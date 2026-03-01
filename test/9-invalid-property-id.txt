@@ -1,0 +1,43 @@
+============================================================
+AxisRooms API Test Log
+============================================================
+Test Name: 9-invalid-property-id
+Timestamp: 2026-02-28T00:21:30.356Z
+Status: SUCCESS
+============================================================
+
+REQUEST:
+--------
+URL: http://127.0.0.1:4006/api/v1/axisrooms/productInfo
+Method: POST
+Headers:
+{}
+
+Body:
+{
+  "auth": {
+    "key": "test-key-12345"
+  },
+  "propertyId": "INVALID_PROPERTY"
+}
+
+RESPONSE:
+---------
+Status: 200
+Headers:
+{
+  "x-powered-by": "Express",
+  "access-control-allow-origin": "*",
+  "content-type": "application/json; charset=utf-8",
+  "content-length": "61",
+  "etag": "W/\"3d-BO2hlSLpq1FRELkdvoAGXarAOCw\"",
+  "date": "Sat, 28 Feb 2026 00:21:30 GMT",
+  "connection": "close"
+}
+
+Data:
+{
+  "message": "Invalid propertyId",
+  "status": "failure",
+  "data": []
+}

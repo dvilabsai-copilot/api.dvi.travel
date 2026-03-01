@@ -3043,6 +3043,8 @@ model dvi_hotel {
   hotel_free_cancel_policy_no_of_days_from_booking_date Int       @default(0)
   hotel_cancel_policy_percentage                        Float     @default(0) @db.Float
   hotel_hotspot_status                                  Int       @default(0)
+  axisrooms_property_id                                 String?   @unique @db.VarChar(100)
+  axisrooms_enabled                                     Int       @default(0) @db.TinyInt
   createdby                                             Int       @default(0)
   createdon                                             DateTime? @db.DateTime(0)
   updatedon                                             DateTime? @updatedAt @db.DateTime(0)
@@ -3079,6 +3081,8 @@ model dvi_hotel {
   @@index([status], map: "idx_hotel_status")
   @@index([updatedon], map: "idx_hotel_updatedon")
   @@index([hotel_category, hotel_city], map: "idx_hotel_category_city")
+  @@index([axisrooms_property_id], map: "idx_hotel_axisrooms_property")
+  @@index([axisrooms_enabled], map: "idx_hotel_axisrooms_enabled")
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
@@ -5611,21 +5615,21 @@ model tbo_city_master {
 }
 
 model tbo_hotel_master {
-  id                Int       @id @default(autoincrement())
-  tbo_hotel_code    String    @unique @db.VarChar(50)
-  tbo_city_code     String    @db.VarChar(10)
-  hotel_name        String?   @db.VarChar(255)
-  hotel_address     String?   @db.VarChar(500)
-  city_name         String?   @db.VarChar(100)
-  star_rating       Int?      @default(0)
-  hotel_image_url   String?   @db.VarChar(500)
-  description       String?   @db.Text
-  check_in_time     String?   @db.VarChar(10)
-  check_out_time    String?   @db.VarChar(10)
-  facilities        Json?
-  created_at        DateTime? @default(now()) @db.DateTime(0)
-  updated_at        DateTime? @default(now()) @updatedAt @db.DateTime(0)
-  status            Int?      @default(1) @db.TinyInt
+  id                       Int       @id @default(autoincrement())
+  tbo_hotel_code           String    @unique @db.VarChar(50)
+  tbo_city_code            String    @db.VarChar(10)
+  hotel_name               String?   @db.VarChar(255)
+  hotel_address            String?   @db.VarChar(500)
+  city_name                String?   @db.VarChar(100)
+  star_rating              Int?      @default(0)
+  hotel_image_url          String?   @db.VarChar(500)
+  description              String?   @db.Text
+  check_in_time            String?   @db.VarChar(10)
+  check_out_time           String?   @db.VarChar(10)
+  facilities               Json?
+  created_at               DateTime? @default(now()) @db.DateTime(0)
+  updated_at               DateTime? @default(now()) @updatedAt @db.DateTime(0)
+  status                   Int?      @default(1) @db.TinyInt
 
   @@index([tbo_city_code], map: "idx_tbo_hotel_master_city_code")
   @@index([star_rating], map: "idx_tbo_hotel_master_star_rating")
@@ -5736,4 +5740,108 @@ model hobse_hotel_booking_confirmation {
   @@index([check_out_date], map: "idx_hobse_booking_check_out_date")
   @@index([booking_status], map: "idx_hobse_booking_status")
   @@index([created_at], map: "idx_hobse_booking_created_at")
+}
+
+/// AxisRooms Room Master
+/// Stores room types (productInfo) for each AxisRooms property
+model axisrooms_room {
+  id                      Int      @id @default(autoincrement())
+  axisrooms_property_id   String   @db.VarChar(100)
+  room_id                 String   @db.VarChar(100)
+  room_name               String   @db.VarChar(255)
+  created_at              DateTime @default(now()) @db.DateTime(0)
+
+  @@unique([axisrooms_property_id, room_id], map: "uniq_axisrooms_room")
+  @@index([axisrooms_property_id], map: "idx_axisrooms_room_property")
+}
+
+/// AxisRooms Rate Plan Master
+/// Stores rate plans (ratePlanInfo) for each room
+model axisrooms_rateplan {
+  id                      Int      @id @default(autoincrement())
+  axisrooms_property_id   String   @db.VarChar(100)
+  room_id                 String   @db.VarChar(100)
+  rateplan_id             String   @db.VarChar(100)
+  rateplan_name           String   @db.VarChar(255)
+  occupancy               Json
+  commission_perc         String?  @db.VarChar(20)
+  tax_perc                String?  @db.VarChar(20)
+  currency                String?  @db.VarChar(10)
+  created_at              DateTime @default(now()) @db.DateTime(0)
+
+  @@unique([axisrooms_property_id, room_id, rateplan_id], map: "uniq_axisrooms_rateplan")
+  @@index([axisrooms_property_id], map: "idx_axisrooms_rateplan_property")
+  @@index([room_id], map: "idx_axisrooms_rateplan_room")
+}
+
+/// AxisRooms Inventory Updates
+/// Stores inventory pushed from AxisRooms
+model axisrooms_inventory {
+  id                      Int      @id @default(autoincrement())
+  axisrooms_property_id   String   @db.VarChar(100)
+  room_id                 String   @db.VarChar(100)
+  start_date              DateTime @db.Date
+  end_date                DateTime @db.Date
+  free                    Int
+  received_at             DateTime @default(now()) @db.DateTime(0)
+
+  @@unique([axisrooms_property_id, room_id, start_date, end_date], map: "uniq_axisrooms_inventory")
+  @@index([axisrooms_property_id], map: "idx_axisrooms_inventory_property")
+  @@index([room_id], map: "idx_axisrooms_inventory_room")
+  @@index([start_date], map: "idx_axisrooms_inventory_start")
+}
+
+/// AxisRooms Rate Updates
+/// Stores rates pushed from AxisRooms
+model axisrooms_rate {
+  id                      Int      @id @default(autoincrement())
+  axisrooms_property_id   String   @db.VarChar(100)
+  room_id                 String   @db.VarChar(100)
+  rateplan_id             String   @db.VarChar(100)
+  start_date              DateTime @db.Date
+  end_date                DateTime @db.Date
+  occupancy_rates         Json
+  received_at             DateTime @default(now()) @db.DateTime(0)
+
+  @@unique([axisrooms_property_id, room_id, rateplan_id, start_date, end_date], map: "uniq_axisrooms_rate")
+  @@index([axisrooms_property_id], map: "idx_axisrooms_rate_property")
+  @@index([room_id], map: "idx_axisrooms_rate_room")
+  @@index([rateplan_id], map: "idx_axisrooms_rate_rateplan")
+  @@index([start_date], map: "idx_axisrooms_rate_start")
+}
+
+/// AxisRooms Restriction Updates
+/// Stores restrictions pushed from AxisRooms
+model axisrooms_restriction {
+  id                      Int      @id @default(autoincrement())
+  axisrooms_property_id   String   @db.VarChar(100)
+  room_id                 String   @db.VarChar(100)
+  rateplan_id             String   @db.VarChar(100)
+  start_date              DateTime @db.Date
+  end_date                DateTime @db.Date
+  type                    String   @db.VarChar(50)
+  value                   String   @db.VarChar(50)
+  received_at             DateTime @default(now()) @db.DateTime(0)
+
+  @@index([axisrooms_property_id], map: "idx_axisrooms_restriction_property")
+  @@index([room_id], map: "idx_axisrooms_restriction_room")
+  @@index([rateplan_id], map: "idx_axisrooms_restriction_rateplan")
+  @@index([start_date], map: "idx_axisrooms_restriction_start")
+  @@index([type], map: "idx_axisrooms_restriction_type")
+}
+
+/// AxisRooms Inbound Log
+/// Logs all inbound requests from AxisRooms for debugging
+model axisrooms_inbound_log {
+  id                      Int      @id @default(autoincrement())
+  type                    String   @db.VarChar(50)
+  axisrooms_property_id   String?  @db.VarChar(100)
+  room_id                 String?  @db.VarChar(100)
+  rateplan_id             String?  @db.VarChar(100)
+  payload                 Json
+  received_at             DateTime @default(now()) @db.DateTime(0)
+
+  @@index([type], map: "idx_axisrooms_log_type")
+  @@index([axisrooms_property_id], map: "idx_axisrooms_log_property")
+  @@index([received_at], map: "idx_axisrooms_log_received")
 }

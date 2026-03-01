@@ -1,0 +1,134 @@
+============================================================
+AxisRooms Admin API Test Log
+============================================================
+Test Name: admin-6-export-csv-basic
+Timestamp: 2026-02-28T00:21:45.736Z
+Status: SUCCESS
+============================================================
+
+REQUEST:
+--------
+URL: http://127.0.0.1:4006/api/v1/axisrooms/admin/hotels/export?limit=100
+Method: GET
+Headers:
+{
+  "x-admin-key": "change_this_secure_key"
+}
+
+RESPONSE:
+---------
+Status: 200
+Headers:
+{
+  "x-powered-by": "Express",
+  "access-control-allow-origin": "*",
+  "content-type": "text/csv; charset=utf-8",
+  "content-disposition": "attachment; filename=\"axisrooms_hotels.csv\"",
+  "content-length": "8985",
+  "etag": "W/\"2319-3v/KNPHi/DZrR+rtbcuIgFODiBo\"",
+  "date": "Sat, 28 Feb 2026 00:21:45 GMT",
+  "connection": "close"
+}
+
+Data (CSV):
+propertyId,hotel_name,hotel_city,hotel_state,hotel_country
+AX_elms-thekkady_thekkaddy_9f4a5af2,Elms Thekkady,Thekkaddy,Kerala,India
+AX_nevesa-suites_bangalore_e1ad6a07,Nevesa Suites,Bangalore,Karnataka,India
+AX_isai-karai-bungalow-_mahabalipuram_2bb37605,Isai Karai Bungalow - A CGH Earth Saha Experience,Mahabalipuram,Tamil Nadu,India
+AX_vrr-astoria-resort-c_bengaluru_b15c4d12,VRR Astoria Resort & Convention Center,Bengaluru,Karnataka,India
+AX_indhu-residency_tiruvannamalai_92cf9446,INDHU RESIDENCY,Tiruvannamalai,Tamil Nadu,India
+AX_sterling-nature-trai_goa_aee19c17,"Sterling Nature Trails Rock Valley, Goa",Goa,Goa,India
+AX_skyry-hotels-singana_coimbatore_a5f522ae,Skyry Hotels Singanallur,Coimbatore,Tamil Nadu,India
+AX_wavecrest-morjim-by-_pernem_f939f331,WAVECREST MORJIM BY JOYSTAYS,Pernem,Goa,India
+AX_palazzo-villa_ooty_0e2ec2c7,Palazzo Villa,Ooty,Tamil Nadu,India
+AX_the-wild-forest-reso_masinagudi_7e4d9ba2,"The Wild Forest Resorts, Masanagudi",Masinagudi,Tamil Nadu,India
+AX_hotel-blue-chip_kochi_e2dcf5e8,Hotel Blue Chip,Kochi,Kerala,India
+AX_rk-residency_chidambaram_0c816fa4,RK Residency,Chidambaram,Tamil Nadu,India
+AX_cholai-resorts-hotel_yercaud_4ae2c566,Cholai Resorts & Hotels,Yercaud,Tamil Nadu,India
+AX_aero-hotel-by-deligh_bengaluru_193eca27,Aero Hotel by Delight Hospitality (Olive Group),Bengaluru,Karnataka,India
+AX_the-on-time-hotel_bengaluru_40c348f0,THE ON TIME HOTEL,Bengaluru,Karnataka,India
+AX_skyry-hotels-gandhip_coimbatore_8f022792,Skyry Hotels Gandhipuram,Coimbatore,Tamil Nadu,India
+AX_hotel-a-square-river_salem_418121c6,Hotel A Square Rivera,Salem,Tamil Nadu,India
+AX_open-hotel-by-olive-_bangalore_31a54e8e,Open Hotel by Olive - S Comfort Inn,Bangalore,Karnataka,India
+AX_continental-inn-inte_ernakulam_555f8e7a,Continental Inn International,Ernakulam,Kerala,India
+AX_venice-riverside_alappuzha_3a92c59d,Venice Riverside,Alappuzha,Kerala,India
+AX_gp-xpress-inn-by-rak_mangalore_b35223b2,GP Xpress Inn by RAK Rooms,Mangalore,Karnataka,India
+AX_la-sara-inn_bengaluru_11488912,La Sara INN,Bengaluru,Karnataka,India
+AX_sterling-nature-trai_gangavathi_51732667,Sterling Nature Trails Ashoka Resorts Hampi,Gangavathi,Karnataka,India
+AX_thapovan-resort-by-z_kodaikanal_2e5f836a,Thapovan Resort by Z Vacations,Kodaikanal,Tamil Nadu,India
+AX_annai-celestial-reso_kanyakumari_e6a7ed2b,ANNAI CELESTIAL RESORT,Kanyakumari,Tamil Nadu,India
+AX_loop-hostels-indiran_bangalore_3b5514cb,Loop Hostels - Indiranagar,Bangalore,Karnataka,India
+AX_vishnu-inn_guruvayoor_6dac45b2,VISHNU INN,Guruvayoor,Kerala,India
+AX_thekkady-arasi_thekkaddy_b7395300,Thekkady Arasi,Thekkaddy,Kerala,India
+AX_wayanad-brook-valley_wayanad_6ec2d357,Wayanad Brook Valley Resort,Wayanad,Kerala,India
+AX_padmam-family-servic_thrissur_544f683b,Padmam Family Service Apartments,Thrissur,Kerala,India
+AX_bloom-hotel-iskcon-r_bengaluru_b7cbf87e,Bloom Hotel - ISKCON Rajajinagar,Bengaluru,Karnataka,India
+AX_nisarga-comforts_chikmagalur_998bdf90,NISARGA COMFORTS,Chikmagalur,Karnataka,India
+AX_sri-yellamma-devi-re_chikmaglur_b06ea20a,Sri Yellamma Devi Rest Inn,Chikmaglur,Karnataka,India
+AX_vk-boarding-and-lodg_bengaluru_5dc44cb5,VK Boarding and Lodging,Bengaluru,Karnataka,India
+AX_loop-hostels-silkboa_bengaluru_ba711c0d,Loop Hostels - Silkboard,Bengaluru,Karnataka,India
+AX_loop-hostels-hsr_bangalore_4e523e76,Loop Hostels - HSR,Bangalore,Karnataka,India
+AX_miia-bella-beach-cot_baga_f8cd8e6b,Miia Bella Beach Cottage Resort Baga,Baga,Goa,India
+AX_johnys-surf-homestay_varkala_40b25a63,Johny's Surf Homestay,Varkala,Kerala,India
+AX_altin-stays_coimbatore_f3dece5f,Altin Stays,Coimbatore,Tamil Nadu,India
+AX_contour-island-resor_wayanad_e628748e,Contour Island Resort & Spa,Wayanad,Kerala,India
+AX_nisara-homestay_varkala_d29e8e3a,NISARA HOMESTAY,Varkala,Kerala,India
+AX_kaizen-residency-tri_tiruchirappalli_3aad9498,KAIZEN RESIDENCY TRICHY,Tiruchirappalli,Tamil Nadu,India
+AX_sonemale-resort_chikmagalur_aea8e380,Sonemale Resort,Chikmagalur,Karnataka,India
+AX_myspace-express-sri-_bengaluru_bf421a7a,Myspace Express Sri Balaji Residency,Bengaluru,Karnataka,India
+AX_janet-johns-beach-re_anjuna_0efd04fc,Janet & John's Beach Resort since 1989,Anjuna,Goa,India
+AX_the-braganza-shoreli_calangute_e18fc6b3,The Braganza Shoreline,Calangute,Goa,India
+AX_hotel-miracle-meridi_bangalore_b1ba52a8,HOTEL MIRACLE MERIDIAN,Bangalore,Karnataka,India
+AX_the-wild-rest-nature_chikmagalur_5fc78fc0,THE WILD REST NATURE RESORT,Chikmagalur,Karnataka,India
+AX_dwayfarer-inn-resort_villarasampatti_2e7d2285,D'WAYFARER INN Resort Erode,Villarasampatti,Tamil Nadu,India
+AX_le-crown-hotel_vagamon_57a96b5f,Le Crown Hotel,Vagamon,Kerala,India
+AX_arthana-residency-ho_udumalpet_3d765abe,Arthana Residency Hotel,Udumalpet,Tamil Nadu,India
+AX_cybele-hill-resort_wayanad_391939d7,Cybele Hill Resort,Wayanad,Kerala,India
+AX_banyan-tree-aayur_trivandrum_eafee9cb,Banyan Tree Aayur,Trivandrum,Kerala,India
+AX_miraaya-sundara-isla_alappuzha_8d36c919,Miraaya Sundara Island Villa,Alappuzha,Kerala,India
+AX_mysa-sky-suites_lakkidi_80ed7e65,MYSA SKY SUITES,Lakkidi,Kerala,India
+AX_warmth-streamside-se_dindigul_9a4880e9,WARMTH STREAMSIDE SERENITY,Dindigul,Tamil Nadu,India
+AX_deva-maani-coorg-nat_madikeri_f0dfb8e1,Deva Maani Coorg Nature Holidays By Z Vacations,Madikeri,Karnataka,India
+AX_ar-phalazzo_villupuram_4b9f35ef,AR PHALAZZO,Villupuram,Tamil Nadu,India
+AX_trisara-boutique-sta_mysuru_b5196760,TRISARA BOUTIQUE STAY,Mysuru,Karnataka,India
+AX_ss-international_coorg_549266bc,SS INTERNATIONAL,Coorg,Karnataka,India
+AX_hotel-seyon-grand-co_coimbatore_3db5bd7e,Hotel Seyon Grand Coimbatore,Coimbatore,Tamil Nadu,India
+AX_fort-verdant_kochi_aa4a3d91,Fort Verdant,Kochi,Kerala,India
+AX_clinton-park-inn_vailankanni_8ef65feb,Clinton Park Inn,Vailankanni,Tamil Nadu,India
+AX_olive-hotel-hosa-roa_bengaluru_8683267f,Olive Hotel Hosa Road Metro by Embassy Group,Bengaluru,Karnataka,India
+AX_rr-grand-inn_coimbatore_69963109,RR Grand Inn,Coimbatore,Tamil Nadu,India
+AX_hotel-saaaj_cochin_ad837954,Hotel Saaaj,Cochin,Kerala,India
+AX_z-express-royce_chennai_d207404b,Z Express Royce,Chennai,Tamil Nadu,India
+AX_coffee-gudda_kalasa_d9b10268,Coffee Gudda,Kalasa,Karnataka,India
+AX_myspace-express-shri_bengaluru_39fc6d68,Myspace Express Shri Balaji Paridise,Bengaluru,Karnataka,India
+AX_myspace-express-gd-i_bengaluru_5967bbfd,Myspace Express GD Inn,Bengaluru,Karnataka,India
+AX_cascade-villa-by-z-v_coorg_4191a8f2,Cascade Villa by Z Vacations,Coorg,Karnataka,India
+AX_hotel-cag-pride_coimbatore_9fbac5d2,HOTEL CaG Pride,Coimbatore,Tamil Nadu,India
+AX_hotel-annapoorna-res_madurai_f92ddc6a,Hotel Annapoorna Residency,Madurai,Tamil Nadu,India
+AX_sanctuary-amaidiyana_pondicherry_b75efe38,Sanctuary Amaidiyana,Pondicherry,Tamil Nadu,India
+AX_z-express-hudson_bengaluru_9a2894ee,Z Express Hudson,Bengaluru,Karnataka,India
+AX_nirvana-holistic-liv_palakkad_d98c308c,NIRVANA HOLISTIC LIVING,Palakkad,Kerala,India
+AX_backwater-retreat-ku_kumarakom_3f785748,Backwater Retreat Kumarakom,Kumarakom,Kerala,India
+AX_pollachi-riverhouse_coimbatore_9bb76ea5,Pollachi Riverhouse,Coimbatore,Tamil Nadu,India
+AX_open-hotel-by-olive-_bengaluru_906d5081,Open Hotel by Olive - A1 Suites,Bengaluru,Karnataka,India
+AX_the-grand-sanvika_idukki_445b8e98,The Grand Sanvika,Idukki,Kerala,India
+AX_ashirwad-retreat_chikmagalur_94f9a666,Ashirwad Retreat,Chikmagalur,Karnataka,India
+AX_kodai-foggy_kodaikanal_31cd424c,Kodai Foggy,Kodaikanal,Tamil Nadu,India
+AX_windstone-residency_coimbatore_09f63bf5,WINDSTONE RESIDENCY,Coimbatore,Tamil Nadu,India
+AX_hotel-park-n_vijayawada_16964869,Hotel Park N,Vijayawada,Andhra Pradesh,India
+AX_ammayi-temple-view_tiruvannamalai_e7406ca8,Ammayi Temple View,Tiruvannamalai,Tamil Nadu,India
+AX_highrange-villas_kattappana_2e917e6f,HIGHRANGE VILLAS,kattappana,Kerala,India
+AX_plumeria-resort-coor_coorg_10511fa3,PLUMERIA RESORT COORG,Coorg,Karnataka,India
+AX_mad-nomad-backpacker_coonoor_beb0ea05,Mad & Nomad Backpackers Hostel,Coonoor,Tamil Nadu,India
+AX_cloudfoster-residenc_kumily_325f0fd8,Cloudfoster Residency,Kumily,Kerala,India
+AX_open-hotel-by-olive-_murudeshwara_39125867,Open Hotel by Olive - Amani Beach Stay,Murudeshwara,Karnataka,India
+AX_hotel-amigos_bangalore_0dba4d53,Hotel Amigos,Bangalore,Karnataka,India
+AX_open-hotel-by-olive-_bengaluru_13cab419,Open Hotel by Olive - Utse Suites,Bengaluru,Karnataka,India
+AX_nirvana-cottages_palakkad_603fb4c6,NIRVANA COTTAGES,Palakkad,Kerala,India
+AX_hotel-mg-grand_rameshwaram_81b63104,HOTEL MG GRAND,Rameshwaram,Tamil Nadu,India
+AX_kodai-square-homesta_kodaikanal_68898b56,KODAI SQUARE HOMESTAY,Kodaikanal,Tamil Nadu,India
+AX_ozone-hill-resorts_yercaud_5f024d2c,Ozone Hill Resorts,Yercaud,Tamil Nadu,India
+AX_hotel-crescent-park_kodaikanal_6a817261,Hotel Crescent Park,Kodaikanal,Tamil Nadu,India
+AX_anantara-hotels-myso_mysuru_16f483d8,Anantara Hotels Mysore,Mysuru,Karnataka,India
+AX_krishna-paradize_kodaikanal_7275a742,Krishna Paradize,Kodaikanal,Tamil Nadu,India
+AX_loop-hostelz-koraman_bengaluru_b09b9f38,Loop Hostelz - Koramangala,Bengaluru,Karnataka,India

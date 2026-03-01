@@ -37,9 +37,10 @@ import { GlobalSettingsModule } from './modules/settings/global-settings/global-
 import { IncidentalExpensesModule } from './modules/incidental-expenses/incidental-expenses.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { AccountsExportModule } from './modules/accounts-export/accounts-export.module';
+import { AxisRoomsModule } from './modules/axisrooms/axisrooms.module';
 
 @Module({
-  imports: [PrismaModule, AuthModule, UsersModule,VendorsModule,AgentsModule,ItineraryViaRoutesModule,HotelsModule,DailyMomentTrackerModule, ItineraryDropdownsModule, ItinerariesModule,AccountsManagerModule, AccountsLedgerModule, DriversModule, VehicleAvailabilityModule, HotspotsModule, HotspotDistanceCacheModule, ActivitiesModule, LocationsModule, GuidesModule, StaffModule, AgentModule, DashboardModule, GstSettingsModule,InbuiltAmenitiesModule, VehicleTypesModule, CitiesModule, ExportPricebookModule, IncidentalExpensesModule, PaymentsModule, LanguageModule, RolePermissionModule, AgentSubscriptionPlanModule, HotelCategoryModule, GlobalSettingsModule, AccountsExportModule],
+  imports: [PrismaModule, AuthModule, UsersModule,VendorsModule,AgentsModule,ItineraryViaRoutesModule,HotelsModule,DailyMomentTrackerModule, ItineraryDropdownsModule, ItinerariesModule,AccountsManagerModule, AccountsLedgerModule, DriversModule, VehicleAvailabilityModule, HotspotsModule, HotspotDistanceCacheModule, ActivitiesModule, LocationsModule, GuidesModule, StaffModule, AgentModule, DashboardModule, GstSettingsModule,InbuiltAmenitiesModule, VehicleTypesModule, CitiesModule, ExportPricebookModule, IncidentalExpensesModule, PaymentsModule, LanguageModule, RolePermissionModule, AgentSubscriptionPlanModule, HotelCategoryModule, GlobalSettingsModule, AccountsExportModule, AxisRoomsModule],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },

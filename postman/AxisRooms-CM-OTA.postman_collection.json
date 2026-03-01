@@ -1,0 +1,424 @@
+{
+  "info": {
+    "name": "AxisRooms CM-OTA APIs",
+    "description": "AxisRooms Channel Manager OTA Integration - Push-based inventory, rates, and restrictions APIs + Admin Export APIs",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:4006",
+      "type": "string"
+    },
+    {
+      "key": "apiPrefix",
+      "value": "/api/v1",
+      "type": "string"
+    },
+    {
+      "key": "apiKey",
+      "value": "test-key-12345",
+      "type": "string"
+    },
+    {
+      "key": "adminKey",
+      "value": "change_this_secure_key",
+      "type": "string"
+    },
+    {
+      "key": "propertyId",
+      "value": "AX_TEST_1",
+      "type": "string"
+    },
+    {
+      "key": "roomId",
+      "value": "DELUXE_ROOM",
+      "type": "string"
+    },
+    {
+      "key": "rateplanId",
+      "value": "CP_PLAN",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Product Info",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"auth\": {\n    \"key\": \"{{apiKey}}\"\n  },\n  \"propertyId\": \"{{propertyId}}\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}{{apiPrefix}}/axisrooms/productInfo",
+          "host": ["{{baseUrl}}"],
+          "path": ["{{apiPrefix}}", "axisrooms", "productInfo"]
+        },
+        "description": "Retrieves the list of room types (products) for a given property.\n\n**Success Response:**\n```json\n{\n  \"message\": \"\",\n  \"status\": \"success\",\n  \"data\": [\n    { \"name\": \"room_name1\", \"id\": \"room1\" },\n    { \"name\": \"room_name2\", \"id\": \"room2\" }\n  ]\n}\n```\n\n**Failure Response:**\n```json\n{\n  \"message\": \"Invalid propertyId\",\n  \"status\": \"failure\",\n  \"data\": []\n}\n```"
+      },
+      "response": []
+    },
+    {
+      "name": "2. Rate Plan Info",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"auth\": {\n    \"key\": \"{{apiKey}}\"\n  },\n  \"propertyId\": \"{{propertyId}}\",\n  \"roomId\": \"{{roomId}}\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}{{apiPrefix}}/axisrooms/ratePlanInfo",
+          "host": ["{{baseUrl}}"],
+          "path": ["{{apiPrefix}}", "axisrooms", "ratePlanInfo"]
+        },
+        "description": "Retrieves the list of rate plans for a specific room.\n\n**Success Response:**\n```json\n{\n  \"message\": \"\",\n  \"status\": \"success\",\n  \"data\": [\n    {\n      \"rateplanId\": \"15\",\n      \"ratePlanName\": \"CP\",\n      \"occupancy\": [\"SINGLE\", \"DOUBLE\", \"TRIPLE\"],\n      \"validity\": { \"startDate\": \"2014-06-02\", \"endDate\": \"2014-06-08\" },\n      \"commissionPerc\": \"10.0\",\n      \"taxPerc\": \"5.0\",\n      \"currency\": \"INR\"\n    }\n  ]\n}\n```"
+      },
+      "response": []
+    },
+    {
+      "name": "3. Inventory Update",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"auth\": {\n    \"key\": \"{{apiKey}}\"\n  },\n  \"data\": {\n    \"propertyId\": \"{{propertyId}}\",\n    \"roomId\": \"{{roomId}}\",\n    \"inventory\": [\n      {\n        \"startDate\": \"2026-06-02\",\n        \"endDate\": \"2026-06-03\",\n        \"free\": 5\n      },\n      {\n        \"startDate\": \"2026-06-04\",\n        \"endDate\": \"2026-06-08\",\n        \"free\": 10\n      }\n    ]\n  }\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}{{apiPrefix}}/axisrooms/inventoryUpdate",
+          "host": ["{{baseUrl}}"],
+          "path": ["{{apiPrefix}}", "axisrooms", "inventoryUpdate"]
+        },
+        "description": "AxisRooms pushes inventory updates to DVI.\n\n**Success Response:**\n```json\n{\n  \"message\": \"\",\n  \"status\": \"success\"\n}\n```"
+      },
+      "response": []
+    },
+    {
+      "name": "4. Rate Update",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"auth\": {\n    \"key\": \"{{apiKey}}\"\n  },\n  \"data\": {\n    \"propertyId\": \"{{propertyId}}\",\n    \"roomId\": \"{{roomId}}\",\n    \"rateplanId\": \"{{rateplanId}}\",\n    \"rate\": [\n      {\n        \"startDate\": \"2026-06-02\",\n        \"endDate\": \"2026-06-03\",\n        \"SINGLE\": 5300,\n        \"DOUBLE\": 5700,\n        \"TRIPLE\": 6200,\n        \"EXTRABED\": 800\n      },\n      {\n        \"startDate\": \"2026-06-04\",\n        \"endDate\": \"2026-06-06\",\n        \"SINGLE\": 5100,\n        \"DOUBLE\": 5600\n      }\n    ]\n  }\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}{{apiPrefix}}/axisrooms/rateUpdate",
+          "host": ["{{baseUrl}}"],
+          "path": ["{{apiPrefix}}", "axisrooms", "rateUpdate"]
+        },
+        "description": "AxisRooms pushes rate updates with dynamic occupancy keys.\n\n**Note:** Occupancy keys (SINGLE, DOUBLE, TRIPLE, EXTRABED, etc.) are dynamic and stored as JSON.\n\n**Success Response:**\n```json\n{\n  \"message\": \"\",\n  \"status\": \"success\"\n}\n```"
+      },
+      "response": []
+    },
+    {
+      "name": "5. Restriction Update - Status",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"auth\": {\n    \"key\": \"{{apiKey}}\"\n  },\n  \"data\": [\n    {\n      \"propertyId\": \"{{propertyId}}\",\n      \"roomDetails\": [\n        {\n          \"roomId\": \"{{roomId}}\",\n          \"ratePlanDetails\": [\n            {\n              \"ratePlanId\": \"{{rateplanId}}\",\n              \"restrictions\": {\n                \"periods\": [\n                  {\n                    \"startDate\": \"2026-06-05\",\n                    \"endDate\": \"2026-06-05\"\n                  },\n                  {\n                    \"startDate\": \"2026-06-10\",\n                    \"endDate\": \"2026-06-15\"\n                  }\n                ],\n                \"type\": \"Status\",\n                \"value\": \"Open\"\n              }\n            }\n          ]\n        }\n      ]\n    }\n  ]\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}{{apiPrefix}}/axisrooms/restrictionUpdate",
+          "host": ["{{baseUrl}}"],
+          "path": ["{{apiPrefix}}", "axisrooms", "restrictionUpdate"]
+        },
+        "description": "AxisRooms pushes restriction updates.\n\n**Restriction Types:**\n- **Status**: Open/Close\n- **COA**: Close on Arrival (Open/Close)\n- **COD**: Close on Departure (Open/Close)\n- **MLos**: Minimum Length of Stay (integer value)\n\n**Success Response:**\n```json\n{\n  \"message\": \"\",\n  \"status\": \"success\"\n}\n```"
+      },
+      "response": []
+    },
+    {
+      "name": "6. Restriction Update - COA",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"auth\": {\n    \"key\": \"{{apiKey}}\"\n  },\n  \"data\": [\n    {\n      \"propertyId\": \"{{propertyId}}\",\n      \"roomDetails\": [\n        {\n          \"roomId\": \"{{roomId}}\",\n          \"ratePlanDetails\": [\n            {\n              \"ratePlanId\": \"{{rateplanId}}\",\n              \"restrictions\": {\n                \"periods\": [\n                  {\n                    \"startDate\": \"2026-07-01\",\n                    \"endDate\": \"2026-07-31\"\n                  }\n                ],\n                \"type\": \"COA\",\n                \"value\": \"Close\"\n              }\n            }\n          ]\n        }\n      ]\n    }\n  ]\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}{{apiPrefix}}/axisrooms/restrictionUpdate",
+          "host": ["{{baseUrl}}"],
+          "path": ["{{apiPrefix}}", "axisrooms", "restrictionUpdate"]
+        },
+        "description": "Close on Arrival restriction example"
+      },
+      "response": []
+    },
+    {
+      "name": "7. Restriction Update - MLos",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"auth\": {\n    \"key\": \"{{apiKey}}\"\n  },\n  \"data\": [\n    {\n      \"propertyId\": \"{{propertyId}}\",\n      \"roomDetails\": [\n        {\n          \"roomId\": \"{{roomId}}\",\n          \"ratePlanDetails\": [\n            {\n              \"ratePlanId\": \"{{rateplanId}}\",\n              \"restrictions\": {\n                \"periods\": [\n                  {\n                    \"startDate\": \"2026-08-01\",\n                    \"endDate\": \"2026-08-31\"\n                  }\n                ],\n                \"type\": \"MLos\",\n                \"value\": \"3\"\n              }\n            }\n          ]\n        }\n      ]\n    }\n  ]\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}{{apiPrefix}}/axisrooms/restrictionUpdate",
+          "host": ["{{baseUrl}}"],
+          "path": ["{{apiPrefix}}", "axisrooms", "restrictionUpdate"]
+        },
+        "description": "Minimum Length of Stay restriction example (3 nights minimum)"
+      },
+      "response": []
+    },
+    {
+      "name": "8. Test Invalid Auth",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"auth\": {\n    \"key\": \"wrong-key\"\n  },\n  \"propertyId\": \"{{propertyId}}\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}{{apiPrefix}}/axisrooms/productInfo",
+          "host": ["{{baseUrl}}"],
+          "path": ["{{apiPrefix}}", "axisrooms", "productInfo"]
+        },
+        "description": "Test invalid authentication - should return 401 with failure status"
+      },
+      "response": []
+    },
+    {
+      "name": "9. Test Invalid PropertyId",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"auth\": {\n    \"key\": \"{{apiKey}}\"\n  },\n  \"propertyId\": \"INVALID_PROPERTY_ID\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}{{apiPrefix}}/axisrooms/productInfo",
+          "host": ["{{baseUrl}}"],
+          "path": ["{{apiPrefix}}", "axisrooms", "productInfo"]
+        },
+        "description": "Test invalid propertyId - should return failure status with message"
+      },
+      "response": []
+    },
+    {
+      "name": "Admin - Get Hotels (JSON)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "x-admin-key",
+            "value": "{{adminKey}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}{{apiPrefix}}/axisrooms/admin/hotels?limit=100&offset=0",
+          "host": ["{{baseUrl}}"],
+          "path": ["{{apiPrefix}}", "axisrooms", "admin", "hotels"],
+          "query": [
+            {
+              "key": "enabled",
+              "value": "1",
+              "description": "Filter by axisrooms_enabled (0 or 1)",
+              "disabled": true
+            },
+            {
+              "key": "updatedAfter",
+              "value": "2026-02-01T00:00:00Z",
+              "description": "ISO date - filter hotels updated after this date",
+              "disabled": true
+            },
+            {
+              "key": "limit",
+              "value": "100",
+              "description": "Number of results (default: 500)"
+            },
+            {
+              "key": "offset",
+              "value": "0",
+              "description": "Pagination offset (default: 0)"
+            },
+            {
+              "key": "includeDetails",
+              "value": "true",
+              "description": "Include rooms and rate plans",
+              "disabled": true
+            }
+          ]
+        },
+        "description": "Export AxisRooms hotel mappings in JSON format.\n\n**Response:**\n```json\n{\n  \"status\": \"success\",\n  \"total\": 1422,\n  \"data\": [\n    {\n      \"hotel_id\": 123,\n      \"hotel_name\": \"Test Hotel\",\n      \"hotel_city\": \"Bangalore\",\n      \"hotel_state\": \"Karnataka\",\n      \"hotel_country\": \"India\",\n      \"propertyId\": \"AX_test-hotel_bangalore_12345678\",\n      \"axisrooms_enabled\": 1,\n      \"updatedon\": \"2026-02-28T00:00:00.000Z\"\n    }\n  ]\n}\n```\n\n**Authentication:** Requires `x-admin-key` header"
+      },
+      "response": []
+    },
+    {
+      "name": "Admin - Get Hotels with Details",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "x-admin-key",
+            "value": "{{adminKey}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}{{apiPrefix}}/axisrooms/admin/hotels?limit=10&includeDetails=true",
+          "host": ["{{baseUrl}}"],
+          "path": ["{{apiPrefix}}", "axisrooms", "admin", "hotels"],
+          "query": [
+            {
+              "key": "limit",
+              "value": "10"
+            },
+            {
+              "key": "includeDetails",
+              "value": "true",
+              "description": "Include rooms and rate plans for each hotel"
+            }
+          ]
+        },
+        "description": "Export hotels with detailed room and rate plan information.\n\n**Response includes:**\n- Hotel basic info\n- `rooms` array with room_id, room_name\n- Each room has `rateplans` array with rateplan_id, rateplan_name\n\n**Authentication:** Requires `x-admin-key` header"
+      },
+      "response": []
+    },
+    {
+      "name": "Admin - Get Hotels Updated After",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "x-admin-key",
+            "value": "{{adminKey}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}{{apiPrefix}}/axisrooms/admin/hotels?updatedAfter=2026-02-27T00:00:00Z&limit=50",
+          "host": ["{{baseUrl}}"],
+          "path": ["{{apiPrefix}}", "axisrooms", "admin", "hotels"],
+          "query": [
+            {
+              "key": "updatedAfter",
+              "value": "2026-02-27T00:00:00Z",
+              "description": "ISO date string - only hotels updated after this date"
+            },
+            {
+              "key": "limit",
+              "value": "50"
+            }
+          ]
+        },
+        "description": "Filter hotels updated after a specific date.\n\nUseful for incremental syncs.\n\n**Authentication:** Requires `x-admin-key` header"
+      },
+      "response": []
+    },
+    {
+      "name": "Admin - Export CSV",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "x-admin-key",
+            "value": "{{adminKey}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}{{apiPrefix}}/axisrooms/admin/hotels/export?limit=1000",
+          "host": ["{{baseUrl}}"],
+          "path": ["{{apiPrefix}}", "axisrooms", "admin", "hotels", "export"],
+          "query": [
+            {
+              "key": "enabled",
+              "value": "1",
+              "description": "Filter by axisrooms_enabled",
+              "disabled": true
+            },
+            {
+              "key": "updatedAfter",
+              "value": "2026-02-01T00:00:00Z",
+              "description": "ISO date filter",
+              "disabled": true
+            },
+            {
+              "key": "limit",
+              "value": "1000",
+              "description": "Number of results"
+            },
+            {
+              "key": "offset",
+              "value": "0",
+              "description": "Pagination offset",
+              "disabled": true
+            }
+          ]
+        },
+        "description": "Export AxisRooms hotel mappings as CSV file.\n\n**CSV Format:**\n```\npropertyId,hotel_name,hotel_city,hotel_state,hotel_country\nAX_test-hotel_bangalore_12345678,Test Hotel,Bangalore,Karnataka,India\n```\n\n**Response:** CSV file download\n**Content-Type:** text/csv\n\n**Authentication:** Requires `x-admin-key` header"
+      },
+      "response": []
+    },
+    {
+      "name": "Admin - Test Unauthorized",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}{{apiPrefix}}/axisrooms/admin/hotels",
+          "host": ["{{baseUrl}}"],
+          "path": ["{{apiPrefix}}", "axisrooms", "admin", "hotels"]
+        },
+        "description": "Test unauthorized access - should return 401.\n\n**Expected Response:**\n```json\n{\n  \"status\": \"failure\",\n  \"message\": \"Unauthorized\"\n}\n```"
+      },
+      "response": []
+    }
+  ]
+}

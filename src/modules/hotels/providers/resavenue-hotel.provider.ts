@@ -469,9 +469,9 @@ export class ResAvenueHotelProvider implements IHotelProvider {
         this.logger.warn(
           `   ⚠️  Rate Fetch failed: ${rateFetchError.message}. Using fallback rates.`
         );
-        // Fallback: Create synthetic rate based on totalAmount from booking details
+        // Fallback: Create synthetic rate with default per-night rate
         const nights = this.getStayNights(bookingDetails.checkInDate, bookingDetails.checkOutDate);
-        const perNightRate = Math.round(bookingDetails.totalPrice / nights.length);
+        const perNightRate = 1000; // Default fallback rate
         
         rateFetchResponse = [
           {
@@ -482,6 +482,10 @@ export class ResAvenueHotelProvider implements IHotelProvider {
               Double: perNightRate,
               Triple: perNightRate,
               ExtraPax: 0,
+              ExtraChild: 0,
+              MinStay: 1,
+              MaxStay: 30,
+              StopSell: false,
             })),
           },
         ];
@@ -614,11 +618,9 @@ export class ResAvenueHotelProvider implements IHotelProvider {
 
       // Add authentication credentials (as per ResAvenue OTA API documentation)
       bookingRequest.OTA_HotelResNotifRQ.POS = {
-        RequestorID: {
-          User: this.USERNAME,
-          Password: this.PASSWORD,
-          ID_Context: this.ID_CONTEXT,
-        },
+        Username: this.USERNAME,
+        Password: this.PASSWORD,
+        ID_Context: this.ID_CONTEXT,
       };
 
       this.logger.log(`\n   Step 3️⃣ : Sending Booking Push to ResAvenue...`);
@@ -776,15 +778,15 @@ export class ResAvenueHotelProvider implements IHotelProvider {
       let normalizedEndDate = endDate;
       
       // If date is a Date object, convert to ISO string
-      if (typeof startDate === 'object' && startDate instanceof Date) {
-        normalizedStartDate = startDate.toISOString().split('T')[0];
+      if (startDate && typeof startDate === 'object' && 'toISOString' in (startDate as object)) {
+        normalizedStartDate = (startDate as Date).toISOString().split('T')[0];
       } else if (typeof startDate === 'string' && startDate.includes('T')) {
         // If it's ISO datetime string, extract just the date part
         normalizedStartDate = startDate.split('T')[0];
       }
       
-      if (typeof endDate === 'object' && endDate instanceof Date) {
-        normalizedEndDate = endDate.toISOString().split('T')[0];
+      if (endDate && typeof endDate === 'object' && 'toISOString' in (endDate as object)) {
+        normalizedEndDate = (endDate as Date).toISOString().split('T')[0];
       } else if (typeof endDate === 'string' && endDate.includes('T')) {
         normalizedEndDate = endDate.split('T')[0];
       }

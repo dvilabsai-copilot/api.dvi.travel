@@ -1,0 +1,238 @@
+============================================================
+AxisRooms Admin API Test Log
+============================================================
+Test Name: admin-3-get-hotels-updated-after
+Timestamp: 2026-02-28T00:21:45.444Z
+Status: SUCCESS
+============================================================
+
+REQUEST:
+--------
+URL: http://127.0.0.1:4006/api/v1/axisrooms/admin/hotels?updatedAfter=2026-02-27T00:00:00Z&limit=20
+Method: GET
+Headers:
+{
+  "x-admin-key": "change_this_secure_key"
+}
+
+RESPONSE:
+---------
+Status: 200
+Headers:
+{
+  "x-powered-by": "Express",
+  "access-control-allow-origin": "*",
+  "content-type": "application/json; charset=utf-8",
+  "content-length": "5039",
+  "etag": "W/\"13af-ROJEsvJsl3DlNMDmeJrrR8ZiI0o\"",
+  "date": "Sat, 28 Feb 2026 00:21:45 GMT",
+  "connection": "close"
+}
+
+Data:
+{
+  "status": "success",
+  "total": 1422,
+  "data": [
+    {
+      "hotel_id": 45958,
+      "hotel_name": "Padmam Family Service Apartments",
+      "hotel_city": "Thrissur",
+      "hotel_state": "Kerala",
+      "hotel_country": "India",
+      "propertyId": "AX_padmam-family-servic_thrissur_544f683b",
+      "axisrooms_enabled": 1,
+      "updatedon": "2026-02-28T00:04:48.000Z"
+    },
+    {
+      "hotel_id": 45957,
+      "hotel_name": "Bloom Hotel - ISKCON Rajajinagar",
+      "hotel_city": "Bengaluru",
+      "hotel_state": "Karnataka",
+      "hotel_country": "India",
+      "propertyId": "AX_bloom-hotel-iskcon-r_bengaluru_b7cbf87e",
+      "axisrooms_enabled": 1,
+      "updatedon": "2026-02-28T00:04:48.000Z"
+    },
+    {
+      "hotel_id": 45956,
+      "hotel_name": "RK Residency",
+      "hotel_city": "Chidambaram",
+      "hotel_state": "Tamil Nadu",
+      "hotel_country": "India",
+      "propertyId": "AX_rk-residency_chidambaram_0c816fa4",
+      "axisrooms_enabled": 1,
+      "updatedon": "2026-02-28T00:04:48.000Z"
+    },
+    {
+      "hotel_id": 45955,
+      "hotel_name": "VK Boarding and Lodging",
+      "hotel_city": "Bengaluru",
+      "hotel_state": "Karnataka",
+      "hotel_country": "India",
+      "propertyId": "AX_vk-boarding-and-lodg_bengaluru_5dc44cb5",
+      "axisrooms_enabled": 1,
+      "updatedon": "2026-02-28T00:04:48.000Z"
+    },
+    {
+      "hotel_id": 45954,
+      "hotel_name": "Wayanad Brook Valley Resort",
+      "hotel_city": "Wayanad",
+      "hotel_state": "Kerala",
+      "hotel_country": "India",
+      "propertyId": "AX_wayanad-brook-valley_wayanad_6ec2d357",
+      "axisrooms_enabled": 1,
+      "updatedon": "2026-02-28T00:04:48.000Z"
+    },
+    {
+      "hotel_id": 45953,
+      "hotel_name": "Loop Hostels - Indiranagar",
+      "hotel_city": "Bangalore",
+      "hotel_state": "Karnataka",
+      "hotel_country": "India",
+      "propertyId": "AX_loop-hostels-indiran_bangalore_3b5514cb",
+      "axisrooms_enabled": 1,
+      "updatedon": "2026-02-28T00:04:48.000Z"
+    },
+    {
+      "hotel_id": 45952,
+      "hotel_name": "GP Xpress Inn by RAK Rooms",
+      "hotel_city": "Mangalore",
+      "hotel_state": "Karnataka",
+      "hotel_country": "India",
+      "propertyId": "AX_gp-xpress-inn-by-rak_mangalore_b35223b2",
+      "axisrooms_enabled": 1,
+      "updatedon": "2026-02-28T00:04:48.000Z"
+    },
+    {
+      "hotel_id": 45951,
+      "hotel_name": "Hotel A Square Rivera",
+      "hotel_city": "Salem",
+      "hotel_state": "Tamil Nadu",
+      "hotel_country": "India",
+      "propertyId": "AX_hotel-a-square-river_salem_418121c6",
+      "axisrooms_enabled": 1,
+      "updatedon": "2026-02-28T00:04:48.000Z"
+    },
+    {
+      "hotel_id": 45950,
+      "hotel_name": "Venice Riverside",
+      "hotel_city": "Alappuzha",
+      "hotel_state": "Kerala",
+      "hotel_country": "India",
+      "propertyId": "AX_venice-riverside_alappuzha_3a92c59d",
+      "axisrooms_enabled": 1,
+      "updatedon": "2026-02-28T00:04:48.000Z"
+    },
+    {
+      "hotel_id": 45949,
+      "hotel_name": "ANNAI CELESTIAL RESORT",
+      "hotel_city": "Kanyakumari",
+      "hotel_state": "Tamil Nadu",
+      "hotel_country": "India",
+      "propertyId": "AX_annai-celestial-reso_kanyakumari_e6a7ed2b",
+      "axisrooms_enabled": 1,
+      "updatedon": "2026-02-28T00:04:48.000Z"
+    },
+    {
+      "hotel_id": 45948,
+      "hotel_name": "Skyry Hotels Singanallur",
+      "hotel_city": "Coimbatore",
+      "hotel_state": "Tamil Nadu",
+      "hotel_country": "India",
+      "propertyId": "AX_skyry-hotels-singana_coimbatore_a5f522ae",
+      "axisrooms_enabled": 1,
+      "updatedon": "2026-02-28T00:04:48.000Z"
+    },
+    {
+      "hotel_id": 45947,
+      "hotel_name": "Palazzo Villa",
+      "hotel_city": "Ooty",
+      "hotel_state": "Tamil Nadu",
+      "hotel_country": "India",
+      "propertyId": "AX_palazzo-villa_ooty_0e2ec2c7",
+      "axisrooms_enabled": 1,
+      "updatedon": "2026-02-28T00:04:48.000Z"
+    },
+    {
+      "hotel_id": 45946,
+      "hotel_name": "Skyry Hotels Gandhipuram",
+      "hotel_city": "Coimbatore",
+      "hotel_state": "Tamil Nadu",
+      "hotel_country": "India",
+      "propertyId": "AX_skyry-hotels-gandhip_coimbatore_8f022792",
+      "axisrooms_enabled": 1,
+      "updatedon": "2026-02-28T00:04:48.000Z"
+    },
+    {
+      "hotel_id": 45945,
+      "hotel_name": "Thapovan Resort by Z Vacations",
+      "hotel_city": "Kodaikanal",
+      "hotel_state": "Tamil Nadu",
+      "hotel_country": "India",
+      "propertyId": "AX_thapovan-resort-by-z_kodaikanal_2e5f836a",
+      "axisrooms_enabled": 1,
+      "updatedon": "2026-02-28T00:04:48.000Z"
+    },
+    {
+      "hotel_id": 45944,
+      "hotel_name": "VISHNU INN",
+      "hotel_city": "Guruvayoor",
+      "hotel_state": "Kerala",
+      "hotel_country": "India",
+      "propertyId": "AX_vishnu-inn_guruvayoor_6dac45b2",
+      "axisrooms_enabled": 1,
+      "updatedon": "2026-02-28T00:04:48.000Z"
+    },
+    {
+      "hotel_id": 45943,
+      "hotel_name": "Nevesa Suites",
+      "hotel_city": "Bangalore",
+      "hotel_state": "Karnataka",
+      "hotel_country": "India",
+      "propertyId": "AX_nevesa-suites_bangalore_e1ad6a07",
+      "axisrooms_enabled": 1,
+      "updatedon": "2026-02-28T00:04:48.000Z"
+    },
+    {
+      "hotel_id": 45942,
+      "hotel_name": "Sterling Nature Trails Ashoka Resorts Hampi",
+      "hotel_city": "Gangavathi",
+      "hotel_state": "Karnataka",
+      "hotel_country": "India",
+      "propertyId": "AX_sterling-nature-trai_gangavathi_51732667",
+      "axisrooms_enabled": 1,
+      "updatedon": "2026-02-28T00:04:48.000Z"
+    },
+    {
+      "hotel_id": 45941,
+      "hotel_name": "WAVECREST MORJIM BY JOYSTAYS",
+      "hotel_city": "Pernem",
+      "hotel_state": "Goa",
+      "hotel_country": "India",
+      "propertyId": "AX_wavecrest-morjim-by-_pernem_f939f331",
+      "axisrooms_enabled": 1,
+      "updatedon": "2026-02-28T00:04:48.000Z"
+    },
+    {
+      "hotel_id": 45940,
+      "hotel_name": "VRR Astoria Resort & Convention Center",
+      "hotel_city": "Bengaluru",
+      "hotel_state": "Karnataka",
+      "hotel_country": "India",
+      "propertyId": "AX_vrr-astoria-resort-c_bengaluru_b15c4d12",
+      "axisrooms_enabled": 1,
+      "updatedon": "2026-02-28T00:04:48.000Z"
+    },
+    {
+      "hotel_id": 45939,
+      "hotel_name": "NISARGA COMFORTS",
+      "hotel_city": "Chikmagalur",
+      "hotel_state": "Karnataka",
+      "hotel_country": "India",
+      "propertyId": "AX_nisarga-comforts_chikmagalur_998bdf90",
+      "axisrooms_enabled": 1,
+      "updatedon": "2026-02-28T00:04:48.000Z"
+    }
+  ]
+}
