@@ -1,0 +1,76 @@
+============================================================
+AxisRooms API Test Log
+============================================================
+Test Name: 2-rate-plan-info
+Timestamp: 2026-02-28T00:21:30.453Z
+Status: SUCCESS
+============================================================
+
+REQUEST:
+--------
+URL: http://127.0.0.1:4006/api/v1/axisrooms/ratePlanInfo
+Method: POST
+Headers:
+{}
+
+Body:
+{
+  "auth": {
+    "key": "test-key-12345"
+  },
+  "propertyId": "AX_TEST_1",
+  "roomId": "DELUXE_ROOM"
+}
+
+RESPONSE:
+---------
+Status: 200
+Headers:
+{
+  "x-powered-by": "Express",
+  "access-control-allow-origin": "*",
+  "content-type": "application/json; charset=utf-8",
+  "content-length": "476",
+  "etag": "W/\"1dc-radPvWSCu9aTRGvBRwoGDMhG/vM\"",
+  "date": "Sat, 28 Feb 2026 00:21:30 GMT",
+  "connection": "close"
+}
+
+Data:
+{
+  "message": "",
+  "status": "success",
+  "data": [
+    {
+      "rateplanId": "CP_PLAN",
+      "ratePlanName": "Continental Plan",
+      "occupancy": [
+        "SINGLE",
+        "DOUBLE",
+        "TRIPLE"
+      ],
+      "validity": {
+        "startDate": "2014-06-02",
+        "endDate": "2099-12-31"
+      },
+      "commissionPerc": "10.0",
+      "taxPerc": "5.0",
+      "currency": "INR"
+    },
+    {
+      "rateplanId": "MAP_PLAN",
+      "ratePlanName": "Modified American Plan",
+      "occupancy": [
+        "SINGLE",
+        "DOUBLE"
+      ],
+      "validity": {
+        "startDate": "2014-06-02",
+        "endDate": "2099-12-31"
+      },
+      "commissionPerc": "12.0",
+      "taxPerc": "5.0",
+      "currency": "INR"
+    }
+  ]
+}

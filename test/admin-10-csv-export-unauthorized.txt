@@ -1,0 +1,25 @@
+============================================================
+AxisRooms Admin API Test Log
+============================================================
+Test Name: admin-10-csv-export-unauthorized
+Timestamp: 2026-02-28T00:21:45.852Z
+Status: FAILED
+============================================================
+
+REQUEST:
+--------
+URL: http://127.0.0.1:4006/api/v1/axisrooms/admin/hotels/export
+Method: GET
+Headers:
+{}
+
+RESPONSE:
+---------
+Status: 401
+Error: Request failed with status code 401
+
+Response Data:
+{
+  "status": "failure",
+  "message": "Unauthorized"
+}

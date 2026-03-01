@@ -1,0 +1,66 @@
+============================================================
+AxisRooms API Test Log
+============================================================
+Test Name: 7-restriction-update-mlos
+Timestamp: 2026-02-28T00:21:30.765Z
+Status: SUCCESS
+============================================================
+
+REQUEST:
+--------
+URL: http://127.0.0.1:4006/api/v1/axisrooms/restrictionUpdate
+Method: POST
+Headers:
+{}
+
+Body:
+{
+  "auth": {
+    "key": "test-key-12345"
+  },
+  "data": [
+    {
+      "propertyId": "AX_TEST_1",
+      "roomDetails": [
+        {
+          "roomId": "DELUXE_ROOM",
+          "ratePlanDetails": [
+            {
+              "ratePlanId": "CP_PLAN",
+              "restrictions": {
+                "periods": [
+                  {
+                    "startDate": "2026-08-01",
+                    "endDate": "2026-08-31"
+                  }
+                ],
+                "type": "MLos",
+                "value": "3"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+
+RESPONSE:
+---------
+Status: 200
+Headers:
+{
+  "x-powered-by": "Express",
+  "access-control-allow-origin": "*",
+  "content-type": "application/json; charset=utf-8",
+  "content-length": "33",
+  "etag": "W/\"21-EaizrEQ5ZkFQOW1tpdnLKL43OS8\"",
+  "date": "Sat, 28 Feb 2026 00:21:30 GMT",
+  "connection": "close"
+}
+
+Data:
+{
+  "message": "",
+  "status": "success"
+}
