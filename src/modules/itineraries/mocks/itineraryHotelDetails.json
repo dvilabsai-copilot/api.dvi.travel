@@ -1,0 +1,116 @@
+{
+  "hotelRatesVisible": true,
+  "hotelTabs": [
+    { "groupType": 1, "label": "Recommended Hotel - 1", "totalAmount": 44342.26 },
+    { "groupType": 2, "label": "Recommended Hotel - 2", "totalAmount": 47299.2 },
+    { "groupType": 3, "label": "Recommended Hotel - 3", "totalAmount": 68854.67 },
+    { "groupType": 4, "label": "Recommended Hotel - 4", "totalAmount": 68854.67 }
+  ],
+  "hotels": [
+    {
+      "groupType": 1,
+      "itineraryRouteId": 501,
+      "day": "Day-1 | 05 May 2026",
+      "destination": "Tirupati, Andhra Pradesh, India",
+      "hotelId": 3001,
+      "hotelName": "Hotel Harsha Residency",
+      "category": "STD",
+      "roomType": "Deluxe Double Room",
+      "mealPlan": "CP",
+      "totalHotelCost": 8856.25,
+      "totalHotelTaxAmount": 0,
+      "provider": "manual",
+      "voucherCancelled": false,
+      "itineraryPlanHotelDetailsId": 8001,
+      "date": "2026-05-05"
+    },
+    {
+      "groupType": 1,
+      "itineraryRouteId": 502,
+      "day": "Day-2 | 06 May 2026",
+      "destination": "Srisailam, Andhra Pradesh, India",
+      "hotelId": 0,
+      "hotelName": "--",
+      "category": "--",
+      "roomType": "-",
+      "mealPlan": "EP",
+      "totalHotelCost": 0,
+      "totalHotelTaxAmount": 0,
+      "provider": "manual",
+      "voucherCancelled": false,
+      "itineraryPlanHotelDetailsId": 8002,
+      "date": "2026-05-06"
+    },
+    {
+      "groupType": 1,
+      "itineraryRouteId": 503,
+      "day": "Day-3 | 07 May 2026",
+      "destination": "Srisailam, Andhra Pradesh, India",
+      "hotelId": 0,
+      "hotelName": "--",
+      "category": "--",
+      "roomType": "-",
+      "mealPlan": "EP",
+      "totalHotelCost": 0,
+      "totalHotelTaxAmount": 0,
+      "provider": "manual",
+      "voucherCancelled": false,
+      "itineraryPlanHotelDetailsId": 8003,
+      "date": "2026-05-07"
+    },
+
+    {
+      "groupType": 2,
+      "itineraryRouteId": 501,
+      "day": "Day-1 | 05 May 2026",
+      "destination": "Tirupati, Andhra Pradesh, India",
+      "hotelId": 3002,
+      "hotelName": "Republic Inn",
+      "category": "3*",
+      "roomType": "SUPERIOR ROOM",
+      "mealPlan": "CP",
+      "totalHotelCost": 11290.69,
+      "totalHotelTaxAmount": 0,
+      "provider": "manual",
+      "voucherCancelled": false,
+      "itineraryPlanHotelDetailsId": 8101,
+      "date": "2026-05-05"
+    },
+
+    {
+      "groupType": 3,
+      "itineraryRouteId": 501,
+      "day": "Day-1 | 05 May 2026",
+      "destination": "Tirupati, Andhra Pradesh, India",
+      "hotelId": 3003,
+      "hotelName": "Fortune Select Grand Ridge",
+      "category": "4*",
+      "roomType": "DELUXE ROOM",
+      "mealPlan": "MAP",
+      "totalHotelCost": 27911.13,
+      "totalHotelTaxAmount": 0,
+      "provider": "manual",
+      "voucherCancelled": false,
+      "itineraryPlanHotelDetailsId": 8201,
+      "date": "2026-05-05"
+    },
+
+    {
+      "groupType": 4,
+      "itineraryRouteId": 501,
+      "day": "Day-1 | 05 May 2026",
+      "destination": "Tirupati, Andhra Pradesh, India",
+      "hotelId": 3004,
+      "hotelName": "Fortune Select Grand Ridge",
+      "category": "4*",
+      "roomType": "DELUXE ROOM",
+      "mealPlan": "MAP",
+      "totalHotelCost": 27911.13,
+      "totalHotelTaxAmount": 0,
+      "provider": "manual",
+      "voucherCancelled": false,
+      "itineraryPlanHotelDetailsId": 8301,
+      "date": "2026-05-05"
+    }
+  ]
+}

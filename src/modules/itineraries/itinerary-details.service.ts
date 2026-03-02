@@ -1,6 +1,7 @@
 // FILE: src/modules/itineraries/itinerary-details.service.ts
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Request } from 'express';
+import itineraryDetailsMock from './mocks/itineraryDetails.json';
 import { PrismaService } from '../../prisma.service';
 import { LatestItineraryQueryDto } from './dto/latest-itinerary-query.dto';
 // Add near top of file imports
@@ -162,6 +163,9 @@ export interface ItineraryDetailsResponseDto {
   costBreakdown: CostBreakdownDto;
 }
 
+const isMockMode = () =>
+  String(process.env.ITINERARY_MOCK_MODE || '').toLowerCase() === 'true';
+
 @Injectable()
 export class ItineraryDetailsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -290,6 +294,7 @@ async getTourDetails(quoteId: string): Promise<TourDetailsResponseDto> {
 
   const nationalityIdRaw = (plan as any).nationality ?? null;
   const nationalityId = nationalityIdRaw !== null ? Number(nationalityIdRaw) : null;
+
 
   // If you have a nationality master table, resolve here.
   // If not available in your schema, keep label null.
@@ -424,6 +429,15 @@ async getTourDetails(quoteId: string): Promise<TourDetailsResponseDto> {
     quoteId: string,
     groupType?: number,
   ): Promise<ItineraryDetailsResponseDto> {
+
+    // ✅ MOCK MODE: return JSON payload directly (no DB)
+  if (isMockMode()) {
+    return {
+      ...(itineraryDetailsMock as any),
+      quoteId, // keep request quoteId (optional)
+    } as ItineraryDetailsResponseDto;
+  }
+
     // ------------------------------ PLAN ------------------------------
     const plan = await this.prisma.dvi_itinerary_plan_details.findFirst({
       where: { itinerary_quote_ID: quoteId, deleted: 0 },

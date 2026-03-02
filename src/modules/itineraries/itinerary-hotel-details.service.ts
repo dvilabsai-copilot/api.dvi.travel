@@ -1,5 +1,6 @@
 // FILE: src/itineraries/itinerary-hotel-details.service.ts
-
+import itineraryDetailsMock from './mocks/itineraryDetails.json';
+import itineraryHotelDetailsMock from './mocks/itineraryHotelDetails.json';
 import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
 import { dvi_itinerary_plan_details, Prisma } from '@prisma/client';
@@ -86,6 +87,9 @@ export interface ItineraryHotelRoomDetailsResponseDto {
   rooms: ItineraryHotelRoomDto[];
 }
 
+const isMockMode = () =>
+  String(process.env.ITINERARY_MOCK_MODE || '').toLowerCase() === 'true';
+
 @Injectable()
 export class ItineraryHotelDetailsService {
   private readonly logger = new Logger(ItineraryHotelDetailsService.name);
@@ -98,6 +102,19 @@ export class ItineraryHotelDetailsService {
   async getHotelDetailsByQuoteId(
     quoteId: string,
   ): Promise<ItineraryHotelDetailsResponseDto> {
+
+     // ✅ FIRST LINE inside method
+  if (isMockMode()) {
+    return {
+      quoteId,
+      planId: Number((itineraryDetailsMock as any).planId ?? 0),
+      hotelRatesVisible: Boolean((itineraryHotelDetailsMock as any).hotelRatesVisible),
+      hotelTabs: ((itineraryHotelDetailsMock as any).hotelTabs ?? []) as any,
+      hotels: ((itineraryHotelDetailsMock as any).hotels ?? []) as any,
+      totalRoomCount: Number((itineraryDetailsMock as any).roomCount ?? 0),
+    };
+  }
+
     const startTime = Date.now();
     this.logger.log(`\n🔍 HOTEL DETAILS SERVICE: Looking up quote ID: ${quoteId}`);
 

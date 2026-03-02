@@ -307,10 +307,7 @@ async getItineraryDetails(
   required: true,
   example: 'DVI2026021007',
 })
-@ApiOkResponse({
-  description: 'Tour details for the given quoteId',
-  type: TourDetailsResponseDto,
-})
+@ApiOkResponse({ description: 'Tour details for the given quoteId', type: TourDetailsResponseDto })
 async getTourDetails(@Param('quoteId') quoteId: string) {
   return this.detailsService.getTourDetails(quoteId);
 }
