@@ -3,6 +3,10 @@
 
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
+import {
+  EligibleVehicleTypesDto,
+  EligibleVehicleTypesResponseDto,
+} from './dto/eligible-vehicle-types.dto';
 
 export type SimpleOption = {
   id: string;
@@ -23,6 +27,257 @@ function isNonEmptyString(v: unknown): v is string {
 @Injectable()
 export class ItineraryDropdownsService {
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * Extract seating capacity from vehicle type title
+   * Fallback parsing if occupancy field is not available
+   * Examples:
+   * "INNOVA CRYSTA 7+1" → 8
+   * "Tempo Traveller 10 Seater" → 10
+   * "LEYLAND - 36 SEATER" → 36
+   * "Sedan" → 4
+   */
+  private extractSeatCapacity(title: string): number {
+    if (!title) return 0;
+
+    // Try to find "X SEATER" pattern
+    const seaterMatch = title.match(/(\d+)\s*(?:seater|seater)/i);
+    if (seaterMatch) {
+      return parseInt(seaterMatch[1], 10);
+    }
+
+    // Try to find "X+Y" pattern (e.g., "7+1" = 8)
+    const plusMatch = title.match(/(\d+)\+(\d+)/);
+    if (plusMatch) {
+      const first = parseInt(plusMatch[1], 10);
+      const second = parseInt(plusMatch[2], 10);
+      return first + second;
+    }
+
+    // Special cases
+    if (title.toLowerCase().includes('sedan')) return 4;
+    if (title.toLowerCase().includes('suv')) return 5;
+
+    return 0; // default if cannot parse
+  }
+
+  /**
+   * Get locations to eligible cities mapping from dvi_stored_locations
+   * Searches both source_location and destination_location fields
+   */
+  private async getLocationsToCitiesMapping(): Promise<Map<string, string>> {
+    const map = new Map<string, string>();
+
+    const rows = await this.prisma.dvi_stored_locations.findMany({
+      where: {
+        deleted: 0,
+        status: 1,
+      } as any,
+      select: {
+        source_location: true,
+        source_location_city: true,
+        destination_location: true,
+        destination_location_city: true,
+      },
+    } as any);
+
+    for (const row of rows) {
+      if (row.source_location && row.source_location_city) {
+        map.set(row.source_location.trim(), row.source_location_city.trim());
+      }
+      if (row.destination_location && row.destination_location_city) {
+        map.set(
+          row.destination_location.trim(),
+          row.destination_location_city.trim(),
+        );
+      }
+    }
+
+    return map;
+  }
+
+  /**
+   * Convert location names to eligible city names
+   * Uses dvi_stored_locations mapping
+   */
+  private async convertLocationsToEligibleCities(
+    locations: string[],
+  ): Promise<string[]> {
+    const mapping = await this.getLocationsToCitiesMapping();
+    const uniqueCities = new Set<string>();
+
+    for (const loc of locations) {
+      const trimmedLoc = loc.trim();
+      if (trimmedLoc.length === 0) continue;
+
+      // Look up the city for this location
+      const city = mapping.get(trimmedLoc);
+      if (city) {
+        uniqueCities.add(city);
+      } else {
+        // Fallback: try to use the location name itself as city
+        // (in case it's already a city name)
+        uniqueCities.add(trimmedLoc);
+      }
+    }
+
+    return Array.from(uniqueCities);
+  }
+
+  /**
+   * Get eligible vehicle types for given locations
+   * Matches PHP behavior: filters by cities, sorts by seating capacity
+   */
+  async getEligibleVehicleTypes(
+    dto: EligibleVehicleTypesDto,
+  ): Promise<EligibleVehicleTypesResponseDto> {
+    try {
+      console.log('[getEligibleVehicleTypes] Raw DTO:', JSON.stringify(dto));
+      
+      // 1. Merge and unique locations
+      const allLocations = [
+        ...(dto.sourceLocation || []),
+        ...(dto.nextVisitingLocation || []),
+      ];
+
+      const uniqueLocations = Array.from(new Set(allLocations))
+        .map((loc) => loc.trim())
+        .filter(isNonEmptyString);
+
+      console.log('[getEligibleVehicleTypes] Input locations:', uniqueLocations);
+
+      if (uniqueLocations.length === 0) {
+        console.log('[getEligibleVehicleTypes] No locations provided, returning empty');
+        return {
+          vehicleTypes: [],
+          selectedVehicleIds: [],
+        };
+      }
+
+      // 2. Convert locations to eligible cities
+      const eligibleCities = await this.convertLocationsToEligibleCities(
+        uniqueLocations,
+      );
+
+      console.log('[getEligibleVehicleTypes] Eligible cities:', eligibleCities);
+
+      if (eligibleCities.length === 0) {
+        console.log('[getEligibleVehicleTypes] No eligible cities found, returning empty');
+        return {
+          vehicleTypes: [],
+          selectedVehicleIds: [],
+        };
+      }
+
+      // 3. Query distinct vehicle types that have vehicles in eligible cities
+      // Matches PHP logic: uses vendor_vehicle_types and vendor_details tables
+      // SQL equivalent from PHP:
+      // SELECT DISTINCT VENDOR_VEHICLE_TYPES.vehicle_type_id, VEHICLE_TYPES.vehicle_type_title
+      // FROM dvi_vehicle VEHICLE
+      // LEFT JOIN dvi_vendor_vehicle_types VENDOR_VEHICLE_TYPES ON ...
+      // LEFT JOIN dvi_vendor_details VENDOR_DETAILS ON ...
+      // LEFT JOIN dvi_vendor_branches VENDOR_BRANCH_DETAILS ON ...
+      // LEFT JOIN dvi_vehicle_type VEHICLE_TYPES ON ...
+      // WHERE VEHICLE.status = 1 AND VEHICLE.deleted = 0
+      //   AND VENDOR_DETAILS.status = 1 AND VENDOR_DETAILS.deleted = 0
+      //   AND VENDOR_BRANCH_DETAILS.status = 1 AND VENDOR_BRANCH_DETAILS.deleted = 0
+      //   AND VEHICLE.owner_city IN (eligibleCities)
+      const placeholders = eligibleCities.map(() => `?`).join(',');
+      console.log('[getEligibleVehicleTypes] Executing SQL query with cities:', eligibleCities);
+
+      const distinctVehicleTypes = await (this.prisma as any).$queryRawUnsafe(
+        `
+        SELECT DISTINCT 
+          VENDOR_VEHICLE_TYPES.vehicle_type_id, 
+          VEHICLE_TYPES.vehicle_type_title,
+          VEHICLE_TYPES.occupancy
+        FROM dvi_vehicle VEHICLE
+        LEFT JOIN dvi_vendor_vehicle_types VENDOR_VEHICLE_TYPES 
+          ON VEHICLE.vehicle_type_id = VENDOR_VEHICLE_TYPES.vendor_vehicle_type_ID 
+          AND VEHICLE.vendor_id = VENDOR_VEHICLE_TYPES.vendor_id
+        LEFT JOIN dvi_vendor_details VENDOR_DETAILS 
+          ON VENDOR_DETAILS.vendor_id = VEHICLE.vendor_id
+        LEFT JOIN dvi_vendor_branches VENDOR_BRANCH_DETAILS 
+          ON VENDOR_BRANCH_DETAILS.vendor_branch_id = VEHICLE.vendor_branch_id
+        LEFT JOIN dvi_vehicle_type VEHICLE_TYPES 
+          ON VEHICLE_TYPES.vehicle_type_id = VENDOR_VEHICLE_TYPES.vehicle_type_id
+        WHERE VEHICLE.status = 1 
+          AND VEHICLE.deleted = 0 
+          AND VENDOR_DETAILS.status = 1 
+          AND VENDOR_DETAILS.deleted = 0 
+          AND VENDOR_BRANCH_DETAILS.status = 1 
+          AND VENDOR_BRANCH_DETAILS.deleted = 0
+          AND VEHICLE.owner_city IN (${placeholders})
+        ORDER BY VEHICLE_TYPES.occupancy ASC, VEHICLE_TYPES.vehicle_type_title ASC
+        `,
+        ...eligibleCities,
+      );
+
+      console.log('[getEligibleVehicleTypes] Query returned:', distinctVehicleTypes.length, 'vehicle types');
+
+      // 4. Map to response format
+      const vehicleTypes = (
+        distinctVehicleTypes as Array<{
+          vehicle_type_id: number;
+          vehicle_type_title: string;
+          occupancy: number | null;
+        }>
+      )
+        .map((vt) => {
+          const capacity = vt.occupancy ?? this.extractSeatCapacity(vt.vehicle_type_title);
+          return {
+            id: String(vt.vehicle_type_id),
+            label: vt.vehicle_type_title || '',
+            capacity, // for sorting reference
+          };
+        })
+        // Sort by capacity ascending (primary), then by label
+        .sort((a, b) => {
+          if (a.capacity !== b.capacity) {
+            return a.capacity - b.capacity;
+          }
+          return a.label.localeCompare(b.label);
+        })
+        .map(({ id, label }) => ({ id, label })); // remove capacity from response
+
+      console.log('[getEligibleVehicleTypes] Returning vehicleTypes:', vehicleTypes.length, 'items');
+
+      // 5. Load selectedVehicleIds if itineraryPlanId provided
+      let selectedVehicleIds: string[] = [];
+
+      if (dto.itineraryPlanId) {
+        const itineraryPlanId = Number(dto.itineraryPlanId);
+        if (Number.isFinite(itineraryPlanId) && itineraryPlanId > 0) {
+          const selectedVehicles = await this.prisma.dvi_itinerary_plan_vehicle_details.findMany(
+            {
+              where: {
+                itinerary_plan_id: itineraryPlanId,
+                status: 1,
+                deleted: 0,
+              } as any,
+              select: {
+                vehicle_type_id: true,
+              },
+            } as any,
+          );
+
+          selectedVehicleIds = selectedVehicles
+            .map((v) => String(v.vehicle_type_id))
+            .filter(isNonEmptyString);
+
+          console.log('[getEligibleVehicleTypes] Selected vehicle IDs:', selectedVehicleIds);
+        }
+      }
+
+      return {
+        vehicleTypes,
+        selectedVehicleIds,
+      };
+    } catch (error) {
+      console.error('[getEligibleVehicleTypes] ERROR:', error.message, error);
+      throw error;
+    }
+  }
 
   // ---------------------------------------------------------------------------
   // LOCATIONS (source / destination) from dvi_stored_locations like old PHP

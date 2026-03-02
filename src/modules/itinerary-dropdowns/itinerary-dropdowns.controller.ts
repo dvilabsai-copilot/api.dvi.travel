@@ -1,6 +1,6 @@
 // FILE: src/modules/itinerary-dropdowns/itinerary-dropdowns.controller.ts
 
-import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, Query, Post, Body } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiQuery,
@@ -8,6 +8,10 @@ import {
   ApiOperation,
 } from '@nestjs/swagger';
 import { ItineraryDropdownsService } from './itinerary-dropdowns.service';
+import {
+  EligibleVehicleTypesDto,
+  EligibleVehicleTypesResponseDto,
+} from './dto/eligible-vehicle-types.dto';
 
 @ApiTags('Itinerary Dropdowns')
 @ApiBearerAuth()
@@ -87,6 +91,21 @@ export class ItineraryDropdownsController {
   @ApiOperation({ summary: 'List vehicle types' })
   vehicleTypes() {
     return this.svc.getVehicleTypes();
+  }
+
+  @Post('eligible-vehicle-types')
+  @ApiOperation({
+    summary: 'Get eligible vehicle types by location',
+    description:
+      'Mirrors legacy PHP: accepts source and destination locations, ' +
+      'filters vehicles by cities in those locations, ' +
+      'and sorts by seating capacity (ascending). ' +
+      'Optionally returns selected vehicle IDs for an itinerary plan.',
+  })
+  async getEligibleVehicleTypes(
+    @Body() dto: EligibleVehicleTypesDto,
+  ): Promise<EligibleVehicleTypesResponseDto> {
+    return this.svc.getEligibleVehicleTypes(dto);
   }
 
   @Get('hotel-categories')
