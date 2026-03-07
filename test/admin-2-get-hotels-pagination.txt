@@ -2,7 +2,7 @@
 AxisRooms Admin API Test Log
 ============================================================
 Test Name: admin-2-get-hotels-pagination
-Timestamp: 2026-02-28T00:21:45.401Z
+Timestamp: 2026-03-07T18:08:55.534Z
 Status: SUCCESS
 ============================================================
 
@@ -12,7 +12,7 @@ URL: http://127.0.0.1:4006/api/v1/axisrooms/admin/hotels?limit=10&offset=0
 Method: GET
 Headers:
 {
-  "x-admin-key": "change_this_secure_key"
+  "x-admin-key": "axis_export_C3g8K3b1wray989DVih37od3314r6444"
 }
 
 RESPONSE:
@@ -23,116 +23,27 @@ Headers:
   "x-powered-by": "Express",
   "access-control-allow-origin": "*",
   "content-type": "application/json; charset=utf-8",
-  "content-length": "2545",
-  "etag": "W/\"9f1-yb7ZX959JfTHLtufvaiXp3tkESM\"",
-  "date": "Sat, 28 Feb 2026 00:21:45 GMT",
-  "connection": "close"
+  "content-length": "260",
+  "etag": "W/\"104-oSK7Hlo/kBUf7S62Hop+Pvn/dIk\"",
+  "date": "Sat, 07 Mar 2026 18:08:55 GMT",
+  "connection": "keep-alive",
+  "keep-alive": "timeout=5"
 }
 
 Data:
 {
   "status": "success",
-  "total": 1422,
+  "total": 1,
   "data": [
     {
-      "hotel_id": 45958,
-      "hotel_name": "Padmam Family Service Apartments",
-      "hotel_city": "Thrissur",
-      "hotel_state": "Kerala",
+      "hotel_id": 44537,
+      "hotel_name": "Test Hotel for AxisRooms",
+      "hotel_city": "Test City",
+      "hotel_state": "Test State",
       "hotel_country": "India",
-      "propertyId": "AX_padmam-family-servic_thrissur_544f683b",
+      "propertyId": "AX_TEST_1",
       "axisrooms_enabled": 1,
-      "updatedon": "2026-02-28T00:04:48.000Z"
-    },
-    {
-      "hotel_id": 45957,
-      "hotel_name": "Bloom Hotel - ISKCON Rajajinagar",
-      "hotel_city": "Bengaluru",
-      "hotel_state": "Karnataka",
-      "hotel_country": "India",
-      "propertyId": "AX_bloom-hotel-iskcon-r_bengaluru_b7cbf87e",
-      "axisrooms_enabled": 1,
-      "updatedon": "2026-02-28T00:04:48.000Z"
-    },
-    {
-      "hotel_id": 45956,
-      "hotel_name": "RK Residency",
-      "hotel_city": "Chidambaram",
-      "hotel_state": "Tamil Nadu",
-      "hotel_country": "India",
-      "propertyId": "AX_rk-residency_chidambaram_0c816fa4",
-      "axisrooms_enabled": 1,
-      "updatedon": "2026-02-28T00:04:48.000Z"
-    },
-    {
-      "hotel_id": 45955,
-      "hotel_name": "VK Boarding and Lodging",
-      "hotel_city": "Bengaluru",
-      "hotel_state": "Karnataka",
-      "hotel_country": "India",
-      "propertyId": "AX_vk-boarding-and-lodg_bengaluru_5dc44cb5",
-      "axisrooms_enabled": 1,
-      "updatedon": "2026-02-28T00:04:48.000Z"
-    },
-    {
-      "hotel_id": 45954,
-      "hotel_name": "Wayanad Brook Valley Resort",
-      "hotel_city": "Wayanad",
-      "hotel_state": "Kerala",
-      "hotel_country": "India",
-      "propertyId": "AX_wayanad-brook-valley_wayanad_6ec2d357",
-      "axisrooms_enabled": 1,
-      "updatedon": "2026-02-28T00:04:48.000Z"
-    },
-    {
-      "hotel_id": 45953,
-      "hotel_name": "Loop Hostels - Indiranagar",
-      "hotel_city": "Bangalore",
-      "hotel_state": "Karnataka",
-      "hotel_country": "India",
-      "propertyId": "AX_loop-hostels-indiran_bangalore_3b5514cb",
-      "axisrooms_enabled": 1,
-      "updatedon": "2026-02-28T00:04:48.000Z"
-    },
-    {
-      "hotel_id": 45952,
-      "hotel_name": "GP Xpress Inn by RAK Rooms",
-      "hotel_city": "Mangalore",
-      "hotel_state": "Karnataka",
-      "hotel_country": "India",
-      "propertyId": "AX_gp-xpress-inn-by-rak_mangalore_b35223b2",
-      "axisrooms_enabled": 1,
-      "updatedon": "2026-02-28T00:04:48.000Z"
-    },
-    {
-      "hotel_id": 45951,
-      "hotel_name": "Hotel A Square Rivera",
-      "hotel_city": "Salem",
-      "hotel_state": "Tamil Nadu",
-      "hotel_country": "India",
-      "propertyId": "AX_hotel-a-square-river_salem_418121c6",
-      "axisrooms_enabled": 1,
-      "updatedon": "2026-02-28T00:04:48.000Z"
-    },
-    {
-      "hotel_id": 45950,
-      "hotel_name": "Venice Riverside",
-      "hotel_city": "Alappuzha",
-      "hotel_state": "Kerala",
-      "hotel_country": "India",
-      "propertyId": "AX_venice-riverside_alappuzha_3a92c59d",
-      "axisrooms_enabled": 1,
-      "updatedon": "2026-02-28T00:04:48.000Z"
-    },
-    {
-      "hotel_id": 45949,
-      "hotel_name": "ANNAI CELESTIAL RESORT",
-      "hotel_city": "Kanyakumari",
-      "hotel_state": "Tamil Nadu",
-      "hotel_country": "India",
-      "propertyId": "AX_annai-celestial-reso_kanyakumari_e6a7ed2b",
-      "axisrooms_enabled": 1,
-      "updatedon": "2026-02-28T00:04:48.000Z"
+      "updatedon": "2026-03-07T18:01:52.000Z"
     }
   ]
 }

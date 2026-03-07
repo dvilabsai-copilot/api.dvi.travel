@@ -16911,3 +16911,15 @@
 [2026-03-01T19:20:37.765Z] PrismaService type: object
 [2026-03-01T19:20:37.765Z] PrismaService value: DEFINED
 [2026-03-01T19:20:37.766Z] PrismaService constructor: PrismaService
+[2026-03-07T03:26:20.241Z] ═════════════════════════════════════════
+[2026-03-07T03:26:20.241Z] TBOHotelProvider CONSTRUCTOR CALLED
+[2026-03-07T03:26:20.242Z] ═════════════════════════════════════════
+[2026-03-07T03:26:20.242Z] PrismaService type: object
+[2026-03-07T03:26:20.242Z] PrismaService value: DEFINED
+[2026-03-07T03:26:20.242Z] PrismaService constructor: PrismaService
+[2026-03-07T03:29:53.129Z] ═════════════════════════════════════════
+[2026-03-07T03:29:53.130Z] TBOHotelProvider CONSTRUCTOR CALLED
+[2026-03-07T03:29:53.131Z] ═════════════════════════════════════════
+[2026-03-07T03:29:53.131Z] PrismaService type: object
+[2026-03-07T03:29:53.131Z] PrismaService value: DEFINED
+[2026-03-07T03:29:53.131Z] PrismaService constructor: PrismaService

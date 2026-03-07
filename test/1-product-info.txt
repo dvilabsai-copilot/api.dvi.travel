@@ -2,7 +2,7 @@
 AxisRooms API Test Log
 ============================================================
 Test Name: 1-product-info
-Timestamp: 2026-02-28T00:21:30.411Z
+Timestamp: 2026-03-07T18:08:46.839Z
 Status: SUCCESS
 ============================================================
 
@@ -16,7 +16,7 @@ Headers:
 Body:
 {
   "auth": {
-    "key": "test-key-12345"
+    "key": "axis_C3g8K3b1wray989DVih37od3314r6444"
   },
   "propertyId": "AX_TEST_1"
 }
@@ -31,8 +31,9 @@ Headers:
   "content-type": "application/json; charset=utf-8",
   "content-length": "124",
   "etag": "W/\"7c-t0ASdLhv1UMlgS4t/Mru1dONrLw\"",
-  "date": "Sat, 28 Feb 2026 00:21:30 GMT",
-  "connection": "close"
+  "date": "Sat, 07 Mar 2026 18:08:46 GMT",
+  "connection": "keep-alive",
+  "keep-alive": "timeout=5"
 }
 
 Data:

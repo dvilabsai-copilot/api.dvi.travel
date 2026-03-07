@@ -2,7 +2,7 @@
 AxisRooms Admin API Test Log
 ============================================================
 Test Name: admin-8-unauthorized-missing-key
-Timestamp: 2026-02-28T00:21:45.801Z
+Timestamp: 2026-03-07T18:08:55.577Z
 Status: FAILED
 ============================================================
 

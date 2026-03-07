@@ -2,7 +2,7 @@
 AxisRooms Admin API Test Log
 ============================================================
 Test Name: admin-4-get-hotels-with-details
-Timestamp: 2026-02-28T00:21:45.497Z
+Timestamp: 2026-03-07T18:08:55.555Z
 Status: SUCCESS
 ============================================================
 
@@ -12,7 +12,7 @@ URL: http://127.0.0.1:4006/api/v1/axisrooms/admin/hotels?includeDetails=true&lim
 Method: GET
 Headers:
 {
-  "x-admin-key": "change_this_secure_key"
+  "x-admin-key": "axis_export_C3g8K3b1wray989DVih37od3314r6444"
 }
 
 RESPONSE:
@@ -23,71 +23,48 @@ Headers:
   "x-powered-by": "Express",
   "access-control-allow-origin": "*",
   "content-type": "application/json; charset=utf-8",
-  "content-length": "1353",
-  "etag": "W/\"549-ysAczsJLVhQY120KoZLZVFYA3HI\"",
-  "date": "Sat, 28 Feb 2026 00:21:45 GMT",
-  "connection": "close"
+  "content-length": "530",
+  "etag": "W/\"212-ZgRUCGqKQoIWFC6a+yQ4ffVynDk\"",
+  "date": "Sat, 07 Mar 2026 18:08:55 GMT",
+  "connection": "keep-alive",
+  "keep-alive": "timeout=5"
 }
 
 Data:
 {
   "status": "success",
-  "total": 1422,
+  "total": 1,
   "data": [
     {
-      "hotel_id": 45958,
-      "hotel_name": "Padmam Family Service Apartments",
-      "hotel_city": "Thrissur",
-      "hotel_state": "Kerala",
+      "hotel_id": 44537,
+      "hotel_name": "Test Hotel for AxisRooms",
+      "hotel_city": "Test City",
+      "hotel_state": "Test State",
       "hotel_country": "India",
-      "propertyId": "AX_padmam-family-servic_thrissur_544f683b",
+      "propertyId": "AX_TEST_1",
       "axisrooms_enabled": 1,
-      "updatedon": "2026-02-28T00:04:48.000Z",
-      "rooms": []
-    },
-    {
-      "hotel_id": 45957,
-      "hotel_name": "Bloom Hotel - ISKCON Rajajinagar",
-      "hotel_city": "Bengaluru",
-      "hotel_state": "Karnataka",
-      "hotel_country": "India",
-      "propertyId": "AX_bloom-hotel-iskcon-r_bengaluru_b7cbf87e",
-      "axisrooms_enabled": 1,
-      "updatedon": "2026-02-28T00:04:48.000Z",
-      "rooms": []
-    },
-    {
-      "hotel_id": 45956,
-      "hotel_name": "RK Residency",
-      "hotel_city": "Chidambaram",
-      "hotel_state": "Tamil Nadu",
-      "hotel_country": "India",
-      "propertyId": "AX_rk-residency_chidambaram_0c816fa4",
-      "axisrooms_enabled": 1,
-      "updatedon": "2026-02-28T00:04:48.000Z",
-      "rooms": []
-    },
-    {
-      "hotel_id": 45955,
-      "hotel_name": "VK Boarding and Lodging",
-      "hotel_city": "Bengaluru",
-      "hotel_state": "Karnataka",
-      "hotel_country": "India",
-      "propertyId": "AX_vk-boarding-and-lodg_bengaluru_5dc44cb5",
-      "axisrooms_enabled": 1,
-      "updatedon": "2026-02-28T00:04:48.000Z",
-      "rooms": []
-    },
-    {
-      "hotel_id": 45954,
-      "hotel_name": "Wayanad Brook Valley Resort",
-      "hotel_city": "Wayanad",
-      "hotel_state": "Kerala",
-      "hotel_country": "India",
-      "propertyId": "AX_wayanad-brook-valley_wayanad_6ec2d357",
-      "axisrooms_enabled": 1,
-      "updatedon": "2026-02-28T00:04:48.000Z",
-      "rooms": []
+      "updatedon": "2026-03-07T18:01:52.000Z",
+      "rooms": [
+        {
+          "room_id": "DELUXE_ROOM",
+          "room_name": "Deluxe Room",
+          "rateplans": [
+            {
+              "rateplan_id": "CP_PLAN",
+              "rateplan_name": "Continental Plan"
+            },
+            {
+              "rateplan_id": "MAP_PLAN",
+              "rateplan_name": "Modified American Plan"
+            }
+          ]
+        },
+        {
+          "room_id": "SUITE_ROOM",
+          "room_name": "Suite Room",
+          "rateplans": []
+        }
+      ]
     }
   ]
 }

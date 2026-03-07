@@ -2,7 +2,7 @@
 AxisRooms Admin API Test Log
 ============================================================
 Test Name: admin-9-unauthorized-invalid-key
-Timestamp: 2026-02-28T00:21:45.824Z
+Timestamp: 2026-03-07T18:08:55.581Z
 Status: FAILED
 ============================================================
 

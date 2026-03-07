@@ -2,7 +2,7 @@
 AxisRooms Admin API Test Log
 ============================================================
 Test Name: admin-10-csv-export-unauthorized
-Timestamp: 2026-02-28T00:21:45.852Z
+Timestamp: 2026-03-07T18:08:55.584Z
 Status: FAILED
 ============================================================
 

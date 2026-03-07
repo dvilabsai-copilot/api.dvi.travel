@@ -2,7 +2,7 @@
 AxisRooms Admin API Test Log
 ============================================================
 Test Name: admin-5-get-hotels-disabled
-Timestamp: 2026-02-28T00:21:45.705Z
+Timestamp: 2026-03-07T18:08:55.563Z
 Status: SUCCESS
 ============================================================
 
@@ -12,7 +12,7 @@ URL: http://127.0.0.1:4006/api/v1/axisrooms/admin/hotels?enabled=0&limit=10
 Method: GET
 Headers:
 {
-  "x-admin-key": "change_this_secure_key"
+  "x-admin-key": "axis_export_C3g8K3b1wray989DVih37od3314r6444"
 }
 
 RESPONSE:
@@ -25,8 +25,9 @@ Headers:
   "content-type": "application/json; charset=utf-8",
   "content-length": "40",
   "etag": "W/\"28-8Wp9Z6nhjhNqHigmHaF7oR/z/9w\"",
-  "date": "Sat, 28 Feb 2026 00:21:45 GMT",
-  "connection": "close"
+  "date": "Sat, 07 Mar 2026 18:08:55 GMT",
+  "connection": "keep-alive",
+  "keep-alive": "timeout=5"
 }
 
 Data:

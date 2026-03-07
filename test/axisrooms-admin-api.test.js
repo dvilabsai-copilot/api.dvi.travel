@@ -5,9 +5,10 @@
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
-const BASE_URL = 'http://127.0.0.1:4006';
-const API_PREFIX = '/api/v1';
+const BASE_URL = process.env.BASE_URL || 'https://dvi.travel';
+const API_PREFIX = process.env.API_PREFIX || '/api/V1';
 const ADMIN_KEY = process.env.ADMIN_EXPORT_KEY || 'change_this_secure_key';
 
 // Test results tracker
