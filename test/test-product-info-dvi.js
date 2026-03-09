@@ -6,7 +6,7 @@ const axios = require('axios');
 const BASE_URL = 'http://127.0.0.1:4006';
 const API_PREFIX = '/api/v1';
 const API_KEY = 'test-key-12345';
-const PROPERTY_ID = 'AX_TEST_1';
+const PROPERTY_ID = 'AX_TEST_HOTEL_1';
 
 async function testProductInfo() {
   console.log('🧪 Testing ProductInfo with DVI hotel rooms...\n');

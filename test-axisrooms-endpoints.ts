@@ -9,7 +9,7 @@ const BASE_URL = process.env.API_BASE_URL || 'http://localhost:3000';
 const API_PREFIX = '/api/v1';
 const API_KEY = process.env.AXISROOMS_API_KEY || 'test-key-12345';
 
-const TEST_PROPERTY_ID = 'AX_TEST_1';
+const TEST_PROPERTY_ID = 'AX_TEST_HOTEL_1';
 const TEST_ROOM_ID = 'DELUXE_ROOM';
 const TEST_RATEPLAN_ID = 'CP_PLAN';
 

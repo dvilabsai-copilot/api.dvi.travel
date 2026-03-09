@@ -12,7 +12,7 @@ async function main() {
   // Step 1: Find or create a test hotel in dvi_hotel
   let testHotel = await prisma.dvi_hotel.findFirst({
     where: {
-      axisrooms_property_id: 'AX_TEST_1',
+      axisrooms_property_id: 'AX_TEST_HOTEL_1',
     },
   });
 
@@ -28,7 +28,7 @@ async function main() {
       testHotel = await prisma.dvi_hotel.update({
         where: { hotel_id: existingHotel.hotel_id },
         data: {
-          axisrooms_property_id: 'AX_TEST_1',
+          axisrooms_property_id: 'AX_TEST_HOTEL_1',
           axisrooms_enabled: 1,
         },
       });
@@ -44,7 +44,7 @@ async function main() {
           hotel_state: 'Test State',
           hotel_country: 'India',
           hotel_category: 1,
-          axisrooms_property_id: 'AX_TEST_1',
+          axisrooms_property_id: 'AX_TEST_HOTEL_1',
           axisrooms_enabled: 1,
           status: 1,
         },
@@ -145,13 +145,13 @@ async function main() {
   const room1 = await prisma.axisrooms_room.upsert({
     where: {
       axisrooms_property_id_room_id: {
-        axisrooms_property_id: 'AX_TEST_1',
+        axisrooms_property_id: 'AX_TEST_HOTEL_1',
         room_id: 'DELUXE_ROOM',
       },
     },
     update: {},
     create: {
-      axisrooms_property_id: 'AX_TEST_1',
+      axisrooms_property_id: 'AX_TEST_HOTEL_1',
       room_id: 'DELUXE_ROOM',
       room_name: 'Deluxe Room',
     },
@@ -160,13 +160,13 @@ async function main() {
   const room2 = await prisma.axisrooms_room.upsert({
     where: {
       axisrooms_property_id_room_id: {
-        axisrooms_property_id: 'AX_TEST_1',
+        axisrooms_property_id: 'AX_TEST_HOTEL_1',
         room_id: 'SUITE_ROOM',
       },
     },
     update: {},
     create: {
-      axisrooms_property_id: 'AX_TEST_1',
+      axisrooms_property_id: 'AX_TEST_HOTEL_1',
       room_id: 'SUITE_ROOM',
       room_name: 'Suite Room',
     },
@@ -178,14 +178,14 @@ async function main() {
   const rateplan1 = await prisma.axisrooms_rateplan.upsert({
     where: {
       axisrooms_property_id_room_id_rateplan_id: {
-        axisrooms_property_id: 'AX_TEST_1',
+        axisrooms_property_id: 'AX_TEST_HOTEL_1',
         room_id: 'DELUXE_ROOM',
         rateplan_id: 'CP_PLAN',
       },
     },
     update: {},
     create: {
-      axisrooms_property_id: 'AX_TEST_1',
+      axisrooms_property_id: 'AX_TEST_HOTEL_1',
       room_id: 'DELUXE_ROOM',
       rateplan_id: 'CP_PLAN',
       rateplan_name: 'Continental Plan',
@@ -199,14 +199,14 @@ async function main() {
   const rateplan2 = await prisma.axisrooms_rateplan.upsert({
     where: {
       axisrooms_property_id_room_id_rateplan_id: {
-        axisrooms_property_id: 'AX_TEST_1',
+        axisrooms_property_id: 'AX_TEST_HOTEL_1',
         room_id: 'DELUXE_ROOM',
         rateplan_id: 'MAP_PLAN',
       },
     },
     update: {},
     create: {
-      axisrooms_property_id: 'AX_TEST_1',
+      axisrooms_property_id: 'AX_TEST_HOTEL_1',
       room_id: 'DELUXE_ROOM',
       rateplan_id: 'MAP_PLAN',
       rateplan_name: 'Modified American Plan',
@@ -222,12 +222,12 @@ async function main() {
   console.log('\n✨ Seeding complete!');
   console.log('\nTest Data Summary:');
   console.log('==================');
-  console.log(`Property ID: AX_TEST_1`);
+  console.log(`Property ID: AX_TEST_HOTEL_1`);
   console.log(`Hotel: ${testHotel.hotel_name}`);
   console.log(`Rooms: DELUXE_ROOM, SUITE_ROOM`);
   console.log(`Rate Plans: CP_PLAN, MAP_PLAN`);
   console.log('\nYou can now test AxisRooms endpoints with:');
-  console.log(`  propertyId: "AX_TEST_1"`);
+  console.log(`  propertyId: "AX_TEST_HOTEL_1"`);
   console.log(`  roomId: "DELUXE_ROOM" or "SUITE_ROOM"`);
   console.log(`  rateplanId: "CP_PLAN" or "MAP_PLAN"`);
 }

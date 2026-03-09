@@ -42,7 +42,7 @@ async function checkHotel() {
   } else {
     console.log('\n❌ No rooms found for this hotel!');
     console.log('\n💡 Solution: This hotel was imported from Excel but has no rooms yet.');
-    console.log('   Use the test property instead: AX_TEST_1');
+    console.log('   Use the test property instead: AX_TEST_HOTEL_1');
   }
   
   await prisma.$disconnect();

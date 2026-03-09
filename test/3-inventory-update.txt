@@ -2,7 +2,7 @@
 AxisRooms API Test Log
 ============================================================
 Test Name: 3-inventory-update
-Timestamp: 2026-03-09T04:13:51.397Z
+Timestamp: 2026-03-09T04:57:06.822Z
 Status: SUCCESS
 ============================================================
 
@@ -19,7 +19,7 @@ Body:
     "key": "axis_C3g8K3b1wray989DVih37od3314r6444"
   },
   "data": {
-    "propertyId": "AX_TEST_1",
+    "propertyId": "AX_TEST_HOTEL_1",
     "roomId": "DELUXE_ROOM",
     "inventory": [
       {
@@ -44,15 +44,15 @@ Headers:
   "x-powered-by": "Express",
   "access-control-allow-origin": "*",
   "content-type": "application/json; charset=utf-8",
-  "content-length": "64",
-  "etag": "W/\"40-JnxSRuxCwEpuUfmpQWQizLbMpqE\"",
-  "date": "Mon, 09 Mar 2026 04:13:51 GMT",
+  "content-length": "33",
+  "etag": "W/\"21-EaizrEQ5ZkFQOW1tpdnLKL43OS8\"",
+  "date": "Mon, 09 Mar 2026 04:57:06 GMT",
   "connection": "keep-alive",
   "keep-alive": "timeout=5"
 }
 
 Data:
 {
-  "message": "Inventory updated successfully.",
+  "message": "",
   "status": "success"
 }

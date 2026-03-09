@@ -7,9 +7,9 @@ const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
 const BASE_URL = process.env.BASE_URL || 'https://dvi.travel';
-const API_PREFIX = process.env.API_PREFIX || '/api/V1';
+const API_PREFIX = process.env.API_PREFIX || '/api/v1';
 const API_KEY = process.env.AXISROOMS_API_KEY || 'test-key-12345';
-const PROPERTY_ID = process.env.AXISROOMS_PROPERTY_ID || 'AX_TEST_1';
+const PROPERTY_ID = process.env.AXISROOMS_PROPERTY_ID || 'AX_TEST_HOTEL_1';
 const ROOM_ID = process.env.AXISROOMS_ROOM_ID || 'DELUXE_ROOM';
 const RATEPLAN_ID = process.env.AXISROOMS_RATEPLAN_ID || 'CP_PLAN';
 const LOG_OUTPUT_DIR = process.env.LOG_OUTPUT_DIR || '';

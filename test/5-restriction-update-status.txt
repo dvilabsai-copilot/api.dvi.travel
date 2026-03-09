@@ -2,7 +2,7 @@
 AxisRooms API Test Log
 ============================================================
 Test Name: 5-restriction-update-status
-Timestamp: 2026-03-09T04:13:51.437Z
+Timestamp: 2026-03-09T04:57:06.857Z
 Status: SUCCESS
 ============================================================
 
@@ -20,7 +20,7 @@ Body:
   },
   "data": [
     {
-      "propertyId": "AX_TEST_1",
+      "propertyId": "AX_TEST_HOTEL_1",
       "roomDetails": [
         {
           "roomId": "DELUXE_ROOM",
@@ -57,15 +57,15 @@ Headers:
   "x-powered-by": "Express",
   "access-control-allow-origin": "*",
   "content-type": "application/json; charset=utf-8",
-  "content-length": "67",
-  "etag": "W/\"43-ernp+YZiYFHenaBa3wsN4icVvqk\"",
-  "date": "Mon, 09 Mar 2026 04:13:51 GMT",
+  "content-length": "33",
+  "etag": "W/\"21-EaizrEQ5ZkFQOW1tpdnLKL43OS8\"",
+  "date": "Mon, 09 Mar 2026 04:57:06 GMT",
   "connection": "keep-alive",
   "keep-alive": "timeout=5"
 }
 
 Data:
 {
-  "message": "Restrictions updated successfully.",
+  "message": "",
   "status": "success"
 }

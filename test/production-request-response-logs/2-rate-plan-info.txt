@@ -2,13 +2,13 @@
 AxisRooms API Test Log
 ============================================================
 Test Name: 2-rate-plan-info
-Timestamp: 2026-03-09T04:57:06.805Z
+Timestamp: 2026-03-09T04:43:07.581Z
 Status: SUCCESS
 ============================================================
 
 REQUEST:
 --------
-URL: http://127.0.0.1:4006/api/v1/axisrooms/ratePlanInfo
+URL: https://dvi.travel/api/V1/axisrooms/ratePlanInfo
 Method: POST
 Headers:
 {}
@@ -27,19 +27,19 @@ RESPONSE:
 Status: 200
 Headers:
 {
+  "server": "nginx/1.24.0 (Ubuntu)",
+  "date": "Mon, 09 Mar 2026 04:43:07 GMT",
+  "content-type": "application/json; charset=utf-8",
+  "content-length": "519",
+  "connection": "keep-alive",
   "x-powered-by": "Express",
   "access-control-allow-origin": "*",
-  "content-type": "application/json; charset=utf-8",
-  "content-length": "476",
-  "etag": "W/\"1dc-radPvWSCu9aTRGvBRwoGDMhG/vM\"",
-  "date": "Mon, 09 Mar 2026 04:57:06 GMT",
-  "connection": "keep-alive",
-  "keep-alive": "timeout=5"
+  "etag": "W/\"207-cu47uHyRMi++e8bNedhw/cIXYyk\""
 }
 
 Data:
 {
-  "message": "",
+  "message": "Rate plan information fetched successfully.",
   "status": "success",
   "data": [
     {
