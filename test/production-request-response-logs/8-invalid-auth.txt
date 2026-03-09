@@ -2,13 +2,13 @@
 AxisRooms API Test Log
 ============================================================
 Test Name: 8-invalid-auth
-Timestamp: 2026-03-09T04:43:07.320Z
+Timestamp: 2026-03-09T05:09:41.386Z
 Status: FAILED
 ============================================================
 
 REQUEST:
 --------
-URL: https://dvi.travel/api/V1/axisrooms/productInfo
+URL: https://dvi.travel/api/v1/axisrooms/productInfo
 Method: POST
 Headers:
 {}

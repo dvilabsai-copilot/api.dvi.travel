@@ -1,0 +1,68 @@
+name: Deploy API to DigitalOcean
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    if: github.event_name == 'push' || github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: SSH & deploy on Droplet
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DO_HOST }}
+          username: ${{ secrets.DO_USER }}
+          key: ${{ secrets.DO_SSH_KEY }}
+          script: |
+            set -e
+
+            APP_DIR="/var/node-projects/api.dvi.travel"
+
+            echo "🔐 Switching to app directory..."
+            cd "$APP_DIR"
+
+            echo "📥 Pulling latest code from main..."
+            git fetch origin main
+            git reset --hard origin/main
+
+            echo "📝 Writing production .env file..."
+            cat > .env <<'EOF'
+            ${{ secrets.BACKEND_ENV_FILE }}
+            EOF
+
+            echo "📦 Installing dependencies..."
+            npm ci
+
+            echo "⚙️ Generating Prisma client..."
+            npx prisma generate
+
+            echo "🗄 Running Prisma DB push..."
+            set +e
+            npx prisma db push
+            PRISMA_EXIT=$?
+            set -e
+
+            if [ $PRISMA_EXIT -ne 0 ]; then
+              echo "❌ Prisma db push failed."
+              echo "Deployment aborted."
+              exit 1
+            fi
+
+            echo "✅ Prisma db push completed successfully."
+
+            echo "🏗 Building app..."
+            NODE_OPTIONS="--max-old-space-size=4096" npm run build
+
+            echo "🚀 Restarting PM2 process 'api.dvi.travel'..."
+            pm2 restart api.dvi.travel || pm2 start dist/src/main.js --name api.dvi.travel
+
+            echo "💾 Saving PM2 process list..."
+            pm2 save
+
+            echo "🎉 Deployment completed successfully."
