@@ -22,47 +22,44 @@ jobs:
           script: |
             set -e
 
-            APP_DIR="/var/node-projects/api.dvi.travel"
+            APP_DIR="/var/www/api.dvi.travel"
 
-            echo "🔐 Switching to app directory..."
+            echo "Switching to app directory..."
             cd "$APP_DIR"
 
-            echo "📥 Pulling latest code from main..."
+            echo "Pulling latest code from main..."
             git fetch origin main
             git reset --hard origin/main
 
-            echo "📝 Writing production .env file..."
+            echo "Writing production .env file..."
             cat > .env <<'EOF'
             ${{ secrets.BACKEND_ENV_FILE }}
             EOF
 
-            echo "📦 Installing dependencies..."
+            echo "Installing dependencies..."
             npm ci
 
-            echo "⚙️ Generating Prisma client..."
+            echo "Generating Prisma client..."
             npx prisma generate
 
-            echo "🗄 Running Prisma DB push..."
+            echo "Running Prisma DB push..."
             set +e
             npx prisma db push
             PRISMA_EXIT=$?
             set -e
 
             if [ $PRISMA_EXIT -ne 0 ]; then
-              echo "❌ Prisma db push failed."
-              echo "Deployment aborted."
+              echo "Prisma db push failed. Deployment aborted."
               exit 1
             fi
 
-            echo "✅ Prisma db push completed successfully."
-
-            echo "🏗 Building app..."
+            echo "Building app..."
             NODE_OPTIONS="--max-old-space-size=4096" npm run build
 
-            echo "🚀 Restarting PM2 process 'api.dvi.travel'..."
-            pm2 restart api.dvi.travel || pm2 start dist/src/main.js --name api.dvi.travel
+            echo "Restarting PM2 process 'dvi-backend'..."
+            pm2 restart dvi-backend || pm2 start dist/src/main.js --name dvi-backend
 
-            echo "💾 Saving PM2 process list..."
+            echo "Saving PM2 process list..."
             pm2 save
 
-            echo "🎉 Deployment completed successfully."
+            echo "Deployment completed successfully."
