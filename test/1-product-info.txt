@@ -2,7 +2,7 @@
 AxisRooms API Test Log
 ============================================================
 Test Name: 1-product-info
-Timestamp: 2026-03-07T18:08:46.839Z
+Timestamp: 2026-03-09T04:13:51.361Z
 Status: SUCCESS
 ============================================================
 
@@ -29,16 +29,16 @@ Headers:
   "x-powered-by": "Express",
   "access-control-allow-origin": "*",
   "content-type": "application/json; charset=utf-8",
-  "content-length": "124",
-  "etag": "W/\"7c-t0ASdLhv1UMlgS4t/Mru1dONrLw\"",
-  "date": "Sat, 07 Mar 2026 18:08:46 GMT",
+  "content-length": "165",
+  "etag": "W/\"a5-hlbhWvMlHEmvkaHP0Q8DHYeV4Y4\"",
+  "date": "Mon, 09 Mar 2026 04:13:51 GMT",
   "connection": "keep-alive",
   "keep-alive": "timeout=5"
 }
 
 Data:
 {
-  "message": "",
+  "message": "Product information fetched successfully.",
   "status": "success",
   "data": [
     {

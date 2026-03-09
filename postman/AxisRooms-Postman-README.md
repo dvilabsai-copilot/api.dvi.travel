@@ -11,36 +11,23 @@ This document describes `postman/AxisRooms-Full.postman_collection.json`, genera
 - `POST /api/v1/axisrooms/rateUpdate`
 - `POST /api/v1/axisrooms/restrictionUpdate`
 
-### AxisRooms Admin APIs
-- `GET /api/v1/axisrooms/admin/hotels`
-- `GET /api/v1/axisrooms/admin/hotels/export`
-
 ## Variables To Set Before Use
 
 Collection variables:
 - `baseUrl` (example: `http://localhost:4006`)
 - `apiPrefix` (default from app bootstrap: `/api/v1`)
 - `axisroomsApiKey` (must match `AXISROOMS_API_KEY` in backend env)
-- `adminKey` (must match `ADMIN_EXPORT_KEY` in backend env)
 - `propertyId`
 - `roomId`
 - `rateplanId`
 - `startDate` (YYYY-MM-DD)
 - `endDate` (YYYY-MM-DD)
-- `updatedAfter` (ISO string for admin filters)
-- `limit`
-- `offset`
-- `includeDetails` (`true` or `false`)
 
 ## Authentication Difference
 
 - AxisRooms public APIs use request-body auth handled by `AxisRoomsApiKeyGuard`:
   - Body must include:
     - `auth.key = {{axisroomsApiKey}}`
-- AxisRooms admin APIs use header auth handled by `AdminKeyGuard`:
-  - Header must include:
-    - `x-admin-key: {{adminKey}}`
-
 ## Example Execution Order
 
 1. `productInfo`
@@ -48,8 +35,6 @@ Collection variables:
 3. `inventoryUpdate`
 4. `rateUpdate`
 5. `restrictionUpdate`
-
-Admin APIs can be run anytime after `adminKey` is configured.
 
 ## Notes
 
