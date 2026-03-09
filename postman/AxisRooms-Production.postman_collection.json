@@ -1,0 +1,231 @@
+{
+  "info": {
+    "name": "AxisRooms Production APIs",
+    "description": "Production-ready AxisRooms CM-OTA endpoints with variable-driven payloads. Import this collection and the matching Postman globals file.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://dvi.travel/api",
+      "type": "string"
+    },
+    {
+      "key": "apiPrefix",
+      "value": "/v1",
+      "type": "string"
+    },
+    {
+      "key": "axisroomsApiKey",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "propertyId",
+      "value": "AX_TEST_HOTEL_1",
+      "type": "string"
+    },
+    {
+      "key": "roomId",
+      "value": "DELUXE_ROOM",
+      "type": "string"
+    },
+    {
+      "key": "rateplanId",
+      "value": "CP_PLAN",
+      "type": "string"
+    },
+    {
+      "key": "startDate",
+      "value": "2026-06-10",
+      "type": "string"
+    },
+    {
+      "key": "endDate",
+      "value": "2026-06-12",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1 - productInfo",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"auth\": {\n    \"key\": \"{{axisroomsApiKey}}\"\n  },\n  \"propertyId\": \"{{propertyId}}\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}{{apiPrefix}}/axisrooms/productInfo",
+          "host": ["{{baseUrl}}"],
+          "path": ["{{apiPrefix}}", "axisrooms", "productInfo"]
+        }
+      }
+    },
+    {
+      "name": "2 - ratePlanInfo",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"auth\": {\n    \"key\": \"{{axisroomsApiKey}}\"\n  },\n  \"propertyId\": \"{{propertyId}}\",\n  \"roomId\": \"{{roomId}}\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}{{apiPrefix}}/axisrooms/ratePlanInfo",
+          "host": ["{{baseUrl}}"],
+          "path": ["{{apiPrefix}}", "axisrooms", "ratePlanInfo"]
+        }
+      }
+    },
+    {
+      "name": "3 - inventoryUpdate",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"auth\": {\n    \"key\": \"{{axisroomsApiKey}}\"\n  },\n  \"data\": {\n    \"propertyId\": \"{{propertyId}}\",\n    \"roomId\": \"{{roomId}}\",\n    \"inventory\": [\n      {\n        \"startDate\": \"{{startDate}}\",\n        \"endDate\": \"{{endDate}}\",\n        \"free\": 10\n      }\n    ]\n  }\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}{{apiPrefix}}/axisrooms/inventoryUpdate",
+          "host": ["{{baseUrl}}"],
+          "path": ["{{apiPrefix}}", "axisrooms", "inventoryUpdate"]
+        }
+      }
+    },
+    {
+      "name": "4 - rateUpdate",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"auth\": {\n    \"key\": \"{{axisroomsApiKey}}\"\n  },\n  \"data\": {\n    \"propertyId\": \"{{propertyId}}\",\n    \"roomId\": \"{{roomId}}\",\n    \"rateplanId\": \"{{rateplanId}}\",\n    \"rate\": [\n      {\n        \"startDate\": \"{{startDate}}\",\n        \"endDate\": \"{{endDate}}\",\n        \"SINGLE\": 5000,\n        \"DOUBLE\": 6000\n      }\n    ]\n  }\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}{{apiPrefix}}/axisrooms/rateUpdate",
+          "host": ["{{baseUrl}}"],
+          "path": ["{{apiPrefix}}", "axisrooms", "rateUpdate"]
+        }
+      }
+    },
+    {
+      "name": "5 - restrictionUpdate (Status)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"auth\": {\n    \"key\": \"{{axisroomsApiKey}}\"\n  },\n  \"data\": [\n    {\n      \"propertyId\": \"{{propertyId}}\",\n      \"roomDetails\": [\n        {\n          \"roomId\": \"{{roomId}}\",\n          \"ratePlanDetails\": [\n            {\n              \"ratePlanId\": \"{{rateplanId}}\",\n              \"restrictions\": {\n                \"periods\": [\n                  {\n                    \"startDate\": \"{{startDate}}\",\n                    \"endDate\": \"{{endDate}}\"\n                  }\n                ],\n                \"type\": \"Status\",\n                \"value\": \"Open\"\n              }\n            }\n          ]\n        }\n      ]\n    }\n  ]\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}{{apiPrefix}}/axisrooms/restrictionUpdate",
+          "host": ["{{baseUrl}}"],
+          "path": ["{{apiPrefix}}", "axisrooms", "restrictionUpdate"]
+        }
+      }
+    },
+    {
+      "name": "6 - restrictionUpdate (COA)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"auth\": {\n    \"key\": \"{{axisroomsApiKey}}\"\n  },\n  \"data\": [\n    {\n      \"propertyId\": \"{{propertyId}}\",\n      \"roomDetails\": [\n        {\n          \"roomId\": \"{{roomId}}\",\n          \"ratePlanDetails\": [\n            {\n              \"ratePlanId\": \"{{rateplanId}}\",\n              \"restrictions\": {\n                \"periods\": [\n                  {\n                    \"startDate\": \"{{startDate}}\",\n                    \"endDate\": \"{{endDate}}\"\n                  }\n                ],\n                \"type\": \"COA\",\n                \"value\": \"Close\"\n              }\n            }\n          ]\n        }\n      ]\n    }\n  ]\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}{{apiPrefix}}/axisrooms/restrictionUpdate",
+          "host": ["{{baseUrl}}"],
+          "path": ["{{apiPrefix}}", "axisrooms", "restrictionUpdate"]
+        }
+      }
+    },
+    {
+      "name": "7 - restrictionUpdate (MLos)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"auth\": {\n    \"key\": \"{{axisroomsApiKey}}\"\n  },\n  \"data\": [\n    {\n      \"propertyId\": \"{{propertyId}}\",\n      \"roomDetails\": [\n        {\n          \"roomId\": \"{{roomId}}\",\n          \"ratePlanDetails\": [\n            {\n              \"ratePlanId\": \"{{rateplanId}}\",\n              \"restrictions\": {\n                \"periods\": [\n                  {\n                    \"startDate\": \"{{startDate}}\",\n                    \"endDate\": \"{{endDate}}\"\n                  }\n                ],\n                \"type\": \"MLos\",\n                \"value\": \"3\"\n              }\n            }\n          ]\n        }\n      ]\n    }\n  ]\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}{{apiPrefix}}/axisrooms/restrictionUpdate",
+          "host": ["{{baseUrl}}"],
+          "path": ["{{apiPrefix}}", "axisrooms", "restrictionUpdate"]
+        }
+      }
+    },
+    {
+      "name": "8 - invalid-auth (negative)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"auth\": {\n    \"key\": \"wrong-key\"\n  },\n  \"propertyId\": \"{{propertyId}}\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}{{apiPrefix}}/axisrooms/productInfo",
+          "host": ["{{baseUrl}}"],
+          "path": ["{{apiPrefix}}", "axisrooms", "productInfo"]
+        }
+      }
+    },
+    {
+      "name": "9 - invalid-property-id (negative)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"auth\": {\n    \"key\": \"{{axisroomsApiKey}}\"\n  },\n  \"propertyId\": \"INVALID_PROPERTY\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}{{apiPrefix}}/axisrooms/productInfo",
+          "host": ["{{baseUrl}}"],
+          "path": ["{{apiPrefix}}", "axisrooms", "productInfo"]
+        }
+      }
+    },
+    {
+      "name": "10 - missing-auth (negative)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"propertyId\": \"{{propertyId}}\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}{{apiPrefix}}/axisrooms/productInfo",
+          "host": ["{{baseUrl}}"],
+          "path": ["{{apiPrefix}}", "axisrooms", "productInfo"]
+        }
+      }
+    }
+  ]
+}
