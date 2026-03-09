@@ -2,7 +2,7 @@
 AxisRooms API Test Log
 ============================================================
 Test Name: 2-rate-plan-info
-Timestamp: 2026-03-07T18:08:46.849Z
+Timestamp: 2026-03-09T04:13:51.376Z
 Status: SUCCESS
 ============================================================
 
@@ -30,16 +30,16 @@ Headers:
   "x-powered-by": "Express",
   "access-control-allow-origin": "*",
   "content-type": "application/json; charset=utf-8",
-  "content-length": "476",
-  "etag": "W/\"1dc-radPvWSCu9aTRGvBRwoGDMhG/vM\"",
-  "date": "Sat, 07 Mar 2026 18:08:46 GMT",
+  "content-length": "519",
+  "etag": "W/\"207-cu47uHyRMi++e8bNedhw/cIXYyk\"",
+  "date": "Mon, 09 Mar 2026 04:13:51 GMT",
   "connection": "keep-alive",
   "keep-alive": "timeout=5"
 }
 
 Data:
 {
-  "message": "",
+  "message": "Rate plan information fetched successfully.",
   "status": "success",
   "data": [
     {

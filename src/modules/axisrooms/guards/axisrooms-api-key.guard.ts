@@ -1,5 +1,6 @@
 import { Injectable, CanActivate, ExecutionContext, UnauthorizedException, Logger } from '@nestjs/common';
 import { Observable } from 'rxjs';
+import { AXISROOMS_MESSAGES } from '../constants/axisrooms-messages';
 
 @Injectable()
 export class AxisRoomsApiKeyGuard implements CanActivate {
@@ -20,7 +21,7 @@ export class AxisRoomsApiKeyGuard implements CanActivate {
     if (!apiKey) {
       this.logger.error('AXISROOMS_API_KEY not configured in environment');
       throw new UnauthorizedException({
-        message: 'Unauthorized',
+        message: AXISROOMS_MESSAGES.UNAUTHORIZED,
         status: 'failure',
       });
     }
@@ -30,7 +31,7 @@ export class AxisRoomsApiKeyGuard implements CanActivate {
     if (!requestKey || requestKey !== apiKey) {
       this.logger.warn(`Auth failed - Expected: ${apiKey}, Got: ${requestKey}`);
       throw new UnauthorizedException({
-        message: 'Unauthorized',
+        message: AXISROOMS_MESSAGES.UNAUTHORIZED,
         status: 'failure',
       });
     }

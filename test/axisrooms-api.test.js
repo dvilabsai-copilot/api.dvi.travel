@@ -12,6 +12,14 @@ const API_KEY = process.env.AXISROOMS_API_KEY || 'test-key-12345';
 const PROPERTY_ID = process.env.AXISROOMS_PROPERTY_ID || 'AX_TEST_1';
 const ROOM_ID = process.env.AXISROOMS_ROOM_ID || 'DELUXE_ROOM';
 const RATEPLAN_ID = process.env.AXISROOMS_RATEPLAN_ID || 'CP_PLAN';
+const LOG_OUTPUT_DIR = process.env.LOG_OUTPUT_DIR || '';
+const LOG_DIR_PATH = LOG_OUTPUT_DIR
+  ? path.resolve(__dirname, LOG_OUTPUT_DIR)
+  : __dirname;
+
+if (!fs.existsSync(LOG_DIR_PATH)) {
+  fs.mkdirSync(LOG_DIR_PATH, { recursive: true });
+}
 
 // Test results tracker
 const results = {
@@ -24,7 +32,7 @@ const results = {
 function saveToFile(filename, requestData, responseData, error = null) {
   const timestamp = new Date().toISOString();
   const sanitizedFilename = filename.replace(/[^a-z0-9]/gi, '-').toLowerCase() + '.txt';
-  const filePath = path.join(__dirname, sanitizedFilename);
+  const filePath = path.join(LOG_DIR_PATH, sanitizedFilename);
   
   let content = `============================================================\n`;
   content += `AxisRooms API Test Log\n`;
@@ -54,7 +62,7 @@ function saveToFile(filename, requestData, responseData, error = null) {
   }
   
   fs.writeFileSync(filePath, content, 'utf8');
-  console.log(`   📝 Saved to: ${sanitizedFilename}`);
+  console.log(`   📝 Saved to: ${path.relative(__dirname, filePath)}`);
 }
 
 // Helper function to run a test

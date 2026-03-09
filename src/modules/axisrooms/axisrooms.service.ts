@@ -22,6 +22,7 @@ import {
   RestrictionUpdateRequestDto,
   RestrictionUpdateResponseDto,
 } from './dto/restriction-update.dto';
+import { AXISROOMS_MESSAGES } from './constants/axisrooms-messages';
 
 @Injectable()
 export class AxisRoomsService {
@@ -88,7 +89,7 @@ export class AxisRoomsService {
 
     if (!hotel) {
       return {
-        message: 'Invalid propertyId',
+        message: AXISROOMS_MESSAGES.INVALID_PROPERTY_ID,
         status: 'failure',
         data: [],
       };
@@ -111,7 +112,7 @@ export class AxisRoomsService {
 
     if (!rooms || rooms.length === 0) {
       return {
-        message: 'No data found',
+        message: AXISROOMS_MESSAGES.NO_PRODUCTS_FOUND,
         status: 'failure',
         data: [],
       };
@@ -151,7 +152,7 @@ export class AxisRoomsService {
     });
 
     return {
-      message: '',
+      message: AXISROOMS_MESSAGES.PRODUCT_INFO_SUCCESS,
       status: 'success',
       data,
     };
@@ -168,7 +169,7 @@ export class AxisRoomsService {
     const isValid = await this.validatePropertyMapping(dto.propertyId);
     if (!isValid) {
       return {
-        message: 'Invalid propertyId',
+        message: AXISROOMS_MESSAGES.INVALID_PROPERTY_ID,
         status: 'failure',
         data: [],
       };
@@ -183,7 +184,7 @@ export class AxisRoomsService {
 
     if (!ratePlans || ratePlans.length === 0) {
       return {
-        message: 'No data found',
+        message: AXISROOMS_MESSAGES.NO_RATEPLANS_FOUND,
         status: 'failure',
         data: [],
       };
@@ -203,7 +204,7 @@ export class AxisRoomsService {
     }));
 
     return {
-      message: '',
+      message: AXISROOMS_MESSAGES.RATE_PLAN_INFO_SUCCESS,
       status: 'success',
       data,
     };
@@ -222,7 +223,7 @@ export class AxisRoomsService {
     const isValid = await this.validatePropertyMapping(propertyId);
     if (!isValid) {
       return {
-        message: 'Invalid propertyId',
+        message: AXISROOMS_MESSAGES.INVALID_PROPERTY_ID,
         status: 'failure',
       };
     }
@@ -253,13 +254,13 @@ export class AxisRoomsService {
       }
 
       return {
-        message: '',
+        message: AXISROOMS_MESSAGES.INVENTORY_UPDATE_SUCCESS,
         status: 'success',
       };
     } catch (error) {
       this.logger.error(`Inventory update error: ${error.message}`);
       return {
-        message: error.message,
+        message: `${AXISROOMS_MESSAGES.INVENTORY_UPDATE_FAILED} ${error.message}`,
         status: 'failure',
       };
     }
@@ -278,7 +279,7 @@ export class AxisRoomsService {
     const isValid = await this.validatePropertyMapping(propertyId);
     if (!isValid) {
       return {
-        message: 'Invalid propertyId',
+        message: AXISROOMS_MESSAGES.INVALID_PROPERTY_ID,
         status: 'failure',
       };
     }
@@ -313,13 +314,13 @@ export class AxisRoomsService {
       }
 
       return {
-        message: '',
+        message: AXISROOMS_MESSAGES.RATE_UPDATE_SUCCESS,
         status: 'success',
       };
     } catch (error) {
       this.logger.error(`Rate update error: ${error.message}`);
       return {
-        message: error.message,
+        message: `${AXISROOMS_MESSAGES.RATE_UPDATE_FAILED} ${error.message}`,
         status: 'failure',
       };
     }
@@ -340,7 +341,7 @@ export class AxisRoomsService {
         const isValid = await this.validatePropertyMapping(propertyId);
         if (!isValid) {
           return {
-            message: 'Invalid propertyId',
+            message: AXISROOMS_MESSAGES.INVALID_PROPERTY_ID,
             status: 'failure',
           };
         }
@@ -371,13 +372,13 @@ export class AxisRoomsService {
       }
 
       return {
-        message: '',
+        message: AXISROOMS_MESSAGES.RESTRICTION_UPDATE_SUCCESS,
         status: 'success',
       };
     } catch (error) {
       this.logger.error(`Restriction update error: ${error.message}`);
       return {
-        message: error.message,
+        message: `${AXISROOMS_MESSAGES.RESTRICTION_UPDATE_FAILED} ${error.message}`,
         status: 'failure',
       };
     }
