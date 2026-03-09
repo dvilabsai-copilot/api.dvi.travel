@@ -174,7 +174,7 @@ All endpoints are prefixed with `/api/v1/axisrooms/`
 ```json
 {
   "auth": { "key": "your-api-key" },
-  "propertyId": "AX_TEST_1"
+  "propertyId": "AX_TEST_HOTEL_1"
 }
 ```
 
@@ -209,7 +209,7 @@ All endpoints are prefixed with `/api/v1/axisrooms/`
 ```json
 {
   "auth": { "key": "your-api-key" },
-  "propertyId": "AX_TEST_1",
+  "propertyId": "AX_TEST_HOTEL_1",
   "roomId": "DELUXE_ROOM"
 }
 ```
@@ -244,7 +244,7 @@ All endpoints are prefixed with `/api/v1/axisrooms/`
 {
   "auth": { "key": "your-api-key" },
   "data": {
-    "propertyId": "AX_TEST_1",
+    "propertyId": "AX_TEST_HOTEL_1",
     "roomId": "DELUXE_ROOM",
     "inventory": [
       { "startDate": "2026-06-01", "endDate": "2026-06-05", "free": 10 },
@@ -273,7 +273,7 @@ All endpoints are prefixed with `/api/v1/axisrooms/`
 {
   "auth": { "key": "your-api-key" },
   "data": {
-    "propertyId": "AX_TEST_1",
+    "propertyId": "AX_TEST_HOTEL_1",
     "roomId": "DELUXE_ROOM",
     "rateplanId": "CP_PLAN",
     "rate": [
@@ -312,7 +312,7 @@ All endpoints are prefixed with `/api/v1/axisrooms/`
   "auth": { "key": "your-api-key" },
   "data": [
     {
-      "propertyId": "AX_TEST_1",
+      "propertyId": "AX_TEST_HOTEL_1",
       "roomDetails": [
         {
           "roomId": "DELUXE_ROOM",
@@ -436,7 +436,7 @@ npx ts-node seed-axisrooms-test-data.ts
 ```
 
 This creates:
-- Test hotel with `axisrooms_property_id = "AX_TEST_1"`
+- Test hotel with `axisrooms_property_id = "AX_TEST_HOTEL_1"`
 - 2 test rooms: DELUXE_ROOM, SUITE_ROOM
 - 2 test rate plans: CP_PLAN, MAP_PLAN
 
@@ -458,7 +458,7 @@ Server will start on port defined in `.env` (default: 4006).
 ```bash
 curl -X POST http://localhost:4006/api/v1/axisrooms/productInfo \
   -H "Content-Type: application/json" \
-  -d '{"auth":{"key":"your-api-key"},"propertyId":"AX_TEST_1"}'
+  -d '{"auth":{"key":"your-api-key"},"propertyId":"AX_TEST_HOTEL_1"}'
 ```
 
 Expected response:
@@ -507,7 +507,7 @@ curl -X POST http://localhost:4006/api/v1/axisrooms/productInfo \
   -H "Content-Type: application/json" \
   -d '{
     "auth": {"key": "your-api-key"},
-    "propertyId": "AX_TEST_1"
+    "propertyId": "AX_TEST_HOTEL_1"
   }'
 ```
 
@@ -518,7 +518,7 @@ curl -X POST http://localhost:4006/api/v1/axisrooms/inventoryUpdate \
   -d '{
     "auth": {"key": "your-api-key"},
     "data": {
-      "propertyId": "AX_TEST_1",
+      "propertyId": "AX_TEST_HOTEL_1",
       "roomId": "DELUXE_ROOM",
       "inventory": [
         {"startDate": "2026-06-01", "endDate": "2026-06-05", "free": 10}
@@ -544,7 +544,7 @@ Update these variables in Postman:
 | `baseUrl` | `http://localhost:3000` | Base URL of your API |
 | `apiPrefix` | `/api/v1` | API prefix |
 | `apiKey` | `test-key-12345` | AxisRooms API key |
-| `propertyId` | `AX_TEST_1` | Test property ID |
+| `propertyId` | `AX_TEST_HOTEL_1` | Test property ID |
 | `roomId` | `DELUXE_ROOM` | Test room ID |
 | `rateplanId` | `CP_PLAN` | Test rate plan ID |
 
@@ -579,12 +579,12 @@ Update these variables in Postman:
 ```sql
 -- Check if property exists
 SELECT * FROM tbo_hotel_master 
-WHERE axisrooms_property_id = 'AX_TEST_1';
+WHERE axisrooms_property_id = 'AX_TEST_HOTEL_1';
 
 -- Enable property
 UPDATE tbo_hotel_master 
 SET axisrooms_enabled = 1 
-WHERE axisrooms_property_id = 'AX_TEST_1';
+WHERE axisrooms_property_id = 'AX_TEST_HOTEL_1';
 ```
 
 ### Issue: Database Schema Mismatch

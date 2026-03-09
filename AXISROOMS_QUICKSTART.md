@@ -82,7 +82,7 @@ AXISROOMS_API_KEY=your-axisrooms-api-key-here
 
 ### 5️⃣ Seed Test Data
 ```bash
-# Creates test hotel with propertyId: AX_TEST_1
+# Creates test hotel with propertyId: AX_TEST_HOTEL_1
 npx ts-node seed-axisrooms-test-data.ts
 ```
 
@@ -115,7 +115,7 @@ Once server is running, test with PowerShell:
 ```powershell
 $body = @{
     auth = @{ key = "your-api-key" }
-    propertyId = "AX_TEST_1"
+    propertyId = "AX_TEST_HOTEL_1"
 } | ConvertTo-Json
 
 Invoke-RestMethod -Uri "http://localhost:4006/api/v1/axisrooms/productInfo" `

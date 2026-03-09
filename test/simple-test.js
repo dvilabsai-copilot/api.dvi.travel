@@ -4,7 +4,7 @@ console.log('Testing connection to http://localhost:4006');
 
 axios.post('http://localhost:4006/api/v1/axisrooms/productInfo', {
   auth: { key: 'test-key-12345' },
-  propertyId: 'AX_TEST_1'
+  propertyId: 'AX_TEST_HOTEL_1'
 }, {
   timeout: 5000
 })

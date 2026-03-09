@@ -1,20 +1,23 @@
 ============================================================
 AxisRooms API Test Log
 ============================================================
-Test Name: 10-missing-auth
-Timestamp: 2026-03-09T04:57:06.763Z
+Test Name: 8-invalid-auth
+Timestamp: 2026-03-09T04:43:07.320Z
 Status: FAILED
 ============================================================
 
 REQUEST:
 --------
-URL: http://127.0.0.1:4006/api/v1/axisrooms/productInfo
+URL: https://dvi.travel/api/V1/axisrooms/productInfo
 Method: POST
 Headers:
 {}
 
 Body:
 {
+  "auth": {
+    "key": "wrong-key"
+  },
   "propertyId": "AX_TEST_HOTEL_1"
 }
 
@@ -25,6 +28,6 @@ Error: Request failed with status code 401
 
 Response Data:
 {
-  "message": "Unauthorized",
+  "message": "Unauthorized access. Invalid or missing API key.",
   "status": "failure"
 }

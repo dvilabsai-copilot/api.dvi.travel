@@ -1,14 +1,14 @@
 ============================================================
 AxisRooms API Test Log
 ============================================================
-Test Name: 7-restriction-update-mlos
-Timestamp: 2026-03-09T04:57:06.883Z
+Test Name: 6-restriction-update-coa
+Timestamp: 2026-03-09T04:43:07.894Z
 Status: SUCCESS
 ============================================================
 
 REQUEST:
 --------
-URL: http://127.0.0.1:4006/api/v1/axisrooms/restrictionUpdate
+URL: https://dvi.travel/api/V1/axisrooms/restrictionUpdate
 Method: POST
 Headers:
 {}
@@ -30,12 +30,12 @@ Body:
               "restrictions": {
                 "periods": [
                   {
-                    "startDate": "2026-08-01",
-                    "endDate": "2026-08-31"
+                    "startDate": "2026-07-01",
+                    "endDate": "2026-07-31"
                   }
                 ],
-                "type": "MLos",
-                "value": "3"
+                "type": "COA",
+                "value": "Close"
               }
             }
           ]
@@ -50,18 +50,18 @@ RESPONSE:
 Status: 200
 Headers:
 {
+  "server": "nginx/1.24.0 (Ubuntu)",
+  "date": "Mon, 09 Mar 2026 04:43:08 GMT",
+  "content-type": "application/json; charset=utf-8",
+  "content-length": "67",
+  "connection": "keep-alive",
   "x-powered-by": "Express",
   "access-control-allow-origin": "*",
-  "content-type": "application/json; charset=utf-8",
-  "content-length": "33",
-  "etag": "W/\"21-EaizrEQ5ZkFQOW1tpdnLKL43OS8\"",
-  "date": "Mon, 09 Mar 2026 04:57:06 GMT",
-  "connection": "keep-alive",
-  "keep-alive": "timeout=5"
+  "etag": "W/\"43-ernp+YZiYFHenaBa3wsN4icVvqk\""
 }
 
 Data:
 {
-  "message": "",
+  "message": "Restrictions updated successfully.",
   "status": "success"
 }
