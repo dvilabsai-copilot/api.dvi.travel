@@ -60,7 +60,14 @@ async function bootstrap() {
     .build();
 
   const doc = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('docs', app, doc);
+
+  SwaggerModule.setup('api/v1/docs', app, doc, {
+    swaggerOptions: {
+      persistAuthorization: true,
+    },
+    customSiteTitle: 'DVI Backend APIs',
+  });
+
 
   // Prisma graceful shutdown
   const prisma = app.get(PrismaService);
@@ -69,6 +76,7 @@ async function bootstrap() {
   const port = Number(process.env.PORT) || 4006;
   await app.listen(port,'0.0.0.0');
   console.log(`Server running on http://localhost:${port}`);
-  console.log(`Swagger docs at http://localhost:${port}/docs`);
+  console.log(`Swagger docs at http://localhost:${port}/api/v1/docs`);
+  
 }
 bootstrap();
