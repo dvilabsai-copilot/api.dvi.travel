@@ -2,20 +2,20 @@
 STAAH API Test Log
 ============================================================
 Test Name: staah-13-year-info-arr
-Timestamp: 2026-03-13T09:56:32.707Z
+Timestamp: 2026-03-13T19:27:47.697Z
 Status: SUCCESS
 ============================================================
 
 REQUEST:
 --------
-URL: http://127.0.0.1:4006/api/v1/staah/yearInfoArr
+URL: https://dvi.travel/api/v1/staah/yearInfoArr
 Method: POST
 Headers:
 {}
 
 Body:
 {
-  "apikey": "staah-local-test-key",
+  "apikey": "staah_C3g8K3b1wray989DVih37od3314r6444",
   "propertyid": "STAAH_TEST_HOTEL_1",
   "room_id": "DELUXE_ROOM",
   "rate_id": "CP_PLAN",
@@ -28,38 +28,19 @@ RESPONSE:
 Status: 200
 Headers:
 {
+  "server": "nginx/1.24.0 (Ubuntu)",
+  "date": "Fri, 13 Mar 2026 19:27:46 GMT",
+  "content-type": "application/json; charset=utf-8",
+  "content-length": "105",
+  "connection": "keep-alive",
   "x-powered-by": "Express",
   "access-control-allow-origin": "*",
-  "content-type": "application/json; charset=utf-8",
-  "content-length": "307",
-  "etag": "W/\"133-lQCAl7b4UtDruHJK4FOKOh+F6bI\"",
-  "date": "Fri, 13 Mar 2026 09:56:32 GMT",
-  "connection": "keep-alive",
-  "keep-alive": "timeout=5"
+  "etag": "W/\"69-qYyhjEy/j0aeomqv30FWixxFmeg\""
 }
 
 Data:
 {
-  "status": "success",
-  "error_desc": "",
-  "trackingId": "AEAB7093-119C-40AF-B519-851DAC725ED3",
-  "inventory": [
-    {
-      "start_date": "2026-10-01",
-      "end_date": "2026-10-03",
-      "free": 8
-    },
-    {
-      "start_date": "2026-10-04",
-      "end_date": "2026-10-06",
-      "free": 5
-    }
-  ],
-  "rates": [
-    {
-      "start_date": "2026-10-01",
-      "end_date": "2026-10-03",
-      "occupancy_rates": {}
-    }
-  ]
+  "status": "fail",
+  "error_desc": "Invalid property ID.",
+  "trackingId": "869A9F4D-5BAC-43C7-B298-96041C7855E8"
 }

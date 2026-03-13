@@ -2,27 +2,27 @@
 STAAH API Test Log
 ============================================================
 Test Name: staah-9-reservation
-Timestamp: 2026-03-13T09:56:32.686Z
+Timestamp: 2026-03-13T19:27:47.526Z
 Status: SUCCESS
 ============================================================
 
 REQUEST:
 --------
-URL: http://127.0.0.1:4006/api/v1/staah/reservation
+URL: https://dvi.travel/api/v1/staah/reservation
 Method: POST
 Headers:
 {}
 
 Body:
 {
-  "apikey": "staah-local-test-key",
+  "apikey": "staah_C3g8K3b1wray989DVih37od3314r6444",
   "propertyid": "STAAH_TEST_HOTEL_1",
   "action": "reservation_info",
   "version": "2",
   "reservations": {
     "reservation": [
       {
-        "bookingId": "STAAH-RES-1773395792681",
+        "bookingId": "STAAH-RES-1773430067478",
         "room_id": "DELUXE_ROOM",
         "rate_id": "CP_PLAN",
         "checkIn": "2026-12-01",
@@ -30,7 +30,7 @@ Body:
       }
     ]
   },
-  "trackingId": "TRK-1773395792681"
+  "trackingId": "TRK-1773430067478"
 }
 
 RESPONSE:
@@ -38,24 +38,24 @@ RESPONSE:
 Status: 200
 Headers:
 {
+  "server": "nginx/1.24.0 (Ubuntu)",
+  "date": "Fri, 13 Mar 2026 19:27:45 GMT",
+  "content-type": "application/json; charset=utf-8",
+  "content-length": "105",
+  "connection": "keep-alive",
   "x-powered-by": "Express",
   "access-control-allow-origin": "*",
-  "content-type": "application/json; charset=utf-8",
-  "content-length": "111",
-  "etag": "W/\"6f-V66akzjlc9dP9eksXyAk0xmFMew\"",
-  "date": "Fri, 13 Mar 2026 09:56:32 GMT",
-  "connection": "keep-alive",
-  "keep-alive": "timeout=5"
+  "etag": "W/\"69-stpCWtB60+7GCEfO7+JF2/A6f2o\""
 }
 
 Data:
 [
   {
-    "bookingId": "STAAH-RES-1773395792681",
-    "status": "success",
-    "error_desc": ""
+    "bookingId": "",
+    "status": "fail",
+    "error_desc": "Invalid property ID."
   },
   {
-    "trackingId": "TRK-1773395792681"
+    "trackingId": "TRK-1773430067478"
   }
 ]

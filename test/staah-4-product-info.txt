@@ -2,20 +2,20 @@
 STAAH API Test Log
 ============================================================
 Test Name: staah-4-product-info
-Timestamp: 2026-03-13T09:56:32.654Z
+Timestamp: 2026-03-13T19:27:47.289Z
 Status: SUCCESS
 ============================================================
 
 REQUEST:
 --------
-URL: http://127.0.0.1:4006/api/v1/staah/productInfo
+URL: https://dvi.travel/api/v1/staah/productInfo
 Method: POST
 Headers:
 {}
 
 Body:
 {
-  "apikey": "staah-local-test-key",
+  "apikey": "staah_C3g8K3b1wray989DVih37od3314r6444",
   "propertyid": "STAAH_TEST_HOTEL_1",
   "action": "property_info",
   "version": "2"
@@ -26,34 +26,34 @@ RESPONSE:
 Status: 200
 Headers:
 {
+  "server": "nginx/1.24.0 (Ubuntu)",
+  "date": "Fri, 13 Mar 2026 19:27:45 GMT",
+  "content-type": "application/json; charset=utf-8",
+  "content-length": "307",
+  "connection": "keep-alive",
   "x-powered-by": "Express",
   "access-control-allow-origin": "*",
-  "content-type": "application/json; charset=utf-8",
-  "content-length": "352",
-  "etag": "W/\"160-VinurPM9e1VA2xvHslWiNsNFsBA\"",
-  "date": "Fri, 13 Mar 2026 09:56:32 GMT",
-  "connection": "keep-alive",
-  "keep-alive": "timeout=5"
+  "etag": "W/\"133-231AawKyFEzXASWzxof+vDei+4Y\""
 }
 
 Data:
 {
   "currency": "INR",
-  "propertyname": "Test Hotel for AxisRooms",
+  "propertyname": "",
   "checkintime": "",
   "checkouttime": "",
   "contactinfo": {
     "zip": "",
     "latitude": "",
     "longitude": "",
-    "country": "India",
-    "addressline": "123 Test Street",
-    "city": "Test City",
+    "country": "",
+    "addressline": "",
+    "city": "",
     "fax": "",
     "telephone": "",
-    "location": "Test City"
+    "location": ""
   },
-  "trackingId": "8B76D625-A932-455A-9BB2-73756506F710",
-  "status": "success",
-  "error_desc": ""
+  "status": "fail",
+  "error_desc": "Invalid property ID.",
+  "trackingId": "47687103-870E-4A78-B5A8-81B8E3348DBE"
 }
