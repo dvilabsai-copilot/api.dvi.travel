@@ -1,0 +1,39 @@
+============================================================
+STAAH API Test Log
+============================================================
+Test Name: staah-20-reservation-wrong-version
+Timestamp: 2026-03-13T22:39:10.120Z
+Status: FAILED
+============================================================
+
+REQUEST:
+--------
+URL: http://127.0.0.1:4006/api/v1/staah/reservation
+Method: POST
+Headers:
+{}
+
+Body:
+{
+  "apikey": "staah-local-test-key",
+  "propertyid": "STAAH_TEST_HOTEL_1",
+  "action": "reservation_info",
+  "version": "1",
+  "reservations": {
+    "reservation": []
+  }
+}
+
+RESPONSE:
+---------
+Status: 400
+Error: Request failed with status code 400
+
+Response Data:
+{
+  "status": "fail",
+  "error_desc": "version must be one of the following values: 2",
+  "details": [
+    "version must be one of the following values: 2"
+  ]
+}

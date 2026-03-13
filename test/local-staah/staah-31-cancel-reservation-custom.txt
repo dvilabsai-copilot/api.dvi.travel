@@ -1,0 +1,48 @@
+============================================================
+STAAH API Test Log
+============================================================
+Test Name: staah-31-cancel-reservation-custom
+Timestamp: 2026-03-13T22:39:10.230Z
+Status: SUCCESS
+============================================================
+
+REQUEST:
+--------
+URL: http://127.0.0.1:4006/api/v1/staah/custom/cancelReservation
+Method: POST
+Headers:
+{}
+
+Body:
+{
+  "apikey": "staah-local-test-key",
+  "propertyid": "STAAH_TEST_HOTEL_1",
+  "version": "2",
+  "reservationId": "STAAH-RES-1773441550225",
+  "data": {
+    "status": "cancelled",
+    "reason": "Test cancellation payload via custom route"
+  },
+  "trackingId": "TRK-CAN-CUSTOM-1773441550225"
+}
+
+RESPONSE:
+---------
+Status: 200
+Headers:
+{
+  "x-powered-by": "Express",
+  "access-control-allow-origin": "*",
+  "content-type": "application/json; charset=utf-8",
+  "content-length": "36",
+  "etag": "W/\"24-ypKu2umBXPlfAf6vrewuMz5Xruo\"",
+  "date": "Fri, 13 Mar 2026 22:39:10 GMT",
+  "connection": "keep-alive",
+  "keep-alive": "timeout=5"
+}
+
+Data:
+{
+  "status": "success",
+  "error_desc": ""
+}

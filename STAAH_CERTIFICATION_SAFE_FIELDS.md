@@ -43,7 +43,13 @@ These exist in code but are adapter-defined, internal route naming, or not prove
   - `ratePlanInfo`
   - `arrInfo`
   - `yearInfoArr`
-  - reservation acknowledgement
+  - reservation inner item payload schema
+- Custom adapter routes (not official STAAH v2):
+  - `POST /api/v1/staah/custom/modifyReservation`
+  - `POST /api/v1/staah/custom/cancelReservation`
+  - legacy aliases retained for compatibility only:
+    - `POST /api/v1/staah/modifyReservation`
+    - `POST /api/v1/staah/cancelReservation`
 - Adapter-defined pull response bodies built from local Prisma tables:
   - `staah_inventory`
   - `staah_rate`
@@ -51,6 +57,7 @@ These exist in code but are adapter-defined, internal route naming, or not prove
 ## Not safe to claim yet
 
 - Official STAAH response body shapes for any of the current STAAH routes
+- Official response shape for `reservation_info` beyond verified wrapper-level acknowledgement array behavior
 - Full reservation item schema inside `reservations.reservation[]`
 - `modifyReservation` as an official STAAH operation
 - `cancelReservation` as an official STAAH operation

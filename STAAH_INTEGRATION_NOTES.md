@@ -22,13 +22,21 @@ https://api.dvi.travel/staah/restrictionUpdate
 Reservation:
 https://api.dvi.travel/staah/reservation
 
-Modify Reservation:
-https://api.dvi.travel/staah/modifyReservation
+Modify Reservation (custom canonical route):
+https://api.dvi.travel/staah/custom/modifyReservation
 (ADAPTER/CUSTOM EXTENSION — NOT a confirmed official STAAH v2 operation. Do not include in Excel/certification forms.)
 
-Cancel Reservation:
-https://api.dvi.travel/staah/cancelReservation
+Modify Reservation (legacy alias, deprecated):
+https://api.dvi.travel/staah/modifyReservation
+(Backward-compatibility alias retained for existing consumers. Do not include in Excel/certification forms.)
+
+Cancel Reservation (custom canonical route):
+https://api.dvi.travel/staah/custom/cancelReservation
 (ADAPTER/CUSTOM EXTENSION — NOT a confirmed official STAAH v2 operation. Do not include in Excel/certification forms.)
+
+Cancel Reservation (legacy alias, deprecated):
+https://api.dvi.travel/staah/cancelReservation
+(Backward-compatibility alias retained for existing consumers. Do not include in Excel/certification forms.)
 
 ARI Date-Range Pull (ARR_info — adapter; request body = exact STAAH v2 doc contract):
 https://api.dvi.travel/staah/arrInfo

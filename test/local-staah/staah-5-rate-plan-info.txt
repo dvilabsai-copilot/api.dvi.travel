@@ -1,0 +1,88 @@
+============================================================
+STAAH API Test Log
+============================================================
+Test Name: staah-5-rate-plan-info
+Timestamp: 2026-03-13T22:39:10.139Z
+Status: SUCCESS
+============================================================
+
+REQUEST:
+--------
+URL: http://127.0.0.1:4006/api/v1/staah/ratePlanInfo
+Method: POST
+Headers:
+{}
+
+Body:
+{
+  "apikey": "staah-local-test-key",
+  "propertyid": "STAAH_TEST_HOTEL_1",
+  "action": "roomrate_info",
+  "version": "2"
+}
+
+RESPONSE:
+---------
+Status: 200
+Headers:
+{
+  "x-powered-by": "Express",
+  "access-control-allow-origin": "*",
+  "content-type": "application/json; charset=utf-8",
+  "content-length": "803",
+  "etag": "W/\"323-p0mTikz5W4KTXlOogzzZGE0njTE\"",
+  "date": "Fri, 13 Mar 2026 22:39:10 GMT",
+  "connection": "keep-alive",
+  "keep-alive": "timeout=5"
+}
+
+Data:
+{
+  "roomtypes": [
+    {
+      "room_id": "DELUXE_ROOM",
+      "OTA_room_id": "DELUXE_ROOM",
+      "room_name": "Deluxe Room - Test"
+    },
+    {
+      "room_id": "SUITE_ROOM",
+      "OTA_room_id": "SUITE_ROOM",
+      "room_name": "Suite Room - Test"
+    }
+  ],
+  "rateplans": [
+    {
+      "room_id": "DELUXE_ROOM",
+      "rate_id": "CP_PLAN",
+      "OTA_room_id": "DELUXE_ROOM",
+      "OTA_rate_id": "CP_PLAN",
+      "rate_name": "Continental Plan",
+      "currency": "INR"
+    },
+    {
+      "room_id": "SUITE_ROOM",
+      "rate_id": "MAP_PLAN",
+      "OTA_room_id": "SUITE_ROOM",
+      "OTA_rate_id": "MAP_PLAN",
+      "rate_name": "Modified American Plan",
+      "currency": "INR"
+    }
+  ],
+  "room_rate_mapping": [
+    {
+      "room_id": "DELUXE_ROOM",
+      "rate_id": "CP_PLAN",
+      "OTA_room_id": "DELUXE_ROOM",
+      "OTA_rate_id": "CP_PLAN"
+    },
+    {
+      "room_id": "SUITE_ROOM",
+      "rate_id": "MAP_PLAN",
+      "OTA_room_id": "SUITE_ROOM",
+      "OTA_rate_id": "MAP_PLAN"
+    }
+  ],
+  "trackingId": "BDA0564D-2133-4B43-AC35-633D8DFB9685",
+  "status": "success",
+  "error_desc": ""
+}

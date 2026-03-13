@@ -1,4 +1,12 @@
-import { Controller, Post, Body, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  UseGuards,
+  HttpCode,
+  HttpStatus,
+  UseFilters,
+} from '@nestjs/common';
 import { Public } from '../../auth/public.decorator';
 import { StaahService } from './staah.service';
 import { StaahApiKeyGuard } from './guards/staah-api-key.guard';
@@ -24,8 +32,7 @@ import {
 } from './dto/restriction-update.dto';
 import {
   ReservationRequestDto,
-  ReservationAckDto,
-  ReservationTrackingDto,
+  ReservationResponseDto,
 } from './dto/reservation.dto';
 import {
   ModifyReservationRequestDto,
@@ -37,10 +44,12 @@ import {
 } from './dto/cancel-reservation.dto';
 import { ArrInfoRequestDto, ArrInfoResponseDto } from './dto/arr-info.dto';
 import { YearInfoArrRequestDto, YearInfoArrResponseDto } from './dto/year-info-arr.dto';
+import { StaahExceptionFilter } from './filters/staah-exception.filter';
 
 @Controller('staah')
 @Public()
 @UseGuards(StaahApiKeyGuard)
+@UseFilters(new StaahExceptionFilter())
 export class StaahController {
   constructor(private readonly staahService: StaahService) {}
 
@@ -88,35 +97,57 @@ export class StaahController {
   @HttpCode(HttpStatus.OK)
   async reservation(
     @Body() dto: ReservationRequestDto,
-  ): Promise<Array<ReservationAckDto | ReservationTrackingDto>> {
+  ): Promise<ReservationResponseDto> {
     return this.staahService.receiveReservation(dto);
   }
 
-    /**
-     * ADAPTER/CUSTOM EXTENSION — NOT a confirmed official STAAH v2 operation.
-     * Kept for local business flow (payload logging/storage only).
-     * Do NOT document as an official STAAH contract in Excel or certification forms.
-     */
-    @Post('modifyReservation')
-    @HttpCode(HttpStatus.OK)
-    async modifyReservation(
-      @Body() dto: ModifyReservationRequestDto,
-    ): Promise<ModifyReservationResponseDto> {
-      return this.staahService.modifyReservation(dto);
-    }
+  /**
+   * CUSTOM ADAPTER ENDPOINT (canonical)
+   * NOT a confirmed official STAAH v2 public contract operation.
+   */
+  @Post('custom/modifyReservation')
+  @HttpCode(HttpStatus.OK)
+  async modifyReservationCustom(
+    @Body() dto: ModifyReservationRequestDto,
+  ): Promise<ModifyReservationResponseDto> {
+    return this.staahService.modifyReservation(dto);
+  }
 
-    /**
-     * ADAPTER/CUSTOM EXTENSION — NOT a confirmed official STAAH v2 operation.
-     * Kept for local business flow (payload logging/storage only).
-     * Do NOT document as an official STAAH contract in Excel or certification forms.
-     */
-    @Post('cancelReservation')
-    @HttpCode(HttpStatus.OK)
-    async cancelReservation(
-      @Body() dto: CancelReservationRequestDto,
-    ): Promise<CancelReservationResponseDto> {
-      return this.staahService.cancelReservation(dto);
-    }
+  /**
+   * CUSTOM ADAPTER ENDPOINT (canonical)
+   * NOT a confirmed official STAAH v2 public contract operation.
+   */
+  @Post('custom/cancelReservation')
+  @HttpCode(HttpStatus.OK)
+  async cancelReservationCustom(
+    @Body() dto: CancelReservationRequestDto,
+  ): Promise<CancelReservationResponseDto> {
+    return this.staahService.cancelReservation(dto);
+  }
+
+  /**
+   * BACKWARD-COMPATIBILITY ALIAS (deprecated)
+   * Retained to avoid breaking existing consumers still calling /staah/modifyReservation.
+   */
+  @Post('modifyReservation')
+  @HttpCode(HttpStatus.OK)
+  async modifyReservation(
+    @Body() dto: ModifyReservationRequestDto,
+  ): Promise<ModifyReservationResponseDto> {
+    return this.modifyReservationCustom(dto);
+  }
+
+  /**
+   * BACKWARD-COMPATIBILITY ALIAS (deprecated)
+   * Retained to avoid breaking existing consumers still calling /staah/cancelReservation.
+   */
+  @Post('cancelReservation')
+  @HttpCode(HttpStatus.OK)
+  async cancelReservation(
+    @Body() dto: CancelReservationRequestDto,
+  ): Promise<CancelReservationResponseDto> {
+    return this.cancelReservationCustom(dto);
+  }
 
     /**
      * ADAPTER ENDPOINT — exposes STAAH v2 doc-native ARR_info pull contract.

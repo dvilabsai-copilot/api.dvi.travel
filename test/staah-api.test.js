@@ -113,6 +113,13 @@ async function postExpectHttpError(namePrefix, endpoint, body, expectedStatus) {
     throw new Error(`Should have thrown ${expectedStatus} error`);
   } catch (error) {
     if (error.response?.status === expectedStatus) {
+      const errBody = error.response?.data || {};
+      if (errBody.status !== 'fail') {
+        throw new Error(`Expected error payload status=fail, got ${errBody.status}`);
+      }
+      if (typeof errBody.error_desc !== 'string' || errBody.error_desc.length === 0) {
+        throw new Error('Expected error_desc in fail payload');
+      }
       saveToFile(namePrefix, { url, method: 'POST', body }, null, error);
       return error.response;
     }
@@ -133,6 +140,10 @@ async function testInvalidAuth() {
     throw new Error('Should have thrown 401 error');
   } catch (error) {
     if (error.response?.status === 401) {
+      const errBody = error.response?.data || {};
+      if (errBody.status !== 'fail' || typeof errBody.error_desc !== 'string') {
+        throw new Error('Expected STAAH fail envelope for unauthorized response');
+      }
       saveToFile('staah-1-invalid-auth', { url, method: 'POST', body }, null, error);
       return;
     }
@@ -152,6 +163,10 @@ async function testMissingAuth() {
     throw new Error('Should have thrown 401 error');
   } catch (error) {
     if (error.response?.status === 401) {
+      const errBody = error.response?.data || {};
+      if (errBody.status !== 'fail' || typeof errBody.error_desc !== 'string') {
+        throw new Error('Expected STAAH fail envelope for unauthorized response');
+      }
       saveToFile('staah-2-missing-auth', { url, method: 'POST', body }, null, error);
       return;
     }
@@ -236,6 +251,18 @@ async function testRatePlanInfo() {
 
   if (!['success', 'fail'].includes(response.data.status)) {
     throw new Error(`Unexpected status value: ${response.data.status}`);
+  }
+
+  if (response.data.status === 'success') {
+    const mapping = Array.isArray(response.data.room_rate_mapping)
+      ? response.data.room_rate_mapping
+      : [];
+    if (mapping.length > 0) {
+      const firstMap = mapping[0];
+      if (!firstMap.OTA_room_id || !firstMap.OTA_rate_id) {
+        throw new Error('Expected OTA_room_id and OTA_rate_id in room_rate_mapping response');
+      }
+    }
   }
 }
 
@@ -338,6 +365,66 @@ async function testRestrictionUpdate() {
   }
 }
 
+async function testRestrictionIdempotency() {
+  const restrictionRow = {
+    start_date: '2026-11-10',
+    end_date: '2026-11-12',
+    type: 'Status',
+    value: 'Close',
+  };
+
+  const body = {
+    apikey: API_KEY,
+    propertyid: PROPERTY_ID,
+    version: '2',
+    room_id: ROOM_ID,
+    rate_id: RATEPLAN_ID,
+    data: [restrictionRow],
+  };
+
+  const first = await postAndAssert('staah-32-restriction-idempotent-first', 'restrictionUpdate', body);
+  const second = await postAndAssert('staah-33-restriction-idempotent-second', 'restrictionUpdate', body);
+
+  if (REQUIRE_VALID_PROPERTY) {
+    if (first.data.status !== 'success' || second.data.status !== 'success') {
+      throw new Error('Expected both duplicate restriction pushes to succeed in strict mode');
+    }
+  }
+
+  const arrBody = {
+    apikey: API_KEY,
+    propertyid: PROPERTY_ID,
+    room_id: ROOM_ID,
+    rate_id: RATEPLAN_ID,
+    action: 'ARR_info',
+    from_date: '2026-11-01',
+    to_date: '2026-11-30',
+    version: '2',
+  };
+
+  const arrResponse = await postAndAssert('staah-34-restriction-idempotent-arr-read', 'arrInfo', arrBody);
+  if (arrResponse.data.status !== 'success') {
+    if (REQUIRE_VALID_PROPERTY) {
+      throw new Error(`Expected arrInfo success for idempotency check, got ${arrResponse.data.status}`);
+    }
+    return;
+  }
+
+  const restrictions = Array.isArray(arrResponse.data.restrictions)
+    ? arrResponse.data.restrictions
+    : [];
+
+  const sameIdentity = restrictions.filter((row) =>
+    row.start_date === restrictionRow.start_date
+    && row.end_date === restrictionRow.end_date
+    && row.type === restrictionRow.type,
+  );
+
+  if (sameIdentity.length > 1) {
+    throw new Error(`Expected deduplicated restriction readback, got ${sameIdentity.length} rows for same identity`);
+  }
+}
+
 async function testReservation() {
   const body = {
     apikey: API_KEY,
@@ -359,17 +446,83 @@ async function testReservation() {
   };
   const response = await postAndAssert('staah-9-reservation', 'reservation', body);
 
-  if (!Array.isArray(response.data) || response.data.length === 0) {
-    throw new Error('Expected reservation response as array');
+  if (!response.data || typeof response.data !== 'object' || Array.isArray(response.data)) {
+    throw new Error('Expected reservation response as object envelope');
   }
-  const first = response.data[0] || {};
+
+  if (typeof response.data.trackingId !== 'string' || response.data.trackingId.length === 0) {
+    throw new Error('Expected trackingId in reservation response object');
+  }
+
+  if (!Array.isArray(response.data.bookings) || response.data.bookings.length === 0) {
+    throw new Error('Expected non-empty bookings array in reservation response');
+  }
+
+  const first = response.data.bookings[0] || {};
   const expected = REQUIRE_VALID_PROPERTY ? 'success' : ['success', 'fail'];
   if (Array.isArray(expected)) {
-    if (!expected.includes(first.status)) {
-      throw new Error(`Unexpected status value: ${first.status}`);
+    if (!expected.includes(response.data.status)) {
+      throw new Error(`Unexpected response status value: ${response.data.status}`);
     }
-  } else if (first.status !== expected) {
-    throw new Error(`Expected status=${expected}, got ${first.status}`);
+  } else if (response.data.status !== expected) {
+    throw new Error(`Expected status=${expected}, got ${response.data.status}`);
+  }
+
+  if (!['success', 'fail'].includes(first.status)) {
+    throw new Error(`Unexpected booking status value: ${first.status}`);
+  }
+}
+
+async function testReservationMultiBooking() {
+  const body = {
+    apikey: API_KEY,
+    propertyid: PROPERTY_ID,
+    action: 'reservation_info',
+    version: '2',
+    reservations: {
+      reservation: [
+        {
+          bookingId: `STAAH-RES-A-${Date.now()}`,
+          room_id: ROOM_ID,
+          rate_id: RATEPLAN_ID,
+          checkIn: '2026-12-05',
+          checkOut: '2026-12-06',
+        },
+        {
+          bookingId: `STAAH-RES-B-${Date.now()}`,
+          room_id: ROOM_ID,
+          rate_id: RATEPLAN_ID,
+          checkIn: '2026-12-07',
+          checkOut: '2026-12-08',
+        },
+      ],
+    },
+    trackingId: `TRK-MULTI-${Date.now()}`,
+  };
+
+  const response = await postAndAssert('staah-29-reservation-multi', 'reservation', body);
+
+  if (!response.data || typeof response.data !== 'object' || Array.isArray(response.data)) {
+    throw new Error('Expected multi-booking reservation response as object envelope');
+  }
+
+  if (typeof response.data.trackingId !== 'string' || response.data.trackingId.length === 0) {
+    throw new Error('Expected trackingId in multi-booking response');
+  }
+
+  if (!Array.isArray(response.data.bookings)) {
+    throw new Error('Expected bookings array in multi-booking response');
+  }
+
+  if (response.data.bookings.length !== 2) {
+    throw new Error(`Expected 2 booking ack rows, got ${response.data.bookings.length}`);
+  }
+
+  const invalidRow = response.data.bookings.find(
+    (row) => !row || typeof row.bookingId !== 'string' || !['success', 'fail'].includes(row.status),
+  );
+  if (invalidRow) {
+    throw new Error('Found invalid booking ack row in multi-booking response');
   }
 }
 
@@ -440,6 +593,35 @@ async function testModifyReservation() {
   }
 }
 
+async function testModifyReservationCustomRoute() {
+  const body = {
+    apikey: API_KEY,
+    propertyid: PROPERTY_ID,
+    version: '2',
+    reservationId: `STAAH-RES-${Date.now()}`,
+    data: {
+      status: 'modified',
+      note: 'Test modify payload via custom route',
+    },
+    trackingId: `TRK-MOD-CUSTOM-${Date.now()}`,
+  };
+
+  const response = await postAndAssert(
+    'staah-30-modify-reservation-custom',
+    'custom/modifyReservation',
+    body,
+  );
+
+  const expected = REQUIRE_VALID_PROPERTY ? 'success' : ['success', 'fail'];
+  if (Array.isArray(expected)) {
+    if (!expected.includes(response.data.status)) {
+      throw new Error(`Unexpected status value: ${response.data.status}`);
+    }
+  } else if (response.data.status !== expected) {
+    throw new Error(`Expected status=${expected}, got ${response.data.status}`);
+  }
+}
+
 async function testCancelReservation() {
   const body = {
     apikey: API_KEY,
@@ -453,6 +635,35 @@ async function testCancelReservation() {
     trackingId: `TRK-CAN-${Date.now()}`,
   };
   const response = await postAndAssert('staah-11-cancel-reservation', 'cancelReservation', body);
+
+  const expected = REQUIRE_VALID_PROPERTY ? 'success' : ['success', 'fail'];
+  if (Array.isArray(expected)) {
+    if (!expected.includes(response.data.status)) {
+      throw new Error(`Unexpected status value: ${response.data.status}`);
+    }
+  } else if (response.data.status !== expected) {
+    throw new Error(`Expected status=${expected}, got ${response.data.status}`);
+  }
+}
+
+async function testCancelReservationCustomRoute() {
+  const body = {
+    apikey: API_KEY,
+    propertyid: PROPERTY_ID,
+    version: '2',
+    reservationId: `STAAH-RES-${Date.now()}`,
+    data: {
+      status: 'cancelled',
+      reason: 'Test cancellation payload via custom route',
+    },
+    trackingId: `TRK-CAN-CUSTOM-${Date.now()}`,
+  };
+
+  const response = await postAndAssert(
+    'staah-31-cancel-reservation-custom',
+    'custom/cancelReservation',
+    body,
+  );
 
   const expected = REQUIRE_VALID_PROPERTY ? 'success' : ['success', 'fail'];
   if (Array.isArray(expected)) {
@@ -487,6 +698,18 @@ async function testArrInfo() {
   if (response.data.trackingId === undefined || response.data.trackingId === null) {
     throw new Error('Expected trackingId in arrInfo response');
   }
+
+  if (REQUIRE_VALID_PROPERTY && response.data.status === 'success') {
+    if (!Array.isArray(response.data.rates) || response.data.rates.length === 0) {
+      throw new Error('Expected non-empty rates array in arrInfo response for valid property');
+    }
+
+    const firstRate = response.data.rates[0] || {};
+    const occ = firstRate.occupancy_rates || {};
+    if (occ.SINGLE === undefined && occ.DOUBLE === undefined && occ.TRIPLE === undefined) {
+      throw new Error('Expected occupancy rates (SINGLE/DOUBLE/TRIPLE) in arrInfo response');
+    }
+  }
 }
 
 /**
@@ -509,6 +732,18 @@ async function testYearInfoArr() {
   }
   if (response.data.trackingId === undefined || response.data.trackingId === null) {
     throw new Error('Expected trackingId in yearInfoArr response');
+  }
+
+  if (REQUIRE_VALID_PROPERTY && response.data.status === 'success') {
+    if (!Array.isArray(response.data.rates) || response.data.rates.length === 0) {
+      throw new Error('Expected non-empty rates array in yearInfoArr response for valid property');
+    }
+
+    const firstRate = response.data.rates[0] || {};
+    const occ = firstRate.occupancy_rates || {};
+    if (occ.SINGLE === undefined && occ.DOUBLE === undefined && occ.TRIPLE === undefined) {
+      throw new Error('Expected occupancy rates (SINGLE/DOUBLE/TRIPLE) in yearInfoArr response');
+    }
   }
 }
 
@@ -648,9 +883,13 @@ async function runAllTests() {
   await runTest('Inventory Update', testInventoryUpdate);
   await runTest('Rate Update', testRateUpdate);
   await runTest('Restriction Update', testRestrictionUpdate);
+  await runTest('Restriction Idempotency', testRestrictionIdempotency);
   await runTest('Reservation', testReservation);
-  await runTest('Modify Reservation', testModifyReservation);
-  await runTest('Cancel Reservation', testCancelReservation);
+  await runTest('Reservation Multi Booking', testReservationMultiBooking);
+  await runTest('Modify Reservation (Legacy Alias)', testModifyReservation);
+  await runTest('Cancel Reservation (Legacy Alias)', testCancelReservation);
+  await runTest('Modify Reservation (Custom Route)', testModifyReservationCustomRoute);
+  await runTest('Cancel Reservation (Custom Route)', testCancelReservationCustomRoute);
 
   console.log('\nARI PULL ENDPOINT TESTS (adapter; request body = exact STAAH v2 doc contract)');
   await runTest('ARR Info (Date-Range Pull)', testArrInfo);

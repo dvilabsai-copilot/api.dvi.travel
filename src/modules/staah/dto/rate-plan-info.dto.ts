@@ -22,12 +22,15 @@ export class RatePlanInfoRequestDto {
 
 export class RoomTypeDto {
   room_id: string;
+  OTA_room_id?: string;
   room_name: string;
 }
 
 export class RatePlanDto {
   room_id: string;
   rate_id: string;
+  OTA_room_id?: string;
+  OTA_rate_id?: string;
   rate_name: string;
   currency: string;
 }
@@ -35,6 +38,8 @@ export class RatePlanDto {
 export class RoomRateMappingDto {
   room_id: string;
   rate_id: string;
+  OTA_room_id?: string;
+  OTA_rate_id?: string;
 }
 
 export class RatePlanInfoResponseDto {

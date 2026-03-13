@@ -21,7 +21,12 @@
  */
 
 import { IsIn, IsNotEmpty, IsString } from 'class-validator';
-import { ArrInventoryEntryDto, ArrRateEntryDto } from './arr-info.dto';
+import {
+  ArrDataEntryDto,
+  ArrInventoryEntryDto,
+  ArrRateEntryDto,
+  ArrRestrictionEntryDto,
+} from './arr-info.dto';
 
 export class YearInfoArrRequestDto {
   @IsString()
@@ -59,6 +64,12 @@ export class YearInfoArrResponseDto {
   status: 'success' | 'fail';
   error_desc: string;
   trackingId: string;
+  propertyid?: string;
+  room_id?: string;
+  rate_id?: string;
+  currency?: string;
+  data?: ArrDataEntryDto[];
   inventory?: ArrInventoryEntryDto[];
   rates?: ArrRateEntryDto[];
+  restrictions?: ArrRestrictionEntryDto[];
 }

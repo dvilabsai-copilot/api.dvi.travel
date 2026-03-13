@@ -1,0 +1,84 @@
+============================================================
+STAAH API Test Log
+============================================================
+Test Name: staah-34-restriction-idempotent-arr-read
+Timestamp: 2026-03-13T22:39:10.188Z
+Status: SUCCESS
+============================================================
+
+REQUEST:
+--------
+URL: http://127.0.0.1:4006/api/v1/staah/arrInfo
+Method: POST
+Headers:
+{}
+
+Body:
+{
+  "apikey": "staah-local-test-key",
+  "propertyid": "STAAH_TEST_HOTEL_1",
+  "room_id": "DELUXE_ROOM",
+  "rate_id": "CP_PLAN",
+  "action": "ARR_info",
+  "from_date": "2026-11-01",
+  "to_date": "2026-11-30",
+  "version": "2"
+}
+
+RESPONSE:
+---------
+Status: 200
+Headers:
+{
+  "x-powered-by": "Express",
+  "access-control-allow-origin": "*",
+  "content-type": "application/json; charset=utf-8",
+  "content-length": "573",
+  "etag": "W/\"23d-OMVsj1kQhfYqP90mIV3HK/2ELPs\"",
+  "date": "Fri, 13 Mar 2026 22:39:10 GMT",
+  "connection": "keep-alive",
+  "keep-alive": "timeout=5"
+}
+
+Data:
+{
+  "status": "success",
+  "error_desc": "",
+  "trackingId": "176F9CD9-A16B-470B-A8BD-BD7F3CCA2E0D",
+  "propertyid": "STAAH_TEST_HOTEL_1",
+  "room_id": "DELUXE_ROOM",
+  "rate_id": "CP_PLAN",
+  "currency": "INR",
+  "data": [
+    {
+      "start_date": "2026-11-01",
+      "end_date": "2026-11-05",
+      "restrictions": {
+        "Status": "Open"
+      }
+    },
+    {
+      "start_date": "2026-11-10",
+      "end_date": "2026-11-12",
+      "restrictions": {
+        "Status": "Close"
+      }
+    }
+  ],
+  "inventory": [],
+  "rates": [],
+  "restrictions": [
+    {
+      "start_date": "2026-11-01",
+      "end_date": "2026-11-05",
+      "type": "Status",
+      "value": "Open"
+    },
+    {
+      "start_date": "2026-11-10",
+      "end_date": "2026-11-12",
+      "type": "Status",
+      "value": "Close"
+    }
+  ]
+}

@@ -1,0 +1,74 @@
+============================================================
+STAAH API Test Log
+============================================================
+Test Name: staah-29-reservation-multi
+Timestamp: 2026-03-13T22:39:10.205Z
+Status: SUCCESS
+============================================================
+
+REQUEST:
+--------
+URL: http://127.0.0.1:4006/api/v1/staah/reservation
+Method: POST
+Headers:
+{}
+
+Body:
+{
+  "apikey": "staah-local-test-key",
+  "propertyid": "STAAH_TEST_HOTEL_1",
+  "action": "reservation_info",
+  "version": "2",
+  "reservations": {
+    "reservation": [
+      {
+        "bookingId": "STAAH-RES-A-1773441550198",
+        "room_id": "DELUXE_ROOM",
+        "rate_id": "CP_PLAN",
+        "checkIn": "2026-12-05",
+        "checkOut": "2026-12-06"
+      },
+      {
+        "bookingId": "STAAH-RES-B-1773441550198",
+        "room_id": "DELUXE_ROOM",
+        "rate_id": "CP_PLAN",
+        "checkIn": "2026-12-07",
+        "checkOut": "2026-12-08"
+      }
+    ]
+  },
+  "trackingId": "TRK-MULTI-1773441550198"
+}
+
+RESPONSE:
+---------
+Status: 200
+Headers:
+{
+  "x-powered-by": "Express",
+  "access-control-allow-origin": "*",
+  "content-type": "application/json; charset=utf-8",
+  "content-length": "226",
+  "etag": "W/\"e2-rcMewK1kKqywoErxsu1aqraURQQ\"",
+  "date": "Fri, 13 Mar 2026 22:39:10 GMT",
+  "connection": "keep-alive",
+  "keep-alive": "timeout=5"
+}
+
+Data:
+{
+  "status": "success",
+  "trackingId": "TRK-MULTI-1773441550198",
+  "bookings": [
+    {
+      "bookingId": "STAAH-RES-A-1773441550198",
+      "status": "success",
+      "error_desc": ""
+    },
+    {
+      "bookingId": "STAAH-RES-B-1773441550198",
+      "status": "success",
+      "error_desc": ""
+    }
+  ]
+}

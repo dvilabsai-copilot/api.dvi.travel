@@ -84,14 +84,19 @@ export class ReservationRequestDto {
 
 export class ReservationAckDto {
   /**
-   * Adapter-defined acknowledgement item based on current verified samples.
-   * The fully official STAAH acknowledgement schema is not fully proven yet.
+   * Booking-level acknowledgement entry included in ReservationResponseDto.bookings.
    */
   bookingId: string;
   status: 'success' | 'fail';
   error_desc: string;
 }
 
-export class ReservationTrackingDto {
+/**
+ * Reservation delivery response contract.
+ * Uses a single response envelope while preserving booking-level ack entries.
+ */
+export class ReservationResponseDto {
+  status: 'success' | 'fail';
   trackingId: string;
+  bookings: ReservationAckDto[];
 }
