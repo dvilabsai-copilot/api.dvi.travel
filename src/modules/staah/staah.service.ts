@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'crypto';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import { STAAH_MESSAGES } from './constants/staah-messages';
 import {
@@ -394,7 +395,7 @@ export class StaahService {
             type: 'reservation',
             staah_property_id: dto.propertyid,
             reservation_id: bookingId || null,
-            payload: reservation,
+            payload: reservation as unknown as Prisma.InputJsonValue,
           },
         });
 
@@ -446,7 +447,7 @@ export class StaahService {
           type: 'modifyReservation',
           staah_property_id: dto.propertyid,
           reservation_id: dto.reservationId || this.extractReservationId(dto),
-          payload: dto,
+          payload: dto as unknown as Prisma.InputJsonValue,
         },
       });
 
@@ -482,7 +483,7 @@ export class StaahService {
           type: 'cancelReservation',
           staah_property_id: dto.propertyid,
           reservation_id: dto.reservationId || this.extractReservationId(dto),
-          payload: dto,
+          payload: dto as unknown as Prisma.InputJsonValue,
         },
       });
 
