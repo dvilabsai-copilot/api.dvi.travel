@@ -2,11 +2,11 @@
   "name": "dvi-backend-starter",
   "version": "1.0.0",
   "description": "DVI Backend Starter - NestJS + Prisma (MySQL) with Hotels & Itineraries modules and RBAC",
-  "main": "dist/main.js",
+  "main": "dist/src/main.js",
   "scripts": {
     "start:dev": "ts-node-dev --respawn --transpile-only src/main.ts",
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/main.js",
+    "start": "node dist/src/main.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev --name init",
     "seed": "ts-node prisma/seed.ts",
