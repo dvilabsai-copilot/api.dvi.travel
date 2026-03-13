@@ -30,6 +30,12 @@ async function main() {
       testHotel = await prisma.dvi_hotel.update({
         where: { hotel_id: existingHotel.hotel_id },
         data: {
+          hotel_name: 'Test Hotel for STAAH',
+          hotel_address: '123 Test Street',
+          hotel_city: 'Test City',
+          hotel_state: 'Test State',
+          hotel_country: 'India',
+          hotel_category: 1,
           staah_property_id: STAAH_PROPERTY_ID,
           staah_enabled: 1,
           status: 1,
@@ -58,6 +64,12 @@ async function main() {
     testHotel = await prisma.dvi_hotel.update({
       where: { hotel_id: testHotel.hotel_id },
       data: {
+        hotel_name: 'Test Hotel for STAAH',
+        hotel_address: '123 Test Street',
+        hotel_city: 'Test City',
+        hotel_state: 'Test State',
+        hotel_country: 'India',
+        hotel_category: 1,
         staah_enabled: 1,
         status: 1,
       },
