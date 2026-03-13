@@ -15,6 +15,10 @@ export class StaahApiKeyGuard implements CanActivate {
   canActivate(
     context: ExecutionContext,
   ): boolean | Promise<boolean> | Observable<boolean> {
+    return this.validate(context);
+  }
+
+  private validate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest();
     const body = request.body || {};
 

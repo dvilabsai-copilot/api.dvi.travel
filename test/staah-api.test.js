@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
-const BASE_URL = process.env.BASE_URL || 'http://127.0.0.1:4006';
+const BASE_URL = process.env.BASE_URL || 'https://dvi.travel';
 const API_PREFIX = process.env.API_PREFIX || '/api/v1';
 const API_KEY = process.env.STAAH_API_KEY || 'test-key-12345';
 const PROPERTY_ID = process.env.STAAH_PROPERTY_ID || 'STAAH_TEST_HOTEL_1';
@@ -693,6 +693,15 @@ async function runAllTests() {
     console.log('Set STAAH_API_KEY in .env, then rerun: node test/staah-api.test.js');
     process.exit(0);
   }
+
+  const TARGET_IS_PRODUCTION = /^https?:\/\/(www\.)?dvi\.travel/i.test(BASE_URL);
+  if (TARGET_IS_PRODUCTION && API_KEY === 'staah-local-test-key') {
+    console.error('Refusing to run STAAH tests on production URL with local test key.');
+    console.error('Set STAAH_API_KEY to the real production key in .env before testing dvi.travel.');
+    process.exit(1);
+  }
+
+  console.log(`Using STAAH_API_KEY: ${API_KEY ? '***set***' : '(empty)'}`);
 
   await runAllTests();
 })();

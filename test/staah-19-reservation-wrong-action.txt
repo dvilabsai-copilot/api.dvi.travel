@@ -2,20 +2,20 @@
 STAAH API Test Log
 ============================================================
 Test Name: staah-19-reservation-wrong-action
-Timestamp: 2026-03-13T09:56:32.640Z
+Timestamp: 2026-03-13T19:27:47.138Z
 Status: FAILED
 ============================================================
 
 REQUEST:
 --------
-URL: http://127.0.0.1:4006/api/v1/staah/reservation
+URL: https://dvi.travel/api/v1/staah/reservation
 Method: POST
 Headers:
 {}
 
 Body:
 {
-  "apikey": "staah-local-test-key",
+  "apikey": "staah_C3g8K3b1wray989DVih37od3314r6444",
   "propertyid": "STAAH_TEST_HOTEL_1",
   "action": "wrong_action",
   "version": "2",

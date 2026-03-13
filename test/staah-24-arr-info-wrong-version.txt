@@ -2,20 +2,20 @@
 STAAH API Test Log
 ============================================================
 Test Name: staah-24-arr-info-wrong-version
-Timestamp: 2026-03-13T09:56:32.714Z
+Timestamp: 2026-03-13T19:27:47.796Z
 Status: FAILED
 ============================================================
 
 REQUEST:
 --------
-URL: http://127.0.0.1:4006/api/v1/staah/arrInfo
+URL: https://dvi.travel/api/v1/staah/arrInfo
 Method: POST
 Headers:
 {}
 
 Body:
 {
-  "apikey": "staah-local-test-key",
+  "apikey": "staah_C3g8K3b1wray989DVih37od3314r6444",
   "propertyid": "STAAH_TEST_HOTEL_1",
   "room_id": "DELUXE_ROOM",
   "rate_id": "CP_PLAN",
