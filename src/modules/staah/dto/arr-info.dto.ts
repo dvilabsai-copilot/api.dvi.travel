@@ -74,6 +74,23 @@ export class ArrRateEntryDto {
   occupancy_rates: Record<string, any>;
 }
 
+/** Adapter-defined restriction record returned in ARR_info pull response */
+export class ArrRestrictionEntryDto {
+  start_date: string;
+  end_date: string;
+  type: string;
+  value: string;
+}
+
+/** Adapter-defined merged date-range row for pull responses */
+export class ArrDataEntryDto {
+  start_date: string;
+  end_date: string;
+  free?: number;
+  occupancy_rates?: Record<string, any>;
+  restrictions?: Record<string, string>;
+}
+
 /**
  * ArrInfoResponseDto — adapter-defined response.
  * NOTE: exact response shape expected by STAAH is not confirmed from available doc snippets.
@@ -82,6 +99,12 @@ export class ArrInfoResponseDto {
   status: 'success' | 'fail';
   error_desc: string;
   trackingId: string;
+  propertyid?: string;
+  room_id?: string;
+  rate_id?: string;
+  currency?: string;
+  data?: ArrDataEntryDto[];
   inventory?: ArrInventoryEntryDto[];
   rates?: ArrRateEntryDto[];
+  restrictions?: ArrRestrictionEntryDto[];
 }

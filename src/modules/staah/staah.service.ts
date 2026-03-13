@@ -23,7 +23,7 @@ import {
 import {
   ReservationRequestDto,
   ReservationAckDto,
-  ReservationTrackingDto,
+  ReservationResponseDto,
 } from './dto/reservation.dto';
 import {
   ModifyReservationRequestDto,
@@ -87,6 +87,140 @@ export class StaahService {
         error_desc: STAAH_MESSAGES.INVALID_ARR_DATE_RANGE,
       });
     }
+  }
+
+  private parseIsoDateOnly(value: unknown, fieldName: string): Date {
+    if (typeof value !== 'string' || value.trim().length === 0) {
+      throw new BadRequestException(`${fieldName} is required.`);
+    }
+
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      throw new BadRequestException(`${fieldName} must be a valid date in YYYY-MM-DD format.`);
+    }
+
+    return parsed;
+  }
+
+  private buildArrDataRows(
+    inventoryRecords: Array<{ start_date: Date; end_date: Date; free: number }>,
+    rateRecords: Array<{ start_date: Date; end_date: Date; occupancy_rates: Prisma.JsonValue }>,
+    restrictionRecords: Array<{ start_date: Date; end_date: Date; type: string; value: string }>,
+  ): Array<{
+    start_date: string;
+    end_date: string;
+    free?: number;
+    occupancy_rates?: Record<string, any>;
+    restrictions?: Record<string, string>;
+  }> {
+    const rows = new Map<
+      string,
+      {
+        start_date: string;
+        end_date: string;
+        free?: number;
+        occupancy_rates?: Record<string, any>;
+        restrictions?: Record<string, string>;
+      }
+    >();
+
+    const keyFor = (startDate: Date, endDate: Date): string => {
+      return `${startDate.toISOString().slice(0, 10)}|${endDate.toISOString().slice(0, 10)}`;
+    };
+
+    const getOrCreateRow = (startDate: Date, endDate: Date) => {
+      const key = keyFor(startDate, endDate);
+      const existing = rows.get(key);
+      if (existing) {
+        return existing;
+      }
+
+      const created = {
+        start_date: startDate.toISOString().slice(0, 10),
+        end_date: endDate.toISOString().slice(0, 10),
+      };
+      rows.set(key, created);
+      return created;
+    };
+
+    for (const record of inventoryRecords) {
+      const row = getOrCreateRow(record.start_date, record.end_date);
+      row.free = record.free;
+    }
+
+    for (const record of rateRecords) {
+      const row = getOrCreateRow(record.start_date, record.end_date);
+      row.occupancy_rates = (record.occupancy_rates || {}) as Record<string, any>;
+    }
+
+    for (const record of restrictionRecords) {
+      const row = getOrCreateRow(record.start_date, record.end_date);
+      row.restrictions = row.restrictions || {};
+      row.restrictions[record.type] = record.value;
+    }
+
+    return [...rows.values()].sort((a, b) => {
+      if (a.start_date === b.start_date) {
+        return a.end_date.localeCompare(b.end_date);
+      }
+      return a.start_date.localeCompare(b.start_date);
+    });
+  }
+
+  private dedupeRestrictions(
+    rows: Array<{
+      start_date: Date;
+      end_date: Date;
+      type: string;
+      value: string;
+      received_at: Date;
+    }>,
+  ): Array<{
+    start_date: Date;
+    end_date: Date;
+    type: string;
+    value: string;
+  }> {
+    const seen = new Set<string>();
+    const deduped: Array<{
+      start_date: Date;
+      end_date: Date;
+      type: string;
+      value: string;
+    }> = [];
+
+    for (const row of rows) {
+      const key = `${row.start_date.toISOString().slice(0, 10)}|${row.end_date
+        .toISOString()
+        .slice(0, 10)}|${row.type}`;
+
+      // Rows are fetched newest-first for the same identity, so first match wins.
+      if (seen.has(key)) {
+        continue;
+      }
+
+      seen.add(key);
+      deduped.push({
+        start_date: row.start_date,
+        end_date: row.end_date,
+        type: row.type,
+        value: row.value,
+      });
+    }
+
+    return deduped.sort((a, b) => {
+      const startCmp = a.start_date.getTime() - b.start_date.getTime();
+      if (startCmp !== 0) {
+        return startCmp;
+      }
+
+      const endCmp = a.end_date.getTime() - b.end_date.getTime();
+      if (endCmp !== 0) {
+        return endCmp;
+      }
+
+      return a.type.localeCompare(b.type);
+    });
   }
 
   async getProductInfo(dto: ProductInfoRequestDto): Promise<ProductInfoResponseDto> {
@@ -190,12 +324,15 @@ export class StaahService {
 
     const roomtypes = rooms.map((room) => ({
       room_id: room.room_ref_code || String(room.room_ID),
+      OTA_room_id: room.room_ref_code || String(room.room_ID),
       room_name: room.room_title || 'Room',
     }));
 
     const plans = ratePlans.map((ratePlan) => ({
       room_id: ratePlan.room_id,
       rate_id: ratePlan.rateplan_id,
+      OTA_room_id: ratePlan.room_id,
+      OTA_rate_id: ratePlan.rateplan_id,
       rate_name: ratePlan.rateplan_name,
       currency: ratePlan.currency || 'INR',
     }));
@@ -203,6 +340,8 @@ export class StaahService {
     const roomRateMap = ratePlans.map((ratePlan) => ({
       room_id: ratePlan.room_id,
       rate_id: ratePlan.rateplan_id,
+      OTA_room_id: ratePlan.room_id,
+      OTA_rate_id: ratePlan.rateplan_id,
     }));
 
     return {
@@ -283,7 +422,24 @@ export class StaahService {
 
     try {
       for (const rateEntry of data) {
-        const { start_date, end_date, ...occupancyRates } = rateEntry;
+        if (!rateEntry || typeof rateEntry !== 'object') {
+          throw new BadRequestException('Each rate row must be a JSON object.');
+        }
+
+        const startDate = this.parseIsoDateOnly((rateEntry as any).start_date, 'start_date');
+        const endDate = this.parseIsoDateOnly((rateEntry as any).end_date, 'end_date');
+
+        const occupancyRates = Object.fromEntries(
+          Object.entries(rateEntry).filter(
+            ([key]) => key !== 'start_date' && key !== 'end_date',
+          ),
+        );
+
+        if (Object.keys(occupancyRates).length === 0) {
+          throw new BadRequestException(
+            'At least one occupancy rate field is required in each data row.',
+          );
+        }
 
         await this.prisma.staah_rate.upsert({
           where: {
@@ -291,8 +447,8 @@ export class StaahService {
               staah_property_id: propertyid,
               room_id,
               rateplan_id: rate_id,
-              start_date: new Date(start_date),
-              end_date: new Date(end_date),
+              start_date: startDate,
+              end_date: endDate,
             },
           },
           update: {
@@ -303,8 +459,8 @@ export class StaahService {
             staah_property_id: propertyid,
             room_id,
             rateplan_id: rate_id,
-            start_date: new Date(start_date),
-            end_date: new Date(end_date),
+            start_date: startDate,
+            end_date: endDate,
             occupancy_rates: occupancyRates,
           },
         });
@@ -315,6 +471,9 @@ export class StaahService {
         error_desc: '',
       };
     } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
       this.logger.error(`Rate update error: ${error.message}`);
       return {
         status: 'fail',
@@ -338,14 +497,37 @@ export class StaahService {
       }
 
       for (const row of dto.data) {
+        const startDate = this.parseIsoDateOnly(row.start_date, 'start_date');
+        const endDate = this.parseIsoDateOnly(row.end_date, 'end_date');
+
+        const identityWhere = {
+          staah_property_id: dto.propertyid,
+          room_id: dto.room_id,
+          rateplan_id: dto.rate_id,
+          start_date: startDate,
+          end_date: endDate,
+          type: row.type,
+        };
+
+        const existing = await this.prisma.staah_restriction.findFirst({
+          where: identityWhere,
+          select: { id: true },
+        });
+
+        if (existing) {
+          await this.prisma.staah_restriction.updateMany({
+            where: identityWhere,
+            data: {
+              value: row.value,
+              received_at: new Date(),
+            },
+          });
+          continue;
+        }
+
         await this.prisma.staah_restriction.create({
           data: {
-            staah_property_id: dto.propertyid,
-            room_id: dto.room_id,
-            rateplan_id: dto.rate_id,
-            start_date: new Date(row.start_date),
-            end_date: new Date(row.end_date),
-            type: row.type,
+            ...identityWhere,
             value: row.value,
           },
         });
@@ -366,20 +548,23 @@ export class StaahService {
 
   async receiveReservation(
     dto: ReservationRequestDto,
-  ): Promise<Array<ReservationAckDto | ReservationTrackingDto>> {
+  ): Promise<ReservationResponseDto> {
     const trackingId = dto.trackingId || this.createTrackingId();
     await this.logInbound('reservation', dto.propertyid, null, null, dto);
 
     const isValid = await this.validatePropertyMapping(dto.propertyid);
     if (!isValid) {
-      return [
-        {
-          bookingId: '',
-          status: 'fail',
-          error_desc: STAAH_MESSAGES.INVALID_PROPERTY_ID,
-        },
-        { trackingId },
-      ];
+      return {
+        status: 'fail',
+        trackingId,
+        bookings: [
+          {
+            bookingId: '',
+            status: 'fail',
+            error_desc: STAAH_MESSAGES.INVALID_PROPERTY_ID,
+          },
+        ],
+      };
     }
 
     try {
@@ -414,17 +599,28 @@ export class StaahService {
         });
       }
 
-      return [...responses, { trackingId }];
+      const status = responses.every((row) => row.status === 'success')
+        ? 'success'
+        : 'fail';
+
+      return {
+        status,
+        trackingId,
+        bookings: responses,
+      };
     } catch (error) {
       this.logger.error(`Reservation receive error: ${error.message}`);
-      return [
-        {
-          bookingId: '',
-          status: 'fail',
-          error_desc: `${STAAH_MESSAGES.RESERVATION_RECEIVE_FAILED} ${error.message}`,
-        },
-        { trackingId },
-      ];
+      return {
+        status: 'fail',
+        trackingId,
+        bookings: [
+          {
+            bookingId: '',
+            status: 'fail',
+            error_desc: `${STAAH_MESSAGES.RESERVATION_RECEIVE_FAILED} ${error.message}`,
+          },
+        ],
+      };
     }
   }
 
@@ -518,17 +714,17 @@ export class StaahService {
       };
     }
 
-    const fromDate = new Date(dto.from_date);
-    const toDate = new Date(dto.to_date);
-  this.ensureValidArrDateRange(fromDate, toDate);
+    const fromDate = this.parseIsoDateOnly(dto.from_date, 'from_date');
+    const toDate = this.parseIsoDateOnly(dto.to_date, 'to_date');
+    this.ensureValidArrDateRange(fromDate, toDate);
 
-    const [inventoryRecords, rateRecords] = await Promise.all([
+    const [inventoryRecords, rateRecords, restrictionRows, ratePlan] = await Promise.all([
       this.prisma.staah_inventory.findMany({
         where: {
           staah_property_id: dto.propertyid,
           room_id: dto.room_id,
-          start_date: { gte: fromDate },
-          end_date: { lte: toDate },
+          start_date: { lte: toDate },
+          end_date: { gte: fromDate },
         },
         orderBy: { start_date: 'asc' },
       }),
@@ -537,17 +733,45 @@ export class StaahService {
           staah_property_id: dto.propertyid,
           room_id: dto.room_id,
           rateplan_id: dto.rate_id,
-          start_date: { gte: fromDate },
-          end_date: { lte: toDate },
+          start_date: { lte: toDate },
+          end_date: { gte: fromDate },
         },
         orderBy: { start_date: 'asc' },
       }),
+      this.prisma.staah_restriction.findMany({
+        where: {
+          staah_property_id: dto.propertyid,
+          room_id: dto.room_id,
+          rateplan_id: dto.rate_id,
+          start_date: { lte: toDate },
+          end_date: { gte: fromDate },
+        },
+        orderBy: [{ start_date: 'asc' }, { received_at: 'desc' }, { id: 'desc' }],
+      }),
+      this.prisma.staah_rateplan.findFirst({
+        where: {
+          staah_property_id: dto.propertyid,
+          room_id: dto.room_id,
+          rateplan_id: dto.rate_id,
+        },
+        select: {
+          currency: true,
+        },
+      }),
     ]);
+
+    const restrictionRecords = this.dedupeRestrictions(restrictionRows);
+    const data = this.buildArrDataRows(inventoryRecords, rateRecords, restrictionRecords);
 
     return {
       status: 'success',
       error_desc: '',
       trackingId,
+      propertyid: dto.propertyid,
+      room_id: dto.room_id,
+      rate_id: dto.rate_id,
+      currency: ratePlan?.currency || 'INR',
+      data,
       inventory: inventoryRecords.map((record) => ({
         start_date: record.start_date.toISOString().slice(0, 10),
         end_date: record.end_date.toISOString().slice(0, 10),
@@ -557,6 +781,12 @@ export class StaahService {
         start_date: record.start_date.toISOString().slice(0, 10),
         end_date: record.end_date.toISOString().slice(0, 10),
         occupancy_rates: record.occupancy_rates as Record<string, any>,
+      })),
+      restrictions: restrictionRecords.map((record) => ({
+        start_date: record.start_date.toISOString().slice(0, 10),
+        end_date: record.end_date.toISOString().slice(0, 10),
+        type: record.type,
+        value: record.value,
       })),
     };
   }
@@ -579,7 +809,7 @@ export class StaahService {
       };
     }
 
-    const [inventoryRecords, rateRecords] = await Promise.all([
+    const [inventoryRecords, rateRecords, restrictionRows, ratePlan] = await Promise.all([
       this.prisma.staah_inventory.findMany({
         where: {
           staah_property_id: dto.propertyid,
@@ -595,12 +825,38 @@ export class StaahService {
         },
         orderBy: { start_date: 'asc' },
       }),
+      this.prisma.staah_restriction.findMany({
+        where: {
+          staah_property_id: dto.propertyid,
+          room_id: dto.room_id,
+          rateplan_id: dto.rate_id,
+        },
+        orderBy: [{ start_date: 'asc' }, { received_at: 'desc' }, { id: 'desc' }],
+      }),
+      this.prisma.staah_rateplan.findFirst({
+        where: {
+          staah_property_id: dto.propertyid,
+          room_id: dto.room_id,
+          rateplan_id: dto.rate_id,
+        },
+        select: {
+          currency: true,
+        },
+      }),
     ]);
+
+    const restrictionRecords = this.dedupeRestrictions(restrictionRows);
+    const data = this.buildArrDataRows(inventoryRecords, rateRecords, restrictionRecords);
 
     return {
       status: 'success',
       error_desc: '',
       trackingId,
+      propertyid: dto.propertyid,
+      room_id: dto.room_id,
+      rate_id: dto.rate_id,
+      currency: ratePlan?.currency || 'INR',
+      data,
       inventory: inventoryRecords.map((record) => ({
         start_date: record.start_date.toISOString().slice(0, 10),
         end_date: record.end_date.toISOString().slice(0, 10),
@@ -610,6 +866,12 @@ export class StaahService {
         start_date: record.start_date.toISOString().slice(0, 10),
         end_date: record.end_date.toISOString().slice(0, 10),
         occupancy_rates: record.occupancy_rates as Record<string, any>,
+      })),
+      restrictions: restrictionRecords.map((record) => ({
+        start_date: record.start_date.toISOString().slice(0, 10),
+        end_date: record.end_date.toISOString().slice(0, 10),
+        type: record.type,
+        value: record.value,
       })),
     };
   }

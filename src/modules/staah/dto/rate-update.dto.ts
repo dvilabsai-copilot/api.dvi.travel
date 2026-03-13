@@ -1,22 +1,11 @@
 import {
+  IsArray,
   IsIn,
   IsNotEmpty,
-  IsArray,
   IsString,
-  IsDateString,
-  ValidateNested,
 } from 'class-validator';
-import { Type } from 'class-transformer';
 
-export class RateEntryDto {
-  @IsDateString()
-  start_date: string;
-
-  @IsDateString()
-  end_date: string;
-
-  [key: string]: any;
-}
+export type RateEntryDto = Record<string, any>;
 
 export class RateUpdateRequestDto {
   @IsString()
@@ -41,8 +30,6 @@ export class RateUpdateRequestDto {
   version: string;
 
   @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => RateEntryDto)
   data: RateEntryDto[];
 }
 
