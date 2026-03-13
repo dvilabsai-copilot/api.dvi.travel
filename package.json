@@ -9,7 +9,8 @@
     "start": "node dist/main.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev --name init",
-    "seed": "ts-node prisma/seed.ts"
+    "seed": "ts-node prisma/seed.ts",
+    "seed:staah:test": "ts-node seed-staah-test-data.ts"
   },
   "dependencies": {
     "@nestjs/axios": "^4.0.1",

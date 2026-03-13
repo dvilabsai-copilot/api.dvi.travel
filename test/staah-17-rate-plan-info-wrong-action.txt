@@ -1,0 +1,36 @@
+============================================================
+STAAH API Test Log
+============================================================
+Test Name: staah-17-rate-plan-info-wrong-action
+Timestamp: 2026-03-13T09:56:32.635Z
+Status: FAILED
+============================================================
+
+REQUEST:
+--------
+URL: http://127.0.0.1:4006/api/v1/staah/ratePlanInfo
+Method: POST
+Headers:
+{}
+
+Body:
+{
+  "apikey": "staah-local-test-key",
+  "propertyid": "STAAH_TEST_HOTEL_1",
+  "action": "wrong_action",
+  "version": "2"
+}
+
+RESPONSE:
+---------
+Status: 400
+Error: Request failed with status code 400
+
+Response Data:
+{
+  "message": [
+    "action must be one of the following values: roomrate_info"
+  ],
+  "error": "Bad Request",
+  "statusCode": 400
+}
