@@ -36,8 +36,22 @@ jobs:
             ${{ secrets.BACKEND_ENV_FILE }}
             EOF
 
+            echo "Node and npm versions..."
+            node -v
+            npm -v
+
+            echo "Stopping PM2 process before reinstall..."
+            pm2 stop dvi-backend || true
+
             echo "Installing dependencies..."
-            npm ci
+            rm -rf node_modules
+            npm cache verify || npm cache clean --force
+            if ! npm ci --no-audit --no-fund; then
+              echo "npm ci failed on first attempt. Cleaning install artifacts and retrying once..."
+              rm -rf node_modules
+              npm cache clean --force
+              npm ci --no-audit --no-fund
+            fi
 
             echo "Generating Prisma client..."
             npx prisma generate
