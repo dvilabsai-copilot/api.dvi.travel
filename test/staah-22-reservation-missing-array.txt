@@ -1,0 +1,37 @@
+============================================================
+STAAH API Test Log
+============================================================
+Test Name: staah-22-reservation-missing-array
+Timestamp: 2026-03-13T09:56:32.649Z
+Status: FAILED
+============================================================
+
+REQUEST:
+--------
+URL: http://127.0.0.1:4006/api/v1/staah/reservation
+Method: POST
+Headers:
+{}
+
+Body:
+{
+  "apikey": "staah-local-test-key",
+  "propertyid": "STAAH_TEST_HOTEL_1",
+  "action": "reservation_info",
+  "version": "2",
+  "reservations": {}
+}
+
+RESPONSE:
+---------
+Status: 400
+Error: Request failed with status code 400
+
+Response Data:
+{
+  "message": [
+    "reservations.reservation must be an array"
+  ],
+  "error": "Bad Request",
+  "statusCode": 400
+}

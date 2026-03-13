@@ -1,0 +1,37 @@
+============================================================
+STAAH API Test Log
+============================================================
+Test Name: staah-28-arr-info-invalid-date-range
+Timestamp: 2026-03-13T09:56:32.724Z
+Status: FAILED
+============================================================
+
+REQUEST:
+--------
+URL: http://127.0.0.1:4006/api/v1/staah/arrInfo
+Method: POST
+Headers:
+{}
+
+Body:
+{
+  "apikey": "staah-local-test-key",
+  "propertyid": "STAAH_TEST_HOTEL_1",
+  "room_id": "DELUXE_ROOM",
+  "rate_id": "CP_PLAN",
+  "action": "ARR_info",
+  "from_date": "2026-10-31",
+  "to_date": "2026-10-01",
+  "version": "2"
+}
+
+RESPONSE:
+---------
+Status: 400
+Error: Request failed with status code 400
+
+Response Data:
+{
+  "status": "fail",
+  "error_desc": "Invalid ARR date range. from_date must be less than or equal to to_date."
+}

@@ -3045,6 +3045,8 @@ model dvi_hotel {
   hotel_hotspot_status                                  Int       @default(0)
   axisrooms_property_id                                 String?   @db.VarChar(100)
   axisrooms_enabled                                     Int       @default(0) @db.TinyInt
+  staah_property_id                                     String?   @db.VarChar(100)
+  staah_enabled                                         Int       @default(0) @db.TinyInt
   createdby                                             Int       @default(0)
   createdon                                             DateTime? @db.DateTime(0)
   updatedon                                             DateTime? @updatedAt @db.DateTime(0)
@@ -3083,6 +3085,8 @@ model dvi_hotel {
   @@index([hotel_category, hotel_city], map: "idx_hotel_category_city")
   @@index([axisrooms_property_id], map: "idx_hotel_axisrooms_property")
   @@index([axisrooms_enabled], map: "idx_hotel_axisrooms_enabled")
+  @@index([staah_property_id], map: "idx_hotel_staah_property")
+  @@index([staah_enabled], map: "idx_hotel_staah_enabled")
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
@@ -5844,4 +5848,111 @@ model axisrooms_inbound_log {
   @@index([type], map: "idx_axisrooms_log_type")
   @@index([axisrooms_property_id], map: "idx_axisrooms_log_property")
   @@index([received_at], map: "idx_axisrooms_log_received")
+}
+
+/// STAAH Rate Plan Master
+/// Stores rate plans (ratePlanInfo) for each room
+model staah_rateplan {
+  id                      Int      @id @default(autoincrement())
+  staah_property_id       String   @db.VarChar(64)
+  room_id                 String   @db.VarChar(64)
+  rateplan_id             String   @db.VarChar(64)
+  rateplan_name           String   @db.VarChar(255)
+  occupancy               Json
+  commission_perc         String?  @db.VarChar(20)
+  tax_perc                String?  @db.VarChar(20)
+  currency                String?  @db.VarChar(10)
+  created_at              DateTime @default(now()) @db.DateTime(0)
+
+  @@unique([staah_property_id, room_id, rateplan_id], map: "uniq_staah_rateplan")
+  @@index([staah_property_id], map: "idx_staah_rateplan_property")
+  @@index([room_id], map: "idx_staah_rateplan_room")
+}
+
+/// STAAH Inventory Updates
+/// Stores inventory pushed from STAAH
+model staah_inventory {
+  id                      Int      @id @default(autoincrement())
+  staah_property_id       String   @db.VarChar(64)
+  room_id                 String   @db.VarChar(64)
+  start_date              DateTime @db.Date
+  end_date                DateTime @db.Date
+  free                    Int
+  received_at             DateTime @default(now()) @db.DateTime(0)
+
+  @@unique([staah_property_id, room_id, start_date, end_date], map: "uniq_staah_inventory")
+  @@index([staah_property_id], map: "idx_staah_inventory_property")
+  @@index([room_id], map: "idx_staah_inventory_room")
+  @@index([start_date], map: "idx_staah_inventory_start")
+}
+
+/// STAAH Rate Updates
+/// Stores rates pushed from STAAH
+model staah_rate {
+  id                      Int      @id @default(autoincrement())
+  staah_property_id       String   @db.VarChar(64)
+  room_id                 String   @db.VarChar(64)
+  rateplan_id             String   @db.VarChar(64)
+  start_date              DateTime @db.Date
+  end_date                DateTime @db.Date
+  occupancy_rates         Json
+  received_at             DateTime @default(now()) @db.DateTime(0)
+
+  @@unique([staah_property_id, room_id, rateplan_id, start_date, end_date], map: "uniq_staah_rate")
+  @@index([staah_property_id], map: "idx_staah_rate_property")
+  @@index([room_id], map: "idx_staah_rate_room")
+  @@index([rateplan_id], map: "idx_staah_rate_rateplan")
+  @@index([start_date], map: "idx_staah_rate_start")
+}
+
+/// STAAH Restriction Updates
+/// Stores restrictions pushed from STAAH
+model staah_restriction {
+  id                      Int      @id @default(autoincrement())
+  staah_property_id       String   @db.VarChar(64)
+  room_id                 String   @db.VarChar(64)
+  rateplan_id             String   @db.VarChar(64)
+  start_date              DateTime @db.Date
+  end_date                DateTime @db.Date
+  type                    String   @db.VarChar(50)
+  value                   String   @db.VarChar(50)
+  received_at             DateTime @default(now()) @db.DateTime(0)
+
+  @@index([staah_property_id], map: "idx_staah_restriction_property")
+  @@index([room_id], map: "idx_staah_restriction_room")
+  @@index([rateplan_id], map: "idx_staah_restriction_rateplan")
+  @@index([start_date], map: "idx_staah_restriction_start")
+  @@index([type], map: "idx_staah_restriction_type")
+}
+
+/// STAAH Inbound Log
+/// Logs all inbound requests from STAAH for debugging
+model staah_inbound_log {
+  id                      Int      @id @default(autoincrement())
+  type                    String   @db.VarChar(50)
+  staah_property_id       String?  @db.VarChar(64)
+  room_id                 String?  @db.VarChar(64)
+  rateplan_id             String?  @db.VarChar(64)
+  payload                 Json
+  received_at             DateTime @default(now()) @db.DateTime(0)
+
+  @@index([type], map: "idx_staah_log_type")
+  @@index([staah_property_id], map: "idx_staah_log_property")
+  @@index([received_at], map: "idx_staah_log_received")
+}
+
+/// STAAH Reservation Payload Log
+/// Stores reservation/create/modify/cancel payloads for phase-1 processing
+model staah_reservation {
+  id                      Int      @id @default(autoincrement())
+  type                    String   @db.VarChar(50)
+  staah_property_id       String   @db.VarChar(64)
+  reservation_id          String?  @db.VarChar(100)
+  payload                 Json
+  received_at             DateTime @default(now()) @db.DateTime(0)
+
+  @@index([type], map: "idx_staah_reservation_type")
+  @@index([staah_property_id], map: "idx_staah_reservation_property")
+  @@index([reservation_id], map: "idx_staah_reservation_id")
+  @@index([received_at], map: "idx_staah_reservation_received")
 }
