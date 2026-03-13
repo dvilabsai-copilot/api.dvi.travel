@@ -113,29 +113,31 @@ export class StaahService {
     occupancy_rates?: Record<string, any>;
     restrictions?: Record<string, string>;
   }> {
+    type ArrDataRow = {
+      start_date: string;
+      end_date: string;
+      free?: number;
+      occupancy_rates?: Record<string, any>;
+      restrictions?: Record<string, string>;
+    };
+
     const rows = new Map<
       string,
-      {
-        start_date: string;
-        end_date: string;
-        free?: number;
-        occupancy_rates?: Record<string, any>;
-        restrictions?: Record<string, string>;
-      }
+      ArrDataRow
     >();
 
     const keyFor = (startDate: Date, endDate: Date): string => {
       return `${startDate.toISOString().slice(0, 10)}|${endDate.toISOString().slice(0, 10)}`;
     };
 
-    const getOrCreateRow = (startDate: Date, endDate: Date) => {
+    const getOrCreateRow = (startDate: Date, endDate: Date): ArrDataRow => {
       const key = keyFor(startDate, endDate);
       const existing = rows.get(key);
       if (existing) {
         return existing;
       }
 
-      const created = {
+      const created: ArrDataRow = {
         start_date: startDate.toISOString().slice(0, 10),
         end_date: endDate.toISOString().slice(0, 10),
       };
