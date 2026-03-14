@@ -1,6 +1,19 @@
-import { Controller, Post, Get, Param, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  Controller,
+  Post,
+  Get,
+  Param,
+  Logger,
+  Query,
+  UploadedFile,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 import { TboSoapSyncService } from '../services/tbo-soap-sync.service';
 import { HobseHotelMasterSyncService } from '../services/hobse-hotel-master-sync.service';
+import { HobseHotelCsvImportService } from '../services/hobse-hotel-csv-import.service';
 
 /**
  * Hotel Master Sync Controller
@@ -15,6 +28,7 @@ export class HotelMasterSyncController {
   constructor(
     private readonly tboSoapService: TboSoapSyncService,
     private readonly hobseHotelMasterSyncService: HobseHotelMasterSyncService,
+    private readonly hobseHotelCsvImportService: HobseHotelCsvImportService,
   ) {}
 
   /**
@@ -106,5 +120,48 @@ export class HotelMasterSyncController {
         message: `HOBSE sync failed: ${error.message}`,
       };
     }
+  }
+
+  /**
+   * Import HOBSE/Justa hotels from uploaded CSV/XLS/XLSX into dvi_hotel + dvi_cities mapping
+   * POST /api/v1/hotels/sync/hobse/import/csv?createMissingCities=true
+   * multipart/form-data with file field: "file"
+   */
+  @Post('hobse/import/csv')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: 15 * 1024 * 1024 },
+    }),
+  )
+  async importHobseCsv(
+    @UploadedFile() file: Express.Multer.File,
+    @Query('createMissingCities') createMissingCities = 'false',
+  ) {
+    if (!file) {
+      throw new BadRequestException('No file uploaded. Use multipart/form-data with field name "file"');
+    }
+
+    const ext = (file.originalname?.split('.').pop() || '').toLowerCase();
+    if (!['csv', 'xls', 'xlsx'].includes(ext)) {
+      throw new BadRequestException('Unsupported file type. Allowed: .csv, .xls, .xlsx');
+    }
+
+    const allowCreateMissingCities = String(createMissingCities).toLowerCase() === 'true';
+    this.logger.log(
+      `🔄 Starting CSV import for ${file.originalname} | createMissingCities=${allowCreateMissingCities}`,
+    );
+
+    const summary = await this.hobseHotelCsvImportService.importFromFileBuffer(file.buffer, {
+      createMissingCities: allowCreateMissingCities,
+    });
+
+    return {
+      success: true,
+      message: 'CSV import completed',
+      fileName: file.originalname,
+      createMissingCities: allowCreateMissingCities,
+      summary,
+    };
   }
 }

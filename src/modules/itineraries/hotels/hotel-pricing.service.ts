@@ -255,6 +255,31 @@ export class HotelPricingService {
     }
 
     // 2. If no city match, try state fallback
+    // 1b. If no hotels found with preferred category in city, try ANY category in city
+    if (allHotels.length === 0 && cityTrim) {
+      const { candidates: candidatesAny } = await this.resolveCityCandidates(cityTrim);
+      const whereAny: any = { deleted: false, status: 1 };
+      for (const c of candidatesAny) {
+        const hotels = await this.prisma.dvi_hotel.findMany({
+          where: { ...whereAny, hotel_city: c },
+          select: {
+            hotel_id: true,
+            hotel_name: true,
+            hotel_margin: true,
+            hotel_margin_gst_type: true,
+            hotel_margin_gst_percentage: true,
+            hotel_hotspot_status: true,
+            hotel_city: true,
+            hotel_state: true,
+          },
+        });
+        if (hotels.length > 0) {
+          allHotels = allHotels.concat(hotels);
+        }
+      }
+    }
+
+    // 2. If no city match, try state fallback
     if (allHotels.length === 0 && targetStateId) {
       const stateHotels = await this.prisma.dvi_hotel.findMany({
         where: { ...whereBase, hotel_state: targetStateId },
