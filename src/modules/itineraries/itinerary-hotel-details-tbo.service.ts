@@ -83,9 +83,9 @@ export class ItineraryHotelDetailsTboService {
     const hotelsByRoute = await this.fetchHotelsForRoutes(routes, noOfNights);
     
     // Step 3.5: Fetch HOBSE hotels and merge with TBO hotels
-    // First, create a city code map for HOBSE (maps destination to TBO city code)
-    const cityCodeMap = await this.batchMapDestinationsToCityCodes(routes);
-    const hobseHotelsByRoute = await this.fetchHobseHotelsForRoutes(routes, noOfNights, cityCodeMap);
+    // First, create a HOBSE-specific city code map using hobse_city_code
+    const hobseCityCodeMap = await this.batchMapDestinationsToHobseCityCodes(routes);
+    const hobseHotelsByRoute = await this.fetchHobseHotelsForRoutes(routes, noOfNights, hobseCityCodeMap);
     
     // Merge HOBSE hotels into the TBO hotel map
     hobseHotelsByRoute.forEach((hobseHotels, routeId) => {
@@ -241,6 +241,53 @@ export class ItineraryHotelDetailsTboService {
   }
 
   /**
+     * Batch load HOBSE city codes for all destinations using hobse_city_code field.
+     */
+    private async batchMapDestinationsToHobseCityCodes(routes: any[]): Promise<Record<string, string>> {
+      const cityCodeMap: Record<string, string> = {};
+      const uniqueDestinations = [...new Set(routes.map(r => (r as any).next_visiting_location))] as string[];
+
+      this.logger.log(`📍 Loading HOBSE city codes for ${uniqueDestinations.length} unique destinations`);
+      if (uniqueDestinations.length === 0) return cityCodeMap;
+
+      const allCities = await this.prisma.dvi_cities.findMany({
+        select: { name: true, hobse_city_code: true } as any,
+      });
+      this.logger.log(`✅ Loaded ${allCities.length} cities for HOBSE code lookup`);
+
+      const cityNameMap: Record<string, string> = {};
+      const cityPrefixMap: Record<string, string> = {};
+
+      allCities.forEach((city: any) => {
+        if (city.hobse_city_code) {
+          cityNameMap[city.name.toLowerCase()] = String(city.hobse_city_code);
+          const prefix = city.name.split(',')[0].trim().toLowerCase();
+          cityPrefixMap[prefix] = String(city.hobse_city_code);
+        }
+      });
+
+      uniqueDestinations.forEach(destination => {
+        if (!destination) return;
+        const lower = destination.toLowerCase();
+        let code = cityNameMap[lower];
+
+        if (!code) {
+          const firstPart = destination.split(/[,\(\-]/)[0].trim().toLowerCase();
+          code = cityNameMap[firstPart] || cityPrefixMap[firstPart];
+        }
+
+        if (code) {
+          this.logger.log(`✅ HOBSE "${destination}" -> code: ${code}`);
+          cityCodeMap[destination] = code;
+        } else {
+          this.logger.warn(`❌ No HOBSE city code found for: "${destination}"`);
+        }
+      });
+
+      return cityCodeMap;
+  }
+
+  /**
    * Search hotels for a single route (used in parallel execution)
    */
   private async searchHotelsForRoute(
@@ -320,15 +367,14 @@ export class ItineraryHotelDetailsTboService {
         }
         
         const destination = (route as any).next_visiting_location;
-        // Get the city code from the map instead of using the destination name
+        // Get the HOBSE city code from the pre-built map
         const cityCode = cityCodeMap[destination];
         
         if (!cityCode) {
-          this.logger.warn(`   ⚠️  No city code mapping for destination "${destination}" - skipping HOBSE search`);
+          this.logger.warn(`   ⚠️  No HOBSE city code for destination "${destination}" - skipping HOBSE search`);
           hotelsByRoute.set(routeId, []);
           continue;
         }
-        
         const routeDate = new Date((route as any).itinerary_route_date);
         const checkOutDate = new Date(routeDate);
         checkOutDate.setDate(checkOutDate.getDate() + 1);

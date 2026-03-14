@@ -10,6 +10,7 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev --name init",
     "seed": "ts-node prisma/seed.ts",
+    "seed:justa": "node scripts/import-justa-hotels.js",
     "seed:staah:test": "ts-node seed-staah-test-data.ts"
   },
   "dependencies": {

@@ -1,0 +1,1739 @@
+{
+  "generatedAt": "2026-03-14T21:00:41.738Z",
+  "baseUrl": "http://127.0.0.1:4006/api/v1",
+  "cityChain": [
+    "Udaipur",
+    "Parsoli",
+    "Nathdwara",
+    "Bangalore",
+    "Goa"
+  ],
+  "request": {
+    "createUrl": "http://127.0.0.1:4006/api/v1/itineraries",
+    "payload": {
+      "plan": {
+        "itinerary_plan_id": 0,
+        "agent_id": 126,
+        "staff_id": 0,
+        "location_id": 0,
+        "arrival_point": "Udaipur",
+        "departure_point": "Udaipur",
+        "itinerary_preference": 3,
+        "itinerary_type": 2,
+        "preferred_hotel_category": [
+          2
+        ],
+        "hotel_facilities": [],
+        "trip_start_date": "2026-04-13T21:00:17.389+05:30",
+        "trip_end_date": "2026-04-15T21:00:17.389+05:30",
+        "pick_up_date_and_time": "2026-04-13T21:00:17.389+05:30",
+        "arrival_type": 1,
+        "departure_type": 1,
+        "no_of_nights": 2,
+        "no_of_days": 3,
+        "budget": 25000,
+        "entry_ticket_required": 0,
+        "guide_for_itinerary": 0,
+        "nationality": 101,
+        "food_type": 0,
+        "adult_count": 2,
+        "child_count": 0,
+        "infant_count": 0,
+        "special_instructions": "Auto-generated from Justa cities for HOBSE production test"
+      },
+      "routes": [
+        {
+          "location_name": "Udaipur",
+          "next_visiting_location": "Bangalore",
+          "itinerary_route_date": "2026-04-13T21:00:17.389+05:30",
+          "no_of_days": 1,
+          "no_of_km": "",
+          "direct_to_next_visiting_place": 0,
+          "via_route": "",
+          "via_routes": []
+        },
+        {
+          "location_name": "Bangalore",
+          "next_visiting_location": "Goa",
+          "itinerary_route_date": "2026-04-14T21:00:17.389+05:30",
+          "no_of_days": 2,
+          "no_of_km": "",
+          "direct_to_next_visiting_place": 0,
+          "via_route": "",
+          "via_routes": []
+        },
+        {
+          "location_name": "Goa",
+          "next_visiting_location": "Udaipur",
+          "itinerary_route_date": "2026-04-15T21:00:17.389+05:30",
+          "no_of_days": 3,
+          "no_of_km": "",
+          "direct_to_next_visiting_place": 0,
+          "via_route": "",
+          "via_routes": []
+        }
+      ],
+      "vehicles": [
+        {
+          "vehicle_type_id": 1,
+          "vehicle_count": 1
+        }
+      ],
+      "travellers": [
+        {
+          "room_id": 1,
+          "traveller_type": 1
+        },
+        {
+          "room_id": 1,
+          "traveller_type": 1
+        }
+      ]
+    }
+  },
+  "responses": {
+    "create": {
+      "planId": 18,
+      "quoteId": "DVI2026031",
+      "routeIds": [
+        357,
+        358,
+        359
+      ],
+      "message": "Plan created/updated with routes, vehicles, travellers, hotspots, and hotels."
+    },
+    "details": {
+      "quoteId": "DVI2026031",
+      "planId": 18,
+      "isConfirmed": false,
+      "dateRange": "2026-04-14 to 2026-04-16",
+      "roomCount": 1,
+      "extraBed": 0,
+      "childWithBed": 0,
+      "childWithoutBed": 0,
+      "adults": 2,
+      "children": 0,
+      "infants": 0,
+      "overallCost": "4366.00",
+      "days": [
+        {
+          "id": 357,
+          "dayNumber": 1,
+          "date": "2026-04-13T00:00:00.000Z",
+          "locationId": 0,
+          "departure": "Udaipur",
+          "arrival": "Bangalore",
+          "startTime": "09:00 PM",
+          "endTime": "08:00 PM",
+          "viaRoutes": [],
+          "segments": [
+            {
+              "type": "start",
+              "title": "Start your Journey",
+              "timeRange": "09:00 PM - 10:00 PM"
+            },
+            {
+              "type": "travel",
+              "from": "Udaipur",
+              "to": "Hotel",
+              "timeRange": "10:00 PM - 10:00 PM",
+              "distance": "0.00 KM",
+              "duration": null,
+              "note": "This may vary due to traffic conditions",
+              "isConflict": false,
+              "conflictReason": null
+            },
+            {
+              "type": "checkin",
+              "hotelName": "Hotel",
+              "hotelAddress": "",
+              "time": "10:00 PM"
+            },
+            {
+              "type": "hotspot",
+              "text": "Click to Add Hotspot",
+              "locationId": null
+            }
+          ]
+        },
+        {
+          "id": 358,
+          "dayNumber": 2,
+          "date": "2026-04-14T00:00:00.000Z",
+          "locationId": 0,
+          "departure": "Bangalore",
+          "arrival": "Goa",
+          "startTime": "08:00 AM",
+          "endTime": "08:00 PM",
+          "viaRoutes": [],
+          "segments": [
+            {
+              "type": "start",
+              "title": "Start Your Day",
+              "timeRange": "08:00 AM - 09:00 AM"
+            },
+            {
+              "type": "travel",
+              "from": "Bangalore",
+              "to": "Hotel",
+              "timeRange": "09:00 AM - 09:00 AM",
+              "distance": "0.00 KM",
+              "duration": null,
+              "note": "This may vary due to traffic conditions",
+              "isConflict": false,
+              "conflictReason": null
+            },
+            {
+              "type": "checkin",
+              "hotelName": "Hotel",
+              "hotelAddress": "",
+              "time": "09:00 AM"
+            },
+            {
+              "type": "hotspot",
+              "text": "Click to Add Hotspot",
+              "locationId": null
+            }
+          ]
+        },
+        {
+          "id": 359,
+          "dayNumber": 3,
+          "date": "2026-04-15T00:00:00.000Z",
+          "locationId": 0,
+          "departure": "Goa",
+          "arrival": "Udaipur",
+          "startTime": "08:00 AM",
+          "endTime": "08:00 PM",
+          "viaRoutes": [],
+          "segments": [
+            {
+              "type": "travel",
+              "from": "Goa",
+              "to": "Udaipur",
+              "timeRange": "09:00 AM - 09:00 AM",
+              "distance": "0.00 KM",
+              "duration": null,
+              "note": "This may vary due to traffic conditions",
+              "isConflict": false,
+              "conflictReason": null
+            },
+            {
+              "type": "hotspot",
+              "text": "Click to Add Hotspot",
+              "locationId": null
+            }
+          ]
+        }
+      ],
+      "vehicles": [
+        {
+          "vendorName": "MYSORE",
+          "branchName": "MYSORE",
+          "vehicleOrigin": "MYSORE",
+          "totalQty": "1",
+          "totalAmount": "9702.00",
+          "vendorEligibleId": 338,
+          "vehicleTypeId": 1,
+          "vehicleTypeName": "Sedan",
+          "isAssigned": false,
+          "rentalCharges": 8400,
+          "tollCharges": 0,
+          "parkingCharges": 0,
+          "driverCharges": 0,
+          "permitCharges": 0,
+          "dayWisePricing": [
+            {
+              "date": "2026-04-13",
+              "dayLabel": "Day 1 | Mon, Apr 13, 2026",
+              "route": "Udaipur → Bangalore",
+              "travelKms": 0,
+              "sightseeingKms": 0,
+              "totalKms": 0,
+              "rentalCharges": 2800,
+              "tollCharges": 0,
+              "parkingCharges": 0,
+              "driverCharges": 0,
+              "permitCharges": 0,
+              "totalCharges": 2800
+            },
+            {
+              "date": "2026-04-14",
+              "dayLabel": "Day 2 | Tue, Apr 14, 2026",
+              "route": "Bangalore → Goa",
+              "travelKms": 0,
+              "sightseeingKms": 0,
+              "totalKms": 0,
+              "rentalCharges": 2800,
+              "tollCharges": 0,
+              "parkingCharges": 0,
+              "driverCharges": 0,
+              "permitCharges": 0,
+              "totalCharges": 2800
+            },
+            {
+              "date": "2026-04-15",
+              "dayLabel": "Day 3 | Wed, Apr 15, 2026",
+              "route": "Goa → Udaipur",
+              "travelKms": 0,
+              "sightseeingKms": 0,
+              "totalKms": 0,
+              "rentalCharges": 2800,
+              "tollCharges": 0,
+              "parkingCharges": 0,
+              "driverCharges": 0,
+              "permitCharges": 0,
+              "totalCharges": 2800
+            }
+          ],
+          "before6amDriver": 0,
+          "before6amVendor": 0,
+          "after8pmDriver": 0,
+          "after8pmVendor": 0,
+          "breakdown": [
+            {
+              "label": "Rental Charges",
+              "amount": 8400
+            }
+          ],
+          "packageLabel": "Outstation - 0KM",
+          "col1Distance": "0.00 KM",
+          "col2Distance": "0.00 KM",
+          "col3Distance": "0.00 KM",
+          "col1Duration": "0 Min",
+          "col2Duration": "0 Min",
+          "col3Duration": "0 Min"
+        },
+        {
+          "vendorName": "VSR-TIRUPATI",
+          "branchName": "VSR-TIRUPATI",
+          "vehicleOrigin": "VSR-TIRUPATI",
+          "totalQty": "1",
+          "totalAmount": "14949.90",
+          "vendorEligibleId": 339,
+          "vehicleTypeId": 1,
+          "vehicleTypeName": "Sedan",
+          "isAssigned": false,
+          "rentalCharges": 12600,
+          "tollCharges": 0,
+          "parkingCharges": 0,
+          "driverCharges": 0,
+          "permitCharges": 0,
+          "dayWisePricing": [
+            {
+              "date": "2026-04-13",
+              "dayLabel": "Day 1 | Mon, Apr 13, 2026",
+              "route": "Udaipur → Bangalore",
+              "travelKms": 0,
+              "sightseeingKms": 0,
+              "totalKms": 0,
+              "rentalCharges": 4200,
+              "tollCharges": 0,
+              "parkingCharges": 0,
+              "driverCharges": 0,
+              "permitCharges": 0,
+              "totalCharges": 4200
+            },
+            {
+              "date": "2026-04-14",
+              "dayLabel": "Day 2 | Tue, Apr 14, 2026",
+              "route": "Bangalore → Goa",
+              "travelKms": 0,
+              "sightseeingKms": 0,
+              "totalKms": 0,
+              "rentalCharges": 4200,
+              "tollCharges": 0,
+              "parkingCharges": 0,
+              "driverCharges": 0,
+              "permitCharges": 0,
+              "totalCharges": 4200
+            },
+            {
+              "date": "2026-04-15",
+              "dayLabel": "Day 3 | Wed, Apr 15, 2026",
+              "route": "Goa → Udaipur",
+              "travelKms": 0,
+              "sightseeingKms": 0,
+              "totalKms": 0,
+              "rentalCharges": 4200,
+              "tollCharges": 0,
+              "parkingCharges": 0,
+              "driverCharges": 0,
+              "permitCharges": 0,
+              "totalCharges": 4200
+            }
+          ],
+          "before6amDriver": 0,
+          "before6amVendor": 0,
+          "after8pmDriver": 0,
+          "after8pmVendor": 0,
+          "breakdown": [
+            {
+              "label": "Rental Charges",
+              "amount": 12600
+            }
+          ],
+          "packageLabel": "Outstation - 0KM",
+          "col1Distance": "0.00 KM",
+          "col2Distance": "0.00 KM",
+          "col3Distance": "0.00 KM",
+          "col1Duration": "0 Min",
+          "col2Duration": "0 Min",
+          "col3Duration": "0 Min"
+        },
+        {
+          "vendorName": "VSR-TRICHY",
+          "branchName": "VSR-TRICHY",
+          "vehicleOrigin": "VSR-TRICHY",
+          "totalQty": "1",
+          "totalAmount": "6703.20",
+          "vendorEligibleId": 340,
+          "vehicleTypeId": 1,
+          "vehicleTypeName": "Sedan",
+          "isAssigned": false,
+          "rentalCharges": 5700,
+          "tollCharges": 0,
+          "parkingCharges": 0,
+          "driverCharges": 0,
+          "permitCharges": 0,
+          "dayWisePricing": [
+            {
+              "date": "2026-04-13",
+              "dayLabel": "Day 1 | Mon, Apr 13, 2026",
+              "route": "Udaipur → Bangalore",
+              "travelKms": 0,
+              "sightseeingKms": 0,
+              "totalKms": 0,
+              "rentalCharges": 3000,
+              "tollCharges": 0,
+              "parkingCharges": 0,
+              "driverCharges": 0,
+              "permitCharges": 0,
+              "totalCharges": 3000
+            },
+            {
+              "date": "2026-04-14",
+              "dayLabel": "Day 2 | Tue, Apr 14, 2026",
+              "route": "Bangalore → Goa",
+              "travelKms": 0,
+              "sightseeingKms": 0,
+              "totalKms": 0,
+              "rentalCharges": 3000,
+              "tollCharges": 0,
+              "parkingCharges": 0,
+              "driverCharges": 0,
+              "permitCharges": 0,
+              "totalCharges": 3000
+            },
+            {
+              "date": "2026-04-15",
+              "dayLabel": "Day 3 | Wed, Apr 15, 2026",
+              "route": "Goa → Udaipur",
+              "travelKms": 0,
+              "sightseeingKms": 0,
+              "totalKms": 0,
+              "rentalCharges": 3000,
+              "tollCharges": 0,
+              "parkingCharges": 0,
+              "driverCharges": 0,
+              "permitCharges": 0,
+              "totalCharges": 3000
+            }
+          ],
+          "before6amDriver": 0,
+          "before6amVendor": 0,
+          "after8pmDriver": 0,
+          "after8pmVendor": 0,
+          "breakdown": [
+            {
+              "label": "Rental Charges",
+              "amount": 5700
+            }
+          ],
+          "packageLabel": "Outstation - 0KM",
+          "col1Distance": "0.00 KM",
+          "col2Distance": "0.00 KM",
+          "col3Distance": "0.00 KM",
+          "col1Duration": "0 Min",
+          "col2Duration": "0 Min",
+          "col3Duration": "0 Min"
+        },
+        {
+          "vendorName": "DVI-COCHIN",
+          "branchName": "DVI-COCHIN",
+          "vehicleOrigin": "DVI-COCHIN",
+          "totalQty": "1",
+          "totalAmount": "6930.00",
+          "vendorEligibleId": 341,
+          "vehicleTypeId": 1,
+          "vehicleTypeName": "Sedan",
+          "isAssigned": false,
+          "rentalCharges": 6000,
+          "tollCharges": 0,
+          "parkingCharges": 0,
+          "driverCharges": 0,
+          "permitCharges": 0,
+          "dayWisePricing": [
+            {
+              "date": "2026-04-13",
+              "dayLabel": "Day 1 | Mon, Apr 13, 2026",
+              "route": "Udaipur → Bangalore",
+              "travelKms": 0,
+              "sightseeingKms": 0,
+              "totalKms": 0,
+              "rentalCharges": 2000,
+              "tollCharges": 0,
+              "parkingCharges": 0,
+              "driverCharges": 0,
+              "permitCharges": 0,
+              "totalCharges": 2000
+            },
+            {
+              "date": "2026-04-14",
+              "dayLabel": "Day 2 | Tue, Apr 14, 2026",
+              "route": "Bangalore → Goa",
+              "travelKms": 0,
+              "sightseeingKms": 0,
+              "totalKms": 0,
+              "rentalCharges": 2000,
+              "tollCharges": 0,
+              "parkingCharges": 0,
+              "driverCharges": 0,
+              "permitCharges": 0,
+              "totalCharges": 2000
+            },
+            {
+              "date": "2026-04-15",
+              "dayLabel": "Day 3 | Wed, Apr 15, 2026",
+              "route": "Goa → Udaipur",
+              "travelKms": 0,
+              "sightseeingKms": 0,
+              "totalKms": 0,
+              "rentalCharges": 2000,
+              "tollCharges": 0,
+              "parkingCharges": 0,
+              "driverCharges": 0,
+              "permitCharges": 0,
+              "totalCharges": 2000
+            }
+          ],
+          "before6amDriver": 0,
+          "before6amVendor": 0,
+          "after8pmDriver": 0,
+          "after8pmVendor": 0,
+          "breakdown": [
+            {
+              "label": "Rental Charges",
+              "amount": 6000
+            }
+          ],
+          "packageLabel": "Outstation - 0KM",
+          "col1Distance": "0.00 KM",
+          "col2Distance": "0.00 KM",
+          "col3Distance": "0.00 KM",
+          "col1Duration": "0 Min",
+          "col2Duration": "0 Min",
+          "col3Duration": "0 Min"
+        },
+        {
+          "vendorName": "DVI-CHENNAI",
+          "branchName": "DVI-CHENNAI",
+          "vehicleOrigin": "DVI-CHENNAI",
+          "totalQty": "1",
+          "totalAmount": "11088.00",
+          "vendorEligibleId": 342,
+          "vehicleTypeId": 1,
+          "vehicleTypeName": "Sedan",
+          "isAssigned": false,
+          "rentalCharges": 9600,
+          "tollCharges": 0,
+          "parkingCharges": 0,
+          "driverCharges": 0,
+          "permitCharges": 0,
+          "dayWisePricing": [
+            {
+              "date": "2026-04-13",
+              "dayLabel": "Day 1 | Mon, Apr 13, 2026",
+              "route": "Udaipur → Bangalore",
+              "travelKms": 0,
+              "sightseeingKms": 0,
+              "totalKms": 0,
+              "rentalCharges": 2400,
+              "tollCharges": 0,
+              "parkingCharges": 0,
+              "driverCharges": 0,
+              "permitCharges": 0,
+              "totalCharges": 2400
+            },
+            {
+              "date": "2026-04-14",
+              "dayLabel": "Day 2 | Tue, Apr 14, 2026",
+              "route": "Bangalore → Goa",
+              "travelKms": 0,
+              "sightseeingKms": 0,
+              "totalKms": 0,
+              "rentalCharges": 2400,
+              "tollCharges": 0,
+              "parkingCharges": 0,
+              "driverCharges": 0,
+              "permitCharges": 0,
+              "totalCharges": 2400
+            },
+            {
+              "date": "2026-04-15",
+              "dayLabel": "Day 3 | Wed, Apr 15, 2026",
+              "route": "Goa → Udaipur",
+              "travelKms": 0,
+              "sightseeingKms": 0,
+              "totalKms": 0,
+              "rentalCharges": 2400,
+              "tollCharges": 0,
+              "parkingCharges": 0,
+              "driverCharges": 0,
+              "permitCharges": 0,
+              "totalCharges": 2400
+            }
+          ],
+          "before6amDriver": 0,
+          "before6amVendor": 0,
+          "after8pmDriver": 0,
+          "after8pmVendor": 0,
+          "breakdown": [
+            {
+              "label": "Rental Charges",
+              "amount": 9600
+            }
+          ],
+          "packageLabel": "Outstation - 0KM",
+          "col1Distance": "0.00 KM",
+          "col2Distance": "0.00 KM",
+          "col3Distance": "0.00 KM",
+          "col1Duration": "0 Min",
+          "col2Duration": "0 Min",
+          "col3Duration": "0 Min"
+        },
+        {
+          "vendorName": "DVI- BANGALORE",
+          "branchName": "DVI- BANGALORE",
+          "vehicleOrigin": "DVI- BANGALORE",
+          "totalQty": "1",
+          "totalAmount": "9702.00",
+          "vendorEligibleId": 343,
+          "vehicleTypeId": 1,
+          "vehicleTypeName": "Sedan",
+          "isAssigned": false,
+          "rentalCharges": 8400,
+          "tollCharges": 0,
+          "parkingCharges": 0,
+          "driverCharges": 0,
+          "permitCharges": 0,
+          "dayWisePricing": [
+            {
+              "date": "2026-04-13",
+              "dayLabel": "Day 1 | Mon, Apr 13, 2026",
+              "route": "Udaipur → Bangalore",
+              "travelKms": 0,
+              "sightseeingKms": 0,
+              "totalKms": 0,
+              "rentalCharges": 2800,
+              "tollCharges": 0,
+              "parkingCharges": 0,
+              "driverCharges": 0,
+              "permitCharges": 0,
+              "totalCharges": 2800
+            },
+            {
+              "date": "2026-04-14",
+              "dayLabel": "Day 2 | Tue, Apr 14, 2026",
+              "route": "Bangalore → Goa",
+              "travelKms": 0,
+              "sightseeingKms": 0,
+              "totalKms": 0,
+              "rentalCharges": 2800,
+              "tollCharges": 0,
+              "parkingCharges": 0,
+              "driverCharges": 0,
+              "permitCharges": 0,
+              "totalCharges": 2800
+            },
+            {
+              "date": "2026-04-15",
+              "dayLabel": "Day 3 | Wed, Apr 15, 2026",
+              "route": "Goa → Udaipur",
+              "travelKms": 0,
+              "sightseeingKms": 0,
+              "totalKms": 0,
+              "rentalCharges": 2800,
+              "tollCharges": 0,
+              "parkingCharges": 0,
+              "driverCharges": 0,
+              "permitCharges": 0,
+              "totalCharges": 2800
+            }
+          ],
+          "before6amDriver": 0,
+          "before6amVendor": 0,
+          "after8pmDriver": 0,
+          "after8pmVendor": 0,
+          "breakdown": [
+            {
+              "label": "Rental Charges",
+              "amount": 8400
+            }
+          ],
+          "packageLabel": "Outstation - 0KM",
+          "col1Distance": "0.00 KM",
+          "col2Distance": "0.00 KM",
+          "col3Distance": "0.00 KM",
+          "col1Duration": "0 Min",
+          "col2Duration": "0 Min",
+          "col3Duration": "0 Min"
+        },
+        {
+          "vendorName": "MADURAI",
+          "branchName": "MADURAI",
+          "vehicleOrigin": "MADURAI",
+          "totalQty": "1",
+          "totalAmount": "5197.50",
+          "vendorEligibleId": 344,
+          "vehicleTypeId": 1,
+          "vehicleTypeName": "Sedan",
+          "isAssigned": false,
+          "rentalCharges": 4500,
+          "tollCharges": 0,
+          "parkingCharges": 0,
+          "driverCharges": 0,
+          "permitCharges": 0,
+          "dayWisePricing": [
+            {
+              "date": "2026-04-13",
+              "dayLabel": "Day 1 | Mon, Apr 13, 2026",
+              "route": "Udaipur → Bangalore",
+              "travelKms": 0,
+              "sightseeingKms": 0,
+              "totalKms": 0,
+              "rentalCharges": 1500,
+              "tollCharges": 0,
+              "parkingCharges": 0,
+              "driverCharges": 0,
+              "permitCharges": 0,
+              "totalCharges": 1500
+            },
+            {
+              "date": "2026-04-14",
+              "dayLabel": "Day 2 | Tue, Apr 14, 2026",
+              "route": "Bangalore → Goa",
+              "travelKms": 0,
+              "sightseeingKms": 0,
+              "totalKms": 0,
+              "rentalCharges": 1500,
+              "tollCharges": 0,
+              "parkingCharges": 0,
+              "driverCharges": 0,
+              "permitCharges": 0,
+              "totalCharges": 1500
+            },
+            {
+              "date": "2026-04-15",
+              "dayLabel": "Day 3 | Wed, Apr 15, 2026",
+              "route": "Goa → Udaipur",
+              "travelKms": 0,
+              "sightseeingKms": 0,
+              "totalKms": 0,
+              "rentalCharges": 1500,
+              "tollCharges": 0,
+              "parkingCharges": 0,
+              "driverCharges": 0,
+              "permitCharges": 0,
+              "totalCharges": 1500
+            }
+          ],
+          "before6amDriver": 0,
+          "before6amVendor": 0,
+          "after8pmDriver": 0,
+          "after8pmVendor": 0,
+          "breakdown": [
+            {
+              "label": "Rental Charges",
+              "amount": 4500
+            }
+          ],
+          "packageLabel": "Outstation - 0KM",
+          "col1Distance": "0.00 KM",
+          "col2Distance": "0.00 KM",
+          "col3Distance": "0.00 KM",
+          "col1Duration": "0 Min",
+          "col2Duration": "0 Min",
+          "col3Duration": "0 Min"
+        },
+        {
+          "vendorName": "COIMBATORE",
+          "branchName": "COIMBATORE",
+          "vehicleOrigin": "COIMBATORE",
+          "totalQty": "1",
+          "totalAmount": "5997.60",
+          "vendorEligibleId": 345,
+          "vehicleTypeId": 1,
+          "vehicleTypeName": "Sedan",
+          "isAssigned": false,
+          "rentalCharges": 5100,
+          "tollCharges": 0,
+          "parkingCharges": 0,
+          "driverCharges": 0,
+          "permitCharges": 0,
+          "dayWisePricing": [
+            {
+              "date": "2026-04-13",
+              "dayLabel": "Day 1 | Mon, Apr 13, 2026",
+              "route": "Udaipur → Bangalore",
+              "travelKms": 0,
+              "sightseeingKms": 0,
+              "totalKms": 0,
+              "rentalCharges": 1700,
+              "tollCharges": 0,
+              "parkingCharges": 0,
+              "driverCharges": 0,
+              "permitCharges": 0,
+              "totalCharges": 1700
+            },
+            {
+              "date": "2026-04-14",
+              "dayLabel": "Day 2 | Tue, Apr 14, 2026",
+              "route": "Bangalore → Goa",
+              "travelKms": 0,
+              "sightseeingKms": 0,
+              "totalKms": 0,
+              "rentalCharges": 1700,
+              "tollCharges": 0,
+              "parkingCharges": 0,
+              "driverCharges": 0,
+              "permitCharges": 0,
+              "totalCharges": 1700
+            },
+            {
+              "date": "2026-04-15",
+              "dayLabel": "Day 3 | Wed, Apr 15, 2026",
+              "route": "Goa → Udaipur",
+              "travelKms": 0,
+              "sightseeingKms": 0,
+              "totalKms": 0,
+              "rentalCharges": 1700,
+              "tollCharges": 0,
+              "parkingCharges": 0,
+              "driverCharges": 0,
+              "permitCharges": 0,
+              "totalCharges": 1700
+            }
+          ],
+          "before6amDriver": 0,
+          "before6amVendor": 0,
+          "after8pmDriver": 0,
+          "after8pmVendor": 0,
+          "breakdown": [
+            {
+              "label": "Rental Charges",
+              "amount": 5100
+            }
+          ],
+          "packageLabel": "Outstation - 0KM",
+          "col1Distance": "0.00 KM",
+          "col2Distance": "0.00 KM",
+          "col3Distance": "0.00 KM",
+          "col1Duration": "0 Min",
+          "col2Duration": "0 Min",
+          "col3Duration": "0 Min"
+        },
+        {
+          "vendorName": "CALICUT",
+          "branchName": "CALICUT",
+          "vehicleOrigin": "CALICUT",
+          "totalQty": "1",
+          "totalAmount": "9056.25",
+          "vendorEligibleId": 346,
+          "vehicleTypeId": 1,
+          "vehicleTypeName": "Sedan",
+          "isAssigned": false,
+          "rentalCharges": 7500,
+          "tollCharges": 0,
+          "parkingCharges": 0,
+          "driverCharges": 0,
+          "permitCharges": 0,
+          "dayWisePricing": [
+            {
+              "date": "2026-04-13",
+              "dayLabel": "Day 1 | Mon, Apr 13, 2026",
+              "route": "Udaipur → Bangalore",
+              "travelKms": 0,
+              "sightseeingKms": 0,
+              "totalKms": 0,
+              "rentalCharges": 2500,
+              "tollCharges": 0,
+              "parkingCharges": 0,
+              "driverCharges": 0,
+              "permitCharges": 0,
+              "totalCharges": 2500
+            },
+            {
+              "date": "2026-04-14",
+              "dayLabel": "Day 2 | Tue, Apr 14, 2026",
+              "route": "Bangalore → Goa",
+              "travelKms": 0,
+              "sightseeingKms": 0,
+              "totalKms": 0,
+              "rentalCharges": 2500,
+              "tollCharges": 0,
+              "parkingCharges": 0,
+              "driverCharges": 0,
+              "permitCharges": 0,
+              "totalCharges": 2500
+            },
+            {
+              "date": "2026-04-15",
+              "dayLabel": "Day 3 | Wed, Apr 15, 2026",
+              "route": "Goa → Udaipur",
+              "travelKms": 0,
+              "sightseeingKms": 0,
+              "totalKms": 0,
+              "rentalCharges": 2500,
+              "tollCharges": 0,
+              "parkingCharges": 0,
+              "driverCharges": 0,
+              "permitCharges": 0,
+              "totalCharges": 2500
+            }
+          ],
+          "before6amDriver": 0,
+          "before6amVendor": 0,
+          "after8pmDriver": 0,
+          "after8pmVendor": 0,
+          "breakdown": [
+            {
+              "label": "Rental Charges",
+              "amount": 7500
+            }
+          ],
+          "packageLabel": "Outstation - 0KM",
+          "col1Distance": "0.00 KM",
+          "col2Distance": "0.00 KM",
+          "col3Distance": "0.00 KM",
+          "col1Duration": "0 Min",
+          "col2Duration": "0 Min",
+          "col3Duration": "0 Min"
+        },
+        {
+          "vendorName": "KANNUR",
+          "branchName": "KANNUR",
+          "vehicleOrigin": "KANNUR",
+          "totalQty": "1",
+          "totalAmount": "9000.00",
+          "vendorEligibleId": 347,
+          "vehicleTypeId": 1,
+          "vehicleTypeName": "Sedan",
+          "isAssigned": false,
+          "rentalCharges": 7500,
+          "tollCharges": 0,
+          "parkingCharges": 0,
+          "driverCharges": 0,
+          "permitCharges": 0,
+          "dayWisePricing": [
+            {
+              "date": "2026-04-13",
+              "dayLabel": "Day 1 | Mon, Apr 13, 2026",
+              "route": "Udaipur → Bangalore",
+              "travelKms": 0,
+              "sightseeingKms": 0,
+              "totalKms": 0,
+              "rentalCharges": 2500,
+              "tollCharges": 0,
+              "parkingCharges": 0,
+              "driverCharges": 0,
+              "permitCharges": 0,
+              "totalCharges": 2500
+            },
+            {
+              "date": "2026-04-14",
+              "dayLabel": "Day 2 | Tue, Apr 14, 2026",
+              "route": "Bangalore → Goa",
+              "travelKms": 0,
+              "sightseeingKms": 0,
+              "totalKms": 0,
+              "rentalCharges": 2500,
+              "tollCharges": 0,
+              "parkingCharges": 0,
+              "driverCharges": 0,
+              "permitCharges": 0,
+              "totalCharges": 2500
+            },
+            {
+              "date": "2026-04-15",
+              "dayLabel": "Day 3 | Wed, Apr 15, 2026",
+              "route": "Goa → Udaipur",
+              "travelKms": 0,
+              "sightseeingKms": 0,
+              "totalKms": 0,
+              "rentalCharges": 2500,
+              "tollCharges": 0,
+              "parkingCharges": 0,
+              "driverCharges": 0,
+              "permitCharges": 0,
+              "totalCharges": 2500
+            }
+          ],
+          "before6amDriver": 0,
+          "before6amVendor": 0,
+          "after8pmDriver": 0,
+          "after8pmVendor": 0,
+          "breakdown": [
+            {
+              "label": "Rental Charges",
+              "amount": 7500
+            }
+          ],
+          "packageLabel": "Outstation - 0KM",
+          "col1Distance": "0.00 KM",
+          "col2Distance": "0.00 KM",
+          "col3Distance": "0.00 KM",
+          "col1Duration": "0 Min",
+          "col2Duration": "0 Min",
+          "col3Duration": "0 Min"
+        },
+        {
+          "vendorName": "HYDERABAD",
+          "branchName": "HYDERABAD",
+          "vehicleOrigin": "HYDERABAD",
+          "totalQty": "1",
+          "totalAmount": "16729.65",
+          "vendorEligibleId": 348,
+          "vehicleTypeId": 1,
+          "vehicleTypeName": "Sedan",
+          "isAssigned": false,
+          "rentalCharges": 14100,
+          "tollCharges": 0,
+          "parkingCharges": 0,
+          "driverCharges": 0,
+          "permitCharges": 0,
+          "dayWisePricing": [
+            {
+              "date": "2026-04-13",
+              "dayLabel": "Day 1 | Mon, Apr 13, 2026",
+              "route": "Udaipur → Bangalore",
+              "travelKms": 0,
+              "sightseeingKms": 0,
+              "totalKms": 0,
+              "rentalCharges": 2580,
+              "tollCharges": 0,
+              "parkingCharges": 0,
+              "driverCharges": 0,
+              "permitCharges": 0,
+              "totalCharges": 2580
+            },
+            {
+              "date": "2026-04-14",
+              "dayLabel": "Day 2 | Tue, Apr 14, 2026",
+              "route": "Bangalore → Goa",
+              "travelKms": 0,
+              "sightseeingKms": 0,
+              "totalKms": 0,
+              "rentalCharges": 2580,
+              "tollCharges": 0,
+              "parkingCharges": 0,
+              "driverCharges": 0,
+              "permitCharges": 0,
+              "totalCharges": 2580
+            },
+            {
+              "date": "2026-04-15",
+              "dayLabel": "Day 3 | Wed, Apr 15, 2026",
+              "route": "Goa → Udaipur",
+              "travelKms": 0,
+              "sightseeingKms": 0,
+              "totalKms": 0,
+              "rentalCharges": 2580,
+              "tollCharges": 0,
+              "parkingCharges": 0,
+              "driverCharges": 0,
+              "permitCharges": 0,
+              "totalCharges": 2580
+            }
+          ],
+          "before6amDriver": 0,
+          "before6amVendor": 0,
+          "after8pmDriver": 0,
+          "after8pmVendor": 0,
+          "breakdown": [
+            {
+              "label": "Rental Charges",
+              "amount": 14100
+            }
+          ],
+          "packageLabel": "Outstation - 0KM",
+          "col1Distance": "0.00 KM",
+          "col2Distance": "0.00 KM",
+          "col3Distance": "0.00 KM",
+          "col1Duration": "0 Min",
+          "col2Duration": "0 Min",
+          "col3Duration": "0 Min"
+        },
+        {
+          "vendorName": "VISAKHAPATNAM",
+          "branchName": "VISAKHAPATNAM",
+          "vehicleOrigin": "VISAKHAPATNAM",
+          "totalQty": "1",
+          "totalAmount": "13860.00",
+          "vendorEligibleId": 349,
+          "vehicleTypeId": 1,
+          "vehicleTypeName": "Sedan",
+          "isAssigned": false,
+          "rentalCharges": 12000,
+          "tollCharges": 0,
+          "parkingCharges": 0,
+          "driverCharges": 0,
+          "permitCharges": 0,
+          "dayWisePricing": [
+            {
+              "date": "2026-04-13",
+              "dayLabel": "Day 1 | Mon, Apr 13, 2026",
+              "route": "Udaipur → Bangalore",
+              "travelKms": 0,
+              "sightseeingKms": 0,
+              "totalKms": 0,
+              "rentalCharges": 2450,
+              "tollCharges": 0,
+              "parkingCharges": 0,
+              "driverCharges": 700,
+              "permitCharges": 0,
+              "totalCharges": 3150
+            },
+            {
+              "date": "2026-04-14",
+              "dayLabel": "Day 2 | Tue, Apr 14, 2026",
+              "route": "Bangalore → Goa",
+              "travelKms": 0,
+              "sightseeingKms": 0,
+              "totalKms": 0,
+              "rentalCharges": 2450,
+              "tollCharges": 0,
+              "parkingCharges": 0,
+              "driverCharges": 700,
+              "permitCharges": 0,
+              "totalCharges": 3150
+            },
+            {
+              "date": "2026-04-15",
+              "dayLabel": "Day 3 | Wed, Apr 15, 2026",
+              "route": "Goa → Udaipur",
+              "travelKms": 0,
+              "sightseeingKms": 0,
+              "totalKms": 0,
+              "rentalCharges": 2450,
+              "tollCharges": 0,
+              "parkingCharges": 0,
+              "driverCharges": 700,
+              "permitCharges": 0,
+              "totalCharges": 3150
+            }
+          ],
+          "before6amDriver": 0,
+          "before6amVendor": 0,
+          "after8pmDriver": 0,
+          "after8pmVendor": 0,
+          "breakdown": [
+            {
+              "label": "Rental Charges",
+              "amount": 12000
+            }
+          ],
+          "packageLabel": "Outstation - 0KM",
+          "col1Distance": "0.00 KM",
+          "col2Distance": "0.00 KM",
+          "col3Distance": "0.00 KM",
+          "col1Duration": "0 Min",
+          "col2Duration": "0 Min",
+          "col3Duration": "0 Min"
+        },
+        {
+          "vendorName": "MANGALORE",
+          "branchName": "MANGALORE",
+          "vehicleOrigin": "MANGALORE",
+          "totalQty": "1",
+          "totalAmount": "13860.00",
+          "vendorEligibleId": 350,
+          "vehicleTypeId": 1,
+          "vehicleTypeName": "Sedan",
+          "isAssigned": false,
+          "rentalCharges": 12000,
+          "tollCharges": 0,
+          "parkingCharges": 0,
+          "driverCharges": 0,
+          "permitCharges": 0,
+          "dayWisePricing": [
+            {
+              "date": "2026-04-13",
+              "dayLabel": "Day 1 | Mon, Apr 13, 2026",
+              "route": "Udaipur → Bangalore",
+              "travelKms": 0,
+              "sightseeingKms": 0,
+              "totalKms": 0,
+              "rentalCharges": 3600,
+              "tollCharges": 0,
+              "parkingCharges": 0,
+              "driverCharges": 0,
+              "permitCharges": 0,
+              "totalCharges": 3600
+            },
+            {
+              "date": "2026-04-14",
+              "dayLabel": "Day 2 | Tue, Apr 14, 2026",
+              "route": "Bangalore → Goa",
+              "travelKms": 0,
+              "sightseeingKms": 0,
+              "totalKms": 0,
+              "rentalCharges": 3600,
+              "tollCharges": 0,
+              "parkingCharges": 0,
+              "driverCharges": 0,
+              "permitCharges": 0,
+              "totalCharges": 3600
+            },
+            {
+              "date": "2026-04-15",
+              "dayLabel": "Day 3 | Wed, Apr 15, 2026",
+              "route": "Goa → Udaipur",
+              "travelKms": 0,
+              "sightseeingKms": 0,
+              "totalKms": 0,
+              "rentalCharges": 3600,
+              "tollCharges": 0,
+              "parkingCharges": 0,
+              "driverCharges": 0,
+              "permitCharges": 0,
+              "totalCharges": 3600
+            }
+          ],
+          "before6amDriver": 0,
+          "before6amVendor": 0,
+          "after8pmDriver": 0,
+          "after8pmVendor": 0,
+          "breakdown": [
+            {
+              "label": "Rental Charges",
+              "amount": 12000
+            }
+          ],
+          "packageLabel": "Outstation - 0KM",
+          "col1Distance": "0.00 KM",
+          "col2Distance": "0.00 KM",
+          "col3Distance": "0.00 KM",
+          "col1Duration": "0 Min",
+          "col2Duration": "0 Min",
+          "col3Duration": "0 Min"
+        },
+        {
+          "vendorName": "PONDICHERRY",
+          "branchName": "PONDICHERRY",
+          "vehicleOrigin": "PONDICHERRY",
+          "totalQty": "1",
+          "totalAmount": "11088.00",
+          "vendorEligibleId": 351,
+          "vehicleTypeId": 1,
+          "vehicleTypeName": "Sedan",
+          "isAssigned": false,
+          "rentalCharges": 9600,
+          "tollCharges": 0,
+          "parkingCharges": 0,
+          "driverCharges": 0,
+          "permitCharges": 0,
+          "dayWisePricing": [
+            {
+              "date": "2026-04-13",
+              "dayLabel": "Day 1 | Mon, Apr 13, 2026",
+              "route": "Udaipur → Bangalore",
+              "travelKms": 0,
+              "sightseeingKms": 0,
+              "totalKms": 0,
+              "rentalCharges": 3200,
+              "tollCharges": 0,
+              "parkingCharges": 0,
+              "driverCharges": 0,
+              "permitCharges": 0,
+              "totalCharges": 3200
+            },
+            {
+              "date": "2026-04-14",
+              "dayLabel": "Day 2 | Tue, Apr 14, 2026",
+              "route": "Bangalore → Goa",
+              "travelKms": 0,
+              "sightseeingKms": 0,
+              "totalKms": 0,
+              "rentalCharges": 3200,
+              "tollCharges": 0,
+              "parkingCharges": 0,
+              "driverCharges": 0,
+              "permitCharges": 0,
+              "totalCharges": 3200
+            },
+            {
+              "date": "2026-04-15",
+              "dayLabel": "Day 3 | Wed, Apr 15, 2026",
+              "route": "Goa → Udaipur",
+              "travelKms": 0,
+              "sightseeingKms": 0,
+              "totalKms": 0,
+              "rentalCharges": 3200,
+              "tollCharges": 0,
+              "parkingCharges": 0,
+              "driverCharges": 0,
+              "permitCharges": 0,
+              "totalCharges": 3200
+            }
+          ],
+          "before6amDriver": 0,
+          "before6amVendor": 0,
+          "after8pmDriver": 0,
+          "after8pmVendor": 0,
+          "breakdown": [
+            {
+              "label": "Rental Charges",
+              "amount": 9600
+            }
+          ],
+          "packageLabel": "Outstation - 0KM",
+          "col1Distance": "0.00 KM",
+          "col2Distance": "0.00 KM",
+          "col3Distance": "0.00 KM",
+          "col1Duration": "0 Min",
+          "col2Duration": "0 Min",
+          "col3Duration": "0 Min"
+        },
+        {
+          "vendorName": "TRIVANDRUM",
+          "branchName": "TRIVANDRUM",
+          "vehicleOrigin": "TRIVANDRUM",
+          "totalQty": "1",
+          "totalAmount": "8662.50",
+          "vendorEligibleId": 352,
+          "vehicleTypeId": 1,
+          "vehicleTypeName": "Sedan",
+          "isAssigned": false,
+          "rentalCharges": 7500,
+          "tollCharges": 0,
+          "parkingCharges": 0,
+          "driverCharges": 0,
+          "permitCharges": 0,
+          "dayWisePricing": [
+            {
+              "date": "2026-04-13",
+              "dayLabel": "Day 1 | Mon, Apr 13, 2026",
+              "route": "Udaipur → Bangalore",
+              "travelKms": 0,
+              "sightseeingKms": 0,
+              "totalKms": 0,
+              "rentalCharges": 2500,
+              "tollCharges": 0,
+              "parkingCharges": 0,
+              "driverCharges": 0,
+              "permitCharges": 0,
+              "totalCharges": 2500
+            },
+            {
+              "date": "2026-04-14",
+              "dayLabel": "Day 2 | Tue, Apr 14, 2026",
+              "route": "Bangalore → Goa",
+              "travelKms": 0,
+              "sightseeingKms": 0,
+              "totalKms": 0,
+              "rentalCharges": 2500,
+              "tollCharges": 0,
+              "parkingCharges": 0,
+              "driverCharges": 0,
+              "permitCharges": 0,
+              "totalCharges": 2500
+            },
+            {
+              "date": "2026-04-15",
+              "dayLabel": "Day 3 | Wed, Apr 15, 2026",
+              "route": "Goa → Udaipur",
+              "travelKms": 0,
+              "sightseeingKms": 0,
+              "totalKms": 0,
+              "rentalCharges": 2500,
+              "tollCharges": 0,
+              "parkingCharges": 0,
+              "driverCharges": 0,
+              "permitCharges": 0,
+              "totalCharges": 2500
+            }
+          ],
+          "before6amDriver": 0,
+          "before6amVendor": 0,
+          "after8pmDriver": 0,
+          "after8pmVendor": 0,
+          "breakdown": [
+            {
+              "label": "Rental Charges",
+              "amount": 7500
+            }
+          ],
+          "packageLabel": "Outstation - 0KM",
+          "col1Distance": "0.00 KM",
+          "col2Distance": "0.00 KM",
+          "col3Distance": "0.00 KM",
+          "col1Duration": "0 Min",
+          "col2Duration": "0 Min",
+          "col3Duration": "0 Min"
+        },
+        {
+          "vendorName": "DVI-VARANASI",
+          "branchName": "DVI-VARANASI",
+          "vehicleOrigin": "DVI-VARANASI",
+          "totalQty": "1",
+          "totalAmount": "10939.50",
+          "vendorEligibleId": 353,
+          "vehicleTypeId": 1,
+          "vehicleTypeName": "Sedan",
+          "isAssigned": false,
+          "rentalCharges": 9900,
+          "tollCharges": 0,
+          "parkingCharges": 0,
+          "driverCharges": 0,
+          "permitCharges": 0,
+          "dayWisePricing": [
+            {
+              "date": "2026-04-13",
+              "dayLabel": "Day 1 | Mon, Apr 13, 2026",
+              "route": "Udaipur → Bangalore",
+              "travelKms": 0,
+              "sightseeingKms": 0,
+              "totalKms": 0,
+              "rentalCharges": 2500,
+              "tollCharges": 0,
+              "parkingCharges": 0,
+              "driverCharges": 0,
+              "permitCharges": 0,
+              "totalCharges": 2500
+            },
+            {
+              "date": "2026-04-14",
+              "dayLabel": "Day 2 | Tue, Apr 14, 2026",
+              "route": "Bangalore → Goa",
+              "travelKms": 0,
+              "sightseeingKms": 0,
+              "totalKms": 0,
+              "rentalCharges": 2500,
+              "tollCharges": 0,
+              "parkingCharges": 0,
+              "driverCharges": 0,
+              "permitCharges": 0,
+              "totalCharges": 2500
+            },
+            {
+              "date": "2026-04-15",
+              "dayLabel": "Day 3 | Wed, Apr 15, 2026",
+              "route": "Goa → Udaipur",
+              "travelKms": 0,
+              "sightseeingKms": 0,
+              "totalKms": 0,
+              "rentalCharges": 2500,
+              "tollCharges": 0,
+              "parkingCharges": 0,
+              "driverCharges": 0,
+              "permitCharges": 0,
+              "totalCharges": 2500
+            }
+          ],
+          "before6amDriver": 0,
+          "before6amVendor": 0,
+          "after8pmDriver": 0,
+          "after8pmVendor": 0,
+          "breakdown": [
+            {
+              "label": "Rental Charges",
+              "amount": 9900
+            }
+          ],
+          "packageLabel": "Outstation - 0KM",
+          "col1Distance": "0.00 KM",
+          "col2Distance": "0.00 KM",
+          "col3Distance": "0.00 KM",
+          "col1Duration": "0 Min",
+          "col2Duration": "0 Min",
+          "col3Duration": "0 Min"
+        },
+        {
+          "vendorName": "DVI-RAMESWARAM",
+          "branchName": "DVI-RAMESWARAM",
+          "vehicleOrigin": "DVI-RAMESWARAM",
+          "totalQty": "1",
+          "totalAmount": "3960.00",
+          "vendorEligibleId": 354,
+          "vehicleTypeId": 1,
+          "vehicleTypeName": "Sedan",
+          "isAssigned": true,
+          "rentalCharges": 3600,
+          "tollCharges": 0,
+          "parkingCharges": 0,
+          "driverCharges": 0,
+          "permitCharges": 0,
+          "dayWisePricing": [
+            {
+              "date": "2026-04-13",
+              "dayLabel": "Day 1 | Mon, Apr 13, 2026",
+              "route": "Udaipur → Bangalore",
+              "travelKms": 0,
+              "sightseeingKms": 0,
+              "totalKms": 0,
+              "rentalCharges": 2800,
+              "tollCharges": 0,
+              "parkingCharges": 0,
+              "driverCharges": 0,
+              "permitCharges": 0,
+              "totalCharges": 2800
+            },
+            {
+              "date": "2026-04-14",
+              "dayLabel": "Day 2 | Tue, Apr 14, 2026",
+              "route": "Bangalore → Goa",
+              "travelKms": 0,
+              "sightseeingKms": 0,
+              "totalKms": 0,
+              "rentalCharges": 2800,
+              "tollCharges": 0,
+              "parkingCharges": 0,
+              "driverCharges": 0,
+              "permitCharges": 0,
+              "totalCharges": 2800
+            },
+            {
+              "date": "2026-04-15",
+              "dayLabel": "Day 3 | Wed, Apr 15, 2026",
+              "route": "Goa → Udaipur",
+              "travelKms": 0,
+              "sightseeingKms": 0,
+              "totalKms": 0,
+              "rentalCharges": 2800,
+              "tollCharges": 0,
+              "parkingCharges": 0,
+              "driverCharges": 0,
+              "permitCharges": 0,
+              "totalCharges": 2800
+            }
+          ],
+          "before6amDriver": 0,
+          "before6amVendor": 0,
+          "after8pmDriver": 0,
+          "after8pmVendor": 0,
+          "breakdown": [
+            {
+              "label": "Rental Charges",
+              "amount": 3600
+            }
+          ],
+          "packageLabel": "Outstation - 0KM",
+          "col1Distance": "0.00 KM",
+          "col2Distance": "0.00 KM",
+          "col3Distance": "0.00 KM",
+          "col1Duration": "0 Min",
+          "col2Duration": "0 Min",
+          "col3Duration": "0 Min"
+        }
+      ],
+      "packageIncludes": {
+        "description": "",
+        "houseBoatNote": "",
+        "rateNote": ""
+      },
+      "costBreakdown": {
+        "hotelPaxCount": 2,
+        "totalVehicleCost": 3960,
+        "totalVehicleAmount": 3960,
+        "totalVehicleQty": 17,
+        "additionalMargin": 396,
+        "totalAmount": 4356,
+        "couponDiscount": 0,
+        "agentMargin": 10,
+        "totalRoundOff": 0,
+        "netPayable": 4366,
+        "companyName": "Doview Holidays India Pvt ltd"
+      }
+    },
+    "hotelDetails": {
+      "quoteId": "DVI2026031",
+      "planId": 18,
+      "hotelRatesVisible": true,
+      "hotelTabs": [
+        {
+          "groupType": 1,
+          "label": "Budget Hotels",
+          "totalAmount": 0
+        },
+        {
+          "groupType": 2,
+          "label": "Mid-Range Hotels",
+          "totalAmount": 0
+        },
+        {
+          "groupType": 3,
+          "label": "Premium Hotels",
+          "totalAmount": 0
+        },
+        {
+          "groupType": 4,
+          "label": "Luxury Hotels",
+          "totalAmount": 0
+        }
+      ],
+      "hotels": [
+        {
+          "groupType": 1,
+          "itineraryRouteId": 357,
+          "day": "Day 1 | 2026-04-13",
+          "destination": "Bangalore",
+          "hotelId": 0,
+          "hotelName": "No Hotels Available",
+          "category": 0,
+          "roomType": "-",
+          "mealPlan": "-",
+          "totalHotelCost": 0,
+          "totalHotelTaxAmount": 0,
+          "bookingCode": "0",
+          "provider": "tbo",
+          "voucherCancelled": false,
+          "itineraryPlanHotelDetailsId": 0,
+          "date": "2026-04-13"
+        },
+        {
+          "groupType": 1,
+          "itineraryRouteId": 358,
+          "day": "Day 2 | 2026-04-14",
+          "destination": "Goa",
+          "hotelId": 0,
+          "hotelName": "No Hotels Available",
+          "category": 0,
+          "roomType": "-",
+          "mealPlan": "-",
+          "totalHotelCost": 0,
+          "totalHotelTaxAmount": 0,
+          "bookingCode": "0",
+          "provider": "tbo",
+          "voucherCancelled": false,
+          "itineraryPlanHotelDetailsId": 0,
+          "date": "2026-04-14"
+        },
+        {
+          "groupType": 2,
+          "itineraryRouteId": 357,
+          "day": "Day 1 | 2026-04-13",
+          "destination": "Bangalore",
+          "hotelId": 0,
+          "hotelName": "No Hotels Available",
+          "category": 0,
+          "roomType": "-",
+          "mealPlan": "-",
+          "totalHotelCost": 0,
+          "totalHotelTaxAmount": 0,
+          "bookingCode": "0",
+          "provider": "tbo",
+          "voucherCancelled": false,
+          "itineraryPlanHotelDetailsId": 0,
+          "date": "2026-04-13"
+        },
+        {
+          "groupType": 2,
+          "itineraryRouteId": 358,
+          "day": "Day 2 | 2026-04-14",
+          "destination": "Goa",
+          "hotelId": 0,
+          "hotelName": "No Hotels Available",
+          "category": 0,
+          "roomType": "-",
+          "mealPlan": "-",
+          "totalHotelCost": 0,
+          "totalHotelTaxAmount": 0,
+          "bookingCode": "0",
+          "provider": "tbo",
+          "voucherCancelled": false,
+          "itineraryPlanHotelDetailsId": 0,
+          "date": "2026-04-14"
+        },
+        {
+          "groupType": 3,
+          "itineraryRouteId": 357,
+          "day": "Day 1 | 2026-04-13",
+          "destination": "Bangalore",
+          "hotelId": 0,
+          "hotelName": "No Hotels Available",
+          "category": 0,
+          "roomType": "-",
+          "mealPlan": "-",
+          "totalHotelCost": 0,
+          "totalHotelTaxAmount": 0,
+          "bookingCode": "0",
+          "provider": "tbo",
+          "voucherCancelled": false,
+          "itineraryPlanHotelDetailsId": 0,
+          "date": "2026-04-13"
+        },
+        {
+          "groupType": 3,
+          "itineraryRouteId": 358,
+          "day": "Day 2 | 2026-04-14",
+          "destination": "Goa",
+          "hotelId": 0,
+          "hotelName": "No Hotels Available",
+          "category": 0,
+          "roomType": "-",
+          "mealPlan": "-",
+          "totalHotelCost": 0,
+          "totalHotelTaxAmount": 0,
+          "bookingCode": "0",
+          "provider": "tbo",
+          "voucherCancelled": false,
+          "itineraryPlanHotelDetailsId": 0,
+          "date": "2026-04-14"
+        },
+        {
+          "groupType": 4,
+          "itineraryRouteId": 357,
+          "day": "Day 1 | 2026-04-13",
+          "destination": "Bangalore",
+          "hotelId": 0,
+          "hotelName": "No Hotels Available",
+          "category": 0,
+          "roomType": "-",
+          "mealPlan": "-",
+          "totalHotelCost": 0,
+          "totalHotelTaxAmount": 0,
+          "bookingCode": "0",
+          "provider": "tbo",
+          "voucherCancelled": false,
+          "itineraryPlanHotelDetailsId": 0,
+          "date": "2026-04-13"
+        },
+        {
+          "groupType": 4,
+          "itineraryRouteId": 358,
+          "day": "Day 2 | 2026-04-14",
+          "destination": "Goa",
+          "hotelId": 0,
+          "hotelName": "No Hotels Available",
+          "category": 0,
+          "roomType": "-",
+          "mealPlan": "-",
+          "totalHotelCost": 0,
+          "totalHotelTaxAmount": 0,
+          "bookingCode": "0",
+          "provider": "tbo",
+          "voucherCancelled": false,
+          "itineraryPlanHotelDetailsId": 0,
+          "date": "2026-04-14"
+        }
+      ],
+      "totalRoomCount": 8
+    },
+    "roomDetails": {
+      "quoteId": "DVI2026031",
+      "planId": 18,
+      "rooms": []
+    }
+  }
+}
