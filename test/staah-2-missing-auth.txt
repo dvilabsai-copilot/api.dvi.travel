@@ -2,13 +2,13 @@
 STAAH API Test Log
 ============================================================
 Test Name: staah-2-missing-auth
-Timestamp: 2026-03-13T19:27:46.899Z
+Timestamp: 2026-03-13T21:38:29.486Z
 Status: FAILED
 ============================================================
 
 REQUEST:
 --------
-URL: https://dvi.travel/api/v1/staah/productInfo
+URL: http://127.0.0.1:4006/api/v1/staah/productInfo
 Method: POST
 Headers:
 {}

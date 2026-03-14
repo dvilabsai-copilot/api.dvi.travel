@@ -8,6 +8,7 @@ require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
 const BASE_URL = process.env.BASE_URL || 'https://dvi.travel';
 const API_PREFIX = process.env.API_PREFIX || '/api/v1';
+const STAAH_BASE_PATH = (process.env.STAAH_BASE_PATH || 'staah-test').replace(/^\/+|\/+$/g, '');
 const API_KEY = process.env.STAAH_API_KEY || 'test-key-12345';
 const PROPERTY_ID = process.env.STAAH_PROPERTY_ID || 'STAAH_TEST_HOTEL_1';
 const ROOM_ID = process.env.STAAH_ROOM_ID || 'DELUXE_ROOM';
@@ -17,6 +18,7 @@ const LOG_OUTPUT_DIR = process.env.LOG_OUTPUT_DIR || '';
 const LOG_DIR_PATH = LOG_OUTPUT_DIR
   ? path.resolve(__dirname, LOG_OUTPUT_DIR)
   : __dirname;
+const STAAH_BASE_URL = `${BASE_URL}${API_PREFIX}/${STAAH_BASE_PATH}`;
 
 if (!fs.existsSync(LOG_DIR_PATH)) {
   fs.mkdirSync(LOG_DIR_PATH, { recursive: true });
@@ -95,7 +97,7 @@ function markSkipped(name, reason) {
 }
 
 async function postAndAssert(namePrefix, endpoint, body) {
-  const url = `${BASE_URL}${API_PREFIX}/staah/${endpoint}`;
+  const url = `${STAAH_BASE_URL}/${endpoint}`;
   try {
     const response = await axios.post(url, body);
     saveToFile(namePrefix, { url, method: 'POST', body }, response);
@@ -107,7 +109,7 @@ async function postAndAssert(namePrefix, endpoint, body) {
 }
 
 async function postExpectHttpError(namePrefix, endpoint, body, expectedStatus) {
-  const url = `${BASE_URL}${API_PREFIX}/staah/${endpoint}`;
+  const url = `${STAAH_BASE_URL}/${endpoint}`;
   try {
     await axios.post(url, body);
     throw new Error(`Should have thrown ${expectedStatus} error`);
@@ -134,7 +136,7 @@ async function testInvalidAuth() {
     action: 'property_info',
     version: '2',
   };
-  const url = `${BASE_URL}${API_PREFIX}/staah/productInfo`;
+  const url = `${STAAH_BASE_URL}/productInfo`;
   try {
     await axios.post(url, body);
     throw new Error('Should have thrown 401 error');
@@ -157,7 +159,7 @@ async function testMissingAuth() {
     action: 'property_info',
     version: '2',
   };
-  const url = `${BASE_URL}${API_PREFIX}/staah/productInfo`;
+  const url = `${STAAH_BASE_URL}/productInfo`;
   try {
     await axios.post(url, body);
     throw new Error('Should have thrown 401 error');
@@ -677,7 +679,7 @@ async function testCancelReservationCustomRoute() {
 
 /**
  * ARR_info — ARI date-range pull (adapter endpoint; request body is exact STAAH v2 doc contract)
- * Route: POST /api/v1/staah/arrInfo
+ * Route: POST /api/v1/<staah-base-path>/arrInfo
  */
 async function testArrInfo() {
   const body = {
@@ -714,7 +716,7 @@ async function testArrInfo() {
 
 /**
  * year_info_ARR — ARI full-year pull (adapter endpoint; request body is exact STAAH v2 doc contract)
- * Route: POST /api/v1/staah/yearInfoArr
+ * Route: POST /api/v1/<staah-base-path>/yearInfoArr
  */
 async function testYearInfoArr() {
   const body = {
@@ -837,7 +839,7 @@ async function testArrInfoInvalidDateRange() {
 async function checkServer() {
   try {
     console.log('Checking if server is running...');
-    await axios.post(`${BASE_URL}${API_PREFIX}/staah/productInfo`, {}, {
+    await axios.post(`${STAAH_BASE_URL}/productInfo`, {}, {
       timeout: 3000,
       validateStatus: () => true,
     });
@@ -859,7 +861,7 @@ async function runAllTests() {
   console.log('============================================================');
   console.log('STAAH CM-OTA API Test Suite');
   console.log('============================================================');
-  console.log(`Base URL: ${BASE_URL}${API_PREFIX}/staah`);
+  console.log(`Base URL: ${STAAH_BASE_URL}`);
   console.log(`Property strict mode: ${REQUIRE_VALID_PROPERTY ? 'ON' : 'OFF'}`);
 
   console.log('\nAUTHENTICATION TESTS');

@@ -1,0 +1,62 @@
+============================================================
+STAAH API Test Log
+============================================================
+Test Name: staah-9-reservation
+Timestamp: 2026-03-13T23:18:14.748Z
+Status: SUCCESS
+============================================================
+
+REQUEST:
+--------
+URL: https://dvi.travel/api/v1/staah/reservation
+Method: POST
+Headers:
+{}
+
+Body:
+{
+  "apikey": "staah_C3g8K3b1wray989DVih37od3314r6444",
+  "propertyid": "STAAH_TEST_HOTEL_1",
+  "action": "reservation_info",
+  "version": "2",
+  "reservations": {
+    "reservation": [
+      {
+        "bookingId": "STAAH-RES-1773443894702",
+        "room_id": "DELUXE_ROOM",
+        "rate_id": "CP_PLAN",
+        "checkIn": "2026-12-01",
+        "checkOut": "2026-12-03"
+      }
+    ]
+  },
+  "trackingId": "TRK-1773443894702"
+}
+
+RESPONSE:
+---------
+Status: 200
+Headers:
+{
+  "server": "nginx/1.24.0 (Ubuntu)",
+  "date": "Fri, 13 Mar 2026 23:18:14 GMT",
+  "content-type": "application/json; charset=utf-8",
+  "content-length": "141",
+  "connection": "keep-alive",
+  "x-powered-by": "Express",
+  "access-control-allow-origin": "*",
+  "etag": "W/\"8d-PNZ0W1C0zKEydMbhoZG0xwL49AA\""
+}
+
+Data:
+{
+  "status": "success",
+  "trackingId": "TRK-1773443894702",
+  "bookings": [
+    {
+      "bookingId": "STAAH-RES-1773443894702",
+      "status": "success",
+      "error_desc": ""
+    }
+  ]
+}

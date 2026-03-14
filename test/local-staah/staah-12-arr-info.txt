@@ -2,13 +2,13 @@
 STAAH API Test Log
 ============================================================
 Test Name: staah-12-arr-info
-Timestamp: 2026-03-13T22:39:10.237Z
+Timestamp: 2026-03-13T23:55:04.177Z
 Status: SUCCESS
 ============================================================
 
 REQUEST:
 --------
-URL: http://127.0.0.1:4006/api/v1/staah/arrInfo
+URL: http://127.0.0.1:4006/api/v1/staah-test/arrInfo
 Method: POST
 Headers:
 {}
@@ -34,8 +34,8 @@ Headers:
   "access-control-allow-origin": "*",
   "content-type": "application/json; charset=utf-8",
   "content-length": "654",
-  "etag": "W/\"28e-tANr7k6xAzx2WWYyFI+lyJQOvtg\"",
-  "date": "Fri, 13 Mar 2026 22:39:10 GMT",
+  "etag": "W/\"28e-JkZ4m9MuRtr037DAOfpRYNLUYgM\"",
+  "date": "Fri, 13 Mar 2026 23:55:04 GMT",
   "connection": "keep-alive",
   "keep-alive": "timeout=5"
 }
@@ -44,7 +44,7 @@ Data:
 {
   "status": "success",
   "error_desc": "",
-  "trackingId": "2CC8CFB8-6144-43C4-9AEF-A6EF171E7790",
+  "trackingId": "2092A541-4717-418B-B0D3-0880EF311540",
   "propertyid": "STAAH_TEST_HOTEL_1",
   "room_id": "DELUXE_ROOM",
   "rate_id": "CP_PLAN",

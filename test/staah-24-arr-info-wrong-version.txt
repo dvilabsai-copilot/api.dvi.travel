@@ -2,20 +2,20 @@
 STAAH API Test Log
 ============================================================
 Test Name: staah-24-arr-info-wrong-version
-Timestamp: 2026-03-13T19:27:47.796Z
+Timestamp: 2026-03-13T21:38:29.637Z
 Status: FAILED
 ============================================================
 
 REQUEST:
 --------
-URL: https://dvi.travel/api/v1/staah/arrInfo
+URL: http://127.0.0.1:4006/api/v1/staah/arrInfo
 Method: POST
 Headers:
 {}
 
 Body:
 {
-  "apikey": "staah_C3g8K3b1wray989DVih37od3314r6444",
+  "apikey": "staah-local-test-key",
   "propertyid": "STAAH_TEST_HOTEL_1",
   "room_id": "DELUXE_ROOM",
   "rate_id": "CP_PLAN",
@@ -32,9 +32,9 @@ Error: Request failed with status code 400
 
 Response Data:
 {
-  "message": [
+  "status": "fail",
+  "error_desc": "version must be one of the following values: 2",
+  "details": [
     "version must be one of the following values: 2"
-  ],
-  "error": "Bad Request",
-  "statusCode": 400
+  ]
 }

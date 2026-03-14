@@ -2,13 +2,13 @@
 STAAH API Test Log
 ============================================================
 Test Name: staah-30-modify-reservation-custom
-Timestamp: 2026-03-13T22:39:10.224Z
+Timestamp: 2026-03-13T23:55:04.164Z
 Status: SUCCESS
 ============================================================
 
 REQUEST:
 --------
-URL: http://127.0.0.1:4006/api/v1/staah/custom/modifyReservation
+URL: http://127.0.0.1:4006/api/v1/staah-test/custom/modifyReservation
 Method: POST
 Headers:
 {}
@@ -18,12 +18,12 @@ Body:
   "apikey": "staah-local-test-key",
   "propertyid": "STAAH_TEST_HOTEL_1",
   "version": "2",
-  "reservationId": "STAAH-RES-1773441550220",
+  "reservationId": "STAAH-RES-1773446104158",
   "data": {
     "status": "modified",
     "note": "Test modify payload via custom route"
   },
-  "trackingId": "TRK-MOD-CUSTOM-1773441550220"
+  "trackingId": "TRK-MOD-CUSTOM-1773446104158"
 }
 
 RESPONSE:
@@ -36,7 +36,7 @@ Headers:
   "content-type": "application/json; charset=utf-8",
   "content-length": "36",
   "etag": "W/\"24-ypKu2umBXPlfAf6vrewuMz5Xruo\"",
-  "date": "Fri, 13 Mar 2026 22:39:10 GMT",
+  "date": "Fri, 13 Mar 2026 23:55:04 GMT",
   "connection": "keep-alive",
   "keep-alive": "timeout=5"
 }

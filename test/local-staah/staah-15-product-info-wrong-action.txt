@@ -2,13 +2,13 @@
 STAAH API Test Log
 ============================================================
 Test Name: staah-15-product-info-wrong-action
-Timestamp: 2026-03-13T22:39:10.102Z
+Timestamp: 2026-03-13T23:55:04.043Z
 Status: FAILED
 ============================================================
 
 REQUEST:
 --------
-URL: http://127.0.0.1:4006/api/v1/staah/productInfo
+URL: http://127.0.0.1:4006/api/v1/staah-test/productInfo
 Method: POST
 Headers:
 {}

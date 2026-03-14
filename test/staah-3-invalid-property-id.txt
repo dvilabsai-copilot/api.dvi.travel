@@ -2,20 +2,20 @@
 STAAH API Test Log
 ============================================================
 Test Name: staah-3-invalid-property-id
-Timestamp: 2026-03-13T19:27:46.964Z
+Timestamp: 2026-03-13T21:38:29.502Z
 Status: SUCCESS
 ============================================================
 
 REQUEST:
 --------
-URL: https://dvi.travel/api/v1/staah/productInfo
+URL: http://127.0.0.1:4006/api/v1/staah/productInfo
 Method: POST
 Headers:
 {}
 
 Body:
 {
-  "apikey": "staah_C3g8K3b1wray989DVih37od3314r6444",
+  "apikey": "staah-local-test-key",
   "propertyid": "INVALID_PROPERTY",
   "action": "property_info",
   "version": "2"
@@ -26,14 +26,14 @@ RESPONSE:
 Status: 200
 Headers:
 {
-  "server": "nginx/1.24.0 (Ubuntu)",
-  "date": "Fri, 13 Mar 2026 19:27:45 GMT",
-  "content-type": "application/json; charset=utf-8",
-  "content-length": "307",
-  "connection": "keep-alive",
   "x-powered-by": "Express",
   "access-control-allow-origin": "*",
-  "etag": "W/\"133-AusXFzT5NjUqyBwuXTcvz3vDv6Q\""
+  "content-type": "application/json; charset=utf-8",
+  "content-length": "307",
+  "etag": "W/\"133-x+Xat0ON9a3KTE82k93bGlp1xXU\"",
+  "date": "Fri, 13 Mar 2026 21:38:29 GMT",
+  "connection": "keep-alive",
+  "keep-alive": "timeout=5"
 }
 
 Data:
@@ -55,5 +55,5 @@ Data:
   },
   "status": "fail",
   "error_desc": "Invalid property ID.",
-  "trackingId": "F4AE2AC2-5BB9-4C8A-96B1-7F191960774C"
+  "trackingId": "AEE4B1B8-14FB-4CF2-BDDF-9FCE202AEB36"
 }

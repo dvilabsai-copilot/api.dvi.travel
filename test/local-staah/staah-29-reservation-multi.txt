@@ -2,13 +2,13 @@
 STAAH API Test Log
 ============================================================
 Test Name: staah-29-reservation-multi
-Timestamp: 2026-03-13T22:39:10.205Z
+Timestamp: 2026-03-13T23:55:04.144Z
 Status: SUCCESS
 ============================================================
 
 REQUEST:
 --------
-URL: http://127.0.0.1:4006/api/v1/staah/reservation
+URL: http://127.0.0.1:4006/api/v1/staah-test/reservation
 Method: POST
 Headers:
 {}
@@ -22,14 +22,14 @@ Body:
   "reservations": {
     "reservation": [
       {
-        "bookingId": "STAAH-RES-A-1773441550198",
+        "bookingId": "STAAH-RES-A-1773446104136",
         "room_id": "DELUXE_ROOM",
         "rate_id": "CP_PLAN",
         "checkIn": "2026-12-05",
         "checkOut": "2026-12-06"
       },
       {
-        "bookingId": "STAAH-RES-B-1773441550198",
+        "bookingId": "STAAH-RES-B-1773446104136",
         "room_id": "DELUXE_ROOM",
         "rate_id": "CP_PLAN",
         "checkIn": "2026-12-07",
@@ -37,7 +37,7 @@ Body:
       }
     ]
   },
-  "trackingId": "TRK-MULTI-1773441550198"
+  "trackingId": "TRK-MULTI-1773446104136"
 }
 
 RESPONSE:
@@ -49,8 +49,8 @@ Headers:
   "access-control-allow-origin": "*",
   "content-type": "application/json; charset=utf-8",
   "content-length": "226",
-  "etag": "W/\"e2-rcMewK1kKqywoErxsu1aqraURQQ\"",
-  "date": "Fri, 13 Mar 2026 22:39:10 GMT",
+  "etag": "W/\"e2-zo4sOklx/kBZVWPk0MQ3/xkEuN0\"",
+  "date": "Fri, 13 Mar 2026 23:55:04 GMT",
   "connection": "keep-alive",
   "keep-alive": "timeout=5"
 }
@@ -58,15 +58,15 @@ Headers:
 Data:
 {
   "status": "success",
-  "trackingId": "TRK-MULTI-1773441550198",
+  "trackingId": "TRK-MULTI-1773446104136",
   "bookings": [
     {
-      "bookingId": "STAAH-RES-A-1773441550198",
+      "bookingId": "STAAH-RES-A-1773446104136",
       "status": "success",
       "error_desc": ""
     },
     {
-      "bookingId": "STAAH-RES-B-1773441550198",
+      "bookingId": "STAAH-RES-B-1773446104136",
       "status": "success",
       "error_desc": ""
     }

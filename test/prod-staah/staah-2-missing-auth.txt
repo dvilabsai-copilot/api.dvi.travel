@@ -1,0 +1,32 @@
+============================================================
+STAAH API Test Log
+============================================================
+Test Name: staah-2-missing-auth
+Timestamp: 2026-03-13T23:18:13.875Z
+Status: FAILED
+============================================================
+
+REQUEST:
+--------
+URL: https://dvi.travel/api/v1/staah/productInfo
+Method: POST
+Headers:
+{}
+
+Body:
+{
+  "propertyid": "STAAH_TEST_HOTEL_1",
+  "action": "property_info",
+  "version": "2"
+}
+
+RESPONSE:
+---------
+Status: 401
+Error: Request failed with status code 401
+
+Response Data:
+{
+  "status": "fail",
+  "error_desc": "Unauthorized access. Invalid API key or source IP."
+}

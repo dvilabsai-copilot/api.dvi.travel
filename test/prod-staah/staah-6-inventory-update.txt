@@ -1,0 +1,56 @@
+============================================================
+STAAH API Test Log
+============================================================
+Test Name: staah-6-inventory-update
+Timestamp: 2026-03-13T23:18:14.440Z
+Status: SUCCESS
+============================================================
+
+REQUEST:
+--------
+URL: https://dvi.travel/api/v1/staah/inventoryUpdate
+Method: POST
+Headers:
+{}
+
+Body:
+{
+  "apikey": "staah_C3g8K3b1wray989DVih37od3314r6444",
+  "propertyid": "STAAH_TEST_HOTEL_1",
+  "version": "2",
+  "room_id": "DELUXE_ROOM",
+  "rate_id": "CP_PLAN",
+  "data": [
+    {
+      "start_date": "2026-10-01",
+      "end_date": "2026-10-03",
+      "free": 8
+    },
+    {
+      "start_date": "2026-10-04",
+      "end_date": "2026-10-06",
+      "free": 5
+    }
+  ]
+}
+
+RESPONSE:
+---------
+Status: 200
+Headers:
+{
+  "server": "nginx/1.24.0 (Ubuntu)",
+  "date": "Fri, 13 Mar 2026 23:18:14 GMT",
+  "content-type": "application/json; charset=utf-8",
+  "content-length": "36",
+  "connection": "keep-alive",
+  "x-powered-by": "Express",
+  "access-control-allow-origin": "*",
+  "etag": "W/\"24-ypKu2umBXPlfAf6vrewuMz5Xruo\""
+}
+
+Data:
+{
+  "status": "success",
+  "error_desc": ""
+}

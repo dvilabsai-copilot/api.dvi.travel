@@ -2,13 +2,13 @@
 STAAH API Test Log
 ============================================================
 Test Name: staah-24-arr-info-wrong-version
-Timestamp: 2026-03-13T22:39:10.250Z
+Timestamp: 2026-03-13T23:55:04.193Z
 Status: FAILED
 ============================================================
 
 REQUEST:
 --------
-URL: http://127.0.0.1:4006/api/v1/staah/arrInfo
+URL: http://127.0.0.1:4006/api/v1/staah-test/arrInfo
 Method: POST
 Headers:
 {}
