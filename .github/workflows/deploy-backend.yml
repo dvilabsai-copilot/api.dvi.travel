@@ -43,14 +43,20 @@ jobs:
             echo "Stopping PM2 process before reinstall..."
             pm2 stop dvi-backend || true
 
+            echo "Stopping lingering node/npm processes (if any)..."
+            pkill -f "node|npm|ts-node-dev" || true
+
             echo "Installing dependencies..."
             rm -rf node_modules
-            npm cache verify || npm cache clean --force
+            rm -rf ~/.npm/_cacache ~/.npm/_logs
+            npm cache clean --force || true
+            npm cache verify || true
             if ! npm ci --no-audit --no-fund; then
               echo "npm ci failed on first attempt. Cleaning install artifacts and retrying once..."
               rm -rf node_modules
-              npm cache clean --force
-              npm ci --no-audit --no-fund
+              rm -rf ~/.npm/_cacache ~/.npm/_logs
+              npm cache clean --force || true
+              npm ci --no-audit --no-fund --prefer-online
             fi
 
             echo "Generating Prisma client..."
