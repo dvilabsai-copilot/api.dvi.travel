@@ -273,12 +273,22 @@ export class RouteEngineService {
       const sourceName = String(r.location_name ?? "").trim();
       const destName = String(r.next_visiting_location ?? "").trim();
 
-      // location_id + no_of_km from master stored locations table
+      // location_id from master stored locations table
+// no_of_km should prefer request payload value, with master distance as fallback
       const { locationId, distanceKm } = await this.resolveSourceLocationAndKm(
-        tx,
-        sourceName,
-        destName,
-      );
+  tx,
+  sourceName,
+  destName,
+);
+
+const requestKm =
+  r.no_of_km !== undefined &&
+  r.no_of_km !== null &&
+  String(r.no_of_km).trim() !== ""
+    ? String(r.no_of_km).trim()
+    : "";
+
+const finalKm = requestKm || distanceKm || "";
 
       // itinerary_route_date = trip_start_date + dayOffset (one day per leg)
       const routeDate = new Date(baseDate.getTime());
@@ -310,25 +320,25 @@ export class RouteEngineService {
       // Prisma requires a Date object for @db.Time fields. This helper builds a Date-like
       // value that Prisma can write into MySQL TIME. The IMPORTANT part is: startHms/endHms
       // must be IST wall-clock (fixed above), not UTC-shifted.
-      const row = await (tx as any).dvi_itinerary_route_details.create({
-        data: {
-          itinerary_plan_ID: planId,
-          location_id: locationId,
-          location_name: sourceName,
-          itinerary_route_date: routeDate,
-          no_of_days: 1, // PHP: $selected_NO_OF_DAYS = 1
-          no_of_km: distanceKm, // from master distance; "" or "0" if missing
-          direct_to_next_visiting_place: Number(r.direct_to_next_visiting_place || 0),
-          next_visiting_location: destName,
-          route_start_time: timeStringToPrismaTime(startHms),
-          route_end_time: timeStringToPrismaTime(endHms),
-          createdby: userId,
-          createdon: new Date(),
-          updatedon: null,
-          status: 1,
-          deleted: 0,
-        },
-      });
+     const row = await (tx as any).dvi_itinerary_route_details.create({
+  data: {
+    itinerary_plan_ID: planId,
+    location_id: locationId,
+    location_name: sourceName,
+    itinerary_route_date: routeDate,
+    no_of_days: 1, // PHP: $selected_NO_OF_DAYS = 1
+    no_of_km: finalKm, // prefer request payload value; fallback to master distance
+    direct_to_next_visiting_place: Number(r.direct_to_next_visiting_place || 0),
+    next_visiting_location: destName,
+    route_start_time: timeStringToPrismaTime(startHms),
+    route_end_time: timeStringToPrismaTime(endHms),
+    createdby: userId,
+    createdon: new Date(),
+    updatedon: null,
+    status: 1,
+    deleted: 0,
+  },
+});
 
       created.push(row);
 

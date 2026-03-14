@@ -146,7 +146,21 @@ export interface ItineraryDetailsResponseDto {
   overallCost: string;
 
   // DAY / ROUTE TIMELINE
-  days: any[]; // already shaped for FE (Start/Travel/Attraction/Return)
+  days: {
+  id: number;
+  dayNumber: number;
+  date: Date | string;
+  locationId: number;
+  departure: string;
+  arrival: string;
+  distance: string;
+  intercityDistance: string;
+  sightseeingDistance: string;
+  startTime: string;
+  endTime: string;
+  viaRoutes: { id: number; name: string }[];
+  segments: any[];
+}[]; // already shaped for FE (Start/Travel/Attraction/Return)
 
   // VEHICLES
   vehicles: ItineraryVehicleRowDto[];
@@ -167,6 +181,10 @@ export class ItineraryDetailsService {
   // ---------------------------------------------------------------------------
   // Low-level helpers
   // ---------------------------------------------------------------------------
+
+  private formatKm(value: number): string {
+  return `${value.toFixed(2)} KM`;
+}
 
   private toBigIntOrZero(value?: number | string | bigint | null): bigint {
     if (typeof value === 'bigint') return value;
@@ -1020,19 +1038,28 @@ export class ItineraryDetailsService {
         });
       }
 
-      // Day distance: prefer total_running_kms from route (PHP header),
-      // otherwise fall back to summed travel distances.
-      let dayDistance: string | undefined = undefined;
-      const totalRunningRaw: any = (route as any).total_running_kms;
-      if (totalRunningRaw !== undefined && totalRunningRaw !== null) {
-        const n = parseFloat(String(totalRunningRaw));
-        if (!Number.isNaN(n)) {
-          dayDistance = `${n.toFixed(2)} KM`;
-        }
-      }
-      if (!dayDistance && totalDistanceKm > 0) {
-        dayDistance = `${totalDistanceKm.toFixed(2)} KM`;
-      }
+      // Intercity distance = actual city-to-city route distance
+const intercityDistanceNum = parseFloat(String((route as any).no_of_km ?? 0)) || 0;
+
+// Sightseeing distance = sum of hotspot travelling distances inside the day
+const sightseeingDistanceNum = routeHotspots.reduce((sum, rh) => {
+  const itemType = Number((rh as any).item_type ?? 0);
+
+  // Ignore pure START rows
+  if (itemType === 1) return sum;
+
+  const distanceStr = String((rh as any).hotspot_travelling_distance ?? '').trim();
+  const distanceNum = distanceStr ? parseFloat(distanceStr) : 0;
+
+  return sum + (Number.isNaN(distanceNum) ? 0 : distanceNum);
+}, 0);
+
+// Total distance = intercity + sightseeing
+const totalDistanceNum = intercityDistanceNum + sightseeingDistanceNum;
+
+const intercityDistance = this.formatKm(intercityDistanceNum);
+const sightseeingDistance = this.formatKm(sightseeingDistanceNum);
+const dayDistance = this.formatKm(totalDistanceNum);
 
       const dayStartTimeText = this.formatTime(route.route_start_time as any);
 
@@ -1051,27 +1078,29 @@ export class ItineraryDetailsService {
         name: vr.itinerary_via_location_name,
       }));
 
-      days.push({
-        id: route.itinerary_route_ID,
-        dayNumber: index + 1,
-        date: route.itinerary_route_date,
-        locationId: Number(route.location_id || 0),
-        departure:
-          location?.source_location ??
-          route.location_name ??
-          plan.arrival_location ??
-          '',
-        arrival:
-          location?.destination_location ??
-          route.next_visiting_location ??
-          plan.departure_location ??
-          '',
-        distance: dayDistance,
-        startTime: dayStartTimeText,
-        endTime: dayEndTimeText,
-        viaRoutes: viaRoutesList,
-        segments,
-      });
+     days.push({
+  id: route.itinerary_route_ID,
+  dayNumber: index + 1,
+  date: route.itinerary_route_date,
+  locationId: Number(route.location_id || 0),
+  departure:
+    location?.source_location ??
+    route.location_name ??
+    plan.arrival_location ??
+    '',
+  arrival:
+    location?.destination_location ??
+    route.next_visiting_location ??
+    plan.departure_location ??
+    '',
+  distance: dayDistance, // total distance
+  intercityDistance,     // city-to-city only
+  sightseeingDistance,   // local sightseeing only
+  startTime: dayStartTimeText,
+  endTime: dayEndTimeText,
+  viaRoutes: viaRoutesList,
+  segments,
+});
     }
 
     // ------------------------------ VEHICLES ------------------------------
