@@ -2,20 +2,20 @@
 STAAH API Test Log
 ============================================================
 Test Name: staah-13-year-info-arr
-Timestamp: 2026-03-13T19:27:47.697Z
+Timestamp: 2026-03-13T21:38:29.628Z
 Status: SUCCESS
 ============================================================
 
 REQUEST:
 --------
-URL: https://dvi.travel/api/v1/staah/yearInfoArr
+URL: http://127.0.0.1:4006/api/v1/staah/yearInfoArr
 Method: POST
 Headers:
 {}
 
 Body:
 {
-  "apikey": "staah_C3g8K3b1wray989DVih37od3314r6444",
+  "apikey": "staah-local-test-key",
   "propertyid": "STAAH_TEST_HOTEL_1",
   "room_id": "DELUXE_ROOM",
   "rate_id": "CP_PLAN",
@@ -28,19 +28,150 @@ RESPONSE:
 Status: 200
 Headers:
 {
-  "server": "nginx/1.24.0 (Ubuntu)",
-  "date": "Fri, 13 Mar 2026 19:27:46 GMT",
-  "content-type": "application/json; charset=utf-8",
-  "content-length": "105",
-  "connection": "keep-alive",
   "x-powered-by": "Express",
   "access-control-allow-origin": "*",
-  "etag": "W/\"69-qYyhjEy/j0aeomqv30FWixxFmeg\""
+  "content-type": "application/json; charset=utf-8",
+  "content-length": "1817",
+  "etag": "W/\"719-XUbnRiKONEtavCQ9gN2UlDxQh6M\"",
+  "date": "Fri, 13 Mar 2026 21:38:29 GMT",
+  "connection": "keep-alive",
+  "keep-alive": "timeout=5"
 }
 
 Data:
 {
-  "status": "fail",
-  "error_desc": "Invalid property ID.",
-  "trackingId": "869A9F4D-5BAC-43C7-B298-96041C7855E8"
+  "status": "success",
+  "error_desc": "",
+  "trackingId": "EA374ADE-730B-4A2D-B865-A161F4356C45",
+  "propertyid": "STAAH_TEST_HOTEL_1",
+  "room_id": "DELUXE_ROOM",
+  "rate_id": "CP_PLAN",
+  "currency": "INR",
+  "data": [
+    {
+      "start_date": "2026-10-01",
+      "end_date": "2026-10-03",
+      "free": 8,
+      "occupancy_rates": {
+        "DOUBLE": 5200,
+        "SINGLE": 4200,
+        "TRIPLE": 6200
+      }
+    },
+    {
+      "start_date": "2026-10-04",
+      "end_date": "2026-10-06",
+      "free": 5
+    },
+    {
+      "start_date": "2026-11-01",
+      "end_date": "2026-11-05",
+      "restrictions": {
+        "Status": "Open"
+      }
+    }
+  ],
+  "inventory": [
+    {
+      "start_date": "2026-10-01",
+      "end_date": "2026-10-03",
+      "free": 8
+    },
+    {
+      "start_date": "2026-10-04",
+      "end_date": "2026-10-06",
+      "free": 5
+    }
+  ],
+  "rates": [
+    {
+      "start_date": "2026-10-01",
+      "end_date": "2026-10-03",
+      "occupancy_rates": {
+        "DOUBLE": 5200,
+        "SINGLE": 4200,
+        "TRIPLE": 6200
+      }
+    }
+  ],
+  "restrictions": [
+    {
+      "start_date": "2026-11-01",
+      "end_date": "2026-11-05",
+      "type": "Status",
+      "value": "Open"
+    },
+    {
+      "start_date": "2026-11-01",
+      "end_date": "2026-11-05",
+      "type": "Status",
+      "value": "Open"
+    },
+    {
+      "start_date": "2026-11-01",
+      "end_date": "2026-11-05",
+      "type": "Status",
+      "value": "Open"
+    },
+    {
+      "start_date": "2026-11-01",
+      "end_date": "2026-11-05",
+      "type": "Status",
+      "value": "Open"
+    },
+    {
+      "start_date": "2026-11-01",
+      "end_date": "2026-11-05",
+      "type": "Status",
+      "value": "Open"
+    },
+    {
+      "start_date": "2026-11-01",
+      "end_date": "2026-11-05",
+      "type": "Status",
+      "value": "Open"
+    },
+    {
+      "start_date": "2026-11-01",
+      "end_date": "2026-11-05",
+      "type": "Status",
+      "value": "Open"
+    },
+    {
+      "start_date": "2026-11-01",
+      "end_date": "2026-11-05",
+      "type": "Status",
+      "value": "Open"
+    },
+    {
+      "start_date": "2026-11-01",
+      "end_date": "2026-11-05",
+      "type": "Status",
+      "value": "Open"
+    },
+    {
+      "start_date": "2026-11-01",
+      "end_date": "2026-11-05",
+      "type": "Status",
+      "value": "Open"
+    },
+    {
+      "start_date": "2026-11-01",
+      "end_date": "2026-11-05",
+      "type": "Status",
+      "value": "Open"
+    },
+    {
+      "start_date": "2026-11-01",
+      "end_date": "2026-11-05",
+      "type": "Status",
+      "value": "Open"
+    },
+    {
+      "start_date": "2026-11-01",
+      "end_date": "2026-11-05",
+      "type": "Status",
+      "value": "Open"
+    }
+  ]
 }

@@ -2,28 +2,28 @@
 STAAH API Test Log
 ============================================================
 Test Name: staah-11-cancel-reservation
-Timestamp: 2026-03-13T19:27:47.611Z
+Timestamp: 2026-03-13T21:38:29.604Z
 Status: SUCCESS
 ============================================================
 
 REQUEST:
 --------
-URL: https://dvi.travel/api/v1/staah/cancelReservation
+URL: http://127.0.0.1:4006/api/v1/staah/cancelReservation
 Method: POST
 Headers:
 {}
 
 Body:
 {
-  "apikey": "staah_C3g8K3b1wray989DVih37od3314r6444",
+  "apikey": "staah-local-test-key",
   "propertyid": "STAAH_TEST_HOTEL_1",
   "version": "2",
-  "reservationId": "STAAH-RES-1773430067571",
+  "reservationId": "STAAH-RES-1773437909599",
   "data": {
     "status": "cancelled",
     "reason": "Test cancellation payload"
   },
-  "trackingId": "TRK-CAN-1773430067571"
+  "trackingId": "TRK-CAN-1773437909599"
 }
 
 RESPONSE:
@@ -31,18 +31,18 @@ RESPONSE:
 Status: 200
 Headers:
 {
-  "server": "nginx/1.24.0 (Ubuntu)",
-  "date": "Fri, 13 Mar 2026 19:27:45 GMT",
-  "content-type": "application/json; charset=utf-8",
-  "content-length": "53",
-  "connection": "keep-alive",
   "x-powered-by": "Express",
   "access-control-allow-origin": "*",
-  "etag": "W/\"35-gL0FFNYo2o0/kuZDY8ATGqeLFPU\""
+  "content-type": "application/json; charset=utf-8",
+  "content-length": "36",
+  "etag": "W/\"24-ypKu2umBXPlfAf6vrewuMz5Xruo\"",
+  "date": "Fri, 13 Mar 2026 21:38:29 GMT",
+  "connection": "keep-alive",
+  "keep-alive": "timeout=5"
 }
 
 Data:
 {
-  "status": "fail",
-  "error_desc": "Invalid property ID."
+  "status": "success",
+  "error_desc": ""
 }

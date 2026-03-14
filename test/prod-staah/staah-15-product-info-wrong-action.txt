@@ -1,0 +1,36 @@
+============================================================
+STAAH API Test Log
+============================================================
+Test Name: staah-15-product-info-wrong-action
+Timestamp: 2026-03-13T23:18:13.995Z
+Status: FAILED
+============================================================
+
+REQUEST:
+--------
+URL: https://dvi.travel/api/v1/staah/productInfo
+Method: POST
+Headers:
+{}
+
+Body:
+{
+  "apikey": "staah_C3g8K3b1wray989DVih37od3314r6444",
+  "propertyid": "STAAH_TEST_HOTEL_1",
+  "action": "wrong_action",
+  "version": "2"
+}
+
+RESPONSE:
+---------
+Status: 400
+Error: Request failed with status code 400
+
+Response Data:
+{
+  "status": "fail",
+  "error_desc": "action must be one of the following values: property_info",
+  "details": [
+    "action must be one of the following values: property_info"
+  ]
+}

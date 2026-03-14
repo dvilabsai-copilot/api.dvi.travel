@@ -2,13 +2,13 @@
 STAAH API Test Log
 ============================================================
 Test Name: staah-4-product-info
-Timestamp: 2026-03-13T22:39:10.131Z
+Timestamp: 2026-03-13T23:55:04.068Z
 Status: SUCCESS
 ============================================================
 
 REQUEST:
 --------
-URL: http://127.0.0.1:4006/api/v1/staah/productInfo
+URL: http://127.0.0.1:4006/api/v1/staah-test/productInfo
 Method: POST
 Headers:
 {}
@@ -30,8 +30,8 @@ Headers:
   "access-control-allow-origin": "*",
   "content-type": "application/json; charset=utf-8",
   "content-length": "348",
-  "etag": "W/\"15c-H6P+hTKMGvqKLqXmrZJJGNQE71A\"",
-  "date": "Fri, 13 Mar 2026 22:39:10 GMT",
+  "etag": "W/\"15c-q8f4mgi8vqaQwdzutoOWHV99Cbw\"",
+  "date": "Fri, 13 Mar 2026 23:55:04 GMT",
   "connection": "keep-alive",
   "keep-alive": "timeout=5"
 }
@@ -53,7 +53,7 @@ Data:
     "telephone": "",
     "location": "Test City"
   },
-  "trackingId": "73C27AAC-4F7D-4E65-92B5-653F2AD41329",
+  "trackingId": "50422C9C-ADD4-4ECB-826F-F5796451702B",
   "status": "success",
   "error_desc": ""
 }

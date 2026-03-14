@@ -2,13 +2,13 @@
 STAAH API Test Log
 ============================================================
 Test Name: staah-6-inventory-update
-Timestamp: 2026-03-13T22:39:10.148Z
+Timestamp: 2026-03-13T23:55:04.085Z
 Status: SUCCESS
 ============================================================
 
 REQUEST:
 --------
-URL: http://127.0.0.1:4006/api/v1/staah/inventoryUpdate
+URL: http://127.0.0.1:4006/api/v1/staah-test/inventoryUpdate
 Method: POST
 Headers:
 {}
@@ -44,7 +44,7 @@ Headers:
   "content-type": "application/json; charset=utf-8",
   "content-length": "36",
   "etag": "W/\"24-ypKu2umBXPlfAf6vrewuMz5Xruo\"",
-  "date": "Fri, 13 Mar 2026 22:39:10 GMT",
+  "date": "Fri, 13 Mar 2026 23:55:04 GMT",
   "connection": "keep-alive",
   "keep-alive": "timeout=5"
 }

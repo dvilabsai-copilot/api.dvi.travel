@@ -1,0 +1,36 @@
+============================================================
+STAAH API Test Log
+============================================================
+Test Name: staah-18-rate-plan-info-wrong-version
+Timestamp: 2026-03-13T23:18:14.107Z
+Status: FAILED
+============================================================
+
+REQUEST:
+--------
+URL: https://dvi.travel/api/v1/staah/ratePlanInfo
+Method: POST
+Headers:
+{}
+
+Body:
+{
+  "apikey": "staah_C3g8K3b1wray989DVih37od3314r6444",
+  "propertyid": "STAAH_TEST_HOTEL_1",
+  "action": "roomrate_info",
+  "version": "1"
+}
+
+RESPONSE:
+---------
+Status: 400
+Error: Request failed with status code 400
+
+Response Data:
+{
+  "status": "fail",
+  "error_desc": "version must be one of the following values: 2",
+  "details": [
+    "version must be one of the following values: 2"
+  ]
+}

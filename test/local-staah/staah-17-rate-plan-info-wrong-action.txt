@@ -2,13 +2,13 @@
 STAAH API Test Log
 ============================================================
 Test Name: staah-17-rate-plan-info-wrong-action
-Timestamp: 2026-03-13T22:39:10.109Z
+Timestamp: 2026-03-13T23:55:04.050Z
 Status: FAILED
 ============================================================
 
 REQUEST:
 --------
-URL: http://127.0.0.1:4006/api/v1/staah/ratePlanInfo
+URL: http://127.0.0.1:4006/api/v1/staah-test/ratePlanInfo
 Method: POST
 Headers:
 {}

@@ -2,13 +2,13 @@
 STAAH API Test Log
 ============================================================
 Test Name: staah-7-rate-update
-Timestamp: 2026-03-13T22:39:10.156Z
+Timestamp: 2026-03-13T23:55:04.093Z
 Status: SUCCESS
 ============================================================
 
 REQUEST:
 --------
-URL: http://127.0.0.1:4006/api/v1/staah/rateUpdate
+URL: http://127.0.0.1:4006/api/v1/staah-test/rateUpdate
 Method: POST
 Headers:
 {}
@@ -41,7 +41,7 @@ Headers:
   "content-type": "application/json; charset=utf-8",
   "content-length": "36",
   "etag": "W/\"24-ypKu2umBXPlfAf6vrewuMz5Xruo\"",
-  "date": "Fri, 13 Mar 2026 22:39:10 GMT",
+  "date": "Fri, 13 Mar 2026 23:55:04 GMT",
   "connection": "keep-alive",
   "keep-alive": "timeout=5"
 }

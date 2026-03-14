@@ -1,0 +1,400 @@
+{
+  "info": {
+    "name": "STAAH CM-OTA APIs",
+    "description": "STAAH Channel Manager OTA integration endpoints. All requests require `apikey` in the body.\n\nVariables:\n- `baseUrl`       → server base (e.g. https://dvi.travel or http://localhost:4006)\n- `apiPrefix`     → /api/v1\n- `staahApiKey`   → value of STAAH_API_KEY on the server\n- `propertyId`    → STAAH property ID\n- `roomId`        → room ID\n- `ratePlanId`    → rate plan ID",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl",     "value": "https://dvi.travel",                       "type": "string" },
+    { "key": "apiPrefix",   "value": "/api/v1",                                  "type": "string" },
+    { "key": "staahApiKey", "value": "staah_C3g8K3b1wray989DVih37od3314r6444",  "type": "string" },
+    { "key": "propertyId",  "value": "STAAH_TEST_HOTEL_1",                       "type": "string" },
+    { "key": "roomId",      "value": "DELUXE_ROOM",                              "type": "string" },
+    { "key": "ratePlanId",  "value": "CP_PLAN",                                  "type": "string" },
+    { "key": "startDate",   "value": "2026-10-01",                               "type": "string" },
+    { "key": "endDate",     "value": "2026-10-31",                               "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Authentication",
+      "description": "Tests for guard behaviour — invalid / missing API key.",
+      "item": [
+        {
+          "name": "Invalid API Key → 401",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}{{apiPrefix}}/staah/productInfo", "host": ["{{baseUrl}}{{apiPrefix}}"], "path": ["staah", "productInfo"] },
+            "body": {
+              "mode": "raw",
+              "options": { "raw": { "language": "json" } },
+              "raw": "{\n  \"apikey\": \"wrong-key\",\n  \"propertyid\": \"{{propertyId}}\",\n  \"action\": \"property_info\",\n  \"version\": \"2\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Missing Auth Credentials → 401",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}{{apiPrefix}}/staah/productInfo", "host": ["{{baseUrl}}{{apiPrefix}}"], "path": ["staah", "productInfo"] },
+            "body": {
+              "mode": "raw",
+              "options": { "raw": { "language": "json" } },
+              "raw": "{\n  \"propertyid\": \"{{propertyId}}\",\n  \"action\": \"property_info\",\n  \"version\": \"2\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Property & Rate Plan Pull",
+      "description": "Read-only pull endpoints. Body field `action` and `version` are validated strictly.",
+      "item": [
+        {
+          "name": "productInfo — property_info",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}{{apiPrefix}}/staah/productInfo", "host": ["{{baseUrl}}{{apiPrefix}}"], "path": ["staah", "productInfo"] },
+            "body": {
+              "mode": "raw",
+              "options": { "raw": { "language": "json" } },
+              "raw": "{\n  \"apikey\": \"{{staahApiKey}}\",\n  \"propertyid\": \"{{propertyId}}\",\n  \"action\": \"property_info\",\n  \"version\": \"2\"\n}"
+            }
+          }
+        },
+        {
+          "name": "productInfo — wrong action → 400",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}{{apiPrefix}}/staah/productInfo", "host": ["{{baseUrl}}{{apiPrefix}}"], "path": ["staah", "productInfo"] },
+            "body": {
+              "mode": "raw",
+              "options": { "raw": { "language": "json" } },
+              "raw": "{\n  \"apikey\": \"{{staahApiKey}}\",\n  \"propertyid\": \"{{propertyId}}\",\n  \"action\": \"wrong_action\",\n  \"version\": \"2\"\n}"
+            }
+          }
+        },
+        {
+          "name": "productInfo — wrong version → 400",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}{{apiPrefix}}/staah/productInfo", "host": ["{{baseUrl}}{{apiPrefix}}"], "path": ["staah", "productInfo"] },
+            "body": {
+              "mode": "raw",
+              "options": { "raw": { "language": "json" } },
+              "raw": "{\n  \"apikey\": \"{{staahApiKey}}\",\n  \"propertyid\": \"{{propertyId}}\",\n  \"action\": \"property_info\",\n  \"version\": \"3\"\n}"
+            }
+          }
+        },
+        {
+          "name": "ratePlanInfo — roomrate_info",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}{{apiPrefix}}/staah/ratePlanInfo", "host": ["{{baseUrl}}{{apiPrefix}}"], "path": ["staah", "ratePlanInfo"] },
+            "body": {
+              "mode": "raw",
+              "options": { "raw": { "language": "json" } },
+              "raw": "{\n  \"apikey\": \"{{staahApiKey}}\",\n  \"propertyid\": \"{{propertyId}}\",\n  \"action\": \"roomrate_info\",\n  \"version\": \"2\"\n}"
+            }
+          }
+        },
+        {
+          "name": "ratePlanInfo — wrong action → 400",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}{{apiPrefix}}/staah/ratePlanInfo", "host": ["{{baseUrl}}{{apiPrefix}}"], "path": ["staah", "ratePlanInfo"] },
+            "body": {
+              "mode": "raw",
+              "options": { "raw": { "language": "json" } },
+              "raw": "{\n  \"apikey\": \"{{staahApiKey}}\",\n  \"propertyid\": \"{{propertyId}}\",\n  \"action\": \"wrong_action\",\n  \"version\": \"2\"\n}"
+            }
+          }
+        },
+        {
+          "name": "ratePlanInfo — wrong version → 400",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}{{apiPrefix}}/staah/ratePlanInfo", "host": ["{{baseUrl}}{{apiPrefix}}"], "path": ["staah", "ratePlanInfo"] },
+            "body": {
+              "mode": "raw",
+              "options": { "raw": { "language": "json" } },
+              "raw": "{\n  \"apikey\": \"{{staahApiKey}}\",\n  \"propertyid\": \"{{propertyId}}\",\n  \"action\": \"roomrate_info\",\n  \"version\": \"1\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ARI Push (Inventory / Rate / Restriction)",
+      "description": "STAAH pushes availability, rates and restrictions to this adapter.",
+      "item": [
+        {
+          "name": "inventoryUpdate",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}{{apiPrefix}}/staah/inventoryUpdate", "host": ["{{baseUrl}}{{apiPrefix}}"], "path": ["staah", "inventoryUpdate"] },
+            "body": {
+              "mode": "raw",
+              "options": { "raw": { "language": "json" } },
+              "raw": "{\n  \"apikey\": \"{{staahApiKey}}\",\n  \"propertyid\": \"{{propertyId}}\",\n  \"version\": \"2\",\n  \"room_id\": \"{{roomId}}\",\n  \"rate_id\": \"{{ratePlanId}}\",\n  \"data\": [\n    { \"start_date\": \"{{startDate}}\", \"end_date\": \"2026-10-03\", \"free\": 8 },\n    { \"start_date\": \"2026-10-04\",    \"end_date\": \"2026-10-06\", \"free\": 5 }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "rateUpdate",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}{{apiPrefix}}/staah/rateUpdate", "host": ["{{baseUrl}}{{apiPrefix}}"], "path": ["staah", "rateUpdate"] },
+            "body": {
+              "mode": "raw",
+              "options": { "raw": { "language": "json" } },
+              "raw": "{\n  \"apikey\": \"{{staahApiKey}}\",\n  \"propertyid\": \"{{propertyId}}\",\n  \"version\": \"2\",\n  \"room_id\": \"{{roomId}}\",\n  \"rate_id\": \"{{ratePlanId}}\",\n  \"data\": [\n    {\n      \"start_date\": \"{{startDate}}\",\n      \"end_date\": \"2026-10-03\",\n      \"SINGLE\": 4200,\n      \"DOUBLE\": 5200,\n      \"TRIPLE\": 6200\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "restrictionUpdate",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}{{apiPrefix}}/staah/restrictionUpdate", "host": ["{{baseUrl}}{{apiPrefix}}"], "path": ["staah", "restrictionUpdate"] },
+            "body": {
+              "mode": "raw",
+              "options": { "raw": { "language": "json" } },
+              "raw": "{\n  \"apikey\": \"{{staahApiKey}}\",\n  \"propertyid\": \"{{propertyId}}\",\n  \"version\": \"2\",\n  \"room_id\": \"{{roomId}}\",\n  \"rate_id\": \"{{ratePlanId}}\",\n  \"data\": [\n    {\n      \"start_date\": \"2026-11-01\",\n      \"end_date\": \"2026-11-05\",\n      \"type\": \"Status\",\n      \"value\": \"Open\"\n    }\n  ]\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Reservations",
+      "description": "Reservation push (new booking), modify, and cancel.",
+      "item": [
+        {
+          "name": "reservation — new booking",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}{{apiPrefix}}/staah/reservation", "host": ["{{baseUrl}}{{apiPrefix}}"], "path": ["staah", "reservation"] },
+            "body": {
+              "mode": "raw",
+              "options": { "raw": { "language": "json" } },
+              "raw": "{\n  \"apikey\": \"{{staahApiKey}}\",\n  \"propertyid\": \"{{propertyId}}\",\n  \"action\": \"reservation_info\",\n  \"version\": \"2\",\n  \"reservations\": {\n    \"reservation\": [\n      {\n        \"bookingId\": \"STAAH-RES-001\",\n        \"room_id\": \"{{roomId}}\",\n        \"rate_id\": \"{{ratePlanId}}\",\n        \"checkIn\": \"2026-12-01\",\n        \"checkOut\": \"2026-12-03\"\n      }\n    ]\n  },\n  \"trackingId\": \"TRK-001\"\n}"
+            }
+          }
+        },
+        {
+          "name": "reservation — wrong action → 400",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}{{apiPrefix}}/staah/reservation", "host": ["{{baseUrl}}{{apiPrefix}}"], "path": ["staah", "reservation"] },
+            "body": {
+              "mode": "raw",
+              "options": { "raw": { "language": "json" } },
+              "raw": "{\n  \"apikey\": \"{{staahApiKey}}\",\n  \"propertyid\": \"{{propertyId}}\",\n  \"action\": \"wrong_action\",\n  \"version\": \"2\",\n  \"reservations\": { \"reservation\": [] }\n}"
+            }
+          }
+        },
+        {
+          "name": "reservation — wrong version → 400",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}{{apiPrefix}}/staah/reservation", "host": ["{{baseUrl}}{{apiPrefix}}"], "path": ["staah", "reservation"] },
+            "body": {
+              "mode": "raw",
+              "options": { "raw": { "language": "json" } },
+              "raw": "{\n  \"apikey\": \"{{staahApiKey}}\",\n  \"propertyid\": \"{{propertyId}}\",\n  \"action\": \"reservation_info\",\n  \"version\": \"1\",\n  \"reservations\": { \"reservation\": [] }\n}"
+            }
+          }
+        },
+        {
+          "name": "reservation — missing reservations wrapper → 400",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}{{apiPrefix}}/staah/reservation", "host": ["{{baseUrl}}{{apiPrefix}}"], "path": ["staah", "reservation"] },
+            "body": {
+              "mode": "raw",
+              "options": { "raw": { "language": "json" } },
+              "raw": "{\n  \"apikey\": \"{{staahApiKey}}\",\n  \"propertyid\": \"{{propertyId}}\",\n  \"action\": \"reservation_info\",\n  \"version\": \"2\"\n}"
+            }
+          }
+        },
+        {
+          "name": "reservation — missing reservation array → 400",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}{{apiPrefix}}/staah/reservation", "host": ["{{baseUrl}}{{apiPrefix}}"], "path": ["staah", "reservation"] },
+            "body": {
+              "mode": "raw",
+              "options": { "raw": { "language": "json" } },
+              "raw": "{\n  \"apikey\": \"{{staahApiKey}}\",\n  \"propertyid\": \"{{propertyId}}\",\n  \"action\": \"reservation_info\",\n  \"version\": \"2\",\n  \"reservations\": {}\n}"
+            }
+          }
+        },
+        {
+          "name": "modifyReservation",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}{{apiPrefix}}/staah/modifyReservation", "host": ["{{baseUrl}}{{apiPrefix}}"], "path": ["staah", "modifyReservation"] },
+            "body": {
+              "mode": "raw",
+              "options": { "raw": { "language": "json" } },
+              "raw": "{\n  \"apikey\": \"{{staahApiKey}}\",\n  \"propertyid\": \"{{propertyId}}\",\n  \"version\": \"2\",\n  \"reservationId\": \"STAAH-RES-001\",\n  \"data\": {\n    \"status\": \"modified\",\n    \"note\": \"Guest request change\"\n  },\n  \"trackingId\": \"TRK-MOD-001\"\n}"
+            }
+          }
+        },
+        {
+          "name": "cancelReservation",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}{{apiPrefix}}/staah/cancelReservation", "host": ["{{baseUrl}}{{apiPrefix}}"], "path": ["staah", "cancelReservation"] },
+            "body": {
+              "mode": "raw",
+              "options": { "raw": { "language": "json" } },
+              "raw": "{\n  \"apikey\": \"{{staahApiKey}}\",\n  \"propertyid\": \"{{propertyId}}\",\n  \"version\": \"2\",\n  \"reservationId\": \"STAAH-RES-001\",\n  \"data\": {\n    \"status\": \"cancelled\",\n    \"reason\": \"Guest cancellation\"\n  },\n  \"trackingId\": \"TRK-CAN-001\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ARI Pull (arrInfo / yearInfoArr)",
+      "description": "Adapter pull endpoints. Request body matches exact STAAH v2 doc contract.",
+      "item": [
+        {
+          "name": "arrInfo — date-range pull",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}{{apiPrefix}}/staah/arrInfo", "host": ["{{baseUrl}}{{apiPrefix}}"], "path": ["staah", "arrInfo"] },
+            "body": {
+              "mode": "raw",
+              "options": { "raw": { "language": "json" } },
+              "raw": "{\n  \"apikey\": \"{{staahApiKey}}\",\n  \"propertyid\": \"{{propertyId}}\",\n  \"room_id\": \"{{roomId}}\",\n  \"rate_id\": \"{{ratePlanId}}\",\n  \"action\": \"ARR_info\",\n  \"from_date\": \"{{startDate}}\",\n  \"to_date\": \"{{endDate}}\",\n  \"version\": \"2\"\n}"
+            }
+          }
+        },
+        {
+          "name": "arrInfo — wrong action → 400",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}{{apiPrefix}}/staah/arrInfo", "host": ["{{baseUrl}}{{apiPrefix}}"], "path": ["staah", "arrInfo"] },
+            "body": {
+              "mode": "raw",
+              "options": { "raw": { "language": "json" } },
+              "raw": "{\n  \"apikey\": \"{{staahApiKey}}\",\n  \"propertyid\": \"{{propertyId}}\",\n  \"room_id\": \"{{roomId}}\",\n  \"rate_id\": \"{{ratePlanId}}\",\n  \"action\": \"wrong_action\",\n  \"from_date\": \"{{startDate}}\",\n  \"to_date\": \"{{endDate}}\",\n  \"version\": \"2\"\n}"
+            }
+          }
+        },
+        {
+          "name": "arrInfo — wrong version → 400",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}{{apiPrefix}}/staah/arrInfo", "host": ["{{baseUrl}}{{apiPrefix}}"], "path": ["staah", "arrInfo"] },
+            "body": {
+              "mode": "raw",
+              "options": { "raw": { "language": "json" } },
+              "raw": "{\n  \"apikey\": \"{{staahApiKey}}\",\n  \"propertyid\": \"{{propertyId}}\",\n  \"room_id\": \"{{roomId}}\",\n  \"rate_id\": \"{{ratePlanId}}\",\n  \"action\": \"ARR_info\",\n  \"from_date\": \"{{startDate}}\",\n  \"to_date\": \"{{endDate}}\",\n  \"version\": \"1\"\n}"
+            }
+          }
+        },
+        {
+          "name": "arrInfo — invalid from_date → 400",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}{{apiPrefix}}/staah/arrInfo", "host": ["{{baseUrl}}{{apiPrefix}}"], "path": ["staah", "arrInfo"] },
+            "body": {
+              "mode": "raw",
+              "options": { "raw": { "language": "json" } },
+              "raw": "{\n  \"apikey\": \"{{staahApiKey}}\",\n  \"propertyid\": \"{{propertyId}}\",\n  \"room_id\": \"{{roomId}}\",\n  \"rate_id\": \"{{ratePlanId}}\",\n  \"action\": \"ARR_info\",\n  \"from_date\": \"bad-date\",\n  \"to_date\": \"{{endDate}}\",\n  \"version\": \"2\"\n}"
+            }
+          }
+        },
+        {
+          "name": "arrInfo — invalid to_date → 400",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}{{apiPrefix}}/staah/arrInfo", "host": ["{{baseUrl}}{{apiPrefix}}"], "path": ["staah", "arrInfo"] },
+            "body": {
+              "mode": "raw",
+              "options": { "raw": { "language": "json" } },
+              "raw": "{\n  \"apikey\": \"{{staahApiKey}}\",\n  \"propertyid\": \"{{propertyId}}\",\n  \"room_id\": \"{{roomId}}\",\n  \"rate_id\": \"{{ratePlanId}}\",\n  \"action\": \"ARR_info\",\n  \"from_date\": \"{{startDate}}\",\n  \"to_date\": \"bad-date\",\n  \"version\": \"2\"\n}"
+            }
+          }
+        },
+        {
+          "name": "arrInfo — from_date > to_date → 400",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}{{apiPrefix}}/staah/arrInfo", "host": ["{{baseUrl}}{{apiPrefix}}"], "path": ["staah", "arrInfo"] },
+            "body": {
+              "mode": "raw",
+              "options": { "raw": { "language": "json" } },
+              "raw": "{\n  \"apikey\": \"{{staahApiKey}}\",\n  \"propertyid\": \"{{propertyId}}\",\n  \"room_id\": \"{{roomId}}\",\n  \"rate_id\": \"{{ratePlanId}}\",\n  \"action\": \"ARR_info\",\n  \"from_date\": \"2026-10-31\",\n  \"to_date\": \"2026-10-01\",\n  \"version\": \"2\"\n}"
+            }
+          }
+        },
+        {
+          "name": "yearInfoArr — full-year pull",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}{{apiPrefix}}/staah/yearInfoArr", "host": ["{{baseUrl}}{{apiPrefix}}"], "path": ["staah", "yearInfoArr"] },
+            "body": {
+              "mode": "raw",
+              "options": { "raw": { "language": "json" } },
+              "raw": "{\n  \"apikey\": \"{{staahApiKey}}\",\n  \"propertyid\": \"{{propertyId}}\",\n  \"room_id\": \"{{roomId}}\",\n  \"rate_id\": \"{{ratePlanId}}\",\n  \"action\": \"year_info_ARR\",\n  \"version\": \"2\"\n}"
+            }
+          }
+        },
+        {
+          "name": "yearInfoArr — wrong action → 400",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}{{apiPrefix}}/staah/yearInfoArr", "host": ["{{baseUrl}}{{apiPrefix}}"], "path": ["staah", "yearInfoArr"] },
+            "body": {
+              "mode": "raw",
+              "options": { "raw": { "language": "json" } },
+              "raw": "{\n  \"apikey\": \"{{staahApiKey}}\",\n  \"propertyid\": \"{{propertyId}}\",\n  \"room_id\": \"{{roomId}}\",\n  \"rate_id\": \"{{ratePlanId}}\",\n  \"action\": \"wrong_action\",\n  \"version\": \"2\"\n}"
+            }
+          }
+        },
+        {
+          "name": "yearInfoArr — wrong version → 400",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}{{apiPrefix}}/staah/yearInfoArr", "host": ["{{baseUrl}}{{apiPrefix}}"], "path": ["staah", "yearInfoArr"] },
+            "body": {
+              "mode": "raw",
+              "options": { "raw": { "language": "json" } },
+              "raw": "{\n  \"apikey\": \"{{staahApiKey}}\",\n  \"propertyid\": \"{{propertyId}}\",\n  \"room_id\": \"{{roomId}}\",\n  \"rate_id\": \"{{ratePlanId}}\",\n  \"action\": \"year_info_ARR\",\n  \"version\": \"1\"\n}"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

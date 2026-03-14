@@ -46,7 +46,7 @@ import { ArrInfoRequestDto, ArrInfoResponseDto } from './dto/arr-info.dto';
 import { YearInfoArrRequestDto, YearInfoArrResponseDto } from './dto/year-info-arr.dto';
 import { StaahExceptionFilter } from './filters/staah-exception.filter';
 
-@Controller('staah')
+@Controller(['staah', 'staah-test'])
 @Public()
 @UseGuards(StaahApiKeyGuard)
 @UseFilters(new StaahExceptionFilter())

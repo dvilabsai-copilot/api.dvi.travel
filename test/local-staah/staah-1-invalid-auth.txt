@@ -2,13 +2,13 @@
 STAAH API Test Log
 ============================================================
 Test Name: staah-1-invalid-auth
-Timestamp: 2026-03-13T22:39:10.079Z
+Timestamp: 2026-03-13T23:55:04.019Z
 Status: FAILED
 ============================================================
 
 REQUEST:
 --------
-URL: http://127.0.0.1:4006/api/v1/staah/productInfo
+URL: http://127.0.0.1:4006/api/v1/staah-test/productInfo
 Method: POST
 Headers:
 {}

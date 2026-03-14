@@ -2,20 +2,20 @@
 STAAH API Test Log
 ============================================================
 Test Name: staah-12-arr-info
-Timestamp: 2026-03-13T19:27:47.653Z
+Timestamp: 2026-03-13T21:38:29.616Z
 Status: SUCCESS
 ============================================================
 
 REQUEST:
 --------
-URL: https://dvi.travel/api/v1/staah/arrInfo
+URL: http://127.0.0.1:4006/api/v1/staah/arrInfo
 Method: POST
 Headers:
 {}
 
 Body:
 {
-  "apikey": "staah_C3g8K3b1wray989DVih37od3314r6444",
+  "apikey": "staah-local-test-key",
   "propertyid": "STAAH_TEST_HOTEL_1",
   "room_id": "DELUXE_ROOM",
   "rate_id": "CP_PLAN",
@@ -30,19 +30,64 @@ RESPONSE:
 Status: 200
 Headers:
 {
-  "server": "nginx/1.24.0 (Ubuntu)",
-  "date": "Fri, 13 Mar 2026 19:27:45 GMT",
-  "content-type": "application/json; charset=utf-8",
-  "content-length": "105",
-  "connection": "keep-alive",
   "x-powered-by": "Express",
   "access-control-allow-origin": "*",
-  "etag": "W/\"69-Zf2HIrnt1p5AfEqEpMUTRfpCBLA\""
+  "content-type": "application/json; charset=utf-8",
+  "content-length": "654",
+  "etag": "W/\"28e-euNoTn7PEraOD7qqp/NtuQFIO1Y\"",
+  "date": "Fri, 13 Mar 2026 21:38:29 GMT",
+  "connection": "keep-alive",
+  "keep-alive": "timeout=5"
 }
 
 Data:
 {
-  "status": "fail",
-  "error_desc": "Invalid property ID.",
-  "trackingId": "2363597D-0F9A-4379-8E56-62D34DCA86F2"
+  "status": "success",
+  "error_desc": "",
+  "trackingId": "71B651B3-1069-48BE-8918-DBEF0EE05DDB",
+  "propertyid": "STAAH_TEST_HOTEL_1",
+  "room_id": "DELUXE_ROOM",
+  "rate_id": "CP_PLAN",
+  "currency": "INR",
+  "data": [
+    {
+      "start_date": "2026-10-01",
+      "end_date": "2026-10-03",
+      "free": 8,
+      "occupancy_rates": {
+        "DOUBLE": 5200,
+        "SINGLE": 4200,
+        "TRIPLE": 6200
+      }
+    },
+    {
+      "start_date": "2026-10-04",
+      "end_date": "2026-10-06",
+      "free": 5
+    }
+  ],
+  "inventory": [
+    {
+      "start_date": "2026-10-01",
+      "end_date": "2026-10-03",
+      "free": 8
+    },
+    {
+      "start_date": "2026-10-04",
+      "end_date": "2026-10-06",
+      "free": 5
+    }
+  ],
+  "rates": [
+    {
+      "start_date": "2026-10-01",
+      "end_date": "2026-10-03",
+      "occupancy_rates": {
+        "DOUBLE": 5200,
+        "SINGLE": 4200,
+        "TRIPLE": 6200
+      }
+    }
+  ],
+  "restrictions": []
 }

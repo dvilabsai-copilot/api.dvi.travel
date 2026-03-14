@@ -2,20 +2,20 @@
 STAAH API Test Log
 ============================================================
 Test Name: staah-5-rate-plan-info
-Timestamp: 2026-03-13T19:27:47.333Z
+Timestamp: 2026-03-13T21:38:29.553Z
 Status: SUCCESS
 ============================================================
 
 REQUEST:
 --------
-URL: https://dvi.travel/api/v1/staah/ratePlanInfo
+URL: http://127.0.0.1:4006/api/v1/staah/ratePlanInfo
 Method: POST
 Headers:
 {}
 
 Body:
 {
-  "apikey": "staah_C3g8K3b1wray989DVih37od3314r6444",
+  "apikey": "staah-local-test-key",
   "propertyid": "STAAH_TEST_HOTEL_1",
   "action": "roomrate_info",
   "version": "2"
@@ -26,22 +26,63 @@ RESPONSE:
 Status: 200
 Headers:
 {
-  "server": "nginx/1.24.0 (Ubuntu)",
-  "date": "Fri, 13 Mar 2026 19:27:45 GMT",
-  "content-type": "application/json; charset=utf-8",
-  "content-length": "158",
-  "connection": "keep-alive",
   "x-powered-by": "Express",
   "access-control-allow-origin": "*",
-  "etag": "W/\"9e-FWjMdRVsj2CS8dRwFC07UW9PxL0\""
+  "content-type": "application/json; charset=utf-8",
+  "content-length": "803",
+  "etag": "W/\"323-gGtGlxksNxZSQMm8ztOrFGheuRI\"",
+  "date": "Fri, 13 Mar 2026 21:38:29 GMT",
+  "connection": "keep-alive",
+  "keep-alive": "timeout=5"
 }
 
 Data:
 {
-  "roomtypes": [],
-  "rateplans": [],
-  "room_rate_mapping": [],
-  "trackingId": "85667D0C-26F4-496B-BA90-F9D812026FA4",
-  "status": "fail",
-  "error_desc": "Invalid property ID."
+  "roomtypes": [
+    {
+      "room_id": "DELUXE_ROOM",
+      "OTA_room_id": "DELUXE_ROOM",
+      "room_name": "Deluxe Room - Test"
+    },
+    {
+      "room_id": "SUITE_ROOM",
+      "OTA_room_id": "SUITE_ROOM",
+      "room_name": "Suite Room - Test"
+    }
+  ],
+  "rateplans": [
+    {
+      "room_id": "DELUXE_ROOM",
+      "rate_id": "CP_PLAN",
+      "OTA_room_id": "DELUXE_ROOM",
+      "OTA_rate_id": "CP_PLAN",
+      "rate_name": "Continental Plan",
+      "currency": "INR"
+    },
+    {
+      "room_id": "SUITE_ROOM",
+      "rate_id": "MAP_PLAN",
+      "OTA_room_id": "SUITE_ROOM",
+      "OTA_rate_id": "MAP_PLAN",
+      "rate_name": "Modified American Plan",
+      "currency": "INR"
+    }
+  ],
+  "room_rate_mapping": [
+    {
+      "room_id": "DELUXE_ROOM",
+      "rate_id": "CP_PLAN",
+      "OTA_room_id": "DELUXE_ROOM",
+      "OTA_rate_id": "CP_PLAN"
+    },
+    {
+      "room_id": "SUITE_ROOM",
+      "rate_id": "MAP_PLAN",
+      "OTA_room_id": "SUITE_ROOM",
+      "OTA_rate_id": "MAP_PLAN"
+    }
+  ],
+  "trackingId": "F4FEACFB-62DA-41D2-8023-1B1845704792",
+  "status": "success",
+  "error_desc": ""
 }

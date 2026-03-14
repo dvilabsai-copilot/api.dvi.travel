@@ -2,13 +2,13 @@
 STAAH API Test Log
 ============================================================
 Test Name: staah-3-invalid-property-id
-Timestamp: 2026-03-13T22:39:10.097Z
+Timestamp: 2026-03-13T23:55:04.039Z
 Status: SUCCESS
 ============================================================
 
 REQUEST:
 --------
-URL: http://127.0.0.1:4006/api/v1/staah/productInfo
+URL: http://127.0.0.1:4006/api/v1/staah-test/productInfo
 Method: POST
 Headers:
 {}
@@ -30,8 +30,8 @@ Headers:
   "access-control-allow-origin": "*",
   "content-type": "application/json; charset=utf-8",
   "content-length": "307",
-  "etag": "W/\"133-LjN3EpBiLP18YCSebjDg3fqVwS0\"",
-  "date": "Fri, 13 Mar 2026 22:39:10 GMT",
+  "etag": "W/\"133-uPY+sOWXIAs5s0qWXF6PMwY6Y2g\"",
+  "date": "Fri, 13 Mar 2026 23:55:04 GMT",
   "connection": "keep-alive",
   "keep-alive": "timeout=5"
 }
@@ -55,5 +55,5 @@ Data:
   },
   "status": "fail",
   "error_desc": "Invalid property ID.",
-  "trackingId": "595DCC33-6910-4D41-AA3B-A65E5E1C4B96"
+  "trackingId": "B9E37050-20C5-4FFA-BD3C-AF47C140FC61"
 }

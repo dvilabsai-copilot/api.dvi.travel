@@ -2,7 +2,7 @@
 STAAH API Test Log
 ============================================================
 Test Name: staah-28-arr-info-invalid-date-range
-Timestamp: 2026-03-13T19:26:31.408Z
+Timestamp: 2026-03-13T21:38:29.651Z
 Status: FAILED
 ============================================================
 
@@ -15,7 +15,7 @@ Headers:
 
 Body:
 {
-  "apikey": "staah_C3g8K3b1wray989DVih37od3314r6444",
+  "apikey": "staah-local-test-key",
   "propertyid": "STAAH_TEST_HOTEL_1",
   "room_id": "DELUXE_ROOM",
   "rate_id": "CP_PLAN",
