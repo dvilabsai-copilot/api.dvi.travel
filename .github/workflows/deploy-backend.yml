@@ -1,16 +1,18 @@
 name: Deploy API to DigitalOcean
 
 on:
-  pull_request:
-    types: [closed]
-    branches: [main]
   push:
-    branches: [main]
+    branches:
+      - main
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
 
 jobs:
   deploy:
-    if: github.event_name == 'push' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - name: SSH & deploy on Droplet
@@ -19,10 +21,13 @@ jobs:
           host: ${{ secrets.DO_HOST }}
           username: ${{ secrets.DO_USER }}
           key: ${{ secrets.DO_SSH_KEY }}
+          script_stop: true
+          command_timeout: 30m
           script: |
             set -e
 
             APP_DIR="/var/www/api.dvi.travel"
+            APP_NAME="dvi-backend"
 
             echo "Switching to app directory..."
             cd "$APP_DIR"
@@ -41,16 +46,14 @@ jobs:
             npm -v
 
             echo "Stopping PM2 process before reinstall..."
-            pm2 stop dvi-backend || true
-
-            echo "Stopping lingering node/npm processes (if any)..."
-            pkill -f "node|npm|ts-node-dev" || true
+            pm2 stop "$APP_NAME" || true
 
             echo "Installing dependencies..."
             rm -rf node_modules
             rm -rf ~/.npm/_cacache ~/.npm/_logs
             npm cache clean --force || true
             npm cache verify || true
+
             if ! npm ci --no-audit --no-fund; then
               echo "npm ci failed on first attempt. Cleaning install artifacts and retrying once..."
               rm -rf node_modules
@@ -76,10 +79,17 @@ jobs:
             echo "Building app..."
             NODE_OPTIONS="--max-old-space-size=4096" npm run build
 
-            echo "Restarting PM2 process 'dvi-backend'..."
-            pm2 restart dvi-backend || pm2 start dist/src/main.js --name dvi-backend
+            echo "Starting or restarting PM2 process..."
+            if pm2 describe "$APP_NAME" > /dev/null 2>&1; then
+              pm2 restart "$APP_NAME"
+            else
+              pm2 start dist/src/main.js --name "$APP_NAME"
+            fi
 
             echo "Saving PM2 process list..."
             pm2 save
+
+            echo "PM2 status:"
+            pm2 status
 
             echo "Deployment completed successfully."
