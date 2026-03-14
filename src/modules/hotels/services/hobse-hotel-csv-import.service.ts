@@ -2,11 +2,11 @@ import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import * as XLSX from 'xlsx';
 import { PrismaService } from '../../../prisma.service';
 
-interface ImportOptions {
+export interface ImportOptions {
   createMissingCities: boolean;
 }
 
-interface ImportSummary {
+export interface ImportSummary {
   totalRows: number;
   cityMappingsUpdated: number;
   cityMappingsSkipped: number;
