@@ -1,0 +1,15 @@
+{
+  "success": true,
+  "message": "Quotation confirmed successfully",
+  "itinerary_plan_ID": 20,
+  "confirmed_itinerary_plan_ID": 123,
+  "bookingResults": [
+    {
+      "provider": "HOBSE",
+      "routeId": 368,
+      "hotelId": "89cc7ab0dfc30982",
+      "status": "failed",
+      "error": "HOBSE API failed: Bad Request"
+    }
+  ]
+}

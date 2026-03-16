@@ -2,13 +2,13 @@
 STAAH API Test Log
 ============================================================
 Test Name: staah-5-rate-plan-info
-Timestamp: 2026-03-13T23:18:14.374Z
+Timestamp: 2026-03-14T00:21:03.665Z
 Status: SUCCESS
 ============================================================
 
 REQUEST:
 --------
-URL: https://dvi.travel/api/v1/staah/ratePlanInfo
+URL: https://dvi.travel/api/v1/staah-test/ratePlanInfo
 Method: POST
 Headers:
 {}
@@ -27,13 +27,13 @@ Status: 200
 Headers:
 {
   "server": "nginx/1.24.0 (Ubuntu)",
-  "date": "Fri, 13 Mar 2026 23:18:14 GMT",
+  "date": "Sat, 14 Mar 2026 00:21:03 GMT",
   "content-type": "application/json; charset=utf-8",
   "content-length": "803",
   "connection": "keep-alive",
   "x-powered-by": "Express",
   "access-control-allow-origin": "*",
-  "etag": "W/\"323-omZu5zlWPNBpaKvWx6VGsgzohdU\""
+  "etag": "W/\"323-vLGZa/x2Vl6BCNbzTdHXbPN/pcs\""
 }
 
 Data:
@@ -82,7 +82,7 @@ Data:
       "OTA_rate_id": "MAP_PLAN"
     }
   ],
-  "trackingId": "9A14F6FC-7345-426B-8C11-FCD6131F0C2E",
+  "trackingId": "E91B9347-3B02-4E33-B6A2-C4E85B1FC3A3",
   "status": "success",
   "error_desc": ""
 }

@@ -2,13 +2,13 @@
 STAAH API Test Log
 ============================================================
 Test Name: staah-13-year-info-arr
-Timestamp: 2026-03-13T23:18:15.082Z
+Timestamp: 2026-03-14T00:21:04.494Z
 Status: SUCCESS
 ============================================================
 
 REQUEST:
 --------
-URL: https://dvi.travel/api/v1/staah/yearInfoArr
+URL: https://dvi.travel/api/v1/staah-test/yearInfoArr
 Method: POST
 Headers:
 {}
@@ -29,20 +29,20 @@ Status: 200
 Headers:
 {
   "server": "nginx/1.24.0 (Ubuntu)",
-  "date": "Fri, 13 Mar 2026 23:18:15 GMT",
+  "date": "Sat, 14 Mar 2026 00:21:04 GMT",
   "content-type": "application/json; charset=utf-8",
   "content-length": "991",
   "connection": "keep-alive",
   "x-powered-by": "Express",
   "access-control-allow-origin": "*",
-  "etag": "W/\"3df-rAWe/VRHABsJeX4uExqTikV93vE\""
+  "etag": "W/\"3df-k6kaM7+CoLGEi+lKQjTVJrKI7vk\""
 }
 
 Data:
 {
   "status": "success",
   "error_desc": "",
-  "trackingId": "CE0B0B41-7E1E-46B1-A60C-26A068197F1C",
+  "trackingId": "B795E2FA-63FB-4029-8DAE-205D2D6286AF",
   "propertyid": "STAAH_TEST_HOTEL_1",
   "room_id": "DELUXE_ROOM",
   "rate_id": "CP_PLAN",

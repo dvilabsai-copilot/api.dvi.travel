@@ -2,13 +2,13 @@
 STAAH API Test Log
 ============================================================
 Test Name: staah-34-restriction-idempotent-arr-read
-Timestamp: 2026-03-13T23:18:14.690Z
+Timestamp: 2026-03-14T00:21:04.037Z
 Status: SUCCESS
 ============================================================
 
 REQUEST:
 --------
-URL: https://dvi.travel/api/v1/staah/arrInfo
+URL: https://dvi.travel/api/v1/staah-test/arrInfo
 Method: POST
 Headers:
 {}
@@ -31,20 +31,20 @@ Status: 200
 Headers:
 {
   "server": "nginx/1.24.0 (Ubuntu)",
-  "date": "Fri, 13 Mar 2026 23:18:14 GMT",
+  "date": "Sat, 14 Mar 2026 00:21:04 GMT",
   "content-type": "application/json; charset=utf-8",
   "content-length": "573",
   "connection": "keep-alive",
   "x-powered-by": "Express",
   "access-control-allow-origin": "*",
-  "etag": "W/\"23d-KKYxkeRJE7m0cLBtREkS/Lv23Ho\""
+  "etag": "W/\"23d-IIb7N04Cn0icZZoElrJobSZz/Y0\""
 }
 
 Data:
 {
   "status": "success",
   "error_desc": "",
-  "trackingId": "C270C028-0D00-4225-B263-FE780FCC6E51",
+  "trackingId": "CF7CE2D9-E9AB-4E2E-B848-23BE71800CFE",
   "propertyid": "STAAH_TEST_HOTEL_1",
   "room_id": "DELUXE_ROOM",
   "rate_id": "CP_PLAN",

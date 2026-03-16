@@ -1,0 +1,10 @@
+[
+  {
+    "confirmed_itinerary_plan_ID": 123,
+    "itinerary_plan_ID": 20,
+    "agent_id": 125,
+    "itinerary_quote_ID": "DVI2026033",
+    "itinerary_total_net_payable_amount": 6610,
+    "createdon": "2026-03-15T21:57:21.000Z"
+  }
+]

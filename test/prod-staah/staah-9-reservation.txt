@@ -2,13 +2,13 @@
 STAAH API Test Log
 ============================================================
 Test Name: staah-9-reservation
-Timestamp: 2026-03-13T23:18:14.748Z
+Timestamp: 2026-03-14T00:21:04.094Z
 Status: SUCCESS
 ============================================================
 
 REQUEST:
 --------
-URL: https://dvi.travel/api/v1/staah/reservation
+URL: https://dvi.travel/api/v1/staah-test/reservation
 Method: POST
 Headers:
 {}
@@ -22,7 +22,7 @@ Body:
   "reservations": {
     "reservation": [
       {
-        "bookingId": "STAAH-RES-1773443894702",
+        "bookingId": "STAAH-RES-1773447664038",
         "room_id": "DELUXE_ROOM",
         "rate_id": "CP_PLAN",
         "checkIn": "2026-12-01",
@@ -30,7 +30,7 @@ Body:
       }
     ]
   },
-  "trackingId": "TRK-1773443894702"
+  "trackingId": "TRK-1773447664038"
 }
 
 RESPONSE:
@@ -39,22 +39,22 @@ Status: 200
 Headers:
 {
   "server": "nginx/1.24.0 (Ubuntu)",
-  "date": "Fri, 13 Mar 2026 23:18:14 GMT",
+  "date": "Sat, 14 Mar 2026 00:21:04 GMT",
   "content-type": "application/json; charset=utf-8",
   "content-length": "141",
   "connection": "keep-alive",
   "x-powered-by": "Express",
   "access-control-allow-origin": "*",
-  "etag": "W/\"8d-PNZ0W1C0zKEydMbhoZG0xwL49AA\""
+  "etag": "W/\"8d-KYiq87/wfAaYJvHa2C43VDyPhfE\""
 }
 
 Data:
 {
   "status": "success",
-  "trackingId": "TRK-1773443894702",
+  "trackingId": "TRK-1773447664038",
   "bookings": [
     {
-      "bookingId": "STAAH-RES-1773443894702",
+      "bookingId": "STAAH-RES-1773447664038",
       "status": "success",
       "error_desc": ""
     }

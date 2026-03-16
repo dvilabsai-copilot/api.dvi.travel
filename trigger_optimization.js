@@ -108,7 +108,7 @@ const requestBody =
   ]
 };
 console.log('\n=== TRIGGERING PLAN 5 OPTIMIZATION ===');
-console.log('Sending POST request to https://dvi.versile.in/api/v1/itineraries\n');
+console.log('Sending POST request to https://dvi.travel/api/v1/itineraries\n');
 
 const postData = JSON.stringify(requestBody);
 const options = {

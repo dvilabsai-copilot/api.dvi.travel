@@ -1,0 +1,42 @@
+{
+  "itinerary_plan_ID": 20,
+  "hotel_bookings": [
+    {
+      "provider": "HOBSE",
+      "routeId": 368,
+      "hotelCode": "89cc7ab0dfc30982",
+      "bookingCode": "{\"provider\":\"HOBSE\",\"hotelId\":\"89cc7ab0dfc30982\",\"cityId\":\"76\",\"checkInDate\":\"2026-04-16\",\"checkOutDate\":\"2026-04-17\",\"priceOwnerType\":\"2\",\"partnerId\":\"a14fc9d3a3e31230\",\"partnerTypeId\":\"4\",\"tariffMode\":\"B2B\",\"roomCode\":\"a7b9a47942eb2d2b\",\"occupancyTypeCode\":\"9f780ff7fa46f40f\",\"ratePlanCode\":\"d8e93e7fb017972b\"}",
+      "roomType": "Superior Room",
+      "checkInDate": "2026-04-16",
+      "checkOutDate": "2026-04-17",
+      "numberOfRooms": 1,
+      "guestNationality": "IN",
+      "netAmount": 6520,
+      "passengers": [
+        {
+          "title": "Mr",
+          "firstName": "Real",
+          "lastName": "Flow",
+          "paxType": 1,
+          "leadPassenger": true,
+          "age": 34,
+          "phoneNo": "9876543210",
+          "panNo": "ABCDE1234F",
+          "passportNo": "N1234567"
+        },
+        {
+          "title": "Mrs",
+          "firstName": "Real",
+          "lastName": "Flow",
+          "paxType": 1,
+          "leadPassenger": false,
+          "age": 30,
+          "phoneNo": "9876543210",
+          "panNo": "ABCDE1234F",
+          "passportNo": "N1234568"
+        }
+      ]
+    }
+  ],
+  "endUserIp": "127.0.0.1"
+}

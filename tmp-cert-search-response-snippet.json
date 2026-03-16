@@ -1,0 +1,18 @@
+{
+  "success": true,
+  "message": "Found 27 hotels",
+  "data": {
+    "hotels": [
+      {
+        "provider": "tbo",
+        "hotelCode": "1056437",
+        "hotelName": "Hotel Gangasagar",
+        "cityCode": "Bangalore",
+        "price": 1389.22,
+        "currency": "INR",
+        "roomType": "Deluxe Twin Room, 1 Bedroom,2 Double Beds and 2 Large Twin Beds,NonSmoking",
+        "searchReference": "1056437!TB!1!TB!8d1db8e0-20c6-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!"
+      }
+    ]
+  }
+}
