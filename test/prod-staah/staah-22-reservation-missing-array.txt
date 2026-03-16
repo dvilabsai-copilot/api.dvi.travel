@@ -2,13 +2,13 @@
 STAAH API Test Log
 ============================================================
 Test Name: staah-22-reservation-missing-array
-Timestamp: 2026-03-13T23:18:14.258Z
+Timestamp: 2026-03-14T00:21:03.560Z
 Status: FAILED
 ============================================================
 
 REQUEST:
 --------
-URL: https://dvi.travel/api/v1/staah/reservation
+URL: https://dvi.travel/api/v1/staah-test/reservation
 Method: POST
 Headers:
 {}

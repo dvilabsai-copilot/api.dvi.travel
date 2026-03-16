@@ -1,0 +1,35 @@
+{
+  "success": true,
+  "message": "Quotation confirmed successfully",
+  "itinerary_plan_ID": 1,
+  "confirmed_itinerary_plan_ID": 129,
+  "bookingResults": [
+    {
+      "routeId": 1,
+      "hotelCode": "1056437",
+      "bookingId": "2093541",
+      "status": "confirmed",
+      "preBook": {
+        "rawStatus": {
+          "Code": 200,
+          "Description": "Successful"
+        },
+        "finalPrice": null,
+        "isPriceChanged": false,
+        "rateConditions": [],
+        "roomPromotions": [],
+        "cancellationPolicy": [],
+        "originalSearchPrice": 1389.22,
+        "mandatorySupplements": [],
+        "cancellationPolicyText": null,
+        "isCancellationPolicyChanged": false
+      },
+      "priceChanged": false,
+      "priceChangedMessage": null,
+      "mandatorySupplements": [],
+      "confirmation": {
+        "tbo_hotel_booking_confirmation_ID": 51
+      }
+    }
+  ]
+}

@@ -1,0 +1,236 @@
+[
+  {
+    "cityCode": "Rameswaram",
+    "status": 200,
+    "ok": true,
+    "message": "Found 0 hotels",
+    "totalResults": 0,
+    "providers": [],
+    "sampleHotel": null,
+    "body": {
+      "success": true,
+      "message": "Found 0 hotels",
+      "data": {
+        "totalResults": 0,
+        "hotels": [],
+        "filters": {
+          "ratings": [],
+          "priceRange": {
+            "min": null,
+            "max": null
+          },
+          "facilities": [],
+          "providers": []
+        }
+      }
+    }
+  },
+  {
+    "cityCode": "Mumbai",
+    "status": 200,
+    "ok": true,
+    "message": "Found 0 hotels",
+    "totalResults": 0,
+    "providers": [],
+    "sampleHotel": null,
+    "body": {
+      "success": true,
+      "message": "Found 0 hotels",
+      "data": {
+        "totalResults": 0,
+        "hotels": [],
+        "filters": {
+          "ratings": [],
+          "priceRange": {
+            "min": null,
+            "max": null
+          },
+          "facilities": [],
+          "providers": []
+        }
+      }
+    }
+  },
+  {
+    "cityCode": "Delhi",
+    "status": 200,
+    "ok": true,
+    "message": "Found 0 hotels",
+    "totalResults": 0,
+    "providers": [],
+    "sampleHotel": null,
+    "body": {
+      "success": true,
+      "message": "Found 0 hotels",
+      "data": {
+        "totalResults": 0,
+        "hotels": [],
+        "filters": {
+          "ratings": [],
+          "priceRange": {
+            "min": null,
+            "max": null
+          },
+          "facilities": [],
+          "providers": []
+        }
+      }
+    }
+  },
+  {
+    "cityCode": "Gwalior",
+    "status": 200,
+    "ok": true,
+    "message": "Found 0 hotels",
+    "totalResults": 0,
+    "providers": [],
+    "sampleHotel": null,
+    "body": {
+      "success": true,
+      "message": "Found 0 hotels",
+      "data": {
+        "totalResults": 0,
+        "hotels": [],
+        "filters": {
+          "ratings": [],
+          "priceRange": {
+            "min": null,
+            "max": null
+          },
+          "facilities": [],
+          "providers": []
+        }
+      }
+    }
+  },
+  {
+    "cityCode": "Chennai",
+    "status": 200,
+    "ok": true,
+    "message": "Found 0 hotels",
+    "totalResults": 0,
+    "providers": [],
+    "sampleHotel": null,
+    "body": {
+      "success": true,
+      "message": "Found 0 hotels",
+      "data": {
+        "totalResults": 0,
+        "hotels": [],
+        "filters": {
+          "ratings": [],
+          "priceRange": {
+            "min": null,
+            "max": null
+          },
+          "facilities": [],
+          "providers": []
+        }
+      }
+    }
+  },
+  {
+    "cityCode": "Madurai",
+    "status": 200,
+    "ok": true,
+    "message": "Found 0 hotels",
+    "totalResults": 0,
+    "providers": [],
+    "sampleHotel": null,
+    "body": {
+      "success": true,
+      "message": "Found 0 hotels",
+      "data": {
+        "totalResults": 0,
+        "hotels": [],
+        "filters": {
+          "ratings": [],
+          "priceRange": {
+            "min": null,
+            "max": null
+          },
+          "facilities": [],
+          "providers": []
+        }
+      }
+    }
+  },
+  {
+    "cityCode": "Bangalore",
+    "status": 200,
+    "ok": true,
+    "message": "Found 0 hotels",
+    "totalResults": 0,
+    "providers": [],
+    "sampleHotel": null,
+    "body": {
+      "success": true,
+      "message": "Found 0 hotels",
+      "data": {
+        "totalResults": 0,
+        "hotels": [],
+        "filters": {
+          "ratings": [],
+          "priceRange": {
+            "min": null,
+            "max": null
+          },
+          "facilities": [],
+          "providers": []
+        }
+      }
+    }
+  },
+  {
+    "cityCode": "76",
+    "status": 200,
+    "ok": true,
+    "message": "Found 0 hotels",
+    "totalResults": 0,
+    "providers": [],
+    "sampleHotel": null,
+    "body": {
+      "success": true,
+      "message": "Found 0 hotels",
+      "data": {
+        "totalResults": 0,
+        "hotels": [],
+        "filters": {
+          "ratings": [],
+          "priceRange": {
+            "min": null,
+            "max": null
+          },
+          "facilities": [],
+          "providers": []
+        }
+      }
+    }
+  },
+  {
+    "cityCode": "19",
+    "status": 200,
+    "ok": true,
+    "message": "Found 0 hotels",
+    "totalResults": 0,
+    "providers": [],
+    "sampleHotel": null,
+    "body": {
+      "success": true,
+      "message": "Found 0 hotels",
+      "data": {
+        "totalResults": 0,
+        "hotels": [],
+        "filters": {
+          "ratings": [],
+          "priceRange": {
+            "min": null,
+            "max": null
+          },
+          "facilities": [],
+          "providers": []
+        }
+      }
+    }
+  }
+]

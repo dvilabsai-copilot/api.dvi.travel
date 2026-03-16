@@ -2,13 +2,13 @@
 STAAH API Test Log
 ============================================================
 Test Name: staah-3-invalid-property-id
-Timestamp: 2026-03-13T23:18:13.958Z
+Timestamp: 2026-03-14T00:21:03.221Z
 Status: SUCCESS
 ============================================================
 
 REQUEST:
 --------
-URL: https://dvi.travel/api/v1/staah/productInfo
+URL: https://dvi.travel/api/v1/staah-test/productInfo
 Method: POST
 Headers:
 {}
@@ -27,13 +27,13 @@ Status: 200
 Headers:
 {
   "server": "nginx/1.24.0 (Ubuntu)",
-  "date": "Fri, 13 Mar 2026 23:18:13 GMT",
+  "date": "Sat, 14 Mar 2026 00:21:03 GMT",
   "content-type": "application/json; charset=utf-8",
   "content-length": "307",
   "connection": "keep-alive",
   "x-powered-by": "Express",
   "access-control-allow-origin": "*",
-  "etag": "W/\"133-/wBZb7kbo6j1EC6TT5atPN8hHBA\""
+  "etag": "W/\"133-FSdDVr+CCUolqZZYmDopB0VLBAA\""
 }
 
 Data:
@@ -55,5 +55,5 @@ Data:
   },
   "status": "fail",
   "error_desc": "Invalid property ID.",
-  "trackingId": "D5162DE6-D7C1-4CD7-BD12-5284AD4C47BE"
+  "trackingId": "03B54790-7759-4E15-A9C9-CF2F0EDB6F88"
 }

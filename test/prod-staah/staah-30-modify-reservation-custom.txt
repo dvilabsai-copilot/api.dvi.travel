@@ -2,13 +2,13 @@
 STAAH API Test Log
 ============================================================
 Test Name: staah-30-modify-reservation-custom
-Timestamp: 2026-03-13T23:18:14.944Z
+Timestamp: 2026-03-14T00:21:04.327Z
 Status: SUCCESS
 ============================================================
 
 REQUEST:
 --------
-URL: https://dvi.travel/api/v1/staah/custom/modifyReservation
+URL: https://dvi.travel/api/v1/staah-test/custom/modifyReservation
 Method: POST
 Headers:
 {}
@@ -18,12 +18,12 @@ Body:
   "apikey": "staah_C3g8K3b1wray989DVih37od3314r6444",
   "propertyid": "STAAH_TEST_HOTEL_1",
   "version": "2",
-  "reservationId": "STAAH-RES-1773443894895",
+  "reservationId": "STAAH-RES-1773447664271",
   "data": {
     "status": "modified",
     "note": "Test modify payload via custom route"
   },
-  "trackingId": "TRK-MOD-CUSTOM-1773443894895"
+  "trackingId": "TRK-MOD-CUSTOM-1773447664271"
 }
 
 RESPONSE:
@@ -32,7 +32,7 @@ Status: 200
 Headers:
 {
   "server": "nginx/1.24.0 (Ubuntu)",
-  "date": "Fri, 13 Mar 2026 23:18:14 GMT",
+  "date": "Sat, 14 Mar 2026 00:21:04 GMT",
   "content-type": "application/json; charset=utf-8",
   "content-length": "36",
   "connection": "keep-alive",

@@ -2,13 +2,13 @@
 STAAH API Test Log
 ============================================================
 Test Name: staah-27-arr-info-invalid-to-date
-Timestamp: 2026-03-13T23:18:15.295Z
+Timestamp: 2026-03-14T00:21:04.741Z
 Status: FAILED
 ============================================================
 
 REQUEST:
 --------
-URL: https://dvi.travel/api/v1/staah/arrInfo
+URL: https://dvi.travel/api/v1/staah-test/arrInfo
 Method: POST
 Headers:
 {}

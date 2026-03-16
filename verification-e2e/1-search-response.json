@@ -1,0 +1,247 @@
+{
+  "success": true,
+  "message": "Found 3 hotels",
+  "data": {
+    "totalResults": 3,
+    "hotels": [
+      {
+        "provider": "HOBSE",
+        "hotelCode": "89cc7ab0dfc30982",
+        "hotelName": "juSTa Indiranagar, Bangalore",
+        "cityCode": "Bangalore",
+        "address": "796, 1st Cross, 12th Main, HAL 2nd Stage, Indiranagar",
+        "rating": 4,
+        "category": "4-Star",
+        "facilities": [],
+        "images": [],
+        "price": 6520,
+        "currency": "INR",
+        "roomTypes": [
+          {
+            "roomCode": "304464c60ab95f3a",
+            "roomName": "Studio Room",
+            "bedType": "Double",
+            "capacity": 2,
+            "price": 7020,
+            "cancellationPolicy": ""
+          },
+          {
+            "roomCode": "304464c60ab95f3a",
+            "roomName": "Studio Room",
+            "bedType": "Double",
+            "capacity": 2,
+            "price": 7420,
+            "cancellationPolicy": ""
+          },
+          {
+            "roomCode": "a7b9a47942eb2d2b",
+            "roomName": "Superior Room",
+            "bedType": "Double",
+            "capacity": 2,
+            "price": 6520,
+            "cancellationPolicy": ""
+          },
+          {
+            "roomCode": "a7b9a47942eb2d2b",
+            "roomName": "Superior Room",
+            "bedType": "Double",
+            "capacity": 2,
+            "price": 6920,
+            "cancellationPolicy": ""
+          },
+          {
+            "roomCode": "a7b9a47942eb2d2b",
+            "roomName": "Superior Room",
+            "bedType": "Double",
+            "capacity": 2,
+            "price": 15999,
+            "cancellationPolicy": ""
+          },
+          {
+            "roomCode": "06ba8348f2b2530d",
+            "roomName": "Junior Suite",
+            "bedType": "Double",
+            "capacity": 2,
+            "price": 8020,
+            "cancellationPolicy": ""
+          },
+          {
+            "roomCode": "06ba8348f2b2530d",
+            "roomName": "Junior Suite",
+            "bedType": "Double",
+            "capacity": 2,
+            "price": 8420,
+            "cancellationPolicy": ""
+          }
+        ],
+        "roomType": "Superior Room",
+        "mealPlan": "European Plan",
+        "searchReference": "{\"provider\":\"HOBSE\",\"hotelId\":\"89cc7ab0dfc30982\",\"cityId\":\"76\",\"checkInDate\":\"2026-04-16\",\"checkOutDate\":\"2026-04-17\",\"priceOwnerType\":\"2\",\"partnerId\":\"a14fc9d3a3e31230\",\"partnerTypeId\":\"4\",\"tariffMode\":\"B2B\",\"roomCode\":\"a7b9a47942eb2d2b\",\"occupancyTypeCode\":\"9f780ff7fa46f40f\",\"ratePlanCode\":\"d8e93e7fb017972b\"}",
+        "expiresAt": "2026-03-15T22:27:20.892Z"
+      },
+      {
+        "provider": "HOBSE",
+        "hotelCode": "df61e6f4638cc87f",
+        "hotelName": "juSTa MG Road,Bangalore",
+        "cityCode": "Bangalore",
+        "address": "21/14 Craig Park Layout, Behind Oriental Bank of Commerce, MG Road",
+        "rating": 4,
+        "category": "4-Star",
+        "facilities": [],
+        "images": [],
+        "price": 6720,
+        "currency": "INR",
+        "roomTypes": [
+          {
+            "roomCode": "8992112abb3f8f31",
+            "roomName": "Deluxe Room",
+            "bedType": "Double",
+            "capacity": 2,
+            "price": 7720,
+            "cancellationPolicy": ""
+          },
+          {
+            "roomCode": "8992112abb3f8f31",
+            "roomName": "Deluxe Room",
+            "bedType": "Double",
+            "capacity": 2,
+            "price": 8120,
+            "cancellationPolicy": ""
+          },
+          {
+            "roomCode": "4e1f7aba607b417e",
+            "roomName": "Suite ",
+            "bedType": "Double",
+            "capacity": 2,
+            "price": 8220,
+            "cancellationPolicy": ""
+          },
+          {
+            "roomCode": "4e1f7aba607b417e",
+            "roomName": "Suite ",
+            "bedType": "Double",
+            "capacity": 2,
+            "price": 8620,
+            "cancellationPolicy": ""
+          },
+          {
+            "roomCode": "8e0ddf3dcd685620",
+            "roomName": "Superior Room",
+            "bedType": "Double",
+            "capacity": 2,
+            "price": 6720,
+            "cancellationPolicy": ""
+          },
+          {
+            "roomCode": "8e0ddf3dcd685620",
+            "roomName": "Superior Room",
+            "bedType": "Double",
+            "capacity": 2,
+            "price": 7120,
+            "cancellationPolicy": ""
+          }
+        ],
+        "roomType": "Superior Room",
+        "mealPlan": "European Plan",
+        "searchReference": "{\"provider\":\"HOBSE\",\"hotelId\":\"df61e6f4638cc87f\",\"cityId\":\"76\",\"checkInDate\":\"2026-04-16\",\"checkOutDate\":\"2026-04-17\",\"priceOwnerType\":\"2\",\"partnerId\":\"a14fc9d3a3e31230\",\"partnerTypeId\":\"4\",\"tariffMode\":\"B2B\",\"roomCode\":\"8e0ddf3dcd685620\",\"occupancyTypeCode\":\"bc3d6848fe283fa2\",\"ratePlanCode\":\"ea5de044954b1f3f\"}",
+        "expiresAt": "2026-03-15T22:27:20.796Z"
+      },
+      {
+        "provider": "HOBSE",
+        "hotelCode": "f0542aaf7b8e81d6",
+        "hotelName": "juSTa Off MG Road,Bangalore",
+        "cityCode": "Bangalore",
+        "address": "30/1, 2nd Cross, Ulsoor Road, Ulso",
+        "rating": 4,
+        "category": "4-Star",
+        "facilities": [],
+        "images": [],
+        "price": 6720,
+        "currency": "INR",
+        "roomTypes": [
+          {
+            "roomCode": "a29dd5edfea7a51f",
+            "roomName": "Superior Room",
+            "bedType": "Double",
+            "capacity": 2,
+            "price": 6720,
+            "cancellationPolicy": ""
+          },
+          {
+            "roomCode": "a29dd5edfea7a51f",
+            "roomName": "Superior Room",
+            "bedType": "Double",
+            "capacity": 2,
+            "price": 7120,
+            "cancellationPolicy": ""
+          },
+          {
+            "roomCode": "f9ae50bc974faee2",
+            "roomName": "Deluxe Room",
+            "bedType": "Double",
+            "capacity": 2,
+            "price": 7720,
+            "cancellationPolicy": ""
+          },
+          {
+            "roomCode": "f9ae50bc974faee2",
+            "roomName": "Deluxe Room",
+            "bedType": "Double",
+            "capacity": 2,
+            "price": 8120,
+            "cancellationPolicy": ""
+          },
+          {
+            "roomCode": "386db998d0561da7",
+            "roomName": "Premium Room",
+            "bedType": "Double",
+            "capacity": 2,
+            "price": 7220,
+            "cancellationPolicy": ""
+          },
+          {
+            "roomCode": "386db998d0561da7",
+            "roomName": "Premium Room",
+            "bedType": "Double",
+            "capacity": 2,
+            "price": 7620,
+            "cancellationPolicy": ""
+          },
+          {
+            "roomCode": "9df080bbb78af61e",
+            "roomName": "Suite",
+            "bedType": "Double",
+            "capacity": 2,
+            "price": 8220,
+            "cancellationPolicy": ""
+          },
+          {
+            "roomCode": "9df080bbb78af61e",
+            "roomName": "Suite",
+            "bedType": "Double",
+            "capacity": 2,
+            "price": 8620,
+            "cancellationPolicy": ""
+          }
+        ],
+        "roomType": "Superior Room",
+        "mealPlan": "European Plan",
+        "searchReference": "{\"provider\":\"HOBSE\",\"hotelId\":\"f0542aaf7b8e81d6\",\"cityId\":\"76\",\"checkInDate\":\"2026-04-16\",\"checkOutDate\":\"2026-04-17\",\"priceOwnerType\":\"2\",\"partnerId\":\"a14fc9d3a3e31230\",\"partnerTypeId\":\"4\",\"tariffMode\":\"B2B\",\"roomCode\":\"a29dd5edfea7a51f\",\"occupancyTypeCode\":\"a87e8f10aebab5a0\",\"ratePlanCode\":\"cd566875ba4d8b65\"}",
+        "expiresAt": "2026-03-15T22:27:20.873Z"
+      }
+    ],
+    "filters": {
+      "ratings": [
+        4
+      ],
+      "priceRange": {
+        "min": 6520,
+        "max": 6720
+      },
+      "facilities": [],
+      "providers": [
+        "HOBSE"
+      ]
+    }
+  }
+}

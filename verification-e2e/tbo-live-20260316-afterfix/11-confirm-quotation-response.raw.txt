@@ -1,0 +1,2 @@
+﻿HTTP_STATUS=400
+{"message":"Insufficient wallet balance. Required: 138311, Available: 11960","error":"Bad Request","statusCode":400}

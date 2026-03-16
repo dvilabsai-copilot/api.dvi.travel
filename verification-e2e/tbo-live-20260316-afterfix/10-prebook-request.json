@@ -1,0 +1,53 @@
+{
+    "hotel_bookings":  [
+                           {
+                               "checkInDate":  "2026-04-16",
+                               "numberOfRooms":  1,
+                               "netAmount":  1389.22,
+                               "routeId":  1,
+                               "roomType":  "Deluxe Twin Room, 1 Bedroom,2 Double Beds and 2 Large Twin Beds,NonSmoking",
+                               "hotelCode":  "1056437",
+                               "occupancies":  [
+                                                   {
+                                                       "adults":  2,
+                                                       "childrenAges":  [
+
+                                                                        ],
+                                                       "children":  0
+                                                   }
+                                               ],
+                               "checkOutDate":  "2026-04-17",
+                               "bookingCode":  "1056437!TB!1!TB!f1039de5-20c3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+                               "passengers":  [
+                                                  {
+                                                      "paxType":  1,
+                                                      "leadPassenger":  true,
+                                                      "middleName":  "",
+                                                      "firstName":  "Test",
+                                                      "lastName":  "User",
+                                                      "phoneNo":  "9876543210",
+                                                      "pan":  "ABCDE1234F",
+                                                      "title":  "Mr",
+                                                      "age":  30,
+                                                      "email":  "test.user@example.com"
+                                                  },
+                                                  {
+                                                      "paxType":  1,
+                                                      "leadPassenger":  false,
+                                                      "middleName":  "",
+                                                      "firstName":  "Test2",
+                                                      "lastName":  "User2",
+                                                      "phoneNo":  "9876543211",
+                                                      "pan":  "FGHIJ1234K",
+                                                      "title":  "Mrs",
+                                                      "age":  28,
+                                                      "email":  "test2.user@example.com"
+                                                  }
+                                              ],
+                               "provider":  "tbo",
+                               "guestNationality":  "IN"
+                           }
+                       ],
+    "endUserIp":  "192.168.1.1",
+    "itinerary_plan_ID":  1
+}

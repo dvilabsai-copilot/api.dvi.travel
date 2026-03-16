@@ -2,13 +2,13 @@
 STAAH API Test Log
 ============================================================
 Test Name: staah-7-rate-update
-Timestamp: 2026-03-13T23:18:14.489Z
+Timestamp: 2026-03-14T00:21:03.788Z
 Status: SUCCESS
 ============================================================
 
 REQUEST:
 --------
-URL: https://dvi.travel/api/v1/staah/rateUpdate
+URL: https://dvi.travel/api/v1/staah-test/rateUpdate
 Method: POST
 Headers:
 {}
@@ -37,7 +37,7 @@ Status: 200
 Headers:
 {
   "server": "nginx/1.24.0 (Ubuntu)",
-  "date": "Fri, 13 Mar 2026 23:18:14 GMT",
+  "date": "Sat, 14 Mar 2026 00:21:03 GMT",
   "content-type": "application/json; charset=utf-8",
   "content-length": "36",
   "connection": "keep-alive",

@@ -2,13 +2,13 @@
 STAAH API Test Log
 ============================================================
 Test Name: staah-12-arr-info
-Timestamp: 2026-03-13T23:18:15.036Z
+Timestamp: 2026-03-14T00:21:04.439Z
 Status: SUCCESS
 ============================================================
 
 REQUEST:
 --------
-URL: https://dvi.travel/api/v1/staah/arrInfo
+URL: https://dvi.travel/api/v1/staah-test/arrInfo
 Method: POST
 Headers:
 {}
@@ -31,20 +31,20 @@ Status: 200
 Headers:
 {
   "server": "nginx/1.24.0 (Ubuntu)",
-  "date": "Fri, 13 Mar 2026 23:18:15 GMT",
+  "date": "Sat, 14 Mar 2026 00:21:04 GMT",
   "content-type": "application/json; charset=utf-8",
   "content-length": "654",
   "connection": "keep-alive",
   "x-powered-by": "Express",
   "access-control-allow-origin": "*",
-  "etag": "W/\"28e-wjhgCKclR0Yd6ynnvdv0ojYopnc\""
+  "etag": "W/\"28e-OnDzyTixZAIyt1FYJleWY222vgY\""
 }
 
 Data:
 {
   "status": "success",
   "error_desc": "",
-  "trackingId": "07764161-E8BC-4D61-AEED-70D1FEF4320D",
+  "trackingId": "2A99E670-5C97-4737-8318-FE21000D20C4",
   "propertyid": "STAAH_TEST_HOTEL_1",
   "room_id": "DELUXE_ROOM",
   "rate_id": "CP_PLAN",

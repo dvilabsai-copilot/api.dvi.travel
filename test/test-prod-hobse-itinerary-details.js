@@ -12,7 +12,7 @@ require('dotenv').config();
 
 const prisma = new PrismaClient();
 
-const PROD_API_BASE_URL = process.env.PROD_API_BASE_URL || 'https://dvi.versile.in/api/v1';
+const PROD_API_BASE_URL = process.env.PROD_API_BASE_URL || 'https://dvi.travel/api/v1';
 const PROD_JWT_TOKEN = process.env.PROD_JWT_TOKEN || '';
 const JUSTA_XLSX_PATH =
   process.env.JUSTA_XLSX_PATH || path.join(process.cwd(), 'Justa Active Hotels City Details.xlsx');
