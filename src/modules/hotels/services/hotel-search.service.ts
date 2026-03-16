@@ -18,6 +18,9 @@ import { HobseHotelProvider } from '../providers/hobse-hotel.provider';
 
 @Injectable()
 export class HotelSearchService {
+  private static readonly MAX_ROOMS = 6;
+  private static readonly MAX_ADULTS_PER_ROOM = 8;
+  private static readonly MAX_CHILDREN_PER_ROOM = 4;
   private providers: Map<string, IHotelProvider>;
   private readonly logger = new Logger(HotelSearchService.name);
 
@@ -43,6 +46,11 @@ export class HotelSearchService {
         checkOutDate,
         roomCount,
         guestCount,
+        adultCount,
+        childCount,
+        childAges,
+        guestNationality,
+        occupancies,
         providers = ['tbo', 'resavenue', 'hobse'], // Search all providers by default
       } = searchCriteria;
 
@@ -53,11 +61,26 @@ export class HotelSearchService {
       this.logger.log(`   - Check-out: ${checkOutDate}`);
       this.logger.log(`   - Rooms: ${roomCount}`);
       this.logger.log(`   - Guests: ${guestCount}`);
+      if (adultCount !== undefined || childCount !== undefined) {
+        this.logger.log(`   - Adults: ${adultCount ?? 'n/a'}`);
+        this.logger.log(`   - Children: ${childCount ?? 'n/a'}`);
+      }
+      if (guestNationality) {
+        this.logger.log(`   - Nationality: ${guestNationality}`);
+      }
       this.logger.log(`   - Providers: ${providers.join(', ')}`);
 
       // Validation
       if (!cityCode) {
         throw new BadRequestException('City code is required');
+      }
+
+      const normalizedProviders = (providers || []).map((provider) => String(provider).toLowerCase());
+      const isTboRequested = normalizedProviders.length === 0 || normalizedProviders.includes('tbo');
+      if (isTboRequested && (!guestNationality || !/^[A-Z]{2}$/i.test(String(guestNationality).trim()))) {
+        throw new BadRequestException(
+          'guestNationality is required as ISO-2 code when searching TBO hotels (example: IN).',
+        );
       }
 
       const checkIn = new Date(checkInDate);
@@ -71,6 +94,60 @@ export class HotelSearchService {
       if (checkIn < new Date()) {
         throw new BadRequestException('Check-in date cannot be in the past');
       }
+
+      if (roomCount > HotelSearchService.MAX_ROOMS) {
+        throw new BadRequestException(
+          `roomCount cannot exceed ${HotelSearchService.MAX_ROOMS}`,
+        );
+      }
+
+      let normalizedOccupancies = occupancies;
+
+      if (adultCount !== undefined || childCount !== undefined || (childAges && childAges.length > 0)) {
+        const safeAdultCount = Number(adultCount ?? 0);
+        const safeChildCount = Number(childCount ?? 0);
+        const safeChildAges = Array.isArray(childAges)
+          ? childAges.map((age) => Number(age)).filter((age) => !Number.isNaN(age))
+          : [];
+
+        if (safeAdultCount < 1) {
+          throw new BadRequestException('At least one adult is required for hotel search');
+        }
+
+        if (roomCount === 1 && safeAdultCount > HotelSearchService.MAX_ADULTS_PER_ROOM) {
+          throw new BadRequestException(
+            `adultCount cannot exceed ${HotelSearchService.MAX_ADULTS_PER_ROOM} for one room`,
+          );
+        }
+
+        if (roomCount === 1 && safeChildCount > HotelSearchService.MAX_CHILDREN_PER_ROOM) {
+          throw new BadRequestException(
+            `childCount cannot exceed ${HotelSearchService.MAX_CHILDREN_PER_ROOM} for one room`,
+          );
+        }
+
+        if (safeChildCount > 0 && safeChildAges.length !== safeChildCount) {
+          throw new BadRequestException('childAges length must match childCount');
+        }
+
+        if (safeAdultCount + safeChildCount !== guestCount) {
+          throw new BadRequestException(
+            `guestCount (${guestCount}) must equal adultCount + childCount (${safeAdultCount + safeChildCount})`,
+          );
+        }
+
+        if ((!normalizedOccupancies || normalizedOccupancies.length === 0) && roomCount === 1) {
+          normalizedOccupancies = [
+            {
+              adults: safeAdultCount,
+              children: safeChildCount,
+              childrenAges: safeChildAges,
+            },
+          ];
+        }
+      }
+
+      this.validateOccupancies(roomCount, guestCount, normalizedOccupancies);
 
       // Get eligible providers
       const activeProviders = providers
@@ -93,6 +170,8 @@ export class HotelSearchService {
             checkOutDate,
             roomCount,
             guestCount,
+            guestNationality,
+            occupancies: normalizedOccupancies,
           },
           searchCriteria.preferences,
         ),
@@ -184,5 +263,65 @@ export class HotelSearchService {
       // Priority 3: Rating (descending)
       return b.rating - a.rating;
     });
+  }
+
+  private validateOccupancies(
+    roomCount: number,
+    guestCount: number,
+    occupancies?: Array<{ adults: number; children: number; childrenAges?: number[] }>,
+  ): void {
+    if (!occupancies || occupancies.length === 0) {
+      return;
+    }
+
+    if (occupancies.length !== roomCount) {
+      throw new BadRequestException(
+        `occupancies length (${occupancies.length}) must match roomCount (${roomCount})`,
+      );
+    }
+
+    let totalGuestsFromOccupancy = 0;
+    for (let i = 0; i < occupancies.length; i++) {
+      const occ = occupancies[i];
+      const childrenAges = occ.childrenAges || [];
+      totalGuestsFromOccupancy += occ.adults + occ.children;
+
+      if (occ.adults > HotelSearchService.MAX_ADULTS_PER_ROOM) {
+        throw new BadRequestException(
+          `occupancies[${i}].adults cannot exceed ${HotelSearchService.MAX_ADULTS_PER_ROOM}`,
+        );
+      }
+
+      if (occ.children > HotelSearchService.MAX_CHILDREN_PER_ROOM) {
+        throw new BadRequestException(
+          `occupancies[${i}].children cannot exceed ${HotelSearchService.MAX_CHILDREN_PER_ROOM}`,
+        );
+      }
+
+      if (occ.children > 0 && childrenAges.length === 0) {
+        throw new BadRequestException(
+          `occupancies[${i}].childrenAges is required when children > 0`,
+        );
+      }
+
+      if (childrenAges.length !== occ.children) {
+        throw new BadRequestException(
+          `occupancies[${i}].childrenAges length must equal children count`,
+        );
+      }
+
+      const hasInvalidAge = childrenAges.some((age) => age < 0 || age > 17);
+      if (hasInvalidAge) {
+        throw new BadRequestException(
+          `occupancies[${i}].childrenAges must be between 0 and 17`,
+        );
+      }
+    }
+
+    if (totalGuestsFromOccupancy !== guestCount) {
+      throw new BadRequestException(
+        `guestCount (${guestCount}) does not match occupancies total (${totalGuestsFromOccupancy})`,
+      );
+    }
   }
 }

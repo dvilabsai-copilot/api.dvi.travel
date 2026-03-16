@@ -1,0 +1,2527 @@
+{
+  "status": 200,
+  "ok": true,
+  "body": {
+    "success": true,
+    "message": "Found 81 hotels",
+    "data": {
+      "totalResults": 81,
+      "hotels": [
+        {
+          "provider": "tbo",
+          "hotelCode": "1056437",
+          "hotelName": "Hotel Gangasagar",
+          "cityCode": "Bangalore",
+          "address": "Koramangala 8th Block Next To Indoor StadiumNear Passport Office8th Block ",
+          "rating": 2,
+          "category": "2-Star",
+          "facilities": [
+            "Free breakfast",
+            "Breakfast for 2",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 1389.22,
+          "currency": "INR",
+          "roomType": "Deluxe Twin Room, 1 Bedroom,2 Double Beds and 2 Large Twin Beds,NonSmoking",
+          "mealPlan": "Breakfast Included",
+          "roomTypes": [
+            {
+              "roomCode": "1056437!TB!1!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Deluxe Twin Room, 1 Bedroom,2 Double Beds and 2 Large Twin Beds,NonSmoking",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 1389.22,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1056437!TB!1!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1128612",
+          "hotelName": "Treebo Terminus",
+          "cityCode": "Bangalore",
+          "address": "5Th Block Koramangala Industrial Layout Koramangala Industrial EstateOff St Pedro RoadOld Goa comma ",
+          "rating": 2,
+          "category": "2-Star",
+          "facilities": [
+            "Free breakfast"
+          ],
+          "images": [],
+          "price": 1986.78,
+          "currency": "INR",
+          "roomType": "Standard Room,1 King Bed,NonSmoking",
+          "mealPlan": "-",
+          "roomTypes": [
+            {
+              "roomCode": "1128612!TB!1!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Standard Room,1 King Bed,NonSmoking",
+              "bedType": "King",
+              "capacity": 2,
+              "price": 1986.78,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1128612!TB!1!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1708684",
+          "hotelName": "Fabhotel Astra Suites Hsr Layout",
+          "cityCode": "Bangalore",
+          "address": "2796 27th Main Road HSR Layout HSR Layout Sector-1Bangalore ",
+          "rating": 2,
+          "category": "2-Star",
+          "facilities": [
+            "Free breakfast",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 2125.99,
+          "currency": "INR",
+          "roomType": "Deluxe Room,1 Double Bed,NonSmoking",
+          "mealPlan": "-",
+          "roomTypes": [
+            {
+              "roomCode": "1708684!TB!2!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Deluxe Room,1 Double Bed,NonSmoking",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 2125.99,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1708684!TB!2!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1128612",
+          "hotelName": "Treebo Terminus",
+          "cityCode": "Bangalore",
+          "address": "5Th Block Koramangala Industrial Layout Koramangala Industrial EstateOff St Pedro RoadOld Goa comma ",
+          "rating": 2,
+          "category": "2-Star",
+          "facilities": [
+            "Free breakfast"
+          ],
+          "images": [],
+          "price": 2248.63,
+          "currency": "INR",
+          "roomType": "Deluxe Room,1 King Bed,NonSmoking",
+          "mealPlan": "-",
+          "roomTypes": [
+            {
+              "roomCode": "1128612!TB!2!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Deluxe Room,1 King Bed,NonSmoking",
+              "bedType": "King",
+              "capacity": 2,
+              "price": 2248.63,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1128612!TB!2!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1128612",
+          "hotelName": "Treebo Terminus",
+          "cityCode": "Bangalore",
+          "address": "5Th Block Koramangala Industrial Layout Koramangala Industrial EstateOff St Pedro RoadOld Goa comma ",
+          "rating": 2,
+          "category": "2-Star",
+          "facilities": [
+            "Free breakfast"
+          ],
+          "images": [],
+          "price": 2248.63,
+          "currency": "INR",
+          "roomType": "Deluxe Room,2 Twin Beds,NonSmoking",
+          "mealPlan": "-",
+          "roomTypes": [
+            {
+              "roomCode": "1128612!TB!3!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Deluxe Room,2 Twin Beds,NonSmoking",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 2248.63,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1128612!TB!3!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1128612",
+          "hotelName": "Treebo Terminus",
+          "cityCode": "Bangalore",
+          "address": "5Th Block Koramangala Industrial Layout Koramangala Industrial EstateOff St Pedro RoadOld Goa comma ",
+          "rating": 2,
+          "category": "2-Star",
+          "facilities": [
+            "Free breakfast"
+          ],
+          "images": [],
+          "price": 2361.36,
+          "currency": "INR",
+          "roomType": "Premium Room,1 King Bed,NonSmoking",
+          "mealPlan": "-",
+          "roomTypes": [
+            {
+              "roomCode": "1128612!TB!4!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Premium Room,1 King Bed,NonSmoking",
+              "bedType": "King",
+              "capacity": 2,
+              "price": 2361.36,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1128612!TB!4!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1708684",
+          "hotelName": "Fabhotel Astra Suites Hsr Layout",
+          "cityCode": "Bangalore",
+          "address": "2796 27th Main Road HSR Layout HSR Layout Sector-1Bangalore ",
+          "rating": 2,
+          "category": "2-Star",
+          "facilities": [
+            "Free breakfast",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 2428.61,
+          "currency": "INR",
+          "roomType": "Premium Room,1 Queen Bed,NonSmoking",
+          "mealPlan": "-",
+          "roomTypes": [
+            {
+              "roomCode": "1708684!TB!4!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Premium Room,1 Queen Bed,NonSmoking",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 2428.61,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1708684!TB!4!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "6185482",
+          "hotelName": "De Venetian by TGI",
+          "cityCode": "Bangalore",
+          "address": "305 AECS Layout Main Rd  ",
+          "rating": 2,
+          "category": "2-Star",
+          "facilities": [
+            "Free breakfast",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 3024.43,
+          "currency": "INR",
+          "roomType": "Executive Double Room, 1 Queen Bed,NonSmoking",
+          "mealPlan": "-",
+          "roomTypes": [
+            {
+              "roomCode": "6185482!TB!2!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Executive Double Room, 1 Queen Bed,NonSmoking",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 3024.43,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "6185482!TB!2!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1870674",
+          "hotelName": "Southend by TGI",
+          "cityCode": "Bangalore",
+          "address": "21 5Th Cross Road Vidya Nagar Hosur Road Bommasandra Near Electronic City Hosur Road, Bommasandra Hosur RoadVidyanagarBommasandra ",
+          "rating": 2,
+          "category": "2-Star",
+          "facilities": [
+            "Free breakfast",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 3044.56,
+          "currency": "INR",
+          "roomType": "Executive Double Room, 1 Double Bed, Non Smoking",
+          "mealPlan": "-",
+          "roomTypes": [
+            {
+              "roomCode": "1870674!TB!2!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Executive Double Room, 1 Double Bed, Non Smoking",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 3044.56,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1870674!TB!2!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1708684",
+          "hotelName": "Fabhotel Astra Suites Hsr Layout",
+          "cityCode": "Bangalore",
+          "address": "2796 27th Main Road HSR Layout HSR Layout Sector-1Bangalore ",
+          "rating": 2,
+          "category": "2-Star",
+          "facilities": [
+            "Half board"
+          ],
+          "images": [],
+          "price": 3051.98,
+          "currency": "INR",
+          "roomType": "Deluxe Room,1 Double Bed,NonSmoking",
+          "mealPlan": "-",
+          "roomTypes": [
+            {
+              "roomCode": "1708684!TB!5!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Deluxe Room,1 Double Bed,NonSmoking",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 3051.98,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1708684!TB!5!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "6180634",
+          "hotelName": "Langford Keys by TGI",
+          "cityCode": "Bangalore",
+          "address": "35 Langford Rd Cross  ",
+          "rating": 2,
+          "category": "2-Star",
+          "facilities": [
+            "Free breakfast",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 3182.16,
+          "currency": "INR",
+          "roomType": "Deluxe Room,1 Queen Bed,NonSmoking",
+          "mealPlan": "-",
+          "roomTypes": [
+            {
+              "roomCode": "6180634!TB!2!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Deluxe Room,1 Queen Bed,NonSmoking",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 3182.16,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "6180634!TB!2!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1413772",
+          "hotelName": "The Sanctum Suites",
+          "cityCode": "Bangalore",
+          "address": "15 Behind Cpri Compound Ashwathnagar Dollars Colony, RMV 2nd Stage Off 80 ft. RoadAshwathnagarRMV 2nd Stage ",
+          "rating": 2,
+          "category": "2-Star",
+          "facilities": [
+            "Free breakfast",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 3208.1,
+          "currency": "INR",
+          "roomType": "Standard Double Room, 1 King Bed,NonSmoking",
+          "mealPlan": "-",
+          "roomTypes": [
+            {
+              "roomCode": "1413772!TB!3!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Standard Double Room, 1 King Bed,NonSmoking",
+              "bedType": "King",
+              "capacity": 2,
+              "price": 3208.1,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1413772!TB!3!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1035281",
+          "hotelName": "Springs Hotel And Spa Bangalor",
+          "cityCode": "Bangalore",
+          "address": "19 H Siddaiah Road,Off JC road,Opp Lions Hospital,Before Urvasi,Bangalore,Karnataka 560002 off J.C. Road Off JC roadOpp Lions HospitalBefore Urvasi ",
+          "rating": 3,
+          "category": "3-Star",
+          "facilities": [
+            "Free breakfast",
+            "Continental breakfast",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 3247,
+          "currency": "INR",
+          "roomType": "Standard Studio,1 Double Bed,NonSmoking",
+          "mealPlan": "-",
+          "roomTypes": [
+            {
+              "roomCode": "1035281!TB!2!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Standard Studio,1 Double Bed,NonSmoking",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 3247,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1035281!TB!2!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1413772",
+          "hotelName": "The Sanctum Suites",
+          "cityCode": "Bangalore",
+          "address": "15 Behind Cpri Compound Ashwathnagar Dollars Colony, RMV 2nd Stage Off 80 ft. RoadAshwathnagarRMV 2nd Stage ",
+          "rating": 2,
+          "category": "2-Star",
+          "facilities": [
+            "Free breakfast",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 3250.22,
+          "currency": "INR",
+          "roomType": "Standard Twin Room, 2 Twin Beds,NonSmoking",
+          "mealPlan": "-",
+          "roomTypes": [
+            {
+              "roomCode": "1413772!TB!4!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Standard Twin Room, 2 Twin Beds,NonSmoking",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 3250.22,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1413772!TB!4!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1825791",
+          "hotelName": "Fountain Tree By Tgi",
+          "cityCode": "Bangalore",
+          "address": "47 1 Jp Nagar 3Rd Phase 9Th Cross 1St Main Road Bangalore 1st Main Road, JP Nagar  ",
+          "rating": 2,
+          "category": "2-Star",
+          "facilities": [
+            "Free breakfast",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 3264.42,
+          "currency": "INR",
+          "roomType": "Executive Double Room, 1 Double Bed,NonSmoking",
+          "mealPlan": "-",
+          "roomTypes": [
+            {
+              "roomCode": "1825791!TB!2!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Executive Double Room, 1 Double Bed,NonSmoking",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 3264.42,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1825791!TB!2!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1870674",
+          "hotelName": "Southend by TGI",
+          "cityCode": "Bangalore",
+          "address": "21 5Th Cross Road Vidya Nagar Hosur Road Bommasandra Near Electronic City Hosur Road, Bommasandra Hosur RoadVidyanagarBommasandra ",
+          "rating": 2,
+          "category": "2-Star",
+          "facilities": [
+            "Free breakfast",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 3576.23,
+          "currency": "INR",
+          "roomType": "Premium Double Room, 1 Double Bed, Non Smoking",
+          "mealPlan": "-",
+          "roomTypes": [
+            {
+              "roomCode": "1870674!TB!4!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Premium Double Room, 1 Double Bed, Non Smoking",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 3576.23,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1870674!TB!4!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1035281",
+          "hotelName": "Springs Hotel And Spa Bangalor",
+          "cityCode": "Bangalore",
+          "address": "19 H Siddaiah Road,Off JC road,Opp Lions Hospital,Before Urvasi,Bangalore,Karnataka 560002 off J.C. Road Off JC roadOpp Lions HospitalBefore Urvasi ",
+          "rating": 3,
+          "category": "3-Star",
+          "facilities": [
+            "Breakfast buffet",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 3662.93,
+          "currency": "INR",
+          "roomType": "Superior Room,1 Double Bed,NonSmoking",
+          "mealPlan": "Breakfast Included",
+          "roomTypes": [
+            {
+              "roomCode": "1035281!TB!4!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Superior Room,1 Double Bed,NonSmoking",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 3662.93,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1035281!TB!4!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "6180634",
+          "hotelName": "Langford Keys by TGI",
+          "cityCode": "Bangalore",
+          "address": "35 Langford Rd Cross  ",
+          "rating": 2,
+          "category": "2-Star",
+          "facilities": [
+            "Breakfast for 1",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 3922.2,
+          "currency": "INR",
+          "roomType": "Premium Double Room,1 Queen Bed,NonSmoking",
+          "mealPlan": "Breakfast Included",
+          "roomTypes": [
+            {
+              "roomCode": "6180634!TB!4!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Premium Double Room,1 Queen Bed,NonSmoking",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 3922.2,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "6180634!TB!4!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1825791",
+          "hotelName": "Fountain Tree By Tgi",
+          "cityCode": "Bangalore",
+          "address": "47 1 Jp Nagar 3Rd Phase 9Th Cross 1St Main Road Bangalore 1st Main Road, JP Nagar  ",
+          "rating": 2,
+          "category": "2-Star",
+          "facilities": [
+            "Free breakfast",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 3952.88,
+          "currency": "INR",
+          "roomType": "Premium Double Room, 1 Double Bed,NonSmoking",
+          "mealPlan": "-",
+          "roomTypes": [
+            {
+              "roomCode": "1825791!TB!4!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Premium Double Room, 1 Double Bed,NonSmoking",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 3952.88,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1825791!TB!4!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1087690",
+          "hotelName": "Cross Roads Inn",
+          "cityCode": "Bangalore",
+          "address": "#827 24th Main, 2nd Phase J.P.Nagar 2nd PhaseJ. P. NagarBangalore 560078 ",
+          "rating": 13,
+          "category": "13-Star",
+          "facilities": [
+            "Free breakfast",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 4082.05,
+          "currency": "INR",
+          "roomType": "Deluxe Double Room,1 Double Bed,NonSmoking",
+          "mealPlan": "-",
+          "roomTypes": [
+            {
+              "roomCode": "1087690!TB!1!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Deluxe Double Room,1 Double Bed,NonSmoking",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 4082.05,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1087690!TB!1!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1458365",
+          "hotelName": "Starlit Suites",
+          "cityCode": "Bangalore",
+          "address": "No E 39 275 Smondo Road Neotown Electronic City Phase I Near Fire Station NeotownElectronic City Phase 1Bengaluru 560100 ",
+          "rating": 2,
+          "category": "2-Star",
+          "facilities": [
+            "Breakfast buffet",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 4459.63,
+          "currency": "INR",
+          "roomType": "Premium Studio,1 Queen Bed,NonSmoking",
+          "mealPlan": "Breakfast Included",
+          "roomTypes": [
+            {
+              "roomCode": "1458365!TB!2!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Premium Studio,1 Queen Bed,NonSmoking",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 4459.63,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1458365!TB!2!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1825791",
+          "hotelName": "Fountain Tree By Tgi",
+          "cityCode": "Bangalore",
+          "address": "47 1 Jp Nagar 3Rd Phase 9Th Cross 1St Main Road Bangalore 1st Main Road, JP Nagar  ",
+          "rating": 2,
+          "category": "2-Star",
+          "facilities": [
+            "Free breakfast",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 4639.65,
+          "currency": "INR",
+          "roomType": "Luxury Suite, 1 Double Bed,NonSmoking",
+          "mealPlan": "-",
+          "roomTypes": [
+            {
+              "roomCode": "1825791!TB!5!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Luxury Suite, 1 Double Bed,NonSmoking",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 4639.65,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1825791!TB!5!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1458365",
+          "hotelName": "Starlit Suites",
+          "cityCode": "Bangalore",
+          "address": "No E 39 275 Smondo Road Neotown Electronic City Phase I Near Fire Station NeotownElectronic City Phase 1Bengaluru 560100 ",
+          "rating": 2,
+          "category": "2-Star",
+          "facilities": [
+            "Half board"
+          ],
+          "images": [],
+          "price": 5053.72,
+          "currency": "INR",
+          "roomType": "Premium Studio,1 Queen Bed,NonSmoking",
+          "mealPlan": "-",
+          "roomTypes": [
+            {
+              "roomCode": "1458365!TB!3!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Premium Studio,1 Queen Bed,NonSmoking",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 5053.72,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1458365!TB!3!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1458365",
+          "hotelName": "Starlit Suites",
+          "cityCode": "Bangalore",
+          "address": "No E 39 275 Smondo Road Neotown Electronic City Phase I Near Fire Station NeotownElectronic City Phase 1Bengaluru 560100 ",
+          "rating": 2,
+          "category": "2-Star",
+          "facilities": [
+            "Breakfast buffet",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 5202.33,
+          "currency": "INR",
+          "roomType": "Deluxe Suite,2 Twin Beds,NonSmoking",
+          "mealPlan": "Breakfast Included",
+          "roomTypes": [
+            {
+              "roomCode": "1458365!TB!4!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Deluxe Suite,2 Twin Beds,NonSmoking",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 5202.33,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1458365!TB!4!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1190996",
+          "hotelName": "Hotel Ivory Tower",
+          "cityCode": "Bangalore",
+          "address": "12th floor, Barton Centre 84 M.G.Road 84 M.G.Road ",
+          "rating": 2,
+          "category": "2-Star",
+          "facilities": [
+            "Free valet parking",
+            "Free breakfast",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 5412.23,
+          "currency": "INR",
+          "roomType": "Ivory Suite Room,1 King Bed,NonSmoking",
+          "mealPlan": "-",
+          "roomTypes": [
+            {
+              "roomCode": "1190996!TB!1!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Ivory Suite Room,1 King Bed,NonSmoking",
+              "bedType": "King",
+              "capacity": 2,
+              "price": 5412.23,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1190996!TB!1!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1078753",
+          "hotelName": "Sai Vishram Business Hotel",
+          "cityCode": "Bangalore",
+          "address": "144C/1 Kirloskar Road,Bommasandra Industrial Area,Bengaluru 560099,Karnataka Bommasandra Industrial EstateElectronic CityHebbagodi ",
+          "rating": 3,
+          "category": "3-Star",
+          "facilities": [
+            "Free breakfast",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 5845.03,
+          "currency": "INR",
+          "roomType": "Club Twin Bed,2 Twin Beds,NonSmoking",
+          "mealPlan": "-",
+          "roomTypes": [
+            {
+              "roomCode": "1078753!TB!2!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Club Twin Bed,2 Twin Beds,NonSmoking",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 5845.03,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1078753!TB!2!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1665068",
+          "hotelName": "Days Suites Bengaluru Whitefield",
+          "cityCode": "Bangalore",
+          "address": "Sy 139 Hoodi Village Opp Prestige Shantineketan Rajapalya Opposite Prestige ShantineketanBengaluruKarnataka ",
+          "rating": 2,
+          "category": "2-Star",
+          "facilities": [
+            "Half board"
+          ],
+          "images": [],
+          "price": 5853.12,
+          "currency": "INR",
+          "roomType": "Room, 1 Queen Bed, Non Smoking",
+          "mealPlan": "-",
+          "roomTypes": [
+            {
+              "roomCode": "1665068!TB!5!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Room, 1 Queen Bed, Non Smoking",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 5853.12,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1665068!TB!5!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1078753",
+          "hotelName": "Sai Vishram Business Hotel",
+          "cityCode": "Bangalore",
+          "address": "144C/1 Kirloskar Road,Bommasandra Industrial Area,Bengaluru 560099,Karnataka Bommasandra Industrial EstateElectronic CityHebbagodi ",
+          "rating": 3,
+          "category": "3-Star",
+          "facilities": [
+            "Half board"
+          ],
+          "images": [],
+          "price": 5928.43,
+          "currency": "INR",
+          "roomType": "Club Twin Bed,2 Twin Beds,NonSmoking",
+          "mealPlan": "-",
+          "roomTypes": [
+            {
+              "roomCode": "1078753!TB!3!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Club Twin Bed,2 Twin Beds,NonSmoking",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 5928.43,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1078753!TB!3!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1458365",
+          "hotelName": "Starlit Suites",
+          "cityCode": "Bangalore",
+          "address": "No E 39 275 Smondo Road Neotown Electronic City Phase I Near Fire Station NeotownElectronic City Phase 1Bengaluru 560100 ",
+          "rating": 2,
+          "category": "2-Star",
+          "facilities": [
+            "Half board"
+          ],
+          "images": [],
+          "price": 6021.23,
+          "currency": "INR",
+          "roomType": "Deluxe Suite,2 Twin Beds,NonSmoking",
+          "mealPlan": "-",
+          "roomTypes": [
+            {
+              "roomCode": "1458365!TB!5!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Deluxe Suite,2 Twin Beds,NonSmoking",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 6021.23,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1458365!TB!5!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1078753",
+          "hotelName": "Sai Vishram Business Hotel",
+          "cityCode": "Bangalore",
+          "address": "144C/1 Kirloskar Road,Bommasandra Industrial Area,Bengaluru 560099,Karnataka Bommasandra Industrial EstateElectronic CityHebbagodi ",
+          "rating": 3,
+          "category": "3-Star",
+          "facilities": [
+            "Free breakfast",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 6260.88,
+          "currency": "INR",
+          "roomType": "Club King,1 Double Bed,NonSmoking",
+          "mealPlan": "-",
+          "roomTypes": [
+            {
+              "roomCode": "1078753!TB!4!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Club King,1 Double Bed,NonSmoking",
+              "bedType": "King",
+              "capacity": 2,
+              "price": 6260.88,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1078753!TB!4!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1078753",
+          "hotelName": "Sai Vishram Business Hotel",
+          "cityCode": "Bangalore",
+          "address": "144C/1 Kirloskar Road,Bommasandra Industrial Area,Bengaluru 560099,Karnataka Bommasandra Industrial EstateElectronic CityHebbagodi ",
+          "rating": 3,
+          "category": "3-Star",
+          "facilities": [
+            "Half board"
+          ],
+          "images": [],
+          "price": 6260.88,
+          "currency": "INR",
+          "roomType": "Club King,1 Double Bed,NonSmoking",
+          "mealPlan": "-",
+          "roomTypes": [
+            {
+              "roomCode": "1078753!TB!5!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Club King,1 Double Bed,NonSmoking",
+              "bedType": "King",
+              "capacity": 2,
+              "price": 6260.88,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1078753!TB!5!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1168365",
+          "hotelName": "The Chancery Pavilion",
+          "cityCode": "Bangalore",
+          "address": "135 Residency Road,Opposite To Bangalore Club,Bangalore 560025 Opposite To Bangalore ClubBangalore 560025 ",
+          "rating": 3,
+          "category": "3-Star",
+          "facilities": [
+            "Free valet parking",
+            "Breakfast buffet"
+          ],
+          "images": [],
+          "price": 6469.84,
+          "currency": "INR",
+          "roomType": "Deluxe Room, 1 King Bed, Non Smoking",
+          "mealPlan": "Breakfast Included",
+          "roomTypes": [
+            {
+              "roomCode": "1168365!TB!6!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Deluxe Room, 1 King Bed, Non Smoking",
+              "bedType": "King",
+              "capacity": 2,
+              "price": 6469.84,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1168365!TB!6!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1356520",
+          "hotelName": "The Fern Residency Yeshwanthpur",
+          "cityCode": "Bangalore",
+          "address": "6/1, Tumkur Main Road Next to Sparsh Hospital, Yeshwanthpur Next to Sparsh Hospital, Yeshwanthpur ",
+          "rating": 2,
+          "category": "2-Star",
+          "facilities": [
+            "Breakfast buffet",
+            "Free valet parking",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 6607.48,
+          "currency": "INR",
+          "roomType": "Studio, 1 Queen Bed (No View),NonSmoking",
+          "mealPlan": "Breakfast Included",
+          "roomTypes": [
+            {
+              "roomCode": "1356520!TB!3!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Studio, 1 Queen Bed (No View),NonSmoking",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 6607.48,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1356520!TB!3!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1356520",
+          "hotelName": "The Fern Residency Yeshwanthpur",
+          "cityCode": "Bangalore",
+          "address": "6/1, Tumkur Main Road Next to Sparsh Hospital, Yeshwanthpur Next to Sparsh Hospital, Yeshwanthpur ",
+          "rating": 2,
+          "category": "2-Star",
+          "facilities": [
+            "Breakfast buffet",
+            "Free valet parking",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 6607.48,
+          "currency": "INR",
+          "roomType": "Studio, 2 Twin Beds (No View),NonSmoking",
+          "mealPlan": "Breakfast Included",
+          "roomTypes": [
+            {
+              "roomCode": "1356520!TB!4!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Studio, 2 Twin Beds (No View),NonSmoking",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 6607.48,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1356520!TB!4!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1356520",
+          "hotelName": "The Fern Residency Yeshwanthpur",
+          "cityCode": "Bangalore",
+          "address": "6/1, Tumkur Main Road Next to Sparsh Hospital, Yeshwanthpur Next to Sparsh Hospital, Yeshwanthpur ",
+          "rating": 2,
+          "category": "2-Star",
+          "facilities": [
+            "Breakfast buffet",
+            "Free valet parking",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 7078.38,
+          "currency": "INR",
+          "roomType": "Room, 1 Queen Bed, City View,NonSmoking",
+          "mealPlan": "Breakfast Included",
+          "roomTypes": [
+            {
+              "roomCode": "1356520!TB!5!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Room, 1 Queen Bed, City View,NonSmoking",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 7078.38,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1356520!TB!5!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1168365",
+          "hotelName": "The Chancery Pavilion",
+          "cityCode": "Bangalore",
+          "address": "135 Residency Road,Opposite To Bangalore Club,Bangalore 560025 Opposite To Bangalore ClubBangalore 560025 ",
+          "rating": 3,
+          "category": "3-Star",
+          "facilities": [
+            "Free valet parking",
+            "Breakfast buffet"
+          ],
+          "images": [],
+          "price": 8346.65,
+          "currency": "INR",
+          "roomType": "Club Room,1 King Bed,NonSmoking",
+          "mealPlan": "Breakfast Included",
+          "roomTypes": [
+            {
+              "roomCode": "1168365!TB!8!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Club Room,1 King Bed,NonSmoking",
+              "bedType": "King",
+              "capacity": 2,
+              "price": 8346.65,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1168365!TB!8!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1316792",
+          "hotelName": "Citrine Hotel",
+          "cityCode": "Bangalore",
+          "address": "# 211, S.C. Road Seshadripuram Seshadripuram ",
+          "rating": 2,
+          "category": "2-Star",
+          "facilities": [
+            "Breakfast buffet",
+            "Free valet parking",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 8494.63,
+          "currency": "INR",
+          "roomType": "Club Executive,1 King Bed,NonSmoking",
+          "mealPlan": "Breakfast Included",
+          "roomTypes": [
+            {
+              "roomCode": "1316792!TB!2!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Club Executive,1 King Bed,NonSmoking",
+              "bedType": "King",
+              "capacity": 2,
+              "price": 8494.63,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1316792!TB!2!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1211307",
+          "hotelName": "Royal Orchid",
+          "cityCode": "Bangalore",
+          "address": "1, Golf Avenue,Bangalore 560008 HAL Airport Road Bangalore 560008 ",
+          "rating": 4,
+          "category": "4-Star",
+          "facilities": [
+            "BREAKFAST",
+            "FOOD & BEVERAGE DISCOUNT 15%",
+            "PARKING",
+            "EXPRESS CHECK-IN",
+            "FREE WIFI",
+            "FREE FITNESS CENTER ACCESS"
+          ],
+          "images": [],
+          "price": 8909.08,
+          "currency": "INR",
+          "roomType": "Deluxe Twin Room Non-Smoking",
+          "mealPlan": "-",
+          "roomTypes": [
+            {
+              "roomCode": "1211307!TB!5!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Deluxe Twin Room Non-Smoking",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 8909.08,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1211307!TB!5!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1356500",
+          "hotelName": "Pride Hotel Bengaluru",
+          "cityCode": "Bangalore",
+          "address": "93 Richmond Road,Bangalore 25,Karnataka 560025 Bangalore 25Karnataka 560025 ",
+          "rating": 4,
+          "category": "4-Star",
+          "facilities": [
+            "Free valet parking",
+            "Breakfast buffet",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 8926.84,
+          "currency": "INR",
+          "roomType": "Deluxe Room,1 Double Bed,NonSmoking",
+          "mealPlan": "Breakfast Included",
+          "roomTypes": [
+            {
+              "roomCode": "1356500!TB!3!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Deluxe Room,1 Double Bed,NonSmoking",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 8926.84,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1356500!TB!3!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1356500",
+          "hotelName": "Pride Hotel Bengaluru",
+          "cityCode": "Bangalore",
+          "address": "93 Richmond Road,Bangalore 25,Karnataka 560025 Bangalore 25Karnataka 560025 ",
+          "rating": 4,
+          "category": "4-Star",
+          "facilities": [
+            "Free valet parking",
+            "Free breakfast",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 8926.84,
+          "currency": "INR",
+          "roomType": "Deluxe Twin Room, Non Smoking,1 King Bed",
+          "mealPlan": "-",
+          "roomTypes": [
+            {
+              "roomCode": "1356500!TB!4!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Deluxe Twin Room, Non Smoking,1 King Bed",
+              "bedType": "King",
+              "capacity": 2,
+              "price": 8926.84,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1356500!TB!4!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1211307",
+          "hotelName": "Royal Orchid",
+          "cityCode": "Bangalore",
+          "address": "1, Golf Avenue,Bangalore 560008 HAL Airport Road Bangalore 560008 ",
+          "rating": 4,
+          "category": "4-Star",
+          "facilities": [
+            "BREAKFAST",
+            "FOOD & BEVERAGE DISCOUNT 15%",
+            "PARKING",
+            "EXPRESS CHECK-IN",
+            "FREE WIFI",
+            "DRINKING WATER",
+            "FREE FITNESS CENTER ACCESS"
+          ],
+          "images": [],
+          "price": 9355.14,
+          "currency": "INR",
+          "roomType": "Deluxe King Room",
+          "mealPlan": "-",
+          "roomTypes": [
+            {
+              "roomCode": "1211307!TB!8!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Deluxe King Room",
+              "bedType": "King",
+              "capacity": 2,
+              "price": 9355.14,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1211307!TB!8!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1211307",
+          "hotelName": "Royal Orchid",
+          "cityCode": "Bangalore",
+          "address": "1, Golf Avenue,Bangalore 560008 HAL Airport Road Bangalore 560008 ",
+          "rating": 4,
+          "category": "4-Star",
+          "facilities": [
+            "Breakfast buffet",
+            "Free valet parking",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 9429.22,
+          "currency": "INR",
+          "roomType": "Deluxe Twin Room, Non Smoking,2 Twin Beds",
+          "mealPlan": "Breakfast Included",
+          "roomTypes": [
+            {
+              "roomCode": "1211307!TB!4!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Deluxe Twin Room, Non Smoking,2 Twin Beds",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 9429.22,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1211307!TB!4!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1356188",
+          "hotelName": "Fortune Park JP Celestial",
+          "cityCode": "Bangalore",
+          "address": "5/43 Race Course Road,Bangalore 560009,Karnataka Near Anand Rao Circle Bangalore 560009Kamataka ",
+          "rating": 2,
+          "category": "2-Star",
+          "facilities": [
+            "Free breakfast",
+            "Free valet parking",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 9459.99,
+          "currency": "INR",
+          "roomType": "Deluxe Room,1 Queen Bed,NonSmoking",
+          "mealPlan": "-",
+          "roomTypes": [
+            {
+              "roomCode": "1356188!TB!2!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Deluxe Room,1 Queen Bed,NonSmoking",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 9459.99,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1356188!TB!2!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1356500",
+          "hotelName": "Pride Hotel Bengaluru",
+          "cityCode": "Bangalore",
+          "address": "93 Richmond Road,Bangalore 25,Karnataka 560025 Bangalore 25Karnataka 560025 ",
+          "rating": 4,
+          "category": "4-Star",
+          "facilities": [
+            "Breakfast buffet",
+            "Free breakfast",
+            "Free valet parking",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 9709.46,
+          "currency": "INR",
+          "roomType": "S-Class Room,1 Double Bed,NonSmoking",
+          "mealPlan": "Breakfast Included",
+          "roomTypes": [
+            {
+              "roomCode": "1356500!TB!5!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "S-Class Room,1 Double Bed,NonSmoking",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 9709.46,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1356500!TB!5!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1211307",
+          "hotelName": "Royal Orchid",
+          "cityCode": "Bangalore",
+          "address": "1, Golf Avenue,Bangalore 560008 HAL Airport Road Bangalore 560008 ",
+          "rating": 4,
+          "category": "4-Star",
+          "facilities": [
+            "Breakfast buffet",
+            "Free valet parking",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 9909.02,
+          "currency": "INR",
+          "roomType": "Deluxe Room, Non Smoking,2 Twin Beds",
+          "mealPlan": "Breakfast Included",
+          "roomTypes": [
+            {
+              "roomCode": "1211307!TB!6!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Deluxe Room, Non Smoking,2 Twin Beds",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 9909.02,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1211307!TB!6!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1356188",
+          "hotelName": "Fortune Park JP Celestial",
+          "cityCode": "Bangalore",
+          "address": "5/43 Race Course Road,Bangalore 560009,Karnataka Near Anand Rao Circle Bangalore 560009Kamataka ",
+          "rating": 2,
+          "category": "2-Star",
+          "facilities": [
+            "Free breakfast",
+            "Free valet parking",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 10058.23,
+          "currency": "INR",
+          "roomType": "Premium Room, 1 King Bed,NonSmoking",
+          "mealPlan": "-",
+          "roomTypes": [
+            {
+              "roomCode": "1356188!TB!4!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Premium Room, 1 King Bed,NonSmoking",
+              "bedType": "King",
+              "capacity": 2,
+              "price": 10058.23,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1356188!TB!4!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1367701",
+          "hotelName": "WelcomHotel Bengaluru",
+          "cityCode": "Bangalore",
+          "address": "46 Richmond Road,Adjacent To M.G. Road And Brigade Road,Bangalore 560025,Karnataka Adjacent To M.G. Road And Brigade RoadBangalore 560025Karnataka ",
+          "rating": 4,
+          "category": "4-Star",
+          "facilities": [
+            "Breakfast buffet",
+            "Free valet parking",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 10148.24,
+          "currency": "INR",
+          "roomType": "Deluxe Room, 1 Queen Bed (Deluxe Room Double),NonSmoking",
+          "mealPlan": "Breakfast Included",
+          "roomTypes": [
+            {
+              "roomCode": "1367701!TB!2!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Deluxe Room, 1 Queen Bed (Deluxe Room Double),NonSmoking",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 10148.24,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1367701!TB!2!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1367701",
+          "hotelName": "WelcomHotel Bengaluru",
+          "cityCode": "Bangalore",
+          "address": "46 Richmond Road,Adjacent To M.G. Road And Brigade Road,Bangalore 560025,Karnataka Adjacent To M.G. Road And Brigade RoadBangalore 560025Karnataka ",
+          "rating": 4,
+          "category": "4-Star",
+          "facilities": [
+            "Breakfast buffet",
+            "Free valet parking",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 10148.24,
+          "currency": "INR",
+          "roomType": "Deluxe Room, 2 Twin Beds (Deluxe Room Twin),NonSmoking",
+          "mealPlan": "Breakfast Included",
+          "roomTypes": [
+            {
+              "roomCode": "1367701!TB!3!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Deluxe Room, 2 Twin Beds (Deluxe Room Twin),NonSmoking",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 10148.24,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1367701!TB!3!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1367701",
+          "hotelName": "WelcomHotel Bengaluru",
+          "cityCode": "Bangalore",
+          "address": "46 Richmond Road,Adjacent To M.G. Road And Brigade Road,Bangalore 560025,Karnataka Adjacent To M.G. Road And Brigade RoadBangalore 560025Karnataka ",
+          "rating": 4,
+          "category": "4-Star",
+          "facilities": [
+            "BREAKFAST",
+            "BREAKFAST FOR 2 PEOPLE",
+            "PARKING",
+            "FREE PREMIUM WIFI",
+            "FREE WIFI",
+            "DRINKING WATER",
+            "FREE FITNESS CENTER ACCESS"
+          ],
+          "images": [],
+          "price": 10395.34,
+          "currency": "INR",
+          "roomType": "Deluxe Room Twin",
+          "mealPlan": "-",
+          "roomTypes": [
+            {
+              "roomCode": "1367701!TB!8!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Deluxe Room Twin",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 10395.34,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1367701!TB!8!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1367701",
+          "hotelName": "WelcomHotel Bengaluru",
+          "cityCode": "Bangalore",
+          "address": "46 Richmond Road,Adjacent To M.G. Road And Brigade Road,Bangalore 560025,Karnataka Adjacent To M.G. Road And Brigade RoadBangalore 560025Karnataka ",
+          "rating": 4,
+          "category": "4-Star",
+          "facilities": [
+            "BREAKFAST",
+            "BREAKFAST FOR 2 PEOPLE",
+            "PARKING",
+            "FREE PREMIUM WIFI",
+            "FREE WIFI",
+            "DRINKING WATER",
+            "FREE FITNESS CENTER ACCESS"
+          ],
+          "images": [],
+          "price": 10395.34,
+          "currency": "INR",
+          "roomType": "Deluxe Room Double",
+          "mealPlan": "-",
+          "roomTypes": [
+            {
+              "roomCode": "1367701!TB!9!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Deluxe Room Double",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 10395.34,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1367701!TB!9!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1500817",
+          "hotelName": "Oyo 2561 Near Manipal Hospital",
+          "cityCode": "Bangalore",
+          "address": "4121A 19Th Main Road Hal Ii Stage Kodihalli 19Th Main Road Bangalore 19th Main Road, Indiranagar HAL II StageKodihalliIndiranagar ",
+          "rating": 13,
+          "category": "13-Star",
+          "facilities": [
+            "Free breakfast",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 10710.08,
+          "currency": "INR",
+          "roomType": "Standard Double Room,1 Double Bed,NonSmoking",
+          "mealPlan": "-",
+          "roomTypes": [
+            {
+              "roomCode": "1500817!TB!1!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Standard Double Room,1 Double Bed,NonSmoking",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 10710.08,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1500817!TB!1!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1211307",
+          "hotelName": "Royal Orchid",
+          "cityCode": "Bangalore",
+          "address": "1, Golf Avenue,Bangalore 560008 HAL Airport Road Bangalore 560008 ",
+          "rating": 4,
+          "category": "4-Star",
+          "facilities": [
+            "Free breakfast",
+            "Free valet parking",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 10842.84,
+          "currency": "INR",
+          "roomType": "Royal Club Twin,2 Twin Beds,NonSmoking",
+          "mealPlan": "-",
+          "roomTypes": [
+            {
+              "roomCode": "1211307!TB!9!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Royal Club Twin,2 Twin Beds,NonSmoking",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 10842.84,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1211307!TB!9!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1356188",
+          "hotelName": "Fortune Park JP Celestial",
+          "cityCode": "Bangalore",
+          "address": "5/43 Race Course Road,Bangalore 560009,Karnataka Near Anand Rao Circle Bangalore 560009Kamataka ",
+          "rating": 2,
+          "category": "2-Star",
+          "facilities": [
+            "Half board"
+          ],
+          "images": [],
+          "price": 11078.55,
+          "currency": "INR",
+          "roomType": "Deluxe Room,1 Queen Bed,NonSmoking",
+          "mealPlan": "-",
+          "roomTypes": [
+            {
+              "roomCode": "1356188!TB!5!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Deluxe Room,1 Queen Bed,NonSmoking",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 11078.55,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1356188!TB!5!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1367701",
+          "hotelName": "WelcomHotel Bengaluru",
+          "cityCode": "Bangalore",
+          "address": "46 Richmond Road,Adjacent To M.G. Road And Brigade Road,Bangalore 560025,Karnataka Adjacent To M.G. Road And Brigade RoadBangalore 560025Karnataka ",
+          "rating": 4,
+          "category": "4-Star",
+          "facilities": [
+            "Breakfast buffet",
+            "Free valet parking",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 11114.35,
+          "currency": "INR",
+          "roomType": "Deluxe Room (Superior Room Double),1 Queen Bed,NonSmoking",
+          "mealPlan": "Breakfast Included",
+          "roomTypes": [
+            {
+              "roomCode": "1367701!TB!6!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Deluxe Room (Superior Room Double),1 Queen Bed,NonSmoking",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 11114.35,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1367701!TB!6!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1367701",
+          "hotelName": "WelcomHotel Bengaluru",
+          "cityCode": "Bangalore",
+          "address": "46 Richmond Road,Adjacent To M.G. Road And Brigade Road,Bangalore 560025,Karnataka Adjacent To M.G. Road And Brigade RoadBangalore 560025Karnataka ",
+          "rating": 4,
+          "category": "4-Star",
+          "facilities": [
+            "Breakfast buffet",
+            "Free valet parking",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 11114.35,
+          "currency": "INR",
+          "roomType": "Superior Room, 2 Twin Beds (Superior Room Twin),NonSmoking",
+          "mealPlan": "Breakfast Included",
+          "roomTypes": [
+            {
+              "roomCode": "1367701!TB!7!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Superior Room, 2 Twin Beds (Superior Room Twin),NonSmoking",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 11114.35,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1367701!TB!7!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1367701",
+          "hotelName": "WelcomHotel Bengaluru",
+          "cityCode": "Bangalore",
+          "address": "46 Richmond Road,Adjacent To M.G. Road And Brigade Road,Bangalore 560025,Karnataka Adjacent To M.G. Road And Brigade RoadBangalore 560025Karnataka ",
+          "rating": 4,
+          "category": "4-Star",
+          "facilities": [
+            "BREAKFAST",
+            "BREAKFAST FOR 2 PEOPLE",
+            "PARKING",
+            "FREE PREMIUM WIFI",
+            "FREE WIFI",
+            "DRINKING WATER",
+            "FREE FITNESS CENTER ACCESS"
+          ],
+          "images": [],
+          "price": 11385.27,
+          "currency": "INR",
+          "roomType": "Superior Room Double",
+          "mealPlan": "-",
+          "roomTypes": [
+            {
+              "roomCode": "1367701!TB!10!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Superior Room Double",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 11385.27,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1367701!TB!10!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1500817",
+          "hotelName": "Oyo 2561 Near Manipal Hospital",
+          "cityCode": "Bangalore",
+          "address": "4121A 19Th Main Road Hal Ii Stage Kodihalli 19Th Main Road Bangalore 19th Main Road, Indiranagar HAL II StageKodihalliIndiranagar ",
+          "rating": 13,
+          "category": "13-Star",
+          "facilities": [
+            "Free breakfast",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 11658.18,
+          "currency": "INR",
+          "roomType": "Deluxe Double Room,1 King Bed,NonSmoking",
+          "mealPlan": "-",
+          "roomTypes": [
+            {
+              "roomCode": "1500817!TB!2!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Deluxe Double Room,1 King Bed,NonSmoking",
+              "bedType": "King",
+              "capacity": 2,
+              "price": 11658.18,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1500817!TB!2!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1087770",
+          "hotelName": "Taj Yeshwantpur, Bengaluru",
+          "cityCode": "Bangalore",
+          "address": "2275 Tumkur Road,Yeshwanthpur,Bangalore 560022,Karnataka Yeshwanthpur Industrial AreaPhase 1Peenya Industrial Area ",
+          "rating": 4,
+          "category": "4-Star",
+          "facilities": [
+            "Breakfast buffet",
+            "Free valet parking",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 13597.24,
+          "currency": "INR",
+          "roomType": "Superior Room, 1 Queen Bed, City View,NonSmoking",
+          "mealPlan": "Breakfast Included",
+          "roomTypes": [
+            {
+              "roomCode": "1087770!TB!3!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Superior Room, 1 Queen Bed, City View,NonSmoking",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 13597.24,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1087770!TB!3!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1087770",
+          "hotelName": "Taj Yeshwantpur, Bengaluru",
+          "cityCode": "Bangalore",
+          "address": "2275 Tumkur Road,Yeshwanthpur,Bangalore 560022,Karnataka Yeshwanthpur Industrial AreaPhase 1Peenya Industrial Area ",
+          "rating": 4,
+          "category": "4-Star",
+          "facilities": [
+            "Breakfast buffet",
+            "Free valet parking",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 13597.24,
+          "currency": "INR",
+          "roomType": "Superior Room, 1 Twin Bed, City View,NonSmoking",
+          "mealPlan": "Breakfast Included",
+          "roomTypes": [
+            {
+              "roomCode": "1087770!TB!4!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Superior Room, 1 Twin Bed, City View,NonSmoking",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 13597.24,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1087770!TB!4!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1832101",
+          "hotelName": "Radisson Bengaluru City Center",
+          "cityCode": "Bangalore",
+          "address": "2 Gangadhar Chetty Road Ulsoor UlsoorBengaluru 560042 ",
+          "rating": 3,
+          "category": "3-Star",
+          "facilities": [
+            "Full Breakfast",
+            "Free valet parking",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 14039.15,
+          "currency": "INR",
+          "roomType": "Superior Room, City View,1 King Bed,NonSmoking",
+          "mealPlan": "Breakfast Included",
+          "roomTypes": [
+            {
+              "roomCode": "1832101!TB!3!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Superior Room, City View,1 King Bed,NonSmoking",
+              "bedType": "King",
+              "capacity": 2,
+              "price": 14039.15,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1832101!TB!3!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1832101",
+          "hotelName": "Radisson Bengaluru City Center",
+          "cityCode": "Bangalore",
+          "address": "2 Gangadhar Chetty Road Ulsoor UlsoorBengaluru 560042 ",
+          "rating": 3,
+          "category": "3-Star",
+          "facilities": [
+            "Full Breakfast",
+            "Free valet parking",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 14039.15,
+          "currency": "INR",
+          "roomType": "Superior Room, City View,2 Twin Beds,NonSmoking",
+          "mealPlan": "Breakfast Included",
+          "roomTypes": [
+            {
+              "roomCode": "1832101!TB!4!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Superior Room, City View,2 Twin Beds,NonSmoking",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 14039.15,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1832101!TB!4!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1832101",
+          "hotelName": "Radisson Bengaluru City Center",
+          "cityCode": "Bangalore",
+          "address": "2 Gangadhar Chetty Road Ulsoor UlsoorBengaluru 560042 ",
+          "rating": 3,
+          "category": "3-Star",
+          "facilities": [
+            "Full Breakfast",
+            "Free valet parking",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 14318.85,
+          "currency": "INR",
+          "roomType": "Superior Room, City View,1 King Bed,NonSmoking",
+          "mealPlan": "Breakfast Included",
+          "roomTypes": [
+            {
+              "roomCode": "1832101!TB!5!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Superior Room, City View,1 King Bed,NonSmoking",
+              "bedType": "King",
+              "capacity": 2,
+              "price": 14318.85,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1832101!TB!5!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1832101",
+          "hotelName": "Radisson Bengaluru City Center",
+          "cityCode": "Bangalore",
+          "address": "2 Gangadhar Chetty Road Ulsoor UlsoorBengaluru 560042 ",
+          "rating": 3,
+          "category": "3-Star",
+          "facilities": [
+            "Full Breakfast",
+            "Free valet parking",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 14318.85,
+          "currency": "INR",
+          "roomType": "Superior Room, City View,2 Twin Beds,NonSmoking",
+          "mealPlan": "Breakfast Included",
+          "roomTypes": [
+            {
+              "roomCode": "1832101!TB!6!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Superior Room, City View,2 Twin Beds,NonSmoking",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 14318.85,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1832101!TB!6!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1832101",
+          "hotelName": "Radisson Bengaluru City Center",
+          "cityCode": "Bangalore",
+          "address": "2 Gangadhar Chetty Road Ulsoor UlsoorBengaluru 560042 ",
+          "rating": 3,
+          "category": "3-Star",
+          "facilities": [
+            "Full Breakfast",
+            "Free valet parking",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 14974.51,
+          "currency": "INR",
+          "roomType": "Deluxe Room,1 King Bed,NonSmoking",
+          "mealPlan": "Breakfast Included",
+          "roomTypes": [
+            {
+              "roomCode": "1832101!TB!9!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Deluxe Room,1 King Bed,NonSmoking",
+              "bedType": "King",
+              "capacity": 2,
+              "price": 14974.51,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1832101!TB!9!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1832101",
+          "hotelName": "Radisson Bengaluru City Center",
+          "cityCode": "Bangalore",
+          "address": "2 Gangadhar Chetty Road Ulsoor UlsoorBengaluru 560042 ",
+          "rating": 3,
+          "category": "3-Star",
+          "facilities": [
+            "Full Breakfast",
+            "Free valet parking",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 14974.51,
+          "currency": "INR",
+          "roomType": "Deluxe Room,2 Twin Beds,NonSmoking",
+          "mealPlan": "Breakfast Included",
+          "roomTypes": [
+            {
+              "roomCode": "1832101!TB!10!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Deluxe Room,2 Twin Beds,NonSmoking",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 14974.51,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1832101!TB!10!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1832101",
+          "hotelName": "Radisson Bengaluru City Center",
+          "cityCode": "Bangalore",
+          "address": "2 Gangadhar Chetty Road Ulsoor UlsoorBengaluru 560042 ",
+          "rating": 3,
+          "category": "3-Star",
+          "facilities": [
+            "Half board"
+          ],
+          "images": [],
+          "price": 16602.26,
+          "currency": "INR",
+          "roomType": "Superior Room, City View,1 King Bed,NonSmoking",
+          "mealPlan": "-",
+          "roomTypes": [
+            {
+              "roomCode": "1832101!TB!14!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Superior Room, City View,1 King Bed,NonSmoking",
+              "bedType": "King",
+              "capacity": 2,
+              "price": 16602.26,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1832101!TB!14!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1832101",
+          "hotelName": "Radisson Bengaluru City Center",
+          "cityCode": "Bangalore",
+          "address": "2 Gangadhar Chetty Road Ulsoor UlsoorBengaluru 560042 ",
+          "rating": 3,
+          "category": "3-Star",
+          "facilities": [
+            "Half board"
+          ],
+          "images": [],
+          "price": 16602.26,
+          "currency": "INR",
+          "roomType": "Superior Room, City View,2 Twin Beds,NonSmoking",
+          "mealPlan": "-",
+          "roomTypes": [
+            {
+              "roomCode": "1832101!TB!15!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Superior Room, City View,2 Twin Beds,NonSmoking",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 16602.26,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1832101!TB!15!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1087770",
+          "hotelName": "Taj Yeshwantpur, Bengaluru",
+          "cityCode": "Bangalore",
+          "address": "2275 Tumkur Road,Yeshwanthpur,Bangalore 560022,Karnataka Yeshwanthpur Industrial AreaPhase 1Peenya Industrial Area ",
+          "rating": 4,
+          "category": "4-Star",
+          "facilities": [
+            "Half board"
+          ],
+          "images": [],
+          "price": 16792.37,
+          "currency": "INR",
+          "roomType": "Superior Room, 1 Queen Bed, City View,NonSmoking",
+          "mealPlan": "-",
+          "roomTypes": [
+            {
+              "roomCode": "1087770!TB!5!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Superior Room, 1 Queen Bed, City View,NonSmoking",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 16792.37,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1087770!TB!5!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1492818",
+          "hotelName": "Taj Bangalore",
+          "cityCode": "Bangalore",
+          "address": "Devanahalli DevanahalliBengaluru 560300 ",
+          "rating": 4,
+          "category": "4-Star",
+          "facilities": [
+            "Breakfast buffet",
+            "Free valet parking",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 17441.12,
+          "currency": "INR",
+          "roomType": "Deluxe Room, 1 King Bed,NonSmoking",
+          "mealPlan": "Breakfast Included",
+          "roomTypes": [
+            {
+              "roomCode": "1492818!TB!1!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Deluxe Room, 1 King Bed,NonSmoking",
+              "bedType": "King",
+              "capacity": 2,
+              "price": 17441.12,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1492818!TB!1!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1492818",
+          "hotelName": "Taj Bangalore",
+          "cityCode": "Bangalore",
+          "address": "Devanahalli DevanahalliBengaluru 560300 ",
+          "rating": 4,
+          "category": "4-Star",
+          "facilities": [
+            "Free breakfast",
+            "Free valet parking",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 17441.12,
+          "currency": "INR",
+          "roomType": "Deluxe Room, 2 Twin Beds,NonSmoking",
+          "mealPlan": "-",
+          "roomTypes": [
+            {
+              "roomCode": "1492818!TB!2!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Deluxe Room, 2 Twin Beds,NonSmoking",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 17441.12,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1492818!TB!2!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1169207",
+          "hotelName": "The Zuri Whitefield Bengaluru",
+          "cityCode": "Bangalore",
+          "address": "ITPL Road,Whitefield,Bangalore 560048,Karnataka ITPL Road , Whitefield WhitefieldBangalore 560048Karnataka ",
+          "rating": 4,
+          "category": "4-Star",
+          "facilities": [
+            "Breakfast buffet",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 17965.88,
+          "currency": "INR",
+          "roomType": "Zuri Standard Room with Twin Beds (02 single beds),1 Twin Bed,NonSmoking",
+          "mealPlan": "Breakfast Included",
+          "roomTypes": [
+            {
+              "roomCode": "1169207!TB!1!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Zuri Standard Room with Twin Beds (02 single beds),1 Twin Bed,NonSmoking",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 17965.88,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1169207!TB!1!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1169207",
+          "hotelName": "The Zuri Whitefield Bengaluru",
+          "cityCode": "Bangalore",
+          "address": "ITPL Road,Whitefield,Bangalore 560048,Karnataka ITPL Road , Whitefield WhitefieldBangalore 560048Karnataka ",
+          "rating": 4,
+          "category": "4-Star",
+          "facilities": [
+            "Breakfast buffet",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 17965.88,
+          "currency": "INR",
+          "roomType": "Zuri Standard Room with King bed (01 King Bed),NonSmoking",
+          "mealPlan": "Breakfast Included",
+          "roomTypes": [
+            {
+              "roomCode": "1169207!TB!2!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Zuri Standard Room with King bed (01 King Bed),NonSmoking",
+              "bedType": "King",
+              "capacity": 2,
+              "price": 17965.88,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1169207!TB!2!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1492818",
+          "hotelName": "Taj Bangalore",
+          "cityCode": "Bangalore",
+          "address": "Devanahalli DevanahalliBengaluru 560300 ",
+          "rating": 4,
+          "category": "4-Star",
+          "facilities": [
+            "Free dinner"
+          ],
+          "images": [],
+          "price": 20399.87,
+          "currency": "INR",
+          "roomType": "Deluxe Room, 2 Twin Beds,NonSmoking",
+          "mealPlan": "-",
+          "roomTypes": [
+            {
+              "roomCode": "1492818!TB!3!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Deluxe Room, 2 Twin Beds,NonSmoking",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 20399.87,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1492818!TB!3!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1528048",
+          "hotelName": "Fairfield by Marriott Bengaluru Outer Ring Road",
+          "cityCode": "Bangalore",
+          "address": "Outer Ring Road Marathahalli Sarjapur Road Marathahalli Sarjapur RoadBengaluru 560103Karnataka ",
+          "rating": 3,
+          "category": "3-Star",
+          "facilities": [
+            "Breakfast buffet",
+            "Free valet parking",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 20646.12,
+          "currency": "INR",
+          "roomType": "Room, 1 Queen Bed, City View,NonSmoking",
+          "mealPlan": "Breakfast Included",
+          "roomTypes": [
+            {
+              "roomCode": "1528048!TB!2!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Room, 1 Queen Bed, City View,NonSmoking",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 20646.12,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1528048!TB!2!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1528048",
+          "hotelName": "Fairfield by Marriott Bengaluru Outer Ring Road",
+          "cityCode": "Bangalore",
+          "address": "Outer Ring Road Marathahalli Sarjapur Road Marathahalli Sarjapur RoadBengaluru 560103Karnataka ",
+          "rating": 3,
+          "category": "3-Star",
+          "facilities": [
+            "Breakfast buffet",
+            "Free valet parking",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 20646.12,
+          "currency": "INR",
+          "roomType": "Room, 2 Twin Beds, City View,NonSmoking",
+          "mealPlan": "Breakfast Included",
+          "roomTypes": [
+            {
+              "roomCode": "1528048!TB!3!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Room, 2 Twin Beds, City View,NonSmoking",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 20646.12,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1528048!TB!3!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1528048",
+          "hotelName": "Fairfield by Marriott Bengaluru Outer Ring Road",
+          "cityCode": "Bangalore",
+          "address": "Outer Ring Road Marathahalli Sarjapur Road Marathahalli Sarjapur RoadBengaluru 560103Karnataka ",
+          "rating": 3,
+          "category": "3-Star",
+          "facilities": [
+            "Breakfast buffet",
+            "Free valet parking",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 21747.89,
+          "currency": "INR",
+          "roomType": "Room, 2 Twin Beds,NonSmoking",
+          "mealPlan": "Breakfast Included",
+          "roomTypes": [
+            {
+              "roomCode": "1528048!TB!4!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Room, 2 Twin Beds,NonSmoking",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 21747.89,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1528048!TB!4!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1528048",
+          "hotelName": "Fairfield by Marriott Bengaluru Outer Ring Road",
+          "cityCode": "Bangalore",
+          "address": "Outer Ring Road Marathahalli Sarjapur Road Marathahalli Sarjapur RoadBengaluru 560103Karnataka ",
+          "rating": 3,
+          "category": "3-Star",
+          "facilities": [
+            "Breakfast buffet",
+            "Free valet parking",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 21770.52,
+          "currency": "INR",
+          "roomType": "Room, 1 Queen Bed,NonSmoking",
+          "mealPlan": "Breakfast Included",
+          "roomTypes": [
+            {
+              "roomCode": "1528048!TB!5!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Room, 1 Queen Bed,NonSmoking",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 21770.52,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1528048!TB!5!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1169207",
+          "hotelName": "The Zuri Whitefield Bengaluru",
+          "cityCode": "Bangalore",
+          "address": "ITPL Road,Whitefield,Bangalore 560048,Karnataka ITPL Road , Whitefield WhitefieldBangalore 560048Karnataka ",
+          "rating": 4,
+          "category": "4-Star",
+          "facilities": [
+            "Free one-way airport transfer",
+            "Breakfast buffet",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 21817.05,
+          "currency": "INR",
+          "roomType": "Zuri Club Room with Twin Beds (02 single beds),1 Twin Bed,NonSmoking",
+          "mealPlan": "Breakfast Included",
+          "roomTypes": [
+            {
+              "roomCode": "1169207!TB!3!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Zuri Club Room with Twin Beds (02 single beds),1 Twin Bed,NonSmoking",
+              "bedType": "Twin",
+              "capacity": 2,
+              "price": 21817.05,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1169207!TB!3!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1169207",
+          "hotelName": "The Zuri Whitefield Bengaluru",
+          "cityCode": "Bangalore",
+          "address": "ITPL Road,Whitefield,Bangalore 560048,Karnataka ITPL Road , Whitefield WhitefieldBangalore 560048Karnataka ",
+          "rating": 4,
+          "category": "4-Star",
+          "facilities": [
+            "Free one-way airport transfer",
+            "Breakfast buffet",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 21817.05,
+          "currency": "INR",
+          "roomType": "Zuri Club Room with King Bed (01 King Bed),NonSmoking",
+          "mealPlan": "Breakfast Included",
+          "roomTypes": [
+            {
+              "roomCode": "1169207!TB!4!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Zuri Club Room with King Bed (01 King Bed),NonSmoking",
+              "bedType": "King",
+              "capacity": 2,
+              "price": 21817.05,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1169207!TB!4!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1169207",
+          "hotelName": "The Zuri Whitefield Bengaluru",
+          "cityCode": "Bangalore",
+          "address": "ITPL Road,Whitefield,Bangalore 560048,Karnataka ITPL Road , Whitefield WhitefieldBangalore 560048Karnataka ",
+          "rating": 4,
+          "category": "4-Star",
+          "facilities": [
+            "Free one-way airport transfer",
+            "Breakfast buffet",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 25684.37,
+          "currency": "INR",
+          "roomType": "Zuri Junior Suite with King Size Bed (two ways Airport transfers included),1 King Bed,NonSmoking",
+          "mealPlan": "Breakfast Included",
+          "roomTypes": [
+            {
+              "roomCode": "1169207!TB!5!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Zuri Junior Suite with King Size Bed (two ways Airport transfers included),1 King Bed,NonSmoking",
+              "bedType": "King",
+              "capacity": 2,
+              "price": 25684.37,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1169207!TB!5!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        },
+        {
+          "provider": "tbo",
+          "hotelCode": "1492818",
+          "hotelName": "Taj Bangalore",
+          "cityCode": "Bangalore",
+          "address": "Devanahalli DevanahalliBengaluru 560300 ",
+          "rating": 4,
+          "category": "4-Star",
+          "facilities": [
+            "Free breakfast",
+            "Free valet parking",
+            "Free self parking"
+          ],
+          "images": [],
+          "price": 44362.65,
+          "currency": "INR",
+          "roomType": "Deluxe Suite,1 King Bed,NonSmoking",
+          "mealPlan": "-",
+          "roomTypes": [
+            {
+              "roomCode": "1492818!TB!4!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "roomName": "Deluxe Suite,1 King Bed,NonSmoking",
+              "bedType": "King",
+              "capacity": 2,
+              "price": 44362.65,
+              "cancellationPolicy": "Fixed"
+            }
+          ],
+          "searchReference": "1492818!TB!4!TB!834d2505-20d3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "expiresAt": "2026-03-16T01:15:25.203Z"
+        }
+      ],
+      "filters": {
+        "ratings": [
+          2,
+          3,
+          4,
+          13
+        ],
+        "priceRange": {
+          "min": 1389.22,
+          "max": 44362.65
+        },
+        "facilities": [
+          "BREAKFAST",
+          "BREAKFAST FOR 2 PEOPLE",
+          "Breakfast buffet",
+          "Breakfast for 1",
+          "Breakfast for 2",
+          "Continental breakfast",
+          "DRINKING WATER",
+          "EXPRESS CHECK-IN",
+          "FOOD & BEVERAGE DISCOUNT 15%",
+          "FREE FITNESS CENTER ACCESS",
+          "FREE PREMIUM WIFI",
+          "FREE WIFI",
+          "Free breakfast",
+          "Free dinner",
+          "Free one-way airport transfer",
+          "Free self parking",
+          "Free valet parking",
+          "Full Breakfast",
+          "Half board",
+          "PARKING"
+        ],
+        "providers": [
+          "tbo"
+        ]
+      }
+    }
+  }
+}
