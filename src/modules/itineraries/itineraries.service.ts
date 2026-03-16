@@ -25,6 +25,7 @@ import { TboHotelBookingService } from "./services/tbo-hotel-booking.service";
 import { ResAvenueHotelBookingService } from "./services/resavenue-hotel-booking.service";
 import { HobseHotelBookingService } from "./services/hobse-hotel-booking.service";
 import { ItineraryHotelDetailsTboService } from "./itinerary-hotel-details-tbo.service";
+import { normalizePassengerTitle } from "../../common/utils/passenger-title.util";
 
 @Injectable()
 export class ItinerariesService {
@@ -1432,6 +1433,13 @@ export class ItinerariesService {
       const confirmedPlanId = confirmedPlan.confirmed_itinerary_plan_ID;
 
       // C. Insert Primary Guest
+      const primaryCustomerSalutation =
+        normalizePassengerTitle(dto.primary_guest_salutation) || dto.primary_guest_salutation || '';
+      const additionalAdultPassengerTitles =
+        dto.hotel_bookings?.[0]?.passengers
+          ?.filter((passenger) => Number(passenger.paxType) === 1 && !passenger.leadPassenger)
+          .map((passenger) => normalizePassengerTitle(passenger.title) || '') || [];
+
       await tx.dvi_confirmed_itinerary_customer_details.create({
         data: {
           confirmed_itinerary_plan_ID: confirmedPlanId,
@@ -1439,7 +1447,7 @@ export class ItinerariesService {
           agent_id: dto.agent,
           primary_customer: 1,
           customer_type: 1, // Adult
-          customer_salutation: dto.primary_guest_salutation,
+          customer_salutation: primaryCustomerSalutation,
           customer_name: dto.primary_guest_name,
           customer_age: parseInt(dto.primary_guest_age) || 0,
           primary_contact_no: dto.primary_guest_contact_no,
@@ -1469,7 +1477,7 @@ export class ItinerariesService {
                 agent_id: dto.agent,
                 primary_customer: 0,
                 customer_type: 1, // Adult
-                customer_salutation: 'Mr',
+                customer_salutation: additionalAdultPassengerTitles[i] || '',
                 customer_name: dto.adult_name[i],
                 customer_age: parseInt(dto.adult_age?.[i] || '0') || 0,
                 createdby: userId,
@@ -1572,6 +1580,184 @@ export class ItinerariesService {
     });
   }
 
+  async prebookHotels(payload: {
+    itinerary_plan_ID: number;
+    hotel_bookings: Array<{
+      routeId: number;
+      provider: string;
+      hotelCode: string;
+      bookingCode: string;
+      roomType: string;
+      checkInDate: string;
+      checkOutDate: string;
+      numberOfRooms: number;
+      guestNationality: string;
+      netAmount: number;
+      occupancies?: Array<{
+        adults: number;
+        children: number;
+        childrenAges?: number[];
+      }>;
+      passengers: Array<{
+        title: string;
+        firstName: string;
+        middleName?: string;
+        lastName: string;
+        email?: string;
+        paxType: number;
+        leadPassenger: boolean;
+        age: number;
+        pan?: string;
+        panNo?: string;
+        passportNo?: string;
+        passportIssueDate?: string;
+        passportExpDate?: string;
+        phoneNo?: string;
+        gstNumber?: string;
+        gstCompanyName?: string;
+      }>;
+    }>;
+    endUserIp?: string;
+  }) {
+    if (!payload?.hotel_bookings || payload.hotel_bookings.length === 0) {
+      throw new BadRequestException('hotel_bookings is required for prebook');
+    }
+
+    const tboHotels = payload.hotel_bookings.filter(
+      (hotel) => String(hotel.provider || '').toLowerCase() === 'tbo',
+    );
+
+    if (tboHotels.length === 0) {
+      return {
+        success: true,
+        message: 'No TBO hotels selected for prebook',
+        itinerary_plan_ID: payload.itinerary_plan_ID,
+        hotels: [],
+        updatedTotalPrice: 0,
+        finalPrice: 0,
+        totalAmount: 0,
+        cancellationPolicy: null,
+        cancellationPoliciesText: null,
+        roomPromotion: null,
+        rateConditions: [],
+        mandatorySupplements: [],
+      };
+    }
+
+    const prebookResults: any[] = [];
+
+    for (const hotel of tboHotels) {
+      const selection = {
+        hotelCode: hotel.hotelCode,
+        bookingCode: hotel.bookingCode,
+        roomType: hotel.roomType,
+        checkInDate: hotel.checkInDate,
+        checkOutDate: hotel.checkOutDate,
+        numberOfRooms: hotel.numberOfRooms,
+        guestNationality: hotel.guestNationality,
+        netAmount: hotel.netAmount,
+        occupancies: hotel.occupancies,
+        passengers: (hotel.passengers || []).map((p) => ({
+          title: p.title,
+          firstName: p.firstName,
+          middleName: p.middleName,
+          lastName: p.lastName,
+          email: p.email,
+          paxType: p.paxType,
+          leadPassenger: p.leadPassenger,
+          age: p.age,
+          pan: p.pan || p.panNo,
+          passportNo: p.passportNo,
+          passportIssueDate: p.passportIssueDate,
+          passportExpDate: p.passportExpDate,
+          phoneNo: p.phoneNo,
+          gstNumber: p.gstNumber,
+          gstCompanyName: p.gstCompanyName,
+        })),
+      };
+
+      const prebookResponse = await this.tboHotelBooking.preBookHotel(selection as any);
+      const prebookRequestPayload = (prebookResponse as any)?.__requestPayload || null;
+      const rawRoomDetails = prebookResponse?.HotelRoomsDetails || [];
+      const mandatorySupplements = rawRoomDetails
+        .flatMap((room: any) => room?.MandatorySupplements || room?.MandatorySupplement || [])
+        .filter(Boolean);
+      const roomPromotions = rawRoomDetails
+        .flatMap((room: any) => room?.RoomPromotion || room?.RoomPromotions || [])
+        .filter(Boolean);
+      const rateConditions = rawRoomDetails
+        .flatMap((room: any) => room?.RateConditions || [])
+        .filter(Boolean);
+      const cancellationPolicies = rawRoomDetails
+        .flatMap((room: any) => room?.CancelPolicies || room?.CancellationPolicy || [])
+        .filter(Boolean);
+
+      const candidatePrices = [
+        prebookResponse?.NetAmount,
+        prebookResponse?.TotalFare,
+        prebookResponse?.PriceVerification?.FinalPrice,
+        ...rawRoomDetails.map((room: any) => room?.TotalFare),
+      ];
+      const finalPriceCandidate = candidatePrices.find(
+        (price) => typeof price === 'number' || (typeof price === 'string' && price !== ''),
+      );
+      const finalPrice = finalPriceCandidate !== undefined ? Number(finalPriceCandidate) : 0;
+
+      prebookResults.push({
+        routeId: hotel.routeId,
+        hotelCode: hotel.hotelCode,
+        bookingCode: prebookResponse?.BookingCode || hotel.bookingCode,
+        updatedTotalPrice: finalPrice,
+        finalPrice,
+        totalAmount: finalPrice,
+        cancellationPolicy: cancellationPolicies,
+        cancellationPoliciesText: cancellationPolicies.length
+          ? JSON.stringify(cancellationPolicies)
+          : null,
+        roomPromotion: roomPromotions.length ? roomPromotions.join(', ') : null,
+        rateConditions,
+        mandatorySupplements,
+        isPriceChanged: Boolean(prebookResponse?.IsPriceChanged),
+        isCancellationPolicyChanged: Boolean(prebookResponse?.IsCancellationPolicyChanged),
+        rawStatus: prebookResponse?.Status,
+        certificationTrace: {
+          guestNationality: selection.guestNationality,
+          prebookRequest: prebookRequestPayload,
+        },
+      });
+    }
+
+    const totalAmount = prebookResults.reduce(
+      (sum, item) => sum + Number(item.finalPrice || item.updatedTotalPrice || 0),
+      0,
+    );
+    const cancellationPoliciesAll = prebookResults.flatMap((item) => item.cancellationPolicy || []);
+    const roomPromotionsAll = prebookResults
+      .flatMap((item) => (item.roomPromotion ? [item.roomPromotion] : []))
+      .filter(Boolean);
+    const rateConditionsAll = prebookResults.flatMap((item) => item.rateConditions || []);
+    const mandatorySupplementsAll = prebookResults.flatMap((item) => item.mandatorySupplements || []);
+
+    return {
+      success: true,
+      message: `Prebook completed for ${prebookResults.length} hotel(s)`,
+      itinerary_plan_ID: payload.itinerary_plan_ID,
+      hotels: prebookResults,
+      updatedTotalPrice: totalAmount,
+      finalPrice: totalAmount,
+      totalAmount,
+      cancellationPolicy: cancellationPoliciesAll.length
+        ? JSON.stringify(cancellationPoliciesAll)
+        : null,
+      cancellationPoliciesText: cancellationPoliciesAll.length
+        ? JSON.stringify(cancellationPoliciesAll)
+        : null,
+      roomPromotion: roomPromotionsAll.length ? roomPromotionsAll.join(', ') : null,
+      rateConditions: rateConditionsAll,
+      mandatorySupplements: mandatorySupplementsAll,
+    };
+  }
+
   /**
    * After transaction completes, handle hotel bookings for all providers
    * This is done outside transaction to avoid locking issues with external API calls
@@ -1616,6 +1802,11 @@ export class ItinerariesService {
           numberOfRooms: hotel.numberOfRooms,
           guestNationality: hotel.guestNationality,
           netAmount: hotel.netAmount,
+          occupancies: hotel.occupancies?.map((occ) => ({
+            adults: occ.adults,
+            children: occ.children,
+            childrenAges: occ.childrenAges,
+          })),
           passengers: hotel.passengers.map((p) => ({
             title: p.title,
             firstName: p.firstName,
@@ -1631,7 +1822,7 @@ export class ItinerariesService {
             phoneNo: p.phoneNo,
             gstNumber: p.gstNumber,
             gstCompanyName: p.gstCompanyName,
-            pan: p.pan,
+            pan: p.pan || p.panNo,
           })),
         },
       }));
@@ -1704,7 +1895,12 @@ export class ItinerariesService {
           baseResult.itinerary_plan_ID,
           hobseHotels,
           {
-            salutation: (dto as any).title || 'Mr',
+            salutation:
+              normalizePassengerTitle(
+                (dto as any).primary_guest_salutation,
+                (dto as any).title,
+                dto.hotel_bookings?.[0]?.passengers?.find((p) => p.leadPassenger)?.title,
+              ) || '',
             name: (dto as any).contactName || 'Guest',
             email: (dto as any).contactEmail || '',
             phone: (dto as any).contactPhone || '',

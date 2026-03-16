@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import axios, { AxiosInstance } from 'axios';
 import { PrismaService } from '../../../prisma.service';
 
@@ -15,15 +15,75 @@ import { PrismaService } from '../../../prisma.service';
  * 4. Schedule periodic sync (daily/weekly) to keep data fresh
  */
 @Injectable()
-export class TboHotelMasterSyncService {
+export class TboHotelMasterSyncService implements OnModuleInit, OnModuleDestroy {
   private logger = new Logger(TboHotelMasterSyncService.name);
   private readonly SHARED_API_URL = 'https://sharedapi.tektravels.com';
   private readonly USERNAME = process.env.TBO_USERNAME || 'Doview';
   private readonly PASSWORD = process.env.TBO_PASSWORD || 'Doview@12345';
   private http: AxiosInstance = axios;
   private tokenId: string | null = null;
+  private syncTimer: NodeJS.Timeout | null = null;
+  private isSyncRunning = false;
 
   constructor(private readonly prisma: PrismaService) {}
+
+  onModuleInit() {
+    const enabled = String(process.env.TBO_STATIC_SYNC_ENABLED || 'true').toLowerCase() === 'true';
+    if (!enabled) {
+      this.logger.log('ℹ️ TBO static sync scheduler is disabled by TBO_STATIC_SYNC_ENABLED=false');
+      return;
+    }
+
+    const intervalDays = Number(process.env.TBO_STATIC_SYNC_INTERVAL_DAYS || 15);
+    const intervalMs = Math.max(intervalDays, 1) * 24 * 60 * 60 * 1000;
+
+    this.syncTimer = setInterval(() => {
+      this.runScheduledSync().catch((error) => {
+        this.logger.error(`❌ Scheduled TBO static sync failed: ${error.message}`);
+      });
+    }, intervalMs);
+
+    this.logger.log(`🕒 TBO static sync scheduler started (every ${Math.max(intervalDays, 1)} day(s))`);
+
+    if (this.syncTimer.unref) {
+      this.syncTimer.unref();
+    }
+
+    const runOnStart = String(process.env.TBO_STATIC_SYNC_RUN_ON_START || 'false').toLowerCase() === 'true';
+    if (runOnStart) {
+      this.runScheduledSync().catch((error) => {
+        this.logger.error(`❌ Startup TBO static sync failed: ${error.message}`);
+      });
+    }
+  }
+
+  onModuleDestroy() {
+    if (this.syncTimer) {
+      clearInterval(this.syncTimer);
+      this.syncTimer = null;
+    }
+  }
+
+  private async runScheduledSync(): Promise<void> {
+    if (this.isSyncRunning) {
+      this.logger.warn('⚠️ Skipping scheduled TBO static sync because previous run is still in progress');
+      return;
+    }
+
+    this.isSyncRunning = true;
+    const startedAt = Date.now();
+
+    try {
+      this.logger.log('🔄 Starting scheduled TBO static sync');
+      const results = await this.syncAllCities();
+      const totalSynced = Array.from(results.values()).reduce((sum, value) => sum + Number(value || 0), 0);
+      this.logger.log(
+        `✅ Scheduled TBO static sync completed. Cities=${results.size}, HotelsSynced=${totalSynced}, DurationMs=${Date.now() - startedAt}`,
+      );
+    } finally {
+      this.isSyncRunning = false;
+    }
+  }
 
   /**
    * Authenticate with TBO to get TokenId for GetHotels API
