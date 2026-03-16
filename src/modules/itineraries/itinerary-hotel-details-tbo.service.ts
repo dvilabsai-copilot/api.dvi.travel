@@ -34,6 +34,78 @@ export class ItineraryHotelDetailsTboService {
     private readonly hobseProvider: HobseHotelProvider,
   ) {}
 
+  private extractIso2FromCountryRow(row: any): string | null {
+    if (!row || typeof row !== 'object') return null;
+
+    const candidates = [
+      row.shortname,
+      row.country_code,
+      row.iso2,
+      row.iso_code,
+      row.sortname,
+      row.alpha2,
+      row.code,
+    ];
+
+    for (const value of candidates) {
+      const normalized = String(value ?? '').trim().toUpperCase();
+      if (/^[A-Z]{2}$/.test(normalized)) {
+        return normalized;
+      }
+    }
+
+    return null;
+  }
+
+  private async resolveGuestNationality(plan: any): Promise<string> {
+    const nationalityId = Number((plan as any)?.nationality ?? 0);
+
+    // Prefer master-country mapping from DB (as requested).
+    if (nationalityId > 0) {
+      try {
+        const country = await this.prisma.dvi_countries.findFirst({
+          where: {
+            id: nationalityId,
+            deleted: 0,
+            status: 1,
+          },
+          select: {
+            shortname: true,
+            name: true,
+          },
+        });
+        const iso2 = this.extractIso2FromCountryRow(country);
+        if (iso2) {
+          this.logger.log(
+            `✅ Resolved guestNationality from country table: nationality=${nationalityId} -> ${iso2}`,
+          );
+          return iso2;
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger.warn(
+          `⚠️ Could not resolve country mapping from table dvi_countries for nationality=${nationalityId}: ${message}`,
+        );
+      }
+    }
+
+    const envFallback = String(
+      process.env.TBO_DEFAULT_GUEST_NATIONALITY || '',
+    )
+      .trim()
+      .toUpperCase();
+    if (/^[A-Z]{2}$/.test(envFallback)) {
+      this.logger.warn(
+        `⚠️ Using TBO_DEFAULT_GUEST_NATIONALITY fallback: ${envFallback}`,
+      );
+      return envFallback;
+    }
+
+    throw new BadRequestException(
+      'Unable to resolve guestNationality. Ensure country table mapping exists for plan nationality or set TBO_DEFAULT_GUEST_NATIONALITY.',
+    );
+  }
+
   /**
    * Get hotel details with dynamic packages from TBO API
    * Creates 4 different price tier packages: Budget, Mid-Range, Premium, Luxury
@@ -55,6 +127,7 @@ export class ItineraryHotelDetailsTboService {
     }
 
     const planId = plan.itinerary_plan_ID;
+    const guestNationality = await this.resolveGuestNationality(plan);
     this.logger.log(`✅ Found plan ID: ${planId}`);
 
     // Step 2: Get itinerary routes (days and destinations)
@@ -80,7 +153,11 @@ export class ItineraryHotelDetailsTboService {
     this.logger.log(`🌙 Plan has ${noOfNights} nights`);
 
     // Step 3: Fetch hotels from TBO for each route (except last route if it's departure day)
-    const hotelsByRoute = await this.fetchHotelsForRoutes(routes, noOfNights);
+    const hotelsByRoute = await this.fetchHotelsForRoutes(
+      routes,
+      noOfNights,
+      guestNationality,
+    );
     
     // Step 3.5: Fetch HOBSE hotels and merge with TBO hotels
     // First, create a HOBSE-specific city code map using hobse_city_code
@@ -138,6 +215,7 @@ export class ItineraryHotelDetailsTboService {
   private async fetchHotelsForRoutes(
     routes: any[],
     noOfNights: number,
+    guestNationality: string,
   ): Promise<Map<number, HotelSearchResult[]>> {
     const hotelsByRoute = new Map<number, HotelSearchResult[]>();
     const totalRoutes = routes.length;
@@ -162,7 +240,13 @@ export class ItineraryHotelDetailsTboService {
       
       // Push search task to run in parallel
       searchTasks.push(
-        this.searchHotelsForRoute(route, routeIndex, cityCodeMap, hotelsByRoute).catch(error => {
+        this.searchHotelsForRoute(
+          route,
+          routeIndex,
+          cityCodeMap,
+          hotelsByRoute,
+          guestNationality,
+        ).catch(error => {
           const routeId = (route as any).itinerary_route_ID;
           const errorMsg = error instanceof Error ? error.message : String(error);
           this.logger.error(`❌ HOTEL SEARCH ERROR for route ${routeId}: ${errorMsg}`);
@@ -295,6 +379,7 @@ export class ItineraryHotelDetailsTboService {
     routeIndex: number,
     cityCodeMap: Record<string, string>,
     hotelsByRoute: Map<number, HotelSearchResult[]>,
+    guestNationality: string,
   ): Promise<void> {
     const routeId = (route as any).itinerary_route_ID;
     const destination = (route as any).next_visiting_location;
@@ -308,23 +393,26 @@ export class ItineraryHotelDetailsTboService {
 
     // Get city code from pre-loaded map (no database query!)
     const cityCode = cityCodeMap[destination];
-    
+
+    // Fallback: if dvi_cities mapping is missing, use destination text directly.
+    const effectiveCityCode = cityCode || destination;
     if (!cityCode) {
-      this.logger.warn(`❌ Route ${routeId}: No city code for "${destination}" - skipping`);
-      hotelsByRoute.set(routeId, []);
-      return;
+      this.logger.warn(
+        `⚠️ Route ${routeId}: No mapped TBO city code for "${destination}". Falling back to destination text lookup.`,
+      );
     }
 
     const searchCriteria = {
-      cityCode,
+      cityCode: effectiveCityCode,
       checkInDate: routeDate.toISOString().split('T')[0],
       checkOutDate: checkOutDate.toISOString().split('T')[0],
       roomCount: 1,
       guestCount: 2,
+      guestNationality,
       providers: ['tbo', 'resavenue'], // Only TBO + ResAvenue - HOBSE will be merged separately
     };
 
-    this.logger.log(`   🏨 Searching hotels with cityCode: ${cityCode}`);
+    this.logger.log(`   🏨 Searching hotels with cityCode: ${effectiveCityCode}`);
     const hotels = await this.hotelSearchService.searchHotels(searchCriteria);
     this.logger.log(`   ✅ Found ${hotels ? hotels.length : 0} hotels for route ${routeId} (TBO only at this stage)`);
     
@@ -755,7 +843,12 @@ export class ItineraryHotelDetailsTboService {
       this.logger.log(`✅ Optimized: Fetching hotels for 1 route only (filtered)`);
     }
 
-    const hotelsByRoute = await this.fetchHotelsForRoutes(routesToProcess, noOfNights);
+    const guestNationality = await this.resolveGuestNationality(plan);
+    const hotelsByRoute = await this.fetchHotelsForRoutes(
+      routesToProcess,
+      noOfNights,
+      guestNationality,
+    );
 
     // Step 4: Transform fresh TBO data into room details format
     const roomDetailsList: ItineraryHotelRoomDto[] = [];
