@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../prisma.service';
 import { HobseHotelProvider } from '../../hotels/providers/hobse-hotel.provider';
 import { HotelSelectionDto } from '../dto/confirm-quotation.dto';
+import { resolveProviderPassengerTitle } from '../../../common/utils/passenger-title.util';
 
 @Injectable()
 export class HobseHotelBookingService {
@@ -73,7 +74,7 @@ export class HobseHotelBookingService {
           bookingDesc: sel.roomType || '',
 
           guest: {
-            title: lead?.title || primaryGuest.salutation || 'Mr',
+            title: resolveProviderPassengerTitle(lead?.title, primaryGuest.salutation),
             firstName,
             lastName: lastName || 'Guest',
             mobileNumber: lead?.phoneNo || primaryGuest.phone,

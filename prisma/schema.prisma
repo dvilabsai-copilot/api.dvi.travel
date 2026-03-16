@@ -5659,6 +5659,16 @@ model tbo_hotel_booking_confirmation {
   net_amount                        Float     @default(0) @db.Float
   guest_nationality                 String?   @db.VarChar(10)
   total_guests                      Int       @default(0)
+  child_ages                        String?   @db.Text
+  passenger_snapshot                Json?
+  prebook_amount                    Float?    @db.Float
+  booked_amount                     Float?    @db.Float
+  cancellation_policy               String?   @db.Text
+  rate_conditions                   Json?
+  room_promotions                   Json?
+  mandatory_supplements             Json?
+  pan_details                       Json?
+  passport_details                  Json?
   api_response                      Json?
   createdby                         Int       @default(0)
   createdon                         DateTime? @default(now()) @db.DateTime(0)

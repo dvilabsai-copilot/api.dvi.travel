@@ -54,7 +54,15 @@ export interface HotelSearchCriteria {
   checkOutDate: string;
   roomCount: number;
   guestCount: number;
+  guestNationality?: string;
+  occupancies?: RoomOccupancy[];
   hotelCodes?: string; // Optional: specific hotel codes to search (comma-separated)
+}
+
+export interface RoomOccupancy {
+  adults: number;
+  children: number;
+  childrenAges?: number[];
 }
 
 export interface HotelPreferences {
@@ -71,6 +79,7 @@ export interface HotelConfirmationDTO {
   checkInDate: string;
   checkOutDate: string;
   roomCount: number;
+  guestNationality?: string;
   guests: GuestDetails[];
   rooms: RoomSelection[];
   contactName: string;
@@ -81,10 +90,14 @@ export interface HotelConfirmationDTO {
 }
 
 export interface GuestDetails {
+  title?: string;
   firstName: string;
   lastName: string;
   email: string;
   phone: string;
+  nationality?: string;
+  pan?: string;
+  passportNo?: string;
 }
 
 export interface RoomSelection {

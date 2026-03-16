@@ -834,6 +834,20 @@ export class ItinerariesController {
   }
 
   @Public()
+  @Post('hotels/prebook')
+  @ApiOperation({ summary: 'Prebook selected hotels before final quotation confirmation' })
+  async prebookHotels(
+    @Body()
+    body: {
+      itinerary_plan_ID: number;
+      hotel_bookings: any[];
+      endUserIp?: string;
+    },
+  ) {
+    return this.svc.prebookHotels(body);
+  }
+
+  @Public()
   @Post('confirm-quotation')
   @ApiOperation({ summary: 'Confirm quotation with guest details and optional TBO hotel bookings' })
   @ApiBody({ type: ConfirmQuotationDto })
