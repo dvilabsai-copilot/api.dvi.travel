@@ -15,7 +15,7 @@ Headers:
 
 Body:
 {
-  "propertyid": "STAAH_TEST_HOTEL_1",
+  "propertyid": "STAAHTESTHOTEL1",
   "action": "property_info",
   "version": "2"
 }

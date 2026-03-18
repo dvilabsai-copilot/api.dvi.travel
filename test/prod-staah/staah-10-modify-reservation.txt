@@ -16,7 +16,7 @@ Headers:
 Body:
 {
   "apikey": "staah_C3g8K3b1wray989DVih37od3314r6444",
-  "propertyid": "STAAH_TEST_HOTEL_1",
+  "propertyid": "STAAHTESTHOTEL1",
   "version": "2",
   "reservationId": "STAAH-RES-1773447664157",
   "data": {

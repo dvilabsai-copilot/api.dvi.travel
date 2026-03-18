@@ -37,6 +37,20 @@ export class HotelSearchService {
     ]);
   }
 
+  private parseDateOnly(input: string): Date {
+    const raw = String(input || '').trim();
+    const datePart = raw.includes('T') ? raw.split('T')[0] : raw;
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(datePart);
+    if (!match) {
+      throw new BadRequestException(`Invalid date format: ${input}. Expected YYYY-MM-DD.`);
+    }
+
+    const year = Number(match[1]);
+    const month = Number(match[2]) - 1;
+    const day = Number(match[3]);
+    return new Date(year, month, day, 0, 0, 0, 0);
+  }
+
   async searchHotels(searchCriteria: HotelSearchDTO): Promise<HotelSearchResult[]> {
     const startTime = Date.now();
     try {
@@ -83,15 +97,17 @@ export class HotelSearchService {
         );
       }
 
-      const checkIn = new Date(checkInDate);
-      const checkOut = new Date(checkOutDate);
+      const checkIn = this.parseDateOnly(checkInDate);
+      const checkOut = this.parseDateOnly(checkOutDate);
 
       if (checkIn >= checkOut) {
         throw new BadRequestException('Check-in must be before check-out');
       }
 
-      // Check if dates are in the past
-      if (checkIn < new Date()) {
+      // Compare at day granularity so same-day bookings remain valid after midnight.
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      if (checkIn < today) {
         throw new BadRequestException('Check-in date cannot be in the past');
       }
 

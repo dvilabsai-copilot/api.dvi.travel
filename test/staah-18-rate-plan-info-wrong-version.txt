@@ -16,7 +16,7 @@ Headers:
 Body:
 {
   "apikey": "staah-local-test-key",
-  "propertyid": "STAAH_TEST_HOTEL_1",
+  "propertyid": "STAAHTESTHOTEL1",
   "action": "roomrate_info",
   "version": "1"
 }
