@@ -6,7 +6,8 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-const STAAH_PROPERTY_ID = 'STAAH_TEST_HOTEL_1';
+const STAAH_PROPERTY_ID = 'STAAHTESTHOTEL1';
+const LEGACY_STAAH_PROPERTY_IDS = ['STAAH_TEST_HOTEL_1'];
 const HOTEL_CODE = 'TEST_DVI_001';
 
 async function main() {
@@ -15,7 +16,9 @@ async function main() {
   // Step 1: Find or create a test hotel in dvi_hotel
   let testHotel = await prisma.dvi_hotel.findFirst({
     where: {
-      staah_property_id: STAAH_PROPERTY_ID,
+      staah_property_id: {
+        in: [STAAH_PROPERTY_ID, ...LEGACY_STAAH_PROPERTY_IDS],
+      },
     },
   });
 
@@ -60,7 +63,7 @@ async function main() {
       console.log('Created new test hotel with STAAH mapping');
     }
   } else {
-    // Ensure enabled flag stays on for test runs
+    // Ensure enabled flag stays on for test runs and migrate any legacy property id.
     testHotel = await prisma.dvi_hotel.update({
       where: { hotel_id: testHotel.hotel_id },
       data: {
@@ -70,6 +73,7 @@ async function main() {
         hotel_state: 'Test State',
         hotel_country: 'India',
         hotel_category: 1,
+        staah_property_id: STAAH_PROPERTY_ID,
         staah_enabled: 1,
         status: 1,
       },

@@ -16,7 +16,7 @@ Headers:
 Body:
 {
   "apikey": "staah-local-test-key",
-  "propertyid": "STAAH_TEST_HOTEL_1",
+  "propertyid": "STAAHTESTHOTEL1",
   "room_id": "DELUXE_ROOM",
   "rate_id": "CP_PLAN",
   "action": "ARR_info",
@@ -45,7 +45,7 @@ Data:
   "status": "success",
   "error_desc": "",
   "trackingId": "804B5EF2-0347-4FAF-BDCB-12A929E8A6AB",
-  "propertyid": "STAAH_TEST_HOTEL_1",
+  "propertyid": "STAAHTESTHOTEL1",
   "room_id": "DELUXE_ROOM",
   "rate_id": "CP_PLAN",
   "currency": "INR",

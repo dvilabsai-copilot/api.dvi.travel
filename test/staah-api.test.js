@@ -10,7 +10,7 @@ const BASE_URL = process.env.BASE_URL || 'https://dvi.travel';
 const API_PREFIX = process.env.API_PREFIX || '/api/v1';
 const STAAH_BASE_PATH = (process.env.STAAH_BASE_PATH || 'staah-test').replace(/^\/+|\/+$/g, '');
 const API_KEY = process.env.STAAH_API_KEY || 'test-key-12345';
-const PROPERTY_ID = process.env.STAAH_PROPERTY_ID || 'STAAH_TEST_HOTEL_1';
+const PROPERTY_ID = process.env.STAAH_PROPERTY_ID || 'STAAHTESTHOTEL1';
 const ROOM_ID = process.env.STAAH_ROOM_ID || 'DELUXE_ROOM';
 const RATEPLAN_ID = process.env.STAAH_RATEPLAN_ID || 'CP_PLAN';
 const REQUIRE_VALID_PROPERTY = String(process.env.STAAH_REQUIRE_VALID_PROPERTY || 'false').toLowerCase() === 'true';
@@ -678,7 +678,7 @@ async function testCancelReservationCustomRoute() {
 }
 
 /**
- * ARR_info — ARI date-range pull (adapter endpoint; request body is exact STAAH v2 doc contract)
+ * ARR_info â€” ARI date-range pull (adapter endpoint; request body is exact STAAH v2 doc contract)
  * Route: POST /api/v1/<staah-base-path>/arrInfo
  */
 async function testArrInfo() {
@@ -715,7 +715,7 @@ async function testArrInfo() {
 }
 
 /**
- * year_info_ARR — ARI full-year pull (adapter endpoint; request body is exact STAAH v2 doc contract)
+ * year_info_ARR â€” ARI full-year pull (adapter endpoint; request body is exact STAAH v2 doc contract)
  * Route: POST /api/v1/<staah-base-path>/yearInfoArr
  */
 async function testYearInfoArr() {

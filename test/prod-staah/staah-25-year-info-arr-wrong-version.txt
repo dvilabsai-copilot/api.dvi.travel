@@ -16,7 +16,7 @@ Headers:
 Body:
 {
   "apikey": "staah_C3g8K3b1wray989DVih37od3314r6444",
-  "propertyid": "STAAH_TEST_HOTEL_1",
+  "propertyid": "STAAHTESTHOTEL1",
   "room_id": "DELUXE_ROOM",
   "rate_id": "CP_PLAN",
   "action": "year_info_ARR",
