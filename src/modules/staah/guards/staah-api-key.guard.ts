@@ -12,6 +12,49 @@ import { STAAH_MESSAGES } from '../constants/staah-messages';
 export class StaahApiKeyGuard implements CanActivate {
   private readonly logger = new Logger(StaahApiKeyGuard.name);
 
+  private normalizeIp(ip: string): string {
+    const trimmed = String(ip || '').trim();
+    if (!trimmed) {
+      return '';
+    }
+
+    if (trimmed === '::1') {
+      return '127.0.0.1';
+    }
+
+    return trimmed.replace(/^::ffff:/, '');
+  }
+
+  private resolveClientIp(request: any): string {
+    const trustedChain = Array.isArray(request.ips)
+      ? request.ips.map((ip: string) => this.normalizeIp(ip)).filter(Boolean)
+      : [];
+
+    if (trustedChain.length > 0) {
+      return trustedChain[0];
+    }
+
+    const requestIp = this.normalizeIp(request.ip || '');
+    if (requestIp) {
+      return requestIp;
+    }
+
+    const forwardedFor = request.headers?.['x-forwarded-for'];
+    const forwardedIp = Array.isArray(forwardedFor)
+      ? this.normalizeIp(String(forwardedFor[0]).split(',')[0])
+      : typeof forwardedFor === 'string'
+        ? this.normalizeIp(forwardedFor.split(',')[0])
+        : '';
+
+    if (forwardedIp) {
+      return forwardedIp;
+    }
+
+    return this.normalizeIp(
+      request.connection?.remoteAddress || request.socket?.remoteAddress || '',
+    );
+  }
+
   canActivate(
     context: ExecutionContext,
   ): boolean | Promise<boolean> | Observable<boolean> {
@@ -47,28 +90,14 @@ export class StaahApiKeyGuard implements CanActivate {
 
     const allowedIps = allowedIpsRaw
       .split(',')
-      .map((ip) => ip.trim())
+      .map((ip) => this.normalizeIp(ip))
       .filter((ip) => ip.length > 0);
 
     if (allowedIps.length === 0) {
       return true;
     }
 
-    const forwardedFor = request.headers['x-forwarded-for'];
-    const forwardedIp = Array.isArray(forwardedFor)
-      ? forwardedFor[0]
-      : typeof forwardedFor === 'string'
-        ? forwardedFor.split(',')[0].trim()
-        : null;
-
-    const remoteIp =
-      forwardedIp ||
-      request.ip ||
-      request.connection?.remoteAddress ||
-      request.socket?.remoteAddress ||
-      '';
-
-    const normalizedIp = String(remoteIp).replace('::ffff:', '');
+    const normalizedIp = this.resolveClientIp(request);
 
     if (!allowedIps.includes(normalizedIp)) {
       this.logger.warn(`Blocked STAAH request from non-whitelisted IP: ${normalizedIp}`);
