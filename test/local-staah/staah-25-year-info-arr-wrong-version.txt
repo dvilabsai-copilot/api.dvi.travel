@@ -2,13 +2,13 @@
 STAAH API Test Log
 ============================================================
 Test Name: staah-25-year-info-arr-wrong-version
-Timestamp: 2026-03-13T23:55:04.196Z
+Timestamp: 2026-03-19T19:16:15.940Z
 Status: FAILED
 ============================================================
 
 REQUEST:
 --------
-URL: http://127.0.0.1:4006/api/v1/staah-test/yearInfoArr
+URL: http://127.0.0.1:4010/api/v1/staah-test/yearInfoArr
 Method: POST
 Headers:
 {}
