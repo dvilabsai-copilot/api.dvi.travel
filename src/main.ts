@@ -29,6 +29,24 @@ try {
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { cors: true });
 
+  // Trust reverse proxy when explicitly configured (required for accurate client IP behind Nginx/LB).
+  const trustProxyRaw = String(process.env.TRUST_PROXY || '').trim().toLowerCase();
+  if (trustProxyRaw) {
+    const trustProxyValue =
+      trustProxyRaw === 'true'
+        ? true
+        : trustProxyRaw === 'false'
+          ? false
+          : /^\d+$/.test(trustProxyRaw)
+            ? Number(trustProxyRaw)
+            : trustProxyRaw;
+    const httpAdapter = app.getHttpAdapter();
+    const expressApp = httpAdapter?.getInstance?.();
+    if (expressApp && typeof expressApp.set === 'function') {
+      expressApp.set('trust proxy', trustProxyValue);
+    }
+  }
+
   // All routes start with /api/v1
   app.setGlobalPrefix('api/v1');
 

@@ -2,13 +2,13 @@
 STAAH API Test Log
 ============================================================
 Test Name: staah-11-cancel-reservation
-Timestamp: 2026-03-13T23:55:04.157Z
+Timestamp: 2026-03-19T19:16:15.841Z
 Status: SUCCESS
 ============================================================
 
 REQUEST:
 --------
-URL: http://127.0.0.1:4006/api/v1/staah-test/cancelReservation
+URL: http://127.0.0.1:4010/api/v1/staah-test/cancelReservation
 Method: POST
 Headers:
 {}
@@ -18,12 +18,12 @@ Body:
   "apikey": "staah-local-test-key",
   "propertyid": "STAAHTESTHOTEL1",
   "version": "2",
-  "reservationId": "STAAH-RES-1773446104152",
+  "reservationId": "STAAH-RES-1773947775824",
   "data": {
     "status": "cancelled",
     "reason": "Test cancellation payload"
   },
-  "trackingId": "TRK-CAN-1773446104152"
+  "trackingId": "TRK-CAN-1773947775824"
 }
 
 RESPONSE:
@@ -36,7 +36,7 @@ Headers:
   "content-type": "application/json; charset=utf-8",
   "content-length": "36",
   "etag": "W/\"24-ypKu2umBXPlfAf6vrewuMz5Xruo\"",
-  "date": "Fri, 13 Mar 2026 23:55:04 GMT",
+  "date": "Thu, 19 Mar 2026 19:16:15 GMT",
   "connection": "keep-alive",
   "keep-alive": "timeout=5"
 }

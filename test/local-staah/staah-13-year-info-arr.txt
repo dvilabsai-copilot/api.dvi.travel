@@ -2,13 +2,13 @@
 STAAH API Test Log
 ============================================================
 Test Name: staah-13-year-info-arr
-Timestamp: 2026-03-13T23:55:04.184Z
+Timestamp: 2026-03-19T19:16:15.912Z
 Status: SUCCESS
 ============================================================
 
 REQUEST:
 --------
-URL: http://127.0.0.1:4006/api/v1/staah-test/yearInfoArr
+URL: http://127.0.0.1:4010/api/v1/staah-test/yearInfoArr
 Method: POST
 Headers:
 {}
@@ -31,9 +31,9 @@ Headers:
   "x-powered-by": "Express",
   "access-control-allow-origin": "*",
   "content-type": "application/json; charset=utf-8",
-  "content-length": "991",
-  "etag": "W/\"3df-INr6ef81juOpLTE42dtPw8yssXs\"",
-  "date": "Fri, 13 Mar 2026 23:55:04 GMT",
+  "content-length": "988",
+  "etag": "W/\"3dc-S1SkefuxEQ5ikvc0niQgLDJitqc\"",
+  "date": "Thu, 19 Mar 2026 19:16:15 GMT",
   "connection": "keep-alive",
   "keep-alive": "timeout=5"
 }
@@ -42,7 +42,7 @@ Data:
 {
   "status": "success",
   "error_desc": "",
-  "trackingId": "3C54C03F-882C-4734-835E-74FF3064DD39",
+  "trackingId": "637BDBDC-5BE6-4A8E-AB70-3718860D6071",
   "propertyid": "STAAHTESTHOTEL1",
   "room_id": "DELUXE_ROOM",
   "rate_id": "CP_PLAN",

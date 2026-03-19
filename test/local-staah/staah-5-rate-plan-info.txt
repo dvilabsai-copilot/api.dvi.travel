@@ -2,13 +2,13 @@
 STAAH API Test Log
 ============================================================
 Test Name: staah-5-rate-plan-info
-Timestamp: 2026-03-13T23:55:04.076Z
+Timestamp: 2026-03-19T19:16:15.629Z
 Status: SUCCESS
 ============================================================
 
 REQUEST:
 --------
-URL: http://127.0.0.1:4006/api/v1/staah-test/ratePlanInfo
+URL: http://127.0.0.1:4010/api/v1/staah-test/ratePlanInfo
 Method: POST
 Headers:
 {}
@@ -30,8 +30,8 @@ Headers:
   "access-control-allow-origin": "*",
   "content-type": "application/json; charset=utf-8",
   "content-length": "803",
-  "etag": "W/\"323-o9Ua/BIfZZJCXdF7IfKtvIS+v8E\"",
-  "date": "Fri, 13 Mar 2026 23:55:04 GMT",
+  "etag": "W/\"323-Hy2rqS8ugMeDvdSsKqbeOYSCw5c\"",
+  "date": "Thu, 19 Mar 2026 19:16:15 GMT",
   "connection": "keep-alive",
   "keep-alive": "timeout=5"
 }
@@ -82,7 +82,7 @@ Data:
       "OTA_rate_id": "MAP_PLAN"
     }
   ],
-  "trackingId": "AF499A20-EDE4-48F9-9E78-9F8039C9B8FB",
+  "trackingId": "0534B298-63CC-4157-9632-68D2F8E8EBCF",
   "status": "success",
   "error_desc": ""
 }
