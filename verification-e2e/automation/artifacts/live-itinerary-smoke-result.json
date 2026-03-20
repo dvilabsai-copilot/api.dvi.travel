@@ -1,0 +1,68 @@
+{
+  "generatedAt": "2026-03-16T02:50:11.952Z",
+  "baseUrl": "https://dvi.travel/api/v1",
+  "checks": {
+    "login": {
+      "status": 201,
+      "ok": true,
+      "tokenPresent": true
+    },
+    "createItinerary": {
+      "status": 201,
+      "ok": true,
+      "quoteId": "DVI2026036",
+      "expectedArrival": "Madurai"
+    },
+    "latestItinerary": {
+      "status": 200,
+      "ok": true,
+      "count": 10,
+      "topQuoteId": "DVI2026036",
+      "topArrival": "Madurai"
+    },
+    "hotelDetails": {
+      "status": 200,
+      "ok": true,
+      "quoteId": "DVI2026036",
+      "hotelCount": 4,
+      "providers": [
+        "tbo"
+      ],
+      "hasTboHotels": true,
+      "sampleHotels": [
+        {
+          "name": "No Hotels Available",
+          "provider": "tbo"
+        },
+        {
+          "name": "No Hotels Available",
+          "provider": "tbo"
+        },
+        {
+          "name": "No Hotels Available",
+          "provider": "tbo"
+        },
+        {
+          "name": "No Hotels Available",
+          "provider": "tbo"
+        }
+      ]
+    },
+    "directTboSearch": {
+      "status": 200,
+      "ok": true,
+      "totalResults": 32,
+      "providers": [
+        "tbo"
+      ],
+      "sampleHotels": [
+        "P K Rresidency",
+        "Hotel Lotus",
+        "P K Rresidency",
+        "Hotel Lotus",
+        "Hotel Lotus"
+      ]
+    }
+  },
+  "pass": true
+}

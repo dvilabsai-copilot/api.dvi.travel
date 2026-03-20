@@ -1,0 +1,163 @@
+======== REQUEST ========
+{
+  "BookingCode": "1088736!TB!1!TB!9803ea4d-2429-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+  "PaymentMode": "Limit",
+  "GuestNationality": "IN",
+  "NoOfRooms": 1,
+  "PaxRooms": [
+    {
+      "Adults": 1,
+      "Children": 0,
+      "ChildrenAges": []
+    }
+  ]
+}
+
+======== RESPONSE ========
+{
+  "Status": {
+    "Code": 200,
+    "Description": "Successful"
+  },
+  "HotelResult": [
+    {
+      "HotelCode": "1088736",
+      "Currency": "INR",
+      "Rooms": [
+        {
+          "Name": [
+            "Club Room,1 King Bed,NonSmoking"
+          ],
+          "BookingCode": "1088736!TB!1!TB!9803ea4d-2429-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "Inclusion": "Free valet parking,Free self parking",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 5696.71
+              }
+            ]
+          ],
+          "TotalFare": 5984.03,
+          "TotalTax": 287.32,
+          "NetAmount": 5984.997212944001,
+          "NetTax": 288.294807144,
+          "RoomPromotion": [
+            "Save:25%"
+          ],
+          "CancelPolicies": [
+            {
+              "FromDate": "19-03-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "22-04-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "Room_Only",
+          "IsRefundable": true,
+          "WithTransfers": false,
+          "Amenities": [
+            "Non-Smoking",
+            "Television",
+            "Turndown service",
+            "Premium bedding",
+            "Satellite TV service",
+            "Iron/ironing board (on request)",
+            "In-room climate control (air conditioning)",
+            "Refrigerator",
+            "Minibar",
+            "Wardrobe or closet",
+            "Coffee/tea maker",
+            "Daily housekeeping",
+            "Free WiFi",
+            "Individually furnished",
+            "In-room safe (laptop compatible)",
+            "Desk",
+            "No rollaway/extra beds",
+            "Towels provided",
+            "Premium TV channels",
+            "Bedsheets provided",
+            "Connecting/adjoining rooms available",
+            "Shower only",
+            "DVD player",
+            "TV size measurement: inch",
+            "Slippers",
+            "Private bathroom",
+            "Free toiletries",
+            "Hair dryer",
+            "TV size: 32",
+            "Rainfall showerhead",
+            "Pay movies",
+            "Separate sitting area",
+            "Room service (24 hours)",
+            "LCD TV",
+            "Free bottled water",
+            "Free newspaper",
+            "Free cribs/infant beds"
+          ],
+          "BeddingGroup": "Bedding type is not guaranteed and it will be allocated by hotel based on availability",
+          "LastCancellationDeadline": "21-04-2026 23:59:59",
+          "PriceBreakUp": [
+            {
+              "RoomRate": 5745.521113000001,
+              "RoomTax": 287.318433,
+              "AgentCommission": 48.8187072,
+              "TaxBreakup": [
+                {
+                  "TaxType": "Tax_TDS",
+                  "TaxableAmount": 48.8187072,
+                  "TaxPercentage": 2,
+                  "TaxAmount": 0.9763741439999999
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "RateConditions": [
+        "Early check out will attract full cancellation charge unless otherwise specified",
+        "Bedding type is not guaranteed and it will be allocated by hotel based on availability ",
+        " CheckIn Time-Begin: 2:00 PM ",
+        " CheckIn Time-End: midnight",
+        "CheckOut Time: 11:00 AM",
+        "CheckIn Instructions: &lt;ul&gt;  &lt;li&gt;Extra-person charges may apply and vary depending on property policy&lt;/li&gt;&lt;li&gt;Government-issued photo identification and a credit card, debit card, or cash deposit may be required at check-in for incidental charges&lt;/li&gt;&lt;li&gt;Special requests are subject to availability upon check-in and may incur additional charges; special requests cannot be guaranteed&lt;/li&gt;&lt;li&gt;This property accepts credit cards, debit cards, and cash&lt;/li&gt;&lt;li&gt;Parties and events are allowed on site&lt;/li&gt;&lt;li&gt;Safety features at this property include a fire extinguisher&lt;/li&gt;&lt;li&gt;Please note that cultural norms and guest policies may differ by country and by property; the policies listed are provided by the property&lt;/li&gt;  &lt;/ul&gt; ",
+        " Special Instructions : Front desk staff will greet guests on arrival at the property. Information provided by the property may be translated using automated translation tools. To register at this property, guests who are Indian citizens must provide a valid photo identity card issued by the Government of India; travelers who are not citizens of India must present a valid passport and visa.",
+        "Minimum CheckIn Age : 21",
+        "Optional Fees: &lt;ul&gt; &lt;li&gt;Rollaway bed fee: INR 1500.0 per night&lt;/li&gt;&lt;/ul&gt; &lt;p&gt;The above list may not be comprehensive. Fees and deposits may not include tax and are subject to change. &lt;/p&gt;",
+        "Cards Accepted: Visa,Debit cards,Cash,American Express,Mastercard",
+        "&lt;ul&gt;  &lt;li&gt;Reservations are required for massage services. Reservations can be made by contacting the hotel prior to arrival, using the contact information on the booking confirmation. &lt;/li&gt;&lt;li&gt;Only registered guests are allowed in the guestrooms. &lt;/li&gt; &lt;li&gt;The property has connecting/adjoining rooms, which are subject to availability and can be requested by contacting the property using the number on the booking confirmation. &lt;/li&gt;&lt;li&gt;A car is required for transportation to and from this property. &lt;/li&gt; &lt;/ul&gt;,Pets not allowed,Professional property host/manager,Events/parties allowed,Beach nearby,Car required"
+      ]
+    }
+  ],
+  "ValidationInfo": {
+    "PanMandatory": false,
+    "PassportMandatory": false,
+    "CorporateBookingAllowed": false,
+    "PanCountRequired": 0,
+    "SamePaxNameAllowed": true,
+    "SpaceAllowed": true,
+    "SpecialCharAllowed": false,
+    "PaxNameMinLength": 1,
+    "PaxNameMaxLength": 50,
+    "CharLimit": true,
+    "PackageFare": false,
+    "PackageDetailsMandatory": false,
+    "DepartureDetailsMandatory": false,
+    "GSTAllowed": false,
+    "CrpPANMandatory": false
+  }
+}
+
+======== METADATA ========
+- timestamp: 2026-03-20T06:54:13.105Z
+- endpoint: https://affiliate.tektravels.com/HotelAPI/PreBook
+- status code: 200
+- case id: 1
+- step name: prebook
+- method: POST
+- status: success
+- error: none
+- skipped reason: none

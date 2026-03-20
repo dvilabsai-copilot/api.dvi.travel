@@ -1,0 +1,37 @@
+Case: Case 5 - International (Room 1 – Adult 1)
+Case ID: 5
+Date Range: 2026-05-02 -> 2026-05-03
+
+Runtime Values
+- TokenId: 1b025632-6947-468e-81ad-3a11a801a822
+- TraceId: c2c202b4-2429-11f1-aada-ba9013e35c3f
+- BookingCode: 6107371!TB!1!TB!c2c202b4-2429-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!
+- BookingId: 2096855
+- ConfirmationNo: 7932645475239
+- NetAmount: 3391.42
+- AgencyId: 57955
+- GuestNationality: IN
+- PaymentMode: Limit
+- NoOfRooms: 1
+- Filters.NoOfRooms: 0
+- Titles: Mr
+
+Step Results
+- 1. authenticate: success (HTTP 200)
+- 2. search: success (HTTP 200)
+- 3. prebook: success (HTTP 200)
+- 4. book: success (HTTP 200)
+- 5. get-booking-detail: success (HTTP 200)
+- 6. cancel: success (HTTP 200)
+
+CancelPolicies Found: 0
+MandatorySupplements Found: 0
+
+Token Chaining Verification
+- Auth TokenId captured: yes
+- GetBookingDetail request includes TokenId: yes
+- Cancel request includes TokenId: yes
+
+Backend Flow Differences
+- Postman certification chain is provider-level and calls TBO endpoints directly.
+- Backend public controllers expose hotel search and itinerary prebook/confirm workflows, while this runner keeps provider-level request/response flow to preserve evidence parity with Postman.

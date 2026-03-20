@@ -1,0 +1,181 @@
+======== REQUEST ========
+{
+  "BookingCode": "1818391!TB!1!TB!cbd34015-2429-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+  "PaymentMode": "Limit",
+  "GuestNationality": "IN",
+  "NoOfRooms": 1,
+  "PaxRooms": [
+    {
+      "Adults": 2,
+      "Children": 2,
+      "ChildrenAges": [
+        3,
+        4
+      ]
+    }
+  ]
+}
+
+======== RESPONSE ========
+{
+  "Status": {
+    "Code": 200,
+    "Description": "Successful"
+  },
+  "HotelResult": [
+    {
+      "HotelCode": "1818391",
+      "Currency": "INR",
+      "Rooms": [
+        {
+          "Name": [
+            "Family Room,1 King Bed and 2 Twin Beds,NonSmoking"
+          ],
+          "BookingCode": "1818391!TB!1!TB!cbd34015-2429-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "Inclusion": "Free breakfast,Free self parking",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 17963.34
+              }
+            ]
+          ],
+          "TotalFare": 22412.96,
+          "TotalTax": 4449.63,
+          "NetAmount": 22415.609463610002,
+          "NetTax": 4452.27457211,
+          "CancelPolicies": [
+            {
+              "FromDate": "19-03-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "02-05-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "BreakFast",
+          "IsRefundable": true,
+          "Supplements": [
+            [
+              {
+                "Index": 1,
+                "Type": "AtProperty",
+                "Description": "mandatory_tax",
+                "Price": 15,
+                "Currency": "AED"
+              }
+            ]
+          ],
+          "WithTransfers": false,
+          "Amenities": [
+            "Non-Smoking",
+            "Desk chair",
+            "Local maps",
+            "Premium bedding",
+            "Closed captioned TV",
+            "Electric kettle",
+            "Iron/ironing board (on request)",
+            "Change of bed sheets (on request)",
+            "Laptop-friendly workspace",
+            "Blackout drapes/curtains",
+            "Wardrobe or closet",
+            "Free wired internet",
+            "Coffee/tea maker",
+            "Ceiling fan",
+            "Daily housekeeping",
+            "Individually decorated",
+            "Free WiFi",
+            "Individually furnished",
+            "Espresso maker",
+            "Hypo-allergenic bedding available",
+            "Access via exterior corridors",
+            "Phone",
+            "Desk",
+            "Restaurant dining guide",
+            "Towels provided",
+            "Energy-saving switches",
+            "Bedsheets provided",
+            "Connecting/adjoining rooms available",
+            "Shower only",
+            "Visual fire alarm",
+            "Egyptian-cotton sheets",
+            "Slippers",
+            "Private bathroom",
+            "Bathrobes",
+            "Free toiletries",
+            "Hair dryer",
+            "Air conditioning",
+            "Housekeeping on request",
+            "Rainfall showerhead",
+            "In-room safe",
+            "Room service (24 hours)",
+            "Flat-panel TV",
+            "Cable TV service",
+            "Free bottled water",
+            "Free cribs/infant beds"
+          ],
+          "LastCancellationDeadline": "01-05-2026 23:59:59",
+          "PriceBreakUp": [
+            {
+              "RoomRate": 18095.975996999998,
+              "RoomTax": 4449.62175,
+              "AgentCommission": 132.6411055,
+              "TaxBreakup": [
+                {
+                  "TaxType": "Tax_TDS",
+                  "TaxableAmount": 132.6411055,
+                  "TaxPercentage": 2,
+                  "TaxAmount": 2.6528221100000002
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "RateConditions": [
+        "Early check out will attract full cancellation charge unless otherwise specified",
+        "CheckIn Time-Begin: 3:00 PM ",
+        " CheckIn Time-End: 11:30 PM",
+        "CheckOut Time: 12:00 PM",
+        "CheckIn Instructions: &lt;ul&gt;  &lt;li&gt;Extra-person charges may apply and vary depending on property policy&lt;/li&gt;&lt;li&gt;Government-issued photo identification and a credit card, debit card, or cash deposit may be required at check-in for incidental charges&lt;/li&gt;&lt;li&gt;Special requests are subject to availability upon check-in and may incur additional charges; special requests cannot be guaranteed&lt;/li&gt;&lt;li&gt;This property accepts credit cards, debit cards, and cash&lt;/li&gt;&lt;li&gt;Cashless transactions are available&lt;/li&gt;&lt;li&gt;This property uses solar energy&lt;/li&gt;&lt;li&gt;Safety features at this property include a carbon monoxide detector, a fire extinguisher, a smoke detector, a security system, a first aid kit, and window guards&lt;/li&gt;&lt;li&gt;This property has outdoor spaces, such as balconies, patios, terraces which may not be suitable for children; if you have concerns, we recommend contacting the property prior to your arrival to confirm they can accommodate you in a suitable room&lt;/li&gt;&lt;li&gt;This property affirms that it follows the cleaning and disinfection practices of CleanStay (Hilton)&lt;/li&gt;  &lt;/ul&gt; ",
+        " Special Instructions : Front desk staff will greet guests on arrival at the property. Information provided by the property may be translated using automated translation tools. During Ramadan, guests booked in a breakfast included rate plan may choose sahur (pre-dawn meal) instead of breakfast and guests booked in a dinner included plan may choose iftar (evening meal) instead of dinner.",
+        "Minimum CheckIn Age : 18",
+        "Mandatory Fees: &lt;p&gt;You'll be asked to pay the following charges at the property. Fees may include applicable taxes:&lt;/p&gt; &lt;ul&gt;&lt;li&gt;A tax is imposed by the city: AED 15.00 per accommodation, per night&lt;/li&gt;A tourism fee is imposed by the city and collected at the property. The fee is AED 15.00 for the first bedroom per night, and increases by AED 15.00 per night for each additional bedroom. &lt;/ul&gt; &lt;p&gt;We have included all charges provided to us by the property. &lt;/p&gt; ",
+        " Optional Fees: &lt;ul&gt; &lt;li&gt;Fee for buffet breakfast: approximately AED 75 for adults and AED 38 for children&lt;/li&gt;&lt;/ul&gt; &lt;p&gt;The above list may not be comprehensive. Fees and deposits may not include tax and are subject to change. &lt;/p&gt;",
+        "Cards Accepted: Visa,Diners Club,Debit cards,Discover,Cash,American Express,JCB International,Mastercard,UnionPay",
+        "&lt;ul&gt;  &lt;li&gt;The property has connecting/adjoining rooms, which are subject to availability and can be requested by contacting the property using the number on the booking confirmation. &lt;/li&gt;&lt;li&gt;No pets and no service animals are allowed at this property. &lt;/li&gt;&lt;li&gt;Cashless payment methods are available for all transactions.&lt;/li&gt; &lt;/ul&gt;,Service animals not allowed,Pets not allowed,Professional property host/manager,Property follows a brand or regulatory agency's sanitization guidelines CleanStay (Hilton),No rollaway/extra beds available,Cashless transactions are available"
+      ]
+    }
+  ],
+  "ValidationInfo": {
+    "PanMandatory": true,
+    "PassportMandatory": false,
+    "CorporateBookingAllowed": false,
+    "PanCountRequired": 1,
+    "SamePaxNameAllowed": true,
+    "SpaceAllowed": true,
+    "SpecialCharAllowed": false,
+    "PaxNameMinLength": 1,
+    "PaxNameMaxLength": 50,
+    "CharLimit": true,
+    "PackageFare": false,
+    "PackageDetailsMandatory": false,
+    "DepartureDetailsMandatory": false,
+    "GSTAllowed": false,
+    "CrpPANMandatory": true
+  }
+}
+
+======== METADATA ========
+- timestamp: 2026-03-20T06:55:40.402Z
+- endpoint: https://affiliate.tektravels.com/HotelAPI/PreBook
+- status code: 200
+- case id: 6
+- step name: prebook
+- method: POST
+- status: success
+- error: none
+- skipped reason: none

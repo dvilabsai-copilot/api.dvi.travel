@@ -1,0 +1,443 @@
+{
+  "baseUrl": "https://dvi.travel/api/v1",
+  "generatedAt": "2026-03-16T02:29:21.929Z",
+  "login": {
+    "status": 201,
+    "ok": true,
+    "tokenField": "present"
+  },
+  "create": {
+    "status": 201,
+    "ok": true,
+    "request": {
+      "plan": {
+        "itinerary_plan_id": 0,
+        "agent_id": 126,
+        "staff_id": 0,
+        "location_id": 0,
+        "arrival_point": "Madurai",
+        "departure_point": "Chennai",
+        "itinerary_preference": 3,
+        "itinerary_type": 2,
+        "preferred_hotel_category": [
+          2
+        ],
+        "hotel_facilities": [],
+        "trip_start_date": "2026-04-05T02:29:21.929+05:30",
+        "trip_end_date": "2026-04-06T02:29:21.929+05:30",
+        "pick_up_date_and_time": "2026-04-05T02:29:21.929+05:30",
+        "arrival_type": 1,
+        "departure_type": 1,
+        "no_of_nights": 1,
+        "no_of_days": 2,
+        "budget": 25000,
+        "entry_ticket_required": 0,
+        "guide_for_itinerary": 0,
+        "nationality": 101,
+        "food_type": 0,
+        "adult_count": 2,
+        "child_count": 0,
+        "infant_count": 0,
+        "special_instructions": "Live check: Madurai itinerary for TBO hotel verification"
+      },
+      "routes": [
+        {
+          "location_name": "Madurai",
+          "next_visiting_location": "Chennai",
+          "itinerary_route_date": "2026-04-05T02:29:21.929+05:30",
+          "no_of_days": 1,
+          "no_of_km": "",
+          "direct_to_next_visiting_place": 1,
+          "via_route": "",
+          "via_routes": []
+        },
+        {
+          "location_name": "Chennai",
+          "next_visiting_location": "Chennai",
+          "itinerary_route_date": "2026-04-06T02:29:21.929+05:30",
+          "no_of_days": 2,
+          "no_of_km": "",
+          "direct_to_next_visiting_place": 1,
+          "via_route": "",
+          "via_routes": []
+        }
+      ],
+      "vehicles": [
+        {
+          "vehicle_type_id": 1,
+          "vehicle_count": 1
+        }
+      ],
+      "travellers": [
+        {
+          "room_id": 1,
+          "traveller_type": 1
+        },
+        {
+          "room_id": 1,
+          "traveller_type": 1
+        }
+      ]
+    },
+    "response": {
+      "planId": 22,
+      "quoteId": "DVI2026035",
+      "routeIds": [
+        402,
+        403
+      ],
+      "message": "Plan created/updated with routes, vehicles, travellers, hotspots, and hotels."
+    },
+    "extracted": {
+      "quoteId": "DVI2026035",
+      "planId": null
+    }
+  },
+  "latest": {
+    "status": 200,
+    "ok": true,
+    "url": "https://dvi.travel/api/v1/itineraries/latest?start=0&length=10",
+    "count": 10,
+    "top": {
+      "quoteId": "DVI2026035",
+      "arrival": null,
+      "departure": null
+    },
+    "body": {
+      "draw": 0,
+      "recordsTotal": 22,
+      "recordsFiltered": 22,
+      "data": [
+        {
+          "counter": 1,
+          "modify": 22,
+          "itinerary_quote_ID": "DVI2026035",
+          "itinerary_booking_ID": null,
+          "arrival_location": "Madurai",
+          "departure_location": "Chennai",
+          "itinerary_preference": 3,
+          "no_of_days_and_nights": "1&2",
+          "no_of_person": "<span>Adult - 2</br>Children - 0</br>Infants - 0</span>",
+          "trip_start_date_and_time": "02:29 AM",
+          "trip_end_date_and_time": "02:29 AM",
+          "total_adult": 2,
+          "total_children": 0,
+          "total_infants": 0,
+          "username": "admindvi",
+          "createdon": "Mon, Mar 16, 2026"
+        },
+        {
+          "counter": 2,
+          "modify": 21,
+          "itinerary_quote_ID": "DVI2026034",
+          "itinerary_booking_ID": "DVI2026034",
+          "arrival_location": "Udaipur",
+          "departure_location": "Udaipur",
+          "itinerary_preference": 3,
+          "no_of_days_and_nights": "4&5",
+          "no_of_person": "<span>Adult - 2</br>Children - 0</br>Infants - 0</span>",
+          "trip_start_date_and_time": "11:04 PM",
+          "trip_end_date_and_time": "11:04 PM",
+          "total_adult": 2,
+          "total_children": 0,
+          "total_infants": 0,
+          "username": "admindvi",
+          "createdon": "Sat, Mar 14, 2026"
+        },
+        {
+          "counter": 3,
+          "modify": 20,
+          "itinerary_quote_ID": "DVI2026033",
+          "itinerary_booking_ID": null,
+          "arrival_location": "Chennai International Airport",
+          "departure_location": "Madurai Airport",
+          "itinerary_preference": 3,
+          "no_of_days_and_nights": "5&6",
+          "no_of_person": "<span>Adult - 2</br>Children - 0</br>Infants - 0</span>",
+          "trip_start_date_and_time": "12:00 PM",
+          "trip_end_date_and_time": "12:00 PM",
+          "total_adult": 2,
+          "total_children": 0,
+          "total_infants": 0,
+          "username": "admindvi",
+          "createdon": "Sun, Mar 08, 2026"
+        },
+        {
+          "counter": 4,
+          "modify": 19,
+          "itinerary_quote_ID": "DVI2026032",
+          "itinerary_booking_ID": null,
+          "arrival_location": "Madurai Airport",
+          "departure_location": "Trivandrum, Domestic Airport",
+          "itinerary_preference": 3,
+          "no_of_days_and_nights": "7&8",
+          "no_of_person": "<span>Adult - 4</br>Children - 0</br>Infants - 0</span>",
+          "trip_start_date_and_time": "12:00 PM",
+          "trip_end_date_and_time": "12:00 PM",
+          "total_adult": 4,
+          "total_children": 0,
+          "total_infants": 0,
+          "username": "admindvi",
+          "createdon": "Sat, Mar 07, 2026"
+        },
+        {
+          "counter": 5,
+          "modify": 18,
+          "itinerary_quote_ID": "DVI2026031",
+          "itinerary_booking_ID": null,
+          "arrival_location": "Madurai Airport",
+          "departure_location": "Trivandrum, Domestic Airport",
+          "itinerary_preference": 3,
+          "no_of_days_and_nights": "7&8",
+          "no_of_person": "<span>Adult - 4</br>Children - 0</br>Infants - 0</span>",
+          "trip_start_date_and_time": "12:00 PM",
+          "trip_end_date_and_time": "12:00 PM",
+          "total_adult": 4,
+          "total_children": 0,
+          "total_infants": 0,
+          "username": "admindvi",
+          "createdon": "Sat, Mar 07, 2026"
+        },
+        {
+          "counter": 6,
+          "modify": 17,
+          "itinerary_quote_ID": "DVI2026024",
+          "itinerary_booking_ID": null,
+          "arrival_location": "Madurai Airport",
+          "departure_location": "Trivandrum, Domestic Airport",
+          "itinerary_preference": 3,
+          "no_of_days_and_nights": "4&5",
+          "no_of_person": "<span>Adult - 2</br>Children - 0</br>Infants - 0</span>",
+          "trip_start_date_and_time": "12:00 PM",
+          "trip_end_date_and_time": "12:00 PM",
+          "total_adult": 2,
+          "total_children": 0,
+          "total_infants": 0,
+          "username": "admindvi",
+          "createdon": "Sat, Jan 31, 2026"
+        },
+        {
+          "counter": 7,
+          "modify": 16,
+          "itinerary_quote_ID": "DVI2026023",
+          "itinerary_booking_ID": null,
+          "arrival_location": "Madurai Airport",
+          "departure_location": "Trivandrum, Domestic Airport",
+          "itinerary_preference": 3,
+          "no_of_days_and_nights": "4&5",
+          "no_of_person": "<span>Adult - 2</br>Children - 0</br>Infants - 0</span>",
+          "trip_start_date_and_time": "12:00 PM",
+          "trip_end_date_and_time": "12:00 PM",
+          "total_adult": 2,
+          "total_children": 0,
+          "total_infants": 0,
+          "username": "admindvi",
+          "createdon": "Sat, Jan 31, 2026"
+        },
+        {
+          "counter": 8,
+          "modify": 15,
+          "itinerary_quote_ID": "DVI2026022",
+          "itinerary_booking_ID": null,
+          "arrival_location": "Madurai Airport",
+          "departure_location": "Trivandrum, Domestic Airport",
+          "itinerary_preference": 3,
+          "no_of_days_and_nights": "4&5",
+          "no_of_person": "<span>Adult - 2</br>Children - 0</br>Infants - 0</span>",
+          "trip_start_date_and_time": "12:00 PM",
+          "trip_end_date_and_time": "12:00 PM",
+          "total_adult": 2,
+          "total_children": 0,
+          "total_infants": 0,
+          "username": "admindvi",
+          "createdon": "Sat, Jan 31, 2026"
+        },
+        {
+          "counter": 9,
+          "modify": 14,
+          "itinerary_quote_ID": "DVI2026021",
+          "itinerary_booking_ID": null,
+          "arrival_location": "Madurai Airport",
+          "departure_location": "Trivandrum, Domestic Airport",
+          "itinerary_preference": 3,
+          "no_of_days_and_nights": "4&5",
+          "no_of_person": "<span>Adult - 2</br>Children - 0</br>Infants - 0</span>",
+          "trip_start_date_and_time": "12:00 PM",
+          "trip_end_date_and_time": "12:00 PM",
+          "total_adult": 2,
+          "total_children": 0,
+          "total_infants": 0,
+          "username": "admindvi",
+          "createdon": "Sat, Jan 31, 2026"
+        },
+        {
+          "counter": 10,
+          "modify": 13,
+          "itinerary_quote_ID": "DVI20260111",
+          "itinerary_booking_ID": null,
+          "arrival_location": "Chennai International Airport",
+          "departure_location": "Thanjavur Airport",
+          "itinerary_preference": 3,
+          "no_of_days_and_nights": "3&4",
+          "no_of_person": "<span>Adult - 2</br>Children - 0</br>Infants - 0</span>",
+          "trip_start_date_and_time": "06:30 PM",
+          "trip_end_date_and_time": "06:30 PM",
+          "total_adult": 2,
+          "total_children": 0,
+          "total_infants": 0,
+          "username": "admindvi",
+          "createdon": "Tue, Jan 27, 2026"
+        }
+      ]
+    }
+  },
+  "hotelDetails": {
+    "status": 200,
+    "ok": true,
+    "quoteId": "DVI2026035",
+    "hotelCount": 4,
+    "providers": [
+      "tbo"
+    ],
+    "sampleHotels": [
+      {
+        "name": "No Hotels Available",
+        "provider": "tbo",
+        "city": null
+      },
+      {
+        "name": "No Hotels Available",
+        "provider": "tbo",
+        "city": null
+      },
+      {
+        "name": "No Hotels Available",
+        "provider": "tbo",
+        "city": null
+      },
+      {
+        "name": "No Hotels Available",
+        "provider": "tbo",
+        "city": null
+      }
+    ],
+    "body": {
+      "quoteId": "DVI2026035",
+      "planId": 22,
+      "hotelRatesVisible": true,
+      "hotelTabs": [
+        {
+          "groupType": 1,
+          "label": "Budget Hotels",
+          "totalAmount": 0
+        },
+        {
+          "groupType": 2,
+          "label": "Mid-Range Hotels",
+          "totalAmount": 0
+        },
+        {
+          "groupType": 3,
+          "label": "Premium Hotels",
+          "totalAmount": 0
+        },
+        {
+          "groupType": 4,
+          "label": "Luxury Hotels",
+          "totalAmount": 0
+        }
+      ],
+      "hotels": [
+        {
+          "groupType": 1,
+          "itineraryRouteId": 402,
+          "day": "Day 1 | 2026-04-05",
+          "destination": "Chennai",
+          "hotelId": 0,
+          "hotelName": "No Hotels Available",
+          "category": 0,
+          "roomType": "-",
+          "mealPlan": "-",
+          "totalHotelCost": 0,
+          "totalHotelTaxAmount": 0,
+          "bookingCode": "0",
+          "provider": "tbo",
+          "voucherCancelled": false,
+          "itineraryPlanHotelDetailsId": 0,
+          "date": "2026-04-05"
+        },
+        {
+          "groupType": 2,
+          "itineraryRouteId": 402,
+          "day": "Day 1 | 2026-04-05",
+          "destination": "Chennai",
+          "hotelId": 0,
+          "hotelName": "No Hotels Available",
+          "category": 0,
+          "roomType": "-",
+          "mealPlan": "-",
+          "totalHotelCost": 0,
+          "totalHotelTaxAmount": 0,
+          "bookingCode": "0",
+          "provider": "tbo",
+          "voucherCancelled": false,
+          "itineraryPlanHotelDetailsId": 0,
+          "date": "2026-04-05"
+        },
+        {
+          "groupType": 3,
+          "itineraryRouteId": 402,
+          "day": "Day 1 | 2026-04-05",
+          "destination": "Chennai",
+          "hotelId": 0,
+          "hotelName": "No Hotels Available",
+          "category": 0,
+          "roomType": "-",
+          "mealPlan": "-",
+          "totalHotelCost": 0,
+          "totalHotelTaxAmount": 0,
+          "bookingCode": "0",
+          "provider": "tbo",
+          "voucherCancelled": false,
+          "itineraryPlanHotelDetailsId": 0,
+          "date": "2026-04-05"
+        },
+        {
+          "groupType": 4,
+          "itineraryRouteId": 402,
+          "day": "Day 1 | 2026-04-05",
+          "destination": "Chennai",
+          "hotelId": 0,
+          "hotelName": "No Hotels Available",
+          "category": 0,
+          "roomType": "-",
+          "mealPlan": "-",
+          "totalHotelCost": 0,
+          "totalHotelTaxAmount": 0,
+          "bookingCode": "0",
+          "provider": "tbo",
+          "voucherCancelled": false,
+          "itineraryPlanHotelDetailsId": 0,
+          "date": "2026-04-05"
+        }
+      ],
+      "totalRoomCount": 4
+    }
+  },
+  "summary": {
+    "loginOk": true,
+    "createOk": true,
+    "quoteId": "DVI2026035",
+    "planId": null,
+    "latestOk": true,
+    "latestTopQuoteId": "DVI2026035",
+    "latestTopArrival": null,
+    "latestTopDeparture": null,
+    "hotelDetailsStatus": 200,
+    "hotelCount": 4,
+    "providers": [
+      "tbo"
+    ],
+    "hasTboHotels": true
+  }
+}

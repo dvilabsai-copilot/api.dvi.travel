@@ -2,6 +2,7 @@ import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma.service';
 import { HotelSearchService } from '../../hotels/services/hotel-search.service';
 import { TBOHotelProvider } from '../../hotels/providers/tbo-hotel.provider';
+import { SupplementNormalizerService } from '../../hotels/services/supplement-normalizer.service';
 import axios, { AxiosInstance } from 'axios';
 import {
   normalizePassengerTitle,
@@ -102,6 +103,7 @@ export class TboHotelBookingService {
     private readonly prisma: PrismaService,
     private readonly hotelSearchService: HotelSearchService,
     private readonly tboProvider: TBOHotelProvider,
+    private readonly supplementNormalizer: SupplementNormalizerService,
   ) {
     // Create axios client with explicit Authorization header (not auth object)
     const credentials = Buffer.from(`${this.TBO_USERNAME}:${this.TBO_PASSWORD}`).toString('base64');
@@ -469,6 +471,9 @@ export class TboHotelBookingService {
               rateConditions: preBookMeta?.rateConditions || null,
               roomPromotions: preBookMeta?.roomPromotions || null,
               mandatorySupplements: preBookMeta?.mandatorySupplements || null,
+              // ✅ NEW: normalized supplements for display/booking
+              normalizedSupplements: preBookMeta?.normalizedSupplements || null,
+              supplements: preBookMeta?.supplements || null,
               panDetails: selection.passengers.map((p) => p.pan).filter(Boolean),
               passportDetails: selection.passengers.map((p) => p.passportNo).filter(Boolean),
             },
@@ -562,6 +567,9 @@ export class TboHotelBookingService {
               ? 'Price/cancellation policy changed during prebook. Reconfirmation required.'
               : null,
           mandatorySupplements: preBookMeta?.mandatorySupplements || [],
+          // ✅ NEW: normalized supplements for display
+          normalizedSupplements: preBookMeta?.normalizedSupplements || [],
+          supplements: preBookMeta?.supplements || [],
           confirmation: savedConfirmation,
         });
 
@@ -768,19 +776,56 @@ export class TboHotelBookingService {
     );
   }
 
+  private normalizeToArray(value: any): any[] {
+    if (!value) return [];
+    if (Array.isArray(value)) return value;
+    if (typeof value === 'string' && value.trim()) return [value.trim()];
+    if (value && typeof value === 'object') return [value];
+    return [];
+  }
+
   private extractPreBookMeta(preBookResponse: PreBookResponse, selection: TboHotelSelection) {
     const rawRoomDetails = preBookResponse?.HotelRoomsDetails || [];
-    const mandatorySupplements = rawRoomDetails
-      .flatMap((room: any) => room?.MandatorySupplements || room?.MandatorySupplement || [])
+    
+    // Extract raw mandatory supplements from MandatorySupplements/MandatorySupplement fields
+    const rawMandatorySupplements = rawRoomDetails
+      .flatMap((room: any) => this.normalizeToArray(room?.MandatorySupplements ?? room?.MandatorySupplement))
       .filter(Boolean);
+    
+    // ✅ ALSO extract any Supplements fields if present in prebook response
+    const rawSupplements = rawRoomDetails
+      .flatMap((room: any) => this.normalizeToArray(room?.Supplements))
+      .filter(Boolean);
+
+    // ✅ Normalize supplements using suppl ement normalizer service
+    // Mandatory supplements come from prebook and are authoritative
+    const normalizedMandatorySupplements = this.supplementNormalizer.normalizeSupplements(
+      rawMandatorySupplements,
+      'prebook',
+    );
+    
+    const normalizedSupplements = this.supplementNormalizer.normalizeSupplements(
+      rawSupplements,
+      'prebook',
+    );
+
+    // Merge both sources: normalized mandatory + any additional supplements
+    const allNormalizedSupplements = [
+      ...normalizedMandatorySupplements,
+      ...normalizedSupplements,
+    ];
+
     const roomPromotions = rawRoomDetails
-      .flatMap((room: any) => room?.RoomPromotion || room?.RoomPromotions || [])
+      .flatMap((room: any) => this.normalizeToArray(room?.RoomPromotion ?? room?.RoomPromotions))
       .filter(Boolean);
     const rateConditions = rawRoomDetails
-      .flatMap((room: any) => room?.RateConditions || [])
+      .flatMap((room: any) => this.normalizeToArray(room?.RateConditions))
       .filter(Boolean);
     const cancellationPolicies = rawRoomDetails
-      .flatMap((room: any) => room?.CancelPolicies || room?.CancellationPolicy || [])
+      .flatMap((room: any) => this.normalizeToArray(room?.CancelPolicies ?? room?.CancellationPolicy))
+      .filter(Boolean);
+    const inclusions = rawRoomDetails
+      .flatMap((room: any) => this.normalizeToArray(room?.Inclusion))
       .filter(Boolean);
 
     const candidatePrices = [
@@ -801,7 +846,11 @@ export class TboHotelBookingService {
       cancellationPolicyText: cancellationPolicies.length ? JSON.stringify(cancellationPolicies) : null,
       rateConditions,
       roomPromotions,
-      mandatorySupplements,
+      inclusions,
+      // ✅ Return both raw and normalized supplements
+      mandatorySupplements: rawMandatorySupplements, // Raw mandatory supplements (kept for backward compat)
+      supplements: rawSupplements, // Raw supplements (if present)
+      normalizedSupplements: allNormalizedSupplements, // ✅ NEW: normalized supplements with metadata
       rawStatus: preBookResponse?.Status,
     };
   }

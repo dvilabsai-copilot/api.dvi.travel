@@ -1,0 +1,38 @@
+======== REQUEST ========
+{
+  "RequestType": 4,
+  "BookingMode": 5,
+  "BookingId": 2096855,
+  "EndUserIp": "192.168.1.1",
+  "TokenId": "1b025632-6947-468e-81ad-3a11a801a822",
+  "Remarks": "Certification cancel for case 5"
+}
+
+======== RESPONSE ========
+{
+  "HotelChangeRequestResult": {
+    "B2B2BStatus": false,
+    "CancellationChargeBreakUp": null,
+    "TotalServiceCharge": 0,
+    "ResponseStatus": 1,
+    "Error": {
+      "ErrorCode": 0,
+      "ErrorMessage": ""
+    },
+    "TraceId": "c2c202b4-2429-11f1-aada-ba9013e35c3f",
+    "ChangeRequestId": 381044,
+    "ChangeRequestStatus": 2,
+    "ZendeskTicketId": 4814
+  }
+}
+
+======== METADATA ========
+- timestamp: 2026-03-20T06:55:36.653Z
+- endpoint: https://hotelbe.tektravels.com/hotelservice.svc/rest/SendChangeRequest
+- status code: 200
+- case id: 5
+- step name: cancel
+- method: POST
+- status: success
+- error: none
+- skipped reason: none

@@ -1,0 +1,166 @@
+======== REQUEST ========
+{
+  "BookingCode": "6107371!TB!1!TB!c2c202b4-2429-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+  "PaymentMode": "Limit",
+  "GuestNationality": "IN",
+  "NoOfRooms": 1,
+  "PaxRooms": [
+    {
+      "Adults": 1,
+      "Children": 0,
+      "ChildrenAges": []
+    }
+  ]
+}
+
+======== RESPONSE ========
+{
+  "Status": {
+    "Code": 200,
+    "Description": "Successful"
+  },
+  "HotelResult": [
+    {
+      "HotelCode": "6107371",
+      "Currency": "INR",
+      "Rooms": [
+        {
+          "Name": [
+            "Economy Double Room, 1 Double Bed,Smoking"
+          ],
+          "BookingCode": "6107371!TB!1!TB!c2c202b4-2429-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "Inclusion": "Free self parking",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 3227
+              }
+            ]
+          ],
+          "TotalFare": 3391.42,
+          "TotalTax": 164.43,
+          "NetAmount": 3391.833088727,
+          "NetTax": 164.8402635769998,
+          "RoomPromotion": [
+            "Save:20%"
+          ],
+          "CancelPolicies": [
+            {
+              "FromDate": "19-03-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "Room_Only",
+          "IsRefundable": false,
+          "WithTransfers": false,
+          "Amenities": [
+            "Smoking",
+            "Television",
+            "Electric kettle",
+            "Iron/ironing board (on request)",
+            "Pillowtop mattress",
+            "Soundproofed rooms",
+            "Laptop-friendly workspace",
+            "Blackout drapes/curtains",
+            "Minibar",
+            "Coffee/tea maker",
+            "Ceiling fan",
+            "Daily housekeeping",
+            "Individually decorated",
+            "Free WiFi",
+            "Individually furnished",
+            "Hypo-allergenic bedding available",
+            "Desk",
+            "Towels provided",
+            "Premium TV channels",
+            "Highchair",
+            "Bedsheets provided",
+            "Soap",
+            "LED TV",
+            "Doorbell/telephone notification",
+            "Toilet paper",
+            "Shower only",
+            "Children's books",
+            "Shampoo",
+            "Lever door handles",
+            "Low-height counters/sink",
+            "Toothbrush and toothpaste available on request",
+            "TV size measurement: inch",
+            "Slippers",
+            "Private bathroom",
+            "Free toiletries",
+            "Wheelchair accessible",
+            "Hair dryer",
+            "Air conditioning",
+            "TV size: 36",
+            "Housekeeping on request",
+            "Rollaway/extra beds (surcharge)",
+            "Rainfall showerhead",
+            "In-room safe",
+            "Room service (24 hours)",
+            "Cable TV service",
+            "Free bottled water",
+            "Free newspaper"
+          ],
+          "LastCancellationDeadline": "18-03-2026 23:59:59",
+          "PriceBreakUp": [
+            {
+              "RoomRate": 3247.800104,
+              "RoomTax": 164.4241179999998,
+              "AgentCommission": 20.80727885,
+              "TaxBreakup": [
+                {
+                  "TaxType": "Tax_TDS",
+                  "TaxableAmount": 20.80727885,
+                  "TaxPercentage": 2,
+                  "TaxAmount": 0.41614557700000004
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "RateConditions": [
+        "Early check out will attract full cancellation charge unless otherwise specified",
+        "CheckIn Time-Begin: 12:00 PM ",
+        " CheckIn Time-End: anytime",
+        "CheckOut Time: 11:00 AM",
+        "CheckIn Instructions: &lt;ul&gt;  &lt;li&gt;Extra-person charges may apply and vary depending on property policy&lt;/li&gt;&lt;li&gt;Government-issued photo identification and a credit card, debit card, or cash deposit may be required at check-in for incidental charges&lt;/li&gt;&lt;li&gt;Special requests are subject to availability upon check-in and may incur additional charges; special requests cannot be guaranteed&lt;/li&gt;&lt;li&gt;Minimum Spring Break check-in age is 18 years old&lt;/li&gt;&lt;li&gt;This property accepts credit cards; cash is not accepted&lt;/li&gt;&lt;li&gt;Cashless transactions are available&lt;/li&gt;&lt;li&gt;Safety features at this property include a fire extinguisher, a security system, and a first aid kit&lt;/li&gt;&lt;li&gt;Please note that cultural norms and guest policies may differ by country and by property; the policies listed are provided by the property&lt;/li&gt;  &lt;/ul&gt; ",
+        " Special Instructions : To make arrangements for check-in please contact the property at least 24 hours before arrival using the information on the booking confirmation. Guests must contact the property in advance for check-in instructions. Front desk staff will greet guests on arrival at the property. For any questions, please contact the property using the information on the booking confirmation. Information provided by the property may be translated using automated translation tools. Please note that PAN cards are not accepted as identification at this property. To register at this property, guests who are Indian citizens must provide a valid photo identity card issued by the Government of India; travelers who are not citizens of India must present a valid passport and visa.",
+        "Minimum CheckIn Age : 18",
+        "Optional Fees: &lt;ul&gt; &lt;li&gt;Early check-in fee: INR 1500 (subject to availability)&lt;/li&gt;&lt;li&gt;Late check-out fee: INR 1500 (subject to availability)&lt;/li&gt;&lt;li&gt;Rollaway bed fee: INR 1000.0 per night&lt;/li&gt;&lt;/ul&gt; &lt;p&gt;The above list may not be comprehensive. Fees and deposits may not include tax and are subject to change. &lt;/p&gt;",
+        "Cards Accepted: Visa,Debit cards not accepted,Cash not accepted,Mastercard",
+        "&lt;ul&gt;  &lt;li&gt;Pool access available from 9:00 AM to 8:30 PM.&lt;/li&gt;&lt;li&gt;Only registered guests are allowed in the guestrooms. &lt;/li&gt; &lt;li&gt;Cashless payment methods are available for all transactions.&lt;/li&gt; &lt;/ul&gt;,Pets not allowed,Professional property host/manager,No cribs (infant beds) available,Cashless transactions are available,Essential workers only - NO"
+      ]
+    }
+  ],
+  "ValidationInfo": {
+    "PanMandatory": false,
+    "PassportMandatory": false,
+    "CorporateBookingAllowed": false,
+    "PanCountRequired": 0,
+    "SamePaxNameAllowed": true,
+    "SpaceAllowed": true,
+    "SpecialCharAllowed": false,
+    "PaxNameMinLength": 1,
+    "PaxNameMaxLength": 50,
+    "CharLimit": true,
+    "PackageFare": false,
+    "PackageDetailsMandatory": false,
+    "DepartureDetailsMandatory": false,
+    "GSTAllowed": false,
+    "CrpPANMandatory": false
+  }
+}
+
+======== METADATA ========
+- timestamp: 2026-03-20T06:55:25.207Z
+- endpoint: https://affiliate.tektravels.com/HotelAPI/PreBook
+- status code: 200
+- case id: 5
+- step name: prebook
+- method: POST
+- status: success
+- error: none
+- skipped reason: none

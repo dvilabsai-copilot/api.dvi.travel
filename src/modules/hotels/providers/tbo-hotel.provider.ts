@@ -15,9 +15,15 @@ import {
   CancellationResult,
 } from '../interfaces/hotel-provider.interface';
 import { resolveProviderPassengerTitle } from '../../../common/utils/passenger-title.util';
+import { SupplementNormalizerService } from '../services/supplement-normalizer.service';
 
 @Injectable()
 export class TBOHotelProvider implements IHotelProvider {
+  // TBO API Constraints - Certification Required
+  private static readonly MAX_ROOMS = 6;
+  private static readonly MAX_ADULTS_PER_ROOM = 8;
+  private static readonly MAX_CHILDREN_PER_ROOM = 4;
+
   // Production API Endpoints from Postman Collection
   private readonly SEARCH_API_URL = 'https://affiliate.tektravels.com/HotelAPI';
   private readonly BOOKING_API_URL = 'https://hotelbe.tektravels.com';
@@ -46,7 +52,10 @@ export class TBOHotelProvider implements IHotelProvider {
     }
   }
 
-  constructor(private readonly prisma: PrismaService) {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly supplementNormalizer: SupplementNormalizerService,
+  ) {
     this.fileLog('═════════════════════════════════════════');
     this.fileLog('TBOHotelProvider CONSTRUCTOR CALLED');
     this.fileLog('═════════════════════════════════════════');
@@ -297,6 +306,25 @@ export class TBOHotelProvider implements IHotelProvider {
           // Use REAL BookingCode from TBO Search API response (not generated)
           const realBookingCode = room.BookingCode || `${hotel.HotelCode}_${room.TBORoomID}`;
 
+          // ✅ Extract and normalize supplements from search response
+          const rawSupplements = room.Supplements || [];
+          const supplementSummary = this.supplementNormalizer.createSupplementSummary(
+            rawSupplements,
+            'search',
+          );
+
+          // Build room type with supplement details
+          const roomTypeObj: RoomType = {
+            roomCode: realBookingCode,
+            roomName: roomName,
+            bedType: roomName.includes('King') ? 'King' : 'Twin',
+            capacity: 2,
+            price: parseFloat(totalFare.toString()),
+            cancellationPolicy: room.CancelPolicies?.[0]?.ChargeType || 'Non-refundable',
+            // ✅ Add supplements to room type
+            supplements: rawSupplements.length > 0 ? rawSupplements : undefined,
+          };
+
           results.push({
             provider: 'tbo',
             hotelCode: hotel.HotelCode,
@@ -311,19 +339,19 @@ export class TBOHotelProvider implements IHotelProvider {
             currency: hotel.Currency || 'INR',
             roomType: roomName, // Room type name for display
             mealPlan: (room.Inclusion || '').includes('Breakfast') ? 'Breakfast Included' : '-',
-            roomTypes: [
-              {
-                roomCode: realBookingCode,
-                roomName: roomName,
-                bedType: roomName.includes('King') ? 'King' : 'Twin',
-                capacity: 2,
-                price: parseFloat(totalFare.toString()),
-                cancellationPolicy: room.CancelPolicies?.[0]?.ChargeType || 'Non-refundable',
-              },
-            ],
+            roomTypes: [roomTypeObj],
             // Use REAL BookingCode from TBO as searchReference
             searchReference: realBookingCode,
             expiresAt: expiresAt,
+            // ✅ Add hotel-level supplement summary
+            supplementSummary: {
+              hasSupplements: supplementSummary.rawSupplements.length > 0,
+              supplementCount: supplementSummary.normalizedSupplements.length,
+              atPropertyChargeCount: supplementSummary.atPropertyCharges.length,
+              requiresReview:
+                supplementSummary.unknownTypeCharges.length > 0 ||
+                supplementSummary.mandatoryChargesCount > 0,
+            },
           });
         }
       }
@@ -847,21 +875,44 @@ export class TBOHotelProvider implements IHotelProvider {
     Children: number;
     ChildrenAges: number[];
   }> {
-    if (criteria.occupancies && criteria.occupancies.length > 0) {
-      return criteria.occupancies.map((occ) => ({
-        Adults: Math.max(occ.adults || 1, 1),
-        Children: Math.max(occ.children || 0, 0),
-        ChildrenAges: (occ.childrenAges || []).map((age) => Number(age)).filter((age) => !Number.isNaN(age)),
-      }));
+    // DEFENSIVE VALIDATION: Ensure occupancies exist and comply with TBO limits
+    if (!criteria.occupancies || criteria.occupancies.length === 0) {
+      throw new InternalServerErrorException(
+        'Occupancies must be defined before building PaxRooms. This indicates a bug in the service layer.',
+      );
     }
 
-    return [
-      {
-        Adults: Math.max(criteria.guestCount, 1),
-        Children: 0,
-        ChildrenAges: [],
-      },
-    ];
+    if (criteria.occupancies.length > TBOHotelProvider.MAX_ROOMS) {
+      throw new InternalServerErrorException(
+        `Number of rooms (${criteria.occupancies.length}) exceeds TBO limit of ${TBOHotelProvider.MAX_ROOMS}.`,
+      );
+    }
+
+    // Validate each occupancy before building PaxRooms payload
+    for (let i = 0; i < criteria.occupancies.length; i++) {
+      const occ = criteria.occupancies[i];
+
+      if (occ.adults > TBOHotelProvider.MAX_ADULTS_PER_ROOM || occ.adults < 0) {
+        throw new InternalServerErrorException(
+          `Occupancy[${i}].adults (${occ.adults}) violates TBO limit. ` +
+          `Must be 0-${TBOHotelProvider.MAX_ADULTS_PER_ROOM}.`,
+        );
+      }
+
+      if (occ.children > TBOHotelProvider.MAX_CHILDREN_PER_ROOM || occ.children < 0) {
+        throw new InternalServerErrorException(
+          `Occupancy[${i}].children (${occ.children}) violates TBO limit. ` +
+          `Must be 0-${TBOHotelProvider.MAX_CHILDREN_PER_ROOM}.`,
+        );
+      }
+    }
+
+    // Build PaxRooms with validated occupancies
+    return criteria.occupancies.map((occ) => ({
+      Adults: Math.max(occ.adults || 1, 1),
+      Children: Math.max(occ.children || 0, 0),
+      ChildrenAges: (occ.childrenAges || []).map((age) => Number(age)).filter((age) => !Number.isNaN(age)),
+    }));
   }
 
   /**
