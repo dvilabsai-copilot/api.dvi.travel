@@ -1,0 +1,80 @@
+============================================================
+STAAH API Test Log
+============================================================
+Test Name: staah-36-ari
+Timestamp: 2026-03-20T00:25:21.000Z
+Status: SUCCESS
+============================================================
+
+REQUEST:
+--------
+URL: http://127.0.0.1:4006/api/v1/staah-test/ari
+Method: POST
+Headers:
+{}
+
+Body:
+{
+  "propertyid": "STAAHTESTHOTEL1",
+  "room_id": "DELUXE_ROOM",
+  "rate_id": "CP_PLAN",
+  "currency": "INR",
+  "apikey": "staah_C3g8K3b1wray989DVih37od3314r6444",
+  "trackingId": "FA81B5AD-E050-4501-81C9-E33EAD371762",
+  "version": "2",
+  "data": [
+    {
+      "from_date": "2026-10-11",
+      "to_date": "2026-10-11",
+      "inventory": "9",
+      "cta": "N",
+      "ctd": "N",
+      "stopsell": "N",
+      "minstay": "1",
+      "maxstay": "5",
+      "minstay_through": "1",
+      "maxstay_through": "3",
+      "amountBeforeTax": {
+        "Rate": "4900",
+        "extrachild": "600.00",
+        "extraadult": "800.00",
+        "obp": {
+          "person1": "4900",
+          "person2": "5400",
+          "person3": "5700"
+        }
+      },
+      "amountAfterTax": {
+        "Rate": "4900",
+        "extrachild": "600",
+        "extraadult": "800",
+        "obp": {
+          "person1": "4900",
+          "person2": "5400",
+          "person3": "5700"
+        }
+      }
+    }
+  ]
+}
+
+RESPONSE:
+---------
+Status: 200
+Headers:
+{
+  "access-control-allow-origin": "*",
+  "connection": "keep-alive",
+  "content-length": "36",
+  "content-type": "application/json; charset=utf-8",
+  "date": "Fri, 20 Mar 2026 00:25:21 GMT",
+  "etag": "W/\"24-ypKu2umBXPlfAf6vrewuMz5Xruo\"",
+  "keep-alive": "timeout=5",
+  "x-powered-by": "Express"
+}
+
+Data:
+{
+  "status": "success",
+  "error_desc": ""
+}
