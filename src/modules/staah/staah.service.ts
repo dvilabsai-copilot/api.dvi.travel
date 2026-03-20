@@ -20,6 +20,8 @@ import {
   RestrictionUpdateRequestDto,
   RestrictionUpdateResponseDto,
 } from './dto/restriction-update.dto';
+import { MappingRequestDto, MappingResponseDto } from './dto/mapping.dto';
+import { AriRequestDto, AriResponseDto } from './dto/ari.dto';
 import {
   ReservationRequestDto,
   ReservationAckDto,
@@ -100,6 +102,168 @@ export class StaahService {
     }
 
     return parsed;
+  }
+
+  private hasDefinedValue(value: unknown): boolean {
+    return value !== undefined && value !== null;
+  }
+
+  private buildAriRatePayload(row: Record<string, any>): Record<string, any> | null {
+    const occupancyRates: Record<string, any> = {};
+
+    if (this.hasDefinedValue(row.amountBeforeTax)) {
+      occupancyRates.amountBeforeTax = row.amountBeforeTax;
+    }
+
+    if (this.hasDefinedValue(row.amountAfterTax)) {
+      occupancyRates.amountAfterTax = row.amountAfterTax;
+    }
+
+    return Object.keys(occupancyRates).length > 0 ? occupancyRates : null;
+  }
+
+  private extractAriRestrictionEntries(
+    row: Record<string, any>,
+  ): Array<{ type: string; value: string }> {
+    const mappings = [
+      { field: 'cta', type: 'cta' },
+      { field: 'ctd', type: 'ctd' },
+      { field: 'stopsell', type: 'stopsell' },
+      { field: 'minstay', type: 'minstay' },
+      { field: 'maxstay', type: 'maxstay' },
+      { field: 'minstay_through', type: 'minstay_through' },
+      { field: 'maxstay_through', type: 'maxstay_through' },
+    ] as const;
+
+    return mappings
+      .filter(({ field }) => this.hasDefinedValue(row[field]))
+      .map(({ field, type }) => ({
+        type,
+        value: String(row[field]),
+      }));
+  }
+
+  private async upsertAriInventoryRow(
+    tx: Prisma.TransactionClient,
+    propertyId: string,
+    roomId: string,
+    startDate: Date,
+    endDate: Date,
+    inventoryValue: unknown,
+  ): Promise<void> {
+    const free = Number(inventoryValue);
+
+    if (!Number.isFinite(free)) {
+      throw new BadRequestException('inventory must be a number when provided.');
+    }
+
+    await tx.staah_inventory.upsert({
+      where: {
+        staah_property_id_room_id_start_date_end_date: {
+          staah_property_id: propertyId,
+          room_id: roomId,
+          start_date: startDate,
+          end_date: endDate,
+        },
+      },
+      update: {
+        free,
+        received_at: new Date(),
+      },
+      create: {
+        staah_property_id: propertyId,
+        room_id: roomId,
+        start_date: startDate,
+        end_date: endDate,
+        free,
+      },
+    });
+  }
+
+  private async upsertAriRateRow(
+    tx: Prisma.TransactionClient,
+    propertyId: string,
+    roomId: string,
+    rateId: string,
+    startDate: Date,
+    endDate: Date,
+    row: Record<string, any>,
+  ): Promise<void> {
+    const occupancyRates = this.buildAriRatePayload(row);
+
+    if (!occupancyRates) {
+      return;
+    }
+
+    await tx.staah_rate.upsert({
+      where: {
+        staah_property_id_room_id_rateplan_id_start_date_end_date: {
+          staah_property_id: propertyId,
+          room_id: roomId,
+          rateplan_id: rateId,
+          start_date: startDate,
+          end_date: endDate,
+        },
+      },
+      update: {
+        occupancy_rates: occupancyRates,
+        received_at: new Date(),
+      },
+      create: {
+        staah_property_id: propertyId,
+        room_id: roomId,
+        rateplan_id: rateId,
+        start_date: startDate,
+        end_date: endDate,
+        occupancy_rates: occupancyRates,
+      },
+    });
+  }
+
+  private async upsertAriRestrictionRows(
+    tx: Prisma.TransactionClient,
+    propertyId: string,
+    roomId: string,
+    rateId: string,
+    startDate: Date,
+    endDate: Date,
+    row: Record<string, any>,
+  ): Promise<void> {
+    const restrictions = this.extractAriRestrictionEntries(row);
+
+    for (const restriction of restrictions) {
+      const identityWhere = {
+        staah_property_id: propertyId,
+        room_id: roomId,
+        rateplan_id: rateId,
+        start_date: startDate,
+        end_date: endDate,
+        type: restriction.type,
+      };
+
+      const existing = await tx.staah_restriction.findFirst({
+        where: identityWhere,
+        select: { id: true },
+      });
+
+      if (existing) {
+        await tx.staah_restriction.updateMany({
+          where: identityWhere,
+          data: {
+            value: restriction.value,
+            received_at: new Date(),
+          },
+        });
+        continue;
+      }
+
+      await tx.staah_restriction.create({
+        data: {
+          ...identityWhere,
+          value: restriction.value,
+        },
+      });
+    }
   }
 
   private buildArrDataRows(
@@ -356,6 +520,72 @@ export class StaahService {
     };
   }
 
+  async getMapping(dto: MappingRequestDto): Promise<MappingResponseDto> {
+    await this.logInbound('mapping', dto.propertyid, null, null, dto);
+
+    const isValid = await this.validatePropertyMapping(dto.propertyid);
+    if (!isValid) {
+      return {
+        room_rate_mapping: [],
+        status: 'fail',
+        error_desc: STAAH_MESSAGES.INVALID_PROPERTY_ID,
+      };
+    }
+
+    const hotel = await this.prisma.dvi_hotel.findFirst({
+      where: {
+        staah_property_id: dto.propertyid,
+        staah_enabled: 1,
+        deleted: { not: true },
+      },
+      select: {
+        hotel_id: true,
+      },
+    });
+
+    const [rooms, ratePlans] = await Promise.all([
+      this.prisma.dvi_hotel_rooms.findMany({
+        where: {
+          hotel_id: hotel?.hotel_id || 0,
+          status: 1,
+          deleted: 0,
+        },
+        select: {
+          room_ID: true,
+          room_ref_code: true,
+          room_title: true,
+        },
+      }),
+      this.prisma.staah_rateplan.findMany({
+        where: {
+          staah_property_id: dto.propertyid,
+        },
+        orderBy: [{ room_id: 'asc' }, { rateplan_id: 'asc' }],
+      }),
+    ]);
+
+    const roomNameById = new Map<string, string>();
+    for (const room of rooms) {
+      const roomName = room.room_title || 'Room';
+      roomNameById.set(String(room.room_ID), roomName);
+      if (room.room_ref_code) {
+        roomNameById.set(room.room_ref_code, roomName);
+      }
+    }
+
+    return {
+      room_rate_mapping: ratePlans.map((ratePlan) => ({
+        room_id: ratePlan.room_id,
+        room_name: roomNameById.get(ratePlan.room_id) || 'Room',
+        rate_id: ratePlan.rateplan_id,
+        rate_name: ratePlan.rateplan_name,
+        manageable: 'Y',
+      })),
+      status: 'success',
+      error_desc: '',
+    };
+  }
+
   async inventoryUpdate(
     dto: InventoryUpdateRequestDto,
   ): Promise<InventoryUpdateResponseDto> {
@@ -480,6 +710,91 @@ export class StaahService {
       return {
         status: 'fail',
         error_desc: `${STAAH_MESSAGES.RATE_UPDATE_FAILED} ${error.message}`,
+      };
+    }
+  }
+
+  async ariUpdate(dto: AriRequestDto): Promise<AriResponseDto> {
+    await this.logInbound('ari', dto.propertyid, dto.room_id, dto.rate_id, dto);
+
+    const isValid = await this.validatePropertyMapping(dto.propertyid);
+    if (!isValid) {
+      return {
+        status: 'fail',
+        error_desc: STAAH_MESSAGES.INVALID_PROPERTY_ID,
+      };
+    }
+
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        for (const rawRow of dto.data) {
+          if (!rawRow || typeof rawRow !== 'object' || Array.isArray(rawRow)) {
+            throw new BadRequestException('Each ARI data row must be a JSON object.');
+          }
+
+          const row = rawRow as Record<string, any>;
+          const hasInventory = this.hasDefinedValue(row.inventory);
+          const hasRate = this.hasDefinedValue(row.amountBeforeTax)
+            || this.hasDefinedValue(row.amountAfterTax);
+          const hasRestrictions = this.extractAriRestrictionEntries(row).length > 0;
+
+          if (!hasInventory && !hasRate && !hasRestrictions) {
+            continue;
+          }
+
+          const startDate = this.parseIsoDateOnly(row.from_date, 'from_date');
+          const endDate = this.parseIsoDateOnly(row.to_date, 'to_date');
+
+          if (hasInventory) {
+            await this.upsertAriInventoryRow(
+              tx,
+              dto.propertyid,
+              dto.room_id,
+              startDate,
+              endDate,
+              row.inventory,
+            );
+          }
+
+          if (hasRate) {
+            await this.upsertAriRateRow(
+              tx,
+              dto.propertyid,
+              dto.room_id,
+              dto.rate_id,
+              startDate,
+              endDate,
+              row,
+            );
+          }
+
+          if (hasRestrictions) {
+            await this.upsertAriRestrictionRows(
+              tx,
+              dto.propertyid,
+              dto.room_id,
+              dto.rate_id,
+              startDate,
+              endDate,
+              row,
+            );
+          }
+        }
+      });
+
+      return {
+        status: 'success',
+        error_desc: '',
+      };
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+
+      this.logger.error(`ARI update error: ${error.message}`);
+      return {
+        status: 'fail',
+        error_desc: `Failed to process ARI update. ${error.message}`,
       };
     }
   }

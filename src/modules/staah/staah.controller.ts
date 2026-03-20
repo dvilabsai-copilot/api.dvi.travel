@@ -30,6 +30,8 @@ import {
   RestrictionUpdateRequestDto,
   RestrictionUpdateResponseDto,
 } from './dto/restriction-update.dto';
+import { MappingRequestDto, MappingResponseDto } from './dto/mapping.dto';
+import { AriRequestDto, AriResponseDto } from './dto/ari.dto';
 import {
   ReservationRequestDto,
   ReservationResponseDto,
@@ -69,6 +71,12 @@ export class StaahController {
     return this.staahService.getRatePlanInfo(dto);
   }
 
+  @Post('mapping')
+  @HttpCode(HttpStatus.OK)
+  async mapping(@Body() dto: MappingRequestDto): Promise<MappingResponseDto> {
+    return this.staahService.getMapping(dto);
+  }
+
   @Post('inventoryUpdate')
   @HttpCode(HttpStatus.OK)
   async inventoryUpdate(
@@ -91,6 +99,12 @@ export class StaahController {
     @Body() dto: RestrictionUpdateRequestDto,
   ): Promise<RestrictionUpdateResponseDto> {
     return this.staahService.restrictionUpdate(dto);
+  }
+
+  @Post('ari')
+  @HttpCode(HttpStatus.OK)
+  async ari(@Body() dto: AriRequestDto): Promise<AriResponseDto> {
+    return this.staahService.ariUpdate(dto);
   }
 
   @Post('reservation')
