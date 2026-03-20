@@ -1,0 +1,1071 @@
+======== REQUEST ========
+{
+  "CheckIn": "2026-05-04",
+  "CheckOut": "2026-05-05",
+  "HotelCodes": "1013903,1016572,1019759,1019773,1027668,1029938,1030703,1030706,1042560,1063998,1078237,1082959,1087049,1107162,1107830,1124503,1128818,1134723,1137002,1139839,1161849,1169520,1212129,1236600,1248631,1251184,1258480,1258682,1265410,1282524,1311276,1347149,1355446,1361345,1370325,1383932,1391922,1467025,1502220,1508529,1582970,1631008,1637999,1690408,1729190,1814800,1818391,5000157,5003712,5003899,5006293,5006297,5007813,5291201,5727543,1035267,1056571,1056615,1087963,1087968,1087970,1087985,1087988,1088035,1088041,1088049,1088051,1088092,1088104,1128868,1128871,1128876,1128879,1128883,1128896,1128900,1128904,1128907,1128949,1128954,1128967,1128996,1129066,1129077,1129080,1129096,1129111,1129134,1129162,1129164,1129252,1129267,1191990,1285665,1285669,1285677,1365382,1369556,1369558,1369572,1369617,1369745,1369746,1369772,1369773,1369805,1369890,1370612,1372387,1372470,1372640,1383789,1383845,1384231,1396318,1402082,1518053,1539765,1735473,1735490,1736880,1736891,1736923,1737899,1738376,1739263,1740012,1741744,1743859,1764249,1771790,1774069,1774092,1774235,1781934,5392050,6107371,6182547,6183771,6183797,6183952,6184426,6184433,6185083,6185198,6185546,6185626,6185842,6186388,6187748,6187953,6189899,6189905,6189983,6190055",
+  "GuestNationality": "IN",
+  "NoOfRooms": 1,
+  "PaxRooms": [
+    {
+      "Adults": 2,
+      "Children": 2,
+      "ChildrenAges": [
+        3,
+        4
+      ]
+    }
+  ],
+  "ResponseTime": 23,
+  "IsDetailedResponse": true,
+  "Filters": {
+    "Refundable": true,
+    "NoOfRooms": 0,
+    "MealType": "WithMeal",
+    "OrderBy": 0,
+    "StarRating": 0,
+    "HotelName": null
+  }
+}
+
+======== RESPONSE ========
+{
+  "Status": {
+    "Code": 200,
+    "Description": "Successful"
+  },
+  "HotelResult": [
+    {
+      "HotelCode": "1818391",
+      "Currency": "INR",
+      "Rooms": [
+        {
+          "Name": [
+            "Family Room,1 King Bed and 2 Twin Beds,NonSmoking"
+          ],
+          "BookingCode": "1818391!TB!1!TB!cbd34015-2429-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "Inclusion": "Free breakfast,Free self parking",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 17963.34
+              }
+            ]
+          ],
+          "TotalFare": 22412.96,
+          "TotalTax": 4449.63,
+          "CancelPolicies": [
+            {
+              "FromDate": "19-03-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "02-05-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "BreakFast",
+          "IsRefundable": true,
+          "Supplements": [
+            [
+              {
+                "Index": 1,
+                "Type": "AtProperty",
+                "Description": "mandatory_tax",
+                "Price": 15,
+                "Currency": "AED"
+              }
+            ]
+          ],
+          "WithTransfers": false
+        },
+        {
+          "Name": [
+            "Family Room,1 King Bed and 2 Twin Beds,NonSmoking"
+          ],
+          "BookingCode": "1818391!TB!5!TB!cbd34015-2429-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "Inclusion": "Free breakfast,Free self parking",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 19368.32
+              }
+            ]
+          ],
+          "TotalFare": 23776.33,
+          "TotalTax": 4408.01,
+          "CancelPolicies": [
+            {
+              "FromDate": "19-03-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "28-04-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "BreakFast",
+          "IsRefundable": true,
+          "Supplements": [
+            [
+              {
+                "Index": 1,
+                "Type": "AtProperty",
+                "Description": "mandatory_tax",
+                "Price": 15,
+                "Currency": "AED"
+              }
+            ]
+          ],
+          "WithTransfers": false
+        },
+        {
+          "Name": [
+            "Family Room,1 King Bed and 2 Twin Beds,NonSmoking"
+          ],
+          "BookingCode": "1818391!TB!6!TB!cbd34015-2429-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "Inclusion": "Half board",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 20777.66
+              }
+            ]
+          ],
+          "TotalFare": 25798.53,
+          "TotalTax": 5020.87,
+          "CancelPolicies": [
+            {
+              "FromDate": "19-03-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "02-05-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "Half_Board",
+          "IsRefundable": true,
+          "Supplements": [
+            [
+              {
+                "Index": 1,
+                "Type": "AtProperty",
+                "Description": "mandatory_tax",
+                "Price": 15,
+                "Currency": "AED"
+              }
+            ]
+          ],
+          "WithTransfers": false
+        }
+      ]
+    },
+    {
+      "HotelCode": "1282524",
+      "Currency": "INR",
+      "Rooms": [
+        {
+          "Name": [
+            "Superior Room, 1 Double Bed,NonSmoking"
+          ],
+          "BookingCode": "1282524!TB!1!TB!cbd34015-2429-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "Inclusion": "Half board",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 7509.61
+              }
+            ]
+          ],
+          "TotalFare": 9308.11,
+          "TotalTax": 1798.5,
+          "RoomPromotion": [
+            "Private sale"
+          ],
+          "CancelPolicies": [
+            {
+              "FromDate": "19-03-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "02-05-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "Half_Board",
+          "IsRefundable": true,
+          "Supplements": [
+            [
+              {
+                "Index": 1,
+                "Type": "AtProperty",
+                "Description": "mandatory_tax",
+                "Price": 15,
+                "Currency": "AED"
+              }
+            ]
+          ],
+          "WithTransfers": false
+        },
+        {
+          "Name": [
+            "Superior Room, 1 King Bed, City View,NonSmoking"
+          ],
+          "BookingCode": "1282524!TB!3!TB!cbd34015-2429-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "Inclusion": "Half board",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 7509.61
+              }
+            ]
+          ],
+          "TotalFare": 9308.11,
+          "TotalTax": 1798.5,
+          "RoomPromotion": [
+            "Private sale"
+          ],
+          "CancelPolicies": [
+            {
+              "FromDate": "19-03-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "02-05-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "Half_Board",
+          "IsRefundable": true,
+          "Supplements": [
+            [
+              {
+                "Index": 1,
+                "Type": "AtProperty",
+                "Description": "mandatory_tax",
+                "Price": 15,
+                "Currency": "AED"
+              }
+            ]
+          ],
+          "WithTransfers": false
+        }
+      ]
+    },
+    {
+      "HotelCode": "1631008",
+      "Currency": "INR",
+      "Rooms": [
+        {
+          "Name": [
+            "One Bedroom Apartment with Kitchen,2 Twin Beds,NonSmoking"
+          ],
+          "BookingCode": "1631008!TB!7!TB!cbd34015-2429-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "Inclusion": "Breakfast buffet,Free valet parking,Free self parking",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 27586.47
+              }
+            ]
+          ],
+          "TotalFare": 32031.01,
+          "TotalTax": 4444.54,
+          "RoomPromotion": [
+            "Save8%"
+          ],
+          "CancelPolicies": [
+            {
+              "FromDate": "19-03-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "03-04-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "BreakFast",
+          "IsRefundable": true,
+          "Supplements": [
+            [
+              {
+                "Index": 1,
+                "Type": "AtProperty",
+                "Description": "mandatory_tax",
+                "Price": 15,
+                "Currency": "AED"
+              }
+            ]
+          ],
+          "WithTransfers": false,
+          "BeddingGroup": "Bedding type is not guaranteed and it will be allocated by hotel based on availability"
+        },
+        {
+          "Name": [
+            "Family Room (4 adults),2 King Beds,NonSmoking"
+          ],
+          "BookingCode": "1631008!TB!1!TB!cbd34015-2429-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "Inclusion": "Free valet parking,Continental breakfast,Free self parking",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 27117.91
+              }
+            ]
+          ],
+          "TotalFare": 33731.23,
+          "TotalTax": 6613.33,
+          "CancelPolicies": [
+            {
+              "FromDate": "19-03-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "02-05-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "BreakFast",
+          "IsRefundable": true,
+          "Supplements": [
+            [
+              {
+                "Index": 1,
+                "Type": "AtProperty",
+                "Description": "mandatory_tax",
+                "Price": 20,
+                "Currency": "AED"
+              }
+            ]
+          ],
+          "WithTransfers": false
+        },
+        {
+          "Name": [
+            "Emiri Suite,1 King Bed and 1 Twin Bed,NonSmoking"
+          ],
+          "BookingCode": "1631008!TB!5!TB!cbd34015-2429-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "Inclusion": "Free valet parking,Continental breakfast,Free self parking",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 50531.39
+              }
+            ]
+          ],
+          "TotalFare": 62856.34,
+          "TotalTax": 12324.95,
+          "CancelPolicies": [
+            {
+              "FromDate": "19-03-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "02-05-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "BreakFast",
+          "IsRefundable": true,
+          "Supplements": [
+            [
+              {
+                "Index": 1,
+                "Type": "AtProperty",
+                "Description": "mandatory_tax",
+                "Price": 20,
+                "Currency": "AED"
+              }
+            ]
+          ],
+          "WithTransfers": false
+        },
+        {
+          "Name": [
+            "Prince Suite,1 King Bed and 2 Twin Beds,NonSmoking"
+          ],
+          "BookingCode": "1631008!TB!9!TB!cbd34015-2429-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "Inclusion": "Free valet parking,Continental breakfast,Free self parking",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 71816.09
+              }
+            ]
+          ],
+          "TotalFare": 89332.26,
+          "TotalTax": 17516.17,
+          "CancelPolicies": [
+            {
+              "FromDate": "19-03-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "02-05-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "BreakFast",
+          "IsRefundable": true,
+          "Supplements": [
+            [
+              {
+                "Index": 1,
+                "Type": "AtProperty",
+                "Description": "mandatory_tax",
+                "Price": 20,
+                "Currency": "AED"
+              }
+            ]
+          ],
+          "WithTransfers": false
+        }
+      ]
+    },
+    {
+      "HotelCode": "1258480",
+      "Currency": "INR",
+      "Rooms": [
+        {
+          "Name": [
+            "Apartment, 1 Bedroom,1 King Bed,NonSmoking"
+          ],
+          "BookingCode": "1258480!TB!1!TB!cbd34015-2429-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "Inclusion": "Free breakfast,Free self parking",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 13528.13
+              }
+            ]
+          ],
+          "TotalFare": 16754.65,
+          "TotalTax": 3226.53,
+          "RoomPromotion": [
+            "Save10%"
+          ],
+          "CancelPolicies": [
+            {
+              "FromDate": "19-03-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "02-05-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "BreakFast",
+          "IsRefundable": true,
+          "Supplements": [
+            [
+              {
+                "Index": 1,
+                "Type": "AtProperty",
+                "Description": "mandatory_tax",
+                "Price": 15,
+                "Currency": "AED"
+              }
+            ]
+          ],
+          "WithTransfers": false
+        }
+      ]
+    },
+    {
+      "HotelCode": "1137002",
+      "Currency": "INR",
+      "Rooms": [
+        {
+          "Name": [
+            "Premium Double or Twin Room,2 Twin Beds,NonSmoking"
+          ],
+          "BookingCode": "1137002!TB!3!TB!cbd34015-2429-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "Inclusion": "Free valet parking,Breakfast buffet,Free self parking",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 13031.08
+              }
+            ]
+          ],
+          "TotalFare": 16028.86,
+          "TotalTax": 2997.78,
+          "RoomPromotion": [
+            "Save15%"
+          ],
+          "CancelPolicies": [
+            {
+              "FromDate": "19-03-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "30-04-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "BreakFast",
+          "IsRefundable": true,
+          "Supplements": [
+            [
+              {
+                "Index": 1,
+                "Type": "AtProperty",
+                "Description": "mandatory_tax",
+                "Price": 15,
+                "Currency": "AED"
+              }
+            ]
+          ],
+          "WithTransfers": false,
+          "BeddingGroup": "Bedding type is not guaranteed and it will be allocated by hotel based on availability"
+        },
+        {
+          "Name": [
+            "Skyline Premium Room,2 Twin Beds,NonSmoking"
+          ],
+          "BookingCode": "1137002!TB!1!TB!cbd34015-2429-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "Inclusion": "Free valet parking,Breakfast buffet,Free self parking",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 13506.6
+              }
+            ]
+          ],
+          "TotalFare": 16612.86,
+          "TotalTax": 3106.26,
+          "RoomPromotion": [
+            "Save15%"
+          ],
+          "CancelPolicies": [
+            {
+              "FromDate": "19-03-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "30-04-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "BreakFast",
+          "IsRefundable": true,
+          "Supplements": [
+            [
+              {
+                "Index": 1,
+                "Type": "AtProperty",
+                "Description": "mandatory_tax",
+                "Price": 15,
+                "Currency": "AED"
+              }
+            ]
+          ],
+          "WithTransfers": false,
+          "BeddingGroup": "Bedding type is not guaranteed and it will be allocated by hotel based on availability"
+        }
+      ]
+    },
+    {
+      "HotelCode": "1383932",
+      "Currency": "INR",
+      "Rooms": [
+        {
+          "Name": [
+            "Executive Suite,1 Double Bed,NonSmoking"
+          ],
+          "BookingCode": "1383932!TB!4!TB!cbd34015-2429-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "Inclusion": "Free breakfast,Free valet parking,Free self parking",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 17822.52
+              }
+            ]
+          ],
+          "TotalFare": 21894.9,
+          "TotalTax": 4072.38,
+          "RoomPromotion": [
+            "Save:6%"
+          ],
+          "CancelPolicies": [
+            {
+              "FromDate": "19-03-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "01-05-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "BreakFast",
+          "IsRefundable": true,
+          "Supplements": [
+            [
+              {
+                "Index": 1,
+                "Type": "AtProperty",
+                "Description": "mandatory_tax",
+                "Price": 15,
+                "Currency": "AED"
+              }
+            ]
+          ],
+          "WithTransfers": false
+        },
+        {
+          "Name": [
+            "Family Room,2 King Beds,NonSmoking"
+          ],
+          "BookingCode": "1383932!TB!2!TB!cbd34015-2429-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "Inclusion": "Free breakfast,Free valet parking,Free self parking",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 20046.4
+              }
+            ]
+          ],
+          "TotalFare": 24630.78,
+          "TotalTax": 4584.39,
+          "RoomPromotion": [
+            "Save:7%"
+          ],
+          "CancelPolicies": [
+            {
+              "FromDate": "19-03-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "01-05-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "BreakFast",
+          "IsRefundable": true,
+          "Supplements": [
+            [
+              {
+                "Index": 1,
+                "Type": "AtProperty",
+                "Description": "mandatory_tax",
+                "Price": 15,
+                "Currency": "AED"
+              }
+            ]
+          ],
+          "WithTransfers": false
+        }
+      ]
+    },
+    {
+      "HotelCode": "1729190",
+      "Currency": "INR",
+      "Rooms": [
+        {
+          "Name": [
+            "Family Room, Connecting Rooms,1 King Bed and 2 Twin Beds,NonSmoking"
+          ],
+          "BookingCode": "1729190!TB!5!TB!cbd34015-2429-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "Inclusion": "Free breakfast,Free valet parking,Free self parking",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 21978.04
+              }
+            ]
+          ],
+          "TotalFare": 27332.84,
+          "TotalTax": 5354.81,
+          "CancelPolicies": [
+            {
+              "FromDate": "19-03-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "02-05-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "BreakFast",
+          "IsRefundable": true,
+          "Supplements": [
+            [
+              {
+                "Index": 1,
+                "Type": "AtProperty",
+                "Description": "mandatory_tax",
+                "Price": 15,
+                "Currency": "AED"
+              }
+            ]
+          ],
+          "WithTransfers": false
+        },
+        {
+          "Name": [
+            "Family Room, Connecting Rooms,1 King Bed and 2 Twin Beds,NonSmoking"
+          ],
+          "BookingCode": "1729190!TB!4!TB!cbd34015-2429-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "Inclusion": "Free breakfast,Free valet parking,Free self parking",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 23886.76
+              }
+            ]
+          ],
+          "TotalFare": 29296.65,
+          "TotalTax": 5409.9,
+          "CancelPolicies": [
+            {
+              "FromDate": "19-03-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "28-04-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "BreakFast",
+          "IsRefundable": true,
+          "Supplements": [
+            [
+              {
+                "Index": 1,
+                "Type": "AtProperty",
+                "Description": "mandatory_tax",
+                "Price": 15,
+                "Currency": "AED"
+              }
+            ]
+          ],
+          "WithTransfers": false
+        },
+        {
+          "Name": [
+            "Family Room, Connecting Rooms,1 King Bed and 2 Twin Beds,NonSmoking"
+          ],
+          "BookingCode": "1729190!TB!1!TB!cbd34015-2429-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "Inclusion": "Half board",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 24782.45
+              }
+            ]
+          ],
+          "TotalFare": 30814.36,
+          "TotalTax": 6031.91,
+          "CancelPolicies": [
+            {
+              "FromDate": "19-03-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "02-05-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "Half_Board",
+          "IsRefundable": true,
+          "Supplements": [
+            [
+              {
+                "Index": 1,
+                "Type": "AtProperty",
+                "Description": "mandatory_tax",
+                "Price": 15,
+                "Currency": "AED"
+              }
+            ]
+          ],
+          "WithTransfers": false
+        }
+      ]
+    },
+    {
+      "HotelCode": "1029938",
+      "Currency": "INR",
+      "Rooms": [
+        {
+          "Name": [
+            "Executive Studio  - Free Bus service to La Mer Beach at Jumeirah with Beach Mats and Beach Towels,1 King Bed,NonSmoking"
+          ],
+          "BookingCode": "1029938!TB!1!TB!cbd34015-2429-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "Inclusion": "Breakfast buffet,Free welcome drink,Free self parking",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 7313.45
+              }
+            ]
+          ],
+          "TotalFare": 8975.49,
+          "TotalTax": 1662.04,
+          "RoomPromotion": [
+            "Save:30%"
+          ],
+          "CancelPolicies": [
+            {
+              "FromDate": "19-03-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "01-05-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "BreakFast",
+          "IsRefundable": true,
+          "Supplements": [
+            [
+              {
+                "Index": 1,
+                "Type": "AtProperty",
+                "Description": "mandatory_tax",
+                "Price": 15,
+                "Currency": "AED"
+              }
+            ]
+          ],
+          "WithTransfers": false,
+          "BeddingGroup": "Bedding type is not guaranteed and it will be allocated by hotel based on availability"
+        },
+        {
+          "Name": [
+            "Executive Studio  - Free Bus service to La Mer Beach at Jumeirah with Beach Mats and Beach Towels,1 Twin Bed,NonSmoking"
+          ],
+          "BookingCode": "1029938!TB!3!TB!cbd34015-2429-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "Inclusion": "Breakfast buffet,Free welcome drink,Free self parking",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 7313.45
+              }
+            ]
+          ],
+          "TotalFare": 8975.49,
+          "TotalTax": 1662.04,
+          "RoomPromotion": [
+            "Save:30%"
+          ],
+          "CancelPolicies": [
+            {
+              "FromDate": "19-03-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "01-05-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "BreakFast",
+          "IsRefundable": true,
+          "Supplements": [
+            [
+              {
+                "Index": 1,
+                "Type": "AtProperty",
+                "Description": "mandatory_tax",
+                "Price": 15,
+                "Currency": "AED"
+              }
+            ]
+          ],
+          "WithTransfers": false,
+          "BeddingGroup": "Bedding type is not guaranteed and it will be allocated by hotel based on availability"
+        },
+        {
+          "Name": [
+            "Interconnecting Executive Studio,1 King Bed, 2 Twin Beds and 1 Twin Sofa Bed,NonSmoking"
+          ],
+          "BookingCode": "1029938!TB!9!TB!cbd34015-2429-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "Inclusion": "Breakfast buffet,Free welcome drink,Free self parking",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 17279.12
+              }
+            ]
+          ],
+          "TotalFare": 21204.11,
+          "TotalTax": 3925,
+          "RoomPromotion": [
+            "Save:30%"
+          ],
+          "CancelPolicies": [
+            {
+              "FromDate": "19-03-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "01-05-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "BreakFast",
+          "IsRefundable": true,
+          "Supplements": [
+            [
+              {
+                "Index": 1,
+                "Type": "AtProperty",
+                "Description": "mandatory_tax",
+                "Price": 15,
+                "Currency": "AED"
+              }
+            ]
+          ],
+          "WithTransfers": false
+        }
+      ]
+    },
+    {
+      "HotelCode": "1212129",
+      "Currency": "INR",
+      "Rooms": [
+        {
+          "Name": [
+            "Classic Studio Suite - Free Bus service to La Mer Beach at Jumeirah with Beach Mats and Beach Towels,1 King Bed and 1 Twin Sofa Bed,NonSmoking"
+          ],
+          "BookingCode": "1212129!TB!2!TB!cbd34015-2429-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "Inclusion": "Breakfast buffet,Free self parking",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 7275.14
+              }
+            ]
+          ],
+          "TotalFare": 9019.39,
+          "TotalTax": 1744.26,
+          "RoomPromotion": [
+            "Save:31%"
+          ],
+          "CancelPolicies": [
+            {
+              "FromDate": "19-03-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "01-05-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "BreakFast",
+          "IsRefundable": true,
+          "Supplements": [
+            [
+              {
+                "Index": 1,
+                "Type": "AtProperty",
+                "Description": "mandatory_tax",
+                "Price": 15,
+                "Currency": "AED"
+              }
+            ]
+          ],
+          "WithTransfers": false
+        },
+        {
+          "Name": [
+            "Interconnecting Studio,2 Twin Beds, 1 Queen Bed and 2 Twin Sofa Beds,NonSmoking"
+          ],
+          "BookingCode": "1212129!TB!4!TB!cbd34015-2429-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "Inclusion": "Free breakfast,Free self parking",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 14546.28
+              }
+            ]
+          ],
+          "TotalFare": 18030.47,
+          "TotalTax": 3484.19,
+          "RoomPromotion": [
+            "Save:31%"
+          ],
+          "CancelPolicies": [
+            {
+              "FromDate": "19-03-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "01-05-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "BreakFast",
+          "IsRefundable": true,
+          "Supplements": [
+            [
+              {
+                "Index": 1,
+                "Type": "AtProperty",
+                "Description": "mandatory_tax",
+                "Price": 15,
+                "Currency": "AED"
+              }
+            ]
+          ],
+          "WithTransfers": false
+        }
+      ]
+    }
+  ]
+}
+
+======== METADATA ========
+- timestamp: 2026-03-20T06:55:38.536Z
+- endpoint: https://affiliate.tektravels.com/HotelAPI/Search
+- status code: 200
+- case id: 6
+- step name: search
+- method: POST
+- status: success
+- error: none
+- skipped reason: none

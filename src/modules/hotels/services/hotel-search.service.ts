@@ -152,14 +152,14 @@ export class HotelSearchService {
           );
         }
 
-        if ((!normalizedOccupancies || normalizedOccupancies.length === 0) && roomCount === 1) {
-          normalizedOccupancies = [
-            {
-              adults: safeAdultCount,
-              children: safeChildCount,
-              childrenAges: safeChildAges,
-            },
-          ];
+        // Derive occupancies from adult/child counts if not explicitly provided
+        if (!normalizedOccupancies || normalizedOccupancies.length === 0) {
+          normalizedOccupancies = this.deriveOccupancies(
+            roomCount,
+            safeAdultCount,
+            safeChildCount,
+            safeChildAges,
+          );
         }
       }
 
@@ -281,13 +281,66 @@ export class HotelSearchService {
     });
   }
 
+  private deriveOccupancies(
+    roomCount: number,
+    adultCount: number,
+    childCount: number,
+    childAges?: number[],
+  ): Array<{ adults: number; children: number; childrenAges?: number[] }> {
+    // Validate that even distribution across rooms won't exceed TBO limits
+    const maxAdultsInAnyRoom = Math.ceil(adultCount / roomCount);
+    const maxChildrenInAnyRoom = Math.ceil(childCount / roomCount);
+
+    if (maxAdultsInAnyRoom > HotelSearchService.MAX_ADULTS_PER_ROOM) {
+      throw new BadRequestException(
+        `Cannot distribute ${adultCount} adults across ${roomCount} room(s). ` +
+        `Minimum ${maxAdultsInAnyRoom} adults per room exceeds TBO limit of ${HotelSearchService.MAX_ADULTS_PER_ROOM}.`,
+      );
+    }
+
+    if (maxChildrenInAnyRoom > HotelSearchService.MAX_CHILDREN_PER_ROOM) {
+      throw new BadRequestException(
+        `Cannot distribute ${childCount} children across ${roomCount} room(s). ` +
+        `Minimum ${maxChildrenInAnyRoom} children per room exceeds TBO limit of ${HotelSearchService.MAX_CHILDREN_PER_ROOM}.`,
+      );
+    }
+
+    // Distribute guests evenly across rooms
+    const occupancies: Array<{ adults: number; children: number; childrenAges?: number[] }> = [];
+    let remainingAdults = adultCount;
+    let remainingChildren = childCount;
+    let childAgeIndex = 0;
+
+    for (let i = 0; i < roomCount; i++) {
+      const roomsLeft = roomCount - i;
+      const adultsInThisRoom = Math.ceil(remainingAdults / roomsLeft);
+      const childrenInThisRoom = Math.ceil(remainingChildren / roomsLeft);
+
+      const roomChildAges = (childAges || []).slice(childAgeIndex, childAgeIndex + childrenInThisRoom);
+
+      occupancies.push({
+        adults: adultsInThisRoom,
+        children: childrenInThisRoom,
+        childrenAges: roomChildAges.length > 0 ? roomChildAges : undefined,
+      });
+
+      remainingAdults -= adultsInThisRoom;
+      remainingChildren -= childrenInThisRoom;
+      childAgeIndex += childrenInThisRoom;
+    }
+
+    return occupancies;
+  }
+
   private validateOccupancies(
     roomCount: number,
     guestCount: number,
     occupancies?: Array<{ adults: number; children: number; childrenAges?: number[] }>,
   ): void {
     if (!occupancies || occupancies.length === 0) {
-      return;
+      throw new BadRequestException(
+        'Occupancies must be provided and non-empty. This indicates a missing derivation from adultCount/childCount.',
+      );
     }
 
     if (occupancies.length !== roomCount) {

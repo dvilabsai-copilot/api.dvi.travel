@@ -1,0 +1,72 @@
+{
+  "status": 200,
+  "ok": true,
+  "request": {
+    "cityCode": "Madurai",
+    "checkInDate": "2026-04-05",
+    "checkOutDate": "2026-04-06",
+    "roomCount": 1,
+    "guestCount": 2,
+    "guestNationality": "IN",
+    "providers": [
+      "tbo"
+    ]
+  },
+  "totalResults": 32,
+  "providers": [
+    "tbo"
+  ],
+  "sampleHotels": [
+    {
+      "name": "P K Rresidency",
+      "provider": "tbo",
+      "city": null
+    },
+    {
+      "name": "Hotel Lotus",
+      "provider": "tbo",
+      "city": null
+    },
+    {
+      "name": "P K Rresidency",
+      "provider": "tbo",
+      "city": null
+    },
+    {
+      "name": "Hotel Lotus",
+      "provider": "tbo",
+      "city": null
+    },
+    {
+      "name": "Hotel Lotus",
+      "provider": "tbo",
+      "city": null
+    },
+    {
+      "name": "Astoria Hotels",
+      "provider": "tbo",
+      "city": null
+    },
+    {
+      "name": "Heritage Residency",
+      "provider": "tbo",
+      "city": null
+    },
+    {
+      "name": "V Grand Hotel",
+      "provider": "tbo",
+      "city": null
+    },
+    {
+      "name": "V Grand Hotel",
+      "provider": "tbo",
+      "city": null
+    },
+    {
+      "name": "Heritage Residency",
+      "provider": "tbo",
+      "city": null
+    }
+  ],
+  "message": "Found 32 hotels"
+}

@@ -37,6 +37,13 @@ export interface HotelSearchResult {
   mealPlan?: string; // Meal plan info (if available)
   searchReference: string; // Used for confirmation
   expiresAt: Date; // When search result expires
+  // Supplement summary at hotel level
+  supplementSummary?: {
+    hasSupplements: boolean;
+    supplementCount: number;
+    atPropertyChargeCount: number;
+    requiresReview: boolean; // true if unknown types or mandatory charges
+  };
 }
 
 export interface RoomType {
@@ -46,6 +53,15 @@ export interface RoomType {
   capacity: number;
   price: number;
   cancellationPolicy: string;
+  // Supplements (optional - from search response)
+  supplements?: Array<{
+    type: string; // "AtProperty", etc
+    description: string;
+    amount: number;
+    currency: string;
+    chargeType?: string;
+    fromDate?: string;
+  }>;
 }
 
 export interface HotelSearchCriteria {

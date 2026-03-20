@@ -1,0 +1,55 @@
+TBO Certification Observations
+
+1. Checkin/Checkout usage per case
+- Case 1: 2026-04-24 -> 2026-04-25
+- Case 2: 2026-04-26 -> 2026-04-27
+- Case 3: 2026-04-28 -> 2026-04-29
+- Case 4: 2026-04-30 -> 2026-05-01
+- Case 5: 2026-05-02 -> 2026-05-03
+- Case 6: 2026-05-04 -> 2026-05-05
+- Case 7: 2026-05-06 -> 2026-05-07
+- Case 8: 2026-05-08 -> 2026-05-09
+
+2. GuestNationality per case
+- Case 1: IN
+- Case 2: AE
+- Case 3: IN
+- Case 4: IN
+- Case 5: IN
+- Case 6: IN
+- Case 7: US
+- Case 8: US
+
+3. PaymentMode per case
+- Case 1: Limit
+- Case 2: Limit
+- Case 3: Limit
+- Case 4: Limit
+- Case 5: Limit
+- Case 6: Limit
+- Case 7: Limit
+- Case 8: Limit
+
+4. Titles per case
+- Case 1: Mr
+- Case 2: Mr, Ms, Miss
+- Case 3: Mr, Ms
+- Case 4: Mr, Miss, Ms, Mrs
+- Case 5: Mr
+- Case 6: Mr, Ms, Miss
+- Case 7: Mr, Ms
+- Case 8: Mr, Miss, Ms, Mrs
+
+5. NoOfRooms usage per case
+- Case 1: NoOfRooms=1, Filters.NoOfRooms=0
+- Case 2: NoOfRooms=1, Filters.NoOfRooms=0
+- Case 3: NoOfRooms=2, Filters.NoOfRooms=0
+- Case 4: NoOfRooms=2, Filters.NoOfRooms=0
+- Case 5: NoOfRooms=1, Filters.NoOfRooms=0
+- Case 6: NoOfRooms=1, Filters.NoOfRooms=0
+- Case 7: NoOfRooms=2, Filters.NoOfRooms=0
+- Case 8: NoOfRooms=2, Filters.NoOfRooms=0
+
+Additional checks
+- Non-IN GuestNationality used: yes
+- PaymentMode=Limit used in prebook payloads: yes

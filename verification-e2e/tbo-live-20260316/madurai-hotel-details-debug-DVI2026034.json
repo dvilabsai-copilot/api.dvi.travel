@@ -1,0 +1,179 @@
+{
+  "quoteId": "DVI2026034",
+  "apiBase": "http://127.0.0.1:4006/api/v1",
+  "detailsStatus": 200,
+  "hotelDetailsStatus": 200,
+  "rowSummary": {
+    "totalRows": 104,
+    "maduraiRows": 47,
+    "maduraiNoHotelRows": 0,
+    "maduraiRealRows": 47,
+    "sampleMaduraiRows": [
+      {
+        "groupType": 1,
+        "itineraryRouteId": 382,
+        "day": "Day 3 | 2026-04-28",
+        "destination": "Madurai",
+        "hotelId": 1739944,
+        "hotelName": "P K Rresidency",
+        "category": 2,
+        "roomType": "Standard Double Room AC,2 Double Beds,NonSmoking",
+        "mealPlan": "-",
+        "totalHotelCost": 2119,
+        "totalHotelTaxAmount": 0,
+        "searchReference": "1739944!TB!2!TB!fe55e930-20f3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+        "bookingCode": "1739944",
+        "provider": "tbo",
+        "voucherCancelled": false,
+        "itineraryPlanHotelDetailsId": 0,
+        "date": "2026-04-28"
+      },
+      {
+        "groupType": 1,
+        "itineraryRouteId": 382,
+        "day": "Day 3 | 2026-04-28",
+        "destination": "Madurai",
+        "hotelId": 1739944,
+        "hotelName": "P K Rresidency",
+        "category": 2,
+        "roomType": "Standard Double Room AC,2 Double Beds,NonSmoking",
+        "mealPlan": "-",
+        "totalHotelCost": 2627,
+        "totalHotelTaxAmount": 0,
+        "searchReference": "1739944!TB!1!TB!fe55e930-20f3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+        "bookingCode": "1739944",
+        "provider": "tbo",
+        "voucherCancelled": false,
+        "itineraryPlanHotelDetailsId": 0,
+        "date": "2026-04-28"
+      },
+      {
+        "groupType": 1,
+        "itineraryRouteId": 382,
+        "day": "Day 3 | 2026-04-28",
+        "destination": "Madurai",
+        "hotelId": 1663585,
+        "hotelName": "Hotel Lotus",
+        "category": 2,
+        "roomType": "Standard Double Room, 1 King Bed, Accessible,NonSmoking",
+        "mealPlan": "-",
+        "totalHotelCost": 3196,
+        "totalHotelTaxAmount": 0,
+        "searchReference": "1663585!TB!3!TB!fe55e930-20f3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+        "bookingCode": "1663585",
+        "provider": "tbo",
+        "voucherCancelled": false,
+        "itineraryPlanHotelDetailsId": 0,
+        "date": "2026-04-28"
+      },
+      {
+        "groupType": 1,
+        "itineraryRouteId": 382,
+        "day": "Day 3 | 2026-04-28",
+        "destination": "Madurai",
+        "hotelId": 1663585,
+        "hotelName": "Hotel Lotus",
+        "category": 2,
+        "roomType": "Deluxe Double Room, 1 King Bed, Accessible,NonSmoking",
+        "mealPlan": "-",
+        "totalHotelCost": 3412,
+        "totalHotelTaxAmount": 0,
+        "searchReference": "1663585!TB!5!TB!fe55e930-20f3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+        "bookingCode": "1663585",
+        "provider": "tbo",
+        "voucherCancelled": false,
+        "itineraryPlanHotelDetailsId": 0,
+        "date": "2026-04-28"
+      },
+      {
+        "groupType": 1,
+        "itineraryRouteId": 382,
+        "day": "Day 3 | 2026-04-28",
+        "destination": "Madurai",
+        "hotelId": 1663585,
+        "hotelName": "Hotel Lotus",
+        "category": 2,
+        "roomType": "Business Twin Room, 2 Twin Beds,NonSmoking",
+        "mealPlan": "-",
+        "totalHotelCost": 3626,
+        "totalHotelTaxAmount": 0,
+        "searchReference": "1663585!TB!4!TB!fe55e930-20f3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+        "bookingCode": "1663585",
+        "provider": "tbo",
+        "voucherCancelled": false,
+        "itineraryPlanHotelDetailsId": 0,
+        "date": "2026-04-28"
+      },
+      {
+        "groupType": 1,
+        "itineraryRouteId": 382,
+        "day": "Day 3 | 2026-04-28",
+        "destination": "Madurai",
+        "hotelId": 1366969,
+        "hotelName": "Astoria Hotels",
+        "category": 2,
+        "roomType": "Deluxe Double Room,1 Double Bed,NonSmoking",
+        "mealPlan": "-",
+        "totalHotelCost": 3656,
+        "totalHotelTaxAmount": 0,
+        "searchReference": "1366969!TB!1!TB!fe55e930-20f3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+        "bookingCode": "1366969",
+        "provider": "tbo",
+        "voucherCancelled": false,
+        "itineraryPlanHotelDetailsId": 0,
+        "date": "2026-04-28"
+      }
+    ]
+  },
+  "maduraiDates": [
+    "2026-04-28",
+    "2026-04-29",
+    "2026-04-30"
+  ],
+  "maduraiSearchChecks": [
+    {
+      "checkInDate": "2026-04-28",
+      "checkOutDate": "2026-04-29",
+      "withoutNationality": {
+        "status": 400,
+        "message": "guestNationality is required as ISO-2 code when searching TBO hotels (example: IN)."
+      },
+      "withNationality": {
+        "status": 200,
+        "message": "Found 31 hotels",
+        "totalResults": 31,
+        "sampleHotel": "P K Rresidency"
+      }
+    },
+    {
+      "checkInDate": "2026-04-29",
+      "checkOutDate": "2026-04-30",
+      "withoutNationality": {
+        "status": 400,
+        "message": "guestNationality is required as ISO-2 code when searching TBO hotels (example: IN)."
+      },
+      "withNationality": {
+        "status": 200,
+        "message": "Found 33 hotels",
+        "totalResults": 33,
+        "sampleHotel": "P K Rresidency"
+      }
+    },
+    {
+      "checkInDate": "2026-04-30",
+      "checkOutDate": "2026-05-01",
+      "withoutNationality": {
+        "status": 400,
+        "message": "guestNationality is required as ISO-2 code when searching TBO hotels (example: IN)."
+      },
+      "withNationality": {
+        "status": 200,
+        "message": "Found 32 hotels",
+        "totalResults": 32,
+        "sampleHotel": "P K Rresidency"
+      }
+    }
+  ],
+  "inferredReason": "Madurai real hotels are present in hotel_details response for this quote.",
+  "timestamp": "2026-03-16T04:52:58.835Z"
+}

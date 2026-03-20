@@ -1,0 +1,38 @@
+======== REQUEST ========
+{
+  "ClientId": "ApiIntegrationNew",
+  "UserName": "Doview",
+  "Password": "Doview@12345",
+  "EndUserIp": "192.168.1.1"
+}
+
+======== RESPONSE ========
+{
+  "Status": 1,
+  "TokenId": "2f9ade7e-ad68-47ed-a817-7cf29d78bd39",
+  "Error": {
+    "ErrorCode": 0,
+    "ErrorMessage": ""
+  },
+  "Member": {
+    "FirstName": "SRINIVASA",
+    "LastName": "RAO VEMURI",
+    "Email": "vsr@dvi.co.in",
+    "MemberId": 58166,
+    "AgencyId": 57955,
+    "LoginName": "Doview",
+    "LoginDetails": "Login Success at#@ 20/03/2026 12:24:26 #@ IPAddress: 139.5.249.210",
+    "isPrimaryAgent": false
+  }
+}
+
+======== METADATA ========
+- timestamp: 2026-03-20T06:54:45.079Z
+- endpoint: https://sharedapi.tektravels.com/SharedData.svc/rest/Authenticate
+- status code: 200
+- case id: 3
+- step name: authenticate
+- method: POST
+- status: success
+- error: none
+- skipped reason: none

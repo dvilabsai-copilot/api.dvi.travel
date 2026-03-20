@@ -26,6 +26,7 @@ import { ResAvenueHotelBookingService } from "./services/resavenue-hotel-booking
 import { HobseHotelBookingService } from "./services/hobse-hotel-booking.service";
 import { ItineraryHotelDetailsTboService } from "./itinerary-hotel-details-tbo.service";
 import { normalizePassengerTitle } from "../../common/utils/passenger-title.util";
+import { SupplementNormalizerService } from "../../modules/hotels/services/supplement-normalizer.service";
 
 @Injectable()
 export class ItinerariesService {
@@ -45,7 +46,20 @@ export class ItinerariesService {
     private readonly resavenueHotelBooking: ResAvenueHotelBookingService,
     private readonly hobseHotelBooking: HobseHotelBookingService,
     private readonly hotelDetailsTboService: ItineraryHotelDetailsTboService,
+    private readonly supplementNormalizer: SupplementNormalizerService,
   ) {}
+
+  /**
+   * Normalize field values to arrays safely.
+   * Handles string, array, object, null, undefined without spreading strings into characters.
+   */
+  private normalizeToArray(value: any): any[] {
+    if (!value) return [];
+    if (Array.isArray(value)) return value;
+    if (typeof value === 'string' && value.trim()) return [value.trim()];
+    if (value && typeof value === 'object') return [value];
+    return [];
+  }
 
   async createPlan(dto: CreateItineraryDto, req: any, shouldOptimizeRoute: boolean = false) {
     const u: any = (req as any).user ?? {};
@@ -1641,6 +1655,7 @@ export class ItinerariesService {
         roomPromotion: null,
         rateConditions: [],
         mandatorySupplements: [],
+        normalizedSupplements: [], // ✅ NEW
       };
     }
 
@@ -1679,17 +1694,42 @@ export class ItinerariesService {
       const prebookResponse = await this.tboHotelBooking.preBookHotel(selection as any);
       const prebookRequestPayload = (prebookResponse as any)?.__requestPayload || null;
       const rawRoomDetails = prebookResponse?.HotelRoomsDetails || [];
+      
+      // Extract raw mandatory supplements
       const mandatorySupplements = rawRoomDetails
-        .flatMap((room: any) => room?.MandatorySupplements || room?.MandatorySupplement || [])
+        .flatMap((room: any) => this.normalizeToArray(room?.MandatorySupplements ?? room?.MandatorySupplement))
         .filter(Boolean);
+      
+      // ✅ Extract raw supplements if present
+      const rawSupplements = rawRoomDetails
+        .flatMap((room: any) => this.normalizeToArray(room?.Supplements))
+        .filter(Boolean);
+
+      // ✅ Normalize all supplements for display
+      const normalizedMandatorySupplements = this.supplementNormalizer.normalizeSupplements(
+        mandatorySupplements,
+        'prebook',
+      );
+      const normalizedSupplements = this.supplementNormalizer.normalizeSupplements(
+        rawSupplements,
+        'prebook',
+      );
+      const allNormalizedSupplements = [
+        ...normalizedMandatorySupplements,
+        ...normalizedSupplements,
+      ];
+
       const roomPromotions = rawRoomDetails
-        .flatMap((room: any) => room?.RoomPromotion || room?.RoomPromotions || [])
+        .flatMap((room: any) => this.normalizeToArray(room?.RoomPromotion ?? room?.RoomPromotions))
         .filter(Boolean);
       const rateConditions = rawRoomDetails
-        .flatMap((room: any) => room?.RateConditions || [])
+        .flatMap((room: any) => this.normalizeToArray(room?.RateConditions))
         .filter(Boolean);
       const cancellationPolicies = rawRoomDetails
-        .flatMap((room: any) => room?.CancelPolicies || room?.CancellationPolicy || [])
+        .flatMap((room: any) => this.normalizeToArray(room?.CancelPolicies ?? room?.CancellationPolicy))
+        .filter(Boolean);
+      const inclusions = rawRoomDetails
+        .flatMap((room: any) => this.normalizeToArray(room?.Inclusion))
         .filter(Boolean);
 
       const candidatePrices = [
@@ -1716,7 +1756,11 @@ export class ItinerariesService {
           : null,
         roomPromotion: roomPromotions.length ? roomPromotions.join(', ') : null,
         rateConditions,
+        inclusions,
         mandatorySupplements,
+        // ✅ NEW: include normalized supplements
+        normalizedSupplements: allNormalizedSupplements,
+        supplements: rawSupplements,
         isPriceChanged: Boolean(prebookResponse?.IsPriceChanged),
         isCancellationPolicyChanged: Boolean(prebookResponse?.IsCancellationPolicyChanged),
         rawStatus: prebookResponse?.Status,
@@ -1736,7 +1780,10 @@ export class ItinerariesService {
       .flatMap((item) => (item.roomPromotion ? [item.roomPromotion] : []))
       .filter(Boolean);
     const rateConditionsAll = prebookResults.flatMap((item) => item.rateConditions || []);
+    const inclusionsAll = prebookResults.flatMap((item) => item.inclusions || []);
     const mandatorySupplementsAll = prebookResults.flatMap((item) => item.mandatorySupplements || []);
+    // ✅ NEW: Extract normalized supplements from prebook results
+    const normalizedSupplementsAll = prebookResults.flatMap((item) => item.normalizedSupplements || []);
 
     return {
       success: true,
@@ -1754,7 +1801,10 @@ export class ItinerariesService {
         : null,
       roomPromotion: roomPromotionsAll.length ? roomPromotionsAll.join(', ') : null,
       rateConditions: rateConditionsAll,
+      inclusions: inclusionsAll,
       mandatorySupplements: mandatorySupplementsAll,
+      // ✅ NEW: include normalized supplements for frontend display
+      normalizedSupplements: normalizedSupplementsAll,
     };
   }
 

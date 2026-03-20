@@ -26,33 +26,60 @@ export class StaahApiKeyGuard implements CanActivate {
   }
 
   private resolveClientIp(request: any): string {
-    const trustedChain = Array.isArray(request.ips)
-      ? request.ips.map((ip: string) => this.normalizeIp(ip)).filter(Boolean)
-      : [];
+    return this.getClientIpDebugData(request).resolvedClientIp;
+  }
 
-    if (trustedChain.length > 0) {
-      return trustedChain[0];
+  private normalizeIpList(values: unknown): string[] {
+    if (Array.isArray(values)) {
+      return values
+        .flatMap((value) => String(value).split(','))
+        .map((value) => this.normalizeIp(value))
+        .filter(Boolean);
     }
 
+    if (typeof values === 'string') {
+      return values
+        .split(',')
+        .map((value) => this.normalizeIp(value))
+        .filter(Boolean);
+    }
+
+    return [];
+  }
+
+  private getClientIpDebugData(request: any): {
+    resolvedClientIp: string;
+    requestIp: string;
+    requestIps: string[];
+    forwardedFor: string[];
+    realIp: string;
+    remoteAddress: string;
+  } {
+    const forwardedFor = this.normalizeIpList(request.headers?.['x-forwarded-for']);
+    const realIp = this.normalizeIpList(request.headers?.['x-real-ip'])[0] || '';
+    const requestIps = this.normalizeIpList(request.ips);
     const requestIp = this.normalizeIp(request.ip || '');
-    if (requestIp) {
-      return requestIp;
-    }
-
-    const forwardedFor = request.headers?.['x-forwarded-for'];
-    const forwardedIp = Array.isArray(forwardedFor)
-      ? this.normalizeIp(String(forwardedFor[0]).split(',')[0])
-      : typeof forwardedFor === 'string'
-        ? this.normalizeIp(forwardedFor.split(',')[0])
-        : '';
-
-    if (forwardedIp) {
-      return forwardedIp;
-    }
-
-    return this.normalizeIp(
-      request.connection?.remoteAddress || request.socket?.remoteAddress || '',
+    const remoteAddress = this.normalizeIp(
+      request.connection?.remoteAddress
+        || request.socket?.remoteAddress
+        || request.connection?.socket?.remoteAddress
+        || '',
     );
+
+    const resolvedClientIp = forwardedFor[0]
+      || realIp
+      || requestIps[0]
+      || requestIp
+      || remoteAddress;
+
+    return {
+      resolvedClientIp,
+      requestIp,
+      requestIps,
+      forwardedFor,
+      realIp,
+      remoteAddress,
+    };
   }
 
   canActivate(
@@ -97,7 +124,13 @@ export class StaahApiKeyGuard implements CanActivate {
       return true;
     }
 
-    const normalizedIp = this.resolveClientIp(request);
+    const ipDebug = this.getClientIpDebugData(request);
+
+    this.logger.log(
+      `STAAH IP debug resolved=${ipDebug.resolvedClientIp || 'n/a'} request.ip=${ipDebug.requestIp || 'n/a'} request.ips=${ipDebug.requestIps.join('|') || 'n/a'} x-forwarded-for=${ipDebug.forwardedFor.join('|') || 'n/a'} x-real-ip=${ipDebug.realIp || 'n/a'} remoteAddress=${ipDebug.remoteAddress || 'n/a'}`,
+    );
+
+    const normalizedIp = ipDebug.resolvedClientIp;
 
     if (!allowedIps.includes(normalizedIp)) {
       this.logger.warn(`Blocked STAAH request from non-whitelisted IP: ${normalizedIp}`);

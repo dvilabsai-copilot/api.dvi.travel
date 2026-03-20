@@ -1,0 +1,58 @@
+============================================================
+STAAH API Test Log
+============================================================
+Test Name: staah-35-mapping
+Timestamp: 2026-03-19T21:45:53.000Z
+Status: SUCCESS
+============================================================
+
+REQUEST:
+--------
+URL: http://127.0.0.1:4006/api/v1/staah-test/mapping
+Method: POST
+Headers:
+{}
+
+Body:
+{
+  "propertyid": "STAAHTESTHOTEL1",
+  "apikey": "staah_C3g8K3b1wray989DVih37od3314r6444",
+  "version": "2"
+}
+
+RESPONSE:
+---------
+Status: 200
+Headers:
+{
+  "Access-Control-Allow-Origin": "*",
+  "Connection": "keep-alive",
+  "Keep-Alive": "timeout=5",
+  "Content-Length": "317",
+  "Content-Type": "application/json; charset=utf-8",
+  "Date": "Thu, 19 Mar 2026 21:45:53 GMT",
+  "ETag": "W/\"13d-Vyw+J8spic0bA1VL3uNAgDxqDIM\"",
+  "X-Powered-By": "Express"
+}
+
+Data:
+{
+  "room_rate_mapping": [
+    {
+      "room_id": "DELUXE_ROOM",
+      "room_name": "Deluxe Room - Test",
+      "rate_id": "CP_PLAN",
+      "rate_name": "Continental Plan",
+      "manageable": "Y"
+    },
+    {
+      "room_id": "SUITE_ROOM",
+      "room_name": "Suite Room - Test",
+      "rate_id": "MAP_PLAN",
+      "rate_name": "Modified American Plan",
+      "manageable": "Y"
+    }
+  ],
+  "status": "success",
+  "error_desc": ""
+}
