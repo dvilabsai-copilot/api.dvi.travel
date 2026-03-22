@@ -1,5 +1,5 @@
 {
-  "itinerary_plan_ID": 20,
+  "itinerary_plan_ID": 33,
   "agent": 125,
   "primary_guest_salutation": "Mr",
   "primary_guest_name": "Real Flow",
@@ -28,15 +28,15 @@
   "hotel_bookings": [
     {
       "provider": "HOBSE",
-      "routeId": 368,
-      "hotelCode": "89cc7ab0dfc30982",
-      "bookingCode": "{\"provider\":\"HOBSE\",\"hotelId\":\"89cc7ab0dfc30982\",\"cityId\":\"76\",\"checkInDate\":\"2026-04-16\",\"checkOutDate\":\"2026-04-17\",\"priceOwnerType\":\"2\",\"partnerId\":\"a14fc9d3a3e31230\",\"partnerTypeId\":\"4\",\"tariffMode\":\"B2B\",\"roomCode\":\"a7b9a47942eb2d2b\",\"occupancyTypeCode\":\"9f780ff7fa46f40f\",\"ratePlanCode\":\"d8e93e7fb017972b\"}",
-      "roomType": "Superior Room",
-      "checkInDate": "2026-04-16",
-      "checkOutDate": "2026-04-17",
+      "routeId": 438,
+      "hotelCode": "973d8ea763c57027",
+      "bookingCode": "{\"provider\":\"HOBSE\",\"hotelId\":\"973d8ea763c57027\",\"cityId\":\"170\",\"checkInDate\":\"2026-04-17\",\"checkOutDate\":\"2026-04-18\",\"priceOwnerType\":\"2\",\"partnerId\":\"a14fc9d3a3e31230\",\"partnerTypeId\":\"4\",\"tariffMode\":\"B2B\",\"roomCode\":\"9089a12b869057d1\",\"occupancyTypeCode\":\"cddc3772b32d5464\",\"ratePlanCode\":\"2e8fbda786b1ac11\"}",
+      "roomType": "Studio Apartment",
+      "checkInDate": "2026-04-17",
+      "checkOutDate": "2026-04-18",
       "numberOfRooms": 1,
       "guestNationality": "IN",
-      "netAmount": 6520,
+      "netAmount": 4820,
       "passengers": [
         {
           "title": "Mr",

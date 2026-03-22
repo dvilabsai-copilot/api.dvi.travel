@@ -152,11 +152,18 @@ export class ItineraryHotelDetailsTboService {
     const noOfNights = Number((plan as any).no_of_nights || 0);
     this.logger.log(`🌙 Plan has ${noOfNights} nights`);
 
+    // Read pax counts saved by the user when creating the itinerary
+    const planAdultCount = Number((plan as any).total_adult || 0);
+    const planChildCount = Number((plan as any).total_children || 0);
+    this.logger.log(`👥 Pax from plan: adults=${planAdultCount}, children=${planChildCount}`);
+
     // Step 3: Fetch hotels from TBO for each route (except last route if it's departure day)
     const hotelsByRoute = await this.fetchHotelsForRoutes(
       routes,
       noOfNights,
       guestNationality,
+      planAdultCount,
+      planChildCount,
     );
     
     // Step 3.5: Fetch HOBSE hotels and merge with TBO hotels
@@ -216,6 +223,8 @@ export class ItineraryHotelDetailsTboService {
     routes: any[],
     noOfNights: number,
     guestNationality: string,
+    adultCount: number = 2,
+    childCount: number = 0,
   ): Promise<Map<number, HotelSearchResult[]>> {
     const hotelsByRoute = new Map<number, HotelSearchResult[]>();
     const totalRoutes = routes.length;
@@ -246,6 +255,8 @@ export class ItineraryHotelDetailsTboService {
           cityCodeMap,
           hotelsByRoute,
           guestNationality,
+          adultCount,
+          childCount,
         ).catch(error => {
           const routeId = (route as any).itinerary_route_ID;
           const errorMsg = error instanceof Error ? error.message : String(error);
@@ -380,6 +391,8 @@ export class ItineraryHotelDetailsTboService {
     cityCodeMap: Record<string, string>,
     hotelsByRoute: Map<number, HotelSearchResult[]>,
     guestNationality: string,
+    adultCount: number = 2,
+    childCount: number = 0,
   ): Promise<void> {
     const routeId = (route as any).itinerary_route_ID;
     const destination = (route as any).next_visiting_location;
@@ -402,12 +415,22 @@ export class ItineraryHotelDetailsTboService {
       );
     }
 
+    // Use pax counts from the plan; guarantee at least 1 adult so TBO validation passes
+    if (adultCount <= 0) {
+      this.logger.warn(`⚠️ Route ${routeId}: adultCount is ${adultCount} (not saved in plan?) - defaulting to 1`);
+    }
+    const safeAdultCount = adultCount > 0 ? adultCount : 1;
+    const safeChildCount = childCount >= 0 ? childCount : 0;
+    const guestCount = safeAdultCount + safeChildCount;
+
     const searchCriteria = {
       cityCode: effectiveCityCode,
       checkInDate: routeDate.toISOString().split('T')[0],
       checkOutDate: checkOutDate.toISOString().split('T')[0],
       roomCount: 1,
-      guestCount: 2,
+      guestCount,
+      adultCount: safeAdultCount,
+      childCount: safeChildCount,
       guestNationality,
       providers: ['tbo', 'resavenue'], // Only TBO + ResAvenue - HOBSE will be merged separately
     };
@@ -757,7 +780,10 @@ export class ItineraryHotelDetailsTboService {
           totalHotelCost: Math.round(hotel.price),
           totalHotelTaxAmount: 0,
           searchReference: hotel.searchReference,
-          bookingCode: hotel.hotelCode, // Use actual hotelCode (works for both TBO and HOBSE - can be numeric or UUID string)
+          bookingCode:
+            (hotel.provider || 'tbo').toLowerCase() === 'tbo'
+              ? hotel.searchReference || hotel.roomTypes?.[0]?.roomCode || undefined
+              : hotel.hotelCode,
           provider: hotel.provider || 'tbo',
           voucherCancelled: voucherCancelled,
           itineraryPlanHotelDetailsId: hotelDetailsId || 0,
@@ -908,7 +934,9 @@ export class ItineraryHotelDetailsTboService {
           availableRoomTypes: (hotel.roomTypes || []).map((rt, idx) => ({
             roomTypeId: rt.roomTypeId || idx + 1,
             roomTypeTitle: rt.roomName,
+            bookingCode: rt.roomCode,
           })),
+          bookingCode: firstRoomType?.roomCode || hotel.searchReference || undefined,
           pricePerNight: Number(hotel.price || 0),
           numberOfNights: noOfNights,
           totalPrice: Number(hotel.price || 0) * noOfNights,

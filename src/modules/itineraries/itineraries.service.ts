@@ -1607,6 +1607,7 @@ export class ItinerariesService {
       numberOfRooms: number;
       guestNationality: string;
       netAmount: number;
+      searchInitiatedAt?: string;
       occupancies?: Array<{
         adults: number;
         children: number;
@@ -1662,15 +1663,21 @@ export class ItinerariesService {
     const prebookResults: any[] = [];
 
     for (const hotel of tboHotels) {
+      const resolvedBookingCode = await this.resolvePrebookBookingCode(
+        payload.itinerary_plan_ID,
+        hotel,
+      );
+
       const selection = {
         hotelCode: hotel.hotelCode,
-        bookingCode: hotel.bookingCode,
+        bookingCode: resolvedBookingCode,
         roomType: hotel.roomType,
         checkInDate: hotel.checkInDate,
         checkOutDate: hotel.checkOutDate,
         numberOfRooms: hotel.numberOfRooms,
         guestNationality: hotel.guestNationality,
         netAmount: hotel.netAmount,
+        searchInitiatedAt: hotel.searchInitiatedAt,
         occupancies: hotel.occupancies,
         passengers: (hotel.passengers || []).map((p) => ({
           title: p.title,
@@ -1693,7 +1700,31 @@ export class ItinerariesService {
 
       const prebookResponse = await this.tboHotelBooking.preBookHotel(selection as any);
       const prebookRequestPayload = (prebookResponse as any)?.__requestPayload || null;
-      const rawRoomDetails = prebookResponse?.HotelRoomsDetails || [];
+      const rawRoomDetails = [
+        ...this.normalizeToArray(prebookResponse?.HotelRoomsDetails),
+        ...this.normalizeToArray(prebookResponse?.HotelResult)
+          .flatMap((hotelResult: any) => this.normalizeToArray(hotelResult?.Rooms)),
+      ].filter(Boolean);
+
+      const prebookCancelPoliciesDebug = rawRoomDetails
+        .flatMap((room: any) => this.normalizeToArray(room?.CancelPolicies ?? room?.CancellationPolicy))
+        .filter(Boolean);
+      console.log(
+        '[ItinerariesService] 📥 PreBook API room snapshot:',
+        JSON.stringify({
+          routeId: hotel.routeId,
+          hotelCode: hotel.hotelCode,
+          status: prebookResponse?.Status,
+          bookingCode: prebookResponse?.BookingCode || hotel.bookingCode,
+          roomCount: rawRoomDetails.length,
+          cancelPoliciesCount: prebookCancelPoliciesDebug.length,
+          sampleCancelPolicy: prebookCancelPoliciesDebug[0] || null,
+        }),
+      );
+      console.log(
+        '[ItinerariesService] 📥 Full PreBook API response:',
+        JSON.stringify(prebookResponse),
+      );
       
       // Extract raw mandatory supplements
       const mandatorySupplements = rawRoomDetails
@@ -1808,6 +1839,85 @@ export class ItinerariesService {
     };
   }
 
+  private async resolvePrebookBookingCode(
+    itineraryPlanId: number,
+    hotel: {
+      routeId: number;
+      hotelCode: string;
+      bookingCode?: string;
+      roomType?: string;
+    },
+  ): Promise<string> {
+    const incomingBookingCode = String(hotel.bookingCode || '').trim();
+    if (incomingBookingCode.includes('!TB!')) {
+      return incomingBookingCode;
+    }
+
+    const plan = await this.prisma.dvi_itinerary_plan_details.findUnique({
+      where: { itinerary_plan_ID: itineraryPlanId },
+      select: { itinerary_quote_ID: true },
+    });
+
+    const quoteId = String((plan as any)?.itinerary_quote_ID || '').trim();
+    if (!quoteId) {
+      throw new BadRequestException(
+        'Unable to resolve itinerary quote for fresh hotel room validation. Please refresh hotel search and try prebook again.',
+      );
+    }
+
+    // Force a fresh room search to avoid stale cached booking codes.
+    this.hotelDetailsTboService.clearCacheForQuote(quoteId);
+    const roomDetails = await this.hotelDetailsTboService.getHotelRoomDetailsFromTbo(
+      quoteId,
+      Number(hotel.routeId),
+    );
+
+    const hotelCode = String(hotel.hotelCode || '').trim();
+    const requestedRoomType = String(hotel.roomType || '').trim().toLowerCase();
+
+    const matchingRooms = (roomDetails?.rooms || []).filter(
+      (room: any) =>
+        Number(room.itineraryRouteId) === Number(hotel.routeId) &&
+        String(room.hotelId || '') === hotelCode,
+    );
+
+    if (matchingRooms.length === 0) {
+      throw new BadRequestException(
+        'No fresh room options found for selected hotel. Please run hotel search again and select a room before prebook.',
+      );
+    }
+
+    const roomTypeMatch = requestedRoomType
+      ? matchingRooms.find((room: any) => {
+          const roomTypeName = String(room.roomTypeName || '').toLowerCase();
+          if (roomTypeName && roomTypeName === requestedRoomType) {
+            return true;
+          }
+
+          const availableRoomTypes = Array.isArray(room.availableRoomTypes)
+            ? room.availableRoomTypes
+            : [];
+          return availableRoomTypes.some(
+            (rt: any) =>
+              String(rt.roomTypeTitle || '').toLowerCase() === requestedRoomType,
+          );
+        })
+      : undefined;
+
+    const selectedRoom = roomTypeMatch || matchingRooms[0];
+    const selectedBookingCode =
+      String(selectedRoom?.bookingCode || '').trim() ||
+      String(selectedRoom?.availableRoomTypes?.[0]?.bookingCode || '').trim();
+
+    if (!selectedBookingCode || !selectedBookingCode.includes('!TB!')) {
+      throw new BadRequestException(
+        'Fresh room booking code not available for selected hotel. Please refresh hotel selection and prebook again.',
+      );
+    }
+
+    return selectedBookingCode;
+  }
+
   /**
    * After transaction completes, handle hotel bookings for all providers
    * This is done outside transaction to avoid locking issues with external API calls
@@ -1852,6 +1962,7 @@ export class ItinerariesService {
           numberOfRooms: hotel.numberOfRooms,
           guestNationality: hotel.guestNationality,
           netAmount: hotel.netAmount,
+          searchInitiatedAt: (hotel as any).searchInitiatedAt,
           occupancies: hotel.occupancies?.map((occ) => ({
             adults: occ.adults,
             children: occ.children,
@@ -2612,6 +2723,9 @@ export class ItinerariesService {
             cancelled_on: cancellation.cancelled_on,
           },
         };
+      }, {
+        maxWait: 15000,
+        timeout: 120000,
       });
     } catch (error) {
       if (error instanceof BadRequestException || 
@@ -2627,17 +2741,17 @@ export class ItinerariesService {
   // Helper methods for selective cancellation
   private async cancelHotspots(tx: any, itineraryPlanId: number, cancellationId: number, userId: number): Promise<number> {
     try {
-      const hotspots = await tx.dvi_itinerary_plan_hotspot_details.findMany({
+      const hotspots = await tx.dvi_itinerary_route_hotspot_details.findMany({
         where: { 
-          itinerary_plan_id: itineraryPlanId,
+          itinerary_plan_ID: itineraryPlanId,
           deleted: 0,
         },
       });
 
       if (hotspots.length > 0) {
-        await tx.dvi_itinerary_plan_hotspot_details.updateMany({
+        await tx.dvi_itinerary_route_hotspot_details.updateMany({
           where: { 
-            itinerary_plan_id: itineraryPlanId,
+            itinerary_plan_ID: itineraryPlanId,
             deleted: 0,
           },
           data: {
@@ -2825,17 +2939,17 @@ export class ItinerariesService {
 
   private async cancelGuides(tx: any, itineraryPlanId: number, cancellationId: number, userId: number): Promise<number> {
     try {
-      const guides = await tx.dvi_itinerary_plan_guide_details.findMany({
+      const guides = await tx.dvi_itinerary_route_guide_details.findMany({
         where: { 
-          itinerary_plan_id: itineraryPlanId,
+          itinerary_plan_ID: itineraryPlanId,
           deleted: 0,
         },
       });
 
       if (guides.length > 0) {
-        await tx.dvi_itinerary_plan_guide_details.updateMany({
+        await tx.dvi_itinerary_route_guide_details.updateMany({
           where: { 
-            itinerary_plan_id: itineraryPlanId,
+            itinerary_plan_ID: itineraryPlanId,
             deleted: 0,
           },
           data: {
@@ -2872,17 +2986,17 @@ export class ItinerariesService {
 
   private async cancelActivities(tx: any, itineraryPlanId: number, cancellationId: number, userId: number): Promise<number> {
     try {
-      const activities = await tx.dvi_itinerary_plan_activity_details.findMany({
+      const activities = await tx.dvi_itinerary_route_activity_details.findMany({
         where: { 
-          itinerary_plan_id: itineraryPlanId,
+          itinerary_plan_ID: itineraryPlanId,
           deleted: 0,
         },
       });
 
       if (activities.length > 0) {
-        await tx.dvi_itinerary_plan_activity_details.updateMany({
+        await tx.dvi_itinerary_route_activity_details.updateMany({
           where: { 
-            itinerary_plan_id: itineraryPlanId,
+            itinerary_plan_ID: itineraryPlanId,
             deleted: 0,
           },
           data: {
@@ -4353,12 +4467,7 @@ export class ItinerariesService {
    * This finds the optimal or near-optimal route that minimizes total travel distance/time
    */
   private async optimizeRouteOrder(routes: any[]): Promise<any[]> {
-    const fs = require('fs');
-    const logFile = 'd:\\wamp64\\www\\dvi_fullstack\\dvi_backend\\logs\\route-optimization.log';
-    const logs: string[] = [];
-
     const log = (msg: string) => {
-      logs.push(msg);
       console.log(msg);
     };
 
@@ -4388,7 +4497,6 @@ export class ItinerariesService {
 
     if (middleLocations.length === 0) {
       log(`[RouteOptimization] ⚠️  No middle locations to optimize. Returning as-is.`);
-      fs.writeFileSync(logFile, logs.join('\n'), 'utf-8');
       return routes;
     }
 
@@ -4438,7 +4546,6 @@ export class ItinerariesService {
     log(`[RouteOptimization] ✅ Route optimization completed`);
     log(`[RouteOptimization] Final chain: ${optimizedRoutes.map(r => `${r.location_name}→${r.next_visiting_location}`).join(' | ')}`);
 
-    fs.writeFileSync(logFile, logs.join('\n'), 'utf-8');
     return optimizedRoutes;
   }
 

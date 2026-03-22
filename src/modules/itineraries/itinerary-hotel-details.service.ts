@@ -48,6 +48,7 @@ export interface ItineraryHotelDetailsResponseDto {
 export interface RoomTypeOptionDto {
   roomTypeId: number;
   roomTypeTitle: string;
+  bookingCode?: string;
 }
 
 /**
@@ -64,6 +65,7 @@ export interface ItineraryHotelRoomDto {
   roomTypeId: number;
   roomTypeName: string;
   roomId: number;
+  bookingCode?: string;
   availableRoomTypes: RoomTypeOptionDto[];
 
   // Pricing & tax

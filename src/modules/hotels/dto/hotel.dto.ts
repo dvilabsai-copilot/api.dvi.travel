@@ -31,7 +31,7 @@ export class RoomOccupancyDTO {
   @IsArray()
   @IsInt({ each: true })
   @Min(0, { each: true })
-  @Max(17, { each: true })
+  @Max(11, { each: true })
   childrenAges?: number[];
 }
 
@@ -79,7 +79,7 @@ export class HotelSearchDTO {
   @IsArray()
   @IsInt({ each: true })
   @Min(0, { each: true })
-  @Max(17, { each: true })
+  @Max(11, { each: true })
   childAges?: number[];
 
   @IsOptional()
