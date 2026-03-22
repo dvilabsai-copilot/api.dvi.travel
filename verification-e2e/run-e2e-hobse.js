@@ -6,17 +6,30 @@ const base = 'http://127.0.0.1:4006/api/v1';
 (async () => {
   fs.mkdirSync('verification-e2e', { recursive: true });
 
-  const planId = 20;
-  const routeId = 368;
-  const checkInDate = '2026-04-16';
-  const checkOutDate = '2026-04-17';
+  const planId = Number(process.env.HOBSE_E2E_PLAN_ID || 20);
+  const routeId = Number(process.env.HOBSE_E2E_ROUTE_ID || 368);
+  const checkInDate = process.env.HOBSE_E2E_CHECKIN || '2026-04-16';
+  const checkOutDate = process.env.HOBSE_E2E_CHECKOUT || '2026-04-17';
+  const cityCode = process.env.HOBSE_E2E_CITY || 'Bangalore';
+
+  console.log('HOBSE_E2E_CONFIG');
+  console.log(JSON.stringify({ planId, routeId, checkInDate, checkOutDate, cityCode }, null, 2));
 
   const searchReq = {
-    cityCode: 'Bangalore',
+    cityCode,
     checkInDate,
     checkOutDate,
     roomCount: 1,
     guestCount: 2,
+    adultCount: 2,
+    childCount: 0,
+    occupancies: [
+      {
+        adults: 2,
+        children: 0,
+        childrenAges: [],
+      },
+    ],
     providers: ['hobse']
   };
   fs.writeFileSync('verification-e2e/1-search-request.json', JSON.stringify(searchReq, null, 2));

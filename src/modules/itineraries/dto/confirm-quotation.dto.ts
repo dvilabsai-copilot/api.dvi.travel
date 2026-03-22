@@ -11,6 +11,7 @@ import {
   Matches,
   ValidateNested,
   IsIn,
+  IsDateString,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -129,7 +130,7 @@ export class HotelRoomOccupancyDto {
   @IsArray()
   @IsInt({ each: true })
   @Min(0, { each: true })
-  @Max(17, { each: true })
+  @Max(11, { each: true })
   childrenAges?: number[];
 }
 
@@ -176,6 +177,15 @@ export class HotelSelectionDto {
   @ApiProperty({ example: 5000 })
   @IsNumber()
   netAmount!: number;
+
+  @ApiProperty({
+    example: '2026-03-22T10:15:00.000Z',
+    required: false,
+    description: 'Timestamp when hotel search result/session was generated',
+  })
+  @IsOptional()
+  @IsDateString()
+  searchInitiatedAt?: string;
 
   @ApiProperty({ type: [HotelPassengerDto] })
   @IsArray()

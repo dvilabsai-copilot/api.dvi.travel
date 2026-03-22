@@ -779,6 +779,10 @@ export class TBOHotelProvider implements IHotelProvider {
       const result = response.data?.HotelChangeRequestResult;
       if (!result || result.ResponseStatus !== 1) {
         this.logger.error(`❌ TBO Cancel Error Details: ${JSON.stringify(result)}`);
+        const recovered = await this.tryRecoverCancellationStatus(confirmationRef, result);
+        if (recovered) {
+          return recovered;
+        }
         throw new Error(
           `Cancellation failed: ${result?.Error?.ErrorMessage || 'Unknown error'}`
         );
@@ -798,11 +802,61 @@ export class TBOHotelProvider implements IHotelProvider {
         this.logger.error(`❌ TBO API Error Response Status: ${error.response.status}`);
         this.logger.error(`❌ TBO API Error Response Body: ${JSON.stringify(error.response.data)}`);
       }
+
+      const recovered = await this.tryRecoverCancellationStatus(confirmationRef, error);
+      if (recovered) {
+        return recovered;
+      }
+
       this.logger.error(
         `❌ Cancel Booking Error: ${error.message}`,
         error.stack
       );
       throw new InternalServerErrorException('Failed to cancel booking');
+    }
+  }
+
+  private async tryRecoverCancellationStatus(
+    confirmationRef: string,
+    context: any,
+  ): Promise<CancellationResult | null> {
+    try {
+      this.logger.warn(
+        `⚠️ Cancel request did not return success for booking ${confirmationRef}. Verifying final status via GetBookingDetail...`,
+      );
+
+      const detail = await this.getConfirmation(String(confirmationRef));
+      const status = String(detail?.status || '').toLowerCase();
+      const isCancelled =
+        status.includes('cancel') ||
+        status.includes('void') ||
+        status.includes('refunded');
+
+      if (!isCancelled) {
+        this.logger.warn(
+          `⚠️ Recovery check completed but booking is not cancelled. status=${detail?.status || 'unknown'}`,
+        );
+        return null;
+      }
+
+      const fallbackRef =
+        String(context?.ChangeRequestId || context?.data?.HotelChangeRequestResult?.ChangeRequestId || confirmationRef);
+
+      this.logger.warn(
+        `✅ Cancellation recovered via BookingDetail for booking ${confirmationRef}. status=${detail.status}`,
+      );
+
+      return {
+        cancellationRef: fallbackRef,
+        refundAmount: 0,
+        charges: 0,
+        refundDays: 0,
+      };
+    } catch (recoveryError: any) {
+      this.logger.error(
+        `❌ Cancellation recovery check failed for booking ${confirmationRef}: ${recoveryError.message}`,
+      );
+      return null;
     }
   }
 

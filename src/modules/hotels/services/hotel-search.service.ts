@@ -379,10 +379,10 @@ export class HotelSearchService {
         );
       }
 
-      const hasInvalidAge = childrenAges.some((age) => age < 0 || age > 17);
+      const hasInvalidAge = childrenAges.some((age) => age < 0 || age > 11);
       if (hasInvalidAge) {
         throw new BadRequestException(
-          `occupancies[${i}].childrenAges must be between 0 and 17`,
+          `occupancies[${i}].childrenAges must be between 0 and 11`,
         );
       }
     }

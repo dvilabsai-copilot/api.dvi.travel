@@ -1,0 +1,275 @@
+{
+    "success":  true,
+    "message":  "Quotation confirmed successfully",
+    "itinerary_plan_ID":  32,
+    "confirmed_itinerary_plan_ID":  147,
+    "bookingResults":  [
+                           {
+                               "routeId":  432,
+                               "hotelCode":  "1739944",
+                               "bookingId":  "2097731",
+                               "status":  "confirmed",
+                               "preBook":  {
+                                               "finalPrice":  null,
+                                               "originalSearchPrice":  2099,
+                                               "isPriceChanged":  false,
+                                               "isCancellationPolicyChanged":  false,
+                                               "cancellationPolicy":  [
+
+                                                                      ],
+                                               "cancellationPolicyText":  null,
+                                               "rateConditions":  [
+
+                                                                  ],
+                                               "roomPromotions":  [
+
+                                                                  ],
+                                               "inclusions":  [
+
+                                                              ],
+                                               "mandatorySupplements":  [
+
+                                                                        ],
+                                               "supplements":  [
+
+                                                               ],
+                                               "normalizedSupplements":  [
+
+                                                                         ],
+                                               "rawStatus":  {
+                                                                 "Code":  200,
+                                                                 "Description":  "Successful"
+                                                             }
+                                           },
+                               "bookingRequest":  {
+                                                      "BookingCode":  "1739944!TB!2!TB!5313fcd4-25c0-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+                                                      "TokenId":  "597590d0-d652-4193-a206-f652d468bc51",
+                                                      "IsVoucherBooking":  true,
+                                                      "GuestNationality":  "IN",
+                                                      "EndUserIp":  "127.0.0.1",
+                                                      "RequestedBookingMode":  1,
+                                                      "TraceId":  "",
+                                                      "NetAmount":  2099,
+                                                      "HotelRoomsDetails":  [
+                                                                                {
+                                                                                    "HotelPassenger":  [
+                                                                                                           {
+                                                                                                               "Title":  "Mr",
+                                                                                                               "FirstName":  "Primary",
+                                                                                                               "MiddleName":  "",
+                                                                                                               "LastName":  "Guest",
+                                                                                                               "Email":  "primary@example.com",
+                                                                                                               "PaxType":  1,
+                                                                                                               "LeadPassenger":  true,
+                                                                                                               "Age":  32,
+                                                                                                               "PassportNo":  null,
+                                                                                                               "PassportIssueDate":  null,
+                                                                                                               "PassportExpDate":  null,
+                                                                                                               "Phoneno":  "9876543210",
+                                                                                                               "PaxId":  0,
+                                                                                                               "GSTCompanyAddress":  null,
+                                                                                                               "GSTCompanyContactNumber":  null,
+                                                                                                               "GSTCompanyName":  null,
+                                                                                                               "GSTNumber":  null,
+                                                                                                               "GSTCompanyEmail":  null,
+                                                                                                               "PAN":  null
+                                                                                                           }
+                                                                                                       ]
+                                                                                }
+                                                                            ]
+                                                  },
+                               "priceChanged":  false,
+                               "priceChangedMessage":  null,
+                               "mandatorySupplements":  [
+
+                                                        ],
+                               "normalizedSupplements":  [
+
+                                                         ],
+                               "supplements":  [
+
+                                               ],
+                               "confirmation":  {
+                                                    "tbo_hotel_booking_confirmation_ID":  68
+                                                }
+                           },
+                           {
+                               "routeId":  433,
+                               "hotelCode":  "1383563",
+                               "bookingId":  "2097732",
+                               "status":  "confirmed",
+                               "preBook":  {
+                                               "finalPrice":  null,
+                                               "originalSearchPrice":  2028,
+                                               "isPriceChanged":  false,
+                                               "isCancellationPolicyChanged":  false,
+                                               "cancellationPolicy":  [
+
+                                                                      ],
+                                               "cancellationPolicyText":  null,
+                                               "rateConditions":  [
+
+                                                                  ],
+                                               "roomPromotions":  [
+
+                                                                  ],
+                                               "inclusions":  [
+
+                                                              ],
+                                               "mandatorySupplements":  [
+
+                                                                        ],
+                                               "supplements":  [
+
+                                                               ],
+                                               "normalizedSupplements":  [
+
+                                                                         ],
+                                               "rawStatus":  {
+                                                                 "Code":  200,
+                                                                 "Description":  "Successful"
+                                                             }
+                                           },
+                               "bookingRequest":  {
+                                                      "BookingCode":  "1383563!TB!1!TB!5314b03f-25c0-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+                                                      "TokenId":  "597590d0-d652-4193-a206-f652d468bc51",
+                                                      "IsVoucherBooking":  true,
+                                                      "GuestNationality":  "IN",
+                                                      "EndUserIp":  "127.0.0.1",
+                                                      "RequestedBookingMode":  1,
+                                                      "TraceId":  "",
+                                                      "NetAmount":  2028,
+                                                      "HotelRoomsDetails":  [
+                                                                                {
+                                                                                    "HotelPassenger":  [
+                                                                                                           {
+                                                                                                               "Title":  "Mr",
+                                                                                                               "FirstName":  "Primary",
+                                                                                                               "MiddleName":  "",
+                                                                                                               "LastName":  "Guest",
+                                                                                                               "Email":  "primary@example.com",
+                                                                                                               "PaxType":  1,
+                                                                                                               "LeadPassenger":  true,
+                                                                                                               "Age":  32,
+                                                                                                               "PassportNo":  null,
+                                                                                                               "PassportIssueDate":  null,
+                                                                                                               "PassportExpDate":  null,
+                                                                                                               "Phoneno":  "9876543210",
+                                                                                                               "PaxId":  0,
+                                                                                                               "GSTCompanyAddress":  null,
+                                                                                                               "GSTCompanyContactNumber":  null,
+                                                                                                               "GSTCompanyName":  null,
+                                                                                                               "GSTNumber":  null,
+                                                                                                               "GSTCompanyEmail":  null,
+                                                                                                               "PAN":  null
+                                                                                                           }
+                                                                                                       ]
+                                                                                }
+                                                                            ]
+                                                  },
+                               "priceChanged":  false,
+                               "priceChangedMessage":  null,
+                               "mandatorySupplements":  [
+
+                                                        ],
+                               "normalizedSupplements":  [
+
+                                                         ],
+                               "supplements":  [
+
+                                               ],
+                               "confirmation":  {
+                                                    "tbo_hotel_booking_confirmation_ID":  69
+                                                }
+                           },
+                           {
+                               "routeId":  434,
+                               "hotelCode":  "1742171",
+                               "bookingId":  "2097733",
+                               "status":  "confirmed",
+                               "preBook":  {
+                                               "finalPrice":  null,
+                                               "originalSearchPrice":  2312,
+                                               "isPriceChanged":  false,
+                                               "isCancellationPolicyChanged":  false,
+                                               "cancellationPolicy":  [
+
+                                                                      ],
+                                               "cancellationPolicyText":  null,
+                                               "rateConditions":  [
+
+                                                                  ],
+                                               "roomPromotions":  [
+
+                                                                  ],
+                                               "inclusions":  [
+
+                                                              ],
+                                               "mandatorySupplements":  [
+
+                                                                        ],
+                                               "supplements":  [
+
+                                                               ],
+                                               "normalizedSupplements":  [
+
+                                                                         ],
+                                               "rawStatus":  {
+                                                                 "Code":  200,
+                                                                 "Description":  "Successful"
+                                                             }
+                                           },
+                               "bookingRequest":  {
+                                                      "BookingCode":  "1742171!TB!1!TB!53148aa4-25c0-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+                                                      "TokenId":  "597590d0-d652-4193-a206-f652d468bc51",
+                                                      "IsVoucherBooking":  true,
+                                                      "GuestNationality":  "IN",
+                                                      "EndUserIp":  "127.0.0.1",
+                                                      "RequestedBookingMode":  1,
+                                                      "TraceId":  "",
+                                                      "NetAmount":  2312,
+                                                      "HotelRoomsDetails":  [
+                                                                                {
+                                                                                    "HotelPassenger":  [
+                                                                                                           {
+                                                                                                               "Title":  "Mr",
+                                                                                                               "FirstName":  "Primary",
+                                                                                                               "MiddleName":  "",
+                                                                                                               "LastName":  "Guest",
+                                                                                                               "Email":  "primary@example.com",
+                                                                                                               "PaxType":  1,
+                                                                                                               "LeadPassenger":  true,
+                                                                                                               "Age":  32,
+                                                                                                               "PassportNo":  null,
+                                                                                                               "PassportIssueDate":  null,
+                                                                                                               "PassportExpDate":  null,
+                                                                                                               "Phoneno":  "9876543210",
+                                                                                                               "PaxId":  0,
+                                                                                                               "GSTCompanyAddress":  null,
+                                                                                                               "GSTCompanyContactNumber":  null,
+                                                                                                               "GSTCompanyName":  null,
+                                                                                                               "GSTNumber":  null,
+                                                                                                               "GSTCompanyEmail":  null,
+                                                                                                               "PAN":  null
+                                                                                                           }
+                                                                                                       ]
+                                                                                }
+                                                                            ]
+                                                  },
+                               "priceChanged":  false,
+                               "priceChangedMessage":  null,
+                               "mandatorySupplements":  [
+
+                                                        ],
+                               "normalizedSupplements":  [
+
+                                                         ],
+                               "supplements":  [
+
+                                               ],
+                               "confirmation":  {
+                                                    "tbo_hotel_booking_confirmation_ID":  70
+                                                }
+                           }
+                       ]
+}

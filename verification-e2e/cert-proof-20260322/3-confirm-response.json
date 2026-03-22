@@ -1,0 +1,26 @@
+{
+  "success": true,
+  "message": "Quotation confirmed successfully",
+  "itinerary_plan_ID": 24,
+  "confirmed_itinerary_plan_ID": 146,
+  "bookingResults": [
+    {
+      "routeId": 400,
+      "hotelCode": "1739944",
+      "status": "failed",
+      "error": "Booking failed for hotel 1739944: Booking failed: Your request could not be processed as booking under process"
+    },
+    {
+      "routeId": 401,
+      "hotelCode": "1383563",
+      "status": "failed",
+      "error": "Booking failed for hotel 1383563: Booking failed: Your request could not be processed as booking under process"
+    },
+    {
+      "routeId": 402,
+      "hotelCode": "1742171",
+      "status": "failed",
+      "error": "Booking failed for hotel 1742171: Booking failed: Your request could not be processed as booking under process"
+    }
+  ]
+}

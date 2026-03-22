@@ -1,4 +1,9 @@
-import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  BadRequestException,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import { PrismaService } from '../../../prisma.service';
 import { HotelSearchService } from '../../hotels/services/hotel-search.service';
 import { TBOHotelProvider } from '../../hotels/providers/tbo-hotel.provider';
@@ -18,6 +23,7 @@ interface TboHotelSelection {
   numberOfRooms: number;
   guestNationality: string;
   netAmount: number;
+  searchInitiatedAt?: string;
   passengers: TboHotelPassenger[];
   occupancies?: TboRoomOccupancy[];
 }
@@ -82,7 +88,27 @@ interface BookResponse {
   meta?: {
     recoveredFromTimeout?: boolean;
     recoveryMessage?: string;
+    tokenId?: string;
+    requestPayload?: Record<string, any>;
   };
+}
+
+interface TboAuthResponse {
+  Status: number;
+  TokenId?: string;
+  Error?: {
+    ErrorCode?: number;
+    ErrorMessage?: string;
+  };
+  [key: string]: any;
+}
+
+interface TboCancellationBookingRow {
+  tbo_hotel_booking_confirmation_ID: number;
+  itinerary_route_ID: number | null;
+  tbo_booking_id: string;
+  tbo_booking_reference_number: string | null;
+  api_response: Record<string, any> | null;
 }
 
 @Injectable()
@@ -90,11 +116,17 @@ export class TboHotelBookingService {
   private static readonly MAX_ROOMS = 6;
   private static readonly MAX_ADULTS_PER_ROOM = 8;
   private static readonly MAX_CHILDREN_PER_ROOM = 4;
+  private static readonly SEARCH_SESSION_VALIDITY_MS = 35 * 60 * 1000;
   private readonly logger = new Logger(TboHotelBookingService.name);
   private readonly client: AxiosInstance;
+  private tokenId: string | null = null;
+  private tokenExpiry: Date | null = null;
+  private readonly authTokenTtlMs = 10 * 60 * 1000;
 
   private readonly TBO_USERNAME = process.env.TBO_API_USERNAME || 'Doview';
   private readonly TBO_PASSWORD = process.env.TBO_API_PASSWORD || 'Doview@12345';
+  private readonly TBO_CLIENT_ID = process.env.TBO_CLIENT_ID || 'ApiIntegrationNew';
+  private readonly AUTH_URL = 'https://sharedapi.tektravels.com/SharedData.svc/rest/Authenticate';
   private readonly PREBOOK_URL = 'https://affiliate.tektravels.com/HotelAPI/PreBook';
   private readonly BOOK_URL = 'https://hotelbe.tektravels.com/hotelservice.svc/rest/book';
   private readonly USE_MOCK_TBO = process.env.TBO_USE_MOCK === 'true' || false;
@@ -168,6 +200,21 @@ export class TboHotelBookingService {
         this.logger.error('❌ PreBook response.data is undefined');
         throw new BadRequestException('PreBook response is empty or undefined');
       }
+
+      const prebookRooms = this.collectPreBookRooms(response.data);
+      const prebookCancelPolicies = prebookRooms
+        .flatMap((room: any) => this.normalizeToArray(room?.CancelPolicies ?? room?.CancellationPolicy))
+        .filter(Boolean);
+      const prebookSnapshot = {
+        status: response.data?.Status,
+        message: response.data?.Message,
+        bookingCode: response.data?.BookingCode,
+        roomCount: prebookRooms.length,
+        cancelPoliciesCount: prebookCancelPolicies.length,
+        sampleCancelPolicy: prebookCancelPolicies[0] || null,
+      };
+      this.logger.log(`📥 PreBook API snapshot: ${JSON.stringify(prebookSnapshot)}`);
+      this.logger.log(`📥 PreBook API raw response: ${JSON.stringify(response.data)}`);
 
       (response.data as any).__requestPayload = payload;
 
@@ -259,12 +306,27 @@ export class TboHotelBookingService {
         selection.occupancies,
       );
 
+      const prebookBookingCode = String(
+        preBookResponse?.BookingCode ||
+          preBookResponse?.HotelResult?.[0]?.Rooms?.[0]?.BookingCode ||
+          '',
+      ).trim();
+      if (!prebookBookingCode || !prebookBookingCode.includes('!TB!')) {
+        throw new BadRequestException(
+          'PreBook did not return a valid BookingCode. Please run a fresh search and prebook again before booking.',
+        );
+      }
+
+      const tokenId = await this.authenticate(endUserIp);
+
       const bookingPayload = {
-        BookingCode: preBookResponse.BookingCode || selection.bookingCode,
-        IsVoucherBooking: false,
+        BookingCode: prebookBookingCode,
+        TokenId: tokenId,
+        IsVoucherBooking: true,
         GuestNationality: this.normalizeNationality(selection.guestNationality),
         EndUserIp: endUserIp,
         RequestedBookingMode: 1,
+        TraceId: preBookResponse?.TraceId || '',
         NetAmount: selection.netAmount,
         HotelRoomsDetails: hotelRoomsDetails,
       };
@@ -280,6 +342,7 @@ export class TboHotelBookingService {
 
       (response.data as any).meta = {
         ...(response.data as any).meta,
+        tokenId: tokenId,
         requestPayload: bookingPayload,
       };
 
@@ -432,6 +495,12 @@ export class TboHotelBookingService {
     userId: number,
   ) {
     try {
+      const bookingMeta = (bookingResponse as any)?.meta || {};
+      const tokenId =
+        typeof bookingMeta.tokenId === 'string' && bookingMeta.tokenId.trim().length > 0
+          ? bookingMeta.tokenId.trim()
+          : null;
+
       const childAges = this.getChildAgesFromSelection(selection);
       const passengerSnapshot = selection.passengers.map((p) => ({
         title: resolveProviderPassengerTitle(p.title),
@@ -462,6 +531,8 @@ export class TboHotelBookingService {
             preBookResponse: preBookResponse as Record<string, any>,
             preBookMeta: preBookMeta as Record<string, any>,
             bookResponse: bookingResponse as unknown as Record<string, any>,
+            tokenId,
+            tokenSource: tokenId ? 'authenticate' : 'unavailable',
             persistenceSnapshot: {
               childAges,
               passengerSnapshot,
@@ -648,7 +719,7 @@ export class TboHotelBookingService {
 
     const childrenAges = this.getChildAgesFromSelection(selection);
     const adults = selection.passengers.filter((p) => p.paxType === 1).length;
-    const children = selection.passengers.filter((p) => p.paxType !== 1 && Number(p.age) <= 17).length;
+    const children = selection.passengers.filter((p) => p.paxType !== 1 && Number(p.age) <= 11).length;
     return [
       {
         Adults: Math.max(adults, 1),
@@ -683,6 +754,8 @@ export class TboHotelBookingService {
     if (!selection.guestNationality || !/^[A-Z]{2}$/i.test(selection.guestNationality.trim())) {
       throw new BadRequestException('guestNationality must be a valid ISO-2 country code');
     }
+
+    this.validateSearchSessionWindow(selection.searchInitiatedAt);
 
     if (selection.numberOfRooms < 1 || selection.numberOfRooms > TboHotelBookingService.MAX_ROOMS) {
       throw new BadRequestException(
@@ -723,8 +796,8 @@ export class TboHotelBookingService {
         throw new BadRequestException(`Adult passenger age at index ${i} must be between 12 and 120`);
       }
 
-      if (passenger.paxType === 2 && (passenger.age < 0 || passenger.age > 17)) {
-        throw new BadRequestException(`Child passenger age at index ${i} must be between 0 and 17`);
+      if (passenger.paxType === 2 && (passenger.age < 0 || passenger.age > 11)) {
+        throw new BadRequestException(`Child passenger age at index ${i} must be between 0 and 11`);
       }
 
       if (passenger.pan && !/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(passenger.pan)) {
@@ -762,11 +835,29 @@ export class TboHotelBookingService {
           throw new BadRequestException(`childrenAges length must match children for occupancy index ${i}`);
         }
 
-        const hasInvalidChildAge = ages.some((age) => Number(age) < 0 || Number(age) > 17);
+        const hasInvalidChildAge = ages.some((age) => Number(age) < 0 || Number(age) > 11);
         if (hasInvalidChildAge) {
-          throw new BadRequestException(`childrenAges must be between 0 and 17 for occupancy index ${i}`);
+          throw new BadRequestException(`childrenAges must be between 0 and 11 for occupancy index ${i}`);
         }
       }
+    }
+  }
+
+  private validateSearchSessionWindow(searchInitiatedAt?: string): void {
+    if (!searchInitiatedAt) {
+      return;
+    }
+
+    const parsed = new Date(searchInitiatedAt);
+    if (Number.isNaN(parsed.getTime())) {
+      throw new BadRequestException('searchInitiatedAt must be a valid ISO datetime');
+    }
+
+    const elapsedMs = Date.now() - parsed.getTime();
+    if (elapsedMs > TboHotelBookingService.SEARCH_SESSION_VALIDITY_MS) {
+      throw new BadRequestException(
+        'TBO search session exceeded 35 minutes. Please run a fresh hotel search before prebook/booking.',
+      );
     }
   }
 
@@ -784,8 +875,16 @@ export class TboHotelBookingService {
     return [];
   }
 
+  private collectPreBookRooms(preBookResponse: any): any[] {
+    const roomDetails = this.normalizeToArray(preBookResponse?.HotelRoomsDetails);
+    const hotelResultRooms = this.normalizeToArray(preBookResponse?.HotelResult)
+      .flatMap((hotelResult: any) => this.normalizeToArray(hotelResult?.Rooms));
+
+    return [...roomDetails, ...hotelResultRooms].filter(Boolean);
+  }
+
   private extractPreBookMeta(preBookResponse: PreBookResponse, selection: TboHotelSelection) {
-    const rawRoomDetails = preBookResponse?.HotelRoomsDetails || [];
+    const rawRoomDetails = this.collectPreBookRooms(preBookResponse);
     
     // Extract raw mandatory supplements from MandatorySupplements/MandatorySupplement fields
     const rawMandatorySupplements = rawRoomDetails
@@ -853,6 +952,49 @@ export class TboHotelBookingService {
       normalizedSupplements: allNormalizedSupplements, // ✅ NEW: normalized supplements with metadata
       rawStatus: preBookResponse?.Status,
     };
+  }
+
+  private async authenticate(endUserIp: string): Promise<string> {
+    const now = new Date();
+    if (this.tokenId && this.tokenExpiry && this.tokenExpiry.getTime() > now.getTime()) {
+      return this.tokenId;
+    }
+
+    const authPayload = {
+      ClientId: this.TBO_CLIENT_ID,
+      UserName: this.TBO_USERNAME,
+      Password: this.TBO_PASSWORD,
+      EndUserIp: endUserIp,
+    };
+
+    try {
+      const response = await axios.post<TboAuthResponse>(this.AUTH_URL, authPayload, {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 15000,
+      });
+
+      if (response.data?.Status !== 1 || !response.data?.TokenId) {
+        throw new InternalServerErrorException(
+          `TBO authentication failed: ${response.data?.Error?.ErrorMessage || 'Unknown error'}`,
+        );
+      }
+
+      this.tokenId = response.data.TokenId;
+      this.tokenExpiry = new Date(now.getTime() + this.authTokenTtlMs);
+      return this.tokenId;
+    } catch (error: any) {
+      if (error instanceof InternalServerErrorException) {
+        throw error;
+      }
+
+      const message =
+        error?.response?.data?.Error?.ErrorMessage ||
+        error?.response?.data?.Message ||
+        error?.message ||
+        'Unknown error';
+      this.logger.error(`❌ TBO authentication failed: ${message}`);
+      throw new InternalServerErrorException('Failed to authenticate with TBO before booking.');
+    }
   }
 
   private async tryRecoverBookingAfterTimeout(error: any): Promise<BookResponse | null> {
@@ -956,14 +1098,7 @@ export class TboHotelBookingService {
     reason: string = 'Itinerary cancelled by user',
   ) {
     try {
-      // Find all active TBO bookings for this itinerary
-      const bookings = await this.prisma.tbo_hotel_booking_confirmation.findMany({
-        where: {
-          itinerary_plan_ID: itineraryPlanId,
-          status: 1,
-          deleted: 0,
-        },
-      });
+      const bookings = await this.fetchActiveCancellationBookings(itineraryPlanId);
 
       if (bookings.length === 0) {
         this.logger.log(`No active TBO bookings found for itinerary ${itineraryPlanId}`);
@@ -997,6 +1132,9 @@ export class TboHotelBookingService {
                 cancelledAt: new Date().toISOString(),
                 cancelReason: reason,
               },
+            },
+            select: {
+              tbo_hotel_booking_confirmation_ID: true,
             },
           });
 
@@ -1050,15 +1188,7 @@ export class TboHotelBookingService {
         return [];
       }
 
-      // Find TBO bookings for specified routes
-      const bookings = await this.prisma.tbo_hotel_booking_confirmation.findMany({
-        where: {
-          itinerary_plan_ID: itineraryPlanId,
-          itinerary_route_ID: { in: routeIds },
-          status: 1,
-          deleted: 0,
-        },
-      });
+      const bookings = await this.fetchActiveCancellationBookings(itineraryPlanId, routeIds);
 
       if (bookings.length === 0) {
         this.logger.log(
@@ -1096,6 +1226,9 @@ export class TboHotelBookingService {
                 cancelledAt: new Date().toISOString(),
                 cancelReason: reason,
               },
+            },
+            select: {
+              tbo_hotel_booking_confirmation_ID: true,
             },
           });
 
@@ -1135,5 +1268,43 @@ export class TboHotelBookingService {
         `Failed to cancel TBO hotel routes: ${error.message}`,
       );
     }
+  }
+
+  private async fetchActiveCancellationBookings(
+    itineraryPlanId: number,
+    routeIds?: number[],
+  ): Promise<TboCancellationBookingRow[]> {
+    const safePlanId = Number(itineraryPlanId);
+    if (!Number.isFinite(safePlanId) || safePlanId <= 0) {
+      return [];
+    }
+
+    if (!routeIds || routeIds.length === 0) {
+      const rows = await this.prisma.$queryRawUnsafe(
+        `SELECT tbo_hotel_booking_confirmation_ID, itinerary_route_ID, tbo_booking_id, tbo_booking_reference_number, api_response
+         FROM tbo_hotel_booking_confirmation
+         WHERE itinerary_plan_ID = ? AND status = 1 AND deleted = 0`,
+        safePlanId,
+      );
+      return rows as TboCancellationBookingRow[];
+    }
+
+    const safeRouteIds = routeIds
+      .map((id) => Number(id))
+      .filter((id) => Number.isFinite(id) && id > 0);
+
+    if (safeRouteIds.length === 0) {
+      return [];
+    }
+
+    const placeholders = safeRouteIds.map(() => '?').join(',');
+    const rows = await this.prisma.$queryRawUnsafe(
+      `SELECT tbo_hotel_booking_confirmation_ID, itinerary_route_ID, tbo_booking_id, tbo_booking_reference_number, api_response
+       FROM tbo_hotel_booking_confirmation
+       WHERE itinerary_plan_ID = ? AND itinerary_route_ID IN (${placeholders}) AND status = 1 AND deleted = 0`,
+      safePlanId,
+      ...safeRouteIds,
+    );
+    return rows as TboCancellationBookingRow[];
   }
 }

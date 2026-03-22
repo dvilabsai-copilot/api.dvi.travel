@@ -1,9 +1,18 @@
 {
-  "cityCode": "Bangalore",
-  "checkInDate": "2026-04-16",
-  "checkOutDate": "2026-04-17",
+  "cityCode": "Gurgaon",
+  "checkInDate": "2026-04-17",
+  "checkOutDate": "2026-04-18",
   "roomCount": 1,
   "guestCount": 2,
+  "adultCount": 2,
+  "childCount": 0,
+  "occupancies": [
+    {
+      "adults": 2,
+      "children": 0,
+      "childrenAges": []
+    }
+  ],
   "providers": [
     "hobse"
   ]

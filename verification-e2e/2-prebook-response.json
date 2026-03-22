@@ -1,7 +1,7 @@
 {
   "success": true,
   "message": "No TBO hotels selected for prebook",
-  "itinerary_plan_ID": 20,
+  "itinerary_plan_ID": 33,
   "hotels": [],
   "updatedTotalPrice": 0,
   "finalPrice": 0,
@@ -10,5 +10,6 @@
   "cancellationPoliciesText": null,
   "roomPromotion": null,
   "rateConditions": [],
-  "mandatorySupplements": []
+  "mandatorySupplements": [],
+  "normalizedSupplements": []
 }
