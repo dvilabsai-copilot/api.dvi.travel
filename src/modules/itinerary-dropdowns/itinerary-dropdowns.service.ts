@@ -279,27 +279,110 @@ export class ItineraryDropdownsService {
     }
   }
 
-  // ---------------------------------------------------------------------------
+    // ---------------------------------------------------------------------------
   // LOCATIONS (source / destination) from dvi_stored_locations like old PHP
   // ---------------------------------------------------------------------------
-  async getLocations(
-    type: LocationType = 'source',
-    sourceLocation?: string,
-  ): Promise<LocationOption[]> {
-    const isDestination = type === 'destination';
-
-    const rows = await this.prisma.dvi_stored_locations.findMany({
+  private async getItineraryDistanceLimit(): Promise<number | null> {
+    const row = await this.prisma.dvi_global_settings.findFirst({
       where: {
         deleted: 0,
         status: 1,
-        ...(isDestination && sourceLocation ? { source_location: sourceLocation } : {}),
       } as any,
       select: {
-        source_location: true,
-        destination_location: true,
+        itinerary_distance_limit: true,
       },
-      distinct: isDestination ? ['destination_location'] : ['source_location'],
     } as any);
+
+    if (!row || row.itinerary_distance_limit == null) return null;
+    return Number(row.itinerary_distance_limit);
+  }
+
+  async getLocations(
+    type: LocationType = 'source',
+    sourceLocation?: string,
+    dayNo?: string,
+    totalNoOfDays?: string,
+    departureLocation?: string,
+  ): Promise<LocationOption[]> {
+    const isDestination = type === 'destination';
+
+    let rows:
+      | Array<{ source_location?: string | null; destination_location?: string | null }>
+      | Array<{ destination_location?: string | null }>;
+
+    if (isDestination && isNonEmptyString(sourceLocation)) {
+      const trimmedSourceLocation = sourceLocation.trim();
+      const trimmedDepartureLocation = isNonEmptyString(departureLocation)
+        ? departureLocation.trim()
+        : '';
+      const parsedDayNo = Number(dayNo);
+      const parsedTotalNoOfDays = Number(totalNoOfDays);
+      const hasDayContext =
+        Number.isFinite(parsedDayNo) &&
+        parsedDayNo > 0 &&
+        Number.isFinite(parsedTotalNoOfDays) &&
+        parsedTotalNoOfDays > 0;
+
+      const whereClauses: string[] = ['deleted = 0', 'status = 1'];
+      const params: Array<string | number> = [];
+
+      if (
+        hasDayContext &&
+        parsedTotalNoOfDays - 1 === parsedDayNo &&
+        trimmedDepartureLocation
+      ) {
+        whereClauses.push('(source_location = ? OR source_location = ?)');
+        params.push(trimmedSourceLocation, trimmedDepartureLocation);
+      } else {
+        whereClauses.push('source_location = ?');
+        params.push(trimmedSourceLocation);
+      }
+
+      if (
+        hasDayContext &&
+        parsedTotalNoOfDays === parsedDayNo &&
+        trimmedDepartureLocation
+      ) {
+        whereClauses.push('destination_location = ?');
+        params.push(trimmedDepartureLocation);
+      }
+
+      const itineraryDistanceLimit = await this.getItineraryDistanceLimit();
+      if (
+        itineraryDistanceLimit != null &&
+        Number.isFinite(itineraryDistanceLimit) &&
+        itineraryDistanceLimit > 0
+      ) {
+        whereClauses.push('distance <= ?');
+        params.push(itineraryDistanceLimit);
+      }
+
+      rows = await (this.prisma as any).$queryRawUnsafe(
+        `
+        SELECT destination_location
+        FROM dvi_stored_locations
+        WHERE ${whereClauses.join(' AND ')}
+          AND destination_location IS NOT NULL
+          AND TRIM(destination_location) <> ''
+        GROUP BY destination_location
+        ORDER BY MIN(CAST(distance AS DECIMAL(10,2))) ASC, destination_location ASC
+        `,
+        ...params,
+      );
+    } else {
+      rows = await this.prisma.dvi_stored_locations.findMany({
+        where: {
+          deleted: 0,
+          status: 1,
+          ...(isDestination && sourceLocation ? { source_location: sourceLocation } : {}),
+        } as any,
+        select: {
+          source_location: true,
+          destination_location: true,
+        },
+        distinct: isDestination ? ['destination_location'] : ['source_location'],
+      } as any);
+    }
 
     let locations = rows
       .map((r) => (isDestination ? r.destination_location : r.source_location))
