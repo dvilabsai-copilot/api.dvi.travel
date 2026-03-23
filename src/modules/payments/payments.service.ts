@@ -248,4 +248,32 @@ export class PaymentsService {
       },
     });
   }
+
+  async getCouponWalletHistory(reqUser: any) {
+    const agentId = Number(reqUser.agentId || 0);
+    if (agentId === 0) {
+      throw new BadRequestException('Agent not found');
+    }
+
+    return this.prisma.dvi_coupon_wallet.findMany({
+      where: {
+        agent_id: agentId,
+        deleted: 0,
+      },
+      orderBy: {
+        transaction_date: 'desc',
+      },
+      select: {
+        coupon_wallet_ID: true,
+        agent_id: true,
+        transaction_date: true,
+        transaction_amount: true,
+        transaction_type: true,
+        remarks: true,
+        createdon: true,
+        status: true,
+        deleted: true,
+      },
+    });
+  }
 }
