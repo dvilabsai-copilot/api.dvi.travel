@@ -18,6 +18,10 @@ import { PrismaService } from '../../../prisma.service';
 export class TboHotelMasterSyncService implements OnModuleInit, OnModuleDestroy {
   private logger = new Logger(TboHotelMasterSyncService.name);
   private readonly SHARED_API_URL = 'https://sharedapi.tektravels.com';
+  private readonly TBO_MASTER_API_BASE = 'http://api.tbotechnology.in/TBOHolidays_HotelAPI';
+  private readonly CITY_LIST_API_URL = 'http://api.tbotechnology.in/TBOHolidays_HotelAPI/CityList';
+  private readonly TBO_STATIC_USERNAME = process.env.TBO_STATIC_USERNAME || 'TBOStaticAPITest';
+  private readonly TBO_STATIC_PASSWORD = process.env.TBO_STATIC_PASSWORD || 'Tbo@11530818';
   private readonly USERNAME = process.env.TBO_USERNAME || 'Doview';
   private readonly PASSWORD = process.env.TBO_PASSWORD || 'Doview@12345';
   private http: AxiosInstance = axios;
@@ -131,33 +135,8 @@ export class TboHotelMasterSyncService implements OnModuleInit, OnModuleDestroy 
     try {
       this.logger.log(`📋 Starting hotel master sync for TBO city code: ${tboCityCode}`);
 
-      const tokenId = await this.authenticate();
-
-      // Step 1: Call GetHotels API
-      const request = {
-        CityCode: tboCityCode,
-        TokenId: tokenId,
-        StarRating: 0, // 0 = All ratings
-      };
-
-      this.logger.debug(`📤 GetHotels request: ${JSON.stringify(request)}`);
-
-      const response = await this.http.post(
-        `${this.SHARED_API_URL}/SharedData.svc/rest/GetHotels`,
-        request,
-        {
-          timeout: 30000,
-          headers: { 'Content-Type': 'application/json' },
-        }
-      );
-
-      const status = response.data?.Status;
-      if (status !== 1) {
-        this.logger.warn(`⚠️  GetHotels returned status: ${status}`);
-        return 0;
-      }
-
-      const hotels = response.data?.Hotels || [];
+      // Step 1: Call TBOHotelCodeList API (same source used in proven manual Ooty sync)
+      const hotels = await this.fetchHotelsFromTboHotelCodeList(tboCityCode);
       this.logger.log(`📦 Fetched ${hotels.length} hotels from TBO for city ${tboCityCode}`);
 
       if (hotels.length === 0) {
@@ -169,15 +148,20 @@ export class TboHotelMasterSyncService implements OnModuleInit, OnModuleDestroy 
       let upsertedCount = 0;
       for (const hotel of hotels) {
         try {
+          const hotelCode = String(hotel.HotelCode || hotel.hotelCode || '').trim();
+          if (!hotelCode) {
+            continue;
+          }
+
           await this.prisma.tbo_hotel_master.upsert({
-            where: { tbo_hotel_code: hotel.HotelCode },
+            where: { tbo_hotel_code: hotelCode },
             create: {
-              tbo_hotel_code: hotel.HotelCode,
+              tbo_hotel_code: hotelCode,
               tbo_city_code: tboCityCode,
-              hotel_name: hotel.HotelName || `Hotel ${hotel.HotelCode}`,
+              hotel_name: hotel.HotelName || hotel.hotelName || `Hotel ${hotelCode}`,
               hotel_address: hotel.Address || '',
               city_name: hotel.CityName || '',
-              star_rating: this.parseStarRating(hotel.HotelCategory),
+              star_rating: this.parseStarRating(hotel.HotelCategory || hotel.StarRating),
               hotel_image_url: hotel.Image || '',
               description: hotel.Description || '',
               check_in_time: hotel.CheckInTime || '',
@@ -188,7 +172,7 @@ export class TboHotelMasterSyncService implements OnModuleInit, OnModuleDestroy 
               hotel_name: hotel.HotelName || undefined,
               hotel_address: hotel.Address || undefined,
               city_name: hotel.CityName || undefined,
-              star_rating: this.parseStarRating(hotel.HotelCategory),
+              star_rating: this.parseStarRating(hotel.HotelCategory || hotel.StarRating),
               hotel_image_url: hotel.Image || undefined,
               description: hotel.Description || undefined,
               facilities: hotel.Facilities ? JSON.stringify(hotel.Facilities) : undefined,
@@ -197,7 +181,7 @@ export class TboHotelMasterSyncService implements OnModuleInit, OnModuleDestroy 
           upsertedCount++;
         } catch (upsertError) {
           this.logger.warn(
-            `⚠️  Failed to upsert hotel ${hotel.HotelCode}: ${upsertError.message}`
+            `⚠️  Failed to upsert hotel ${hotel.HotelCode || hotel.hotelCode}: ${upsertError.message}`
           );
         }
       }
@@ -212,37 +196,117 @@ export class TboHotelMasterSyncService implements OnModuleInit, OnModuleDestroy 
     }
   }
 
+  private async fetchHotelsFromTboHotelCodeList(tboCityCode: string): Promise<any[]> {
+    try {
+      const basicAuth = Buffer.from(`${this.TBO_STATIC_USERNAME}:${this.TBO_STATIC_PASSWORD}`).toString('base64');
+      const response = await this.http.post(
+        `${this.TBO_MASTER_API_BASE}/TBOHotelCodeList`,
+        {
+          CityCode: tboCityCode,
+          IsDetailedResponse: 'true',
+        },
+        {
+          timeout: 45000,
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Basic ${basicAuth}`,
+          },
+        },
+      );
+
+      const hotelList = response.data?.HotelCodeList;
+      if (Array.isArray(hotelList)) {
+        return hotelList;
+      }
+
+      const hotels = response.data?.Hotels;
+      if (Array.isArray(hotels)) {
+        return hotels;
+      }
+
+      return [];
+    } catch (error: any) {
+      this.logger.error(`❌ TBOHotelCodeList failed for city ${tboCityCode}: ${error?.message || error}`);
+      return [];
+    }
+  }
+
   /**
    * Sync all major cities
    * Call this periodically (e.g., daily) via a cron job
    */
   async syncAllCities(): Promise<Map<string, number>> {
-    const majorCities = [
-      { code: '1', name: 'Delhi' },
-      { code: '2', name: 'Mumbai' },
-      { code: '3', name: 'Bangalore' },
-      { code: '4', name: 'Agra' },
-      { code: '5', name: 'Hyderabad' },
-      { code: '6', name: 'Jaipur' },
-      { code: '7', name: 'Kolkata' },
-      { code: '8', name: 'Chennai' },
-    ];
+    const allIndiaCities = await this.fetchIndiaCitiesFromCityListApi();
+    if (allIndiaCities.length === 0) {
+      this.logger.warn('⚠️ No cities returned from CityList API for country IN');
+      return new Map<string, number>();
+    }
+
+    this.logger.log(`🌍 Starting full India hotel master sync for ${allIndiaCities.length} city codes`);
 
     const results = new Map<string, number>();
+    const delayMs = Number(process.env.TBO_STATIC_SYNC_CITY_DELAY_MS || 400);
 
-    for (const city of majorCities) {
+    for (const city of allIndiaCities) {
       try {
         const count = await this.syncHotelsForCity(city.code);
-        results.set(city.name, count);
+        results.set(`${city.code}|${city.name}`, count);
         // Add delay to avoid rate limiting
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+        if (delayMs > 0) {
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+        }
       } catch (error) {
-        this.logger.error(`❌ Failed to sync ${city.name}: ${error.message}`);
-        results.set(city.name, 0);
+        this.logger.error(`❌ Failed to sync ${city.name} (${city.code}): ${error.message}`);
+        results.set(`${city.code}|${city.name}`, 0);
       }
     }
 
     return results;
+  }
+
+  /**
+   * Fetch India city list from external TBO CityList API.
+   * Endpoint provided by certification flow.
+   */
+  async fetchIndiaCitiesFromCityListApi(): Promise<Array<{ code: string; name: string }>> {
+    try {
+      const staticBasicAuth = Buffer.from(`${this.TBO_STATIC_USERNAME}:${this.TBO_STATIC_PASSWORD}`).toString('base64');
+      const response = await this.http.post(
+        this.CITY_LIST_API_URL,
+        { CountryCode: 'IN' },
+        {
+          timeout: 60000,
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Basic ${staticBasicAuth}`,
+          },
+        },
+      );
+
+      const statusCode = response.data?.Status?.Code;
+      if (statusCode !== 200) {
+        this.logger.warn(
+          `⚠️ CityList API returned non-success status: ${statusCode} (${response.data?.Status?.Description || 'Unknown'})`,
+        );
+        return [];
+      }
+
+      const cityListRaw = response.data?.CityList;
+      const cityList = Array.isArray(cityListRaw) ? cityListRaw : cityListRaw ? [cityListRaw] : [];
+
+      const normalized = cityList
+        .map((city: any) => ({
+          code: String(city?.Code || city?.CityCode || '').trim(),
+          name: String(city?.Name || city?.CityName || '').trim(),
+        }))
+        .filter((city) => !!city.code);
+
+      this.logger.log(`📍 CityList API returned ${normalized.length} India cities`);
+      return normalized;
+    } catch (error: any) {
+      this.logger.error(`❌ Failed to fetch India cities from CityList API: ${error?.message || error}`);
+      return [];
+    }
   }
 
   /**

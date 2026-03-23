@@ -12,6 +12,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { TboSoapSyncService } from '../services/tbo-soap-sync.service';
+import { TboHotelMasterSyncService } from '../services/tbo-hotel-master-sync.service';
 import { HobseHotelMasterSyncService } from '../services/hobse-hotel-master-sync.service';
 import { HobseHotelCsvImportService } from '../services/hobse-hotel-csv-import.service';
 
@@ -27,6 +28,7 @@ export class HotelMasterSyncController {
 
   constructor(
     private readonly tboSoapService: TboSoapSyncService,
+    private readonly tboHotelMasterSyncService: TboHotelMasterSyncService,
     private readonly hobseHotelMasterSyncService: HobseHotelMasterSyncService,
     private readonly hobseHotelCsvImportService: HobseHotelCsvImportService,
   ) {}
@@ -57,6 +59,80 @@ export class HotelMasterSyncController {
       return {
         success: false,
         message: `Sync failed: ${error.message}`,
+      };
+    }
+  }
+
+  /**
+   * Sync all India cities from CityList API + GetHotels into tbo_hotel_master
+   * POST /api/v1/hotels/sync/all-india
+   */
+  @Post('all-india')
+  async syncAllIndiaCitiesAndHotels() {
+    try {
+      this.logger.log('🔄 Starting full India sync using CityList API (CountryCode=IN)...');
+      const results = await this.tboHotelMasterSyncService.syncAllCities();
+
+      const summary = Array.from(results.entries()).map(([cityKey, count]) => {
+        const [cityCode, ...nameParts] = cityKey.split('|');
+        return {
+          cityCode,
+          cityName: nameParts.join('|'),
+          hotelsAdded: count,
+        };
+      });
+
+      return {
+        success: true,
+        message: 'India cities and hotels synced successfully from CityList API',
+        totalCities: results.size,
+        totalHotels: Array.from(results.values()).reduce((a, b) => a + b, 0),
+        summary,
+      };
+    } catch (error: any) {
+      this.logger.error(`❌ India CityList sync failed: ${error.message}`);
+      return {
+        success: false,
+        message: `India CityList sync failed: ${error.message}`,
+      };
+    }
+  }
+
+  /**
+   * Preview all India city codes from CityList API
+   * GET /api/v1/hotels/sync/all-india/cities
+   */
+  @Get('all-india/cities')
+  async getAllIndiaCitiesFromApi() {
+    const cities = await this.tboHotelMasterSyncService.fetchIndiaCitiesFromCityListApi();
+    return {
+      success: true,
+      count: cities.length,
+      cities,
+    };
+  }
+
+  /**
+   * Test one city sync through all-india service path
+   * POST /api/v1/hotels/sync/all-india/city/:cityCode
+   */
+  @Post('all-india/city/:cityCode')
+  async syncSingleIndiaCity(@Param('cityCode') cityCode: string) {
+    try {
+      this.logger.log(`🔄 Starting single-city India sync for cityCode=${cityCode}`);
+      const inserted = await this.tboHotelMasterSyncService.syncHotelsForCity(cityCode);
+      return {
+        success: true,
+        cityCode,
+        inserted,
+        message: `Single-city sync completed for ${cityCode}`,
+      };
+    } catch (error: any) {
+      this.logger.error(`❌ Single-city India sync failed for ${cityCode}: ${error.message}`);
+      return {
+        success: false,
+        cityCode,
+        message: `Single-city India sync failed: ${error.message}`,
       };
     }
   }

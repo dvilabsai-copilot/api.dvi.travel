@@ -1,0 +1,493 @@
+DVI20260317 REFRESH - TBO API REQUEST/RESPONSE
+============================================
+Source log: server-logs-live-trigger-3.txt
+
+REQUEST 1
+---------
+{
+  "CheckIn": "2026-03-28",
+  "CheckOut": "2026-03-31",
+  "HotelCodes": "1286299,6189887,5957152,5458349,1096747,5451871,1892355,5125296,1743772,1853034,6002645,6190255,1137869,1285684,1527990,1819873,1512017,5522309,6041483,1853760,1732939,1736711,1137971,1743143,6035359,1134576,1413845,1193242,1621819,1740444,1531591,1137975,1742206,1507251,1137871,1137985,1402419,5900427,1505354,6182355,1138012,1736972,1636356,1137914,1524553,6186564,5522608,1514838,1514515,1770139,1193240,1568918,1505401,1735326,1804518,1491314,5483747,1743263,1137925,1522224,5120469,1525024,1137979,1537546,1137987,1482980,1770016,1665842,1771338,5451514,1622114,1506494,1400525,1887299,1706964,1738114,1137969,1137860,1495503,6190127,1732769,1890157,1740239,1853279,1137920,1625322,1514565,1853084,5147932,5392310,1040951,1426294,1887724,6181547,1766160,1472758,1040953,1137827,5150773,1138028",
+  "CityCode": "130990",
+  "GuestNationality": "IN",
+  "PaxRooms": [
+    {
+      "Adults": 2,
+      "Children": 0,
+      "ChildrenAges": []
+    }
+  ],
+  "ResponseTime": 23,
+  "IsDetailedResponse": true,
+  "Filters": {
+    "Refundable": true,
+    "NoOfRooms": 0,
+    "MealType": "WithMeal",
+    "OrderBy": 0,
+    "StarRating": 0,
+    "HotelName": null
+  }
+}
+
+REQUEST 2
+---------
+{
+  "CheckIn": "2026-03-27",
+  "CheckOut": "2026-03-28",
+  "HotelCodes": "1261862,1261860,1688202,1129731,1128903,1277095",
+  "CityCode": "127343",
+  "GuestNationality": "IN",
+  "PaxRooms": [
+    {
+      "Adults": 2,
+      "Children": 0,
+      "ChildrenAges": []
+    }
+  ],
+  "ResponseTime": 23,
+  "IsDetailedResponse": true,
+  "Filters": {
+    "Refundable": true,
+    "NoOfRooms": 0,
+    "MealType": "WithMeal",
+    "OrderBy": 0,
+    "StarRating": 0,
+    "HotelName": null
+  }
+}
+
+RESPONSE 1
+----------
+{
+  "Status": {
+    "Code": 200,
+    "Description": "Successful"
+  },
+  "HotelResult": [
+    {
+      "HotelCode": "1261860",
+      "Currency": "INR",
+      "Rooms": [
+        {
+          "Name": [
+            "Superior Twin,2 Twin Beds,NonSmoking"
+          ],
+          "BookingCode": "1261860!TB!3!TB!68e3e5f8-2634-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "Inclusion": "Free breakfast,Free valet parking,Free self parking",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 7101.52
+              }
+            ]
+          ],
+          "TotalFare": 8748.3,
+          "TotalTax": 1646.79,
+          "RoomPromotion": [
+            "Book now and save"
+          ],
+          "CancelPolicies": [
+            {
+              "FromDate": "21-03-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "25-03-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "BreakFast",
+          "IsRefundable": true,
+          "WithTransfers": false,
+          "RoomID": [
+            "0"
+          ]
+        },
+        {
+          "Name": [
+            "Superior Queen,1 Queen Bed,NonSmoking"
+          ],
+          "BookingCode": "1261860!TB!8!TB!68e3e5f8-2634-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "Inclusion": "Free breakfast,Free valet parking,Free self parking",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 7299
+              }
+            ]
+          ],
+          "TotalFare": 8991.55,
+          "TotalTax": 1692.56,
+          "RoomPromotion": [
+            "Book now and save"
+          ],
+          "CancelPolicies": [
+            {
+              "FromDate": "21-03-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "25-03-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "BreakFast",
+          "IsRefundable": true,
+          "WithTransfers": false,
+          "RoomID": [
+            "0"
+          ]
+        },
+        {
+          "Name": [
+            "Superior Twin"
+          ],
+          "BookingCode": "1261860!TB!4!TB!68e3e5f8-2634-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "Inclusion": "BREAKFAST,PARKING,EXPRESS CHECK-IN,FREE WIFI,DRINKING WATER,FREE FITNESS CENTER ACCESS",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 7325.1
+              }
+            ]
+          ],
+          "TotalFare": 9270.22,
+          "TotalTax": 1945.13,
+          "CancelPolicies": [
+            {
+              "FromDate": "21-03-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "25-03-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "BreakFast",
+          "IsRefundable": true,
+          "WithTransfers": false,
+          "RoomID": [
+            "0"
+          ]
+        },
+        {
+          "Name": [
+            "Superior Queen"
+          ],
+          "BookingCode": "1261860!TB!5!TB!68e3e5f8-2634-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "Inclusion": "BREAKFAST,PARKING,EXPRESS CHECK-IN,FREE WIFI,DRINKING WATER,FREE FITNESS CENTER ACCESS",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 7528.77
+              }
+            ]
+          ],
+          "TotalFare": 9527.28,
+          "TotalTax": 1998.52,
+          "CancelPolicies": [
+            {
+              "FromDate": "21-03-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "25-03-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "BreakFast",
+          "IsRefundable": true,
+          "WithTransfers": false,
+          "RoomID": [
+            "0"
+          ]
+        },
+        {
+          "Name": [
+            "Deluxe King,1 King Bed,NonSmoking"
+          ],
+          "BookingCode": "1261860!TB!1!TB!68e3e5f8-2634-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "Inclusion": "Free breakfast,Free valet parking,Free self parking",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 8284.82
+              }
+            ]
+          ],
+          "TotalFare": 10206.21,
+          "TotalTax": 1921.39,
+          "RoomPromotion": [
+            "Book now and save"
+          ],
+          "CancelPolicies": [
+            {
+              "FromDate": "21-03-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "25-03-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "BreakFast",
+          "IsRefundable": true,
+          "WithTransfers": false,
+          "RoomID": [
+            "0"
+          ]
+        },
+        {
+          "Name": [
+            "Superior Twin,2 Twin Beds,NonSmoking"
+          ],
+          "BookingCode": "1261860!TB!7!TB!68e3e5f8-2634-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "Inclusion": "Half board (buffet dinner),Free breakfast,Free valet parking,Free self parking",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 11047.27
+              }
+            ]
+          ],
+          "TotalFare": 13609.41,
+          "TotalTax": 2562.14,
+          "RoomPromotion": [
+            "Book now and save"
+          ],
+          "CancelPolicies": [
+            {
+              "FromDate": "21-03-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "23-03-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "BreakFast",
+          "IsRefundable": true,
+          "WithTransfers": false,
+          "RoomID": [
+            "0"
+          ]
+        }
+      ]
+    },
+    {
+      "HotelCode": "1128903",
+      "Currency": "INR",
+      "Rooms": [
+        {
+          "Name": [
+            "Premier Room,2 Twin Beds,NonSmoking"
+          ],
+          "BookingCode": "1128903!TB!3!TB!68e3e5f8-2634-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "Inclusion": "Breakfast buffet,Free valet parking,Free self parking",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 7082.4
+              }
+            ]
+          ],
+          "TotalFare": 8660.45,
+          "TotalTax": 1578.05,
+          "RoomPromotion": [
+            "Private sale"
+          ],
+          "CancelPolicies": [
+            {
+              "FromDate": "21-03-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "24-03-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "BreakFast",
+          "IsRefundable": true,
+          "WithTransfers": false,
+          "BeddingGroup": "Bedding type is not guaranteed and it will be allocated by hotel based on availability",
+          "TBORoomID": "10683406",
+          "RoomID": [
+            "10683406"
+          ]
+        },
+        {
+          "Name": [
+            "Premier Kitchenette,1 King Bed,NonSmoking"
+          ],
+          "BookingCode": "1128903!TB!2!TB!68e3e5f8-2634-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "Inclusion": "Free breakfast,Free valet parking,Free self parking",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 8655.71
+              }
+            ]
+          ],
+          "TotalFare": 10583.88,
+          "TotalTax": 1928.17,
+          "RoomPromotion": [
+            "Private sale"
+          ],
+          "CancelPolicies": [
+            {
+              "FromDate": "21-03-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "24-03-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "BreakFast",
+          "IsRefundable": true,
+          "WithTransfers": false,
+          "TBORoomID": "10683551",
+          "RoomID": [
+            "10683551"
+          ]
+        },
+        {
+          "Name": [
+            "Club Room,1 Large Twin Bed,NonSmoking"
+          ],
+          "BookingCode": "1128903!TB!1!TB!68e3e5f8-2634-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "Inclusion": "Breakfast buffet,Free valet parking,Free self parking",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 9480.28
+              }
+            ]
+          ],
+          "TotalFare": 11583.9,
+          "TotalTax": 2103.62,
+          "CancelPolicies": [
+            {
+              "FromDate": "21-03-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "24-03-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "BreakFast",
+          "IsRefundable": true,
+          "WithTransfers": false,
+          "TBORoomID": "10683754",
+          "RoomID": [
+            "10683754"
+          ]
+        },
+        {
+          "Name": [
+            "Club High Rise Room,1 Double Bed,NonSmoking"
+          ],
+          "BookingCode": "1128903!TB!4!TB!68e3e5f8-2634-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "Inclusion": "Breakfast buffet,Free valet parking,Free welcome drink,Free self parking",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 10229.85
+              }
+            ]
+          ],
+          "TotalFare": 12508.82,
+          "TotalTax": 2278.97,
+          "RoomPromotion": [
+            "Private sale"
+          ],
+          "CancelPolicies": [
+            {
+              "FromDate": "21-03-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "24-03-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "BreakFast",
+          "IsRefundable": true,
+          "WithTransfers": false,
+          "TBORoomID": "10683372",
+          "RoomID": [
+            "10683372"
+          ]
+        },
+        {
+          "Name": [
+            "Premier Family Room,1 King Bed,NonSmoking"
+          ],
+          "BookingCode": "1128903!TB!5!TB!68e3e5f8-2634-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "Inclusion": "Breakfast buffet,Free valet parking,Free self parking",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 10229.85
+              }
+            ]
+          ],
+          "TotalFare": 12508.82,
+          "TotalTax": 2278.97,
+          "RoomPromotion": [
+            "Private sale"
+          ],
+          "CancelPolicies": [
+            {
+              "FromDate": "21-03-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "24-03-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "BreakFast",
+          "IsRefundable": true,
+          "WithTransfers": false,
+          "TBORoomID": "10683552",
+          "RoomID": [
+            "10683552"
+          ]
+        }
+      ]
+    }
+  ]
+}
+
+RESPONSE 2
+----------
+{
+  "Status": {
+    "Code": 201,
+    "Description": "No Available rooms for given criteria"
+  }
+}

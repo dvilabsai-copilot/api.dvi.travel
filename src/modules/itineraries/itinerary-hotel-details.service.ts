@@ -40,6 +40,17 @@ export interface ItineraryHotelDetailsResponseDto {
   hotelTabs: ItineraryHotelTabDto[];
   hotels: ItineraryHotelRowDto[];
   totalRoomCount: number;
+  hotelAvailability?: HotelAvailabilityMetaDto;
+}
+
+export interface HotelAvailabilityMetaDto {
+  hasSupplierHotels: boolean;
+  supplierHotelCount: number;
+  placeholderRowCount: number;
+  totalSearchRoutes: number;
+  emptySearchRoutes: number;
+  isPlaceholderOnly: boolean;
+  message: string;
 }
 
 /**

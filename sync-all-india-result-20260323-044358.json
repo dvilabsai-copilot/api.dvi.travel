@@ -1,0 +1,5053 @@
+{
+  "success": true,
+  "message": "India cities and hotels synced successfully from CityList API",
+  "totalCities": 1009,
+  "totalHotels": 0,
+  "summary": [
+    {
+      "cityCode": "268880",
+      "cityName": "Abohar,   Punjab",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "105141",
+      "cityName": "Abu Road,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "102138",
+      "cityName": "Adoor,   kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "101615",
+      "cityName": "Adyar,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "100667",
+      "cityName": "Agartala,   Tripura",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "100578",
+      "cityName": "Agatti,   Lakshadweep",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "394603",
+      "cityName": "Agonda",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "100589",
+      "cityName": "Agra,   Uttar Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "100263",
+      "cityName": "Ahmedabad,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "100363",
+      "cityName": "Ahmednagar,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "100797",
+      "cityName": "Ahmedpur Mandvi,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "260619",
+      "cityName": "Ahwa,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "100273",
+      "cityName": "Aizawl,   Mizoram",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "100686",
+      "cityName": "Ajabgarh,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "100804",
+      "cityName": "Ajmer,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "100689",
+      "cityName": "Akola,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "101625",
+      "cityName": "Alibaug,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "100420",
+      "cityName": "Aligarh,   Uttar Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "148835",
+      "cityName": "Alipurduar,   West Bengal",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "161104",
+      "cityName": "Alkapuri,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "109524",
+      "cityName": "Alleppey/Alappuzha,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "100203",
+      "cityName": "Almora,   Uttarakhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "151339",
+      "cityName": "Along,   Arunachal Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "101349",
+      "cityName": "Alto Porvorim,   Goa",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "109093",
+      "cityName": "Alwar,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "418099",
+      "cityName": "Amalapuram,   Andhra Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "305707",
+      "cityName": "Ambaji,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "100881",
+      "cityName": "Ambala,   Haryana",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "105159",
+      "cityName": "Amer,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "101128",
+      "cityName": "Amravati,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "299784",
+      "cityName": "Amreli,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "101129",
+      "cityName": "Amritsar,   Punjab",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "252072",
+      "cityName": "Anachal,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "109446",
+      "cityName": "Anand,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "105160",
+      "cityName": "Anandpur,   Punjab",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "308358",
+      "cityName": "Anandpur Sahib,   Punjab",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "153877",
+      "cityName": "Anantapur District",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "153814",
+      "cityName": "Andaman and Nicobar Islands",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "102166",
+      "cityName": "Angul,   Odisha",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "160388",
+      "cityName": "Anjar,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "101146",
+      "cityName": "Anjuna,   Goa",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "101147",
+      "cityName": "Ankleshwar,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "417883",
+      "cityName": "Annavaram,   Andhra Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "104724",
+      "cityName": "Arambol,   Goa",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "109167",
+      "cityName": "Arcot,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "109973",
+      "cityName": "Aronda,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "161026",
+      "cityName": "Arookutty,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "109872",
+      "cityName": "Arpora,   Goa",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "294336",
+      "cityName": "Arrah,   Bihar",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "101068",
+      "cityName": "Arrosim Beach,   Goa",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "110211",
+      "cityName": "Asansol,   West Bengal",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "151836",
+      "cityName": "Ashtamudi,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "404579",
+      "cityName": "Ashvem,   Goa",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "150412",
+      "cityName": "Athirapally,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "105178",
+      "cityName": "Athirapilly,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "110248",
+      "cityName": "Auli,   Uttarakhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "110349",
+      "cityName": "Aurangabad,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "109665",
+      "cityName": "Auroville,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "110358",
+      "cityName": "Ayodhya,   Uttar Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "302986",
+      "cityName": "Azamgarh,   Uttar Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "110041",
+      "cityName": "B. R. Hills,   Mizoram",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "111073",
+      "cityName": "Badami,   Karnataka",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "150171",
+      "cityName": "Baddi,   Himachal Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "109814",
+      "cityName": "Badrinath,   Uttarakhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "110640",
+      "cityName": "Baga,   Goa",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "300972",
+      "cityName": "Bagalkot,   Karnataka",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "294442",
+      "cityName": "Bagar,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "150697",
+      "cityName": "Bagdogra,   WEST BENGAL",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "295633",
+      "cityName": "Bahadurgarh,   Haryana",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "291124",
+      "cityName": "Bahraich,   Uttar Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "151842",
+      "cityName": "Baiguney,   Sikkim",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "101485",
+      "cityName": "Baindur,   Karnataka",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "110659",
+      "cityName": "Bakkhali,   West Bengal",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "148857",
+      "cityName": "Balaghat,   Madhya Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "105188",
+      "cityName": "Balangir,   Odisha",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "111097",
+      "cityName": "Balasinore,   Gujrat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "295632",
+      "cityName": "Balasore,   Odisha",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "110483",
+      "cityName": "Ballari,   Karnataka",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "301775",
+      "cityName": "Ballia,   Uttar Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "110977",
+      "cityName": "Balrampur,   Uttar Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "150951",
+      "cityName": "Balurghat,   West Bengal",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "111121",
+      "cityName": "Bandhavgarh-Nationalpark,   Madhya Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "110851",
+      "cityName": "Bandipur,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "110853",
+      "cityName": "Bangaram Island,   Lakshadweep",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "294440",
+      "cityName": "Banjar",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "418092",
+      "cityName": "Banswara,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "110855",
+      "cityName": "Baramati,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "274840",
+      "cityName": "Barasat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "110425",
+      "cityName": "Baratang Island,   Andaman & Nicobar",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "105028",
+      "cityName": "Barauni,   Bihar",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "110789",
+      "cityName": "Barbil,   Odisha",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "110512",
+      "cityName": "Bardez,   Goa",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "111009",
+      "cityName": "Bareilly,   Uttar Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "298690",
+      "cityName": "Barkot,   Uttarakhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "111142",
+      "cityName": "Barmer,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "307085",
+      "cityName": "Barnala,   Punjab",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "417419",
+      "cityName": "Barsana,   Uttar Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "111028",
+      "cityName": "Basara,   Telangana",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "160986",
+      "cityName": "Basti,   Uttar Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "370731",
+      "cityName": "Bayad,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "102213",
+      "cityName": "Beawar,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "161013",
+      "cityName": "Becharaji,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "234393",
+      "cityName": "Begun,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "307801",
+      "cityName": "Begusarai,   Bihar",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "110564",
+      "cityName": "Behror,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "110566",
+      "cityName": "Bekal,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "111427",
+      "cityName": "Belagavi,   Karnataka",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "417940",
+      "cityName": "Belmonte Mezzagno",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "111440",
+      "cityName": "Belur & Halebid,   Karnataka",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "150242",
+      "cityName": "Benaulim,   Goa",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "111124",
+      "cityName": "Bengaluru/Bangalore,   Karnataka",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "110618",
+      "cityName": "Betalbatim Beach,   Goa",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "111749",
+      "cityName": "Betul,   Madhya Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "161003",
+      "cityName": "Bhabua,   Bihar",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "108056",
+      "cityName": "Bhagalpur,   Bihar",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "151811",
+      "cityName": "Bhalukpong,   Arunachal Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "111694",
+      "cityName": "Bhandardara,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "111484",
+      "cityName": "Bharatpur,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "105046",
+      "cityName": "Bharmour,   Himachal Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "111195",
+      "cityName": "Bharuch,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "111292",
+      "cityName": "Bhatinda,   Punjab",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "111485",
+      "cityName": "Bhavnagar,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "101318",
+      "cityName": "Bhayandar,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "144227",
+      "cityName": "Bheeramballi,   Karnataka",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "105400",
+      "cityName": "Bhilai,   Chhattisgarh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "105648",
+      "cityName": "Bhilwara,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "111196",
+      "cityName": "Bhimtal,   Uttarakhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "109000",
+      "cityName": "Bhiwadi,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "144229",
+      "cityName": "Bhiwandi,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "154216",
+      "cityName": "Bhiwani district,   Haryana",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "111486",
+      "cityName": "Bhogapuram,   Andhra Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "111932",
+      "cityName": "Bhopal,   Madhya Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "105649",
+      "cityName": "Bhowali,   Uttarakhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "111558",
+      "cityName": "Bhubaneswar,   Odisha",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "144230",
+      "cityName": "Bhuj,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "108057",
+      "cityName": "Bhuntar,   Himachal Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "161001",
+      "cityName": "Bihar Shariff,   Bihar",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "105736",
+      "cityName": "Bijainagar,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "111499",
+      "cityName": "Bijaipur,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "417015",
+      "cityName": "Bijanbari,   West Bengal",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "144247",
+      "cityName": "Bikaner,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "111574",
+      "cityName": "Bilaspur,   Chhattisgarh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "111212",
+      "cityName": "Binsar,   Uttarakhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "267778",
+      "cityName": "Bir,   Himachal Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "280430",
+      "cityName": "Bisalpur,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "111216",
+      "cityName": "Bishangarh,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "112643",
+      "cityName": "Bodhgaya,   Bihar",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "112649",
+      "cityName": "Bogmallo,   Goa",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "263258",
+      "cityName": "Boisar,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "112228",
+      "cityName": "Bokaro,   Jharkhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "111364",
+      "cityName": "Bokkapuram,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "111264",
+      "cityName": "Bomdila,   Arunachal Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "356153",
+      "cityName": "Bommaraspet,   Telangana",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "151843",
+      "cityName": "Bongaigaon,   Assam",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "112272",
+      "cityName": "Brahmapur,   Odisha",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "346602",
+      "cityName": "Bulandshahr,   Uttar Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "293567",
+      "cityName": "Buldana,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "113081",
+      "cityName": "Bundi,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "160993",
+      "cityName": "Burdwan,   West Bengal",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "148834",
+      "cityName": "Burhanpur,   Madhya Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "112868",
+      "cityName": "Calangute,   Goa",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "113160",
+      "cityName": "Canacona,   Goa",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "105699",
+      "cityName": "Candolim,   Goa",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "144510",
+      "cityName": "Candolim Beach,   Goa",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "113347",
+      "cityName": "Cansaulim Beach,   Goa",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "150965",
+      "cityName": "Car Nicobar,   Andaman & Nicobar",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "112913",
+      "cityName": "Caranzalem,   Goa",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "113566",
+      "cityName": "Cauvery,   Karnataka",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "114566",
+      "cityName": "Cavelossim,   Goa",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "113675",
+      "cityName": "Chail,   Himachal Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "114601",
+      "cityName": "Chakan,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "150284",
+      "cityName": "Chalakudy,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "417515",
+      "cityName": "Challakere",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "114703",
+      "cityName": "Chamba,   Uttarakhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "114936",
+      "cityName": "Chamoli,   Uttarakhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "105721",
+      "cityName": "Champakulam,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "114107",
+      "cityName": "Chandigarh,   Chandigarh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "102259",
+      "cityName": "Chandipur,   Odisha",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "105246",
+      "cityName": "Chandrapur,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "417335",
+      "cityName": "Chandrapur district,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "113683",
+      "cityName": "Changanassery,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "105247",
+      "cityName": "Changodar,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "417528",
+      "cityName": "Chapra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "114117",
+      "cityName": "Charholi Budruk,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "417037",
+      "cityName": "Chatra,   Jharkhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "114960",
+      "cityName": "Chaukori,   Uttarakhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "364172",
+      "cityName": "Chavakkad",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "127343",
+      "cityName": "Chennai,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "114523",
+      "cityName": "Cherai,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "106208",
+      "cityName": "Cherai Beach,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "161025",
+      "cityName": "Cherrapunji,   Meghalaya",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "160465",
+      "cityName": "Chhatarpur",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "108141",
+      "cityName": "Chhindwara,   Madhya Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "114977",
+      "cityName": "Chhota Udaipur,   Gujrat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "114793",
+      "cityName": "Chidambaram,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "379302",
+      "cityName": "Chikkaballapur,   Karnataka",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "114986",
+      "cityName": "Chikkamagaluru,   Karnataka",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "114987",
+      "cityName": "Chikmaglur,   Karnataka",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "148870",
+      "cityName": "CHILLING,   Jammu and Kashmir",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "256989",
+      "cityName": "Chimur",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "114357",
+      "cityName": "Chinakakani,   Andhra Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "114660",
+      "cityName": "Chinnakanal,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "114801",
+      "cityName": "Chintpuri,   Himachal Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "114272",
+      "cityName": "Chiplun,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "274833",
+      "cityName": "Chirawa,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "225402",
+      "cityName": "Chitradurga,   Karnataka",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "153978",
+      "cityName": "Chitradurga District",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "114803",
+      "cityName": "Chitrakoot,   Madhya Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "114804",
+      "cityName": "Chittaurgarh,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "108144",
+      "cityName": "Chittorgarh,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "114758",
+      "cityName": "Choglamsar,   Jammu And Kashmir",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "160626",
+      "cityName": "Chomu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "114811",
+      "cityName": "Chorao Island,   Goa",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "286831",
+      "cityName": "Chottanikkara",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "114817",
+      "cityName": "Chowara,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "114823",
+      "cityName": "Chundale,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "114554",
+      "cityName": "Churu,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "144735",
+      "cityName": "Coimbatore,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "115840",
+      "cityName": "Colva,   Goa",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "301104",
+      "cityName": "Cooch Behar,   West Bengal",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "102287",
+      "cityName": "Coochbehar,   West Bengal",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "115864",
+      "cityName": "Coonoor,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "115400",
+      "cityName": "Coorg,   Karnataka",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "305701",
+      "cityName": "Courtallam,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "115526",
+      "cityName": "Covelong,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "116021",
+      "cityName": "Cuttack,   Orissa",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "104936",
+      "cityName": "Dadahu,   Himachal Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "238716",
+      "cityName": "Dahegam,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "115176",
+      "cityName": "Dahej,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "154007",
+      "cityName": "Dakshina Kannada District,   Karnataka",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "116613",
+      "cityName": "Dalhousie,   Himachal Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "116035",
+      "cityName": "Daman,   Daman and Diu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "116039",
+      "cityName": "Dandeli,   Karnataka",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "116624",
+      "cityName": "Dankuni,   West Bengal",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "115634",
+      "cityName": "Dapoli,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "105998",
+      "cityName": "Darbhanga,   Bihar",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "116264",
+      "cityName": "Darjeeling,   West Bengal",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "402770",
+      "cityName": "Dasada,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "101849",
+      "cityName": "Daund,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "144874",
+      "cityName": "Dausa,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "280566",
+      "cityName": "Davanagere,   Karnataka",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "148900",
+      "cityName": "DEEPYOKMA,   Jammu and Kashmir",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "116164",
+      "cityName": "Dehradun,   Uttarakhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "418069",
+      "cityName": "Delhi NCR",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "116074",
+      "cityName": "Deogarh,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "105482",
+      "cityName": "Deoghar,   Jharkhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "301589",
+      "cityName": "Dera Bassi,   Punjab",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "117352",
+      "cityName": "Devikulam,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "106255",
+      "cityName": "Devprayag,   Uttarakhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "104946",
+      "cityName": "Dhanachuli,   Uttarakhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "106006",
+      "cityName": "Dhanaulti,   Uttarakhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "150731",
+      "cityName": "Dhanbad,   Jharkhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "154074",
+      "cityName": "Dhar District,   Madhya Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "102310",
+      "cityName": "Dharampur,   Himachal Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "115880",
+      "cityName": "Dharamshala,   HIMACHAL PRADESH",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "302737",
+      "cityName": "Dhari,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "144913",
+      "cityName": "Dharmapuri,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "105779",
+      "cityName": "Dhela,   Uttarakhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "116338",
+      "cityName": "Dhikuli,   Uttarakhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "245095",
+      "cityName": "Dholavira,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "115881",
+      "cityName": "Dholpur,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "116087",
+      "cityName": "Dhule,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "115884",
+      "cityName": "Dibrugarh,   Assam",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "115894",
+      "cityName": "Digha,   West Bengal",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "115896",
+      "cityName": "Dimapur,   Nagaland",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "160727",
+      "cityName": "Dindi,   Andhra Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "106010",
+      "cityName": "Dindigul,   tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "151439",
+      "cityName": "Dirang,   Arunachal Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "115899",
+      "cityName": "Diuu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "295356",
+      "cityName": "Diveagar",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "408733",
+      "cityName": "Doddaballapura,   Karnataka",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "144950",
+      "cityName": "Dooars,   West Bengal",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "116460",
+      "cityName": "Dundlod,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "144996",
+      "cityName": "Dungarpur,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "117048",
+      "cityName": "Durg,   Chhattisgarh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "115958",
+      "cityName": "Durgapur,   West Bengal",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "108863",
+      "cityName": "Dwarka,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "117110",
+      "cityName": "Edava,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "417865",
+      "cityName": "Eluru,   Andhra Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "145110",
+      "cityName": "Ernakulam,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "333373",
+      "cityName": "Erode,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "153847",
+      "cityName": "Etah District",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "118129",
+      "cityName": "Faridabad,   Haryana",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "297864",
+      "cityName": "Faridkot,   Punjab",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "102458",
+      "cityName": "Fatehabad,   Haryana",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "118805",
+      "cityName": "Fatehgarh,   Uttar Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "117771",
+      "cityName": "Fatehpur Sikri,   Uttar Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "404366",
+      "cityName": "Firozabad,   Uttar Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "370828",
+      "cityName": "Fort Kochi",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "305606",
+      "cityName": "Gachibowli,   Telangana",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "402273",
+      "cityName": "Gadag-Betageri,   Karnataka",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "117993",
+      "cityName": "Gandhidham,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "119071",
+      "cityName": "Gandhinagar,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "160995",
+      "cityName": "Gandipet,   Telangana",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "101509",
+      "cityName": "Gangavathi,   Karnataka",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "119613",
+      "cityName": "Gangotri,   Uttarakhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "119221",
+      "cityName": "Gangtok,   Sikkim",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "119222",
+      "cityName": "Ganpatipule,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "200705",
+      "cityName": "Garhmukteshwar,   Uttar Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "119358",
+      "cityName": "Gaya,   Bihar",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "160390",
+      "cityName": "Geyzing,   Sikkim",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "295489",
+      "cityName": "Ghanerao",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "118973",
+      "cityName": "Ghaziabad,   Uttar Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "106106",
+      "cityName": "Giridih,   Jharkhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "118719",
+      "cityName": "Glenburn,   West Bengal",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "119805",
+      "cityName": "Goa,   Goa",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "108256",
+      "cityName": "Goa Velha,   Goa",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "261602",
+      "cityName": "Godhra,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "118733",
+      "cityName": "Gokarna,   Karnataka",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "417924",
+      "cityName": "Gokul,   Mathura",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "251229",
+      "cityName": "Gomti Nagar,   Uttar Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "417511",
+      "cityName": "Gondal,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "382623",
+      "cityName": "Gondia,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "262960",
+      "cityName": "Gopalganj,   Bihar",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "120368",
+      "cityName": "Gopalpur on Sea,   Odisha",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "256969",
+      "cityName": "Gorai,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "120371",
+      "cityName": "Gorakhpur,   Uttar Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "102486",
+      "cityName": "Gosaba,   West Bengal",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "108265",
+      "cityName": "Govardhan,   Uttar Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "145430",
+      "cityName": "Greater Noida,   Uttar Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "102499",
+      "cityName": "Gudalur,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "105832",
+      "cityName": "Guirim,   Goa",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "153893",
+      "cityName": "Gujarat,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "119924",
+      "cityName": "Gulmarg,   Jammu and Kashmir",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "280781",
+      "cityName": "Gummidipundi,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "150594",
+      "cityName": "Guna,   Madhya Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "106131",
+      "cityName": "Guntur,   Andhra Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "300176",
+      "cityName": "Guptkashi,   Uttarakhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "301389",
+      "cityName": "Gurdaspur",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "119513",
+      "cityName": "Gurugram/Gurgaon,   Haryana",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "119517",
+      "cityName": "Guruvayur,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "121139",
+      "cityName": "Guwahati,   Assam",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "120439",
+      "cityName": "Gwalior,   Madhya Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "161000",
+      "cityName": "Hajipur,   Bihar",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "120588",
+      "cityName": "Haldwani,   Uttarakhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "121175",
+      "cityName": "Hampi,   Karnataka",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "119961",
+      "cityName": "Hansi,   Haryana",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "120206",
+      "cityName": "Hanumangarh,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "121186",
+      "cityName": "Haridwar,   Uttarakhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "257027",
+      "cityName": "Hasanganj,   Uttar Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "120871",
+      "cityName": "Hassan,   Karnataka",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "417919",
+      "cityName": "Hatgad,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "119978",
+      "cityName": "Havelock Island,   Andaman & Nicobar",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "102512",
+      "cityName": "Hebbal,   Karnataka",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "148892",
+      "cityName": "Hemis Skupachan,   Jammu and Kashmir",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "121355",
+      "cityName": "Hinjawadi,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "105850",
+      "cityName": "Hisar,   Haryana",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "145660",
+      "cityName": "Hooghly,   West Bengal",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "121396",
+      "cityName": "Hosapete,   Karnataka",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "153950",
+      "cityName": "Hoshangabad District",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "121557",
+      "cityName": "Hoshiarpur,   Punjab",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "355946",
+      "cityName": "Hoskote",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "121290",
+      "cityName": "Hosur,   KARNATAKA",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "145687",
+      "cityName": "Howrah,   West Bengal",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "150235",
+      "cityName": "Hubballi,   Karnataka",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "338277",
+      "cityName": "Hubli (HBX),   Hubli",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "121570",
+      "cityName": "Hudikeri,   Karnataka",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "393866",
+      "cityName": "Hunder",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "355802",
+      "cityName": "Hunsur,   Karnataka",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "145710",
+      "cityName": "Hyderabad,   Andra Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "102531",
+      "cityName": "Ichalkaranji,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "154222",
+      "cityName": "Idukki District",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "121984",
+      "cityName": "Igatpuri,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "122108",
+      "cityName": "Imphal,   Manipur",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "121726",
+      "cityName": "Indore,   Madhya Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "122732",
+      "cityName": "Itanagar,   Arunachal Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "121509",
+      "cityName": "Jabalpur,   Madhya Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "150469",
+      "cityName": "Jagdalpur,   Chhattisgarh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "122175",
+      "cityName": "Jaipur,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "122326",
+      "cityName": "Jaisalmer,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "268917",
+      "cityName": "Jajapur",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "122327",
+      "cityName": "Jalandhar,   Punjab",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "160994",
+      "cityName": "Jaldapara,   West Bengal",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "122177",
+      "cityName": "Jalgaon,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "103931",
+      "cityName": "Jalna,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "123420",
+      "cityName": "Jalore,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "122328",
+      "cityName": "Jalpaiguri,   West Bengal",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "105614",
+      "cityName": "Jambulne,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "121783",
+      "cityName": "Jammu,   Jammu and Kashmir",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "122329",
+      "cityName": "Jamnagar,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "123422",
+      "cityName": "Jamshedpur,   Jharkhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "280676",
+      "cityName": "Jamui,   Bihar",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "251261",
+      "cityName": "Jangipur,   West Bengal",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "161002",
+      "cityName": "Jaunpur,   Uttar Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "161021",
+      "cityName": "Jawai,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "301375",
+      "cityName": "Jawhar,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "122763",
+      "cityName": "Jeypore,   Odisha",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "105885",
+      "cityName": "Jhadol,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "122199",
+      "cityName": "Jhansi,   Uttar Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "295101",
+      "cityName": "Jharsuguda,   Odisha",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "148844",
+      "cityName": "Jhunjhunu,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "257230",
+      "cityName": "Jibhi,   Himachal Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "115501",
+      "cityName": "Jim Corbett National Park,   Uttarakhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "123445",
+      "cityName": "Jispa,   Himachal Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "145836",
+      "cityName": "Jodhpur,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "122215",
+      "cityName": "Jorhat,   Assam",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "160632",
+      "cityName": "Joshimath",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "105627",
+      "cityName": "Junagadh,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "122370",
+      "cityName": "Junagarh,   Gujrat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "123469",
+      "cityName": "Jwalamukhi,   Himachal Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "150397",
+      "cityName": "Kadapa,   Andhra Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "355405",
+      "cityName": "Kadi,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "145856",
+      "cityName": "Kadmat Island,   Lakshadweep",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "151112",
+      "cityName": "Kailashahar,   Tripura",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "123476",
+      "cityName": "Kakinada,   Andhra Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "104092",
+      "cityName": "Kalady,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "269264",
+      "cityName": "Kalamassery",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "122388",
+      "cityName": "Kaliel,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "122511",
+      "cityName": "Kalimpong,   West Bengal",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "293190",
+      "cityName": "Kallakurichi,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "368724",
+      "cityName": "Kalol,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "105633",
+      "cityName": "Kalpatta,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "121837",
+      "cityName": "Kalpetta,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "145872",
+      "cityName": "Kalyan,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "151198",
+      "cityName": "Kamalpur,   Tripura",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "121841",
+      "cityName": "Kamba,   Gujrat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "306364",
+      "cityName": "Kamshet,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "122406",
+      "cityName": "Kanadukathan,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "338739",
+      "cityName": "Kanatal",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "122824",
+      "cityName": "Kanchipuram,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "122253",
+      "cityName": "Kandaghat,   Himachal Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "151469",
+      "cityName": "Kandla,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "153910",
+      "cityName": "Kangra District",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "122826",
+      "cityName": "Kangra Valley,   Himachal Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "122931",
+      "cityName": "Kanha,   Madhya Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "299954",
+      "cityName": "Kankavli,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "417856",
+      "cityName": "Kannauj,   Uttar Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "122256",
+      "cityName": "Kanniyakumari,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "122522",
+      "cityName": "Kannur,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "153898",
+      "cityName": "Kannur District",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "122932",
+      "cityName": "Kanpur,   Uttar Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "151841",
+      "cityName": "Kantal,   Uttarakhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "370728",
+      "cityName": "Kanthi,   West Bengal",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "123084",
+      "cityName": "Kanyakumari,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "122525",
+      "cityName": "Kappad,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "300642",
+      "cityName": "Kapurthala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "123503",
+      "cityName": "Karad,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "123204",
+      "cityName": "Karaikudi,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "148869",
+      "cityName": "Karauli,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "153890",
+      "cityName": "Karauli District",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "122938",
+      "cityName": "Kargil,   Jammu and Kashmir",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "103950",
+      "cityName": "Karimnagar,   Telangana",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "160750",
+      "cityName": "Karjat City",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "122275",
+      "cityName": "Karnal,   Haryana",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "123217",
+      "cityName": "Karur,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "123098",
+      "cityName": "Karwar,   Karnataka",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "123218",
+      "cityName": "Kasarde,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "122848",
+      "cityName": "Kasargod,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "122950",
+      "cityName": "Kasauli,   Himachal Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "417942",
+      "cityName": "Kasganj,   Uttar Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "123518",
+      "cityName": "Kashid,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "123519",
+      "cityName": "Kashipur,   Uttarakhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "102540",
+      "cityName": "Kasol,   Himachal Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "123108",
+      "cityName": "Kathgodam,   Uttarakhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "108361",
+      "cityName": "Katihar,   Bihar",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "151859",
+      "cityName": "KATPADI,   TAMIL NADU",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "124184",
+      "cityName": "Katra,   Jammu and Kashmir",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "123227",
+      "cityName": "Kausani,   Uttarakhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "123527",
+      "cityName": "Kaziranga,   Assam",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "123231",
+      "cityName": "Kedarnath,   Uttarakhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "122978",
+      "cityName": "Kerala,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "150615",
+      "cityName": "Keshod,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "161022",
+      "cityName": "Kevadia,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "123258",
+      "cityName": "Khajjiar,   Himachal Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "122580",
+      "cityName": "Khajuraho,   Madhya Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "123259",
+      "cityName": "Khandala,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "102545",
+      "cityName": "Khandela,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "106186",
+      "cityName": "Khandwa,   Madhya Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "280867",
+      "cityName": "Kharagpur,   West Bengal",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "205200",
+      "cityName": "Kharar,   Punjab",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "293579",
+      "cityName": "Khargone,   Madhya Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "101671",
+      "cityName": "Khas Nagrota,   Himachal Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "160988",
+      "cityName": "Khawasa,   Madhya Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "153813",
+      "cityName": "Kheri District,   Uttar Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "122998",
+      "cityName": "Khilchipur,   Madhya Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "123676",
+      "cityName": "Khimsar,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "404666",
+      "cityName": "Khiyansaria,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "295097",
+      "cityName": "Khopoli,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "151837",
+      "cityName": "Kidanganad,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "108369",
+      "cityName": "Kihim,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "417524",
+      "cityName": "Kishanganj,   Bihar",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "148902",
+      "cityName": "Kishangarh,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "101204",
+      "cityName": "Kochi,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "154023",
+      "cityName": "Kodagu,   Karnataka",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "123608",
+      "cityName": "Kodaikanal,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "300919",
+      "cityName": "Koderma",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "352597",
+      "cityName": "Kodungallur,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "304539",
+      "cityName": "Kolad,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "161007",
+      "cityName": "Kolaghat,   West Bengal",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "123875",
+      "cityName": "Kolhapur,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "262894",
+      "cityName": "Koliyaak,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "113128",
+      "cityName": "Kolkata/Calcutta,   West Bengal",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "123877",
+      "cityName": "Kollam,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "123879",
+      "cityName": "Konark,   Odisha",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "103877",
+      "cityName": "Kondotty,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "241214",
+      "cityName": "Koppal,   Karnataka",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "286380",
+      "cityName": "Korba,   Chhattisgarh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "124966",
+      "cityName": "Kota,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "396075",
+      "cityName": "Kotabagh,   Uttarakhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "123312",
+      "cityName": "Kotagiri,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "260573",
+      "cityName": "Kotda Sangani,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "418091",
+      "cityName": "Kotdwar,   Uttarakhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "124008",
+      "cityName": "Kothamangalam,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "101696",
+      "cityName": "Koti,   Telangana",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "123314",
+      "cityName": "Kotputli,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "123891",
+      "cityName": "Kottayam,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "101967",
+      "cityName": "Kottivakkam,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "123897",
+      "cityName": "Kovalam,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "144475",
+      "cityName": "Kozhikode,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "123334",
+      "cityName": "Krishnagiri,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "123914",
+      "cityName": "Kuchaman,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "103727",
+      "cityName": "Kudal,   Goa",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "124997",
+      "cityName": "Kudasan,   Gujrat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "371051",
+      "cityName": "Kufri",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "146047",
+      "cityName": "Kullu,   HIMACHAL PRADESH",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "123344",
+      "cityName": "Kumarakom,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "125002",
+      "cityName": "Kumbakonam,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "150174",
+      "cityName": "Kumbalgarh,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "123774",
+      "cityName": "Kumbhalgarh,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "402772",
+      "cityName": "Kumharsain,   Himachal Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "146051",
+      "cityName": "Kumily,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "103888",
+      "cityName": "Kundapur,   Karnataka",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "103728",
+      "cityName": "Kurnool,   Andhra Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "159580",
+      "cityName": "Kurseong,   West Bengal",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "151844",
+      "cityName": "Kurukshetra,   Haryana",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "105541",
+      "cityName": "Kuruppanthara,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "124044",
+      "cityName": "Kushalnagar,   Karnataka",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "124045",
+      "cityName": "Kushinagar,   Uttar Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "122798",
+      "cityName": "Kutch,   Gujrat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "244233",
+      "cityName": "Lachen,   Sikkim",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "262996",
+      "cityName": "Lachhmangarh,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "146091",
+      "cityName": "Lachung,   Sikkim",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "150363",
+      "cityName": "Ladakh,   Ladakh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "146104",
+      "cityName": "Lahaul and Spiti,   Himachal Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "161005",
+      "cityName": "Lakhimpur,   Uttar Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "124514",
+      "cityName": "Lakkidi,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "153914",
+      "cityName": "Lakshadweep",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "103751",
+      "cityName": "Lansdowne,   Uttarakhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "148903",
+      "cityName": "Lataguri,   West Bengal",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "125485",
+      "cityName": "Latur,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "146184",
+      "cityName": "Lava,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "125144",
+      "cityName": "Leh,   Jammu and Kashmir",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "148896",
+      "cityName": "LINGSHED,   Jammu and Kashmir",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "126630",
+      "cityName": "Lonavala,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "126666",
+      "cityName": "Lucknow,   Uttar Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "125928",
+      "cityName": "Ludhiana,   Punjab",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "125651",
+      "cityName": "Luni,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "418067",
+      "cityName": "Madgaon",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "243580",
+      "cityName": "Madhapur,   Telangana",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "160999",
+      "cityName": "Madhubani,   Bihar",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "104313",
+      "cityName": "Madikeri,   Karnataka",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "127067",
+      "cityName": "Madurai,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "125684",
+      "cityName": "Mahabaleshwar,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "126117",
+      "cityName": "Mahabalipuram,   TAMIL NADU",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "103781",
+      "cityName": "Mahad,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "104316",
+      "cityName": "Mahansar,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "417923",
+      "cityName": "Maharajganj",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "126265",
+      "cityName": "Maheshwar,   Madhya Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "371686",
+      "cityName": "Mahipalpur,   National Capital Territory of Delhi",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "104318",
+      "cityName": "Majorda,   Goa",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "146447",
+      "cityName": "Malappuram,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "102599",
+      "cityName": "Malayattoor,   kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "150632",
+      "cityName": "Malda,   West Bengal",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "417300",
+      "cityName": "Malout,   Punjab",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "127105",
+      "cityName": "Malpura,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "126958",
+      "cityName": "Malvan,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "126139",
+      "cityName": "Mamallapuram,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "126388",
+      "cityName": "Manali,   Himachal pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "375619",
+      "cityName": "Mandarmani,   West Bengal",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "104156",
+      "cityName": "Mandarmoni,   West Bengal",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "263259",
+      "cityName": "Mandav",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "126802",
+      "cityName": "Mandawa,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "146462",
+      "cityName": "Mandi,   Himachal Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "160389",
+      "cityName": "Mandla,   Madhya Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "104482",
+      "cityName": "Mandrem,   Goa",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "126805",
+      "cityName": "Mangaluru,   Karnataka",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "104157",
+      "cityName": "Manipal,   Karnataka",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "126810",
+      "cityName": "Manmad,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "104323",
+      "cityName": "Mapusa,   Goa",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "146481",
+      "cityName": "Maradu,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "146484",
+      "cityName": "Marari Beach,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "126817",
+      "cityName": "Mararikulam,   KERALA",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "336934",
+      "cityName": "Marchula,   Uttarakhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "106481",
+      "cityName": "Margao,   Goa",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "299743",
+      "cityName": "Marmagao,   Goa",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "146533",
+      "cityName": "Mashobra,   Himachal Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "146545",
+      "cityName": "Matheran,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "127857",
+      "cityName": "Mathura,   Uttar Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "126911",
+      "cityName": "Mayiladuthurai,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "104040",
+      "cityName": "McLeod Ganj,   Himachal Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "146575",
+      "cityName": "Meerut,   Uttar Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "151812",
+      "cityName": "Mehsana,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "161036",
+      "cityName": "Melaghar,   Tripura",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "295351",
+      "cityName": "Mendarda",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "104345",
+      "cityName": "Meppadi,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "128829",
+      "cityName": "Mettupalayam,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "300324",
+      "cityName": "Mhow,   Madhya Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "150356",
+      "cityName": "Midnapur,   West Bengal",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "106510",
+      "cityName": "Mirik,   West Bengal",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "151864",
+      "cityName": "Mirzapur,   Uttar Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "128914",
+      "cityName": "Mobor Beach,   Goa",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "370782",
+      "cityName": "Modasa,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "299281",
+      "cityName": "Moga",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "106514",
+      "cityName": "Mohali,   Punjab",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "102819",
+      "cityName": "Mohan,   Uttar Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "103825",
+      "cityName": "Mohania,   Bihar",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "364153",
+      "cityName": "Mohanlalganj,   Uttar Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "101894",
+      "cityName": "Mollem,   Goa",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "129615",
+      "cityName": "Moradabad,   Uttar Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "102834",
+      "cityName": "Morbi,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "129044",
+      "cityName": "Morjim,   Goa",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "146752",
+      "cityName": "Mount Abu,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "151863",
+      "cityName": "Mughalsarai,   Uttar Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "129690",
+      "cityName": "Mukkam,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "129415",
+      "cityName": "Mukteshwar,   Uttarakhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "301296",
+      "cityName": "Muktsar,   Punjab",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "146768",
+      "cityName": "Mukundgarh,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "129695",
+      "cityName": "Mullor",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "237563",
+      "cityName": "Mulshi,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "144306",
+      "cityName": "Mumbai/Bombay,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "381757",
+      "cityName": "Mundra,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "128573",
+      "cityName": "Munnar,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "146776",
+      "cityName": "Munsiyari,   Uttarakhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "129232",
+      "cityName": "Muradabad,   Uttar Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "128030",
+      "cityName": "Murbad,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "129104",
+      "cityName": "Murinjapuzha,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "295707",
+      "cityName": "Murthal,   Haryana",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "129434",
+      "cityName": "Murud,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "130341",
+      "cityName": "Mussoorie,   Uttarakhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "150392",
+      "cityName": "Muzaffarnagar,   Uttar Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "151536",
+      "cityName": "Muzaffarpur,   Bihar",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "128698",
+      "cityName": "Mysuru,   Karnataka",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "417527",
+      "cityName": "Nabadwip",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "153797",
+      "cityName": "Nadia District,   West Bengal",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "104506",
+      "cityName": "Nadiad,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "130352",
+      "cityName": "Nadukani,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "274813",
+      "cityName": "Nagaon,   Assam",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "129447",
+      "cityName": "Nagapattinam,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "160628",
+      "cityName": "Nagaur,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "104260",
+      "cityName": "Naggar,   Himachal Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "129723",
+      "cityName": "Nagpur,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "338761",
+      "cityName": "Nahan,   Himachal Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "130354",
+      "cityName": "Nahar Magra,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "160877",
+      "cityName": "NAIMISHARANYA,   UTTAR PRADESH",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "129726",
+      "cityName": "Nainital,   Uttarakhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "130357",
+      "cityName": "Nakinda,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "129257",
+      "cityName": "Nalagarh,   Himachal Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "151833",
+      "cityName": "Naldehra,   Himachal",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "130105",
+      "cityName": "Nalkeri,   Karnataka",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "104509",
+      "cityName": "Namakkal,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "130358",
+      "cityName": "Namchi,   Sikkim",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "129732",
+      "cityName": "Nanded,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "299841",
+      "cityName": "Nandurbar,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "160634",
+      "cityName": "Narendranagar,   Uttarakhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "102033",
+      "cityName": "Narkanda,   Himachal Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "129163",
+      "cityName": "Narlai,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "418060",
+      "cityName": "Narmadapuram,   Madhya Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "146814",
+      "cityName": "Nashik,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "151845",
+      "cityName": "Nathdwara,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "146820",
+      "cityName": "Nattika,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "128734",
+      "cityName": "Navi Mumbai,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "300782",
+      "cityName": "Navsari,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "146825",
+      "cityName": "Nawalgarh,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "151846",
+      "cityName": "Nawanshahar,   Punjab",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "154145",
+      "cityName": "Nawanshahr,   Punjab",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "150203",
+      "cityName": "Nedumbassery,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "129816",
+      "cityName": "Neeleshwar,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "130137",
+      "cityName": "Neemrana,   RAJASTHAN",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "235963",
+      "cityName": "Neemuch,   Madhya Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "129189",
+      "cityName": "Neil Island,   Andaman & Nicobar",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "358240",
+      "cityName": "Nelamangala,   Karnataka",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "129289",
+      "cityName": "Nellore,   Andhra Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "129827",
+      "cityName": "Nerul,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "130443",
+      "cityName": "New Delhi / Delhi,   DELHI",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "287941",
+      "cityName": "New Digha,   West Bengal",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "150649",
+      "cityName": "Neyveli,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "346564",
+      "cityName": "Nilambur,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "104531",
+      "cityName": "Nilgiri,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "129477",
+      "cityName": "Nimaj,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "130205",
+      "cityName": "Noida,   UTTAR PRADESH",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "153921",
+      "cityName": "North Goa,   Goa",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "150162",
+      "cityName": "North Lakhimpur,   Assam",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "106556",
+      "cityName": "North Paravur,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "153975",
+      "cityName": "North Sikkim,   Sikkim",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "150357",
+      "cityName": "NYERAK,   Jammu Kashmir",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "131276",
+      "cityName": "Omkareshwar,   Madhya Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "130990",
+      "cityName": "Ooty,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "130252",
+      "cityName": "Orchha,   Madhya Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "132015",
+      "cityName": "Pachmarhi,   Madhya Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "130852",
+      "cityName": "Padappai,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "131375",
+      "cityName": "Pahalgam,   Jammu and Kashmir",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "131721",
+      "cityName": "Pakhal,   Telangana",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "132025",
+      "cityName": "Palakkad,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "153808",
+      "cityName": "Palakkad District",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "147070",
+      "cityName": "Palampur,   Himachal Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "130749",
+      "cityName": "Palani,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "130316",
+      "cityName": "Palanpur,   Gujrat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "292291",
+      "cityName": "Palghar",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "147075",
+      "cityName": "Pali,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "294433",
+      "cityName": "Palia Kalan,   Uttar Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "362198",
+      "cityName": "Palolem,   Goa",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "241457",
+      "cityName": "Palwal,   Haryana",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "131398",
+      "cityName": "Panaji,   Goa",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "131394",
+      "cityName": "Panchgani,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "131002",
+      "cityName": "Panchkula,   Haryana",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "261909",
+      "cityName": "Pandharpur,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "147083",
+      "cityName": "Pandikkad,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "106580",
+      "cityName": "Pangong Tso Lake,   Jammu And Kashmir",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "298741",
+      "cityName": "Panhala,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "147088",
+      "cityName": "Panipat,   Haryana",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "131437",
+      "cityName": "Panna,   Madhya Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "150800",
+      "cityName": "Pantnagar,   Uttarakhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "131544",
+      "cityName": "Panvel,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "353074",
+      "cityName": "Paradeep,   Odisha",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "131406",
+      "cityName": "Paragpur,   Himachal Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "418061",
+      "cityName": "Paralakhemundi,   Odisha",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "131552",
+      "cityName": "Paravur,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "151861",
+      "cityName": "Parbhani,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "132055",
+      "cityName": "Parra,   Goa",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "147106",
+      "cityName": "Parwanoo,   Himachal Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "315734",
+      "cityName": "Patan,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "106662",
+      "cityName": "Pateri,   Bihar",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "131027",
+      "cityName": "Pathanamthitta,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "132705",
+      "cityName": "Pathankot,   Punjab",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "106663",
+      "cityName": "Patiala,   Punjab",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "132429",
+      "cityName": "Patna,   Bihar",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "418068",
+      "cityName": "Patnem",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "131028",
+      "cityName": "Patnitop,   Jammu and Kashmir",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "161105",
+      "cityName": "Peermade,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "147140",
+      "cityName": "Pelling,   Sikkim",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "132089",
+      "cityName": "Pench,   Madhya Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "132724",
+      "cityName": "Pench Nationalpark,   Madhya Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "102750",
+      "cityName": "Perambalur,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "157867",
+      "cityName": "Perintalmanna,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "103270",
+      "cityName": "Perinthalmanna,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "132133",
+      "cityName": "Periyar,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "131597",
+      "cityName": "Pernem,   Goa",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "132753",
+      "cityName": "Phagwara,   Punjab",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "131523",
+      "cityName": "Phalodi,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "106676",
+      "cityName": "Phaltan,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "133418",
+      "cityName": "Pimpri-Chinchwad,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "132183",
+      "cityName": "Pinjore,   Haryana",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "295095",
+      "cityName": "Pithoragarh,   Uttarakhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "133214",
+      "cityName": "Pokhran,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "132282",
+      "cityName": "Pollachi,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "132292",
+      "cityName": "Ponmudi,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "133497",
+      "cityName": "Poovar,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "133551",
+      "cityName": "Porbandar,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "133556",
+      "cityName": "Port Blair,   Andaman And Nicobar",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "151840",
+      "cityName": "Pragpur,   Himachal Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "100307",
+      "cityName": "Prayagraj (Formally-Allahabad),   Uttar Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "280675",
+      "cityName": "Proddatur,   Andhra Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "132561",
+      "cityName": "Puducherry/Pondicherry,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "106703",
+      "cityName": "Pudukkotai,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "394717",
+      "cityName": "Pudukkottai,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "134170",
+      "cityName": "Pulamanthole,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "133133",
+      "cityName": "Pune,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "147410",
+      "cityName": "Purakkad,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "275226",
+      "cityName": "Purasaiwakkam,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "153873",
+      "cityName": "Purba Medinipur District,   West Bengal",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "132593",
+      "cityName": "Puri,   Orissa",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "293576",
+      "cityName": "Purnia,   Bihar",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "306303",
+      "cityName": "Purulia,   West Bengal",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "134001",
+      "cityName": "Pushkar,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "134178",
+      "cityName": "Puttaparthi,   Andhra Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "254863",
+      "cityName": "Raebareli,   Uttar Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "147442",
+      "cityName": "Raigad,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "237311",
+      "cityName": "Raigarh,   Chhattisgarh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "133672",
+      "cityName": "Raipur,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "134040",
+      "cityName": "Rajahmahendravaram,   Andhra Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "102941",
+      "cityName": "Rajakkad,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "102942",
+      "cityName": "Rajapalayam,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "134041",
+      "cityName": "Rajgarh,   Himachal Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "133175",
+      "cityName": "Rajgir,   Bihar",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "134211",
+      "cityName": "Rajkot,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "298575",
+      "cityName": "Rajnandgaon",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "304525",
+      "cityName": "Rajpipla",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "153963",
+      "cityName": "Rajsamand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "151654",
+      "cityName": "Ramagundam,   Telangana",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "133177",
+      "cityName": "Ramakkalmedu,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "404831",
+      "cityName": "Ramanathapuram,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "134213",
+      "cityName": "Ramathra Fort,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "133179",
+      "cityName": "Rameshwaram,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "151860",
+      "cityName": "Rameswaram,   TAMIL NADU",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "132621",
+      "cityName": "Ramgarh,   Uttarakhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "134214",
+      "cityName": "Ramnagar,   Uttarakhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "133676",
+      "cityName": "Ranakpur,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "133760",
+      "cityName": "Ranchi,   Jharkhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "133838",
+      "cityName": "Ranikhet,   Uttarakhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "134224",
+      "cityName": "Ranthambore Nationalpark,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "102675",
+      "cityName": "Ratlam,   Madhya Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "133687",
+      "cityName": "Ratnagiri,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "133295",
+      "cityName": "Ravangla,   Sikkim",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "295703",
+      "cityName": "Razole,   Andhra Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "102683",
+      "cityName": "Renigunta,   Andhra Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "150930",
+      "cityName": "Rewa,   Madhya Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "147501",
+      "cityName": "Rewari,   Delhi National Territory",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "102954",
+      "cityName": "Rinchenpong,   Sikkim",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "134932",
+      "cityName": "Rishikesh,   Uttarakhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "147554",
+      "cityName": "Rohet,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "103217",
+      "cityName": "Rohetgarh,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "134058",
+      "cityName": "Rohtak,   Haryana",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "150180",
+      "cityName": "Roorkee,   Uttarakhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "134643",
+      "cityName": "Rourkela,   Orissa",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "135778",
+      "cityName": "Rudraprayag,   Uttarakhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "150359",
+      "cityName": "Rudrapur,   Uttarakhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "150936",
+      "cityName": "Rupsi,   Assam",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "267858",
+      "cityName": "Sagar,   Madhya Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "272583",
+      "cityName": "Sagara,   Karnataka",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "103325",
+      "cityName": "Saharanpur,   Uttar Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "147607",
+      "cityName": "Sahibzada Ajit Singh Nagar,   Punjab",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "394732",
+      "cityName": "Sakleshpur,   Karnataka",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "103491",
+      "cityName": "Salasar,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "154057",
+      "cityName": "Salcete,   Goa",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "135916",
+      "cityName": "Salem,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "135694",
+      "cityName": "Saligao,   Goa",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "272466",
+      "cityName": "Samastipur,   Bihar",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "103344",
+      "cityName": "Samayapuram,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "103345",
+      "cityName": "Sambalpur,   Odisha",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "103346",
+      "cityName": "Samode,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "106770",
+      "cityName": "Sanand,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "135522",
+      "cityName": "Sanchi,   Madhya Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "417319",
+      "cityName": "Sanchore,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "202708",
+      "cityName": "Sangla,   Himachal Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "136501",
+      "cityName": "Sangli,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "394926",
+      "cityName": "Saputara",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "205218",
+      "cityName": "Sarchu,   Sarchu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "136093",
+      "cityName": "Sardargarh,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "135586",
+      "cityName": "Sariska National Park,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "136555",
+      "cityName": "Sasan Gir,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "261894",
+      "cityName": "Sasaram",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "136409",
+      "cityName": "Satara,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "147780",
+      "cityName": "Satna,   Madhya Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "148897",
+      "cityName": "Satpura,   Madhya Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "151847",
+      "cityName": "Sattal,   Uttarakhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "136656",
+      "cityName": "Sawai Madhopur,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "136748",
+      "cityName": "Secunderabad,   Telangana",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "136766",
+      "cityName": "Seoni,   Madhya Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "222992",
+      "cityName": "Seraikela,   Jharkhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "150360",
+      "cityName": "Shahpur,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "137380",
+      "cityName": "Shahpura,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "136285",
+      "cityName": "Shamirpet,   Telangana",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "107371",
+      "cityName": "Shamshabad,   Telangana",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "137568",
+      "cityName": "Shantiniketan,   West Bengal",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "268822",
+      "cityName": "Shegaon,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "138670",
+      "cityName": "Shillong,   Meghalaya",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "138673",
+      "cityName": "Shimla,   Himachal Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "154080",
+      "cityName": "Shimoga district",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "148898",
+      "cityName": "SHINGRAK,   Jammu and Kashmir",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "137316",
+      "cityName": "Shirdi,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "147891",
+      "cityName": "Shivamogga,   Karnataka",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "137750",
+      "cityName": "Shivpuri,   Madhya Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "106639",
+      "cityName": "Sholayur,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "137404",
+      "cityName": "Siana,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "136312",
+      "cityName": "Sikar,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "153976",
+      "cityName": "Sikkim",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "150361",
+      "cityName": "Silchar,   Assam",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "147912",
+      "cityName": "Siliguri,   West Bengal",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "147914",
+      "cityName": "Silvassa,   Dadra and Nagar Have",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "137470",
+      "cityName": "Sindhudi,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "153859",
+      "cityName": "Sindhudurg",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "106649",
+      "cityName": "Singrauli,   Madhya Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "138010",
+      "cityName": "Siolim,   Goa",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "106650",
+      "cityName": "Sirkazhi,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "154070",
+      "cityName": "Sirmaur District",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "103180",
+      "cityName": "Sirsa,   Haryana",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "107226",
+      "cityName": "Sitalakhet,   Uttarakhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "293199",
+      "cityName": "Sitapur,   Uttar Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "106898",
+      "cityName": "Sitlakhet,   Uttarakhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "106651",
+      "cityName": "Skara,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "302824",
+      "cityName": "Sohagpur",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "138127",
+      "cityName": "Solan,   Himachal Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "154112",
+      "cityName": "Solan District",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "138128",
+      "cityName": "Solapur,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "138049",
+      "cityName": "Somnath,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "138484",
+      "cityName": "Sonamarg,   Jammu And Kashmir",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "151848",
+      "cityName": "Sonipat,   Haryana",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "151835",
+      "cityName": "Sonmarg,   Jammu and Kashmir",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "154101",
+      "cityName": "South 24 Parganas",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "153958",
+      "cityName": "South Goa",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "376717",
+      "cityName": "Spangmik,   Ladakh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "138523",
+      "cityName": "Sravasti,   Uttar Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "107250",
+      "cityName": "Sri Ganganagar,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "137118",
+      "cityName": "Srikakulam,   Andhra Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "299949",
+      "cityName": "Srikalahasti",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "139456",
+      "cityName": "Srinagar,   Jammu and Kashmir",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "103198",
+      "cityName": "Srinagar, Uttarakhand,   Uttarakhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "417859",
+      "cityName": "Sringeri or Shringeri,   Karnataka",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "138370",
+      "cityName": "Sriperumbudur,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "108572",
+      "cityName": "Stok,   Jammu And Kashmir",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "107078",
+      "cityName": "Sultan Bathery,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "151849",
+      "cityName": "Sultanpur,   Uttar Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "286488",
+      "cityName": "Sundarnagar,   Himachal Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "140235",
+      "cityName": "Sunderban,   West Bengal",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "107275",
+      "cityName": "Sungal,   Jammu Kashmir",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "151866",
+      "cityName": "Surajgarh,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "139526",
+      "cityName": "Surat,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "107754",
+      "cityName": "Suratgarh,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "305699",
+      "cityName": "Surendranagar,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "151834",
+      "cityName": "Taboda,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "151850",
+      "cityName": "Tadoba,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "161006",
+      "cityName": "Taki,   West Bengal",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "139669",
+      "cityName": "Tala,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "273102",
+      "cityName": "Talala,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "139974",
+      "cityName": "Tarangambadi,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "150362",
+      "cityName": "Tarapith,   West Bengal",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "139699",
+      "cityName": "Tawang,   Arunachal Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "160633",
+      "cityName": "Tehri,   Uttarakhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "139069",
+      "cityName": "Tezpur,   Assam",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "106383",
+      "cityName": "Thakurdwara,   Uttar Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "139071",
+      "cityName": "Thalassery,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "140020",
+      "cityName": "Thane,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "300755",
+      "cityName": "Thanesar",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "139605",
+      "cityName": "Thanjavur,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "138628",
+      "cityName": "Thanneermukkom,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "139609",
+      "cityName": "Thekkady,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "139744",
+      "cityName": "Theni,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "299948",
+      "cityName": "Theog",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "140415",
+      "cityName": "Thiksey,   Jammu And Kashmir",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "302786",
+      "cityName": "Thirukkadaiyur,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "338807",
+      "cityName": "Thirumayam,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "148901",
+      "cityName": "Thiruvananthapuram,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "106955",
+      "cityName": "Thodupuzha,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "141231",
+      "cityName": "Thoothukudi,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "140032",
+      "cityName": "Thrissur,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "106958",
+      "cityName": "Thumkunta,   Telangana",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "150287",
+      "cityName": "TIB BAGO,   Jammu and Kashmir",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "333310",
+      "cityName": "Tindivanam,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "107782",
+      "cityName": "Tinsukia,   Assam",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "105896",
+      "cityName": "Tiracol,   Tiracol",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "399762",
+      "cityName": "Tiruchendur",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "148240",
+      "cityName": "Tiruchirappalli,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "140310",
+      "cityName": "Tirunelveli,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "281412",
+      "cityName": "Tirunelveli District",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "140311",
+      "cityName": "Tirupati,   Andhra Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "141054",
+      "cityName": "Tiruppur,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "106394",
+      "cityName": "Tiruttani,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "139315",
+      "cityName": "Tiruvannamalai,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "106963",
+      "cityName": "Titwala,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "280875",
+      "cityName": "Tosh,   Himachal Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "106849",
+      "cityName": "Trimbak,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "139820",
+      "cityName": "Trivandrum,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "106856",
+      "cityName": "Tura,   Meghalaya",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "141528",
+      "cityName": "Turia,   West Bengal",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "140098",
+      "cityName": "Uchiyarda,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "140522",
+      "cityName": "Udaipur,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "377670",
+      "cityName": "Udumalaipettai,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "148363",
+      "cityName": "Udupi,   Karnataka",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "140701",
+      "cityName": "Ujjain,   Madhya Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "157929",
+      "cityName": "Ukhimath,   Uttarakhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "299947",
+      "cityName": "Ulhasnagar,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "141832",
+      "cityName": "Umaria,   Madhya Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "141097",
+      "cityName": "Una,   Himachal Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "148374",
+      "cityName": "Unchagaon,   Uttar Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "286704",
+      "cityName": "Unjha,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "300441",
+      "cityName": "Unnao,   Uttar Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "107938",
+      "cityName": "Uruli Kanchan,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "141578",
+      "cityName": "Utorda Beach,   Goa",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "385613",
+      "cityName": "Uttan,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "154207",
+      "cityName": "Uttara Kannada District",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "140143",
+      "cityName": "Uttarkashi,   Uttarakhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "141587",
+      "cityName": "Vadodara,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "148406",
+      "cityName": "Vagamon,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "148407",
+      "cityName": "Vagator,   Goa",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "107944",
+      "cityName": "Vaikom,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "107210",
+      "cityName": "Vajrahalli,   Karnataka",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "140593",
+      "cityName": "Vallikunnam,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "160640",
+      "cityName": "Valparai,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "238713",
+      "cityName": "Valsad,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "141615",
+      "cityName": "Vandanmedu,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "141147",
+      "cityName": "Vapi,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "141618",
+      "cityName": "Varanasi,   Uttar Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "200830",
+      "cityName": "Varca,   Goa",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "141450",
+      "cityName": "Varca Beach,   Goa",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "141976",
+      "cityName": "Varkala,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "141980",
+      "cityName": "Vasai,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "107855",
+      "cityName": "Vasco da Gama,   Goa",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "148446",
+      "cityName": "Vayalar,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "257036",
+      "cityName": "Vayittiri",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "141630",
+      "cityName": "Vazhoor,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "148450",
+      "cityName": "Velankanni,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "148459",
+      "cityName": "Vellore,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "142295",
+      "cityName": "Velsao Beach,   Goa",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "142563",
+      "cityName": "Veraval,   Gujarat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "107957",
+      "cityName": "Verem,   Goa",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "111949",
+      "cityName": "Vijayapura/Bijapur,   Karnataka",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "148500",
+      "cityName": "Vijayawada,   Andhra Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "417561",
+      "cityName": "Vikasnagar,   Uttarakhand",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "333311",
+      "cityName": "Viluppuram,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "409965",
+      "cityName": "Virudhunagar,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "142198",
+      "cityName": "Vizag/Visakhapatnam,   Andhra Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "141371",
+      "cityName": "Vizhinjam,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "107391",
+      "cityName": "Vizianagaram,   Andhra Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "141391",
+      "cityName": "Vrindavan,   Uttar Pradesh",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "151612",
+      "cityName": "Vythiri,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "107703",
+      "cityName": "Wakad,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "107887",
+      "cityName": "Wandoor",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "141960",
+      "cityName": "Wankaner,   Gujrat",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "151614",
+      "cityName": "Warangal,   Telangana",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "148630",
+      "cityName": "Wayanad,   Kerala",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "153886",
+      "cityName": "West Godavari District",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "143481",
+      "cityName": "Wuste Thar,   Rajasthan",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "143798",
+      "cityName": "Yavatmal,   Maharashtra",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "148767",
+      "cityName": "Yelagiri,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "348599",
+      "cityName": "Yelahanka,   Karnataka",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "143329",
+      "cityName": "Yercaud,   Tamil Nadu",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "150396",
+      "cityName": "Yuksom,   Sikkim",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "150387",
+      "cityName": "ZARIBAGO,   Jammu and Kashmir",
+      "hotelsAdded": 0
+    },
+    {
+      "cityCode": "150248",
+      "cityName": "Zirakpur,   Punjab",
+      "hotelsAdded": 0
+    }
+  ]
+}

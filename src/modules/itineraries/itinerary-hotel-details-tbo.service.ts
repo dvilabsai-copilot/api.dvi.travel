@@ -20,6 +20,8 @@ import {
 @Injectable()
 export class ItineraryHotelDetailsTboService {
   private readonly logger = new Logger(ItineraryHotelDetailsTboService.name);
+
+  private static readonly ONE_DAY_MS = 24 * 60 * 60 * 1000;
   
   // Cache structure: key = "quoteId:routeId" or "quoteId" (no route filter)
   // Stores the entire response to avoid re-fetching TBO data
@@ -227,42 +229,38 @@ export class ItineraryHotelDetailsTboService {
     childCount: number = 0,
   ): Promise<Map<number, HotelSearchResult[]>> {
     const hotelsByRoute = new Map<number, HotelSearchResult[]>();
-    const totalRoutes = routes.length;
 
     // 🔥 OPTIMIZATION 1: Batch load ALL cities upfront instead of querying per route
     const cityCodeMap = await this.batchMapDestinationsToCityCodes(routes);
     this.logger.log(`✅ Pre-loaded ${Object.keys(cityCodeMap).length} city codes for all routes`);
 
+    // Build stay blocks so TBO search is done once per destination-stay window,
+    // not once per day/route.
+    const stayBlocks = this.buildStayBlocks(routes, noOfNights);
+    this.logger.log(`🧩 Built ${stayBlocks.length} stay block(s) for consolidated TBO search`);
+
     // 🔥 OPTIMIZATION 2: Prepare all hotel search tasks for parallel execution
     const searchTasks: Promise<void>[] = [];
 
-    for (let routeIndex = 0; routeIndex < routes.length; routeIndex++) {
-      const route = routes[routeIndex];
-      const routeId = (route as any).itinerary_route_ID;
-      
-      // Skip hotel generation for the last route (departure day) if routeIndex >= noOfNights
-      const isLastRoute = routeIndex === totalRoutes - 1;
-      if (isLastRoute && routeIndex >= noOfNights) {
-        this.logger.log(`   ⏭️  Skipping route ${routeIndex + 1} (last route - departure day, no hotel needed)`);
-        continue;
-      }
-      
-      // Push search task to run in parallel
+    for (const block of stayBlocks) {
       searchTasks.push(
-        this.searchHotelsForRoute(
-          route,
-          routeIndex,
+        this.searchHotelsForStayBlock(
+          block,
           cityCodeMap,
-          hotelsByRoute,
           guestNationality,
           adultCount,
           childCount,
-        ).catch(error => {
-          const routeId = (route as any).itinerary_route_ID;
-          const errorMsg = error instanceof Error ? error.message : String(error);
-          this.logger.error(`❌ HOTEL SEARCH ERROR for route ${routeId}: ${errorMsg}`);
-          hotelsByRoute.set(routeId, []);
-        })
+        )
+          .then((hotels) => {
+            block.routeIds.forEach((routeId) => hotelsByRoute.set(routeId, hotels || []));
+          })
+          .catch((error) => {
+            const errorMsg = error instanceof Error ? error.message : String(error);
+            this.logger.error(
+              `❌ HOTEL SEARCH ERROR for stay block ${block.destination} (${block.checkInDate} -> ${block.checkOutDate}): ${errorMsg}`,
+            );
+            block.routeIds.forEach((routeId) => hotelsByRoute.set(routeId, []));
+          }),
       );
     }
 
@@ -272,6 +270,94 @@ export class ItineraryHotelDetailsTboService {
     this.logger.log(`✅ All parallel searches completed`);
 
     return hotelsByRoute;
+  }
+
+  private buildStayBlocks(
+    routes: any[],
+    noOfNights: number,
+  ): Array<{
+    destination: string;
+    checkInDate: string;
+    checkOutDate: string;
+    routeIds: number[];
+  }> {
+    const blocks: Array<{
+      destination: string;
+      checkInDate: string;
+      checkOutDate: string;
+      routeIds: number[];
+    }> = [];
+
+    const totalRoutes = routes.length;
+    let currentBlock: {
+      destination: string;
+      checkInDate: string;
+      checkOutDate: string;
+      routeIds: number[];
+      lastDate: Date;
+    } | null = null;
+
+    for (let routeIndex = 0; routeIndex < routes.length; routeIndex++) {
+      const route = routes[routeIndex];
+      const isLastRoute = routeIndex === totalRoutes - 1;
+      if (isLastRoute && routeIndex >= noOfNights) {
+        this.logger.log(`   ⏭️  Skipping route ${routeIndex + 1} (last route - departure day, no hotel needed)`);
+        continue;
+      }
+
+      const routeId = Number((route as any).itinerary_route_ID);
+      const destination = String((route as any).next_visiting_location || '').trim();
+      const routeDate = new Date((route as any).itinerary_route_date);
+      const checkInDate = routeDate.toISOString().split('T')[0];
+      const nextDay = new Date(routeDate.getTime() + ItineraryHotelDetailsTboService.ONE_DAY_MS);
+      const checkOutDate = nextDay.toISOString().split('T')[0];
+
+      if (!currentBlock) {
+        currentBlock = {
+          destination,
+          checkInDate,
+          checkOutDate,
+          routeIds: [routeId],
+          lastDate: routeDate,
+        };
+        continue;
+      }
+
+      const isSameDestination = destination === currentBlock.destination;
+      const isConsecutiveDay =
+        routeDate.getTime() - currentBlock.lastDate.getTime() === ItineraryHotelDetailsTboService.ONE_DAY_MS;
+
+      if (isSameDestination && isConsecutiveDay) {
+        currentBlock.checkOutDate = checkOutDate;
+        currentBlock.routeIds.push(routeId);
+        currentBlock.lastDate = routeDate;
+      } else {
+        blocks.push({
+          destination: currentBlock.destination,
+          checkInDate: currentBlock.checkInDate,
+          checkOutDate: currentBlock.checkOutDate,
+          routeIds: currentBlock.routeIds,
+        });
+        currentBlock = {
+          destination,
+          checkInDate,
+          checkOutDate,
+          routeIds: [routeId],
+          lastDate: routeDate,
+        };
+      }
+    }
+
+    if (currentBlock) {
+      blocks.push({
+        destination: currentBlock.destination,
+        checkInDate: currentBlock.checkInDate,
+        checkOutDate: currentBlock.checkOutDate,
+        routeIds: currentBlock.routeIds,
+      });
+    }
+
+    return blocks;
   }
 
   /**
@@ -385,24 +471,23 @@ export class ItineraryHotelDetailsTboService {
   /**
    * Search hotels for a single route (used in parallel execution)
    */
-  private async searchHotelsForRoute(
-    route: any,
-    routeIndex: number,
+  private async searchHotelsForStayBlock(
+    block: {
+      destination: string;
+      checkInDate: string;
+      checkOutDate: string;
+      routeIds: number[];
+    },
     cityCodeMap: Record<string, string>,
-    hotelsByRoute: Map<number, HotelSearchResult[]>,
     guestNationality: string,
     adultCount: number = 2,
     childCount: number = 0,
-  ): Promise<void> {
-    const routeId = (route as any).itinerary_route_ID;
-    const destination = (route as any).next_visiting_location;
-    const routeDate = new Date((route as any).itinerary_route_date);
+  ): Promise<HotelSearchResult[]> {
+    const destination = block.destination;
 
-    // Set check-out to next day (standard 1-night stay)
-    const checkOutDate = new Date(routeDate);
-    checkOutDate.setDate(checkOutDate.getDate() + 1);
-
-    this.logger.log(`🔍 Route ${routeId}: Searching hotels for "${destination}" (${routeDate.toISOString().split('T')[0]})`);
+    this.logger.log(
+      `🔍 Stay block (${block.routeIds.join(',')}): Searching hotels for "${destination}" (${block.checkInDate} -> ${block.checkOutDate})`,
+    );
 
     // Get city code from pre-loaded map (no database query!)
     const cityCode = cityCodeMap[destination];
@@ -411,13 +496,15 @@ export class ItineraryHotelDetailsTboService {
     const effectiveCityCode = cityCode || destination;
     if (!cityCode) {
       this.logger.warn(
-        `⚠️ Route ${routeId}: No mapped TBO city code for "${destination}". Falling back to destination text lookup.`,
+        `⚠️ Stay block (${block.routeIds.join(',')}): No mapped TBO city code for "${destination}". Falling back to destination text lookup.`,
       );
     }
 
     // Use pax counts from the plan; guarantee at least 1 adult so TBO validation passes
     if (adultCount <= 0) {
-      this.logger.warn(`⚠️ Route ${routeId}: adultCount is ${adultCount} (not saved in plan?) - defaulting to 1`);
+      this.logger.warn(
+        `⚠️ Stay block (${block.routeIds.join(',')}): adultCount is ${adultCount} (not saved in plan?) - defaulting to 1`,
+      );
     }
     const safeAdultCount = adultCount > 0 ? adultCount : 1;
     const safeChildCount = childCount >= 0 ? childCount : 0;
@@ -425,8 +512,8 @@ export class ItineraryHotelDetailsTboService {
 
     const searchCriteria = {
       cityCode: effectiveCityCode,
-      checkInDate: routeDate.toISOString().split('T')[0],
-      checkOutDate: checkOutDate.toISOString().split('T')[0],
+      checkInDate: block.checkInDate,
+      checkOutDate: block.checkOutDate,
       roomCount: 1,
       guestCount,
       adultCount: safeAdultCount,
@@ -435,20 +522,24 @@ export class ItineraryHotelDetailsTboService {
       providers: ['tbo', 'resavenue'], // Only TBO + ResAvenue - HOBSE will be merged separately
     };
 
-    this.logger.log(`   🏨 Searching hotels with cityCode: ${effectiveCityCode}`);
+    this.logger.log(
+      `   🏨 Searching hotels with cityCode: ${effectiveCityCode}, checkIn: ${block.checkInDate}, checkOut: ${block.checkOutDate}`,
+    );
     const hotels = await this.hotelSearchService.searchHotels(searchCriteria);
-    this.logger.log(`   ✅ Found ${hotels ? hotels.length : 0} hotels for route ${routeId} (TBO only at this stage)`);
+    this.logger.log(
+      `   ✅ Found ${hotels ? hotels.length : 0} hotels for stay block (${block.routeIds.join(',')}) (TBO only at this stage)`,
+    );
     
     if (hotels && hotels.length > 0) {
-      this.logger.log(`   📋 TBO Hotels for route ${routeId}:`);
+      this.logger.log(`   📋 TBO Hotels for stay block (${block.routeIds.join(',')}):`);
       hotels.forEach((h, idx) => {
         this.logger.log(`      ${idx + 1}. ${h.hotelName} (${h.provider}) - ₹${h.price}`);
       });
     } else {
-      this.logger.log(`   ⚠️  WARNING: TBO search returned ZERO hotels for route ${routeId}!`);
+      this.logger.log(`   ⚠️  WARNING: TBO search returned ZERO hotels for stay block (${block.routeIds.join(',')})!`);
     }
-    
-    hotelsByRoute.set(routeId, hotels || []);
+
+    return hotels || [];
   }
 
   /**
@@ -797,6 +888,34 @@ export class ItineraryHotelDetailsTboService {
       }
     }
 
+    const supplierHotelRows = hotelRows.filter(
+      (row) => row.hotelId > 0 && row.hotelName !== 'No Hotels Available',
+    );
+    const placeholderRows = hotelRows.filter(
+      (row) => row.hotelName === 'No Hotels Available',
+    );
+
+    const searchableRouteIds = routes
+      .filter((route, index) => {
+        const isLastRoute = index === routes.length - 1;
+        return !(isLastRoute && index >= noOfNights);
+      })
+      .map((route: any) => Number(route.itinerary_route_ID));
+
+    const totalSearchRoutes = searchableRouteIds.length;
+    const emptySearchRoutes = searchableRouteIds.filter((routeId) => {
+      const routeHotels = hotelsByRoute.get(routeId) || [];
+      return routeHotels.length === 0;
+    }).length;
+
+    const hasSupplierHotels = supplierHotelRows.length > 0;
+    const isPlaceholderOnly = !hasSupplierHotels && placeholderRows.length > 0;
+    const availabilityMessage = isPlaceholderOnly
+      ? 'Supplier search completed but no available rooms were returned for the selected city/date criteria.'
+      : hasSupplierHotels
+        ? 'Live supplier hotels are available for the current itinerary selection.'
+        : 'No hotel data available yet. Try refreshing search or adjusting criteria.';
+
     return {
       quoteId,
       planId,
@@ -804,6 +923,15 @@ export class ItineraryHotelDetailsTboService {
       hotelTabs,
       hotels: hotelRows,
       totalRoomCount: hotelRows.length,
+      hotelAvailability: {
+        hasSupplierHotels,
+        supplierHotelCount: supplierHotelRows.length,
+        placeholderRowCount: placeholderRows.length,
+        totalSearchRoutes,
+        emptySearchRoutes,
+        isPlaceholderOnly,
+        message: availabilityMessage,
+      },
     };
   }
 
