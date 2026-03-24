@@ -121,10 +121,12 @@ export class HotelMasterSyncController {
     try {
       this.logger.log(`🔄 Starting single-city India sync for cityCode=${cityCode}`);
       const inserted = await this.tboHotelMasterSyncService.syncHotelsForCity(cityCode);
+      const coordinateSample = await this.tboHotelMasterSyncService.getHotelCoordinateSampleByCity(cityCode, 5);
       return {
         success: true,
         cityCode,
         inserted,
+        coordinateSample,
         message: `Single-city sync completed for ${cityCode}`,
       };
     } catch (error: any) {

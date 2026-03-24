@@ -7,8 +7,10 @@
  */
 
 const fs = require('fs');
+const net = require('net');
 const path = require('path');
 const axios = require('axios');
+const { URL } = require('url');
 
 const PROGRESS_REGEX = /Starting full India sync using CityList API|CityList API returned|Starting hotel master sync for TBO city code|Fetched\s+\d+\s+hotels from TBO for city|Successfully synced\s+\d+\/\d+\s+hotels for city|Hotel sync failed/i;
 const CITY_START_REGEX = /Starting hotel master sync for TBO city code:\s*([0-9]+)/i;
@@ -153,6 +155,58 @@ function startProgressWatcher(logFilePath) {
   };
 }
 
+async function assertServerReachable(baseUrl) {
+  const parsedUrl = new URL(baseUrl);
+  const port = Number(parsedUrl.port || (parsedUrl.protocol === 'https:' ? 443 : 80));
+
+  await new Promise((resolve, reject) => {
+    const socket = net.createConnection({ host: parsedUrl.hostname, port });
+    let settled = false;
+
+    const finish = (callback) => (value) => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      callback(value);
+    };
+
+    socket.setTimeout(4000);
+    socket.once('connect', finish(resolve));
+    socket.once(
+      'error',
+      finish((error) => {
+        const detail = error && error.message ? error.message : 'connection refused or server not running';
+        reject(new Error(`Cannot reach ${parsedUrl.hostname}:${port} - ${detail}`));
+      }),
+    );
+    socket.once(
+      'timeout',
+      finish(() => reject(new Error(`Cannot reach ${parsedUrl.hostname}:${port} - connection timed out`))),
+    );
+  });
+}
+
+function formatAxiosError(err) {
+  if (!err) {
+    return 'Unknown error';
+  }
+
+  if (err.response) {
+    const status = err.response.status;
+    const statusText = err.response.statusText || '';
+    const responseData = typeof err.response.data === 'string'
+      ? err.response.data
+      : JSON.stringify(err.response.data);
+    return `HTTP ${status} ${statusText}`.trim() + (responseData ? ` - ${responseData}` : '');
+  }
+
+  if (err.code || err.message) {
+    return [err.code, err.message].filter(Boolean).join(' - ');
+  }
+
+  return String(err);
+}
+
 async function run() {
   const args = parseArgs(process.argv.slice(2));
 
@@ -179,6 +233,8 @@ async function run() {
   let watcher = null;
 
   try {
+    await assertServerReachable(baseUrl);
+
     const loginResp = await axios.post(
       `${baseUrl}/auth/login`,
       { email, password },
@@ -245,9 +301,7 @@ async function run() {
       watcher = null;
     }
 
-    const msg = err && err.response && err.response.data
-      ? JSON.stringify(err.response.data)
-      : (err && err.message) || String(err);
+    const msg = formatAxiosError(err);
 
     pushLog('STATUS=FAILED');
     pushLog(`ERROR=${msg}`);

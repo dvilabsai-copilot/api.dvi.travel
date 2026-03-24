@@ -178,6 +178,27 @@ export class ItineraryHotelDetailsTboService {
       const existingHotels = hotelsByRoute.get(routeId) || [];
       hotelsByRoute.set(routeId, [...existingHotels, ...hobseHotels]);
     });
+
+    // Step 3.6: Fetch ResAvenue hotels explicitly (in case they weren't included in TBO search)
+    const resavenueHotelsByRoute = await this.fetchResavenueHotelsForRoutes(
+      routes,
+      noOfNights,
+      guestNationality,
+      planAdultCount,
+      planChildCount,
+    );
+    
+    // Merge ResAvenue hotels into the hotel map
+    resavenueHotelsByRoute.forEach((resavenueHotels, routeId) => {
+      const existingHotels = hotelsByRoute.get(routeId) || [];
+      // Avoid duplicates: check if hotel already exists by hotel code + provider
+      const hotelStrs = existingHotels.map(h => `${h.hotelCode}|${h.provider}`);
+      const newHotels = resavenueHotels.filter(h => !hotelStrs.includes(`${h.hotelCode}|${h.provider}`));
+      if (newHotels.length > 0) {
+        this.logger.log(`   ✅ Added ${newHotels.length} new ResAvenue hotel(s) to route ${routeId}`);
+      }
+      hotelsByRoute.set(routeId, [...existingHotels, ...newHotels]);
+    });
     
     // Debug: Check if any hotels were found
     const hotelEntries = Array.from(hotelsByRoute.entries());
@@ -613,9 +634,78 @@ export class ItineraryHotelDetailsTboService {
   }
 
   /**
-   * Generate 4 price tier packages: Budget, Mid-Range, Premium, Luxury
-   * Ensures INCREASING price order: Budget < Mid-Range < Premium < Luxury
+   * Fetch ResAvenue hotels for each route
+   * Searches for properties using destination city names
    */
+  private async fetchResavenueHotelsForRoutes(
+    routes: any[],
+    noOfNights: number,
+    guestNationality: string,
+    adultCount: number = 2,
+    childCount: number = 0,
+  ): Promise<Map<number, HotelSearchResult[]>> {
+    const hotelsByRoute = new Map<number, HotelSearchResult[]>();
+    const totalRoutes = routes.length;
+
+    this.logger.log(`\n🏨 RESAVENUE HOTEL FETCH: Attempting to fetch ResAvenue hotels for ${routes.length} routes`);
+
+    try {
+      const safeAdultCount = adultCount > 0 ? adultCount : 1;
+      const safeChildCount = childCount >= 0 ? childCount : 0;
+      const guestCount = safeAdultCount + safeChildCount;
+
+      for (let routeIndex = 0; routeIndex < totalRoutes; routeIndex++) {
+        const route = routes[routeIndex];
+        const routeId = (route as any).itinerary_route_ID;
+        
+        // Skip hotel generation for the last route (departure day) if routeIndex >= noOfNights
+        const isLastRoute = routeIndex === totalRoutes - 1;
+        if (isLastRoute && routeIndex >= noOfNights) {
+          this.logger.log(`   ⏭️  Skipping ResAvenue route ${routeIndex + 1} (last route - departure day)`);
+          continue;
+        }
+        
+        const destination = (route as any).next_visiting_location;
+        const routeDate = new Date((route as any).itinerary_route_date);
+        const checkOutDate = new Date(routeDate);
+        checkOutDate.setDate(checkOutDate.getDate() + 1);
+
+        try {
+          // Search ResAvenue hotels using city name directly
+          const resavenueHotels = await this.hotelSearchService.searchHotels({
+            cityCode: destination, // ResAvenue provider accepts city names
+            checkInDate: routeDate.toISOString().split('T')[0],
+            checkOutDate: checkOutDate.toISOString().split('T')[0],
+            roomCount: 1,
+            guestCount,
+            adultCount: safeAdultCount,
+            childCount: safeChildCount,
+            guestNationality,
+            providers: ['resavenue'], // Only ResAvenue
+          });
+
+          if (resavenueHotels && resavenueHotels.length > 0) {
+            this.logger.log(`   ✅ ResAvenue Route ${routeId}: Found ${resavenueHotels.length} hotels in ${destination}`);
+            hotelsByRoute.set(routeId, resavenueHotels);
+          } else {
+            this.logger.log(`   ℹ️  ResAvenue Route ${routeId}: No hotels found in ${destination}`);
+            hotelsByRoute.set(routeId, []);
+          }
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          this.logger.warn(`   ⚠️  ResAvenue Route ${routeId} search failed: ${errorMsg}`);
+          hotelsByRoute.set(routeId, []);
+        }
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      this.logger.error(`❌ RESAVENUE HOTEL FETCH FAILED: ${errorMsg}`);
+    }
+
+    return hotelsByRoute;
+  }
+
+
   private generatePricePackages(
     hotelsByRoute: Map<number, HotelSearchResult[]>,
     routes: any[],

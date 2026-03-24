@@ -5626,6 +5626,8 @@ model tbo_hotel_master {
   hotel_address            String?   @db.VarChar(500)
   city_name                String?   @db.VarChar(100)
   star_rating              Int?      @default(0)
+  hotel_latitude           String    @default("") @db.VarChar(50)
+  hotel_longitude          String    @default("") @db.VarChar(50)
   hotel_image_url          String?   @db.VarChar(500)
   description              String?   @db.Text
   check_in_time            String?   @db.VarChar(10)
