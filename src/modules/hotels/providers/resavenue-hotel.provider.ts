@@ -64,9 +64,24 @@ interface RoomRatesPayload {
   };
 }
 
+function normalizeResAvenueBaseUrl(rawUrl: string): string {
+  const fallback = 'http://203.109.97.241:8080/ChannelController';
+  const value = String(rawUrl || '').trim();
+  if (!value) return fallback;
+
+  let normalized = value.replace(/\/$/, '');
+  if (/\/PropertyDetails$/i.test(normalized)) {
+    normalized = normalized.replace(/\/PropertyDetails$/i, '');
+  }
+
+  return normalized || fallback;
+}
+
 @Injectable()
 export class ResAvenueHotelProvider implements IHotelProvider {
-  private readonly BASE_URL = process.env.RESAVENUE_BASE_URL || 'http://203.109.97.241:8080/ChannelController';
+  private readonly BASE_URL = normalizeResAvenueBaseUrl(
+    process.env.RESAVENUE_BASE_URL || 'http://203.109.97.241:8080/ChannelController',
+  );
   private readonly USERNAME = process.env.RESAVENUE_USERNAME || 'testpmsk4@resavenue.com';
   private readonly PASSWORD = process.env.RESAVENUE_PASSWORD || 'testpms@123';
   private readonly ID_CONTEXT = process.env.RESAVENUE_ID_CONTEXT || 'REV';
@@ -79,7 +94,6 @@ export class ResAvenueHotelProvider implements IHotelProvider {
     this.logger.log('🏨 ResAvenue Hotel Provider initialized');
     this.logger.log(`Using endpoint: ${this.BASE_URL}`);
     this.logger.log(`🔐 Credentials - Username: ${this.USERNAME}`);
-    this.logger.log(`🔐 Credentials - Password: ${this.PASSWORD}`);
     this.logger.log(`🔐 Credentials - ID_Context: ${this.ID_CONTEXT}`);
   }
 

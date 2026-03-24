@@ -153,6 +153,10 @@ export class TboHotelMasterSyncService implements OnModuleInit, OnModuleDestroy 
             continue;
           }
 
+          const coords = this.extractCoordinates(hotel);
+          const latitude = coords.latitude;
+          const longitude = coords.longitude;
+
           await this.prisma.tbo_hotel_master.upsert({
             where: { tbo_hotel_code: hotelCode },
             create: {
@@ -161,7 +165,11 @@ export class TboHotelMasterSyncService implements OnModuleInit, OnModuleDestroy 
               hotel_name: hotel.HotelName || hotel.hotelName || `Hotel ${hotelCode}`,
               hotel_address: hotel.Address || '',
               city_name: hotel.CityName || '',
-              star_rating: this.parseStarRating(hotel.HotelCategory || hotel.StarRating),
+              star_rating: this.parseStarRating(
+                hotel.HotelCategory || hotel.HotelRating || hotel.hotelRating || hotel.StarRating || hotel.starRating,
+              ),
+              hotel_latitude: latitude,
+              hotel_longitude: longitude,
               hotel_image_url: hotel.Image || '',
               description: hotel.Description || '',
               check_in_time: hotel.CheckInTime || '',
@@ -172,7 +180,11 @@ export class TboHotelMasterSyncService implements OnModuleInit, OnModuleDestroy 
               hotel_name: hotel.HotelName || undefined,
               hotel_address: hotel.Address || undefined,
               city_name: hotel.CityName || undefined,
-              star_rating: this.parseStarRating(hotel.HotelCategory || hotel.StarRating),
+              star_rating: this.parseStarRating(
+                hotel.HotelCategory || hotel.HotelRating || hotel.hotelRating || hotel.StarRating || hotel.starRating,
+              ),
+              hotel_latitude: latitude,
+              hotel_longitude: longitude,
               hotel_image_url: hotel.Image || undefined,
               description: hotel.Description || undefined,
               facilities: hotel.Facilities ? JSON.stringify(hotel.Facilities) : undefined,
@@ -316,13 +328,38 @@ export class TboHotelMasterSyncService implements OnModuleInit, OnModuleDestroy 
     return await this.prisma.tbo_hotel_master.count();
   }
 
+  async getHotelCoordinateSampleByCity(
+    tboCityCode: string,
+    take = 5,
+  ): Promise<Array<{ hotelCode: string; hotelName: string | null; latitude: string; longitude: string }>> {
+    const rows = await this.prisma.tbo_hotel_master.findMany({
+      where: { tbo_city_code: tboCityCode },
+      select: {
+        tbo_hotel_code: true,
+        hotel_name: true,
+        hotel_latitude: true,
+        hotel_longitude: true,
+      },
+      orderBy: { updated_at: 'desc' },
+      take,
+    });
+
+    return rows.map((row) => ({
+      hotelCode: row.tbo_hotel_code,
+      hotelName: row.hotel_name,
+      latitude: row.hotel_latitude || '',
+      longitude: row.hotel_longitude || '',
+    }));
+  }
+
   /**
    * Parse star rating from TBO's hotel category string
    * Examples: "FiveStar", "FourStar", "5-Star", "4", etc.
    */
-  private parseStarRating(category: string): number {
-    if (!category) return 0;
-    const categoryStr = category.toString().toLowerCase();
+  private parseStarRating(category: unknown): number {
+    if (category === null || category === undefined) return 0;
+    const categoryStr = String(category).toLowerCase().trim();
+    if (!categoryStr || categoryStr === 'all') return 0;
 
     if (categoryStr.includes('five') || categoryStr.includes('5')) return 5;
     if (categoryStr.includes('four') || categoryStr.includes('4')) return 4;
@@ -331,5 +368,29 @@ export class TboHotelMasterSyncService implements OnModuleInit, OnModuleDestroy 
     if (categoryStr.includes('one') || categoryStr.includes('1')) return 1;
 
     return 0;
+  }
+
+  private extractCoordinates(hotel: any): { latitude: string; longitude: string } {
+    const directLatitude = String(hotel?.Latitude || hotel?.latitude || '').trim();
+    const directLongitude = String(hotel?.Longitude || hotel?.longitude || '').trim();
+
+    if (directLatitude || directLongitude) {
+      return {
+        latitude: directLatitude,
+        longitude: directLongitude,
+      };
+    }
+
+    // Static TBO payload often returns coordinates as "lat|lng" in Map.
+    const mapValue = String(hotel?.Map || hotel?.map || '').trim();
+    if (!mapValue) {
+      return { latitude: '', longitude: '' };
+    }
+
+    const [latRaw, lngRaw] = mapValue.split('|');
+    return {
+      latitude: String(latRaw || '').trim(),
+      longitude: String(lngRaw || '').trim(),
+    };
   }
 }

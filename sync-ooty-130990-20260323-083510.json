@@ -1,0 +1,38 @@
+{
+    "success":  true,
+    "cityCode":  "130990",
+    "inserted":  490,
+    "coordinateSample":  [
+                             {
+                                 "hotelCode":  "1853100",
+                                 "hotelName":  "Memo Rooms \u0026 Spa",
+                                 "latitude":  "11.40947",
+                                 "longitude":  "76.68678"
+                             },
+                             {
+                                 "hotelCode":  "6444874",
+                                 "hotelName":  "Blossom Spring Villa",
+                                 "latitude":  "11.3893",
+                                 "longitude":  "76.71863"
+                             },
+                             {
+                                 "hotelCode":  "1853279",
+                                 "hotelName":  "OYO 13915 Albis Ville",
+                                 "latitude":  "11.39514",
+                                 "longitude":  "76.69565"
+                             },
+                             {
+                                 "hotelCode":  "1853084",
+                                 "hotelName":  "OYO 11394 Hotel Mount N Breeze",
+                                 "latitude":  "11.459696",
+                                 "longitude":  "76.683463"
+                             },
+                             {
+                                 "hotelCode":  "1853760",
+                                 "hotelName":  "Oyo 8736 Hotel Pratham International",
+                                 "latitude":  "11.409838",
+                                 "longitude":  "76.70913"
+                             }
+                         ],
+    "message":  "Single-city sync completed for 130990"
+}
