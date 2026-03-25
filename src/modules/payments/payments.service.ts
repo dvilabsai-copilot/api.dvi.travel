@@ -19,7 +19,7 @@ export class PaymentsService {
 
   async createOrder(dto: CreateOrderDto, userId: number) {
     const options = {
-      amount: dto.amount * 100, // amount in the smallest currency unit (paise)
+      amount: dto.amount * 100,
       currency: 'INR',
       receipt: `receipt_wallet_${userId}_${Date.now()}`,
       notes: {
@@ -103,7 +103,6 @@ export class PaymentsService {
       throw new BadRequestException('Invalid payment signature');
     }
 
-    // Get order details from Razorpay to know what this payment was for
     const order = await this.razorpay.orders.fetch(razorpay_order_id);
     const type = order.notes?.type;
 
@@ -123,13 +122,12 @@ export class PaymentsService {
     const amountInInr = order.amount / 100;
 
     await this.prisma.$transaction(async (tx) => {
-      // 1. Record in cash wallet
       await tx.dvi_cash_wallet.create({
         data: {
           agent_id: agentId,
           transaction_date: new Date(),
           transaction_amount: amountInInr,
-          transaction_type: 1, // Credit
+          transaction_type: 1,
           transaction_id: paymentId,
           remarks: `Razorpay Topup: ${paymentId}`,
           createdby: userId,
@@ -139,7 +137,6 @@ export class PaymentsService {
         },
       });
 
-      // 2. Update agent's total balance
       const agent = await tx.dvi_agent.findUnique({
         where: { agent_ID: agentId },
         select: { total_cash_wallet: true },
@@ -173,7 +170,6 @@ export class PaymentsService {
     validityEnd.setDate(validityEnd.getDate() + validityDays);
 
     await this.prisma.$transaction(async (tx) => {
-      // 1. Create subscribed plan record
       await tx.dvi_agent_subscribed_plans.create({
         data: {
           agent_ID: agentId,
@@ -199,7 +195,6 @@ export class PaymentsService {
         },
       });
 
-      // 2. Add to wallet history
       await tx.dvi_cash_wallet.create({
         data: {
           agent_id: agentId,
@@ -215,7 +210,6 @@ export class PaymentsService {
         },
       });
 
-      // 3. Update agent's wallet balance
       const agent = await tx.dvi_agent.findUnique({
         where: { agent_ID: agentId },
         select: { total_cash_wallet: true },
@@ -245,6 +239,34 @@ export class PaymentsService {
       },
       orderBy: {
         transaction_date: 'desc',
+      },
+    });
+  }
+
+  async getCouponWalletHistory(reqUser: any) {
+    const agentId = Number(reqUser.agentId || 0);
+    if (agentId === 0) {
+      throw new BadRequestException('Agent not found');
+    }
+
+    return this.prisma.dvi_coupon_wallet.findMany({
+      where: {
+        agent_id: agentId,
+        deleted: 0,
+      },
+      orderBy: {
+        transaction_date: 'desc',
+      },
+      select: {
+        coupon_wallet_ID: true,
+        agent_id: true,
+        transaction_date: true,
+        transaction_amount: true,
+        transaction_type: true,
+        remarks: true,
+        createdon: true,
+        status: true,
+        deleted: true,
       },
     });
   }

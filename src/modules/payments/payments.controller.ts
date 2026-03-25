@@ -14,9 +14,16 @@ export class PaymentsController {
 
   @UseGuards(JwtAuthGuard)
   @Get('wallet-history')
-  @ApiOperation({ summary: 'Get agent wallet transaction history' })
+  @ApiOperation({ summary: 'Get agent cash wallet transaction history' })
   async getWalletHistory(@Req() req: any) {
     return this.paymentsService.getWalletHistory(req.user);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('coupon-wallet-history')
+  @ApiOperation({ summary: 'Get agent coupon wallet transaction history' })
+  async getCouponWalletHistory(@Req() req: any) {
+    return this.paymentsService.getCouponWalletHistory(req.user);
   }
 
   @UseGuards(JwtAuthGuard)
