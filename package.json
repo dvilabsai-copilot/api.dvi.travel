@@ -12,7 +12,8 @@
     "seed": "ts-node prisma/seed.ts",
     "seed:justa": "node scripts/import-justa-hotels.js",
     "seed:staah:test": "ts-node seed-staah-test-data.ts",
-    "cert:tbo": "tsx verification-e2e/tbo-certification/run-tbo-certification.ts"
+    "cert:tbo": "tsx verification-e2e/tbo-certification/run-tbo-certification.ts",
+    "cert:staah": "node verification-e2e/staah-certification/run-staah-certification.js"
   },
   "dependencies": {
     "@nestjs/axios": "^4.0.1",

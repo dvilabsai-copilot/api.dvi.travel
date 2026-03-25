@@ -103,8 +103,10 @@ export class StaahController {
 
   @Post('ari')
   @HttpCode(HttpStatus.OK)
-  async ari(@Body() dto: AriRequestDto): Promise<AriResponseDto> {
-    return this.staahService.ariUpdate(dto);
+  async ari(
+    @Body() dto: AriRequestDto,
+  ): Promise<AriResponseDto | ArrInfoResponseDto | YearInfoArrResponseDto> {
+    return this.staahService.handleUnifiedAri(dto);
   }
 
   @Post('reservation')
