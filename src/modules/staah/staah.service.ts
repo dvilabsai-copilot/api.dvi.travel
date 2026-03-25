@@ -714,6 +714,24 @@ export class StaahService {
     }
   }
 
+  /**
+   * The final certification route is a single ARI endpoint, so dispatch read vs write
+   * semantics here without removing the older adapter-specific routes.
+   */
+  async handleUnifiedAri(
+    dto: AriRequestDto,
+  ): Promise<AriResponseDto | ArrInfoResponseDto | YearInfoArrResponseDto> {
+    if (dto.action === 'ARR_info') {
+      return this.getArrInfo(dto as unknown as ArrInfoRequestDto);
+    }
+
+    if (dto.action === 'year_info_ARR') {
+      return this.getYearInfoArr(dto as unknown as YearInfoArrRequestDto);
+    }
+
+    return this.ariUpdate(dto);
+  }
+
   async ariUpdate(dto: AriRequestDto): Promise<AriResponseDto> {
     await this.logInbound('ari', dto.propertyid, dto.room_id, dto.rate_id, dto);
 
@@ -727,7 +745,7 @@ export class StaahService {
 
     try {
       await this.prisma.$transaction(async (tx) => {
-        for (const rawRow of dto.data) {
+        for (const rawRow of dto.data || []) {
           if (!rawRow || typeof rawRow !== 'object' || Array.isArray(rawRow)) {
             throw new BadRequestException('Each ARI data row must be a JSON object.');
           }

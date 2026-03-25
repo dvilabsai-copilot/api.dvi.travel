@@ -1,5 +1,14 @@
 import { Type } from 'class-transformer';
-import { IsArray, IsIn, IsNotEmpty, IsObject, IsOptional, IsString } from 'class-validator';
+import {
+  IsArray,
+  IsDateString,
+  IsIn,
+  IsNotEmpty,
+  IsObject,
+  IsOptional,
+  IsString,
+  ValidateIf,
+} from 'class-validator';
 
 export type AriDataEntryDto = Record<string, any>;
 
@@ -20,6 +29,12 @@ export class AriRequestDto {
   @IsOptional()
   currency?: string;
 
+  // The final single ARI endpoint accepts read-style pull actions as well.
+  @IsString()
+  @IsOptional()
+  @IsIn(['ARR_info', 'year_info_ARR'])
+  action?: string;
+
   @IsString()
   @IsNotEmpty()
   apikey: string;
@@ -33,10 +48,21 @@ export class AriRequestDto {
   @IsIn(['2'])
   version: string;
 
+  @ValidateIf((value) => value.action === 'ARR_info')
+  @IsDateString()
+  @IsNotEmpty()
+  from_date?: string;
+
+  @ValidateIf((value) => value.action === 'ARR_info')
+  @IsDateString()
+  @IsNotEmpty()
+  to_date?: string;
+
+  @ValidateIf((value) => !value.action)
   @IsArray()
   @IsObject({ each: true })
   @Type(() => Object)
-  data: AriDataEntryDto[];
+  data?: AriDataEntryDto[];
 }
 
 export class AriResponseDto {
