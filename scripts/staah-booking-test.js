@@ -7,7 +7,6 @@
  *
  * Optional env overrides:
  *   STAAH_PROPERTY_ID=STAAHTESTHOTEL1
- *   STAAH_API_KEY=Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH
  *   STAAH_BOOKING_URL=https://channels-stage.staah.net/booking/getapi/reservation/v2
  *   STAAH_ROOM_ID=DELUXE_ROOM
  *   STAAH_RATE_ID=CP_PLAN
@@ -33,7 +32,7 @@ if (fs.existsSync(envPath)) {
 }
 
 const PROPERTY_ID = process.env.STAAH_PROPERTY_ID || 'STAAHTESTHOTEL1';
-const API_KEY     = process.env.STAAH_API_KEY     || '';
+const API_KEY     = 'GeT-aPi-DemoY-U1V8-bdt-03gEp-u1D8a4Y';
 const ROOM_ID     = process.env.STAAH_ROOM_ID     || 'DELUXE_ROOM';
 const RATE_ID     = process.env.STAAH_RATE_ID     || 'CP_PLAN';
 const BOOKING_URL = process.env.STAAH_BOOKING_URL || 'https://channels-stage.staah.net/booking/getapi/reservation/v2';
