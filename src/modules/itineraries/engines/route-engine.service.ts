@@ -42,8 +42,18 @@ export class RouteEngineService {
    * --------------------------------------------------------*/
 
   private pad2(n: number): string {
-    return String(Math.max(0, n | 0)).padStart(2, "0");
-  }
+  return String(Math.max(0, n | 0)).padStart(2, "0");
+}
+
+private normalizeKmValue(value: unknown): string {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+
+  const numeric = parseFloat(raw.replace(/[^0-9.]/g, ""));
+  if (Number.isNaN(numeric) || numeric <= 0) return "";
+
+  return numeric.toFixed(2);
+}
 
   private toHmsFromDate(d: Date): string {
     const hh = d.getHours();
@@ -149,18 +159,25 @@ export class RouteEngineService {
    * `$distanceKM = 0;` branch.
    */
   private async resolveSourceLocationAndKm(
-    tx: Tx,
-    sourceName: string,
-    destName: string,
-  ): Promise<{ locationId: bigint; distanceKm: string }> {
-    const trimmedSource = String(sourceName ?? "").trim();
-    const trimmedDest = String(destName ?? "").trim();
+  tx: Tx,
+  sourceName: string,
+  destName: string,
+): Promise<{ locationId: bigint; distanceKm: string }> {
+  const trimmedSource = String(sourceName ?? "").trim();
+  const trimmedDest = String(destName ?? "").trim();
 
-    if (!trimmedSource || !trimmedDest) {
-      return { locationId: BigInt(0), distanceKm: "" };
-    }
+  if (!trimmedSource || !trimmedDest) {
+    return { locationId: BigInt(0), distanceKm: "" };
+  }
 
-    const row = await (tx as any).dvi_stored_locations.findFirst({
+  const normalizeText = (value: string) =>
+    value.replace(/\s+/g, " ").trim().toLowerCase();
+
+  const normalizedSource = normalizeText(trimmedSource);
+  const normalizedDest = normalizeText(trimmedDest);
+
+  let row =
+    await (tx as any).dvi_stored_locations.findFirst({
       where: {
         source_location: trimmedSource,
         destination_location: trimmedDest,
@@ -175,31 +192,56 @@ export class RouteEngineService {
       },
     });
 
-    if (!row) {
-      return { locationId: BigInt(0), distanceKm: "" };
-    }
+  if (!row) {
+    const rows = await (tx as any).dvi_stored_locations.findMany({
+      where: { deleted: 0 },
+      orderBy: { location_ID: "desc" },
+      select: {
+        location_ID: true,
+        source_location: true,
+        destination_location: true,
+        distance: true,
+      },
+    });
 
-    const rawId = (row as any).location_ID ?? 0;
-
-    let locationId: bigint;
-    try {
-      if (typeof rawId === "bigint") {
-        locationId = rawId;
-      } else if (typeof rawId === "number") {
-        locationId = BigInt(Math.trunc(rawId));
-      } else {
-        locationId = BigInt(String(rawId));
-      }
-    } catch {
-      locationId = BigInt(0);
-    }
-
-    const distanceRaw = (row as any).distance;
-    const distanceKm =
-      distanceRaw === null || distanceRaw === undefined ? "" : String(distanceRaw);
-
-    return { locationId, distanceKm };
+    row =
+      rows.find((r: any) => {
+        const src = normalizeText(String(r.source_location ?? ""));
+        const dest = normalizeText(String(r.destination_location ?? ""));
+        return src === normalizedSource && dest === normalizedDest;
+      }) ||
+      rows.find((r: any) => {
+        const src = normalizeText(String(r.source_location ?? ""));
+        const dest = normalizeText(String(r.destination_location ?? ""));
+        return src === normalizedDest && dest === normalizedSource;
+      }) ||
+      null;
   }
+
+  if (!row) {
+    return { locationId: BigInt(0), distanceKm: "" };
+  }
+
+  const rawId = (row as any).location_ID ?? 0;
+
+  let locationId: bigint;
+  try {
+    if (typeof rawId === "bigint") {
+      locationId = rawId;
+    } else if (typeof rawId === "number") {
+      locationId = BigInt(Math.trunc(rawId));
+    } else {
+      locationId = BigInt(String(rawId));
+    }
+  } catch {
+    locationId = BigInt(0);
+  }
+
+  const distanceRaw = (row as any).distance;
+  const distanceKm = this.normalizeKmValue(distanceRaw);
+
+  return { locationId, distanceKm };
+}
 
   /**
    * Normalize the base trip start date (date-only) from the plan.
@@ -275,19 +317,13 @@ export class RouteEngineService {
 
       // location_id from master stored locations table
 // no_of_km should prefer request payload value, with master distance as fallback
-      const { locationId, distanceKm } = await this.resolveSourceLocationAndKm(
+  const { locationId, distanceKm } = await this.resolveSourceLocationAndKm(
   tx,
   sourceName,
   destName,
 );
 
-const requestKm =
-  r.no_of_km !== undefined &&
-  r.no_of_km !== null &&
-  String(r.no_of_km).trim() !== ""
-    ? String(r.no_of_km).trim()
-    : "";
-
+const requestKm = this.normalizeKmValue(r.no_of_km);
 const finalKm = requestKm || distanceKm || "";
 
       // itinerary_route_date = trip_start_date + dayOffset (one day per leg)
