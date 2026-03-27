@@ -1084,8 +1084,23 @@ for (const row of vehicleKmRows) {
         });
       }
 
-   const intercityDistanceNum =
+const storedIntercityDistanceNum =
   parseFloat(String((route as any).no_of_km ?? 0)) || 0;
+
+const travelSegmentDistanceNum = segments.reduce((sum, segment: any) => {
+  if (segment?.type !== 'travel') return sum;
+
+  const distanceNum =
+    parseFloat(String(segment?.distance ?? '').replace(/[^0-9.]/g, '')) || 0;
+
+  return sum + distanceNum;
+}, 0);
+
+// Never show Inter-City as 0 when visible travel already exists
+const intercityDistanceNum =
+  storedIntercityDistanceNum > 0
+    ? storedIntercityDistanceNum
+    : travelSegmentDistanceNum;
 
 const sightseeingDistanceNum = routeHotspots.reduce((sum, rh) => {
   const itemType = Number((rh as any).item_type ?? 0);
@@ -1093,18 +1108,22 @@ const sightseeingDistanceNum = routeHotspots.reduce((sum, rh) => {
   // Ignore pure START row
   if (itemType === 1) return sum;
 
-  const distanceStr = String((rh as any).hotspot_travelling_distance ?? "").trim();
+  const distanceStr = String((rh as any).hotspot_travelling_distance ?? '').trim();
   const distanceNum = distanceStr ? parseFloat(distanceStr) : 0;
 
   return sum + (Number.isNaN(distanceNum) ? 0 : distanceNum);
 }, 0);
 
-const totalDistanceNum = intercityDistanceNum + sightseeingDistanceNum;
+// Keep total realistic even when old DB has missing no_of_km
+const totalDistanceNum = Math.max(
+  intercityDistanceNum + sightseeingDistanceNum,
+  travelSegmentDistanceNum,
+);
 
 const intercityDistance = this.formatKm(intercityDistanceNum);
 const sightseeingDistance = this.formatKm(sightseeingDistanceNum);
 const dayDistance = this.formatKm(totalDistanceNum);
-
+//const dayDistance = this.formatKm(totalDistanceNum);
       const dayStartTimeText = this.formatTime(route.route_start_time as any);
 
       // Fetch via routes for this route

@@ -324,7 +324,13 @@ private normalizeKmValue(value: unknown): string {
 );
 
 const requestKm = this.normalizeKmValue(r.no_of_km);
-const finalKm = requestKm || distanceKm || "";
+
+const fallbackKm =
+  this.normalizeKmValue(r.distance) ||
+  this.normalizeKmValue(r.total_distance) ||
+  this.normalizeKmValue(r.intercityDistance);
+
+const finalKm = requestKm || distanceKm || fallbackKm || "";
 
       // itinerary_route_date = trip_start_date + dayOffset (one day per leg)
       const routeDate = new Date(baseDate.getTime());
