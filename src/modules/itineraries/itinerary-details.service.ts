@@ -390,10 +390,56 @@ export class ItineraryDetailsService {
     });
 
     // ------------------------- ROUTES + HOTSPOTS ----------------------
-    const routes = await this.prisma.dvi_itinerary_route_details.findMany({
-      where: { itinerary_plan_ID: planId, deleted: 0, status: 1 },
-      orderBy: { itinerary_route_ID: 'asc' },
+   const routes = await this.prisma.dvi_itinerary_route_details.findMany({
+  where: { itinerary_plan_ID: planId, deleted: 0, status: 1 },
+  orderBy: { itinerary_route_ID: 'asc' },
+});
+
+const vehicleKmRows =
+  await this.prisma.$queryRawUnsafe(`
+    SELECT
+      itinerary_route_id,
+      total_running_km,
+      total_siteseeing_km,
+      total_travelled_km
+    FROM dvi_itinerary_plan_vendor_vehicle_details
+    WHERE itinerary_plan_id = ${planId}
+      AND deleted = 0
+  `) as any[];
+
+const vehicleKmByRouteId = new Map<
+  number,
+  { runningKm: number; sightseeingKm: number; totalKm: number }
+>();
+
+for (const row of vehicleKmRows) {
+  const routeId = Number((row as any).itinerary_route_id || 0);
+  if (!routeId) continue;
+
+  const runningKm =
+    parseFloat(String((row as any).total_running_km || 0)) || 0;
+  const sightseeingKm =
+    parseFloat(String((row as any).total_siteseeing_km || 0)) || 0;
+  const totalKm =
+    parseFloat(String((row as any).total_travelled_km || 0)) || 0;
+
+  const existing = vehicleKmByRouteId.get(routeId);
+
+  if (!existing) {
+    vehicleKmByRouteId.set(routeId, {
+      runningKm,
+      sightseeingKm,
+      totalKm,
     });
+    continue;
+  }
+
+  vehicleKmByRouteId.set(routeId, {
+    runningKm: Math.max(existing.runningKm, runningKm),
+    sightseeingKm: Math.max(existing.sightseeingKm, sightseeingKm),
+    totalKm: Math.max(existing.totalKm, totalKm),
+  });
+}
 
     // ------------------------- HOTELS FOR TIMELINE ----------------------
     let timelineHotelRows: any[] = [];
@@ -1038,23 +1084,21 @@ export class ItineraryDetailsService {
         });
       }
 
-      // Intercity distance = actual city-to-city route distance
-const intercityDistanceNum = parseFloat(String((route as any).no_of_km ?? 0)) || 0;
+   const intercityDistanceNum =
+  parseFloat(String((route as any).no_of_km ?? 0)) || 0;
 
-// Sightseeing distance = sum of hotspot travelling distances inside the day
 const sightseeingDistanceNum = routeHotspots.reduce((sum, rh) => {
   const itemType = Number((rh as any).item_type ?? 0);
 
-  // Ignore pure START rows
+  // Ignore pure START row
   if (itemType === 1) return sum;
 
-  const distanceStr = String((rh as any).hotspot_travelling_distance ?? '').trim();
+  const distanceStr = String((rh as any).hotspot_travelling_distance ?? "").trim();
   const distanceNum = distanceStr ? parseFloat(distanceStr) : 0;
 
   return sum + (Number.isNaN(distanceNum) ? 0 : distanceNum);
 }, 0);
 
-// Total distance = intercity + sightseeing
 const totalDistanceNum = intercityDistanceNum + sightseeingDistanceNum;
 
 const intercityDistance = this.formatKm(intercityDistanceNum);
@@ -1130,60 +1174,67 @@ const dayDistance = this.formatKm(totalDistanceNum);
       vehicleTypes.map((vt: any) => [vt.vehicle_type_id, vt.vehicle_type_title || 'Unknown Vehicle Type'])
     );
 
-    // Also fetch day-wise vehicle details to calculate KM totals
-    const vehicleDetailsRows =
-      await this.prisma.$queryRawUnsafe(`
-        SELECT 
-          itinerary_plan_vendor_vehicle_details_ID,
-          itinerary_plan_vendor_eligible_ID,
-          itinerary_plan_id,
-          itinerary_route_id,
-          itinerary_route_date,
-          vehicle_type_id,
-          vehicle_qty,
-          vendor_id,
-          vendor_vehicle_type_id,
-          vehicle_id,
-          vendor_branch_id,
-          time_limit_id,
-          kms_limit_id,
-          travel_type,
-          itinerary_route_location_from,
-          itinerary_route_location_to,
-          total_running_km,
-          CAST(total_running_time AS CHAR) as total_running_time,
-          total_siteseeing_km,
-          CAST(total_siteseeing_time AS CHAR) as total_siteseeing_time,
-          total_pickup_km,
-          CAST(total_pickup_duration AS CHAR) as total_pickup_duration,
-          total_drop_km,
-          CAST(total_drop_duration AS CHAR) as total_drop_duration,
-          total_extra_km,
-          extra_km_rate,
-          total_extra_km_charges,
-          total_travelled_km,
-          total_travelled_time,
-          vehicle_rental_charges,
-          vehicle_toll_charges,
-          vehicle_parking_charges,
-          vehicle_driver_charges,
-          vehicle_permit_charges,
-          before_6_am_extra_time,
-          after_8_pm_extra_time,
-          before_6_am_charges_for_driver,
-          before_6_am_charges_for_vehicle,
-          after_8_pm_charges_for_driver,
-          after_8_pm_charges_for_vehicle,
-          total_vehicle_amount,
-          createdby,
-          createdon,
-          updatedon,
-          status,
-          deleted
-        FROM dvi_itinerary_plan_vendor_vehicle_details
-        WHERE itinerary_plan_id = ${planId} AND deleted = 0
-        ORDER BY itinerary_route_date ASC
-      `) as any[];
+    const assignedEligibleIds = eligibleRows
+  .filter((e) => (e as any).itineary_plan_assigned_status === 1)
+  .map((e) => Number((e as any).itinerary_plan_vendor_eligible_ID))
+  .filter((id) => id > 0);
+
+   const vehicleDetailsRows = assignedEligibleIds.length
+  ? await this.prisma.$queryRawUnsafe(`
+      SELECT 
+        itinerary_plan_vendor_vehicle_details_ID,
+        itinerary_plan_vendor_eligible_ID,
+        itinerary_plan_id,
+        itinerary_route_id,
+        itinerary_route_date,
+        vehicle_type_id,
+        vehicle_qty,
+        vendor_id,
+        vendor_vehicle_type_id,
+        vehicle_id,
+        vendor_branch_id,
+        time_limit_id,
+        kms_limit_id,
+        travel_type,
+        itinerary_route_location_from,
+        itinerary_route_location_to,
+        total_running_km,
+        CAST(total_running_time AS CHAR) as total_running_time,
+        total_siteseeing_km,
+        CAST(total_siteseeing_time AS CHAR) as total_siteseeing_time,
+        total_pickup_km,
+        CAST(total_pickup_duration AS CHAR) as total_pickup_duration,
+        total_drop_km,
+        CAST(total_drop_duration AS CHAR) as total_drop_duration,
+        total_extra_km,
+        extra_km_rate,
+        total_extra_km_charges,
+        total_travelled_km,
+        total_travelled_time,
+        vehicle_rental_charges,
+        vehicle_toll_charges,
+        vehicle_parking_charges,
+        vehicle_driver_charges,
+        vehicle_permit_charges,
+        before_6_am_extra_time,
+        after_8_pm_extra_time,
+        before_6_am_charges_for_driver,
+        before_6_am_charges_for_vehicle,
+        after_8_pm_charges_for_driver,
+        after_8_pm_charges_for_vehicle,
+        total_vehicle_amount,
+        createdby,
+        createdon,
+        updatedon,
+        status,
+        deleted
+      FROM dvi_itinerary_plan_vendor_vehicle_details
+      WHERE itinerary_plan_id = ${planId}
+        AND deleted = 0
+        AND itinerary_plan_vendor_eligible_ID IN (${assignedEligibleIds.join(",")})
+      ORDER BY itinerary_route_date ASC
+    `) as any[]
+  : [];
 
     // Group vehicle details by eligible ID to sum KMs
     const vehicleDetailsByEligible = new Map<number, any[]>();
@@ -1239,15 +1290,25 @@ const dayDistance = this.formatKm(totalDistanceNum);
       const eligibleId = eligible.itinerary_plan_vendor_eligible_ID;
       const dayWiseDetails = vehicleDetailsByEligible.get(eligibleId) || [];
       
-      let totalRunningKm = 0;
-      let totalSiteseeingKm = 0;
-      let totalTravelledKm = 0;
-      
-      for (const vd of dayWiseDetails) {
-        totalRunningKm += parseFloat((vd as any).total_running_km || 0);
-        totalSiteseeingKm += parseFloat((vd as any).total_siteseeing_km || 0);
-        totalTravelledKm += parseFloat((vd as any).total_travelled_km || 0);
-      }
+     let totalRunningKm = 0;
+let totalSiteseeingKm = 0;
+let totalTravelledKm = 0;
+
+for (const vd of dayWiseDetails) {
+  const runningKm = parseFloat(String((vd as any).total_running_km || 0)) || 0;
+  const sightseeingKm = parseFloat(String((vd as any).total_siteseeing_km || 0)) || 0;
+  const dbTotalKm = parseFloat(String((vd as any).total_travelled_km || 0)) || 0;
+
+  const expectedTotalKm = Number((runningKm + sightseeingKm).toFixed(2));
+  const safeTotalKm =
+    Math.abs(dbTotalKm - expectedTotalKm) <= 0.01
+      ? dbTotalKm
+      : expectedTotalKm;
+
+  totalRunningKm += runningKm;
+  totalSiteseeingKm += sightseeingKm;
+  totalTravelledKm += safeTotalKm;
+}
 
       // Build a breakdown list only for >0 amounts (for UI card)
       const tmp: VehicleCostBreakdownItemDto[] = [];
@@ -1309,9 +1370,19 @@ const dayDistance = this.formatKm(totalDistanceNum);
         dayData.driver += parseFloat((vd as any).vehicle_driver_charges || 0);
         dayData.permit += parseFloat((vd as any).vehicle_permit_charges || 0);
         // Track all three KMS values per day
-        dayData.travelKms += parseFloat((vd as any).total_running_km || 0);
-        dayData.sightseeingKms += parseFloat((vd as any).total_siteseeing_km || 0);
-        dayData.totalKms += parseFloat((vd as any).total_travelled_km || 0);
+       const runningKm = parseFloat(String((vd as any).total_running_km || 0)) || 0;
+const sightseeingKm = parseFloat(String((vd as any).total_siteseeing_km || 0)) || 0;
+const dbTotalKm = parseFloat(String((vd as any).total_travelled_km || 0)) || 0;
+
+const expectedTotalKm = Number((runningKm + sightseeingKm).toFixed(2));
+const safeTotalKm =
+  Math.abs(dbTotalKm - expectedTotalKm) <= 0.01
+    ? dbTotalKm
+    : expectedTotalKm;
+
+dayData.travelKms += runningKm;
+dayData.sightseeingKms += sightseeingKm;
+dayData.totalKms += safeTotalKm;
       }
 
       // Convert map to array and format with day labels
