@@ -599,6 +599,24 @@ export class ItinerariesController {
     return this.svc.previewActivityAddition(body);
   }
 
+  @Post('activities/preview-all-hotspots')
+  @ApiOperation({ summary: 'Preview activity addition across all hotspots in a route (day view)' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        planId: { type: 'number', example: 17940 },
+        routeId: { type: 'number', example: 1 },
+        activityId: { type: 'number', example: 5 },
+      },
+      required: ['planId', 'routeId', 'activityId'],
+    },
+  })
+  @ApiOkResponse({ description: 'Activity preview for all hotspots with fit/conflict status' })
+  async previewActivityForAllHotspots(@Body() body: any) {
+    return this.svc.previewActivityForAllHotspots(body);
+  }
+
   @Post('activities/add')
   @ApiOperation({ summary: 'Add an activity to a hotspot in the itinerary' })
   @ApiBody({
