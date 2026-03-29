@@ -432,13 +432,13 @@ export class ItinerariesService {
         throw new NotFoundException('Route hotspot not found');
       }
 
-      // Enforce uniqueness: same activity can be added only once per
-      // itinerary plan + route + hotspot combination.
+      // Enforce uniqueness per specific hotspot window (route_hotspot_ID),
+      // not globally by hotspot_ID across all windows.
       const duplicate = await (tx as any).dvi_itinerary_route_activity_details.findFirst({
         where: {
           itinerary_plan_ID: data.planId,
           itinerary_route_ID: data.routeId,
-          hotspot_ID: data.hotspotId,
+          route_hotspot_ID: data.routeHotspotId,
           activity_ID: data.activityId,
           deleted: 0,
           status: 1,
