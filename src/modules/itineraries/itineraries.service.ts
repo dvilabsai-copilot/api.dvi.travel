@@ -632,13 +632,13 @@ export class ItinerariesService {
       affectedSegments: Array<{
         type: string;
         name: string;
-        oldStartTime: string | null;
-        oldEndTime: string | null;
-        newStartTime: string | null;
-        newEndTime: string | null;
+        oldStartTime: Date | null;
+        oldEndTime: Date | null;
+        newStartTime: Date | null;
+        newEndTime: Date | null;
       }>;
-      originalDayEndTime: string | null;
-      newDayEndTime: string | null;
+      originalDayEndTime: Date | null;
+      newDayEndTime: Date | null;
     } = {
       shiftMinutes: hotspotExtensionMinutes,
       affectedSegments: [],
@@ -695,8 +695,8 @@ export class ItinerariesService {
 
       for (const row of subsequentRows) {
         const itemType = Number(row.item_type ?? 0);
-        const oldStart: string | null = row.hotspot_start_time ?? null;
-        const oldEnd: string | null = row.hotspot_end_time ?? null;
+        const oldStart: Date | null = row.hotspot_start_time ?? null;
+        const oldEnd: Date | null = row.hotspot_end_time ?? null;
         const newStart = oldStart ? this.addMinutesToTime(oldStart, hotspotExtensionMinutes) : null;
         const newEnd = oldEnd ? this.addMinutesToTime(oldEnd, hotspotExtensionMinutes) : null;
 
