@@ -411,6 +411,10 @@ export class ItinerariesService {
         },
       });
 
+      if (!activity) {
+        throw new NotFoundException('Activity not found');
+      }
+
       // Get current hotspot timing
       const routeHotspot = await (tx as any).dvi_itinerary_route_hotspot_details.findFirst({
         where: {
@@ -423,6 +427,28 @@ export class ItinerariesService {
           hotspot_end_time: true,
         },
       });
+
+      if (!routeHotspot) {
+        throw new NotFoundException('Route hotspot not found');
+      }
+
+      // Enforce uniqueness: same activity can be added only once per
+      // itinerary plan + route + hotspot combination.
+      const duplicate = await (tx as any).dvi_itinerary_route_activity_details.findFirst({
+        where: {
+          itinerary_plan_ID: data.planId,
+          itinerary_route_ID: data.routeId,
+          hotspot_ID: data.hotspotId,
+          activity_ID: data.activityId,
+          deleted: 0,
+          status: 1,
+        },
+        select: { route_activity_ID: true },
+      });
+
+      if (duplicate) {
+        throw new ConflictException('This activity is already added for this hotspot');
+      }
 
       // Get the next activity order and calculate start time
       const existingActivities = await (tx as any).dvi_itinerary_route_activity_details.findMany({
@@ -487,9 +513,8 @@ export class ItinerariesService {
             updatedon: new Date(),
           },
         });
-
-        // Rebuild timeline to adjust subsequent hotspots
-        await this.hotspotEngine.rebuildRouteHotspots(tx, data.planId);
+        // Do not rebuild full hotspot timeline here because rebuild re-derives
+        // hotspot timing windows and can overwrite this explicit extension.
       }
 
       return {
@@ -537,7 +562,7 @@ export class ItinerariesService {
       },
     });
 
-    // 3. Get current hotspot timing in the itinerary
+    // 3. Get current hotspot timing + order in the itinerary
     const routeHotspot = await (this.prisma as any).dvi_itinerary_route_hotspot_details.findFirst({
       where: {
         route_hotspot_ID: data.routeHotspotId,
@@ -547,6 +572,9 @@ export class ItinerariesService {
       select: {
         hotspot_start_time: true,
         hotspot_end_time: true,
+        hotspot_order: true,
+        hotspot_ID: true,
+        item_type: true,
       },
     });
 
@@ -554,13 +582,157 @@ export class ItinerariesService {
       throw new NotFoundException('Route hotspot not found');
     }
 
-    // 4. Check for timing conflicts
+    // 4. Compute where the activity will be inserted in this hotspot
+    const existingActivities = await (this.prisma as any).dvi_itinerary_route_activity_details.findMany({
+      where: {
+        itinerary_plan_ID: data.planId,
+        itinerary_route_ID: data.routeId,
+        route_hotspot_ID: data.routeHotspotId,
+        deleted: 0,
+      },
+      select: {
+        activity_order: true,
+        activity_end_time: true,
+      },
+      orderBy: { activity_order: 'desc' },
+      take: 1,
+    });
+
+    const nextOrder = existingActivities.length > 0
+      ? existingActivities[0].activity_order + 1
+      : 1;
+
+    const proposedStartTime =
+      existingActivities.length > 0 && existingActivities[0].activity_end_time
+        ? existingActivities[0].activity_end_time
+        : routeHotspot.hotspot_start_time;
+
+    const durationMinutes = activity.activity_duration
+      ? this.timeToMinutes(activity.activity_duration)
+      : 30;
+
+    const proposedEndTime = this.addMinutesToTime(proposedStartTime, durationMinutes);
+
+    // 5. Check for timing conflicts against the proposed inserted slot
     const conflicts = this.checkActivityTimingConflicts(
       activity,
       timeSlots,
-      routeHotspot.hotspot_start_time,
-      routeHotspot.hotspot_end_time
+      proposedStartTime,
+      proposedEndTime
     );
+
+    // 6. Compute day cascade — how many minutes does the hotspot extend?
+    const hotspotExtensionMinutes =
+      proposedEndTime > routeHotspot.hotspot_end_time
+        ? this.timeToMinutes(proposedEndTime) - this.timeToMinutes(routeHotspot.hotspot_end_time)
+        : 0;
+
+    let cascade: {
+      shiftMinutes: number;
+      affectedSegments: Array<{
+        type: string;
+        name: string;
+        oldStartTime: string | null;
+        oldEndTime: string | null;
+        newStartTime: string | null;
+        newEndTime: string | null;
+      }>;
+      originalDayEndTime: string | null;
+      newDayEndTime: string | null;
+    } = {
+      shiftMinutes: hotspotExtensionMinutes,
+      affectedSegments: [],
+      originalDayEndTime: null,
+      newDayEndTime: null,
+    };
+
+    if (hotspotExtensionMinutes > 0) {
+      // Fetch all subsequent route hotspot rows (ordered by hotspot_order)
+      const subsequentRows = await (this.prisma as any).dvi_itinerary_route_hotspot_details.findMany({
+        where: {
+          itinerary_plan_ID: data.planId,
+          itinerary_route_ID: data.routeId,
+          hotspot_order: { gt: routeHotspot.hotspot_order },
+          deleted: 0,
+        },
+        select: {
+          route_hotspot_ID: true,
+          hotspot_ID: true,
+          item_type: true,
+          hotspot_start_time: true,
+          hotspot_end_time: true,
+          hotspot_order: true,
+          hotspot_traveling_time: true,
+          allow_break_hours: true,
+          allow_via_route: true,
+          via_location_name: true,
+        },
+        orderBy: { hotspot_order: 'asc' },
+      });
+
+      // Collect all hotspot_IDs to batch-fetch names
+      const hotspotIds = subsequentRows
+        .map((r: any) => r.hotspot_ID)
+        .filter((id: any) => id && id > 0);
+
+      const masterHotspots = hotspotIds.length > 0
+        ? await (this.prisma as any).dvi_hotspot_master.findMany({
+            where: { hotspot_ID: { in: hotspotIds } },
+            select: { hotspot_ID: true, hotspot_name: true },
+          })
+        : [];
+
+      const hotspotNameMap = new Map<number, string>(
+        masterHotspots.map((h: any) => [h.hotspot_ID, h.hotspot_name])
+      );
+
+      // Determine original day end time (last segment's end time)
+      const lastRow = subsequentRows[subsequentRows.length - 1];
+      cascade.originalDayEndTime = lastRow?.hotspot_end_time ?? routeHotspot.hotspot_end_time;
+      cascade.newDayEndTime = cascade.originalDayEndTime
+        ? this.addMinutesToTime(cascade.originalDayEndTime, hotspotExtensionMinutes)
+        : null;
+
+      for (const row of subsequentRows) {
+        const itemType = Number(row.item_type ?? 0);
+        const oldStart: string | null = row.hotspot_start_time ?? null;
+        const oldEnd: string | null = row.hotspot_end_time ?? null;
+        const newStart = oldStart ? this.addMinutesToTime(oldStart, hotspotExtensionMinutes) : null;
+        const newEnd = oldEnd ? this.addMinutesToTime(oldEnd, hotspotExtensionMinutes) : null;
+
+        let segType = 'hotspot';
+        let segName = 'Unknown';
+
+        if (itemType === 2) {
+          segType = 'travel';
+          segName = 'Travel';
+        } else if (itemType === 3) {
+          if (Number(row.allow_break_hours) === 1) {
+            segType = 'break';
+            segName = hotspotNameMap.get(row.hotspot_ID) ?? 'Break';
+          } else if (Number(row.allow_via_route) === 1) {
+            segType = 'travel';
+            segName = `Travel via ${row.via_location_name ?? 'route'}`;
+          } else {
+            segType = 'travel';
+            segName = 'Travel';
+          }
+        } else if (itemType === 4) {
+          segType = 'hotspot';
+          segName = hotspotNameMap.get(row.hotspot_ID) ?? 'Hotspot';
+        } else if (itemType === 5) {
+          segType = 'hotel';
+          segName = 'Hotel Check-in';
+        } else if (itemType === 6 || itemType === 7) {
+          segType = 'return';
+          segName = 'Return';
+        } else {
+          continue; // Skip item_type 1 (already handled as current hotspot)
+        }
+
+        cascade.affectedSegments.push({ type: segType, name: segName, oldStartTime: oldStart, oldEndTime: oldEnd, newStartTime: newStart, newEndTime: newEnd });
+      }
+    }
 
     return {
       activity: {
@@ -572,8 +744,15 @@ export class ItinerariesService {
         startTime: routeHotspot.hotspot_start_time,
         endTime: routeHotspot.hotspot_end_time,
       },
+      proposedTiming: {
+        order: nextOrder,
+        startTime: proposedStartTime,
+        endTime: proposedEndTime,
+        willExtendHotspot: proposedEndTime > routeHotspot.hotspot_end_time,
+      },
       conflicts,
       hasConflicts: conflicts.length > 0,
+      cascade,
     };
   }
 
@@ -610,6 +789,181 @@ export class ItinerariesService {
     return {
       success: true,
       message: 'Activity deleted successfully',
+    };
+  }
+
+  /**
+   * Preview activity addition for ALL hotspots on a route (for day view)
+   */
+  async previewActivityForAllHotspots(data: {
+    planId: number;
+    routeId: number;
+    activityId: number;
+  }) {
+    // 1. Get activity details including duration
+    const activity = await (this.prisma as any).dvi_activity.findUnique({
+      where: { activity_id: data.activityId },
+      select: {
+        activity_id: true,
+        activity_title: true,
+        activity_duration: true,
+      },
+    });
+
+    if (!activity) {
+      throw new NotFoundException('Activity not found');
+    }
+
+    // 2. Get activity time slots
+    const timeSlots = await (this.prisma as any).dvi_activity_time_slot_details.findMany({
+      where: {
+        activity_id: data.activityId,
+        deleted: 0,
+        status: 1,
+      },
+    });
+
+    // 3. Get ALL hotspots for this route (not deleted, in timeline)
+    const routeHotspots = await (this.prisma as any).dvi_itinerary_route_hotspot_details.findMany({
+      where: {
+        itinerary_plan_ID: data.planId,
+        itinerary_route_ID: data.routeId,
+        deleted: 0,
+        status: 1,
+        item_type: 4, // Only attraction hotspots
+      },
+      select: {
+        route_hotspot_ID: true,
+        hotspot_ID: true,
+        hotspot_start_time: true,
+        hotspot_end_time: true,
+      },
+      orderBy: { hotspot_start_time: 'asc' }, // Order by time on timeline
+    });
+
+    if (!routeHotspots || routeHotspots.length === 0) {
+      throw new NotFoundException('No hotspots found for this route');
+    }
+
+      const hotspotIds = routeHotspots
+        .map((h: any) => Number(h.hotspot_ID || 0))
+        .filter((id: number) => id > 0);
+
+      const hotspotMasters = hotspotIds.length > 0
+        ? await (this.prisma as any).dvi_hotspot_place.findMany({
+            where: {
+              hotspot_ID: { in: hotspotIds },
+            },
+            select: {
+              hotspot_ID: true,
+              hotspot_name: true,
+            },
+          })
+        : [];
+
+      const hotspotNameMap = new Map<number, string>(
+        hotspotMasters.map((h: any) => [Number(h.hotspot_ID), String(h.hotspot_name || '')])
+      );
+
+    // 4. For each hotspot, compute the preview
+    const hotspotsPreview = await Promise.all(
+      routeHotspots.map(async (hotspot: any) => {
+        // Check if activity already exists for this hotspot
+        const duplicate = await (this.prisma as any).dvi_itinerary_route_activity_details.findFirst({
+          where: {
+            itinerary_plan_ID: data.planId,
+            itinerary_route_ID: data.routeId,
+            route_hotspot_ID: hotspot.route_hotspot_ID,
+            activity_ID: data.activityId,
+            deleted: 0,
+            status: 1,
+          },
+          select: { route_activity_ID: true },
+        });
+
+        if (duplicate) {
+          return {
+            routeHotspotId: hotspot.route_hotspot_ID,
+            hotspotId: hotspot.hotspot_ID,
+            hotspotName: hotspotNameMap.get(Number(hotspot.hotspot_ID || 0)) || null,
+            hotspotTiming: {
+              startTime: hotspot.hotspot_start_time,
+              endTime: hotspot.hotspot_end_time,
+            },
+            proposedTiming: null,
+            conflicts: [{ reason: 'Activity already added for this hotspot' }],
+            hasConflicts: true,
+            isAlreadyAdded: true,
+          };
+        }
+
+        // Get existing activities for this hotspot
+        const existingActivities = await (this.prisma as any).dvi_itinerary_route_activity_details.findMany({
+          where: {
+            itinerary_plan_ID: data.planId,
+            itinerary_route_ID: data.routeId,
+            route_hotspot_ID: hotspot.route_hotspot_ID,
+            deleted: 0,
+          },
+          select: {
+            activity_order: true,
+            activity_end_time: true,
+          },
+          orderBy: { activity_order: 'desc' },
+          take: 1,
+        });
+
+        const nextOrder = existingActivities.length > 0
+          ? existingActivities[0].activity_order + 1
+          : 1;
+
+        const proposedStartTime =
+          existingActivities.length > 0 && existingActivities[0].activity_end_time
+            ? existingActivities[0].activity_end_time
+            : hotspot.hotspot_start_time;
+
+        const durationMinutes = activity.activity_duration
+          ? this.timeToMinutes(activity.activity_duration)
+          : 30;
+
+        const proposedEndTime = this.addMinutesToTime(proposedStartTime, durationMinutes);
+
+        // Check for timing conflicts
+        const conflicts = this.checkActivityTimingConflicts(
+          activity,
+          timeSlots,
+          proposedStartTime,
+          proposedEndTime
+        );
+
+        return {
+          routeHotspotId: hotspot.route_hotspot_ID,
+          hotspotId: hotspot.hotspot_ID,
+          hotspotName: hotspotNameMap.get(Number(hotspot.hotspot_ID || 0)) || null,
+          hotspotTiming: {
+            startTime: hotspot.hotspot_start_time,
+            endTime: hotspot.hotspot_end_time,
+          },
+          proposedTiming: {
+            order: nextOrder,
+            startTime: proposedStartTime,
+            endTime: proposedEndTime,
+            willExtendHotspot: proposedEndTime > hotspot.hotspot_end_time,
+          },
+          conflicts,
+          hasConflicts: conflicts.length > 0,
+          isAlreadyAdded: false,
+        };
+      })
+    );
+
+    return {
+      activity: {
+        id: activity.activity_id,
+        title: activity.activity_title,
+        duration: activity.activity_duration,
+      },
+      hotspots: hotspotsPreview,
     };
   }
 
@@ -4850,7 +5204,8 @@ export class ItinerariesService {
   private timeToMinutes(time: Date | null): number {
     if (!time) return 0;
     const d = new Date(time);
-    return d.getHours() * 60 + d.getMinutes();
+    // TIME columns are stored/handled as UTC values in this codebase.
+    return d.getUTCHours() * 60 + d.getUTCMinutes();
   }
 
   /**
@@ -4859,8 +5214,8 @@ export class ItinerariesService {
   private formatTime(time: Date | null): string {
     if (!time) return 'N/A';
     const d = new Date(time);
-    const hours = d.getHours().toString().padStart(2, '0');
-    const minutes = d.getMinutes().toString().padStart(2, '0');
+    const hours = d.getUTCHours().toString().padStart(2, '0');
+    const minutes = d.getUTCMinutes().toString().padStart(2, '0');
     return `${hours}:${minutes}`;
   }
 
@@ -4869,18 +5224,18 @@ export class ItinerariesService {
    */
   private addMinutesToTime(time: Date, minutes: number): Date {
     const result = new Date(time);
-    result.setMinutes(result.getMinutes() + minutes);
+    result.setUTCMinutes(result.getUTCMinutes() + minutes);
     return result;
   }
 
   /**
-   * Check if activity timing conflicts with hotspot timing
+   * Check if proposed activity insertion timing conflicts with activity time slots.
    */
   private checkActivityTimingConflicts(
     activity: any,
     timeSlots: any[],
-    hotspotStartTime: Date,
-    hotspotEndTime: Date
+    proposedStartTime: Date,
+    proposedEndTime: Date
   ): Array<{ reason: string; severity: string }> {
     const conflicts: Array<{ reason: string; severity: string }> = [];
 
@@ -4889,32 +5244,27 @@ export class ItinerariesService {
       return conflicts;
     }
 
-    const hotspotStart = this.timeToMinutes(hotspotStartTime);
-    const hotspotEnd = this.timeToMinutes(hotspotEndTime);
+    const proposedStart = this.timeToMinutes(proposedStartTime);
+    const proposedEnd = this.timeToMinutes(proposedEndTime);
 
-    // Check each time slot
-    for (const slot of timeSlots) {
+    // Check if proposed slot fits in any available slot.
+    const fitsAnySlot = timeSlots.some((slot: any) => {
       const slotStart = this.timeToMinutes(slot.start_time);
       const slotEnd = this.timeToMinutes(slot.end_time);
+      return proposedStart >= slotStart && proposedEnd <= slotEnd;
+    });
 
-      // Check if hotspot timing falls within activity availability
-      let hasConflict = false;
-      let conflictReason = '';
+    if (!fitsAnySlot) {
+      const slotRanges = timeSlots
+        .map((slot: any) => `${this.formatTime(slot.start_time)} - ${this.formatTime(slot.end_time)}`)
+        .join(', ');
 
-      if (hotspotStart < slotStart) {
-        hasConflict = true;
-        conflictReason = `Activity "${activity.activity_title}" only opens at ${this.formatTime(slot.start_time)}, but hotspot visit starts at ${this.formatTime(hotspotStartTime)}`;
-      } else if (hotspotEnd > slotEnd) {
-        hasConflict = true;
-        conflictReason = `Activity "${activity.activity_title}" closes at ${this.formatTime(slot.end_time)}, but hotspot visit ends at ${this.formatTime(hotspotEndTime)}`;
-      }
-
-      if (hasConflict) {
-        conflicts.push({
-          reason: conflictReason,
-          severity: 'warning',
-        });
-      }
+      conflicts.push({
+        reason:
+          `Activity "${activity.activity_title}" is available only at ${slotRanges}, ` +
+          `but it would be inserted at ${this.formatTime(proposedStartTime)} - ${this.formatTime(proposedEndTime)}`,
+        severity: 'warning',
+      });
     }
 
     return conflicts;
