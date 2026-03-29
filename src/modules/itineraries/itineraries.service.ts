@@ -423,6 +423,7 @@ export class ItinerariesService {
           deleted: 0,
         },
         select: {
+          hotspot_ID: true,
           hotspot_start_time: true,
           hotspot_end_time: true,
           hotspot_order: true,
@@ -491,7 +492,7 @@ export class ItinerariesService {
           itinerary_plan_ID: data.planId,
           itinerary_route_ID: data.routeId,
           route_hotspot_ID: data.routeHotspotId,
-          hotspot_ID: data.hotspotId,
+          hotspot_ID: routeHotspot.hotspot_ID,
           activity_ID: data.activityId,
           activity_order: nextOrder,
           activity_amout: data.amount || 0,
@@ -508,8 +509,9 @@ export class ItinerariesService {
       // If activity extends beyond hotspot end time, shift downstream timeline
       // segments to keep persisted schedule consistent.
       if (activityEndTime > routeHotspot.hotspot_end_time) {
-        const extensionMinutes =
-          this.timeToMinutes(activityEndTime) - this.timeToMinutes(routeHotspot.hotspot_end_time);
+        const extensionMinutes = Math.round(
+          (activityEndTime.getTime() - routeHotspot.hotspot_end_time.getTime()) / 60000,
+        );
 
         await (tx as any).dvi_itinerary_route_hotspot_details.updateMany({
           where: { route_hotspot_ID: data.routeHotspotId },
@@ -535,26 +537,30 @@ export class ItinerariesService {
             orderBy: { hotspot_order: 'asc' },
           });
 
-          for (const row of subsequentRows) {
-            const newStart = row.hotspot_start_time
-              ? this.addMinutesToTime(row.hotspot_start_time, extensionMinutes)
-              : null;
-            const newEnd = row.hotspot_end_time
-              ? this.addMinutesToTime(row.hotspot_end_time, extensionMinutes)
-              : null;
+          const updatedOn = new Date();
 
-            await (tx as any).dvi_itinerary_route_hotspot_details.updateMany({
-              where: {
-                route_hotspot_ID: row.route_hotspot_ID,
-                deleted: 0,
-              },
-              data: {
-                hotspot_start_time: newStart,
-                hotspot_end_time: newEnd,
-                updatedon: new Date(),
-              },
-            });
-          }
+          await Promise.all(
+            subsequentRows.map((row) => {
+              const newStart = row.hotspot_start_time
+                ? this.addMinutesToTime(row.hotspot_start_time, extensionMinutes)
+                : null;
+              const newEnd = row.hotspot_end_time
+                ? this.addMinutesToTime(row.hotspot_end_time, extensionMinutes)
+                : null;
+
+              return (tx as any).dvi_itinerary_route_hotspot_details.updateMany({
+                where: {
+                  route_hotspot_ID: row.route_hotspot_ID,
+                  deleted: 0,
+                },
+                data: {
+                  hotspot_start_time: newStart,
+                  hotspot_end_time: newEnd,
+                  updatedon: updatedOn,
+                },
+              });
+            }),
+          );
         }
       }
 
