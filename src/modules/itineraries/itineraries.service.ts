@@ -676,7 +676,7 @@ export class ItinerariesService {
         .filter((id: any) => id && id > 0);
 
       const masterHotspots = hotspotIds.length > 0
-        ? await (this.prisma as any).dvi_hotspot_master.findMany({
+        ? await (this.prisma as any).dvi_hotspot_place.findMany({
             where: { hotspot_ID: { in: hotspotIds } },
             select: { hotspot_ID: true, hotspot_name: true },
           })
