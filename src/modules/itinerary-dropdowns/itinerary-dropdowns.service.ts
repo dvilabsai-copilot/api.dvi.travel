@@ -483,7 +483,7 @@ export class ItineraryDropdownsService {
 
   async getNationalities(): Promise<SimpleOption[]> {
     return [
-      { id: '101', label: 'Indian T' },
+      { id: '101', label: 'Indian' },
       { id: '2', label: 'Non Indian' },
     ];
   }

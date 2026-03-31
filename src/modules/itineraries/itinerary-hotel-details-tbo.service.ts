@@ -19,6 +19,58 @@ import {
  */
 @Injectable()
 export class ItineraryHotelDetailsTboService {
+    /**
+     * Fetch hotels for all routes, retrying ONCE if any provider/system failure (null) is detected.
+     */
+    private async fetchHotelsForRoutesWithRetry(
+      routes: any[],
+      ...args: any[]
+    ): Promise<Map<number, any[] | null>> {
+      let hotelsByRoute = await this.fetchHotelsForRoutes(routes, ...args);
+
+      const hasProviderFailure = Array.from(hotelsByRoute.values()).some(
+        (value) => value === null,
+      );
+
+      if (hasProviderFailure) {
+        this.logger.warn(
+          '🚨 Hotel search had provider/system failure on first attempt. Retrying once...'
+        );
+
+        // small delay to allow DB sync / provider readiness
+        await new Promise((resolve) => setTimeout(resolve, 800));
+
+        const retryResult = await this.fetchHotelsForRoutes(routes, ...args);
+
+        const retryStillFailed = Array.from(retryResult.values()).some(
+          (value) => value === null,
+        );
+
+        // compare number of successful routes (non-empty arrays)
+        const retrySuccessCount = Array.from(retryResult.values()).filter(
+          (v) => Array.isArray(v) && v.length > 0,
+        ).length;
+
+        const firstSuccessCount = Array.from(hotelsByRoute.values()).filter(
+          (v) => Array.isArray(v) && v.length > 0,
+        ).length;
+
+        this.logger.log(
+          `📊 Comparing results → First: ${firstSuccessCount}, Retry: ${retrySuccessCount}`,
+        );
+
+        // return whichever has more valid hotel data
+        if (retrySuccessCount >= firstSuccessCount) {
+          this.logger.log('✅ Using retry result (better or equal)');
+          return retryResult;
+        } else {
+          this.logger.log('⚠️ Using first attempt result (better)');
+          return hotelsByRoute;
+        }
+      }
+
+      return hotelsByRoute;
+    }
   private readonly logger = new Logger(ItineraryHotelDetailsTboService.name);
 
   private static readonly ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -160,7 +212,7 @@ export class ItineraryHotelDetailsTboService {
     this.logger.log(`👥 Pax from plan: adults=${planAdultCount}, children=${planChildCount}`);
 
     // Step 3: Fetch hotels from TBO for each route (except last route if it's departure day)
-    const hotelsByRoute = await this.fetchHotelsForRoutes(
+    const hotelsByRoute = await this.fetchHotelsForRoutesWithRetry(
       routes,
       noOfNights,
       guestNationality,
@@ -280,7 +332,7 @@ export class ItineraryHotelDetailsTboService {
             this.logger.error(
               `❌ HOTEL SEARCH ERROR for stay block ${block.destination} (${block.checkInDate} -> ${block.checkOutDate}): ${errorMsg}`,
             );
-            block.routeIds.forEach((routeId) => hotelsByRoute.set(routeId, []));
+            block.routeIds.forEach((routeId) => hotelsByRoute.set(routeId, null)); // null = provider failure
           }),
       );
     }
@@ -740,9 +792,13 @@ export class ItineraryHotelDetailsTboService {
     
     for (const route of routes) {
       const routeId = (route as any).itinerary_route_ID;
-      const availableHotels = hotelsByRoute.get(routeId) || [];
+      const availableHotels = hotelsByRoute.get(routeId);
 
-      if (availableHotels.length === 0) {
+      if (availableHotels === null) {
+        this.logger.warn(`      🚨 Provider/system failure for route ${routeId} — skipping placeholder row. See previous logs for error.`);
+        continue;
+      }
+      if (!Array.isArray(availableHotels) || availableHotels.length === 0) {
         this.logger.warn(`      ⚠️  No hotels available for route ${routeId}`);
         continue;
       }
@@ -801,9 +857,13 @@ export class ItineraryHotelDetailsTboService {
 
       for (const route of routes) {
         const routeId = (route as any).itinerary_route_ID;
-        const availableHotels = hotelsByRoute.get(routeId) || [];
+        const availableHotels = hotelsByRoute.get(routeId);
 
-        if (availableHotels.length === 0) {
+        if (availableHotels === null) {
+          this.logger.warn(`   🚨 Provider/system failure for route ${routeId} — not inserting placeholder row. See previous logs for error.`);
+          continue;
+        }
+        if (!Array.isArray(availableHotels) || availableHotels.length === 0) {
           this.logger.debug(`   Tier ${groupType}, Route ${routeId}: No hotels available`);
           // CREATE PLACEHOLDER FOR NO HOTELS - price 0
           const placeholderHotel: any = {
