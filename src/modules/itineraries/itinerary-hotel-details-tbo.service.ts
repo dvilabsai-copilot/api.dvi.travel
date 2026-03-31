@@ -24,9 +24,18 @@ export class ItineraryHotelDetailsTboService {
      */
     private async fetchHotelsForRoutesWithRetry(
       routes: any[],
-      ...args: any[]
-    ): Promise<Map<number, any[] | null>> {
-      let hotelsByRoute = await this.fetchHotelsForRoutes(routes, ...args);
+      noOfNights: number,
+      guestNationality: string,
+      adultCount: number = 2,
+      childCount: number = 0,
+    ): Promise<Map<number, HotelSearchResult[] | null>> {
+      let hotelsByRoute = await this.fetchHotelsForRoutes(
+        routes,
+        noOfNights,
+        guestNationality,
+        adultCount,
+        childCount,
+      );
 
       const hasProviderFailure = Array.from(hotelsByRoute.values()).some(
         (value) => value === null,
@@ -40,7 +49,13 @@ export class ItineraryHotelDetailsTboService {
         // small delay to allow DB sync / provider readiness
         await new Promise((resolve) => setTimeout(resolve, 800));
 
-        const retryResult = await this.fetchHotelsForRoutes(routes, ...args);
+        const retryResult = await this.fetchHotelsForRoutes(
+          routes,
+          noOfNights,
+          guestNationality,
+          adultCount,
+          childCount,
+        );
 
         const retryStillFailed = Array.from(retryResult.values()).some(
           (value) => value === null,
@@ -300,8 +315,8 @@ export class ItineraryHotelDetailsTboService {
     guestNationality: string,
     adultCount: number = 2,
     childCount: number = 0,
-  ): Promise<Map<number, HotelSearchResult[]>> {
-    const hotelsByRoute = new Map<number, HotelSearchResult[]>();
+  ): Promise<Map<number, HotelSearchResult[] | null>> {
+    const hotelsByRoute = new Map<number, HotelSearchResult[] | null>();
 
     // 🔥 OPTIMIZATION 1: Batch load ALL cities upfront instead of querying per route
     const cityCodeMap = await this.batchMapDestinationsToCityCodes(routes);
