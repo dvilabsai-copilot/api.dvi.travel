@@ -366,11 +366,9 @@ export class TBOHotelProvider implements IHotelProvider {
       const errorMsg = error instanceof Error ? error.message : String(error);
       this.logger.error(`❌ Hotel Search Error: ${errorMsg}`);
       this.logger.error(`   📋 Stack: ${error?.stack?.substring(0, 200)}`);
-      
-      // CRITICAL: Don't throw - return empty array for graceful handling
-      // This allows the system to generate placeholder "No Hotels Available" instead of crashing
-      this.logger.warn(`   ⚠️  Returning empty results instead of throwing error`);
-      return [];
+      // CRITICAL: Throw so service can distinguish provider/system failure from genuine empty result
+      const { ServiceUnavailableException } = require('@nestjs/common');
+      throw new ServiceUnavailableException(`TBO provider failed: ${errorMsg}`);
     }
   }
 
