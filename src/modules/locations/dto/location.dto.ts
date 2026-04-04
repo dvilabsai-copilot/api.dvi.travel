@@ -20,7 +20,7 @@ export class LocationResponseDto {
   @ApiProperty({ nullable: true }) location_description!: string | null;
 }
 
-// CREATE DTO: Source fields ONLY (no destination/distance/duration)
+// CREATE DTO: source required, destination optional
 export class CreateLocationDto {
   @ApiProperty()
   @IsNotEmpty()
@@ -46,6 +46,41 @@ export class CreateLocationDto {
   @IsNotEmpty()
   @IsString()
   source_longitude!: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  destination_location?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  destination_city?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  destination_state?: string;
+
+  @ApiProperty({ required: false, description: 'Numeric value as string' })
+  @IsOptional()
+  @IsString()
+  destination_latitude?: string;
+
+  @ApiProperty({ required: false, description: 'Numeric value as string' })
+  @IsOptional()
+  @IsString()
+  destination_longitude?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  duration_text?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  location_description?: string | null;
 }
 
 // UPDATE DTO: All fields optional (partial)
