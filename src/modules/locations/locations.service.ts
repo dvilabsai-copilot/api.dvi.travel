@@ -94,26 +94,59 @@ export class LocationsService {
   }
 
   // ------ CRUD ------
-  async create(payload: any) {
-    const data = this.mapDtoToSchema(payload);
-    // For new locations, destination fields default to empty strings
-    const created = await this.prisma.dvi_stored_locations.create({
-      data: {
-        ...data,
-        destination_location: '',
-        destination_location_city: '',
-        destination_location_state: '',
-        destination_location_lattitude: '',
-        destination_location_longitude: '',
-        distance: 0,
-        duration: '',
-        status: 1,
-        deleted: 0,
-        createdon: new Date(),
-      },
-    });
-    return this.mapRowToResponse(created);
+async create(payload: any) {
+  const data = this.mapDtoToSchema(payload);
+
+  const sourceLat = this.toCoordinate(payload?.source_latitude);
+  const sourceLng = this.toCoordinate(payload?.source_longitude);
+  const destLat = this.toCoordinate(payload?.destination_latitude);
+  const destLng = this.toCoordinate(payload?.destination_longitude);
+
+  if (payload?.source_latitude !== undefined && sourceLat === null) {
+    throw new BadRequestException('Invalid source_latitude');
   }
+
+  if (payload?.source_longitude !== undefined && sourceLng === null) {
+    throw new BadRequestException('Invalid source_longitude');
+  }
+
+  if (payload?.destination_latitude !== undefined && destLat === null) {
+    throw new BadRequestException('Invalid destination_latitude');
+  }
+
+  if (payload?.destination_longitude !== undefined && destLng === null) {
+    throw new BadRequestException('Invalid destination_longitude');
+  }
+
+  const computedDistanceKm =
+    sourceLat !== null &&
+    sourceLng !== null &&
+    destLat !== null &&
+    destLng !== null
+      ? this.calculateDistanceKm(sourceLat, sourceLng, destLat, destLng)
+      : 0;
+
+  const created = await this.prisma.dvi_stored_locations.create({
+    data: {
+      ...data,
+      destination_location: data.destination_location ?? '',
+      destination_location_city: data.destination_location_city ?? '',
+      destination_location_state: data.destination_location_state ?? '',
+      destination_location_lattitude:
+        data.destination_location_lattitude ?? '',
+      destination_location_longitude:
+        data.destination_location_longitude ?? '',
+      distance:
+        data.distance !== undefined ? data.distance : computedDistanceKm,
+      duration: data.duration ?? '',
+      status: 1,
+      deleted: 0,
+      createdon: new Date(),
+    },
+  });
+
+  return this.mapRowToResponse(created);
+}
 
   async get(id: number) {
     const row = await this.prisma.dvi_stored_locations.findFirst({
@@ -134,25 +167,62 @@ export class LocationsService {
   }
 
   private mapDtoToSchema(dto: any) {
-    const mapped: any = {};
-    if (dto.source_location !== undefined) mapped.source_location = dto.source_location;
-    if (dto.source_city !== undefined) mapped.source_location_city = dto.source_city;
-    if (dto.source_state !== undefined) mapped.source_location_state = dto.source_state;
-    if (dto.source_latitude !== undefined) mapped.source_location_lattitude = dto.source_latitude;
-    if (dto.source_longitude !== undefined) mapped.source_location_longitude = dto.source_longitude;
+  const mapped: any = {};
+  if (dto.source_location !== undefined) mapped.source_location = dto.source_location;
+  if (dto.source_city !== undefined) mapped.source_location_city = dto.source_city;
+  if (dto.source_state !== undefined) mapped.source_location_state = dto.source_state;
+  if (dto.source_latitude !== undefined) mapped.source_location_lattitude = dto.source_latitude;
+  if (dto.source_longitude !== undefined) mapped.source_location_longitude = dto.source_longitude;
 
-    if (dto.destination_location !== undefined) mapped.destination_location = dto.destination_location;
-    if (dto.destination_city !== undefined) mapped.destination_location_city = dto.destination_city;
-    if (dto.destination_state !== undefined) mapped.destination_location_state = dto.destination_state;
-    if (dto.destination_latitude !== undefined) mapped.destination_location_lattitude = dto.destination_latitude;
-    if (dto.destination_longitude !== undefined) mapped.destination_location_longitude = dto.destination_longitude;
+  if (dto.destination_location !== undefined) mapped.destination_location = dto.destination_location;
+  if (dto.destination_city !== undefined) mapped.destination_location_city = dto.destination_city;
+  if (dto.destination_state !== undefined) mapped.destination_location_state = dto.destination_state;
+  if (dto.destination_latitude !== undefined) mapped.destination_location_lattitude = dto.destination_latitude;
+  if (dto.destination_longitude !== undefined) mapped.destination_location_longitude = dto.destination_longitude;
 
-    if (dto.distance_km !== undefined) mapped.distance = Number(dto.distance_km);
-    if (dto.duration_text !== undefined) mapped.duration = dto.duration_text;
-    if (dto.location_description !== undefined) mapped.location_description = dto.location_description;
+  if (dto.distance_km !== undefined) mapped.distance = Number(dto.distance_km);
+  if (dto.duration_text !== undefined) mapped.duration = dto.duration_text;
+  if (dto.location_description !== undefined) mapped.location_description = dto.location_description;
 
-    return mapped;
-  }
+  return mapped;
+}
+
+private toCoordinate(value: unknown): number | null {
+  if (value === undefined || value === null || value === '') return null;
+
+  const num = Number(value);
+  if (!Number.isFinite(num)) return null;
+
+  return num;
+}
+
+private toRadians(value: number): number {
+  return (value * Math.PI) / 180;
+}
+
+private calculateDistanceKm(
+  sourceLat: number,
+  sourceLng: number,
+  destLat: number,
+  destLng: number,
+): number {
+  const earthRadiusKm = 6371;
+
+  const dLat = this.toRadians(destLat - sourceLat);
+  const dLng = this.toRadians(destLng - sourceLng);
+
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(this.toRadians(sourceLat)) *
+      Math.cos(this.toRadians(destLat)) *
+      Math.sin(dLng / 2) *
+      Math.sin(dLng / 2);
+
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const distance = earthRadiusKm * c;
+
+  return Number(distance.toFixed(6));
+}
 
   async softDelete(id: number) {
     await this.get(id);

@@ -74,12 +74,12 @@ export class LocationsController {
   }
 
   @Post()
-  @ApiOperation({ summary: 'Add Location (source fields only)' })
-  @ApiResponse({ status: 201, type: LocationResponseDto })
-  @ApiResponse({ status: 400, description: 'Validation error' })
-  create(@Body() dto: CreateLocationDto) {
-    return this.svc.create(dto);
-  }
+@ApiOperation({ summary: 'Add Location' })
+@ApiResponse({ status: 201, type: LocationResponseDto })
+@ApiResponse({ status: 400, description: 'Validation error' })
+create(@Body() dto: CreateLocationDto) {
+  return this.svc.create(dto);
+}
 
   @Get(':id')
   @ApiOperation({ summary: 'Get a single Location by ID' })
