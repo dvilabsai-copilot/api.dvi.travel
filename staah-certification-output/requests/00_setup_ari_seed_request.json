@@ -1,0 +1,133 @@
+{
+  "propertyid": "STAAHTESTHOTEL1",
+  "room_id": "DELUXE_ROOM",
+  "rate_id": "CP_PLAN",
+  "currency": "INR",
+  "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+  "version": "2",
+  "trackingId": "CERT-SETUP-1774425827113",
+  "data": [
+    {
+      "from_date": "2026-12-15",
+      "to_date": "2026-12-15",
+      "inventory": "9",
+      "cta": "N",
+      "ctd": "N",
+      "stopsell": "N",
+      "minstay": "1",
+      "maxstay": "5",
+      "minstay_through": "1",
+      "maxstay_through": "3",
+      "amountBeforeTax": {
+        "Rate": "4900",
+        "extrachild": "600.00",
+        "extraadult": "800.00",
+        "obp": {
+          "person1": "4900",
+          "person2": "5400",
+          "person3": "5700"
+        }
+      },
+      "amountAfterTax": {
+        "Rate": "4900",
+        "extrachild": "600",
+        "extraadult": "800",
+        "obp": {
+          "person1": "4900",
+          "person2": "5400",
+          "person3": "5700"
+        }
+      }
+    },
+    {
+      "from_date": "2026-12-15",
+      "to_date": "2027-01-11",
+      "inventory": "7",
+      "cta": "N",
+      "ctd": "N",
+      "stopsell": "N",
+      "minstay": "2",
+      "maxstay": "7",
+      "amountBeforeTax": {
+        "Rate": "5100",
+        "extrachild": "650.00",
+        "extraadult": "900.00",
+        "obp": {
+          "person1": "5100",
+          "person2": "5600",
+          "person3": "5900"
+        }
+      },
+      "amountAfterTax": {
+        "Rate": "5355",
+        "extrachild": "683",
+        "extraadult": "945",
+        "obp": {
+          "person1": "5355",
+          "person2": "5880",
+          "person3": "6195"
+        }
+      }
+    },
+    {
+      "from_date": "2026-06-01",
+      "to_date": "2026-06-10",
+      "inventory": "11",
+      "cta": "N",
+      "ctd": "N",
+      "stopsell": "N",
+      "minstay": "1",
+      "maxstay": "10",
+      "amountBeforeTax": {
+        "Rate": "4300",
+        "extrachild": "500.00",
+        "extraadult": "700.00",
+        "obp": {
+          "person1": "4300",
+          "person2": "4700",
+          "person3": "5100"
+        }
+      },
+      "amountAfterTax": {
+        "Rate": "4515",
+        "extrachild": "525",
+        "extraadult": "735",
+        "obp": {
+          "person1": "4515",
+          "person2": "4935",
+          "person3": "5355"
+        }
+      }
+    },
+    {
+      "from_date": "2026-01-01",
+      "to_date": "2026-12-31",
+      "inventory": "6",
+      "cta": "N",
+      "ctd": "N",
+      "stopsell": "N",
+      "minstay": "1",
+      "maxstay": "14",
+      "amountBeforeTax": {
+        "Rate": "5200",
+        "extrachild": "650.00",
+        "extraadult": "900.00",
+        "obp": {
+          "person1": "5200",
+          "person2": "5700",
+          "person3": "6200"
+        }
+      },
+      "amountAfterTax": {
+        "Rate": "5460",
+        "extrachild": "683",
+        "extraadult": "945",
+        "obp": {
+          "person1": "5460",
+          "person2": "5985",
+          "person3": "6510"
+        }
+      }
+    }
+  ]
+}

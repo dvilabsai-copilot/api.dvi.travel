@@ -1,0 +1,33 @@
+Test Case Name: ARI Single Date
+Excel Section / Row: ARI Tests / Row 6 / Sr No 3
+Endpoint: https://dvi.travel/api/v1/staah-test/ari
+Method: POST
+Request Time: 2026-03-25T08:21:24.707Z
+Request Payload / Params:
+{
+  "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+  "propertyid": "STAAHTESTHOTEL1",
+  "room_id": "DELUXE_ROOM",
+  "rate_id": "CP_PLAN",
+  "action": "ARR_info",
+  "from_date": "2026-12-15",
+  "to_date": "2026-12-15",
+  "version": "2"
+}
+Response Status: 200
+Response Body:
+{
+  "status": "success",
+  "error_desc": "",
+  "trackingId": "AEF30FBA-71CD-4DC2-9D8E-45FF4C4E7BEE",
+  "propertyid": "STAAHTESTHOTEL1",
+  "room_id": "DELUXE_ROOM",
+  "rate_id": "CP_PLAN",
+  "currency": "INR",
+  "data": [],
+  "inventory": [],
+  "rates": [],
+  "restrictions": []
+}
+Pass / Fail / Blocked: PASS
+Notes: Uses the final single ARI endpoint in read mode via action ARR_info. HTTP 200.

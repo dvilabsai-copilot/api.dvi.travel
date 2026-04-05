@@ -1,0 +1,20 @@
+{
+  "currency": "INR",
+  "propertyname": "Test Hotel for STAAH",
+  "checkintime": "",
+  "checkouttime": "",
+  "contactinfo": {
+    "zip": "",
+    "latitude": "",
+    "longitude": "",
+    "country": "India",
+    "addressline": "123 Test Street",
+    "city": "Test City",
+    "fax": "",
+    "telephone": "",
+    "location": "Test City"
+  },
+  "trackingId": "7DFFB9A5-AB54-408B-8BE1-0A2158988824",
+  "status": "success",
+  "error_desc": ""
+}
