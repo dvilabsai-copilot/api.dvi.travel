@@ -85,6 +85,19 @@ export class ItineraryClipboardService {
     return `${dd}-${mm}-${yyyy}`;
   }
 
+  private formatDateWithWeekday(value?: Date | string | null): string {
+    if (!value) return '';
+    const dt = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(dt.getTime())) return '';
+
+    const weekday = dt.toLocaleString('en-US', { weekday: 'short' });
+    const month = dt.toLocaleString('en-US', { month: 'short' });
+    const day = String(dt.getDate()).padStart(2, '0');
+    const year = dt.getFullYear();
+
+    return `${weekday}, ${month} ${day}, ${year}`;
+  }
+
   private normalizeGroupTypes(groupTypes: number[]): number[] {
     const cleaned = Array.from(
       new Set(
@@ -153,6 +166,23 @@ export class ItineraryClipboardService {
         </tr>
       </table>
     `;
+  }
+
+  private async resolveNationalityLabel(nationalityId: unknown): Promise<string> {
+    const id = Number(nationalityId || 0);
+    if (!id) return '';
+
+    const country = await this.prisma.dvi_countries.findFirst({
+      where: {
+        id,
+        deleted: 0,
+      },
+      select: {
+        name: true,
+      },
+    });
+
+    return String(country?.name || id);
   }
 
   private buildHotelSection(args: {
@@ -309,7 +339,19 @@ export class ItineraryClipboardService {
     `;
   }
 
-  private buildHotspotSection(mode: ClipboardMode, days: any[]): string {
+  private buildHotspotSection(
+    mode: ClipboardMode,
+    days: any[],
+    labels?: {
+      firstDayStartLabel: string;
+      otherDayStartLabel: string;
+    },
+  ): string {
+    const firstDayStartLabel =
+      labels?.firstDayStartLabel?.trim() || 'Start your Journey';
+    const otherDayStartLabel =
+      labels?.otherDayStartLabel?.trim() || 'Start Your Day';
+
     let html = `
       <table width="700" align="left" border="0" cellpadding="0" cellspacing="0" style="border-collapse: collapse; background-color:#fff; font-family:Calibri; font-size:11px; color:#302c6e;">
         <tr><td align="center" valign="middle" style="color:#302c6e; font-size:18px; line-height:40px; font-weight:600;">Hotspot Details</td></tr>
@@ -317,8 +359,15 @@ export class ItineraryClipboardService {
     `;
 
     for (const day of days || []) {
-      const dayTitle = `Day ${day.dayNumber} | ${this.formatDate(day.date)}`;
-      const locationTitle = this.escapeHtml(day.arrival || day.departure || '');
+      const dayTitle = `Day ${this.escapeHtml(day.dayNumber)} - ${this.escapeHtml(this.formatDateWithWeekday(day.date) || this.formatDate(day.date))}`;
+      const routeTitle = `${this.escapeHtml(day.departure || '')} to ${this.escapeHtml(day.arrival || '')}`;
+      const dayTimeRange = day.startTime && day.endTime
+        ? ` (${this.escapeHtml(day.startTime)} - ${this.escapeHtml(day.endTime)})`
+        : '';
+      const dayDistance = this.escapeHtml(
+        day.distance || day.intercityDistance || '',
+      );
+      const dayDistancePart = dayDistance ? ` - (${dayDistance})` : '';
 
       const lines: string[] = [];
       const segments = Array.isArray(day.segments) ? day.segments : [];
@@ -332,22 +381,52 @@ export class ItineraryClipboardService {
         }
 
         if (segment.type === 'start') {
-          lines.push(`<div>Start: ${this.escapeHtml(segment.title || '')} ${this.escapeHtml(segment.timeRange || '')}</div>`);
+          const startLabel =
+            Number(day.dayNumber) === 1
+              ? firstDayStartLabel
+              : otherDayStartLabel;
+          const range = this.escapeHtml(segment.timeRange || '');
+          lines.push(
+            `<div>${this.escapeHtml(startLabel)}${range ? ` ${range}` : ''}</div>`,
+          );
           continue;
         }
 
         if (segment.type === 'travel') {
-          lines.push(`<div>Travel: ${this.escapeHtml(segment.from || '')} to ${this.escapeHtml(segment.to || '')} (${this.escapeHtml(segment.distance || '')} / ${this.escapeHtml(segment.duration || '')})</div>`);
+          const distance = this.escapeHtml(segment.distance || '');
+          const duration = this.escapeHtml(segment.duration || '');
+          const range = this.escapeHtml(segment.timeRange || '');
+          const metrics = [
+            distance ? `<span style="color:#7e7d88; margin-right: 5px;">Distance:</span> ${distance}` : '',
+            duration ? `<span style="color:#7e7d88; margin: 0px 5px;">Duration:</span> ${duration}` : '',
+          ]
+            .filter(Boolean)
+            .join(', ');
+
+          lines.push(
+            `<div>Travelling from ${this.escapeHtml(segment.from || '')} to ${this.escapeHtml(segment.to || '')}${range ? ` - ${range}` : ''}${metrics ? ` [${metrics}]` : ''}</div>`,
+          );
           continue;
         }
 
         if (segment.type === 'break') {
-          lines.push(`<div>Break: ${this.escapeHtml(segment.location || '')} ${this.escapeHtml(segment.timeRange || '')}</div>`);
+          const duration = this.escapeHtml(segment.duration || '');
+          const range = this.escapeHtml(segment.timeRange || '');
+          lines.push(
+            `<div>Expect a waiting time of approximately ${duration} at this location ${this.escapeHtml(segment.location || '')}${range ? ` - ${range}` : ''}${duration ? ` [<span style="color:#7e7d88; margin: 0px 5px;">Duration:</span> ${duration}]` : ''}</div>`,
+          );
           continue;
         }
 
         if (segment.type === 'attraction') {
-          lines.push(`<div><b>${this.escapeHtml(segment.name || '')}</b> ${this.escapeHtml(segment.description || '')}</div>`);
+          const range = this.escapeHtml(segment.visitTime || segment.timeRange || '');
+          const duration = this.escapeHtml(segment.duration || '');
+          lines.push(
+            `<div>${range ? `${range} - ` : ''}${duration ? `${duration} - ` : ''}<b>${this.escapeHtml(segment.name || '')}</b></div>`,
+          );
+          if (segment.description) {
+            lines.push(`<div>${this.escapeHtml(segment.description)}</div>`);
+          }
           continue;
         }
 
@@ -367,13 +446,82 @@ export class ItineraryClipboardService {
 
       html += `
         <table width="700" align="left" border="0" cellpadding="0" cellspacing="0" style="border-collapse: collapse; background-color:#fff; font-family:Calibri; font-size:11px; color:#302c6e; margin-top:8px;">
-          <tr><td style="padding:3px; border:1px solid #b1b1b1;"><b>${this.escapeHtml(dayTitle)}</b> - ${locationTitle}</td></tr>
+          <tr><td style="padding:3px; border:1px solid #b1b1b1;"><b>${dayTitle}${dayTimeRange} - ${routeTitle}${dayDistancePart}</b></td></tr>
           <tr><td style="padding:3px; border:1px solid #b1b1b1;">${lines.join('')}</td></tr>
         </table>
       `;
     }
 
     return html;
+  }
+
+  private buildTermsSection(plan: any, globalSettings: any): string {
+    const preference = Number(plan?.itinerary_preference || 0);
+
+    const hotelTerms = this.decodeHtmlEntities(
+      String(
+      (plan as any)?.hotel_terms_condition ||
+        globalSettings?.hotel_terms_condition ||
+        '',
+      ).trim(),
+    );
+
+    const vehicleTerms = this.decodeHtmlEntities(
+      String(
+      (plan as any)?.vehicle_terms_condition ||
+        globalSettings?.vehicle_terms_condition ||
+        '',
+      ).trim(),
+    );
+
+    let includeHotel = preference === 1 || preference === 3;
+    let includeVehicle = preference === 2 || preference === 3;
+
+    if (!includeHotel && !includeVehicle) {
+      includeHotel = Boolean(hotelTerms);
+      includeVehicle = Boolean(vehicleTerms);
+    }
+
+    const termsBody = [
+      includeHotel && hotelTerms ? hotelTerms : '',
+      includeVehicle && vehicleTerms ? vehicleTerms : '',
+    ]
+      .filter(Boolean)
+      .join('');
+
+    if (!termsBody) {
+      return '';
+    }
+
+    return `
+      <table width="700" align="left" border="0" cellpadding="0" cellspacing="0" style="border-collapse: collapse; background-color:#fff; font-family:Calibri; font-size:11px; color:#302c6e;">
+        <tr><td align="center" valign="middle" style="color:#302c6e; font-size:20px; line-height:40px; font-weight:600; text-align:center;">Terms & Condition</td></tr>
+      </table>
+      <table width="700" align="left" border="1" cellpadding="5" cellspacing="0" style="border-collapse: collapse; background-color:#fff; font-family:Calibri; font-size:11px; color:#302c6e;">
+        <tr>
+          <td>
+            <table width="100%" align="left" border="0" cellpadding="0" cellspacing="0" style="border-collapse: collapse; background-color:#fff;">
+              <tr>
+                ${termsBody}
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+    `;
+  }
+
+  private decodeHtmlEntities(value: string): string {
+    if (!value) return '';
+
+    return value
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/&amp;/gi, '&')
+      .replace(/&lt;/gi, '<')
+      .replace(/&gt;/gi, '>')
+      .replace(/&quot;/gi, '"')
+      .replace(/&#039;/gi, "'")
+      .replace(/&#39;/gi, "'");
   }
 
   private stripHtml(html: string): string {
@@ -404,8 +552,20 @@ export class ItineraryClipboardService {
       throw new NotFoundException('Itinerary not found');
     }
 
+    const globalSettings = await this.prisma.dvi_global_settings.findFirst({
+      where: { status: 1, deleted: 0 },
+    });
+
     const itinerary = await this.detailsService.getItineraryDetails(quoteId);
     const hotelDetails = await this.hotelDetailsService.getHotelDetailsByQuoteId(quoteId);
+
+    const nationalityLabel = await this.resolveNationalityLabel(
+      (plan as any)?.nationality,
+    );
+    const summaryPlan = {
+      ...plan,
+      nationality: nationalityLabel,
+    };
 
     const selectedGroupTypes = this.normalizeGroupTypes(requestedGroupTypes);
     const showRates = Boolean(hotelDetails.hotelRatesVisible);
@@ -413,7 +573,7 @@ export class ItineraryClipboardService {
     const additionalMarginPct = Number(process.env.ITINERARY_ADDITIONAL_MARGIN_PERCENTAGE || 0);
     const additionalMarginDayLimit = Number(process.env.ITINERARY_ADDITIONAL_MARGIN_DAY_LIMIT || 0);
 
-    const summaryHtml = this.buildSummaryTable(plan);
+    const summaryHtml = this.buildSummaryTable(summaryPlan);
     const hotelsHtml = this.buildHotelSection({
       selectedGroupTypes,
       hotels: hotelDetails.hotels,
@@ -446,7 +606,13 @@ export class ItineraryClipboardService {
 
     const vehiclesHtml = this.buildVehicleSection(vehiclesForClipboard);
     const costHtml = this.buildCostSection(costBreakdown);
-    const hotspotHtml = this.buildHotspotSection(mode, itinerary.days || []);
+    const hotspotHtml = this.buildHotspotSection(mode, itinerary.days || [], {
+      firstDayStartLabel:
+        globalSettings?.itinerary_break_time || 'Start your Journey',
+      otherDayStartLabel:
+        globalSettings?.itinerary_hotel_start || 'Start Your Day',
+    });
+    const termsHtml = this.buildTermsSection(plan, globalSettings);
 
     const html = `
       <div style="margin:0; padding:0; background-color:#f9f9f9; font-family:Calibri; font-size:11px; color:#302c6e;">
@@ -456,6 +622,7 @@ export class ItineraryClipboardService {
           ${vehiclesHtml}
           ${costHtml}
           ${hotspotHtml}
+          ${termsHtml}
         </div>
       </div>
     `;
