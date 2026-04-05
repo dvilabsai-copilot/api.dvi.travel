@@ -1537,7 +1537,10 @@ dayData.totalKms += safeTotalKm;
 
     // 2. Vehicle costs already calculated
     const totalVehicleCost = totalVehicleAmount;
-    const totalVehicleQty = eligibleRows.reduce((sum, e) => sum + Number((e as any).total_vehicle_qty || 0), 0);
+    const totalVehicleQty = eligibleRows.reduce((sum, e) => {
+      const isAssigned = (e as any).itineary_plan_assigned_status === 1;
+      return sum + (isAssigned ? Number((e as any).total_vehicle_qty || 0) : 0);
+    }, 0);
 
     // 3. Calculate Guide, Hotspot, and Activity costs
     // For now set to 0, can be calculated from route activities/guides if needed

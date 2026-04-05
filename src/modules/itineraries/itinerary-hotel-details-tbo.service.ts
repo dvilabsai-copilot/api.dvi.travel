@@ -935,6 +935,15 @@ export class ItineraryHotelDetailsTboService {
     routes: any[],
     noOfNights: number,
   ): Promise<ItineraryHotelDetailsResponseDto> {
+    const plan = await this.prisma.dvi_itinerary_plan_details.findFirst({
+      where: { itinerary_plan_ID: planId, deleted: 0 },
+      select: { hotel_rates_visibility: true },
+    });
+
+    const hotelRatesVisible =
+      Number((plan as any)?.hotel_rates_visibility || 0) === 1 ||
+      (plan as any)?.hotel_rates_visibility === true;
+
     // Build hotel tabs (one per package with total cost)
     const hotelTabs: ItineraryHotelTabDto[] = packages.map((pkg) => {
       const totalAmount = pkg.hotels.reduce((sum, h) => sum + h.price, 0);
@@ -1084,7 +1093,7 @@ export class ItineraryHotelDetailsTboService {
     return {
       quoteId,
       planId,
-      hotelRatesVisible: true,
+      hotelRatesVisible,
       hotelTabs,
       hotels: hotelRows,
       totalRoomCount: hotelRows.length,
