@@ -1,0 +1,35 @@
+Test Case Name: Mapping Info
+Excel Section / Row: ARI Tests / Row 5 / Sr No 2
+Endpoint: http://127.0.0.1:4006/api/v1/staah-test/mapping
+Method: POST
+Request Time: 2026-03-25T08:03:47.232Z
+Request Payload / Params:
+{
+  "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+  "propertyid": "STAAHTESTHOTEL1",
+  "version": "2"
+}
+Response Status: 200
+Response Body:
+{
+  "room_rate_mapping": [
+    {
+      "room_id": "DELUXE_ROOM",
+      "room_name": "Deluxe Room - Test",
+      "rate_id": "CP_PLAN",
+      "rate_name": "Continental Plan",
+      "manageable": "Y"
+    },
+    {
+      "room_id": "SUITE_ROOM",
+      "room_name": "Suite Room - Test",
+      "rate_id": "MAP_PLAN",
+      "rate_name": "Modified American Plan",
+      "manageable": "Y"
+    }
+  ],
+  "status": "success",
+  "error_desc": ""
+}
+Pass / Fail / Blocked: PASS
+Notes: Uses the final single mapping endpoint. HTTP 200.

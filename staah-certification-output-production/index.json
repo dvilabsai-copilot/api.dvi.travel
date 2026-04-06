@@ -1,0 +1,195 @@
+{
+  "generatedAt": "2026-03-25T07:30:07.351Z",
+  "baseUrl": "https://dvi.travel",
+  "finalBaseUrl": "https://dvi.travel/api/v1/staah-test",
+  "sourceIpUsed": "3.110.172.16",
+  "skipSeed": true,
+  "skipAriSetup": true,
+  "propertyId": "STAAHTESTHOTEL1",
+  "roomId": "DELUXE_ROOM",
+  "rateplanId": "CP_PLAN",
+  "cases": [
+    {
+      "id": "01",
+      "fileName": "01_property_info.txt",
+      "outcome": "PASS",
+      "endpoint": "https://dvi.travel/api/v1/staah-test/productInfo",
+      "routeUsage": "supplementary product info endpoint"
+    },
+    {
+      "id": "02",
+      "fileName": "02_mapping_info.txt",
+      "outcome": "PASS",
+      "endpoint": "https://dvi.travel/api/v1/staah-test/mapping",
+      "routeUsage": "single Mapping endpoint"
+    },
+    {
+      "id": "03",
+      "fileName": "03_ari_single_date.txt",
+      "outcome": "FAIL",
+      "endpoint": "https://dvi.travel/api/v1/staah-test/ari",
+      "routeUsage": "single ARI endpoint"
+    },
+    {
+      "id": "04",
+      "fileName": "04_ari_28_days.txt",
+      "outcome": "FAIL",
+      "endpoint": "https://dvi.travel/api/v1/staah-test/ari",
+      "routeUsage": "single ARI endpoint"
+    },
+    {
+      "id": "05",
+      "fileName": "05_ari_first_10_days.txt",
+      "outcome": "FAIL",
+      "endpoint": "https://dvi.travel/api/v1/staah-test/ari",
+      "routeUsage": "single ARI endpoint"
+    },
+    {
+      "id": "06",
+      "fileName": "06_ari_year_sync.txt",
+      "outcome": "FAIL",
+      "endpoint": "https://dvi.travel/api/v1/staah-test/ari",
+      "routeUsage": "single ARI endpoint"
+    },
+    {
+      "id": "07",
+      "fileName": "07_booking_case_1_pre-book.txt",
+      "outcome": "BLOCKED",
+      "endpoint": "https://channelconnect.otaswitch.com/common-cgi/dviholidays/test/services.p",
+      "routeUsage": "fetch data endpoint"
+    },
+    {
+      "id": "08",
+      "fileName": "08_booking_case_1_confirm.txt",
+      "outcome": "BLOCKED",
+      "endpoint": "https://channels-stage.staah.net/booking/getapi/reservation/v2",
+      "routeUsage": "booking endpoint"
+    },
+    {
+      "id": "09",
+      "fileName": "09_booking_case_1_pre-modify.txt",
+      "outcome": "BLOCKED",
+      "endpoint": "https://channelconnect.otaswitch.com/common-cgi/dviholidays/test/services.p",
+      "routeUsage": "fetch data endpoint"
+    },
+    {
+      "id": "10",
+      "fileName": "10_booking_case_1_modify.txt",
+      "outcome": "BLOCKED",
+      "endpoint": "https://channels-stage.staah.net/booking/getapi/reservation/v2",
+      "routeUsage": "booking endpoint"
+    },
+    {
+      "id": "11",
+      "fileName": "11_booking_case_1_cancel.txt",
+      "outcome": "BLOCKED",
+      "endpoint": "https://channels-stage.staah.net/booking/getapi/reservation/v2",
+      "routeUsage": "booking endpoint"
+    },
+    {
+      "id": "12",
+      "fileName": "12_booking_case_2_pre-book.txt",
+      "outcome": "BLOCKED",
+      "endpoint": "https://channelconnect.otaswitch.com/common-cgi/dviholidays/test/services.p",
+      "routeUsage": "fetch data endpoint"
+    },
+    {
+      "id": "13",
+      "fileName": "13_booking_case_2_confirm.txt",
+      "outcome": "BLOCKED",
+      "endpoint": "https://channels-stage.staah.net/booking/getapi/reservation/v2",
+      "routeUsage": "booking endpoint"
+    },
+    {
+      "id": "14",
+      "fileName": "14_booking_case_2_pre-modify.txt",
+      "outcome": "BLOCKED",
+      "endpoint": "https://channelconnect.otaswitch.com/common-cgi/dviholidays/test/services.p",
+      "routeUsage": "fetch data endpoint"
+    },
+    {
+      "id": "15",
+      "fileName": "15_booking_case_2_modify.txt",
+      "outcome": "BLOCKED",
+      "endpoint": "https://channels-stage.staah.net/booking/getapi/reservation/v2",
+      "routeUsage": "booking endpoint"
+    },
+    {
+      "id": "16",
+      "fileName": "16_booking_case_2_cancel.txt",
+      "outcome": "BLOCKED",
+      "endpoint": "https://channels-stage.staah.net/booking/getapi/reservation/v2",
+      "routeUsage": "booking endpoint"
+    },
+    {
+      "id": "17",
+      "fileName": "17_booking_case_3_pre-book.txt",
+      "outcome": "BLOCKED",
+      "endpoint": "https://channelconnect.otaswitch.com/common-cgi/dviholidays/test/services.p",
+      "routeUsage": "fetch data endpoint"
+    },
+    {
+      "id": "18",
+      "fileName": "18_booking_case_3_confirm.txt",
+      "outcome": "BLOCKED",
+      "endpoint": "https://channels-stage.staah.net/booking/getapi/reservation/v2",
+      "routeUsage": "booking endpoint"
+    },
+    {
+      "id": "19",
+      "fileName": "19_booking_case_3_pre-modify.txt",
+      "outcome": "BLOCKED",
+      "endpoint": "https://channelconnect.otaswitch.com/common-cgi/dviholidays/test/services.p",
+      "routeUsage": "fetch data endpoint"
+    },
+    {
+      "id": "20",
+      "fileName": "20_booking_case_3_modify.txt",
+      "outcome": "BLOCKED",
+      "endpoint": "https://channels-stage.staah.net/booking/getapi/reservation/v2",
+      "routeUsage": "booking endpoint"
+    },
+    {
+      "id": "21",
+      "fileName": "21_booking_case_3_cancel.txt",
+      "outcome": "BLOCKED",
+      "endpoint": "https://channels-stage.staah.net/booking/getapi/reservation/v2",
+      "routeUsage": "booking endpoint"
+    },
+    {
+      "id": "22",
+      "fileName": "22_booking_case_4_pre-book.txt",
+      "outcome": "BLOCKED",
+      "endpoint": "https://channelconnect.otaswitch.com/common-cgi/dviholidays/test/services.p",
+      "routeUsage": "fetch data endpoint"
+    },
+    {
+      "id": "23",
+      "fileName": "23_booking_case_4_confirm.txt",
+      "outcome": "BLOCKED",
+      "endpoint": "https://channels-stage.staah.net/booking/getapi/reservation/v2",
+      "routeUsage": "booking endpoint"
+    },
+    {
+      "id": "24",
+      "fileName": "24_booking_case_4_pre-modify.txt",
+      "outcome": "BLOCKED",
+      "endpoint": "https://channelconnect.otaswitch.com/common-cgi/dviholidays/test/services.p",
+      "routeUsage": "fetch data endpoint"
+    },
+    {
+      "id": "25",
+      "fileName": "25_booking_case_4_modify.txt",
+      "outcome": "BLOCKED",
+      "endpoint": "https://channels-stage.staah.net/booking/getapi/reservation/v2",
+      "routeUsage": "booking endpoint"
+    },
+    {
+      "id": "26",
+      "fileName": "26_booking_case_4_cancel.txt",
+      "outcome": "BLOCKED",
+      "endpoint": "https://channels-stage.staah.net/booking/getapi/reservation/v2",
+      "routeUsage": "booking endpoint"
+    }
+  ]
+}

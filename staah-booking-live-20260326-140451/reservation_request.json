@@ -1,0 +1,17 @@
+﻿{
+    "version":  "2",
+    "reservations":  {
+                         "reservation":  [
+                                             {
+                                                 "bookingId":  "DVI-TEST-20260326-140451",
+                                                 "rate_id":  "CP_PLAN",
+                                                 "room_id":  "DELUXE_ROOM",
+                                                 "checkOut":  "2026-12-03",
+                                                 "checkIn":  "2026-12-01"
+                                             }
+                                         ]
+                     },
+    "apikey":  "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+    "action":  "reservation_info",
+    "propertyid":  "STAAHTESTHOTEL1"
+}
