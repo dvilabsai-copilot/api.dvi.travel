@@ -5,6 +5,7 @@ import {
   Controller,
   Delete,
   Get,
+  Patch,
   Param,
   ParseIntPipe,
   Post,
@@ -105,6 +106,30 @@ export class VendorsController {
     return this.vendorsService.updateVendorBasicInfo(id, body);
   }
 
+  @Patch(':id')
+  @ApiOperation({
+    summary: 'Patch vendor basic info',
+    description: 'Partial update support for wizard compatibility.',
+  })
+  async patch(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: any,
+  ): Promise<any> {
+    return this.vendorsService.updateVendorBasicInfo(id, body);
+  }
+
+  @Public()
+  @Post(':id/status-toggle')
+  @ApiOperation({ summary: 'Toggle vendor active status' })
+  async toggleStatus(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: { oldstatus?: number; status?: number },
+  ): Promise<{ success: boolean; status: number }> {
+    const oldStatus = Number(body?.oldstatus ?? body?.status ?? 0);
+    const status = await this.vendorsService.toggleVendorStatus(id, oldStatus);
+    return { success: true, status };
+  }
+
   @Public()
   @Delete(':id')
   @ApiOperation({
@@ -132,6 +157,23 @@ export class VendorsController {
   @Post(':id/vehicle-types')
   @ApiOperation({ summary: 'Update vendor vehicle type (Driver Cost)' })
   async updateVehicleType(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: any,
+  ): Promise<any> {
+    return this.vendorsService.updateVendorVehicleType(id, body);
+  }
+
+  @Public()
+  @Get(':id/vehicle-type-costs')
+  @ApiOperation({ summary: 'Alias: get vendor vehicle type costs' })
+  async getVehicleTypeCosts(@Param('id', ParseIntPipe) id: number): Promise<any[]> {
+    return this.vendorsService.getVendorVehicleTypes(id);
+  }
+
+  @Public()
+  @Post(':id/vehicle-type-costs')
+  @ApiOperation({ summary: 'Alias: update vendor vehicle type costs' })
+  async updateVehicleTypeCosts(
     @Param('id', ParseIntPipe) id: number,
     @Body() body: any,
   ): Promise<any> {
@@ -168,6 +210,18 @@ export class VendorsController {
   }
 
   @Public()
+  @Post('vehicles/:vehicleId/status-toggle')
+  @ApiOperation({ summary: 'Toggle vendor vehicle status' })
+  async toggleVehicleStatus(
+    @Param('vehicleId', ParseIntPipe) vehicleId: number,
+    @Body() body: { oldstatus?: number; status?: number },
+  ): Promise<{ success: boolean; status: number }> {
+    const oldStatus = Number(body?.oldstatus ?? body?.status ?? 0);
+    const status = await this.vendorsService.toggleVendorVehicleStatus(vehicleId, oldStatus);
+    return { success: true, status };
+  }
+
+  @Public()
   @Delete('vehicles/:vehicleId')
   @ApiOperation({ summary: 'Delete vendor vehicle' })
   async deleteVehicle(@Param('vehicleId', ParseIntPipe) vehicleId: number): Promise<void> {
@@ -194,6 +248,41 @@ export class VendorsController {
   }
 
   @Public()
+  @Get(':id/local-pricebook')
+  @ApiOperation({ summary: 'Alias: get vendor local pricebook' })
+  async getLocalPricebookAlias(@Param('id', ParseIntPipe) id: number): Promise<any[]> {
+    return this.vendorsService.getVendorLocalPricebook(id);
+  }
+
+  @Public()
+  @Get(':id/pricebook/local/form-rows')
+  @ApiOperation({ summary: 'Get PHP-parity local pricebook form rows (branch + vehicle type + time limit)' })
+  async getLocalPricebookFormRows(@Param('id', ParseIntPipe) id: number): Promise<any[]> {
+    return this.vendorsService.getVendorLocalPricebookFormRows(id);
+  }
+
+  @Public()
+  @Get(':id/pricebook/local/preview')
+  @ApiOperation({ summary: 'Get local pricebook date-range preview (PHP ajax parity)' })
+  async getLocalPricebookPreview(
+    @Param('id', ParseIntPipe) id: number,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ): Promise<any> {
+    return this.vendorsService.getVendorLocalPricebookPreview(id, startDate, endDate);
+  }
+
+  @Public()
+  @Post(':id/local-pricebook')
+  @ApiOperation({ summary: 'Alias: update vendor local pricebook' })
+  async updateLocalPricebookAlias(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: any,
+  ): Promise<any> {
+    return this.vendorsService.updateVendorLocalPricebook(id, body);
+  }
+
+  @Public()
   @Get(':id/pricebook/outstation')
   @ApiOperation({ summary: 'Get vendor outstation pricebook' })
   async getOutstationPricebook(@Param('id', ParseIntPipe) id: number): Promise<any[]> {
@@ -204,6 +293,30 @@ export class VendorsController {
   @Post(':id/pricebook/outstation')
   @ApiOperation({ summary: 'Update vendor outstation pricebook' })
   async updateOutstationPricebook(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: any,
+  ): Promise<any> {
+    return this.vendorsService.updateVendorOutstationPricebook(id, body);
+  }
+
+  @Public()
+  @Get(':id/outstation-pricebook')
+  @ApiOperation({ summary: 'Alias: get vendor outstation pricebook' })
+  async getOutstationPricebookAlias(@Param('id', ParseIntPipe) id: number): Promise<any[]> {
+    return this.vendorsService.getVendorOutstationPricebook(id);
+  }
+
+  @Public()
+  @Get(':id/pricebook/outstation/form-rows')
+  @ApiOperation({ summary: 'Get PHP-parity outstation pricebook form rows (branch + vehicle type + kms limit)' })
+  async getOutstationPricebookFormRows(@Param('id', ParseIntPipe) id: number): Promise<any[]> {
+    return this.vendorsService.getVendorOutstationPricebookFormRows(id);
+  }
+
+  @Public()
+  @Post(':id/outstation-pricebook')
+  @ApiOperation({ summary: 'Alias: update vendor outstation pricebook' })
+  async updateOutstationPricebookAlias(
     @Param('id', ParseIntPipe) id: number,
     @Body() body: any,
   ): Promise<any> {
@@ -227,6 +340,57 @@ export class VendorsController {
     @Body() body: any,
   ): Promise<any> {
     return this.vendorsService.updateVendorPermitCost(id, body);
+  }
+
+  @Public()
+  @Get(':id/outstation-km-limits')
+  @ApiOperation({ summary: 'Get vendor outstation KM limits' })
+  async getOutstationKmLimits(@Param('id', ParseIntPipe) id: number): Promise<any[]> {
+    return this.vendorsService.getVendorOutstationKmLimits(id);
+  }
+
+  @Public()
+  @Get(':id/vehicle-extra-costs')
+  @ApiOperation({ summary: 'Get vendor vehicle extra cost rows (PHP parity)' })
+  async getVehicleExtraCosts(@Param('id', ParseIntPipe) id: number): Promise<any[]> {
+    return this.vendorsService.getVendorVehicleExtraCosts(id);
+  }
+
+  @Public()
+  @Post(':id/vehicle-extra-costs')
+  @ApiOperation({ summary: 'Update vendor vehicle extra costs (PHP parity)' })
+  async updateVehicleExtraCosts(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: any,
+  ): Promise<any> {
+    return this.vendorsService.updateVendorVehicleExtraCosts(id, body);
+  }
+
+  @Public()
+  @Post(':id/outstation-km-limits')
+  @ApiOperation({ summary: 'Create or update vendor outstation KM limit' })
+  async upsertOutstationKmLimit(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: any,
+  ): Promise<any> {
+    return this.vendorsService.upsertVendorOutstationKmLimit(id, body);
+  }
+
+  @Public()
+  @Get(':id/local-km-limits')
+  @ApiOperation({ summary: 'Get vendor local KM limits' })
+  async getLocalKmLimits(@Param('id', ParseIntPipe) id: number): Promise<any[]> {
+    return this.vendorsService.getVendorLocalKmLimits(id);
+  }
+
+  @Public()
+  @Post(':id/local-km-limits')
+  @ApiOperation({ summary: 'Create or update vendor local KM limit' })
+  async upsertLocalKmLimit(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: any,
+  ): Promise<any> {
+    return this.vendorsService.upsertVendorLocalKmLimit(id, body);
   }
 
   /**
@@ -542,6 +706,15 @@ export class VendorsDropdownsController {
     return items;
   }
 
+  @Get('gst-percentages')
+  @ApiOperation({
+    summary: 'Alias: GST percentage dropdown (flat array)',
+  })
+  async gstPercentages(): Promise<DropdownItem[]> {
+    const { items } = await this.vendorsService.getGstPercentOptions();
+    return items;
+  }
+
   @Get('vehicle-types')
   @ApiOperation({
     summary: 'Vehicle type dropdown (flat array)',
@@ -570,6 +743,15 @@ export class VendorsDropdownsController {
     @Query('vendorId', ParseIntPipe) vendorId: number,
   ): Promise<DropdownItem[]> {
     const { items } = await this.vendorsService.getKmsLimitOptions(vendorId);
+    return items;
+  }
+
+  @Get('permit-states')
+  @ApiOperation({
+    summary: 'Permit source/destination state dropdown (flat array)',
+  })
+  async permitStates(): Promise<DropdownItem[]> {
+    const { items } = await this.vendorsService.getPermitStateOptions();
     return items;
   }
 }
