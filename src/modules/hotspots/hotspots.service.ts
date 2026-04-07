@@ -10,6 +10,7 @@ import { HotspotCreateDto } from './dto/hotspot-create.dto';
 import { HotspotUpdateDto } from './dto/hotspot-update.dto';
 
 import * as fs from 'fs';
+import * as path from 'path';
 import * as readline from 'readline';
 import * as crypto from 'crypto';
 
@@ -23,8 +24,20 @@ function currencySymbol(): string {
 function baseUrl(): string | undefined {
   return process.env.BASE_URL || undefined;
 }
+function resolveBackendRoot(): string {
+  const candidate = path.resolve(__dirname, '..', '..', '..', '..');
+  return fs.existsSync(path.join(candidate, 'package.json')) ? candidate : process.cwd();
+}
+function hotspotImageExists(name?: string | null): boolean {
+  const fileName = String(name || '').trim();
+  if (!fileName) return false;
+  const apiPath = path.join(resolveBackendRoot(), 'public', 'uploads', 'hotspot_gallery', fileName);
+  // Keep a legacy fallback to avoid breaking previews if older files were stored under workspace root.
+  const legacyPath = path.join(process.cwd(), 'public', 'uploads', 'hotspot_gallery', fileName);
+  return fs.existsSync(apiPath) || fs.existsSync(legacyPath);
+}
 function buildImageUrl(name?: string | null): string {
-  if (!name) return '';
+  if (!name || !hotspotImageExists(name)) return '';
   const relative = `/uploads/hotspot_gallery/${name}`;
   const base = baseUrl();
   return base ? `${base.replace(/\/$/, '')}${relative}` : relative;
@@ -258,8 +271,10 @@ export class HotspotsService {
 
     const firstImageByHotspot = new Map<number, string>();
     for (const g of galleries) {
-      if (!firstImageByHotspot.has(g.hotspot_ID as unknown as number)) {
-        firstImageByHotspot.set(g.hotspot_ID as unknown as number, g.hotspot_gallery_name ?? '');
+      const hotspotId = g.hotspot_ID as unknown as number;
+      const fileName = (g.hotspot_gallery_name ?? '').toString();
+      if (!firstImageByHotspot.has(hotspotId) && hotspotImageExists(fileName)) {
+        firstImageByHotspot.set(hotspotId, fileName);
       }
     }
 
@@ -421,6 +436,7 @@ export class HotspotsService {
       hotspot_landmark: (hotspot as any).hotspot_landmark ?? null,
       hotspot_description: (hotspot as any).hotspot_description ?? null,
       hotspot_video_url: (hotspot as any).hotspot_video_url ?? null,
+      hotspot_duration: timeToHHmmUTC((hotspot as any).hotspot_duration) || null,
       status: hotspot.status ?? 1,
       deleted: hotspot.deleted ?? 0,
 
@@ -441,10 +457,12 @@ export class HotspotsService {
 
       operatingHours,
 
-      gallery: (gallery as any[]).map((g) => ({
-        id: g.hotspot_gallery_details_id,
-        name: g.hotspot_gallery_name,
-      })),
+      gallery: (gallery as any[])
+        .filter((g) => hotspotImageExists(g.hotspot_gallery_name))
+        .map((g) => ({
+          id: g.hotspot_gallery_details_id,
+          name: g.hotspot_gallery_name,
+        })),
     };
 
     return { payload, options };
@@ -467,6 +485,7 @@ export class HotspotsService {
       hotspot_landmark: (input as any).hotspot_landmark ?? null,
       hotspot_description: (input as any).hotspot_description ?? null,
       hotspot_video_url: (input as any).hotspot_video_url ?? null,
+      hotspot_duration: hhmmToUTCDate((input as any).hotspot_duration) as any,
 
       hotspot_location: normalizeLocationArrayToPipe((input as any).hotspot_location_list),
 
@@ -747,6 +766,13 @@ export class HotspotsService {
       vehicle_type_title: string;
       parking_charge: string;
     }> = [];
+    const rejectedRows: Array<{
+      hotspot_name: string;
+      hotspot_location: string;
+      vehicle_type_title: string;
+      parking_charge: string;
+      reason: string;
+    }> = [];
 
     const rl = readline.createInterface({
       input: fs.createReadStream(csvFilePath),
@@ -754,6 +780,7 @@ export class HotspotsService {
     });
 
     let lineNo = 0;
+    let expectedLayout: '4col' | '5col-sno' | null = null;
     for await (const rawLine of rl) {
       let line = (rawLine ?? '').trim();
       if (!line) continue;
@@ -762,27 +789,44 @@ export class HotspotsService {
 
       const cols = parseCsvLine(line).map(csvUnquote);
 
-      // --- header guards (handles both 4-col and 5-col with S.NO header) ---
-      const colsLower = cols.map((c) => c.toLowerCase());
-      if (
-        lineNo === 1 &&
-        (
-          colsLower.includes('hotspot name') ||
-          colsLower.includes('s.no') ||
-          (colsLower[0]?.includes('hotspot') && colsLower[1]?.includes('hotspot'))
-        )
-      ) {
-        continue; // skip header
+      // Header validation (PHP parity + backward compatibility for 4-col format)
+      if (lineNo === 1) {
+        const h = cols.map((c) => c.trim().toLowerCase());
+        const is4 =
+          h.length >= 4 &&
+          h[0] === 'hotspot_name' &&
+          h[1] === 'hotspot_location' &&
+          h[2] === 'vehicle_type_title' &&
+          h[3] === 'parking_charge';
+        const is5 =
+          h.length >= 5 &&
+          (h[0] === 's.no' || h[0] === 's_no' || h[0] === 'sno') &&
+          h[1] === 'hotspot_name' &&
+          h[2] === 'hotspot_location' &&
+          h[3] === 'vehicle_type_title' &&
+          h[4] === 'parking_charge';
+        if (!is4 && !is5) {
+          throw new BadRequestException(
+            'Invalid CSV header. Expected hotspot_name,hotspot_location,vehicle_type_title,parking_charge (optionally with leading S.NO).',
+          );
+        }
+        expectedLayout = is5 ? '5col-sno' : '4col';
+        continue;
       }
 
-      if (cols.length < 4) continue;
+      if (cols.length < 4) {
+        rejectedRows.push({
+          hotspot_name: '',
+          hotspot_location: '',
+          vehicle_type_title: '',
+          parking_charge: '',
+          reason: `Row ${lineNo}: insufficient columns`,
+        });
+        continue;
+      }
 
-      // ---- Detect layout: with S.NO as the first column in data rows ----
-      // If first column is purely numeric (1,2,3,...) and we have >=5 cols,
-      // treat it as S.NO and shift indices by +1 so field1..field4 map correctly.
       let idxName = 0, idxLoc = 1, idxType = 2, idxCharge = 3;
-      const looksSerial = /^\d+$/.test(cols[0]);
-      if (looksSerial && cols.length >= 5) {
+      if (expectedLayout === '5col-sno') {
         idxName = 1; idxLoc = 2; idxType = 3; idxCharge = 4;
       }
 
@@ -791,7 +835,21 @@ export class HotspotsService {
       const vehicle_type_title = (cols[idxType] ?? '').trim();
       const parking_charge = (cols[idxCharge] ?? '').trim();
 
-      if (!hotspot_name || !vehicle_type_title) continue;
+      if (!hotspot_name || !hotspot_location || !vehicle_type_title || parking_charge === '') {
+        const missing: string[] = [];
+        if (!hotspot_name) missing.push('hotspot_name');
+        if (!hotspot_location) missing.push('hotspot_location');
+        if (!vehicle_type_title) missing.push('vehicle_type_title');
+        if (parking_charge === '') missing.push('parking_charge');
+        rejectedRows.push({
+          hotspot_name,
+          hotspot_location,
+          vehicle_type_title,
+          parking_charge,
+          reason: `Row ${lineNo}: missing ${missing.join(', ')}`,
+        });
+        continue;
+      }
 
       rows.push({
         hotspot_name,
@@ -815,9 +873,24 @@ export class HotspotsService {
       });
     }
 
+    for (const r of rejectedRows) {
+      await this.prisma.dvi_tempcsv.create({
+        data: {
+          csvtype: 4 as any,
+          sessionID: sessionId as any,
+          field1: String(r.hotspot_name || ''),
+          field2: String(r.hotspot_location || ''),
+          field3: String(r.vehicle_type_title || ''),
+          field4: String(r.parking_charge || ''),
+          field5: String(r.reason || 'Rejected'),
+          status: 3 as any, // rejected
+        } as Prisma.dvi_tempcsvCreateInput,
+      });
+    }
+
     try { fs.unlinkSync(csvFilePath); } catch {}
 
-    return { sessionId, stagedCount: rows.length };
+    return { sessionId, stagedCount: rows.length, rejectedCount: rejectedRows.length };
   }
 
   /**
@@ -825,7 +898,11 @@ export class HotspotsService {
    */
   async getParkingTemplist(sessionId: string) {
     const data = await this.prisma.dvi_tempcsv.findMany({
-      where: { csvtype: 4 as any, sessionID: sessionId as any, status: 1 as any },
+      where: {
+        csvtype: 4 as any,
+        sessionID: sessionId as any,
+        status: { in: [1, 2, 3] as any },
+      },
       orderBy: { temp_id: 'asc' },
       select: {
         temp_id: true,
@@ -833,17 +910,25 @@ export class HotspotsService {
         field2: true, // hotspot_location
         field3: true, // vehicle_type_title
         field4: true, // parking_charge (stored as STRING)
+        field5: true, // reject reason
+        status: true,
       },
     });
 
     return {
       sessionId,
       rows: data.map((r) => ({
+        ...(Number(r.status) === 2
+          ? { row_status: 'imported' }
+          : Number(r.status) === 1
+          ? { row_status: 'staged' }
+          : { row_status: 'rejected' }),
         id: Number(r.temp_id),
         hotspot_name: r.field1 ?? '',
         hotspot_location: r.field2 ?? '',
         vehicle_type_title: r.field3 ?? '',
         parking_charge: Number(r.field4 ?? 0), // convert to number for UI
+        reason: r.field5 ?? '',
       })),
     };
   }
@@ -893,7 +978,14 @@ export class HotspotsService {
           },
           select: { hotspot_ID: true },
         });
-        if (!hotspot) { failed++; continue; }
+        if (!hotspot) {
+          failed++;
+          await this.prisma.dvi_tempcsv.update({
+            where: { temp_id: (t as any).temp_id as any },
+            data: { status: 3 as any, field5: 'Hotspot not found for name/location' as any },
+          });
+          continue;
+        }
 
         // Resolve vehicle type
         const vtype = await this.prisma.dvi_vehicle_type.findFirst({
@@ -904,7 +996,14 @@ export class HotspotsService {
           },
           select: { vehicle_type_id: true },
         });
-        if (!vtype) { failed++; continue; }
+        if (!vtype) {
+          failed++;
+          await this.prisma.dvi_tempcsv.update({
+            where: { temp_id: (t as any).temp_id as any },
+            data: { status: 3 as any, field5: 'Vehicle type not found' as any },
+          });
+          continue;
+        }
 
         // If a record exists for (hotspot_id, vehicle_type_id) -> UPDATE else INSERT
         const existing = await this.prisma.dvi_hotspot_vehicle_parking_charges.findFirst({
@@ -949,6 +1048,14 @@ export class HotspotsService {
         imported++;
       } catch {
         failed++;
+        try {
+          await this.prisma.dvi_tempcsv.update({
+            where: { temp_id: (t as any).temp_id as any },
+            data: { status: 3 as any, field5: 'Unexpected import error' as any },
+          });
+        } catch {
+          // ignore secondary update failure
+        }
       }
     }
 
@@ -1083,7 +1190,9 @@ export class HotspotsService {
       firstImgById = {};
       for (const row of g) {
         const id = row.hotspot_ID as unknown as number;
-        if (!firstImgById[id]) firstImgById[id] = buildImageUrl(row.hotspot_gallery_name ?? '');
+        const fileName = (row.hotspot_gallery_name ?? '').toString();
+        const url = buildImageUrl(fileName);
+        if (!firstImgById[id] && url) firstImgById[id] = url;
       }
     }
 

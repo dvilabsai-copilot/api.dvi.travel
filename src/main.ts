@@ -13,6 +13,12 @@ import * as express from 'express';
 import * as fs from 'fs';
 import * as path from 'path';
 
+function resolveBackendRoot(): string {
+  // Works for both src/main.ts (dev) and dist/main.js (prod).
+  const candidate = path.resolve(__dirname, '..');
+  return fs.existsSync(path.join(candidate, 'package.json')) ? candidate : process.cwd();
+}
+
 // ---- Safe JSON patches (do NOT change other app behavior) ----
 (BigInt.prototype as any).toJSON = function () {
   return this.toString();
@@ -51,7 +57,7 @@ async function bootstrap() {
   }
 
   // Serve publicly accessible files from <appRoot>/public/uploads at /uploads/*
-  const uploadsRoot = path.join(process.cwd(), 'public', 'uploads');
+  const uploadsRoot = path.join(resolveBackendRoot(), 'public', 'uploads');
   try {
     fs.mkdirSync(uploadsRoot, { recursive: true });
   } catch {
