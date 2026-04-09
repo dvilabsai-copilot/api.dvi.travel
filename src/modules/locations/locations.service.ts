@@ -151,8 +151,11 @@ export class LocationsService {
 
   // ------ CRUD ------
   async create(payload: any) {
-    const sourceLat = this.toCoordinate(payload?.source_latitude);
-    const sourceLng = this.toCoordinate(payload?.source_longitude);
+       const { latitude: sourceLat, longitude: sourceLng } =
+      this.resolveCoordinateInput(
+        payload?.source_latitude,
+        payload?.source_longitude,
+      );
 
     if (sourceLat === null) {
       throw new BadRequestException('Invalid source_latitude');
@@ -211,23 +214,93 @@ export class LocationsService {
 
   private mapDtoToSchema(dto: any) {
   const mapped: any = {};
+
   if (dto.source_location !== undefined) mapped.source_location = dto.source_location;
   if (dto.source_city !== undefined) mapped.source_location_city = dto.source_city;
   if (dto.source_state !== undefined) mapped.source_location_state = dto.source_state;
-  if (dto.source_latitude !== undefined) mapped.source_location_lattitude = dto.source_latitude;
-  if (dto.source_longitude !== undefined) mapped.source_location_longitude = dto.source_longitude;
+
+  if (dto.source_latitude !== undefined || dto.source_longitude !== undefined) {
+    const { latitude, longitude } = this.resolveCoordinateInput(
+      dto.source_latitude,
+      dto.source_longitude,
+    );
+
+    if (latitude !== null) {
+      mapped.source_location_lattitude = latitude.toFixed(6);
+    }
+
+    if (longitude !== null) {
+      mapped.source_location_longitude = longitude.toFixed(6);
+    }
+  }
 
   if (dto.destination_location !== undefined) mapped.destination_location = dto.destination_location;
   if (dto.destination_city !== undefined) mapped.destination_location_city = dto.destination_city;
   if (dto.destination_state !== undefined) mapped.destination_location_state = dto.destination_state;
-  if (dto.destination_latitude !== undefined) mapped.destination_location_lattitude = dto.destination_latitude;
-  if (dto.destination_longitude !== undefined) mapped.destination_location_longitude = dto.destination_longitude;
+
+  if (dto.destination_latitude !== undefined || dto.destination_longitude !== undefined) {
+    const { latitude, longitude } = this.resolveCoordinateInput(
+      dto.destination_latitude,
+      dto.destination_longitude,
+    );
+
+    if (latitude !== null) {
+      mapped.destination_location_lattitude = latitude.toFixed(6);
+    }
+
+    if (longitude !== null) {
+      mapped.destination_location_longitude = longitude.toFixed(6);
+    }
+  }
 
   if (dto.distance_km !== undefined) mapped.distance = Number(dto.distance_km);
   if (dto.duration_text !== undefined) mapped.duration = dto.duration_text;
   if (dto.location_description !== undefined) mapped.location_description = dto.location_description;
 
   return mapped;
+}
+
+private parseCoordinatePair(value: unknown): { latitude: number; longitude: number } | null {
+  const text = String(value ?? '').trim();
+  if (!text) return null;
+
+  const match = text.match(/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/);
+  if (!match) return null;
+
+  const latitude = Number(match[1]);
+  const longitude = Number(match[2]);
+
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    return null;
+  }
+
+  return { latitude, longitude };
+}
+
+private resolveCoordinateInput(
+  latitudeValue: unknown,
+  longitudeValue: unknown,
+): { latitude: number | null; longitude: number | null } {
+  const combinedFromLatitude = this.parseCoordinatePair(latitudeValue);
+  if (combinedFromLatitude) {
+    return {
+      latitude: combinedFromLatitude.latitude,
+      longitude: combinedFromLatitude.longitude,
+    };
+  }
+
+  const combinedFromLongitude = this.parseCoordinatePair(longitudeValue);
+  if (combinedFromLongitude) {
+    return {
+      latitude: combinedFromLongitude.latitude,
+      longitude: combinedFromLongitude.longitude,
+    };
+  }
+
+  return {
+    latitude: this.toCoordinate(latitudeValue),
+    longitude: this.toCoordinate(longitudeValue),
+  };
 }
 
 private toCoordinate(value: unknown): number | null {
@@ -591,13 +664,38 @@ private calculateDistanceKm(
   return Number(distance.toFixed(6));
 }
 
-  async softDelete(id: number) {
-    await this.get(id);
+    async softDelete(id: number) {
+    const row = await this.get(id);
+
     await this.prisma.dvi_stored_locations.update({
       where: { location_ID: BigInt(id) },
       data: { deleted: 1, updatedon: new Date() },
     });
-    return { ok: true };
+
+    return {
+      ok: true,
+      row,
+    };
+  }
+
+  async restore(id: number) {
+    const row = await this.prisma.dvi_stored_locations.findFirst({
+      where: { location_ID: BigInt(id) },
+    });
+
+    if (!row) {
+      throw new NotFoundException('Location not found');
+    }
+
+    const restored = await this.prisma.dvi_stored_locations.update({
+      where: { location_ID: BigInt(id) },
+      data: { deleted: 0, updatedon: new Date() },
+    });
+
+    return {
+      ok: true,
+      row: this.mapRowToResponse(restored),
+    };
   }
 
   // ------ Modify Location Name (quick rename) ------
