@@ -10,6 +10,20 @@ type ListQuery = {
   pageSize?: number;
 };
 
+type SourceLocationSeed = {
+  source_location: string;
+  source_location_city: string;
+  source_location_state: string;
+  source_location_lattitude: string;
+  source_location_longitude: string;
+};
+
+type AutosuggestQuery = {
+  phrase?: string;
+  format?: string;
+  type?: string;
+};
+
 @Injectable()
 export class LocationsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -93,26 +107,91 @@ export class LocationsService {
     };
   }
 
+  async searchCities(query: AutosuggestQuery) {
+    const phrase = String(query?.phrase ?? '').trim();
+    if (!phrase) return [];
+
+    const rows = await this.prisma.dvi_cities.findMany({
+      where: {
+        deleted: 0,
+        name: { contains: phrase },
+      },
+      select: { name: true },
+      orderBy: { name: 'asc' },
+    });
+
+    const names = this.uniqueStringsCaseInsensitive(rows.map((r) => r.name));
+    if (!names.length) {
+      return [{ get_city: phrase }];
+    }
+
+    return names.map((name) => ({ get_city: name }));
+  }
+
+  async searchStates(query: AutosuggestQuery) {
+    const phrase = String(query?.phrase ?? '').trim();
+    if (!phrase) return [];
+
+    const rows = await this.prisma.dvi_states.findMany({
+      where: {
+        deleted: 0,
+        name: { contains: phrase },
+      },
+      select: { name: true },
+      orderBy: { name: 'asc' },
+    });
+
+    const names = this.uniqueStringsCaseInsensitive(rows.map((r) => r.name));
+    if (!names.length) {
+      return [{ get_state: phrase }];
+    }
+
+    return names.map((name) => ({ get_state: name }));
+  }
+
   // ------ CRUD ------
   async create(payload: any) {
-    const data = this.mapDtoToSchema(payload);
-    // For new locations, destination fields default to empty strings
-    const created = await this.prisma.dvi_stored_locations.create({
-      data: {
-        ...data,
-        destination_location: '',
-        destination_location_city: '',
-        destination_location_state: '',
-        destination_location_lattitude: '',
-        destination_location_longitude: '',
-        distance: 0,
-        duration: '',
-        status: 1,
-        deleted: 0,
-        createdon: new Date(),
-      },
-    });
-    return this.mapRowToResponse(created);
+       const { latitude: sourceLat, longitude: sourceLng } =
+      this.resolveCoordinateInput(
+        payload?.source_latitude,
+        payload?.source_longitude,
+      );
+
+    if (sourceLat === null) {
+      throw new BadRequestException('Invalid source_latitude');
+    }
+
+    if (sourceLng === null) {
+      throw new BadRequestException('Invalid source_longitude');
+    }
+
+    const newSourceSeed: SourceLocationSeed = {
+      source_location: this.normalizeLocationName(payload?.source_location),
+      source_location_city: this.normalizeLocationName(payload?.source_city),
+      source_location_state: this.normalizeLocationName(payload?.source_state),
+      source_location_lattitude: sourceLat.toFixed(6),
+      source_location_longitude: sourceLng.toFixed(6),
+    };
+
+    const itineraryDistanceLimit = await this.getItineraryDistanceLimit();
+    const existingSources = await this.getDistinctExistingSourceLocations();
+
+    const result = await this.createReplicatedLocationRows(
+      newSourceSeed,
+      existingSources,
+      itineraryDistanceLimit,
+      payload?.location_description,
+    );
+
+    if (result.createdRows.length === 1) {
+      return this.mapRowToResponse(result.createdRows[0]);
+    }
+
+    return {
+      createdCount: result.createdRows.length,
+      skippedCount: result.skippedCount,
+      rows: result.createdRows.map((r) => this.mapRowToResponse(r)),
+    };
   }
 
   async get(id: number) {
@@ -134,33 +213,489 @@ export class LocationsService {
   }
 
   private mapDtoToSchema(dto: any) {
-    const mapped: any = {};
-    if (dto.source_location !== undefined) mapped.source_location = dto.source_location;
-    if (dto.source_city !== undefined) mapped.source_location_city = dto.source_city;
-    if (dto.source_state !== undefined) mapped.source_location_state = dto.source_state;
-    if (dto.source_latitude !== undefined) mapped.source_location_lattitude = dto.source_latitude;
-    if (dto.source_longitude !== undefined) mapped.source_location_longitude = dto.source_longitude;
+  const mapped: any = {};
 
-    if (dto.destination_location !== undefined) mapped.destination_location = dto.destination_location;
-    if (dto.destination_city !== undefined) mapped.destination_location_city = dto.destination_city;
-    if (dto.destination_state !== undefined) mapped.destination_location_state = dto.destination_state;
-    if (dto.destination_latitude !== undefined) mapped.destination_location_lattitude = dto.destination_latitude;
-    if (dto.destination_longitude !== undefined) mapped.destination_location_longitude = dto.destination_longitude;
+  if (dto.source_location !== undefined) mapped.source_location = dto.source_location;
+  if (dto.source_city !== undefined) mapped.source_location_city = dto.source_city;
+  if (dto.source_state !== undefined) mapped.source_location_state = dto.source_state;
 
-    if (dto.distance_km !== undefined) mapped.distance = Number(dto.distance_km);
-    if (dto.duration_text !== undefined) mapped.duration = dto.duration_text;
-    if (dto.location_description !== undefined) mapped.location_description = dto.location_description;
+  if (dto.source_latitude !== undefined || dto.source_longitude !== undefined) {
+    const { latitude, longitude } = this.resolveCoordinateInput(
+      dto.source_latitude,
+      dto.source_longitude,
+    );
 
-    return mapped;
+    if (latitude !== null) {
+      mapped.source_location_lattitude = latitude.toFixed(6);
+    }
+
+    if (longitude !== null) {
+      mapped.source_location_longitude = longitude.toFixed(6);
+    }
   }
 
-  async softDelete(id: number) {
-    await this.get(id);
+  if (dto.destination_location !== undefined) mapped.destination_location = dto.destination_location;
+  if (dto.destination_city !== undefined) mapped.destination_location_city = dto.destination_city;
+  if (dto.destination_state !== undefined) mapped.destination_location_state = dto.destination_state;
+
+  if (dto.destination_latitude !== undefined || dto.destination_longitude !== undefined) {
+    const { latitude, longitude } = this.resolveCoordinateInput(
+      dto.destination_latitude,
+      dto.destination_longitude,
+    );
+
+    if (latitude !== null) {
+      mapped.destination_location_lattitude = latitude.toFixed(6);
+    }
+
+    if (longitude !== null) {
+      mapped.destination_location_longitude = longitude.toFixed(6);
+    }
+  }
+
+  if (dto.distance_km !== undefined) mapped.distance = Number(dto.distance_km);
+  if (dto.duration_text !== undefined) mapped.duration = dto.duration_text;
+  if (dto.location_description !== undefined) mapped.location_description = dto.location_description;
+
+  return mapped;
+}
+
+private parseCoordinatePair(value: unknown): { latitude: number; longitude: number } | null {
+  const text = String(value ?? '').trim();
+  if (!text) return null;
+
+  const match = text.match(/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/);
+  if (!match) return null;
+
+  const latitude = Number(match[1]);
+  const longitude = Number(match[2]);
+
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    return null;
+  }
+
+  return { latitude, longitude };
+}
+
+private resolveCoordinateInput(
+  latitudeValue: unknown,
+  longitudeValue: unknown,
+): { latitude: number | null; longitude: number | null } {
+  const combinedFromLatitude = this.parseCoordinatePair(latitudeValue);
+  if (combinedFromLatitude) {
+    return {
+      latitude: combinedFromLatitude.latitude,
+      longitude: combinedFromLatitude.longitude,
+    };
+  }
+
+  const combinedFromLongitude = this.parseCoordinatePair(longitudeValue);
+  if (combinedFromLongitude) {
+    return {
+      latitude: combinedFromLongitude.latitude,
+      longitude: combinedFromLongitude.longitude,
+    };
+  }
+
+  return {
+    latitude: this.toCoordinate(latitudeValue),
+    longitude: this.toCoordinate(longitudeValue),
+  };
+}
+
+private toCoordinate(value: unknown): number | null {
+  if (value === undefined || value === null || value === '') return null;
+
+  const num = Number(value);
+  if (!Number.isFinite(num)) return null;
+
+  return num;
+}
+
+private toRadians(value: number): number {
+  return (value * Math.PI) / 180;
+}
+
+private normalizeLocationName(value: unknown): string {
+  return String(value ?? '')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+private uniqueStringsCaseInsensitive(values: Array<string | null | undefined>): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  for (const value of values) {
+    const text = String(value ?? '').trim();
+    if (!text) continue;
+
+    const key = text.toLowerCase();
+    if (seen.has(key)) continue;
+
+    seen.add(key);
+    result.push(text);
+  }
+
+  return result;
+}
+
+private estimateDurationText(distanceKm: number): string {
+  const averageSpeedKmPerHour = 25;
+  const totalHours = distanceKm / averageSpeedKmPerHour;
+  let hours = Math.floor(totalHours);
+  let mins = Math.round((totalHours - hours) * 60);
+
+  if (mins === 60) {
+    hours += 1;
+    mins = 0;
+  }
+
+  return `${hours} hours ${mins} mins`;
+}
+
+private async getItineraryDistanceLimit(): Promise<number> {
+  const settings = await this.prisma.dvi_global_settings.findFirst({
+    where: { deleted: 0 },
+    orderBy: { global_settings_ID: 'asc' },
+    select: { itinerary_distance_limit: true },
+  });
+
+  const limit = Number(settings?.itinerary_distance_limit ?? 0);
+  return Number.isFinite(limit) && limit >= 0 ? limit : 0;
+}
+
+private async getDistinctExistingSourceLocations(): Promise<SourceLocationSeed[]> {
+  // PHP replication candidates come only from existing SOURCE-side values, not destination rows.
+  const rows = await this.prisma.dvi_stored_locations.findMany({
+    where: {
+      deleted: 0,
+    },
+    select: {
+      source_location: true,
+      source_location_city: true,
+      source_location_state: true,
+      source_location_lattitude: true,
+      source_location_longitude: true,
+    },
+    orderBy: { source_location: 'asc' },
+  });
+
+  const dedupMap = new Map<string, SourceLocationSeed>();
+
+  for (const row of rows) {
+    const seed: SourceLocationSeed = {
+      source_location: this.normalizeLocationName(row.source_location),
+      source_location_city: this.normalizeLocationName(row.source_location_city),
+      source_location_state: this.normalizeLocationName(row.source_location_state),
+      source_location_lattitude: this.normalizeLocationName(row.source_location_lattitude),
+      source_location_longitude: this.normalizeLocationName(row.source_location_longitude),
+    };
+
+    const key = [
+      seed.source_location,
+      seed.source_location_lattitude,
+      seed.source_location_longitude,
+      seed.source_location_city,
+      seed.source_location_state,
+    ].join('||');
+
+    if (!dedupMap.has(key)) {
+      dedupMap.set(key, seed);
+    }
+  }
+
+  return Array.from(dedupMap.values());
+}
+
+private async forwardRouteExists(
+  tx: any,
+  source: SourceLocationSeed,
+  destination: SourceLocationSeed,
+): Promise<boolean> {
+  const existing = await tx.dvi_stored_locations.findFirst({
+    where: {
+      deleted: 0,
+      source_location: source.source_location,
+      destination_location: destination.source_location,
+    },
+    select: { location_ID: true },
+  });
+
+  return Boolean(existing);
+}
+
+private async reverseRouteExists(
+  tx: any,
+  source: SourceLocationSeed,
+  destination: SourceLocationSeed,
+): Promise<boolean> {
+  const existing = await tx.dvi_stored_locations.findFirst({
+    where: {
+      deleted: 0,
+      OR: [
+        {
+          source_location: destination.source_location,
+          destination_location: source.source_location,
+        },
+        {
+          source_location_lattitude: destination.source_location_lattitude,
+          source_location_longitude: destination.source_location_longitude,
+          destination_location_lattitude: source.source_location_lattitude,
+          destination_location_longitude: source.source_location_longitude,
+        },
+      ],
+    },
+    select: { location_ID: true },
+  });
+
+  return Boolean(existing);
+}
+
+private buildLocationRowData(
+  source: SourceLocationSeed,
+  destination: SourceLocationSeed,
+  distanceKm: number,
+  locationDescription?: string | null,
+) {
+  return {
+    source_location: source.source_location,
+    source_location_lattitude: source.source_location_lattitude,
+    source_location_longitude: source.source_location_longitude,
+    source_location_city: source.source_location_city,
+    source_location_state: source.source_location_state,
+    destination_location: destination.source_location,
+    destination_location_lattitude: destination.source_location_lattitude,
+    destination_location_longitude: destination.source_location_longitude,
+    destination_location_city: destination.source_location_city,
+    destination_location_state: destination.source_location_state,
+    distance: Number(distanceKm.toFixed(6)),
+    duration: this.estimateDurationText(distanceKm),
+    location_description:
+      locationDescription === undefined ? null : locationDescription,
+    status: 1,
+    deleted: 0,
+    createdon: new Date(),
+  };
+}
+
+private async createReplicatedLocationRows(
+  newSource: SourceLocationSeed,
+  candidates: SourceLocationSeed[],
+  itineraryDistanceLimit: number,
+  locationDescription?: string | null,
+) {
+  const locationNames = Array.from(
+    new Set([
+      newSource.source_location,
+      ...candidates.map((c) => c.source_location),
+    ]),
+  );
+
+  const existingRoutes = await this.prisma.dvi_stored_locations.findMany({
+    where: {
+      deleted: 0,
+      OR: [
+        { source_location: { in: locationNames } },
+        { destination_location: { in: locationNames } },
+      ],
+    },
+    select: {
+      source_location: true,
+      destination_location: true,
+      source_location_lattitude: true,
+      source_location_longitude: true,
+      destination_location_lattitude: true,
+      destination_location_longitude: true,
+    },
+  });
+
+  const pairKey = (s: string, d: string) => `${s}||${d}`;
+  const coordKey = (slat: string, slng: string, dlat: string, dlng: string) =>
+    `${slat}||${slng}||${dlat}||${dlng}`;
+
+  const existingNamePairs = new Set<string>();
+  const existingCoordPairs = new Set<string>();
+
+  for (const row of existingRoutes) {
+    existingNamePairs.add(pairKey(row.source_location, row.destination_location));
+    existingCoordPairs.add(
+      coordKey(
+        row.source_location_lattitude,
+        row.source_location_longitude,
+        row.destination_location_lattitude,
+        row.destination_location_longitude,
+      ),
+    );
+  }
+
+  const rowsToInsert: any[] = [];
+  let skippedCount = 0;
+
+  for (const candidate of candidates) {
+    const candidateLat = this.toCoordinate(candidate.source_location_lattitude);
+    const candidateLng = this.toCoordinate(candidate.source_location_longitude);
+    const sourceLat = this.toCoordinate(newSource.source_location_lattitude);
+    const sourceLng = this.toCoordinate(newSource.source_location_longitude);
+
+    if (
+      candidateLat === null ||
+      candidateLng === null ||
+      sourceLat === null ||
+      sourceLng === null
+    ) {
+      skippedCount += 1;
+      continue;
+    }
+
+    const distanceKm = this.calculateDistanceKm(
+      sourceLat,
+      sourceLng,
+      candidateLat,
+      candidateLng,
+    );
+
+    if (distanceKm > itineraryDistanceLimit) {
+      skippedCount += 1;
+      continue;
+    }
+
+    const forwardNameKey = pairKey(newSource.source_location, candidate.source_location);
+    const forwardCoordKey = coordKey(
+      newSource.source_location_lattitude,
+      newSource.source_location_longitude,
+      candidate.source_location_lattitude,
+      candidate.source_location_longitude,
+    );
+
+    if (!existingNamePairs.has(forwardNameKey)) {
+      rowsToInsert.push(
+        this.buildLocationRowData(
+          newSource,
+          candidate,
+          distanceKm,
+          locationDescription,
+        ),
+      );
+      existingNamePairs.add(forwardNameKey);
+      existingCoordPairs.add(forwardCoordKey);
+    } else {
+      skippedCount += 1;
+    }
+
+    const isSelfRoute =
+      newSource.source_location.toLowerCase() ===
+      candidate.source_location.toLowerCase();
+
+    if (isSelfRoute) {
+      continue;
+    }
+
+    const reverseNameKey = pairKey(candidate.source_location, newSource.source_location);
+    const reverseCoordKey = coordKey(
+      candidate.source_location_lattitude,
+      candidate.source_location_longitude,
+      newSource.source_location_lattitude,
+      newSource.source_location_longitude,
+    );
+
+    if (
+      !existingNamePairs.has(reverseNameKey) &&
+      !existingCoordPairs.has(reverseCoordKey)
+    ) {
+      rowsToInsert.push(
+        this.buildLocationRowData(
+          candidate,
+          newSource,
+          distanceKm,
+          locationDescription,
+        ),
+      );
+      existingNamePairs.add(reverseNameKey);
+      existingCoordPairs.add(reverseCoordKey);
+    } else {
+      skippedCount += 1;
+    }
+  }
+
+  const selfNameKey = pairKey(newSource.source_location, newSource.source_location);
+  if (rowsToInsert.length === 0 && !existingNamePairs.has(selfNameKey)) {
+    rowsToInsert.push({
+      ...this.buildLocationRowData(newSource, newSource, 0, locationDescription),
+      distance: 0,
+      duration: '0 hours 0 mins',
+    });
+  }
+
+  return this.prisma.$transaction(async (tx) => {
+    const createdRows: any[] = [];
+    for (const rowData of rowsToInsert) {
+      const created = await tx.dvi_stored_locations.create({ data: rowData });
+      createdRows.push(created);
+    }
+    return { createdRows, skippedCount };
+  }, {
+    maxWait: 10000,
+    timeout: 60000,
+  });
+}
+
+private calculateDistanceKm(
+  sourceLat: number,
+  sourceLng: number,
+  destLat: number,
+  destLng: number,
+): number {
+  const earthRadiusKm = 6371;
+
+  const dLat = this.toRadians(destLat - sourceLat);
+  const dLng = this.toRadians(destLng - sourceLng);
+
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(this.toRadians(sourceLat)) *
+      Math.cos(this.toRadians(destLat)) *
+      Math.sin(dLng / 2) *
+      Math.sin(dLng / 2);
+
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const distance = earthRadiusKm * c;
+
+  return Number(distance.toFixed(6));
+}
+
+    async softDelete(id: number) {
+    const row = await this.get(id);
+
     await this.prisma.dvi_stored_locations.update({
       where: { location_ID: BigInt(id) },
       data: { deleted: 1, updatedon: new Date() },
     });
-    return { ok: true };
+
+    return {
+      ok: true,
+      row,
+    };
+  }
+
+  async restore(id: number) {
+    const row = await this.prisma.dvi_stored_locations.findFirst({
+      where: { location_ID: BigInt(id) },
+    });
+
+    if (!row) {
+      throw new NotFoundException('Location not found');
+    }
+
+    const restored = await this.prisma.dvi_stored_locations.update({
+      where: { location_ID: BigInt(id) },
+      data: { deleted: 0, updatedon: new Date() },
+    });
+
+    return {
+      ok: true,
+      row: this.mapRowToResponse(restored),
+    };
   }
 
   // ------ Modify Location Name (quick rename) ------

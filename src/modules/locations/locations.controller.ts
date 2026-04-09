@@ -107,15 +107,40 @@ export class LocationsController {
     return this.svc.modifyName(Number(id), dto.scope, dto.new_name);
   }
 
-  @Delete(':id')
-  @HttpCode(204)
+    @Delete(':id')
+  @HttpCode(200)
   @ApiOperation({ summary: 'Delete location by ID' })
-  @ApiResponse({ status: 204, description: 'Location deleted' })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      type: 'object',
+      properties: {
+        ok: { type: 'boolean' },
+        row: { $ref: '#/components/schemas/LocationResponseDto' },
+      },
+    },
+  })
   @ApiResponse({ status: 404, description: 'Location not found' })
   softDelete(@Param('id') id: string) {
     return this.svc.softDelete(Number(id));
   }
 
+  @Patch(':id/restore')
+  @ApiOperation({ summary: 'Restore soft-deleted location by ID' })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      type: 'object',
+      properties: {
+        ok: { type: 'boolean' },
+        row: { $ref: '#/components/schemas/LocationResponseDto' },
+      },
+    },
+  })
+  @ApiResponse({ status: 404, description: 'Location not found' })
+  restore(@Param('id') id: string) {
+    return this.svc.restore(Number(id));
+  }
   @Get(':id/tolls')
   @ApiOperation({ summary: 'Get toll charges for this location' })
   @ApiResponse({
