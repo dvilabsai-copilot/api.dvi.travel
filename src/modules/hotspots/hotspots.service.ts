@@ -574,7 +574,12 @@ export class HotspotsService {
 
         const open24 = !!def.open24hrs;
         const closed = !!def.closed24hrs;
-        const slots = Array.isArray(def.slots) ? def.slots : [];
+        const rawSlots = Array.isArray(def.slots) ? def.slots : [];
+        // Persist a day row even when there are no explicit slots for open-24/closed-24.
+        const slots =
+          (open24 || closed) && rawSlots.length === 0
+            ? [{ start: '00:00', end: '23:59' }]
+            : rawSlots;
 
         for (const s of slots) {
           const start = hhmmToUTCDate(s.start);

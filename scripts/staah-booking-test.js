@@ -254,7 +254,7 @@ async function main() {
     reservationDateTime: '2026-07-29T06:15:00',
     arrivalDate: '2026-07-21',
     departureDate: '2026-07-22',
-    status: 'Modify',
+    status: 'Modified',
   })));
 
   results.push(await runTest('S1_05_Cancel', buildReservationPayload({

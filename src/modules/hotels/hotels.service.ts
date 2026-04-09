@@ -1413,6 +1413,9 @@ export class HotelsService {
         extraBed?: number | string;
         childWithBed?: number | string;
         childWithoutBed?: number | string;
+        axisroomsRoomId?: string;
+        rateplanId?: string;
+        ratePlanName?: string;
       }>;
     },
   ) {
@@ -1463,6 +1466,21 @@ export class HotelsService {
       }
     };
 
+    const hotel = await this.prisma.dvi_hotel.findFirst({
+      where: { hotel_id: hid } as any,
+      select: {
+        axisrooms_enabled: true,
+        axisrooms_property_id: true,
+      } as any,
+    });
+
+    const axisroomsEnabled = Number(hotel?.axisrooms_enabled || 0) === 1;
+    const axisroomsPropertyId = this.toStr(hotel?.axisrooms_property_id);
+    const roomRefCache = new Map<number, string | undefined>();
+
+    let axisroomsSyncedCount = 0;
+    let axisroomsSkippedCount = 0;
+
     for (const it of body.items) {
       const roomId = Number(it.room_id);
       const start = this.toDate(it.startDate);
@@ -1482,9 +1500,119 @@ export class HotelsService {
       if (it.childWithoutBed !== undefined && it.childWithoutBed !== '' && it.childWithoutBed !== null) {
         await mkTask(roomId, 4, start, end, it.childWithoutBed);
       }
+
+      const rateplanId = this.toStr(it.rateplanId);
+      if (!rateplanId) {
+        continue;
+      }
+
+      if (!axisroomsEnabled || !axisroomsPropertyId) {
+        axisroomsSkippedCount++;
+        continue;
+      }
+
+      let axisroomsRoomId = this.toStr(it.axisroomsRoomId);
+      if (!axisroomsRoomId) {
+        if (!roomRefCache.has(roomId)) {
+          const roomRow = await this.prisma.dvi_hotel_rooms.findFirst({
+            where: {
+              hotel_id: hid,
+              room_ID: roomId,
+            } as any,
+            select: {
+              room_ref_code: true,
+            } as any,
+          });
+          roomRefCache.set(roomId, this.toStr(roomRow?.room_ref_code));
+        }
+        axisroomsRoomId = roomRefCache.get(roomId);
+      }
+
+      if (!axisroomsRoomId) {
+        axisroomsSkippedCount++;
+        continue;
+      }
+
+      const ratePlanName = this.toStr(it.ratePlanName) || rateplanId;
+
+      const occupancyRates: Record<string, number> = {};
+      if (it.roomPrice !== undefined && it.roomPrice !== '' && it.roomPrice !== null) {
+        const single = Number(it.roomPrice);
+        if (Number.isFinite(single)) occupancyRates.SINGLE = single;
+      }
+      if (it.extraBed !== undefined && it.extraBed !== '' && it.extraBed !== null) {
+        const extraBed = Number(it.extraBed);
+        if (Number.isFinite(extraBed)) occupancyRates.EXTRABED = extraBed;
+      }
+      if (it.childWithBed !== undefined && it.childWithBed !== '' && it.childWithBed !== null) {
+        const childWithBed = Number(it.childWithBed);
+        if (Number.isFinite(childWithBed)) occupancyRates.CHILD_WITH_BED = childWithBed;
+      }
+      if (it.childWithoutBed !== undefined && it.childWithoutBed !== '' && it.childWithoutBed !== null) {
+        const childWithoutBed = Number(it.childWithoutBed);
+        if (Number.isFinite(childWithoutBed)) occupancyRates.CHILD_WITHOUT_BED = childWithoutBed;
+      }
+
+      await this.prisma.axisrooms_rateplan.upsert({
+        where: {
+          axisrooms_property_id_room_id_rateplan_id: {
+            axisrooms_property_id: axisroomsPropertyId,
+            room_id: axisroomsRoomId,
+            rateplan_id: rateplanId,
+          },
+        },
+        update: {
+          rateplan_name: ratePlanName,
+          occupancy: Object.keys(occupancyRates),
+        },
+        create: {
+          axisrooms_property_id: axisroomsPropertyId,
+          room_id: axisroomsRoomId,
+          rateplan_id: rateplanId,
+          rateplan_name: ratePlanName,
+          occupancy: Object.keys(occupancyRates),
+          commission_perc: '0.0',
+          tax_perc: '0.0',
+          currency: 'INR',
+        },
+      });
+
+      if (Object.keys(occupancyRates).length > 0) {
+        await this.prisma.axisrooms_rate.upsert({
+          where: {
+            axisrooms_property_id_room_id_rateplan_id_start_date_end_date: {
+              axisrooms_property_id: axisroomsPropertyId,
+              room_id: axisroomsRoomId,
+              rateplan_id: rateplanId,
+              start_date: start,
+              end_date: end,
+            },
+          },
+          update: {
+            occupancy_rates: occupancyRates,
+            received_at: new Date(),
+          },
+          create: {
+            axisrooms_property_id: axisroomsPropertyId,
+            room_id: axisroomsRoomId,
+            rateplan_id: rateplanId,
+            start_date: start,
+            end_date: end,
+            occupancy_rates: occupancyRates,
+          },
+        });
+      }
+
+      axisroomsSyncedCount++;
     }
 
-    return { success: true };
+    return {
+      success: true,
+      axisroomsSync: {
+        synced: axisroomsSyncedCount,
+        skipped: axisroomsSkippedCount,
+      },
+    };
   }
 
   // =====================================================================================

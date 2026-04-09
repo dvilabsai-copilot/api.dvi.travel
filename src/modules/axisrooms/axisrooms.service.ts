@@ -30,6 +30,37 @@ export class AxisRoomsService {
 
   constructor(private prisma: PrismaService) {}
 
+  private normalizeId(value: string): string {
+    return value?.trim();
+  }
+
+  private async ensureRatePlanExists(
+    propertyId: string,
+    roomId: string,
+    rateplanId: string,
+  ): Promise<void> {
+    await this.prisma.axisrooms_rateplan.upsert({
+      where: {
+        axisrooms_property_id_room_id_rateplan_id: {
+          axisrooms_property_id: propertyId,
+          room_id: roomId,
+          rateplan_id: rateplanId,
+        },
+      },
+      update: {},
+      create: {
+        axisrooms_property_id: propertyId,
+        room_id: roomId,
+        rateplan_id: rateplanId,
+        rateplan_name: rateplanId,
+        occupancy: [],
+        commission_perc: '0.0',
+        tax_perc: '0.0',
+        currency: 'INR',
+      },
+    });
+  }
+
   /**
    * Validates if a propertyId is mapped and enabled in dvi_hotel
    */
@@ -76,12 +107,14 @@ export class AxisRoomsService {
   async getProductInfo(
     dto: ProductInfoRequestDto,
   ): Promise<ProductInfoResponseDto> {
-    await this.logInbound('productInfo', dto.propertyId, null, null, dto);
+    const propertyId = this.normalizeId(dto.propertyId);
+
+    await this.logInbound('productInfo', propertyId, null, null, dto);
 
     // Find hotel by propertyId
     const hotel = await this.prisma.dvi_hotel.findFirst({
       where: {
-        axisrooms_property_id: dto.propertyId,
+        axisrooms_property_id: propertyId,
         axisrooms_enabled: 1,
         deleted: { not: true },
       },
@@ -164,9 +197,12 @@ export class AxisRoomsService {
   async getRatePlanInfo(
     dto: RatePlanInfoRequestDto,
   ): Promise<RatePlanInfoResponseDto> {
-    await this.logInbound('ratePlanInfo', dto.propertyId, dto.roomId, null, dto);
+    const propertyId = this.normalizeId(dto.propertyId);
+    const roomId = this.normalizeId(dto.roomId);
 
-    const isValid = await this.validatePropertyMapping(dto.propertyId);
+    await this.logInbound('ratePlanInfo', propertyId, roomId, null, dto);
+
+    const isValid = await this.validatePropertyMapping(propertyId);
     if (!isValid) {
       return {
         message: AXISROOMS_MESSAGES.INVALID_PROPERTY_ID,
@@ -177,8 +213,8 @@ export class AxisRoomsService {
 
     const ratePlans = await this.prisma.axisrooms_rateplan.findMany({
       where: {
-        axisrooms_property_id: dto.propertyId,
-        room_id: dto.roomId,
+        axisrooms_property_id: propertyId,
+        room_id: roomId,
       },
     });
 
@@ -216,7 +252,9 @@ export class AxisRoomsService {
   async updateInventory(
     dto: InventoryUpdateRequestDto,
   ): Promise<InventoryUpdateResponseDto> {
-    const { propertyId, roomId, inventory } = dto.data;
+    const propertyId = this.normalizeId(dto.data.propertyId);
+    const roomId = this.normalizeId(dto.data.roomId);
+    const { inventory } = dto.data;
 
     await this.logInbound('inventoryUpdate', propertyId, roomId, null, dto);
 
@@ -272,7 +310,10 @@ export class AxisRoomsService {
   async updateRate(
     dto: RateUpdateRequestDto,
   ): Promise<RateUpdateResponseDto> {
-    const { propertyId, roomId, rateplanId, rate } = dto.data;
+    const propertyId = this.normalizeId(dto.data.propertyId);
+    const roomId = this.normalizeId(dto.data.roomId);
+    const rateplanId = this.normalizeId(dto.data.rateplanId);
+    const { rate } = dto.data;
 
     await this.logInbound('rateUpdate', propertyId, roomId, rateplanId, dto);
 
@@ -285,6 +326,8 @@ export class AxisRoomsService {
     }
 
     try {
+      await this.ensureRatePlanExists(propertyId, roomId, rateplanId);
+
       for (const rateEntry of rate) {
         const { startDate, endDate, ...occupancyRates } = rateEntry;
 
@@ -336,7 +379,8 @@ export class AxisRoomsService {
 
     try {
       for (const property of dto.data) {
-        const { propertyId, roomDetails } = property;
+        const propertyId = this.normalizeId(property.propertyId);
+        const { roomDetails } = property;
 
         const isValid = await this.validatePropertyMapping(propertyId);
         if (!isValid) {
@@ -347,11 +391,15 @@ export class AxisRoomsService {
         }
 
         for (const roomDetail of roomDetails) {
-          const { roomId, ratePlanDetails } = roomDetail;
+          const roomId = this.normalizeId(roomDetail.roomId);
+          const { ratePlanDetails } = roomDetail;
 
           for (const ratePlanDetail of ratePlanDetails) {
-            const { ratePlanId, restrictions } = ratePlanDetail;
+            const ratePlanId = this.normalizeId(ratePlanDetail.ratePlanId);
+            const { restrictions } = ratePlanDetail;
             const { periods, type, value } = restrictions;
+
+            await this.ensureRatePlanExists(propertyId, roomId, ratePlanId);
 
             // Insert one row per period
             for (const period of periods) {

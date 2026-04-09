@@ -68,6 +68,8 @@ interface SelectedHotspot {
   hotspot_priority?: number;
 }
 
+const HOTEL_FIRST_REST_GAP = "02:00:00";
+
 export class TimelineBuilder {
   private readonly refreshmentBuilder = new RefreshmentBuilder();
   private readonly travelBuilder = new TravelSegmentBuilder();
@@ -80,6 +82,11 @@ export class TimelineBuilder {
 
   constructor() {
     // Logging removed for performance
+  }
+
+  // TODO: remove after validation
+  private logBookingRule(payload: Record<string, unknown>): void {
+    console.log('[BOOKING_RULE]', payload);
   }
 
   /**
@@ -391,6 +398,145 @@ export class TimelineBuilder {
       if (!sourceCity) sourceCity = ((route.location_name as string) || "").split('|')[0].trim();
       if (!destinationCity) destinationCity = ((route.next_visiting_location as string) || "").split('|')[0].trim();
 
+      // Route-level hotel context is reused for both hotspot gating and final hotel segment.
+      const hotelInfoForRoute = await this.getHotelDetailsForRoute(
+        tx,
+        planId,
+        route.itinerary_route_ID,
+      );
+
+      const normalizedArrivalCity = this.normalizeCityName(arrivalPoint);
+      const isArrivalCityStayRoute =
+        isFirstRoute &&
+        this.normalizeCityName(sourceCity) === normalizedArrivalCity &&
+        this.normalizeCityName(destinationCity) === normalizedArrivalCity;
+
+      const arrivalHour =
+        isFirstRoute && plan.trip_start_date_and_time instanceof Date
+          ? plan.trip_start_date_and_time.getUTCHours()
+          : null;
+      const isArrivalAfterNoon =
+        isFirstRoute && arrivalHour !== null && arrivalHour >= 12;
+
+      const fullDayMarkerRaw =
+        (route as any).is_full_day_trip ??
+        (route as any).full_day_trip ??
+        (route as any).day_trip ??
+        (route as any).is_day_trip ??
+        null;
+
+      const hasReliableFullDayMarker =
+        fullDayMarkerRaw !== null && fullDayMarkerRaw !== undefined;
+
+      const isFullDayTrip = hasReliableFullDayMarker
+        ? (typeof fullDayMarkerRaw === "boolean"
+            ? fullDayMarkerRaw
+            : Number(fullDayMarkerRaw) === 1)
+        : false;
+
+      let hotelDistanceFromArrivalKm: number | null = null;
+      if (
+        isFirstRoute &&
+        isArrivalCityStayRoute &&
+        currentCoords &&
+        hotelInfoForRoute?.coords
+      ) {
+        hotelDistanceFromArrivalKm = this.distanceHelper.calculateHaversine(
+          Number(currentCoords.lat || 0),
+          Number(currentCoords.lon || 0),
+          Number(hotelInfoForRoute.coords.lat || 0),
+          Number(hotelInfoForRoute.coords.lon || 0),
+        );
+      }
+
+      const shouldHotelFirstByDistance =
+        isFirstRoute &&
+        isArrivalCityStayRoute &&
+        isArrivalAfterNoon &&
+        hotelDistanceFromArrivalKm != null &&
+        hotelDistanceFromArrivalKm <= 20;
+
+      const shouldHotelLastByDistance =
+        isFirstRoute &&
+        isArrivalCityStayRoute &&
+        hotelDistanceFromArrivalKm != null &&
+        hotelDistanceFromArrivalKm > 20;
+
+      this.logBookingRule({
+        rule: 'HOTEL_DISTANCE_BRANCH',
+        quoteId:
+          (plan as any).quote_id ??
+          (plan as any).quoteId ??
+          (plan as any).quote_ID ??
+          null,
+        planId,
+        routeId: route.itinerary_route_ID,
+        isFirstRoute,
+        sameCityStay: isArrivalCityStayRoute,
+        arrivalAfterNoon: isArrivalAfterNoon,
+        hotelDistanceFromArrivalKm:
+          hotelDistanceFromArrivalKm != null
+            ? Number(hotelDistanceFromArrivalKm.toFixed(2))
+            : null,
+        shouldHotelFirstByDistance,
+        shouldHotelLastByDistance,
+      });
+
+      let didHotelFirstCheckin = false;
+
+      // Booking-engine alignment:
+      // 1) Houseboat stay day -> disable sightseeing.
+      // 2) Suppress local sightseeing when a reliable full-day marker is present.
+      const forceNoSightseeingOnThisRoute =
+        !!hotelInfoForRoute?.isHouseboat ||
+        isFullDayTrip;
+
+      if (!!hotelInfoForRoute?.isHouseboat) {
+        this.logBookingRule({
+          rule: 'HOUSEBOAT_SUPPRESSION',
+          quoteId:
+            (plan as any).quote_id ??
+            (plan as any).quoteId ??
+            (plan as any).quote_ID ??
+            null,
+          planId,
+          routeId: route.itinerary_route_ID,
+          triggered: true,
+        });
+      }
+
+      if (hasReliableFullDayMarker) {
+        this.logBookingRule({
+          rule: 'FULL_DAY_MARKER_DETECTED',
+          quoteId:
+            (plan as any).quote_id ??
+            (plan as any).quoteId ??
+            (plan as any).quote_ID ??
+            null,
+          planId,
+          routeId: route.itinerary_route_ID,
+          markerRaw: fullDayMarkerRaw,
+          isFullDayTrip,
+          suppressionTriggered: isFullDayTrip,
+        });
+      }
+
+      this.logBookingRule({
+        rule: 'DAY1_BRANCH_SELECTED',
+        quoteId:
+          (plan as any).quote_id ??
+          (plan as any).quoteId ??
+          (plan as any).quote_ID ??
+          null,
+        planId,
+        routeId: route.itinerary_route_ID,
+        isFirstRoute,
+        arrivalHour,
+        arrivalAfterNoon: isArrivalAfterNoon,
+        sameCityStay: isArrivalCityStayRoute,
+        forceNoSightseeingOnThisRoute,
+      });
+
       // 1) ADD REFRESHMENT BREAK (PHP line 969-993)
       // PHP adds 1-hour refreshment at route start EXCEPT for last route
       // Last route starts directly with hotspots (order 2) and skips refreshment ROW
@@ -447,6 +593,116 @@ export class TimelineBuilder {
         currentTime = addSeconds(currentTime, bufferSeconds);
       }
 
+      // Day-1 same-city distance rule:
+      // <=20 km and after noon -> allow hotel-first check-in with a 2h rest gap,
+      // then continue current hotspot selection logic.
+      if (
+        !isLastRoute &&
+        shouldHotelFirstByDistance &&
+        hotelInfoForRoute?.coords
+      ) {
+        const hotelOrder = order;
+        const sourceCityForHotel = currentLocationName.split("|")[0].trim();
+        const destinationCityForHotel =
+          ((route.next_visiting_location as string) || currentLocationName)
+            .split("|")[0]
+            .trim();
+
+        const { row: toHotelRow, nextTime: hotelArrivalTime } =
+          await this.hotelBuilder.buildToHotel(tx, {
+            planId,
+            routeId: route.itinerary_route_ID,
+            order: hotelOrder,
+            startTime: currentTime,
+            travelLocationType: 1,
+            userId: createdByUserId,
+            sourceLocationName: sourceCityForHotel,
+            destinationLocationName: destinationCityForHotel,
+            sourceCoords: currentCoords,
+            destCoords: hotelInfoForRoute.coords,
+          });
+
+        this.logBookingRule({
+          rule: 'HOTEL_FIRST_SELECTED',
+          quoteId:
+            (plan as any).quote_id ??
+            (plan as any).quoteId ??
+            (plan as any).quote_ID ??
+            null,
+          planId,
+          routeId: route.itinerary_route_ID,
+          hotelDistanceFromArrivalKm:
+            hotelDistanceFromArrivalKm != null
+              ? Number(hotelDistanceFromArrivalKm.toFixed(2))
+              : null,
+          arrivalAfterNoon: isArrivalAfterNoon,
+          sameCityStay: isArrivalCityStayRoute,
+        });
+
+        const checkInClampApplied =
+          timeToSeconds(hotelArrivalTime) < timeToSeconds("14:00:00");
+        const checkInTime = checkInClampApplied ? "14:00:00" : hotelArrivalTime;
+
+        if (checkInClampApplied) {
+          this.logBookingRule({
+            rule: 'CHECKIN_CLAMP_APPLIED',
+            quoteId:
+              (plan as any).quote_id ??
+              (plan as any).quoteId ??
+              (plan as any).quote_ID ??
+              null,
+            planId,
+            routeId: route.itinerary_route_ID,
+            clampTo: '14:00:00',
+            context: 'hotel_first',
+          });
+        }
+
+        hotspotRows.push({
+          ...toHotelRow,
+          hotspot_end_time: TimeConverter.toDate(checkInTime),
+        });
+
+        const { row: hotelCheckinRow, nextTime: checkinCloseTime } =
+          await this.hotelBuilder.buildReturnToHotel(tx, {
+            planId,
+            routeId: route.itinerary_route_ID,
+            order: hotelOrder,
+            startTime: checkInTime,
+            userId: createdByUserId,
+          });
+
+        hotspotRows.push(hotelCheckinRow);
+        order++;
+
+        const { row: restRow, nextTime: afterRestTime } = this.refreshmentBuilder.build(
+          planId,
+          route.itinerary_route_ID,
+          order++,
+          checkinCloseTime,
+          HOTEL_FIRST_REST_GAP,
+          createdByUserId,
+        );
+
+        hotspotRows.push(restRow);
+        this.logBookingRule({
+          rule: 'REST_GAP_INSERTED',
+          quoteId:
+            (plan as any).quote_id ??
+            (plan as any).quoteId ??
+            (plan as any).quote_ID ??
+            null,
+          planId,
+          routeId: route.itinerary_route_ID,
+          restMinutes: 120,
+          insertedAfter: 'hotel_checkin',
+        });
+        currentTime = afterRestTime;
+        currentLocationName = "Hotel";
+        currentCoords = hotelInfoForRoute.coords;
+        didHotelFirstCheckin = true;
+      }
+
       // 2) CALCULATE LATEST HOTSPOT END USING ROUTE'S CONFIGURED END TIME
       // Use route_end_time (not hardcoded cutoffs) so users can adjust end time
       let latestNonHotelEndSeconds = routeEndSeconds; // Default: route end time
@@ -485,20 +741,65 @@ export class TimelineBuilder {
       // 2) SELECTED HOTSPOTS FOR THIS ROUTE
       // DAY-1 DIFFERENT CITIES: If Day 1 and source city != destination city, enforce max 3 priority hotspots
       let selectedHotspots: SelectedHotspot[] = [];
+
+      if (forceNoSightseeingOnThisRoute) {
+        selectedHotspots = [];
+      }
       
       const normalizedSourceCity = this.normalizeCityName(sourceCity);
       const normalizedDestinationCity = this.normalizeCityName(destinationCity);
       const isDay1DifferentCities = isFirstRoute && normalizedSourceCity && normalizedDestinationCity && normalizedSourceCity !== normalizedDestinationCity && (route as any).direct_to_next_visiting_place !== 1;
-      
+
       if (isDay1DifferentCities) {
-        // Day-1 with different cities: fetch max 3 priority hotspots from source city only
-        selectedHotspots = await this.fetchDay1TopPrioritySourceHotspots(
-          tx,
+        this.logBookingRule({
+          rule: 'EN_ROUTE_SIGHTSEEING_BRANCH',
+          quoteId:
+            (plan as any).quote_id ??
+            (plan as any).quoteId ??
+            (plan as any).quote_ID ??
+            null,
           planId,
-          route.itinerary_route_ID,
+          routeId: route.itinerary_route_ID,
           sourceCity,
           destinationCity,
-        );
+          directToNext: Number((route as any).direct_to_next_visiting_place || 0),
+          enabled: true,
+        });
+      }
+      
+      if (!forceNoSightseeingOnThisRoute) {
+        if (isDay1DifferentCities) {
+        const directToNext = Number((route as any).direct_to_next_visiting_place || 0);
+
+        if (directToNext === 1) {
+          selectedHotspots = await this.fetchSelectedHotspotsForRoute(
+            tx,
+            planId,
+            route.itinerary_route_ID,
+            allHotspots,
+          );
+        } else {
+          // Strengthen on-the-way behavior: prefer source + via before destination.
+          selectedHotspots = await this.fetchSelectedHotspotsForRoute(
+            tx,
+            planId,
+            route.itinerary_route_ID,
+            allHotspots,
+            undefined,
+            true,
+          );
+
+          // Fallback to strict source-priority fetch if route matching returns nothing.
+          if (!selectedHotspots.length) {
+            selectedHotspots = await this.fetchDay1TopPrioritySourceHotspots(
+              tx,
+              planId,
+              route.itinerary_route_ID,
+              sourceCity,
+              destinationCity,
+            );
+          }
+        }
       } else if (isFirstRoute && shouldDeferDay1Sightseeing) {
         // Check if current route is STAYING in arrival city (not just passing through)
         // Only skip if both location_name AND next_visiting_location are in arrival city
@@ -603,6 +904,22 @@ export class TimelineBuilder {
           route.itinerary_route_ID,
           allHotspots,
         );
+      }
+
+      if (didHotelFirstCheckin) {
+        this.logBookingRule({
+          rule: 'POST_HOTEL_SIGHTSEEING_PASS',
+          quoteId:
+            (plan as any).quote_id ??
+            (plan as any).quoteId ??
+            (plan as any).quote_ID ??
+            null,
+          planId,
+          routeId: route.itinerary_route_ID,
+          ran: selectedHotspots.length > 0,
+          selectedHotspotCount: selectedHotspots.length,
+        });
+      }
       }
 
       // NO LUNCH BREAKS OR TIME CUTOFFS - User can schedule all hotspots and delete unwanted ones from UI
@@ -979,7 +1296,13 @@ export class TimelineBuilder {
         const maxPasses = 5; // Prevent infinite loops
         let pass = 1;
         let addedInLastPass = true;
-        const deferredHotspots: Array<typeof selectedHotspots[0] & { deferredAtTime: string; opensAt: string }> = [];
+        const deferredHotspots: Array<
+          typeof selectedHotspots[0] & {
+            deferredAtTime: string;
+            opensAt: string;
+            mustVisitProxy: boolean;
+          }
+        > = [];
         
         // ✅ CALCULATE INITIAL CUTOFF from starting location → destination
         // Latest allowed arrival is the route's configured end time (route_end_time).
@@ -1005,7 +1328,48 @@ export class TimelineBuilder {
         
         while (pass <= maxPasses && addedInLastPass) {
           addedInLastPass = false;
-          const hotspotsToTry = pass === 1 ? selectedHotspots : deferredHotspots.filter(h => !addedHotspotIds.has(h.hotspot_ID));
+          let hotspotsToTry = selectedHotspots as Array<
+            SelectedHotspot | (typeof selectedHotspots[0] & {
+              deferredAtTime: string;
+              opensAt: string;
+              mustVisitProxy: boolean;
+            })
+          >;
+
+          if (pass > 1) {
+            const deferredCandidates = deferredHotspots.filter(
+              (h) => !addedHotspotIds.has(h.hotspot_ID),
+            );
+            const sortedDeferred = [...deferredCandidates].sort((a, b) => {
+              const mustDiff = Number(b.mustVisitProxy) - Number(a.mustVisitProxy);
+              if (mustDiff !== 0) return mustDiff;
+              return timeToSeconds(a.opensAt) - timeToSeconds(b.opensAt);
+            });
+
+            const mustVisitPrioritizationApplied =
+              deferredCandidates.some((h) => h.mustVisitProxy) &&
+              sortedDeferred.length > 1;
+
+            if (mustVisitPrioritizationApplied) {
+              this.logBookingRule({
+                rule: 'MUST_VISIT_RETRY_PRIORITY',
+                quoteId:
+                  (plan as any).quote_id ??
+                  (plan as any).quoteId ??
+                  (plan as any).quote_ID ??
+                  null,
+                planId,
+                routeId: route.itinerary_route_ID,
+                pass,
+                deferredCount: sortedDeferred.length,
+                firstRetryHotspotId: sortedDeferred[0]?.hotspot_ID ?? null,
+                firstRetryMustVisitProxy:
+                  sortedDeferred[0]?.mustVisitProxy ?? null,
+              });
+            }
+
+            hotspotsToTry = sortedDeferred;
+          }
           
           if (pass > 1) {
             deferredHotspots.length = 0; // Clear for next pass
@@ -1140,16 +1504,49 @@ export class TimelineBuilder {
             // Hotspot opens later today - defer for now, try other hotspots first
             if (pass === 1) {
               // First pass: defer and track for later retry
+              const mustVisitProxy = Number((sh as any).hotspot_priority ?? 0) > 0;
               deferredHotspots.push({
                 ...sh,
                 deferredAtTime: currentTime,
-                opensAt: operatingHoursCheck.nextWindowStart
+                opensAt: operatingHoursCheck.nextWindowStart,
+                // No explicit must-visit column exists in current schema.
+                // Use hotspot_priority (>0) as the safest existing proxy.
+                mustVisitProxy,
+              });
+
+              this.logBookingRule({
+                rule: 'HOTSPOT_DEFERRED',
+                quoteId:
+                  (plan as any).quote_id ??
+                  (plan as any).quoteId ??
+                  (plan as any).quote_ID ??
+                  null,
+                planId,
+                routeId: route.itinerary_route_ID,
+                hotspotId: sh.hotspot_ID,
+                reason: 'opens_later',
+                nextWindowStart: operatingHoursCheck.nextWindowStart,
+                mustVisitProxy,
               });
             }
             continue; // Try next hotspot to fill the time
           } else {
             // Hotspot is explicitly closed (all timing records have hotspot_closed=1)
             // Do not schedule this hotspot
+            this.logBookingRule({
+              rule: 'HOTSPOT_DEFERRED',
+              quoteId:
+                (plan as any).quote_id ??
+                (plan as any).quoteId ??
+                (plan as any).quote_ID ??
+                null,
+              planId,
+              routeId: route.itinerary_route_ID,
+              hotspotId: sh.hotspot_ID,
+              reason: 'closed_no_window',
+              nextWindowStart: null,
+              mustVisitProxy: Number((sh as any).hotspot_priority ?? 0) > 0,
+            });
             continue;
           }
         }
@@ -1270,13 +1667,19 @@ export class TimelineBuilder {
       // BUSINESS RULE: Hotel check-in must be before 10 PM (22:00)
       // Last route SKIPS hotel rows
       if (!isLastRoute) {
-        const hotelOrder = order;
+        if (didHotelFirstCheckin && !shouldHotelLastByDistance) {
+          // Hotel-first already done; skip duplicate end-of-route hotel check-in rows.
+          continue;
+        }
 
-        const hotelInfo = await this.getHotelDetailsForRoute(
-          tx,
-          planId,
-          route.itinerary_route_ID,
-        );
+        const hotelOrder = order;
+        const hotelInfo =
+          hotelInfoForRoute ??
+          (await this.getHotelDetailsForRoute(
+            tx,
+            planId,
+            route.itinerary_route_ID,
+          ));
 
         // ✅ ALWAYS use DESTINATION CITY for distance calculation (not hotel coordinates)
         // This ensures consistent distance regardless of hotel selection
@@ -1324,12 +1727,55 @@ export class TimelineBuilder {
           adjustedHotelRow.hotspot_end_time = TimeConverter.toDate(tAfterHotel);
         }
 
+        // Booking-engine alignment: same-city Day-1 arrival stay should not check in before 2 PM.
+        if (isArrivalCityStayRoute && hotelCutoffSeconds >= timeToSeconds("14:00:00")) {
+          const currentCheckInTime = TimeConverter.toTimeString(
+            adjustedHotelRow.hotspot_end_time,
+          );
+          if (timeToSeconds(currentCheckInTime) < timeToSeconds("14:00:00")) {
+            adjustedHotelRow.hotspot_end_time = TimeConverter.toDate("14:00:00");
+            this.logBookingRule({
+              rule: 'CHECKIN_CLAMP_APPLIED',
+              quoteId:
+                (plan as any).quote_id ??
+                (plan as any).quoteId ??
+                (plan as any).quote_ID ??
+                null,
+              planId,
+              routeId: route.itinerary_route_ID,
+              clampTo: '14:00:00',
+              context: 'hotel_last',
+            });
+          }
+        }
+
+        if (shouldHotelLastByDistance) {
+          this.logBookingRule({
+            rule: 'HOTEL_LAST_RULE_APPLIED',
+            quoteId:
+              (plan as any).quote_id ??
+              (plan as any).quoteId ??
+              (plan as any).quote_ID ??
+              null,
+            planId,
+            routeId: route.itinerary_route_ID,
+            hotelDistanceFromArrivalKm:
+              hotelDistanceFromArrivalKm != null
+                ? Number(hotelDistanceFromArrivalKm.toFixed(2))
+                : null,
+            thresholdKm: 20,
+          });
+        }
+
         // Ensure start time uses proper UTC conversion
         adjustedHotelRow.hotspot_start_time = TimeConverter.toDate(hotelStartTime);
 
         hotspotRows.push(adjustedHotelRow);
-        currentTime = Math.min(hotelEndSeconds, hotelCutoffSeconds) > 0
-          ? secondsToTime(Math.min(hotelEndSeconds, hotelCutoffSeconds))
+        const adjustedHotelEndTime = TimeConverter.toTimeString(
+          adjustedHotelRow.hotspot_end_time,
+        );
+        currentTime = timeToSeconds(adjustedHotelEndTime) > 0
+          ? adjustedHotelEndTime
           : tAfterHotel;
         currentLocationName = "Hotel";
         if (hotelInfo?.coords) {
@@ -2071,7 +2517,7 @@ export class TimelineBuilder {
     tx: Tx,
     planId: number,
     routeId: number,
-  ): Promise<{ hotelId: number; hotelName: string | null; hotelCity: string | null; coords?: { lat: number; lon: number } } | null> {
+  ): Promise<{ hotelId: number; hotelName: string | null; hotelCity: string | null; isHouseboat?: boolean; coords?: { lat: number; lon: number } } | null> {
     const details = await (tx as any).dvi_itinerary_plan_hotel_details?.findFirst({
       where: {
         itinerary_plan_id: planId,
@@ -2095,6 +2541,7 @@ export class TimelineBuilder {
       select: {
         hotel_name: true,
         hotel_city: true,
+        hotel_category: true,
         hotel_latitude: true,
         hotel_longitude: true,
       },
@@ -2127,10 +2574,33 @@ export class TimelineBuilder {
     const lon = Number(hotel.hotel_longitude);
     const hasCoords = Number.isFinite(lat) && Number.isFinite(lon);
 
+    let categoryTitle: string | null = null;
+    const categoryId = Number((hotel as any).hotel_category ?? 0);
+    if (categoryId > 0) {
+      const category = await (tx as any).dvi_hotel_category?.findFirst({
+        where: {
+          hotel_category_id: categoryId,
+          deleted: 0,
+          status: 1,
+        },
+        select: {
+          hotel_category_title: true,
+          hotel_category_code: true,
+        },
+      });
+
+      categoryTitle =
+        String(category?.hotel_category_title || category?.hotel_category_code || "").trim() || null;
+    }
+
+    const houseboatTag = `${String(hotel.hotel_name || "")} ${String(categoryTitle || "")}`;
+    const isHouseboat = /house\s*boat/i.test(houseboatTag);
+
     return {
       hotelId,
       hotelName: (hotel.hotel_name as string) ?? null,
       hotelCity,
+      isHouseboat,
       coords: hasCoords ? { lat, lon } : undefined,
     };
   }
