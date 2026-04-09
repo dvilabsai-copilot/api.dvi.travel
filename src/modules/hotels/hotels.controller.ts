@@ -109,6 +109,18 @@ class BulkRoomPricebookItemDto {
   @Type(() => Number)
   @IsNumber()
   childWithoutBed?: number | string;
+
+  @IsOptional()
+  @IsString()
+  axisroomsRoomId?: string;
+
+  @IsOptional()
+  @IsString()
+  rateplanId?: string;
+
+  @IsOptional()
+  @IsString()
+  ratePlanName?: string;
 }
 
 class BulkRoomPricebookDto {
