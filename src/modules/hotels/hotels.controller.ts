@@ -17,6 +17,16 @@ import {
 } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
+import {
+  IsArray,
+  IsDateString,
+  IsInt,
+  IsNumber,
+  IsOptional,
+  IsString,
+  ValidateNested,
+} from 'class-validator';
 
 import { Express } from 'express';
 import { HotelsService } from './hotels.service';
@@ -29,30 +39,95 @@ import { UpdateHotelDto } from './dto/update-hotel.dto';
  * =======================================================================================
  */
 class UpsertHotelMealPriceBookDto {
+  @IsDateString()
   startDate!: string;
+
+  @IsDateString()
   endDate!: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
   breakfastCost?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
   lunchCost?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
   dinnerCost?: number;
 }
 
 class UpsertAmenityPricebookDto {
+  @IsDateString()
   startDate!: string;
+
+  @IsDateString()
   endDate!: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
   hoursCharge?: number | string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
   dayCharge?: number | string;
 }
 
+class BulkRoomPricebookItemDto {
+  @Type(() => Number)
+  @IsInt()
+  room_id!: number;
+
+  @IsDateString()
+  startDate!: string | Date;
+
+  @IsDateString()
+  endDate!: string | Date;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  roomPrice?: number | string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  extraBed?: number | string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  childWithBed?: number | string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  childWithoutBed?: number | string;
+
+  @IsOptional()
+  @IsString()
+  axisroomsRoomId?: string;
+
+  @IsOptional()
+  @IsString()
+  rateplanId?: string;
+
+  @IsOptional()
+  @IsString()
+  ratePlanName?: string;
+}
+
 class BulkRoomPricebookDto {
-  items!: Array<{
-    room_id: number;
-    startDate: string | Date;
-    endDate: string | Date;
-    roomPrice?: number | string;
-    extraBed?: number | string;
-    childWithBed?: number | string;
-    childWithoutBed?: number | string;
-  }>;
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => BulkRoomPricebookItemDto)
+  items!: BulkRoomPricebookItemDto[];
 }
 
 /** Minimal DTO for reviews */
@@ -91,12 +166,14 @@ export class HotelsController {
   }
 
   @Get('meta/states')
-  states(@Query('countryId') countryId: string) {
+  states(@Query('countryId') countryId: string, @Query('all') all?: string) {
+    if (String(all) === '1') return this.hotels.statesAll();
     return this.hotels.states(Number(countryId));
   }
 
   @Get('meta/cities')
-  cities(@Query('stateId') stateId: string) {
+  cities(@Query('stateId') stateId: string, @Query('all') all?: string) {
+    if (String(all) === '1') return this.hotels.citiesAll();
     return this.hotels.cities(Number(stateId));
   }
 
@@ -148,13 +225,13 @@ export class HotelsController {
   }
 
   @Get(':id/roomtypes')
-  roomTypesAliasPlain(@Param('id', ParseIntPipe) _id: number) {
-    return this.hotels.roomTypes();
+  roomTypesAliasPlain(@Param('id', ParseIntPipe) id: number) {
+    return this.hotels.roomTypesByHotel(id);
   }
 
   @Get(':id/room-types')
-  roomTypesAliasKebab(@Param('id', ParseIntPipe) _id: number) {
-    return this.hotels.roomTypes();
+  roomTypesAliasKebab(@Param('id', ParseIntPipe) id: number) {
+    return this.hotels.roomTypesByHotel(id);
   }
 
   // =============================================================================
@@ -233,16 +310,32 @@ export class HotelsController {
     }
 
     const results: any[] = [];
+    const errors: any[] = [];
     for (const raw of items) {
       const payload = { ...(raw ?? {}), hotel_id: id };
-      const res = await this.hotels.saveRoom(payload as any);
-      results.push(res);
+      try {
+        const res = await this.hotels.saveRoom(payload as any);
+        results.push(res);
+      } catch (e: any) {
+        errors.push({
+          room_id: payload?.room_id ?? payload?.room_ID ?? null,
+          message: e?.message || 'Failed to save room row',
+        });
+      }
+    }
+
+    if (!results.length) {
+      throw new BadRequestException(
+        errors[0]?.message || 'Failed to save rooms',
+      );
     }
 
     return {
       success: true,
       count: results.length,
       items: results,
+      failedCount: errors.length,
+      errors,
     };
   }
 
@@ -571,7 +664,7 @@ export class LocationsController {
     @Query('countryId') countryId?: string,
   ) {
     if (String(all) === '1') {
-      return this.hotels.states(Number(countryId ?? 0)) || [];
+      return this.hotels.statesAll();
     }
     return this.hotels.states(Number(countryId ?? 0));
   }
@@ -582,7 +675,7 @@ export class LocationsController {
     @Query('stateId') stateId?: string,
   ) {
     if (String(all) === '1') {
-      return this.hotels.cities(Number(stateId ?? 0)) || [];
+      return this.hotels.citiesAll();
     }
     return this.hotels.cities(Number(stateId ?? 0));
   }
@@ -598,7 +691,7 @@ export class RootStatesController {
     @Query('countryId') countryId?: string,
   ) {
     if (String(all) === '1') {
-      return this.hotels.states(Number(countryId ?? 0)) || [];
+      return this.hotels.statesAll();
     }
     return this.hotels.states(Number(countryId ?? 0));
   }
@@ -614,7 +707,7 @@ export class RootCitiesController {
     @Query('stateId') stateId?: string,
   ) {
     if (String(all) === '1') {
-      return this.hotels.cities(Number(stateId ?? 0)) || [];
+      return this.hotels.citiesAll();
     }
     return this.hotels.cities(Number(stateId ?? 0));
   }
@@ -630,7 +723,7 @@ export class DviGeoController {
     @Query('countryId') countryId?: string,
   ) {
     if (String(all) === '1') {
-      return this.hotels.states(Number(countryId ?? 0)) || [];
+      return this.hotels.statesAll();
     }
     return this.hotels.states(Number(countryId ?? 0));
   }
@@ -641,7 +734,7 @@ export class DviGeoController {
     @Query('stateId') stateId?: string,
   ) {
     if (String(all) === '1') {
-      return this.hotels.cities(Number(stateId ?? 0)) || [];
+      return this.hotels.citiesAll();
     }
     return this.hotels.cities(Number(stateId ?? 0));
   }
@@ -650,6 +743,19 @@ export class DviGeoController {
 @Controller()
 export class PreviewAliasesController {
   constructor(private readonly hotels: HotelsService) {}
+
+  // PHP JSON parity aliases:
+  // - engine/json/__JSONsearchhotel.php?phrase=...
+  // - engine/json/__JSONsearchroomtype.php?phrase=...
+  @Get('json/searchhotel')
+  searchHotelNames(@Query('phrase') phrase = '') {
+    return this.hotels.searchHotelNames(phrase);
+  }
+
+  @Get('json/searchroomtype')
+  searchRoomTypeNames(@Query('phrase') phrase = '') {
+    return this.hotels.searchRoomTypeNames(phrase);
+  }
 
   // ===== Amenities aliases that your UI calls =====
 

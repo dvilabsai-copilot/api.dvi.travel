@@ -1,5 +1,5 @@
 // FILE: src/modules/hotels/hotels.service.ts
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
 import { Prisma } from '@prisma/client';
 import { PaginationQueryDto } from './dto/pagination.dto';
@@ -15,6 +15,25 @@ import * as path from 'path';
 @Injectable()
 export class HotelsService {
   constructor(private prisma: PrismaService) {}
+
+  private readonly basicInfoRequiredKeys = [
+    'hotel_name',
+    'hotel_code',
+    'hotel_place',
+    'hotel_mobile',
+    'hotel_email',
+    'hotel_address',
+    'hotel_category',
+    'status',
+    'hotel_power_backup',
+    'hotel_country',
+    'hotel_state',
+    'hotel_city',
+    'hotel_pincode',
+    'hotel_margin',
+    'hotel_margin_gst_type',
+    'hotel_margin_gst_percentage',
+  ] as const;
 
   // =====================================================================================
   // Helpers
@@ -145,6 +164,45 @@ export class HotelsService {
     return mapped;
   }
 
+  private isBlank(v: any): boolean {
+    if (v === undefined || v === null) return true;
+    if (typeof v === 'string') return v.trim().length === 0;
+    return false;
+  }
+
+  private validateBasicInfoRequired(mapped: Record<string, any>) {
+    const errors: Record<string, boolean> = {};
+
+    if (this.isBlank(mapped.hotel_name)) errors.hotel_name_required = true;
+    if (this.isBlank(mapped.hotel_code)) errors.hotel_code_required = true;
+    if (this.isBlank(mapped.hotel_place)) errors.hotel_place_required = true;
+    if (this.isBlank(mapped.hotel_mobile)) errors.hotel_mobile_no_required = true;
+    if (this.isBlank(mapped.hotel_email)) errors.hotel_email_id_required = true;
+    if (this.isBlank(mapped.hotel_address)) errors.hotel_address_required = true;
+    if (this.isBlank(mapped.hotel_category)) errors.hotel_category_required = true;
+    if (this.isBlank(mapped.status)) errors.hotel_status_required = true;
+    if (this.isBlank(mapped.hotel_power_backup)) errors.hotel_powerbackup_required = true;
+    if (this.isBlank(mapped.hotel_country)) errors.hotel_country_required = true;
+    if (this.isBlank(mapped.hotel_state)) errors.hotel_state_required = true;
+    if (this.isBlank(mapped.hotel_city)) errors.hotel_city_required = true;
+    if (this.isBlank(mapped.hotel_pincode)) errors.hotel_postal_code_required = true;
+    if (this.isBlank(mapped.hotel_margin)) errors.hotel_margin_required = true;
+    if (this.isBlank(mapped.hotel_margin_gst_type)) {
+      errors.hotel_margin_gst_type_required = true;
+    }
+    if (this.isBlank(mapped.hotel_margin_gst_percentage)) {
+      errors.hotel_margin_gst_percentage_required = true;
+    }
+
+    if (Object.keys(errors).length) {
+      throw new BadRequestException({ success: false, errors });
+    }
+  }
+
+  private isBasicInfoAttempt(dto: Record<string, any>): boolean {
+    return this.basicInfoRequiredKeys.some((k) => Object.prototype.hasOwnProperty.call(dto, k));
+  }
+
   // =====================================================================================
   // Hotels: list / options / derived cities / getOne / create / update / remove
   // =====================================================================================
@@ -254,6 +312,46 @@ export class HotelsService {
     return items.map((i) => ({ id: i.hotel_id, label: i.hotel_name, code: i.hotel_code }));
   }
 
+  async searchHotelNames(phrase: string) {
+    const term = (phrase ?? '').toString().trim();
+    if (!term) return [];
+
+    const rows = await this.prisma.dvi_hotel.findMany({
+      where: {
+        AND: [
+          this.notDeletedBool as any,
+          { hotel_name: { contains: term } as any },
+        ],
+      } as any,
+      select: { hotel_name: true },
+      orderBy: { hotel_name: 'asc' } as any,
+      take: 50,
+    });
+
+    if (!rows.length) return [{ check_hotel_name: term }];
+    return rows.map((r: any) => ({ check_hotel_name: r.hotel_name }));
+  }
+
+  async searchRoomTypeNames(phrase: string) {
+    const term = (phrase ?? '').toString().trim();
+    if (!term) return [];
+
+    const rows = await this.prisma.dvi_hotel_roomtype.findMany({
+      where: {
+        AND: [
+          { OR: [{ deleted: 0 as any }, { deleted: null as any }] } as any,
+          { room_type_title: { contains: term } as any },
+        ],
+      } as any,
+      select: { room_type_title: true },
+      orderBy: { room_type_title: 'asc' } as any,
+      take: 50,
+    } as any);
+
+    if (!rows.length) return [{ check_room_type: term }];
+    return rows.map((r: any) => ({ check_room_type: r.room_type_title }));
+  }
+
   async citiesByState(hotel_state: string) {
     if (!hotel_state) return [];
     const groups = await this.prisma.dvi_hotel.groupBy({
@@ -347,6 +445,7 @@ export class HotelsService {
 
   create(dto: CreateHotelDto) {
     const data = this.mapHotelDto(dto);
+    this.validateBasicInfoRequired(data);
     if ((data as any).deleted === undefined) (data as any).deleted = false;
     if ((data as any).status === undefined) (data as any).status = 1;
     if ((data as any).hotel_power_backup === undefined) (data as any).hotel_power_backup = 0;
@@ -356,11 +455,38 @@ export class HotelsService {
     return this.prisma.dvi_hotel.create({ data } as any);
   }
 
-  update(hotel_id: number, dto: UpdateHotelDto) {
+  async update(hotel_id: number, dto: UpdateHotelDto) {
     const id = Number(hotel_id);
     if (!Number.isFinite(id) || id <= 0) throw new Error('Invalid hotel_id');
 
-    const data = this.mapHotelDto(dto);
+    const incoming = this.mapHotelDto(dto);
+    if (this.isBasicInfoAttempt(dto as any)) {
+      const current = await this.prisma.dvi_hotel.findUnique({
+        where: { hotel_id: id },
+        select: {
+          hotel_name: true,
+          hotel_code: true,
+          hotel_place: true,
+          hotel_mobile: true,
+          hotel_email: true,
+          hotel_address: true,
+          hotel_category: true,
+          status: true,
+          hotel_power_backup: true,
+          hotel_country: true,
+          hotel_state: true,
+          hotel_city: true,
+          hotel_pincode: true,
+          hotel_margin: true,
+          hotel_margin_gst_type: true,
+          hotel_margin_gst_percentage: true,
+        },
+      });
+      const merged = { ...(current ?? {}), ...incoming };
+      this.validateBasicInfoRequired(merged);
+    }
+
+    const data = incoming;
     if ((data as any).deleted !== undefined) delete (data as any).deleted;
 
     return this.prisma.dvi_hotel.update({
@@ -526,6 +652,48 @@ export class HotelsService {
       where: {
         OR: [{ deleted: 0 as any }, { deleted: null as any }],
       },
+      select: {
+        room_type_id: true,
+        room_type_title: true,
+      },
+      orderBy: { room_type_title: 'asc' } as any,
+    } as any);
+
+    return rows.map((r: any) => ({
+      id: r.room_type_id,
+      roomtype_id: r.room_type_id,
+      room_type_id: r.room_type_id,
+      value: r.room_type_id,
+      name: r.room_type_title,
+      title: r.room_type_title,
+      room_type: r.room_type_title,
+    }));
+  }
+
+  async roomTypesByHotel(hotelId: number) {
+    const hid = Number(hotelId);
+    if (!Number.isFinite(hid) || hid <= 0) return [];
+
+    const roomRows = await this.prisma.dvi_hotel_rooms.findMany({
+      where: {
+        hotel_id: hid,
+        OR: [{ deleted: 0 as any }, { deleted: null as any }, { deleted: false as any }],
+      } as any,
+      select: { room_type_id: true },
+      distinct: ['room_type_id'] as any,
+    } as any);
+
+    const roomTypeIds = roomRows
+      .map((r: any) => Number(r.room_type_id))
+      .filter((id: number) => Number.isFinite(id) && id > 0);
+
+    if (!roomTypeIds.length) return [];
+
+    const rows = await this.prisma.dvi_hotel_roomtype.findMany({
+      where: {
+        room_type_id: { in: roomTypeIds } as any,
+        OR: [{ deleted: 0 as any }, { deleted: null as any }],
+      } as any,
       select: {
         room_type_id: true,
         room_type_title: true,
@@ -1081,68 +1249,74 @@ export class HotelsService {
       status?: number;
     },
   ) {
-    const id = Number(hotel_id);
-    if (!Number.isFinite(id) || id <= 0) throw new Error('Invalid hotel_id');
+    try {
+      const id = Number(hotel_id);
+      if (!Number.isFinite(id) || id <= 0) throw new Error('Invalid hotel_id');
 
-    const start = this.toDate(dto.startDate);
-    const end = this.toDate(dto.endDate);
-    if (!start || !end) throw new Error('startDate and endDate are required');
+      const start = this.toDate(dto.startDate);
+      const end = this.toDate(dto.endDate);
+      if (!start || !end) throw new Error('startDate and endDate are required');
 
-    const status = dto.status !== undefined ? Number(dto.status) : 1;
-    const buckets = this.splitRangeByMonth(start, end);
+      const status = dto.status !== undefined ? Number(dto.status) : 1;
+      const buckets = this.splitRangeByMonth(start, end);
 
-    const doWrite = async (mealType: 1 | 2 | 3, price: number) => {
-      for (const b of buckets) {
-        const dayPatch = this.buildDayPatch(price, b.days);
+      const doWrite = async (mealType: 1 | 2 | 3, price: number) => {
+        for (const b of buckets) {
+          const dayPatch = this.buildDayPatch(price, b.days);
 
-        // find row if exists for (hotel, meal_type, year, month)
-        const existing = await this.prisma.dvi_hotel_meal_price_book.findFirst({
-          where: {
-            hotel_id: id,
-            meal_type: mealType,
-            year: b.year,
-            month: b.month,
-          } as any,
-          select: { hotel_meal_price_book_id: true } as any,
-        });
-
-        if (!existing) {
-          await this.prisma.dvi_hotel_meal_price_book.create({
-            data: {
+          // find row if exists for (hotel, meal_type, year, month)
+          const existing = await this.prisma.dvi_hotel_meal_price_book.findFirst({
+            where: {
               hotel_id: id,
               meal_type: mealType,
               year: b.year,
               month: b.month,
-              status,
-              deleted: 0,
-              createdby: 1,
-              createdon: new Date(),
-              updatedon: new Date(),
-              ...dayPatch,
             } as any,
-          } as any);
-        } else {
-          await this.prisma.dvi_hotel_meal_price_book.update({
-            where: { hotel_meal_price_book_id: (existing as any).hotel_meal_price_book_id } as any,
-            data: { ...dayPatch, status, updatedon: new Date() } as any,
-          } as any);
+            select: { hotel_meal_price_book_id: true } as any,
+          });
+
+          if (!existing) {
+            await this.prisma.dvi_hotel_meal_price_book.create({
+              data: {
+                hotel_id: id,
+                meal_type: mealType,
+                year: b.year,
+                month: b.month,
+                status,
+                deleted: 0,
+                createdby: 1,
+                createdon: new Date(),
+                updatedon: new Date(),
+                ...dayPatch,
+              } as any,
+            } as any);
+          } else {
+            await this.prisma.dvi_hotel_meal_price_book.update({
+              where: { hotel_meal_price_book_id: (existing as any).hotel_meal_price_book_id } as any,
+              data: { ...dayPatch, status, updatedon: new Date() } as any,
+            } as any);
+          }
         }
+      };
+
+      const tasks: Promise<any>[] = [];
+      if (dto.breakfastCost !== undefined && dto.breakfastCost !== null) {
+        tasks.push(doWrite(1, Number(dto.breakfastCost)));
       }
-    };
+      if (dto.lunchCost !== undefined && dto.lunchCost !== null) {
+        tasks.push(doWrite(2, Number(dto.lunchCost)));
+      }
+      if (dto.dinnerCost !== undefined && dto.dinnerCost !== null) {
+        tasks.push(doWrite(3, Number(dto.dinnerCost)));
+      }
 
-    const tasks: Promise<any>[] = [];
-    if (dto.breakfastCost !== undefined && dto.breakfastCost !== null) {
-      tasks.push(doWrite(1, Number(dto.breakfastCost)));
+      await Promise.all(tasks);
+      return { success: true, monthsAffected: buckets.length };
+    } catch (e: any) {
+      throw new BadRequestException(
+        e?.message || 'Meal pricebook save failed',
+      );
     }
-    if (dto.lunchCost !== undefined && dto.lunchCost !== null) {
-      tasks.push(doWrite(2, Number(dto.lunchCost)));
-    }
-    if (dto.dinnerCost !== undefined && dto.dinnerCost !== null) {
-      tasks.push(doWrite(3, Number(dto.dinnerCost)));
-    }
-
-    await Promise.all(tasks);
-    return { success: true, monthsAffected: buckets.length };
   }
 
   // =====================================================================================
@@ -1239,6 +1413,9 @@ export class HotelsService {
         extraBed?: number | string;
         childWithBed?: number | string;
         childWithoutBed?: number | string;
+        axisroomsRoomId?: string;
+        rateplanId?: string;
+        ratePlanName?: string;
       }>;
     },
   ) {
@@ -1289,6 +1466,21 @@ export class HotelsService {
       }
     };
 
+    const hotel = await this.prisma.dvi_hotel.findFirst({
+      where: { hotel_id: hid } as any,
+      select: {
+        axisrooms_enabled: true,
+        axisrooms_property_id: true,
+      } as any,
+    });
+
+    const axisroomsEnabled = Number(hotel?.axisrooms_enabled || 0) === 1;
+    const axisroomsPropertyId = this.toStr(hotel?.axisrooms_property_id);
+    const roomRefCache = new Map<number, string | undefined>();
+
+    let axisroomsSyncedCount = 0;
+    let axisroomsSkippedCount = 0;
+
     for (const it of body.items) {
       const roomId = Number(it.room_id);
       const start = this.toDate(it.startDate);
@@ -1308,9 +1500,119 @@ export class HotelsService {
       if (it.childWithoutBed !== undefined && it.childWithoutBed !== '' && it.childWithoutBed !== null) {
         await mkTask(roomId, 4, start, end, it.childWithoutBed);
       }
+
+      const rateplanId = this.toStr(it.rateplanId);
+      if (!rateplanId) {
+        continue;
+      }
+
+      if (!axisroomsEnabled || !axisroomsPropertyId) {
+        axisroomsSkippedCount++;
+        continue;
+      }
+
+      let axisroomsRoomId = this.toStr(it.axisroomsRoomId);
+      if (!axisroomsRoomId) {
+        if (!roomRefCache.has(roomId)) {
+          const roomRow = await this.prisma.dvi_hotel_rooms.findFirst({
+            where: {
+              hotel_id: hid,
+              room_ID: roomId,
+            } as any,
+            select: {
+              room_ref_code: true,
+            } as any,
+          });
+          roomRefCache.set(roomId, this.toStr(roomRow?.room_ref_code));
+        }
+        axisroomsRoomId = roomRefCache.get(roomId);
+      }
+
+      if (!axisroomsRoomId) {
+        axisroomsSkippedCount++;
+        continue;
+      }
+
+      const ratePlanName = this.toStr(it.ratePlanName) || rateplanId;
+
+      const occupancyRates: Record<string, number> = {};
+      if (it.roomPrice !== undefined && it.roomPrice !== '' && it.roomPrice !== null) {
+        const single = Number(it.roomPrice);
+        if (Number.isFinite(single)) occupancyRates.SINGLE = single;
+      }
+      if (it.extraBed !== undefined && it.extraBed !== '' && it.extraBed !== null) {
+        const extraBed = Number(it.extraBed);
+        if (Number.isFinite(extraBed)) occupancyRates.EXTRABED = extraBed;
+      }
+      if (it.childWithBed !== undefined && it.childWithBed !== '' && it.childWithBed !== null) {
+        const childWithBed = Number(it.childWithBed);
+        if (Number.isFinite(childWithBed)) occupancyRates.CHILD_WITH_BED = childWithBed;
+      }
+      if (it.childWithoutBed !== undefined && it.childWithoutBed !== '' && it.childWithoutBed !== null) {
+        const childWithoutBed = Number(it.childWithoutBed);
+        if (Number.isFinite(childWithoutBed)) occupancyRates.CHILD_WITHOUT_BED = childWithoutBed;
+      }
+
+      await this.prisma.axisrooms_rateplan.upsert({
+        where: {
+          axisrooms_property_id_room_id_rateplan_id: {
+            axisrooms_property_id: axisroomsPropertyId,
+            room_id: axisroomsRoomId,
+            rateplan_id: rateplanId,
+          },
+        },
+        update: {
+          rateplan_name: ratePlanName,
+          occupancy: Object.keys(occupancyRates),
+        },
+        create: {
+          axisrooms_property_id: axisroomsPropertyId,
+          room_id: axisroomsRoomId,
+          rateplan_id: rateplanId,
+          rateplan_name: ratePlanName,
+          occupancy: Object.keys(occupancyRates),
+          commission_perc: '0.0',
+          tax_perc: '0.0',
+          currency: 'INR',
+        },
+      });
+
+      if (Object.keys(occupancyRates).length > 0) {
+        await this.prisma.axisrooms_rate.upsert({
+          where: {
+            axisrooms_property_id_room_id_rateplan_id_start_date_end_date: {
+              axisrooms_property_id: axisroomsPropertyId,
+              room_id: axisroomsRoomId,
+              rateplan_id: rateplanId,
+              start_date: start,
+              end_date: end,
+            },
+          },
+          update: {
+            occupancy_rates: occupancyRates,
+            received_at: new Date(),
+          },
+          create: {
+            axisrooms_property_id: axisroomsPropertyId,
+            room_id: axisroomsRoomId,
+            rateplan_id: rateplanId,
+            start_date: start,
+            end_date: end,
+            occupancy_rates: occupancyRates,
+          },
+        });
+      }
+
+      axisroomsSyncedCount++;
     }
 
-    return { success: true };
+    return {
+      success: true,
+      axisroomsSync: {
+        synced: axisroomsSyncedCount,
+        skipped: axisroomsSkippedCount,
+      },
+    };
   }
 
   // =====================================================================================

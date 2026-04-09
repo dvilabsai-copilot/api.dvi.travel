@@ -58,6 +58,7 @@ import { Public } from '../../auth/public.decorator';
 import { Response, Request } from 'express';
 import { RouteSuggestionsService } from './route-suggestions.service';
 import { RouteSuggestionsV2Service } from './route-suggestions-v2.service';
+import { ItineraryClipboardService } from './itinerary-clipboard.service';
 
 @ApiTags('Itineraries')
 @ApiBearerAuth()
@@ -81,7 +82,87 @@ export class ItinerariesController {
     private readonly routeSuggestionsService: RouteSuggestionsService,
     private readonly routeSuggestionsV2Service: RouteSuggestionsV2Service,
     private readonly hotelVoucherService: HotelVoucherService,
+    private readonly clipboardService: ItineraryClipboardService,
   ) {}
+
+  private parseClipboardGroupTypes(query: Record<string, any>): number[] {
+    const collect = (value: unknown): number[] => {
+      if (Array.isArray(value)) {
+        return value.map((v) => Number(v)).filter((v) => Number.isInteger(v));
+      }
+      if (value === undefined || value === null || value === '') {
+        return [];
+      }
+      return [Number(value)].filter((v) => Number.isInteger(v));
+    };
+
+    const groupTypeValues = collect(query.groupType);
+    const recommendedValues = [
+      ...collect(query.recommended1),
+      ...collect(query.recommended2),
+      ...collect(query.recommended3),
+      ...collect(query.recommended4),
+    ];
+
+    const combined = [...groupTypeValues, ...recommendedValues];
+    const unique = Array.from(new Set(combined));
+
+    return unique.filter((v) => v >= 1 && v <= 4);
+  }
+
+  @Get('clipboard/:quoteId')
+  @Public()
+  @ApiOperation({
+    summary: 'Generate clipboard HTML for recommended mode',
+    description: 'PHP-parity clipboard output for recommended itinerary content',
+  })
+  async getClipboardRecommended(
+    @Param('quoteId') quoteId: string,
+    @Query() query: Record<string, any>,
+  ) {
+    const groupTypes = this.parseClipboardGroupTypes(query);
+    return this.clipboardService.generateClipboardByQuoteId(
+      quoteId,
+      'recommended',
+      groupTypes,
+    );
+  }
+
+  @Get('clipboard-highlights/:quoteId')
+  @Public()
+  @ApiOperation({
+    summary: 'Generate clipboard HTML for highlights mode',
+    description: 'PHP-parity clipboard output for highlights itinerary content',
+  })
+  async getClipboardHighlights(
+    @Param('quoteId') quoteId: string,
+    @Query() query: Record<string, any>,
+  ) {
+    const groupTypes = this.parseClipboardGroupTypes(query);
+    return this.clipboardService.generateClipboardByQuoteId(
+      quoteId,
+      'highlights',
+      groupTypes,
+    );
+  }
+
+  @Get('clipboard-para/:quoteId')
+  @Public()
+  @ApiOperation({
+    summary: 'Generate clipboard HTML for paragraph mode',
+    description: 'PHP-parity clipboard output for paragraph itinerary content',
+  })
+  async getClipboardPara(
+    @Param('quoteId') quoteId: string,
+    @Query() query: Record<string, any>,
+  ) {
+    const groupTypes = this.parseClipboardGroupTypes(query);
+    return this.clipboardService.generateClipboardByQuoteId(
+      quoteId,
+      'para',
+      groupTypes,
+    );
+  }
 
   @Post()
   @ApiOperation({

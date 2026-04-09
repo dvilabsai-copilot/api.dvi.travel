@@ -1,0 +1,36 @@
+Test Case Name: Property Info
+Excel Section / Row: ARI Tests / Row 4 / Sr No 1
+Endpoint: https://dvi.travel/api/v1/staah-test/productInfo
+Method: POST
+Request Time: 2026-03-25T07:30:06.814Z
+Request Payload / Params:
+{
+  "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+  "propertyid": "STAAHTESTHOTEL1",
+  "action": "property_info",
+  "version": "2"
+}
+Response Status: 200
+Response Body:
+{
+  "currency": "INR",
+  "propertyname": "Test Hotel for STAAH",
+  "checkintime": "",
+  "checkouttime": "",
+  "contactinfo": {
+    "zip": "",
+    "latitude": "",
+    "longitude": "",
+    "country": "India",
+    "addressline": "123 Test Street",
+    "city": "Test City",
+    "fax": "",
+    "telephone": "",
+    "location": "Test City"
+  },
+  "trackingId": "8422CEAE-DF79-423C-9101-1B1A56A9B584",
+  "status": "success",
+  "error_desc": ""
+}
+Pass / Fail / Blocked: PASS
+Notes: Optional workbook row; executed with the existing supplementary productInfo endpoint because the final single-endpoint pair covers mapping and ARI only. HTTP 200.

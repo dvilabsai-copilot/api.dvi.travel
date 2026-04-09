@@ -9,6 +9,15 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { PrismaService } from './prisma.service';
 import { BigIntSerializerInterceptor } from './common/interceptors/bigint-serializer.interceptor';
 import { ValidationPipe } from '@nestjs/common';
+import * as express from 'express';
+import * as fs from 'fs';
+import * as path from 'path';
+
+function resolveBackendRoot(): string {
+  // Works for both src/main.ts (dev) and dist/main.js (prod).
+  const candidate = path.resolve(__dirname, '..');
+  return fs.existsSync(path.join(candidate, 'package.json')) ? candidate : process.cwd();
+}
 
 // ---- Safe JSON patches (do NOT change other app behavior) ----
 (BigInt.prototype as any).toJSON = function () {
@@ -45,6 +54,19 @@ async function bootstrap() {
     if (expressApp && typeof expressApp.set === 'function') {
       expressApp.set('trust proxy', trustProxyValue);
     }
+  }
+
+  // Serve publicly accessible files from <appRoot>/public/uploads at /uploads/*
+  const uploadsRoot = path.join(resolveBackendRoot(), 'public', 'uploads');
+  try {
+    fs.mkdirSync(uploadsRoot, { recursive: true });
+  } catch {
+    // no-op
+  }
+  const httpAdapter = app.getHttpAdapter();
+  const expressApp = httpAdapter?.getInstance?.();
+  if (expressApp && typeof expressApp.use === 'function') {
+    expressApp.use('/uploads', express.static(uploadsRoot));
   }
 
   // All routes start with /api/v1

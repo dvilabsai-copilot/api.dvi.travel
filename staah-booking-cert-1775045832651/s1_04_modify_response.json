@@ -1,0 +1,13 @@
+{
+  "status": 200,
+  "body": [
+    {
+      "bookingId": "",
+      "status": "fail",
+      "error_desc": "Invalid Booking Status"
+    },
+    {
+      "trackingId": "A924EFB1-084F-46FF-A5E3-C1102D78DA9D"
+    }
+  ]
+}

@@ -118,6 +118,10 @@ export interface CostBreakdownDto {
   totalGuideCost?: number;
   totalHotspotCost?: number;
   totalActivityCost?: number;
+  kmLimitWarning?: string;
+  totalAllowedKm?: number;
+  totalTravelledKm?: number;
+  totalExtraKm?: number;
   
   // Final calculations
   additionalMargin: number;
@@ -177,6 +181,11 @@ export interface ItineraryDetailsResponseDto {
 @Injectable()
 export class ItineraryDetailsService {
   constructor(private readonly prisma: PrismaService) {}
+
+  // TODO: remove after validation
+  private logBookingRule(payload: Record<string, unknown>): void {
+    console.log('[BOOKING_RULE]', payload);
+  }
 
   // ---------------------------------------------------------------------------
   // Low-level helpers
@@ -856,9 +865,14 @@ for (const row of vehicleKmRows) {
           if (visitTimeDisplay && rh.hotspot_ID && route.itinerary_route_date) {
             const timings = hotspotTimingMap.get(rh.hotspot_ID as number) || [];
             const dayOfWeek = (route.itinerary_route_date.getDay() + 6) % 7; // Mon=0 style
-            
-            const todayTimings = timings.filter(t => Number(t.hotspot_timing_day) === dayOfWeek && t.hotspot_closed !== 1);
-            
+
+            const dayTimings = timings.filter(t => Number(t.hotspot_timing_day) === dayOfWeek);
+            const todayTimings = dayTimings.filter(t => t.hotspot_closed !== 1);
+
+            if (dayTimings.length > 0 && todayTimings.length === 0) {
+              visitTimeDisplay = `${startTimeText} - ${endTimeText} (closed on this day)`;
+            }
+
             if (todayTimings.length > 0) {
               const isOpenAllTime = todayTimings.some(t => t.hotspot_open_all_time === 1);
               
@@ -882,6 +896,8 @@ for (const row of vehicleKmRows) {
 
                   if (nextOpening) {
                     visitTimeDisplay = `${startTimeText} - ${endTimeText} (opens at ${nextOpening})`;
+                  } else {
+                    visitTimeDisplay = `${startTimeText} - ${endTimeText} (outside operating hours)`;
                   }
                 }
               }
@@ -892,9 +908,12 @@ for (const row of vehicleKmRows) {
           let operatingHours = '';
           const timings = rh.hotspot_ID ? hotspotTimingMap.get(rh.hotspot_ID as number) || [] : [];
           const dayOfWeek = route.itinerary_route_date ? (route.itinerary_route_date.getDay() + 6) % 7 : 0;
-          const todayTimings = timings.filter(t => Number(t.hotspot_timing_day) === dayOfWeek && t.hotspot_closed !== 1);
+          const dayTimings = timings.filter(t => Number(t.hotspot_timing_day) === dayOfWeek);
+          const todayTimings = dayTimings.filter(t => t.hotspot_closed !== 1);
 
-          if (todayTimings.length > 0) {
+          if (dayTimings.length > 0 && todayTimings.length === 0) {
+            operatingHours = 'Closed';
+          } else if (todayTimings.length > 0) {
             if (todayTimings.some(t => t.hotspot_open_all_time === 1)) {
               operatingHours = 'Open 24 Hours';
             } else {
@@ -1174,6 +1193,44 @@ const dayDistance = this.formatKm(totalDistanceNum);
         where: { itinerary_plan_id: planId, deleted: 0 },
         orderBy: { itinerary_plan_vendor_eligible_ID: 'asc' },
       });
+
+    const assignedEligibleRows = eligibleRows.filter(
+      (e) => (e as any).itineary_plan_assigned_status === 1,
+    );
+
+    const totalAllowedKmFromAssigned = assignedEligibleRows.reduce(
+      (sum, e) => sum + (parseFloat(String((e as any).total_allowed_kms || 0)) || 0),
+      0,
+    );
+    const totalTravelledKmFromAssigned = assignedEligibleRows.reduce(
+      (sum, e) => sum + (parseFloat(String((e as any).total_kms || 0)) || 0),
+      0,
+    );
+    const totalExtraKmFromAssigned = assignedEligibleRows.reduce(
+      (sum, e) => sum + (parseFloat(String((e as any).total_extra_kms || 0)) || 0),
+      0,
+    );
+
+    let kmLimitWarning: string | undefined;
+    if (totalExtraKmFromAssigned > 0) {
+      kmLimitWarning = `Planner warning: assigned vehicles exceed allowed KM by ${totalExtraKmFromAssigned.toFixed(2)} km (extra KM charges may apply).`;
+    } else if (
+      totalAllowedKmFromAssigned > 0 &&
+      totalTravelledKmFromAssigned > totalAllowedKmFromAssigned
+    ) {
+      const overflow = totalTravelledKmFromAssigned - totalAllowedKmFromAssigned;
+      kmLimitWarning = `Planner warning: travelled KM exceed allowed KM by ${overflow.toFixed(2)} km.`;
+    }
+
+    this.logBookingRule({
+      rule: 'KM_LIMIT_WARNING',
+      quoteId,
+      planId,
+      emitted: Boolean(kmLimitWarning),
+      totalAllowedKm: Number(totalAllowedKmFromAssigned.toFixed(2)),
+      totalTravelledKm: Number(totalTravelledKmFromAssigned.toFixed(2)),
+      totalExtraKm: Number(totalExtraKmFromAssigned.toFixed(2)),
+    });
 
     // Fetch all vehicle type names to map vehicleTypeId -> vehicleTypeName
     const vehicleTypeIds = Array.from(
@@ -1537,13 +1594,45 @@ dayData.totalKms += safeTotalKm;
 
     // 2. Vehicle costs already calculated
     const totalVehicleCost = totalVehicleAmount;
-    const totalVehicleQty = eligibleRows.reduce((sum, e) => sum + Number((e as any).total_vehicle_qty || 0), 0);
+    const totalVehicleQty = eligibleRows.reduce((sum, e) => {
+      const isAssigned = (e as any).itineary_plan_assigned_status === 1;
+      return sum + (isAssigned ? Number((e as any).total_vehicle_qty || 0) : 0);
+    }, 0);
 
     // 3. Calculate Guide, Hotspot, and Activity costs
     // For now set to 0, can be calculated from route activities/guides if needed
-    const totalGuideCost = 0;
-    const totalHotspotCost = 0;
-    const totalActivityCost = 0;
+    const [guideAgg, hotspotAgg, activityAgg] = await Promise.all([
+      this.prisma.dvi_itinerary_route_guide_details.aggregate({
+        where: { itinerary_plan_ID: planId, deleted: 0, status: 1 },
+        _sum: { guide_cost: true },
+      }),
+      this.prisma.dvi_itinerary_route_hotspot_details.aggregate({
+        where: {
+          itinerary_plan_ID: planId,
+          item_type: 4,
+          deleted: 0,
+          status: 1,
+        },
+        _sum: { hotspot_amout: true },
+      }),
+      this.prisma.dvi_itinerary_route_activity_details.aggregate({
+        where: { itinerary_plan_ID: planId, deleted: 0, status: 1 },
+        _sum: { activity_amout: true },
+      }),
+    ]);
+
+    const totalGuideCost = Number(guideAgg._sum.guide_cost || 0);
+    const totalHotspotCost = Number(hotspotAgg._sum.hotspot_amout || 0);
+    const totalActivityCost = Number(activityAgg._sum.activity_amout || 0);
+
+    this.logBookingRule({
+      rule: 'GUIDE_AGGREGATION',
+      quoteId,
+      planId,
+      totalGuideCost,
+      totalHotspotCost,
+      totalActivityCost,
+    });
 
     // 4. Calculate additional margin (10% for trips <= configured day limit)
     const itineraryNoDays = plan.no_of_days || 0;
@@ -1590,6 +1679,15 @@ dayData.totalKms += safeTotalKm;
       totalGuideCost: totalGuideCost > 0 ? totalGuideCost : undefined,
       totalHotspotCost: totalHotspotCost > 0 ? totalHotspotCost : undefined,
       totalActivityCost: totalActivityCost > 0 ? totalActivityCost : undefined,
+      kmLimitWarning,
+      totalAllowedKm:
+        totalAllowedKmFromAssigned > 0 ? Number(totalAllowedKmFromAssigned.toFixed(2)) : undefined,
+      totalTravelledKm:
+        totalTravelledKmFromAssigned > 0
+          ? Number(totalTravelledKmFromAssigned.toFixed(2))
+          : undefined,
+      totalExtraKm:
+        totalExtraKmFromAssigned > 0 ? Number(totalExtraKmFromAssigned.toFixed(2)) : undefined,
       
       // Final calculations
       additionalMargin: additionalMargin,

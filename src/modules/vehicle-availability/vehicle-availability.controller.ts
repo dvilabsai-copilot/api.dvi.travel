@@ -88,11 +88,35 @@ export class VehicleAvailabilityController {
   async driversForAssign(
     @Query('vendorId') vendorId?: string,
     @Query('vendorVehicleTypeId') vendorVehicleTypeId?: string,
+    @Query('itineraryPlanId') itineraryPlanId?: string,
   ) {
     return this.service.listDriversForAssign(
       vendorId ? Number(vendorId) : null,
       vendorVehicleTypeId ? Number(vendorVehicleTypeId) : null,
+      itineraryPlanId ? Number(itineraryPlanId) : null,
     );
+  }
+
+  @Get('check-vehicle-duplication')
+  @ApiOperation({ summary: 'PHP parity: duplicate checks for registration/engine/chassis/insurance' })
+  async checkVehicleDuplication(
+    @Query('type') type: 'registration_number' | 'engine_number' | 'chassis_number' | 'insurance_policy_number',
+    @Query('value') value?: string,
+    @Query('vendorId') vendorId?: string,
+    @Query('oldValue') oldValue?: string,
+  ) {
+    return this.service.checkVehicleDuplication({
+      type,
+      value: value ?? '',
+      vendorId: vendorId ? Number(vendorId) : 0,
+      oldValue,
+    });
+  }
+
+  @Get('customer-name')
+  @ApiOperation({ summary: 'PHP parity: get primary customer name by itinerary plan id' })
+  async customerName(@Query('itineraryPlanId') itineraryPlanId?: string) {
+    return this.service.getCustomerName(itineraryPlanId ? Number(itineraryPlanId) : 0);
   }
 
   // ---------------------------------------------------------------------------

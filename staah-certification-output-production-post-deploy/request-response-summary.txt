@@ -1,0 +1,611 @@
+Test Case Name: Property Info
+Excel Section / Row: ARI Tests / Row 4 / Sr No 1
+Endpoint: https://dvi.travel/api/v1/staah-test/productInfo
+Method: POST
+Request Time: 2026-03-25T08:21:24.481Z
+Request Payload / Params:
+{
+  "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+  "propertyid": "STAAHTESTHOTEL1",
+  "action": "property_info",
+  "version": "2"
+}
+Response Status: 200
+Response Body:
+{
+  "currency": "INR",
+  "propertyname": "Test Hotel for STAAH",
+  "checkintime": "",
+  "checkouttime": "",
+  "contactinfo": {
+    "zip": "",
+    "latitude": "",
+    "longitude": "",
+    "country": "India",
+    "addressline": "123 Test Street",
+    "city": "Test City",
+    "fax": "",
+    "telephone": "",
+    "location": "Test City"
+  },
+  "trackingId": "F3B0425F-FF34-4AA9-9E7D-3A2E4292F4B0",
+  "status": "success",
+  "error_desc": ""
+}
+Pass / Fail / Blocked: PASS
+Notes: Optional workbook row; executed with the existing supplementary productInfo endpoint because the final single-endpoint pair covers mapping and ARI only. HTTP 200.
+
+Test Case Name: Mapping Info
+Excel Section / Row: ARI Tests / Row 5 / Sr No 2
+Endpoint: https://dvi.travel/api/v1/staah-test/mapping
+Method: POST
+Request Time: 2026-03-25T08:21:24.636Z
+Request Payload / Params:
+{
+  "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+  "propertyid": "STAAHTESTHOTEL1",
+  "version": "2"
+}
+Response Status: 200
+Response Body:
+{
+  "room_rate_mapping": [
+    {
+      "room_id": "DELUXE_ROOM",
+      "room_name": "Deluxe Room - Test",
+      "rate_id": "CP_PLAN",
+      "rate_name": "Continental Plan",
+      "manageable": "Y"
+    },
+    {
+      "room_id": "SUITE_ROOM",
+      "room_name": "Suite Room - Test",
+      "rate_id": "MAP_PLAN",
+      "rate_name": "Modified American Plan",
+      "manageable": "Y"
+    }
+  ],
+  "status": "success",
+  "error_desc": ""
+}
+Pass / Fail / Blocked: PASS
+Notes: Uses the final single mapping endpoint. HTTP 200.
+
+Test Case Name: ARI Single Date
+Excel Section / Row: ARI Tests / Row 6 / Sr No 3
+Endpoint: https://dvi.travel/api/v1/staah-test/ari
+Method: POST
+Request Time: 2026-03-25T08:21:24.707Z
+Request Payload / Params:
+{
+  "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+  "propertyid": "STAAHTESTHOTEL1",
+  "room_id": "DELUXE_ROOM",
+  "rate_id": "CP_PLAN",
+  "action": "ARR_info",
+  "from_date": "2026-12-15",
+  "to_date": "2026-12-15",
+  "version": "2"
+}
+Response Status: 200
+Response Body:
+{
+  "status": "success",
+  "error_desc": "",
+  "trackingId": "AEF30FBA-71CD-4DC2-9D8E-45FF4C4E7BEE",
+  "propertyid": "STAAHTESTHOTEL1",
+  "room_id": "DELUXE_ROOM",
+  "rate_id": "CP_PLAN",
+  "currency": "INR",
+  "data": [],
+  "inventory": [],
+  "rates": [],
+  "restrictions": []
+}
+Pass / Fail / Blocked: PASS
+Notes: Uses the final single ARI endpoint in read mode via action ARR_info. HTTP 200.
+
+Test Case Name: ARI 28 Days
+Excel Section / Row: ARI Tests / Row 7 / Sr No 4
+Endpoint: https://dvi.travel/api/v1/staah-test/ari
+Method: POST
+Request Time: 2026-03-25T08:21:24.795Z
+Request Payload / Params:
+{
+  "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+  "propertyid": "STAAHTESTHOTEL1",
+  "room_id": "DELUXE_ROOM",
+  "rate_id": "CP_PLAN",
+  "action": "ARR_info",
+  "from_date": "2026-12-15",
+  "to_date": "2027-01-11",
+  "version": "2"
+}
+Response Status: 200
+Response Body:
+{
+  "status": "success",
+  "error_desc": "",
+  "trackingId": "CFCC9DBE-86C8-47C6-84F9-230952C104FE",
+  "propertyid": "STAAHTESTHOTEL1",
+  "room_id": "DELUXE_ROOM",
+  "rate_id": "CP_PLAN",
+  "currency": "INR",
+  "data": [],
+  "inventory": [],
+  "rates": [],
+  "restrictions": []
+}
+Pass / Fail / Blocked: PASS
+Notes: Uses the final single ARI endpoint in read mode via action ARR_info. HTTP 200.
+
+Test Case Name: ARI First 10 Days
+Excel Section / Row: ARI Tests / Row 8 / Sr No 5
+Endpoint: https://dvi.travel/api/v1/staah-test/ari
+Method: POST
+Request Time: 2026-03-25T08:21:24.856Z
+Request Payload / Params:
+{
+  "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+  "propertyid": "STAAHTESTHOTEL1",
+  "room_id": "DELUXE_ROOM",
+  "rate_id": "CP_PLAN",
+  "action": "ARR_info",
+  "from_date": "2026-06-01",
+  "to_date": "2026-06-10",
+  "version": "2"
+}
+Response Status: 200
+Response Body:
+{
+  "status": "success",
+  "error_desc": "",
+  "trackingId": "079EBAF1-E018-4C0D-B69A-6FD200A4D46B",
+  "propertyid": "STAAHTESTHOTEL1",
+  "room_id": "DELUXE_ROOM",
+  "rate_id": "CP_PLAN",
+  "currency": "INR",
+  "data": [],
+  "inventory": [],
+  "rates": [],
+  "restrictions": []
+}
+Pass / Fail / Blocked: PASS
+Notes: Uses the final single ARI endpoint in read mode via action ARR_info. HTTP 200.
+
+Test Case Name: ARI Full Sync
+Excel Section / Row: ARI Tests / Row 9 / Sr No 6
+Endpoint: https://dvi.travel/api/v1/staah-test/ari
+Method: POST
+Request Time: 2026-03-25T08:21:24.915Z
+Request Payload / Params:
+{
+  "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+  "propertyid": "STAAHTESTHOTEL1",
+  "room_id": "DELUXE_ROOM",
+  "rate_id": "CP_PLAN",
+  "action": "year_info_ARR",
+  "version": "2"
+}
+Response Status: 200
+Response Body:
+{
+  "status": "success",
+  "error_desc": "",
+  "trackingId": "786FA9FE-1F82-45E6-AF5C-8334F157BB0D",
+  "propertyid": "STAAHTESTHOTEL1",
+  "room_id": "DELUXE_ROOM",
+  "rate_id": "CP_PLAN",
+  "currency": "INR",
+  "data": [
+    {
+      "start_date": "2026-10-01",
+      "end_date": "2026-10-03",
+      "free": 8,
+      "occupancy_rates": {
+        "DOUBLE": 5200,
+        "SINGLE": 4200,
+        "TRIPLE": 6200
+      }
+    },
+    {
+      "start_date": "2026-10-04",
+      "end_date": "2026-10-06",
+      "free": 5
+    },
+    {
+      "start_date": "2026-10-11",
+      "end_date": "2026-10-11",
+      "free": 9,
+      "occupancy_rates": {
+        "amountAfterTax": {
+          "Rate": "4900"
+        },
+        "amountBeforeTax": {
+          "Rate": "4900"
+        }
+      },
+      "restrictions": {
+        "cta": "N",
+        "ctd": "N",
+        "maxstay": "5",
+        "maxstay_through": "3",
+        "minstay": "1",
+        "minstay_through": "1",
+        "stopsell": "N"
+      }
+    },
+    {
+      "start_date": "2026-11-01",
+      "end_date": "2026-11-05",
+      "restrictions": {
+        "Status": "Open"
+      }
+    },
+    {
+      "start_date": "2026-11-10",
+      "end_date": "2026-11-12",
+      "restrictions": {
+        "Status": "Close"
+      }
+    }
+  ],
+  "inventory": [
+    {
+      "start_date": "2026-10-01",
+      "end_date": "2026-10-03",
+      "free": 8
+    },
+    {
+      "start_date": "2026-10-04",
+      "end_date": "2026-10-06",
+      "free": 5
+    },
+    {
+      "start_date": "2026-10-11",
+      "end_date": "2026-10-11",
+      "free": 9
+    }
+  ],
+  "rates": [
+    {
+      "start_date": "2026-10-01",
+      "end_date": "2026-10-03",
+      "occupancy_rates": {
+        "DOUBLE": 5200,
+        "SINGLE": 4200,
+        "TRIPLE": 6200
+      }
+    },
+    {
+      "start_date": "2026-10-11",
+      "end_date": "2026-10-11",
+      "occupancy_rates": {
+        "amountAfterTax": {
+          "Rate": "4900"
+        },
+        "amountBeforeTax": {
+          "Rate": "4900"
+        }
+      }
+    }
+  ],
+  "restrictions": [
+    {
+      "start_date": "2026-10-11",
+      "end_date": "2026-10-11",
+      "type": "cta",
+      "value": "N"
+    },
+    {
+      "start_date": "2026-10-11",
+      "end_date": "2026-10-11",
+      "type": "ctd",
+      "value": "N"
+    },
+    {
+      "start_date": "2026-10-11",
+      "end_date": "2026-10-11",
+      "type": "maxstay",
+      "value": "5"
+    },
+    {
+      "start_date": "2026-10-11",
+      "end_date": "2026-10-11",
+      "type": "maxstay_through",
+      "value": "3"
+    },
+    {
+      "start_date": "2026-10-11",
+      "end_date": "2026-10-11",
+      "type": "minstay",
+      "value": "1"
+    },
+    {
+      "start_date": "2026-10-11",
+      "end_date": "2026-10-11",
+      "type": "minstay_through",
+      "value": "1"
+    },
+    {
+      "start_date": "2026-10-11",
+      "end_date": "2026-10-11",
+      "type": "stopsell",
+      "value": "N"
+    },
+    {
+      "start_date": "2026-11-01",
+      "end_date": "2026-11-05",
+      "type": "Status",
+      "value": "Open"
+    },
+    {
+      "start_date": "2026-11-10",
+      "end_date": "2026-11-12",
+      "type": "Status",
+      "value": "Close"
+    }
+  ]
+}
+Pass / Fail / Blocked: PASS
+Notes: Uses the final single ARI endpoint in full-sync read mode via action year_info_ARR. HTTP 200.
+
+Test Case Name: Booking Case 1 Pre-Book
+Excel Section / Row: Booking Tests / Scenario 1 / Pre-Book
+Endpoint: https://channelconnect.otaswitch.com/common-cgi/dviholidays/test/services.p
+Method: POST
+Request Time: 2026-03-25T08:21:24.976Z
+Request Payload / Params:
+N/A
+Response Status: BLOCKED
+Response Body:
+N/A
+Pass / Fail / Blocked: BLOCKED
+Notes: Blocked: the repo does not contain a verified request contract, reusable local caller, or captured booking identifiers/session flow for the external STAAH booking-side API. Local custom reservation adapter routes are intentionally excluded from certification-safe claims.
+
+Test Case Name: Booking Case 1 Confirm
+Excel Section / Row: Booking Tests / Scenario 1 / Confirm
+Endpoint: https://channels-stage.staah.net/booking/getapi/reservation/v2
+Method: POST
+Request Time: 2026-03-25T08:21:24.977Z
+Request Payload / Params:
+N/A
+Response Status: BLOCKED
+Response Body:
+N/A
+Pass / Fail / Blocked: BLOCKED
+Notes: Blocked: the repo does not contain a verified request contract, reusable local caller, or captured booking identifiers/session flow for the external STAAH booking-side API. Local custom reservation adapter routes are intentionally excluded from certification-safe claims.
+
+Test Case Name: Booking Case 1 Pre-Modify
+Excel Section / Row: Booking Tests / Scenario 1 / Pre-Modify
+Endpoint: https://channelconnect.otaswitch.com/common-cgi/dviholidays/test/services.p
+Method: POST
+Request Time: 2026-03-25T08:21:24.978Z
+Request Payload / Params:
+N/A
+Response Status: BLOCKED
+Response Body:
+N/A
+Pass / Fail / Blocked: BLOCKED
+Notes: Blocked: the repo does not contain a verified request contract, reusable local caller, or captured booking identifiers/session flow for the external STAAH booking-side API. Local custom reservation adapter routes are intentionally excluded from certification-safe claims.
+
+Test Case Name: Booking Case 1 Modify
+Excel Section / Row: Booking Tests / Scenario 1 / Modify
+Endpoint: https://channels-stage.staah.net/booking/getapi/reservation/v2
+Method: POST
+Request Time: 2026-03-25T08:21:24.979Z
+Request Payload / Params:
+N/A
+Response Status: BLOCKED
+Response Body:
+N/A
+Pass / Fail / Blocked: BLOCKED
+Notes: Blocked: the repo does not contain a verified request contract, reusable local caller, or captured booking identifiers/session flow for the external STAAH booking-side API. Local custom reservation adapter routes are intentionally excluded from certification-safe claims.
+
+Test Case Name: Booking Case 1 Cancel
+Excel Section / Row: Booking Tests / Scenario 1 / Cancel
+Endpoint: https://channels-stage.staah.net/booking/getapi/reservation/v2
+Method: POST
+Request Time: 2026-03-25T08:21:24.980Z
+Request Payload / Params:
+N/A
+Response Status: BLOCKED
+Response Body:
+N/A
+Pass / Fail / Blocked: BLOCKED
+Notes: Blocked: the repo does not contain a verified request contract, reusable local caller, or captured booking identifiers/session flow for the external STAAH booking-side API. Local custom reservation adapter routes are intentionally excluded from certification-safe claims.
+
+Test Case Name: Booking Case 2 Pre-Book
+Excel Section / Row: Booking Tests / Scenario 2 / Pre-Book
+Endpoint: https://channelconnect.otaswitch.com/common-cgi/dviholidays/test/services.p
+Method: POST
+Request Time: 2026-03-25T08:21:24.981Z
+Request Payload / Params:
+N/A
+Response Status: BLOCKED
+Response Body:
+N/A
+Pass / Fail / Blocked: BLOCKED
+Notes: Blocked: the repo does not contain a verified request contract, reusable local caller, or captured booking identifiers/session flow for the external STAAH booking-side API. Local custom reservation adapter routes are intentionally excluded from certification-safe claims.
+
+Test Case Name: Booking Case 2 Confirm
+Excel Section / Row: Booking Tests / Scenario 2 / Confirm
+Endpoint: https://channels-stage.staah.net/booking/getapi/reservation/v2
+Method: POST
+Request Time: 2026-03-25T08:21:24.981Z
+Request Payload / Params:
+N/A
+Response Status: BLOCKED
+Response Body:
+N/A
+Pass / Fail / Blocked: BLOCKED
+Notes: Blocked: the repo does not contain a verified request contract, reusable local caller, or captured booking identifiers/session flow for the external STAAH booking-side API. Local custom reservation adapter routes are intentionally excluded from certification-safe claims.
+
+Test Case Name: Booking Case 2 Pre-Modify
+Excel Section / Row: Booking Tests / Scenario 2 / Pre-Modify
+Endpoint: https://channelconnect.otaswitch.com/common-cgi/dviholidays/test/services.p
+Method: POST
+Request Time: 2026-03-25T08:21:24.982Z
+Request Payload / Params:
+N/A
+Response Status: BLOCKED
+Response Body:
+N/A
+Pass / Fail / Blocked: BLOCKED
+Notes: Blocked: the repo does not contain a verified request contract, reusable local caller, or captured booking identifiers/session flow for the external STAAH booking-side API. Local custom reservation adapter routes are intentionally excluded from certification-safe claims.
+
+Test Case Name: Booking Case 2 Modify
+Excel Section / Row: Booking Tests / Scenario 2 / Modify
+Endpoint: https://channels-stage.staah.net/booking/getapi/reservation/v2
+Method: POST
+Request Time: 2026-03-25T08:21:24.983Z
+Request Payload / Params:
+N/A
+Response Status: BLOCKED
+Response Body:
+N/A
+Pass / Fail / Blocked: BLOCKED
+Notes: Blocked: the repo does not contain a verified request contract, reusable local caller, or captured booking identifiers/session flow for the external STAAH booking-side API. Local custom reservation adapter routes are intentionally excluded from certification-safe claims.
+
+Test Case Name: Booking Case 2 Cancel
+Excel Section / Row: Booking Tests / Scenario 2 / Cancel
+Endpoint: https://channels-stage.staah.net/booking/getapi/reservation/v2
+Method: POST
+Request Time: 2026-03-25T08:21:24.983Z
+Request Payload / Params:
+N/A
+Response Status: BLOCKED
+Response Body:
+N/A
+Pass / Fail / Blocked: BLOCKED
+Notes: Blocked: the repo does not contain a verified request contract, reusable local caller, or captured booking identifiers/session flow for the external STAAH booking-side API. Local custom reservation adapter routes are intentionally excluded from certification-safe claims.
+
+Test Case Name: Booking Case 3 Pre-Book
+Excel Section / Row: Booking Tests / Scenario 3 / Pre-Book
+Endpoint: https://channelconnect.otaswitch.com/common-cgi/dviholidays/test/services.p
+Method: POST
+Request Time: 2026-03-25T08:21:24.985Z
+Request Payload / Params:
+N/A
+Response Status: BLOCKED
+Response Body:
+N/A
+Pass / Fail / Blocked: BLOCKED
+Notes: Blocked: the repo does not contain a verified request contract, reusable local caller, or captured booking identifiers/session flow for the external STAAH booking-side API. Local custom reservation adapter routes are intentionally excluded from certification-safe claims.
+
+Test Case Name: Booking Case 3 Confirm
+Excel Section / Row: Booking Tests / Scenario 3 / Confirm
+Endpoint: https://channels-stage.staah.net/booking/getapi/reservation/v2
+Method: POST
+Request Time: 2026-03-25T08:21:24.985Z
+Request Payload / Params:
+N/A
+Response Status: BLOCKED
+Response Body:
+N/A
+Pass / Fail / Blocked: BLOCKED
+Notes: Blocked: the repo does not contain a verified request contract, reusable local caller, or captured booking identifiers/session flow for the external STAAH booking-side API. Local custom reservation adapter routes are intentionally excluded from certification-safe claims.
+
+Test Case Name: Booking Case 3 Pre-Modify
+Excel Section / Row: Booking Tests / Scenario 3 / Pre-Modify
+Endpoint: https://channelconnect.otaswitch.com/common-cgi/dviholidays/test/services.p
+Method: POST
+Request Time: 2026-03-25T08:21:24.986Z
+Request Payload / Params:
+N/A
+Response Status: BLOCKED
+Response Body:
+N/A
+Pass / Fail / Blocked: BLOCKED
+Notes: Blocked: the repo does not contain a verified request contract, reusable local caller, or captured booking identifiers/session flow for the external STAAH booking-side API. Local custom reservation adapter routes are intentionally excluded from certification-safe claims.
+
+Test Case Name: Booking Case 3 Modify
+Excel Section / Row: Booking Tests / Scenario 3 / Modify
+Endpoint: https://channels-stage.staah.net/booking/getapi/reservation/v2
+Method: POST
+Request Time: 2026-03-25T08:21:24.987Z
+Request Payload / Params:
+N/A
+Response Status: BLOCKED
+Response Body:
+N/A
+Pass / Fail / Blocked: BLOCKED
+Notes: Blocked: the repo does not contain a verified request contract, reusable local caller, or captured booking identifiers/session flow for the external STAAH booking-side API. Local custom reservation adapter routes are intentionally excluded from certification-safe claims.
+
+Test Case Name: Booking Case 3 Cancel
+Excel Section / Row: Booking Tests / Scenario 3 / Cancel
+Endpoint: https://channels-stage.staah.net/booking/getapi/reservation/v2
+Method: POST
+Request Time: 2026-03-25T08:21:24.988Z
+Request Payload / Params:
+N/A
+Response Status: BLOCKED
+Response Body:
+N/A
+Pass / Fail / Blocked: BLOCKED
+Notes: Blocked: the repo does not contain a verified request contract, reusable local caller, or captured booking identifiers/session flow for the external STAAH booking-side API. Local custom reservation adapter routes are intentionally excluded from certification-safe claims.
+
+Test Case Name: Booking Case 4 Pre-Book
+Excel Section / Row: Booking Tests / Scenario 4 / Pre-Book
+Endpoint: https://channelconnect.otaswitch.com/common-cgi/dviholidays/test/services.p
+Method: POST
+Request Time: 2026-03-25T08:21:24.989Z
+Request Payload / Params:
+N/A
+Response Status: BLOCKED
+Response Body:
+N/A
+Pass / Fail / Blocked: BLOCKED
+Notes: Blocked: the repo does not contain a verified request contract, reusable local caller, or captured booking identifiers/session flow for the external STAAH booking-side API. Local custom reservation adapter routes are intentionally excluded from certification-safe claims.
+
+Test Case Name: Booking Case 4 Confirm
+Excel Section / Row: Booking Tests / Scenario 4 / Confirm
+Endpoint: https://channels-stage.staah.net/booking/getapi/reservation/v2
+Method: POST
+Request Time: 2026-03-25T08:21:24.990Z
+Request Payload / Params:
+N/A
+Response Status: BLOCKED
+Response Body:
+N/A
+Pass / Fail / Blocked: BLOCKED
+Notes: Blocked: the repo does not contain a verified request contract, reusable local caller, or captured booking identifiers/session flow for the external STAAH booking-side API. Local custom reservation adapter routes are intentionally excluded from certification-safe claims.
+
+Test Case Name: Booking Case 4 Pre-Modify
+Excel Section / Row: Booking Tests / Scenario 4 / Pre-Modify
+Endpoint: https://channelconnect.otaswitch.com/common-cgi/dviholidays/test/services.p
+Method: POST
+Request Time: 2026-03-25T08:21:24.991Z
+Request Payload / Params:
+N/A
+Response Status: BLOCKED
+Response Body:
+N/A
+Pass / Fail / Blocked: BLOCKED
+Notes: Blocked: the repo does not contain a verified request contract, reusable local caller, or captured booking identifiers/session flow for the external STAAH booking-side API. Local custom reservation adapter routes are intentionally excluded from certification-safe claims.
+
+Test Case Name: Booking Case 4 Modify
+Excel Section / Row: Booking Tests / Scenario 4 / Modify
+Endpoint: https://channels-stage.staah.net/booking/getapi/reservation/v2
+Method: POST
+Request Time: 2026-03-25T08:21:24.992Z
+Request Payload / Params:
+N/A
+Response Status: BLOCKED
+Response Body:
+N/A
+Pass / Fail / Blocked: BLOCKED
+Notes: Blocked: the repo does not contain a verified request contract, reusable local caller, or captured booking identifiers/session flow for the external STAAH booking-side API. Local custom reservation adapter routes are intentionally excluded from certification-safe claims.
+
+Test Case Name: Booking Case 4 Cancel
+Excel Section / Row: Booking Tests / Scenario 4 / Cancel
+Endpoint: https://channels-stage.staah.net/booking/getapi/reservation/v2
+Method: POST
+Request Time: 2026-03-25T08:21:24.993Z
+Request Payload / Params:
+N/A
+Response Status: BLOCKED
+Response Body:
+N/A
+Pass / Fail / Blocked: BLOCKED
+Notes: Blocked: the repo does not contain a verified request contract, reusable local caller, or captured booking identifiers/session flow for the external STAAH booking-side API. Local custom reservation adapter routes are intentionally excluded from certification-safe claims.

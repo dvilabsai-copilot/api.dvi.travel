@@ -73,13 +73,63 @@ export class LocationsController {
     return this.svc.dropdowns();
   }
 
-  @Post()
-  @ApiOperation({ summary: 'Add Location (source fields only)' })
-  @ApiResponse({ status: 201, type: LocationResponseDto })
-  @ApiResponse({ status: 400, description: 'Validation error' })
-  create(@Body() dto: CreateLocationDto) {
-    return this.svc.create(dto);
+  @Get('autosuggest/cities')
+  @ApiOperation({ summary: 'Autosuggest cities (legacy PHP-compatible shape)' })
+  @ApiQuery({ name: 'phrase', required: false, type: String })
+  @ApiQuery({ name: 'format', required: false, type: String })
+  @ApiQuery({ name: 'type', required: false, type: String })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          get_city: { type: 'string' },
+        },
+      },
+    },
+  })
+  cityAutosuggest(
+    @Query('phrase') phrase?: string,
+    @Query('format') format?: string,
+    @Query('type') type?: string,
+  ) {
+    return this.svc.searchCities({ phrase, format, type });
   }
+
+  @Get('autosuggest/states')
+  @ApiOperation({ summary: 'Autosuggest states (legacy PHP-compatible shape)' })
+  @ApiQuery({ name: 'phrase', required: false, type: String })
+  @ApiQuery({ name: 'format', required: false, type: String })
+  @ApiQuery({ name: 'type', required: false, type: String })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          get_state: { type: 'string' },
+        },
+      },
+    },
+  })
+  stateAutosuggest(
+    @Query('phrase') phrase?: string,
+    @Query('format') format?: string,
+    @Query('type') type?: string,
+  ) {
+    return this.svc.searchStates({ phrase, format, type });
+  }
+
+  @Post()
+@ApiOperation({ summary: 'Add Location' })
+@ApiResponse({ status: 201, type: LocationResponseDto })
+@ApiResponse({ status: 400, description: 'Validation error' })
+create(@Body() dto: CreateLocationDto) {
+  return this.svc.create(dto);
+}
 
   @Get(':id')
   @ApiOperation({ summary: 'Get a single Location by ID' })

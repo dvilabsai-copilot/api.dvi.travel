@@ -1,0 +1,20 @@
+{
+  "propertyid": "STAAHTESTHOTEL1",
+  "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+  "action": "reservation_info",
+  "version": "2",
+  "reservations": {
+    "reservation": [
+      {
+        "bookingId": "DVI-CERT-S1-1775045301070",
+        "room_id": "DELUXE_ROOM",
+        "rate_id": "CP_PLAN",
+        "checkIn": "2026-12-02",
+        "checkOut": "2026-12-05",
+        "adults": 2,
+        "children": 0,
+        "status": "modified"
+      }
+    ]
+  }
+}

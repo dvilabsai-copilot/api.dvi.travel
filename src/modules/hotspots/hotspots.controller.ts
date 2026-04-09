@@ -30,11 +30,26 @@ import * as fs from 'fs';
 import * as os from 'os';
 
 // -------------------- storage helpers --------------------
+function resolveBackendRoot(): string {
+  // Works for both src/* (ts-node) and dist/* (compiled) execution.
+  const candidate = path.resolve(__dirname, '..', '..', '..', '..');
+  return fs.existsSync(path.join(candidate, 'package.json')) ? candidate : process.cwd();
+}
+
 // Gallery images go to public/uploads/hotspot_gallery (unchanged)
 function galleryStorage() {
   return diskStorage({
-    destination: (_req, _file, cb) =>
-      cb(null, path.join(process.cwd(), 'public', 'uploads', 'hotspot_gallery')),
+    destination: (_req, _file, cb) => {
+      const dest = path.join(resolveBackendRoot(), 'public', 'uploads', 'hotspot_gallery');
+      try {
+        if (!fs.existsSync(dest)) {
+          fs.mkdirSync(dest, { recursive: true });
+        }
+        cb(null, dest);
+      } catch (e) {
+        cb(e as Error, dest);
+      }
+    },
     filename: (_req, file, cb) => {
       const ext = path.extname(file.originalname || '').toLowerCase();
       const base = crypto.randomBytes(16).toString('hex');
@@ -49,7 +64,7 @@ function csvTempStorage() {
   // Allow override via env, else default to <appRoot>/tmp/uploads
   const dest =
     (process.env.TMP_UPLOAD_DIR && process.env.TMP_UPLOAD_DIR.trim()) ||
-    path.join(process.cwd(), 'tmp', 'uploads');
+    path.join(resolveBackendRoot(), 'tmp', 'uploads');
 
   try {
     if (!fs.existsSync(dest)) {

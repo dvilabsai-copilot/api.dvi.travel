@@ -1,0 +1,1833 @@
+Test Case Name: Property Info
+Excel Section / Row: ARI Tests / Row 4 / Sr No 1
+Endpoint: http://127.0.0.1:4006/api/v1/staah-test/productInfo
+Method: POST
+Request Time: 2026-03-25T08:03:47.217Z
+Request Payload / Params:
+{
+  "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+  "propertyid": "STAAHTESTHOTEL1",
+  "action": "property_info",
+  "version": "2"
+}
+Response Status: 200
+Response Body:
+{
+  "currency": "INR",
+  "propertyname": "Test Hotel for STAAH",
+  "checkintime": "",
+  "checkouttime": "",
+  "contactinfo": {
+    "zip": "",
+    "latitude": "",
+    "longitude": "",
+    "country": "India",
+    "addressline": "123 Test Street",
+    "city": "Test City",
+    "fax": "",
+    "telephone": "",
+    "location": "Test City"
+  },
+  "trackingId": "7DFFB9A5-AB54-408B-8BE1-0A2158988824",
+  "status": "success",
+  "error_desc": ""
+}
+Pass / Fail / Blocked: PASS
+Notes: Optional workbook row; executed with the existing supplementary productInfo endpoint because the final single-endpoint pair covers mapping and ARI only. HTTP 200.
+
+Test Case Name: Mapping Info
+Excel Section / Row: ARI Tests / Row 5 / Sr No 2
+Endpoint: http://127.0.0.1:4006/api/v1/staah-test/mapping
+Method: POST
+Request Time: 2026-03-25T08:03:47.232Z
+Request Payload / Params:
+{
+  "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+  "propertyid": "STAAHTESTHOTEL1",
+  "version": "2"
+}
+Response Status: 200
+Response Body:
+{
+  "room_rate_mapping": [
+    {
+      "room_id": "DELUXE_ROOM",
+      "room_name": "Deluxe Room - Test",
+      "rate_id": "CP_PLAN",
+      "rate_name": "Continental Plan",
+      "manageable": "Y"
+    },
+    {
+      "room_id": "SUITE_ROOM",
+      "room_name": "Suite Room - Test",
+      "rate_id": "MAP_PLAN",
+      "rate_name": "Modified American Plan",
+      "manageable": "Y"
+    }
+  ],
+  "status": "success",
+  "error_desc": ""
+}
+Pass / Fail / Blocked: PASS
+Notes: Uses the final single mapping endpoint. HTTP 200.
+
+Test Case Name: ARI Single Date
+Excel Section / Row: ARI Tests / Row 6 / Sr No 3
+Endpoint: http://127.0.0.1:4006/api/v1/staah-test/ari
+Method: POST
+Request Time: 2026-03-25T08:03:47.290Z
+Request Payload / Params:
+{
+  "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+  "propertyid": "STAAHTESTHOTEL1",
+  "room_id": "DELUXE_ROOM",
+  "rate_id": "CP_PLAN",
+  "action": "ARR_info",
+  "from_date": "2026-12-15",
+  "to_date": "2026-12-15",
+  "version": "2"
+}
+Response Status: 200
+Response Body:
+{
+  "status": "success",
+  "error_desc": "",
+  "trackingId": "061823B1-3373-4DFD-9A68-0CC01AB31B35",
+  "propertyid": "STAAHTESTHOTEL1",
+  "room_id": "DELUXE_ROOM",
+  "rate_id": "CP_PLAN",
+  "currency": "INR",
+  "data": [
+    {
+      "start_date": "2026-01-01",
+      "end_date": "2026-12-31",
+      "free": 6,
+      "occupancy_rates": {
+        "amountAfterTax": {
+          "obp": {
+            "person1": "5460",
+            "person2": "5985",
+            "person3": "6510"
+          },
+          "Rate": "5460",
+          "extraadult": "945",
+          "extrachild": "683"
+        },
+        "amountBeforeTax": {
+          "obp": {
+            "person1": "5200",
+            "person2": "5700",
+            "person3": "6200"
+          },
+          "Rate": "5200",
+          "extraadult": "900.00",
+          "extrachild": "650.00"
+        }
+      },
+      "restrictions": {
+        "cta": "N",
+        "ctd": "N",
+        "maxstay": "14",
+        "minstay": "1",
+        "stopsell": "N"
+      }
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2026-12-15",
+      "free": 9,
+      "occupancy_rates": {
+        "amountAfterTax": {
+          "obp": {
+            "person1": "4900",
+            "person2": "5400",
+            "person3": "5700"
+          },
+          "Rate": "4900",
+          "extraadult": "800",
+          "extrachild": "600"
+        },
+        "amountBeforeTax": {
+          "obp": {
+            "person1": "4900",
+            "person2": "5400",
+            "person3": "5700"
+          },
+          "Rate": "4900",
+          "extraadult": "800.00",
+          "extrachild": "600.00"
+        }
+      },
+      "restrictions": {
+        "cta": "N",
+        "ctd": "N",
+        "maxstay": "5",
+        "maxstay_through": "3",
+        "minstay": "1",
+        "minstay_through": "1",
+        "stopsell": "N"
+      }
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2027-01-11",
+      "free": 7,
+      "occupancy_rates": {
+        "amountAfterTax": {
+          "obp": {
+            "person1": "5355",
+            "person2": "5880",
+            "person3": "6195"
+          },
+          "Rate": "5355",
+          "extraadult": "945",
+          "extrachild": "683"
+        },
+        "amountBeforeTax": {
+          "obp": {
+            "person1": "5100",
+            "person2": "5600",
+            "person3": "5900"
+          },
+          "Rate": "5100",
+          "extraadult": "900.00",
+          "extrachild": "650.00"
+        }
+      },
+      "restrictions": {
+        "cta": "N",
+        "ctd": "N",
+        "maxstay": "7",
+        "minstay": "2",
+        "stopsell": "N"
+      }
+    }
+  ],
+  "inventory": [
+    {
+      "start_date": "2026-01-01",
+      "end_date": "2026-12-31",
+      "free": 6
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2026-12-15",
+      "free": 9
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2027-01-11",
+      "free": 7
+    }
+  ],
+  "rates": [
+    {
+      "start_date": "2026-01-01",
+      "end_date": "2026-12-31",
+      "occupancy_rates": {
+        "amountAfterTax": {
+          "obp": {
+            "person1": "5460",
+            "person2": "5985",
+            "person3": "6510"
+          },
+          "Rate": "5460",
+          "extraadult": "945",
+          "extrachild": "683"
+        },
+        "amountBeforeTax": {
+          "obp": {
+            "person1": "5200",
+            "person2": "5700",
+            "person3": "6200"
+          },
+          "Rate": "5200",
+          "extraadult": "900.00",
+          "extrachild": "650.00"
+        }
+      }
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2026-12-15",
+      "occupancy_rates": {
+        "amountAfterTax": {
+          "obp": {
+            "person1": "4900",
+            "person2": "5400",
+            "person3": "5700"
+          },
+          "Rate": "4900",
+          "extraadult": "800",
+          "extrachild": "600"
+        },
+        "amountBeforeTax": {
+          "obp": {
+            "person1": "4900",
+            "person2": "5400",
+            "person3": "5700"
+          },
+          "Rate": "4900",
+          "extraadult": "800.00",
+          "extrachild": "600.00"
+        }
+      }
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2027-01-11",
+      "occupancy_rates": {
+        "amountAfterTax": {
+          "obp": {
+            "person1": "5355",
+            "person2": "5880",
+            "person3": "6195"
+          },
+          "Rate": "5355",
+          "extraadult": "945",
+          "extrachild": "683"
+        },
+        "amountBeforeTax": {
+          "obp": {
+            "person1": "5100",
+            "person2": "5600",
+            "person3": "5900"
+          },
+          "Rate": "5100",
+          "extraadult": "900.00",
+          "extrachild": "650.00"
+        }
+      }
+    }
+  ],
+  "restrictions": [
+    {
+      "start_date": "2026-01-01",
+      "end_date": "2026-12-31",
+      "type": "cta",
+      "value": "N"
+    },
+    {
+      "start_date": "2026-01-01",
+      "end_date": "2026-12-31",
+      "type": "ctd",
+      "value": "N"
+    },
+    {
+      "start_date": "2026-01-01",
+      "end_date": "2026-12-31",
+      "type": "maxstay",
+      "value": "14"
+    },
+    {
+      "start_date": "2026-01-01",
+      "end_date": "2026-12-31",
+      "type": "minstay",
+      "value": "1"
+    },
+    {
+      "start_date": "2026-01-01",
+      "end_date": "2026-12-31",
+      "type": "stopsell",
+      "value": "N"
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2026-12-15",
+      "type": "cta",
+      "value": "N"
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2026-12-15",
+      "type": "ctd",
+      "value": "N"
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2026-12-15",
+      "type": "maxstay",
+      "value": "5"
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2026-12-15",
+      "type": "maxstay_through",
+      "value": "3"
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2026-12-15",
+      "type": "minstay",
+      "value": "1"
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2026-12-15",
+      "type": "minstay_through",
+      "value": "1"
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2026-12-15",
+      "type": "stopsell",
+      "value": "N"
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2027-01-11",
+      "type": "cta",
+      "value": "N"
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2027-01-11",
+      "type": "ctd",
+      "value": "N"
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2027-01-11",
+      "type": "maxstay",
+      "value": "7"
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2027-01-11",
+      "type": "minstay",
+      "value": "2"
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2027-01-11",
+      "type": "stopsell",
+      "value": "N"
+    }
+  ]
+}
+Pass / Fail / Blocked: PASS
+Notes: Uses the final single ARI endpoint in read mode via action ARR_info. HTTP 200.
+
+Test Case Name: ARI 28 Days
+Excel Section / Row: ARI Tests / Row 7 / Sr No 4
+Endpoint: http://127.0.0.1:4006/api/v1/staah-test/ari
+Method: POST
+Request Time: 2026-03-25T08:03:47.317Z
+Request Payload / Params:
+{
+  "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+  "propertyid": "STAAHTESTHOTEL1",
+  "room_id": "DELUXE_ROOM",
+  "rate_id": "CP_PLAN",
+  "action": "ARR_info",
+  "from_date": "2026-12-15",
+  "to_date": "2027-01-11",
+  "version": "2"
+}
+Response Status: 200
+Response Body:
+{
+  "status": "success",
+  "error_desc": "",
+  "trackingId": "1FE4514C-C2D2-44C5-9601-56CF470BA158",
+  "propertyid": "STAAHTESTHOTEL1",
+  "room_id": "DELUXE_ROOM",
+  "rate_id": "CP_PLAN",
+  "currency": "INR",
+  "data": [
+    {
+      "start_date": "2026-01-01",
+      "end_date": "2026-12-31",
+      "free": 6,
+      "occupancy_rates": {
+        "amountAfterTax": {
+          "obp": {
+            "person1": "5460",
+            "person2": "5985",
+            "person3": "6510"
+          },
+          "Rate": "5460",
+          "extraadult": "945",
+          "extrachild": "683"
+        },
+        "amountBeforeTax": {
+          "obp": {
+            "person1": "5200",
+            "person2": "5700",
+            "person3": "6200"
+          },
+          "Rate": "5200",
+          "extraadult": "900.00",
+          "extrachild": "650.00"
+        }
+      },
+      "restrictions": {
+        "cta": "N",
+        "ctd": "N",
+        "maxstay": "14",
+        "minstay": "1",
+        "stopsell": "N"
+      }
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2026-12-15",
+      "free": 9,
+      "occupancy_rates": {
+        "amountAfterTax": {
+          "obp": {
+            "person1": "4900",
+            "person2": "5400",
+            "person3": "5700"
+          },
+          "Rate": "4900",
+          "extraadult": "800",
+          "extrachild": "600"
+        },
+        "amountBeforeTax": {
+          "obp": {
+            "person1": "4900",
+            "person2": "5400",
+            "person3": "5700"
+          },
+          "Rate": "4900",
+          "extraadult": "800.00",
+          "extrachild": "600.00"
+        }
+      },
+      "restrictions": {
+        "cta": "N",
+        "ctd": "N",
+        "maxstay": "5",
+        "maxstay_through": "3",
+        "minstay": "1",
+        "minstay_through": "1",
+        "stopsell": "N"
+      }
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2027-01-11",
+      "free": 7,
+      "occupancy_rates": {
+        "amountAfterTax": {
+          "obp": {
+            "person1": "5355",
+            "person2": "5880",
+            "person3": "6195"
+          },
+          "Rate": "5355",
+          "extraadult": "945",
+          "extrachild": "683"
+        },
+        "amountBeforeTax": {
+          "obp": {
+            "person1": "5100",
+            "person2": "5600",
+            "person3": "5900"
+          },
+          "Rate": "5100",
+          "extraadult": "900.00",
+          "extrachild": "650.00"
+        }
+      },
+      "restrictions": {
+        "cta": "N",
+        "ctd": "N",
+        "maxstay": "7",
+        "minstay": "2",
+        "stopsell": "N"
+      }
+    }
+  ],
+  "inventory": [
+    {
+      "start_date": "2026-01-01",
+      "end_date": "2026-12-31",
+      "free": 6
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2026-12-15",
+      "free": 9
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2027-01-11",
+      "free": 7
+    }
+  ],
+  "rates": [
+    {
+      "start_date": "2026-01-01",
+      "end_date": "2026-12-31",
+      "occupancy_rates": {
+        "amountAfterTax": {
+          "obp": {
+            "person1": "5460",
+            "person2": "5985",
+            "person3": "6510"
+          },
+          "Rate": "5460",
+          "extraadult": "945",
+          "extrachild": "683"
+        },
+        "amountBeforeTax": {
+          "obp": {
+            "person1": "5200",
+            "person2": "5700",
+            "person3": "6200"
+          },
+          "Rate": "5200",
+          "extraadult": "900.00",
+          "extrachild": "650.00"
+        }
+      }
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2026-12-15",
+      "occupancy_rates": {
+        "amountAfterTax": {
+          "obp": {
+            "person1": "4900",
+            "person2": "5400",
+            "person3": "5700"
+          },
+          "Rate": "4900",
+          "extraadult": "800",
+          "extrachild": "600"
+        },
+        "amountBeforeTax": {
+          "obp": {
+            "person1": "4900",
+            "person2": "5400",
+            "person3": "5700"
+          },
+          "Rate": "4900",
+          "extraadult": "800.00",
+          "extrachild": "600.00"
+        }
+      }
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2027-01-11",
+      "occupancy_rates": {
+        "amountAfterTax": {
+          "obp": {
+            "person1": "5355",
+            "person2": "5880",
+            "person3": "6195"
+          },
+          "Rate": "5355",
+          "extraadult": "945",
+          "extrachild": "683"
+        },
+        "amountBeforeTax": {
+          "obp": {
+            "person1": "5100",
+            "person2": "5600",
+            "person3": "5900"
+          },
+          "Rate": "5100",
+          "extraadult": "900.00",
+          "extrachild": "650.00"
+        }
+      }
+    }
+  ],
+  "restrictions": [
+    {
+      "start_date": "2026-01-01",
+      "end_date": "2026-12-31",
+      "type": "cta",
+      "value": "N"
+    },
+    {
+      "start_date": "2026-01-01",
+      "end_date": "2026-12-31",
+      "type": "ctd",
+      "value": "N"
+    },
+    {
+      "start_date": "2026-01-01",
+      "end_date": "2026-12-31",
+      "type": "maxstay",
+      "value": "14"
+    },
+    {
+      "start_date": "2026-01-01",
+      "end_date": "2026-12-31",
+      "type": "minstay",
+      "value": "1"
+    },
+    {
+      "start_date": "2026-01-01",
+      "end_date": "2026-12-31",
+      "type": "stopsell",
+      "value": "N"
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2026-12-15",
+      "type": "cta",
+      "value": "N"
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2026-12-15",
+      "type": "ctd",
+      "value": "N"
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2026-12-15",
+      "type": "maxstay",
+      "value": "5"
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2026-12-15",
+      "type": "maxstay_through",
+      "value": "3"
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2026-12-15",
+      "type": "minstay",
+      "value": "1"
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2026-12-15",
+      "type": "minstay_through",
+      "value": "1"
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2026-12-15",
+      "type": "stopsell",
+      "value": "N"
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2027-01-11",
+      "type": "cta",
+      "value": "N"
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2027-01-11",
+      "type": "ctd",
+      "value": "N"
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2027-01-11",
+      "type": "maxstay",
+      "value": "7"
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2027-01-11",
+      "type": "minstay",
+      "value": "2"
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2027-01-11",
+      "type": "stopsell",
+      "value": "N"
+    }
+  ]
+}
+Pass / Fail / Blocked: PASS
+Notes: Uses the final single ARI endpoint in read mode via action ARR_info. HTTP 200.
+
+Test Case Name: ARI First 10 Days
+Excel Section / Row: ARI Tests / Row 8 / Sr No 5
+Endpoint: http://127.0.0.1:4006/api/v1/staah-test/ari
+Method: POST
+Request Time: 2026-03-25T08:03:47.338Z
+Request Payload / Params:
+{
+  "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+  "propertyid": "STAAHTESTHOTEL1",
+  "room_id": "DELUXE_ROOM",
+  "rate_id": "CP_PLAN",
+  "action": "ARR_info",
+  "from_date": "2026-06-01",
+  "to_date": "2026-06-10",
+  "version": "2"
+}
+Response Status: 200
+Response Body:
+{
+  "status": "success",
+  "error_desc": "",
+  "trackingId": "7BEA018C-50BE-46AB-BF13-CC017F70AC2F",
+  "propertyid": "STAAHTESTHOTEL1",
+  "room_id": "DELUXE_ROOM",
+  "rate_id": "CP_PLAN",
+  "currency": "INR",
+  "data": [
+    {
+      "start_date": "2026-01-01",
+      "end_date": "2026-12-31",
+      "free": 6,
+      "occupancy_rates": {
+        "amountAfterTax": {
+          "obp": {
+            "person1": "5460",
+            "person2": "5985",
+            "person3": "6510"
+          },
+          "Rate": "5460",
+          "extraadult": "945",
+          "extrachild": "683"
+        },
+        "amountBeforeTax": {
+          "obp": {
+            "person1": "5200",
+            "person2": "5700",
+            "person3": "6200"
+          },
+          "Rate": "5200",
+          "extraadult": "900.00",
+          "extrachild": "650.00"
+        }
+      },
+      "restrictions": {
+        "cta": "N",
+        "ctd": "N",
+        "maxstay": "14",
+        "minstay": "1",
+        "stopsell": "N"
+      }
+    },
+    {
+      "start_date": "2026-06-01",
+      "end_date": "2026-06-10",
+      "free": 11,
+      "occupancy_rates": {
+        "amountAfterTax": {
+          "obp": {
+            "person1": "4515",
+            "person2": "4935",
+            "person3": "5355"
+          },
+          "Rate": "4515",
+          "extraadult": "735",
+          "extrachild": "525"
+        },
+        "amountBeforeTax": {
+          "obp": {
+            "person1": "4300",
+            "person2": "4700",
+            "person3": "5100"
+          },
+          "Rate": "4300",
+          "extraadult": "700.00",
+          "extrachild": "500.00"
+        }
+      },
+      "restrictions": {
+        "cta": "N",
+        "ctd": "N",
+        "maxstay": "10",
+        "minstay": "1",
+        "stopsell": "N"
+      }
+    }
+  ],
+  "inventory": [
+    {
+      "start_date": "2026-01-01",
+      "end_date": "2026-12-31",
+      "free": 6
+    },
+    {
+      "start_date": "2026-06-01",
+      "end_date": "2026-06-10",
+      "free": 11
+    }
+  ],
+  "rates": [
+    {
+      "start_date": "2026-01-01",
+      "end_date": "2026-12-31",
+      "occupancy_rates": {
+        "amountAfterTax": {
+          "obp": {
+            "person1": "5460",
+            "person2": "5985",
+            "person3": "6510"
+          },
+          "Rate": "5460",
+          "extraadult": "945",
+          "extrachild": "683"
+        },
+        "amountBeforeTax": {
+          "obp": {
+            "person1": "5200",
+            "person2": "5700",
+            "person3": "6200"
+          },
+          "Rate": "5200",
+          "extraadult": "900.00",
+          "extrachild": "650.00"
+        }
+      }
+    },
+    {
+      "start_date": "2026-06-01",
+      "end_date": "2026-06-10",
+      "occupancy_rates": {
+        "amountAfterTax": {
+          "obp": {
+            "person1": "4515",
+            "person2": "4935",
+            "person3": "5355"
+          },
+          "Rate": "4515",
+          "extraadult": "735",
+          "extrachild": "525"
+        },
+        "amountBeforeTax": {
+          "obp": {
+            "person1": "4300",
+            "person2": "4700",
+            "person3": "5100"
+          },
+          "Rate": "4300",
+          "extraadult": "700.00",
+          "extrachild": "500.00"
+        }
+      }
+    }
+  ],
+  "restrictions": [
+    {
+      "start_date": "2026-01-01",
+      "end_date": "2026-12-31",
+      "type": "cta",
+      "value": "N"
+    },
+    {
+      "start_date": "2026-01-01",
+      "end_date": "2026-12-31",
+      "type": "ctd",
+      "value": "N"
+    },
+    {
+      "start_date": "2026-01-01",
+      "end_date": "2026-12-31",
+      "type": "maxstay",
+      "value": "14"
+    },
+    {
+      "start_date": "2026-01-01",
+      "end_date": "2026-12-31",
+      "type": "minstay",
+      "value": "1"
+    },
+    {
+      "start_date": "2026-01-01",
+      "end_date": "2026-12-31",
+      "type": "stopsell",
+      "value": "N"
+    },
+    {
+      "start_date": "2026-06-01",
+      "end_date": "2026-06-10",
+      "type": "cta",
+      "value": "N"
+    },
+    {
+      "start_date": "2026-06-01",
+      "end_date": "2026-06-10",
+      "type": "ctd",
+      "value": "N"
+    },
+    {
+      "start_date": "2026-06-01",
+      "end_date": "2026-06-10",
+      "type": "maxstay",
+      "value": "10"
+    },
+    {
+      "start_date": "2026-06-01",
+      "end_date": "2026-06-10",
+      "type": "minstay",
+      "value": "1"
+    },
+    {
+      "start_date": "2026-06-01",
+      "end_date": "2026-06-10",
+      "type": "stopsell",
+      "value": "N"
+    }
+  ]
+}
+Pass / Fail / Blocked: PASS
+Notes: Uses the final single ARI endpoint in read mode via action ARR_info. HTTP 200.
+
+Test Case Name: ARI Full Sync
+Excel Section / Row: ARI Tests / Row 9 / Sr No 6
+Endpoint: http://127.0.0.1:4006/api/v1/staah-test/ari
+Method: POST
+Request Time: 2026-03-25T08:03:47.357Z
+Request Payload / Params:
+{
+  "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+  "propertyid": "STAAHTESTHOTEL1",
+  "room_id": "DELUXE_ROOM",
+  "rate_id": "CP_PLAN",
+  "action": "year_info_ARR",
+  "version": "2"
+}
+Response Status: 200
+Response Body:
+{
+  "status": "success",
+  "error_desc": "",
+  "trackingId": "A2A45EBD-3F79-461C-8AE5-7FF7B1599B0E",
+  "propertyid": "STAAHTESTHOTEL1",
+  "room_id": "DELUXE_ROOM",
+  "rate_id": "CP_PLAN",
+  "currency": "INR",
+  "data": [
+    {
+      "start_date": "2026-01-01",
+      "end_date": "2026-12-31",
+      "free": 6,
+      "occupancy_rates": {
+        "amountAfterTax": {
+          "obp": {
+            "person1": "5460",
+            "person2": "5985",
+            "person3": "6510"
+          },
+          "Rate": "5460",
+          "extraadult": "945",
+          "extrachild": "683"
+        },
+        "amountBeforeTax": {
+          "obp": {
+            "person1": "5200",
+            "person2": "5700",
+            "person3": "6200"
+          },
+          "Rate": "5200",
+          "extraadult": "900.00",
+          "extrachild": "650.00"
+        }
+      },
+      "restrictions": {
+        "cta": "N",
+        "ctd": "N",
+        "maxstay": "14",
+        "minstay": "1",
+        "stopsell": "N"
+      }
+    },
+    {
+      "start_date": "2026-06-01",
+      "end_date": "2026-06-10",
+      "free": 11,
+      "occupancy_rates": {
+        "amountAfterTax": {
+          "obp": {
+            "person1": "4515",
+            "person2": "4935",
+            "person3": "5355"
+          },
+          "Rate": "4515",
+          "extraadult": "735",
+          "extrachild": "525"
+        },
+        "amountBeforeTax": {
+          "obp": {
+            "person1": "4300",
+            "person2": "4700",
+            "person3": "5100"
+          },
+          "Rate": "4300",
+          "extraadult": "700.00",
+          "extrachild": "500.00"
+        }
+      },
+      "restrictions": {
+        "cta": "N",
+        "ctd": "N",
+        "maxstay": "10",
+        "minstay": "1",
+        "stopsell": "N"
+      }
+    },
+    {
+      "start_date": "2026-10-01",
+      "end_date": "2026-10-03",
+      "free": 8,
+      "occupancy_rates": {
+        "DOUBLE": 5200,
+        "SINGLE": 4200,
+        "TRIPLE": 6200
+      }
+    },
+    {
+      "start_date": "2026-10-04",
+      "end_date": "2026-10-06",
+      "free": 5
+    },
+    {
+      "start_date": "2026-10-11",
+      "end_date": "2026-10-11",
+      "free": 9,
+      "occupancy_rates": {
+        "amountAfterTax": {
+          "obp": {
+            "person1": "4900",
+            "person2": "5400",
+            "person3": "5700"
+          },
+          "Rate": "4900",
+          "extraadult": "800",
+          "extrachild": "600"
+        },
+        "amountBeforeTax": {
+          "obp": {
+            "person1": "4900",
+            "person2": "5400",
+            "person3": "5700"
+          },
+          "Rate": "4900",
+          "extraadult": "800.00",
+          "extrachild": "600.00"
+        }
+      },
+      "restrictions": {
+        "cta": "N",
+        "ctd": "N",
+        "maxstay": "5",
+        "maxstay_through": "3",
+        "minstay": "1",
+        "minstay_through": "1",
+        "stopsell": "N"
+      }
+    },
+    {
+      "start_date": "2026-11-01",
+      "end_date": "2026-11-05",
+      "restrictions": {
+        "Status": "Open"
+      }
+    },
+    {
+      "start_date": "2026-11-10",
+      "end_date": "2026-11-12",
+      "restrictions": {
+        "Status": "Close"
+      }
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2026-12-15",
+      "free": 9,
+      "occupancy_rates": {
+        "amountAfterTax": {
+          "obp": {
+            "person1": "4900",
+            "person2": "5400",
+            "person3": "5700"
+          },
+          "Rate": "4900",
+          "extraadult": "800",
+          "extrachild": "600"
+        },
+        "amountBeforeTax": {
+          "obp": {
+            "person1": "4900",
+            "person2": "5400",
+            "person3": "5700"
+          },
+          "Rate": "4900",
+          "extraadult": "800.00",
+          "extrachild": "600.00"
+        }
+      },
+      "restrictions": {
+        "cta": "N",
+        "ctd": "N",
+        "maxstay": "5",
+        "maxstay_through": "3",
+        "minstay": "1",
+        "minstay_through": "1",
+        "stopsell": "N"
+      }
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2027-01-11",
+      "free": 7,
+      "occupancy_rates": {
+        "amountAfterTax": {
+          "obp": {
+            "person1": "5355",
+            "person2": "5880",
+            "person3": "6195"
+          },
+          "Rate": "5355",
+          "extraadult": "945",
+          "extrachild": "683"
+        },
+        "amountBeforeTax": {
+          "obp": {
+            "person1": "5100",
+            "person2": "5600",
+            "person3": "5900"
+          },
+          "Rate": "5100",
+          "extraadult": "900.00",
+          "extrachild": "650.00"
+        }
+      },
+      "restrictions": {
+        "cta": "N",
+        "ctd": "N",
+        "maxstay": "7",
+        "minstay": "2",
+        "stopsell": "N"
+      }
+    }
+  ],
+  "inventory": [
+    {
+      "start_date": "2026-01-01",
+      "end_date": "2026-12-31",
+      "free": 6
+    },
+    {
+      "start_date": "2026-06-01",
+      "end_date": "2026-06-10",
+      "free": 11
+    },
+    {
+      "start_date": "2026-10-01",
+      "end_date": "2026-10-03",
+      "free": 8
+    },
+    {
+      "start_date": "2026-10-04",
+      "end_date": "2026-10-06",
+      "free": 5
+    },
+    {
+      "start_date": "2026-10-11",
+      "end_date": "2026-10-11",
+      "free": 9
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2026-12-15",
+      "free": 9
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2027-01-11",
+      "free": 7
+    }
+  ],
+  "rates": [
+    {
+      "start_date": "2026-01-01",
+      "end_date": "2026-12-31",
+      "occupancy_rates": {
+        "amountAfterTax": {
+          "obp": {
+            "person1": "5460",
+            "person2": "5985",
+            "person3": "6510"
+          },
+          "Rate": "5460",
+          "extraadult": "945",
+          "extrachild": "683"
+        },
+        "amountBeforeTax": {
+          "obp": {
+            "person1": "5200",
+            "person2": "5700",
+            "person3": "6200"
+          },
+          "Rate": "5200",
+          "extraadult": "900.00",
+          "extrachild": "650.00"
+        }
+      }
+    },
+    {
+      "start_date": "2026-06-01",
+      "end_date": "2026-06-10",
+      "occupancy_rates": {
+        "amountAfterTax": {
+          "obp": {
+            "person1": "4515",
+            "person2": "4935",
+            "person3": "5355"
+          },
+          "Rate": "4515",
+          "extraadult": "735",
+          "extrachild": "525"
+        },
+        "amountBeforeTax": {
+          "obp": {
+            "person1": "4300",
+            "person2": "4700",
+            "person3": "5100"
+          },
+          "Rate": "4300",
+          "extraadult": "700.00",
+          "extrachild": "500.00"
+        }
+      }
+    },
+    {
+      "start_date": "2026-10-01",
+      "end_date": "2026-10-03",
+      "occupancy_rates": {
+        "DOUBLE": 5200,
+        "SINGLE": 4200,
+        "TRIPLE": 6200
+      }
+    },
+    {
+      "start_date": "2026-10-11",
+      "end_date": "2026-10-11",
+      "occupancy_rates": {
+        "amountAfterTax": {
+          "obp": {
+            "person1": "4900",
+            "person2": "5400",
+            "person3": "5700"
+          },
+          "Rate": "4900",
+          "extraadult": "800",
+          "extrachild": "600"
+        },
+        "amountBeforeTax": {
+          "obp": {
+            "person1": "4900",
+            "person2": "5400",
+            "person3": "5700"
+          },
+          "Rate": "4900",
+          "extraadult": "800.00",
+          "extrachild": "600.00"
+        }
+      }
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2026-12-15",
+      "occupancy_rates": {
+        "amountAfterTax": {
+          "obp": {
+            "person1": "4900",
+            "person2": "5400",
+            "person3": "5700"
+          },
+          "Rate": "4900",
+          "extraadult": "800",
+          "extrachild": "600"
+        },
+        "amountBeforeTax": {
+          "obp": {
+            "person1": "4900",
+            "person2": "5400",
+            "person3": "5700"
+          },
+          "Rate": "4900",
+          "extraadult": "800.00",
+          "extrachild": "600.00"
+        }
+      }
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2027-01-11",
+      "occupancy_rates": {
+        "amountAfterTax": {
+          "obp": {
+            "person1": "5355",
+            "person2": "5880",
+            "person3": "6195"
+          },
+          "Rate": "5355",
+          "extraadult": "945",
+          "extrachild": "683"
+        },
+        "amountBeforeTax": {
+          "obp": {
+            "person1": "5100",
+            "person2": "5600",
+            "person3": "5900"
+          },
+          "Rate": "5100",
+          "extraadult": "900.00",
+          "extrachild": "650.00"
+        }
+      }
+    }
+  ],
+  "restrictions": [
+    {
+      "start_date": "2026-01-01",
+      "end_date": "2026-12-31",
+      "type": "cta",
+      "value": "N"
+    },
+    {
+      "start_date": "2026-01-01",
+      "end_date": "2026-12-31",
+      "type": "ctd",
+      "value": "N"
+    },
+    {
+      "start_date": "2026-01-01",
+      "end_date": "2026-12-31",
+      "type": "maxstay",
+      "value": "14"
+    },
+    {
+      "start_date": "2026-01-01",
+      "end_date": "2026-12-31",
+      "type": "minstay",
+      "value": "1"
+    },
+    {
+      "start_date": "2026-01-01",
+      "end_date": "2026-12-31",
+      "type": "stopsell",
+      "value": "N"
+    },
+    {
+      "start_date": "2026-06-01",
+      "end_date": "2026-06-10",
+      "type": "cta",
+      "value": "N"
+    },
+    {
+      "start_date": "2026-06-01",
+      "end_date": "2026-06-10",
+      "type": "ctd",
+      "value": "N"
+    },
+    {
+      "start_date": "2026-06-01",
+      "end_date": "2026-06-10",
+      "type": "maxstay",
+      "value": "10"
+    },
+    {
+      "start_date": "2026-06-01",
+      "end_date": "2026-06-10",
+      "type": "minstay",
+      "value": "1"
+    },
+    {
+      "start_date": "2026-06-01",
+      "end_date": "2026-06-10",
+      "type": "stopsell",
+      "value": "N"
+    },
+    {
+      "start_date": "2026-10-11",
+      "end_date": "2026-10-11",
+      "type": "cta",
+      "value": "N"
+    },
+    {
+      "start_date": "2026-10-11",
+      "end_date": "2026-10-11",
+      "type": "ctd",
+      "value": "N"
+    },
+    {
+      "start_date": "2026-10-11",
+      "end_date": "2026-10-11",
+      "type": "maxstay",
+      "value": "5"
+    },
+    {
+      "start_date": "2026-10-11",
+      "end_date": "2026-10-11",
+      "type": "maxstay_through",
+      "value": "3"
+    },
+    {
+      "start_date": "2026-10-11",
+      "end_date": "2026-10-11",
+      "type": "minstay",
+      "value": "1"
+    },
+    {
+      "start_date": "2026-10-11",
+      "end_date": "2026-10-11",
+      "type": "minstay_through",
+      "value": "1"
+    },
+    {
+      "start_date": "2026-10-11",
+      "end_date": "2026-10-11",
+      "type": "stopsell",
+      "value": "N"
+    },
+    {
+      "start_date": "2026-11-01",
+      "end_date": "2026-11-05",
+      "type": "Status",
+      "value": "Open"
+    },
+    {
+      "start_date": "2026-11-10",
+      "end_date": "2026-11-12",
+      "type": "Status",
+      "value": "Close"
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2026-12-15",
+      "type": "cta",
+      "value": "N"
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2026-12-15",
+      "type": "ctd",
+      "value": "N"
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2026-12-15",
+      "type": "maxstay",
+      "value": "5"
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2026-12-15",
+      "type": "maxstay_through",
+      "value": "3"
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2026-12-15",
+      "type": "minstay",
+      "value": "1"
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2026-12-15",
+      "type": "minstay_through",
+      "value": "1"
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2026-12-15",
+      "type": "stopsell",
+      "value": "N"
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2027-01-11",
+      "type": "cta",
+      "value": "N"
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2027-01-11",
+      "type": "ctd",
+      "value": "N"
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2027-01-11",
+      "type": "maxstay",
+      "value": "7"
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2027-01-11",
+      "type": "minstay",
+      "value": "2"
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2027-01-11",
+      "type": "stopsell",
+      "value": "N"
+    }
+  ]
+}
+Pass / Fail / Blocked: PASS
+Notes: Uses the final single ARI endpoint in full-sync read mode via action year_info_ARR. HTTP 200.
+
+Test Case Name: Booking Case 1 Pre-Book
+Excel Section / Row: Booking Tests / Scenario 1 / Pre-Book
+Endpoint: https://channelconnect.otaswitch.com/common-cgi/dviholidays/test/services.p
+Method: POST
+Request Time: 2026-03-25T08:03:47.372Z
+Request Payload / Params:
+N/A
+Response Status: BLOCKED
+Response Body:
+N/A
+Pass / Fail / Blocked: BLOCKED
+Notes: Blocked: the repo does not contain a verified request contract, reusable local caller, or captured booking identifiers/session flow for the external STAAH booking-side API. Local custom reservation adapter routes are intentionally excluded from certification-safe claims.
+
+Test Case Name: Booking Case 1 Confirm
+Excel Section / Row: Booking Tests / Scenario 1 / Confirm
+Endpoint: https://channels-stage.staah.net/booking/getapi/reservation/v2
+Method: POST
+Request Time: 2026-03-25T08:03:47.373Z
+Request Payload / Params:
+N/A
+Response Status: BLOCKED
+Response Body:
+N/A
+Pass / Fail / Blocked: BLOCKED
+Notes: Blocked: the repo does not contain a verified request contract, reusable local caller, or captured booking identifiers/session flow for the external STAAH booking-side API. Local custom reservation adapter routes are intentionally excluded from certification-safe claims.
+
+Test Case Name: Booking Case 1 Pre-Modify
+Excel Section / Row: Booking Tests / Scenario 1 / Pre-Modify
+Endpoint: https://channelconnect.otaswitch.com/common-cgi/dviholidays/test/services.p
+Method: POST
+Request Time: 2026-03-25T08:03:47.374Z
+Request Payload / Params:
+N/A
+Response Status: BLOCKED
+Response Body:
+N/A
+Pass / Fail / Blocked: BLOCKED
+Notes: Blocked: the repo does not contain a verified request contract, reusable local caller, or captured booking identifiers/session flow for the external STAAH booking-side API. Local custom reservation adapter routes are intentionally excluded from certification-safe claims.
+
+Test Case Name: Booking Case 1 Modify
+Excel Section / Row: Booking Tests / Scenario 1 / Modify
+Endpoint: https://channels-stage.staah.net/booking/getapi/reservation/v2
+Method: POST
+Request Time: 2026-03-25T08:03:47.376Z
+Request Payload / Params:
+N/A
+Response Status: BLOCKED
+Response Body:
+N/A
+Pass / Fail / Blocked: BLOCKED
+Notes: Blocked: the repo does not contain a verified request contract, reusable local caller, or captured booking identifiers/session flow for the external STAAH booking-side API. Local custom reservation adapter routes are intentionally excluded from certification-safe claims.
+
+Test Case Name: Booking Case 1 Cancel
+Excel Section / Row: Booking Tests / Scenario 1 / Cancel
+Endpoint: https://channels-stage.staah.net/booking/getapi/reservation/v2
+Method: POST
+Request Time: 2026-03-25T08:03:47.378Z
+Request Payload / Params:
+N/A
+Response Status: BLOCKED
+Response Body:
+N/A
+Pass / Fail / Blocked: BLOCKED
+Notes: Blocked: the repo does not contain a verified request contract, reusable local caller, or captured booking identifiers/session flow for the external STAAH booking-side API. Local custom reservation adapter routes are intentionally excluded from certification-safe claims.
+
+Test Case Name: Booking Case 2 Pre-Book
+Excel Section / Row: Booking Tests / Scenario 2 / Pre-Book
+Endpoint: https://channelconnect.otaswitch.com/common-cgi/dviholidays/test/services.p
+Method: POST
+Request Time: 2026-03-25T08:03:47.379Z
+Request Payload / Params:
+N/A
+Response Status: BLOCKED
+Response Body:
+N/A
+Pass / Fail / Blocked: BLOCKED
+Notes: Blocked: the repo does not contain a verified request contract, reusable local caller, or captured booking identifiers/session flow for the external STAAH booking-side API. Local custom reservation adapter routes are intentionally excluded from certification-safe claims.
+
+Test Case Name: Booking Case 2 Confirm
+Excel Section / Row: Booking Tests / Scenario 2 / Confirm
+Endpoint: https://channels-stage.staah.net/booking/getapi/reservation/v2
+Method: POST
+Request Time: 2026-03-25T08:03:47.381Z
+Request Payload / Params:
+N/A
+Response Status: BLOCKED
+Response Body:
+N/A
+Pass / Fail / Blocked: BLOCKED
+Notes: Blocked: the repo does not contain a verified request contract, reusable local caller, or captured booking identifiers/session flow for the external STAAH booking-side API. Local custom reservation adapter routes are intentionally excluded from certification-safe claims.
+
+Test Case Name: Booking Case 2 Pre-Modify
+Excel Section / Row: Booking Tests / Scenario 2 / Pre-Modify
+Endpoint: https://channelconnect.otaswitch.com/common-cgi/dviholidays/test/services.p
+Method: POST
+Request Time: 2026-03-25T08:03:47.382Z
+Request Payload / Params:
+N/A
+Response Status: BLOCKED
+Response Body:
+N/A
+Pass / Fail / Blocked: BLOCKED
+Notes: Blocked: the repo does not contain a verified request contract, reusable local caller, or captured booking identifiers/session flow for the external STAAH booking-side API. Local custom reservation adapter routes are intentionally excluded from certification-safe claims.
+
+Test Case Name: Booking Case 2 Modify
+Excel Section / Row: Booking Tests / Scenario 2 / Modify
+Endpoint: https://channels-stage.staah.net/booking/getapi/reservation/v2
+Method: POST
+Request Time: 2026-03-25T08:03:47.385Z
+Request Payload / Params:
+N/A
+Response Status: BLOCKED
+Response Body:
+N/A
+Pass / Fail / Blocked: BLOCKED
+Notes: Blocked: the repo does not contain a verified request contract, reusable local caller, or captured booking identifiers/session flow for the external STAAH booking-side API. Local custom reservation adapter routes are intentionally excluded from certification-safe claims.
+
+Test Case Name: Booking Case 2 Cancel
+Excel Section / Row: Booking Tests / Scenario 2 / Cancel
+Endpoint: https://channels-stage.staah.net/booking/getapi/reservation/v2
+Method: POST
+Request Time: 2026-03-25T08:03:47.387Z
+Request Payload / Params:
+N/A
+Response Status: BLOCKED
+Response Body:
+N/A
+Pass / Fail / Blocked: BLOCKED
+Notes: Blocked: the repo does not contain a verified request contract, reusable local caller, or captured booking identifiers/session flow for the external STAAH booking-side API. Local custom reservation adapter routes are intentionally excluded from certification-safe claims.
+
+Test Case Name: Booking Case 3 Pre-Book
+Excel Section / Row: Booking Tests / Scenario 3 / Pre-Book
+Endpoint: https://channelconnect.otaswitch.com/common-cgi/dviholidays/test/services.p
+Method: POST
+Request Time: 2026-03-25T08:03:47.388Z
+Request Payload / Params:
+N/A
+Response Status: BLOCKED
+Response Body:
+N/A
+Pass / Fail / Blocked: BLOCKED
+Notes: Blocked: the repo does not contain a verified request contract, reusable local caller, or captured booking identifiers/session flow for the external STAAH booking-side API. Local custom reservation adapter routes are intentionally excluded from certification-safe claims.
+
+Test Case Name: Booking Case 3 Confirm
+Excel Section / Row: Booking Tests / Scenario 3 / Confirm
+Endpoint: https://channels-stage.staah.net/booking/getapi/reservation/v2
+Method: POST
+Request Time: 2026-03-25T08:03:47.389Z
+Request Payload / Params:
+N/A
+Response Status: BLOCKED
+Response Body:
+N/A
+Pass / Fail / Blocked: BLOCKED
+Notes: Blocked: the repo does not contain a verified request contract, reusable local caller, or captured booking identifiers/session flow for the external STAAH booking-side API. Local custom reservation adapter routes are intentionally excluded from certification-safe claims.
+
+Test Case Name: Booking Case 3 Pre-Modify
+Excel Section / Row: Booking Tests / Scenario 3 / Pre-Modify
+Endpoint: https://channelconnect.otaswitch.com/common-cgi/dviholidays/test/services.p
+Method: POST
+Request Time: 2026-03-25T08:03:47.390Z
+Request Payload / Params:
+N/A
+Response Status: BLOCKED
+Response Body:
+N/A
+Pass / Fail / Blocked: BLOCKED
+Notes: Blocked: the repo does not contain a verified request contract, reusable local caller, or captured booking identifiers/session flow for the external STAAH booking-side API. Local custom reservation adapter routes are intentionally excluded from certification-safe claims.
+
+Test Case Name: Booking Case 3 Modify
+Excel Section / Row: Booking Tests / Scenario 3 / Modify
+Endpoint: https://channels-stage.staah.net/booking/getapi/reservation/v2
+Method: POST
+Request Time: 2026-03-25T08:03:47.391Z
+Request Payload / Params:
+N/A
+Response Status: BLOCKED
+Response Body:
+N/A
+Pass / Fail / Blocked: BLOCKED
+Notes: Blocked: the repo does not contain a verified request contract, reusable local caller, or captured booking identifiers/session flow for the external STAAH booking-side API. Local custom reservation adapter routes are intentionally excluded from certification-safe claims.
+
+Test Case Name: Booking Case 3 Cancel
+Excel Section / Row: Booking Tests / Scenario 3 / Cancel
+Endpoint: https://channels-stage.staah.net/booking/getapi/reservation/v2
+Method: POST
+Request Time: 2026-03-25T08:03:47.392Z
+Request Payload / Params:
+N/A
+Response Status: BLOCKED
+Response Body:
+N/A
+Pass / Fail / Blocked: BLOCKED
+Notes: Blocked: the repo does not contain a verified request contract, reusable local caller, or captured booking identifiers/session flow for the external STAAH booking-side API. Local custom reservation adapter routes are intentionally excluded from certification-safe claims.
+
+Test Case Name: Booking Case 4 Pre-Book
+Excel Section / Row: Booking Tests / Scenario 4 / Pre-Book
+Endpoint: https://channelconnect.otaswitch.com/common-cgi/dviholidays/test/services.p
+Method: POST
+Request Time: 2026-03-25T08:03:47.393Z
+Request Payload / Params:
+N/A
+Response Status: BLOCKED
+Response Body:
+N/A
+Pass / Fail / Blocked: BLOCKED
+Notes: Blocked: the repo does not contain a verified request contract, reusable local caller, or captured booking identifiers/session flow for the external STAAH booking-side API. Local custom reservation adapter routes are intentionally excluded from certification-safe claims.
+
+Test Case Name: Booking Case 4 Confirm
+Excel Section / Row: Booking Tests / Scenario 4 / Confirm
+Endpoint: https://channels-stage.staah.net/booking/getapi/reservation/v2
+Method: POST
+Request Time: 2026-03-25T08:03:47.394Z
+Request Payload / Params:
+N/A
+Response Status: BLOCKED
+Response Body:
+N/A
+Pass / Fail / Blocked: BLOCKED
+Notes: Blocked: the repo does not contain a verified request contract, reusable local caller, or captured booking identifiers/session flow for the external STAAH booking-side API. Local custom reservation adapter routes are intentionally excluded from certification-safe claims.
+
+Test Case Name: Booking Case 4 Pre-Modify
+Excel Section / Row: Booking Tests / Scenario 4 / Pre-Modify
+Endpoint: https://channelconnect.otaswitch.com/common-cgi/dviholidays/test/services.p
+Method: POST
+Request Time: 2026-03-25T08:03:47.396Z
+Request Payload / Params:
+N/A
+Response Status: BLOCKED
+Response Body:
+N/A
+Pass / Fail / Blocked: BLOCKED
+Notes: Blocked: the repo does not contain a verified request contract, reusable local caller, or captured booking identifiers/session flow for the external STAAH booking-side API. Local custom reservation adapter routes are intentionally excluded from certification-safe claims.
+
+Test Case Name: Booking Case 4 Modify
+Excel Section / Row: Booking Tests / Scenario 4 / Modify
+Endpoint: https://channels-stage.staah.net/booking/getapi/reservation/v2
+Method: POST
+Request Time: 2026-03-25T08:03:47.397Z
+Request Payload / Params:
+N/A
+Response Status: BLOCKED
+Response Body:
+N/A
+Pass / Fail / Blocked: BLOCKED
+Notes: Blocked: the repo does not contain a verified request contract, reusable local caller, or captured booking identifiers/session flow for the external STAAH booking-side API. Local custom reservation adapter routes are intentionally excluded from certification-safe claims.
+
+Test Case Name: Booking Case 4 Cancel
+Excel Section / Row: Booking Tests / Scenario 4 / Cancel
+Endpoint: https://channels-stage.staah.net/booking/getapi/reservation/v2
+Method: POST
+Request Time: 2026-03-25T08:03:47.398Z
+Request Payload / Params:
+N/A
+Response Status: BLOCKED
+Response Body:
+N/A
+Pass / Fail / Blocked: BLOCKED
+Notes: Blocked: the repo does not contain a verified request contract, reusable local caller, or captured booking identifiers/session flow for the external STAAH booking-side API. Local custom reservation adapter routes are intentionally excluded from certification-safe claims.

@@ -894,6 +894,8 @@ export class ItineraryHotelDetailsTboService {
           continue;
         }
 
+        let foundForGroup = false;
+
         // Get hotels that belong to this tier for this route
         for (const hotel of availableHotels) {
           const key = `${routeId}-${hotel.hotelCode || hotel.hotelName}`;
@@ -902,6 +904,26 @@ export class ItineraryHotelDetailsTboService {
           if (assignedGroupType === groupType) {
             const hotelWithRoute = { ...hotel, routeId } as HotelSearchResult & { routeId: number };
             tieredHotels.push(hotelWithRoute);
+            foundForGroup = true;
+          }
+        }
+
+        // Overlap fallback: if this route has hotels but none mapped to current tier,
+        // pick deterministic fallback by sorted price index so every tier has data.
+        if (!foundForGroup && availableHotels.length > 0) {
+          const sortedHotels = [...availableHotels].sort((a, b) => (a.price || 0) - (b.price || 0));
+          const fallbackIndex = Math.min(groupType - 1, sortedHotels.length - 1);
+          const fallbackHotel = sortedHotels[fallbackIndex];
+          if (fallbackHotel) {
+            const fallbackWithRoute = {
+              ...fallbackHotel,
+              routeId,
+              __fallbackAssigned: true,
+            } as HotelSearchResult & { routeId: number };
+            tieredHotels.push(fallbackWithRoute);
+            this.logger.debug(
+              `   Tier ${groupType}, Route ${routeId}: overlap fallback -> ${fallbackHotel.hotelName}`,
+            );
           }
         }
       }
@@ -935,6 +957,15 @@ export class ItineraryHotelDetailsTboService {
     routes: any[],
     noOfNights: number,
   ): Promise<ItineraryHotelDetailsResponseDto> {
+    const plan = await this.prisma.dvi_itinerary_plan_details.findFirst({
+      where: { itinerary_plan_ID: planId, deleted: 0 },
+      select: { hotel_rates_visibility: true },
+    });
+
+    const hotelRatesVisible =
+      Number((plan as any)?.hotel_rates_visibility || 0) === 1 ||
+      (plan as any)?.hotel_rates_visibility === true;
+
     // Build hotel tabs (one per package with total cost)
     const hotelTabs: ItineraryHotelTabDto[] = packages.map((pkg) => {
       const totalAmount = pkg.hotels.reduce((sum, h) => sum + h.price, 0);
@@ -1084,7 +1115,7 @@ export class ItineraryHotelDetailsTboService {
     return {
       quoteId,
       planId,
-      hotelRatesVisible: true,
+      hotelRatesVisible,
       hotelTabs,
       hotels: hotelRows,
       totalRoomCount: hotelRows.length,
@@ -1173,10 +1204,10 @@ export class ItineraryHotelDetailsTboService {
     const roomDetailsList: ItineraryHotelRoomDto[] = [];
     let roomDetailsId = 1;
 
-    // Create a map to track unique hotels per route
-    const hotelsByRouteAndGroup = new Map<string, any[]>();
+    // Build route-scoped room candidates with group coverage fallback.
+    // PHP behavior allows overlap fallback when a recommendation bucket would be empty.
+    const routeHotelRows: Array<{ routeId: number; hotel: any }> = [];
 
-    // Group hotels by route and hotelCode
     hotelsByRoute.forEach((hotelsForRoute, routeId) => {
       // FILTER: Only process this route if filterRouteId is not provided OR if it matches
       if (filterRouteId && routeId !== filterRouteId) {
@@ -1184,30 +1215,47 @@ export class ItineraryHotelDetailsTboService {
         return;
       }
 
-      // ✅ Extract all prices for this route to calculate quartiles
       const allPrices = hotelsForRoute.map((h: HotelSearchResult) => h.price || 0);
+      const sortedHotels = [...hotelsForRoute].sort((a, b) => (a.price || 0) - (b.price || 0));
+
+      const byGroup = new Map<number, any[]>();
 
       hotelsForRoute.forEach((hotel: HotelSearchResult) => {
-        // ✅ Assign groupType based on PRICE QUARTILE, not array position
         const hotelPrice = hotel.price || 0;
         const groupType = this.getGroupTypeFromPrice(hotelPrice, allPrices);
-        const key = `${routeId}-${hotel.hotelCode || hotel.hotelName}`;
-        
-        if (!hotelsByRouteAndGroup.has(key)) {
-          hotelsByRouteAndGroup.set(key, []);
-        }
-        hotelsByRouteAndGroup.get(key)!.push({ ...hotel, groupType });
+        if (!byGroup.has(groupType)) byGroup.set(groupType, []);
+        byGroup.get(groupType)!.push({ ...hotel, groupType, __fallbackAssigned: false });
       });
+
+      // Ensure all 4 groups are represented when a route has at least one hotel.
+      for (let groupType = 1; groupType <= 4; groupType++) {
+        const groupHotels = byGroup.get(groupType) ?? [];
+        if (groupHotels.length === 0 && sortedHotels.length > 0) {
+          const fallbackIndex = Math.min(groupType - 1, sortedHotels.length - 1);
+          const fallbackHotel = sortedHotels[fallbackIndex];
+          if (fallbackHotel) {
+            byGroup.set(groupType, [
+              {
+                ...fallbackHotel,
+                groupType,
+                __fallbackAssigned: true,
+              },
+            ]);
+          }
+        }
+      }
+
+      for (let groupType = 1; groupType <= 4; groupType++) {
+        const groupHotels = byGroup.get(groupType) ?? [];
+        groupHotels.forEach((hotel) => routeHotelRows.push({ routeId, hotel }));
+      }
     });
 
     // Build room entries from fresh TBO data
-    // ✅ FIXED: Iterate through ALL hotels in each group, not just the first one
-    hotelsByRouteAndGroup.forEach((hotelArray, _key) => {
-      const routeId = parseInt(_key.split('-')[0]);
+    routeHotelRows.forEach(({ routeId, hotel }) => {
       const route = routes.find(r => (r as any).itinerary_route_ID === routeId);
+      if (!route) return;
 
-      // ✅ Loop through ALL unique hotels in this route/group (not just first)
-      hotelArray.forEach((hotel: any) => {
         // ✅ FIXED: Use actual room type from TBO, not groupType
         const firstRoomType = hotel.roomTypes?.[0];
         const actualRoomTypeId = firstRoomType?.roomTypeId || 1;
@@ -1236,7 +1284,6 @@ export class ItineraryHotelDetailsTboService {
           currency: hotel.currency || 'INR',
           mealPlan: hotel.mealPlan || 'Not Specified',
         } as any);
-      });
     });
 
     const duration = Date.now() - startTime;

@@ -1,0 +1,8 @@
+{
+  "status": "fail",
+  "error_desc": "each value in data must be an object; data must be an array",
+  "details": [
+    "each value in data must be an object",
+    "data must be an array"
+  ]
+}
