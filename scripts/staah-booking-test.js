@@ -7,9 +7,10 @@
  *
  * Optional env overrides:
  *   STAAH_PROPERTY_ID=STAAHTESTHOTEL1
+ *   STAAH_FETCH_URL=https://channelconnect.otaswitch.com/common-cgi/dviholidays/test/services.pl
  *   STAAH_BOOKING_URL=https://channels-stage.staah.net/booking/getapi/reservation/v2
- *   STAAH_ROOM_ID=DELUXE_ROOM
- *   STAAH_RATE_ID=CP_PLAN
+ *   STAAH_ROOM_ID=DELUXE
+ *   STAAH_RATE_ID=ROOM
  */
 
 const https = require('https');
@@ -32,12 +33,13 @@ if (fs.existsSync(envPath)) {
 }
 
 const PROPERTY_ID = process.env.STAAH_PROPERTY_ID || 'STAAHTESTHOTEL1';
-const API_KEY     = 'Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH';
-const ROOM_ID     = process.env.STAAH_ROOM_ID     || 'DELUXE_ROOM';
-const RATE_ID     = process.env.STAAH_RATE_ID     || 'CP_PLAN';
+const API_KEY     = process.env.STAAH_API_KEY || 'Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH';
+const ROOM_ID     = process.env.STAAH_ROOM_ID || 'DELUXE';
+const RATE_ID     = process.env.STAAH_RATE_ID || 'ROOM';
+const FETCH_URL   = process.env.STAAH_FETCH_URL || 'https://channelconnect.otaswitch.com/common-cgi/dviholidays/test/services.pl';
 const BOOKING_URL = process.env.STAAH_BOOKING_URL || 'https://channels-stage.staah.net/booking/getapi/reservation/v2';
 
-const OUT_DIR = path.join(__dirname, '..', `staah-booking-cert-${Date.now()}`);
+const OUT_DIR = path.join(process.cwd(), `staah-booking-cert-${Date.now()}`);
 fs.mkdirSync(OUT_DIR, { recursive: true });
 
 function postJson(url, payload) {
@@ -66,6 +68,9 @@ function postJson(url, payload) {
     });
 
     req.on('error', reject);
+    req.setTimeout(20000, () => {
+      req.destroy(new Error('Request timeout after 20000ms'));
+    });
     req.write(body);
     req.end();
   });
@@ -78,6 +83,10 @@ function saveEvidence(name, request, response) {
   fs.writeFileSync(resFile, JSON.stringify({ status: response.status, body: response.body }, null, 2), 'utf8');
   console.log(`  Request  → ${reqFile}`);
   console.log(`  Response → ${resFile}`);
+}
+
+function nowIsoSeconds() {
+  return new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
 }
 
 function makeBookingId(label) {
@@ -194,21 +203,57 @@ function buildReservationPayload(options) {
   };
 }
 
-async function runTest(label, payload) {
+function buildArrInfoPayload(fromDate, toDate) {
+  return {
+    propertyid: PROPERTY_ID,
+    apikey: API_KEY,
+    room_id: ROOM_ID,
+    rate_id: RATE_ID,
+    action: 'ARR_info',
+    from_date: fromDate,
+    to_date: toDate,
+    version: '2',
+  };
+}
+
+async function runTest({ label, excelRow, endpointName, url, payload, bookingId }) {
   console.log(`\n=== ${label} ===`);
-  console.log(`POST ${BOOKING_URL}`);
+  console.log(`POST ${url}`);
   console.log('Payload:', JSON.stringify(payload, null, 2));
+  const requestedAt = nowIsoSeconds();
   try {
-    const res = await postJson(BOOKING_URL, payload);
+    const res = await postJson(url, payload);
     const pass = res.status === 200;
     console.log(`Status : ${res.status}  →  ${pass ? 'PASS ✓' : 'FAIL ✗'}`);
     console.log('Response:', JSON.stringify(res.body, null, 2));
     saveEvidence(label.toLowerCase().replace(/\s+/g, '_'), payload, res);
-    return { label, status: res.status, pass, body: res.body };
+    return {
+      label,
+      excelRow,
+      endpointName,
+      requestedAt,
+      bookingId: bookingId || '',
+      request: payload,
+      response: { status: res.status, body: res.body },
+      status: res.status,
+      pass,
+      body: res.body,
+    };
   } catch (err) {
     console.error(`ERROR: ${err.message}`);
     saveEvidence(label.toLowerCase().replace(/\s+/g, '_'), payload, { status: 'ERR', body: err.message });
-    return { label, status: 'ERR', pass: false, body: err.message };
+    return {
+      label,
+      excelRow,
+      endpointName,
+      requestedAt,
+      bookingId: bookingId || '',
+      request: payload,
+      response: { status: 'ERR', body: err.message },
+      status: 'ERR',
+      pass: false,
+      body: err.message,
+    };
   }
 }
 
@@ -217,88 +262,55 @@ async function main() {
   console.log('==================================');
   console.log(`Property ID : ${PROPERTY_ID}`);
   console.log(`API Key     : ${API_KEY}`);
+  console.log(`Fetch URL   : ${FETCH_URL}`);
   console.log(`Booking URL : ${BOOKING_URL}`);
+  console.log(`Room ID     : ${ROOM_ID}`);
+  console.log(`Rate ID     : ${RATE_ID}`);
   console.log(`Output dir  : ${OUT_DIR}`);
 
   const results = [];
 
-  // ── Scenario 1: Single Room, Single Rate Plan ─────────────────────
   const bookingId1 = makeBookingId('S1');
-
-  results.push(await runTest('S1_01_Pre-Book', buildReservationPayload({
-    reservationId: bookingId1,
-    reservationDateTime: '2026-07-29T06:00:00',
-    arrivalDate: '2026-07-20',
-    departureDate: '2026-07-21',
-    status: 'Confirm',
-  })));
-
-  results.push(await runTest('S1_02_Confirm', buildReservationPayload({
-    reservationId: bookingId1,
-    reservationDateTime: '2026-07-29T06:00:00',
-    arrivalDate: '2026-07-20',
-    departureDate: '2026-07-21',
-    status: 'Confirm',
-  })));
-
-  results.push(await runTest('S1_03_Pre-Modify', buildReservationPayload({
-    reservationId: bookingId1,
-    reservationDateTime: '2026-07-29T06:10:00',
-    arrivalDate: '2026-07-21',
-    departureDate: '2026-07-22',
-    status: 'Pending Modify',
-  })));
-
-  results.push(await runTest('S1_04_Modify', buildReservationPayload({
-    reservationId: bookingId1,
-    reservationDateTime: '2026-07-29T06:15:00',
-    arrivalDate: '2026-07-21',
-    departureDate: '2026-07-22',
-    status: 'Modified',
-  })));
-
-  results.push(await runTest('S1_05_Cancel', buildReservationPayload({
-    reservationId: bookingId1,
-    reservationDateTime: '2026-07-29T06:20:00',
-    arrivalDate: '2026-07-21',
-    departureDate: '2026-07-22',
-    status: 'Cancel',
-  })));
-
-  // ── Scenario 2: With Extra Adult/Child ────────────────────────────
   const bookingId2 = makeBookingId('S2');
+  const bookingId3 = makeBookingId('S3');
+  const bookingId4 = makeBookingId('S4');
 
-  results.push(await runTest('S2_01_Confirm', buildReservationPayload({
-    reservationId: bookingId2,
-    reservationDateTime: '2026-07-29T07:00:00',
-    arrivalDate: '2026-07-20',
-    departureDate: '2026-07-21',
-    status: 'Confirm',
-    amountAfterTax: '1300',
-    totalAmountAfterTax: '1340',
-    totalTax: '140',
-    extraAdult: '1',
-    extraChild: '1',
-    extraAdultRate: '100',
-    extraChildRate: '100',
-    adultCount: '3',
-  })));
+  const plan = [
+    { label: 'S1_01_Pre-Book', row: 5, endpointName: 'fetch', url: FETCH_URL, bookingId: bookingId1, payload: buildArrInfoPayload('2026-07-20', '2026-07-20') },
+    { label: 'S1_02_Confirm', row: 6, endpointName: 'booking', url: BOOKING_URL, bookingId: bookingId1, payload: buildReservationPayload({ reservationId: bookingId1, reservationDateTime: '2026-07-29T06:00:00', arrivalDate: '2026-07-20', departureDate: '2026-07-21', status: 'Confirm' }) },
+    { label: 'S1_03_Pre-Modify', row: 7, endpointName: 'fetch', url: FETCH_URL, bookingId: bookingId1, payload: buildArrInfoPayload('2026-07-21', '2026-07-21') },
+    { label: 'S1_04_Modify', row: 8, endpointName: 'booking', url: BOOKING_URL, bookingId: bookingId1, payload: buildReservationPayload({ reservationId: bookingId1, reservationDateTime: '2026-07-29T06:15:00', arrivalDate: '2026-07-21', departureDate: '2026-07-22', status: 'Modified' }) },
+    { label: 'S1_05_Cancel', row: 9, endpointName: 'booking', url: BOOKING_URL, bookingId: bookingId1, payload: buildReservationPayload({ reservationId: bookingId1, reservationDateTime: '2026-07-29T06:20:00', arrivalDate: '2026-07-21', departureDate: '2026-07-22', status: 'Cancel' }) },
 
-  results.push(await runTest('S2_02_Cancel', buildReservationPayload({
-    reservationId: bookingId2,
-    reservationDateTime: '2026-07-29T07:10:00',
-    arrivalDate: '2026-07-20',
-    departureDate: '2026-07-21',
-    status: 'Cancel',
-    amountAfterTax: '1300',
-    totalAmountAfterTax: '1340',
-    totalTax: '140',
-    extraAdult: '1',
-    extraChild: '1',
-    extraAdultRate: '100',
-    extraChildRate: '100',
-    adultCount: '3',
-  })));
+    { label: 'S2_01_Pre-Book', row: 10, endpointName: 'fetch', url: FETCH_URL, bookingId: bookingId2, payload: buildArrInfoPayload('2026-08-10', '2026-08-10') },
+    { label: 'S2_02_Confirm', row: 11, endpointName: 'booking', url: BOOKING_URL, bookingId: bookingId2, payload: buildReservationPayload({ reservationId: bookingId2, reservationDateTime: '2026-08-01T07:00:00', arrivalDate: '2026-08-10', departureDate: '2026-08-11', status: 'Confirm', amountAfterTax: '1300', totalAmountAfterTax: '1340', totalTax: '140', extraAdult: '1', extraChild: '1', extraAdultRate: '100', extraChildRate: '100', adultCount: '3' }) },
+    { label: 'S2_03_Pre-Modify', row: 12, endpointName: 'fetch', url: FETCH_URL, bookingId: bookingId2, payload: buildArrInfoPayload('2026-08-11', '2026-08-11') },
+    { label: 'S2_04_Modify', row: 13, endpointName: 'booking', url: BOOKING_URL, bookingId: bookingId2, payload: buildReservationPayload({ reservationId: bookingId2, reservationDateTime: '2026-08-01T07:15:00', arrivalDate: '2026-08-11', departureDate: '2026-08-12', status: 'Modified', amountAfterTax: '1300', totalAmountAfterTax: '1340', totalTax: '140', extraAdult: '1', extraChild: '1', extraAdultRate: '100', extraChildRate: '100', adultCount: '3' }) },
+    { label: 'S2_05_Cancel', row: 14, endpointName: 'booking', url: BOOKING_URL, bookingId: bookingId2, payload: buildReservationPayload({ reservationId: bookingId2, reservationDateTime: '2026-08-01T07:20:00', arrivalDate: '2026-08-11', departureDate: '2026-08-12', status: 'Cancel', amountAfterTax: '1300', totalAmountAfterTax: '1340', totalTax: '140', extraAdult: '1', extraChild: '1', extraAdultRate: '100', extraChildRate: '100', adultCount: '3' }) },
+
+    { label: 'S3_01_Pre-Book', row: 15, endpointName: 'fetch', url: FETCH_URL, bookingId: bookingId3, payload: buildArrInfoPayload('2026-09-01', '2026-09-03') },
+    { label: 'S3_02_Confirm', row: 16, endpointName: 'booking', url: BOOKING_URL, bookingId: bookingId3, payload: buildReservationPayload({ reservationId: bookingId3, reservationDateTime: '2026-09-01T08:00:00', arrivalDate: '2026-09-01', departureDate: '2026-09-03', status: 'Confirm', amountAfterTax: '2100', totalAmountAfterTax: '2240', totalTax: '220', adultCount: '2' }) },
+    { label: 'S3_03_Pre-Modify', row: 17, endpointName: 'fetch', url: FETCH_URL, bookingId: bookingId3, payload: buildArrInfoPayload('2026-09-02', '2026-09-04') },
+    { label: 'S3_04_Modify', row: 18, endpointName: 'booking', url: BOOKING_URL, bookingId: bookingId3, payload: buildReservationPayload({ reservationId: bookingId3, reservationDateTime: '2026-09-01T08:15:00', arrivalDate: '2026-09-02', departureDate: '2026-09-04', status: 'Modified', amountAfterTax: '2200', totalAmountAfterTax: '2360', totalTax: '240', adultCount: '2' }) },
+    { label: 'S3_05_Cancel', row: 19, endpointName: 'booking', url: BOOKING_URL, bookingId: bookingId3, payload: buildReservationPayload({ reservationId: bookingId3, reservationDateTime: '2026-09-01T08:20:00', arrivalDate: '2026-09-02', departureDate: '2026-09-04', status: 'Cancel', amountAfterTax: '2200', totalAmountAfterTax: '2360', totalTax: '240', adultCount: '2' }) },
+
+    { label: 'S4_01_Pre-Book', row: 20, endpointName: 'fetch', url: FETCH_URL, bookingId: bookingId4, payload: buildArrInfoPayload('2026-10-05', '2026-10-05') },
+    { label: 'S4_02_Confirm', row: 21, endpointName: 'booking', url: BOOKING_URL, bookingId: bookingId4, payload: buildReservationPayload({ reservationId: bookingId4, reservationDateTime: '2026-10-01T09:00:00', arrivalDate: '2026-10-05', departureDate: '2026-10-06', status: 'Confirm', amountAfterTax: '2400', totalAmountAfterTax: '2560', totalTax: '260', adultCount: '4' }) },
+    { label: 'S4_03_Pre-Modify', row: 22, endpointName: 'fetch', url: FETCH_URL, bookingId: bookingId4, payload: buildArrInfoPayload('2026-10-06', '2026-10-06') },
+    { label: 'S4_04_Modify', row: 23, endpointName: 'booking', url: BOOKING_URL, bookingId: bookingId4, payload: buildReservationPayload({ reservationId: bookingId4, reservationDateTime: '2026-10-01T09:15:00', arrivalDate: '2026-10-06', departureDate: '2026-10-07', status: 'Modified', amountAfterTax: '2500', totalAmountAfterTax: '2680', totalTax: '280', adultCount: '4' }) },
+    { label: 'S4_05_Cancel', row: 24, endpointName: 'booking', url: BOOKING_URL, bookingId: bookingId4, payload: buildReservationPayload({ reservationId: bookingId4, reservationDateTime: '2026-10-01T09:20:00', arrivalDate: '2026-10-06', departureDate: '2026-10-07', status: 'Cancel', amountAfterTax: '2500', totalAmountAfterTax: '2680', totalTax: '280', adultCount: '4' }) },
+  ];
+
+  for (const t of plan) {
+    results.push(await runTest({
+      label: t.label,
+      excelRow: t.row,
+      endpointName: t.endpointName,
+      url: t.url,
+      payload: t.payload,
+      bookingId: t.bookingId,
+    }));
+  }
 
   // ─── Summary ──────────────────────────────────────────────────────
   console.log('\n\n================================');
@@ -314,7 +326,15 @@ async function main() {
 
   // Write summary JSON
   const summaryFile = path.join(OUT_DIR, 'summary.json');
-  fs.writeFileSync(summaryFile, JSON.stringify({ generatedAt: new Date().toISOString(), propertyId: PROPERTY_ID, url: BOOKING_URL, results }, null, 2), 'utf8');
+  fs.writeFileSync(summaryFile, JSON.stringify({
+    generatedAt: new Date().toISOString(),
+    propertyId: PROPERTY_ID,
+    fetchUrl: FETCH_URL,
+    bookingUrl: BOOKING_URL,
+    roomId: ROOM_ID,
+    rateId: RATE_ID,
+    results,
+  }, null, 2), 'utf8');
   console.log(`Summary JSON  : ${summaryFile}`);
 }
 

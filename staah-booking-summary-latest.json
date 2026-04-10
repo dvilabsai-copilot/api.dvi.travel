@@ -1,0 +1,1950 @@
+{
+  "generatedAt": "2026-04-10T03:45:07.955Z",
+  "propertyId": "STAAHTESTHOTEL1",
+  "fetchUrl": "https://channelconnect.otaswitch.com/common-cgi/dviholidays/test/services.pl",
+  "bookingUrl": "https://reservation.otaswitch.com/getapi/reservation/v2",
+  "roomId": "DELUXE",
+  "rateId": "ROOM",
+  "results": [
+    {
+      "label": "S1_01_Pre-Book",
+      "excelRow": 5,
+      "endpointName": "fetch",
+      "requestedAt": "2026-04-10T03:44:51Z",
+      "bookingId": "DVI-CERT-S1-1775792691249",
+      "request": {
+        "propertyid": "STAAHTESTHOTEL1",
+        "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+        "room_id": "DELUXE",
+        "rate_id": "ROOM",
+        "action": "ARR_info",
+        "from_date": "2026-07-20",
+        "to_date": "2026-07-20",
+        "version": "2"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "currency": "AED",
+          "data": [
+            {
+              "cta": "N",
+              "ctd": "N",
+              "date": "2026-07-20",
+              "inventory": "4",
+              "stopsell": "N"
+            }
+          ],
+          "propertyid": "STAAHTESTHOTEL1",
+          "rate_id": "ROOM",
+          "room_id": "DELUXE",
+          "trackingId": "63062793-D56F-4156-84D1-085BA5888446"
+        }
+      },
+      "status": 200,
+      "pass": true,
+      "body": {
+        "currency": "AED",
+        "data": [
+          {
+            "cta": "N",
+            "ctd": "N",
+            "date": "2026-07-20",
+            "inventory": "4",
+            "stopsell": "N"
+          }
+        ],
+        "propertyid": "STAAHTESTHOTEL1",
+        "rate_id": "ROOM",
+        "room_id": "DELUXE",
+        "trackingId": "63062793-D56F-4156-84D1-085BA5888446"
+      }
+    },
+    {
+      "label": "S1_02_Confirm",
+      "excelRow": 6,
+      "endpointName": "booking",
+      "requestedAt": "2026-04-10T03:44:52Z",
+      "bookingId": "DVI-CERT-S1-1775792691249",
+      "request": {
+        "propertyid": "STAAHTESTHOTEL1",
+        "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+        "action": "reservation_info",
+        "version": "2",
+        "reservations": {
+          "reservation": [
+            {
+              "reservation_datetime": "2026-07-29T06:00:00",
+              "propertyname": "STAAH TEST",
+              "reservation_id": "DVI-CERT-S1-1775792691249",
+              "payment_required": "15",
+              "payment_type": "Hotel Collect",
+              "commissionamount": "0.00",
+              "discountamount": "0.00",
+              "deposit": "0.00",
+              "totalamountaftertax": "1240",
+              "totaltax": "120",
+              "currencycode": "INR",
+              "status": "Confirm",
+              "customer": {
+                "address": "Ring Road",
+                "city": "Surat",
+                "country": "India",
+                "email": "rk@staah.com",
+                "salutation": "Mr.",
+                "first_name": "Test",
+                "last_name": "Test",
+                "remarks": "Please Provide Wine Upon Checking and Do not Disturb",
+                "telephone": "+91 97734 84053",
+                "zip": "395004"
+              },
+              "paymentcarddetail": {
+                "CardHolderName": "Test STAAH",
+                "CardType": "MC",
+                "ExpireDate": "07/28",
+                "CardNumber": "4111111111111111",
+                "cvv": "123"
+              },
+              "room": [
+                {
+                  "arrival_date": "2026-07-20",
+                  "departure_date": "2026-07-21",
+                  "room_id": "DELUXE",
+                  "room_name": "Studio",
+                  "price": [
+                    {
+                      "date": "2026-07-20",
+                      "rate_id": "ROOM",
+                      "rate_name": "Test MK",
+                      "amountaftertax": "1100",
+                      "extraGuests": {
+                        "extraAdult": "1",
+                        "extraChild": "0",
+                        "extraAdultRate": "100",
+                        "extraChildRate": "0"
+                      }
+                    }
+                  ],
+                  "salutation": "Mr.",
+                  "first_name": "Test",
+                  "last_name": "Test",
+                  "taxes": [
+                    {
+                      "name": "service charge",
+                      "value": "120"
+                    }
+                  ],
+                  "amountaftertax": "1200",
+                  "remarks": "No Smoking",
+                  "GuestCount": [
+                    {
+                      "AgeQualifyingCode": "10",
+                      "Count": "2"
+                    }
+                  ]
+                }
+              ],
+              "POS": "TEST",
+              "extraData": [
+                {
+                  "name": "Key",
+                  "value": "Value of key"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": [
+          {
+            "bookingId": "DVI-CERT-S1-1775792691249",
+            "status": "success",
+            "error_desc": ""
+          },
+          {
+            "trackingId": "E8BCE87D-2C9E-4127-B0B8-357D633BC1A5"
+          }
+        ]
+      },
+      "status": 200,
+      "pass": true,
+      "body": [
+        {
+          "bookingId": "DVI-CERT-S1-1775792691249",
+          "status": "success",
+          "error_desc": ""
+        },
+        {
+          "trackingId": "E8BCE87D-2C9E-4127-B0B8-357D633BC1A5"
+        }
+      ]
+    },
+    {
+      "label": "S1_03_Pre-Modify",
+      "excelRow": 7,
+      "endpointName": "fetch",
+      "requestedAt": "2026-04-10T03:44:54Z",
+      "bookingId": "DVI-CERT-S1-1775792691249",
+      "request": {
+        "propertyid": "STAAHTESTHOTEL1",
+        "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+        "room_id": "DELUXE",
+        "rate_id": "ROOM",
+        "action": "ARR_info",
+        "from_date": "2026-07-21",
+        "to_date": "2026-07-21",
+        "version": "2"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "currency": "AED",
+          "data": [
+            {
+              "cta": "N",
+              "ctd": "N",
+              "date": "2026-07-21",
+              "inventory": "8",
+              "stopsell": "N"
+            }
+          ],
+          "propertyid": "STAAHTESTHOTEL1",
+          "rate_id": "ROOM",
+          "room_id": "DELUXE",
+          "trackingId": "F5DC9BE7-AD96-45EA-811F-C288EC1BCBEF"
+        }
+      },
+      "status": 200,
+      "pass": true,
+      "body": {
+        "currency": "AED",
+        "data": [
+          {
+            "cta": "N",
+            "ctd": "N",
+            "date": "2026-07-21",
+            "inventory": "8",
+            "stopsell": "N"
+          }
+        ],
+        "propertyid": "STAAHTESTHOTEL1",
+        "rate_id": "ROOM",
+        "room_id": "DELUXE",
+        "trackingId": "F5DC9BE7-AD96-45EA-811F-C288EC1BCBEF"
+      }
+    },
+    {
+      "label": "S1_04_Modify",
+      "excelRow": 8,
+      "endpointName": "booking",
+      "requestedAt": "2026-04-10T03:44:54Z",
+      "bookingId": "DVI-CERT-S1-1775792691249",
+      "request": {
+        "propertyid": "STAAHTESTHOTEL1",
+        "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+        "action": "reservation_info",
+        "version": "2",
+        "reservations": {
+          "reservation": [
+            {
+              "reservation_datetime": "2026-07-29T06:15:00",
+              "propertyname": "STAAH TEST",
+              "reservation_id": "DVI-CERT-S1-1775792691249",
+              "payment_required": "15",
+              "payment_type": "Hotel Collect",
+              "commissionamount": "0.00",
+              "discountamount": "0.00",
+              "deposit": "0.00",
+              "totalamountaftertax": "1240",
+              "totaltax": "120",
+              "currencycode": "INR",
+              "status": "Modified",
+              "customer": {
+                "address": "Ring Road",
+                "city": "Surat",
+                "country": "India",
+                "email": "rk@staah.com",
+                "salutation": "Mr.",
+                "first_name": "Test",
+                "last_name": "Test",
+                "remarks": "Please Provide Wine Upon Checking and Do not Disturb",
+                "telephone": "+91 97734 84053",
+                "zip": "395004"
+              },
+              "paymentcarddetail": {
+                "CardHolderName": "Test STAAH",
+                "CardType": "MC",
+                "ExpireDate": "07/28",
+                "CardNumber": "4111111111111111",
+                "cvv": "123"
+              },
+              "room": [
+                {
+                  "arrival_date": "2026-07-21",
+                  "departure_date": "2026-07-22",
+                  "room_id": "DELUXE",
+                  "room_name": "Studio",
+                  "price": [
+                    {
+                      "date": "2026-07-21",
+                      "rate_id": "ROOM",
+                      "rate_name": "Test MK",
+                      "amountaftertax": "1100",
+                      "extraGuests": {
+                        "extraAdult": "1",
+                        "extraChild": "0",
+                        "extraAdultRate": "100",
+                        "extraChildRate": "0"
+                      }
+                    }
+                  ],
+                  "salutation": "Mr.",
+                  "first_name": "Test",
+                  "last_name": "Test",
+                  "taxes": [
+                    {
+                      "name": "service charge",
+                      "value": "120"
+                    }
+                  ],
+                  "amountaftertax": "1200",
+                  "remarks": "No Smoking",
+                  "GuestCount": [
+                    {
+                      "AgeQualifyingCode": "10",
+                      "Count": "2"
+                    }
+                  ]
+                }
+              ],
+              "POS": "TEST",
+              "extraData": [
+                {
+                  "name": "Key",
+                  "value": "Value of key"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": [
+          {
+            "bookingId": "DVI-CERT-S1-1775792691249",
+            "status": "success",
+            "error_desc": ""
+          },
+          {
+            "trackingId": "59DCBBB4-73A9-4C40-8E71-B5E876F81904"
+          }
+        ]
+      },
+      "status": 200,
+      "pass": true,
+      "body": [
+        {
+          "bookingId": "DVI-CERT-S1-1775792691249",
+          "status": "success",
+          "error_desc": ""
+        },
+        {
+          "trackingId": "59DCBBB4-73A9-4C40-8E71-B5E876F81904"
+        }
+      ]
+    },
+    {
+      "label": "S1_05_Cancel",
+      "excelRow": 9,
+      "endpointName": "booking",
+      "requestedAt": "2026-04-10T03:44:55Z",
+      "bookingId": "DVI-CERT-S1-1775792691249",
+      "request": {
+        "propertyid": "STAAHTESTHOTEL1",
+        "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+        "action": "reservation_info",
+        "version": "2",
+        "reservations": {
+          "reservation": [
+            {
+              "reservation_datetime": "2026-07-29T06:20:00",
+              "propertyname": "STAAH TEST",
+              "reservation_id": "DVI-CERT-S1-1775792691249",
+              "payment_required": "15",
+              "payment_type": "Hotel Collect",
+              "commissionamount": "0.00",
+              "discountamount": "0.00",
+              "deposit": "0.00",
+              "totalamountaftertax": "1240",
+              "totaltax": "120",
+              "currencycode": "INR",
+              "status": "Cancel",
+              "customer": {
+                "address": "Ring Road",
+                "city": "Surat",
+                "country": "India",
+                "email": "rk@staah.com",
+                "salutation": "Mr.",
+                "first_name": "Test",
+                "last_name": "Test",
+                "remarks": "Please Provide Wine Upon Checking and Do not Disturb",
+                "telephone": "+91 97734 84053",
+                "zip": "395004"
+              },
+              "paymentcarddetail": {
+                "CardHolderName": "Test STAAH",
+                "CardType": "MC",
+                "ExpireDate": "07/28",
+                "CardNumber": "4111111111111111",
+                "cvv": "123"
+              },
+              "room": [
+                {
+                  "arrival_date": "2026-07-21",
+                  "departure_date": "2026-07-22",
+                  "room_id": "DELUXE",
+                  "room_name": "Studio",
+                  "price": [
+                    {
+                      "date": "2026-07-21",
+                      "rate_id": "ROOM",
+                      "rate_name": "Test MK",
+                      "amountaftertax": "1100",
+                      "extraGuests": {
+                        "extraAdult": "1",
+                        "extraChild": "0",
+                        "extraAdultRate": "100",
+                        "extraChildRate": "0"
+                      }
+                    }
+                  ],
+                  "salutation": "Mr.",
+                  "first_name": "Test",
+                  "last_name": "Test",
+                  "taxes": [
+                    {
+                      "name": "service charge",
+                      "value": "120"
+                    }
+                  ],
+                  "amountaftertax": "1200",
+                  "remarks": "No Smoking",
+                  "GuestCount": [
+                    {
+                      "AgeQualifyingCode": "10",
+                      "Count": "2"
+                    }
+                  ]
+                }
+              ],
+              "POS": "TEST",
+              "extraData": [
+                {
+                  "name": "Key",
+                  "value": "Value of key"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": [
+          {
+            "bookingId": "DVI-CERT-S1-1775792691249",
+            "status": "success",
+            "error_desc": ""
+          },
+          {
+            "trackingId": "AC1420CF-285A-4C7D-A55E-E867BC65D93D"
+          }
+        ]
+      },
+      "status": 200,
+      "pass": true,
+      "body": [
+        {
+          "bookingId": "DVI-CERT-S1-1775792691249",
+          "status": "success",
+          "error_desc": ""
+        },
+        {
+          "trackingId": "AC1420CF-285A-4C7D-A55E-E867BC65D93D"
+        }
+      ]
+    },
+    {
+      "label": "S2_01_Pre-Book",
+      "excelRow": 10,
+      "endpointName": "fetch",
+      "requestedAt": "2026-04-10T03:44:55Z",
+      "bookingId": "DVI-CERT-S2-1775792691249",
+      "request": {
+        "propertyid": "STAAHTESTHOTEL1",
+        "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+        "room_id": "DELUXE",
+        "rate_id": "ROOM",
+        "action": "ARR_info",
+        "from_date": "2026-08-10",
+        "to_date": "2026-08-10",
+        "version": "2"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "currency": "AED",
+          "data": [
+            {
+              "cta": "N",
+              "ctd": "N",
+              "date": "2026-08-10",
+              "inventory": "8",
+              "stopsell": "N"
+            }
+          ],
+          "propertyid": "STAAHTESTHOTEL1",
+          "rate_id": "ROOM",
+          "room_id": "DELUXE",
+          "trackingId": "EFFE3935-0891-4024-8300-608557CA8EFC"
+        }
+      },
+      "status": 200,
+      "pass": true,
+      "body": {
+        "currency": "AED",
+        "data": [
+          {
+            "cta": "N",
+            "ctd": "N",
+            "date": "2026-08-10",
+            "inventory": "8",
+            "stopsell": "N"
+          }
+        ],
+        "propertyid": "STAAHTESTHOTEL1",
+        "rate_id": "ROOM",
+        "room_id": "DELUXE",
+        "trackingId": "EFFE3935-0891-4024-8300-608557CA8EFC"
+      }
+    },
+    {
+      "label": "S2_02_Confirm",
+      "excelRow": 11,
+      "endpointName": "booking",
+      "requestedAt": "2026-04-10T03:44:56Z",
+      "bookingId": "DVI-CERT-S2-1775792691249",
+      "request": {
+        "propertyid": "STAAHTESTHOTEL1",
+        "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+        "action": "reservation_info",
+        "version": "2",
+        "reservations": {
+          "reservation": [
+            {
+              "reservation_datetime": "2026-08-01T07:00:00",
+              "propertyname": "STAAH TEST",
+              "reservation_id": "DVI-CERT-S2-1775792691249",
+              "payment_required": "15",
+              "payment_type": "Hotel Collect",
+              "commissionamount": "0.00",
+              "discountamount": "0.00",
+              "deposit": "0.00",
+              "totalamountaftertax": "1340",
+              "totaltax": "140",
+              "currencycode": "INR",
+              "status": "Confirm",
+              "customer": {
+                "address": "Ring Road",
+                "city": "Surat",
+                "country": "India",
+                "email": "rk@staah.com",
+                "salutation": "Mr.",
+                "first_name": "Test",
+                "last_name": "Test",
+                "remarks": "Please Provide Wine Upon Checking and Do not Disturb",
+                "telephone": "+91 97734 84053",
+                "zip": "395004"
+              },
+              "paymentcarddetail": {
+                "CardHolderName": "Test STAAH",
+                "CardType": "MC",
+                "ExpireDate": "07/28",
+                "CardNumber": "4111111111111111",
+                "cvv": "123"
+              },
+              "room": [
+                {
+                  "arrival_date": "2026-08-10",
+                  "departure_date": "2026-08-11",
+                  "room_id": "DELUXE",
+                  "room_name": "Studio",
+                  "price": [
+                    {
+                      "date": "2026-08-10",
+                      "rate_id": "ROOM",
+                      "rate_name": "Test MK",
+                      "amountaftertax": "1100",
+                      "extraGuests": {
+                        "extraAdult": "1",
+                        "extraChild": "1",
+                        "extraAdultRate": "100",
+                        "extraChildRate": "100"
+                      }
+                    }
+                  ],
+                  "salutation": "Mr.",
+                  "first_name": "Test",
+                  "last_name": "Test",
+                  "taxes": [
+                    {
+                      "name": "service charge",
+                      "value": "140"
+                    }
+                  ],
+                  "amountaftertax": "1300",
+                  "remarks": "No Smoking",
+                  "GuestCount": [
+                    {
+                      "AgeQualifyingCode": "10",
+                      "Count": "3"
+                    }
+                  ]
+                }
+              ],
+              "POS": "TEST",
+              "extraData": [
+                {
+                  "name": "Key",
+                  "value": "Value of key"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": [
+          {
+            "bookingId": "DVI-CERT-S2-1775792691249",
+            "status": "success",
+            "error_desc": ""
+          },
+          {
+            "trackingId": "C76155C8-3F1F-45BC-B19F-DCE599997947"
+          }
+        ]
+      },
+      "status": 200,
+      "pass": true,
+      "body": [
+        {
+          "bookingId": "DVI-CERT-S2-1775792691249",
+          "status": "success",
+          "error_desc": ""
+        },
+        {
+          "trackingId": "C76155C8-3F1F-45BC-B19F-DCE599997947"
+        }
+      ]
+    },
+    {
+      "label": "S2_03_Pre-Modify",
+      "excelRow": 12,
+      "endpointName": "fetch",
+      "requestedAt": "2026-04-10T03:44:57Z",
+      "bookingId": "DVI-CERT-S2-1775792691249",
+      "request": {
+        "propertyid": "STAAHTESTHOTEL1",
+        "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+        "room_id": "DELUXE",
+        "rate_id": "ROOM",
+        "action": "ARR_info",
+        "from_date": "2026-08-11",
+        "to_date": "2026-08-11",
+        "version": "2"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "currency": "AED",
+          "data": [
+            {
+              "cta": "N",
+              "ctd": "N",
+              "date": "2026-08-11",
+              "inventory": "8",
+              "stopsell": "N"
+            }
+          ],
+          "propertyid": "STAAHTESTHOTEL1",
+          "rate_id": "ROOM",
+          "room_id": "DELUXE",
+          "trackingId": "76B97729-9281-4111-8A3D-2837E97B9BA2"
+        }
+      },
+      "status": 200,
+      "pass": true,
+      "body": {
+        "currency": "AED",
+        "data": [
+          {
+            "cta": "N",
+            "ctd": "N",
+            "date": "2026-08-11",
+            "inventory": "8",
+            "stopsell": "N"
+          }
+        ],
+        "propertyid": "STAAHTESTHOTEL1",
+        "rate_id": "ROOM",
+        "room_id": "DELUXE",
+        "trackingId": "76B97729-9281-4111-8A3D-2837E97B9BA2"
+      }
+    },
+    {
+      "label": "S2_04_Modify",
+      "excelRow": 13,
+      "endpointName": "booking",
+      "requestedAt": "2026-04-10T03:44:57Z",
+      "bookingId": "DVI-CERT-S2-1775792691249",
+      "request": {
+        "propertyid": "STAAHTESTHOTEL1",
+        "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+        "action": "reservation_info",
+        "version": "2",
+        "reservations": {
+          "reservation": [
+            {
+              "reservation_datetime": "2026-08-01T07:15:00",
+              "propertyname": "STAAH TEST",
+              "reservation_id": "DVI-CERT-S2-1775792691249",
+              "payment_required": "15",
+              "payment_type": "Hotel Collect",
+              "commissionamount": "0.00",
+              "discountamount": "0.00",
+              "deposit": "0.00",
+              "totalamountaftertax": "1340",
+              "totaltax": "140",
+              "currencycode": "INR",
+              "status": "Modified",
+              "customer": {
+                "address": "Ring Road",
+                "city": "Surat",
+                "country": "India",
+                "email": "rk@staah.com",
+                "salutation": "Mr.",
+                "first_name": "Test",
+                "last_name": "Test",
+                "remarks": "Please Provide Wine Upon Checking and Do not Disturb",
+                "telephone": "+91 97734 84053",
+                "zip": "395004"
+              },
+              "paymentcarddetail": {
+                "CardHolderName": "Test STAAH",
+                "CardType": "MC",
+                "ExpireDate": "07/28",
+                "CardNumber": "4111111111111111",
+                "cvv": "123"
+              },
+              "room": [
+                {
+                  "arrival_date": "2026-08-11",
+                  "departure_date": "2026-08-12",
+                  "room_id": "DELUXE",
+                  "room_name": "Studio",
+                  "price": [
+                    {
+                      "date": "2026-08-11",
+                      "rate_id": "ROOM",
+                      "rate_name": "Test MK",
+                      "amountaftertax": "1100",
+                      "extraGuests": {
+                        "extraAdult": "1",
+                        "extraChild": "1",
+                        "extraAdultRate": "100",
+                        "extraChildRate": "100"
+                      }
+                    }
+                  ],
+                  "salutation": "Mr.",
+                  "first_name": "Test",
+                  "last_name": "Test",
+                  "taxes": [
+                    {
+                      "name": "service charge",
+                      "value": "140"
+                    }
+                  ],
+                  "amountaftertax": "1300",
+                  "remarks": "No Smoking",
+                  "GuestCount": [
+                    {
+                      "AgeQualifyingCode": "10",
+                      "Count": "3"
+                    }
+                  ]
+                }
+              ],
+              "POS": "TEST",
+              "extraData": [
+                {
+                  "name": "Key",
+                  "value": "Value of key"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": [
+          {
+            "bookingId": "DVI-CERT-S2-1775792691249",
+            "status": "success",
+            "error_desc": ""
+          },
+          {
+            "trackingId": "D856DFD9-3D5C-4C64-A99A-F34260FDFDB9"
+          }
+        ]
+      },
+      "status": 200,
+      "pass": true,
+      "body": [
+        {
+          "bookingId": "DVI-CERT-S2-1775792691249",
+          "status": "success",
+          "error_desc": ""
+        },
+        {
+          "trackingId": "D856DFD9-3D5C-4C64-A99A-F34260FDFDB9"
+        }
+      ]
+    },
+    {
+      "label": "S2_05_Cancel",
+      "excelRow": 14,
+      "endpointName": "booking",
+      "requestedAt": "2026-04-10T03:44:58Z",
+      "bookingId": "DVI-CERT-S2-1775792691249",
+      "request": {
+        "propertyid": "STAAHTESTHOTEL1",
+        "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+        "action": "reservation_info",
+        "version": "2",
+        "reservations": {
+          "reservation": [
+            {
+              "reservation_datetime": "2026-08-01T07:20:00",
+              "propertyname": "STAAH TEST",
+              "reservation_id": "DVI-CERT-S2-1775792691249",
+              "payment_required": "15",
+              "payment_type": "Hotel Collect",
+              "commissionamount": "0.00",
+              "discountamount": "0.00",
+              "deposit": "0.00",
+              "totalamountaftertax": "1340",
+              "totaltax": "140",
+              "currencycode": "INR",
+              "status": "Cancel",
+              "customer": {
+                "address": "Ring Road",
+                "city": "Surat",
+                "country": "India",
+                "email": "rk@staah.com",
+                "salutation": "Mr.",
+                "first_name": "Test",
+                "last_name": "Test",
+                "remarks": "Please Provide Wine Upon Checking and Do not Disturb",
+                "telephone": "+91 97734 84053",
+                "zip": "395004"
+              },
+              "paymentcarddetail": {
+                "CardHolderName": "Test STAAH",
+                "CardType": "MC",
+                "ExpireDate": "07/28",
+                "CardNumber": "4111111111111111",
+                "cvv": "123"
+              },
+              "room": [
+                {
+                  "arrival_date": "2026-08-11",
+                  "departure_date": "2026-08-12",
+                  "room_id": "DELUXE",
+                  "room_name": "Studio",
+                  "price": [
+                    {
+                      "date": "2026-08-11",
+                      "rate_id": "ROOM",
+                      "rate_name": "Test MK",
+                      "amountaftertax": "1100",
+                      "extraGuests": {
+                        "extraAdult": "1",
+                        "extraChild": "1",
+                        "extraAdultRate": "100",
+                        "extraChildRate": "100"
+                      }
+                    }
+                  ],
+                  "salutation": "Mr.",
+                  "first_name": "Test",
+                  "last_name": "Test",
+                  "taxes": [
+                    {
+                      "name": "service charge",
+                      "value": "140"
+                    }
+                  ],
+                  "amountaftertax": "1300",
+                  "remarks": "No Smoking",
+                  "GuestCount": [
+                    {
+                      "AgeQualifyingCode": "10",
+                      "Count": "3"
+                    }
+                  ]
+                }
+              ],
+              "POS": "TEST",
+              "extraData": [
+                {
+                  "name": "Key",
+                  "value": "Value of key"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": [
+          {
+            "bookingId": "DVI-CERT-S2-1775792691249",
+            "status": "success",
+            "error_desc": ""
+          },
+          {
+            "trackingId": "658FD7E8-C7C7-45F6-BEB4-7793EBA83EA0"
+          }
+        ]
+      },
+      "status": 200,
+      "pass": true,
+      "body": [
+        {
+          "bookingId": "DVI-CERT-S2-1775792691249",
+          "status": "success",
+          "error_desc": ""
+        },
+        {
+          "trackingId": "658FD7E8-C7C7-45F6-BEB4-7793EBA83EA0"
+        }
+      ]
+    },
+    {
+      "label": "S3_01_Pre-Book",
+      "excelRow": 15,
+      "endpointName": "fetch",
+      "requestedAt": "2026-04-10T03:44:59Z",
+      "bookingId": "DVI-CERT-S3-1775792691249",
+      "request": {
+        "propertyid": "STAAHTESTHOTEL1",
+        "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+        "room_id": "DELUXE",
+        "rate_id": "ROOM",
+        "action": "ARR_info",
+        "from_date": "2026-09-01",
+        "to_date": "2026-09-03",
+        "version": "2"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "currency": "AED",
+          "data": [
+            {
+              "cta": "N",
+              "ctd": "N",
+              "date": "2026-09-01",
+              "inventory": "8",
+              "stopsell": "N"
+            },
+            {
+              "cta": "N",
+              "ctd": "N",
+              "date": "2026-09-02",
+              "inventory": "8",
+              "stopsell": "N"
+            },
+            {
+              "cta": "N",
+              "ctd": "N",
+              "date": "2026-09-03",
+              "inventory": "8",
+              "stopsell": "N"
+            }
+          ],
+          "propertyid": "STAAHTESTHOTEL1",
+          "rate_id": "ROOM",
+          "room_id": "DELUXE",
+          "trackingId": "3737E730-8B00-435D-85CF-6148C05E8418"
+        }
+      },
+      "status": 200,
+      "pass": true,
+      "body": {
+        "currency": "AED",
+        "data": [
+          {
+            "cta": "N",
+            "ctd": "N",
+            "date": "2026-09-01",
+            "inventory": "8",
+            "stopsell": "N"
+          },
+          {
+            "cta": "N",
+            "ctd": "N",
+            "date": "2026-09-02",
+            "inventory": "8",
+            "stopsell": "N"
+          },
+          {
+            "cta": "N",
+            "ctd": "N",
+            "date": "2026-09-03",
+            "inventory": "8",
+            "stopsell": "N"
+          }
+        ],
+        "propertyid": "STAAHTESTHOTEL1",
+        "rate_id": "ROOM",
+        "room_id": "DELUXE",
+        "trackingId": "3737E730-8B00-435D-85CF-6148C05E8418"
+      }
+    },
+    {
+      "label": "S3_02_Confirm",
+      "excelRow": 16,
+      "endpointName": "booking",
+      "requestedAt": "2026-04-10T03:44:59Z",
+      "bookingId": "DVI-CERT-S3-1775792691249",
+      "request": {
+        "propertyid": "STAAHTESTHOTEL1",
+        "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+        "action": "reservation_info",
+        "version": "2",
+        "reservations": {
+          "reservation": [
+            {
+              "reservation_datetime": "2026-09-01T08:00:00",
+              "propertyname": "STAAH TEST",
+              "reservation_id": "DVI-CERT-S3-1775792691249",
+              "payment_required": "15",
+              "payment_type": "Hotel Collect",
+              "commissionamount": "0.00",
+              "discountamount": "0.00",
+              "deposit": "0.00",
+              "totalamountaftertax": "2240",
+              "totaltax": "220",
+              "currencycode": "INR",
+              "status": "Confirm",
+              "customer": {
+                "address": "Ring Road",
+                "city": "Surat",
+                "country": "India",
+                "email": "rk@staah.com",
+                "salutation": "Mr.",
+                "first_name": "Test",
+                "last_name": "Test",
+                "remarks": "Please Provide Wine Upon Checking and Do not Disturb",
+                "telephone": "+91 97734 84053",
+                "zip": "395004"
+              },
+              "paymentcarddetail": {
+                "CardHolderName": "Test STAAH",
+                "CardType": "MC",
+                "ExpireDate": "07/28",
+                "CardNumber": "4111111111111111",
+                "cvv": "123"
+              },
+              "room": [
+                {
+                  "arrival_date": "2026-09-01",
+                  "departure_date": "2026-09-03",
+                  "room_id": "DELUXE",
+                  "room_name": "Studio",
+                  "price": [
+                    {
+                      "date": "2026-09-01",
+                      "rate_id": "ROOM",
+                      "rate_name": "Test MK",
+                      "amountaftertax": "1100",
+                      "extraGuests": {
+                        "extraAdult": "1",
+                        "extraChild": "0",
+                        "extraAdultRate": "100",
+                        "extraChildRate": "0"
+                      }
+                    }
+                  ],
+                  "salutation": "Mr.",
+                  "first_name": "Test",
+                  "last_name": "Test",
+                  "taxes": [
+                    {
+                      "name": "service charge",
+                      "value": "220"
+                    }
+                  ],
+                  "amountaftertax": "2100",
+                  "remarks": "No Smoking",
+                  "GuestCount": [
+                    {
+                      "AgeQualifyingCode": "10",
+                      "Count": "2"
+                    }
+                  ]
+                }
+              ],
+              "POS": "TEST",
+              "extraData": [
+                {
+                  "name": "Key",
+                  "value": "Value of key"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": [
+          {
+            "bookingId": "DVI-CERT-S3-1775792691249",
+            "status": "success",
+            "error_desc": ""
+          },
+          {
+            "trackingId": "F7EF064B-9D94-4810-A1CC-CF26BE165AD6"
+          }
+        ]
+      },
+      "status": 200,
+      "pass": true,
+      "body": [
+        {
+          "bookingId": "DVI-CERT-S3-1775792691249",
+          "status": "success",
+          "error_desc": ""
+        },
+        {
+          "trackingId": "F7EF064B-9D94-4810-A1CC-CF26BE165AD6"
+        }
+      ]
+    },
+    {
+      "label": "S3_03_Pre-Modify",
+      "excelRow": 17,
+      "endpointName": "fetch",
+      "requestedAt": "2026-04-10T03:45:00Z",
+      "bookingId": "DVI-CERT-S3-1775792691249",
+      "request": {
+        "propertyid": "STAAHTESTHOTEL1",
+        "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+        "room_id": "DELUXE",
+        "rate_id": "ROOM",
+        "action": "ARR_info",
+        "from_date": "2026-09-02",
+        "to_date": "2026-09-04",
+        "version": "2"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "currency": "AED",
+          "data": [
+            {
+              "cta": "N",
+              "ctd": "N",
+              "date": "2026-09-02",
+              "inventory": "8",
+              "stopsell": "N"
+            },
+            {
+              "cta": "N",
+              "ctd": "N",
+              "date": "2026-09-03",
+              "inventory": "8",
+              "stopsell": "N"
+            },
+            {
+              "cta": "N",
+              "ctd": "N",
+              "date": "2026-09-04",
+              "inventory": "6",
+              "stopsell": "N"
+            }
+          ],
+          "propertyid": "STAAHTESTHOTEL1",
+          "rate_id": "ROOM",
+          "room_id": "DELUXE",
+          "trackingId": "6D5F0453-EC5F-42F6-81FF-F6F23E0BAFD2"
+        }
+      },
+      "status": 200,
+      "pass": true,
+      "body": {
+        "currency": "AED",
+        "data": [
+          {
+            "cta": "N",
+            "ctd": "N",
+            "date": "2026-09-02",
+            "inventory": "8",
+            "stopsell": "N"
+          },
+          {
+            "cta": "N",
+            "ctd": "N",
+            "date": "2026-09-03",
+            "inventory": "8",
+            "stopsell": "N"
+          },
+          {
+            "cta": "N",
+            "ctd": "N",
+            "date": "2026-09-04",
+            "inventory": "6",
+            "stopsell": "N"
+          }
+        ],
+        "propertyid": "STAAHTESTHOTEL1",
+        "rate_id": "ROOM",
+        "room_id": "DELUXE",
+        "trackingId": "6D5F0453-EC5F-42F6-81FF-F6F23E0BAFD2"
+      }
+    },
+    {
+      "label": "S3_04_Modify",
+      "excelRow": 18,
+      "endpointName": "booking",
+      "requestedAt": "2026-04-10T03:45:01Z",
+      "bookingId": "DVI-CERT-S3-1775792691249",
+      "request": {
+        "propertyid": "STAAHTESTHOTEL1",
+        "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+        "action": "reservation_info",
+        "version": "2",
+        "reservations": {
+          "reservation": [
+            {
+              "reservation_datetime": "2026-09-01T08:15:00",
+              "propertyname": "STAAH TEST",
+              "reservation_id": "DVI-CERT-S3-1775792691249",
+              "payment_required": "15",
+              "payment_type": "Hotel Collect",
+              "commissionamount": "0.00",
+              "discountamount": "0.00",
+              "deposit": "0.00",
+              "totalamountaftertax": "2360",
+              "totaltax": "240",
+              "currencycode": "INR",
+              "status": "Modified",
+              "customer": {
+                "address": "Ring Road",
+                "city": "Surat",
+                "country": "India",
+                "email": "rk@staah.com",
+                "salutation": "Mr.",
+                "first_name": "Test",
+                "last_name": "Test",
+                "remarks": "Please Provide Wine Upon Checking and Do not Disturb",
+                "telephone": "+91 97734 84053",
+                "zip": "395004"
+              },
+              "paymentcarddetail": {
+                "CardHolderName": "Test STAAH",
+                "CardType": "MC",
+                "ExpireDate": "07/28",
+                "CardNumber": "4111111111111111",
+                "cvv": "123"
+              },
+              "room": [
+                {
+                  "arrival_date": "2026-09-02",
+                  "departure_date": "2026-09-04",
+                  "room_id": "DELUXE",
+                  "room_name": "Studio",
+                  "price": [
+                    {
+                      "date": "2026-09-02",
+                      "rate_id": "ROOM",
+                      "rate_name": "Test MK",
+                      "amountaftertax": "1100",
+                      "extraGuests": {
+                        "extraAdult": "1",
+                        "extraChild": "0",
+                        "extraAdultRate": "100",
+                        "extraChildRate": "0"
+                      }
+                    }
+                  ],
+                  "salutation": "Mr.",
+                  "first_name": "Test",
+                  "last_name": "Test",
+                  "taxes": [
+                    {
+                      "name": "service charge",
+                      "value": "240"
+                    }
+                  ],
+                  "amountaftertax": "2200",
+                  "remarks": "No Smoking",
+                  "GuestCount": [
+                    {
+                      "AgeQualifyingCode": "10",
+                      "Count": "2"
+                    }
+                  ]
+                }
+              ],
+              "POS": "TEST",
+              "extraData": [
+                {
+                  "name": "Key",
+                  "value": "Value of key"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": [
+          {
+            "bookingId": "DVI-CERT-S3-1775792691249",
+            "status": "success",
+            "error_desc": ""
+          },
+          {
+            "trackingId": "88D3861F-EAC8-437F-8AF8-45E21ECBEB16"
+          }
+        ]
+      },
+      "status": 200,
+      "pass": true,
+      "body": [
+        {
+          "bookingId": "DVI-CERT-S3-1775792691249",
+          "status": "success",
+          "error_desc": ""
+        },
+        {
+          "trackingId": "88D3861F-EAC8-437F-8AF8-45E21ECBEB16"
+        }
+      ]
+    },
+    {
+      "label": "S3_05_Cancel",
+      "excelRow": 19,
+      "endpointName": "booking",
+      "requestedAt": "2026-04-10T03:45:02Z",
+      "bookingId": "DVI-CERT-S3-1775792691249",
+      "request": {
+        "propertyid": "STAAHTESTHOTEL1",
+        "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+        "action": "reservation_info",
+        "version": "2",
+        "reservations": {
+          "reservation": [
+            {
+              "reservation_datetime": "2026-09-01T08:20:00",
+              "propertyname": "STAAH TEST",
+              "reservation_id": "DVI-CERT-S3-1775792691249",
+              "payment_required": "15",
+              "payment_type": "Hotel Collect",
+              "commissionamount": "0.00",
+              "discountamount": "0.00",
+              "deposit": "0.00",
+              "totalamountaftertax": "2360",
+              "totaltax": "240",
+              "currencycode": "INR",
+              "status": "Cancel",
+              "customer": {
+                "address": "Ring Road",
+                "city": "Surat",
+                "country": "India",
+                "email": "rk@staah.com",
+                "salutation": "Mr.",
+                "first_name": "Test",
+                "last_name": "Test",
+                "remarks": "Please Provide Wine Upon Checking and Do not Disturb",
+                "telephone": "+91 97734 84053",
+                "zip": "395004"
+              },
+              "paymentcarddetail": {
+                "CardHolderName": "Test STAAH",
+                "CardType": "MC",
+                "ExpireDate": "07/28",
+                "CardNumber": "4111111111111111",
+                "cvv": "123"
+              },
+              "room": [
+                {
+                  "arrival_date": "2026-09-02",
+                  "departure_date": "2026-09-04",
+                  "room_id": "DELUXE",
+                  "room_name": "Studio",
+                  "price": [
+                    {
+                      "date": "2026-09-02",
+                      "rate_id": "ROOM",
+                      "rate_name": "Test MK",
+                      "amountaftertax": "1100",
+                      "extraGuests": {
+                        "extraAdult": "1",
+                        "extraChild": "0",
+                        "extraAdultRate": "100",
+                        "extraChildRate": "0"
+                      }
+                    }
+                  ],
+                  "salutation": "Mr.",
+                  "first_name": "Test",
+                  "last_name": "Test",
+                  "taxes": [
+                    {
+                      "name": "service charge",
+                      "value": "240"
+                    }
+                  ],
+                  "amountaftertax": "2200",
+                  "remarks": "No Smoking",
+                  "GuestCount": [
+                    {
+                      "AgeQualifyingCode": "10",
+                      "Count": "2"
+                    }
+                  ]
+                }
+              ],
+              "POS": "TEST",
+              "extraData": [
+                {
+                  "name": "Key",
+                  "value": "Value of key"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": [
+          {
+            "bookingId": "DVI-CERT-S3-1775792691249",
+            "status": "success",
+            "error_desc": ""
+          },
+          {
+            "trackingId": "C32624E5-05A1-4693-884E-D2899C56A578"
+          }
+        ]
+      },
+      "status": 200,
+      "pass": true,
+      "body": [
+        {
+          "bookingId": "DVI-CERT-S3-1775792691249",
+          "status": "success",
+          "error_desc": ""
+        },
+        {
+          "trackingId": "C32624E5-05A1-4693-884E-D2899C56A578"
+        }
+      ]
+    },
+    {
+      "label": "S4_01_Pre-Book",
+      "excelRow": 20,
+      "endpointName": "fetch",
+      "requestedAt": "2026-04-10T03:45:03Z",
+      "bookingId": "DVI-CERT-S4-1775792691249",
+      "request": {
+        "propertyid": "STAAHTESTHOTEL1",
+        "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+        "room_id": "DELUXE",
+        "rate_id": "ROOM",
+        "action": "ARR_info",
+        "from_date": "2026-10-05",
+        "to_date": "2026-10-05",
+        "version": "2"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "currency": "AED",
+          "data": [
+            {
+              "cta": "N",
+              "ctd": "N",
+              "date": "2026-10-05",
+              "inventory": "10",
+              "stopsell": "N"
+            }
+          ],
+          "propertyid": "STAAHTESTHOTEL1",
+          "rate_id": "ROOM",
+          "room_id": "DELUXE",
+          "trackingId": "037A8869-61C4-49E8-8DCC-18BDE13E6E51"
+        }
+      },
+      "status": 200,
+      "pass": true,
+      "body": {
+        "currency": "AED",
+        "data": [
+          {
+            "cta": "N",
+            "ctd": "N",
+            "date": "2026-10-05",
+            "inventory": "10",
+            "stopsell": "N"
+          }
+        ],
+        "propertyid": "STAAHTESTHOTEL1",
+        "rate_id": "ROOM",
+        "room_id": "DELUXE",
+        "trackingId": "037A8869-61C4-49E8-8DCC-18BDE13E6E51"
+      }
+    },
+    {
+      "label": "S4_02_Confirm",
+      "excelRow": 21,
+      "endpointName": "booking",
+      "requestedAt": "2026-04-10T03:45:04Z",
+      "bookingId": "DVI-CERT-S4-1775792691249",
+      "request": {
+        "propertyid": "STAAHTESTHOTEL1",
+        "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+        "action": "reservation_info",
+        "version": "2",
+        "reservations": {
+          "reservation": [
+            {
+              "reservation_datetime": "2026-10-01T09:00:00",
+              "propertyname": "STAAH TEST",
+              "reservation_id": "DVI-CERT-S4-1775792691249",
+              "payment_required": "15",
+              "payment_type": "Hotel Collect",
+              "commissionamount": "0.00",
+              "discountamount": "0.00",
+              "deposit": "0.00",
+              "totalamountaftertax": "2560",
+              "totaltax": "260",
+              "currencycode": "INR",
+              "status": "Confirm",
+              "customer": {
+                "address": "Ring Road",
+                "city": "Surat",
+                "country": "India",
+                "email": "rk@staah.com",
+                "salutation": "Mr.",
+                "first_name": "Test",
+                "last_name": "Test",
+                "remarks": "Please Provide Wine Upon Checking and Do not Disturb",
+                "telephone": "+91 97734 84053",
+                "zip": "395004"
+              },
+              "paymentcarddetail": {
+                "CardHolderName": "Test STAAH",
+                "CardType": "MC",
+                "ExpireDate": "07/28",
+                "CardNumber": "4111111111111111",
+                "cvv": "123"
+              },
+              "room": [
+                {
+                  "arrival_date": "2026-10-05",
+                  "departure_date": "2026-10-06",
+                  "room_id": "DELUXE",
+                  "room_name": "Studio",
+                  "price": [
+                    {
+                      "date": "2026-10-05",
+                      "rate_id": "ROOM",
+                      "rate_name": "Test MK",
+                      "amountaftertax": "1100",
+                      "extraGuests": {
+                        "extraAdult": "1",
+                        "extraChild": "0",
+                        "extraAdultRate": "100",
+                        "extraChildRate": "0"
+                      }
+                    }
+                  ],
+                  "salutation": "Mr.",
+                  "first_name": "Test",
+                  "last_name": "Test",
+                  "taxes": [
+                    {
+                      "name": "service charge",
+                      "value": "260"
+                    }
+                  ],
+                  "amountaftertax": "2400",
+                  "remarks": "No Smoking",
+                  "GuestCount": [
+                    {
+                      "AgeQualifyingCode": "10",
+                      "Count": "4"
+                    }
+                  ]
+                }
+              ],
+              "POS": "TEST",
+              "extraData": [
+                {
+                  "name": "Key",
+                  "value": "Value of key"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": [
+          {
+            "bookingId": "DVI-CERT-S4-1775792691249",
+            "status": "success",
+            "error_desc": ""
+          },
+          {
+            "trackingId": "DA609909-D105-43BC-8BD4-D1651B528F77"
+          }
+        ]
+      },
+      "status": 200,
+      "pass": true,
+      "body": [
+        {
+          "bookingId": "DVI-CERT-S4-1775792691249",
+          "status": "success",
+          "error_desc": ""
+        },
+        {
+          "trackingId": "DA609909-D105-43BC-8BD4-D1651B528F77"
+        }
+      ]
+    },
+    {
+      "label": "S4_03_Pre-Modify",
+      "excelRow": 22,
+      "endpointName": "fetch",
+      "requestedAt": "2026-04-10T03:45:05Z",
+      "bookingId": "DVI-CERT-S4-1775792691249",
+      "request": {
+        "propertyid": "STAAHTESTHOTEL1",
+        "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+        "room_id": "DELUXE",
+        "rate_id": "ROOM",
+        "action": "ARR_info",
+        "from_date": "2026-10-06",
+        "to_date": "2026-10-06",
+        "version": "2"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "currency": "AED",
+          "data": [
+            {
+              "cta": "N",
+              "ctd": "N",
+              "date": "2026-10-06",
+              "inventory": "11",
+              "stopsell": "N"
+            }
+          ],
+          "propertyid": "STAAHTESTHOTEL1",
+          "rate_id": "ROOM",
+          "room_id": "DELUXE",
+          "trackingId": "7798CBD6-EF81-45FB-8230-3C3427C2C453"
+        }
+      },
+      "status": 200,
+      "pass": true,
+      "body": {
+        "currency": "AED",
+        "data": [
+          {
+            "cta": "N",
+            "ctd": "N",
+            "date": "2026-10-06",
+            "inventory": "11",
+            "stopsell": "N"
+          }
+        ],
+        "propertyid": "STAAHTESTHOTEL1",
+        "rate_id": "ROOM",
+        "room_id": "DELUXE",
+        "trackingId": "7798CBD6-EF81-45FB-8230-3C3427C2C453"
+      }
+    },
+    {
+      "label": "S4_04_Modify",
+      "excelRow": 23,
+      "endpointName": "booking",
+      "requestedAt": "2026-04-10T03:45:05Z",
+      "bookingId": "DVI-CERT-S4-1775792691249",
+      "request": {
+        "propertyid": "STAAHTESTHOTEL1",
+        "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+        "action": "reservation_info",
+        "version": "2",
+        "reservations": {
+          "reservation": [
+            {
+              "reservation_datetime": "2026-10-01T09:15:00",
+              "propertyname": "STAAH TEST",
+              "reservation_id": "DVI-CERT-S4-1775792691249",
+              "payment_required": "15",
+              "payment_type": "Hotel Collect",
+              "commissionamount": "0.00",
+              "discountamount": "0.00",
+              "deposit": "0.00",
+              "totalamountaftertax": "2680",
+              "totaltax": "280",
+              "currencycode": "INR",
+              "status": "Modified",
+              "customer": {
+                "address": "Ring Road",
+                "city": "Surat",
+                "country": "India",
+                "email": "rk@staah.com",
+                "salutation": "Mr.",
+                "first_name": "Test",
+                "last_name": "Test",
+                "remarks": "Please Provide Wine Upon Checking and Do not Disturb",
+                "telephone": "+91 97734 84053",
+                "zip": "395004"
+              },
+              "paymentcarddetail": {
+                "CardHolderName": "Test STAAH",
+                "CardType": "MC",
+                "ExpireDate": "07/28",
+                "CardNumber": "4111111111111111",
+                "cvv": "123"
+              },
+              "room": [
+                {
+                  "arrival_date": "2026-10-06",
+                  "departure_date": "2026-10-07",
+                  "room_id": "DELUXE",
+                  "room_name": "Studio",
+                  "price": [
+                    {
+                      "date": "2026-10-06",
+                      "rate_id": "ROOM",
+                      "rate_name": "Test MK",
+                      "amountaftertax": "1100",
+                      "extraGuests": {
+                        "extraAdult": "1",
+                        "extraChild": "0",
+                        "extraAdultRate": "100",
+                        "extraChildRate": "0"
+                      }
+                    }
+                  ],
+                  "salutation": "Mr.",
+                  "first_name": "Test",
+                  "last_name": "Test",
+                  "taxes": [
+                    {
+                      "name": "service charge",
+                      "value": "280"
+                    }
+                  ],
+                  "amountaftertax": "2500",
+                  "remarks": "No Smoking",
+                  "GuestCount": [
+                    {
+                      "AgeQualifyingCode": "10",
+                      "Count": "4"
+                    }
+                  ]
+                }
+              ],
+              "POS": "TEST",
+              "extraData": [
+                {
+                  "name": "Key",
+                  "value": "Value of key"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": [
+          {
+            "bookingId": "DVI-CERT-S4-1775792691249",
+            "status": "success",
+            "error_desc": ""
+          },
+          {
+            "trackingId": "D2C51E7B-B2C4-4107-8C43-7ACBE6FE10AA"
+          }
+        ]
+      },
+      "status": 200,
+      "pass": true,
+      "body": [
+        {
+          "bookingId": "DVI-CERT-S4-1775792691249",
+          "status": "success",
+          "error_desc": ""
+        },
+        {
+          "trackingId": "D2C51E7B-B2C4-4107-8C43-7ACBE6FE10AA"
+        }
+      ]
+    },
+    {
+      "label": "S4_05_Cancel",
+      "excelRow": 24,
+      "endpointName": "booking",
+      "requestedAt": "2026-04-10T03:45:06Z",
+      "bookingId": "DVI-CERT-S4-1775792691249",
+      "request": {
+        "propertyid": "STAAHTESTHOTEL1",
+        "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+        "action": "reservation_info",
+        "version": "2",
+        "reservations": {
+          "reservation": [
+            {
+              "reservation_datetime": "2026-10-01T09:20:00",
+              "propertyname": "STAAH TEST",
+              "reservation_id": "DVI-CERT-S4-1775792691249",
+              "payment_required": "15",
+              "payment_type": "Hotel Collect",
+              "commissionamount": "0.00",
+              "discountamount": "0.00",
+              "deposit": "0.00",
+              "totalamountaftertax": "2680",
+              "totaltax": "280",
+              "currencycode": "INR",
+              "status": "Cancel",
+              "customer": {
+                "address": "Ring Road",
+                "city": "Surat",
+                "country": "India",
+                "email": "rk@staah.com",
+                "salutation": "Mr.",
+                "first_name": "Test",
+                "last_name": "Test",
+                "remarks": "Please Provide Wine Upon Checking and Do not Disturb",
+                "telephone": "+91 97734 84053",
+                "zip": "395004"
+              },
+              "paymentcarddetail": {
+                "CardHolderName": "Test STAAH",
+                "CardType": "MC",
+                "ExpireDate": "07/28",
+                "CardNumber": "4111111111111111",
+                "cvv": "123"
+              },
+              "room": [
+                {
+                  "arrival_date": "2026-10-06",
+                  "departure_date": "2026-10-07",
+                  "room_id": "DELUXE",
+                  "room_name": "Studio",
+                  "price": [
+                    {
+                      "date": "2026-10-06",
+                      "rate_id": "ROOM",
+                      "rate_name": "Test MK",
+                      "amountaftertax": "1100",
+                      "extraGuests": {
+                        "extraAdult": "1",
+                        "extraChild": "0",
+                        "extraAdultRate": "100",
+                        "extraChildRate": "0"
+                      }
+                    }
+                  ],
+                  "salutation": "Mr.",
+                  "first_name": "Test",
+                  "last_name": "Test",
+                  "taxes": [
+                    {
+                      "name": "service charge",
+                      "value": "280"
+                    }
+                  ],
+                  "amountaftertax": "2500",
+                  "remarks": "No Smoking",
+                  "GuestCount": [
+                    {
+                      "AgeQualifyingCode": "10",
+                      "Count": "4"
+                    }
+                  ]
+                }
+              ],
+              "POS": "TEST",
+              "extraData": [
+                {
+                  "name": "Key",
+                  "value": "Value of key"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": [
+          {
+            "bookingId": "DVI-CERT-S4-1775792691249",
+            "status": "success",
+            "error_desc": ""
+          },
+          {
+            "trackingId": "B1586E05-4568-40A9-9230-CCE7D023ED58"
+          }
+        ]
+      },
+      "status": 200,
+      "pass": true,
+      "body": [
+        {
+          "bookingId": "DVI-CERT-S4-1775792691249",
+          "status": "success",
+          "error_desc": ""
+        },
+        {
+          "trackingId": "B1586E05-4568-40A9-9230-CCE7D023ED58"
+        }
+      ]
+    }
+  ]
+}

@@ -19,13 +19,9 @@ export class AuthService {
   async validateUser(email: string, password: string) {
     // Map email → useremail (Prisma model: dvi_users)
     const user = await this.prisma.dvi_users.findFirst({
-      where: { useremail: email },
+      where: { useremail: email, deleted: 0 },
     });
 
-    console.log('Validating user:', email);
-    console.log('User record found:', user?.password);
-    const hashedPassword = await bcrypt.hash('Keerthi@2404ias', 10); // 10 = salt rounds
-console.log('Hashed password for comparison:', hashedPassword);
     if (!user) {
       throw new UnauthorizedException('Invalid credentials');
     }
@@ -47,9 +43,7 @@ console.log('Hashed password for comparison:', hashedPassword);
    * Login and issue JWT
    */
   async login(email: string, password: string) {
-    console.log('Login attempt for:', email);
     const user = await this.validateUser(email, password);
-console.log(user);
     // userID is BigInt in Prisma → convert to string for JWT
     const userId = user.userID.toString();
 
