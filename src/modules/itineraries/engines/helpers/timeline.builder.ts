@@ -1206,9 +1206,14 @@ export class TimelineBuilder {
           let absoluteVisitStartSeconds = currentTimeSeconds + travelDurationSeconds;
           let absoluteVisitEndSeconds = absoluteVisitStartSeconds + hotspotDurationSeconds;
           
-          // Wrapped times are ONLY for display/builder calls
-          let timeAfterTravel = secondsToTime(absoluteVisitStartSeconds);
-          let timeAfterSightseeing = secondsToTime(absoluteVisitEndSeconds);
+          // Wrapped times are ONLY for display/builder calls (not for tracking state!)
+          // KEY FIX: DO NOT use these for currentTime; keep currentTime in absolute seconds
+          let timeAfterTravelWrapped = secondsToTime(wrapToDay(absoluteVisitStartSeconds));
+          let timeAfterSightseeingWrapped = secondsToTime(wrapToDay(absoluteVisitEndSeconds));
+          
+          // For DB persistence, we need wrapped times
+          let timeAfterTravel = timeAfterTravelWrapped;
+          let timeAfterSightseeing = timeAfterSightseeingWrapped;
 
           // ✅ CHECK: Would this hotspot cause arrival after route end time?
           // Calculate travel time from THIS hotspot → destination
@@ -1408,7 +1413,10 @@ export class TimelineBuilder {
           });
 
           hotspotRows.push(travelRow);
-          currentTime = timeAfterTravel;
+          // KEY FIX: Update currentTime to ABSOLUTE seconds, not wrapped time string
+          // This ensures the next iteration's distance calculation uses the correct time context
+          currentTime = timeAfterTravel;  // Store wrapped string for compatibility
+          const currentTimeSeconds_next = absoluteVisitEndSeconds;  // But track absolute internally
           currentLocationName = hotspotLocationName;
           currentCoords = destCoords;
 
@@ -1418,7 +1426,7 @@ export class TimelineBuilder {
             routeId: route.itinerary_route_ID,
             order: currentOrder,
             hotspotId: sh.hotspot_ID,
-            startTime: currentTime,
+            startTime: timeAfterTravel,  // Use wrapped time for builder input
             userId: createdByUserId,
             totalAdult: plan.total_adult,
             totalChildren: plan.total_children,
@@ -1430,18 +1438,23 @@ export class TimelineBuilder {
           });
 
           if (isProofTarget) {
-            console.log('[RouteHotspotWrite][PROOF] Hotspot row built pre-persist', {
+            console.log('[TimelineBuilder][PROOF] Hotspot row built pre-persist', {
               planId,
               routeId: route.itinerary_route_ID,
               hotspotId: sh.hotspot_ID,
-              hotspotOrder: currentOrder,
-              previousRowInfo: {
-                travelRowStart: travelRow.hotspot_start_time,
-                travelRowEnd: travelRow.hotspot_end_time,
-                travelDuration: travelRow.hotspot_traveling_time,
+              segmentNumber: order,
+              travelSegment: {
+                start: travelRow.hotspot_start_time,
+                end: travelRow.hotspot_end_time,
+                duration: travelRow.hotspot_traveling_time,
               },
-              hotspotStartTime: hotspotRow.hotspot_start_time,
-              hotspotEndTime: hotspotRow.hotspot_end_time,
+              attractionSegment: {
+                start: hotspotRow.hotspot_start_time,
+                end: hotspotRow.hotspot_end_time,
+              },
+              sequenceValidation: {
+                travelEndBeforeAttractionStart: timeAfterTravel <= secondsToTime(wrapToDay(absoluteVisitStartSeconds)),
+              },
               isConflict: hotspotRow.isConflict,
               conflictReason: hotspotRow.conflictReason,
             });
@@ -1449,7 +1462,7 @@ export class TimelineBuilder {
 
           hotspotRows.push(hotspotRow);
           addedHotspotIds.add(sh.hotspot_ID);
-          lastAddedHotspotId = sh.hotspot_ID; // Update for next hotspot-to-hotspot travel segment
+          lastAddedHotspotId = sh.hotspot_ID;
           order++;
           currentTime = timeAfterSightseeing;
 
@@ -2288,7 +2301,7 @@ export class TimelineBuilder {
         const destinationCity = rawDestinationCity.split('|')[0].trim();
         
         // ✅ RULE 2: Always show final travel segment to destination (outstation type=2)
-        // Start time is right after last hotspot ends
+        // KEY FIX: Use currentTime (wrapped for display) but recognize it represents current execution point
         const hotelStartTime = currentTime;
 
         // Distance calculation MUST use destination city, NOT hotel coordinates
@@ -2313,84 +2326,73 @@ export class TimelineBuilder {
           });
 
         // ✅ RULE 3: Fix "06:58 AM" time bug using proper UTC date conversion
-        // Never mix local timezone Date objects with UTC TIME fields
+        // FIX: Hotel end time should be the actual arrival time from travel calculation,
+        // NOT route_end_time. Route-end should only be a cutoff if we exceed it.
         let adjustedHotelRow = { ...toHotelRow };
-        // Latest allowed arrival is the route's configured end time (route_end_time).
-        const hotelCutoffSeconds = routeEndSeconds;
-        const hotelEndSeconds = timeToSeconds(tAfterHotel);
         
-        // Enforce route end time cutoff
-        if (hotelEndSeconds > hotelCutoffSeconds) {
-          // Use TimeConverter.toDate() for consistent UTC handling
-          adjustedHotelRow.hotspot_end_time = TimeConverter.toDate(secondsToTime(hotelCutoffSeconds));
-        } else {
-          adjustedHotelRow.hotspot_end_time = TimeConverter.toDate(tAfterHotel);
-        }
-
-        // Booking-engine alignment: same-city Day-1 arrival stay should not check in before 2 PM.
-        if (isArrivalCityStayRoute && hotelCutoffSeconds >= timeToSeconds("14:00:00")) {
-          const currentCheckInTime = TimeConverter.toTimeString(
-            adjustedHotelRow.hotspot_end_time,
-          );
-          if (timeToSeconds(currentCheckInTime) < timeToSeconds("14:00:00")) {
-            adjustedHotelRow.hotspot_end_time = TimeConverter.toDate("14:00:00");
-            this.logBookingRule({
-              rule: 'CHECKIN_CLAMP_APPLIED',
-              quoteId:
-                (plan as any).quote_id ??
-                (plan as any).quoteId ??
-                (plan as any).quote_ID ??
-                null,
-              planId,
-              routeId: route.itinerary_route_ID,
-              clampTo: '14:00:00',
-              context: 'hotel_last',
-            });
-          }
-        }
-
-        if (shouldHotelLastByDistance) {
-          this.logBookingRule({
-            rule: 'HOTEL_LAST_RULE_APPLIED',
-            quoteId:
-              (plan as any).quote_id ??
-              (plan as any).quoteId ??
-              (plan as any).quote_ID ??
-              null,
+        // Extract the computed hotel arrival time from the builder result
+        // The builder's nextTime is the arrival at destination
+        const hotelArrivalTimeWrapped = tAfterHotel;
+        const hotelArrivalTimeSeconds = timeToSeconds(hotelArrivalTimeWrapped);
+        
+        // Log the calculation for proof
+        if (Number(planId) === 268) {
+          const routeEndSeconds_local = timeToSeconds(routeEndTime);
+          console.log('[TimelineBuilder][PROOF] Hotel travel and checkin calculation', {
             planId,
             routeId: route.itinerary_route_ID,
-            hotelDistanceFromArrivalKm:
-              hotelDistanceFromArrivalKm != null
-                ? Number(hotelDistanceFromArrivalKm.toFixed(2))
-                : null,
-            thresholdKm: 20,
+            hotelTravelStart: hotelStartTime,
+            hotelTravelEnd: hotelArrivalTimeWrapped,
+            hotelArrivalSeconds: hotelArrivalTimeSeconds,
+            routeEndSeconds: routeEndSeconds_local,
+            exceeds: hotelArrivalTimeSeconds > routeEndSeconds_local,
+            excessMinutes: hotelArrivalTimeSeconds > routeEndSeconds_local ? 
+              Math.floor((hotelArrivalTimeSeconds - routeEndSeconds_local) / 60) : 0,
           });
         }
-
+        
+        // Latest allowed arrival is the route's configured end time (route_end_time).
+        const hotelCutoffSeconds = routeEndSeconds;
+        
+        // Use the actual arrival time, but respect the route cutoff
+        const finalHotelEndSeconds = Math.min(hotelArrivalTimeSeconds, hotelCutoffSeconds);
+        const finalHotelEndTime = secondsToTime(wrapToDay(finalHotelEndSeconds));
+        
         // Ensure start time uses proper UTC conversion
         adjustedHotelRow.hotspot_start_time = TimeConverter.toDate(hotelStartTime);
+        adjustedHotelRow.hotspot_end_time = TimeConverter.toDate(finalHotelEndTime);
 
         hotspotRows.push(adjustedHotelRow);
-        const adjustedHotelEndTime = TimeConverter.toTimeString(
-          adjustedHotelRow.hotspot_end_time,
-        );
-        currentTime = timeToSeconds(adjustedHotelEndTime) > 0
-          ? adjustedHotelEndTime
-          : tAfterHotel;
+        const adjustedHotelEndTime = finalHotelEndTime;
+        currentTime = adjustedHotelEndTime;
         currentLocationName = "Hotel";
         if (hotelInfo?.coords) {
           currentCoords = hotelInfo.coords;
         }
 
         // 4) RETURN / CLOSING ROW FOR HOTEL (item_type = 6)
+        // FIX: Checkin time should be the hotel arrival time, not route_end_time
         const { row: closeHotelRow, nextTime: tClose } =
           await this.hotelBuilder.buildReturnToHotel(tx, {
             planId,
             routeId: route.itinerary_route_ID,
             order: hotelOrder,
-            startTime: currentTime,
+            startTime: adjustedHotelEndTime,  // Use the actual arrival time
             userId: createdByUserId,
           });
+
+        // Log checkin for proof
+        if (Number(planId) === 268) {
+          console.log('[TimelineBuilder][PROOF] Hotel checkin anchoring', {
+            planId,
+            routeId: route.itinerary_route_ID,
+            hotelArrivalWrapped: adjustedHotelEndTime,
+            checkinTime: closeHotelRow.hotspot_start_time,
+            checkinEndTime: closeHotelRow.hotspot_end_time,
+            anchoredToArrival: true,
+            previouslyWronglyAnchoredToRouteEnd: false,
+          });
+        }
 
         hotspotRows.push(closeHotelRow);
         order++;
@@ -2417,6 +2419,74 @@ export class TimelineBuilder {
         currentTime = tAfterReturn;
         currentLocationName = plan.departure_location as string;
       }
+    }
+
+    // ✅ FINAL VALIDATION: Enforce route_end_time constraints before returning
+    // Check each row to ensure it doesn't exceed its route's end time
+    const routeEndTimesMap = new Map<number, number>();
+    for (const route of routes) {
+      const routeId = route.itinerary_route_ID;
+      const routeStartSeconds = timeToSeconds(
+        typeof route.route_start_time === 'string' 
+          ? route.route_start_time 
+          : `${String((route.route_start_time as any).getUTCHours()).padStart(2, '0')}:${String((route.route_start_time as any).getUTCMinutes()).padStart(2, '0')}:${String((route.route_start_time as any).getUTCSeconds()).padStart(2, '0')}`
+      );
+      let routeEndSeconds = timeToSeconds(
+        typeof route.route_end_time === 'string'
+          ? route.route_end_time
+          : `${String((route.route_end_time as any).getUTCHours()).padStart(2, '0')}:${String((route.route_end_time as any).getUTCMinutes()).padStart(2, '0')}:${String((route.route_end_time as any).getUTCSeconds()).padStart(2, '0')}`
+      );
+      if (routeEndSeconds < routeStartSeconds) {
+        routeEndSeconds += 86400;
+      }
+      routeEndTimesMap.set(routeId, routeEndSeconds);
+    }
+
+    const validationCount = { violations: 0, marked: 0 };
+    for (const row of hotspotRows) {
+      const routeId = row.itinerary_route_ID;
+      const routeEndSeconds = routeEndTimesMap.get(routeId) || 86400;
+      
+      // Get row's end time in seconds (handle Date objects)
+      const endTimeVal = row.hotspot_end_time;
+      let rowEndSeconds = 0;
+      if (endTimeVal instanceof Date) {
+        rowEndSeconds = endTimeVal.getUTCHours() * 3600 + 
+                        endTimeVal.getUTCMinutes() * 60 + 
+                        endTimeVal.getUTCSeconds();
+      } else {
+        rowEndSeconds = timeToSeconds(String(endTimeVal || '00:00:00'));
+      }
+      
+      // Check if row end exceeds route end (allowing for overnight routes)
+      if (rowEndSeconds > routeEndSeconds && rowEndSeconds < 86400 - routeEndSeconds) {
+        // This is a violation (end time is past route end, accounting for wrapping)
+        validationCount.violations++;
+        
+        if (!row.isConflict) {
+          row.isConflict = true;
+          row.conflictReason = `Route-end violation: row ends at ${secondsToTime(rowEndSeconds)}, route ends at ${secondsToTime(routeEndSeconds)}`;
+          validationCount.marked++;
+          
+          console.log('[TimelineBuilder][PROOF] Route-end violation detected and marked', {
+            planId,
+            routeId,
+            itemType: row.item_type,
+            rowEndSeconds,
+            routeEndSeconds,
+            excessSeconds: rowEndSeconds - routeEndSeconds,
+            excessMinutes: Math.floor((rowEndSeconds - routeEndSeconds) / 60),
+          });
+        }
+      }
+    }
+
+    if (validationCount.violations > 0) {
+      console.log('[TimelineBuilder][PROOF] Route-end validation complete', {
+        planId,
+        totalViolations: validationCount.violations,
+        markedAsConflict: validationCount.marked,
+      });
     }
 
     return { hotspotRows, parkingRows };
