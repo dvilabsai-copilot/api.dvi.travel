@@ -13,7 +13,7 @@ import { TimelineLogger } from "./timeline.logger";
  * - Do NOT assume SelectedHotspot has hotspot_priority/city_order.
  * - Derive Priority and CityOrder from HotspotLite (hotspotMap) or fallback defaults.
  *
- * Score = (Priority * 10000) + (CityOrder * 100) + Distance
+ * Score = (Priority * 1000000) + (Distance * 10) + CityOrder
  * Lower score is better.
  */
 export function computeGreedyScore(
@@ -59,7 +59,8 @@ export function computeGreedyScore(
   const cityOrderRaw: any = (sh as any)?.city_order ?? (sh as any)?.cityOrder ?? 1;
   const cityOrder = Number.isFinite(Number(cityOrderRaw)) ? Number(cityOrderRaw) : 1;
 
-  const score = cityOrder * 10000 + priority * 100 + distance;
+  // Priority dominates globally, distance is secondary, city order is only a tie-breaker.
+  const score = priority * 1000000 + distance * 10 + cityOrder;
 
   TimelineLogger.log(
     `[SCORING] HS ${hs?.name ?? "Unknown"} (ID: ${sh.hotspot_ID}): ` +

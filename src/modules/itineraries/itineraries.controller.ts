@@ -723,6 +723,48 @@ export class ItinerariesController {
     return this.svc.addActivity(body);
   }
 
+  @Post(':planId/activity/smart-preview')
+  @ApiOperation({ summary: 'Preview smart activity fit for a selected route insertion gap' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        routeId: { type: 'number', example: 1 },
+        activityId: { type: 'number', example: 789 },
+        gapIndex: { type: 'number', example: 1, nullable: true },
+        hotspotId: { type: 'number', example: 456, nullable: true },
+        routeHotspotId: { type: 'number', example: 123, nullable: true },
+        mode: { type: 'string', example: 'preview', nullable: true },
+      },
+      required: ['routeId', 'activityId'],
+    },
+  })
+  @ApiOkResponse({ description: 'Smart fit preview generated successfully' })
+  async smartPreviewActivity(@Param('planId') planId: string, @Body() body: any) {
+    return this.svc.smartPreviewActivity(Number(planId), body);
+  }
+
+  @Post(':planId/activity/smart-insert')
+  @ApiOperation({ summary: 'Apply smart activity insertion to selected route gap' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        routeId: { type: 'number', example: 1 },
+        activityId: { type: 'number', example: 789 },
+        gapIndex: { type: 'number', example: 1 },
+        hotspotId: { type: 'number', example: 456, nullable: true },
+        routeHotspotId: { type: 'number', example: 123, nullable: true },
+        allowTopPriorityRemoval: { type: 'boolean', example: false, nullable: true },
+      },
+      required: ['routeId', 'activityId', 'gapIndex'],
+    },
+  })
+  @ApiOkResponse({ description: 'Smart activity insertion completed successfully' })
+  async smartInsertActivity(@Param('planId') planId: string, @Body() body: any) {
+    return this.svc.smartInsertActivity(Number(planId), body);
+  }
+
   @Delete('activities/:planId/:routeId/:activityId')
   @ApiOperation({ summary: 'Delete an activity from an itinerary route' })
   @ApiParam({ name: 'planId', example: 17940, description: 'Itinerary Plan ID' })
@@ -1162,8 +1204,23 @@ export class ItinerariesController {
   async rebuildRoute(
     @Param('id', ParseIntPipe) planId: number,
     @Param('routeId', ParseIntPipe) routeId: number,
+    @Req() req: any,
   ) {
-    return this.svc.rebuildRoute(planId, routeId);
+    const userId = Number(req.user?.userId ?? 1);
+    return this.svc.rebuildRouteHotspotsForDay(planId, routeId, userId);
+  }
+
+  @Post(':planId/routes/:routeId/rebuild-hotspots')
+  @ApiOperation({ summary: 'Reset and rebuild hotspots for a specific day/route' })
+  @ApiParam({ name: 'planId', example: 33977, description: 'Plan ID' })
+  @ApiParam({ name: 'routeId', example: 207447, description: 'Route ID' })
+  async rebuildRouteHotspotsForDay(
+    @Param('planId', ParseIntPipe) planId: number,
+    @Param('routeId', ParseIntPipe) routeId: number,
+    @Req() req: any,
+  ) {
+    const userId = Number(req.user?.userId ?? 1);
+    return this.svc.rebuildRouteHotspotsForDay(planId, routeId, userId);
   }
 
   @Patch(':id/route/:routeId/times')
@@ -1174,6 +1231,35 @@ export class ItinerariesController {
     @Body() body: { startTime: string; endTime: string },
   ) {
     return this.svc.updateRouteTimes(planId, routeId, body.startTime, body.endTime);
+  }
+
+  @Post('templates/save')
+  @ApiOperation({ summary: 'Save reusable itinerary template from an existing plan' })
+  async saveReusableTemplate(
+    @Body() body: { planId: number; templateName?: string },
+    @Req() req: any,
+  ) {
+    const userId = Number(req.user?.userId ?? 1);
+    return this.svc.saveReusableTemplate(body, userId);
+  }
+
+  @Get('templates/match')
+  @ApiOperation({ summary: 'Load latest reusable itinerary template by source, destination, and day count' })
+  async getReusableTemplateMatch(
+    @Query('sourceLocation') sourceLocation: string,
+    @Query('destinationLocation') destinationLocation: string,
+    @Query('dayCount') dayCount: string,
+  ) {
+    const parsedDayCount = Number(dayCount || 0);
+    if (!Number.isInteger(parsedDayCount) || parsedDayCount <= 0) {
+      throw new BadRequestException('dayCount must be a positive integer');
+    }
+
+    return this.svc.getReusableTemplateMatch(
+      sourceLocation,
+      destinationLocation,
+      parsedDayCount,
+    );
   }
 
   /**
