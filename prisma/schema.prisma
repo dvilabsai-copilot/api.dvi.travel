@@ -5968,3 +5968,21 @@ model staah_reservation {
   @@index([reservation_id], map: "idx_staah_reservation_id")
   @@index([received_at], map: "idx_staah_reservation_received")
 }
+
+model dvi_itinerary_reusable_templates {
+  template_id          BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  source_location      String   @db.VarChar(255)
+  destination_location String   @db.VarChar(255)
+  day_count            Int
+  template_name        String?  @db.VarChar(255)
+  template_payload     String   @db.LongText
+  metadata_payload     String?  @db.LongText
+  created_from_plan_id Int?
+  createdby            Int      @default(1)
+  createdon            DateTime @default(now()) @db.DateTime(0)
+  updatedon            DateTime @default(now()) @db.DateTime(0)
+  status               Int      @default(1) @db.TinyInt
+  deleted              Int      @default(0) @db.TinyInt
+
+  @@index([source_location, destination_location, day_count, deleted, status], map: "idx_template_match")
+}
