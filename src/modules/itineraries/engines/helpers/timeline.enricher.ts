@@ -31,6 +31,25 @@ export class TimelineEnricher {
       const endTime = TimeConverter.toTimeString(row.hotspot_end_time);
       const timeRange = `${this.formatTime(startTime)} - ${this.formatTime(endTime)}`;
       
+      // ════════════════════════════════════════════════════════════════
+      // PROOF LOGGING: For hotspot type items
+      // ════════════════════════════════════════════════════════════════
+      if (row.item_type === 4) {
+        const hotspotName = hotspotMap.get(Number(row.hotspot_ID)) || `Hotspot#${row.hotspot_ID}`;
+        console.log(`\n[TimelineEnricher][PROOF] Enriching hotspot row:`, {
+          hotspot_ID: row.hotspot_ID,
+          hotspot_name: hotspotName,
+          hotspot_order: row.hotspot_order,
+          hotspot_plan_own_way: row.hotspot_plan_own_way,
+          raw_start_time: row.hotspot_start_time,
+          raw_end_time: row.hotspot_end_time,
+          converted_start_time: startTime,
+          converted_end_time: endTime,
+          formatted_timeRange: timeRange,
+          note: startTime === endTime ? 'WARNING: START === END (NO DURATION)' : 'OK: Start != End',
+        });
+      }
+      
       let text = "";
       let type = "";
 

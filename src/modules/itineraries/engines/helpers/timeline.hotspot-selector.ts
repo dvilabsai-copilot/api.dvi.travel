@@ -158,7 +158,6 @@ export class HotspotSelector {
         const hId = Number((h as any).hotspot_ID);
         if (!hId) continue;
         if (!manualHotspotIds.has(hId)) continue;
-        if (excludedHotspotIds.has(hId)) continue;
 
         manualHotspots.push({
           ...h,
@@ -185,9 +184,8 @@ export class HotspotSelector {
     for (const h of this.deps.allHotspots) {
       const hId = Number((h as any).hotspot_ID);
       if (!hId) continue;
-      if (excludedHotspotIds.has(hId)) continue;
-
       const isManual = manualHotspotIds.has(hId);
+      if (excludedHotspotIds.has(hId) && !isManual) continue;
       if (!isManual && allowedHotspotIds && !(allowedHotspotIds as Set<number>).has(hId)) continue;
 
       const matchesSource = containsLocation(String((h as any).hotspot_location || ""), targetLocation);
@@ -236,9 +234,8 @@ export class HotspotSelector {
       for (const h of this.deps.allHotspots) {
         const hId = Number((h as any).hotspot_ID);
         if (!hId) continue;
-        if (excludedHotspotIds.has(hId)) continue;
-
         const isManual = manualHotspotIds.has(hId);
+        if (excludedHotspotIds.has(hId) && !isManual) continue;
         if (!isManual && allowedHotspotIds && !(allowedHotspotIds as Set<number>).has(hId)) continue;
 
         if (containsLocation(String((h as any).hotspot_location || ""), vLoc)) {

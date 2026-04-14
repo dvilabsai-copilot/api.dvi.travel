@@ -104,9 +104,12 @@ export class TravelSegmentBuilder {
       };
     }
 
+    // PHP parity: sightseeing travel segments (item_type=3) use travel time only.
+    // Do not add road/common buffer for hotspot-to-hotspot timeline progression.
+    const effectiveBufferTime = item_type === 3 ? "00:00:00" : distanceResult.bufferTime;
     const totalSegmentTime = secondsToTime(
       timeToSeconds(distanceResult.travelTime) +
-        timeToSeconds(distanceResult.bufferTime),
+        timeToSeconds(effectiveBufferTime),
     );
 
     const endTime = addTimes(startTime, totalSegmentTime);
@@ -129,7 +132,7 @@ export class TravelSegmentBuilder {
       hotspot_amout: 0,
 
       hotspot_traveling_time: TimeConverter.toDate(distanceResult.travelTime),
-      itinerary_travel_type_buffer_time: TimeConverter.toDate(distanceResult.bufferTime),
+      itinerary_travel_type_buffer_time: TimeConverter.toDate(effectiveBufferTime),
       hotspot_travelling_distance: distanceResult.distanceKm
         ? distanceResult.distanceKm.toFixed(2)
         : null,
