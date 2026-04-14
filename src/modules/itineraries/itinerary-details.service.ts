@@ -140,6 +140,7 @@ export interface ItineraryDetailsResponseDto {
   isConfirmed?: boolean;
   confirmed_itinerary_plan_ID?: number; // ID needed for /confirmed/:id endpoint
   dateRange: string;
+  dayCount: number;
   roomCount: number;
   extraBed: number;
   childWithBed: number;
@@ -2294,6 +2295,7 @@ dayData.totalKms += safeTotalKm;
       isConfirmed: !!confirmedPlan,
       confirmed_itinerary_plan_ID: confirmedPlan?.confirmed_itinerary_plan_ID,
       dateRange,
+      dayCount: Number((plan as any).no_of_days || days.length || 0),
       roomCount,
       extraBed: plan.total_extra_bed ?? 0,
       childWithBed: plan.total_child_with_bed ?? 0,

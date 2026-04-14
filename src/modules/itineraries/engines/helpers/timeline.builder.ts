@@ -27,6 +27,7 @@ import {
 import { timeToSeconds, addSeconds, secondsToTime, wrapToDay, normalizeTimeRange } from "./time.helper";
 import { DistanceHelper } from "./distance.helper";
 import { TimeConverter } from "./time-converter";
+import { queueDeferredMustVisitHotspot } from "./deferred-retry.helper";
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -1975,16 +1976,25 @@ export class TimelineBuilder {
         // OTHER DAYS: Multi-pass scheduling with deferred hotspots
         console.log('[TIMELINE] Day 1 loop stats - Queries:', hotspotQueryCount, '| Distance calcs:', distanceCalcCount, '| Operating hours:', operatingHoursCount, '| Time:', Date.now() - routeLoopStart, 'ms');
         
-        const maxPasses = 1; // PHP parity: single-pass scheduling only
+        const maxPasses = 2; // pass 1 = normal, pass 2 = deferred must-visit retry
         let pass = 1;
         let addedInLastPass = true;
+        const deferredPriorityHotspots: SelectedHotspot[] = [];
+        const deferredPriorityHotspotIds = new Set<number>();
         
         // PHP includeHotspotInItinerary parity:
         // no precomputed "latest allowed to still reach destination" cutoff.
         
-        while (pass <= maxPasses && addedInLastPass) {
+        while (pass <= maxPasses && (pass === 1 || addedInLastPass || deferredPriorityHotspots.length > 0)) {
           addedInLastPass = false;
-          const hotspotsToTry = selectedHotspots as Array<SelectedHotspot>;
+          const hotspotsToTry =
+            pass === 1
+              ? (selectedHotspots as Array<SelectedHotspot>)
+              : (deferredPriorityHotspots as Array<SelectedHotspot>);
+
+          if (pass > 1 && hotspotsToTry.length === 0) {
+            break;
+          }
 
         // Build travel + hotspot segments in order (NO LUNCH BREAKS OR CUTOFF CHECKS)
         for (let hsIdx = 0; hsIdx < hotspotsToTry.length; hsIdx++) {
@@ -2209,6 +2219,13 @@ export class TimelineBuilder {
           routeEndRejectionReason = `Rejected: PHP_GATE_ROUTE_END sightseeing end ${secondsToTime(wrapToDay(sightseeingEndSeconds))} exceeds route end ${secondsToTime(routeEndSeconds)}`;
         }
         if (routeEndRejectionReason) {
+          queueDeferredMustVisitHotspot(
+            deferredPriorityHotspots,
+            deferredPriorityHotspotIds,
+            sh,
+            pass,
+            isStageAPriority,
+          );
           this.logHotspotCandidateEvaluation({
             routeId: route.itinerary_route_ID,
             hotspotId: Number(sh.hotspot_ID || 0),
@@ -2224,7 +2241,10 @@ export class TimelineBuilder {
             visitTime: `${timeAfterTravel} - ${timeAfterSightseeing}`,
             isOpenAtVisitTime: false,
             selected: false,
-            rejectedReasons: [routeEndRejectionReason],
+            rejectedReasons: [
+              routeEndRejectionReason,
+              ...(pass === 1 && isStageAPriority ? ['Deferred: will retry in must-visit pass'] : []),
+            ],
           });
           continue;
         }
@@ -2278,6 +2298,13 @@ export class TimelineBuilder {
         // NOTE: Missing timing data is treated as "open 24 hours", so hotspots will be scheduled
         
         if (!isKerala40985ParityPlan && !operatingHoursCheck.canVisitNow) {
+          queueDeferredMustVisitHotspot(
+            deferredPriorityHotspots,
+            deferredPriorityHotspotIds,
+            sh,
+            pass,
+            isStageAPriority,
+          );
           const mustVisitProxy = isStageAPriority;
 
           this.logBookingRule({
@@ -2310,7 +2337,10 @@ export class TimelineBuilder {
             visitTime: `${timeAfterTravel} - ${timeAfterSightseeing}`,
             isOpenAtVisitTime: false,
             selected: false,
-            rejectedReasons: ['Rejected: outside operating hours'],
+            rejectedReasons: [
+              'Rejected: outside operating hours',
+              ...(pass === 1 && isStageAPriority ? ['Deferred: will retry in must-visit pass'] : []),
+            ],
           });
           continue;
         }
