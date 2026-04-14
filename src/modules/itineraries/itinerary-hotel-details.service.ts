@@ -3,6 +3,7 @@
 import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
 import { dvi_itinerary_plan_details, Prisma } from '@prisma/client';
+import { haversineKm } from './utils/distance-utils';
 
 export interface ItineraryHotelTabDto {
   groupType: number;
@@ -31,6 +32,8 @@ export interface ItineraryHotelRowDto {
   voucherCancelled?: boolean;
   itineraryPlanHotelDetailsId?: number;
   date?: string;
+  // Distance from route location to hotel (in kilometers) - calculated using Haversine formula
+  hotelDistance?: string | null;
 }
 
 export interface ItineraryHotelDetailsResponseDto {
@@ -432,12 +435,101 @@ async getHotelRoomDetailsByQuoteId(
       ])
     );
 
+    // Fetch route location IDs to get location coordinates for distance calculation
+    const routeIds = Array.from(
+      new Set(
+        hotelRowsDeduped
+          .map((h) => (h as any).itinerary_route_id as number | null)
+          .filter((id): id is number => typeof id === 'number' && id > 0),
+      ),
+    );
+
+    // Fetch route details to get location_id for each route
+    const routeDetails = routeIds.length
+      ? await this.prisma.dvi_itinerary_route_details.findMany({
+          where: { itinerary_route_id: { in: routeIds }, deleted: 0 },
+          select: { itinerary_route_id: true, location_id: true },
+        })
+      : [];
+
+    const routeLocationMap = new Map(
+      routeDetails.map((r) => [
+        Number((r as any).itinerary_route_id),
+        Number((r as any).location_id),
+      ]),
+    );
+
+    // Fetch stored location coordinates for destination locations
+    const locationIds = Array.from(
+      new Set(routeDetails.map((r) => Number((r as any).location_id)).filter((id) => id > 0)),
+    );
+
+    const storedLocations = locationIds.length
+      ? await this.prisma.dvi_stored_locations.findMany({
+          where: { location_id: { in: locationIds }, deleted: 0 },
+          select: {
+            location_id: true,
+            destination_location_latitude: true,
+            destination_location_longitude: true,
+          },
+        })
+      : [];
+
+    const locationCoordinatesMap = new Map<number, { lat: number; lon: number }>();
+    storedLocations.forEach((loc) => {
+      const lat = Number((loc as any).destination_location_latitude ?? 0);
+      const lon = Number((loc as any).destination_location_longitude ?? 0);
+      if (lat && lon && !isNaN(lat) && !isNaN(lon)) {
+        locationCoordinatesMap.set(Number((loc as any).location_id), { lat, lon });
+      }
+    });
+
     const hotels: ItineraryHotelRowDto[] = hotelRowsDeduped.map((h, idx) => {
       const master = hotelMap.get(Number((h as any).hotel_id)) || null;
       const dateLabel = h.itinerary_route_date
         ? h.itinerary_route_date.toISOString().slice(0, 10)
         : '';
       const hotelDetailsId = (h as any).itinerary_plan_hotel_details_ID;
+
+      // Calculate distance from route location to hotel using Haversine formula
+      let hotelDistance: string | null = null;
+      
+      // Get hotel coordinates
+      const hotelLat = master && (master as any).hotel_latitude ? 
+        Number((master as any).hotel_latitude) : null;
+      const hotelLon = master && (master as any).hotel_longitude ? 
+        Number((master as any).hotel_longitude) : null;
+
+      // Get route location coordinates
+      const routeId = Number((h as any).itinerary_route_id ?? 0);
+      const locationId = routeLocationMap.get(routeId);
+      const routeCoords = locationId ? locationCoordinatesMap.get(locationId) : null;
+      
+      // Calculate distance if both hotel and route coordinates are available
+      if (
+        hotelLat &&
+        hotelLon &&
+        !isNaN(hotelLat) &&
+        !isNaN(hotelLon) &&
+        routeCoords &&
+        routeCoords.lat &&
+        routeCoords.lon
+      ) {
+        try {
+          const distanceKm = haversineKm(
+            routeCoords.lat,
+            routeCoords.lon,
+            hotelLat,
+            hotelLon,
+          );
+          if (distanceKm > 0) {
+            hotelDistance = `${distanceKm.toFixed(2)} KM`;
+          }
+        } catch (err) {
+          // If calculation fails, leave as null
+          hotelDistance = null;
+        }
+      }
 
       return {
         groupType: Number((h as any).group_type ?? 0) || 0,
@@ -454,6 +546,7 @@ async getHotelRoomDetailsByQuoteId(
         voucherCancelled: voucherStatusMap.get(hotelDetailsId) || false,
         itineraryPlanHotelDetailsId: hotelDetailsId,
         date: dateLabel,
+        hotelDistance,
       };
     });
 
