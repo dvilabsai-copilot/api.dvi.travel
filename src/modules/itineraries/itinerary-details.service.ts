@@ -570,7 +570,6 @@ for (const row of vehicleKmRows) {
             AND itinerary_route_ID = ${route.itinerary_route_ID}
             AND deleted = 0
             AND status = 1
-            AND (is_conflict = 0 OR hotspot_plan_own_way = 1)
           ORDER BY hotspot_order ASC
         `) as any[];
 
@@ -850,6 +849,29 @@ for (const row of vehicleKmRows) {
       }
 
       for (const rh of routeHotspots) {
+        // ✅ NEW FILTER: Skip hotel rows marked as appearing before route start
+        // These are previous-day checkout rows incorrectly attached to current day
+        const isConflictMarked = (rh as any).is_conflict === 1 || (rh as any).isConflict === true;
+        const conflictReason = String((rh as any).conflict_reason || (rh as any).conflictReason || '');
+        
+        if (isConflictMarked && conflictReason.includes('HOTEL_ROW_BEFORE_ROUTE_START')) {
+          // Log the suppression for proof
+          if (proofQuoteEnabled) {
+            console.log('[HotelDayBoundaryAPI][PROOF] Suppressing hotel row before route start', {
+              quoteId,
+              routeId: route.itinerary_route_ID,
+              routeHotspotId: rh.route_hotspot_ID,
+              itemType: (rh as any).item_type,
+              itemTypeName: (rh as any).item_type === 5 ? 'TRAVEL_TO_HOTEL' : ((rh as any).item_type === 6 ? 'CHECKIN' : 'OTHER'),
+              startTime: this.formatTime((rh as any).hotspot_start_time ?? null),
+              endTime: this.formatTime((rh as any).hotspot_end_time ?? null),
+              conflictReason,
+              action: 'SKIPPED_FROM_RESPONSE',
+            });
+          }
+          continue;  // Skip this row, don't add segment to response
+        }
+
         const master = rh.hotspot_ID
           ? hotspotMap.get(rh.hotspot_ID as number) || null
           : null;
@@ -1653,11 +1675,38 @@ const dayDistance = this.formatKm(totalDistanceNum);
       };
 
       segments.sort((a: any, b: any) => {
-        // Extract start time from timeRange if available
+        // Type-aware start time extraction based on segment type
         const getStartMinutes = (seg: any): number => {
-          if (!seg.timeRange) return 0;
-          const startTimeStr = seg.timeRange.split(' - ')[0];
-          return this.timeToMinutes(startTimeStr);
+          // Hotspot CTA has no time field - always sort to end (use high number)
+          if (seg.type === 'hotspot') return 1440 + (typeOrder[seg.type] ?? 99);
+
+          // Extract start time based on segment type
+          let timeStr: string | null = null;
+
+          if (seg.type === 'start' || seg.type === 'travel' || seg.type === 'return' || seg.type === 'break') {
+            // These types store time in timeRange: "HH:MM - HH:MM"
+            if (seg.timeRange) {
+              timeStr = seg.timeRange.split(' - ')[0];
+            }
+          } else if (seg.type === 'attraction') {
+            // Attractions store time in visitTime (may include notes in parens)
+            // Example: "10:00 - 12:00 (closed on this day)"
+            if (seg.visitTime) {
+              timeStr = seg.visitTime.split(' - ')[0];
+            }
+          } else if (seg.type === 'checkin') {
+            // Checkin stores time in time field
+            if (seg.time) {
+              // time might be "HH:MM - HH:MM" or just "HH:MM"
+              timeStr = seg.time.split(' - ')[0];
+            }
+          }
+
+          // If we extracted a valid time, convert to minutes; otherwise return high number (sort to end)
+          if (timeStr && timeStr.trim()) {
+            return this.timeToMinutes(timeStr);
+          }
+          return 1440; // No valid time found, sort to end (after all 0-1439 minute times)
         };
 
         const aStartMins = getStartMinutes(a);

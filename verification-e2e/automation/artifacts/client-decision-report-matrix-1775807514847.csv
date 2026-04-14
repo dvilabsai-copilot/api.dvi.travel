@@ -1,0 +1,11 @@
+scenario,runIndex,quoteId,planId,totalCandidates,selectedCount,rejectedCount,deferredCount,duplicateRejectedCount,closedAtVisitRejectedCount,dayOfWeekMismatchRejectedCount,noRemainingDayWindowRejectedCount,optionalClosedSpotSkippedCount,selectedPriority1Count,rejectedPriority1Count,deferredPriority1Count
+TN-Coast-Chennai-Mahabalipuram-Pondicherry,1,DVI202604208,246,109,34,73,2,41,27,0,5,14,3,4,0
+TN-Coast-Chennai-Mahabalipuram-Pondicherry,2,DVI202604209,247,109,34,73,2,41,27,0,5,14,3,4,0
+Kerala-Trivandrum-Munnar-Alleppey,1,DVI202604210,248,73,23,47,3,13,10,0,24,2,2,2,1
+Kerala-Trivandrum-Munnar-Alleppey,2,DVI202604211,249,73,23,47,3,13,10,0,24,2,2,2,1
+Karnataka-Bengaluru-Mysuru-Ooty,1,DVI202604212,250,88,19,65,4,25,40,0,0,40,2,3,0
+Karnataka-Bengaluru-Mysuru-Ooty,2,DVI202604213,251,88,19,65,4,25,40,0,0,40,2,3,0
+AP-Telangana-Tirupati-Hyderabad,1,DVI202604214,252,159,30,121,8,60,27,0,34,20,2,7,1
+AP-Telangana-Tirupati-Hyderabad,2,DVI202604215,253,159,30,121,8,60,27,0,34,20,2,7,1
+Mixed-Chennai-Tirupati-Hyderabad-Mahabalipuram,1,DVI202604216,254,130,27,99,4,49,26,0,24,13,3,4,0
+Mixed-Chennai-Tirupati-Hyderabad-Mahabalipuram,2,DVI202604217,255,130,27,99,4,49,26,0,24,13,3,4,0

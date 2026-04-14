@@ -263,17 +263,46 @@ export class HotspotEngineService {
         rowsByRoute.get(routeId)!.push(row);
       }
 
+      const placeholderEpoch = new Date('1970-01-01T00:00:00Z').getTime();
+
       // Process each manual hotspot
       for (const manualHotspot of manualHotspots) {
         const routeId = Number(manualHotspot.itinerary_route_ID || 0);
         const hotspotId = Number(manualHotspot.hotspot_ID || 0);
         const routeRows = rowsByRoute.get(routeId) || [];
 
+        const route = await (tx as any).dvi_itinerary_route_details.findUnique({
+          where: { itinerary_route_ID: routeId },
+          select: { route_start_time: true },
+        });
+
+        const hotspotMaster = await (tx as any).dvi_hotspot_place.findUnique({
+          where: { hotspot_ID: hotspotId },
+          select: {
+            hotspot_ID: true,
+            hotspot_name: true,
+            hotspot_duration: true,
+            hotspot_priority: true,
+          },
+        });
+
+        const durationMinutes = Math.max(1, Number(hotspotMaster?.hotspot_duration || 30));
+
+        const computeEndTime = (start: Date): Date => {
+          return new Date(start.getTime() + durationMinutes * 60 * 1000);
+        };
+
         if (routeRows.length === 0) {
           console.warn('[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot', {
             routeId,
             hotspotId,
           });
+          const start = route?.route_start_time ? new Date(route.route_start_time) : new Date();
+          manualHotspot.hotspot_order = 1;
+          manualHotspot.hotspot_start_time = start;
+          manualHotspot.hotspot_end_time = computeEndTime(start);
+          if (!rowsByRoute.has(routeId)) rowsByRoute.set(routeId, []);
+          rowsByRoute.get(routeId)!.push(manualHotspot);
           continue;
         }
 
@@ -286,6 +315,9 @@ export class HotspotEngineService {
             hotspotId,
           });
           manualHotspot.hotspot_order = 1;
+          const start = route?.route_start_time ? new Date(route.route_start_time) : new Date();
+          manualHotspot.hotspot_start_time = start;
+          manualHotspot.hotspot_end_time = computeEndTime(start);
           rowsByRoute.get(routeId)!.push(manualHotspot);
           continue;
         }
@@ -318,34 +350,21 @@ export class HotspotEngineService {
           source: lastVisitRow?.hotspot_end_time ? 'hotspot_end_time' : 'hotspot_start_time',
         });
 
-        // Get route to find bounds
-        const route = await (tx as any).dvi_itinerary_route_details.findUnique({
-          where: { itinerary_route_ID: routeId },
-          select: { route_start_time: true, route_end_time: true },
-        });
-
         // ════════════════════════════════════════════════════════════════
         // PROOF: Log manualStartTime decision tree
         // ════════════════════════════════════════════════════════════════
-        const manualStartTime = lastVisitEndTime || route?.route_start_time || new Date();
+        const normalizedLastVisitEnd = lastVisitEndTime ? new Date(lastVisitEndTime) : null;
+        const hasValidLastVisitEnd =
+          !!normalizedLastVisitEnd && Number.isFinite(normalizedLastVisitEnd.getTime()) &&
+          normalizedLastVisitEnd.getTime() !== placeholderEpoch;
+        const manualStartTime = hasValidLastVisitEnd
+          ? normalizedLastVisitEnd!
+          : (route?.route_start_time ? new Date(route.route_start_time) : new Date());
         console.log(`[ManualHotspot][PROOF] Calculated manualStartTime:`, {
           value: manualStartTime,
-          source: lastVisitEndTime ? 'lastVisitEndTime' : (route?.route_start_time ? 'route_start_time' : 'new Date()'),
+          source: hasValidLastVisitEnd ? 'lastVisitEndTime' : (route?.route_start_time ? 'route_start_time' : 'new Date()'),
           lastVisitEndTime_exists: !!lastVisitEndTime,
           route_start_time: route?.route_start_time,
-        });
-
-        // ════════════════════════════════════════════════════════════════
-        // PROOF: Fetch hotspot master to see if duration exists
-        // ════════════════════════════════════════════════════════════════
-        const hotspotMaster = await (tx as any).dvi_hotspot_place.findUnique({
-          where: { hotspot_ID: hotspotId },
-          select: {
-            hotspot_ID: true,
-            hotspot_name: true,
-            hotspot_duration: true,
-            hotspot_priority: true,
-          },
         });
         console.log(`[ManualHotspot][PROOF] Hotspot master data:`, {
           hotspot_ID: hotspotMaster?.hotspot_ID,
@@ -357,12 +376,13 @@ export class HotspotEngineService {
         // ════════════════════════════════════════════════════════════════
         // CURRENT BEHAVIOR: manualEndTime = manualStartTime (NO DURATION)
         // ════════════════════════════════════════════════════════════════
-        const manualEndTime = manualStartTime;
+        const manualEndTime = computeEndTime(manualStartTime);
         console.log(`[ManualHotspot][PROOF] Set manualEndTime to manualStartTime (NO DURATION APPLIED):`, {
           manualStartTime,
           manualEndTime,
-          sameValue: manualStartTime === manualEndTime,
-          note: 'END TIME EQUALS START TIME - THIS IS A BUG',
+          sameValue: manualStartTime.getTime() === manualEndTime.getTime(),
+          durationMinutes,
+          note: 'END TIME NOW APPLIES HOTSPOT DURATION',
         });
 
         // Update manual hotspot with real order and timing

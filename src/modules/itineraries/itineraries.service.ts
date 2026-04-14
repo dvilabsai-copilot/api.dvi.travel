@@ -65,6 +65,8 @@ export class ItinerariesService {
     const userId = Number(u.userId ?? 1);
     const agentId = Number(u.agentId ?? 0);
     const staffId = Number(u.staffId ?? 0);
+    const shouldCheckLocalDbHotels =
+      String(process.env.LOCAL_DB_HOTEL_CHECK || 'true').toLowerCase() === 'true';
 
     // If user is an agent, force their agentId
     if (agentId > 0) {
@@ -90,7 +92,10 @@ export class ItinerariesService {
 
     // Validate hotel availability BEFORE starting the transaction
     // Only validate if hotels are needed (itinerary_preference 1 or 3)
-    if (dto.plan.itinerary_preference === 1 || dto.plan.itinerary_preference === 3) {
+    if (
+      shouldCheckLocalDbHotels &&
+      (dto.plan.itinerary_preference === 1 || dto.plan.itinerary_preference === 3)
+    ) {
       const categoryStr = String(dto.plan.preferred_hotel_category || '');
       const categories = categoryStr
         .split(',')
@@ -117,6 +122,8 @@ export class ItinerariesService {
           error: error instanceof Error ? error.message : String(error),
         });
       }
+    } else if (!shouldCheckLocalDbHotels) {
+      console.log('[ItinerariesService] LOCAL_DB_HOTEL_CHECK disabled, skipping local hotel availability validation');
     }
 
     const txStart = Date.now();

@@ -1,0 +1,160 @@
+{
+  "generatedAt": "2026-04-10T07:47:41.832Z",
+  "mode": "dry-run",
+  "beforeCount": 7,
+  "afterCount": 7,
+  "explicitNames": [
+    "Live Hotspot 1775515744963",
+    "PW Timing Persist 1775727492729",
+    "Live Retry Hotspot 1775515791348",
+    "PW Hotspot 1775516207450",
+    "PW Hotspot 1775516310053",
+    "PW Hotspot 1775516882039"
+  ],
+  "removedHotspots": [
+    {
+      "hotspot_ID": 894,
+      "hotspot_name": "Live Hotspot 1775515744963",
+      "hotspot_priority": 1,
+      "status": 1,
+      "deleted": 0
+    },
+    {
+      "hotspot_ID": 895,
+      "hotspot_name": "Live Retry Hotspot 1775515791348",
+      "hotspot_priority": 1,
+      "status": 1,
+      "deleted": 0
+    },
+    {
+      "hotspot_ID": 896,
+      "hotspot_name": "PW Hotspot 1775516207450",
+      "hotspot_priority": 1,
+      "status": 1,
+      "deleted": 0
+    },
+    {
+      "hotspot_ID": 897,
+      "hotspot_name": "Live Retry Hotspot 1775515791348",
+      "hotspot_priority": 1,
+      "status": 1,
+      "deleted": 0
+    },
+    {
+      "hotspot_ID": 898,
+      "hotspot_name": "PW Hotspot 1775516310053",
+      "hotspot_priority": 1,
+      "status": 1,
+      "deleted": 0
+    },
+    {
+      "hotspot_ID": 899,
+      "hotspot_name": "PW Hotspot 1775516882039",
+      "hotspot_priority": 1,
+      "status": 1,
+      "deleted": 0
+    },
+    {
+      "hotspot_ID": 900,
+      "hotspot_name": "PW Timing Persist 1775727492729",
+      "hotspot_priority": 1,
+      "status": 1,
+      "deleted": 0
+    }
+  ],
+  "dependencyCountsBefore": {
+    "timing": [
+      {
+        "hotspot_ID": 900,
+        "count": 1
+      }
+    ],
+    "gallery": [
+      {
+        "hotspot_ID": 894,
+        "count": 1
+      },
+      {
+        "hotspot_ID": 895,
+        "count": 1
+      },
+      {
+        "hotspot_ID": 896,
+        "count": 2
+      },
+      {
+        "hotspot_ID": 897,
+        "count": 2
+      },
+      {
+        "hotspot_ID": 898,
+        "count": 2
+      },
+      {
+        "hotspot_ID": 899,
+        "count": 2
+      }
+    ],
+    "parking": [
+      {
+        "hotspot_ID": 899,
+        "count": 1
+      }
+    ],
+    "activity": [],
+    "activityGallery": [],
+    "activityPriceBook": [],
+    "activityReview": [],
+    "activitySlot": []
+  },
+  "dependencyCountsAfter": {
+    "timing": [
+      {
+        "hotspot_ID": 900,
+        "count": 1
+      }
+    ],
+    "gallery": [
+      {
+        "hotspot_ID": 894,
+        "count": 1
+      },
+      {
+        "hotspot_ID": 895,
+        "count": 1
+      },
+      {
+        "hotspot_ID": 896,
+        "count": 2
+      },
+      {
+        "hotspot_ID": 897,
+        "count": 2
+      },
+      {
+        "hotspot_ID": 898,
+        "count": 2
+      },
+      {
+        "hotspot_ID": 899,
+        "count": 2
+      }
+    ],
+    "parking": [
+      {
+        "hotspot_ID": 899,
+        "count": 1
+      }
+    ],
+    "activity": [],
+    "activityGallery": [],
+    "activityPriceBook": [],
+    "activityReview": [],
+    "activitySlot": []
+  },
+  "deleteResult": null,
+  "notes": [
+    "Soft-delete strategy used: set deleted=1 and status=0.",
+    "Only explicit Playwright/PW/Live test names and clear placeholder patterns were targeted."
+  ]
+}
