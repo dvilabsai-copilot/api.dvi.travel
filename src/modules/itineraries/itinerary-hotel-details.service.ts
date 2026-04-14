@@ -444,31 +444,31 @@ async getHotelRoomDetailsByQuoteId(
       ),
     );
 
-    // Fetch route details to get location_id for each route
+    // Fetch route details to get location ID for each route
     const routeDetails = routeIds.length
       ? await this.prisma.dvi_itinerary_route_details.findMany({
-          where: { itinerary_route_id: { in: routeIds }, deleted: 0 },
-          select: { itinerary_route_id: true, location_id: true },
+          where: { itinerary_route_ID: { in: routeIds }, deleted: 0 },
+          select: { itinerary_route_ID: true, location_ID: true },
         })
       : [];
 
     const routeLocationMap = new Map(
       routeDetails.map((r) => [
-        Number((r as any).itinerary_route_id),
-        Number((r as any).location_id),
+        Number((r as any).itinerary_route_ID),
+        Number((r as any).location_ID),
       ]),
     );
 
     // Fetch stored location coordinates for destination locations
     const locationIds = Array.from(
-      new Set(routeDetails.map((r) => Number((r as any).location_id)).filter((id) => id > 0)),
+      new Set(routeDetails.map((r) => Number((r as any).location_ID)).filter((id) => id > 0)),
     );
 
     const storedLocations = locationIds.length
       ? await this.prisma.dvi_stored_locations.findMany({
-          where: { location_id: { in: locationIds }, deleted: 0 },
+          where: { location_ID: { in: locationIds }, deleted: 0 },
           select: {
-            location_id: true,
+            location_ID: true,
             destination_location_latitude: true,
             destination_location_longitude: true,
           },
@@ -480,7 +480,7 @@ async getHotelRoomDetailsByQuoteId(
       const lat = Number((loc as any).destination_location_latitude ?? 0);
       const lon = Number((loc as any).destination_location_longitude ?? 0);
       if (lat && lon && !isNaN(lat) && !isNaN(lon)) {
-        locationCoordinatesMap.set(Number((loc as any).location_id), { lat, lon });
+        locationCoordinatesMap.set(Number((loc as any).location_ID), { lat, lon });
       }
     });
 
