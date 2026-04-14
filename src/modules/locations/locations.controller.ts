@@ -22,10 +22,13 @@ import { LocationsService } from './locations.service';
 import {
   BulkTollPayloadDto,
   CreateLocationDto,
+  CreateViaRouteDto,
   LocationResponseDto,
   ModifyLocationNameDto,
+  SuggestedRouteResponseDto,
   TollResponseDto,
   UpdateLocationDto,
+  ViaRouteResponseDto,
 } from './dto/location.dto';
 
 @ApiTags('Locations')
@@ -191,6 +194,55 @@ create(@Body() dto: CreateLocationDto) {
   restore(@Param('id') id: string) {
     return this.svc.restore(Number(id));
   }
+    @Get(':id/via-routes')
+  @ApiOperation({ summary: 'Get via-routes for a location preview' })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      type: 'object',
+      properties: {
+        data: { type: 'array', items: { $ref: '#/components/schemas/ViaRouteResponseDto' } },
+      },
+    },
+  })
+  @ApiResponse({ status: 404, description: 'Location not found' })
+  getViaRoutes(@Param('id') id: string) {
+    return this.svc.getViaRoutes(Number(id));
+  }
+
+  @Post(':id/via-routes')
+  @ApiOperation({ summary: 'Add a via-route for a location preview' })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      type: 'object',
+      properties: {
+        ok: { type: 'boolean' },
+        data: { type: 'array', items: { $ref: '#/components/schemas/ViaRouteResponseDto' } },
+      },
+    },
+  })
+  @ApiResponse({ status: 404, description: 'Location not found' })
+  addViaRoute(@Param('id') id: string, @Body() dto: CreateViaRouteDto) {
+    return this.svc.addViaRoute(Number(id), dto);
+  }
+
+  @Get(':id/suggested-routes')
+  @ApiOperation({ summary: 'Get suggested-routes for a location preview' })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      type: 'object',
+      properties: {
+        data: { type: 'array', items: { $ref: '#/components/schemas/SuggestedRouteResponseDto' } },
+      },
+    },
+  })
+  @ApiResponse({ status: 404, description: 'Location not found' })
+  getSuggestedRoutes(@Param('id') id: string) {
+    return this.svc.getSuggestedRoutes(Number(id));
+  }
+
   @Get(':id/tolls')
   @ApiOperation({ summary: 'Get toll charges for this location' })
   @ApiResponse({

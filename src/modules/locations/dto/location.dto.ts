@@ -191,3 +191,52 @@ export class BulkTollPayloadDto {
   @Type(() => TollChargeUpsertDto)
   items!: TollChargeUpsertDto[];
 }
+
+export class ViaRouteResponseDto {
+  @ApiProperty() count!: string;
+  @ApiProperty() via_route_location_ID!: number;
+  @ApiProperty() location_id!: number;
+  @ApiProperty() via_route_location!: string;
+  @ApiProperty() via_route_location_lattitude!: string;
+  @ApiProperty() via_route_location_longitude!: string;
+  @ApiProperty() via_route_location_city!: string;
+  @ApiProperty() via_route_location_state!: string;
+  @ApiProperty() distance_from_source_to_via_route!: string;
+  @ApiProperty() duration_from_source_to_via_route!: string;
+  @ApiProperty() modify!: string;
+}
+
+export class CreateViaRouteDto {
+  @ApiProperty()
+  @IsNotEmpty()
+  @IsString()
+  via_route_location!: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  via_route_location_lattitude?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  via_route_location_longitude?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  via_route_location_city?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  via_route_location_state?: string;
+}
+
+export class SuggestedRouteResponseDto {
+  @ApiProperty() count!: string;
+  @ApiProperty() routes!: string;
+  @ApiProperty() no_of_nights!: string;
+  @ApiProperty() route_details!: string;
+  @ApiProperty() modify!: string;
+}
