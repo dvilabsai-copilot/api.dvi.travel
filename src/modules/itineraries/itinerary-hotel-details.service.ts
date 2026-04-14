@@ -448,20 +448,20 @@ async getHotelRoomDetailsByQuoteId(
     const routeDetails = routeIds.length
       ? await this.prisma.dvi_itinerary_route_details.findMany({
           where: { itinerary_route_ID: { in: routeIds }, deleted: 0 },
-          select: { itinerary_route_ID: true, location_ID: true },
+          select: { itinerary_route_ID: true, location_id: true },
         })
       : [];
 
     const routeLocationMap = new Map(
       routeDetails.map((r) => [
         Number((r as any).itinerary_route_ID),
-        Number((r as any).location_ID),
+        Number((r as any).location_id),
       ]),
     );
 
     // Fetch stored location coordinates for destination locations
     const locationIds = Array.from(
-      new Set(routeDetails.map((r) => Number((r as any).location_ID)).filter((id) => id > 0)),
+      new Set(routeDetails.map((r) => Number((r as any).location_id)).filter((id) => id > 0)),
     );
 
     const storedLocations = locationIds.length
@@ -469,7 +469,7 @@ async getHotelRoomDetailsByQuoteId(
           where: { location_ID: { in: locationIds }, deleted: 0 },
           select: {
             location_ID: true,
-            destination_location_latitude: true,
+            destination_location_lattitude: true,
             destination_location_longitude: true,
           },
         })
@@ -477,7 +477,7 @@ async getHotelRoomDetailsByQuoteId(
 
     const locationCoordinatesMap = new Map<number, { lat: number; lon: number }>();
     storedLocations.forEach((loc) => {
-      const lat = Number((loc as any).destination_location_latitude ?? 0);
+      const lat = Number((loc as any).destination_location_lattitude ?? 0);
       const lon = Number((loc as any).destination_location_longitude ?? 0);
       if (lat && lon && !isNaN(lat) && !isNaN(lon)) {
         locationCoordinatesMap.set(Number((loc as any).location_ID), { lat, lon });
