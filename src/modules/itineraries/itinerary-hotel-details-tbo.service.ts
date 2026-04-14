@@ -12,6 +12,7 @@ import {
   ItineraryHotelRoomDetailsResponseDto,
   ItineraryHotelRoomDto,
 } from './itinerary-hotel-details.service';
+import { haversineKm } from './utils/distance-utils';
 
 /**
  * This service generates dynamic hotel packages from TBO API
@@ -1018,6 +1019,123 @@ export class ItineraryHotelDetailsTboService {
       ])
     );
 
+    // Preload route destination coordinates and hotel coordinates for distance calculation.
+    const routeLocationIds = Array.from(
+      new Set(
+        routes
+          .map((r: any) => Number((r as any).location_id || 0))
+          .filter((id: number) => id > 0),
+      ),
+    );
+
+    const storedLocations = routeLocationIds.length
+      ? await this.prisma.dvi_stored_locations.findMany({
+          where: { location_ID: { in: routeLocationIds }, deleted: 0 },
+          select: {
+            location_ID: true,
+            destination_location_lattitude: true,
+            destination_location_longitude: true,
+          },
+        })
+      : [];
+
+    const routeDestinationCoordsByLocationId = new Map<number, { lat: number; lon: number }>();
+    for (const loc of storedLocations as any[]) {
+      const lat = Number((loc as any).destination_location_lattitude ?? 0);
+      const lon = Number((loc as any).destination_location_longitude ?? 0);
+      if (Number.isFinite(lat) && Number.isFinite(lon) && lat !== 0 && lon !== 0) {
+        routeDestinationCoordsByLocationId.set(Number((loc as any).location_ID), { lat, lon });
+      }
+    }
+
+    const providerCodeSet = new Set<string>();
+    for (const pkg of packages) {
+      for (const h of pkg.hotels) {
+        const provider = String((h as any).provider || 'tbo').trim().toLowerCase();
+        const code = String((h as any).hotelCode || '').trim();
+        if (!code) continue;
+        providerCodeSet.add(`${provider}|${code}`);
+      }
+    }
+
+    const tboCodes = Array.from(providerCodeSet)
+      .filter((k) => k.startsWith('tbo|'))
+      .map((k) => k.slice(4));
+    const resavenueCodes = Array.from(providerCodeSet)
+      .filter((k) => k.startsWith('resavenue|'))
+      .map((k) => k.slice('resavenue|'.length));
+    const hobseCodes = Array.from(providerCodeSet)
+      .filter((k) => k.startsWith('hobse|'))
+      .map((k) => k.slice(6));
+
+    const hotelMasters = providerCodeSet.size
+      ? await this.prisma.dvi_hotel.findMany({
+          where: {
+            OR: [
+              ...(tboCodes.length
+                ? [{ tbo_hotel_code: { in: tboCodes } }]
+                : []),
+              ...(resavenueCodes.length
+                ? [{ resavenue_hotel_code: { in: resavenueCodes } }]
+                : []),
+              ...(hobseCodes.length
+                ? [{ hotel_code: { in: hobseCodes } }]
+                : []),
+            ],
+          },
+          select: {
+            tbo_hotel_code: true,
+            resavenue_hotel_code: true,
+            hotel_code: true,
+            hotel_latitude: true,
+            hotel_longitude: true,
+          },
+        })
+      : [];
+
+    const hotelCoordsByProviderCode = new Map<string, { lat: number; lon: number }>();
+    for (const hm of hotelMasters as any[]) {
+      const lat = Number((hm as any).hotel_latitude ?? 0);
+      const lon = Number((hm as any).hotel_longitude ?? 0);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon) || lat === 0 || lon === 0) {
+        continue;
+      }
+
+      const tboCode = String((hm as any).tbo_hotel_code || '').trim();
+      const resavenueCode = String((hm as any).resavenue_hotel_code || '').trim();
+      const hobseCode = String((hm as any).hotel_code || '').trim();
+
+      if (tboCode) hotelCoordsByProviderCode.set(`tbo|${tboCode}`, { lat, lon });
+      if (resavenueCode) hotelCoordsByProviderCode.set(`resavenue|${resavenueCode}`, { lat, lon });
+      if (hobseCode) hotelCoordsByProviderCode.set(`hobse|${hobseCode}`, { lat, lon });
+    }
+
+    // Fallback: TBO static master has wider code coverage than dvi_hotel in many environments.
+    if (tboCodes.length > 0) {
+      const tboMasterRows = await this.prisma.tbo_hotel_master.findMany({
+        where: { tbo_hotel_code: { in: tboCodes } },
+        select: {
+          tbo_hotel_code: true,
+          hotel_latitude: true,
+          hotel_longitude: true,
+        },
+      });
+
+      for (const row of tboMasterRows as any[]) {
+        const code = String((row as any).tbo_hotel_code || '').trim();
+        const lat = Number((row as any).hotel_latitude ?? 0);
+        const lon = Number((row as any).hotel_longitude ?? 0);
+        if (!code || !Number.isFinite(lat) || !Number.isFinite(lon) || lat === 0 || lon === 0) {
+          continue;
+        }
+
+        const key = `tbo|${code}`;
+        if (!hotelCoordsByProviderCode.has(key)) {
+          hotelCoordsByProviderCode.set(key, { lat, lon });
+        }
+      }
+    }
+
     // Build hotel rows (detail rows for each package)
     const hotelRows: ItineraryHotelRowDto[] = [];
 
@@ -1054,6 +1172,27 @@ export class ItineraryHotelDetailsTboService {
         const hotelDetailsId = lookupKey ? detailsMap.get(lookupKey) : undefined;
         const voucherCancelled = hotelDetailsId ? (voucherStatusMap.get(hotelDetailsId) || false) : false;
 
+        let hotelDistance: string | null = null;
+        const routeLocationId = Number((route as any).location_id || 0);
+        const routeCoords = routeDestinationCoordsByLocationId.get(routeLocationId);
+        const providerCodeKey = `${String(hotel.provider || 'tbo').trim().toLowerCase()}|${String(hotel.hotelCode || '').trim()}`;
+        const hotelCoords = hotelCoordsByProviderCode.get(providerCodeKey);
+        if (routeCoords && hotelCoords) {
+          try {
+            const distanceKm = haversineKm(
+              routeCoords.lat,
+              routeCoords.lon,
+              hotelCoords.lat,
+              hotelCoords.lon,
+            );
+            if (Number.isFinite(distanceKm) && distanceKm > 0) {
+              hotelDistance = `${distanceKm.toFixed(2)} KM`;
+            }
+          } catch {
+            hotelDistance = null;
+          }
+        }
+
         hotelRows.push({
           groupType: pkg.groupType,
           itineraryRouteId: routeId,
@@ -1075,6 +1214,7 @@ export class ItineraryHotelDetailsTboService {
           voucherCancelled: voucherCancelled,
           itineraryPlanHotelDetailsId: hotelDetailsId || 0,
           date: dateLabel,
+          hotelDistance,
         });
 
         // Log HOBSE hotel codes for debugging

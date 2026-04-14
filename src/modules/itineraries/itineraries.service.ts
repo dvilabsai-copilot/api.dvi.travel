@@ -503,7 +503,7 @@ export class ItinerariesService {
   async deleteHotspot(planId: number, routeId: number, hotspotId: number) {
     const userId = 1;
 
-    await this.prisma.$transaction(async (tx) => {
+    const rebuildResult = await this.prisma.$transaction(async (tx) => {
       // First, fetch the hotspot record to get the actual hotspot_ID
       const hotspotRecord = await (tx as any).dvi_itinerary_route_hotspot_details.findUnique({
         where: {
@@ -562,7 +562,7 @@ export class ItinerariesService {
 
       // Trigger a full rebuild of the hotspots for this plan
       // This ensures travel times and hotel arrival are recalculated after deletion
-      await this.hotspotEngine.rebuildRouteHotspots(tx, planId);
+      return await this.hotspotEngine.rebuildRouteHotspots(tx, planId);
     }, { timeout: 60000 });
 
     // Rebuild parking charges after deletion
@@ -571,6 +571,8 @@ export class ItinerariesService {
     return {
       success: true,
       message: 'Hotspot deleted and timeline recalculated successfully',
+      rebuildSummary: rebuildResult.rebuildSummary,
+      warnings: rebuildResult.warnings,
     };
   }
 
@@ -2824,6 +2826,8 @@ export class ItinerariesService {
       message: 'Hotspot added and timeline recalculated successfully',
       shiftedItems: result.shiftedItems,
       droppedItems: result.droppedItems,
+      rebuildSummary: result.rebuildSummary,
+      warnings: result.warnings,
     };
   }
 
@@ -6280,9 +6284,13 @@ export class ItinerariesService {
         data: { deleted: 1 }
       });
 
-      await this.hotspotEngine.rebuildRouteHotspots(tx, Number(planId));
+      const rebuildResult = await this.hotspotEngine.rebuildRouteHotspots(tx, Number(planId));
 
-      return { success: true };
+      return {
+        success: true,
+        rebuildSummary: rebuildResult.rebuildSummary,
+        warnings: rebuildResult.warnings,
+      };
     }, { timeout: 30000 });
   }
 
@@ -6362,13 +6370,15 @@ export class ItinerariesService {
         },
       });
 
-      await this.hotspotEngine.rebuildRouteHotspots(tx, normalizedPlanId);
+      const rebuildResult = await this.hotspotEngine.rebuildRouteHotspots(tx, normalizedPlanId);
 
       return {
         success: true,
         planId: normalizedPlanId,
         routeId: normalizedRouteId,
         message: 'Day hotspots rebuilt successfully',
+        rebuildSummary: rebuildResult.rebuildSummary,
+        warnings: rebuildResult.warnings,
       };
     }, { timeout: 60000 });
   }
@@ -6415,9 +6425,13 @@ export class ItinerariesService {
 
       // 3. Rebuild the timeline for the entire plan
       console.log(`[updateRouteTimes] Rebuilding timeline for planId=${planId}...`);
-      await this.hotspotEngine.rebuildRouteHotspots(tx, planId);
+      const rebuildResult = await this.hotspotEngine.rebuildRouteHotspots(tx, planId);
 
-      return { success: true };
+      return {
+        success: true,
+        rebuildSummary: rebuildResult.rebuildSummary,
+        warnings: rebuildResult.warnings,
+      };
     }, { timeout: 60000 });
   }
 

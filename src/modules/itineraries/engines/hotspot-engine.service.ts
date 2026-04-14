@@ -6,6 +6,11 @@ import { Prisma } from "@prisma/client";
 import { PrismaService } from "../../../prisma.service";
 import { TimelineBuilder } from "./helpers/timeline.builder";
 import { TimelineEnricher } from "./helpers/timeline.enricher";
+import {
+  RebuildSummary,
+  RebuildWarning,
+} from "./helpers/types";
+import { buildRebuildReport } from "./helpers/rebuild-report.helper";
 
 type Tx = Prisma.TransactionClient;
 
@@ -31,7 +36,12 @@ export class HotspotEngineService {
       protectedHotspotIds?: number[];
       anchorOrderByRoute?: Record<number, number>;
     },
-  ): Promise<any> {
+  ): Promise<{
+    shiftedItems: any[];
+    droppedItems: any[];
+    rebuildSummary: RebuildSummary;
+    warnings: RebuildWarning[];
+  }> {
     // 1) Fetch ALL current hotspots (manual and auto) INCLUDING soft-deleted ones for reference
     // Note: We include deleted:1 records, but the timeline builder/selector will exclude them
     // This ensures deleted hotspots are NOT re-added during rebuild
@@ -710,7 +720,22 @@ export class HotspotEngineService {
       });
     }
 
-    return { shiftedItems, droppedItems };
+    const attemptedHotspotRows = (hotspotRows as any[]).filter(
+      (row: any) => Number((row as any).item_type || 0) === 4,
+    );
+    const scheduledHotspotRows = (sortedRows as any[]).filter(
+      (row: any) => Number((row as any).item_type || 0) === 4,
+    );
+
+    const { rebuildSummary, warnings } = buildRebuildReport({
+      planId,
+      attemptedHotspotCount: attemptedHotspotRows.length,
+      scheduledHotspotCount: scheduledHotspotRows.length,
+      shiftedItems,
+      droppedItems,
+    });
+
+    return { shiftedItems, droppedItems, rebuildSummary, warnings };
   }
 
   /**
