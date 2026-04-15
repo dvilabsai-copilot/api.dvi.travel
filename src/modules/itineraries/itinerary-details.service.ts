@@ -465,6 +465,7 @@ for (const row of vehicleKmRows) {
         where: confirmedHotelWhere,
         select: {
           hotel_id: true,
+          hotel_code: true,
           itinerary_route_id: true,
           group_type: true,
         }
@@ -484,6 +485,7 @@ for (const row of vehicleKmRows) {
         where: timelineHotelWhere,
         select: {
           hotel_id: true,
+          hotel_code: true,
           itinerary_route_id: true,
           group_type: true,
         }
@@ -494,12 +496,18 @@ for (const row of vehicleKmRows) {
 
     // Build route -> hotel map
     // For TBO/ResAvenue hotels, we'll get names from the live search API later
-    const routeHotelIdMap = new Map(
-      timelineHotelRows.map((h) => [h.itinerary_route_id, h.hotel_id]),
+    const routeHotelRowMap = new Map(
+      timelineHotelRows.map((h) => [h.itinerary_route_id, h]),
     );
     
     // Try to get hotel names from dvi_hotel master (for local hotels)
-    const hotelIds = Array.from(new Set(timelineHotelRows.map(h => h.hotel_id)));
+    const hotelIds = Array.from(
+      new Set(
+        timelineHotelRows
+          .map((h) => Number(h.hotel_id ?? 0))
+          .filter((id) => id > 0),
+      ),
+    );
     const hotelMasters = hotelIds.length > 0
       ? await this.prisma.dvi_hotel.findMany({
           where: { hotel_id: { in: hotelIds } },
@@ -508,13 +516,68 @@ for (const row of vehicleKmRows) {
       : [];
     
     const hotelMasterMap = new Map(hotelMasters.map(h => [h.hotel_id, h]));
+
+    const tboHotelCodes = Array.from(
+      new Set(
+        timelineHotelRows
+          .map((h: any) => String(h?.hotel_code ?? '').trim())
+          .filter((code) => code.length > 0),
+      ),
+    );
+
+    const tboHotelMasters = tboHotelCodes.length
+      ? await this.prisma.tbo_hotel_master.findMany({
+          where: { tbo_hotel_code: { in: tboHotelCodes } },
+          select: {
+            tbo_hotel_code: true,
+            hotel_name: true,
+            hotel_address: true,
+          },
+        })
+      : [];
+
+    const tboHotelMasterMap = new Map(
+      tboHotelMasters.map((h) => [h.tbo_hotel_code, h]),
+    );
+
+    // For TBO hotels, also try to look up from tbo_hotel_booking_confirmation
+    const tboConfirmationRows = await this.prisma.tbo_hotel_booking_confirmation.findMany({
+      where: {
+        itinerary_plan_ID: planId,
+        deleted: 0,
+      },
+      select: {
+        itinerary_route_ID: true,
+        tbo_hotel_code: true,
+      },
+      distinct: ['itinerary_route_ID'],
+    });
+
+    const tboConfirmationMap = new Map(
+      tboConfirmationRows.map((r: any) => [Number(r.itinerary_route_ID), r.tbo_hotel_code]),
+    );
     
     // Build final map with hotel info
     // If hotel not in master, we'll fetch from TBO/ResAvenue search results
     const routeHotelMap = new Map();
-    for (const [routeId, hotelId] of routeHotelIdMap.entries()) {
-      const masterInfo = hotelMasterMap.get(hotelId);
-      routeHotelMap.set(routeId, masterInfo || { hotel_id: hotelId, hotel_name: null, hotel_address: null });
+    for (const [routeId, hotelRow] of routeHotelRowMap.entries()) {
+      const hotelIdNum = Number((hotelRow as any)?.hotel_id ?? 0);
+      const masterInfo = hotelMasterMap.get(hotelIdNum);
+      
+      let hotelCode = String((hotelRow as any)?.hotel_code ?? '').trim();
+      // Fallback: check if there's a TBO confirmation for this route
+      if (!hotelCode && tboConfirmationMap.has(routeId)) {
+        hotelCode = String(tboConfirmationMap.get(routeId) ?? '').trim();
+      }
+      
+      const tboInfo = hotelCode.length ? tboHotelMasterMap.get(hotelCode) : null;
+
+      routeHotelMap.set(routeId, {
+        hotel_id: hotelIdNum,
+        hotel_name: masterInfo?.hotel_name ?? tboInfo?.hotel_name ?? null,
+        hotel_address: masterInfo?.hotel_address ?? tboInfo?.hotel_address ?? null,
+        hotel_code: hotelCode,
+      });
     }
 
     const days: any[] = [];
@@ -783,6 +846,26 @@ for (const row of vehicleKmRows) {
         
         // Track the last unique location we're at
         let lastUniqueLocation = routeStartLoc;
+
+        const getHotelCheckinTimeMinutes = (row: any): number | null => {
+          const start = this.formatTime((row as any)?.hotspot_start_time ?? null);
+          const end = this.formatTime((row as any)?.hotspot_end_time ?? null);
+          const checkInTime = end || start;
+          return checkInTime ? this.timeToMinutes(checkInTime) : null;
+        };
+
+        const hasPriorHotelCheckinBeforeTravel = (travelRow: any): boolean => {
+          const travelStart = this.formatTime((travelRow as any)?.hotspot_start_time ?? null);
+          if (!travelStart) return false;
+          const travelStartMins = this.timeToMinutes(travelStart);
+
+          return routeHotspots.some((candidate) => {
+            const candidateType = Number((candidate as any).item_type ?? 0);
+            if (candidateType !== 6) return false;
+            const checkInMins = getHotelCheckinTimeMinutes(candidate);
+            return checkInMins !== null && checkInMins <= travelStartMins;
+          });
+        };
         
         // Build visit sequence by collecting all attractions
         for (const row of routeHotspots) {
@@ -818,8 +901,10 @@ for (const row of vehicleKmRows) {
               // There's a previous visit - that's where we came from
               origin = visitSequence[destIndex - 1].hotspotName;
             } else if (destIndex === 0 && visitSequence.length > 0) {
-              // First destination - came from route start
-              origin = routeStartLoc;
+              // First destination: in hotel-first flows, first sightseeing starts from hotel.
+              origin = hasPriorHotelCheckinBeforeTravel(row)
+                ? getRouteHotelName()
+                : routeStartLoc;
             } else {
               // Destination not found in visits (shouldn't happen, but safe)
               origin = routeStartLoc;
@@ -839,7 +924,30 @@ for (const row of vehicleKmRows) {
       const travelSegmentSemantics = buildTravelSegmentSemantics();
 
       // Only add START segment if item_type 1 exists (match PHP behavior)
-      if (startHotspot) {
+      // Exception: suppress START on late-arrival Day 1 that has no attractions
+      const hasAttractions = routeHotspots.some(
+        (rh) => Number((rh as any).item_type ?? 0) === 4,
+      );
+      const isLateArrivalDay1 = index === 0 && (() => {
+        const planStartTime = (plan as any).trip_start_date_and_time;
+        if (planStartTime instanceof Date) {
+          const h = planStartTime.getUTCHours();
+          return h >= 17 || h === 0;
+        }
+        // Fallback to route start time for this route
+        const routeStart = typeof route.route_start_time === 'string'
+          ? route.route_start_time
+          : route.route_start_time && typeof route.route_start_time === 'object'
+          ? `${String((route.route_start_time as any).getUTCHours()).padStart(2, '0')}:00`
+          : null;
+        if (routeStart) {
+          const h = parseInt(routeStart.split(':')[0], 10);
+          return h >= 17 || h === 0;
+        }
+        return false;
+      })();
+
+      if (startHotspot && !(isLateArrivalDay1 && !hasAttractions)) {
         const startTimeRange = `${this.formatTime((startHotspot as any).hotspot_start_time ?? null)} - ${this.formatTime((startHotspot as any).hotspot_end_time ?? null)}`;
 
         segments.push({
@@ -1325,29 +1433,45 @@ for (const row of vehicleKmRows) {
 
         if (itemType === 5) {
           // TRAVEL TO HOTEL segment
-          // Derive origin from the last processed attraction (true semantic last stop)
-          // Do NOT use previousStopName which may be corrupted
+          // Derive origin by chronology (latest attraction that ended at/before this travel start).
+          // Do NOT rely on row order; route rows are grouped by hotspot_order/item_type and can
+          // place future attractions before this travel-to-hotel row in the array.
           
           const hotelInfo = routeHotelMap.get(route.itinerary_route_ID);
           const toName = hotelInfo?.hotel_name ?? "Hotel";
 
-          // Find the last attraction before this hotel travel row
+          const travelStartMins = startTimeText ? this.timeToMinutes(startTimeText) : null;
+
+          // Find the chronologically last attraction that actually happened before this row.
           let fromName = 
             location?.source_location ??
             route.location_name ??
             plan.arrival_location ??
             ""; // Safe fallback
-            
-          for (let backIdx = routeHotspots.indexOf(rh) - 1; backIdx >= 0; backIdx--) {
-            const backRow = routeHotspots[backIdx];
-            const backItemType = Number((backRow as any).item_type ?? 0);
-            
-            if (backItemType === 4 && Number(backRow.hotspot_ID ?? 0) > 0) {
-              const backMaster = hotspotMap.get(backRow.hotspot_ID as number);
-              if (backMaster?.hotspot_name?.trim()) {
-                fromName = backMaster.hotspot_name;
-                break;
+
+          if (travelStartMins !== null) {
+            let bestAttractionName: string | null = null;
+            let bestAttractionEnd = -1;
+
+            for (const candidate of routeHotspots) {
+              const candidateType = Number((candidate as any).item_type ?? 0);
+              if (candidateType !== 4 || Number(candidate.hotspot_ID ?? 0) <= 0) continue;
+
+              const candidateEndText = this.formatTime((candidate as any).hotspot_end_time ?? null);
+              if (!candidateEndText) continue;
+              const candidateEndMins = this.timeToMinutes(candidateEndText);
+
+              if (candidateEndMins <= travelStartMins && candidateEndMins >= bestAttractionEnd) {
+                const candidateMaster = hotspotMap.get(candidate.hotspot_ID as number);
+                if (candidateMaster?.hotspot_name?.trim()) {
+                  bestAttractionName = candidateMaster.hotspot_name;
+                  bestAttractionEnd = candidateEndMins;
+                }
               }
+            }
+
+            if (bestAttractionName) {
+              fromName = bestAttractionName;
             }
           }
 
@@ -1470,6 +1594,7 @@ for (const row of vehicleKmRows) {
             time: checkInTime,
           });
 
+          previousStopName = hotelName;
           continue;
         }
 
@@ -1724,6 +1849,78 @@ const dayDistance = this.formatKm(totalDistanceNum);
 
         return aTypeOrder - bTypeOrder;
       });
+
+      // In hotel-first flows, place start before check-in
+      // so the sequence reads: travel to hotel -> Start your Journey -> checkin.
+      const getSegmentStartMinutes = (seg: any): number | null => {
+        if (!seg) return null;
+
+        if (seg.type === 'start' || seg.type === 'travel' || seg.type === 'return' || seg.type === 'break') {
+          if (seg.timeRange) {
+            const start = String(seg.timeRange).split(' - ')[0]?.trim();
+            return start ? this.timeToMinutes(start) : null;
+          }
+          return null;
+        }
+
+        if (seg.type === 'attraction') {
+          if (seg.visitTime) {
+            const start = String(seg.visitTime).split(' - ')[0]?.trim();
+            return start ? this.timeToMinutes(start) : null;
+          }
+          return null;
+        }
+
+        if (seg.type === 'checkin') {
+          if (seg.time) {
+            const start = String(seg.time).split(' - ')[0]?.trim();
+            return start ? this.timeToMinutes(start) : null;
+          }
+          return null;
+        }
+
+        return null;
+      };
+
+      const startIndex = segments.findIndex((seg: any) => seg?.type === 'start');
+      const checkinIndex = segments.findIndex((seg: any) => seg?.type === 'checkin');
+      const routeHotelNameForDay = getRouteHotelName();
+      const routeHotelNameNormalized = normalizeName(routeHotelNameForDay);
+
+      const firstHotelDepartureTravel = segments.find((seg: any) => {
+        if (seg?.type !== 'travel') return false;
+        const fromNormalized = normalizeName(seg?.from);
+        const toNormalized = normalizeName(seg?.to);
+
+        return (
+          routeHotelNameNormalized.length > 0 &&
+          fromNormalized === routeHotelNameNormalized &&
+          toNormalized !== routeHotelNameNormalized
+        );
+      });
+
+      const checkinStartMins =
+        checkinIndex >= 0 ? getSegmentStartMinutes(segments[checkinIndex]) : null;
+      const firstHotelDepartureStartMins = getSegmentStartMinutes(firstHotelDepartureTravel);
+
+      const isHotelFirstFlow =
+        checkinIndex >= 0 &&
+        !!firstHotelDepartureTravel &&
+        checkinStartMins !== null &&
+        firstHotelDepartureStartMins !== null &&
+        checkinStartMins <= firstHotelDepartureStartMins;
+
+      if (isHotelFirstFlow && startIndex >= 0 && startIndex < checkinIndex) {
+        const [startSegment] = segments.splice(startIndex, 1);
+        const refreshedCheckinIndex = segments.findIndex((seg: any) => seg?.type === 'checkin');
+
+        if (refreshedCheckinIndex >= 0) {
+          // Insert START before CHECKIN
+          segments.splice(refreshedCheckinIndex, 0, startSegment);
+        } else {
+          segments.unshift(startSegment);
+        }
+      }
 
       if (proofQuoteEnabled) {
         console.log('[SegmentChronology][SORT_APPLIED][PROOF]', {

@@ -26,6 +26,7 @@ import { HobseHotelBookingService } from "./services/hobse-hotel-booking.service
 import { ItineraryHotelDetailsTboService } from "./itinerary-hotel-details-tbo.service";
 import { normalizePassengerTitle } from "../../common/utils/passenger-title.util";
 import { SupplementNormalizerService } from "../../modules/hotels/services/supplement-normalizer.service";
+import { normalizeCityName } from "./utils/city-normalization.util";
 
 @Injectable()
 export class ItinerariesService {
@@ -502,67 +503,92 @@ export class ItinerariesService {
    */
   async deleteHotspot(planId: number, routeId: number, hotspotId: number) {
     const userId = 1;
+    const normalizedPlanId = Number(planId || 0);
+    const normalizedRouteId = Number(routeId || 0);
+    const normalizedHotspotParam = Number(hotspotId || 0);
 
     const rebuildResult = await this.prisma.$transaction(async (tx) => {
-      // First, fetch the hotspot record to get the actual hotspot_ID
-      const hotspotRecord = await (tx as any).dvi_itinerary_route_hotspot_details.findUnique({
+      // Accept either route_hotspot_ID or hotspot_ID from caller and resolve to master hotspot_ID.
+      let hotspotRecord = await (tx as any).dvi_itinerary_route_hotspot_details.findFirst({
         where: {
-          route_hotspot_ID: hotspotId,
+          itinerary_plan_ID: normalizedPlanId,
+          itinerary_route_ID: normalizedRouteId,
+          route_hotspot_ID: normalizedHotspotParam,
+          deleted: 0,
         },
       });
+
+      if (!hotspotRecord) {
+        hotspotRecord = await (tx as any).dvi_itinerary_route_hotspot_details.findFirst({
+          where: {
+            itinerary_plan_ID: normalizedPlanId,
+            itinerary_route_ID: normalizedRouteId,
+            hotspot_ID: normalizedHotspotParam,
+            item_type: 4,
+            deleted: 0,
+          },
+          orderBy: [{ hotspot_order: 'asc' }, { route_hotspot_ID: 'asc' }],
+        });
+      }
 
       if (!hotspotRecord) {
         throw new BadRequestException('Hotspot not found');
       }
 
-      const actualHotspotId = hotspotRecord.hotspot_ID; // This is the master hotspot ID
+      const actualHotspotId = Number(hotspotRecord.hotspot_ID || 0);
 
-      // Hard delete activities associated with this hotspot
-      await (tx as any).dvi_itinerary_route_activity_details.deleteMany({
-        where: {
-          itinerary_plan_ID: planId,
-          itinerary_route_ID: routeId,
-          route_hotspot_ID: hotspotId,
-        },
-      });
+      // Delete all timeline rows tied to this hotspot in the route so it cannot survive via pair rows.
+      const routeRowsForHotspot = actualHotspotId > 0
+        ? await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
+            where: {
+              itinerary_plan_ID: normalizedPlanId,
+              itinerary_route_ID: normalizedRouteId,
+              hotspot_ID: actualHotspotId,
+              deleted: 0,
+            },
+            select: { route_hotspot_ID: true },
+          })
+        : [];
 
-      // Hard delete the hotspot record completely
+      const routeHotspotIdsToDelete = routeRowsForHotspot
+        .map((r: any) => Number(r.route_hotspot_ID || 0))
+        .filter((id: number) => Number.isFinite(id) && id > 0);
+
+      if (routeHotspotIdsToDelete.length > 0) {
+        await (tx as any).dvi_itinerary_route_activity_details.deleteMany({
+          where: {
+            itinerary_plan_ID: normalizedPlanId,
+            itinerary_route_ID: normalizedRouteId,
+            route_hotspot_ID: { in: routeHotspotIdsToDelete },
+          },
+        });
+      }
+
       const deleted = await (tx as any).dvi_itinerary_route_hotspot_details.deleteMany({
-        where: {
-          itinerary_plan_ID: planId,
-          itinerary_route_ID: routeId,
-          route_hotspot_ID: hotspotId,
-        },
+        where: routeHotspotIdsToDelete.length > 0
+          ? {
+              itinerary_plan_ID: normalizedPlanId,
+              itinerary_route_ID: normalizedRouteId,
+              route_hotspot_ID: { in: routeHotspotIdsToDelete },
+            }
+          : {
+              itinerary_plan_ID: normalizedPlanId,
+              itinerary_route_ID: normalizedRouteId,
+              route_hotspot_ID: normalizedHotspotParam,
+            },
       });
 
       if (deleted.count === 0) {
         throw new BadRequestException('Hotspot not found');
       }
 
-      // Get current route to update excluded_hotspot_ids
-      const route = await (tx as any).dvi_itinerary_route_details.findUnique({
-        where: { itinerary_route_ID: routeId },
-      });
-
-      // ✅ FIX: Add the actual hotspot_ID (not route_hotspot_ID) to excluded list
-      // This allows the selector to properly filter hotspots by their master hotspot_ID
-      const excluded = (route?.excluded_hotspot_ids as number[]) || [];
-      if (!excluded.includes(actualHotspotId)) {
-        excluded.push(actualHotspotId);
+      if (actualHotspotId > 0) {
+        await this.addRouteHotspotToExcludedList(tx, normalizedRouteId, actualHotspotId);
       }
-
-      // Update route with excluded list and timestamp
-      await (tx as any).dvi_itinerary_route_details.update({
-        where: { itinerary_route_ID: routeId },
-        data: {
-          excluded_hotspot_ids: excluded,
-          updatedon: new Date(),
-        },
-      });
 
       // Trigger a full rebuild of the hotspots for this plan
       // This ensures travel times and hotel arrival are recalculated after deletion
-      return await this.hotspotEngine.rebuildRouteHotspots(tx, planId);
+      return await this.hotspotEngine.rebuildRouteHotspots(tx, normalizedPlanId);
     }, { timeout: 60000 });
 
     // Rebuild parking charges after deletion
@@ -2603,7 +2629,7 @@ export class ItinerariesService {
         removedHotspots: removedHotspotIds,
         topPriorityRemoved: topPriorityAffected,
       };
-    }, { timeout: 60000 });
+    }, { timeout: 180000 });
   }
 
   /**
@@ -6386,53 +6412,334 @@ export class ItinerariesService {
   /**
    * Update route start and end times and rebuild the timeline.
    */
-  async updateRouteTimes(planId: number, routeId: number, startTime: string, endTime: string) {
+  async updateRouteTimes(
+    planId: number,
+    routeId: number,
+    startTime: string,
+    endTime: string,
+    previousDayBillingDecisionProvided?: boolean,
+    previousDayBillingConfirmed?: boolean,
+  ) {
     console.log(`[updateRouteTimes] planId=${planId}, routeId=${routeId}, startTime=${startTime}, endTime=${endTime}`);
-    
-    return this.prisma.$transaction(async (tx) => {
-      // 1. Verify the record exists and belongs to the plan
-      const record = await (tx as any).dvi_itinerary_route_details.findFirst({
-        where: { 
-          itinerary_route_ID: routeId,
-          itinerary_plan_ID: planId
-        }
+
+    const normalizedPlanId = Number(planId || 0);
+    const normalizedRouteId = Number(routeId || 0);
+    const normalizedStartTime = String(startTime || '').trim();
+    const normalizedEndTime = String(endTime || '').trim();
+    const normalizedDecisionProvided = Boolean(previousDayBillingDecisionProvided);
+    const normalizedDecisionConfirmed = Boolean(previousDayBillingConfirmed);
+    const hhmmss = /^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/;
+
+    if (!normalizedPlanId || !normalizedRouteId) {
+      throw new BadRequestException('planId and routeId are required');
+    }
+
+    if (!hhmmss.test(normalizedStartTime) || !hhmmss.test(normalizedEndTime)) {
+      throw new BadRequestException('startTime and endTime must be in HH:MM:SS format');
+    }
+
+    const toTimeString = (value: unknown): string => {
+      if (typeof value === 'string' && value.trim()) {
+        return TimeConverter.toTimeString(value.trim());
+      }
+      return TimeConverter.toTimeString(value as any);
+    };
+
+    const combineDateAndTimeUtc = (routeDateValue: unknown, hhmmssTime: string): Date => {
+      const routeDate = routeDateValue instanceof Date ? routeDateValue : new Date(routeDateValue as any);
+      if (!Number.isFinite(routeDate.getTime())) {
+        throw new BadRequestException('Invalid itinerary_route_date while computing itinerary boundary');
+      }
+      const [h, m, s] = hhmmssTime.split(':').map((v) => Number(v || 0));
+      return new Date(
+        Date.UTC(
+          routeDate.getUTCFullYear(),
+          routeDate.getUTCMonth(),
+          routeDate.getUTCDate(),
+          h,
+          m,
+          s,
+        ),
+      );
+    };
+
+    const subtractOneUtcDay = (value: Date): Date => {
+      const d = new Date(value);
+      d.setUTCDate(d.getUTCDate() - 1);
+      return d;
+    };
+
+    const startTimeSeconds = (() => {
+      const [h, m, s] = normalizedStartTime.split(':').map((v) => Number(v || 0));
+      return (h * 3600) + (m * 60) + s;
+    })();
+    const isEarlyArrivalWindow = startTimeSeconds >= 3600 && startTimeSeconds < 28800; // 01:00:00–07:59:59
+
+    const transactionResult = await this.prisma.$transaction(async (tx) => {
+      // 1) Verify target route belongs to this plan
+      const targetRoute = await (tx as any).dvi_itinerary_route_details.findFirst({
+        where: {
+          itinerary_route_ID: normalizedRouteId,
+          itinerary_plan_ID: normalizedPlanId,
+          deleted: 0,
+        },
+        select: {
+          itinerary_route_ID: true,
+          itinerary_route_date: true,
+          no_of_days: true,
+          next_visiting_location: true,
+          location_name: true,
+        },
       });
 
-      if (!record) {
-        console.error(`[updateRouteTimes] Record NOT found for routeId=${routeId} and planId=${planId}`);
-        // Check if it exists with a different planId for debugging
+      if (!targetRoute) {
         const otherRecord = await (tx as any).dvi_itinerary_route_details.findUnique({
-          where: { itinerary_route_ID: routeId }
+          where: { itinerary_route_ID: normalizedRouteId },
+          select: { itinerary_plan_ID: true, deleted: true },
         });
         if (otherRecord) {
-          console.error(`[updateRouteTimes] Record exists but belongs to planId=${otherRecord.itinerary_plan_ID}`);
-          throw new BadRequestException(`Route ${routeId} belongs to plan ${otherRecord.itinerary_plan_ID}, not ${planId}`);
+          throw new BadRequestException(
+            `Route ${normalizedRouteId} belongs to plan ${otherRecord.itinerary_plan_ID}, not ${normalizedPlanId}`,
+          );
         }
-        throw new BadRequestException(`Route ${routeId} not found`);
+        throw new BadRequestException(`Route ${normalizedRouteId} not found`);
       }
 
-      console.log(`[updateRouteTimes] Found record. Updating...`);
-
-      // 2. Update the route details
+      // 2) Persist requested route start/end times
       await (tx as any).dvi_itinerary_route_details.update({
-        where: { itinerary_route_ID: routeId },
+        where: { itinerary_route_ID: normalizedRouteId },
         data: {
-          route_start_time: TimeConverter.toDate(startTime),
-          route_end_time: TimeConverter.toDate(endTime),
+          route_start_time: TimeConverter.toDate(normalizedStartTime),
+          route_end_time: TimeConverter.toDate(normalizedEndTime),
           updatedon: new Date(),
         },
       });
 
-      // 3. Rebuild the timeline for the entire plan
-      console.log(`[updateRouteTimes] Rebuilding timeline for planId=${planId}...`);
-      const rebuildResult = await this.hotspotEngine.rebuildRouteHotspots(tx, planId);
+      // 3) Recompute itinerary-level trip boundaries from route rows.
+      //    If Day-1 route time changed, itinerary start/pickup must follow route day-1 start.
+      const commonRouteWhere = {
+        itinerary_plan_ID: normalizedPlanId,
+        deleted: 0,
+        status: 1,
+      };
+
+      const routeBoundarySelect = {
+        itinerary_route_ID: true,
+        itinerary_route_date: true,
+        no_of_days: true,
+        next_visiting_location: true,
+        location_name: true,
+        route_start_time: true,
+        route_end_time: true,
+      };
+
+      const [firstRoute, lastRoute] = await Promise.all([
+        (tx as any).dvi_itinerary_route_details.findFirst({
+          where: commonRouteWhere,
+          orderBy: [
+            { no_of_days: 'asc' },
+            { itinerary_route_date: 'asc' },
+            { itinerary_route_ID: 'asc' },
+          ],
+          select: routeBoundarySelect,
+        }),
+        (tx as any).dvi_itinerary_route_details.findFirst({
+          where: commonRouteWhere,
+          orderBy: [
+            { no_of_days: 'desc' },
+            { itinerary_route_date: 'desc' },
+            { itinerary_route_ID: 'desc' },
+          ],
+          select: routeBoundarySelect,
+        }),
+      ]);
+
+      if (!firstRoute || !lastRoute) {
+        throw new BadRequestException(`No active routes found for plan ${normalizedPlanId}`);
+      }
+
+      const firstRouteStartTime = toTimeString(firstRoute.route_start_time);
+      const lastRouteStartTime = toTimeString(lastRoute.route_start_time);
+      const lastRouteEndTime = toTimeString(lastRoute.route_end_time);
+
+      const itineraryStartDateTime = combineDateAndTimeUtc(
+        firstRoute.itinerary_route_date,
+        firstRouteStartTime,
+      );
+
+      const lastRouteStartDateTime = combineDateAndTimeUtc(
+        lastRoute.itinerary_route_date,
+        lastRouteStartTime,
+      );
+      const itineraryEndDateTime = combineDateAndTimeUtc(
+        lastRoute.itinerary_route_date,
+        lastRouteEndTime,
+      );
+      if (itineraryEndDateTime.getTime() < lastRouteStartDateTime.getTime()) {
+        itineraryEndDateTime.setUTCDate(itineraryEndDateTime.getUTCDate() + 1);
+      }
+
+      const isDay1RouteUpdated = Number(firstRoute.itinerary_route_ID) === normalizedRouteId;
+
+      // Persist previous-day billing decision as marker rows for hotel-details rendering.
+      if (isDay1RouteUpdated) {
+        const existingMarkerRows = await (tx as any).dvi_itinerary_plan_hotel_details.findMany({
+          where: {
+            itinerary_plan_id: normalizedPlanId,
+            itinerary_route_id: normalizedRouteId,
+            hotel_required: 2,
+            hotel_id: 0,
+            deleted: 0,
+          },
+          select: {
+            group_type: true,
+            itinerary_route_date: true,
+            itinerary_route_location: true,
+          },
+        });
+
+        if (
+          normalizedDecisionProvided &&
+          normalizedDecisionConfirmed &&
+          isEarlyArrivalWindow
+        ) {
+          const firstRouteDate = new Date(firstRoute.itinerary_route_date as any);
+          if (!Number.isNaN(firstRouteDate.getTime())) {
+            const previousDayDate = subtractOneUtcDay(
+              new Date(Date.UTC(
+                firstRouteDate.getUTCFullYear(),
+                firstRouteDate.getUTCMonth(),
+                firstRouteDate.getUTCDate(),
+                0,
+                0,
+                0,
+              )),
+            );
+            const routeLocation = String(
+              (firstRoute as any).next_visiting_location ||
+              (firstRoute as any).location_name ||
+              '',
+            ).trim();
+
+            const expectedDateIso = previousDayDate.toISOString().slice(0, 10);
+            const expectedGroups = new Set([1, 2, 3, 4]);
+
+            const markersAlreadyUpToDate =
+              existingMarkerRows.length === 4 &&
+              existingMarkerRows.every((row: any) => {
+                const rowDateIso = new Date(row.itinerary_route_date as any).toISOString().slice(0, 10);
+                const rowGroup = Number(row.group_type || 0);
+                const rowLocation = String(row.itinerary_route_location || '').trim();
+                return (
+                  expectedGroups.has(rowGroup) &&
+                  rowDateIso === expectedDateIso &&
+                  rowLocation === (routeLocation || '')
+                );
+              });
+
+            if (!markersAlreadyUpToDate) {
+              if (existingMarkerRows.length > 0) {
+                await (tx as any).dvi_itinerary_plan_hotel_details.deleteMany({
+                  where: {
+                    itinerary_plan_id: normalizedPlanId,
+                    itinerary_route_id: normalizedRouteId,
+                    hotel_required: 2,
+                    hotel_id: 0,
+                    deleted: 0,
+                  },
+                });
+              }
+
+              const markerRows = [1, 2, 3, 4].map((groupType) => ({
+                group_type: groupType,
+                itinerary_plan_id: normalizedPlanId,
+                itinerary_route_id: normalizedRouteId,
+                itinerary_route_date: previousDayDate,
+                itinerary_route_location: routeLocation || null,
+                hotel_required: 2,
+                hotel_id: 0,
+                total_no_of_rooms: 0,
+                total_hotel_cost: 0,
+                total_hotel_tax_amount: 0,
+                createdby: 1,
+                createdon: new Date(),
+                status: 1,
+                deleted: 0,
+              }));
+
+              await (tx as any).dvi_itinerary_plan_hotel_details.createMany({
+                data: markerRows,
+              });
+            }
+          }
+        } else if (existingMarkerRows.length > 0) {
+          await (tx as any).dvi_itinerary_plan_hotel_details.deleteMany({
+            where: {
+              itinerary_plan_id: normalizedPlanId,
+              itinerary_route_id: normalizedRouteId,
+              hotel_required: 2,
+              hotel_id: 0,
+              deleted: 0,
+            },
+          });
+        }
+      }
+
+      const planUpdateData: any = {
+        trip_end_date_and_time: itineraryEndDateTime,
+        updatedon: new Date(),
+      };
+
+      if (isDay1RouteUpdated) {
+        planUpdateData.trip_start_date_and_time = itineraryStartDateTime;
+        planUpdateData.pick_up_date_and_time = itineraryStartDateTime;
+      }
+
+      await (tx as any).dvi_itinerary_plan_details.updateMany({
+        where: {
+          itinerary_plan_ID: normalizedPlanId,
+          deleted: 0,
+        },
+        data: planUpdateData,
+      });
+
+      // 4) Rebuild itinerary timeline rows (same core build as createPlan hotspot stage)
+      const rebuildResult = await this.hotspotEngine.rebuildRouteHotspots(tx, normalizedPlanId);
 
       return {
         success: true,
+        planId: normalizedPlanId,
+        routeId: normalizedRouteId,
+        routeTimes: {
+          startTime: normalizedStartTime,
+          endTime: normalizedEndTime,
+        },
+        itineraryBoundaries: {
+          tripStartDateTime: isDay1RouteUpdated ? itineraryStartDateTime.toISOString() : null,
+          tripEndDateTime: itineraryEndDateTime.toISOString(),
+          day1RouteUpdated: isDay1RouteUpdated,
+        },
         rebuildSummary: rebuildResult.rebuildSummary,
         warnings: rebuildResult.warnings,
+        previousDayBillingDecision: {
+          decisionProvided: normalizedDecisionProvided,
+          confirmed: normalizedDecisionConfirmed,
+          markerCreated:
+            isDay1RouteUpdated &&
+            normalizedDecisionProvided &&
+            normalizedDecisionConfirmed &&
+            isEarlyArrivalWindow,
+        },
       };
-    }, { timeout: 60000 });
+    }, { timeout: 180000, maxWait: 20000 });
+
+    // 5) Post-commit parity with create flow: recompute parking charges from persisted rebuilt rows
+    await this.hotspotEngine.rebuildParkingCharges(normalizedPlanId, 1);
+
+    return {
+      ...transactionResult,
+      parkingChargesRebuilt: true,
+    };
   }
 
   /**
@@ -7110,103 +7417,413 @@ export class ItinerariesService {
 
   /**
    * 🚀 ROUTE OPTIMIZATION: Reorder routes using TSP algorithm
-   * - For ≤10 days: Exhaustive search (tests all permutations)
-   * - For >10 days: Nearest Neighbor + Simulated Annealing
+    * - For small candidate sets (<=8 movable stops): Exhaustive search
+    * - For larger sets: Nearest Neighbor + Simulated Annealing
    * 
    * This finds the optimal or near-optimal route that minimizes total travel distance/time
    */
   private async optimizeRouteOrder(routes: any[]): Promise<any[]> {
-    const log = (msg: string) => {
-      console.log(msg);
-    };
-
     if (!routes || routes.length <= 2) return routes;
 
-    log(`[RouteOptimization] ============================================`);
-    log(`[RouteOptimization] STARTING ROUTE OPTIMIZATION (PHP-EXACT MODE)`);
-    log(`[RouteOptimization] ============================================`);
+    const debugOptimization = process.env.DEBUG_ROUTE_OPTIMIZER === 'true';
+    const exhaustiveSafeLimit = 8;
+    const log = (msg: string) => console.log(msg);
+    const logDebug = (msg: string) => {
+      if (debugOptimization) {
+        log(msg);
+      }
+    };
 
-    // PHP LOGIC: Build source_location and next_visiting_location arrays
-    const source_location: string[] = routes.map(r => r.location_name);
-    const next_visiting_location: string[] = routes.map(r => r.next_visiting_location);
+    // Logging every permutation is unsafe in production because factorial growth quickly floods logs.
+    log(`[RouteOptimization] Start optimization. routeCount=${routes.length}`);
 
-    log(`[RouteOptimization] Total routes: ${routes.length}`);
-    log(`[RouteOptimization] Source locations: [${source_location.join(', ')}]`);
-    log(`[RouteOptimization] Next visiting: [${next_visiting_location.join(', ')}]`);
-
-    // PHP LOGIC: Anchor start and end
-    const start = source_location[0];
-    const end = next_visiting_location[next_visiting_location.length - 1];
-    const middleLocations = next_visiting_location.slice(0, -1); // Keep duplicates!
-
-    log(`[RouteOptimization] PHP Anchors:`);
-    log(`[RouteOptimization]   start = ${start}`);
-    log(`[RouteOptimization]   end = ${end}`);
-    log(`[RouteOptimization]   middleLocations = [${middleLocations.join(', ')}] (${middleLocations.length} locations with duplicates)`);
-
-    if (middleLocations.length === 0) {
-      log(`[RouteOptimization] ⚠️  No middle locations to optimize. Returning as-is.`);
+    // Broken chains indicate route reconstruction corruption; optimizing them can amplify bad data.
+    if (this.hasBrokenChain(routes)) {
+      log('[RouteOptimization] ⚠️ Broken route chain detected. Skipping optimization and returning original routes.');
       return routes;
     }
 
-    // PHP LOGIC: Choose algorithm based on route count
-    let bestRouteLocations: string[] = [];
+    const context = this.extractRouteOptimizationContext(routes);
+    this.logOptimizationSummary(context, log, debugOptimization);
 
-    if (middleLocations.length <= 10) {
-      log(`[RouteOptimization] ≤10 routes: Using EXHAUSTIVE PERMUTATION search`);
+    const inputValidation = this.validateOptimizationInputs(context);
+    if (!inputValidation.isValid) {
+      log(`[RouteOptimization] ⚠️ Invalid optimization inputs (${inputValidation.reason}). Returning original route order.`);
+      return routes;
+    }
+
+    // When 0/1 movable stops remain after normalization, exhaustive search adds no value.
+    if (context.movableStops.length <= 1) {
+      log(`[RouteOptimization] Skipping optimization. movableStopCount=${context.movableStops.length}`);
+      const anchorSafeLocations = this.removeConsecutiveDuplicateLocations([
+        context.start,
+        ...context.movableStops.map((s) => s.name),
+        context.end,
+      ]);
+      return this.buildOptimizedRouteDtos(routes, anchorSafeLocations, log);
+    }
+
+    let bestRouteLocations: string[] = [];
+    const middleLocations = context.movableStops.map((s) => s.name);
+
+    // Hard cap prevents factorial explosion in production even after normalization.
+    if (middleLocations.length <= exhaustiveSafeLimit) {
+      log(`[RouteOptimization] Using exhaustive permutation. candidateCount=${middleLocations.length}`);
       bestRouteLocations = await this.optimizeWith_ExhaustivePermutation(
-        start,
-        end,
+        context.start,
+        context.end,
         middleLocations,
-        log
+        log,
+        logDebug,
       );
     } else {
-      log(`[RouteOptimization] >10 routes: Using NEAREST NEIGHBOR + SIMULATED ANNEALING`);
+      log(`[RouteOptimization] Using nearest-neighbor + annealing. candidateCount=${middleLocations.length}`);
       bestRouteLocations = await this.optimizeWith_NearestNeighborAndAnnealing(
-        start,
-        end,
+        context.start,
+        context.end,
         middleLocations,
-        log
+        logDebug,
       );
     }
 
-    log(`[RouteOptimization] Best route locations: [${bestRouteLocations.join(', ')}]`);
-
-    // PHP LOGIC: Rebuild routes in-place from new bestRouteLocations
-    const optimizedRoutes: any[] = [];
-    for (let i = 0; i < routes.length; i++) {
-      const newRoute = { ...routes[i] }; // Preserve all other fields
-      newRoute.location_name = bestRouteLocations[i];
-      newRoute.next_visiting_location = bestRouteLocations[i + 1];
-      optimizedRoutes.push(newRoute);
-      
-      log(`[RouteOptimization] Route[${i}]: ${newRoute.location_name} → ${newRoute.next_visiting_location}`);
+    if (!bestRouteLocations.length) {
+      log(`[RouteOptimization] ⚠️ No optimized route generated. Returning original route order.`);
+      return routes;
     }
 
-    // Optionally: shift itinerary_route_date sequentially like PHP does
+    const optimizedRoutes = this.buildOptimizedRouteDtos(routes, bestRouteLocations, log);
+    const finalChain = optimizedRoutes.map(r => `${r.location_name}→${r.next_visiting_location}`).join(' | ');
+    log(`[RouteOptimization] ✅ Completed. optimizedRouteCount=${optimizedRoutes.length}. chain=${finalChain}`);
+    return optimizedRoutes;
+  }
+
+  private normalizeLocationName(value: string): string {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+
+    const normalized = normalizeCityName(raw);
+    if (normalized) return normalized;
+
+    return raw
+      .toLowerCase()
+      .replace(/[.,()\-_\/]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  private isTerminalAnchorLocation(locationName: string): boolean {
+    const text = String(locationName || '').toLowerCase();
+    return /(airport|air\s*port|railway|station|stn|junction|terminal|bus\s*stand|terminus)/i.test(text);
+  }
+
+  private extractRouteOptimizationContext(routes: any[]): {
+    start: string;
+    end: string;
+    sourceLocations: string[];
+    nextVisitingLocations: string[];
+    rawFullPath: string[];
+    cleanedFullPath: string[];
+    rawMiddleLocations: string[];
+    movableStops: Array<{ name: string; normalizedName: string }>;
+    removedDuplicates: Array<{ name: string; normalizedName: string }>;
+    removedInvalidTerminalNodes: Array<{ name: string; reason: string }>;
+  } {
+    const sourceLocations = routes.map((r) => String(r?.location_name || '').trim());
+    const nextVisitingLocations = routes.map((r) => String(r?.next_visiting_location || '').trim());
+
+    // Build a full path first so we normalize chain artifacts before choosing permutation nodes.
+    const rawFullPath = sourceLocations.length > 0
+      ? [sourceLocations[0], ...nextVisitingLocations]
+      : [];
+    const cleanedFullPath = this.buildCleanOptimizationPath(rawFullPath);
+
+    const start = cleanedFullPath[0] || '';
+    const end = cleanedFullPath[cleanedFullPath.length - 1] || '';
+    const rawMiddleLocations = cleanedFullPath.slice(1, -1);
+
+    const rawStops = this.buildMovableStops(rawMiddleLocations, start, end);
+    const dedupeResult = this.dedupeStops(rawStops);
+
+    return {
+      start,
+      end,
+      sourceLocations,
+      nextVisitingLocations,
+      rawFullPath,
+      cleanedFullPath,
+      rawMiddleLocations,
+      movableStops: dedupeResult.stops,
+      removedDuplicates: dedupeResult.removedDuplicates,
+      removedInvalidTerminalNodes: rawStops.removedInvalidTerminalNodes,
+    };
+  }
+
+  private buildMovableStops(
+    rawMiddleLocations: string[],
+    start: string,
+    end: string,
+  ): {
+    stops: Array<{ name: string; normalizedName: string }>;
+    removedInvalidTerminalNodes: Array<{ name: string; reason: string }>;
+  } {
+    const stops: Array<{ name: string; normalizedName: string }> = [];
+    const removedInvalidTerminalNodes: Array<{ name: string; reason: string }> = [];
+
+    const startNormalized = this.normalizeLocationName(start);
+    const endNormalized = this.normalizeLocationName(end);
+
+    for (let idx = 0; idx < rawMiddleLocations.length; idx++) {
+      const rawName = rawMiddleLocations[idx];
+      const name = String(rawName || '').trim();
+      const normalizedName = this.normalizeLocationName(name);
+
+      if (!name || !normalizedName) {
+        removedInvalidTerminalNodes.push({ name, reason: 'empty-name' });
+        continue;
+      }
+
+      // Anchor nodes must remain fixed; allowing them in permutation creates invalid loops.
+      if (normalizedName === startNormalized || normalizedName === endNormalized) {
+        const preserveFirstTerminalToCityHop =
+          idx === 0 &&
+          normalizedName === startNormalized &&
+          this.isTerminalAnchorLocation(start) &&
+          !this.isTerminalAnchorLocation(name) &&
+          start.trim().toLowerCase() !== name.trim().toLowerCase();
+
+        if (preserveFirstTerminalToCityHop) {
+          stops.push({ name, normalizedName });
+          continue;
+        }
+
+        removedInvalidTerminalNodes.push({ name, reason: 'matches-anchor' });
+        continue;
+      }
+
+      stops.push({ name, normalizedName });
+    }
+
+    return { stops, removedInvalidTerminalNodes };
+  }
+
+  private buildCleanOptimizationPath(rawFullPath: string[]): string[] {
+    const cleaned: string[] = [];
+    const seen = new Set<string>();
+
+    // Duplicate chain artifacts are dangerous because they create fake loops and huge permutation inputs.
+    for (let i = 0; i < rawFullPath.length; i++) {
+      const name = String(rawFullPath[i] || '').trim();
+      const normalizedName = this.normalizeLocationName(name);
+      if (!name || !normalizedName) continue;
+
+      let shouldPreserveTerminalToCityHop = false;
+
+      if (cleaned.length > 0) {
+        const prevNormalized = this.normalizeLocationName(cleaned[cleaned.length - 1]);
+        if (normalizedName === prevNormalized) {
+          const prevName = cleaned[cleaned.length - 1];
+          const isFirstHop = cleaned.length === 1;
+          shouldPreserveTerminalToCityHop =
+            isFirstHop &&
+            this.isTerminalAnchorLocation(prevName) &&
+            !this.isTerminalAnchorLocation(name) &&
+            this.normalizeLocationName(prevName) === this.normalizeLocationName(name) &&
+            prevName.trim().toLowerCase() !== name.trim().toLowerCase();
+
+          if (!shouldPreserveTerminalToCityHop) {
+            continue;
+          }
+        }
+      }
+
+      const isLastNode = i === rawFullPath.length - 1;
+      if (seen.has(normalizedName) && !isLastNode && !shouldPreserveTerminalToCityHop) {
+        continue;
+      }
+
+      cleaned.push(name);
+      seen.add(normalizedName);
+    }
+
+    if (cleaned.length >= 2) {
+      return cleaned;
+    }
+
+    // Fallback to non-empty endpoints when cleaned path collapses too far.
+    const first = rawFullPath.find((p) => this.normalizeLocationName(p));
+    const last = [...rawFullPath].reverse().find((p) => this.normalizeLocationName(p));
+    const fallback: string[] = [];
+    if (first) fallback.push(String(first).trim());
+    if (last && this.normalizeLocationName(last) !== this.normalizeLocationName(first || '')) {
+      fallback.push(String(last).trim());
+    }
+    return fallback;
+  }
+
+  private hasBrokenChain(routes: any[]): boolean {
+    if (!routes || routes.length <= 1) return false;
+
+    for (let i = 0; i < routes.length - 1; i++) {
+      const currentNext = this.normalizeLocationName(String(routes[i]?.next_visiting_location || ''));
+      const nextSource = this.normalizeLocationName(String(routes[i + 1]?.location_name || ''));
+      if (!currentNext || !nextSource || currentNext !== nextSource) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private dedupeStops(stopsInput: {
+    stops: Array<{ name: string; normalizedName: string }>;
+    removedInvalidTerminalNodes: Array<{ name: string; reason: string }>;
+  }): {
+    stops: Array<{ name: string; normalizedName: string }>;
+    removedDuplicates: Array<{ name: string; normalizedName: string }>;
+  } {
+    const seen = new Set<string>();
+    const stops: Array<{ name: string; normalizedName: string }> = [];
+    const removedDuplicates: Array<{ name: string; normalizedName: string }> = [];
+
+    // Duplicate place names are dangerous in exhaustive search: they produce repeated equivalent permutations.
+    for (const stop of stopsInput.stops) {
+      if (seen.has(stop.normalizedName)) {
+        removedDuplicates.push(stop);
+        continue;
+      }
+
+      seen.add(stop.normalizedName);
+      stops.push(stop);
+    }
+
+    return { stops, removedDuplicates };
+  }
+
+  private validateOptimizationInputs(context: {
+    start: string;
+    end: string;
+    movableStops: Array<{ name: string; normalizedName: string }>;
+  }): { isValid: boolean; reason?: string } {
+    const startNormalized = this.normalizeLocationName(context.start);
+    const endNormalized = this.normalizeLocationName(context.end);
+
+    if (!startNormalized || !endNormalized) {
+      return { isValid: false, reason: 'missing-start-or-end' };
+    }
+
+    const seen = new Set<string>();
+    for (const stop of context.movableStops) {
+      if (!stop.name || !stop.normalizedName) {
+        return { isValid: false, reason: 'empty-movable-stop' };
+      }
+
+      if (stop.normalizedName === startNormalized || stop.normalizedName === endNormalized) {
+        return { isValid: false, reason: 'anchor-found-in-movable-stops' };
+      }
+
+      if (seen.has(stop.normalizedName)) {
+        return { isValid: false, reason: 'duplicate-movable-stop' };
+      }
+      seen.add(stop.normalizedName);
+    }
+
+    return { isValid: true };
+  }
+
+  private logOptimizationSummary(
+    context: {
+      start: string;
+      end: string;
+      sourceLocations: string[];
+      nextVisitingLocations: string[];
+      rawFullPath: string[];
+      cleanedFullPath: string[];
+      rawMiddleLocations: string[];
+      movableStops: Array<{ name: string; normalizedName: string }>;
+      removedDuplicates: Array<{ name: string; normalizedName: string }>;
+      removedInvalidTerminalNodes: Array<{ name: string; reason: string }>;
+    },
+    log: (msg: string) => void,
+    debug: boolean,
+  ): void {
+    log(`[RouteOptimization] Raw route chain: ${context.sourceLocations.map((s, i) => `${s}→${context.nextVisitingLocations[i] || ''}`).join(' | ')}`);
+    log(`[RouteOptimization] Full path raw=[${context.rawFullPath.join(', ')}], cleaned=[${context.cleanedFullPath.join(', ')}]`);
+    log(`[RouteOptimization] Extracted anchors and movable: start=${context.start}, end=${context.end}, movable=[${context.movableStops.map((s) => s.name).join(', ')}]`);
+
+    if (context.removedDuplicates.length > 0) {
+      log(`[RouteOptimization] Removed duplicate movable stops: [${context.removedDuplicates.map((d) => d.name).join(', ')}]`);
+    }
+
+    if (context.removedInvalidTerminalNodes.length > 0) {
+      log(`[RouteOptimization] Removed invalid terminal or anchor-like nodes: ${context.removedInvalidTerminalNodes.map((n) => `${n.name}(${n.reason})`).join(', ')}`);
+    }
+
+    log(`[RouteOptimization] Candidate movable stop count: ${context.movableStops.length}`);
+
+    if (debug) {
+      log(`[RouteOptimization][DEBUG] Raw middle locations: [${context.rawMiddleLocations.join(', ')}]`);
+    }
+  }
+
+  private buildOptimizedRouteDtos(routes: any[], routeLocations: string[], log: (msg: string) => void): any[] {
+    const cleanedLocations = this.removeConsecutiveDuplicateLocations(routeLocations);
+
+    if (cleanedLocations.length < 2) {
+      log('[RouteOptimization] ⚠️ Optimized route locations are invalid after cleanup. Returning original route order.');
+      return routes;
+    }
+
+    const optimizedRoutes: any[] = [];
+    const routeCount = cleanedLocations.length - 1;
+
+    for (let i = 0; i < routeCount; i++) {
+      const templateRoute = routes[Math.min(i, routes.length - 1)];
+      const newRoute = { ...templateRoute };
+      newRoute.location_name = cleanedLocations[i];
+      newRoute.next_visiting_location = cleanedLocations[i + 1];
+      optimizedRoutes.push(newRoute);
+    }
+
     const startDate = new Date(routes[0].itinerary_route_date);
     optimizedRoutes.forEach((route, index) => {
       const newDate = new Date(startDate);
       newDate.setDate(newDate.getDate() + index);
-      route.itinerary_route_date = newDate.toISOString().split('T')[0]; // Keep YYYY-MM-DD format
+      route.itinerary_route_date = newDate.toISOString().split('T')[0];
       route.no_of_days = index + 1;
     });
-
-    log(`[RouteOptimization] ✅ Route optimization completed`);
-    log(`[RouteOptimization] Final chain: ${optimizedRoutes.map(r => `${r.location_name}→${r.next_visiting_location}`).join(' | ')}`);
 
     return optimizedRoutes;
   }
 
+  private removeConsecutiveDuplicateLocations(locations: string[]): string[] {
+    const cleaned: string[] = [];
+    for (const location of locations) {
+      const name = String(location || '').trim();
+      if (!name) continue;
+      if (cleaned.length === 0) {
+        cleaned.push(name);
+        continue;
+      }
+
+      const prev = cleaned[cleaned.length - 1];
+      if (this.normalizeLocationName(prev) === this.normalizeLocationName(name)) {
+        continue;
+      }
+      cleaned.push(name);
+    }
+    return cleaned;
+  }
+
   /**
-   * PHP-EXACT: ≤10 routes - EXHAUSTIVE PERMUTATION
+    * PHP-EXACT: small candidate sets only - EXHAUSTIVE PERMUTATION
    * Tries all permutations of middleLocations and finds the one with minimum total distance
    */
   private async optimizeWith_ExhaustivePermutation(
     start: string,
     end: string,
     middleLocations: string[],
-    log: (msg: string) => void
+    log: (msg: string) => void,
+    logDebug: (msg: string) => void
   ): Promise<string[]> {
     const perms = this.generatePermutations_PHP([...middleLocations]);
     
@@ -7215,8 +7832,10 @@ export class ItinerariesService {
     let bestChain = '';
     
     log(`[ExhaustivePermutation] Testing ${perms.length} permutations...`);
-    
+
+    let tested = 0;
     for (const perm of perms) {
+      tested++;
       let current = start;
       let totalDistance = 0;
       const chain: string[] = [current];
@@ -7243,14 +7862,16 @@ export class ItinerariesService {
           chain.push(end);
         }
       }
-      
+
       const chainStr = chain.join(' → ');
-      log(`[ExhaustivePermutation] [${perm.join(',')}]: ${totalDistance === Infinity ? 'INVALID (missing distance)' : totalDistance.toFixed(1) + ' km'} (${chainStr})`);
-      
+
       if (totalDistance < bestDistance) {
         bestDistance = totalDistance;
         bestPerm = perm;
         bestChain = chainStr;
+        log(`[ExhaustivePermutation] best-so-far=${bestDistance === Infinity ? 'INVALID' : bestDistance.toFixed(1) + ' km'} route=[${bestPerm.join(', ')}]`);
+      } else if (tested % 250 === 0) {
+        logDebug(`[ExhaustivePermutation][DEBUG] progress=${tested}/${perms.length} best=${bestDistance === Infinity ? 'INVALID' : bestDistance.toFixed(1) + ' km'}`);
       }
     }
     

@@ -1,0 +1,103 @@
+{
+  "sourceQuoteId": "DVI202604230",
+  "sourcePlanId": 268,
+  "sourceRouteCount": 8,
+  "createStatus": 201,
+  "createdQuoteId": "DVI202604206",
+  "createdPlanId": 259,
+  "createBody": {
+    "planId": 259,
+    "quoteId": "DVI202604206",
+    "routeIds": [
+      1248,
+      1249,
+      1250,
+      1251,
+      1252,
+      1253,
+      1254,
+      1255
+    ],
+    "message": "Plan created/updated with routes, vehicles, travellers, hotspots, and hotels."
+  },
+  "detailsStatus": 200,
+  "detailsSummary": {
+    "quoteId": "DVI202604206",
+    "dateRange": "2026-04-28 to 2026-05-05",
+    "overallCost": "86559.00",
+    "dayCount": 8,
+    "firstDayArrival": "Chennai",
+    "lastDayArrival": "Pondicherry Airport",
+    "costBreakdown": {
+      "totalRoomCost": 35392,
+      "totalHotelAmount": 35392,
+      "totalVehicleCost": 51157.02,
+      "totalVehicleAmount": 51157.02,
+      "totalVehicleQty": 1,
+      "kmLimitWarning": "Planner warning: assigned vehicles exceed allowed KM by 1609.66 km (extra KM charges may apply).",
+      "totalAllowedKm": 1750,
+      "totalTravelledKm": 3359.66,
+      "totalExtraKm": 1609.66,
+      "additionalMargin": 0,
+      "totalAmount": 86549.01999999999,
+      "couponDiscount": 0,
+      "agentMargin": 10,
+      "totalRoundOff": -0.01999999998952262,
+      "netPayable": 86559,
+      "companyName": "Doview Holidays India Pvt ltd"
+    }
+  },
+  "hotelDetailsStatus": 200,
+  "hotelDetailsSummary": {
+    "hotelRatesVisible": false,
+    "hotelTabCount": 4,
+    "hotelRowCount": 1775,
+    "sampleRows": [
+      {
+        "routeId": 1248,
+        "hotelName": "The Mount Regency",
+        "destination": "Chennai",
+        "totalHotelCost": 934,
+        "totalHotelTaxAmount": 0,
+        "hotelDistance": null,
+        "groupType": 1
+      },
+      {
+        "routeId": 1248,
+        "hotelName": "The Mount Regency",
+        "destination": "Chennai",
+        "totalHotelCost": 1010,
+        "totalHotelTaxAmount": 0,
+        "hotelDistance": null,
+        "groupType": 1
+      },
+      {
+        "routeId": 1248,
+        "hotelName": "Season 4 Residences",
+        "destination": "Chennai",
+        "totalHotelCost": 1278,
+        "totalHotelTaxAmount": 0,
+        "hotelDistance": null,
+        "groupType": 1
+      },
+      {
+        "routeId": 1248,
+        "hotelName": "Mount Residency",
+        "destination": "Chennai",
+        "totalHotelCost": 1342,
+        "totalHotelTaxAmount": 0,
+        "hotelDistance": null,
+        "groupType": 1
+      },
+      {
+        "routeId": 1248,
+        "hotelName": "Hotel Pandian",
+        "destination": "Chennai",
+        "totalHotelCost": 1365,
+        "totalHotelTaxAmount": 0,
+        "hotelDistance": null,
+        "groupType": 1
+      }
+    ]
+  }
+}

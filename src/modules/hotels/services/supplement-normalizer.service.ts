@@ -46,6 +46,8 @@ export interface SupplementSummary {
 @Injectable()
 export class SupplementNormalizerService {
   private logger = new Logger(SupplementNormalizerService.name);
+  private readonly logUnknownSupplementTypes =
+    (process.env.SUPPLEMENT_WARN_UNKNOWN_TYPES || 'false').toLowerCase() === 'true';
 
   /**
    * Normalize a raw supplement entry from TBO API
@@ -78,7 +80,7 @@ export class SupplementNormalizerService {
         description?.toLowerCase().includes('tax');
 
       // Log unknown types for monitoring
-      if (type !== 'AtProperty') {
+      if (type !== 'AtProperty' && this.logUnknownSupplementTypes) {
         this.logger.warn(
           `⚠️  Unknown supplement type encountered: "${type}" | Description: "${description}" | Source: ${source}`,
         );
