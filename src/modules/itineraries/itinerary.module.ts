@@ -29,6 +29,7 @@ import { ViaRoutesEngine } from './engines/via-routes.engine';
 import { RouteValidationService } from './validation/route-validation.service';
 import { RouteSuggestionsService } from './route-suggestions.service';
 import { RouteSuggestionsV2Service } from './route-suggestions-v2.service';
+import { ArrivalHotelPolicyService } from './services/arrival-hotel-policy.service';
 import { HotelsModule } from '../hotels/hotels.module';
 import { ItineraryClipboardService } from './itinerary-clipboard.service';
 
@@ -64,6 +65,7 @@ import { ItineraryClipboardService } from './itinerary-clipboard.service';
     RouteSuggestionsService,
     RouteSuggestionsV2Service,
     ItineraryClipboardService,
+    ArrivalHotelPolicyService,
   ],
 })
 export class ItinerariesModule {}

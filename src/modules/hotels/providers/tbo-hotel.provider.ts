@@ -1,8 +1,6 @@
 import { Injectable, InternalServerErrorException, Logger, Inject } from '@nestjs/common';
 import axios, { AxiosInstance } from 'axios';
 import { PrismaService } from '../../../prisma.service';
-import * as fs from 'fs';
-import * as path from 'path';
 import {
   IHotelProvider,
   HotelSearchResult,
@@ -37,36 +35,18 @@ export class TBOHotelProvider implements IHotelProvider {
   private readonly PASSWORD = process.env.TBO_PASSWORD || 'Doview@12345';
   
   private logger = new Logger(TBOHotelProvider.name);
+  private readonly verboseHotelLookupLogs =
+    (process.env.TBO_VERBOSE_HOTEL_LOOKUP_LOGS || 'false').toLowerCase() === 'true';
   private tokenId: string | null = null;
   private tokenExpiry: Date | null = null;
   private http: AxiosInstance = axios;
-  private logFile = path.join(process.cwd(), 'tbo-hotel-provider.log');
-
-  private fileLog(message: string) {
-    const timestamp = new Date().toISOString();
-    const logMessage = `[${timestamp}] ${message}\n`;
-    try {
-      fs.appendFileSync(this.logFile, logMessage);
-    } catch (e) {
-      // Ignore file write errors
-    }
-  }
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly supplementNormalizer: SupplementNormalizerService,
   ) {
-    this.fileLog('═════════════════════════════════════════');
-    this.fileLog('TBOHotelProvider CONSTRUCTOR CALLED');
-    this.fileLog('═════════════════════════════════════════');
-    this.fileLog(`PrismaService type: ${typeof this.prisma}`);
-    this.fileLog(`PrismaService value: ${this.prisma ? 'DEFINED' : 'UNDEFINED'}`);
-    this.fileLog(`PrismaService constructor: ${this.prisma?.constructor?.name || 'N/A'}`);
-    console.log('🔐 TBOHotelProvider CONSTRUCTOR CALLED');
-    console.log('🔐 PrismaService received:', !!prisma, typeof prisma);
     if (!prisma) {
-      console.error('🔴 PrismaService is NULL/UNDEFINED!');
-      this.fileLog('🔴 ERROR: PrismaService is NULL/UNDEFINED!');
+      this.logger.error('🔴 PrismaService is NULL/UNDEFINED!');
     }
     this.logger.log('🔐 TBO Hotel Provider initialized with production endpoints');
     this.logger.log(`Using credentials: ${this.USERNAME}`);
@@ -113,7 +93,7 @@ export class TBOHotelProvider implements IHotelProvider {
 
       const authTime = Date.now() - authStartTime;
       this.logger.log(`   ⏱️  TBO Auth Response Time: ${authTime}ms`);
-      this.logger.debug(`   📋 TBO Auth Response: ${JSON.stringify(response.data)}`);
+      this.logger.debug(`   📋 TBO Auth Status: ${response.data?.Status ?? 'unknown'}`);
 
       // TBO API returns Status: 1 for success, not Status.Code
       const status = response.data?.Status;
@@ -146,17 +126,8 @@ export class TBOHotelProvider implements IHotelProvider {
     preferences?: HotelPreferences,
   ): Promise<HotelSearchResult[]> {
     const startTime = Date.now();
-    this.fileLog('\n═════════════════════════════════════════');
-    this.fileLog('search() method called');
-    this.fileLog('═════════════════════════════════════════');
-    this.fileLog(`this.prisma type: ${typeof this.prisma}`);
-    this.fileLog(`this.prisma value: ${this.prisma ? 'DEFINED' : 'UNDEFINED'}`);
-    this.fileLog(`this.prisma.dvi_cities exists: ${!!this.prisma?.dvi_cities}`);
-    console.log('📡 TBOHotelProvider.search() called');
-    console.log('📡 this.prisma is:', !!this.prisma, typeof this.prisma);
     if (!this.prisma) {
-      console.error('🔴 this.prisma is NULL/UNDEFINED in search method!');
-      this.fileLog('🔴 ERROR: this.prisma is NULL/UNDEFINED in search method!');
+      this.logger.error('🔴 this.prisma is NULL/UNDEFINED in search method!');
       throw new Error('PrismaService not injected');
     }
     try {
@@ -285,19 +256,9 @@ export class TBOHotelProvider implements IHotelProvider {
       const results: HotelSearchResult[] = [];
 
       for (const hotel of hotels) {
-        // Log the EXACT hotel data from TBO API
-        this.logger.log(`\n🏨 TBO Hotel Raw Data:`);
-        this.logger.log(`   - Full Hotel Object: ${JSON.stringify(hotel)}`);
-        this.logger.log(`   - HotelCode: ${hotel.HotelCode}`);
-        this.logger.log(`   - HotelName (from TBO): ${hotel.HotelName}`);
-        this.logger.log(`   - Hotel Keys: ${Object.keys(hotel).join(', ')}`);
-
         // Fetch actual hotel name from database (synced from TBO GetHotels API)
         const hotelMasterData = await this.getHotelMasterDataFromDb(hotel.HotelCode, resolvedTboCityCode);
         const hotelDisplayName = hotelMasterData?.hotel_name ?? `Hotel ${hotel.HotelCode}`;
-
-        this.logger.log(`   - Database Hotel Name: ${hotelDisplayName}`);
-        this.logger.log(`   - Using Name: ${hotelDisplayName}\n`);
 
         // Process each room as a separate offering with the SAME real hotel name
         // (One HotelCode = One real hotel, not fake variants)
@@ -360,7 +321,7 @@ export class TBOHotelProvider implements IHotelProvider {
       }
 
       this.logger.log(`✅ Successfully transformed ${results.length} hotels`);
-      this.logger.log(`📊 Room type breakdown: ${results.map(r => r.price).join(', ')}`);
+      this.logger.debug(`📊 Hotel search output size: ${results.length}`);
       return results;
     } catch (error: any) {
       const errorMsg = error instanceof Error ? error.message : String(error);
@@ -1235,7 +1196,6 @@ export class TBOHotelProvider implements IHotelProvider {
       const status = response.data?.Status;
       if (status !== 1) {
         this.logger.warn(`⚠️  TBO API GetHotels returned status: ${status}. Falling back to database.`);
-        this.fileLog(`⚠️  TBO API status ${status} - falling back to database`);
         return await this.getHotelCodesFromDbFallback(tboCityCode);
       }
 
@@ -1244,7 +1204,6 @@ export class TBOHotelProvider implements IHotelProvider {
 
       if (hotels.length === 0) {
         this.logger.warn(`⚠️  TBO API returned 0 hotels for city ${tboCityCode}. Falling back to database.`);
-        this.fileLog(`⚠️  TBO API returned 0 hotels - falling back to database`);
         return await this.getHotelCodesFromDbFallback(tboCityCode);
       }
 
@@ -1255,12 +1214,10 @@ export class TBOHotelProvider implements IHotelProvider {
       }
 
       this.logger.log(`✅ Extracted ${hotelCodes.length} hotel codes from TBO GetHotels response`);
-      this.fileLog(`✅ TBO API SUCCESS: ${hotelCodes.length} hotels extracted`);
       return hotelCodes.join(',');
     } catch (error) {
       const err = error as Error;
       this.logger.error(`❌ TBO API GetHotels failed: ${err.message}. Falling back to database.`);
-      this.fileLog(`❌ TBO API Exception: ${err.message} - falling back to database`);
       return await this.getHotelCodesFromDbFallback(tboCityCode);
     }
   }
@@ -1310,7 +1267,6 @@ export class TBOHotelProvider implements IHotelProvider {
           `❌ DATABASE ERROR: No hotels found in tbo_hotel_master for city ${tboCityCode}. ` +
           `Make sure to run hotel sync: POST /hotels/sync/all`
         );
-        this.fileLog(`❌ DATABASE ERROR: No hotels in tbo_hotel_master for city ${tboCityCode}`);
         return '';
       }
 
@@ -1321,7 +1277,6 @@ export class TBOHotelProvider implements IHotelProvider {
 
       this.logger.warn(`⚠️  Fallback Query SUCCESS: Found ${hotels.length} hotels in database`);
       this.logger.log(`📋 Hotel codes from DB: ${hotelCodes.substring(0, 100)}...`);
-      this.fileLog(`✅ Fallback DB query SUCCESS: ${hotels.length} hotels, codes: ${hotelCodes}`);
 
       return hotelCodes;
     } catch (error: any) {
@@ -1329,7 +1284,6 @@ export class TBOHotelProvider implements IHotelProvider {
       this.logger.error(
         `🔴 DATABASE QUERY ERROR: Failed to fetch hotels from tbo_hotel_master: ${errorMsg}`
       );
-      this.fileLog(`🔴 DB Query Error: ${errorMsg}`);
       return '';
     }
   }
@@ -1349,7 +1303,6 @@ export class TBOHotelProvider implements IHotelProvider {
 
       if (!this.prisma) {
         this.logger.error(`🔴 CRITICAL: PrismaService is NULL/UNDEFINED`);
-        this.fileLog('🔴 CRITICAL: PrismaService is NULL/UNDEFINED in getHotelCodesForCityFromDb');
         throw new Error('PrismaService not available');
       }
 
@@ -1370,7 +1323,6 @@ export class TBOHotelProvider implements IHotelProvider {
           `❌ PRIMARY: No hotels in tbo_hotel_master for city ${tboCityCode}. ` +
           `Run sync: POST /api/v1/hotels/sync/all`
         );
-        this.fileLog(`❌ PRIMARY Query Failed: No hotels for city ${tboCityCode}`);
 
         // Try fallback query from dvi_hotel table
         this.logger.log(`🔄 FALLBACK: Trying dvi_hotel table for city ${tboCityCode}`);
@@ -1410,7 +1362,6 @@ export class TBOHotelProvider implements IHotelProvider {
 
       this.logger.log(`✅ PRIMARY SUCCESS: Found ${hotels.length} hotels in tbo_hotel_master`);
       this.logger.log(`📋 Hotel codes from DB: ${hotelCodes.substring(0, 100)}...`);
-      this.fileLog(`✅ PRIMARY Query SUCCESS: ${hotels.length} hotels, codes: ${hotelCodes}`);
 
       return hotelCodes;
     } catch (error: any) {
@@ -1418,7 +1369,6 @@ export class TBOHotelProvider implements IHotelProvider {
       this.logger.error(
         `🔴 DATABASE QUERY ERROR: ${errorMsg}`
       );
-      this.fileLog(`🔴 DB Query Exception: ${errorMsg}`);
       return '';
     }
   }
@@ -1447,7 +1397,9 @@ export class TBOHotelProvider implements IHotelProvider {
         });
 
         if (hotel) {
-          this.logger.log(`✅ Found hotel by code+city: ${hotelCode} (City: ${cityCode}) -> ${hotel.hotel_name}`);
+          if (this.verboseHotelLookupLogs) {
+            this.logger.log(`✅ Found hotel by code+city: ${hotelCode} (City: ${cityCode}) -> ${hotel.hotel_name}`);
+          }
           return {
             hotel_name: hotel.hotel_name,
             hotel_address: hotel.hotel_address || '',
@@ -1455,7 +1407,9 @@ export class TBOHotelProvider implements IHotelProvider {
           };
         }
 
-        this.logger.log(`🔍 Hotel ${hotelCode} not found in dvi_hotel for city ${cityCode}, searching globally...`);
+        if (this.verboseHotelLookupLogs) {
+          this.logger.log(`🔍 Hotel ${hotelCode} not found in dvi_hotel for city ${cityCode}, searching globally...`);
+        }
       }
 
       // Strategy 2: Search by hotel code only in dvi_hotel (global search)
@@ -1467,7 +1421,9 @@ export class TBOHotelProvider implements IHotelProvider {
       });
 
       if (hotel) {
-        this.logger.log(`✅ Found hotel by code in dvi_hotel: ${hotelCode} -> ${hotel.hotel_name}`);
+        if (this.verboseHotelLookupLogs) {
+          this.logger.log(`✅ Found hotel by code in dvi_hotel: ${hotelCode} -> ${hotel.hotel_name}`);
+        }
         return {
           hotel_name: hotel.hotel_name,
           hotel_address: hotel.hotel_address || '',
@@ -1476,7 +1432,9 @@ export class TBOHotelProvider implements IHotelProvider {
       }
 
       // Strategy 3: Fallback to tbo_hotel_master table (synced from TBO GetHotels API)
-      this.logger.log(`🔍 Hotel ${hotelCode} not found in dvi_hotel, checking tbo_hotel_master...`);
+      if (this.verboseHotelLookupLogs) {
+        this.logger.log(`🔍 Hotel ${hotelCode} not found in dvi_hotel, checking tbo_hotel_master...`);
+      }
       
       const tboHotel: any = await this.prisma.tbo_hotel_master.findFirst({
         where: {
@@ -1487,7 +1445,9 @@ export class TBOHotelProvider implements IHotelProvider {
       });
 
       if (tboHotel) {
-        this.logger.log(`✅ Found hotel in tbo_hotel_master: ${hotelCode} -> ${tboHotel.hotel_name}`);
+        if (this.verboseHotelLookupLogs) {
+          this.logger.log(`✅ Found hotel in tbo_hotel_master: ${hotelCode} -> ${tboHotel.hotel_name}`);
+        }
         return {
           hotel_name: tboHotel.hotel_name || `Hotel ${hotelCode}`,
           hotel_address: tboHotel.hotel_address || '',
@@ -1554,7 +1514,7 @@ export class TBOHotelProvider implements IHotelProvider {
     description: string = ''
   ): Promise<any[]> {
     try {
-      const logFullPayload = (process.env.TBO_LOG_FULL_PAYLOAD || 'true').toLowerCase() === 'true';
+      const logFullPayload = (process.env.TBO_LOG_FULL_PAYLOAD || 'false').toLowerCase() === 'true';
       this.logger.log(`   📤 TBO Search Request ${description}:`);
       this.logger.log(`      - Check-in: ${searchRequest.CheckIn}`);
       this.logger.log(`      - Check-out: ${searchRequest.CheckOut}`);
@@ -1581,7 +1541,9 @@ export class TBOHotelProvider implements IHotelProvider {
       if (logFullPayload) {
         this.logger.log(`   📦 TBO API Response JSON: ${JSON.stringify(response.data)}`);
       } else {
-        this.logger.debug(`   ⏱️  TBO API Response: ${JSON.stringify(response.data).substring(0, 300)}`);
+        const statusObj = response.data?.Status;
+        const statusCode = typeof statusObj === 'object' ? statusObj?.Code : statusObj;
+        this.logger.debug(`   📥 TBO API response summary: status=${statusCode ?? 'unknown'}, hotels=${(response.data?.HotelResult || []).length}`);
       }
 
       // Check response status

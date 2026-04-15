@@ -20,6 +20,10 @@ import { haversineKm } from './utils/distance-utils';
  */
 @Injectable()
 export class ItineraryHotelDetailsTboService {
+  private static readonly HOTEL_DETAILS_CACHE_TTL_MS = 5 * 60 * 1000;
+  private static readonly HOTEL_ROOM_DETAILS_CACHE_TTL_MS = 5 * 60 * 1000;
+  private static readonly MAX_CACHE_ENTRIES = 200;
+
     /**
      * Fetch hotels for all routes, retrying ONCE if any provider/system failure (null) is detected.
      */
@@ -90,6 +94,12 @@ export class ItineraryHotelDetailsTboService {
   private readonly logger = new Logger(ItineraryHotelDetailsTboService.name);
 
   private static readonly ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
+  // Cache for hotel details endpoint response (key = quoteId)
+  private hotelDetailsCache = new Map<string, {
+    data: ItineraryHotelDetailsResponseDto;
+    timestamp: number;
+  }>();
   
   // Cache structure: key = "quoteId:routeId" or "quoteId" (no route filter)
   // Stores the entire response to avoid re-fetching TBO data
@@ -185,6 +195,11 @@ export class ItineraryHotelDetailsTboService {
   ): Promise<ItineraryHotelDetailsResponseDto> {
     const startTime = Date.now();
     this.logger.log(`\n📡 TBO HOTEL PACKAGES: Fetching dynamic packages for quote: ${quoteId}`);
+
+    const cached = this.getCachedHotelDetails(quoteId);
+    if (cached) {
+      return cached;
+    }
 
     // Step 1: Get itinerary plan
     const plan = await this.prisma.dvi_itinerary_plan_details.findFirst({
@@ -302,6 +317,8 @@ export class ItineraryHotelDetailsTboService {
     const duration = Date.now() - startTime;
     this.logger.log(`✅ Generated ${packages.length} hotel packages`);
     this.logger.log(`⏱️  Total TBO Service Time: ${duration}ms\n`);
+
+    this.setCachedHotelDetails(quoteId, response);
 
     return response;
   }
@@ -1509,6 +1526,11 @@ export class ItineraryHotelDetailsTboService {
     const cached = this.hotelRoomDetailsCache.get(cacheKey);
     
     if (cached) {
+      if (this.isCacheExpired(cached.timestamp, ItineraryHotelDetailsTboService.HOTEL_ROOM_DETAILS_CACHE_TTL_MS)) {
+        this.hotelRoomDetailsCache.delete(cacheKey);
+        this.logger.debug(`💾 [CACHE EXPIRED] Removed stale room cache for ${cacheKey}`);
+        return null;
+      }
       this.logger.log(`💾 [CACHE HIT] Using cached data for ${cacheKey}`);
       return cached.data;
     }
@@ -1525,11 +1547,64 @@ export class ItineraryHotelDetailsTboService {
     routeId?: number,
   ): void {
     const cacheKey = this.getCacheKey(quoteId, routeId);
+    this.evictOldestIfNeeded(this.hotelRoomDetailsCache);
     this.hotelRoomDetailsCache.set(cacheKey, {
       data,
       timestamp: Date.now(),
     });
     this.logger.log(`💾 [CACHE SET] Cached data for ${cacheKey}`);
+  }
+
+  private getCachedHotelDetails(quoteId: string): ItineraryHotelDetailsResponseDto | null {
+    const cached = this.hotelDetailsCache.get(quoteId);
+    if (!cached) {
+      return null;
+    }
+
+    if (this.isCacheExpired(cached.timestamp, ItineraryHotelDetailsTboService.HOTEL_DETAILS_CACHE_TTL_MS)) {
+      this.hotelDetailsCache.delete(quoteId);
+      this.logger.debug(`💾 [CACHE EXPIRED] Removed stale hotel details cache for ${quoteId}`);
+      return null;
+    }
+
+    this.logger.log(`💾 [CACHE HIT] Hotel details from cache for ${quoteId}`);
+    return cached.data;
+  }
+
+  private setCachedHotelDetails(
+    quoteId: string,
+    data: ItineraryHotelDetailsResponseDto,
+  ): void {
+    this.evictOldestIfNeeded(this.hotelDetailsCache);
+    this.hotelDetailsCache.set(quoteId, {
+      data,
+      timestamp: Date.now(),
+    });
+    this.logger.log(`💾 [CACHE SET] Hotel details cached for ${quoteId}`);
+  }
+
+  private isCacheExpired(timestamp: number, ttlMs: number): boolean {
+    return Date.now() - timestamp > ttlMs;
+  }
+
+  private evictOldestIfNeeded<T extends { timestamp: number }>(cache: Map<string, T>): void {
+    if (cache.size < ItineraryHotelDetailsTboService.MAX_CACHE_ENTRIES) {
+      return;
+    }
+
+    let oldestKey: string | null = null;
+    let oldestTs = Number.MAX_SAFE_INTEGER;
+
+    cache.forEach((value, key) => {
+      if (value.timestamp < oldestTs) {
+        oldestTs = value.timestamp;
+        oldestKey = key;
+      }
+    });
+
+    if (oldestKey) {
+      cache.delete(oldestKey);
+    }
   }
 
   /**
@@ -1538,6 +1613,8 @@ export class ItineraryHotelDetailsTboService {
    */
   clearCacheForQuote(quoteId: string): void {
     const keysToDelete: string[] = [];
+
+    this.hotelDetailsCache.delete(quoteId);
     
     for (const key of this.hotelRoomDetailsCache.keys()) {
       if (key.startsWith(`${quoteId}:`)) { // Matches "quoteId:routeId"
@@ -1558,9 +1635,12 @@ export class ItineraryHotelDetailsTboService {
    * Get current cache size and stats (for debugging)
    */
   getCacheStats(): { size: number; entries: string[] } {
+    const detailEntries = Array.from(this.hotelDetailsCache.keys()).map((k) => `details:${k}`);
+    const roomEntries = Array.from(this.hotelRoomDetailsCache.keys()).map((k) => `rooms:${k}`);
+
     return {
-      size: this.hotelRoomDetailsCache.size,
-      entries: Array.from(this.hotelRoomDetailsCache.keys()),
+      size: this.hotelDetailsCache.size + this.hotelRoomDetailsCache.size,
+      entries: [...detailEntries, ...roomEntries],
     };
   }
 }

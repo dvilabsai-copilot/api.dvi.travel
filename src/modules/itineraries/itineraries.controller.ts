@@ -50,10 +50,15 @@ import {
   ItineraryHotelDetailsResponseDto,
   ItineraryHotelRoomDetailsResponseDto,
 } from './itinerary-hotel-details.service';
+import {
+  HotelArrivalPolicyRequestDto,
+  HotelArrivalPolicyResponseDto,
+} from './dto/hotel-arrival-policy.dto';
 import { ItineraryHotelDetailsService } from './itinerary-hotel-details.service';
 import { ItineraryHotelDetailsTboService } from './itinerary-hotel-details-tbo.service';
 import { ItineraryExportService } from './itinerary-export.service';
 import { HotelVoucherService, AddCancellationPolicyDto, CreateVoucherDto } from './hotel-voucher.service';
+import { ArrivalHotelPolicyService } from './services/arrival-hotel-policy.service';
 import { Public } from '../../auth/public.decorator';
 import { Response, Request } from 'express';
 import { RouteSuggestionsService } from './route-suggestions.service';
@@ -83,6 +88,7 @@ export class ItinerariesController {
     private readonly routeSuggestionsV2Service: RouteSuggestionsV2Service,
     private readonly hotelVoucherService: HotelVoucherService,
     private readonly clipboardService: ItineraryClipboardService,
+    private readonly arrivalHotelPolicyService: ArrivalHotelPolicyService,
   ) {}
 
   private parseClipboardGroupTypes(query: Record<string, any>): number[] {
@@ -646,6 +652,20 @@ export class ItinerariesController {
       body._formattedStartDate,
       body._formattedEndDate,
     );
+  }
+
+  @Post('hotel-arrival-policy')
+  @ApiOperation({
+    summary: 'Resolve arrival-time hotel decision policy',
+    description:
+      'Computes hotel search/check-in strategy from arrival time, route day, and normalized city context.',
+  })
+  @ApiBody({ type: HotelArrivalPolicyRequestDto })
+  @ApiOkResponse({ type: HotelArrivalPolicyResponseDto })
+  async resolveHotelArrivalPolicy(
+    @Body() body: HotelArrivalPolicyRequestDto,
+  ): Promise<HotelArrivalPolicyResponseDto> {
+    return this.arrivalHotelPolicyService.resolvePolicy(body);
   }
 
   @Get('activities/available/:hotspotId')
@@ -1228,9 +1248,22 @@ export class ItinerariesController {
   async updateRouteTimes(
     @Param('id', ParseIntPipe) planId: number,
     @Param('routeId', ParseIntPipe) routeId: number,
-    @Body() body: { startTime: string; endTime: string },
+    @Body()
+    body: {
+      startTime: string;
+      endTime: string;
+      previousDayBillingDecisionProvided?: boolean;
+      previousDayBillingConfirmed?: boolean;
+    },
   ) {
-    return this.svc.updateRouteTimes(planId, routeId, body.startTime, body.endTime);
+    return this.svc.updateRouteTimes(
+      planId,
+      routeId,
+      body.startTime,
+      body.endTime,
+      body.previousDayBillingDecisionProvided,
+      body.previousDayBillingConfirmed,
+    );
   }
 
   @Post('templates/save')
