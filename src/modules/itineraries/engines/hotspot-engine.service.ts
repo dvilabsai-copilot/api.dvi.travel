@@ -242,6 +242,41 @@ export class HotspotEngineService {
           reason: 'Removed lower-priority hotspot to fit fixed manual hotspot',
         });
       }
+
+      // Persist omitted auto hotspots per route so customization can target skipped items.
+      const omittedByRoute = new Map<number, Set<number>>();
+      for (const item of droppedItems) {
+        const routeId = Number((item as any)?.itineraryRouteId || 0);
+        const hotspotId = Number((item as any)?.hotspotId || 0);
+        if (!routeId || !hotspotId) continue;
+        if (!omittedByRoute.has(routeId)) {
+          omittedByRoute.set(routeId, new Set<number>());
+        }
+        omittedByRoute.get(routeId)!.add(hotspotId);
+      }
+
+      for (const [routeId, omittedSet] of omittedByRoute.entries()) {
+        const routeRow = await (tx as any).dvi_itinerary_route_details.findUnique({
+          where: { itinerary_route_ID: Number(routeId) },
+          select: { excluded_hotspot_ids: true },
+        });
+
+        const existingExcluded = Array.isArray(routeRow?.excluded_hotspot_ids)
+          ? (routeRow!.excluded_hotspot_ids as any[])
+              .map((id: any) => Number(id))
+              .filter((id: number) => Number.isFinite(id) && id > 0)
+          : [];
+
+        const merged = Array.from(new Set([...existingExcluded, ...Array.from(omittedSet)]));
+
+        await (tx as any).dvi_itinerary_route_details.update({
+          where: { itinerary_route_ID: Number(routeId) },
+          data: {
+            excluded_hotspot_ids: merged,
+            updatedon: new Date(),
+          },
+        });
+      }
     }
 
     const droppedRouteHotspotPairs = new Set<string>();

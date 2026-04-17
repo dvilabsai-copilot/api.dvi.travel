@@ -26,6 +26,9 @@ export interface DistanceResult {
  * - "1 day 2 hours 15 mins"
  * Also supports numeric durations (treated as minutes).
  */
+/** Minimum travel time in minutes — accounts for vehicle loading/unloading */
+const MIN_TRAVEL_MINUTES = 5;
+
 function parseDurationToMinutes(duration: any): number | null {
   if (duration == null) return null;
 
@@ -150,8 +153,10 @@ export class DistanceHelper {
     }
 
     const durationHours = correctedDistance / avgSpeedKmPerHr;
-    const wholeHours = Math.floor(durationHours);
-    const minutes = Math.round((durationHours - wholeHours) * 60);
+    const rawTotalMinutes = Math.round(durationHours * 60);
+    const clampedMinutes = Math.max(rawTotalMinutes, MIN_TRAVEL_MINUTES);
+    const wholeHours = Math.floor(clampedMinutes / 60);
+    const minutes = clampedMinutes % 60;
 
     // This is a computed travel time (not from DB). It should never exceed 24h normally.
     const travelTime = `${String(wholeHours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:00`;
@@ -176,7 +181,7 @@ export class DistanceHelper {
     const totalMinutes = parseDurationToMinutes(loc.duration);
 
     // ✅ IMPORTANT: use *duration* formatter (NO wrap)
-    const travelTime = minutesToDurationTime(totalMinutes ?? 0);
+    const travelTime = minutesToDurationTime(Math.max(totalMinutes ?? 0, MIN_TRAVEL_MINUTES));
 
     const bufferTime = await this.getBufferTime(tx, travelLocationType);
 
@@ -249,7 +254,7 @@ export class DistanceHelper {
     if (loc) {
       const distance = Number(loc.distance ?? 0);
       const totalMinutes = parseDurationToMinutes(loc.duration);
-      const travelTime = minutesToDurationTime(totalMinutes ?? 0);
+      const travelTime = minutesToDurationTime(Math.max(totalMinutes ?? 0, MIN_TRAVEL_MINUTES));
       const bufferTime = await this.getBufferTime(tx, travelLocationType);
       return { distanceKm: distance, travelTime, bufferTime };
     }

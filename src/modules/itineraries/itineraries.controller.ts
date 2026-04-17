@@ -815,6 +815,25 @@ export class ItinerariesController {
     return this.svc.getAvailableHotspots(Number(routeId));
   }
 
+  @Post('hotspots/available-for-anchor')
+  @ApiOperation({ summary: 'Get available hotspots for a specific travel anchor on a route' })
+  async getAvailableHotspotsForAnchor(
+    @Body()
+    body: {
+      planId: number;
+      routeId: number;
+      anchorType: 'after_travel';
+      anchorIndex: number;
+    },
+  ) {
+    return this.svc.getAvailableHotspotsForAnchor({
+      planId: Number(body.planId),
+      routeId: Number(body.routeId),
+      anchorType: body.anchorType,
+      anchorIndex: Number(body.anchorIndex),
+    });
+  }
+
   @Post('hotspots/add')
   @ApiOperation({ summary: 'Add a hotspot to an itinerary route' })
   @ApiBody({
@@ -1192,20 +1211,38 @@ export class ItinerariesController {
   @ApiOperation({ summary: 'Preview adding a manual hotspot to a route' })
   async previewManualHotspot(
     @Param('id', ParseIntPipe) planId: number,
-    @Body() body: { routeId: number; hotspotId: number },
+    @Body()
+    body: {
+      routeId: number;
+      hotspotId: number;
+      anchorType?: 'after_travel';
+      anchorIndex?: number;
+    },
   ) {
-    return this.svc.previewManualHotspot(planId, body.routeId, body.hotspotId);
+    return this.svc.previewManualHotspot(planId, body.routeId, body.hotspotId, {
+      anchorType: body.anchorType,
+      anchorIndex: body.anchorIndex,
+    });
   }
 
   @Post(':id/manual-hotspot')
   @ApiOperation({ summary: 'Add a manual hotspot to a route and rebuild timeline' })
   async addManualHotspot(
     @Param('id', ParseIntPipe) planId: number,
-    @Body() body: { routeId: number; hotspotId: number },
+    @Body()
+    body: {
+      routeId: number;
+      hotspotId: number;
+      anchorType?: 'after_travel';
+      anchorIndex?: number;
+    },
     @Req() req: any,
   ) {
     const userId = Number(req.user?.userId ?? 1);
-    return this.svc.addManualHotspot(planId, body.routeId, body.hotspotId, userId);
+    return this.svc.addManualHotspot(planId, body.routeId, body.hotspotId, userId, {
+      anchorType: body.anchorType,
+      anchorIndex: body.anchorIndex,
+    });
   }
 
   @Delete(':id/manual-hotspot/:hotspotId')

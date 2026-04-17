@@ -638,6 +638,40 @@ export class TimelineBuilder {
       let currentTime = effectiveRouteStartTime;
       let routeStartSeconds = timeToSeconds(effectiveRouteStartTime);
       let routeEndSeconds = computeRouteEndSeconds(routeStartSeconds);
+      let lastRouteArrivalDeadlineSeconds = routeEndSeconds;
+      if (isLastRoute) {
+        // Strict report-time rule for departure terminal:
+        // deadline = trip_end_date_and_time (flight/train/etc) - departure buffer.
+        // Use route_end_time as fallback, and never exceed it.
+        const tripEndDateTime = (plan as any).trip_end_date_and_time;
+        if (tripEndDateTime instanceof Date) {
+          let departureSeconds =
+            tripEndDateTime.getUTCHours() * 3600 +
+            tripEndDateTime.getUTCMinutes() * 60 +
+            tripEndDateTime.getUTCSeconds();
+
+          if (departureSeconds < routeStartSeconds) {
+            departureSeconds += 86400;
+          }
+
+          const departureBufferSeconds =
+            Number((plan as any).departure_type || 0) === 1
+              ? 2 * 3600
+              : Number((plan as any).departure_type || 0) === 2
+                ? 1 * 3600
+                : 0;
+
+          const reportDeadlineSeconds = Math.max(
+            routeStartSeconds,
+            departureSeconds - departureBufferSeconds,
+          );
+
+          lastRouteArrivalDeadlineSeconds = Math.min(routeEndSeconds, reportDeadlineSeconds);
+        } else {
+          // Fallback to route_end_time when trip_end_date_and_time is unavailable.
+          lastRouteArrivalDeadlineSeconds = routeEndSeconds;
+        }
+      }
 
       // Maintain current logical location name for distance calculations.
       // Start with the route's location_name (same as PHP "route start city").
@@ -783,6 +817,35 @@ export class TimelineBuilder {
         currentTime = effectiveRouteStartTime;
         routeStartSeconds = timeToSeconds(effectiveRouteStartTime);
         routeEndSeconds = computeRouteEndSeconds(routeStartSeconds);
+        if (isLastRoute) {
+          const tripEndDateTime = (plan as any).trip_end_date_and_time;
+          if (tripEndDateTime instanceof Date) {
+            let departureSeconds =
+              tripEndDateTime.getUTCHours() * 3600 +
+              tripEndDateTime.getUTCMinutes() * 60 +
+              tripEndDateTime.getUTCSeconds();
+
+            if (departureSeconds < routeStartSeconds) {
+              departureSeconds += 86400;
+            }
+
+            const departureBufferSeconds =
+              Number((plan as any).departure_type || 0) === 1
+                ? 2 * 3600
+                : Number((plan as any).departure_type || 0) === 2
+                  ? 1 * 3600
+                  : 0;
+
+            const reportDeadlineSeconds = Math.max(
+              routeStartSeconds,
+              departureSeconds - departureBufferSeconds,
+            );
+
+            lastRouteArrivalDeadlineSeconds = Math.min(routeEndSeconds, reportDeadlineSeconds);
+          } else {
+            lastRouteArrivalDeadlineSeconds = routeEndSeconds;
+          }
+        }
       }
 
       const arrivalHour =
@@ -868,13 +931,9 @@ export class TimelineBuilder {
       let forceNoSightseeingOnThisRoute =
         !!hotelInfoForRoute?.isHouseboat;
 
-      // Departure-hub parity: final airport/station transfer routes should not add sightseeing.
-      if (isLastRoute) {
-        const terminalName = String(route.next_visiting_location || '').toLowerCase();
-        if (terminalName.includes('airport') || terminalName.includes('railway station')) {
-          forceNoSightseeingOnThisRoute = true;
-        }
-      }
+      // Final transfer routes (airport/station) are allowed to include sightseeing.
+      // The effective route_end_time already represents the latest allowable sightseeing cutoff
+      // after subtracting departure buffer and travel-to-terminal duration.
 
       // ✅ LATE ARRIVAL RULE: If arrival is 5 PM (17:00) or later on Day 1, skip all sightseeing
       // User goes directly to hotel check-in (no time for sightseeing same day).
@@ -1920,6 +1979,47 @@ export class TimelineBuilder {
             continue;
           }
 
+          // Last-route guard: keep enough time after this hotspot to travel to departure terminal.
+          if (!isKerala40985ParityPlan && isLastRoute) {
+            const candidateCity = hotspotLocationName.split('|')[0].trim();
+            const travelToDepartureType = this.getTravelLocationType(candidateCity, destinationCity);
+            const travelToDeparture = await this.distanceHelper.fromSourceAndDestination(
+              tx,
+              candidateCity,
+              destinationCity,
+              travelToDepartureType,
+              destCoords,
+              destCityCoords,
+            );
+            const toDepartureSeconds =
+              timeToSeconds(travelToDeparture.travelTime) +
+              timeToSeconds(travelToDeparture.bufferTime);
+            const projectedArrivalAtDeparture = absoluteVisitEndSeconds + toDepartureSeconds;
+
+            if (projectedArrivalAtDeparture > lastRouteArrivalDeadlineSeconds) {
+              this.logHotspotCandidateEvaluation({
+                routeId: route.itinerary_route_ID,
+                hotspotId: Number(sh.hotspot_ID || 0),
+                name: String(hotspotData.hotspot_location || `hotspot_${Number(sh.hotspot_ID || 0)}`),
+                matchedBucket: (sh as any).matched_bucket ?? null,
+                priority: Number((sh as any).hotspot_priority ?? 0),
+                isMustVisit: Number((sh as any).hotspot_priority ?? 0) > 0,
+                distanceFromRoute: Number.isFinite(Number((sh as any).hotspot_distance))
+                  ? Number((sh as any).hotspot_distance)
+                  : null,
+                openingTime: timingSummary.openingTime,
+                closingTime: timingSummary.closingTime,
+                visitTime: `${timeAfterTravel} - ${timeAfterSightseeing}`,
+                isOpenAtVisitTime: false,
+                selected: false,
+                rejectedReasons: [
+                  `Rejected: last-route transfer to departure would end at ${secondsToTime(wrapToDay(projectedArrivalAtDeparture))}, beyond arrival deadline ${secondsToTime(wrapToDay(lastRouteArrivalDeadlineSeconds))}`,
+                ],
+              });
+              continue;
+            }
+          }
+
           // Add travel segment
           const currentOrder = order;
           const travelLocationType = this.getTravelLocationType(currentLocationName, hotspotLocationName);
@@ -2606,6 +2706,55 @@ export class TimelineBuilder {
           });
           continue;
         }
+
+        // Last-route guard: keep enough time after this hotspot to travel to departure terminal.
+        if (!isKerala40985ParityPlan && isLastRoute) {
+          const candidateCity = hotspotLocationName.split('|')[0].trim();
+          const travelToDepartureType = this.getTravelLocationType(candidateCity, destinationCity);
+          const travelToDeparture = await this.distanceHelper.fromSourceAndDestination(
+            tx,
+            candidateCity,
+            destinationCity,
+            travelToDepartureType,
+            destCoords,
+            destCityCoords,
+          );
+          const toDepartureSeconds =
+            timeToSeconds(travelToDeparture.travelTime) +
+            timeToSeconds(travelToDeparture.bufferTime);
+          const projectedArrivalAtDeparture = absoluteTimeAfterSightseeing + toDepartureSeconds;
+
+          if (projectedArrivalAtDeparture > lastRouteArrivalDeadlineSeconds) {
+            queueDeferredMustVisitHotspot(
+              deferredPriorityHotspots,
+              deferredPriorityHotspotIds,
+              sh,
+              pass,
+              isStageAPriority,
+            );
+
+            this.logHotspotCandidateEvaluation({
+              routeId: route.itinerary_route_ID,
+              hotspotId: Number(sh.hotspot_ID || 0),
+              name: String(hotspotData.hotspot_location || `hotspot_${Number(sh.hotspot_ID || 0)}`),
+              matchedBucket: (sh as any).matched_bucket ?? null,
+              priority: Number((sh as any).hotspot_priority ?? 0),
+              isMustVisit: Number((sh as any).hotspot_priority ?? 0) > 0,
+              distanceFromRoute: Number.isFinite(Number((sh as any).hotspot_distance))
+                ? Number((sh as any).hotspot_distance)
+                : null,
+              openingTime: timingSummary.openingTime,
+              closingTime: timingSummary.closingTime,
+              visitTime: `${timeAfterTravel} - ${timeAfterSightseeing}`,
+              isOpenAtVisitTime: false,
+              selected: false,
+              rejectedReasons: [
+                `Rejected: last-route transfer to departure would end at ${secondsToTime(wrapToDay(projectedArrivalAtDeparture))}, beyond arrival deadline ${secondsToTime(wrapToDay(lastRouteArrivalDeadlineSeconds))}`,
+              ],
+            });
+            continue;
+          }
+        }
         
         // USER REQUIREMENT: Schedule all hotspots to keep user busy
         // BALANCED APPROACH: Respect operating hours when available, but be flexible
@@ -2989,13 +3138,34 @@ export class TimelineBuilder {
       // 5) LAST ROUTE ONLY → RETURN TO DEPARTURE LOCATION (item_type = 7)
 
       if (isLastRoute) {
+        const departureCityName = String((plan.departure_location as string) || destinationCity || currentLocationName)
+          .split('|')[0]
+          .trim();
+        const returnTravelLocationType = this.getTravelLocationType(currentLocationName, departureCityName);
+        const estimatedReturn = await this.distanceHelper.fromSourceAndDestination(
+          tx,
+          currentLocationName,
+          departureCityName,
+          returnTravelLocationType,
+          addedHotspotIds.size > 0 ? currentCoords : undefined,
+          addedHotspotIds.size > 0 ? destCityCoords : undefined,
+        );
+        const estimatedReturnSeconds =
+          timeToSeconds(estimatedReturn.travelTime) +
+          timeToSeconds(estimatedReturn.bufferTime);
+        const anchoredReturnStartSeconds = Math.max(
+          timeToSeconds(currentTime),
+          lastRouteArrivalDeadlineSeconds - estimatedReturnSeconds,
+        );
+        const returnStartTime = secondsToTime(wrapToDay(anchoredReturnStartSeconds));
+
         const { row: returnRow, nextTime: tAfterReturn } =
           await this.returnBuilder.buildReturnToDeparture(tx, {
             planId,
             routeId: route.itinerary_route_ID,
             order: order++,
-            startTime: currentTime,
-            travelLocationType: 2, // outstation by default
+            startTime: returnStartTime,
+            travelLocationType: returnTravelLocationType,
             userId: createdByUserId,
             currentLocationName,
             // ✅ PHP PARITY: Only use coordinates (Haversine) if we actually visited hotspots.
