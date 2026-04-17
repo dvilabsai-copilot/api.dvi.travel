@@ -26,6 +26,8 @@ export interface HotelSearchResult {
   hotelName: string;
   cityCode: string;
   address: string;
+  latitude?: number | string | null;
+  longitude?: number | string | null;
   rating: number;
   category?: string; // Hotel category/star rating
   facilities: string[];
