@@ -2095,6 +2095,19 @@ export class ItinerariesService {
       : [];
     const hotspotMap = new Map<number, any>(hotspotMasters.map((h: any) => [Number(h.hotspot_ID), h]));
 
+    // Fetch which hotspot IDs have available activities in the master catalog
+    const hotspotsWithActivities: Set<number> = new Set();
+    if (hotspotIds.length) {
+      const masterActivityHotspots = await (tx as any).dvi_activity.findMany({
+        where: { hotspot_id: { in: hotspotIds }, deleted: 0, status: 1 },
+        select: { hotspot_id: true },
+        distinct: ['hotspot_id'],
+      });
+      for (const row of masterActivityHotspots) {
+        hotspotsWithActivities.add(Number(row.hotspot_id));
+      }
+    }
+
     const routeHotspotIds = rows
       .map((r: any) => Number(r.route_hotspot_ID || 0))
       .filter((id: number) => id > 0);
@@ -2235,6 +2248,7 @@ export class ItinerariesService {
           videoUrl: master.hotspot_video_url || null,
           planOwnWay: Number(rh.hotspot_plan_own_way || 0) === 1,
           activities: activityList,
+          hasAvailableActivities: hotspotsWithActivities.has(Number(rh.hotspot_ID || 0)),
           hotspotId: Number(rh.hotspot_ID || 0),
           routeHotspotId: Number(rh.route_hotspot_ID || 0),
           locationId: route.location_id ? Number(route.location_id) : null,
