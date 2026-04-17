@@ -386,8 +386,11 @@ export class ArrivalHotelPolicyService {
     return {
       routeDate,
       rawArrivalDateTime: arrivalDateTime.toISOString(),
-      arrivalMinutes:
-        arrivalDateTime.getHours() * 60 + arrivalDateTime.getMinutes(),
+      arrivalMinutes: getArrivalMinutes(
+        request.arrivalDateTime,
+        plan?.trip_start_date_and_time,
+        arrivalDateTime,
+      ),
       sameCityArrival,
       normalizedArrivalCity: normalizeCityName(arrivalCityName),
       normalizedNightStayCity: normalizeCityName(nightStayCityName),
@@ -426,6 +429,41 @@ function parseDateOrFallback(
   }
 
   return new Date(fallback);
+}
+
+function getArrivalMinutes(
+  primary: unknown,
+  secondary: unknown,
+  parsedDate: Date,
+): number {
+  const values = [primary, secondary];
+
+  for (const value of values) {
+    if (!value) continue;
+    const text = String(value).trim();
+    if (!text) continue;
+
+    // Keep the intended wall-clock time from payload/DB string regardless of server timezone.
+    const isoMatch = text.match(/T(\d{2}):(\d{2})(?::\d{2})?/);
+    if (isoMatch) {
+      const hh = Number(isoMatch[1]);
+      const mm = Number(isoMatch[2]);
+      if (Number.isFinite(hh) && Number.isFinite(mm)) {
+        return hh * 60 + mm;
+      }
+    }
+
+    const spaceMatch = text.match(/\b(\d{2}):(\d{2})(?::\d{2})?\b/);
+    if (spaceMatch) {
+      const hh = Number(spaceMatch[1]);
+      const mm = Number(spaceMatch[2]);
+      if (Number.isFinite(hh) && Number.isFinite(mm)) {
+        return hh * 60 + mm;
+      }
+    }
+  }
+
+  return parsedDate.getHours() * 60 + parsedDate.getMinutes();
 }
 
 function toDateOnly(date: Date): string {
