@@ -1327,6 +1327,14 @@ for (const row of vehicleKmRows) {
           const rawP = (master as any).hotspot_priority ?? (master as any).priority ?? 0;
           const priority = Number(rawP) === 0 ? 9999 : Number(rawP);
 
+          // Check if master catalog has activities for this hotspot
+          const catalogActivityCount = rh.hotspot_ID
+            ? await this.prisma.dvi_activity.count({
+                where: { hotspot_id: rh.hotspot_ID as number, deleted: 0, status: 1 },
+              })
+            : 0;
+          const hasAvailableActivities = catalogActivityCount > 0;
+
           // Fetch activities for this hotspot
           const activities = await this.prisma.dvi_itinerary_route_activity_details.findMany({
             where: {
@@ -1459,6 +1467,7 @@ for (const row of vehicleKmRows) {
             videoUrl: hotspotVideoUrl,
             planOwnWay: hotspotPlanOwnWay === 1,
             activities: activityList,
+            hasAvailableActivities,
             hotspotId: rh.hotspot_ID as number,
             routeHotspotId: rh.route_hotspot_ID,
             locationId: route.location_id ? Number(route.location_id) : null,
