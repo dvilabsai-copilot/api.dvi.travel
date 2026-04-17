@@ -295,6 +295,12 @@ export class TBOHotelProvider implements IHotelProvider {
             hotelName: hotelDisplayName, // Real hotel name from database
             cityCode: criteria.cityCode,
             address: hotelMasterData?.hotel_address ?? '',
+            latitude:
+              hotelMasterData?.hotel_latitude ??
+              (hotel?.Latitude != null ? String(hotel.Latitude).trim() : null),
+            longitude:
+              hotelMasterData?.hotel_longitude ??
+              (hotel?.Longitude != null ? String(hotel.Longitude).trim() : null),
             rating: hotelMasterData?.star_rating ?? 0,
             category: hotelMasterData?.star_rating ? `${hotelMasterData.star_rating}-Star` : '-',
             facilities: (room.Inclusion || '').split(',').map((f) => f.trim()),
@@ -1403,6 +1409,8 @@ export class TBOHotelProvider implements IHotelProvider {
           return {
             hotel_name: hotel.hotel_name,
             hotel_address: hotel.hotel_address || '',
+            hotel_latitude: hotel.hotel_latitude ?? null,
+            hotel_longitude: hotel.hotel_longitude ?? null,
             star_rating: hotel.hotel_category || 0,
           };
         }
@@ -1427,6 +1435,8 @@ export class TBOHotelProvider implements IHotelProvider {
         return {
           hotel_name: hotel.hotel_name,
           hotel_address: hotel.hotel_address || '',
+          hotel_latitude: hotel.hotel_latitude ?? null,
+          hotel_longitude: hotel.hotel_longitude ?? null,
           star_rating: hotel.hotel_category || 0,
         };
       }
@@ -1451,6 +1461,8 @@ export class TBOHotelProvider implements IHotelProvider {
         return {
           hotel_name: tboHotel.hotel_name || `Hotel ${hotelCode}`,
           hotel_address: tboHotel.hotel_address || '',
+          hotel_latitude: tboHotel.hotel_latitude ?? null,
+          hotel_longitude: tboHotel.hotel_longitude ?? null,
           star_rating: tboHotel.star_rating || 0,
         };
       }

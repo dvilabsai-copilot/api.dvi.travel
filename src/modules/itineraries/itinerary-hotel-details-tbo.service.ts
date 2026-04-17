@@ -1,6 +1,7 @@
 // FILE: src/modules/itineraries/itinerary-hotel-details-tbo.service.ts
 
 import { Injectable, NotFoundException, Logger, BadRequestException } from '@nestjs/common';
+import axios from 'axios';
 import { PrismaService } from '../../prisma.service';
 import { HotelSearchService } from '../hotels/services/hotel-search.service';
 import { HobseHotelProvider } from '../hotels/providers/hobse-hotel.provider';
@@ -12,7 +13,6 @@ import {
   ItineraryHotelRoomDetailsResponseDto,
   ItineraryHotelRoomDto,
 } from './itinerary-hotel-details.service';
-import { haversineKm } from './utils/distance-utils';
 
 /**
  * This service generates dynamic hotel packages from TBO API
@@ -23,6 +23,9 @@ export class ItineraryHotelDetailsTboService {
   private static readonly HOTEL_DETAILS_CACHE_TTL_MS = 5 * 60 * 1000;
   private static readonly HOTEL_ROOM_DETAILS_CACHE_TTL_MS = 5 * 60 * 1000;
   private static readonly MAX_CACHE_ENTRIES = 200;
+  /** 40-minute DB cache TTL before a live re-fetch is triggered */
+  private static readonly DB_CACHE_TTL_MS = 40 * 60 * 1000;
+  private static readonly PAGE_SIZE = 20;
 
     /**
      * Fetch hotels for all routes, retrying ONCE if any provider/system failure (null) is detected.
@@ -192,14 +195,15 @@ export class ItineraryHotelDetailsTboService {
    */
   async getHotelDetailsByQuoteIdFromTbo(
     quoteId: string,
+    page = 1,
+    pageSize = ItineraryHotelDetailsTboService.PAGE_SIZE,
+    requestedGroupType?: number,
+    requestedRouteId?: number,
   ): Promise<ItineraryHotelDetailsResponseDto> {
     const startTime = Date.now();
     this.logger.log(`\n📡 TBO HOTEL PACKAGES: Fetching dynamic packages for quote: ${quoteId}`);
-
-    const cached = this.getCachedHotelDetails(quoteId);
-    if (cached) {
-      return cached;
-    }
+    const safePage = Math.max(1, Number(page) || 1);
+    const safePageSize = Math.max(1, Number(pageSize) || ItineraryHotelDetailsTboService.PAGE_SIZE);
 
     // Step 1: Get itinerary plan
     const plan = await this.prisma.dvi_itinerary_plan_details.findFirst({
@@ -212,7 +216,6 @@ export class ItineraryHotelDetailsTboService {
     }
 
     const planId = plan.itinerary_plan_ID;
-    const guestNationality = await this.resolveGuestNationality(plan);
     this.logger.log(`✅ Found plan ID: ${planId}`);
 
     // Step 2: Get itinerary routes (days and destinations)
@@ -235,6 +238,31 @@ export class ItineraryHotelDetailsTboService {
 
     // Get number of nights from plan to determine which routes need hotels
     const noOfNights = Number((plan as any).no_of_nights || 0);
+    const hotelRatesVisible =
+      Number((plan as any)?.hotel_rates_visibility || 0) === 1 ||
+      (plan as any)?.hotel_rates_visibility === true;
+    const searchableRouteIds = this.getSearchableRouteIds(routes, noOfNights);
+    const effectiveRouteIds =
+      requestedRouteId && searchableRouteIds.includes(requestedRouteId)
+        ? [requestedRouteId]
+        : searchableRouteIds;
+
+    // Fresh DB cache path: always serve paged response from DB (including page=1)
+    const isStale = await this.isDbCacheStale(quoteId);
+    if (!isStale) {
+      this.logger.log(`📦 DB cache fresh — serving page ${safePage} from DB for quote ${quoteId}`);
+      return this.buildPagedResponseFromDb(
+        quoteId,
+        planId,
+        hotelRatesVisible,
+        safePage,
+        safePageSize,
+        requestedGroupType,
+        effectiveRouteIds,
+      );
+    }
+
+    const guestNationality = await this.resolveGuestNationality(plan);
     this.logger.log(`🌙 Plan has ${noOfNights} nights`);
 
     // Read pax counts saved by the user when creating the itinerary
@@ -320,8 +348,198 @@ export class ItineraryHotelDetailsTboService {
 
     this.setCachedHotelDetails(quoteId, response);
 
-    return response;
+    try {
+      await this.syncToDb(quoteId, planId, response.hotels, routes, noOfNights);
+      return this.buildPagedResponseFromDb(
+        quoteId,
+        planId,
+        hotelRatesVisible,
+        safePage,
+        safePageSize,
+        requestedGroupType,
+        effectiveRouteIds,
+        response.hotelAvailability,
+      );
+    } catch (error) {
+      this.logger.error(
+        `❌ Failed DB sync/read pagination path. Falling back to in-memory pagination: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return this.paginateInMemoryResponse(response, safePage, safePageSize, requestedGroupType);
+    }
   }
+
+  private getSearchableRouteIds(routes: any[], noOfNights: number): number[] {
+    return routes
+      .filter((_, index) => {
+        const isLastRoute = index === routes.length - 1;
+        return !(isLastRoute && index >= noOfNights);
+      })
+      .map((route: any) => Number(route.itinerary_route_ID || 0))
+      .filter((id: number) => id > 0);
+  }
+
+  private getGroupLabel(groupType: number): string {
+    const labels: Record<number, string> = {
+      1: 'Budget Hotels',
+      2: 'Mid-Range Hotels',
+      3: 'Premium Hotels',
+      4: 'Luxury Hotels',
+    };
+    return labels[groupType] || `Group ${groupType}`;
+  }
+
+  private async buildPagedResponseFromDb(
+    quoteId: string,
+    planId: number,
+    hotelRatesVisible: boolean,
+    page: number,
+    pageSize: number,
+    requestedGroupType: number | undefined,
+    searchableRouteIds: number[],
+    hotelAvailability?: ItineraryHotelDetailsResponseDto['hotelAvailability'],
+  ): Promise<ItineraryHotelDetailsResponseDto> {
+    const groups = requestedGroupType ? [requestedGroupType] : [1, 2, 3, 4];
+    const hotels: ItineraryHotelRowDto[] = [];
+    const pagination: Record<number, import('./itinerary-hotel-details.service').HotelPaginationMeta> = {};
+    const routePagination: Record<string, import('./itinerary-hotel-details.service').HotelRoutePaginationMeta> = {};
+
+    await Promise.all(
+      groups.map(async (groupType) => {
+        const { rows, total, hasMore, routeMeta } = await this.readPagedHotelsFromDb(
+          quoteId,
+          groupType,
+          page,
+          pageSize,
+          searchableRouteIds,
+        );
+
+        for (const row of rows) {
+          try {
+            const payload = JSON.parse(row.full_payload || '{}') as ItineraryHotelRowDto;
+            hotels.push(payload);
+          } catch {
+            hotels.push({
+              groupType: row.group_type,
+              itineraryRouteId: row.route_id,
+              day: '',
+              destination: '',
+              hotelId: 0,
+              hotelName: row.hotel_name,
+              category: Number(row.rating || 0),
+              roomType: row.room_type || '',
+              mealPlan: row.meal_plan || '-',
+              totalHotelCost: Number(row.price || 0),
+              totalHotelTaxAmount: 0,
+              searchReference: row.search_reference || undefined,
+              provider: row.provider || 'tbo',
+            });
+          }
+        }
+
+        pagination[groupType] = { page, pageSize, total, hasMore };
+        for (const [routeId, meta] of Object.entries(routeMeta)) {
+          const compositeKey = `${groupType}-${routeId}`;
+          routePagination[compositeKey] = {
+            page: meta.page,
+            pageSize: meta.pageSize,
+            total: meta.total,
+            hasMore: meta.hasMore,
+            groupType,
+          };
+        }
+      }),
+    );
+
+    const tabGroups = [1, 2, 3, 4];
+    const tabTotals = await Promise.all(
+      tabGroups.map((groupType) =>
+        this.prisma.dvi_itinerary_hotel_search_cache.aggregate({
+          _sum: { price: true },
+          where: {
+            quote_id: quoteId,
+            group_type: groupType,
+            route_id: { in: searchableRouteIds },
+            deleted: 0,
+            status: 1,
+          },
+        }),
+      ),
+    );
+
+    const hotelTabs: ItineraryHotelTabDto[] = tabGroups.map((groupType, index) => ({
+      groupType,
+      label: this.getGroupLabel(groupType),
+      totalAmount: Number(tabTotals[index]?._sum?.price || 0),
+    }));
+
+    return {
+      quoteId,
+      planId,
+      hotelRatesVisible,
+      hotelTabs,
+      hotels,
+      totalRoomCount: hotels.length,
+      hotelAvailability,
+      pagination,
+      routePagination,
+    };
+  }
+
+  private paginateInMemoryResponse(
+    response: ItineraryHotelDetailsResponseDto,
+    page: number,
+    pageSize: number,
+    requestedGroupType?: number,
+  ): ItineraryHotelDetailsResponseDto {
+    const groups = requestedGroupType ? [requestedGroupType] : [1, 2, 3, 4];
+    const pagedRows: ItineraryHotelRowDto[] = [];
+    const pagination: Record<number, import('./itinerary-hotel-details.service').HotelPaginationMeta> = {};
+
+    for (const groupType of groups) {
+      const routeBuckets = new Map<number, ItineraryHotelRowDto[]>();
+      response.hotels
+        .filter((row) => Number(row.groupType) === groupType)
+        .forEach((row) => {
+          const routeId = Number(row.itineraryRouteId || 0);
+          if (!routeBuckets.has(routeId)) routeBuckets.set(routeId, []);
+          routeBuckets.get(routeId)!.push(row);
+        });
+
+      let groupTotal = 0;
+      let groupHasMore = false;
+
+      for (const [routeId, rows] of routeBuckets.entries()) {
+        const sortedRows = [...rows].sort((a, b) => {
+          const ratingDiff = Number(b.category || 0) - Number(a.category || 0);
+          if (ratingDiff !== 0) return ratingDiff;
+          const priceA = Number(a.totalHotelCost || 0) + Number(a.totalHotelTaxAmount || 0);
+          const priceB = Number(b.totalHotelCost || 0) + Number(b.totalHotelTaxAmount || 0);
+          return priceA - priceB;
+        });
+        groupTotal += sortedRows.length;
+        if (page * pageSize < sortedRows.length) groupHasMore = true;
+
+        const start = (page - 1) * pageSize;
+        const end = start + pageSize;
+        pagedRows.push(...sortedRows.slice(start, end));
+      }
+
+      pagination[groupType] = {
+        page,
+        pageSize,
+        total: groupTotal,
+        hasMore: groupHasMore,
+      };
+    }
+
+    return {
+      ...response,
+      hotels: pagedRows,
+      totalRoomCount: pagedRows.length,
+      pagination,
+    };
+  }
+
 
   /**
    * Fetch available hotels from TBO for each route with OPTIMIZED city mapping
@@ -964,6 +1182,195 @@ export class ItineraryHotelDetailsTboService {
     return packages;
   }
 
+  // ─── DB cache helpers ──────────────────────────────────────────────────────
+
+  /** Returns true when all rows for this quoteId are older than DB_CACHE_TTL_MS or none exist */
+  private async isDbCacheStale(quoteId: string): Promise<boolean> {
+    const newest = await this.prisma.dvi_itinerary_hotel_search_cache.findFirst({
+      where: { quote_id: quoteId, deleted: 0 },
+      orderBy: { synced_at: 'desc' },
+      select: { synced_at: true },
+    });
+    if (!newest) return true;
+    const ageMs = Date.now() - newest.synced_at.getTime();
+    return ageMs > ItineraryHotelDetailsTboService.DB_CACHE_TTL_MS;
+  }
+
+  /** Write paginable hotel rows to DB, computing sort_rank per (route_id, group_type). */
+  private async syncToDb(
+    quoteId: string,
+    planId: number,
+    hotelRows: ItineraryHotelRowDto[],
+    routes: any[],
+    noOfNights: number,
+  ): Promise<void> {
+    const now = new Date();
+
+    await this.prisma.dvi_itinerary_hotel_search_cache.updateMany({
+      where: { quote_id: quoteId },
+      data: { deleted: 1 },
+    });
+
+    const searchableRouteIds = new Set(this.getSearchableRouteIds(routes, noOfNights));
+    const routeDateById = new Map<number, Date>();
+    for (const route of routes) {
+      const routeId = Number((route as any).itinerary_route_ID || 0);
+      if (!routeId) continue;
+      routeDateById.set(routeId, new Date((route as any).itinerary_route_date || now));
+    }
+
+    const buckets = new Map<string, ItineraryHotelRowDto[]>();
+    for (const row of hotelRows) {
+      const routeId = Number(row.itineraryRouteId || 0);
+      const groupType = Number(row.groupType || 0);
+      if (!routeId || !groupType || !searchableRouteIds.has(routeId)) continue;
+      const key = `${groupType}:${routeId}`;
+      if (!buckets.has(key)) buckets.set(key, []);
+      buckets.get(key)!.push(row);
+    }
+
+    const dbRows: any[] = [];
+    for (const [key, rows] of buckets.entries()) {
+      const [groupTypeStr, routeIdStr] = key.split(':');
+      const groupType = Number(groupTypeStr);
+      const routeId = Number(routeIdStr);
+      const routeDate = routeDateById.get(routeId) || now;
+      const checkOutDate = new Date(routeDate);
+      checkOutDate.setDate(checkOutDate.getDate() + 1);
+
+      const sortedRows = [...rows].sort((a, b) => {
+        const ratingDiff = Number(b.category || 0) - Number(a.category || 0);
+        if (ratingDiff !== 0) return ratingDiff;
+        const priceA = Number(a.totalHotelCost || 0) + Number(a.totalHotelTaxAmount || 0);
+        const priceB = Number(b.totalHotelCost || 0) + Number(b.totalHotelTaxAmount || 0);
+        return priceA - priceB;
+      });
+
+      sortedRows.forEach((row, idx) => {
+        const provider = String(row.provider || 'tbo').trim().toLowerCase();
+        const codeBase = String(
+          (row as any).bookingCode ||
+          (row as any).searchReference ||
+          row.hotelId ||
+          row.hotelName ||
+          `hotel-${routeId}-${groupType}-${idx + 1}`,
+        ).trim();
+        const hotelCode = `${codeBase}-${idx + 1}`.slice(0, 100);
+        const price = Number(row.totalHotelCost || 0) + Number(row.totalHotelTaxAmount || 0);
+
+        dbRows.push({
+          quote_id: quoteId,
+          plan_id: planId,
+          route_id: routeId,
+          group_type: groupType,
+          hotel_code: hotelCode,
+          provider: provider.slice(0, 30),
+          hotel_name: String(row.hotelName || '').slice(0, 255),
+          rating: Number(row.category || 0),
+          price,
+          room_type: String(row.roomType || '').slice(0, 255) || null,
+          meal_plan: String(row.mealPlan || '').slice(0, 100) || null,
+          search_reference: String(row.searchReference || '').slice(0, 65535) || null,
+          full_payload: JSON.stringify(row),
+          check_in_date: routeDate,
+          check_out_date: checkOutDate,
+          sort_rank: idx + 1,
+          synced_at: now,
+          status: 1,
+          deleted: 0,
+        });
+      });
+    }
+
+    if (dbRows.length === 0) {
+      this.logger.warn(`⚠️ No DB rows prepared for quote ${quoteId}.`);
+      return;
+    }
+
+    const BATCH_SIZE = 500;
+    for (let i = 0; i < dbRows.length; i += BATCH_SIZE) {
+      const batch = dbRows.slice(i, i + BATCH_SIZE);
+      await this.prisma.dvi_itinerary_hotel_search_cache.createMany({
+        data: batch,
+        skipDuplicates: true,
+      });
+    }
+
+    this.logger.log(`✅ Synced ${dbRows.length} hotel rows to DB for quote ${quoteId}`);
+  }
+
+  /**
+   * Read one page per route/day for a specific group.
+   * Page size is applied independently for each route/day.
+   */
+  private async readPagedHotelsFromDb(
+    quoteId: string,
+    groupType: number,
+    page: number,
+    pageSize: number,
+    routeIds: number[],
+  ): Promise<{
+    rows: any[];
+    total: number;
+    hasMore: boolean;
+    routeMeta: Record<number, { page: number; pageSize: number; total: number; hasMore: boolean }>;
+  }> {
+    const rows: any[] = [];
+    let total = 0;
+    let hasMore = false;
+    const routeMeta: Record<number, { page: number; pageSize: number; total: number; hasMore: boolean }> = {};
+
+    for (const routeId of routeIds) {
+      const where = {
+        quote_id: quoteId,
+        group_type: groupType,
+        route_id: routeId,
+        deleted: 0,
+        status: 1,
+      };
+      const [routeTotal, routeRows] = await Promise.all([
+        this.prisma.dvi_itinerary_hotel_search_cache.count({ where }),
+        this.prisma.dvi_itinerary_hotel_search_cache.findMany({
+          where,
+          orderBy: { sort_rank: 'asc' },
+          skip: (page - 1) * pageSize,
+          take: pageSize,
+        }),
+      ]);
+
+      total += routeTotal;
+      if (page * pageSize < routeTotal) {
+        hasMore = true;
+      }
+      routeMeta[routeId] = {
+        page,
+        pageSize,
+        total: routeTotal,
+        hasMore: page * pageSize < routeTotal,
+      };
+      rows.push(...routeRows);
+    }
+
+    rows.sort((a, b) => {
+      const routeDiff = Number(a.route_id || 0) - Number(b.route_id || 0);
+      if (routeDiff !== 0) return routeDiff;
+      return Number(a.sort_rank || 0) - Number(b.sort_rank || 0);
+    });
+
+    return { rows, total, hasMore, routeMeta };
+  }
+
+  /** Invalidate DB cache for a quote (e.g. when itinerary dates change) */
+  async invalidateHotelCacheForQuote(quoteId: string): Promise<void> {
+    await this.prisma.dvi_itinerary_hotel_search_cache.updateMany({
+      where: { quote_id: quoteId },
+      data: { deleted: 1 },
+    });
+    // Also clear in-memory cache
+    this.hotelDetailsCache.delete(quoteId);
+    this.logger.log(`🗑️  Invalidated hotel cache for quote ${quoteId}`);
+  }
+
   /**
    * Build the response DTO
    */
@@ -1155,6 +1562,87 @@ export class ItineraryHotelDetailsTboService {
 
     // Build hotel rows (detail rows for each package)
     const hotelRows: ItineraryHotelRowDto[] = [];
+    const globalSettings = await this.prisma.dvi_global_settings.findFirst({
+      where: { deleted: 0, status: 1 },
+      select: {
+        itinerary_local_speed_limit: true,
+        itinerary_outstation_speed_limit: true,
+      },
+    });
+
+    // Segment-origin context: prefer last attraction hotspot per route for hotel-leg distance.
+    const routeIdsForHotspotLookup = routes.map((r: any) => Number((r as any).itinerary_route_ID || 0)).filter((id: number) => id > 0);
+    const lastAttractionRows = routeIdsForHotspotLookup.length
+      ? await (this.prisma as any).dvi_itinerary_route_hotspot_details.findMany({
+          where: {
+            itinerary_plan_ID: planId,
+            itinerary_route_ID: { in: routeIdsForHotspotLookup },
+            item_type: 4,
+            deleted: 0,
+            status: 1,
+          },
+          select: {
+            itinerary_route_ID: true,
+            hotspot_ID: true,
+            hotspot_order: true,
+          },
+          orderBy: [
+            { itinerary_route_ID: 'asc' },
+            { hotspot_order: 'desc' },
+          ],
+        })
+      : [];
+
+    const lastHotspotIdByRouteId = new Map<number, number>();
+    for (const row of lastAttractionRows as any[]) {
+      const routeId = Number(row?.itinerary_route_ID || 0);
+      const hotspotId = Number(row?.hotspot_ID || 0);
+      if (routeId > 0 && hotspotId > 0 && !lastHotspotIdByRouteId.has(routeId)) {
+        lastHotspotIdByRouteId.set(routeId, hotspotId);
+      }
+    }
+
+    const hotspotIdsForLookup = Array.from(new Set(Array.from(lastHotspotIdByRouteId.values())));
+    const hotspotMasters = hotspotIdsForLookup.length
+      ? await this.prisma.dvi_hotspot_place.findMany({
+          where: {
+            hotspot_ID: { in: hotspotIdsForLookup },
+            deleted: 0,
+          },
+          select: {
+            hotspot_ID: true,
+            hotspot_name: true,
+            hotspot_latitude: true,
+            hotspot_longitude: true,
+          },
+        })
+      : [];
+
+    const hotspotMetaById = new Map<number, { name: string | null; lat: number; lon: number }>();
+    for (const hotspot of hotspotMasters as any[]) {
+      const lat = Number(hotspot?.hotspot_latitude ?? 0);
+      const lon = Number(hotspot?.hotspot_longitude ?? 0);
+      hotspotMetaById.set(Number(hotspot?.hotspot_ID || 0), {
+        name: String(hotspot?.hotspot_name || '').trim() || null,
+        lat,
+        lon,
+      });
+    }
+
+    const routeLastHotspotContext = new Map<number, { name: string | null; coords: { lat: number; lon: number } | null }>();
+    for (const [routeId, hotspotId] of lastHotspotIdByRouteId.entries()) {
+      const hotspotMeta = hotspotMetaById.get(hotspotId);
+      if (!hotspotMeta) {
+        routeLastHotspotContext.set(routeId, { name: null, coords: null });
+        continue;
+      }
+
+      const hasCoords = Number.isFinite(hotspotMeta.lat) && Number.isFinite(hotspotMeta.lon) && hotspotMeta.lat !== 0 && hotspotMeta.lon !== 0;
+      routeLastHotspotContext.set(routeId, {
+        name: hotspotMeta.name,
+        coords: hasCoords ? { lat: hotspotMeta.lat, lon: hotspotMeta.lon } : null,
+      });
+    }
 
     for (const pkg of packages) {
       for (const hotel of pkg.hotels) {
@@ -1192,20 +1680,67 @@ export class ItineraryHotelDetailsTboService {
         let hotelDistance: string | null = null;
         const routeLocationId = Number((route as any).location_id || 0);
         const routeCoords = routeDestinationCoordsByLocationId.get(routeLocationId);
+        const segmentOriginContext = routeLastHotspotContext.get(routeId);
+        const segmentOriginCoords = segmentOriginContext?.coords || routeCoords || null;
+        const segmentOriginName =
+          String(segmentOriginContext?.name || '').trim() ||
+          String((route as any).next_visiting_location || (route as any).location_name || '').split('|')[0].trim();
+
+        const providerLat = Number((hotel as any)?.latitude ?? 0);
+        const providerLon = Number((hotel as any)?.longitude ?? 0);
+        const providerCoords = Number.isFinite(providerLat) && Number.isFinite(providerLon) && providerLat !== 0 && providerLon !== 0
+          ? { lat: providerLat, lon: providerLon }
+          : null;
+
         const providerCodeKey = `${String(hotel.provider || 'tbo').trim().toLowerCase()}|${String(hotel.hotelCode || '').trim()}`;
-        const hotelCoords = hotelCoordsByProviderCode.get(providerCodeKey);
-        if (routeCoords && hotelCoords) {
+        const masterCoords = hotelCoordsByProviderCode.get(providerCodeKey) || null;
+        const hotelCoords = providerCoords || masterCoords;
+        // When exact hotel coords unavailable, fall back to destination city coords as proxy
+        const effectiveHotelCoords = hotelCoords || routeCoords || null;
+
+        this.logger.log(`[HotelDistance] hotelCode=${String(hotel.hotelCode || '')} hotelName=${String(hotel.hotelName || '')} providerLat=${providerCoords?.lat ?? 'NA'} masterLat=${masterCoords?.lat ?? 'NA'} cityCoords=${routeCoords ? `${routeCoords.lat},${routeCoords.lon}` : 'NA'} segOrigin=${segmentOriginCoords ? `${segmentOriginCoords.lat},${segmentOriginCoords.lon}` : 'NA'}`);
+
+        if (segmentOriginCoords && effectiveHotelCoords) {
           try {
-            const distanceKm = haversineKm(
-              routeCoords.lat,
-              routeCoords.lon,
-              hotelCoords.lat,
-              hotelCoords.lon,
+            const result = this.calculateDistanceAndDuration(
+              segmentOriginCoords.lat,
+              segmentOriginCoords.lon,
+              effectiveHotelCoords.lat,
+              effectiveHotelCoords.lon,
+              1,
+              globalSettings,
             );
-            if (Number.isFinite(distanceKm) && distanceKm > 0) {
+            if (Number.isFinite(result.distanceKm) && result.distanceKm > 0) {
+              // Match PHP helper behavior: coordinate-based distance with correction factor.
+              const distanceKm = result.distanceKm;
               hotelDistance = `${distanceKm.toFixed(2)} KM`;
             }
-          } catch {
+          } catch (e) {
+            this.logger.warn(`[HotelDistance] coord calc error: ${String(e)}`);
+            hotelDistance = null;
+          }
+        } else {
+          // Fallback to Google road distance using textual origin/hotel name when coords are missing.
+          const routeOriginName = segmentOriginName;
+          const hotelDestinationName = [
+            String(displayHotelName || '').trim(),
+            String((hotel as any).address || '').trim(),
+          ]
+            .filter((v) => v.length > 0)
+            .join(', ');
+
+          this.logger.log(`[HotelDistance] Google fallback origin='${routeOriginName}' dest='${hotelDestinationName}'`);
+          try {
+            const matrix = await this.getDistanceAndDuration(routeOriginName, hotelDestinationName);
+            this.logger.log(`[HotelDistance] Google result distanceText=${matrix?.distanceText ?? 'null'}`);
+            if (matrix?.distanceText) {
+              const parsedKm = this.parseDistanceKmText(matrix.distanceText);
+              if (parsedKm != null && parsedKm > 0) {
+                hotelDistance = `${parsedKm.toFixed(2)} KM`;
+              }
+            }
+          } catch (e) {
+            this.logger.warn(`[HotelDistance] Google API error: ${String(e)}`);
             hotelDistance = null;
           }
         }
@@ -1286,6 +1821,129 @@ export class ItineraryHotelDetailsTboService {
         message: availabilityMessage,
       },
     };
+  }
+
+  /**
+   * PHP-equivalent coordinate distance helper.
+   * Uses Haversine + correction factor and derives duration from speed settings.
+   */
+  private calculateDistanceAndDuration(
+    startLatitude: number,
+    startLongitude: number,
+    endLatitude: number,
+    endLongitude: number,
+    travelLocationType: 1 | 2,
+    globalSettings?: {
+      itinerary_local_speed_limit?: number | null;
+      itinerary_outstation_speed_limit?: number | null;
+    } | null,
+  ): { distanceKm: number; durationText: string } {
+    const earthRadiusKm = 6371;
+
+    const startLatRad = (startLatitude * Math.PI) / 180;
+    const startLonRad = (startLongitude * Math.PI) / 180;
+    const endLatRad = (endLatitude * Math.PI) / 180;
+    const endLonRad = (endLongitude * Math.PI) / 180;
+
+    const latDiff = endLatRad - startLatRad;
+    const lonDiff = endLonRad - startLonRad;
+
+    const a =
+      Math.sin(latDiff / 2) * Math.sin(latDiff / 2) +
+      Math.cos(startLatRad) * Math.cos(endLatRad) *
+      Math.sin(lonDiff / 2) * Math.sin(lonDiff / 2);
+    const baseDistance = 2 * earthRadiusKm * Math.asin(Math.sqrt(a));
+
+    const correctionFactor = 1.5;
+    const correctedDistance = baseDistance * correctionFactor;
+
+    const localSpeed = Number(globalSettings?.itinerary_local_speed_limit || 40);
+    const outstationSpeed = Number(globalSettings?.itinerary_outstation_speed_limit || 60);
+    const avgSpeed = travelLocationType === 1 ? localSpeed : outstationSpeed;
+    const durationHours = correctedDistance / Math.max(1, avgSpeed);
+    const hourPart = Math.floor(durationHours);
+    const minutePart = Math.round((durationHours - hourPart) * 60);
+
+    const durationText = [
+      hourPart > 0 ? `${hourPart} hour` : '',
+      minutePart > 0 ? `${minutePart} mins` : '',
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .trim() || '0 mins';
+
+    return {
+      distanceKm: correctedDistance,
+      durationText,
+    };
+  }
+
+  /**
+   * PHP-equivalent name-based Google Distance Matrix helper.
+   */
+  private async getDistanceAndDuration(
+    origin: string,
+    destination: string,
+    travelMode: 'driving' | 'walking' | 'bicycling' | 'transit' = 'driving',
+  ): Promise<{ distanceText: string; durationText: string } | null> {
+    const apiKey = String(process.env.GOOGLE_MAPS_API_KEY || '').trim();
+    if (!apiKey || !origin || !destination) {
+      return null;
+    }
+
+    const params = new URLSearchParams({
+      origins: origin,
+      destinations: destination,
+      mode: travelMode,
+      key: apiKey,
+    });
+
+    const url = `https://maps.googleapis.com/maps/api/distancematrix/json?${params.toString()}`;
+    let response: any = null;
+    try {
+      response = await axios.get(url, { timeout: 10000 });
+    } catch (err) {
+      this.logger.warn(`[HotelDistance] Google HTTP error: ${String(err)}`);
+      return null;
+    }
+    const data = response?.data;
+
+    if (String(data?.status || '') !== 'OK') {
+      return null;
+    }
+
+    const element = data?.rows?.[0]?.elements?.[0];
+    if (!element || String(element.status || '') !== 'OK') {
+      return null;
+    }
+
+    const distanceText = String(element?.distance?.text || '').trim();
+    const durationText = String(element?.duration?.text || '').trim();
+    if (!distanceText) {
+      return null;
+    }
+
+    return { distanceText, durationText };
+  }
+
+  private parseDistanceKmText(distanceText: string): number | null {
+    const normalized = String(distanceText || '').trim().toLowerCase();
+    if (!normalized) {
+      return null;
+    }
+
+    if (normalized.endsWith('km')) {
+      const value = parseFloat(normalized.replace(/[^0-9.]/g, ''));
+      return Number.isFinite(value) ? value : null;
+    }
+
+    if (normalized.endsWith('m')) {
+      const value = parseFloat(normalized.replace(/[^0-9.]/g, ''));
+      return Number.isFinite(value) ? value / 1000 : null;
+    }
+
+    const value = parseFloat(normalized.replace(/[^0-9.]/g, ''));
+    return Number.isFinite(value) ? value : null;
   }
 
   /**

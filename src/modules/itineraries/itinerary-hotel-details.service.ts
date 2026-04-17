@@ -36,6 +36,22 @@ export interface ItineraryHotelRowDto {
   hotelDistance?: string | null;
 }
 
+export interface HotelPaginationMeta {
+  page: number;
+  pageSize: number;
+  /** total rows in this group stored in DB cache */
+  total: number;
+  hasMore: boolean;
+}
+
+export interface HotelRoutePaginationMeta {
+  page: number;
+  pageSize: number;
+  total: number;
+  hasMore: boolean;
+  groupType: number;
+}
+
 export interface ItineraryHotelDetailsResponseDto {
   quoteId: string;
   planId: number;
@@ -44,6 +60,10 @@ export interface ItineraryHotelDetailsResponseDto {
   hotels: ItineraryHotelRowDto[];
   totalRoomCount: number;
   hotelAvailability?: HotelAvailabilityMetaDto;
+  /** Present when ?page param is used; one entry per groupType requested */
+  pagination?: Record<number, HotelPaginationMeta>;
+  /** Per-route/day pagination metadata keyed by `${groupType}-${routeId}` */
+  routePagination?: Record<string, HotelRoutePaginationMeta>;
 }
 
 export interface HotelAvailabilityMetaDto {

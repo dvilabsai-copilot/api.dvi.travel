@@ -5986,3 +5986,33 @@ model dvi_itinerary_reusable_templates {
 
   @@index([source_location, destination_location, day_count, deleted, status], map: "idx_template_match")
 }
+
+/// Hotel search results cache - persists live TBO/HOBSE/ResAvenue results per quote+route+group
+/// Enables fast paginated reads without hitting provider APIs every time
+model dvi_itinerary_hotel_search_cache {
+  id               Int      @id @default(autoincrement())
+  quote_id         String   @db.VarChar(50)
+  plan_id          Int      @default(0)
+  route_id         Int      @default(0)
+  group_type       Int      @default(0) @db.TinyInt
+  hotel_code       String   @db.VarChar(100)
+  provider         String   @db.VarChar(30)
+  hotel_name       String   @db.VarChar(255)
+  rating           Float    @default(0) @db.Float
+  price            Float    @default(0) @db.Double
+  room_type        String?  @db.VarChar(255)
+  meal_plan        String?  @db.VarChar(100)
+  search_reference String?  @db.Text
+  full_payload     String   @db.LongText
+  check_in_date    DateTime @db.Date
+  check_out_date   DateTime @db.Date
+  sort_rank        Int      @default(0)
+  synced_at        DateTime @default(now()) @db.DateTime(0)
+  status           Int      @default(1) @db.TinyInt
+  deleted          Int      @default(0) @db.TinyInt
+
+  @@unique([quote_id, route_id, group_type, hotel_code, provider], map: "uq_hotel_cache_key")
+  @@index([quote_id, group_type, sort_rank], map: "idx_hotel_cache_pagination")
+  @@index([quote_id, synced_at], map: "idx_hotel_cache_stale_check")
+  @@index([route_id], map: "idx_hotel_cache_route")
+}

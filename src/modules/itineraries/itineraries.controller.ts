@@ -399,6 +399,10 @@ export class ItinerariesController {
   @Public()
   async getItineraryHotelDetails(
     @Param('quoteId') quoteId: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @Query('groupType') groupType?: string,
+    @Query('itineraryRouteId') itineraryRouteId?: string,
   ): Promise<ItineraryHotelDetailsResponseDto> {
     const startTime = Date.now();
     this.logger.log('\n════════════════════════════════════════════════════════════════════════════════════════');
@@ -409,7 +413,19 @@ export class ItinerariesController {
 
     try {
       // Use TBO service to fetch dynamic packages
-      const result = await this.hotelDetailsTboService.getHotelDetailsByQuoteIdFromTbo(quoteId);
+      const pageNum = page ? Math.max(1, parseInt(page, 10) || 1) : 1;
+      const pageSizeNum = pageSize ? Math.min(100, Math.max(1, parseInt(pageSize, 10) || 20)) : 20;
+      const groupTypeNum = groupType ? parseInt(groupType, 10) : undefined;
+      const itineraryRouteIdNum = itineraryRouteId
+        ? Math.max(0, parseInt(itineraryRouteId, 10) || 0)
+        : undefined;
+      const result = await this.hotelDetailsTboService.getHotelDetailsByQuoteIdFromTbo(
+        quoteId,
+        pageNum,
+        pageSizeNum,
+        groupTypeNum,
+        itineraryRouteIdNum,
+      );
       const duration = Date.now() - startTime;
 
       this.logger.log('\n✅ HOTEL PACKAGES GENERATED FROM TBO');
