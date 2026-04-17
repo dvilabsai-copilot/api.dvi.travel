@@ -55,6 +55,59 @@ private normalizeKmValue(value: unknown): string {
   return numeric.toFixed(2);
 }
 
+  /**
+   * Parse dvi_stored_locations.duration into seconds.
+   * Supports values like:
+   * - "49 mins"
+   * - "1 hour 56 mins"
+   * - "1 day 2 hours 15 mins"
+   * - numeric strings (treated as minutes)
+   */
+  private parseDurationToSeconds(duration: unknown): number | null {
+    if (duration == null) return null;
+
+    if (typeof duration === "number" && Number.isFinite(duration)) {
+      return Math.max(0, Math.floor(duration)) * 60;
+    }
+
+    const s = String(duration).trim().toLowerCase();
+    if (!s) return null;
+
+    let days = 0;
+    let hours = 0;
+    let mins = 0;
+
+    const dMatch = s.match(/(\d+)\s*day/);
+    const hMatch = s.match(/(\d+)\s*hour/);
+    const mMatch = s.match(/(\d+)\s*min/);
+
+    if (dMatch) days = Number(dMatch[1] || 0);
+    if (hMatch) hours = Number(hMatch[1] || 0);
+    if (mMatch) mins = Number(mMatch[1] || 0);
+
+    if (!dMatch && !hMatch && !mMatch) {
+      const n = Number(s);
+      if (Number.isFinite(n)) return Math.max(0, Math.floor(n)) * 60;
+      return null;
+    }
+
+    return (days * 1440 + hours * 60 + mins) * 60;
+  }
+
+  /**
+   * Fallback estimator when stored_locations.duration is missing.
+   * Keeps short hops conservative for airport reporting reliability.
+   */
+  private estimateTravelSecondsFromKm(distanceKmText: string): number {
+    const km = Number.parseFloat(String(distanceKmText || "0").replace(/[^0-9.]/g, ""));
+    if (!Number.isFinite(km) || km <= 0) return 30 * 60;
+
+    if (km <= 5) return 30 * 60;
+    if (km <= 20) return Math.ceil((km / 25) * 60) * 60;
+    if (km <= 80) return Math.ceil((km / 35) * 60) * 60;
+    return Math.ceil((km / 45) * 60) * 60;
+  }
+
   private toHmsFromDate(d: Date): string {
     const hh = d.getHours();
     const mm = d.getMinutes();
@@ -162,12 +215,12 @@ private normalizeKmValue(value: unknown): string {
   tx: Tx,
   sourceName: string,
   destName: string,
-): Promise<{ locationId: bigint; distanceKm: string }> {
+): Promise<{ locationId: bigint; distanceKm: string; travelSeconds: number | null }> {
   const trimmedSource = String(sourceName ?? "").trim();
   const trimmedDest = String(destName ?? "").trim();
 
   if (!trimmedSource || !trimmedDest) {
-    return { locationId: BigInt(0), distanceKm: "" };
+    return { locationId: BigInt(0), distanceKm: "", travelSeconds: null };
   }
 
   const normalizeText = (value: string) =>
@@ -189,6 +242,7 @@ private normalizeKmValue(value: unknown): string {
       select: {
         location_ID: true,
         distance: true,
+        duration: true,
       },
     });
 
@@ -201,6 +255,7 @@ private normalizeKmValue(value: unknown): string {
         source_location: true,
         destination_location: true,
         distance: true,
+        duration: true,
       },
     });
 
@@ -219,7 +274,7 @@ private normalizeKmValue(value: unknown): string {
   }
 
   if (!row) {
-    return { locationId: BigInt(0), distanceKm: "" };
+    return { locationId: BigInt(0), distanceKm: "", travelSeconds: null };
   }
 
   const rawId = (row as any).location_ID ?? 0;
@@ -239,8 +294,9 @@ private normalizeKmValue(value: unknown): string {
 
   const distanceRaw = (row as any).distance;
   const distanceKm = this.normalizeKmValue(distanceRaw);
+  const travelSeconds = this.parseDurationToSeconds((row as any).duration ?? null);
 
-  return { locationId, distanceKm };
+  return { locationId, distanceKm, travelSeconds };
 }
 
   /**
@@ -291,11 +347,10 @@ private normalizeKmValue(value: unknown): string {
       return [];
     }
 
-    // Compute trip-level times + last-day end time.
+    // Compute trip-level wall-clock start/end from request payload.
     const { tripStartTimeHms, tripEndTimeHms } = this.extractTripTimes(plan);
     const bufferSec = this.getDepartureBufferSeconds(departureType);
     const tripEndSec = this.parseHmsToSeconds(tripEndTimeHms);
-    const lastDayEndSec = Math.max(0, tripEndSec - bufferSec);
 
     const baseDate = this.getTripStartDateOnly(plan);
 
@@ -317,7 +372,7 @@ private normalizeKmValue(value: unknown): string {
 
       // location_id from master stored locations table
 // no_of_km should prefer request payload value, with master distance as fallback
-  const { locationId, distanceKm } = await this.resolveSourceLocationAndKm(
+  const { locationId, distanceKm, travelSeconds } = await this.resolveSourceLocationAndKm(
   tx,
   sourceName,
   destName,
@@ -341,6 +396,10 @@ const finalKm = requestKm || distanceKm || fallbackKm || "";
       let startHms: string;
       if (r.route_start_time) {
         startHms = r.route_start_time;
+      } else if (isLast) {
+        // Last route still gets the timeline builder's 1-hour pre-sightseeing buffer,
+        // so keep route start at 08:00 to make sightseeing begin at 09:00.
+        startHms = "08:00:00";
       } else if (totalRoutes === 1 || (isFirst && sourceName === arrivalLocation)) {
         // First leg matching arrival location → trip_start_time (IST wall-clock)
         startHms = tripStartTimeHms;
@@ -354,9 +413,17 @@ const finalKm = requestKm || distanceKm || fallbackKm || "";
       if (r.route_end_time) {
         endHms = r.route_end_time;
       } else {
-        // PHP behavior: All sightseeing routes end at 20:00, regardless of being last route
-        // The trip_end_time is for the actual flight/train departure, not sightseeing end
-        endHms = "20:00:00";
+        if (isLast) {
+            // The last route's configured end is the latest allowed ARRIVAL at the
+            // departure terminal. The timeline builder separately reserves transfer
+            // time when picking hotspots and when anchoring the final return segment.
+          const dayStartSec = this.parseHmsToSeconds(startHms);
+
+          // Guard: route end should never be earlier than route start.
+            endHms = this.secondsToHms(Math.max(dayStartSec, tripEndSec - bufferSec));
+        } else {
+          endHms = "20:00:00";
+        }
       }
 
       // Prisma requires a Date object for @db.Time fields. This helper builds a Date-like
@@ -384,12 +451,8 @@ const finalKm = requestKm || distanceKm || fallbackKm || "";
 
       created.push(row);
 
-      // keep variables referenced (avoid lint complaints if you use them later)
-      void isLast;
-      void lastDayEndSec;
+      // keep variable referenced (avoid lint complaints if reused later)
       void departureLocation;
-      void bufferSec;
-      void tripEndTimeHms;
     }
 
     return created;

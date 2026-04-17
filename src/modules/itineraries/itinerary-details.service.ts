@@ -716,6 +716,27 @@ for (const row of vehicleKmRows) {
       }
 
       const segments: any[] = [];
+      let travelAnchorIndex = 0;
+
+      // Push CTA immediately before the upcoming travel segment so it renders:
+      //   Attraction → CTA → Travel → Attraction → CTA → Travel …
+      const pushHotspotAnchorPlaceholder = (payload: {
+        from: string;
+        to: string;
+        timeRange: string | null;
+      }) => {
+        segments.push({
+          type: 'hotspot' as const,
+          text: 'Click to Add Hotspot',
+          locationId: route.location_id ? Number(route.location_id) : null,
+          anchorType: 'after_travel' as const,
+          anchorIndex: travelAnchorIndex,
+          anchorFrom: payload.from,
+          anchorTo: payload.to,
+          anchorTimeRange: payload.timeRange,
+        });
+        travelAnchorIndex += 1;
+      };
 
       let previousStopName =
         location?.source_location ??
@@ -838,11 +859,23 @@ for (const row of vehicleKmRows) {
         
         // First pass: collect all attractions and their visit order
         const visitSequence: Array<{hotspotId: number; hotspotName: string}> = [];
-        const routeStartLoc =
+        let routeStartLoc =
           location?.source_location ??
           route.location_name ??
           plan.arrival_location ??
           '';
+
+        // If this day starts from "Hotel" (previous-night stay), resolve the
+        // actual hotel name so the first travel segment reads
+        // "From PLA Residency, Thanjavur" instead of the bare city name.
+        if (index > 0) {
+          const prevRouteHotelInfo = routeHotelMap.get(
+            routes[index - 1].itinerary_route_ID,
+          );
+          if (prevRouteHotelInfo?.hotel_name) {
+            routeStartLoc = prevRouteHotelInfo.hotel_name;
+          }
+        }
         
         // Track the last unique location we're at
         let lastUniqueLocation = routeStartLoc;
@@ -1059,6 +1092,14 @@ for (const row of vehicleKmRows) {
             totalDistanceKm += distanceNum;
           }
 
+          pushHotspotAnchorPlaceholder({
+            from: previousStopName,
+            to: toName,
+            timeRange:
+              startTimeText && endTimeText
+                ? `${startTimeText} - ${endTimeText}`
+                : null,
+          });
           segments.push({
             type: "travel" as const,
             from: previousStopName,
@@ -1123,6 +1164,14 @@ for (const row of vehicleKmRows) {
               totalDistanceKm += distanceNum;
             }
 
+            pushHotspotAnchorPlaceholder({
+              from: previousStopName,
+              to: toName,
+              timeRange:
+                startTimeText && endTimeText
+                  ? `${startTimeText} - ${endTimeText}`
+                  : null,
+            });
             segments.push({
               type: 'travel' as const,
               from: previousStopName,
@@ -1236,6 +1285,14 @@ for (const row of vehicleKmRows) {
               });
             }
 
+            pushHotspotAnchorPlaceholder({
+              from: fromName,
+              to: toName,
+              timeRange:
+                startTimeText && endTimeText
+                  ? `${startTimeText} - ${endTimeText}`
+                  : null,
+            });
             segments.push({
               type: "travel" as const,
               from: fromName,
@@ -1428,6 +1485,7 @@ for (const row of vehicleKmRows) {
           }
 
           previousStopName = master.hotspot_name;
+
           continue;
         }
 
@@ -1443,7 +1501,13 @@ for (const row of vehicleKmRows) {
           const travelStartMins = startTimeText ? this.timeToMinutes(startTimeText) : null;
 
           // Find the chronologically last attraction that actually happened before this row.
-          let fromName = 
+          // Fallback: use previous day's hotel name (if any), otherwise city name.
+          const prevDayHotelForItem5 = index > 0
+            ? routeHotelMap.get(routes[index - 1].itinerary_route_ID)?.hotel_name ?? null
+            : null;
+
+          let fromName =
+            prevDayHotelForItem5 ??
             location?.source_location ??
             route.location_name ??
             plan.arrival_location ??
@@ -1647,62 +1711,6 @@ for (const row of vehicleKmRows) {
         }
       }
 
-      // Add "Click to Add Hotspot" segment after all hotspots
-      // This allows users to add more hotspots to the route
-      // Try to get location_id from route.location_id, or lookup by location_name if missing
-      let hotspotLocationId = route.location_id ? Number(route.location_id) : null;
-      
-      if (!hotspotLocationId) {
-        // Try multiple strategies to find the location
-        let foundLocation = null;
-        
-        // Strategy 1: Exact match on source_location with route.location_name
-        if (route.location_name) {
-          foundLocation = await this.prisma.dvi_stored_locations.findFirst({
-            where: {
-              source_location: route.location_name,
-              deleted: 0,
-            },
-          });
-        }
-        
-        // Strategy 2: If not found, try matching with next_visiting_location
-        if (!foundLocation && route.next_visiting_location) {
-          foundLocation = await this.prisma.dvi_stored_locations.findFirst({
-            where: {
-              OR: [
-                { source_location: route.next_visiting_location },
-                { destination_location: route.next_visiting_location },
-              ],
-              deleted: 0,
-            },
-          });
-        }
-        
-        // Strategy 3: Fuzzy match on location_name (contains)
-        if (!foundLocation && route.location_name) {
-          foundLocation = await this.prisma.dvi_stored_locations.findFirst({
-            where: {
-              OR: [
-                { source_location: { contains: route.location_name } },
-                { destination_location: { contains: route.location_name } },
-              ],
-              deleted: 0,
-            },
-          });
-        }
-        
-        if (foundLocation) {
-          hotspotLocationId = Number(foundLocation.location_ID);
-        }
-      }
-      
-      segments.push({
-        type: 'hotspot' as const,
-        text: 'Click to Add Hotspot',
-        locationId: hotspotLocationId,
-      });
-
       // RETURN block at the end of the day (only if no item_type 6 or 7 exists)
       const hasReturnOrDropOff = routeHotspots.some((rh) => {
         const itemType = Number((rh as any).item_type ?? 0);
@@ -1788,67 +1796,82 @@ const dayDistance = this.formatKm(totalDistanceNum);
         name: vr.itinerary_via_location_name,
       }));
 
-      // FIX #1: Sort segments chronologically before returning
-      // Type precedence: START (0) → TRAVEL (1) → ATTRACTION (2) → BREAK (3) → CHECKIN (4) → HOTSPOT_CTA (5) → RETURN (6)
+      // FIX #1: Sort segments chronologically.
+      // Strategy:
+      //   1. Lift out all anchor CTAs (type=hotspot) along with the index of the segment they
+      //      were inserted after (their preceding non-CTA neighbour index in the unsorted list).
+      //   2. Sort only the non-CTA segments by time.
+      //   3. Re-insert each CTA immediately after the sorted position of its preceding neighbour.
+      // This guarantees: Travel → Attraction → CTA → Travel → Attraction → CTA → …
+
+      // Step 1: extract CTAs and remember which non-CTA segment each followed.
+      type CtaEntry = { cta: any; afterSegmentRef: any | null };
+      const ctaEntries: CtaEntry[] = [];
+      const nonCtaSegments: any[] = [];
+
+      for (let i = 0; i < segments.length; i++) {
+        const seg = segments[i];
+        if (seg?.type === 'hotspot' && seg?.anchorType === 'after_travel') {
+          // Find the most recent non-CTA segment before this one.
+          let afterRef: any | null = null;
+          for (let j = i - 1; j >= 0; j--) {
+            if (!(segments[j]?.type === 'hotspot' && segments[j]?.anchorType === 'after_travel')) {
+              afterRef = segments[j];
+              break;
+            }
+          }
+          ctaEntries.push({ cta: seg, afterSegmentRef: afterRef });
+        } else {
+          nonCtaSegments.push(seg);
+        }
+      }
+
+      // Step 2: sort the non-CTA segments by time.
       const typeOrder: Record<string, number> = {
         'start': 0,
         'travel': 1,
         'attraction': 2,
         'break': 3,
         'checkin': 4,
-        'hotspot': 5,
-        'return': 6,
+        'return': 5,
       };
 
-      segments.sort((a: any, b: any) => {
-        // Type-aware start time extraction based on segment type
-        const getStartMinutes = (seg: any): number => {
-          // Hotspot CTA has no time field - always sort to end (use high number)
-          if (seg.type === 'hotspot') return 1440 + (typeOrder[seg.type] ?? 99);
-
-          // Extract start time based on segment type
-          let timeStr: string | null = null;
-
-          if (seg.type === 'start' || seg.type === 'travel' || seg.type === 'return' || seg.type === 'break') {
-            // These types store time in timeRange: "HH:MM - HH:MM"
-            if (seg.timeRange) {
-              timeStr = seg.timeRange.split(' - ')[0];
-            }
-          } else if (seg.type === 'attraction') {
-            // Attractions store time in visitTime (may include notes in parens)
-            // Example: "10:00 - 12:00 (closed on this day)"
-            if (seg.visitTime) {
-              timeStr = seg.visitTime.split(' - ')[0];
-            }
-          } else if (seg.type === 'checkin') {
-            // Checkin stores time in time field
-            if (seg.time) {
-              // time might be "HH:MM - HH:MM" or just "HH:MM"
-              timeStr = seg.time.split(' - ')[0];
-            }
-          }
-
-          // If we extracted a valid time, convert to minutes; otherwise return high number (sort to end)
-          if (timeStr && timeStr.trim()) {
-            return this.timeToMinutes(timeStr);
-          }
-          return 1440; // No valid time found, sort to end (after all 0-1439 minute times)
-        };
-
-        const aStartMins = getStartMinutes(a);
-        const bStartMins = getStartMinutes(b);
-
-        // Primary sort: chronological by start time
-        if (aStartMins !== bStartMins) {
-          return aStartMins - bStartMins;
+      const getSegMinutes = (seg: any): number => {
+        let timeStr: string | null = null;
+        if (seg.type === 'start' || seg.type === 'travel' || seg.type === 'return' || seg.type === 'break') {
+          timeStr = seg.timeRange ? String(seg.timeRange).split(' - ')[0] : null;
+        } else if (seg.type === 'attraction') {
+          timeStr = seg.visitTime ? String(seg.visitTime).split(' - ')[0] : null;
+        } else if (seg.type === 'checkin') {
+          timeStr = seg.time ? String(seg.time).split(' - ')[0] : null;
         }
+        if (timeStr?.trim()) return this.timeToMinutes(timeStr.trim());
+        return 1440;
+      };
 
-        // Tiebreaker: when times are equal, sort by type precedence
-        const aTypeOrder = typeOrder[a.type] ?? 99;
-        const bTypeOrder = typeOrder[b.type] ?? 99;
-
-        return aTypeOrder - bTypeOrder;
+      nonCtaSegments.sort((a: any, b: any) => {
+        const diff = getSegMinutes(a) - getSegMinutes(b);
+        if (diff !== 0) return diff;
+        return (typeOrder[a.type] ?? 99) - (typeOrder[b.type] ?? 99);
       });
+
+      // Step 3: splice each CTA back in right after its reference segment.
+      // Process in reverse anchorIndex order so earlier insertions don't shift later positions.
+      const sortedCtaEntries = [...ctaEntries].reverse();
+      for (const { cta, afterSegmentRef } of sortedCtaEntries) {
+        let insertAt = nonCtaSegments.length; // default: append
+        if (afterSegmentRef !== null) {
+          const refIdx = nonCtaSegments.indexOf(afterSegmentRef);
+          if (refIdx !== -1) {
+            insertAt = refIdx + 1;
+          }
+        }
+        nonCtaSegments.splice(insertAt, 0, cta);
+      }
+
+      // Replace segments in-place with the correctly ordered result.
+      segments.length = 0;
+      segments.push(...nonCtaSegments);
 
       // In hotel-first flows, place start before check-in
       // so the sequence reads: travel to hotel -> Start your Journey -> checkin.

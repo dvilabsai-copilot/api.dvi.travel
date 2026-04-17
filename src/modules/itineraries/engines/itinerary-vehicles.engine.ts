@@ -53,15 +53,50 @@ const ENABLE_LOG =
 // = SUM(total_vehicle_qty) + COUNT(total_vehicle_qty=0)
 // ---------------------------------------------------------------------------
 async function getPhpTotalVehicleQty(tx: any, whereBase: any): Promise<number> {
-  const [sumAgg, zeroCount] = await Promise.all([
-    tx.dvi_itinerary_plan_vendor_eligible_list.aggregate({
+  const runOnce = async () => {
+    // Use sequential calls on the same tx client for connection stability.
+    const sumAgg = await tx.dvi_itinerary_plan_vendor_eligible_list.aggregate({
       where: whereBase,
       _sum: { total_vehicle_qty: true },
-    }),
-    tx.dvi_itinerary_plan_vendor_eligible_list.count({
+    });
+
+    const zeroCount = await tx.dvi_itinerary_plan_vendor_eligible_list.count({
       where: { ...whereBase, total_vehicle_qty: 0 },
-    }),
-  ]);
+    });
+
+    return { sumAgg, zeroCount };
+  };
+
+  let sumAgg: any;
+  let zeroCount: number;
+
+  try {
+    const result = await runOnce();
+    sumAgg = result.sumAgg;
+    zeroCount = result.zeroCount;
+  } catch (err: any) {
+    const code = String(err?.code || "");
+    const message = String(err?.message || "").toLowerCase();
+    const isTransientDisconnect =
+      code === "P1017" ||
+      message.includes("server has closed the connection") ||
+      message.includes("connection") && message.includes("closed");
+
+    if (!isTransientDisconnect) {
+      throw err;
+    }
+
+    if (ENABLE_LOG) {
+      console.warn(
+        "[vehiclesEngine] PHP_QTY_AGG transient disconnect; retrying once",
+        JSON.stringify({ code, message: err?.message || "" }),
+      );
+    }
+
+    const retry = await runOnce();
+    sumAgg = retry.sumAgg;
+    zeroCount = retry.zeroCount;
+  }
 
   if (ENABLE_LOG) {
     console.log(
