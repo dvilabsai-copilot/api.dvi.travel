@@ -550,6 +550,7 @@ async getForm(query: any) {
   }));
 
   // -------- 3.3 Options for dropdown: dvi_stored_location_via_routes ----
+      // -------- 3.3 Options for dropdown: via routes + matched route details ----
   let optionsRows: {
     via_route_location_ID: bigint;
     via_route_location: string | null;
@@ -557,22 +558,82 @@ async getForm(query: any) {
 
   if (locationId != null) {
     console.log('FETCHING VIA ROUTES FOR location_id:', locationId);
-    optionsRows = await this.prisma.dvi_stored_location_via_routes.findMany({
-      where: {
-        deleted: 0,
-        status: 1,
-        location_id: locationId,
-      },
-      orderBy: {
-        via_route_location: 'asc',
-      },
-      select: {
-        via_route_location_ID: true,
-        via_route_location: true,
-      },
-    });
 
-    console.log('VIA ROUTE OPTIONS FOUND:', optionsRows.length);
+    const baseViaRows =
+      await this.prisma.dvi_stored_location_via_routes.findMany({
+        where: {
+          deleted: 0,
+          status: 1,
+          location_id: locationId,
+        },
+        orderBy: {
+          via_route_location: 'asc',
+        },
+        select: {
+          via_route_location_ID: true,
+          via_route_location: true,
+        },
+      });
+
+    console.log('BASE VIA ROUTE OPTIONS FOUND:', baseViaRows.length);
+
+    const suggestedDetailRows = await this.prisma.$queryRawUnsafe<
+      Array<{ route_location_name: string | null }>
+    >(
+      `
+      SELECT
+        d.route_location_name
+      FROM dvi_stored_routes r
+      INNER JOIN dvi_stored_route_location_details d
+        ON d.stored_route_id = r.stored_route_ID
+       AND d.deleted = 0
+      WHERE r.deleted = 0
+        AND r.location_id = ?
+      ORDER BY d.stored_route_location_ID ASC
+      `,
+      Number(locationId),
+    );
+
+    console.log(
+      'SUGGESTED ROUTE DETAIL ROWS FOUND:',
+      suggestedDetailRows.length,
+    );
+
+    const baseViaMap = new Map<string, (typeof baseViaRows)[number]>();
+
+    for (const row of baseViaRows) {
+      const viaName = String(row.via_route_location ?? '').trim().toLowerCase();
+      if (!viaName) continue;
+      if (!baseViaMap.has(viaName)) {
+        baseViaMap.set(viaName, row);
+      }
+    }
+
+    const mergedRows: typeof baseViaRows = [...baseViaRows];
+    const seenViaIds = new Set(
+      baseViaRows.map((row) => row.via_route_location_ID.toString()),
+    );
+
+    for (const detailRow of suggestedDetailRows) {
+      const detailName = String(detailRow.route_location_name ?? '')
+        .trim()
+        .toLowerCase();
+
+      if (!detailName) continue;
+
+      const matchedViaRow = baseViaMap.get(detailName);
+      if (!matchedViaRow) continue;
+
+      const viaId = matchedViaRow.via_route_location_ID.toString();
+      if (seenViaIds.has(viaId)) continue;
+
+      seenViaIds.add(viaId);
+      mergedRows.push(matchedViaRow);
+    }
+
+    optionsRows = mergedRows;
+
+    console.log('FINAL VIA ROUTE OPTIONS AFTER MERGE:', optionsRows.length);
   } else {
     console.log('CANNOT FETCH VIA ROUTES - locationId is null');
   }

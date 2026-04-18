@@ -22,12 +22,15 @@ import { LocationsService } from './locations.service';
 import {
   BulkTollPayloadDto,
   CreateLocationDto,
-  CreateViaRouteDto,
+  CreateSuggestedRouteDto,
+  LocationPreviewCreateViaRouteDto,
   LocationResponseDto,
   ModifyLocationNameDto,
   SuggestedRouteResponseDto,
   TollResponseDto,
   UpdateLocationDto,
+  UpdateSuggestedRouteDto,
+  UpdateViaRouteDto,
   ViaRouteResponseDto,
 } from './dto/location.dto';
 
@@ -194,7 +197,39 @@ create(@Body() dto: CreateLocationDto) {
   restore(@Param('id') id: string) {
     return this.svc.restore(Number(id));
   }
-    @Get(':id/via-routes')
+      @Get(':id/via-routes/place-details')
+  @ApiOperation({ summary: 'Lookup a stored place and autofill via-route details' })
+  @ApiQuery({ name: 'place', required: true, type: String })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      type: 'object',
+      properties: {
+        found: { type: 'boolean' },
+        data: {
+          type: 'object',
+          nullable: true,
+          properties: {
+            via_route_location: { type: 'string' },
+            via_route_location_city: { type: 'string' },
+            via_route_location_state: { type: 'string' },
+            via_route_location_lattitude: { type: 'string' },
+            via_route_location_longitude: { type: 'string' },
+            distance_from_source_location: { type: 'string' },
+            duration_from_source_location: { type: 'string' },
+          },
+        },
+      },
+    },
+  })
+  lookupViaRoutePlace(
+    @Param('id') id: string,
+    @Query('place') place: string,
+  ) {
+    return this.svc.lookupViaRoutePlace(Number(id), place);
+  }
+
+  @Get(':id/via-routes')
   @ApiOperation({ summary: 'Get via-routes for a location preview' })
   @ApiResponse({
     status: 200,
@@ -210,6 +245,8 @@ create(@Body() dto: CreateLocationDto) {
     return this.svc.getViaRoutes(Number(id));
   }
 
+
+  
   @Post(':id/via-routes')
   @ApiOperation({ summary: 'Add a via-route for a location preview' })
   @ApiResponse({
@@ -223,8 +260,50 @@ create(@Body() dto: CreateLocationDto) {
     },
   })
   @ApiResponse({ status: 404, description: 'Location not found' })
-  addViaRoute(@Param('id') id: string, @Body() dto: CreateViaRouteDto) {
+  addViaRoute(@Param('id') id: string, @Body() dto: LocationPreviewCreateViaRouteDto) {
     return this.svc.addViaRoute(Number(id), dto);
+  }
+
+  @Patch(':id/via-routes/:viaRouteId')
+  @ApiOperation({ summary: 'Update a via-route for a location preview' })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      type: 'object',
+      properties: {
+        ok: { type: 'boolean' },
+        data: { type: 'array', items: { $ref: '#/components/schemas/ViaRouteResponseDto' } },
+      },
+    },
+  })
+  @ApiResponse({ status: 404, description: 'Location or via-route not found' })
+  updateViaRoute(
+    @Param('id') id: string,
+    @Param('viaRouteId') viaRouteId: string,
+    @Body() dto: UpdateViaRouteDto,
+  ) {
+    return this.svc.updateViaRoute(Number(id), Number(viaRouteId), dto);
+  }
+
+  @Delete(':id/via-routes/:viaRouteId')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Delete a via-route for a location preview' })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      type: 'object',
+      properties: {
+        ok: { type: 'boolean' },
+        data: { type: 'array', items: { $ref: '#/components/schemas/ViaRouteResponseDto' } },
+      },
+    },
+  })
+  @ApiResponse({ status: 404, description: 'Location or via-route not found' })
+  deleteViaRoute(
+    @Param('id') id: string,
+    @Param('viaRouteId') viaRouteId: string,
+  ) {
+    return this.svc.deleteViaRoute(Number(id), Number(viaRouteId));
   }
 
   @Get(':id/suggested-routes')
@@ -241,6 +320,68 @@ create(@Body() dto: CreateLocationDto) {
   @ApiResponse({ status: 404, description: 'Location not found' })
   getSuggestedRoutes(@Param('id') id: string) {
     return this.svc.getSuggestedRoutes(Number(id));
+  }
+
+    @Post(':id/suggested-routes')
+  @ApiOperation({ summary: 'Add a suggested-route for a location preview' })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      type: 'object',
+      properties: {
+        ok: { type: 'boolean' },
+        data: { type: 'array', items: { $ref: '#/components/schemas/SuggestedRouteResponseDto' } },
+      },
+    },
+  })
+  @ApiResponse({ status: 404, description: 'Location not found' })
+  addSuggestedRoute(
+    @Param('id') id: string,
+    @Body() dto: CreateSuggestedRouteDto,
+  ) {
+    return this.svc.addSuggestedRoute(Number(id), dto);
+  }
+
+  @Patch(':id/suggested-routes/:suggestedRouteId')
+  @ApiOperation({ summary: 'Update a suggested-route for a location preview' })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      type: 'object',
+      properties: {
+        ok: { type: 'boolean' },
+        data: { type: 'array', items: { $ref: '#/components/schemas/SuggestedRouteResponseDto' } },
+      },
+    },
+  })
+  @ApiResponse({ status: 404, description: 'Location or suggested-route not found' })
+  updateSuggestedRoute(
+    @Param('id') id: string,
+    @Param('suggestedRouteId') suggestedRouteId: string,
+    @Body() dto: UpdateSuggestedRouteDto,
+  ) {
+    return this.svc.updateSuggestedRoute(Number(id), Number(suggestedRouteId), dto);
+  }
+
+  @Delete(':id/suggested-routes/:suggestedRouteId')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Delete a suggested-route for a location preview' })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      type: 'object',
+      properties: {
+        ok: { type: 'boolean' },
+        data: { type: 'array', items: { $ref: '#/components/schemas/SuggestedRouteResponseDto' } },
+      },
+    },
+  })
+  @ApiResponse({ status: 404, description: 'Location or suggested-route not found' })
+  deleteSuggestedRoute(
+    @Param('id') id: string,
+    @Param('suggestedRouteId') suggestedRouteId: string,
+  ) {
+    return this.svc.deleteSuggestedRoute(Number(id), Number(suggestedRouteId));
   }
 
   @Get(':id/tolls')
