@@ -206,7 +206,7 @@ export class ViaRouteResponseDto {
   @ApiProperty() modify!: string;
 }
 
-export class CreateViaRouteDto {
+export class LocationPreviewCreateViaRouteDto {
   @ApiProperty()
   @IsNotEmpty()
   @IsString()
@@ -231,8 +231,37 @@ export class CreateViaRouteDto {
   @IsOptional()
   @IsString()
   via_route_location_state?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  distance_from_source_location?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  duration_from_source_location?: string;
 }
 
+export class UpdateViaRouteDto extends PartialType(LocationPreviewCreateViaRouteDto) {}
+export class CreateSuggestedRouteDto {
+  @ApiProperty()
+  @IsNotEmpty()
+  @IsString()
+  routes!: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  no_of_nights?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  route_details?: string;
+}
+
+export class UpdateSuggestedRouteDto extends PartialType(CreateSuggestedRouteDto) {}
 export class SuggestedRouteResponseDto {
   @ApiProperty() count!: string;
   @ApiProperty() routes!: string;
