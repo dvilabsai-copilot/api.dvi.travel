@@ -25,6 +25,8 @@ export class ItineraryHotelDetailsTboService {
   private static readonly MAX_CACHE_ENTRIES = 200;
   /** 40-minute DB cache TTL before a live re-fetch is triggered */
   private static readonly DB_CACHE_TTL_MS = 40 * 60 * 1000;
+  /** Placeholder-only rows should be retried sooner to self-heal temporary supplier misses */
+  private static readonly PLACEHOLDER_ONLY_DB_CACHE_TTL_MS = 5 * 60 * 1000;
   private static readonly PAGE_SIZE = 20;
 
     /**
@@ -596,6 +598,14 @@ export class ItineraryHotelDetailsTboService {
     return hotelsByRoute;
   }
 
+  // Normalize destination labels (e.g. "Kanchipuram, Railway Station") to a searchable city token.
+  private normalizeDestinationName(destination: string): string {
+    const raw = String(destination || '').trim();
+    if (!raw) return '';
+    const firstPart = raw.split(/[,(\-]/)[0]?.trim() || raw;
+    return firstPart.replace(/\s+/g, ' ').trim();
+  }
+
   private buildStayBlocks(
     routes: any[],
     noOfNights: number,
@@ -630,7 +640,10 @@ export class ItineraryHotelDetailsTboService {
       }
 
       const routeId = Number((route as any).itinerary_route_ID);
-      const destination = String((route as any).next_visiting_location || '').trim();
+      const destinationRaw = String(
+        (route as any).next_visiting_location || (route as any).location_name || '',
+      ).trim();
+      const destination = this.normalizeDestinationName(destinationRaw);
       const routeDate = new Date((route as any).itinerary_route_date);
       const checkInDate = routeDate.toISOString().split('T')[0];
       const nextDay = new Date(routeDate.getTime() + ItineraryHotelDetailsTboService.ONE_DAY_MS);
@@ -719,18 +732,20 @@ export class ItineraryHotelDetailsTboService {
     uniqueDestinations.forEach(destination => {
       if (!destination) return;
 
+      const normalizedDestination = this.normalizeDestinationName(destination);
+
       // Try exact match (case-insensitive)
-      let cityCode = cityNameMap[destination.toLowerCase()];
+      let cityCode = cityNameMap[destination.toLowerCase()] || cityNameMap[normalizedDestination.toLowerCase()];
       
       if (!cityCode) {
         // Try partial match with first part
-        const firstPart = destination.split(',')[0].trim();
+        const firstPart = this.normalizeDestinationName(destination);
         cityCode = cityNameMap[firstPart.toLowerCase()];
       }
 
       if (!cityCode) {
         // Try prefix match
-        const prefix = destination.split(',')[0].trim().toUpperCase();
+        const prefix = this.normalizeDestinationName(destination).toUpperCase();
         cityCode = cityPrefixMap[prefix];
       }
 
@@ -807,14 +822,14 @@ export class ItineraryHotelDetailsTboService {
     adultCount: number = 2,
     childCount: number = 0,
   ): Promise<HotelSearchResult[]> {
-    const destination = block.destination;
+    const destination = this.normalizeDestinationName(block.destination);
 
     this.logger.log(
       `🔍 Stay block (${block.routeIds.join(',')}): Searching hotels for "${destination}" (${block.checkInDate} -> ${block.checkOutDate})`,
     );
 
     // Get city code from pre-loaded map (no database query!)
-    const cityCode = cityCodeMap[destination];
+    const cityCode = cityCodeMap[block.destination] || cityCodeMap[destination];
 
     // Fallback: if dvi_cities mapping is missing, use destination text directly.
     const effectiveCityCode = cityCode || destination;
@@ -1184,15 +1199,52 @@ export class ItineraryHotelDetailsTboService {
 
   // ─── DB cache helpers ──────────────────────────────────────────────────────
 
-  /** Returns true when all rows for this quoteId are older than DB_CACHE_TTL_MS or none exist */
-  private async isDbCacheStale(quoteId: string): Promise<boolean> {
-    const newest = await this.prisma.dvi_itinerary_hotel_search_cache.findFirst({
+  /** Soft-clear cached hotel rows for a quote so the next request does a fresh supplier fetch. */
+  async clearHotelCacheForQuote(quoteId: string): Promise<number> {
+    const result = await this.prisma.dvi_itinerary_hotel_search_cache.updateMany({
       where: { quote_id: quoteId, deleted: 0 },
-      orderBy: { synced_at: 'desc' },
-      select: { synced_at: true },
+      data: { deleted: 1 },
     });
-    if (!newest) return true;
+
+    this.logger.log(
+      `♻️ Cleared hotel cache for quote ${quoteId}: ${result.count} active row(s) marked deleted`,
+    );
+    return result.count;
+  }
+
+  /**
+   * Returns true when cache should be refreshed.
+   * - Normal cache rows: 40 minutes
+   * - Placeholder-only cache rows: 5 minutes
+   */
+  private async isDbCacheStale(quoteId: string): Promise<boolean> {
+    const [newest, totalRows, supplierRows] = await Promise.all([
+      this.prisma.dvi_itinerary_hotel_search_cache.findFirst({
+        where: { quote_id: quoteId, deleted: 0 },
+        orderBy: { synced_at: 'desc' },
+        select: { synced_at: true },
+      }),
+      this.prisma.dvi_itinerary_hotel_search_cache.count({
+        where: { quote_id: quoteId, deleted: 0 },
+      }),
+      this.prisma.dvi_itinerary_hotel_search_cache.count({
+        where: {
+          quote_id: quoteId,
+          deleted: 0,
+          hotel_name: { not: 'No Hotels Available' },
+        },
+      }),
+    ]);
+
+    if (!newest || totalRows === 0) return true;
+
     const ageMs = Date.now() - newest.synced_at.getTime();
+    const isPlaceholderOnly = supplierRows === 0;
+
+    if (isPlaceholderOnly) {
+      return ageMs > ItineraryHotelDetailsTboService.PLACEHOLDER_ONLY_DB_CACHE_TTL_MS;
+    }
+
     return ageMs > ItineraryHotelDetailsTboService.DB_CACHE_TTL_MS;
   }
 

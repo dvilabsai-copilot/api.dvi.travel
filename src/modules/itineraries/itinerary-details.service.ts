@@ -141,6 +141,7 @@ export interface ItineraryDetailsResponseDto {
   confirmed_itinerary_plan_ID?: number; // ID needed for /confirmed/:id endpoint
   dateRange: string;
   dayCount: number;
+  nightCount: number;
   roomCount: number;
   extraBed: number;
   childWithBed: number;
@@ -713,6 +714,23 @@ for (const row of vehicleKmRows) {
           hotspotTimingMap.set(t.hotspot_ID, []);
         }
         hotspotTimingMap.get(t.hotspot_ID)!.push(t);
+      }
+
+      // Bulk fetch hotspot gallery images
+      const hotspotGalleryRows = hotspotIds.length
+        ? await this.prisma.dvi_hotspot_gallery_details.findMany({
+            where: { hotspot_ID: { in: hotspotIds }, deleted: 0 },
+            orderBy: { hotspot_gallery_details_id: 'asc' },
+            select: { hotspot_ID: true, hotspot_gallery_name: true },
+          })
+        : [];
+      const hotspotGalleryMap = new Map<number, string[]>();
+      for (const g of hotspotGalleryRows) {
+        const name = (g.hotspot_gallery_name ?? '').toString().trim();
+        if (!name) continue;
+        const urls = hotspotGalleryMap.get(g.hotspot_ID) ?? [];
+        urls.push(`/uploads/hotspot_gallery/${name}`);
+        hotspotGalleryMap.set(g.hotspot_ID, urls);
       }
 
       const segments: any[] = [];
@@ -1361,8 +1379,27 @@ for (const row of vehicleKmRows) {
 
           const activityMap = new Map(activityMasters.map(a => [a.activity_id, a]));
 
+          // Bulk fetch activity gallery images for this hotspot's activities
+          const activityGalleryRows = activityIds.length
+            ? await this.prisma.dvi_activity_image_gallery_details.findMany({
+                where: { activity_id: { in: activityIds }, deleted: 0 },
+                orderBy: { activity_image_gallery_details_id: 'asc' },
+                select: { activity_id: true, activity_image_gallery_name: true },
+              })
+            : [];
+          const activityGalleryMap = new Map<number, string[]>();
+          for (const g of activityGalleryRows) {
+            const id = g.activity_id ?? 0;
+            const name = (g.activity_image_gallery_name ?? '').toString().trim();
+            if (!name || !id) continue;
+            const urls = activityGalleryMap.get(id) ?? [];
+            urls.push(`/uploads/activity_gallery/${name}`);
+            activityGalleryMap.set(id, urls);
+          }
+
           const activityList = activities.map(actDetail => {
             const actMaster = activityMap.get(actDetail.activity_ID);
+            const actGallery = activityGalleryMap.get(actDetail.activity_ID) ?? [];
             return {
               id: actDetail.route_activity_ID,
               activityId: actDetail.activity_ID,
@@ -1372,7 +1409,8 @@ for (const row of vehicleKmRows) {
               startTime: this.formatTime(actDetail.activity_start_time as any),
               endTime: this.formatTime(actDetail.activity_end_time as any),
               duration: this.formatDuration(actDetail.activity_traveling_time as any),
-              image: null, // Can be fetched from activity gallery if needed
+              image: actGallery[0] ?? null,
+              galleryImages: actGallery,
             };
           });
 
@@ -1463,7 +1501,8 @@ for (const row of vehicleKmRows) {
             duration: this.formatDuration(stayDuration),
             amount: hotspotAmount > 0 ? Number(hotspotAmount) : null,
             timings: operatingHours,
-            image: null,
+            image: (hotspotGalleryMap.get(rh.hotspot_ID as number) ?? [])[0] ?? null,
+            galleryImages: hotspotGalleryMap.get(rh.hotspot_ID as number) ?? [],
             videoUrl: hotspotVideoUrl,
             planOwnWay: hotspotPlanOwnWay === 1,
             activities: activityList,
@@ -2525,6 +2564,7 @@ dayData.totalKms += safeTotalKm;
       confirmed_itinerary_plan_ID: confirmedPlan?.confirmed_itinerary_plan_ID,
       dateRange,
       dayCount: Number((plan as any).no_of_days || days.length || 0),
+      nightCount: Number((plan as any).no_of_nights || 0),
       roomCount,
       extraBed: plan.total_extra_bed ?? 0,
       childWithBed: plan.total_child_with_bed ?? 0,
