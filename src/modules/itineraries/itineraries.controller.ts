@@ -446,6 +446,42 @@ export class ItinerariesController {
     }
   }
 
+  @Post('hotel_details/:quoteId/rebuild')
+  @ApiOperation({
+    summary: 'Rebuild hotel cache for a quote and return fresh hotel details',
+    description:
+      'Clears cached hotel rows for the quote, then fetches fresh supplier results immediately (page=1, pageSize=20 unless overridden).',
+  })
+  @ApiParam({
+    name: 'quoteId',
+    required: true,
+    description: 'Quote ID generated for the itinerary',
+    example: 'DVI202604230',
+  })
+  @ApiQuery({ name: 'page', required: false, example: 1, type: Number })
+  @ApiQuery({ name: 'pageSize', required: false, example: 20, type: Number })
+  @ApiQuery({ name: 'groupType', required: false, example: 1, type: Number })
+  @Public()
+  async rebuildItineraryHotelDetails(
+    @Param('quoteId') quoteId: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @Query('groupType') groupType?: string,
+  ): Promise<ItineraryHotelDetailsResponseDto> {
+    const pageNum = page ? Math.max(1, parseInt(page, 10) || 1) : 1;
+    const pageSizeNum = pageSize ? Math.min(100, Math.max(1, parseInt(pageSize, 10) || 20)) : 20;
+    const groupTypeNum = groupType ? parseInt(groupType, 10) : undefined;
+
+    await this.hotelDetailsTboService.clearHotelCacheForQuote(quoteId);
+
+    return this.hotelDetailsTboService.getHotelDetailsByQuoteIdFromTbo(
+      quoteId,
+      pageNum,
+      pageSizeNum,
+      groupTypeNum,
+    );
+  }
+
   @Get('hotel_room_details/:quoteId')
   @ApiOperation({
     summary: 'Get hotel ROOM details for an itinerary by Quote ID',
