@@ -2400,6 +2400,11 @@ dayData.totalKms += safeTotalKm;
       where: hotelWhere,
     });
 
+    // Exclude marker/placeholder rows from cost math.
+    const costHotelRows = hotelRows.filter(
+      (h) => Number((h as any).hotel_required || 0) !== 2,
+    );
+
     // Total room cost (excluding meals initially)
     let totalRoomCost = 0;
     let totalAmenitiesCost = 0;
@@ -2408,8 +2413,15 @@ dayData.totalKms += safeTotalKm;
     let childWithoutBedCost = 0;
     let totalMealCost = 0;
 
-    hotelRows.forEach(h => {
-      totalRoomCost += Number(h.total_room_cost || 0) + Number(h.hotel_margin_rate || 0) + Number(h.total_room_gst_amount || 0);
+    costHotelRows.forEach(h => {
+      const detailedRoomCost =
+        Number(h.total_room_cost || 0) +
+        Number(h.hotel_margin_rate || 0) +
+        Number(h.total_room_gst_amount || 0);
+      const fallbackRoomCost = Number(h.total_hotel_cost || 0);
+
+      // TBO/cache rows often populate only total_hotel_cost; fallback keeps room totals non-zero.
+      totalRoomCost += detailedRoomCost > 0 ? detailedRoomCost : fallbackRoomCost;
       totalAmenitiesCost += Number(h.total_amenities_cost || 0);
       extraBedCost += Number(h.total_extra_bed_cost || 0);
       childWithBedCost += Number(h.total_childwith_bed_cost || 0);

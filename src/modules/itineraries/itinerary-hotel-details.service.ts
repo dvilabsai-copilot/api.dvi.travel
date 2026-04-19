@@ -366,26 +366,89 @@ async getHotelRoomDetailsByQuoteId(
         ],
       });
 
-    // ✅ Deduplicate: Keep only the LATEST hotel per (route, groupType)
-    const hotelsByRouteAndGroup = new Map<string, any>();
-    hotelRowsRaw.forEach((h: any) => {
-      const key = `${h.itinerary_route_id}-${h.group_type}`;
-      const existing = hotelsByRouteAndGroup.get(key);
-      
-      // Keep this one if: (1) No existing, (2) This has updatedon and existing doesn't, (3) This is newer
-      if (!existing || 
-          (!existing.updatedon && h.updatedon) ||
-          (h.updatedon && existing.updatedon && new Date(h.updatedon) > new Date(existing.updatedon))) {
-        hotelsByRouteAndGroup.set(key, h);
+    const pickLatestRow = (rows: any[]) => {
+      return rows.reduce((latest: any, row: any) => {
+        if (!latest) {
+          return row;
+        }
+
+        if (!latest.updatedon && row.updatedon) {
+          return row;
+        }
+
+        if (latest.updatedon && row.updatedon && new Date(row.updatedon) > new Date(latest.updatedon)) {
+          return row;
+        }
+
+        return latest;
+      }, null);
+    };
+
+    const actualHotelRowsByRouteAndGroup = new Map<string, any[]>();
+    const previousDayBillingMarkerRowsByRouteAndGroup = new Map<string, any[]>();
+
+    hotelRowsRaw.forEach((row: any) => {
+      const key = `${row.itinerary_route_id}-${row.group_type}`;
+      const isPreviousDayBillingMarker = Number(row.hotel_required ?? 0) === 2 && Number(row.hotel_id ?? 0) === 0;
+      const targetMap = isPreviousDayBillingMarker
+        ? previousDayBillingMarkerRowsByRouteAndGroup
+        : actualHotelRowsByRouteAndGroup;
+      const existingRows = targetMap.get(key) || [];
+      existingRows.push(row);
+      targetMap.set(key, existingRows);
+    });
+
+    const hotelRowsExpanded: any[] = [];
+    actualHotelRowsByRouteAndGroup.forEach((rows, key) => {
+      const actualRow = pickLatestRow(rows);
+      if (!actualRow) {
+        return;
+      }
+
+      const markerRow = pickLatestRow(previousDayBillingMarkerRowsByRouteAndGroup.get(key) || []);
+      if (markerRow) {
+        hotelRowsExpanded.push({
+          ...actualRow,
+          itinerary_route_date: markerRow.itinerary_route_date,
+          itinerary_route_location:
+            markerRow.itinerary_route_location || actualRow.itinerary_route_location,
+          __previousDayBillingSynthetic: true,
+        });
+      }
+
+      hotelRowsExpanded.push(actualRow);
+    });
+
+    previousDayBillingMarkerRowsByRouteAndGroup.forEach((rows, key) => {
+      if (actualHotelRowsByRouteAndGroup.has(key)) {
+        return;
+      }
+
+      const markerRow = pickLatestRow(rows);
+      if (markerRow) {
+        hotelRowsExpanded.push(markerRow);
       }
     });
-    
-    const hotelRowsDeduped = Array.from(hotelsByRouteAndGroup.values());
+
+    hotelRowsExpanded.sort((a: any, b: any) => {
+      const groupDiff = Number(a.group_type ?? 0) - Number(b.group_type ?? 0);
+      if (groupDiff !== 0) {
+        return groupDiff;
+      }
+
+      const aTime = a.itinerary_route_date ? new Date(a.itinerary_route_date).getTime() : 0;
+      const bTime = b.itinerary_route_date ? new Date(b.itinerary_route_date).getTime() : 0;
+      if (aTime !== bTime) {
+        return aTime - bTime;
+      }
+
+      return Number(a.itinerary_route_id ?? 0) - Number(b.itinerary_route_id ?? 0);
+    });
 
     // 3) Distinct hotels for name/category
     const hotelIds = Array.from(
       new Set(
-        hotelRowsDeduped
+        hotelRowsExpanded
           .map((h) => (h as any).hotel_id as number | null)
           .filter((id): id is number => typeof id === 'number' && id > 0),
       ),
@@ -401,37 +464,26 @@ async getHotelRoomDetailsByQuoteId(
       hotelMasters.map((h) => [Number((h as any).hotel_id), h]),
     );
 
-    // 4) Per-group GRAND_TOTAL_OF_THE_HOTEL_CHARGES
-    //    SUM(total_hotel_cost) + SUM(total_hotel_tax_amount)
-    const hotelGroupsRaw =
-      await this.prisma.dvi_itinerary_plan_hotel_details.groupBy({
-        by: ['group_type'],
-        where: { itinerary_plan_id: planId, deleted: 0 },
-        _sum: {
-          total_hotel_cost: true,
-          total_hotel_tax_amount: true,
-        },
-      });
+    const hotelGroupTotals = new Map<number, number>();
+    hotelRowsExpanded.forEach((row: any) => {
+      const groupType = Number(row.group_type ?? 0) || 0;
+      const currentTotal = hotelGroupTotals.get(groupType) || 0;
+      const rowTotal =
+        Number(row.total_hotel_cost ?? 0) + Number(row.total_hotel_tax_amount ?? 0);
+      hotelGroupTotals.set(groupType, currentTotal + rowTotal);
+    });
 
-    const hotelTabs: ItineraryHotelTabDto[] = hotelGroupsRaw
-      .map((g) => {
-        const groupType = Number((g as any).group_type ?? 0) || 0;
-        const totalHotelCost = Number(g._sum.total_hotel_cost ?? 0);
-        const totalHotelTaxAmount = Number(g._sum.total_hotel_tax_amount ?? 0);
-        const groupTotal = totalHotelCost + totalHotelTaxAmount;
-
-        // NOTE: margins/markups are NOT applied here – this is pure SUM(cost + tax)
-        return {
-          groupType,
-          label: `Recommended #${groupType}`,
-          totalAmount: Number(groupTotal),
-        };
-      })
+    const hotelTabs: ItineraryHotelTabDto[] = Array.from(hotelGroupTotals.entries())
+      .map(([groupType, totalAmount]) => ({
+        groupType,
+        label: `Recommended #${groupType}`,
+        totalAmount: Number(totalAmount),
+      }))
       .sort((a, b) => a.groupType - b.groupType);
 
     // 5) Per-row hotel list (with group_type & per-row cost)
     // Also check voucher cancellation status
-    const hotelDetailsIds = hotelRowsDeduped.map(h => (h as any).itinerary_plan_hotel_details_ID).filter(id => id);
+    const hotelDetailsIds = hotelRowsExpanded.map(h => (h as any).itinerary_plan_hotel_details_ID).filter(id => id);
     
     // Fetch voucher cancellation statuses
     const voucherStatuses = hotelDetailsIds.length > 0
@@ -458,7 +510,7 @@ async getHotelRoomDetailsByQuoteId(
     // Fetch route location IDs to get location coordinates for distance calculation
     const routeIds = Array.from(
       new Set(
-        hotelRowsDeduped
+        hotelRowsExpanded
           .map((h) => (h as any).itinerary_route_id as number | null)
           .filter((id): id is number => typeof id === 'number' && id > 0),
       ),
@@ -468,7 +520,7 @@ async getHotelRoomDetailsByQuoteId(
     const routeDetails = routeIds.length
       ? await this.prisma.dvi_itinerary_route_details.findMany({
           where: { itinerary_route_ID: { in: routeIds }, deleted: 0 },
-          select: { itinerary_route_ID: true, location_id: true },
+          select: { itinerary_route_ID: true, location_id: true, no_of_days: true },
         })
       : [];
 
@@ -476,6 +528,12 @@ async getHotelRoomDetailsByQuoteId(
       routeDetails.map((r) => [
         Number((r as any).itinerary_route_ID),
         Number((r as any).location_id),
+      ]),
+    );
+    const routeDayNumberMap = new Map(
+      routeDetails.map((r) => [
+        Number((r as any).itinerary_route_ID),
+        Number((r as any).no_of_days ?? 0),
       ]),
     );
 
@@ -504,12 +562,15 @@ async getHotelRoomDetailsByQuoteId(
       }
     });
 
-    const hotels: ItineraryHotelRowDto[] = hotelRowsDeduped.map((h, idx) => {
+    const hotels: ItineraryHotelRowDto[] = hotelRowsExpanded.map((h) => {
       const master = hotelMap.get(Number((h as any).hotel_id)) || null;
       const dateLabel = h.itinerary_route_date
         ? h.itinerary_route_date.toISOString().slice(0, 10)
         : '';
       const hotelDetailsId = (h as any).itinerary_plan_hotel_details_ID;
+      const routeId = Number((h as any).itinerary_route_id ?? 0);
+      const routeDayNumber = routeDayNumberMap.get(routeId) || 0;
+      const isSyntheticPreviousDayBilling = Boolean((h as any).__previousDayBillingSynthetic);
 
       // Calculate distance from route location to hotel using Haversine formula
       let hotelDistance: string | null = null;
@@ -521,7 +582,6 @@ async getHotelRoomDetailsByQuoteId(
         Number((master as any).hotel_longitude) : null;
 
       // Get route location coordinates
-      const routeId = Number((h as any).itinerary_route_id ?? 0);
       const locationId = routeLocationMap.get(routeId);
       const routeCoords = locationId ? locationCoordinatesMap.get(locationId) : null;
       
@@ -553,8 +613,10 @@ async getHotelRoomDetailsByQuoteId(
 
       return {
         groupType: Number((h as any).group_type ?? 0) || 0,
-        itineraryRouteId: Number((h as any).itinerary_route_id ?? 0) || 0,
-        day: `Day ${idx + 1} | ${dateLabel}`,
+        itineraryRouteId: routeId,
+        day: isSyntheticPreviousDayBilling
+          ? `Day ${routeDayNumber} (Previous Day) | ${dateLabel}`
+          : `Day ${routeDayNumber || 0} | ${dateLabel}`,
         destination: (h as any).itinerary_route_location ?? '',
         hotelId: Number((h as any).hotel_id ?? 0) || 0,
         hotelName: master ? ((master as any).hotel_name ?? '') : '',

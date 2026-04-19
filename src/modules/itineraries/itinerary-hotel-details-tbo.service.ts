@@ -404,6 +404,30 @@ export class ItineraryHotelDetailsTboService {
     const hotels: ItineraryHotelRowDto[] = [];
     const pagination: Record<number, import('./itinerary-hotel-details.service').HotelPaginationMeta> = {};
     const routePagination: Record<string, import('./itinerary-hotel-details.service').HotelRoutePaginationMeta> = {};
+    const previousDayBillingMarkers = await this.prisma.dvi_itinerary_plan_hotel_details.findMany({
+      where: {
+        itinerary_plan_id: planId,
+        hotel_required: 2,
+        hotel_id: 0,
+        deleted: 0,
+        group_type: { in: groups },
+      },
+      select: {
+        itinerary_route_id: true,
+        itinerary_route_date: true,
+        itinerary_route_location: true,
+        group_type: true,
+      },
+    });
+    const previousDayBillingMarkerMap = new Map(
+      previousDayBillingMarkers.map((marker: any) => [
+        `${Number(marker.itinerary_route_id || 0)}-${Number(marker.group_type || 0)}`,
+        {
+          date: marker.itinerary_route_date,
+          destination: String(marker.itinerary_route_location || '').trim(),
+        },
+      ]),
+    );
 
     await Promise.all(
       groups.map(async (groupType) => {
@@ -418,6 +442,20 @@ export class ItineraryHotelDetailsTboService {
         for (const row of rows) {
           try {
             const payload = JSON.parse(row.full_payload || '{}') as ItineraryHotelRowDto;
+            const previousDayBillingMarker = previousDayBillingMarkerMap.get(
+              `${Number(payload.itineraryRouteId || 0)}-${groupType}`,
+            );
+            if (previousDayBillingMarker?.date) {
+              const previousDayDate = new Date(previousDayBillingMarker.date as any)
+                .toISOString()
+                .split('T')[0];
+              hotels.push({
+                ...payload,
+                day: `${String(payload.day || '').split('|')[0].trim()} (Previous Day) | ${previousDayDate}`,
+                date: previousDayDate,
+                destination: previousDayBillingMarker.destination || payload.destination,
+              });
+            }
             hotels.push(payload);
           } catch {
             hotels.push({
@@ -1459,7 +1497,10 @@ export class ItineraryHotelDetailsTboService {
       select: {
         itinerary_plan_hotel_details_ID: true,
         itinerary_route_id: true,
+        itinerary_route_date: true,
+        itinerary_route_location: true,
         hotel_id: true,
+        hotel_required: true,
         group_type: true,
       },
     });
@@ -1482,10 +1523,24 @@ export class ItineraryHotelDetailsTboService {
 
     // Create maps for quick lookup
     const detailsMap = new Map(
-      hotelDetailsInDb.map(d => [
-        `${d.itinerary_route_id}-${d.hotel_id}-${d.group_type}`,
-        d.itinerary_plan_hotel_details_ID
-      ])
+      hotelDetailsInDb
+        .filter((d: any) => Number(d.hotel_required ?? 0) !== 2)
+        .map(d => [
+          `${d.itinerary_route_id}-${d.hotel_id}-${d.group_type}`,
+          d.itinerary_plan_hotel_details_ID
+        ])
+    );
+
+    const previousDayBillingMarkerMap = new Map(
+      hotelDetailsInDb
+        .filter((d: any) => Number(d.hotel_required ?? 0) === 2 && Number(d.hotel_id ?? 0) === 0)
+        .map((d: any) => [
+          `${d.itinerary_route_id}-${d.group_type}`,
+          {
+            itineraryRouteDate: d.itinerary_route_date,
+            itineraryRouteLocation: d.itinerary_route_location,
+          },
+        ])
     );
     
     const voucherStatusMap = new Map(
@@ -1797,7 +1852,7 @@ export class ItineraryHotelDetailsTboService {
           }
         }
 
-        hotelRows.push({
+        const baseHotelRow: ItineraryHotelRowDto = {
           groupType: pkg.groupType,
           itineraryRouteId: routeId,
           day: `Day ${routeIndex + 1} | ${dateLabel}`,
@@ -1819,7 +1874,22 @@ export class ItineraryHotelDetailsTboService {
           itineraryPlanHotelDetailsId: hotelDetailsId || 0,
           date: dateLabel,
           hotelDistance,
-        });
+        };
+
+        const previousDayBillingMarker = previousDayBillingMarkerMap.get(`${routeId}-${pkg.groupType}`);
+        if (previousDayBillingMarker?.itineraryRouteDate) {
+          const previousDayDate = new Date(previousDayBillingMarker.itineraryRouteDate as any)
+            .toISOString()
+            .split('T')[0];
+          hotelRows.push({
+            ...baseHotelRow,
+            day: `Day ${routeIndex + 1} (Previous Day) | ${previousDayDate}`,
+            destination: String(previousDayBillingMarker.itineraryRouteLocation || destination || '').trim(),
+            date: previousDayDate,
+          });
+        }
+
+        hotelRows.push(baseHotelRow);
 
         // Log HOBSE hotel codes for debugging
         if (hotel.provider === 'HOBSE') {
