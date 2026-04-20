@@ -216,6 +216,115 @@ export class ItinerariesService {
         console.log('[PERF] rebuildPlanHotels:', Date.now() - opStart2, 'ms');
       }
 
+      const firstRoute = routes.length > 0 ? routes[0] : null;
+      const hasEarlyArrivalDecision = Boolean(dto.previousDayBillingDecisionProvided);
+      const hasPreviousDayBillingConfirmed = Boolean(dto.previousDayBillingConfirmed);
+      const toSeconds = (hhmmss: string): number => {
+        if (!/^\d{2}:\d{2}:\d{2}$/.test(hhmmss)) {
+          return -1;
+        }
+        const [h, m, s] = hhmmss.split(':').map((value) => Number(value || 0));
+        return (h * 3600) + (m * 60) + s;
+      };
+
+      const tripStartTimeRaw = String(
+        dto.plan.pick_up_date_and_time ||
+        dto.plan.trip_start_date_and_time ||
+        '',
+      ).trim();
+      const tripStartTimePart = tripStartTimeRaw.includes('T')
+        ? tripStartTimeRaw.split('T')[1]?.slice(0, 8) || ''
+        : '';
+
+      // Fallback to Day-1 route start time because create/update flows may not always
+      // provide a full pick_up_date_and_time in the payload.
+      const firstRouteStartTime = firstRoute
+        ? TimeConverter.toTimeString((firstRoute as any).route_start_time)
+        : '';
+
+      const tripStartSeconds = (() => {
+        const fromPlan = toSeconds(tripStartTimePart);
+        if (fromPlan >= 0) {
+          return fromPlan;
+        }
+        return toSeconds(firstRouteStartTime);
+      })();
+      const isEarlyArrivalWindow = tripStartSeconds >= 3600 && tripStartSeconds < 28800;
+
+      console.log('[ARRIVAL_DECISION_DEBUG_CREATE]', {
+        planId,
+        hasEarlyArrivalDecision,
+        hasPreviousDayBillingConfirmed,
+        tripStartTimeRaw,
+        tripStartTimePart,
+        firstRouteStartTime,
+        tripStartSeconds,
+        isEarlyArrivalWindow,
+      });
+
+      if (firstRoute) {
+        const existingMarkerWhere = {
+          itinerary_plan_id: planId,
+          itinerary_route_id: Number((firstRoute as any).itinerary_route_ID || 0),
+          hotel_required: 2,
+          hotel_id: 0,
+          deleted: 0,
+        };
+
+        // Respect an explicit user confirmation from the arrival-policy modal.
+        // Time normalization can drift during payload/date conversions, so
+        // confirmed decisions should not be dropped by derived time checks.
+        if (hasEarlyArrivalDecision && hasPreviousDayBillingConfirmed) {
+          const firstRouteDateValue = (firstRoute as any).itinerary_route_date;
+          const firstRouteDate = firstRouteDateValue instanceof Date
+            ? firstRouteDateValue
+            : new Date(firstRouteDateValue as any);
+
+          if (!Number.isNaN(firstRouteDate.getTime())) {
+            const previousDayDate = new Date(Date.UTC(
+              firstRouteDate.getUTCFullYear(),
+              firstRouteDate.getUTCMonth(),
+              firstRouteDate.getUTCDate() - 1,
+              0,
+              0,
+              0,
+            ));
+            const routeLocation = String(
+              (firstRoute as any).next_visiting_location ||
+              (firstRoute as any).location_name ||
+              '',
+            ).trim();
+
+            await (tx as any).dvi_itinerary_plan_hotel_details.deleteMany({
+              where: existingMarkerWhere,
+            });
+
+            await (tx as any).dvi_itinerary_plan_hotel_details.createMany({
+              data: [1, 2, 3, 4].map((groupType) => ({
+                group_type: groupType,
+                itinerary_plan_id: planId,
+                itinerary_route_id: Number((firstRoute as any).itinerary_route_ID || 0),
+                itinerary_route_date: previousDayDate,
+                itinerary_route_location: routeLocation || null,
+                hotel_required: 2,
+                hotel_id: 0,
+                total_no_of_rooms: 0,
+                total_hotel_cost: 0,
+                total_hotel_tax_amount: 0,
+                createdby: userId,
+                createdon: new Date(),
+                status: 1,
+                deleted: 0,
+              })),
+            });
+          }
+        } else {
+          await (tx as any).dvi_itinerary_plan_hotel_details.deleteMany({
+            where: existingMarkerWhere,
+          });
+        }
+      }
+
       opStart2 = Date.now();
       await this.hotspotEngine.rebuildRouteHotspots(tx, planId, existingHotspotsWithDates);
       console.log('[PERF] rebuildRouteHotspots:', Date.now() - opStart2, 'ms');
@@ -7203,8 +7312,7 @@ export class ItinerariesService {
 
         if (
           normalizedDecisionProvided &&
-          normalizedDecisionConfirmed &&
-          isEarlyArrivalWindow
+          normalizedDecisionConfirmed
         ) {
           const firstRouteDate = new Date(firstRoute.itinerary_route_date as any);
           if (!Number.isNaN(firstRouteDate.getTime())) {
@@ -7275,7 +7383,7 @@ export class ItinerariesService {
               });
             }
           }
-        } else if (existingMarkerRows.length > 0) {
+        } else if (normalizedDecisionProvided && !normalizedDecisionConfirmed && existingMarkerRows.length > 0) {
           await (tx as any).dvi_itinerary_plan_hotel_details.deleteMany({
             where: {
               itinerary_plan_id: normalizedPlanId,
