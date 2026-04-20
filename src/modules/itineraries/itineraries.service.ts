@@ -229,7 +229,7 @@ export class ItinerariesService {
 
       const tripStartTimeRaw = String(
         dto.plan.pick_up_date_and_time ||
-        dto.plan.trip_start_date_and_time ||
+        dto.plan.trip_start_date ||
         '',
       ).trim();
       const tripStartTimePart = tripStartTimeRaw.includes('T')
