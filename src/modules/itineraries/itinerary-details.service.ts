@@ -3,6 +3,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { Request } from 'express';
 import { PrismaService } from '../../prisma.service';
 import { LatestItineraryQueryDto } from './dto/latest-itinerary-query.dto';
+import { ItineraryHotelDetailsTboService } from './itinerary-hotel-details-tbo.service';
 
 // ---------------------------------------------------------------------------
 // DTOs for Itinerary Details response (shared shape with frontend)
@@ -182,7 +183,10 @@ export interface ItineraryDetailsResponseDto {
 
 @Injectable()
 export class ItineraryDetailsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly hotelDetailsTboService: ItineraryHotelDetailsTboService,
+  ) {}
 
   // TODO: remove after validation
   private logBookingRule(payload: Record<string, unknown>): void {
@@ -2401,7 +2405,7 @@ dayData.totalKms += safeTotalKm;
     });
 
     // Exclude marker/placeholder rows from cost math.
-    const costHotelRows = hotelRows.filter(
+    let costHotelRows = hotelRows.filter(
       (h) => Number((h as any).hotel_required || 0) !== 2,
     );
 
@@ -2428,6 +2432,57 @@ dayData.totalKms += safeTotalKm;
       childWithoutBedCost += Number(h.total_childwithout_bed_cost || 0);
       totalMealCost += Number(h.total_hotel_meal_plan_cost || 0);
     });
+
+    // If selected recommendation group has only marker/placeholder rows,
+    // derive a usable room total from live hotel-details data (cheapest per stay).
+    if (totalRoomCost <= 0 && groupType !== undefined) {
+      try {
+        const hotelDetailsFallback = await this.hotelDetailsTboService.getHotelDetailsByQuoteIdFromTbo(
+          quoteId,
+          1,
+          500,
+          groupType,
+        );
+
+        const fallbackRows = (hotelDetailsFallback.hotels || []).filter(
+          (h: any) => String(h.hotelName || '') !== 'No Hotels Available',
+        );
+
+        const cheapestByStay = new Map<string, number>();
+        fallbackRows.forEach((h: any) => {
+          const routeId = Number(h.itineraryRouteId || 0);
+          const stayDate = String(h.date || '').trim();
+          if (!routeId || !stayDate) return;
+
+          const key = `${routeId}::${stayDate}`;
+          const amount = Number(h.totalHotelCost || 0) + Number(h.totalHotelTaxAmount || 0);
+          if (!Number.isFinite(amount) || amount <= 0) return;
+
+          const existing = cheapestByStay.get(key);
+          if (existing === undefined || amount < existing) {
+            cheapestByStay.set(key, amount);
+          }
+        });
+
+        const baseFallbackRoomCost = Array.from(cheapestByStay.values()).reduce(
+          (sum, v) => sum + Number(v || 0),
+          0,
+        );
+        const roomCountMultiplier = Math.max(Number(plan.preferred_room_count ?? 1), 1);
+        const fallbackRoomCost = baseFallbackRoomCost * roomCountMultiplier;
+
+        if (fallbackRoomCost > 0) {
+          totalRoomCost = fallbackRoomCost;
+          totalAmenitiesCost = 0;
+          extraBedCost = 0;
+          childWithBedCost = 0;
+          childWithoutBedCost = 0;
+          totalMealCost = 0;
+        }
+      } catch {
+        // Keep existing behavior if live fallback fails.
+      }
+    }
 
     // Calculate per-person room cost (PHP logic)
     const totalAdults = plan.total_adult || 0;
