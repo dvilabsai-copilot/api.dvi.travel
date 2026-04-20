@@ -1,6 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import {
   IsArray,
+  IsBoolean,
   IsInt,
   IsOptional,
   IsString,
@@ -226,4 +227,24 @@ export class CreateItineraryDto {
   @ValidateNested({ each: true })
   @Type(() => CreateTravellerDto)
   travellers!: CreateTravellerDto[];
+
+  @ApiProperty({
+    example: false,
+    required: false,
+    description: 'Whether the user explicitly answered the Day 1 previous-day hotel billing confirmation.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  @Type(() => Boolean)
+  previousDayBillingDecisionProvided?: boolean;
+
+  @ApiProperty({
+    example: false,
+    required: false,
+    description: 'If provided, whether the user confirmed previous-day billing for early Day 1 arrival.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  @Type(() => Boolean)
+  previousDayBillingConfirmed?: boolean;
 }

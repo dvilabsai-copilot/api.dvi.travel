@@ -250,7 +250,11 @@ export class ItineraryHotelDetailsTboService {
         : searchableRouteIds;
 
     // Fresh DB cache path: always serve paged response from DB (including page=1)
-    const isStale = await this.isDbCacheStale(quoteId);
+    const isStale = await this.isDbCacheStale(
+      quoteId,
+      effectiveRouteIds,
+      requestedGroupType,
+    );
     if (!isStale) {
       this.logger.log(`📦 DB cache fresh — serving page ${safePage} from DB for quote ${quoteId}`);
       return this.buildPagedResponseFromDb(
@@ -445,13 +449,20 @@ export class ItineraryHotelDetailsTboService {
             const previousDayBillingMarker = previousDayBillingMarkerMap.get(
               `${Number(payload.itineraryRouteId || 0)}-${groupType}`,
             );
-            if (previousDayBillingMarker?.date) {
+            const payloadDayLabel = String(payload.day || '');
+            const payloadAlreadyPreviousDay = /\(Previous Day\)/i.test(payloadDayLabel);
+            if (previousDayBillingMarker?.date && !payloadAlreadyPreviousDay) {
               const previousDayDate = new Date(previousDayBillingMarker.date as any)
                 .toISOString()
                 .split('T')[0];
+              const baseDayLabel = payloadDayLabel
+                .split('|')[0]
+                .replace(/\(Previous Day\)/gi, '')
+                .replace(/\s+/g, ' ')
+                .trim();
               hotels.push({
                 ...payload,
-                day: `${String(payload.day || '').split('|')[0].trim()} (Previous Day) | ${previousDayDate}`,
+                day: `${baseDayLabel} (Previous Day) | ${previousDayDate}`,
                 date: previousDayDate,
                 destination: previousDayBillingMarker.destination || payload.destination,
               });
@@ -501,6 +512,7 @@ export class ItineraryHotelDetailsTboService {
             route_id: { in: searchableRouteIds },
             deleted: 0,
             status: 1,
+            sort_rank: 1, // cheapest hotel per route only
           },
         }),
       ),
@@ -1255,20 +1267,36 @@ export class ItineraryHotelDetailsTboService {
    * - Normal cache rows: 40 minutes
    * - Placeholder-only cache rows: 5 minutes
    */
-  private async isDbCacheStale(quoteId: string): Promise<boolean> {
+  private async isDbCacheStale(
+    quoteId: string,
+    routeIds: number[] = [],
+    groupType?: number,
+  ): Promise<boolean> {
+    const scopeWhere: any = {
+      quote_id: quoteId,
+      deleted: 0,
+    };
+
+    if (Array.isArray(routeIds) && routeIds.length > 0) {
+      scopeWhere.route_id = { in: routeIds };
+    }
+
+    if (groupType && Number(groupType) > 0) {
+      scopeWhere.group_type = Number(groupType);
+    }
+
     const [newest, totalRows, supplierRows] = await Promise.all([
       this.prisma.dvi_itinerary_hotel_search_cache.findFirst({
-        where: { quote_id: quoteId, deleted: 0 },
+        where: scopeWhere,
         orderBy: { synced_at: 'desc' },
         select: { synced_at: true },
       }),
       this.prisma.dvi_itinerary_hotel_search_cache.count({
-        where: { quote_id: quoteId, deleted: 0 },
+        where: scopeWhere,
       }),
       this.prisma.dvi_itinerary_hotel_search_cache.count({
         where: {
-          quote_id: quoteId,
-          deleted: 0,
+          ...scopeWhere,
           hotel_name: { not: 'No Hotels Available' },
         },
       }),
