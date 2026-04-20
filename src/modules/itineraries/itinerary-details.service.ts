@@ -2433,20 +2433,27 @@ dayData.totalKms += safeTotalKm;
       totalMealCost += Number(h.total_hotel_meal_plan_cost || 0);
     });
 
-    // If selected recommendation group has only marker/placeholder rows,
-    // derive a usable room total from live hotel-details data (cheapest per stay).
-    if (totalRoomCost <= 0 && groupType !== undefined) {
+    // For selected recommendation tabs, derive room total from live group-specific hotel details
+    // and override stale duplicated DB costs when they differ.
+    const getLiveSelectedGroupRoomCost = async (): Promise<number> => {
+      if (groupType === undefined) return 0;
+
       try {
+        // Use the same default hotel_details dataset as frontend tabs
+        // (page=1, pageSize=20, all groups), then filter by selected group.
         const hotelDetailsFallback = await this.hotelDetailsTboService.getHotelDetailsByQuoteIdFromTbo(
           quoteId,
           1,
-          500,
-          groupType,
+          20,
         );
 
-        const fallbackRows = (hotelDetailsFallback.hotels || []).filter(
-          (h: any) => String(h.hotelName || '') !== 'No Hotels Available',
-        );
+        const fallbackRows = (hotelDetailsFallback.hotels || []).filter((h: any) => {
+          const rowGroupType = Number(h.groupType ?? 0);
+          return (
+            rowGroupType === Number(groupType) &&
+            String(h.hotelName || '') !== 'No Hotels Available'
+          );
+        });
 
         const cheapestByStay = new Map<string, number>();
         fallbackRows.forEach((h: any) => {
@@ -2469,19 +2476,24 @@ dayData.totalKms += safeTotalKm;
           0,
         );
         const roomCountMultiplier = Math.max(Number(plan.preferred_room_count ?? 1), 1);
-        const fallbackRoomCost = baseFallbackRoomCost * roomCountMultiplier;
-
-        if (fallbackRoomCost > 0) {
-          totalRoomCost = fallbackRoomCost;
-          totalAmenitiesCost = 0;
-          extraBedCost = 0;
-          childWithBedCost = 0;
-          childWithoutBedCost = 0;
-          totalMealCost = 0;
-        }
+        return baseFallbackRoomCost * roomCountMultiplier;
       } catch {
-        // Keep existing behavior if live fallback fails.
+        return 0;
       }
+    };
+
+    const liveSelectedGroupRoomCost = await getLiveSelectedGroupRoomCost();
+    const shouldUseLiveSelectedGroupCost =
+      liveSelectedGroupRoomCost > 0 &&
+      (totalRoomCost <= 0 || Math.abs(liveSelectedGroupRoomCost - totalRoomCost) > 0.01);
+
+    if (shouldUseLiveSelectedGroupCost) {
+      totalRoomCost = liveSelectedGroupRoomCost;
+      totalAmenitiesCost = 0;
+      extraBedCost = 0;
+      childWithBedCost = 0;
+      childWithoutBedCost = 0;
+      totalMealCost = 0;
     }
 
     // Calculate per-person room cost (PHP logic)
