@@ -122,6 +122,40 @@ export class TimelineBuilder {
     routeId: number,
     routeDate: Date,
   ): Promise<ArrivalPolicyDecisionState> {
+    const markerDecision = await (tx as any).dvi_itinerary_plan_hotel_details?.findFirst({
+      where: {
+        itinerary_plan_id: planId,
+        itinerary_route_id: routeId,
+        hotel_required: 2,
+        hotel_id: 0,
+        deleted: 0,
+        status: 1,
+      },
+      orderBy: {
+        itinerary_plan_hotel_details_ID: 'desc',
+      },
+      select: {
+        group_type: true,
+      },
+    });
+
+    // Source-of-truth: explicit decision marker rows created by updateRouteTimes.
+    // group_type=1 => confirmed previous-day billing, group_type=2 => declined.
+    if (markerDecision?.group_type === 1) {
+      return {
+        previousDayBillingDecisionProvided: true,
+        previousDayBillingConfirmed: true,
+      };
+    }
+
+    if (markerDecision?.group_type === 2) {
+      return {
+        previousDayBillingDecisionProvided: true,
+        previousDayBillingConfirmed: false,
+      };
+    }
+
+    // Fallback for legacy rows where marker is absent.
     const hotelSelection = await (tx as any).dvi_itinerary_plan_hotel_details?.findFirst({
       where: {
         itinerary_plan_id: planId,

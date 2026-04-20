@@ -340,10 +340,26 @@ export class ItineraryDetailsService {
   /** Convert a TIME duration (stored as Date) to "X Hours" / "Y Min" */
   private formatDuration(d?: Date | string | null): string | null {
     if (!d) return null;
-    const dt = d instanceof Date ? d : new Date(d);
-    if (isNaN(dt.getTime())) return null;
+    let totalMinutes: number | null = null;
 
-    const totalMinutes = dt.getUTCHours() * 60 + dt.getUTCMinutes();   // ✅ Read UTC time value
+    if (d instanceof Date) {
+      if (isNaN(d.getTime())) return null;
+      totalMinutes = d.getUTCHours() * 60 + d.getUTCMinutes();
+    } else if (typeof d === 'string') {
+      const raw = d.trim();
+      const hhmmss = raw.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+
+      if (hhmmss) {
+        totalMinutes = Number(hhmmss[1]) * 60 + Number(hhmmss[2]);
+      } else {
+        const dt = new Date(raw);
+        if (!isNaN(dt.getTime())) {
+          totalMinutes = dt.getUTCHours() * 60 + dt.getUTCMinutes();
+        }
+      }
+    }
+
+    if (totalMinutes === null) return null;
     if (totalMinutes <= 0) return null;
 
     const h = Math.floor(totalMinutes / 60);
@@ -369,6 +385,103 @@ export class ItineraryDetailsService {
     if (ampm === 'AM' && hours === 12) hours = 0;
     
     return hours * 60 + minutes;
+  }
+
+  private parseDisplayTimeMinutesStrict(timeStr: string | null): number | null {
+    if (!timeStr) return null;
+    const match = timeStr.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+    if (!match) return null;
+
+    let hours = parseInt(match[1], 10);
+    const minutes = parseInt(match[2], 10);
+    const ampm = match[3].toUpperCase();
+
+    if (ampm === 'PM' && hours !== 12) hours += 12;
+    if (ampm === 'AM' && hours === 12) hours = 0;
+
+    return hours * 60 + minutes;
+  }
+
+  private minutesToDisplayTime(minutes: number): string {
+    const normalized = ((Math.round(minutes) % 1440) + 1440) % 1440;
+    let hh = Math.floor(normalized / 60);
+    const mm = normalized % 60;
+    const ampm = hh >= 12 ? 'PM' : 'AM';
+    hh = hh % 12;
+    if (hh === 0) hh = 12;
+    return `${this.pad2(hh)}:${this.pad2(mm)} ${ampm}`;
+  }
+
+  private orderedTimeRange(startTimeText: string | null, endTimeText: string | null): string | null {
+    if (!startTimeText || !endTimeText) return null;
+
+    const startMins = this.parseDisplayTimeMinutesStrict(startTimeText);
+    const endMins = this.parseDisplayTimeMinutesStrict(endTimeText);
+
+    if (startMins === null || endMins === null) {
+      return `${startTimeText} - ${endTimeText}`;
+    }
+
+    if (startMins <= endMins) {
+      return `${startTimeText} - ${endTimeText}`;
+    }
+
+    return `${endTimeText} - ${startTimeText}`;
+  }
+
+  private extractRangeFromSegment(seg: any): {
+    field: 'timeRange' | 'visitTime';
+    suffix: string;
+    start: number;
+    end: number;
+  } | null {
+    if (!seg) return null;
+
+    const field: 'timeRange' | 'visitTime' | null =
+      seg.type === 'attraction' ? 'visitTime' :
+      (seg.type === 'start' || seg.type === 'travel' || seg.type === 'return' || seg.type === 'break') ? 'timeRange' :
+      null;
+
+    if (!field || typeof seg[field] !== 'string') return null;
+
+    const raw = String(seg[field]);
+    const suffixStart = raw.indexOf(' (');
+    const core = (suffixStart >= 0 ? raw.slice(0, suffixStart) : raw).trim();
+    const suffix = suffixStart >= 0 ? raw.slice(suffixStart) : '';
+    const parts = core.split(' - ').map((p) => p.trim());
+    if (parts.length !== 2) return null;
+
+    const start = this.parseDisplayTimeMinutesStrict(parts[0]);
+    const end = this.parseDisplayTimeMinutesStrict(parts[1]);
+    if (start === null || end === null) return null;
+
+    return { field, suffix, start, end };
+  }
+
+  private normalizeSegmentChronology(segments: any[]): void {
+    let previousEnd: number | null = null;
+
+    for (const seg of segments) {
+      const parsed = this.extractRangeFromSegment(seg);
+      if (!parsed) continue;
+
+      let start = parsed.start;
+      let end = parsed.end;
+      if (end < start) {
+        const temp = start;
+        start = end;
+        end = temp;
+      }
+
+      if (previousEnd !== null && start < previousEnd) {
+        const duration = Math.max(0, end - start);
+        start = previousEnd;
+        end = start + duration;
+      }
+
+      seg[parsed.field] = `${this.minutesToDisplayTime(start)} - ${this.minutesToDisplayTime(end)}${parsed.suffix}`;
+      previousEnd = end;
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -1114,22 +1227,18 @@ for (const row of vehicleKmRows) {
             totalDistanceKm += distanceNum;
           }
 
+          const travelRange = this.orderedTimeRange(startTimeText, endTimeText);
+
           pushHotspotAnchorPlaceholder({
             from: previousStopName,
             to: toName,
-            timeRange:
-              startTimeText && endTimeText
-                ? `${startTimeText} - ${endTimeText}`
-                : null,
+            timeRange: travelRange,
           });
           segments.push({
             type: "travel" as const,
             from: previousStopName,
             to: toName,
-            timeRange:
-              startTimeText && endTimeText
-                ? `${startTimeText} - ${endTimeText}`
-                : null,
+            timeRange: travelRange,
             distance: travelDistance,
             duration: this.formatDuration(travelDuration),
             note: "This may vary due to traffic conditions",
@@ -1168,19 +1277,18 @@ for (const row of vehicleKmRows) {
           if (allowBreakHours === 1) {
             // BREAK HOURS (Lunch break, waiting time, etc.)
             const toName = master?.hotspot_name ?? viaLocationName ?? previousStopName;
+            const breakRange = this.orderedTimeRange(startTimeText, endTimeText);
             
             segments.push({
               type: 'break' as const,
               location: toName,
               duration: this.formatDuration(travelDuration),
-              timeRange:
-                startTimeText && endTimeText
-                  ? `${startTimeText} - ${endTimeText}`
-                  : null,
+              timeRange: breakRange,
             });
           } else if (allowViaRoute === 1 && viaLocationName) {
             // VIA ROUTE (Travel via a location)
             const toName = viaLocationName;
+            const travelRange = this.orderedTimeRange(startTimeText, endTimeText);
 
             if (!Number.isNaN(distanceNum)) {
               totalDistanceKm += distanceNum;
@@ -1189,19 +1297,13 @@ for (const row of vehicleKmRows) {
             pushHotspotAnchorPlaceholder({
               from: previousStopName,
               to: toName,
-              timeRange:
-                startTimeText && endTimeText
-                  ? `${startTimeText} - ${endTimeText}`
-                  : null,
+              timeRange: travelRange,
             });
             segments.push({
               type: 'travel' as const,
               from: previousStopName,
               to: toName,
-              timeRange:
-                startTimeText && endTimeText
-                  ? `${startTimeText} - ${endTimeText}`
-                  : null,
+              timeRange: travelRange,
               distance: travelDistance,
               duration: this.formatDuration(travelDuration),
               note: 'This may vary due to traffic conditions',
@@ -1301,28 +1403,24 @@ for (const row of vehicleKmRows) {
                 type: 'travel',
                 from: fromName,
                 to: toName,
-                timeRange: `${startTimeText} - ${endTimeText}`,
+                timeRange: this.orderedTimeRange(startTimeText, endTimeText),
                 distance: travelDistance,
                 duration: this.formatDuration(travelDuration),
               });
             }
 
+            const travelRange = this.orderedTimeRange(startTimeText, endTimeText);
+
             pushHotspotAnchorPlaceholder({
               from: fromName,
               to: toName,
-              timeRange:
-                startTimeText && endTimeText
-                  ? `${startTimeText} - ${endTimeText}`
-                  : null,
+              timeRange: travelRange,
             });
             segments.push({
               type: "travel" as const,
               from: fromName,
               to: toName,
-              timeRange:
-                startTimeText && endTimeText
-                  ? `${startTimeText} - ${endTimeText}`
-                  : null,
+              timeRange: travelRange,
               distance: travelDistance,
               duration: this.formatDuration(travelDuration),
               note: "This may vary due to traffic conditions",
@@ -1747,10 +1845,7 @@ for (const row of vehicleKmRows) {
             type: 'travel' as const,
             from: previousStopName,
             to: toName,
-            timeRange:
-              startTimeText && endTimeText
-                ? `${startTimeText} - ${endTimeText}`
-                : null,
+            timeRange: this.orderedTimeRange(startTimeText, endTimeText),
             distance: travelDistance,
             duration: this.formatDuration(travelDuration),
             note: 'This may vary due to traffic conditions',
@@ -1996,6 +2091,9 @@ const dayDistance = this.formatKm(totalDistanceNum);
           segments.unshift(startSegment);
         }
       }
+
+      // Ensure timeline never moves backward when source rows contain overlaps/reversed ranges.
+      this.normalizeSegmentChronology(segments);
 
       if (proofQuoteEnabled) {
         console.log('[SegmentChronology][SORT_APPLIED][PROOF]', {
