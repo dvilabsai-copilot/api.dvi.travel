@@ -1517,10 +1517,8 @@ for (const row of vehicleKmRows) {
           });
 
           // Check if there's wait time due to opening hours
-          let visitTimeDisplay = 
-            startTimeText && endTimeText
-              ? `${startTimeText} - ${endTimeText}`
-              : null;
+          const orderedVisitRange = this.orderedTimeRange(startTimeText, endTimeText);
+          let visitTimeDisplay = orderedVisitRange;
 
           let timingValidationExecuted = false;
           let timingValidationPassed = false;
@@ -1535,15 +1533,24 @@ for (const row of vehicleKmRows) {
             const todayTimings = dayTimings.filter(t => t.hotspot_closed !== 1);
 
             if (dayTimings.length > 0 && todayTimings.length === 0) {
-              visitTimeDisplay = `${startTimeText} - ${endTimeText} (closed on this day)`;
+              visitTimeDisplay = orderedVisitRange
+                ? `${orderedVisitRange} (closed on this day)`
+                : null;
             }
 
             if (todayTimings.length > 0) {
               const isOpenAllTime = todayTimings.some(t => t.hotspot_open_all_time === 1);
               
               if (!isOpenAllTime) {
-                const arrivalMins = this.timeToMinutes(startTimeText);
-                const departureMins = this.timeToMinutes(endTimeText);
+                const visitStartText = orderedVisitRange
+                  ? String(orderedVisitRange).split(' - ')[0]?.trim()
+                  : startTimeText;
+                const visitEndText = orderedVisitRange
+                  ? String(orderedVisitRange).split(' - ')[1]?.trim()
+                  : endTimeText;
+
+                const arrivalMins = this.timeToMinutes(visitStartText);
+                const departureMins = this.timeToMinutes(visitEndText);
                 
                 // Check if visit fits in ANY window
                 const fitsInAnyWindow = todayTimings.some(t => {
@@ -1560,9 +1567,13 @@ for (const row of vehicleKmRows) {
                     .sort((a, b) => this.timeToMinutes(a) - this.timeToMinutes(b))[0];
 
                   if (nextOpening) {
-                    visitTimeDisplay = `${startTimeText} - ${endTimeText} (opens at ${nextOpening})`;
+                    visitTimeDisplay = orderedVisitRange
+                      ? `${orderedVisitRange} (opens at ${nextOpening})`
+                      : null;
                   } else {
-                    visitTimeDisplay = `${startTimeText} - ${endTimeText} (outside operating hours)`;
+                    visitTimeDisplay = orderedVisitRange
+                      ? `${orderedVisitRange} (outside operating hours)`
+                      : null;
                   }
                 }
                 timingValidationPassed = fitsInAnyWindow;
@@ -1997,8 +2008,40 @@ const dayDistance = this.formatKm(totalDistanceNum);
       };
 
       nonCtaSegments.sort((a: any, b: any) => {
-        const diff = getSegMinutes(a) - getSegMinutes(b);
+        const aStart = getSegMinutes(a);
+        const bStart = getSegMinutes(b);
+        const diff = aStart - bStart;
         if (diff !== 0) return diff;
+
+        // Same-minute tie-break for dirty overlap data:
+        // if travel starts from an attraction location at the exact same minute,
+        // show the attraction first, then departure travel.
+        if (a?.type === 'travel' && b?.type === 'attraction') {
+          const aFrom = normalizeName(a?.from);
+          const aTo = normalizeName(a?.to);
+          const bName = normalizeName(b?.name);
+
+          if (aFrom.length > 0 && bName.length > 0 && aFrom === bName) {
+            return 1;
+          }
+          if (aTo.length > 0 && bName.length > 0 && aTo === bName) {
+            return -1;
+          }
+        }
+
+        if (a?.type === 'attraction' && b?.type === 'travel') {
+          const bFrom = normalizeName(b?.from);
+          const bTo = normalizeName(b?.to);
+          const aName = normalizeName(a?.name);
+
+          if (bFrom.length > 0 && aName.length > 0 && bFrom === aName) {
+            return -1;
+          }
+          if (bTo.length > 0 && aName.length > 0 && bTo === aName) {
+            return 1;
+          }
+        }
+
         return (typeOrder[a.type] ?? 99) - (typeOrder[b.type] ?? 99);
       });
 

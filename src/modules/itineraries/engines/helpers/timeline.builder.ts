@@ -122,7 +122,7 @@ export class TimelineBuilder {
     routeId: number,
     routeDate: Date,
   ): Promise<ArrivalPolicyDecisionState> {
-    const markerDecision = await (tx as any).dvi_itinerary_plan_hotel_details?.findFirst({
+    const markerRows = await (tx as any).dvi_itinerary_plan_hotel_details?.findMany({
       where: {
         itinerary_plan_id: planId,
         itinerary_route_id: routeId,
@@ -131,27 +131,19 @@ export class TimelineBuilder {
         deleted: 0,
         status: 1,
       },
-      orderBy: {
-        itinerary_plan_hotel_details_ID: 'desc',
-      },
       select: {
         group_type: true,
+        itinerary_route_date: true,
       },
     });
 
-    // Source-of-truth: explicit decision marker rows created by updateRouteTimes.
-    // group_type=1 => confirmed previous-day billing, group_type=2 => declined.
-    if (markerDecision?.group_type === 1) {
+    // Source-of-truth: explicit marker rows created by updateRouteTimes() when user clicks YES.
+    // They are persisted as one row per recommendation group (group_type 1..4), so presence
+    // of any active marker row means previous-day billing is confirmed.
+    if (Array.isArray(markerRows) && markerRows.length > 0) {
       return {
         previousDayBillingDecisionProvided: true,
         previousDayBillingConfirmed: true,
-      };
-    }
-
-    if (markerDecision?.group_type === 2) {
-      return {
-        previousDayBillingDecisionProvided: true,
-        previousDayBillingConfirmed: false,
       };
     }
 
@@ -787,7 +779,7 @@ export class TimelineBuilder {
         : false;
 
       const decisionState =
-        isFirstRoute && isArrivalCityStayRoute
+        isFirstRoute
           ? await this.getArrivalPolicyDecisionStateForRoute(
               tx,
               planId,
@@ -800,7 +792,7 @@ export class TimelineBuilder {
             };
 
       const evaluatedArrivalPolicy =
-        isFirstRoute && isArrivalCityStayRoute && tripStartForPolicy
+        isFirstRoute && tripStartForPolicy
           ? evaluateArrivalHotelPolicy({
               isArrivalDay: arrivalDayForPolicy,
               arrivalMinutes: arrivalMinutesForPolicy,
@@ -829,7 +821,6 @@ export class TimelineBuilder {
 
       const suppressHotelInsertionUntilEndOfDay =
         isFirstRoute &&
-        isArrivalCityStayRoute &&
         (isEarlyArrivalDeclinedSameDayFlow ||
           isEarlyArrivalAwaitingDecisionSameDayFlow);
 
