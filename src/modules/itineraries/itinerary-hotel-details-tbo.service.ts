@@ -1304,6 +1304,51 @@ export class ItineraryHotelDetailsTboService {
 
     if (!newest || totalRows === 0) return true;
 
+    // Guard against partial cache corruption: every searchable route must have
+    // at least one cached row per expected group, otherwise force a rebuild.
+    const normalizedRouteIds = Array.from(
+      new Set(
+        (routeIds || [])
+          .map((id) => Number(id || 0))
+          .filter((id) => id > 0),
+      ),
+    );
+
+    if (normalizedRouteIds.length > 0) {
+      const expectedGroups =
+        groupType && Number(groupType) > 0 ? [Number(groupType)] : [1, 2, 3, 4];
+
+      const coverageRows = await this.prisma.dvi_itinerary_hotel_search_cache.groupBy({
+        by: ['route_id', 'group_type'],
+        where: {
+          quote_id: quoteId,
+          deleted: 0,
+          status: 1,
+          route_id: { in: normalizedRouteIds },
+          group_type: { in: expectedGroups },
+        },
+        _count: {
+          _all: true,
+        },
+      });
+
+      const coverageKeys = new Set(
+        coverageRows.map((row: any) => `${Number(row.route_id || 0)}-${Number(row.group_type || 0)}`),
+      );
+
+      for (const routeId of normalizedRouteIds) {
+        for (const expectedGroup of expectedGroups) {
+          const key = `${routeId}-${expectedGroup}`;
+          if (!coverageKeys.has(key)) {
+            this.logger.warn(
+              `Hotel cache incomplete for quote ${quoteId} (missing route=${routeId}, group=${expectedGroup}); forcing refresh.`,
+            );
+            return true;
+          }
+        }
+      }
+    }
+
     const ageMs = Date.now() - newest.synced_at.getTime();
     const isPlaceholderOnly = supplierRows === 0;
 
