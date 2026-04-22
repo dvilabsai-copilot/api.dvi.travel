@@ -10,12 +10,16 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev --name init",
     "seed": "ts-node prisma/seed.ts",
+    "seed:hotel-rateplans": "tsx scripts/sync-hotel-rate-plan-master.ts",
+    "backfill:hotel-rateplans": "tsx scripts/backfill-hotel-room-rate-plans.ts",
     "axisrooms:backfill-property-ids": "node backfill-axisrooms-property-ids.js",
     "seed:justa": "node scripts/import-justa-hotels.js",
     "seed:staah:test": "ts-node seed-staah-test-data.ts",
     "cert:tbo": "tsx verification-e2e/tbo-certification/run-tbo-certification.ts",
     "cert:staah": "node verification-e2e/staah-certification/run-staah-certification.js",
-    "verify:hotspot-parity": "tsx verification-e2e/hotspot-engine-parity/run-hotspot-engine-parity.ts"
+    "verify:hotspot-parity": "tsx verification-e2e/hotspot-engine-parity/run-hotspot-engine-parity.ts",
+    "verify:hotel-rateplans": "tsx scripts/verify-hotel-rate-plan-system.ts",
+    "verify:hotel-pricebook-range": "tsx scripts/verify-hotel-pricebook-range-view.ts"
   },
   "dependencies": {
     "@nestjs/axios": "^4.0.1",

@@ -23,6 +23,7 @@ import {
   RestrictionUpdateResponseDto,
 } from './dto/restriction-update.dto';
 import { AXISROOMS_MESSAGES } from './constants/axisrooms-messages';
+import { getCanonicalHotelRatePlanDefinition } from '../hotels/hotel-rate-plans';
 
 @Injectable()
 export class AxisRoomsService {
@@ -34,30 +35,204 @@ export class AxisRoomsService {
     return value?.trim();
   }
 
+  private monthName(date: Date): string {
+    return date.toLocaleString('en-US', { month: 'long' });
+  }
+
+  private monthCandidatesForDate(date: Date): string[] {
+    const monthNum = date.getMonth() + 1;
+    return [
+      this.monthName(date),
+      String(monthNum).padStart(2, '0'),
+      String(monthNum),
+    ];
+  }
+
+  private toFiniteNumber(value: any): number | undefined {
+    if (value === undefined || value === null) return undefined;
+    if (typeof value === 'string' && value.trim() === '') return undefined;
+    const n = Number(value);
+    return Number.isFinite(n) ? n : undefined;
+  }
+
+  private extractRate(occupancyRates: Record<string, any>, keys: string[]): number | undefined {
+    for (const k of keys) {
+      if (Object.prototype.hasOwnProperty.call(occupancyRates, k)) {
+        const n = this.toFiniteNumber(occupancyRates[k]);
+        if (n !== undefined) return n;
+      }
+    }
+    return undefined;
+  }
+
+  private splitByMonth(start: Date, end: Date): Array<{ year: string; month: string; days: number[] }> {
+    const from = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+    const to = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+    if (to < from) return [];
+
+    const map = new Map<string, { year: string; month: string; days: number[] }>();
+    const cursor = new Date(from);
+    while (cursor <= to) {
+      const year = String(cursor.getFullYear());
+      const month = this.monthName(cursor);
+      const key = `${year}-${month}`;
+      if (!map.has(key)) map.set(key, { year, month, days: [] });
+      map.get(key)!.days.push(cursor.getDate());
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    return Array.from(map.values());
+  }
+
+  private buildDayPatch(rate: number, days: number[]): Record<string, number> {
+    const patch: Record<string, number> = {};
+    for (const d of days) patch[`day_${d}`] = rate;
+    return patch;
+  }
+
+  private async upsertHotelPricebookRows(
+    hotelId: number,
+    roomId: number,
+    roomTypeId: number | null,
+    startDate: Date,
+    endDate: Date,
+    occupancyRates: Record<string, any>,
+  ): Promise<void> {
+    const single = this.extractRate(occupancyRates, ['SINGLE', 'single']);
+    const extraBed = this.extractRate(occupancyRates, ['EXTRABED', 'extraBed', 'EXTRA_BED']);
+
+    const childWithBed = this.extractRate(occupancyRates, [
+      'CHILD_WITH_BED',
+      'CHILDWITHBED',
+      'EXTRACHILD_WITH_BED',
+    ]);
+    const childWithoutBed = this.extractRate(occupancyRates, [
+      'CHILD_WITHOUT_BED',
+      'CHILDWITHOUTBED',
+      'EXTRACHILD_WITHOUT_BED',
+    ]);
+    const extraChild = this.extractRate(occupancyRates, ['EXTRACHILD', 'extraChild']);
+
+    const priceTypeRates: Array<{ priceType: number; value: number | undefined }> = [
+      { priceType: 0, value: single },
+      { priceType: 1, value: extraBed },
+      { priceType: 2, value: childWithBed ?? extraChild },
+      { priceType: 3, value: childWithoutBed ?? extraChild },
+    ].filter((x) => x.value !== undefined) as Array<{ priceType: number; value: number }>;
+
+    if (priceTypeRates.length === 0) return;
+
+    const buckets = this.splitByMonth(startDate, endDate);
+    for (const bucket of buckets) {
+      const bucketDate = new Date(Number(bucket.year), new Date(`${bucket.month} 1, ${bucket.year}`).getMonth(), 1);
+      const monthCandidates = this.monthCandidatesForDate(bucketDate);
+      const canonicalMonth = monthCandidates[0] || bucket.month;
+
+      for (const row of priceTypeRates) {
+        const whereClause: any = {
+          hotel_id: hotelId,
+          room_id: roomId,
+          price_type: row.priceType,
+          year: bucket.year,
+          month: { in: monthCandidates },
+          deleted: 0,
+        };
+        if (roomTypeId && Number.isFinite(roomTypeId)) {
+          whereClause.room_type_id = Number(roomTypeId);
+        }
+
+        const existing = await this.prisma.dvi_hotel_room_price_book.findFirst({
+          where: whereClause,
+          select: { hotel_price_book_id: true } as any,
+          orderBy: { hotel_price_book_id: 'desc' } as any,
+        });
+
+        const dayPatch = this.buildDayPatch(row.value, bucket.days);
+        if (existing) {
+          await this.prisma.dvi_hotel_room_price_book.update({
+            where: { hotel_price_book_id: (existing as any).hotel_price_book_id } as any,
+            data: dayPatch as any,
+          });
+        } else {
+          const createData: any = {
+            hotel_id: hotelId,
+            room_id: roomId,
+            room_type_id: roomTypeId ?? undefined,
+            price_type: row.priceType,
+            year: bucket.year,
+            month: canonicalMonth,
+            status: 1,
+            deleted: 0,
+            ...dayPatch,
+          };
+          await this.prisma.dvi_hotel_room_price_book.create({ data: createData });
+        }
+      }
+    }
+  }
+
   private async ensureRatePlanExists(
     propertyId: string,
     roomId: string,
     rateplanId: string,
+    details?: {
+      ratePlanName?: string;
+      occupancy?: string[];
+      commissionPerc?: string;
+      taxPerc?: string;
+      currency?: string;
+    },
   ): Promise<void> {
-    await this.prisma.axisrooms_rateplan.upsert({
+    const canonicalDefinition = getCanonicalHotelRatePlanDefinition(
+      rateplanId || details?.ratePlanName,
+    );
+    const occupancy = Array.isArray(details?.occupancy)
+      ? details?.occupancy.filter((item) => !!String(item || '').trim())
+      : [];
+
+    // Resolve hotel_id and room_id (integer) from propertyId and roomId (string)
+    const hotelRow = await this.prisma.dvi_hotel.findFirst({
+      where: { axisrooms_property_id: propertyId, deleted: { not: true } },
+      select: { hotel_id: true },
+    });
+    if (!hotelRow?.hotel_id) return;
+    const hid = Number(hotelRow.hotel_id);
+    const roomRow = await this.prisma.dvi_hotel_rooms.findFirst({
+      where: { hotel_id: hid, room_ref_code: roomId, deleted: 0 } as any,
+      select: { room_ID: true } as any,
+    });
+    if (!(roomRow as any)?.room_ID) return;
+    const rid = Number((roomRow as any).room_ID);
+
+    await this.prisma.dvi_hotel_room_rate_plan.upsert({
       where: {
-        axisrooms_property_id_room_id_rateplan_id: {
-          axisrooms_property_id: propertyId,
-          room_id: roomId,
+        hotel_id_room_id_rateplan_id: {
+          hotel_id: hid,
+          room_id: rid,
           rateplan_id: rateplanId,
         },
-      },
-      update: {},
+      } as any,
+      update: {
+        ...(details?.ratePlanName ? { rateplan_name: details.ratePlanName } : {}),
+        ...(occupancy.length ? { occupancy } : {}),
+        ...(details?.commissionPerc ? { commission_perc: details.commissionPerc } : {}),
+        ...(details?.taxPerc ? { tax_perc: details.taxPerc } : {}),
+        ...(details?.currency ? { currency: details.currency } : {}),
+        updatedon: new Date(),
+      } as any,
       create: {
-        axisrooms_property_id: propertyId,
-        room_id: roomId,
+        hotel_id: hid,
+        room_id: rid,
         rateplan_id: rateplanId,
-        rateplan_name: rateplanId,
-        occupancy: [],
-        commission_perc: '0.0',
-        tax_perc: '0.0',
-        currency: 'INR',
-      },
+        rateplan_name: details?.ratePlanName || canonicalDefinition?.name || rateplanId,
+        occupancy,
+        commission_perc: details?.commissionPerc || '0.0',
+        tax_perc: details?.taxPerc || '0.0',
+        currency: details?.currency || 'INR',
+        status: 1,
+        deleted: 0,
+        createdon: new Date(),
+        updatedon: new Date(),
+      } as any,
     });
   }
 
@@ -211,12 +386,25 @@ export class AxisRoomsService {
       };
     }
 
-    const ratePlans = await this.prisma.axisrooms_rateplan.findMany({
-      where: {
-        axisrooms_property_id: propertyId,
-        room_id: roomId,
-      },
+    // Resolve hotel_id and room_id (integer) from propertyId and roomId (string)
+    const hotelForInfo = await this.prisma.dvi_hotel.findFirst({
+      where: { axisrooms_property_id: propertyId, deleted: { not: true } },
+      select: { hotel_id: true },
     });
+    const hidForInfo = hotelForInfo?.hotel_id ? Number(hotelForInfo.hotel_id) : 0;
+    const roomRowForInfo = hidForInfo
+      ? await this.prisma.dvi_hotel_rooms.findFirst({
+          where: { hotel_id: hidForInfo, room_ref_code: roomId, deleted: 0 } as any,
+          select: { room_ID: true } as any,
+        })
+      : null;
+    const ridForInfo = (roomRowForInfo as any)?.room_ID ? Number((roomRowForInfo as any).room_ID) : 0;
+
+    const ratePlans = hidForInfo && ridForInfo
+      ? await this.prisma.dvi_hotel_room_rate_plan.findMany({
+          where: { hotel_id: hidForInfo, room_id: ridForInfo, deleted: 0, status: 1 } as any,
+        })
+      : [];
 
     if (!ratePlans || ratePlans.length === 0) {
       return {
@@ -226,18 +414,67 @@ export class AxisRoomsService {
       };
     }
 
-    const data: RatePlanDataDto[] = ratePlans.map((rp) => ({
-      rateplanId: rp.rateplan_id,
-      ratePlanName: rp.rateplan_name,
-      occupancy: Array.isArray(rp.occupancy) ? rp.occupancy as string[] : [],
-      validity: {
-        startDate: '2014-06-02', // Placeholder - adjust based on your business logic
-        endDate: '2099-12-31',
-      },
-      commissionPerc: rp.commission_perc || '0.0',
-      taxPerc: rp.tax_perc || '0.0',
-      currency: rp.currency || 'INR',
-    }));
+    const ratePlanIds = ratePlans.map((rp) => (rp as any).rateplan_id);
+    const rateRows = hidForInfo && ridForInfo
+      ? await this.prisma.dvi_hotel_occupancy_rate.findMany({
+          where: {
+            hotel_id: hidForInfo,
+            room_id: ridForInfo,
+            rateplan_id: { in: ratePlanIds },
+          },
+          select: {
+            rateplan_id: true,
+            start_date: true,
+            end_date: true,
+            occupancy_rates: true,
+          } as any,
+        })
+      : [];
+
+    const validityByRateplan = new Map<string, { startDate: string; endDate: string }>();
+    for (const row of rateRows) {
+      const startDate = row.start_date.toISOString().slice(0, 10);
+      const endDate = row.end_date.toISOString().slice(0, 10);
+      const current = validityByRateplan.get(row.rateplan_id);
+
+      if (!current) {
+        validityByRateplan.set(row.rateplan_id, { startDate, endDate });
+        continue;
+      }
+
+      validityByRateplan.set(row.rateplan_id, {
+        startDate: startDate < current.startDate ? startDate : current.startDate,
+        endDate: endDate > current.endDate ? endDate : current.endDate,
+      });
+    }
+
+    const occupancyByRateplan = new Map<string, Set<string>>();
+    for (const rate of rateRows) {
+      const existing = occupancyByRateplan.get(rate.rateplan_id) || new Set<string>();
+      const source = (rate as any)?.occupancy_rates && typeof (rate as any).occupancy_rates === 'object'
+        ? ((rate as any).occupancy_rates as Record<string, unknown>)
+        : {};
+      for (const key of Object.keys(source)) existing.add(key);
+      occupancyByRateplan.set(rate.rateplan_id, existing);
+    }
+
+    const data: RatePlanDataDto[] = ratePlans.map((rp: any) => {
+      const occupancyFromMaster = Array.isArray(rp.occupancy) ? (rp.occupancy as string[]) : [];
+      const occupancyFromRates = Array.from(occupancyByRateplan.get(rp.rateplan_id) || new Set<string>());
+      const validity = validityByRateplan.get(rp.rateplan_id);
+      return {
+        rateplanId: rp.rateplan_id,
+        ratePlanName: rp.rateplan_name,
+        occupancy: Array.from(new Set<string>([...occupancyFromMaster, ...occupancyFromRates])),
+        validity: {
+          startDate: validity?.startDate || '1970-01-01',
+          endDate: validity?.endDate || '2099-12-31',
+        },
+        commissionPerc: rp.commission_perc || '0.0',
+        taxPerc: rp.tax_perc || '0.0',
+        currency: rp.currency || 'INR',
+      };
+    });
 
     return {
       message: AXISROOMS_MESSAGES.RATE_PLAN_INFO_SUCCESS,
@@ -248,6 +485,7 @@ export class AxisRoomsService {
 
   /**
    * POST inventoryUpdate - Stores or updates inventory
+   * Dual-writes: axisrooms_inventory (audit log) + dvi_hotel_room_availability (native table)
    */
   async updateInventory(
     dto: InventoryUpdateRequestDto,
@@ -267,6 +505,7 @@ export class AxisRoomsService {
     }
 
     try {
+      // --- Write 1: axisrooms_inventory (audit log — unchanged) ---
       for (const inv of inventory) {
         await this.prisma.axisrooms_inventory.upsert({
           where: {
@@ -289,6 +528,49 @@ export class AxisRoomsService {
             free: inv.free,
           },
         });
+      }
+
+      // --- Write 2: dvi_hotel_room_availability (universal native table) ---
+      // Resolve string IDs → integer IDs (same pattern as ensureRatePlanExists)
+      const hotelRow = await this.prisma.dvi_hotel.findFirst({
+        where: { axisrooms_property_id: propertyId, deleted: { not: true } },
+        select: { hotel_id: true },
+      });
+
+      if (hotelRow?.hotel_id) {
+        const hid = Number(hotelRow.hotel_id);
+        const roomRow = await this.prisma.dvi_hotel_rooms.findFirst({
+          where: { hotel_id: hid, room_ref_code: roomId, deleted: 0 } as any,
+          select: { room_ID: true } as any,
+        });
+
+        if ((roomRow as any)?.room_ID) {
+          const rid = Number((roomRow as any).room_ID);
+          for (const inv of inventory) {
+            await (this.prisma as any).dvi_hotel_room_availability.upsert({
+              where: {
+                hotel_id_room_id_start_date_end_date: {
+                  hotel_id: hid,
+                  room_id: rid,
+                  start_date: new Date(inv.startDate),
+                  end_date: new Date(inv.endDate),
+                },
+              },
+              update: { free: inv.free, received_at: new Date() },
+              create: {
+                hotel_id: hid,
+                room_id: rid,
+                start_date: new Date(inv.startDate),
+                end_date: new Date(inv.endDate),
+                free: inv.free,
+              },
+            });
+          }
+        } else {
+          this.logger.warn(`AxisRooms inventoryUpdate: room_ref_code "${roomId}" not found for hotel_id ${hid} — skipping native write`);
+        }
+      } else {
+        this.logger.warn(`AxisRooms inventoryUpdate: propertyId "${propertyId}" not mapped to any hotel — skipping native write`);
       }
 
       return {
@@ -325,35 +607,97 @@ export class AxisRoomsService {
       };
     }
 
+    const hotel = await this.prisma.dvi_hotel.findFirst({
+      where: {
+        axisrooms_property_id: propertyId,
+        axisrooms_enabled: 1,
+        deleted: { not: true },
+      },
+      select: { hotel_id: true },
+    });
+
+    const mappedRoom = await this.prisma.dvi_hotel_rooms.findFirst({
+      where: {
+        hotel_id: Number(hotel?.hotel_id || 0),
+        room_ref_code: roomId,
+        deleted: 0,
+        status: 1,
+      },
+      select: { room_ID: true, room_type_id: true },
+    });
+
     try {
-      await this.ensureRatePlanExists(propertyId, roomId, rateplanId);
-
       for (const rateEntry of rate) {
-        const { startDate, endDate, ...occupancyRates } = rateEntry;
+        const { startDate, endDate, ...incomingOccupancyRates } = rateEntry;
+        const parsedStart = new Date(startDate);
+        const parsedEnd = new Date(endDate);
 
-        await this.prisma.axisrooms_rate.upsert({
-          where: {
-            axisrooms_property_id_room_id_rateplan_id_start_date_end_date: {
-              axisrooms_property_id: propertyId,
-              room_id: roomId,
-              rateplan_id: rateplanId,
-              start_date: new Date(startDate),
-              end_date: new Date(endDate),
-            },
-          },
-          update: {
-            occupancy_rates: occupancyRates,
-            received_at: new Date(),
-          },
-          create: {
-            axisrooms_property_id: propertyId,
-            room_id: roomId,
-            rateplan_id: rateplanId,
-            start_date: new Date(startDate),
-            end_date: new Date(endDate),
-            occupancy_rates: occupancyRates,
-          },
+        const occupancyRates: Record<string, number> = {};
+        for (const [rawKey, rawValue] of Object.entries(incomingOccupancyRates || {})) {
+          const key = String(rawKey || '').trim();
+          if (!key) continue;
+          const value = this.toFiniteNumber(rawValue);
+          if (value === undefined) continue;
+          occupancyRates[key] = value;
+        }
+
+        const occupancyKeys = Object.keys(occupancyRates);
+        if (occupancyKeys.length === 0) {
+          continue;
+        }
+
+        await this.ensureRatePlanExists(propertyId, roomId, rateplanId, {
+          occupancy: occupancyKeys,
         });
+
+        if (hotel?.hotel_id && mappedRoom?.room_ID) {
+          const hid2 = Number(hotel.hotel_id);
+          const rid2 = Number((mappedRoom as any).room_ID);
+          const existingOccRate = await this.prisma.dvi_hotel_occupancy_rate.findFirst({
+            where: {
+              hotel_id: hid2,
+              room_id: rid2,
+              rateplan_id: rateplanId,
+              start_date: parsedStart,
+              end_date: parsedEnd,
+            } as any,
+            select: { id: true, occupancy_rates: true } as any,
+          });
+          if (existingOccRate) {
+            const merged = {
+              ...(typeof (existingOccRate as any).occupancy_rates === 'object' && (existingOccRate as any).occupancy_rates !== null
+                ? (existingOccRate as any).occupancy_rates as Record<string, number>
+                : {}),
+              ...occupancyRates,
+            };
+            await this.prisma.dvi_hotel_occupancy_rate.update({
+              where: { id: (existingOccRate as any).id } as any,
+              data: { occupancy_rates: merged, received_at: new Date() } as any,
+            });
+          } else {
+            await this.prisma.dvi_hotel_occupancy_rate.create({
+              data: {
+                hotel_id: hid2,
+                room_id: rid2,
+                rateplan_id: rateplanId,
+                start_date: parsedStart,
+                end_date: parsedEnd,
+                occupancy_rates: occupancyRates,
+              } as any,
+            });
+          }
+        }
+
+        if (hotel?.hotel_id && mappedRoom?.room_ID) {
+          await this.upsertHotelPricebookRows(
+            Number(hotel.hotel_id),
+            Number(mappedRoom.room_ID),
+            mappedRoom.room_type_id ? Number(mappedRoom.room_type_id) : null,
+            parsedStart,
+            parsedEnd,
+            occupancyRates,
+          );
+        }
       }
 
       return {
