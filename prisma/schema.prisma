@@ -1,4 +1,56 @@
-generator client {
+model dvi_hotel_rate_plan_master {
+  hotel_rate_plan_master_id Int       @id @default(autoincrement())
+  rate_plan_code            String    @db.VarChar(20)
+  default_rateplan_id       String    @db.VarChar(64)
+  rate_plan_name            String    @db.VarChar(100)
+  description               String?   @db.VarChar(255)
+  includes_breakfast        Int       @default(0) @db.TinyInt
+  includes_lunch            Int       @default(0) @db.TinyInt
+  includes_dinner           Int       @default(0) @db.TinyInt
+  sort_order                Int       @default(0)
+  createdby                 Int       @default(0)
+  createdon                 DateTime? @db.DateTime(0)
+  updatedon                 DateTime? @db.DateTime(0)
+  status                    Int       @default(1) @db.TinyInt
+  deleted                   Int       @default(0) @db.TinyInt
+
+  @@unique([rate_plan_code], map: "uniq_hotel_rate_plan_master_code")
+  @@unique([default_rateplan_id], map: "uniq_hotel_rate_plan_master_default_id")
+  @@index([status], map: "idx_hotel_rate_plan_master_status")
+  @@index([deleted], map: "idx_hotel_rate_plan_master_deleted")
+  @@index([sort_order], map: "idx_hotel_rate_plan_master_sort_order")
+}
+
+model dvi_hotel_room_rate_plan {
+  hotel_room_rate_plan_id Int       @id @default(autoincrement())
+  hotel_id                Int       @default(0)
+  room_id                 Int       @default(0)
+  room_type_id            Int       @default(0)
+  axisrooms_room_id       String?   @db.VarChar(100)
+  rate_plan_code          String?   @db.VarChar(20)
+  rateplan_id             String    @db.VarChar(64)
+  rateplan_name           String    @db.VarChar(255)
+  meal_plan_description   String?   @db.VarChar(255)
+  commission_perc         String?   @db.VarChar(20)
+  tax_perc                String?   @db.VarChar(20)
+  currency                String?   @db.VarChar(10)
+  occupancy               Json?
+  createdby               Int       @default(0)
+  createdon               DateTime? @db.DateTime(0)
+  updatedon               DateTime? @db.DateTime(0)
+  status                  Int       @default(1) @db.TinyInt
+  deleted                 Int       @default(0) @db.TinyInt
+
+  @@unique([hotel_id, room_id, rateplan_id], map: "uniq_hotel_room_rate_plan")
+  @@index([hotel_id], map: "idx_hotel_room_rate_plan_hotel_id")
+  @@index([room_id], map: "idx_hotel_room_rate_plan_room_id")
+  @@index([room_type_id], map: "idx_hotel_room_rate_plan_room_type_id")
+  @@index([axisrooms_room_id], map: "idx_hotel_room_rate_plan_axisrooms_room_id")
+  @@index([rate_plan_code], map: "idx_hotel_room_rate_plan_code")
+  @@index([rateplan_id], map: "idx_hotel_room_rate_plan_rateplan_id")
+  @@index([status], map: "idx_hotel_room_rate_plan_status")
+  @@index([deleted], map: "idx_hotel_room_rate_plan_deleted")
+}generator client {
   provider = "prisma-client-js"
 }
 
@@ -5773,25 +5825,44 @@ model axisrooms_room {
 
 /// AxisRooms Rate Plan Master
 /// Stores rate plans (ratePlanInfo) for each room
-model axisrooms_rateplan {
-  id                      Int      @id @default(autoincrement())
-  axisrooms_property_id   String   @db.VarChar(64)
-  room_id                 String   @db.VarChar(64)
-  rateplan_id             String   @db.VarChar(64)
-  rateplan_name           String   @db.VarChar(255)
-  occupancy               Json
-  commission_perc         String?  @db.VarChar(20)
-  tax_perc                String?  @db.VarChar(20)
-  currency                String?  @db.VarChar(10)
-  created_at              DateTime @default(now()) @db.DateTime(0)
+/// DVI Hotel Occupancy Rate
+/// Native replacement for axisrooms_rate — keyed by hotel_id/room_id instead of external property/room IDs
+model dvi_hotel_occupancy_rate {
+  id              Int      @id @default(autoincrement())
+  hotel_id        Int
+  room_id         Int
+  rateplan_id     String   @db.VarChar(64)
+  start_date      DateTime @db.Date
+  end_date        DateTime @db.Date
+  occupancy_rates Json
+  received_at     DateTime @default(now()) @db.DateTime(0)
 
-  @@unique([axisrooms_property_id, room_id, rateplan_id], map: "uniq_axisrooms_rateplan")
-  @@index([axisrooms_property_id], map: "idx_axisrooms_rateplan_property")
-  @@index([room_id], map: "idx_axisrooms_rateplan_room")
+  @@unique([hotel_id, room_id, rateplan_id, start_date, end_date], map: "uniq_dvi_hotel_occupancy_rate")
+  @@index([hotel_id], map: "idx_dvi_hotel_occupancy_rate_hotel")
+  @@index([room_id], map: "idx_dvi_hotel_occupancy_rate_room")
+  @@index([rateplan_id], map: "idx_dvi_hotel_occupancy_rate_rateplan")
+  @@index([start_date], map: "idx_dvi_hotel_occupancy_rate_start")
 }
 
 /// AxisRooms Inventory Updates
 /// Stores inventory pushed from AxisRooms
+/// DVI Hotel Room Availability
+/// Native replacement for axisrooms_inventory — keyed by hotel_id/room_id integers
+model dvi_hotel_room_availability {
+  id          Int      @id @default(autoincrement())
+  hotel_id    Int
+  room_id     Int
+  start_date  DateTime @db.Date
+  end_date    DateTime @db.Date
+  free        Int
+  received_at DateTime @default(now()) @db.DateTime(0)
+
+  @@unique([hotel_id, room_id, start_date, end_date], map: "uniq_dvi_hotel_room_availability")
+  @@index([hotel_id], map: "idx_dvi_hotel_room_avail_hotel")
+  @@index([room_id], map: "idx_dvi_hotel_room_avail_room")
+  @@index([start_date], map: "idx_dvi_hotel_room_avail_start")
+}
+
 model axisrooms_inventory {
   id                      Int      @id @default(autoincrement())
   axisrooms_property_id   String   @db.VarChar(64)
@@ -5805,25 +5876,6 @@ model axisrooms_inventory {
   @@index([axisrooms_property_id], map: "idx_axisrooms_inventory_property")
   @@index([room_id], map: "idx_axisrooms_inventory_room")
   @@index([start_date], map: "idx_axisrooms_inventory_start")
-}
-
-/// AxisRooms Rate Updates
-/// Stores rates pushed from AxisRooms
-model axisrooms_rate {
-  id                      Int      @id @default(autoincrement())
-  axisrooms_property_id   String   @db.VarChar(64)
-  room_id                 String   @db.VarChar(64)
-  rateplan_id             String   @db.VarChar(64)
-  start_date              DateTime @db.Date
-  end_date                DateTime @db.Date
-  occupancy_rates         Json
-  received_at             DateTime @default(now()) @db.DateTime(0)
-
-  @@unique([axisrooms_property_id, room_id, rateplan_id, start_date, end_date], map: "uniq_axisrooms_rate")
-  @@index([axisrooms_property_id], map: "idx_axisrooms_rate_property")
-  @@index([room_id], map: "idx_axisrooms_rate_room")
-  @@index([rateplan_id], map: "idx_axisrooms_rate_rateplan")
-  @@index([start_date], map: "idx_axisrooms_rate_start")
 }
 
 /// AxisRooms Restriction Updates

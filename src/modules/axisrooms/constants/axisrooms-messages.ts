@@ -6,6 +6,7 @@ export const AXISROOMS_MESSAGES = {
   RESTRICTION_UPDATE_SUCCESS: 'Restrictions updated successfully.',
 
   INVALID_PROPERTY_ID: 'Invalid property ID.',
+  INVALID_RATEPLAN_ID: 'Invalid rate plan ID. Use ratePlanInfo response values (12/13/14/15).',
   NO_PRODUCTS_FOUND: 'No products found for the given property ID.',
   NO_RATEPLANS_FOUND: 'No rate plans found for the given property ID and room ID.',
   UNAUTHORIZED: 'Unauthorized access. Invalid or missing API key.',

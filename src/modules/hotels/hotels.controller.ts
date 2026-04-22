@@ -23,6 +23,7 @@ import {
   IsDateString,
   IsInt,
   IsNumber,
+  IsObject,
   IsOptional,
   IsString,
   ValidateNested,
@@ -116,11 +117,31 @@ class BulkRoomPricebookItemDto {
 
   @IsOptional()
   @IsString()
+  ratePlanCode?: string;
+
+  @IsOptional()
+  @IsString()
   rateplanId?: string;
 
   @IsOptional()
   @IsString()
   ratePlanName?: string;
+
+  @IsOptional()
+  @IsObject()
+  occupancyRates?: Record<string, number | string>;
+
+  @IsOptional()
+  @IsString()
+  commissionPerc?: string;
+
+  @IsOptional()
+  @IsString()
+  taxPerc?: string;
+
+  @IsOptional()
+  @IsString()
+  currency?: string;
 }
 
 class BulkRoomPricebookDto {
@@ -216,6 +237,11 @@ export class HotelsController {
   @Get('room-types')
   roomTypes() {
     return this.hotels.roomTypes();
+  }
+
+  @Get('rateplans')
+  ratePlans() {
+    return this.hotels.getRatePlans();
   }
 
   // NEW: simple meal types meta (1=B, 2=L, 3=D)
@@ -506,12 +532,94 @@ export class HotelsController {
     });
   }
 
+  @Get(':id/amenities-pricebook/range-view')
+  getAmenitiesPricebookRangeView(
+    @Param('id', ParseIntPipe) id: number,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
+    if (!startDate || !endDate) {
+      throw new BadRequestException('startDate and endDate are required. Use YYYY-MM-DD.');
+    }
+
+    return this.hotels.getAmenitiesPricebookRangeView(
+      id,
+      this.resolveOnDate(startDate),
+      this.resolveOnDate(endDate),
+    );
+  }
+
   // =============================================================================
   // Step 4: Price Book (Rate Plans)
   // =============================================================================
   @Get(':id/pricebook')
   getPricebook(@Param('id', ParseIntPipe) id: number) {
     return this.hotels.getPricebook(id);
+  }
+
+  @Get(':id/pricebook/range-view')
+  getPricebookRangeView(
+    @Param('id', ParseIntPipe) id: number,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('roomId') roomId?: string,
+    @Query('rateplanId') rateplanId?: string,
+  ) {
+    if (!startDate || !endDate) {
+      throw new BadRequestException('startDate and endDate are required. Use YYYY-MM-DD.');
+    }
+
+    return this.hotels.getPricebookRangeView(
+      id,
+      this.resolveOnDate(startDate),
+      this.resolveOnDate(endDate),
+      {
+        roomId: roomId ? Number(roomId) : undefined,
+        rateplanId,
+      },
+    );
+  }
+
+  @Get(':id/pricebook/current-day')
+  getCurrentDayPricebook(
+    @Param('id', ParseIntPipe) id: number,
+    @Query('date') date?: string,
+    @Query('roomId') roomId?: string,
+    @Query('rateplanId') rateplanId?: string,
+  ) {
+    return this.hotels.getCurrentDayPricebook(id, this.resolveOnDate(date), {
+      roomId: roomId ? Number(roomId) : undefined,
+      rateplanId,
+    });
+  }
+
+  @Get(':id/pricebook/current-day-view')
+  getCurrentDayPricebookView(
+    @Param('id', ParseIntPipe) id: number,
+    @Query('date') date?: string,
+    @Query('roomId') roomId?: string,
+    @Query('rateplanId') rateplanId?: string,
+  ) {
+    return this.hotels.getCurrentDayPricebookView(id, this.resolveOnDate(date), {
+      roomId: roomId ? Number(roomId) : undefined,
+      rateplanId,
+    });
+  }
+
+  private resolveOnDate(date?: string): Date {
+    if (!date) return new Date();
+
+    const ymd = /^\d{4}-\d{2}-\d{2}$/;
+    if (ymd.test(date)) {
+      const [y, m, d] = date.split('-').map(Number);
+      const parsed = new Date(y, m - 1, d);
+      if (!Number.isNaN(parsed.getTime())) return parsed;
+    }
+
+    const parsed = new Date(date);
+    if (!Number.isNaN(parsed.getTime())) return parsed;
+
+    throw new BadRequestException('Invalid date query. Use YYYY-MM-DD.');
   }
 
   @Get(':id/price-book')
@@ -538,6 +646,45 @@ export class HotelsController {
     return this.hotels.bulkUpsertRoomPricebook(id, dto);
   }
 
+  @Get(':id/rooms/:roomId/rateplans')
+  roomRatePlans(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('roomId', ParseIntPipe) roomId: number,
+  ) {
+    return this.hotels.getRoomRatePlans(id, roomId);
+  }
+
+  // POST /api/v1/hotels/:id/rooms/:roomId/availability
+  // Body: { items: [{ startDate, endDate, freeRooms }] }
+  @Post(':id/rooms/:roomId/availability')
+  upsertRoomAvailability(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('roomId', ParseIntPipe) roomId: number,
+    @Body() body: any,
+  ) {
+    const items = Array.isArray(body?.items) ? body.items : Array.isArray(body) ? body : [];
+    return this.hotels.upsertRoomAvailability(id, roomId, items);
+  }
+
+  // GET /api/v1/hotels/:id/rooms/:roomId/availability/range-view?startDate=&endDate=
+  @Get(':id/rooms/:roomId/availability/range-view')
+  getRoomAvailabilityRangeView(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('roomId', ParseIntPipe) roomId: number,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
+    if (!startDate || !endDate) {
+      throw new BadRequestException('startDate and endDate are required. Use YYYY-MM-DD.');
+    }
+    return this.hotels.getRoomAvailabilityRangeView(
+      id,
+      roomId,
+      this.resolveOnDate(startDate),
+      this.resolveOnDate(endDate),
+    );
+  }
+
   // =============================================================================
   // Step 4A: Meal Price Book
   // =============================================================================
@@ -549,6 +696,23 @@ export class HotelsController {
     @Req() _req: any,
   ) {
     return this.hotels.upsertMealPricebook(hotelId, dto);
+  }
+
+  @Get(':hotelId/meal-pricebook/range-view')
+  getMealPriceBookRangeView(
+    @Param('hotelId', ParseIntPipe) hotelId: number,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
+    if (!startDate || !endDate) {
+      throw new BadRequestException('startDate and endDate are required. Use YYYY-MM-DD.');
+    }
+
+    return this.hotels.getMealPricebookRangeView(
+      hotelId,
+      this.resolveOnDate(startDate),
+      this.resolveOnDate(endDate),
+    );
   }
 
   @Post('meal-pricebook/:hotelId')
