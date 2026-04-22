@@ -477,10 +477,29 @@ export class AxisRoomsService {
       } as any,
     });
 
+    const toDateOnly = (value: unknown): string | null => {
+      if (!value) {
+        return null;
+      }
+
+      if (value instanceof Date) {
+        return value.toISOString().slice(0, 10);
+      }
+
+      if (typeof value === 'string') {
+        return value.slice(0, 10);
+      }
+
+      return null;
+    };
+
     const validityByRateplan = new Map<string, { startDate: string; endDate: string }>();
     for (const row of rateRows) {
-      const startDate = row.start_date.toISOString().slice(0, 10);
-      const endDate = row.end_date.toISOString().slice(0, 10);
+      const startDate = toDateOnly(row.start_date);
+      const endDate = toDateOnly(row.end_date);
+      if (!startDate || !endDate) {
+        continue;
+      }
       const current = validityByRateplan.get(row.rateplan_id);
 
       if (!current) {
