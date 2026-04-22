@@ -23,11 +23,34 @@ import {
   RestrictionUpdateResponseDto,
 } from './dto/restriction-update.dto';
 import { AXISROOMS_MESSAGES } from './constants/axisrooms-messages';
-import { getCanonicalHotelRatePlanDefinition } from '../hotels/hotel-rate-plans';
+import {
+  CANONICAL_HOTEL_RATE_PLANS,
+  getCanonicalHotelRatePlanDefinition,
+} from '../hotels/hotel-rate-plans';
 
 @Injectable()
 export class AxisRoomsService {
   private readonly logger = new Logger(AxisRoomsService.name);
+  private readonly axisroomsRatePlanOccupancy = [
+    'SINGLE',
+    'DOUBLE',
+    'TRIPLE',
+    'QUAD',
+    'PENTA',
+    'HEXA',
+    'HEPTA',
+    'OCTA',
+    'NONA',
+    'DECA',
+    'EXTRABED',
+    'EXTRAADULT',
+    'EXTRACHILD',
+    'EXTRAADULT2',
+    'EXTRACHILD2',
+    'EXTRAADULT3',
+    'EXTRACHILD3',
+    'EXTRAINFANT',
+  ] as const;
 
   constructor(private prisma: PrismaService) {}
 
@@ -87,6 +110,17 @@ export class AxisRoomsService {
     const patch: Record<string, number> = {};
     for (const d of days) patch[`day_${d}`] = rate;
     return patch;
+  }
+
+  private resolveExternalRatePlanDefinition(rateplanId: string) {
+    const raw = String(rateplanId || '').trim();
+    if (!raw) return null;
+    return (
+      CANONICAL_HOTEL_RATE_PLANS.find((definition) => {
+        const externalId = String(definition.externalRateplanId || '').trim();
+        return !!externalId && (raw === externalId || raw.startsWith(externalId));
+      }) || null
+    );
   }
 
   private async upsertHotelPricebookRows(
@@ -400,13 +434,7 @@ export class AxisRoomsService {
       : null;
     const ridForInfo = (roomRowForInfo as any)?.room_ID ? Number((roomRowForInfo as any).room_ID) : 0;
 
-    const ratePlans = hidForInfo && ridForInfo
-      ? await this.prisma.dvi_hotel_room_rate_plan.findMany({
-          where: { hotel_id: hidForInfo, room_id: ridForInfo, deleted: 0, status: 1 } as any,
-        })
-      : [];
-
-    if (!ratePlans || ratePlans.length === 0) {
+    if (!hidForInfo || !ridForInfo) {
       return {
         message: AXISROOMS_MESSAGES.NO_RATEPLANS_FOUND,
         status: 'failure',
@@ -414,22 +442,40 @@ export class AxisRoomsService {
       };
     }
 
-    const ratePlanIds = ratePlans.map((rp) => (rp as any).rateplan_id);
-    const rateRows = hidForInfo && ridForInfo
-      ? await this.prisma.dvi_hotel_occupancy_rate.findMany({
-          where: {
-            hotel_id: hidForInfo,
-            room_id: ridForInfo,
-            rateplan_id: { in: ratePlanIds },
-          },
-          select: {
-            rateplan_id: true,
-            start_date: true,
-            end_date: true,
-            occupancy_rates: true,
-          } as any,
-        })
-      : [];
+    const ratePlans = await this.prisma.dvi_hotel_room_rate_plan.findMany({
+      where: { hotel_id: hidForInfo, room_id: ridForInfo, deleted: 0, status: 1 } as any,
+    });
+
+    const selectedCanonicalPlans = CANONICAL_HOTEL_RATE_PLANS.map((definition) => {
+      const matched = ratePlans.find((rp: any) => {
+        const inferred = getCanonicalHotelRatePlanDefinition(rp.rateplan_id)
+          || getCanonicalHotelRatePlanDefinition(rp.rateplan_name);
+        return inferred?.code === definition.code;
+      });
+
+      return {
+        definition,
+        row: matched || null,
+      };
+    });
+
+    const ratePlanIds = selectedCanonicalPlans
+      .map((item) => String(item.row?.rateplan_id || item.definition.defaultRateplanId))
+      .filter((value, index, arr) => arr.indexOf(value) === index);
+
+    const rateRows = await this.prisma.dvi_hotel_occupancy_rate.findMany({
+      where: {
+        hotel_id: hidForInfo,
+        room_id: ridForInfo,
+        rateplan_id: { in: ratePlanIds },
+      },
+      select: {
+        rateplan_id: true,
+        start_date: true,
+        end_date: true,
+        occupancy_rates: true,
+      } as any,
+    });
 
     const validityByRateplan = new Map<string, { startDate: string; endDate: string }>();
     for (const row of rateRows) {
@@ -448,31 +494,23 @@ export class AxisRoomsService {
       });
     }
 
-    const occupancyByRateplan = new Map<string, Set<string>>();
-    for (const rate of rateRows) {
-      const existing = occupancyByRateplan.get(rate.rateplan_id) || new Set<string>();
-      const source = (rate as any)?.occupancy_rates && typeof (rate as any).occupancy_rates === 'object'
-        ? ((rate as any).occupancy_rates as Record<string, unknown>)
-        : {};
-      for (const key of Object.keys(source)) existing.add(key);
-      occupancyByRateplan.set(rate.rateplan_id, existing);
-    }
+    const year = new Date().getFullYear();
+    const fullYearValidity = {
+      startDate: `${year}-01-01`,
+      endDate: `${year}-12-31`,
+    };
 
-    const data: RatePlanDataDto[] = ratePlans.map((rp: any) => {
-      const occupancyFromMaster = Array.isArray(rp.occupancy) ? (rp.occupancy as string[]) : [];
-      const occupancyFromRates = Array.from(occupancyByRateplan.get(rp.rateplan_id) || new Set<string>());
-      const validity = validityByRateplan.get(rp.rateplan_id);
+    const data: RatePlanDataDto[] = selectedCanonicalPlans.map(({ definition, row }) => {
+      const resolvedRateplanId = String(definition.externalRateplanId || definition.defaultRateplanId);
+
       return {
-        rateplanId: rp.rateplan_id,
-        ratePlanName: rp.rateplan_name,
-        occupancy: Array.from(new Set<string>([...occupancyFromMaster, ...occupancyFromRates])),
-        validity: {
-          startDate: validity?.startDate || '1970-01-01',
-          endDate: validity?.endDate || '2099-12-31',
-        },
-        commissionPerc: rp.commission_perc || '0.0',
-        taxPerc: rp.tax_perc || '0.0',
-        currency: rp.currency || 'INR',
+        rateplanId: resolvedRateplanId,
+        ratePlanName: definition.code,
+        occupancy: [...this.axisroomsRatePlanOccupancy],
+        validity: fullYearValidity,
+        commissionPerc: String(row?.commission_perc || '0.0'),
+        taxPerc: String(row?.tax_perc || '0.0'),
+        currency: 'INR',
       };
     });
 
@@ -595,6 +633,14 @@ export class AxisRoomsService {
     const propertyId = this.normalizeId(dto.data.propertyId);
     const roomId = this.normalizeId(dto.data.roomId);
     const rateplanId = this.normalizeId(dto.data.rateplanId);
+    const canonicalRatePlanDefinition = this.resolveExternalRatePlanDefinition(rateplanId);
+    if (!canonicalRatePlanDefinition) {
+      return {
+        message: AXISROOMS_MESSAGES.INVALID_RATEPLAN_ID,
+        status: 'failure',
+      };
+    }
+    const internalRateplanId = canonicalRatePlanDefinition?.defaultRateplanId || rateplanId;
     const { rate } = dto.data;
 
     await this.logInbound('rateUpdate', propertyId, roomId, rateplanId, dto);
@@ -646,7 +692,8 @@ export class AxisRoomsService {
           continue;
         }
 
-        await this.ensureRatePlanExists(propertyId, roomId, rateplanId, {
+        await this.ensureRatePlanExists(propertyId, roomId, internalRateplanId, {
+          ratePlanName: canonicalRatePlanDefinition?.code || undefined,
           occupancy: occupancyKeys,
         });
 
@@ -657,7 +704,7 @@ export class AxisRoomsService {
             where: {
               hotel_id: hid2,
               room_id: rid2,
-              rateplan_id: rateplanId,
+              rateplan_id: internalRateplanId,
               start_date: parsedStart,
               end_date: parsedEnd,
             } as any,
@@ -679,7 +726,7 @@ export class AxisRoomsService {
               data: {
                 hotel_id: hid2,
                 room_id: rid2,
-                rateplan_id: rateplanId,
+                rateplan_id: internalRateplanId,
                 start_date: parsedStart,
                 end_date: parsedEnd,
                 occupancy_rates: occupancyRates,
@@ -740,10 +787,20 @@ export class AxisRoomsService {
 
           for (const ratePlanDetail of ratePlanDetails) {
             const ratePlanId = this.normalizeId(ratePlanDetail.ratePlanId);
+            const canonicalRatePlanDefinition = this.resolveExternalRatePlanDefinition(ratePlanId);
+            if (!canonicalRatePlanDefinition) {
+              return {
+                message: AXISROOMS_MESSAGES.INVALID_RATEPLAN_ID,
+                status: 'failure',
+              };
+            }
+            const internalRatePlanId = canonicalRatePlanDefinition?.defaultRateplanId || ratePlanId;
             const { restrictions } = ratePlanDetail;
             const { periods, type, value } = restrictions;
 
-            await this.ensureRatePlanExists(propertyId, roomId, ratePlanId);
+            await this.ensureRatePlanExists(propertyId, roomId, internalRatePlanId, {
+              ratePlanName: canonicalRatePlanDefinition?.code || undefined,
+            });
 
             // Insert one row per period
             for (const period of periods) {

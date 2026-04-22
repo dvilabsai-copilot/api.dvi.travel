@@ -1384,36 +1384,6 @@ export class HotelsService {
       seenRateplanIds.add(defaultRateplanId);
     }
 
-    const extraPlans = [...(savedPlans as any[])];
-    for (const plan of extraPlans) {
-      const rateplanId = String(plan.rateplan_id || '');
-      if (!rateplanId || seenRateplanIds.has(rateplanId)) continue;
-      const inferredCode = inferCanonicalHotelRatePlanCode(plan.rate_plan_code || plan.rateplan_id || plan.rateplan_name);
-      const stats = statsByRateplanId.get(rateplanId);
-      const occupancy = Array.from(
-        new Set<string>([
-          ...(Array.isArray(plan.occupancy)
-            ? plan.occupancy.filter((item: unknown): item is string => typeof item === 'string')
-            : []),
-          ...(stats ? Array.from(stats.occupancy) : []),
-        ]),
-      );
-      items.push({
-        ratePlanCode: inferredCode,
-        rateplanId,
-        ratePlanName: plan.rateplan_name || rateplanId,
-        description: plan.meal_plan_description || plan.rateplan_name || rateplanId,
-        includesBreakfast: inferredCode === 'CP' || inferredCode === 'MAP' || inferredCode === 'AP' ? 1 : 0,
-        includesLunch: inferredCode === 'MAP' || inferredCode === 'AP' ? 1 : 0,
-        includesDinner: inferredCode === 'MAP' || inferredCode === 'AP' ? 1 : 0,
-        occupancy,
-        validity: stats ? { startDate: stats.startDate, endDate: stats.endDate } : null,
-        source: 'saved',
-        isFallback: true,
-      });
-      seenRateplanIds.add(rateplanId);
-    }
-
     return {
       roomId: Number(room.room_ID),
       axisroomsRoomId,
