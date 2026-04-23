@@ -114,6 +114,12 @@ export class ItineraryDropdownsController {
     return this.svc.getFoodPreferences();
   }
 
+  @Get('meal-plans')
+  @ApiOperation({ summary: 'List meal plans (CP/EP/MAP/AP) with meanings' })
+  mealPlans() {
+    return this.svc.getMealPlans();
+  }
+
   @Get('vehicle-types')
   @ApiOperation({ summary: 'List vehicle types' })
   vehicleTypes() {

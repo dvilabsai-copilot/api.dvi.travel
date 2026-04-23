@@ -322,6 +322,91 @@ private normalizeKmValue(value: unknown): string {
     return new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), base.getUTCDate()));
   }
 
+  private normalizeLocationName(value: string): string {
+    return String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
+  }
+
+  /**
+   * PHP parity guard: when incoming route rows contain blank placeholders,
+   * rebuild a stable day-chain by inserting stay-day legs at intermediate cities.
+   */
+  private normalizeSparseRouteDays(routes: CreateRouteDto[]): CreateRouteDto[] {
+    if (!Array.isArray(routes) || routes.length <= 1) return routes;
+
+    const totalRows = routes.length;
+    const trimmed = routes.map((r: any) => ({
+      source: String(r?.location_name ?? "").trim(),
+      dest: String(r?.next_visiting_location ?? "").trim(),
+    }));
+
+    const sparseRowCount = trimmed.filter((r) => !r.source || !r.dest).length;
+    if (sparseRowCount === 0) return routes;
+
+    const anchors: string[] = [];
+    const pushAnchor = (name: string) => {
+      const n = String(name || "").trim();
+      if (!n) return;
+      const prev = anchors[anchors.length - 1] || "";
+      if (this.normalizeLocationName(prev) !== this.normalizeLocationName(n)) {
+        anchors.push(n);
+      }
+    };
+
+    for (const row of trimmed) {
+      if (row.source) pushAnchor(row.source);
+      if (row.dest) pushAnchor(row.dest);
+    }
+
+    if (anchors.length < 2) return routes;
+
+    const intermediateStops = anchors.slice(1, -1);
+    if (!intermediateStops.length) return routes;
+
+    const extraStayDays = Math.max(0, totalRows - (anchors.length - 1));
+    if (extraStayDays <= 0) return routes;
+
+    const stayAlloc = new Map<string, number>();
+    for (const stop of intermediateStops) {
+      stayAlloc.set(stop, 0);
+    }
+
+    for (let i = 0; i < extraStayDays; i++) {
+      const stop = intermediateStops[i % intermediateStops.length];
+      stayAlloc.set(stop, Number(stayAlloc.get(stop) ?? 0) + 1);
+    }
+
+    const legPairs: Array<{ source: string; dest: string }> = [];
+    let current = anchors[0];
+    for (let i = 1; i < anchors.length; i++) {
+      const next = anchors[i];
+      const stayCount = Number(stayAlloc.get(current) ?? 0);
+      for (let s = 0; s < stayCount; s++) {
+        legPairs.push({ source: current, dest: current });
+      }
+      legPairs.push({ source: current, dest: next });
+      current = next;
+    }
+
+    if (legPairs.length !== totalRows) return routes;
+
+    return routes.map((r: any, idx) => {
+      const originalSource = String((r as any)?.location_name ?? "").trim();
+      const originalDest = String((r as any)?.next_visiting_location ?? "").trim();
+      const mappedSource = legPairs[idx].source;
+      const mappedDest = legPairs[idx].dest;
+      const pairChanged =
+        this.normalizeLocationName(originalSource) !== this.normalizeLocationName(mappedSource) ||
+        this.normalizeLocationName(originalDest) !== this.normalizeLocationName(mappedDest);
+
+      return {
+        ...r,
+        location_name: mappedSource,
+        next_visiting_location: mappedDest,
+        __normalizedPairChanged: pairChanged,
+      };
+    });
+  }
+
   /**
    * Main entry: rebuild all routes for a plan.
    */
@@ -337,7 +422,8 @@ private normalizeKmValue(value: unknown): string {
     const departureLocation = String(anyPlan.departure_point ?? "").trim();
     const departureType = Number(anyPlan.departure_type ?? 0) || 0;
 
-    const totalRoutes = Array.isArray(routes) ? routes.length : 0;
+    const normalizedRoutes = this.normalizeSparseRouteDays(Array.isArray(routes) ? routes : []);
+    const totalRoutes = normalizedRoutes.length;
 
     // If no routes, wipe existing and return.
     if (!totalRoutes) {
@@ -363,7 +449,7 @@ private normalizeKmValue(value: unknown): string {
     let dayOffset = 0; // PHP increments $no_of_days by 1 per leg.
 
     for (let idx = 0; idx < totalRoutes; idx++) {
-      const r: any = routes[idx] || {};
+      const r: any = normalizedRoutes[idx] || {};
       const isFirst = idx === 0;
       const isLast = idx === totalRoutes - 1;
 
@@ -379,13 +465,18 @@ private normalizeKmValue(value: unknown): string {
 );
 
 const requestKm = this.normalizeKmValue(r.no_of_km);
+const pairChanged = Boolean((r as any).__normalizedPairChanged);
 
 const fallbackKm =
   this.normalizeKmValue(r.distance) ||
   this.normalizeKmValue(r.total_distance) ||
   this.normalizeKmValue(r.intercityDistance);
 
-const finalKm = requestKm || distanceKm || fallbackKm || "";
+const finalKm = pairChanged
+  ? distanceKm || fallbackKm || requestKm || ""
+  : requestKm || distanceKm || fallbackKm || "";
+
+      const dayNumber = dayOffset + 1;
 
       // itinerary_route_date = trip_start_date + dayOffset (one day per leg)
       const routeDate = new Date(baseDate.getTime());
@@ -435,7 +526,7 @@ const finalKm = requestKm || distanceKm || fallbackKm || "";
     location_id: locationId,
     location_name: sourceName,
     itinerary_route_date: routeDate,
-    no_of_days: 1, // PHP: $selected_NO_OF_DAYS = 1
+    no_of_days: dayNumber,
     no_of_km: finalKm, // prefer request payload value; fallback to master distance
     direct_to_next_visiting_place: Number(r.direct_to_next_visiting_place || 0),
     next_visiting_location: destName,

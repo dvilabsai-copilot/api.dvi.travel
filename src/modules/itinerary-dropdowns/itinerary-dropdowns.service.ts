@@ -18,6 +18,16 @@ export type LocationOption = {
   name: string;
 };
 
+export type MealPlanOption = {
+  id: string;
+  label: string;
+  code: string;
+  description: string;
+  includesBreakfast: number;
+  includesLunch: number;
+  includesDinner: number;
+};
+
 type LocationType = 'source' | 'destination';
 
 function isNonEmptyString(v: unknown): v is string {
@@ -710,6 +720,92 @@ export class ItineraryDropdownsService {
       { id: 'veg', label: 'Vegetarian' },
       { id: 'non-veg', label: 'Non-Vegetarian' },
       { id: 'egg', label: 'Eggetarian' },
+    ];
+  }
+
+  async getMealPlans(): Promise<MealPlanOption[]> {
+    const rows = await this.prisma.dvi_hotel_rate_plan_master.findMany({
+      where: {
+        status: 1,
+        deleted: 0,
+      } as any,
+      select: {
+        rate_plan_code: true,
+        rate_plan_name: true,
+        description: true,
+        includes_breakfast: true,
+        includes_lunch: true,
+        includes_dinner: true,
+        sort_order: true,
+      },
+      orderBy: [{ sort_order: 'asc' }, { rate_plan_code: 'asc' }],
+    } as any);
+
+    const mapped = rows
+      .map((r: any): MealPlanOption | null => {
+        const code = String(r.rate_plan_code ?? '').trim().toUpperCase();
+        const name = String(r.rate_plan_name ?? '').trim();
+        if (!code) return null;
+
+        const description = String(r.description ?? '').trim();
+        const includesBreakfast = Number(r.includes_breakfast ?? 0) ? 1 : 0;
+        const includesLunch = Number(r.includes_lunch ?? 0) ? 1 : 0;
+        const includesDinner = Number(r.includes_dinner ?? 0) ? 1 : 0;
+
+        return {
+          id: code,
+          code,
+          description,
+          label: name ? `${code} - ${name}` : code,
+          includesBreakfast,
+          includesLunch,
+          includesDinner,
+        };
+      })
+      .filter((x): x is MealPlanOption => x !== null);
+
+    if (mapped.length > 0) {
+      return mapped;
+    }
+
+    // Fallback to common defaults when master data is not seeded.
+    return [
+      {
+        id: 'EP',
+        code: 'EP',
+        label: 'EP - European Plan',
+        description: 'Room only (no meals)',
+        includesBreakfast: 0,
+        includesLunch: 0,
+        includesDinner: 0,
+      },
+      {
+        id: 'CP',
+        code: 'CP',
+        label: 'CP - Continental Plan',
+        description: 'Breakfast included',
+        includesBreakfast: 1,
+        includesLunch: 0,
+        includesDinner: 0,
+      },
+      {
+        id: 'MAP',
+        code: 'MAP',
+        label: 'MAP - Modified American Plan',
+        description: 'Breakfast + one major meal',
+        includesBreakfast: 1,
+        includesLunch: 0,
+        includesDinner: 1,
+      },
+      {
+        id: 'AP',
+        code: 'AP',
+        label: 'AP - American Plan',
+        description: 'All meals included',
+        includesBreakfast: 1,
+        includesLunch: 1,
+        includesDinner: 1,
+      },
     ];
   }
 

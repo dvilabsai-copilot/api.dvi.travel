@@ -206,9 +206,9 @@ export class PlanEngineService {
 
     const preferredRoomCount = this.getPreferredRoomCount(travellers || []);
 
-    const meal_plan_breakfast = 1;
-    const meal_plan_lunch = 0;
-    const meal_plan_dinner = 0;
+    const meal_plan_breakfast = Number((plan as any).meal_plan_breakfast ?? 1) ? 1 : 0;
+    const meal_plan_lunch = Number((plan as any).meal_plan_lunch ?? 0) ? 1 : 0;
+    const meal_plan_dinner = Number((plan as any).meal_plan_dinner ?? 0) ? 1 : 0;
 
     const preferred_hotel_category = this.normalizeNumberList(
       (plan as any).preferred_hotel_category,

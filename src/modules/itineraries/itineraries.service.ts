@@ -68,6 +68,9 @@ export class ItinerariesService {
     const staffId = Number(u.staffId ?? 0);
     const shouldCheckLocalDbHotels =
       String(process.env.LOCAL_DB_HOTEL_CHECK || 'true').toLowerCase() === 'true';
+    const itineraryPreference = Number(dto.plan.itinerary_preference ?? 0);
+    const shouldIncludeVehicles = itineraryPreference === 2 || itineraryPreference === 3;
+    const shouldIncludeHotels = itineraryPreference === 1 || itineraryPreference === 3;
 
     // If user is an agent, force their agentId
     if (agentId > 0) {
@@ -93,10 +96,7 @@ export class ItinerariesService {
 
     // Validate hotel availability BEFORE starting the transaction
     // Only validate if hotels are needed (itinerary_preference 1 or 3)
-    if (
-      shouldCheckLocalDbHotels &&
-      (dto.plan.itinerary_preference === 1 || dto.plan.itinerary_preference === 3)
-    ) {
+    if (shouldCheckLocalDbHotels && shouldIncludeHotels) {
       const categoryStr = String(dto.plan.preferred_hotel_category || '');
       const categories = categoryStr
         .split(',')
@@ -196,16 +196,13 @@ export class ItinerariesService {
       opStart2 = Date.now();
       await this.vehiclesEngine.rebuildPlanVehicles(
         planId,
-        dto.vehicles,
+        shouldIncludeVehicles ? dto.vehicles : [],
         tx,
         userId,
       );
       console.log('[PERF] rebuildPlanVehicles:', Date.now() - opStart2, 'ms');
 
-      if (
-        dto.plan.itinerary_preference === 1 ||
-        dto.plan.itinerary_preference === 3
-      ) {
+      if (shouldIncludeHotels) {
         opStart2 = Date.now();
         await this.hotelEngine.rebuildPlanHotels(
           planId,
@@ -351,14 +348,24 @@ export class ItinerariesService {
     await this.hotspotEngine.rebuildParkingCharges(result.planId, userId);
     console.log('[PERF] rebuildParkingCharges:', Date.now() - postStart, 'ms');
 
-    // Rebuild vendor eligible list and vendor vehicle details AFTER transaction completes
-    // (requires committed routes & hotspots data)
-    postStart = Date.now();
-    await this.itineraryVehiclesEngine.rebuildEligibleVendorList({
-      planId: result.planId,
-      createdBy: userId,
-    });
-    console.log('[PERF] rebuildEligibleVendorList:', Date.now() - postStart, 'ms');
+    if (shouldIncludeVehicles) {
+      // Rebuild vendor eligible list and vendor vehicle details AFTER transaction completes
+      // (requires committed routes & hotspots data)
+      postStart = Date.now();
+      await this.itineraryVehiclesEngine.rebuildEligibleVendorList({
+        planId: result.planId,
+        createdBy: userId,
+      });
+      console.log('[PERF] rebuildEligibleVendorList:', Date.now() - postStart, 'ms');
+    } else {
+      // Ensure hotel-only itineraries never retain stale vehicle vendor rows.
+      await (this.prisma as any).dvi_itinerary_plan_vendor_vehicle_details.deleteMany({
+        where: { itinerary_plan_id: result.planId },
+      });
+      await this.prisma.dvi_itinerary_plan_vendor_eligible_list.deleteMany({
+        where: { itinerary_plan_id: result.planId },
+      });
+    }
 
     // Step 10: Persist a reusable template snapshot for this itinerary shape.
     try {
@@ -3534,25 +3541,62 @@ export class ItinerariesService {
     vehicleTypeId: number;
     vendorEligibleId: number;
   }) {
-    // First, reset all vendors for this vehicle type to unassigned (0)
-    await (this.prisma as any).dvi_itinerary_plan_vendor_eligible_list.updateMany({
-      where: {
-        itinerary_plan_id: data.planId,
-        vehicle_type_id: data.vehicleTypeId,
-      },
-      data: {
-        itineary_plan_assigned_status: 0,
-      },
-    });
+    const planId = Number(data.planId || 0);
+    const vehicleTypeId = Number(data.vehicleTypeId || 0);
+    const vendorEligibleId = Number(data.vendorEligibleId || 0);
 
-    // Then, set the selected vendor to assigned (1)
-    await (this.prisma as any).dvi_itinerary_plan_vendor_eligible_list.update({
-      where: {
-        itinerary_plan_vendor_eligible_ID: data.vendorEligibleId,
-      },
-      data: {
-        itineary_plan_assigned_status: 1,
-      },
+    if (!planId || !vehicleTypeId || !vendorEligibleId) {
+      throw new BadRequestException('planId, vehicleTypeId and vendorEligibleId are required');
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      const target = await (tx as any).dvi_itinerary_plan_vendor_eligible_list.findFirst({
+        where: {
+          itinerary_plan_vendor_eligible_ID: vendorEligibleId,
+          itinerary_plan_id: planId,
+          vehicle_type_id: vehicleTypeId,
+          status: 1,
+          deleted: 0,
+        },
+        select: { itinerary_plan_vendor_eligible_ID: true },
+      });
+
+      if (!target) {
+        throw new BadRequestException(
+          `Invalid vendorEligibleId ${vendorEligibleId} for plan ${planId} and vehicleType ${vehicleTypeId}`,
+        );
+      }
+
+      // Reset all candidates for this plan/type.
+      await (tx as any).dvi_itinerary_plan_vendor_eligible_list.updateMany({
+        where: {
+          itinerary_plan_id: planId,
+          vehicle_type_id: vehicleTypeId,
+          status: 1,
+          deleted: 0,
+        },
+        data: {
+          itineary_plan_assigned_status: 0,
+        },
+      });
+
+      // Mark the explicit user-selected vendor.
+      const markRes = await (tx as any).dvi_itinerary_plan_vendor_eligible_list.updateMany({
+        where: {
+          itinerary_plan_vendor_eligible_ID: vendorEligibleId,
+          itinerary_plan_id: planId,
+          vehicle_type_id: vehicleTypeId,
+          status: 1,
+          deleted: 0,
+        },
+        data: {
+          itineary_plan_assigned_status: 1,
+        },
+      });
+
+      if (!markRes || Number(markRes.count || 0) !== 1) {
+        throw new BadRequestException('Failed to persist selected vehicle vendor');
+      }
     });
 
     return {
@@ -8484,14 +8528,55 @@ export class ItinerariesService {
       return routes;
     }
 
-    const optimizedRoutes: any[] = [];
-    const routeCount = cleanedLocations.length - 1;
+    // Preserve "stay days" (source == destination) from original input while optimizing travel order.
+    // Without this, consecutive duplicates (e.g. Ooty -> Ooty) get collapsed and itinerary day count drops.
+    const stayDayCountByLocation = new Map<string, number>();
+    for (const route of routes) {
+      const from = String(route?.location_name || '').trim();
+      const to = String(route?.next_visiting_location || '').trim();
+      const fromNorm = this.normalizeLocationName(from);
+      const toNorm = this.normalizeLocationName(to);
+      if (fromNorm && fromNorm === toNorm) {
+        stayDayCountByLocation.set(fromNorm, (stayDayCountByLocation.get(fromNorm) || 0) + 1);
+      }
+    }
 
-    for (let i = 0; i < routeCount; i++) {
+    type RouteLeg = { from: string; to: string };
+    const expandedLegs: RouteLeg[] = [];
+    for (let i = 0; i < cleanedLocations.length - 1; i++) {
+      const from = cleanedLocations[i];
+      const to = cleanedLocations[i + 1];
+      expandedLegs.push({ from, to });
+
+      const toNorm = this.normalizeLocationName(to);
+      const isFinalDestination = i === cleanedLocations.length - 2;
+      const stayCount = toNorm ? (stayDayCountByLocation.get(toNorm) || 0) : 0;
+
+      if (!isFinalDestination && stayCount > 0) {
+        for (let s = 0; s < stayCount; s++) {
+          expandedLegs.push({ from: to, to });
+        }
+        stayDayCountByLocation.set(toNorm, 0);
+      }
+    }
+
+    const targetRouteCount = routes.length;
+    if (expandedLegs.length > targetRouteCount) {
+      expandedLegs.splice(targetRouteCount);
+    } else if (expandedLegs.length < targetRouteCount) {
+      const lastTo = cleanedLocations[cleanedLocations.length - 1];
+      while (expandedLegs.length < targetRouteCount) {
+        expandedLegs.push({ from: lastTo, to: lastTo });
+      }
+    }
+
+    const optimizedRoutes: any[] = [];
+    for (let i = 0; i < targetRouteCount; i++) {
       const templateRoute = routes[Math.min(i, routes.length - 1)];
+      const leg = expandedLegs[Math.min(i, expandedLegs.length - 1)];
       const newRoute = { ...templateRoute };
-      newRoute.location_name = cleanedLocations[i];
-      newRoute.next_visiting_location = cleanedLocations[i + 1];
+      newRoute.location_name = leg.from;
+      newRoute.next_visiting_location = leg.to;
       optimizedRoutes.push(newRoute);
     }
 
@@ -8502,6 +8587,8 @@ export class ItinerariesService {
       route.itinerary_route_date = newDate.toISOString().split('T')[0];
       route.no_of_days = index + 1;
     });
+
+    log(`[RouteOptimization] Preserved day count. original=${routes.length}, optimized=${optimizedRoutes.length}`);
 
     return optimizedRoutes;
   }
