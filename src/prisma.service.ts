@@ -1,23 +1,15 @@
-import { INestApplication, Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { INestApplication, Injectable, OnModuleInit } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit {
-  private readonly sqlLogger = new Logger('PrismaSQL');
-
   constructor() {
     super({
       log: [
-        { emit: 'event', level: 'query' },
         { emit: 'stdout', level: 'info' },
         { emit: 'stdout', level: 'warn' },
         { emit: 'stdout', level: 'error' },
       ],
-    });
-    (this as any).$on('query', (e: any) => {
-      this.sqlLogger.debug(
-        `QUERY: ${e.query} | PARAMS: ${e.params} | DURATION: ${e.duration}ms`,
-      );
     });
   }
 

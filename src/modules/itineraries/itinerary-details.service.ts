@@ -14,6 +14,20 @@ export interface VehicleCostBreakdownItemDto {
   amount: number;
 }
 
+/** Convert "HH:MM:SS" or Prisma TIME buffer → "X Hours Y Min" label */
+function formatHmsDuration(raw: string | null | undefined): string {
+  if (!raw) return '0 Hours 0 Min';
+  // Prisma TIME fields come back as Buffer bytes or as e.g. "02:49:00"
+  const str = String(raw).trim();
+  const match = str.match(/^(\d{1,3}):(\d{2})(?::\d{2})?$/);
+  if (match) {
+    const h = parseInt(match[1], 10);
+    const m = parseInt(match[2], 10);
+    return `${h} Hours ${m} Min`;
+  }
+  return '0 Hours 0 Min';
+}
+
 export interface VehicleDayWisePricingDto {
   date: string; // "2025-12-26"
   dayLabel: string; // "Day 1 | 26 Dec 2025"
@@ -85,6 +99,27 @@ export interface ItineraryVehicleRowDto {
   // Day-wise pricing breakdown for expandable row
   dayWisePricing?: VehicleDayWisePricingDto[];
 
+  // Summary totals for the PHP-style expanded panel
+  totalDays?: number;
+  totalCostOfVehicle?: number;
+  totalPickupKm?: number;
+  totalPickupDuration?: string;
+  totalDropKm?: number;
+  totalDropDuration?: string;
+  totalUsedKm?: number;
+  totalAllowedKm?: number;
+  extraKms?: number;
+  extraKmRate?: number;
+  extraKmCharge?: number;
+  subtotal?: number;
+  vehicleGstPercentage?: number;
+  vehicleGstAmount?: number;
+  vendorMarginPercentage?: number;
+  vendorMarginAmount?: number;
+  vendorMarginGstPercentage?: number;
+  vendorMarginGstAmount?: number;
+  grandTotal?: number;
+
   // Optional UI helper fields for the vehicle card
   dayLabel?: string;
   fromLabel?: string;
@@ -138,6 +173,7 @@ export interface CostBreakdownDto {
 export interface ItineraryDetailsResponseDto {
   quoteId: string;
   planId: number;
+  itineraryPreference?: number;
   isConfirmed?: boolean;
   confirmed_itinerary_plan_ID?: number; // ID needed for /confirmed/:id endpoint
   dateRange: string;
@@ -498,7 +534,7 @@ export class ItineraryDetailsService {
     });
     return plan ? plan.itinerary_plan_ID : null;
   }
-  
+
   async getItineraryDetails(
     quoteId: string,
     groupType?: number,
@@ -2177,14 +2213,18 @@ const dayDistance = this.formatKm(totalDistanceNum);
 });
     }
 
+    const itineraryPreference = Number((plan as any).itinerary_preference || 0);
+    const shouldIncludeVehicles = itineraryPreference === 2 || itineraryPreference === 3;
+
     // ------------------------------ VEHICLES ------------------------------
     // PHP displays vehicles directly from dvi_itinerary_plan_vendor_eligible_list
     // Each row in eligible list is already aggregated per vendor/branch/type/origin
-    const eligibleRows =
-      await this.prisma.dvi_itinerary_plan_vendor_eligible_list.findMany({
-        where: { itinerary_plan_id: planId, deleted: 0 },
-        orderBy: { itinerary_plan_vendor_eligible_ID: 'asc' },
-      });
+    const eligibleRows = shouldIncludeVehicles
+      ? await this.prisma.dvi_itinerary_plan_vendor_eligible_list.findMany({
+          where: { itinerary_plan_id: planId, deleted: 0 },
+          orderBy: { itinerary_plan_vendor_eligible_ID: 'asc' },
+        })
+      : [];
 
     const assignedEligibleRows = eligibleRows.filter(
       (e) => (e as any).itineary_plan_assigned_status === 1,
@@ -2242,12 +2282,12 @@ const dayDistance = this.formatKm(totalDistanceNum);
       vehicleTypes.map((vt: any) => [vt.vehicle_type_id, vt.vehicle_type_title || 'Unknown Vehicle Type'])
     );
 
-    const assignedEligibleIds = eligibleRows
-  .filter((e) => (e as any).itineary_plan_assigned_status === 1)
+    // Fetch vehicle details for ALL eligibles so every vendor shows day-wise breakdown on expand
+    const allEligibleIds = eligibleRows
   .map((e) => Number((e as any).itinerary_plan_vendor_eligible_ID))
   .filter((id) => id > 0);
 
-   const vehicleDetailsRows = assignedEligibleIds.length
+   const vehicleDetailsRows = allEligibleIds.length
   ? await this.prisma.$queryRawUnsafe(`
       SELECT 
         itinerary_plan_vendor_vehicle_details_ID,
@@ -2299,7 +2339,7 @@ const dayDistance = this.formatKm(totalDistanceNum);
       FROM dvi_itinerary_plan_vendor_vehicle_details
       WHERE itinerary_plan_id = ${planId}
         AND deleted = 0
-        AND itinerary_plan_vendor_eligible_ID IN (${assignedEligibleIds.join(",")})
+        AND itinerary_plan_vendor_eligible_ID IN (${allEligibleIds.join(",")})
       ORDER BY itinerary_route_date ASC
     `) as any[]
   : [];
@@ -2479,6 +2519,40 @@ dayData.totalKms += safeTotalKm;
         dayCounter++;
       }
 
+      // Aggregate pickup/drop KMs from day-wise vehicle details
+      const totalPickupKm = dayWiseDetails.reduce((s: number, vd: any) => s + (parseFloat(String(vd.total_pickup_km || 0)) || 0), 0);
+      const totalDropKm = dayWiseDetails.reduce((s: number, vd: any) => s + (parseFloat(String(vd.total_drop_km || 0)) || 0), 0);
+      const firstDayVd = dayWiseDetails[0];
+      const lastDayVd = dayWiseDetails[dayWiseDetails.length - 1];
+      const totalPickupDuration = (firstDayVd as any)?.total_pickup_duration
+        ? formatHmsDuration(String((firstDayVd as any).total_pickup_duration))
+        : '0 Hours 0 Min';
+      const totalDropDuration = (lastDayVd as any)?.total_drop_duration
+        ? formatHmsDuration(String((lastDayVd as any).total_drop_duration))
+        : '0 Hours 0 Min';
+
+      // Summary fields from eligible_list
+      const noOfDays = dayWiseDetails.length || 1;
+      const eligAny = eligible as any;
+      const totalUsedKm = parseFloat(String(eligAny.total_kms || 0)) || 0;
+      const totalAllowedKm = parseFloat(String(eligAny.total_allowed_kms || 0)) || 0;
+      const extraKms = parseFloat(String(eligAny.total_extra_kms || 0)) || 0;
+      const extraKmRate = parseFloat(String(eligAny.extra_km_rate || 0)) || 0;
+      const extraKmCharge = parseFloat(String(eligAny.total_extra_kms_charge || 0)) || 0;
+      const totalCostOfVehicle = rentalCharges + tollCharges + parkingCharges + driverCharges + permitCharges
+        + Number(eligAny.total_before_6_am_charges_for_driver ?? 0)
+        + Number(eligAny.total_before_6_am_charges_for_vehicle ?? 0)
+        + Number(eligAny.total_after_8_pm_charges_for_driver ?? 0)
+        + Number(eligAny.total_after_8_pm_charges_for_vehicle ?? 0);
+      const subtotal = totalCostOfVehicle + extraKmCharge;
+      const vehicleGstPercentage = parseFloat(String(eligAny.vehicle_gst_percentage || 0)) || 0;
+      const vehicleGstAmount = parseFloat(String(eligAny.vehicle_gst_amount || 0)) || 0;
+      const vendorMarginPercentage = parseFloat(String(eligAny.vendor_margin_percentage || 0)) || 0;
+      const vendorMarginAmount = parseFloat(String(eligAny.vendor_margin_amount || 0)) || 0;
+      const vendorMarginGstPercentage = parseFloat(String(eligAny.vendor_margin_gst_percentage || 0)) || 0;
+      const vendorMarginGstAmount = parseFloat(String(eligAny.vendor_margin_gst_amount || 0)) || 0;
+      const grandTotal = parseFloat(String(eligAny.vehicle_grand_total || 0)) || 0;
+
       return {
         vendorName: branch?.vendor_branch_name ?? null,
         branchName: branch?.vendor_branch_name ?? null,
@@ -2504,12 +2578,33 @@ dayData.totalKms += safeTotalKm;
         after8pmVendor,
         breakdown,
         packageLabel,
-        
+
+        // PHP summary panel fields
+        totalDays: noOfDays,
+        totalCostOfVehicle,
+        totalPickupKm,
+        totalPickupDuration,
+        totalDropKm,
+        totalDropDuration,
+        totalUsedKm,
+        totalAllowedKm,
+        extraKms,
+        extraKmRate,
+        extraKmCharge,
+        subtotal,
+        vehicleGstPercentage,
+        vehicleGstAmount,
+        vendorMarginPercentage,
+        vendorMarginAmount,
+        vendorMarginGstPercentage,
+        vendorMarginGstAmount,
+        grandTotal,
+
         // KM columns for the UI card
         col1Distance: totalRunningKm > 0 ? `${totalRunningKm.toFixed(2)} KM` : '0.00 KM',
         col2Distance: totalSiteseeingKm > 0 ? `${totalSiteseeingKm.toFixed(2)} KM` : '0.00 KM',
         col3Distance: totalTravelledKm > 0 ? `${totalTravelledKm.toFixed(2)} KM` : '0.00 KM',
-        col1Duration: '0 Min', // Duration can be calculated if needed
+        col1Duration: '0 Min',
         col2Duration: '0 Min',
         col3Duration: '0 Min',
       };
@@ -2706,7 +2801,10 @@ dayData.totalKms += safeTotalKm;
     const additionalMarginPercentage = 10; // Could come from global settings
     const additionalMarginDayLimit = 3; // Could come from global settings
     
-    const subtotal = totalHotelAmount + totalVehicleCost;
+    const shouldIncludeHotels = itineraryPreference === 1 || itineraryPreference === 3;
+    const effectiveHotelAmount = shouldIncludeHotels ? totalHotelAmount : 0;
+
+    const subtotal = effectiveHotelAmount + totalVehicleCost;
     const additionalMargin = itineraryNoDays <= additionalMarginDayLimit 
       ? (subtotal * additionalMarginPercentage) / 100
       : 0;
@@ -2728,19 +2826,20 @@ dayData.totalKms += safeTotalKm;
 
     const costBreakdown: CostBreakdownDto = {
       // Hotel costs
-      totalRoomCost: totalRoomCostUpdated > 0 ? totalRoomCostUpdated : undefined,
-      roomCostPerPerson: roomCostPerPerson > 0 ? roomCostPerPerson : undefined,
-      hotelPaxCount: hotelPaxCount > 0 ? hotelPaxCount : undefined,
-      totalAmenitiesCost: totalAmenitiesCost > 0 ? totalAmenitiesCost : undefined,
-      extraBedCost: updatedExtraBedCost > 0 ? updatedExtraBedCost : undefined,
-      childWithBedCost: updatedChildWithBedCost > 0 ? updatedChildWithBedCost : undefined,
-      childWithoutBedCost: updatedChildWithoutBedCost > 0 ? updatedChildWithoutBedCost : undefined,
-      totalHotelAmount: totalHotelAmount > 0 ? totalHotelAmount : undefined,
+      totalRoomCost: shouldIncludeHotels && totalRoomCostUpdated > 0 ? totalRoomCostUpdated : undefined,
+      roomCostPerPerson: shouldIncludeHotels && roomCostPerPerson > 0 ? roomCostPerPerson : undefined,
+      hotelPaxCount: shouldIncludeHotels && hotelPaxCount > 0 ? hotelPaxCount : undefined,
+      totalAmenitiesCost: shouldIncludeHotels && totalAmenitiesCost > 0 ? totalAmenitiesCost : undefined,
+      extraBedCost: shouldIncludeHotels && updatedExtraBedCost > 0 ? updatedExtraBedCost : undefined,
+      childWithBedCost: shouldIncludeHotels && updatedChildWithBedCost > 0 ? updatedChildWithBedCost : undefined,
+      childWithoutBedCost: shouldIncludeHotels && updatedChildWithoutBedCost > 0 ? updatedChildWithoutBedCost : undefined,
+      totalHotelAmount: shouldIncludeHotels && effectiveHotelAmount > 0 ? effectiveHotelAmount : undefined,
       
       // Vehicle costs
-      totalVehicleCost: totalVehicleCost,
-      totalVehicleAmount: totalVehicleCost,
-      totalVehicleQty: totalVehicleQty > 0 ? totalVehicleQty : undefined,
+      totalVehicleCost: shouldIncludeVehicles ? totalVehicleCost : 0,
+      totalVehicleAmount: shouldIncludeVehicles ? totalVehicleCost : 0,
+      totalVehicleQty:
+        shouldIncludeVehicles && totalVehicleQty > 0 ? totalVehicleQty : undefined,
       
       // Activity/Guide costs
       totalGuideCost: totalGuideCost > 0 ? totalGuideCost : undefined,
@@ -2774,12 +2873,13 @@ dayData.totalKms += safeTotalKm;
           )}`
         : '';
 
-    // roomCount: ONLY from plan now. Hotels are handled by hotel endpoint.
-    const roomCount = plan.preferred_room_count ?? 0;
+    // Room count should be hidden for vehicle-only itineraries.
+    const roomCount = shouldIncludeHotels ? Number(plan.preferred_room_count ?? 0) : 0;
 
     const response: ItineraryDetailsResponseDto = {
       quoteId: plan.itinerary_quote_ID ?? '',
       planId: plan.itinerary_plan_ID,
+      itineraryPreference: Number((plan as any).itinerary_preference || 0),
       isConfirmed: !!confirmedPlan,
       confirmed_itinerary_plan_ID: confirmedPlan?.confirmed_itinerary_plan_ID,
       dateRange,

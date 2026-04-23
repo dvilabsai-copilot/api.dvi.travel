@@ -428,8 +428,6 @@ export class ItineraryVehiclesEngine {
       eligibleCities = Array.from(citySet);
     }
 
-    const eligibleCityTokensLower = eligibleCities.map((c) => c.toLowerCase());
-
     // PHP: total km is sum of route.no_of_km ONLY
     const totalKmsNum = routes.reduce(
       (sum: number, r: { no_of_km: string | null }) => sum + toNum(r.no_of_km),
@@ -594,64 +592,33 @@ export class ItineraryVehiclesEngine {
         const vendorMarginGstType = Number(vendorDetails?.vendor_margin_gst_type ?? 2);
         const vendorMarginGstPercentage = Number(vendorDetails?.vendor_margin_gst_percentage ?? 5);
 
-        let allowedBranches: {
+        const branchWhere = {
+          vendor_id: vendorId,
+          status: 1,
+          deleted: 0,
+        };
+        this.logSql(
+          "VENDOR_BRANCHES_FIND_MANY_NO_FILTER",
+          this.buildSelectSql("dvi_vendor_branches", branchWhere),
+          { where: branchWhere },
+        );
+
+        const allowedBranches: {
           vendor_branch_id: number;
           vendor_branch_name: string | null;
           vendor_branch_location: string | null;
           vendor_branch_gst_type: number | null;
           vendor_branch_gst: number | null;
-        }[] = [];
-
-        if (eligibleCityTokensLower.length) {
-          const branchCityFilters = eligibleCityTokensLower.map((token) => ({
-            vendor_branch_location: { contains: token },
-          }));
-
-          const branchWhere = {
-            vendor_id: vendorId,
-            status: 1,
-            deleted: 0,
-            OR: branchCityFilters,
-          };
-          this.logSql(
-            "VENDOR_BRANCHES_FIND_MANY_FILTERED",
-            this.buildSelectSql("dvi_vendor_branches", branchWhere),
-            { where: branchWhere },
-          );
-
-          allowedBranches = await tx.dvi_vendor_branches.findMany({
-            where: branchWhere,
-            select: {
-              vendor_branch_id: true,
-              vendor_branch_name: true,
-              vendor_branch_location: true,
-              vendor_branch_gst_type: true,
-              vendor_branch_gst: true,
-            },
-          });
-        } else {
-          const branchWhere = {
-            vendor_id: vendorId,
-            status: 1,
-            deleted: 0,
-          };
-          this.logSql(
-            "VENDOR_BRANCHES_FIND_MANY_NO_FILTER",
-            this.buildSelectSql("dvi_vendor_branches", branchWhere),
-            { where: branchWhere },
-          );
-
-          allowedBranches = await tx.dvi_vendor_branches.findMany({
-            where: branchWhere,
-            select: {
-              vendor_branch_id: true,
-              vendor_branch_name: true,
-              vendor_branch_location: true,
-              vendor_branch_gst_type: true,
-              vendor_branch_gst: true,
-            },
-          });
-        }
+        }[] = await tx.dvi_vendor_branches.findMany({
+          where: branchWhere,
+          select: {
+            vendor_branch_id: true,
+            vendor_branch_name: true,
+            vendor_branch_location: true,
+            vendor_branch_gst_type: true,
+            vendor_branch_gst: true,
+          },
+        });
 
         const allowedBranchIds = allowedBranches
           .map((b) => Number(b.vendor_branch_id ?? 0))
@@ -664,6 +631,11 @@ export class ItineraryVehiclesEngine {
           vendor_branch_id: { in: allowedBranchIds },
           status: 1,
           deleted: 0,
+          ...(eligibleCities.length
+            ? {
+                owner_city: { in: eligibleCities },
+              }
+            : {}),
           OR: [
             { vehicle_type_id: vendorVehicleTypeId },
             ...(masterVehicleTypeId ? [{ vehicle_type_id: masterVehicleTypeId }] : []),
@@ -1351,7 +1323,7 @@ export class ItineraryVehiclesEngine {
             if (!val) return null;
             if (val instanceof Date) return val;
             if (typeof val === 'string' && /^\d{2}:\d{2}:\d{2}$/.test(val)) {
-              return new Date(`1970-01-01T${val}Z`);
+              return timeStringToPrismaTime(val);
             }
             return null;
           }
@@ -1537,6 +1509,13 @@ export class ItineraryVehiclesEngine {
           travel_type: true,
           total_extra_km: true,
           total_extra_km_charges: true,
+          vehicle_driver_charges: true,
+          before_6_am_extra_time: true,
+          after_8_pm_extra_time: true,
+          before_6_am_charges_for_driver: true,
+          before_6_am_charges_for_vehicle: true,
+          after_8_pm_charges_for_driver: true,
+          after_8_pm_charges_for_vehicle: true,
         },
       });
       
@@ -1591,14 +1570,24 @@ export class ItineraryVehiclesEngine {
         }
       }, 0);
 
-      // Recalculate totals with the aggregated toll/permit charges
+      // Aggregate driver + 6AM/8PM charges from vehicle_details (PHP parity)
+      const totalDriverCharges = vehicleDetailsRecords.reduce((sum: number, r: any) => sum + Number(r.vehicle_driver_charges || 0), 0);
+      const totalBefore6amDriver = vehicleDetailsRecords.reduce((sum: number, r: any) => sum + Number(r.before_6_am_charges_for_driver || 0), 0);
+      const totalBefore6amVehicle = vehicleDetailsRecords.reduce((sum: number, r: any) => sum + Number(r.before_6_am_charges_for_vehicle || 0), 0);
+      const totalAfter8pmDriver = vehicleDetailsRecords.reduce((sum: number, r: any) => sum + Number(r.after_8_pm_charges_for_driver || 0), 0);
+      const totalAfter8pmVehicle = vehicleDetailsRecords.reduce((sum: number, r: any) => sum + Number(r.after_8_pm_charges_for_vehicle || 0), 0);
+      const totalBefore6amExtraTime = vehicleDetailsRecords.reduce((sum: number, r: any) => sum + Number(r.before_6_am_extra_time || 0), 0);
+      const totalAfter8pmExtraTime = vehicleDetailsRecords.reduce((sum: number, r: any) => sum + Number(r.after_8_pm_extra_time || 0), 0);
+
+      // Recalculate totals with the aggregated toll/permit/driver/6am/8pm charges
       const totalRentalNum = Number(eligible.total_rental_charges || 0);
       const totalParkingCharges = Number(eligible.total_parking_charges || 0);
-      const totalDriverCharges = Number(eligible.total_driver_charges || 0);
 
       const vehicleBaseTotal = totalRentalNum + totalExtraKmsCharge +
                                totalTollCharges + totalParkingCharges +
-                               totalDriverCharges + totalPermitCharges;
+                               totalDriverCharges + totalPermitCharges +
+                               totalBefore6amDriver + totalBefore6amVehicle +
+                               totalAfter8pmDriver + totalAfter8pmVehicle;
 
       const vehicleGstType = Number(eligible.vehicle_gst_type || 2);
       const vehicleGstPercentage = Number(eligible.vehicle_gst_percentage || 5);
@@ -1632,6 +1621,13 @@ export class ItineraryVehiclesEngine {
           total_allowed_local_kms: String(totalAllowedLocalKms),
           total_extra_local_kms: String(totalExtraLocalKms),
           total_extra_local_kms_charge: totalExtraLocalKmsCharge,
+          total_driver_charges: totalDriverCharges,
+          total_before_6_am_extra_time: String(totalBefore6amExtraTime),
+          total_after_8_pm_extra_time: String(totalAfter8pmExtraTime),
+          total_before_6_am_charges_for_driver: totalBefore6amDriver,
+          total_before_6_am_charges_for_vehicle: totalBefore6amVehicle,
+          total_after_8_pm_charges_for_driver: totalAfter8pmDriver,
+          total_after_8_pm_charges_for_vehicle: totalAfter8pmVehicle,
           total_toll_charges: totalTollCharges,
           total_permit_charges: totalPermitCharges,
           vehicle_gst_amount: vehicleGstAmount,
@@ -1643,6 +1639,51 @@ export class ItineraryVehiclesEngine {
         },
       });
       this.writeLog(`[vehiclesEngine] Updated eligible ${eligible.itinerary_plan_vendor_eligible_ID} with toll=${totalTollCharges}, permit=${totalPermitCharges}, kms=${totalKms}, allowed_kms=${totalAllowedKms}, extra_kms=${totalExtraKms}, local_allowed=${totalAllowedLocalKms}, local_extra=${totalExtraLocalKms}, local_extra_charge=${totalExtraLocalKmsCharge}`);
+    }
+
+    // Re-assign cheapest vendors AFTER final totals update.
+    // Earlier assignment can be based on provisional totals before toll/permit recalculation.
+    for (const [planVehicleTypeId, requiredCount] of requiredCountByType.entries()) {
+      await tx.dvi_itinerary_plan_vendor_eligible_list.updateMany({
+        where: {
+          itinerary_plan_id: planId,
+          vehicle_type_id: planVehicleTypeId,
+          status: 1,
+          deleted: 0,
+        },
+        data: { itineary_plan_assigned_status: 0 },
+      });
+
+      const finalPicks = await tx.dvi_itinerary_plan_vendor_eligible_list.findMany({
+        where: {
+          itinerary_plan_id: planId,
+          vehicle_type_id: planVehicleTypeId,
+          vehicle_grand_total: { gt: 0 },
+          status: 1,
+          deleted: 0,
+        },
+        orderBy: [
+          { vehicle_grand_total: "asc" },
+          { itinerary_plan_vendor_eligible_ID: "asc" },
+        ],
+        take: Math.max(0, requiredCount),
+        select: { itinerary_plan_vendor_eligible_ID: true, vehicle_grand_total: true },
+      });
+
+      const finalIds = finalPicks
+        .map((p: any) => Number(p.itinerary_plan_vendor_eligible_ID || 0))
+        .filter((id: number) => id > 0);
+
+      if (finalIds.length > 0) {
+        await tx.dvi_itinerary_plan_vendor_eligible_list.updateMany({
+          where: { itinerary_plan_vendor_eligible_ID: { in: finalIds } },
+          data: { itineary_plan_assigned_status: 1 },
+        });
+
+        this.writeLog(
+          `[vehiclesEngine] Final cheapest assigned for vehicle_type_id=${planVehicleTypeId}: ids=[${finalIds.join(',')}]`,
+        );
+      }
     }
 
     return { planId, inserted };

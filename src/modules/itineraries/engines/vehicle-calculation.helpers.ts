@@ -64,8 +64,8 @@ export interface RouteCalculationResult {
   VEHICLE_PARKING_CHARGE: number;
   TOTAL_DRIVER_CHARGES: number;
   permit_charges: number;
-  morning_extra_time: string;
-  evening_extra_time: string;
+  morning_extra_time: number;
+  evening_extra_time: number;
   DRIVER_MORINING_CHARGES: number;
   VENDOR_VEHICLE_MORNING_CHARGES: number;
   DRIVER_EVEINING_CHARGES: number;
@@ -85,6 +85,12 @@ export interface VendorEligibleTotals {
   OVERALL_VEHICLE_PARKING_CHARGE: number;
   OVERALL_TOTAL_DRIVER_CHARGES: number;
   OVERALL_PERMIT_CHARGES: number;
+  OVERALL_BEFORE_6AM_EXTRA_TIME: number;
+  OVERALL_AFTER_8PM_EXTRA_TIME: number;
+  OVERALL_DRIVER_MORINING_CHARGES: number;
+  OVERALL_VENDOR_VEHICLE_MORNING_CHARGES: number;
+  OVERALL_DRIVER_EVEINING_CHARGES: number;
+  OVERALL_VENDOR_VEHICLE_EVENING_CHARGES: number;
   OVERALL_LOCAL_KM: string;
   OVERALL_LOCAL_EXTRA_KM: string;
   OVERALL_LOCAL_EXTRA_KM_CHARGES: number;
@@ -122,11 +128,13 @@ export function calculateDistanceAndDuration(
   lat1: number,
   lon1: number,
   lat2: number,
-  lon2: number
+  lon2: number,
+  avgSpeedKmPerHr = 50,
+  correctionFactor = 1
 ): { distance: string; duration: string } {
-  const distanceKm = calculateDistance(lat1, lon1, lat2, lon2);
-  // Simple duration estimate: 50 km/h average
-  const durationHours = distanceKm / 50;
+  const distanceKm = calculateDistance(lat1, lon1, lat2, lon2) * correctionFactor;
+  const speed = Number.isFinite(avgSpeedKmPerHr) && avgSpeedKmPerHr > 0 ? avgSpeedKmPerHr : 50;
+  const durationHours = distanceKm / speed;
   const hours = Math.floor(durationHours);
   const minutes = Math.floor((durationHours - hours) * 60);
   
@@ -134,6 +142,100 @@ export function calculateDistanceAndDuration(
     distance: distanceKm.toFixed(2),
     duration: `${hours} hour ${minutes} mins`
   };
+}
+
+function getTravelLocationType(
+  startLocation: string,
+  endLocation: string,
+): 1 | 2 {
+  const starts = String(startLocation || '').split('|').map((s) => s.trim()).filter(Boolean);
+  const ends = String(endLocation || '').split('|').map((s) => s.trim()).filter(Boolean);
+  for (const s of starts) {
+    for (const e of ends) {
+      if (s === e) return 1;
+    }
+  }
+  return 2;
+}
+
+function parsePhpDurationToHms(durationText: string | null | undefined): string {
+  const text = String(durationText || '').trim();
+  if (!text) return '00:00:00';
+
+  const hoursMatch = text.match(/(\d+)\s*hour/i);
+  const minsMatch = text.match(/(\d+)\s*mins?/i);
+
+  let hours = hoursMatch ? Number(hoursMatch[1]) : 0;
+  let mins = minsMatch ? Number(minsMatch[1]) : 0;
+
+  if (!Number.isFinite(hours)) hours = 0;
+  if (!Number.isFinite(mins)) mins = 0;
+
+  hours += Math.floor(mins / 60);
+  mins = mins % 60;
+
+  return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}:00`;
+}
+
+function parseHmsToSeconds(hms: string | null | undefined): number {
+  const t = String(hms || '').trim();
+  if (!/^\d{2}:\d{2}:\d{2}$/.test(t)) return 0;
+  const [h, m, s] = t.split(':').map((v) => Number(v || 0));
+  return h * 3600 + m * 60 + s;
+}
+
+function secondsToHms(seconds: number): string {
+  const safe = Math.max(0, Math.floor(Number(seconds) || 0));
+  const h = Math.floor(safe / 3600);
+  const m = Math.floor((safe % 3600) / 60);
+  const s = safe % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+async function getRouteHotspotMetrics(
+  prisma: any,
+  itinerary_plan_ID: number,
+  itinerary_route_ID: number
+): Promise<{
+  runningKm: number;
+  runningSeconds: number;
+  sightseeingKm: number;
+  sightseeingSeconds: number;
+}> {
+  try {
+    const rows = await prisma.$queryRaw<any[]>`
+      SELECT
+        COALESCE(SUM(CASE WHEN item_type IN (2,6,7,5)
+          THEN CAST(hotspot_travelling_distance AS DECIMAL(10,2)) ELSE 0 END), 0) AS running_km,
+        COALESCE(SUM(CASE WHEN item_type IN (2,6,7,5)
+          THEN TIME_TO_SEC(hotspot_traveling_time) ELSE 0 END), 0) AS running_seconds,
+        COALESCE(SUM(CASE WHEN item_type IN (1,3,4)
+          THEN CAST(hotspot_travelling_distance AS DECIMAL(10,2)) ELSE 0 END), 0) AS sightseeing_km,
+        COALESCE(SUM(CASE WHEN item_type IN (1,3,4)
+          THEN TIME_TO_SEC(hotspot_traveling_time) ELSE 0 END), 0) AS sightseeing_seconds
+      FROM dvi_itinerary_route_hotspot_details
+      WHERE itinerary_plan_ID = ${itinerary_plan_ID}
+        AND itinerary_route_ID = ${itinerary_route_ID}
+        AND status = 1
+        AND deleted = 0
+    `;
+
+    const row = rows?.[0] ?? {};
+    return {
+      runningKm: Number(row.running_km ?? 0),
+      runningSeconds: Number(row.running_seconds ?? 0),
+      sightseeingKm: Number(row.sightseeing_km ?? 0),
+      sightseeingSeconds: Number(row.sightseeing_seconds ?? 0),
+    };
+  } catch (error) {
+    console.error('[getRouteHotspotMetrics] Error:', error);
+    return {
+      runningKm: 0,
+      runningSeconds: 0,
+      sightseeingKm: 0,
+      sightseeingSeconds: 0,
+    };
+  }
 }
 
 /**
@@ -231,6 +333,32 @@ export async function calculateRouteTollCharges(
   return totalToll;
 }
 
+async function getViaRouteNames(
+  prisma: any,
+  itinerary_plan_ID: number,
+  itinerary_route_ID: number,
+): Promise<string[]> {
+  try {
+    const rows = await prisma.dvi_itinerary_via_route_details.findMany({
+      where: {
+        itinerary_plan_ID,
+        itinerary_route_ID,
+        status: 1,
+        deleted: 0,
+      },
+      orderBy: { itinerary_via_route_ID: 'asc' },
+      select: { itinerary_via_location_name: true },
+    });
+
+    return rows
+      .map((r: any) => String(r?.itinerary_via_location_name || '').trim())
+      .filter((v: string) => Boolean(v));
+  } catch (error) {
+    console.error('[getViaRouteNames] Error:', error);
+    return [];
+  }
+}
+
 /**
  * Calculate parking charges for hotspots in a route
  * PHP: getITINERARY_HOTSPOT_VEHICLE_PARKING_CHARGES_DETAILS
@@ -252,7 +380,26 @@ export async function calculateHotspotParkingCharges(
       AND status = 1
       AND deleted = 0
     `;
-    return Number(result[0]?.total_parking ?? 0);
+
+    const derived = Number(result[0]?.total_parking ?? 0);
+    if (derived > 0) return derived;
+
+    // Fallback parity path: compute from route hotspot IDs + master parking table.
+    const fallback = await prisma.$queryRaw<any[]>`
+      SELECT COALESCE(SUM(hvpc.parking_charge), 0) AS total_parking
+      FROM dvi_itinerary_route_hotspot_details rh
+      JOIN dvi_hotspot_vehicle_parking_charges hvpc
+        ON hvpc.hotspot_id = rh.hotspot_ID
+       AND hvpc.vehicle_type_id = ${vehicle_type_id}
+       AND hvpc.status = 1
+       AND hvpc.deleted = 0
+      WHERE rh.itinerary_plan_ID = ${itinerary_plan_ID}
+        AND rh.itinerary_route_ID = ${itinerary_route_ID}
+        AND rh.status = 1
+        AND rh.deleted = 0
+    `;
+
+    return Number(fallback[0]?.total_parking ?? 0);
   } catch (error) {
     console.error('[calculateHotspotParkingCharges] Error:', error);
     return 0;
@@ -761,7 +908,7 @@ export async function calculateSightseeingKm(
   itinerary_route_ID: number
 ): Promise<{ km: string; time: string | null }> {
   try {
-    // Sum travel distances from hotspot timeline (item_type=3 is SiteSeeingTravel)
+    // PHP parity: sightseeing includes item_type 1,3,4
     const result = await prisma.$queryRaw<any[]>`
       SELECT 
         COALESCE(SUM(CAST(hotspot_travelling_distance AS DECIMAL(10,2))), 0) as total_sightseeing_km,
@@ -769,7 +916,7 @@ export async function calculateSightseeingKm(
       FROM dvi_itinerary_route_hotspot_details
       WHERE itinerary_plan_ID = ${itinerary_plan_ID}
       AND itinerary_route_ID = ${itinerary_route_ID}
-      AND item_type = 3
+      AND item_type IN (1,3,4)
       AND status = 1
       AND deleted = 0
     `;
@@ -860,6 +1007,7 @@ export async function calculateRouteVehicleDetails(
   // Get coordinates for distance calculations
   const sourceCoords = await getLocationCoordinates(prisma, route.location_name);
   const destCoords = await getLocationCoordinates(prisma, route.next_visiting_location);
+  const viaRouteNames = await getViaRouteNames(prisma, itinerary_plan_ID, route.itinerary_route_ID);
 
   // Check if all via routes are within same city (for LOCAL determination)
   let check_local_via_route_city = true;
@@ -896,108 +1044,93 @@ export async function calculateRouteVehicleDetails(
   let TOTAL_LOCAL_EXTRA_KM_CHARGES = 0;
   let TOTAL_ALLOWED_LOCAL_KM = 0;
 
-  // Calculate running KM (main route distance)
-  if (route.no_of_km && toNum(route.no_of_km) > 0) {
-    TOTAL_RUNNING_KM = String(toNum(route.no_of_km).toFixed(2));
-  } else if (sourceCoords && destCoords && sourceCoords.latitude && destCoords.latitude) {
-    // Calculate distance if not provided
-    const distance = calculateDistance(
-      sourceCoords.latitude,
-      sourceCoords.longitude,
-      destCoords.latitude,
-      destCoords.longitude
-    );
-    TOTAL_RUNNING_KM = distance.toFixed(2);
-  }
-
-  // Calculate pickup distance (Day 1 only)
-  if (route_count === 1 && sourceCoords) {
-    const pickupKm = calculatePickupDistance(
-      ctx.vehicle_origin_latitude,
-      ctx.vehicle_origin_longitude,
-      sourceCoords.latitude,
-      sourceCoords.longitude
-    );
-    TOTAL_PICKUP_KM = pickupKm.toFixed(2);
-  }
-
-  // Calculate drop distance (Last day only)
-  if (route_count === total_routes && destCoords) {
-    const dropKm = calculateDropDistance(
-      destCoords.latitude,
-      destCoords.longitude,
-      ctx.vehicle_origin_latitude,
-      ctx.vehicle_origin_longitude
-    );
-    TOTAL_DROP_KM = dropKm.toFixed(2);
-  }
-
-  // Calculate sightseeing KM
-  const sightseeingResult = await calculateSightseeingKm(
+  const hotspotMetrics = await getRouteHotspotMetrics(
     prisma,
     itinerary_plan_ID,
     route.itinerary_route_ID
   );
-  SIGHT_SEEING_TRAVELLING_KM = sightseeingResult.km;
-  SIGHT_SEEING_TRAVELLING_TIME = sightseeingResult.time;
 
-  // Calculate total KM for the route
-  const totalKmNum =
-    toNum(TOTAL_RUNNING_KM) +
-    toNum(SIGHT_SEEING_TRAVELLING_KM) +
-    toNum(TOTAL_PICKUP_KM) +
-    toNum(TOTAL_DROP_KM);
-  const TOTAL_KM = totalKmNum.toFixed(2);
+  const baseRunningKm = Number(hotspotMetrics.runningKm || 0);
+  const baseRunningTimeSeconds = Number(hotspotMetrics.runningSeconds || 0);
+  const sightseeingTimeSeconds = Number(hotspotMetrics.sightseeingSeconds || 0);
 
-  // Calculate total travelling time from route start and end times
-  if (route.route_start_time && route.route_end_time) {
-    try {
-      // Times come from DB as Date objects (Prisma maps TIME to DateTime)
-      // Extract just the time portion (HH:MM:SS)
-      let startTimeStr: string;
-      let endTimeStr: string;
-      
-      const startTime = route.route_start_time as any;
-      const endTime = route.route_end_time as any;
-      
-      if (typeof startTime === 'object' && startTime.toISOString) {
-        // It's a Date object - extract time from Date object
-        startTimeStr = startTime.toISOString().split('T')[1].substring(0, 8);
-      } else {
-        startTimeStr = String(startTime);
-      }
-      
-      if (typeof endTime === 'object' && endTime.toISOString) {
-        endTimeStr = endTime.toISOString().split('T')[1].substring(0, 8);
-      } else {
-        endTimeStr = String(endTime);
-      }
-      
-      // Now calculate difference using today's date as base
-      const today = new Date().toISOString().split('T')[0];
-      const startDate = new Date(`${today}T${startTimeStr}`);
-      const endDate = new Date(`${today}T${endTimeStr}`);
-      
-      if (!isNaN(startDate.getTime()) && !isNaN(endDate.getTime())) {
-        const diffMs = endDate.getTime() - startDate.getTime();
-        if (diffMs > 0) {
-          const hours = Math.floor(diffMs / (1000 * 60 * 60));
-          const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-          const seconds = Math.floor((diffMs % (1000 * 60)) / 1000);
-          TOTAL_TRAVELLING_TIME = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-        }
-      }
-    } catch (e) {
-      // Ignore date parsing errors
+  const globalSettings = await prisma.dvi_global_settings.findFirst({
+    where: { deleted: 0 },
+    orderBy: { global_settings_ID: 'asc' },
+    select: {
+      itinerary_local_speed_limit: true,
+      itinerary_outstation_speed_limit: true,
+    },
+  });
+  const localSpeed = Number(globalSettings?.itinerary_local_speed_limit ?? 40) || 40;
+  const outstationSpeed = Number(globalSettings?.itinerary_outstation_speed_limit ?? 60) || 60;
+
+  TOTAL_RUNNING_KM = String(baseRunningKm.toFixed(2));
+
+  // Calculate pickup distance (Day 1 only)
+  if (route_count === 1 && sourceCoords) {
+    if (String(ctx.vehicle_origin || '').trim().toLowerCase() !== String(route.location_name || '').trim().toLowerCase()) {
+      const pickupDistance = calculateDistanceAndDuration(
+        ctx.vehicle_origin_latitude,
+        ctx.vehicle_origin_longitude,
+        sourceCoords.latitude,
+        sourceCoords.longitude,
+        getTravelLocationType(ctx.vehicle_origin_city, sourceCity) === 1 ? localSpeed : outstationSpeed,
+        1.5,
+      );
+      TOTAL_PICKUP_KM = String(toNum(pickupDistance.distance).toFixed(2));
+      TOTAL_PICKUP_DURATION = parsePhpDurationToHms(pickupDistance.duration);
     }
   }
+
+  // Calculate drop distance (Last day only)
+  if (route_count === total_routes && destCoords) {
+    if (String(ctx.vehicle_origin || '').trim().toLowerCase() !== String(route.next_visiting_location || '').trim().toLowerCase()) {
+      const dropDistance = calculateDistanceAndDuration(
+        destCoords.latitude,
+        destCoords.longitude,
+        ctx.vehicle_origin_latitude,
+        ctx.vehicle_origin_longitude,
+        getTravelLocationType(destCity, ctx.vehicle_origin_city) === 1 ? localSpeed : outstationSpeed,
+        1.5,
+      );
+      TOTAL_DROP_KM = String(toNum(dropDistance.distance).toFixed(2));
+      TOTAL_DROP_DURATION = parsePhpDurationToHms(dropDistance.duration);
+    }
+  }
+
+  TOTAL_RUNNING_KM = String(
+    (
+      baseRunningKm +
+      toNum(TOTAL_PICKUP_KM) +
+      toNum(TOTAL_DROP_KM)
+    ).toFixed(2)
+  );
+
+  // Calculate sightseeing KM
+  SIGHT_SEEING_TRAVELLING_KM = String(Number(hotspotMetrics.sightseeingKm || 0).toFixed(2));
+  SIGHT_SEEING_TRAVELLING_TIME = secondsToHms(sightseeingTimeSeconds);
+
+  // PHP parity: TOTAL_RUNNING_KM already includes pickup/drop where applicable.
+  const totalKmNum = toNum(TOTAL_RUNNING_KM) + toNum(SIGHT_SEEING_TRAVELLING_KM);
+  const TOTAL_KM = totalKmNum.toFixed(2);
+
+  const totalTravellingSeconds =
+    baseRunningTimeSeconds +
+    parseHmsToSeconds(TOTAL_PICKUP_DURATION) +
+    parseHmsToSeconds(TOTAL_DROP_DURATION);
+  TOTAL_TRAVELLING_TIME = secondsToHms(totalTravellingSeconds);
+
+  const totalRouteSeconds = totalTravellingSeconds + sightseeingTimeSeconds;
+  const TOTAL_TIME = secondsToHms(totalRouteSeconds);
 
   // Calculate toll charges
   let tollCharges = await calculateRouteTollCharges(
     prisma,
     vehicle_type_id,
     route.location_name,
-    route.next_visiting_location
+    route.next_visiting_location,
+    viaRouteNames,
   );
 
   // For OUTSTATION trips, add tolls for vehicle origin segments
@@ -1080,7 +1213,13 @@ export async function calculateRouteVehicleDetails(
       vehicle_cost_for_the_day = 2400;
     }
     
-    TOTAL_ALLOWED_LOCAL_KM = 0.1; // PHP parity: local routes get 0.1km allowance (not 100!)
+    if (time_limit_id > 0) {
+      const timeLimit = await prisma.dvi_time_limit.findUnique({
+        where: { time_limit_id },
+        select: { km_limit: true },
+      });
+      TOTAL_ALLOWED_LOCAL_KM = Number(timeLimit?.km_limit ?? 0);
+    }
 
     // Calculate extra KM charges for LOCAL
     if (totalKmNum > TOTAL_ALLOWED_LOCAL_KM) {
@@ -1120,13 +1259,43 @@ export async function calculateRouteVehicleDetails(
     ctx.accomodation_cost +
     ctx.extra_cost;
 
-  // Time-based extra charges (before 6am, after 8pm)
-  const morning_extra_time = '00:00:00'; // TODO: Calculate from route times
-  const evening_extra_time = '00:00:00'; // TODO: Calculate from route times
-  const DRIVER_MORINING_CHARGES = 0; // TODO: Calculate if morning_extra_time > 0
-  const VENDOR_VEHICLE_MORNING_CHARGES = 0;
-  const DRIVER_EVEINING_CHARGES = 0;
-  const VENDOR_VEHICLE_EVENING_CHARGES = 0;
+  // Time-based extra charges (before 6am, after 8pm) — PHP parity
+  let morning_extra_time_hours = 0;
+  let evening_extra_time_hours = 0;
+  if (route.route_start_time || route.route_end_time) {
+    // Helper to ensure we have a valid time string (HH:MM:SS format)
+    const ensureTimeString = (val: any): string | null => {
+      if (!val) return null;
+      const str = String(val).trim();
+      // Match HH:MM:SS or HH:MM pattern
+      if (/^\d{1,2}:\d{2}(?::\d{2})?$/.test(str)) return str;
+      return null;
+    };
+    const parseTimeToSeconds = (t: string | null): number => {
+      if (!t) return 0;
+      const parts = t.split(':').map(Number);
+      return (parts[0] || 0) * 3600 + (parts[1] || 0) * 60 + (parts[2] || 0);
+    };
+    const SIX_AM_SEC = 6 * 3600;
+    const EIGHT_PM_SEC = 20 * 3600;
+    const startTimeStr = ensureTimeString(route.route_start_time);
+    const endTimeStr = ensureTimeString(route.route_end_time);
+    const startSec = startTimeStr ? parseTimeToSeconds(startTimeStr) : SIX_AM_SEC;
+    const endSec = endTimeStr ? parseTimeToSeconds(endTimeStr) : EIGHT_PM_SEC;
+
+    if (startSec < SIX_AM_SEC) {
+      morning_extra_time_hours = (SIX_AM_SEC - startSec) / 3600;
+    }
+    if (endSec > EIGHT_PM_SEC) {
+      evening_extra_time_hours = (endSec - EIGHT_PM_SEC) / 3600;
+    }
+  }
+  const morning_extra_time = morning_extra_time_hours;
+  const evening_extra_time = evening_extra_time_hours;
+  const DRIVER_MORINING_CHARGES = ctx.driver_early_morning_charges * morning_extra_time_hours;
+  const VENDOR_VEHICLE_MORNING_CHARGES = ctx.early_morning_charges * morning_extra_time_hours;
+  const DRIVER_EVEINING_CHARGES = ctx.driver_evening_charges * evening_extra_time_hours;
+  const VENDOR_VEHICLE_EVENING_CHARGES = ctx.evening_charges * evening_extra_time_hours;
 
   // Calculate total vehicle amount for the route
   const TOTAL_VEHICLE_AMOUNT =
@@ -1140,9 +1309,6 @@ export async function calculateRouteVehicleDetails(
     DRIVER_EVEINING_CHARGES +
     VENDOR_VEHICLE_EVENING_CHARGES +
     TOTAL_LOCAL_EXTRA_KM_CHARGES;
-
-  // Calculate total time (simplified)
-  const TOTAL_TIME = TOTAL_TRAVELLING_TIME || '0.0';
 
   return {
     travel_type,

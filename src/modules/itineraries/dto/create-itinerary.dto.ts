@@ -82,6 +82,21 @@ export class CreatePlanDto {
   @ApiProperty({ example: 0 }) @IsInt() guide_for_itinerary!: number;
   @ApiProperty({ example: 0 }) @IsInt() nationality!: number;
 
+  @ApiProperty({ example: 1, required: false })
+  @IsOptional()
+  @IsInt()
+  meal_plan_breakfast?: number;
+
+  @ApiProperty({ example: 0, required: false })
+  @IsOptional()
+  @IsInt()
+  meal_plan_lunch?: number;
+
+  @ApiProperty({ example: 0, required: false })
+  @IsOptional()
+  @IsInt()
+  meal_plan_dinner?: number;
+
   @ApiProperty({
     example: 0,
     description: 'Never send null. Use 0 if unknown (PHP defaults to 0).',
