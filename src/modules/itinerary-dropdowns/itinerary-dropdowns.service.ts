@@ -459,18 +459,35 @@ export class ItineraryDropdownsService {
       if (aliases?.length) allValidNames.push(...aliases);
     });
 
-    // 3. Filter locations: keep if it matches or contains a city name with hotels
-    locations = locations.filter((loc) => {
-      const lowerLoc = loc.toLowerCase();
-      return allValidNames.some(
-        (cityName) => lowerLoc.includes(cityName) || cityName.includes(lowerLoc),
-      );
-    });
+    // 3. Prefer locations that match a city having active hotels, but do NOT drop
+// newly added stored locations that may not yet map to an active hotel city.
+// This keeps the old itinerary ordering for the matched set while still showing
+// everything currently stored in dvi_stored_locations.
+const hotelMatchedLocations = locations.filter((loc) => {
+  const lowerLoc = loc.toLowerCase();
+  return allValidNames.some(
+    (cityName) => lowerLoc.includes(cityName) || cityName.includes(lowerLoc),
+  );
+});
 
-    return locations.map((loc) => ({
-      id: loc,
-      name: loc,
-    }));
+const seenLocationKeys = new Set<string>();
+const mergedLocations: string[] = [];
+
+for (const loc of [...hotelMatchedLocations, ...locations]) {
+  const trimmed = loc.trim();
+  if (!trimmed) continue;
+
+  const key = trimmed.toLowerCase();
+  if (seenLocationKeys.has(key)) continue;
+
+  seenLocationKeys.add(key);
+  mergedLocations.push(trimmed);
+}
+
+return mergedLocations.map((loc) => ({
+  id: loc,
+  name: loc,
+}));
   }
 
   async getItineraryTypes(): Promise<SimpleOption[]> {
