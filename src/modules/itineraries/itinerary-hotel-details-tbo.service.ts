@@ -38,6 +38,8 @@ export class ItineraryHotelDetailsTboService {
       guestNationality: string,
       adultCount: number = 2,
       childCount: number = 0,
+      childAges: number[] = [],
+      roomCount: number = 1,
     ): Promise<Map<number, HotelSearchResult[] | null>> {
       let hotelsByRoute = await this.fetchHotelsForRoutes(
         routes,
@@ -45,6 +47,8 @@ export class ItineraryHotelDetailsTboService {
         guestNationality,
         adultCount,
         childCount,
+        childAges,
+        roomCount,
       );
 
       const hasProviderFailure = Array.from(hotelsByRoute.values()).some(
@@ -65,6 +69,8 @@ export class ItineraryHotelDetailsTboService {
           guestNationality,
           adultCount,
           childCount,
+          childAges,
+          roomCount,
         );
 
         const retryStillFailed = Array.from(retryResult.values()).some(
@@ -274,6 +280,8 @@ export class ItineraryHotelDetailsTboService {
     // Read pax counts saved by the user when creating the itinerary
     const planAdultCount = Number((plan as any).total_adult || 0);
     const planChildCount = Number((plan as any).total_children || 0);
+    const planChildAges = await this.resolvePlanChildAges(planId, planChildCount);
+    const planRoomCount = Math.max(Number((plan as any).preferred_room_count || 1), 1);
     this.logger.log(`👥 Pax from plan: adults=${planAdultCount}, children=${planChildCount}`);
 
     // Step 3: Fetch hotels from TBO for each route (except last route if it's departure day)
@@ -283,6 +291,8 @@ export class ItineraryHotelDetailsTboService {
       guestNationality,
       planAdultCount,
       planChildCount,
+      planChildAges,
+      planRoomCount,
     );
     
     // Step 3.5: Fetch HOBSE hotels and merge with TBO hotels
@@ -303,6 +313,8 @@ export class ItineraryHotelDetailsTboService {
       guestNationality,
       planAdultCount,
       planChildCount,
+      planChildAges,
+      planRoomCount,
     );
     
     // Merge ResAvenue hotels into the hotel map
@@ -603,6 +615,8 @@ export class ItineraryHotelDetailsTboService {
     guestNationality: string,
     adultCount: number = 2,
     childCount: number = 0,
+    childAges: number[] = [],
+    roomCount: number = 1,
   ): Promise<Map<number, HotelSearchResult[] | null>> {
     const hotelsByRoute = new Map<number, HotelSearchResult[] | null>();
 
@@ -626,6 +640,8 @@ export class ItineraryHotelDetailsTboService {
           guestNationality,
           adultCount,
           childCount,
+          childAges,
+          roomCount,
         )
           .then((hotels) => {
             block.routeIds.forEach((routeId) => hotelsByRoute.set(routeId, hotels || []));
@@ -802,6 +818,8 @@ export class ItineraryHotelDetailsTboService {
       if (cityCode) {
         this.logger.log(`✅ "${destination}" → TBO Code: ${cityCode}`);
         cityCodeMap[destination] = cityCode;
+        // Also index by normalized token because stay blocks use normalized destination labels.
+        cityCodeMap[normalizedDestination] = cityCode;
       } else {
         this.logger.warn(`❌ No city code found for: "${destination}"`);
       }
@@ -849,6 +867,7 @@ export class ItineraryHotelDetailsTboService {
         if (code) {
           this.logger.log(`✅ HOBSE "${destination}" -> code: ${code}`);
           cityCodeMap[destination] = code;
+          cityCodeMap[this.normalizeDestinationName(destination)] = code;
         } else {
           this.logger.warn(`❌ No HOBSE city code found for: "${destination}"`);
         }
@@ -871,6 +890,8 @@ export class ItineraryHotelDetailsTboService {
     guestNationality: string,
     adultCount: number = 2,
     childCount: number = 0,
+    childAges: number[] = [],
+    roomCount: number = 1,
   ): Promise<HotelSearchResult[]> {
     const destination = this.normalizeDestinationName(block.destination);
 
@@ -897,18 +918,40 @@ export class ItineraryHotelDetailsTboService {
     }
     const safeAdultCount = adultCount > 0 ? adultCount : 1;
     const safeChildCount = childCount >= 0 ? childCount : 0;
+    const safeChildAges = this.normalizeChildAges(childAges, safeChildCount);
+    const safeRoomCount = Number.isFinite(Number(roomCount)) && Number(roomCount) > 0 ? Number(roomCount) : 1;
     const guestCount = safeAdultCount + safeChildCount;
+    const destinationLower = String(destination || '').trim().toLowerCase();
+    const forceTwoRoomsForDestination = destinationLower === 'kodaikanal';
+    const effectiveRoomCount =
+      safeRoomCount === 1 && (forceTwoRoomsForDestination || (safeChildCount > 0 && guestCount >= 5))
+        ? 2
+        : safeRoomCount;
+
+    if (effectiveRoomCount !== safeRoomCount) {
+      this.logger.log(
+        `   🛏️  Auto-adjusting roomCount from ${safeRoomCount} to ${effectiveRoomCount} for occupancy adults=${safeAdultCount}, children=${safeChildCount}`,
+      );
+    }
 
     const searchCriteria = {
       cityCode: effectiveCityCode,
       checkInDate: block.checkInDate,
       checkOutDate: block.checkOutDate,
-      roomCount: 1,
+      roomCount: effectiveRoomCount,
       guestCount,
       adultCount: safeAdultCount,
       childCount: safeChildCount,
+      childAges: safeChildCount > 0 ? safeChildAges : undefined,
       guestNationality,
       providers: ['tbo', 'resavenue'], // Only TBO + ResAvenue - HOBSE will be merged separately
+    };
+
+    const attachRoomCountMeta = (rows: HotelSearchResult[], roomCountUsed: number): HotelSearchResult[] => {
+      return (rows || []).map((h: any) => ({
+        ...h,
+        roomCountUsed,
+      }));
     };
 
     this.logger.log(
@@ -918,6 +961,48 @@ export class ItineraryHotelDetailsTboService {
     this.logger.log(
       `   ✅ Found ${hotels ? hotels.length : 0} hotels for stay block (${block.routeIds.join(',')}) (TBO only at this stage)`,
     );
+
+    if ((!hotels || hotels.length === 0) && safeChildCount > 0) {
+      if (safeRoomCount < 2) {
+        this.logger.warn(
+          `   ⚠️  No hotels for child-inclusive occupancy with ${safeRoomCount} room. Retrying with 2-room split for stay block (${block.routeIds.join(',')}).`,
+        );
+
+        const twoRoomCriteria = {
+          ...searchCriteria,
+          roomCount: 2,
+        };
+
+        const twoRoomHotels = await this.hotelSearchService.searchHotels(twoRoomCriteria);
+        this.logger.log(
+          `   ✅ Two-room child-inclusive retry found ${twoRoomHotels ? twoRoomHotels.length : 0} hotels for stay block (${block.routeIds.join(',')})`,
+        );
+
+        if (twoRoomHotels && twoRoomHotels.length > 0) {
+          return attachRoomCountMeta(twoRoomHotels, 2);
+        }
+      }
+
+      this.logger.warn(
+        `   ⚠️  No hotels for child-inclusive occupancy (adults=${safeAdultCount}, children=${safeChildCount}, rooms=${safeRoomCount}) on stay block (${block.routeIds.join(',')}). Retrying with adult-only fallback.`,
+      );
+
+      const fallbackCriteria = {
+        ...searchCriteria,
+        guestCount: safeAdultCount,
+        childCount: 0,
+        childAges: undefined,
+      };
+
+      const fallbackHotels = await this.hotelSearchService.searchHotels(fallbackCriteria);
+      this.logger.log(
+        `   ✅ Adult-only fallback found ${fallbackHotels ? fallbackHotels.length : 0} hotels for stay block (${block.routeIds.join(',')})`,
+      );
+
+      if (fallbackHotels && fallbackHotels.length > 0) {
+        return attachRoomCountMeta(fallbackHotels, effectiveRoomCount);
+      }
+    }
     
     if (hotels && hotels.length > 0) {
       this.logger.log(`   📋 TBO Hotels for stay block (${block.routeIds.join(',')}):`);
@@ -928,7 +1013,7 @@ export class ItineraryHotelDetailsTboService {
       this.logger.log(`   ⚠️  WARNING: TBO search returned ZERO hotels for stay block (${block.routeIds.join(',')})!`);
     }
 
-    return hotels || [];
+    return attachRoomCountMeta(hotels || [], effectiveRoomCount);
   }
 
   /**
@@ -1011,6 +1096,8 @@ export class ItineraryHotelDetailsTboService {
     guestNationality: string,
     adultCount: number = 2,
     childCount: number = 0,
+    childAges: number[] = [],
+    roomCount: number = 1,
   ): Promise<Map<number, HotelSearchResult[]>> {
     const hotelsByRoute = new Map<number, HotelSearchResult[]>();
     const totalRoutes = routes.length;
@@ -1020,6 +1107,8 @@ export class ItineraryHotelDetailsTboService {
     try {
       const safeAdultCount = adultCount > 0 ? adultCount : 1;
       const safeChildCount = childCount >= 0 ? childCount : 0;
+      const safeChildAges = this.normalizeChildAges(childAges, safeChildCount);
+      const safeRoomCount = Number.isFinite(Number(roomCount)) && Number(roomCount) > 0 ? Number(roomCount) : 1;
       const guestCount = safeAdultCount + safeChildCount;
 
       for (let routeIndex = 0; routeIndex < totalRoutes; routeIndex++) {
@@ -1044,10 +1133,11 @@ export class ItineraryHotelDetailsTboService {
             cityCode: destination, // ResAvenue provider accepts city names
             checkInDate: routeDate.toISOString().split('T')[0],
             checkOutDate: checkOutDate.toISOString().split('T')[0],
-            roomCount: 1,
+            roomCount: safeRoomCount,
             guestCount,
             adultCount: safeAdultCount,
             childCount: safeChildCount,
+            childAges: safeChildCount > 0 ? safeChildAges : undefined,
             guestNationality,
             providers: ['resavenue'], // Only ResAvenue
           });
@@ -1071,6 +1161,45 @@ export class ItineraryHotelDetailsTboService {
     }
 
     return hotelsByRoute;
+  }
+
+  private async resolvePlanChildAges(planId: number, expectedChildCount: number): Promise<number[]> {
+    if (expectedChildCount <= 0) return [];
+
+    const travellers = await (this.prisma as any).dvi_itinerary_traveller_details.findMany({
+      where: {
+        itinerary_plan_ID: planId,
+        traveller_type: 2,
+        deleted: 0,
+      },
+      orderBy: { traveller_details_ID: 'asc' },
+      select: { traveller_age: true },
+    });
+
+    const parsedAges = (travellers || [])
+      .map((t: any) => Number(t?.traveller_age))
+      .filter((age: number) => Number.isFinite(age) && age >= 0 && age <= 11);
+
+    const normalized = this.normalizeChildAges(parsedAges, expectedChildCount);
+    this.logger.log(
+      `👶 Child ages resolved for plan ${planId}: [${normalized.join(', ')}] (expected children=${expectedChildCount})`,
+    );
+    return normalized;
+  }
+
+  private normalizeChildAges(childAges: number[], expectedChildCount: number): number[] {
+    if (expectedChildCount <= 0) return [];
+
+    const validAges = (Array.isArray(childAges) ? childAges : [])
+      .map((age) => Number(age))
+      .filter((age) => Number.isFinite(age) && age >= 0 && age <= 11);
+
+    if (validAges.length >= expectedChildCount) {
+      return validAges.slice(0, expectedChildCount);
+    }
+
+    const fallbackAge = 8;
+    return [...validAges, ...new Array(expectedChildCount - validAges.length).fill(fallbackAge)];
   }
 
 
@@ -1933,10 +2062,14 @@ export class ItineraryHotelDetailsTboService {
           hotelId: hotelId,
           hotelName: displayHotelName,
           category: hotel.rating ? parseInt(String(hotel.rating)) : 0,
-          roomType: hotel.roomType || '',
+          roomType:
+            Number((hotel as any).roomCountUsed || 1) > 1
+              ? `${hotel.roomType || ''} (${Number((hotel as any).roomCountUsed)} Rooms)`
+              : hotel.roomType || '',
           mealPlan: hotel.mealPlan || '-',
           totalHotelCost: Math.round(hotel.price),
           totalHotelTaxAmount: 0,
+          noOfRooms: Math.max(Number((hotel as any).roomCountUsed || 1), 1),
           searchReference: hotel.searchReference,
           bookingCode:
             (hotel.provider || 'tbo').toLowerCase() === 'tbo'
@@ -2204,10 +2337,18 @@ export class ItineraryHotelDetailsTboService {
     }
 
     const guestNationality = await this.resolveGuestNationality(plan);
+    const planAdultCount = Number((plan as any).total_adult || 0);
+    const planChildCount = Number((plan as any).total_children || 0);
+    const planChildAges = await this.resolvePlanChildAges(planId, planChildCount);
+    const planRoomCount = Math.max(Number((plan as any).preferred_room_count || 1), 1);
     const hotelsByRoute = await this.fetchHotelsForRoutes(
       routesToProcess,
       noOfNights,
       guestNationality,
+      planAdultCount,
+      planChildCount,
+      planChildAges,
+      planRoomCount,
     );
 
     // Step 4: Transform fresh TBO data into room details format

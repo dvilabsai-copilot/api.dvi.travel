@@ -23,6 +23,7 @@ export interface ItineraryHotelRowDto {
   mealPlan: string;
   totalHotelCost: number;
   totalHotelTaxAmount: number;
+  noOfRooms?: number;
   // TBO Booking Code - for API interactions
   searchReference?: string;
   bookingCode?: string;

@@ -309,7 +309,7 @@ export class ItineraryClipboardService {
       <table width="700" align="left" border="0" cellpadding="0" cellspacing="0" style="border-collapse: collapse; background-color:#fff; font-family:Calibri; font-size:11px; color:#302c6e;">
         <tr><td align="center" valign="middle" style="color:#302c6e; font-size:18px; line-height:40px; font-weight:600;">Vehicle Details</td></tr>
       </table>
-      <table width="100%" align="left" border="0" cellpadding="0" cellspacing="0" style="border-collapse: collapse; background-color:#fff; font-family:Calibri; font-size:11px; color:#302c6e;">
+      <table width="700" align="left" border="0" cellpadding="0" cellspacing="0" style="border-collapse: collapse; background-color:#fff; font-family:Calibri; font-size:11px; color:#302c6e; table-layout:fixed;">
         <tr>
           <th style="background-color:#f2f2f2; text-align:left; padding:3px; border:1px solid #b1b1b1;">Vehicle Details</th>
           <th style="background-color:#f2f2f2; text-align:left; padding:3px; border:1px solid #b1b1b1;">Total Amount</th>
@@ -321,15 +321,32 @@ export class ItineraryClipboardService {
   }
 
   private buildCostSection(cost: any): string {
-    const couponDiscount = Number(cost.couponDiscount || 0);
-    const totalRoundOff = Number(cost.totalRoundOff || 0);
+    const roomCost = Number(cost.totalRoomCost || 0);
+    const roomCostPerPerson = Number(cost.roomCostPerPerson || 0);
+    const hotelPaxCount = Number(cost.hotelPaxCount || 0);
+    const extraBedCost = Number(cost.extraBedCost || 0);
+    const childWithBedCost = Number(cost.childWithBedCost || 0);
+    const childWithoutBedCost = Number(cost.childWithoutBedCost || 0);
     const totalVehicleQty = Number(cost.totalVehicleQty || 0);
     const safeVehicleQty = totalVehicleQty > 0 ? totalVehicleQty : 0;
-    const roundOffLabel = totalRoundOff >= 0 ? `${this.formatCurrencyInr(totalRoundOff)}` : `- ${this.formatCurrencyInr(totalRoundOff)}`;
+    const totalVehicleAmount = Number(cost.totalVehicleAmount || cost.totalVehicleCost || 0);
+    const couponDiscount = Number(cost.couponDiscount || 0);
+    const totalRoundOff = Number(cost.totalRoundOff || 0);
+    const roundOffLabel = totalRoundOff >= 0
+      ? this.formatCurrencyInr(totalRoundOff)
+      : `- ${this.formatCurrencyInr(Math.abs(totalRoundOff))}`;
+
+    const roomLabel = hotelPaxCount > 0 && roomCostPerPerson > 0
+      ? `Total Room Cost (${hotelPaxCount} * ${this.formatNumberInr(roomCostPerPerson)})`
+      : 'Total Room Cost';
 
     return `
       <table width="700" align="left" border="0" cellpadding="0" cellspacing="0" style="border-collapse: collapse; background-color:#fff; font-family:Calibri; font-size:11px; color:#302c6e;">
-        <tr><th style="text-align:left; padding:3px; border:1px solid #b1b1b1;">Total Vehicle Amount Total Vehicle Cost (${this.escapeHtml(safeVehicleQty)})</th><td style="text-align:left; padding:3px; border:1px solid #b1b1b1;"><b>${this.escapeHtml(this.formatCurrencyInr(Number(cost.totalVehicleAmount || 0)))}</b></td></tr>
+        ${roomCost > 0 ? `<tr><th style="text-align:left; padding:3px; border:1px solid #b1b1b1;">${this.escapeHtml(roomLabel)}</th><td style="text-align:left; padding:3px; border:1px solid #b1b1b1;"><b>${this.escapeHtml(this.formatCurrencyInr(roomCost))}</b></td></tr>` : ''}
+        ${extraBedCost > 0 ? `<tr><th style="text-align:left; padding:3px; border:1px solid #b1b1b1;">Extra Bed Cost (${this.escapeHtml(Number(cost.extraBed || 0))})</th><td style="text-align:left; padding:3px; border:1px solid #b1b1b1;"><b>${this.escapeHtml(this.formatCurrencyInr(extraBedCost))}</b></td></tr>` : ''}
+        ${childWithBedCost > 0 ? `<tr><th style="text-align:left; padding:3px; border:1px solid #b1b1b1;">Child With Bed Cost (${this.escapeHtml(Number(cost.childWithBed || 0))})</th><td style="text-align:left; padding:3px; border:1px solid #b1b1b1;"><b>${this.escapeHtml(this.formatCurrencyInr(childWithBedCost))}</b></td></tr>` : ''}
+        ${childWithoutBedCost > 0 ? `<tr><th style="text-align:left; padding:3px; border:1px solid #b1b1b1;">Child Without Bed Cost (${this.escapeHtml(Number(cost.childWithoutBed || 0))})</th><td style="text-align:left; padding:3px; border:1px solid #b1b1b1;"><b>${this.escapeHtml(this.formatCurrencyInr(childWithoutBedCost))}</b></td></tr>` : ''}
+        ${totalVehicleAmount > 0 ? `<tr><th style="text-align:left; padding:3px; border:1px solid #b1b1b1;">Total Vehicle Cost (${this.escapeHtml(safeVehicleQty)})</th><td style="text-align:left; padding:3px; border:1px solid #b1b1b1;"><b>${this.escapeHtml(this.formatCurrencyInr(totalVehicleAmount))}</b></td></tr>` : ''}
         <tr><th style="text-align:left; padding:3px; border:1px solid #b1b1b1;">Total Amount</th><td style="text-align:left; padding:3px; border:1px solid #b1b1b1;"><b>${this.escapeHtml(this.formatCurrencyInr(Number(cost.totalAmount || 0)))}</b></td></tr>
         ${couponDiscount !== 0 ? `<tr><th style="text-align:left; padding:3px; border:1px solid #b1b1b1;">Coupon Discount</th><td style="text-align:left; padding:3px; border:1px solid #b1b1b1;">- ${this.escapeHtml(this.formatCurrencyInr(couponDiscount))}</td></tr>` : ''}
         <tr><th style="text-align:left; padding:3px; border:1px solid #b1b1b1;">Total Round Off</th><td style="text-align:left; padding:3px; border:1px solid #b1b1b1;">${this.escapeHtml(roundOffLabel)}</td></tr>
@@ -595,13 +612,136 @@ export class ItineraryClipboardService {
       return sum + Number(v?.totalAmount || 0);
     }, 0);
 
+    const selectedHotelRows = (hotelDetails.hotels || []).filter((h: any) => {
+      const groupMatch = selectedGroupTypes.includes(Number(h.groupType || 0));
+      const hasHotel = String(h.hotelName || '').trim().toLowerCase() !== 'no hotels available';
+      return groupMatch && hasHotel;
+    });
+
+    let confirmedFallbackRows: any[] = [];
+    if (!selectedHotelRows.length) {
+      confirmedFallbackRows = await this.prisma.dvi_confirmed_itinerary_plan_hotel_details.findMany({
+        where: {
+          itinerary_plan_id: plan.itinerary_plan_ID,
+          deleted: 0,
+          ...(selectedGroupTypes.length
+            ? { group_type: { in: selectedGroupTypes } }
+            : {}),
+        } as any,
+        select: {
+          total_room_cost: true,
+          total_room_gst_amount: true,
+          total_extra_bed_cost: true,
+          total_childwith_bed_cost: true,
+          total_childwithout_bed_cost: true,
+          total_hotel_cost: true,
+          total_hotel_tax_amount: true,
+          total_amenities_cost: true,
+          itinerary_route_id: true,
+          group_type: true,
+          itinerary_plan_hotel_details_ID: true,
+        },
+      });
+    }
+
+    const dedupedConfirmedRowsMap = new Map<string, any>();
+    for (const row of confirmedFallbackRows) {
+      const key = `${Number((row as any).itinerary_route_id || 0)}-${Number((row as any).group_type || 0)}`;
+      const existing = dedupedConfirmedRowsMap.get(key);
+      if (!existing) {
+        dedupedConfirmedRowsMap.set(key, row);
+        continue;
+      }
+      if (
+        Number((row as any).itinerary_plan_hotel_details_ID || 0) >
+        Number((existing as any).itinerary_plan_hotel_details_ID || 0)
+      ) {
+        dedupedConfirmedRowsMap.set(key, row);
+      }
+    }
+    const dedupedConfirmedRows = Array.from(dedupedConfirmedRowsMap.values());
+
+    const fallbackRoomCostFromHotelRows = selectedHotelRows.reduce((sum: number, h: any) => {
+      return sum + Number(h.totalHotelCost || 0) + Number(h.totalHotelTaxAmount || 0);
+    }, 0);
+
+    const fallbackRoomCostFromConfirmedRows = dedupedConfirmedRows.reduce((sum: number, h: any) => {
+      const hotelCost = Number((h as any).total_hotel_cost || 0);
+      const hotelTax = Number((h as any).total_hotel_tax_amount || 0);
+      if (hotelCost + hotelTax > 0) {
+        return sum + hotelCost + hotelTax;
+      }
+      return sum + Number((h as any).total_room_cost || 0) + Number((h as any).total_room_gst_amount || 0);
+    }, 0);
+
+    const fallbackExtraBedFromConfirmedRows = dedupedConfirmedRows.reduce(
+      (sum: number, h: any) => sum + Number((h as any).total_extra_bed_cost || 0),
+      0,
+    );
+    const fallbackChildWithBedFromConfirmedRows = dedupedConfirmedRows.reduce(
+      (sum: number, h: any) => sum + Number((h as any).total_childwith_bed_cost || 0),
+      0,
+    );
+    const fallbackChildWithoutBedFromConfirmedRows = dedupedConfirmedRows.reduce(
+      (sum: number, h: any) => sum + Number((h as any).total_childwithout_bed_cost || 0),
+      0,
+    );
+    const fallbackAmenitiesFromConfirmedRows = dedupedConfirmedRows.reduce(
+      (sum: number, h: any) => sum + Number((h as any).total_amenities_cost || 0),
+      0,
+    );
+
+    const incomingCost = itinerary.costBreakdown || {};
+    const totalRoomCost =
+      Number(incomingCost.totalRoomCost || incomingCost.totalHotelAmount || 0) ||
+      fallbackRoomCostFromHotelRows ||
+      fallbackRoomCostFromConfirmedRows;
+    const totalAmenitiesCost =
+      Number(incomingCost.totalAmenitiesCost || 0) || fallbackAmenitiesFromConfirmedRows;
+    const extraBedCost =
+      Number(incomingCost.extraBedCost || 0) || fallbackExtraBedFromConfirmedRows;
+    const childWithBedCost =
+      Number(incomingCost.childWithBedCost || 0) || fallbackChildWithBedFromConfirmedRows;
+    const childWithoutBedCost =
+      Number(incomingCost.childWithoutBedCost || 0) || fallbackChildWithoutBedFromConfirmedRows;
+    const totalGuideCost = Number(incomingCost.totalGuideCost || 0);
+    const totalHotspotCost = Number(incomingCost.totalHotspotCost || 0);
+    const totalActivityCost = Number(incomingCost.totalActivityCost || 0);
+    const additionalMargin = Number(incomingCost.additionalMargin || 0);
+
+    const vehicleAmount =
+      selectedVehicleAmount > 0
+        ? selectedVehicleAmount
+        : Number(incomingCost.totalVehicleAmount || incomingCost.totalVehicleCost || 0);
+
+    const totalAmount =
+      totalRoomCost +
+      vehicleAmount +
+      totalAmenitiesCost +
+      extraBedCost +
+      childWithBedCost +
+      childWithoutBedCost +
+      totalGuideCost +
+      totalHotspotCost +
+      totalActivityCost +
+      additionalMargin;
+
+    const couponDiscount = Number(incomingCost.couponDiscount || 0);
+    const agentMargin = Number(incomingCost.agentMargin || 0);
+    const totalRoundOff = Number(incomingCost.totalRoundOff || 0);
+    const netPayable = totalAmount - couponDiscount + agentMargin + totalRoundOff;
+
     const costBreakdown = {
-      ...(itinerary.costBreakdown || {}),
-      totalVehicleQty: selectedVehicleQty,
-      totalVehicleAmount:
-        selectedVehicleAmount > 0
-          ? selectedVehicleAmount
-          : Number((itinerary.costBreakdown || {}).totalVehicleAmount || 0),
+      ...incomingCost,
+      totalRoomCost,
+      totalVehicleQty: selectedVehicleQty > 0 ? selectedVehicleQty : Number(incomingCost.totalVehicleQty || 0),
+      totalVehicleAmount: vehicleAmount,
+      totalAmount,
+      netPayable,
+      extraBed: Number(itinerary.extraBed || 0),
+      childWithBed: Number(itinerary.childWithBed || 0),
+      childWithoutBed: Number(itinerary.childWithoutBed || 0),
+      companyName: incomingCost.companyName || 'Doview Holidays India Pvt ltd',
     };
 
     const vehiclesHtml = this.buildVehicleSection(vehiclesForClipboard);
