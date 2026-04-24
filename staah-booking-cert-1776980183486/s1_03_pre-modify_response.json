@@ -1,0 +1,19 @@
+{
+  "status": 200,
+  "body": {
+    "currency": "AED",
+    "data": [
+      {
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-07-21",
+        "inventory": "8",
+        "stopsell": "N"
+      }
+    ],
+    "propertyid": "STAAHTESTHOTEL1",
+    "rate_id": "ROOM",
+    "room_id": "DELUXE",
+    "trackingId": "5EC1D3FB-C576-47A7-8E09-621808312C4B"
+  }
+}

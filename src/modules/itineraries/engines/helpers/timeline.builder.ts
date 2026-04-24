@@ -900,18 +900,20 @@ export class TimelineBuilder {
             : Number(fullDayMarkerRaw) === 1)
         : false;
 
+      const fallbackHotelCoords = hotelInfoForRoute?.coords || destCityCoords;
+
       let hotelDistanceFromArrivalKm: number | null = null;
       if (
         isFirstRoute &&
         isArrivalCityStayRoute &&
         currentCoords &&
-        hotelInfoForRoute?.coords
+        fallbackHotelCoords
       ) {
         hotelDistanceFromArrivalKm = this.distanceHelper.calculateHaversine(
           Number(currentCoords.lat || 0),
           Number(currentCoords.lon || 0),
-          Number(hotelInfoForRoute.coords.lat || 0),
-          Number(hotelInfoForRoute.coords.lon || 0),
+          Number(fallbackHotelCoords.lat || 0),
+          Number(fallbackHotelCoords.lon || 0),
         );
       }
 

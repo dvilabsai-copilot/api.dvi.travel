@@ -287,9 +287,14 @@ export class ItineraryVehiclesEngine {
    * - Mark cheapest per vehicle type as assigned
    * - Build vendor_vehicle_details for ALL eligibles (not just assigned)
    */
-  async rebuildEligibleVendorList(args: { planId: number; createdBy: number }) {
+  async rebuildEligibleVendorList(args: {
+    planId: number;
+    createdBy: number;
+    selectedTimeLimitByEligible?: Record<number, number>;
+  }) {
     const planId = Number(args.planId);
     const createdBy = Number(args.createdBy ?? 0);
+    const selectedTimeLimitByEligible = args.selectedTimeLimitByEligible ?? {};
 
     if (!Number.isFinite(planId) || planId <= 0) {
       return { planId, inserted: 0, reason: "Invalid planId" };
@@ -1202,6 +1207,7 @@ export class ItineraryVehiclesEngine {
           select: {
             vehicle_location_id: true,
             extra_km_charge: true,
+            extra_hour_charge: true,
             early_morning_charges: true,
             evening_charges: true,
             vendor_id: true,
@@ -1250,6 +1256,8 @@ export class ItineraryVehiclesEngine {
           vehicle_origin_latitude: vehicleLocationDetails.latitude,
           vehicle_origin_longitude: vehicleLocationDetails.longitude,
           extra_km_charge: toNum(vehicle.extra_km_charge),  // From dvi_vehicle
+          extra_hour_charge: toNum(vehicle.extra_hour_charge),
+          selected_time_limit_id: Number(selectedTimeLimitByEligible[eligibleId] ?? 0) || undefined,
           get_kms_limit: 250,  // Default outstation KM limit
           driver_batta: toNum(vendorVehicleType.driver_batta),
           food_cost: toNum(vendorVehicleType.food_cost),
