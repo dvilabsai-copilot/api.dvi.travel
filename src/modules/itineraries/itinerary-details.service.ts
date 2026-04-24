@@ -40,6 +40,10 @@ export interface VehicleDayWisePricingDto {
   parkingCharges: number;
   driverCharges: number;
   permitCharges: number;
+  extraHourCount: number;
+  extraHourRate: number;
+  extraHourCharges: number;
+  extraKmCharges: number;
   totalCharges: number;
 }
 
@@ -83,6 +87,13 @@ export interface ItineraryVehicleRowDto {
   vehicleTypeId?: number;
   vehicleTypeName?: string;
   isAssigned?: boolean;
+  selectedTimeLimitId?: number;
+  availableSlabs?: Array<{
+    timeLimitId: number;
+    title: string;
+    hoursLimit: number;
+    kmLimit: number;
+  }>;
 
   // Optional detailed charges – can be filled from vendor-eligible table later
   rentalCharges?: number;
@@ -111,6 +122,9 @@ export interface ItineraryVehicleRowDto {
   extraKms?: number;
   extraKmRate?: number;
   extraKmCharge?: number;
+  extraHourCount?: number;
+  extraHourRate?: number;
+  extraHourCharge?: number;
   subtotal?: number;
   vehicleGstPercentage?: number;
   vehicleGstAmount?: number;
@@ -1693,7 +1707,12 @@ for (const row of vehicleKmRows) {
           // place future attractions before this travel-to-hotel row in the array.
           
           const hotelInfo = routeHotelMap.get(route.itinerary_route_ID);
-          const toName = hotelInfo?.hotel_name ?? "Hotel";
+          const toName =
+            hotelInfo?.hotel_name ??
+            hotelInfo?.hotel_city ??
+            location?.destination_location ??
+            route.next_visiting_location ??
+            "Hotel";
 
           const travelStartMins = startTimeText ? this.timeToMinutes(startTimeText) : null;
 
@@ -1813,7 +1832,12 @@ for (const row of vehicleKmRows) {
         if (itemType === 6) {
           // HOTEL CHECK-IN / RETURN segment
           const hotelInfo = routeHotelMap.get(route.itinerary_route_ID);
-          const hotelName = hotelInfo?.hotel_name ?? "Hotel";
+          const hotelName =
+            hotelInfo?.hotel_name ??
+            hotelInfo?.hotel_city ??
+            location?.destination_location ??
+            route.next_visiting_location ??
+            "Hotel";
           const hotelAddress = hotelInfo?.hotel_address ?? "";
 
           // FIX #3: Use hotel arrival time (from travel-to-hotel) if available
@@ -2354,6 +2378,49 @@ const dayDistance = this.formatKm(totalDistanceNum);
       vehicleDetailsByEligible.get(eligibleId)!.push(vd);
     }
 
+    const routeIds = Array.from(
+      new Set(
+        vehicleDetailsRows
+          .map((vd: any) => Number(vd.itinerary_route_id || 0))
+          .filter((id: number) => id > 0),
+      ),
+    );
+
+    const routeTimeRows = routeIds.length
+      ? await this.prisma.dvi_itinerary_route_details.findMany({
+          where: { itinerary_route_ID: { in: routeIds } },
+          select: {
+            itinerary_route_ID: true,
+            route_start_time: true,
+            route_end_time: true,
+          },
+        })
+      : [];
+    const routeTimeMap = new Map<number, { start: any; end: any }>(
+      routeTimeRows.map((r: any) => [
+        Number(r.itinerary_route_ID || 0),
+        { start: r.route_start_time, end: r.route_end_time },
+      ]),
+    );
+
+    const vehicleIds = Array.from(
+      new Set(
+        vehicleDetailsRows
+          .map((vd: any) => Number(vd.vehicle_id || 0))
+          .filter((id: number) => id > 0),
+      ),
+    );
+
+    const vehicleExtraRows = vehicleIds.length
+      ? await this.prisma.dvi_vehicle.findMany({
+          where: { vehicle_id: { in: vehicleIds }, deleted: 0, status: 1 },
+          select: { vehicle_id: true, extra_hour_charge: true },
+        })
+      : [];
+    const vehicleExtraHourRateMap = new Map<number, number>(
+      vehicleExtraRows.map((v: any) => [Number(v.vehicle_id || 0), Number(v.extra_hour_charge || 0)]),
+    );
+
     // 3) Load vendor branches (for names & origin location)
     const branchIds = Array.from(
       new Set(
@@ -2373,6 +2440,90 @@ const dayDistance = this.formatKm(totalDistanceNum);
       branches.map((b) => [b.vendor_branch_id, b]),
     );
 
+    const slabKeySet = new Set(
+      eligibleRows
+        .map((e) => `${Number((e as any).vendor_id || 0)}_${Number((e as any).vendor_vehicle_type_id || 0)}`)
+        .filter((k) => !k.startsWith('0_0')),
+    );
+    const slabWhereClauses = Array.from(slabKeySet)
+      .map((k) => {
+        const [vendorIdStr, vvtStr] = k.split('_');
+        return `(vendor_id = ${Number(vendorIdStr)} AND vendor_vehicle_type_id = ${Number(vvtStr)})`;
+      })
+      .join(' OR ');
+
+    const slabRows: Array<{
+      vendor_id: number;
+      vendor_vehicle_type_id: number;
+      time_limit_id: number;
+      time_limit_title: string | null;
+      hours_limit: number;
+      km_limit: number;
+    }> = slabWhereClauses
+      ? await this.prisma.$queryRawUnsafe(`
+          SELECT vendor_id, vendor_vehicle_type_id, time_limit_id, time_limit_title, hours_limit, km_limit
+          FROM dvi_time_limit
+          WHERE status = 1
+            AND deleted = 0
+            AND (${slabWhereClauses})
+          ORDER BY time_limit_id ASC
+        `)
+      : [];
+
+    const slabMap = new Map<string, Array<{
+      timeLimitId: number;
+      title: string;
+      hoursLimit: number;
+      kmLimit: number;
+    }>>();
+    const slabHoursById = new Map<number, number>();
+    for (const slab of slabRows) {
+      const slabIdNum = Number(slab.time_limit_id || 0);
+      const hoursLimitNum = Number(slab.hours_limit || 0);
+      if (slabIdNum > 0 && !slabHoursById.has(slabIdNum)) {
+        slabHoursById.set(slabIdNum, hoursLimitNum);
+      }
+      const key = `${Number(slab.vendor_id || 0)}_${Number(slab.vendor_vehicle_type_id || 0)}`;
+      if (!slabMap.has(key)) slabMap.set(key, []);
+      slabMap.get(key)!.push({
+        timeLimitId: slabIdNum,
+        title: String(slab.time_limit_title || '').trim() || `${Number(slab.hours_limit || 0)} HRS ${Number(slab.km_limit || 0)} KMS`,
+        hoursLimit: hoursLimitNum,
+        kmLimit: Number(slab.km_limit || 0),
+      });
+    }
+
+    const parseTimeToSeconds = (value: any): number | null => {
+      if (!value) return null;
+      if (value instanceof Date) {
+        return value.getUTCHours() * 3600 + value.getUTCMinutes() * 60 + value.getUTCSeconds();
+      }
+      const text = String(value).trim();
+      if (!/^\d{1,2}:\d{2}(:\d{2})?$/.test(text)) return null;
+      const parts = text.split(':').map((x) => Number(x || 0));
+      return (Number(parts[0] || 0) * 3600) + (Number(parts[1] || 0) * 60) + Number(parts[2] || 0);
+    };
+
+    const getExtraHourBreakupForRow = (vd: any): { count: number; rate: number; charge: number } => {
+      const routeInfo = routeTimeMap.get(Number(vd.itinerary_route_id || 0));
+      if (!routeInfo) return { count: 0, rate: 0, charge: 0 };
+
+      const startSec = parseTimeToSeconds(routeInfo.start);
+      const endSec = parseTimeToSeconds(routeInfo.end);
+      if (startSec === null || endSec === null) return { count: 0, rate: 0, charge: 0 };
+
+      let durationSec = endSec - startSec;
+      if (durationSec < 0) durationSec += 24 * 3600;
+      const serviceHours = durationSec / 3600;
+
+      const slabHours = Number(slabHoursById.get(Number(vd.time_limit_id || 0)) || 0);
+      const rate = Number(vehicleExtraHourRateMap.get(Number(vd.vehicle_id || 0)) || 0);
+
+      if (slabHours <= 0 || rate <= 0 || serviceHours <= slabHours) return { count: 0, rate, charge: 0 };
+      const count = Math.ceil(serviceHours - slabHours);
+      return { count, rate, charge: count * rate };
+    };
+
     // Build vehicles array directly from eligible list (like PHP does)
     const vehicles: ItineraryVehicleRowDto[] = eligibleRows.map((eligible) => {
       const branchId = (eligible as any).vendor_branch_id ?? 0;
@@ -2384,7 +2535,7 @@ const dayDistance = this.formatKm(totalDistanceNum);
       const totalAmount = (eligible as any).vehicle_grand_total ?? 0;
 
       // Get all charge breakdowns
-      const rentalCharges = (eligible as any).total_rental_charges ?? 0;
+      let rentalCharges = Number((eligible as any).total_rental_charges ?? 0);
       const tollCharges = (eligible as any).total_toll_charges ?? 0;
       const parkingCharges = (eligible as any).total_parking_charges ?? 0;
       const driverCharges = (eligible as any).total_driver_charges ?? 0;
@@ -2393,10 +2544,16 @@ const dayDistance = this.formatKm(totalDistanceNum);
       const before6amVendor = (eligible as any).total_before_6_am_charges_for_vehicle ?? 0;
       const after8pmDriver = (eligible as any).total_after_8_pm_charges_for_driver ?? 0;
       const after8pmVendor = (eligible as any).total_after_8_pm_charges_for_vehicle ?? 0;
+      let extraHourCharge = 0;
 
       // Calculate aggregated KMs from day-wise vehicle details
       const eligibleId = eligible.itinerary_plan_vendor_eligible_ID;
       const dayWiseDetails = vehicleDetailsByEligible.get(eligibleId) || [];
+      const selectedTimeLimitId = dayWiseDetails.length
+        ? Number((dayWiseDetails[0] as any).time_limit_id || 0)
+        : 0;
+      const slabKey = `${Number((eligible as any).vendor_id || 0)}_${Number((eligible as any).vendor_vehicle_type_id || 0)}`;
+      const availableSlabs = slabMap.get(slabKey) || [];
       
      let totalRunningKm = 0;
 let totalSiteseeingKm = 0;
@@ -2418,25 +2575,7 @@ for (const vd of dayWiseDetails) {
   totalTravelledKm += safeTotalKm;
 }
 
-      // Build a breakdown list only for >0 amounts (for UI card)
-      const tmp: VehicleCostBreakdownItemDto[] = [];
-      const pushItem = (label: string, amount: number) => {
-        if (amount > 0) {
-          tmp.push({ label, amount });
-        }
-      };
-
-      pushItem('Rental Charges', rentalCharges);
-      pushItem('Toll Charges', tollCharges);
-      pushItem('Parking Charges', parkingCharges);
-      pushItem('Driver Charges', driverCharges);
-      pushItem('Permit Charges', permitCharges);
-      pushItem('Before 6 AM (Driver)', before6amDriver);
-      pushItem('Before 6 AM (Vehicle)', before6amVendor);
-      pushItem('After 8 PM (Driver)', after8pmDriver);
-      pushItem('After 8 PM (Vehicle)', after8pmVendor);
-
-      const breakdown = tmp.length ? tmp : undefined;
+      let breakdown: VehicleCostBreakdownItemDto[] | undefined;
 
       // Simple PHP-like package label: "Outstation - 250 KM"
       const totalKms = (eligible as any).total_kms ?? '';
@@ -2461,6 +2600,10 @@ for (const vd of dayWiseDetails) {
             parking: 0,
             driver: 0,
             permit: 0,
+            extraHourCount: 0,
+            extraHourRate: 0,
+            extraHour: 0,
+            extraKm: 0,
             travelKms: 0, // running_km per day
             sightseeingKms: 0, // siteseeing_km per day
             totalKms: 0 // total_travelled_km per day
@@ -2472,7 +2615,15 @@ for (const vd of dayWiseDetails) {
           from: (vd as any).itinerary_route_location_from || '',
           to: (vd as any).itinerary_route_location_to || ''
         });
-        dayData.rental += parseFloat((vd as any).vehicle_rental_charges || 0);
+        const rawRental = parseFloat(String((vd as any).vehicle_rental_charges || 0)) || 0;
+        const extraHourBreakup = getExtraHourBreakupForRow(vd);
+        const dayExtraHourCharge = extraHourBreakup.charge;
+        const baseRental = Math.max(0, rawRental - dayExtraHourCharge);
+        dayData.rental += baseRental;
+        dayData.extraHourCount += extraHourBreakup.count;
+        dayData.extraHourRate = extraHourBreakup.rate || dayData.extraHourRate;
+        dayData.extraHour += dayExtraHourCharge;
+        dayData.extraKm += parseFloat(String((vd as any).total_extra_km_charges || 0)) || 0;
         dayData.toll += parseFloat((vd as any).vehicle_toll_charges || 0);
         dayData.parking += parseFloat((vd as any).vehicle_parking_charges || 0);
         dayData.driver += parseFloat((vd as any).vehicle_driver_charges || 0);
@@ -2514,10 +2665,53 @@ dayData.totalKms += safeTotalKm;
           parkingCharges: dayData.parking,
           driverCharges: dayData.driver,
           permitCharges: dayData.permit,
-          totalCharges: dayData.rental + dayData.toll + dayData.parking + dayData.driver + dayData.permit
+          extraHourCount: dayData.extraHourCount,
+          extraHourRate: dayData.extraHourRate,
+          extraHourCharges: dayData.extraHour,
+          extraKmCharges: dayData.extraKm,
+          totalCharges:
+            dayData.rental +
+            dayData.extraHour +
+            dayData.extraKm +
+            dayData.toll +
+            dayData.parking +
+            dayData.driver +
+            dayData.permit
         });
         dayCounter++;
       }
+
+      const dayWiseRentalTotal = dayWisePricing.reduce((s, d) => s + Number(d.rentalCharges || 0), 0);
+      const dayWiseExtraHourCountTotal = dayWisePricing.reduce((s, d) => s + Number(d.extraHourCount || 0), 0);
+      const dayWiseExtraHourRate = Number(dayWisePricing.find((d) => Number(d.extraHourRate || 0) > 0)?.extraHourRate || 0);
+      const dayWiseExtraHourTotal = dayWisePricing.reduce((s, d) => s + Number(d.extraHourCharges || 0), 0);
+      const dayWiseExtraKmChargeTotal = dayWisePricing.reduce((s, d) => s + Number(d.extraKmCharges || 0), 0);
+      extraHourCharge = dayWiseExtraHourTotal;
+      if (dayWiseRentalTotal > 0) {
+        rentalCharges = dayWiseRentalTotal;
+      }
+
+      // Build a breakdown list only for >0 amounts (for UI card)
+      const tmp: VehicleCostBreakdownItemDto[] = [];
+      const pushItem = (label: string, amount: number) => {
+        if (amount > 0) {
+          tmp.push({ label, amount });
+        }
+      };
+
+      pushItem('Rental Charges', rentalCharges);
+      pushItem('Extra Hour Charges', extraHourCharge);
+      pushItem('Extra KM Charges', dayWiseExtraKmChargeTotal);
+      pushItem('Toll Charges', tollCharges);
+      pushItem('Parking Charges', parkingCharges);
+      pushItem('Driver Charges', driverCharges);
+      pushItem('Permit Charges', permitCharges);
+      pushItem('Before 6 AM (Driver)', before6amDriver);
+      pushItem('Before 6 AM (Vehicle)', before6amVendor);
+      pushItem('After 8 PM (Driver)', after8pmDriver);
+      pushItem('After 8 PM (Vehicle)', after8pmVendor);
+
+      breakdown = tmp.length ? tmp : undefined;
 
       // Aggregate pickup/drop KMs from day-wise vehicle details
       const totalPickupKm = dayWiseDetails.reduce((s: number, vd: any) => s + (parseFloat(String(vd.total_pickup_km || 0)) || 0), 0);
@@ -2536,14 +2730,22 @@ dayData.totalKms += safeTotalKm;
       const eligAny = eligible as any;
       const totalUsedKm = parseFloat(String(eligAny.total_kms || 0)) || 0;
       const totalAllowedKm = parseFloat(String(eligAny.total_allowed_kms || 0)) || 0;
-      const extraKms = parseFloat(String(eligAny.total_extra_kms || 0)) || 0;
+      const extraKms =
+        parseFloat(String(eligAny.total_extra_kms || 0)) ||
+        parseFloat(String(eligAny.total_extra_local_kms || 0)) ||
+        0;
       const extraKmRate = parseFloat(String(eligAny.extra_km_rate || 0)) || 0;
-      const extraKmCharge = parseFloat(String(eligAny.total_extra_kms_charge || 0)) || 0;
+      const extraKmCharge =
+        dayWiseExtraKmChargeTotal ||
+        parseFloat(String(eligAny.total_extra_kms_charge || 0)) ||
+        parseFloat(String(eligAny.total_extra_local_kms_charge || 0)) ||
+        0;
       const totalCostOfVehicle = rentalCharges + tollCharges + parkingCharges + driverCharges + permitCharges
         + Number(eligAny.total_before_6_am_charges_for_driver ?? 0)
         + Number(eligAny.total_before_6_am_charges_for_vehicle ?? 0)
         + Number(eligAny.total_after_8_pm_charges_for_driver ?? 0)
-        + Number(eligAny.total_after_8_pm_charges_for_vehicle ?? 0);
+        + Number(eligAny.total_after_8_pm_charges_for_vehicle ?? 0)
+        + extraHourCharge;
       const subtotal = totalCostOfVehicle + extraKmCharge;
       const vehicleGstPercentage = parseFloat(String(eligAny.vehicle_gst_percentage || 0)) || 0;
       const vehicleGstAmount = parseFloat(String(eligAny.vehicle_gst_amount || 0)) || 0;
@@ -2565,6 +2767,8 @@ dayData.totalKms += safeTotalKm;
         vehicleTypeId: vehicleTypeId,
         vehicleTypeName: vehicleTypeNameMap.get(vehicleTypeId) || 'Unknown Vehicle Type',
         isAssigned: (eligible as any).itineary_plan_assigned_status === 1,
+        selectedTimeLimitId,
+        availableSlabs,
 
         rentalCharges,
         tollCharges,
@@ -2591,6 +2795,9 @@ dayData.totalKms += safeTotalKm;
         extraKms,
         extraKmRate,
         extraKmCharge,
+        extraHourCount: dayWiseExtraHourCountTotal,
+        extraHourRate: dayWiseExtraHourRate,
+        extraHourCharge,
         subtotal,
         vehicleGstPercentage,
         vehicleGstAmount,

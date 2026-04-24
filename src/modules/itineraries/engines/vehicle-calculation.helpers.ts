@@ -21,6 +21,8 @@ export interface VehicleCalculationContext {
   vehicle_origin_latitude: number;
   vehicle_origin_longitude: number;
   extra_km_charge: number;
+  extra_hour_charge: number;
+  selected_time_limit_id?: number;
   get_kms_limit: number; // outstation_allowed_km_per_day
   driver_batta: number;
   food_cost: number;
@@ -74,6 +76,8 @@ export interface RouteCalculationResult {
   TOTAL_LOCAL_EXTRA_KM: number;
   TOTAL_LOCAL_EXTRA_KM_CHARGES: number;
   TOTAL_ALLOWED_LOCAL_KM: number;
+  TOTAL_LOCAL_EXTRA_HOURS: number;
+  TOTAL_LOCAL_EXTRA_HOUR_CHARGES: number;
 }
 
 export interface VendorEligibleTotals {
@@ -685,11 +689,30 @@ export async function getTimeLimitId(
   vendor_id: number,
   vendor_vehicle_type_ID: number,
   total_hours?: number,
-  total_km?: number
+  total_km?: number,
+  selected_time_limit_id?: number
 ): Promise<number> {
   try {
-    // Try to find existing vehicle details record
-    const existingVehicleDetails = await prisma.dvi_itinerary_plan_vendor_vehicle_details.findFirst({
+    const selectedTimeLimitId = Number(selected_time_limit_id || 0);
+    if (selectedTimeLimitId > 0) {
+      const selected = await prisma.dvi_time_limit.findFirst({
+        where: {
+          time_limit_id: selectedTimeLimitId,
+          vendor_id,
+          vendor_vehicle_type_id: vendor_vehicle_type_ID,
+          status: 1,
+          deleted: 0,
+        },
+        select: { time_limit_id: true },
+      });
+
+      if (selected?.time_limit_id) {
+        return selected.time_limit_id;
+      }
+    }
+
+    // Auto mode: default to the smallest available slab for this vendor/vehicle type.
+    const firstSlab = await prisma.dvi_time_limit.findFirst({
       where: {
         vendor_id,
         vendor_vehicle_type_id: vendor_vehicle_type_ID,
@@ -700,15 +723,15 @@ export async function getTimeLimitId(
         time_limit_id: true,
       },
       orderBy: {
-        createdby: 'desc',
+        time_limit_id: 'asc',
       },
     });
 
-    if (existingVehicleDetails && existingVehicleDetails.time_limit_id) {
-      return existingVehicleDetails.time_limit_id;
+    if (firstSlab?.time_limit_id) {
+      return firstSlab.time_limit_id;
     }
 
-    // If no existing record, try to find from local pricebook
+    // Fallback: find from local pricebook when time_limit table rows are unavailable.
     const pricebook = await prisma.dvi_vehicle_local_pricebook.findFirst({
       where: {
         vendor_id,
@@ -1042,6 +1065,8 @@ export async function calculateRouteVehicleDetails(
   let time_limit_id = 0;
   let TOTAL_LOCAL_EXTRA_KM = 0;
   let TOTAL_LOCAL_EXTRA_KM_CHARGES = 0;
+  let TOTAL_LOCAL_EXTRA_HOURS = 0;
+  let TOTAL_LOCAL_EXTRA_HOUR_CHARGES = 0;
   let TOTAL_ALLOWED_LOCAL_KM = 0;
 
   const hotspotMetrics = await getRouteHotspotMetrics(
@@ -1124,6 +1149,38 @@ export async function calculateRouteVehicleDetails(
   const totalRouteSeconds = totalTravellingSeconds + sightseeingTimeSeconds;
   const TOTAL_TIME = secondsToHms(totalRouteSeconds);
 
+  // Route service duration is used for slab extra-hour logic.
+  let routeServiceHours = 0;
+  if (route.route_start_time && route.route_end_time) {
+    const parseTimeToSeconds = (value: any): number | null => {
+      if (!value) return null;
+      if (value instanceof Date) {
+        return (
+          (value.getUTCHours() * 3600) +
+          (value.getUTCMinutes() * 60) +
+          value.getUTCSeconds()
+        );
+      }
+      const text = String(value).trim();
+      if (!/^\d{1,2}:\d{2}(:\d{2})?$/.test(text)) return null;
+      const parts = text.split(':').map((x) => Number(x || 0));
+      const h = Number(parts[0] || 0);
+      const m = Number(parts[1] || 0);
+      const s = Number(parts[2] || 0);
+      return h * 3600 + m * 60 + s;
+    };
+
+    const startSec = parseTimeToSeconds(route.route_start_time);
+    const endSec = parseTimeToSeconds(route.route_end_time);
+    if (startSec !== null && endSec !== null) {
+      let diff = endSec - startSec;
+      if (diff < 0) {
+        diff += 24 * 3600;
+      }
+      routeServiceHours = diff / 3600;
+    }
+  }
+
   // Calculate toll charges
   let tollCharges = await calculateRouteTollCharges(
     prisma,
@@ -1193,7 +1250,14 @@ export async function calculateRouteVehicleDetails(
   // Calculate vehicle rental based on travel type
   if (travel_type === 1) {
     // LOCAL - get time limit ID
-    time_limit_id = await getTimeLimitId(prisma, vendor_id, vendor_vehicle_type_ID);
+    time_limit_id = await getTimeLimitId(
+      prisma,
+      vendor_id,
+      vendor_vehicle_type_ID,
+      routeServiceHours,
+      totalKmNum,
+      ctx.selected_time_limit_id,
+    );
     
     // Get LOCAL pricing from day-based pricebook
     vehicle_cost_for_the_day = await getLocalVehiclePricingByDate(
@@ -1216,9 +1280,15 @@ export async function calculateRouteVehicleDetails(
     if (time_limit_id > 0) {
       const timeLimit = await prisma.dvi_time_limit.findUnique({
         where: { time_limit_id },
-        select: { km_limit: true },
+        select: { km_limit: true, hours_limit: true },
       });
       TOTAL_ALLOWED_LOCAL_KM = Number(timeLimit?.km_limit ?? 0);
+
+      const allowedHours = Number(timeLimit?.hours_limit ?? 0);
+      if (allowedHours > 0 && routeServiceHours > allowedHours) {
+        TOTAL_LOCAL_EXTRA_HOURS = Math.ceil(routeServiceHours - allowedHours);
+        TOTAL_LOCAL_EXTRA_HOUR_CHARGES = TOTAL_LOCAL_EXTRA_HOURS * Number(ctx.extra_hour_charge || 0);
+      }
     }
 
     // Calculate extra KM charges for LOCAL
@@ -1226,11 +1296,15 @@ export async function calculateRouteVehicleDetails(
       TOTAL_LOCAL_EXTRA_KM = totalKmNum - TOTAL_ALLOWED_LOCAL_KM;
       TOTAL_LOCAL_EXTRA_KM_CHARGES = TOTAL_LOCAL_EXTRA_KM * ctx.extra_km_charge;
     }
+
+    vehicle_cost_for_the_day += TOTAL_LOCAL_EXTRA_HOUR_CHARGES;
   } else {
     // OUTSTATION - use day-based pricebook
     time_limit_id = 0;
     TOTAL_LOCAL_EXTRA_KM = 0;
     TOTAL_LOCAL_EXTRA_KM_CHARGES = 0;
+    TOTAL_LOCAL_EXTRA_HOURS = 0;
+    TOTAL_LOCAL_EXTRA_HOUR_CHARGES = 0;
     TOTAL_ALLOWED_LOCAL_KM = 0;
 
     // Get OUTSTATION pricing from day-based pricebook
@@ -1266,6 +1340,12 @@ export async function calculateRouteVehicleDetails(
     // Helper to ensure we have a valid time string (HH:MM:SS format)
     const ensureTimeString = (val: any): string | null => {
       if (!val) return null;
+      if (val instanceof Date) {
+        const hh = String(val.getUTCHours()).padStart(2, '0');
+        const mm = String(val.getUTCMinutes()).padStart(2, '0');
+        const ss = String(val.getUTCSeconds()).padStart(2, '0');
+        return `${hh}:${mm}:${ss}`;
+      }
       const str = String(val).trim();
       // Match HH:MM:SS or HH:MM pattern
       if (/^\d{1,2}:\d{2}(?::\d{2})?$/.test(str)) return str;
@@ -1337,6 +1417,8 @@ export async function calculateRouteVehicleDetails(
     TOTAL_VEHICLE_AMOUNT,
     TOTAL_LOCAL_EXTRA_KM,
     TOTAL_LOCAL_EXTRA_KM_CHARGES,
-    TOTAL_ALLOWED_LOCAL_KM
+    TOTAL_ALLOWED_LOCAL_KM,
+    TOTAL_LOCAL_EXTRA_HOURS,
+    TOTAL_LOCAL_EXTRA_HOUR_CHARGES,
   };
 }

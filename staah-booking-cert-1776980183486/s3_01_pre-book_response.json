@@ -1,0 +1,33 @@
+{
+  "status": 200,
+  "body": {
+    "currency": "AED",
+    "data": [
+      {
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-09-01",
+        "inventory": "8",
+        "stopsell": "N"
+      },
+      {
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-09-02",
+        "inventory": "8",
+        "stopsell": "N"
+      },
+      {
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-09-03",
+        "inventory": "8",
+        "stopsell": "N"
+      }
+    ],
+    "propertyid": "STAAHTESTHOTEL1",
+    "rate_id": "ROOM",
+    "room_id": "DELUXE",
+    "trackingId": "88A5AAA0-202B-4F6B-8753-66AF96DD63D4"
+  }
+}
