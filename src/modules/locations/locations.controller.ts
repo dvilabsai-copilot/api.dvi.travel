@@ -163,6 +163,11 @@ create(@Body() dto: CreateLocationDto) {
     return this.svc.modifyName(Number(id), dto.scope, dto.new_name);
   }
 
+  @Delete('location-name')
+@HttpCode(200)
+deleteLocationName(@Query('location') location: string) {
+  return this.svc.deleteLocationName(location);
+}
     @Delete(':id')
   @HttpCode(200)
   @ApiOperation({ summary: 'Delete location by ID' })

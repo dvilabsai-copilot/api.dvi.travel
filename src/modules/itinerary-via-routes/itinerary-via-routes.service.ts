@@ -55,58 +55,99 @@ export class ItineraryViaRoutesService {
    * Matches either source_location or destination_location in dvi_stored_locations
    * and returns the appropriate lat/long.
    */
-  private async getLocationCoordsByName(locationName: string) {
-    if (!locationName) return null;
+  private normalizeLocationName(value: string | null | undefined): string {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/\s*,\s*/g, ', ')
+    .replace(/,\s*india$/i, '');
+}
 
-    const row = await this.prisma.dvi_stored_locations.findFirst({
-      where: {
-        deleted: 0,
-        status: 1,
-        OR: [
-          { source_location: locationName },
-          { destination_location: locationName },
-        ],
-      },
-      select: {
-        source_location: true,
-        source_location_lattitude: true,
-        source_location_longitude: true,
-        destination_location: true,
-        destination_location_lattitude: true,
-        destination_location_longitude: true,
-      },
-    });
+private toCoords(latValue: any, lonValue: any) {
+  if (latValue == null || lonValue == null) return null;
 
-    if (!row) {
-      return null;
+  const lat = Number(latValue);
+  const lon = Number(lonValue);
+
+  if (Number.isNaN(lat) || Number.isNaN(lon)) return null;
+
+  return { lat, lon };
+}
+
+private async getLocationCoordsByName(locationName: string) {
+  const rawName = String(locationName || '').trim();
+  if (!rawName) return null;
+
+  const shortName = rawName.split(',')[0]?.trim() || rawName;
+  const normalizedInput = this.normalizeLocationName(rawName);
+  const normalizedShort = this.normalizeLocationName(shortName);
+
+  const rows = await this.prisma.dvi_stored_locations.findMany({
+    where: {
+      deleted: 0,
+      status: 1,
+      OR: [
+        { source_location: rawName },
+        { destination_location: rawName },
+        { source_location: shortName },
+        { destination_location: shortName },
+        { source_location: { contains: rawName } },
+        { destination_location: { contains: rawName } },
+        { source_location: { contains: shortName } },
+        { destination_location: { contains: shortName } },
+      ],
+    },
+    select: {
+      source_location: true,
+      source_location_lattitude: true,
+      source_location_longitude: true,
+      destination_location: true,
+      destination_location_lattitude: true,
+      destination_location_longitude: true,
+    },
+    take: 50,
+  });
+
+  for (const row of rows) {
+    const sourceName = this.normalizeLocationName(row.source_location);
+    const destinationName = this.normalizeLocationName(row.destination_location);
+
+    const sourceMatches =
+      sourceName === normalizedInput ||
+      sourceName === normalizedShort ||
+      normalizedInput.includes(sourceName) ||
+      sourceName.includes(normalizedShort);
+
+    if (sourceMatches) {
+      const coords = this.toCoords(
+        row.source_location_lattitude,
+        row.source_location_longitude,
+      );
+
+      if (coords) return coords;
     }
 
-    // Decide which side (source/destination) matches the given name
-    let latStr: string | null = null;
-    let lonStr: string | null = null;
+    const destinationMatches =
+      destinationName === normalizedInput ||
+      destinationName === normalizedShort ||
+      normalizedInput.includes(destinationName) ||
+      destinationName.includes(normalizedShort);
 
-    if (row.source_location === locationName) {
-      latStr = row.source_location_lattitude as unknown as string | null;
-      lonStr = row.source_location_longitude as unknown as string | null;
-    } else if (row.destination_location === locationName) {
-      latStr = row.destination_location_lattitude as unknown as string | null;
-      lonStr = row.destination_location_longitude as unknown as string | null;
+    if (destinationMatches) {
+      const coords = this.toCoords(
+        row.destination_location_lattitude,
+        row.destination_location_longitude,
+      );
+
+      if (coords) return coords;
     }
-
-    if (latStr == null || lonStr == null) {
-      return null;
-    }
-
-    const lat = Number(latStr);
-    const lon = Number(lonStr);
-
-    if (Number.isNaN(lat) || Number.isNaN(lon)) {
-      return null;
-    }
-
-    return { lat, lon };
   }
 
+  console.warn('[ViaRoutes] Unable to resolve coordinates for location:', rawName);
+
+  return null;
+}
   /**
    * Given via route IDs from dvi_stored_location_via_routes, resolve them to
    * location names and then fetch their coordinates from dvi_stored_locations.

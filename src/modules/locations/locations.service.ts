@@ -53,38 +53,50 @@ export class LocationsService {
 
   // ------ LIST + FILTERS ------
   async list(q: ListQuery) {
-    const page = Math.max(1, Number(q.page) || 1);
-    const pageSize = Math.min(100, Math.max(1, Number(q.pageSize) || 10));
+  const page = Math.max(1, Number(q.page) || 1);
+  const pageSize = Math.min(500, Math.max(1, Number(q.pageSize) || 10));
 
-    const where: any = { deleted: 0 };
-    if (q.source) where.source_location = q.source;
-    if (q.destination) where.destination_location = q.destination;
-    if (q.search) {
-      where.OR = [
-        { source_location: { contains: q.search } },
-        { destination_location: { contains: q.search } },
-        { source_location_city: { contains: q.search } },
-        { destination_location_city: { contains: q.search } },
-      ];
-    }
+  const where: any = { deleted: 0 };
 
-    const [rows, total] = await this.prisma.$transaction([
-      this.prisma.dvi_stored_locations.findMany({
-        where,
-        orderBy: { location_ID: 'desc' },
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-      }),
-      this.prisma.dvi_stored_locations.count({ where }),
-    ]);
+  if (q.source) where.source_location = q.source;
+  if (q.destination) where.destination_location = q.destination;
 
-    return {
-      rows: rows.map(r => this.mapRowToResponse(r)),
-      total,
-      page,
-      pageSize,
-    };
+  if (q.search) {
+    where.OR = [
+      { source_location: { contains: q.search } },
+      { destination_location: { contains: q.search } },
+      { source_location_city: { contains: q.search } },
+      { destination_location_city: { contains: q.search } },
+    ];
   }
+
+  const orderBy: any[] = q.source
+    ? [
+        { distance: 'asc' },
+        { destination_location: 'asc' },
+        { location_ID: 'desc' },
+      ]
+    : [
+        { location_ID: 'desc' },
+      ];
+
+  const [rows, total] = await this.prisma.$transaction([
+    this.prisma.dvi_stored_locations.findMany({
+      where,
+      orderBy,
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    }),
+    this.prisma.dvi_stored_locations.count({ where }),
+  ]);
+
+  return {
+    rows: rows.map((r) => this.mapRowToResponse(r)),
+    total,
+    page,
+    pageSize,
+  };
+}
 
   async dropdowns() {
     const [src, dst] = await this.prisma.$transaction([
@@ -211,6 +223,8 @@ export class LocationsService {
     });
     return this.mapRowToResponse(updated);
   }
+
+
 
   private mapDtoToSchema(dto: any) {
   const mapped: any = {};
@@ -662,6 +676,38 @@ private calculateDistanceKm(
   const distance = earthRadiusKm * c;
 
   return Number(distance.toFixed(6));
+}
+
+async deleteLocationName(location: string) {
+  const name = String(location || '').trim();
+
+  if (!name) {
+    throw new BadRequestException('Location is required');
+  }
+
+  const result = await this.prisma.dvi_stored_locations.updateMany({
+    where: {
+      deleted: 0,
+      OR: [
+        { source_location: name },
+        { destination_location: name },
+      ],
+    },
+    data: {
+      deleted: 1,
+      updatedon: new Date(),
+    },
+  });
+
+  if (!result.count) {
+    throw new NotFoundException('Location not found');
+  }
+
+  return {
+    ok: true,
+    deletedLocation: name,
+    deletedCount: result.count,
+  };
 }
 
     async softDelete(id: number) {
