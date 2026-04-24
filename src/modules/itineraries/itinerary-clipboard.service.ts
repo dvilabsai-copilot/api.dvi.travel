@@ -10,6 +10,27 @@ export interface ClipboardPayload {
   plainText: string;
 }
 
+type ClipboardCostBreakdown = {
+  totalRoomCost?: number;
+  totalHotelAmount?: number;
+  totalAmenitiesCost?: number;
+  extraBedCost?: number;
+  childWithBedCost?: number;
+  childWithoutBedCost?: number;
+  totalGuideCost?: number;
+  totalHotspotCost?: number;
+  totalActivityCost?: number;
+  additionalMargin?: number;
+  totalVehicleAmount?: number;
+  totalVehicleCost?: number;
+  totalVehicleQty?: number;
+  couponDiscount?: number;
+  agentMargin?: number;
+  totalRoundOff?: number;
+  companyName?: string;
+  [key: string]: unknown;
+};
+
 @Injectable()
 export class ItineraryClipboardService {
   constructor(
@@ -691,7 +712,8 @@ export class ItineraryClipboardService {
       0,
     );
 
-    const incomingCost = itinerary.costBreakdown || {};
+    const incomingCost: ClipboardCostBreakdown =
+      (itinerary?.costBreakdown ?? {}) as ClipboardCostBreakdown;
     const totalRoomCost =
       Number(incomingCost.totalRoomCost || incomingCost.totalHotelAmount || 0) ||
       fallbackRoomCostFromHotelRows ||
