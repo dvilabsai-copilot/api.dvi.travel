@@ -217,6 +217,24 @@ export class CreateTravellerDto {
   @ApiProperty({ example: 1, description: '1=Adult, 2=Child, 3=Infant' })
   @IsInt()
   traveller_type!: number;
+
+  @ApiProperty({
+    example: '8',
+    required: false,
+    description: 'Child age as string. Optional for non-child travellers.',
+  })
+  @IsOptional()
+  @IsString()
+  traveller_age?: string;
+
+  @ApiProperty({
+    example: 1,
+    required: false,
+    description: 'Child bed type (0=NA, 1=Without Bed, 2=With Bed).',
+  })
+  @IsOptional()
+  @IsInt()
+  child_bed_type?: number;
 }
 
 export class CreateItineraryDto {

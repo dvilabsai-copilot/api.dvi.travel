@@ -63,6 +63,52 @@ export class PlanEngineService {
     return maxRoom || 1;
   }
 
+  /**
+   * PHP parity:
+   * - child_bed_type: 1 => without bed, 2 => with bed
+   * - total_extra_bed: +1 per room where adult count is greater than 2
+   */
+  private getBedAndChildTotals(travellers: CreateTravellerDto[]): {
+    totalExtraBed: number;
+    totalChildWithBed: number;
+    totalChildWithoutBed: number;
+  } {
+    let totalChildWithBed = 0;
+    let totalChildWithoutBed = 0;
+    const adultsByRoom = new Map<number, number>();
+
+    for (const t of travellers || []) {
+      if (!t) continue;
+
+      if (Number(t.traveller_type) === 1) {
+        const roomId = Number(t.room_id || 0);
+        if (roomId > 0) {
+          adultsByRoom.set(roomId, (adultsByRoom.get(roomId) || 0) + 1);
+        }
+        continue;
+      }
+
+      if (Number(t.traveller_type) === 2) {
+        const bedType = Number(t.child_bed_type ?? 0);
+        if (bedType === 2) totalChildWithBed += 1;
+        if (bedType === 1) totalChildWithoutBed += 1;
+      }
+    }
+
+    let totalExtraBed = 0;
+    for (const adultCount of adultsByRoom.values()) {
+      if (adultCount > 2) {
+        totalExtraBed += 1;
+      }
+    }
+
+    return {
+      totalExtraBed,
+      totalChildWithBed,
+      totalChildWithoutBed,
+    };
+  }
+
   private normalizeStringList(list: string[] | undefined | null): string {
     if (!list || !Array.isArray(list)) return "";
     return list
@@ -200,9 +246,11 @@ export class PlanEngineService {
     const totalChildren = Number(plan.child_count ?? 0);
     const totalInfants = Number(plan.infant_count ?? 0);
 
-    const totalExtraBed = 0;
-    const totalChildWithBed = 0;
-    const totalChildWithoutBed = 0;
+    const {
+      totalExtraBed,
+      totalChildWithBed,
+      totalChildWithoutBed,
+    } = this.getBedAndChildTotals(travellers || []);
 
     const preferredRoomCount = this.getPreferredRoomCount(travellers || []);
 

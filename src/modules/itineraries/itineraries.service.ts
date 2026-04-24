@@ -3649,10 +3649,16 @@ export class ItinerariesService {
       orderBy: { vehicle_details_ID: 'asc' },
     });
 
+    const travellers = await this.prisma.dvi_itinerary_traveller_details.findMany({
+      where: { itinerary_plan_ID: planId, deleted: 0 },
+      orderBy: { traveller_details_ID: 'asc' },
+    });
+
     return {
       plan,
       routes: routesWithVia,
       vehicles,
+      travellers,
     };
   }
 
