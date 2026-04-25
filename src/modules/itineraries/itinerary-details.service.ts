@@ -32,6 +32,7 @@ export interface VehicleDayWisePricingDto {
   date: string; // "2025-12-26"
   dayLabel: string; // "Day 1 | 26 Dec 2025"
   route: string; // "Chennai → Mahabalipuram"
+  pickupKms: number;
   travelKms: number; // Running KM per day
   sightseeingKms: number; // Sightseeing KM per day
   totalKms: number; // Total KMS per day (travel + sightseeing)
@@ -44,6 +45,7 @@ export interface VehicleDayWisePricingDto {
   extraHourRate: number;
   extraHourCharges: number;
   extraKmCharges: number;
+  dropKms: number;
   totalCharges: number;
 }
 
@@ -2604,6 +2606,8 @@ for (const vd of dayWiseDetails) {
             extraHourRate: 0,
             extraHour: 0,
             extraKm: 0,
+            pickupKms: 0,
+            dropKms: 0,
             travelKms: 0, // running_km per day
             sightseeingKms: 0, // siteseeing_km per day
             totalKms: 0 // total_travelled_km per day
@@ -2628,6 +2632,8 @@ for (const vd of dayWiseDetails) {
         dayData.parking += parseFloat((vd as any).vehicle_parking_charges || 0);
         dayData.driver += parseFloat((vd as any).vehicle_driver_charges || 0);
         dayData.permit += parseFloat((vd as any).vehicle_permit_charges || 0);
+        dayData.pickupKms += parseFloat(String((vd as any).total_pickup_km || 0)) || 0;
+        dayData.dropKms += parseFloat(String((vd as any).total_drop_km || 0)) || 0;
         // Track all three KMS values per day
        const runningKm = parseFloat(String((vd as any).total_running_km || 0)) || 0;
 const sightseeingKm = parseFloat(String((vd as any).total_siteseeing_km || 0)) || 0;
@@ -2657,6 +2663,7 @@ dayData.totalKms += safeTotalKm;
           date: dateStr,
           dayLabel: `Day ${dayCounter} | ${dayName}`,
           route,
+          pickupKms: dayData.pickupKms,
           travelKms: dayData.travelKms,
           sightseeingKms: dayData.sightseeingKms,
           totalKms: dayData.totalKms,
@@ -2669,6 +2676,7 @@ dayData.totalKms += safeTotalKm;
           extraHourRate: dayData.extraHourRate,
           extraHourCharges: dayData.extraHour,
           extraKmCharges: dayData.extraKm,
+          dropKms: dayData.dropKms,
           totalCharges:
             dayData.rental +
             dayData.extraHour +

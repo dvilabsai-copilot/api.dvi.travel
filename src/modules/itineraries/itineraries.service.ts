@@ -3649,6 +3649,25 @@ export class ItinerariesService {
       return diff / 3600;
     };
 
+    const parseDurationToHours = (value: any): number => {
+      if (!value) return 0;
+      if (value instanceof Date) {
+        return (
+          Number(value.getUTCHours() || 0) +
+          Number(value.getUTCMinutes() || 0) / 60 +
+          Number(value.getUTCSeconds() || 0) / 3600
+        );
+      }
+
+      const text = String(value).trim();
+      const m = text.match(/^(\d{1,3}):(\d{2})(?::(\d{2}))?$/);
+      if (!m) return 0;
+      const hh = Number(m[1] || 0);
+      const mm = Number(m[2] || 0);
+      const ss = Number(m[3] || 0);
+      return hh + mm / 60 + ss / 3600;
+    };
+
     await this.prisma.$transaction(async (tx) => {
       const eligible = await (tx as any).dvi_itinerary_plan_vendor_eligible_list.findFirst({
         where: {
@@ -3714,6 +3733,12 @@ export class ItinerariesService {
           vendor_vehicle_type_id: true,
           vehicle_id: true,
           total_travelled_km: true,
+          total_running_time: true,
+          total_siteseeing_time: true,
+          total_pickup_km: true,
+          total_pickup_duration: true,
+          total_drop_km: true,
+          total_drop_duration: true,
           extra_km_rate: true,
           vehicle_toll_charges: true,
           vehicle_parking_charges: true,
@@ -3790,16 +3815,26 @@ export class ItinerariesService {
 
         const route = routeById.get(Number(row.itinerary_route_id || 0));
         const serviceHours = calcServiceHours(route?.route_start_time, route?.route_end_time);
+        const effectiveHours =
+          parseDurationToHours(row.total_running_time) +
+          parseDurationToHours(row.total_siteseeing_time) +
+          parseDurationToHours(row.total_pickup_duration) +
+          parseDurationToHours(row.total_drop_duration);
+        const slabHoursToEvaluate = effectiveHours > 0 ? effectiveHours : serviceHours;
         const slabHours = Number(slab.hours_limit || 0);
         const extraHourRate = Number(vehicleExtraHourRateById.get(Number(row.vehicle_id || 0)) || 0);
-        const extraHours = slabHours > 0 && serviceHours > slabHours
-          ? Math.ceil(serviceHours - slabHours)
+        const extraHours = slabHours > 0 && slabHoursToEvaluate > slabHours
+          ? Math.ceil(slabHoursToEvaluate - slabHours)
           : 0;
         const extraHourCharge = extraHours * extraHourRate;
 
         const travelledKm = Number(row.total_travelled_km || 0);
+        const effectiveKm =
+          travelledKm +
+          Number(row.total_pickup_km || 0) +
+          Number(row.total_drop_km || 0);
         const allowedLocalKm = Number(slab.km_limit || 0);
-        const totalExtraKm = travelledKm > allowedLocalKm ? travelledKm - allowedLocalKm : 0;
+        const totalExtraKm = effectiveKm > allowedLocalKm ? effectiveKm - allowedLocalKm : 0;
         const extraKmRate = Number(row.extra_km_rate || 0);
         const totalExtraKmCharges = totalExtraKm * extraKmRate;
 
@@ -3840,6 +3875,8 @@ export class ItinerariesService {
           total_travelled_km: true,
           total_travelled_time: true,
           travel_type: true,
+          total_pickup_km: true,
+          total_drop_km: true,
           total_extra_km: true,
           total_extra_km_charges: true,
           vehicle_rental_charges: true,
@@ -3856,7 +3893,13 @@ export class ItinerariesService {
         },
       });
 
-      const totalKms = refreshedRows.reduce((sum: number, r: any) => sum + Number(r.total_travelled_km || 0), 0);
+      const totalKms = refreshedRows.reduce((sum: number, r: any) => {
+        const baseKm = Number(r.total_travelled_km || 0);
+        if (Number(r.travel_type || 0) === 1) {
+          return sum + baseKm + Number(r.total_pickup_km || 0) + Number(r.total_drop_km || 0);
+        }
+        return sum + baseKm;
+      }, 0);
       const outstationDays = refreshedRows.reduce((sum: number, r: any) => sum + (Number(r.travel_type || 0) === 2 ? 1 : 0), 0);
       const totalAllowedKms = Number(eligible.outstation_allowed_km_per_day || 250) * outstationDays;
       const totalExtraKms = totalAllowedKms > 0 ? Math.max(0, totalKms - totalAllowedKms) : 0;
@@ -3940,6 +3983,146 @@ export class ItinerariesService {
     return {
       success: true,
       message: 'Vehicle slab selected and pricing recalculated successfully',
+    };
+  }
+
+  async autoSelectVehicleSlabs(data: {
+    planId: number;
+    vehicleTypeId?: number;
+  }) {
+    const planId = Number(data.planId || 0);
+    const vehicleTypeId = Number(data.vehicleTypeId || 0);
+
+    if (!planId) {
+      throw new BadRequestException('planId is required');
+    }
+
+    const parseDurationToHours = (value: any): number => {
+      if (!value) return 0;
+      if (value instanceof Date) {
+        return (
+          Number(value.getUTCHours() || 0) +
+          Number(value.getUTCMinutes() || 0) / 60 +
+          Number(value.getUTCSeconds() || 0) / 3600
+        );
+      }
+
+      const text = String(value).trim();
+      const m = text.match(/^(\d{1,3}):(\d{2})(?::(\d{2}))?$/);
+      if (!m) return 0;
+      const hh = Number(m[1] || 0);
+      const mm = Number(m[2] || 0);
+      const ss = Number(m[3] || 0);
+      return hh + mm / 60 + ss / 3600;
+    };
+
+    const eligibles = await this.prisma.dvi_itinerary_plan_vendor_eligible_list.findMany({
+      where: {
+        itinerary_plan_id: planId,
+        status: 1,
+        deleted: 0,
+        ...(vehicleTypeId > 0 ? { vehicle_type_id: vehicleTypeId } : {}),
+      },
+      select: {
+        itinerary_plan_vendor_eligible_ID: true,
+        vehicle_type_id: true,
+        vendor_id: true,
+        vendor_vehicle_type_id: true,
+      },
+    });
+
+    let updatedCount = 0;
+
+    for (const eligible of eligibles) {
+      const vendorEligibleId = Number((eligible as any).itinerary_plan_vendor_eligible_ID || 0);
+      const vTypeId = Number((eligible as any).vehicle_type_id || 0);
+      const vendorId = Number((eligible as any).vendor_id || 0);
+      const vendorVehicleTypeId = Number((eligible as any).vendor_vehicle_type_id || 0);
+      if (!vendorEligibleId || !vTypeId || !vendorId || !vendorVehicleTypeId) continue;
+
+      const localRows = await this.prisma.dvi_itinerary_plan_vendor_vehicle_details.findMany({
+        where: {
+          itinerary_plan_id: planId,
+          itinerary_plan_vendor_eligible_ID: vendorEligibleId,
+          travel_type: 1,
+          status: 1,
+          deleted: 0,
+        },
+        select: {
+          time_limit_id: true,
+          total_travelled_km: true,
+          total_running_time: true,
+          total_siteseeing_time: true,
+          total_pickup_km: true,
+          total_pickup_duration: true,
+          total_drop_km: true,
+          total_drop_duration: true,
+        },
+      });
+
+      if (!localRows.length) continue;
+
+      let requiredKm = 0;
+      let requiredHours = 0;
+      for (const row of localRows) {
+        const effectiveKm =
+          Number((row as any).total_travelled_km || 0) +
+          Number((row as any).total_pickup_km || 0) +
+          Number((row as any).total_drop_km || 0);
+
+        const effectiveHours =
+          parseDurationToHours((row as any).total_running_time) +
+          parseDurationToHours((row as any).total_siteseeing_time) +
+          parseDurationToHours((row as any).total_pickup_duration) +
+          parseDurationToHours((row as any).total_drop_duration);
+
+        if (effectiveKm > requiredKm) requiredKm = effectiveKm;
+        if (effectiveHours > requiredHours) requiredHours = effectiveHours;
+      }
+
+      const slabs = await this.prisma.dvi_time_limit.findMany({
+        where: {
+          vendor_id: vendorId,
+          vendor_vehicle_type_id: vendorVehicleTypeId,
+          status: 1,
+          deleted: 0,
+        },
+        select: {
+          time_limit_id: true,
+          hours_limit: true,
+          km_limit: true,
+        },
+        orderBy: [
+          { hours_limit: 'asc' },
+          { km_limit: 'asc' },
+          { time_limit_id: 'asc' },
+        ],
+      });
+
+      if (!slabs.length) continue;
+
+      const selectedSlab =
+        slabs.find((s: any) => Number(s.hours_limit || 0) >= requiredHours && Number(s.km_limit || 0) >= requiredKm) ||
+        slabs[slabs.length - 1];
+
+      const currentTimeLimitId = Number((localRows[0] as any).time_limit_id || 0);
+      const chosenTimeLimitId = Number((selectedSlab as any).time_limit_id || 0);
+      if (!chosenTimeLimitId || chosenTimeLimitId === currentTimeLimitId) continue;
+
+      await this.selectVehicleSlab({
+        planId,
+        vehicleTypeId: vTypeId,
+        vendorEligibleId,
+        timeLimitId: chosenTimeLimitId,
+      });
+      updatedCount += 1;
+    }
+
+    return {
+      success: true,
+      message: 'Vehicle slabs auto-selected and pricing recalculated successfully',
+      updatedCount,
+      processedCount: eligibles.length,
     };
   }
 
