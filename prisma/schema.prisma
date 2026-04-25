@@ -1175,6 +1175,39 @@ model dvi_cash_wallet {
   @@index([updatedon], map: "idx_cash_wlt_updatedon")
 }
 
+model dvi_payment_transaction {
+  payment_transaction_ID Int       @id @default(autoincrement())
+  flow_type             String    @db.VarChar(64)
+  entity_id             Int       @default(0)
+  subscription_plan_id  Int       @default(0)
+  amount_inr            Float     @default(0) @db.Float
+  amount_paise          Int       @default(0)
+  currency              String    @default("INR") @db.VarChar(10)
+  provider              String    @default("razorpay") @db.VarChar(30)
+  provider_order_id     String    @db.VarChar(120)
+  provider_payment_id   String?   @db.VarChar(120)
+  provider_signature    String?   @db.VarChar(255)
+  receipt               String?   @db.VarChar(120)
+  status_code           Int       @default(0)
+  processed             Int       @default(0)
+  processed_on          DateTime? @db.DateTime(0)
+  error_message         String?   @db.Text
+  metadata              Json?
+  createdby             Int       @default(0)
+  createdon             DateTime? @db.DateTime(0)
+  updatedon             DateTime? @db.DateTime(0)
+  status                Int       @default(1) @db.TinyInt
+  deleted               Int       @default(0) @db.TinyInt
+
+  @@index([flow_type], map: "idx_payment_txn_flow")
+  @@index([entity_id], map: "idx_payment_txn_entity")
+  @@index([provider_order_id], map: "idx_payment_txn_order")
+  @@index([provider_payment_id], map: "idx_payment_txn_payment")
+  @@index([status_code], map: "idx_payment_txn_status_code")
+  @@index([processed], map: "idx_payment_txn_processed")
+  @@index([deleted], map: "idx_payment_txn_deleted")
+}
+
 model dvi_cities {
   id        Int       @id @default(autoincrement())
   name      String    @db.VarChar(30)
