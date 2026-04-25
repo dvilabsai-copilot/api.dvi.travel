@@ -399,6 +399,30 @@ export class TimelineBuilder {
   }
 
   /**
+   * Canonical city key used for branch decisions.
+   * Examples:
+   * - "Hyderabad, Telangana, India" -> "hyderabad"
+   * - "Hyderabad, Rajiv Gandhi International Airport" -> "hyderabad"
+   * - "Chennai International Airport" -> "chennai"
+   */
+  private canonicalCityKey(name: string): string {
+    const raw = String(name ?? '').split('|')[0]?.trim() ?? '';
+    if (!raw) return '';
+
+    const beforeComma = raw.split(',')[0]?.trim() ?? '';
+    const normalizedPrimary = this.normalizeCityName(beforeComma);
+    if (normalizedPrimary) return normalizedPrimary;
+
+    return this.normalizeCityName(raw);
+  }
+
+  private isSameCity(a: string, b: string): boolean {
+    const aa = this.canonicalCityKey(a);
+    const bb = this.canonicalCityKey(b);
+    return !!aa && !!bb && aa === bb;
+  }
+
+  /**
    * Check if hotspot operating hours allow visit during the specified time window.
    * PHP: checkHOTSPOTOPERATINGHOURS() in sql_functions.php line 10388-10429
    * 
@@ -535,8 +559,7 @@ export class TimelineBuilder {
     const arrivalPoint = String(plan.arrival_location ?? '').trim();
     const departurePoint = String(plan.departure_location ?? '').trim();
     
-    const isSameArrivalDepartureCity = 
-      this.normalizeCityName(arrivalPoint) === this.normalizeCityName(departurePoint);
+    const isSameArrivalDepartureCity = this.isSameCity(arrivalPoint, departurePoint);
     
     // Check departure time (extract hour from trip_end_date_and_time)
     let departureTimeAfter4PM = false;
@@ -755,11 +778,11 @@ export class TimelineBuilder {
         route.itinerary_route_ID,
       );
 
-      const normalizedArrivalCity = this.normalizeCityName(arrivalPoint);
+      const normalizedArrivalCity = this.canonicalCityKey(arrivalPoint);
       const isArrivalCityStayRoute =
         isFirstRoute &&
-        this.normalizeCityName(sourceCity) === normalizedArrivalCity &&
-        this.normalizeCityName(destinationCity) === normalizedArrivalCity;
+        this.canonicalCityKey(sourceCity) === normalizedArrivalCity &&
+        this.canonicalCityKey(destinationCity) === normalizedArrivalCity;
 
       const routeDateForPolicy = route.itinerary_route_date
         ? this.toDateOnly(new Date(route.itinerary_route_date))
@@ -1265,8 +1288,8 @@ export class TimelineBuilder {
         selectedHotspots = [];
       }
       
-      const day1SourceCompare = this.normalizeCityName(String(sourceCity || ''));
-      const day1DestinationCompare = this.normalizeCityName(String(destinationCity || ''));
+      const day1SourceCompare = this.canonicalCityKey(String(sourceCity || ''));
+      const day1DestinationCompare = this.canonicalCityKey(String(destinationCity || ''));
       const isDay1DifferentCities =
         isFirstRoute &&
         day1SourceCompare &&
@@ -1362,9 +1385,9 @@ export class TimelineBuilder {
       } else if (isFirstRoute && shouldDeferDay1Sightseeing) {
         // Check if current route is STAYING in arrival city (not just passing through)
         // Only skip if both location_name AND next_visiting_location are in arrival city
-        const currentCity = this.normalizeCityName(currentLocationName);
-        const nextCity = this.normalizeCityName(route.next_visiting_location || '');
-        const arrivalCity = this.normalizeCityName(arrivalPoint);
+        const currentCity = this.canonicalCityKey(currentLocationName);
+        const nextCity = this.canonicalCityKey(route.next_visiting_location || '');
+        const arrivalCity = this.canonicalCityKey(arrivalPoint);
         
         // CRITICAL FIX: Only skip if STAYING in arrival city, not just starting from there
         // Example: "Madurai Airport → Alleppey" should NOT skip (traveling away)
@@ -1372,10 +1395,22 @@ export class TimelineBuilder {
         const isStayingInArrivalCity = (currentCity === arrivalCity) && (nextCity === arrivalCity);
         
         if (isStayingInArrivalCity) {
-          // Skip hotspot selection on Day 1 in arrival city
-          // Travel directly to next destination
-          
-          selectedHotspots = []; // Empty - no hotspots for Day 1 in arrival city
+          // If Day 1 starts from an arrival terminal (airport/station) and stays in same city,
+          // keep Day 1 sightseeing enabled. This preserves working city-arrival behavior
+          // (e.g. Hyderabad) and prevents Chennai from being forced into hotel-only Day 1.
+          if (isRouteSourceTerminal) {
+            selectedHotspots = await this.fetchSelectedHotspotsForRoute(
+              tx,
+              planId,
+              route.itinerary_route_ID,
+              allHotspots,
+              undefined,
+              false,
+            );
+          } else {
+            // Non-terminal same-city stays follow defer rule.
+            selectedHotspots = [];
+          }
         } else {
           // Traveling away from arrival city on Day 1 - apply same direct/non-direct logic
           const directToNext = (route as any).direct_to_next_visiting_place || 0;
@@ -1433,8 +1468,8 @@ export class TimelineBuilder {
         }
       } else if (isLastRoute && shouldDeferDay1Sightseeing) {
         // Last day in departure city - fetch hotspots for departure city sightseeing
-        const currentCity = this.normalizeCityName(currentLocationName);
-        const departureCity = this.normalizeCityName(departurePoint);
+        const currentCity = this.canonicalCityKey(currentLocationName);
+        const departureCity = this.canonicalCityKey(departurePoint);
         
         if (currentCity === departureCity) {
           // Do local sightseeing on last day
