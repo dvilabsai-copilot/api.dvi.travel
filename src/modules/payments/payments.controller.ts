@@ -1,9 +1,10 @@
-import { Controller, Post, Body, UseGuards, Req, Get } from '@nestjs/common';
+import { Controller, Post, Body, UseGuards, Req, Get, Headers } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { PaymentsService } from './payments.service';
-import { CreateOrderDto } from './dto/create-order.dto';
-import { VerifyPaymentDto } from './dto/verify-payment.dto';
-import { CreateSubscriptionOrderDto } from './dto/create-subscription-order.dto';
+import { CreateWalletTopupOrderDto } from './dto/create-wallet-topup-order.dto';
+import { CreateSubscriptionRenewalOrderDto } from './dto/create-subscription-renewal-order.dto';
+import { CreateAgentRegistrationOrderDto } from './dto/create-agent-registration-order.dto';
+import { ConfirmRazorpayPaymentDto } from './dto/confirm-razorpay-payment.dto';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 
 @ApiTags('Payments')
@@ -27,23 +28,87 @@ export class PaymentsController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Post('razorpay/wallet-topup/create-order')
+  @ApiOperation({ summary: 'Create Razorpay order for wallet top-up' })
+  async createWalletTopupOrder(@Body() dto: CreateWalletTopupOrderDto, @Req() req: any) {
+    return this.paymentsService.createWalletTopupOrder(dto, Number(req.user.userId), req.user);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('razorpay/subscription-renewal/create-order')
+  @ApiOperation({ summary: 'Create Razorpay order for subscription renewal' })
+  async createSubscriptionRenewalOrder(@Body() dto: CreateSubscriptionRenewalOrderDto, @Req() req: any) {
+    return this.paymentsService.createSubscriptionRenewalOrder(dto, Number(req.user.userId), req.user);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('razorpay/agent-registration/create-order')
+  @ApiOperation({ summary: 'Create Razorpay order for paid agent registration plan' })
+  async createAgentRegistrationOrder(@Body() dto: CreateAgentRegistrationOrderDto, @Req() req: any) {
+    return this.paymentsService.createAgentRegistrationOrder(dto, Number(req.user.userId), req.user);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('razorpay/wallet-topup/confirm')
+  @ApiOperation({ summary: 'Confirm Razorpay wallet top-up payment' })
+  async confirmWalletTopup(@Body() dto: ConfirmRazorpayPaymentDto) {
+    return this.paymentsService.confirmWalletTopup(dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('razorpay/subscription-renewal/confirm')
+  @ApiOperation({ summary: 'Confirm Razorpay subscription renewal payment' })
+  async confirmSubscriptionRenewal(@Body() dto: ConfirmRazorpayPaymentDto) {
+    return this.paymentsService.confirmSubscriptionRenewal(dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('razorpay/agent-registration/confirm')
+  @ApiOperation({ summary: 'Confirm Razorpay paid agent registration payment' })
+  async confirmAgentRegistration(@Body() dto: ConfirmRazorpayPaymentDto) {
+    return this.paymentsService.confirmAgentRegistrationPaid(dto);
+  }
+
+  @Post('razorpay/webhook')
+  @ApiOperation({ summary: 'Razorpay webhook for payment.captured/payment.failed reconciliation' })
+  async razorpayWebhook(
+    @Body() body: any,
+    @Headers('x-razorpay-signature') signature?: string,
+  ) {
+    const rawBody = typeof body === 'string' ? body : JSON.stringify(body || {});
+    return this.paymentsService.handleRazorpayWebhook(rawBody, signature);
+  }
+
+  // Backward-compatible endpoints currently used by parts of the frontend.
+  @UseGuards(JwtAuthGuard)
   @Post('create-order')
-  @ApiOperation({ summary: 'Create a Razorpay order for wallet topup' })
-  async createOrder(@Body() dto: CreateOrderDto, @Req() req: any) {
-    return this.paymentsService.createOrder(dto, Number(req.user.userId));
+  async createOrderCompat(@Body() dto: { amount: number }, @Req() req: any) {
+    return this.paymentsService.createWalletTopupOrder(
+      { amountInInr: Number(dto.amount || 0) },
+      Number(req.user.userId),
+      req.user,
+    );
   }
 
   @UseGuards(JwtAuthGuard)
   @Post('create-subscription-order')
-  @ApiOperation({ summary: 'Create a Razorpay order for subscription renewal' })
-  async createSubscriptionOrder(@Body() dto: CreateSubscriptionOrderDto, @Req() req: any) {
-    return this.paymentsService.createSubscriptionOrder(dto, Number(req.user.userId), req.user);
+  async createSubscriptionOrderCompat(
+    @Body() dto: { planId: number; agentSubscribedPlanId?: number },
+    @Req() req: any,
+  ) {
+    return this.paymentsService.createSubscriptionRenewalOrder(
+      {
+        subscriptionPlanId: Number(dto.planId || 0),
+        agentSubscribedPlanId: dto.agentSubscribedPlanId,
+      },
+      Number(req.user.userId),
+      req.user,
+    );
   }
 
   @UseGuards(JwtAuthGuard)
   @Post('verify-payment')
-  @ApiOperation({ summary: 'Verify a Razorpay payment signature' })
-  async verifyPayment(@Body() dto: VerifyPaymentDto, @Req() req: any) {
-    return this.paymentsService.verifyPayment(dto, Number(req.user.userId), req.user);
+  async verifyPaymentCompat(@Body() dto: ConfirmRazorpayPaymentDto) {
+    return this.paymentsService.confirmByOrderLookup(dto);
   }
 }
