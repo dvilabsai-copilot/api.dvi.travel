@@ -3649,6 +3649,25 @@ export class ItinerariesService {
       return diff / 3600;
     };
 
+    const parseDurationToHours = (value: any): number => {
+      if (!value) return 0;
+      if (value instanceof Date) {
+        return (
+          Number(value.getUTCHours() || 0) +
+          Number(value.getUTCMinutes() || 0) / 60 +
+          Number(value.getUTCSeconds() || 0) / 3600
+        );
+      }
+
+      const text = String(value).trim();
+      const m = text.match(/^(\d{1,3}):(\d{2})(?::(\d{2}))?$/);
+      if (!m) return 0;
+      const hh = Number(m[1] || 0);
+      const mm = Number(m[2] || 0);
+      const ss = Number(m[3] || 0);
+      return hh + mm / 60 + ss / 3600;
+    };
+
     await this.prisma.$transaction(async (tx) => {
       const eligible = await (tx as any).dvi_itinerary_plan_vendor_eligible_list.findFirst({
         where: {
@@ -3678,9 +3697,8 @@ export class ItinerariesService {
         );
       }
 
-      const slab = await tx.dvi_time_limit.findFirst({
+      const slabsForVendor = await tx.dvi_time_limit.findMany({
         where: {
-          time_limit_id: timeLimitId,
           vendor_id: Number(eligible.vendor_id || 0),
           vendor_vehicle_type_id: Number(eligible.vendor_vehicle_type_id || 0),
           status: 1,
@@ -3691,11 +3709,21 @@ export class ItinerariesService {
           hours_limit: true,
           km_limit: true,
         },
+        orderBy: [
+          { hours_limit: 'asc' },
+          { km_limit: 'asc' },
+          { time_limit_id: 'asc' },
+        ],
       });
 
-      if (!slab) {
+      const slab = slabsForVendor.find((s: any) => Number(s.time_limit_id || 0) === timeLimitId);
+
+      if (!slab || !slabsForVendor.length) {
         throw new BadRequestException('Selected slab is invalid for this vendor vehicle');
       }
+
+      const maxSlab = slabsForVendor[slabsForVendor.length - 1];
+      const isMaxSlabSelected = Number((maxSlab as any)?.time_limit_id || 0) === timeLimitId;
 
       const detailRows = await (tx as any).dvi_itinerary_plan_vendor_vehicle_details.findMany({
         where: {
@@ -3714,6 +3742,12 @@ export class ItinerariesService {
           vendor_vehicle_type_id: true,
           vehicle_id: true,
           total_travelled_km: true,
+          total_running_time: true,
+          total_siteseeing_time: true,
+          total_pickup_km: true,
+          total_pickup_duration: true,
+          total_drop_km: true,
+          total_drop_duration: true,
           extra_km_rate: true,
           vehicle_toll_charges: true,
           vehicle_parking_charges: true,
@@ -3790,16 +3824,26 @@ export class ItinerariesService {
 
         const route = routeById.get(Number(row.itinerary_route_id || 0));
         const serviceHours = calcServiceHours(route?.route_start_time, route?.route_end_time);
+        const effectiveHours =
+          parseDurationToHours(row.total_running_time) +
+          parseDurationToHours(row.total_siteseeing_time) +
+          parseDurationToHours(row.total_pickup_duration) +
+          parseDurationToHours(row.total_drop_duration);
+        const slabHoursToEvaluate = effectiveHours > 0 ? effectiveHours : serviceHours;
         const slabHours = Number(slab.hours_limit || 0);
         const extraHourRate = Number(vehicleExtraHourRateById.get(Number(row.vehicle_id || 0)) || 0);
-        const extraHours = slabHours > 0 && serviceHours > slabHours
-          ? Math.ceil(serviceHours - slabHours)
+        const extraHours = isMaxSlabSelected && slabHours > 0 && slabHoursToEvaluate > slabHours
+          ? Math.ceil(slabHoursToEvaluate - slabHours)
           : 0;
         const extraHourCharge = extraHours * extraHourRate;
 
         const travelledKm = Number(row.total_travelled_km || 0);
+        const effectiveKm =
+          travelledKm +
+          Number(row.total_pickup_km || 0) +
+          Number(row.total_drop_km || 0);
         const allowedLocalKm = Number(slab.km_limit || 0);
-        const totalExtraKm = travelledKm > allowedLocalKm ? travelledKm - allowedLocalKm : 0;
+        const totalExtraKm = isMaxSlabSelected && effectiveKm > allowedLocalKm ? effectiveKm - allowedLocalKm : 0;
         const extraKmRate = Number(row.extra_km_rate || 0);
         const totalExtraKmCharges = totalExtraKm * extraKmRate;
 
@@ -3840,6 +3884,8 @@ export class ItinerariesService {
           total_travelled_km: true,
           total_travelled_time: true,
           travel_type: true,
+          total_pickup_km: true,
+          total_drop_km: true,
           total_extra_km: true,
           total_extra_km_charges: true,
           vehicle_rental_charges: true,
@@ -3856,7 +3902,13 @@ export class ItinerariesService {
         },
       });
 
-      const totalKms = refreshedRows.reduce((sum: number, r: any) => sum + Number(r.total_travelled_km || 0), 0);
+      const totalKms = refreshedRows.reduce((sum: number, r: any) => {
+        const baseKm = Number(r.total_travelled_km || 0);
+        if (Number(r.travel_type || 0) === 1) {
+          return sum + baseKm + Number(r.total_pickup_km || 0) + Number(r.total_drop_km || 0);
+        }
+        return sum + baseKm;
+      }, 0);
       const outstationDays = refreshedRows.reduce((sum: number, r: any) => sum + (Number(r.travel_type || 0) === 2 ? 1 : 0), 0);
       const totalAllowedKms = Number(eligible.outstation_allowed_km_per_day || 250) * outstationDays;
       const totalExtraKms = totalAllowedKms > 0 ? Math.max(0, totalKms - totalAllowedKms) : 0;
@@ -3940,6 +3992,407 @@ export class ItinerariesService {
     return {
       success: true,
       message: 'Vehicle slab selected and pricing recalculated successfully',
+    };
+  }
+
+  async autoSelectVehicleSlabs(data: {
+    planId: number;
+    vehicleTypeId?: number;
+  }) {
+    const planId = Number(data.planId || 0);
+    const vehicleTypeId = Number(data.vehicleTypeId || 0);
+
+    if (!planId) {
+      throw new BadRequestException('planId is required');
+    }
+
+    // Rebuild vendor rows first so auto-selection runs on fresh day-wise KM/time
+    // calculations (including pickup/drop for local routes).
+    const plan = await this.prisma.dvi_itinerary_plan_details.findUnique({
+      where: { itinerary_plan_ID: planId },
+      select: { createdby: true },
+    });
+    const createdBy = Number((plan as any)?.createdby || 1);
+
+    await this.itineraryVehiclesEngine.rebuildEligibleVendorList({
+      planId,
+      createdBy,
+    });
+
+    const parseDurationToHours = (value: any): number => {
+      if (!value) return 0;
+      if (value instanceof Date) {
+        return (
+          Number(value.getUTCHours() || 0) +
+          Number(value.getUTCMinutes() || 0) / 60 +
+          Number(value.getUTCSeconds() || 0) / 3600
+        );
+      }
+
+      const text = String(value).trim();
+      const m = text.match(/^(\d{1,3}):(\d{2})(?::(\d{2}))?$/);
+      if (!m) return 0;
+      const hh = Number(m[1] || 0);
+      const mm = Number(m[2] || 0);
+      const ss = Number(m[3] || 0);
+      return hh + mm / 60 + ss / 3600;
+    };
+
+    const eligibles = await this.prisma.dvi_itinerary_plan_vendor_eligible_list.findMany({
+      where: {
+        itinerary_plan_id: planId,
+        status: 1,
+        deleted: 0,
+        ...(vehicleTypeId > 0 ? { vehicle_type_id: vehicleTypeId } : {}),
+      },
+      select: {
+        itinerary_plan_vendor_eligible_ID: true,
+        vehicle_type_id: true,
+        vendor_id: true,
+        vendor_vehicle_type_id: true,
+      },
+    });
+
+    const monthNames = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December',
+    ];
+
+    let updatedCount = 0;
+
+    for (const eligible of eligibles) {
+      const vendorEligibleId = Number((eligible as any).itinerary_plan_vendor_eligible_ID || 0);
+      const vTypeId = Number((eligible as any).vehicle_type_id || 0);
+      const vendorId = Number((eligible as any).vendor_id || 0);
+      const vendorVehicleTypeId = Number((eligible as any).vendor_vehicle_type_id || 0);
+      if (!vendorEligibleId || !vTypeId || !vendorId || !vendorVehicleTypeId) continue;
+
+      const changed = await this.prisma.$transaction(async (tx) => {
+        const eligibleFull = await (tx as any).dvi_itinerary_plan_vendor_eligible_list.findFirst({
+          where: {
+            itinerary_plan_vendor_eligible_ID: vendorEligibleId,
+            itinerary_plan_id: planId,
+            vehicle_type_id: vTypeId,
+            status: 1,
+            deleted: 0,
+          },
+          select: {
+            itinerary_plan_vendor_eligible_ID: true,
+            outstation_allowed_km_per_day: true,
+            extra_km_rate: true,
+            vehicle_gst_type: true,
+            vehicle_gst_percentage: true,
+            vendor_margin_percentage: true,
+            vendor_margin_gst_type: true,
+            vendor_margin_gst_percentage: true,
+          },
+        });
+
+        if (!eligibleFull) return false;
+
+        const slabs = await tx.dvi_time_limit.findMany({
+          where: {
+            vendor_id: vendorId,
+            vendor_vehicle_type_id: vendorVehicleTypeId,
+            status: 1,
+            deleted: 0,
+          },
+          select: {
+            time_limit_id: true,
+            hours_limit: true,
+            km_limit: true,
+          },
+          orderBy: [
+            { hours_limit: 'asc' },
+            { km_limit: 'asc' },
+            { time_limit_id: 'asc' },
+          ],
+        });
+
+        if (!slabs.length) return false;
+        const maxSlab = slabs[slabs.length - 1];
+
+        const detailRows = await (tx as any).dvi_itinerary_plan_vendor_vehicle_details.findMany({
+          where: {
+            itinerary_plan_id: planId,
+            itinerary_plan_vendor_eligible_ID: vendorEligibleId,
+            status: 1,
+            deleted: 0,
+          },
+          select: {
+            itinerary_plan_vendor_vehicle_details_ID: true,
+            itinerary_route_id: true,
+            itinerary_route_date: true,
+            travel_type: true,
+            vendor_id: true,
+            vendor_branch_id: true,
+            vendor_vehicle_type_id: true,
+            vehicle_id: true,
+            time_limit_id: true,
+            total_travelled_km: true,
+            total_running_time: true,
+            total_siteseeing_time: true,
+            total_pickup_km: true,
+            total_pickup_duration: true,
+            total_drop_km: true,
+            total_drop_duration: true,
+            extra_km_rate: true,
+            vehicle_toll_charges: true,
+            vehicle_parking_charges: true,
+            vehicle_driver_charges: true,
+            vehicle_permit_charges: true,
+            before_6_am_charges_for_driver: true,
+            before_6_am_charges_for_vehicle: true,
+            after_8_pm_charges_for_driver: true,
+            after_8_pm_charges_for_vehicle: true,
+            vehicle_rental_charges: true,
+          },
+        });
+
+        if (!detailRows.length) return false;
+
+        const routeIds: number[] = Array.from(
+          new Set(detailRows.map((r: any) => Number(r.itinerary_route_id || 0)).filter((x: number) => x > 0)),
+        );
+        const routes = await tx.dvi_itinerary_route_details.findMany({
+          where: { itinerary_route_ID: { in: routeIds } },
+          select: {
+            itinerary_route_ID: true,
+            route_start_time: true,
+            route_end_time: true,
+          },
+        });
+        const routeById = new Map(routes.map((r: any) => [Number(r.itinerary_route_ID || 0), r]));
+
+        const vehicleIds: number[] = Array.from(
+          new Set(detailRows.map((r: any) => Number(r.vehicle_id || 0)).filter((x: number) => x > 0)),
+        );
+        const vehicles = await tx.dvi_vehicle.findMany({
+          where: { vehicle_id: { in: vehicleIds } },
+          select: { vehicle_id: true, extra_hour_charge: true },
+        });
+        const vehicleExtraHourRateById = new Map(
+          vehicles.map((v: any) => [Number(v.vehicle_id || 0), Number(v.extra_hour_charge || 0)]),
+        );
+
+        let anyRowUpdated = false;
+
+        for (const row of detailRows) {
+          const detailsId = Number(row.itinerary_plan_vendor_vehicle_details_ID || 0);
+          if (!detailsId) continue;
+
+          if (Number(row.travel_type || 0) !== 1) continue;
+
+          const effectiveKm =
+            Number(row.total_travelled_km || 0) +
+            Number(row.total_pickup_km || 0) +
+            Number(row.total_drop_km || 0);
+
+          const effectiveHours =
+            parseDurationToHours(row.total_running_time) +
+            parseDurationToHours(row.total_siteseeing_time) +
+            parseDurationToHours(row.total_pickup_duration) +
+            parseDurationToHours(row.total_drop_duration);
+
+          const selectedSlab =
+            slabs.find((s: any) => Number(s.hours_limit || 0) >= effectiveHours && Number(s.km_limit || 0) >= effectiveKm) ||
+            maxSlab;
+
+          const chosenTimeLimitId = Number((selectedSlab as any).time_limit_id || 0);
+          if (!chosenTimeLimitId) continue;
+
+          if (chosenTimeLimitId !== Number(row.time_limit_id || 0)) {
+            anyRowUpdated = true;
+          }
+
+          const routeDate = new Date(row.itinerary_route_date);
+          const day = routeDate.getDate();
+          const month = monthNames[routeDate.getMonth()];
+          const year = String(routeDate.getFullYear());
+          const dayColumn = `day_${day}`;
+
+          const pricebook = await tx.dvi_vehicle_local_pricebook.findFirst({
+            where: {
+              vendor_id: Number(row.vendor_id || 0),
+              vendor_branch_id: Number(row.vendor_branch_id || 0),
+              vehicle_type_id: Number(row.vendor_vehicle_type_id || 0),
+              time_limit_id: chosenTimeLimitId,
+              month,
+              year,
+              status: 1,
+              deleted: 0,
+            },
+          });
+
+          const baseRental = Number((pricebook as any)?.[dayColumn] ?? row.vehicle_rental_charges ?? 0);
+          const slabHours = Number((selectedSlab as any).hours_limit || 0);
+          const allowedLocalKm = Number((selectedSlab as any).km_limit || 0);
+          const isMaxSlabSelected = Number((maxSlab as any)?.time_limit_id || 0) === chosenTimeLimitId;
+
+          const extraHourRate = Number(vehicleExtraHourRateById.get(Number(row.vehicle_id || 0)) || 0);
+          const extraHours = isMaxSlabSelected && slabHours > 0 && effectiveHours > slabHours
+            ? Math.ceil(effectiveHours - slabHours)
+            : 0;
+          const extraHourCharge = extraHours * extraHourRate;
+
+          const totalExtraKm = isMaxSlabSelected && effectiveKm > allowedLocalKm ? effectiveKm - allowedLocalKm : 0;
+          const extraKmRate = Number(row.extra_km_rate || 0);
+          const totalExtraKmCharges = totalExtraKm * extraKmRate;
+
+          const rentalWithExtraHour = baseRental + extraHourCharge;
+          const totalVehicleAmount =
+            rentalWithExtraHour +
+            Number(row.vehicle_toll_charges || 0) +
+            Number(row.vehicle_parking_charges || 0) +
+            Number(row.vehicle_driver_charges || 0) +
+            Number(row.vehicle_permit_charges || 0) +
+            Number(row.before_6_am_charges_for_driver || 0) +
+            Number(row.before_6_am_charges_for_vehicle || 0) +
+            Number(row.after_8_pm_charges_for_driver || 0) +
+            Number(row.after_8_pm_charges_for_vehicle || 0) +
+            totalExtraKmCharges;
+
+          await (tx as any).dvi_itinerary_plan_vendor_vehicle_details.update({
+            where: { itinerary_plan_vendor_vehicle_details_ID: detailsId },
+            data: {
+              time_limit_id: chosenTimeLimitId,
+              vehicle_rental_charges: rentalWithExtraHour,
+              total_extra_km: totalExtraKm.toFixed(2),
+              total_extra_km_charges: totalExtraKmCharges,
+              total_vehicle_amount: totalVehicleAmount,
+              updatedon: new Date(),
+            },
+          });
+        }
+
+        const refreshedRows = await (tx as any).dvi_itinerary_plan_vendor_vehicle_details.findMany({
+          where: {
+            itinerary_plan_id: planId,
+            itinerary_plan_vendor_eligible_ID: vendorEligibleId,
+            status: 1,
+            deleted: 0,
+          },
+          select: {
+            total_travelled_km: true,
+            total_travelled_time: true,
+            travel_type: true,
+            total_pickup_km: true,
+            total_drop_km: true,
+            total_extra_km: true,
+            total_extra_km_charges: true,
+            vehicle_rental_charges: true,
+            vehicle_toll_charges: true,
+            vehicle_parking_charges: true,
+            vehicle_driver_charges: true,
+            vehicle_permit_charges: true,
+            before_6_am_extra_time: true,
+            after_8_pm_extra_time: true,
+            before_6_am_charges_for_driver: true,
+            before_6_am_charges_for_vehicle: true,
+            after_8_pm_charges_for_driver: true,
+            after_8_pm_charges_for_vehicle: true,
+          },
+        });
+
+        const totalKms = refreshedRows.reduce((sum: number, r: any) => {
+          const baseKm = Number(r.total_travelled_km || 0);
+          if (Number(r.travel_type || 0) === 1) {
+            return sum + baseKm + Number(r.total_pickup_km || 0) + Number(r.total_drop_km || 0);
+          }
+          return sum + baseKm;
+        }, 0);
+        const outstationDays = refreshedRows.reduce((sum: number, r: any) => sum + (Number(r.travel_type || 0) === 2 ? 1 : 0), 0);
+        const totalAllowedKms = Number(eligibleFull.outstation_allowed_km_per_day || 250) * outstationDays;
+        const totalExtraKms = totalAllowedKms > 0 ? Math.max(0, totalKms - totalAllowedKms) : 0;
+        const totalExtraKmsCharge = totalExtraKms * Number(eligibleFull.extra_km_rate || 0);
+
+        const localRows = refreshedRows.filter((r: any) => Number(r.travel_type || 0) === 1);
+        const totalAllowedLocalKms = localRows.length > 0 ? 0.1 : 0;
+        const totalExtraLocalKms = localRows.reduce((sum: number, r: any) => sum + Number(r.total_extra_km || 0), 0);
+        const totalExtraLocalKmsCharge = localRows.reduce((sum: number, r: any) => sum + Number(r.total_extra_km_charges || 0), 0);
+
+        const totalTime = refreshedRows.reduce((sum: number, r: any) => {
+          const t = String(r.total_travelled_time || '0');
+          if (t.includes(':')) {
+            const parts = t.split(':').map((x) => Number(x || 0));
+            return sum + Number(parts[0] || 0) + (Number(parts[1] || 0) / 60) + (Number(parts[2] || 0) / 3600);
+          }
+          return sum + Number(t || 0);
+        }, 0);
+
+        const totalRentalCharges = refreshedRows.reduce((sum: number, r: any) => sum + Number(r.vehicle_rental_charges || 0), 0);
+        const totalTollCharges = refreshedRows.reduce((sum: number, r: any) => sum + Number(r.vehicle_toll_charges || 0), 0);
+        const totalParkingCharges = refreshedRows.reduce((sum: number, r: any) => sum + Number(r.vehicle_parking_charges || 0), 0);
+        const totalDriverCharges = refreshedRows.reduce((sum: number, r: any) => sum + Number(r.vehicle_driver_charges || 0), 0);
+        const totalPermitCharges = refreshedRows.reduce((sum: number, r: any) => sum + Number(r.vehicle_permit_charges || 0), 0);
+        const totalBefore6amExtraTime = refreshedRows.reduce((sum: number, r: any) => sum + Number(r.before_6_am_extra_time || 0), 0);
+        const totalAfter8pmExtraTime = refreshedRows.reduce((sum: number, r: any) => sum + Number(r.after_8_pm_extra_time || 0), 0);
+        const totalBefore6amDriver = refreshedRows.reduce((sum: number, r: any) => sum + Number(r.before_6_am_charges_for_driver || 0), 0);
+        const totalBefore6amVehicle = refreshedRows.reduce((sum: number, r: any) => sum + Number(r.before_6_am_charges_for_vehicle || 0), 0);
+        const totalAfter8pmDriver = refreshedRows.reduce((sum: number, r: any) => sum + Number(r.after_8_pm_charges_for_driver || 0), 0);
+        const totalAfter8pmVehicle = refreshedRows.reduce((sum: number, r: any) => sum + Number(r.after_8_pm_charges_for_vehicle || 0), 0);
+
+        const vehicleBaseTotal = totalRentalCharges + totalExtraKmsCharge +
+          totalTollCharges + totalParkingCharges + totalDriverCharges + totalPermitCharges +
+          totalBefore6amDriver + totalBefore6amVehicle + totalAfter8pmDriver + totalAfter8pmVehicle;
+
+        const vehicleGstType = Number(eligibleFull.vehicle_gst_type || 2);
+        const vehicleGstPercentage = Number(eligibleFull.vehicle_gst_percentage || 5);
+        const vehicleGstAmount = vehicleGstType === 2 ? (vehicleBaseTotal * vehicleGstPercentage / 100) : 0;
+        const vehicleTotalAmount = vehicleBaseTotal;
+
+        const vendorMarginPercentage = Number(eligibleFull.vendor_margin_percentage || 10);
+        const vendorMarginAmount = vehicleTotalAmount * vendorMarginPercentage / 100;
+        const vendorMarginGstType = Number(eligibleFull.vendor_margin_gst_type || 2);
+        const vendorMarginGstPercentage = Number(eligibleFull.vendor_margin_gst_percentage || 5);
+        const vendorMarginGstAmount = vendorMarginGstType === 2 ? (vendorMarginAmount * vendorMarginGstPercentage / 100) : 0;
+        const vehicleGrandTotal = vehicleTotalAmount + vehicleGstAmount + vendorMarginAmount + vendorMarginGstAmount;
+
+        await (tx as any).dvi_itinerary_plan_vendor_eligible_list.update({
+          where: { itinerary_plan_vendor_eligible_ID: vendorEligibleId },
+          data: {
+            total_kms: String(totalKms),
+            total_outstation_km: String(totalKms),
+            total_time: String(totalTime),
+            total_rental_charges: totalRentalCharges,
+            total_toll_charges: totalTollCharges,
+            total_parking_charges: totalParkingCharges,
+            total_driver_charges: totalDriverCharges,
+            total_permit_charges: totalPermitCharges,
+            total_before_6_am_extra_time: String(totalBefore6amExtraTime),
+            total_after_8_pm_extra_time: String(totalAfter8pmExtraTime),
+            total_before_6_am_charges_for_driver: totalBefore6amDriver,
+            total_before_6_am_charges_for_vehicle: totalBefore6amVehicle,
+            total_after_8_pm_charges_for_driver: totalAfter8pmDriver,
+            total_after_8_pm_charges_for_vehicle: totalAfter8pmVehicle,
+            total_allowed_kms: String(totalAllowedKms),
+            total_extra_kms: String(totalExtraKms),
+            total_extra_kms_charge: totalExtraKmsCharge,
+            total_allowed_local_kms: String(totalAllowedLocalKms),
+            total_extra_local_kms: String(totalExtraLocalKms),
+            total_extra_local_kms_charge: totalExtraLocalKmsCharge,
+            vehicle_gst_amount: vehicleGstAmount,
+            vehicle_total_amount: vehicleTotalAmount,
+            vendor_margin_amount: vendorMarginAmount,
+            vendor_margin_gst_amount: vendorMarginGstAmount,
+            vehicle_grand_total: vehicleGrandTotal,
+            updatedon: new Date(),
+          },
+        });
+
+        return anyRowUpdated;
+      });
+
+      if (changed) {
+        updatedCount += 1;
+      }
+    }
+
+    return {
+      success: true,
+      message: 'Vehicle slabs auto-selected and pricing recalculated successfully',
+      updatedCount,
+      processedCount: eligibles.length,
     };
   }
 

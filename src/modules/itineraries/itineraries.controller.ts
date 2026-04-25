@@ -1033,6 +1033,23 @@ export class ItinerariesController {
     return this.svc.selectVehicleSlab(body);
   }
 
+  @Post('vehicles/auto-select-slabs')
+  @ApiOperation({ summary: 'Auto select the best slab for vendor vehicles based on effective KM/time and recalculate pricing' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        planId: { type: 'number', example: 17940 },
+        vehicleTypeId: { type: 'number', example: 1 },
+      },
+      required: ['planId'],
+    },
+  })
+  @ApiOkResponse({ description: 'Vehicle slabs auto-selected and pricing recalculated successfully' })
+  async autoSelectVehicleSlabs(@Body() body: any) {
+    return this.svc.autoSelectVehicleSlabs(body);
+  }
+
   @Get('edit/:id')
   @ApiOperation({ summary: 'Get itinerary raw plan data for editing' })
   @ApiParam({ name: 'id', example: 17940, description: 'Itinerary Plan ID' })

@@ -1092,52 +1092,53 @@ export async function calculateRouteVehicleDetails(
 
   TOTAL_RUNNING_KM = String(baseRunningKm.toFixed(2));
 
-  // Calculate pickup distance (Day 1 only)
-  if (route_count === 1 && sourceCoords) {
-    if (String(ctx.vehicle_origin || '').trim().toLowerCase() !== String(route.location_name || '').trim().toLowerCase()) {
-      const pickupDistance = calculateDistanceAndDuration(
-        ctx.vehicle_origin_latitude,
-        ctx.vehicle_origin_longitude,
-        sourceCoords.latitude,
-        sourceCoords.longitude,
-        getTravelLocationType(ctx.vehicle_origin_city, sourceCity) === 1 ? localSpeed : outstationSpeed,
-        1.5,
-      );
-      TOTAL_PICKUP_KM = String(toNum(pickupDistance.distance).toFixed(2));
-      TOTAL_PICKUP_DURATION = parsePhpDurationToHms(pickupDistance.duration);
-    }
+  const applyPickupForThisRoute =
+    sourceCoords && (travel_type === 1 || route_count === 1);
+  const applyDropForThisRoute =
+    destCoords && (travel_type === 1 || route_count === total_routes);
+
+  // LOCAL routes: pickup/drop are applied daily.
+  // OUTSTATION routes: pickup on Day 1 and drop on last day.
+  if (applyPickupForThisRoute && sourceCoords) {
+    const pickupDistance = calculateDistanceAndDuration(
+      ctx.vehicle_origin_latitude,
+      ctx.vehicle_origin_longitude,
+      sourceCoords.latitude,
+      sourceCoords.longitude,
+      getTravelLocationType(ctx.vehicle_origin_city, sourceCity) === 1 ? localSpeed : outstationSpeed,
+      1.5,
+    );
+    TOTAL_PICKUP_KM = String(toNum(pickupDistance.distance).toFixed(2));
+    TOTAL_PICKUP_DURATION = parsePhpDurationToHms(pickupDistance.duration);
   }
 
-  // Calculate drop distance (Last day only)
-  if (route_count === total_routes && destCoords) {
-    if (String(ctx.vehicle_origin || '').trim().toLowerCase() !== String(route.next_visiting_location || '').trim().toLowerCase()) {
-      const dropDistance = calculateDistanceAndDuration(
-        destCoords.latitude,
-        destCoords.longitude,
-        ctx.vehicle_origin_latitude,
-        ctx.vehicle_origin_longitude,
-        getTravelLocationType(destCity, ctx.vehicle_origin_city) === 1 ? localSpeed : outstationSpeed,
-        1.5,
-      );
-      TOTAL_DROP_KM = String(toNum(dropDistance.distance).toFixed(2));
-      TOTAL_DROP_DURATION = parsePhpDurationToHms(dropDistance.duration);
-    }
+  if (applyDropForThisRoute && destCoords) {
+    const dropDistance = calculateDistanceAndDuration(
+      destCoords.latitude,
+      destCoords.longitude,
+      ctx.vehicle_origin_latitude,
+      ctx.vehicle_origin_longitude,
+      getTravelLocationType(destCity, ctx.vehicle_origin_city) === 1 ? localSpeed : outstationSpeed,
+      1.5,
+    );
+    TOTAL_DROP_KM = String(toNum(dropDistance.distance).toFixed(2));
+    TOTAL_DROP_DURATION = parsePhpDurationToHms(dropDistance.duration);
   }
 
-  TOTAL_RUNNING_KM = String(
-    (
-      baseRunningKm +
-      toNum(TOTAL_PICKUP_KM) +
-      toNum(TOTAL_DROP_KM)
-    ).toFixed(2)
-  );
+  // Keep running KM limited to route/hotspot travel only.
+  // Pickup/drop are tracked separately in dedicated fields.
+  TOTAL_RUNNING_KM = String(baseRunningKm.toFixed(2));
 
   // Calculate sightseeing KM
   SIGHT_SEEING_TRAVELLING_KM = String(Number(hotspotMetrics.sightseeingKm || 0).toFixed(2));
   SIGHT_SEEING_TRAVELLING_TIME = secondsToHms(sightseeingTimeSeconds);
 
-  // PHP parity: TOTAL_RUNNING_KM already includes pickup/drop where applicable.
-  const totalKmNum = toNum(TOTAL_RUNNING_KM) + toNum(SIGHT_SEEING_TRAVELLING_KM);
+  // Total KM includes pickup + running + sightseeing + drop.
+  const totalKmNum =
+    toNum(TOTAL_PICKUP_KM) +
+    toNum(TOTAL_RUNNING_KM) +
+    toNum(SIGHT_SEEING_TRAVELLING_KM) +
+    toNum(TOTAL_DROP_KM);
   const TOTAL_KM = totalKmNum.toFixed(2);
 
   const totalTravellingSeconds =
@@ -1190,29 +1191,25 @@ export async function calculateRouteVehicleDetails(
     viaRouteNames,
   );
 
-  // For OUTSTATION trips, add tolls for vehicle origin segments
-  if (travel_type === 2) {
-    // Day 1: Add toll from vehicle origin to source location
-    if (route_count === 1) {
-      const originToSourceToll = await calculateRouteTollCharges(
-        prisma,
-        vehicle_type_id,
-        ctx.vehicle_origin,
-        route.location_name
-      );
-      tollCharges += originToSourceToll;
-    }
-    
-    // Last day: Add toll from destination back to vehicle origin (return journey)
-    if (route_count === total_routes) {
-      const destToOriginToll = await calculateRouteTollCharges(
-        prisma,
-        vehicle_type_id,
-        route.next_visiting_location,
-        ctx.vehicle_origin
-      );
-      tollCharges += destToOriginToll;
-    }
+  // Add tolls for origin legs that are applied for this route.
+  if (applyPickupForThisRoute) {
+    const originToSourceToll = await calculateRouteTollCharges(
+      prisma,
+      vehicle_type_id,
+      ctx.vehicle_origin,
+      route.location_name
+    );
+    tollCharges += originToSourceToll;
+  }
+
+  if (applyDropForThisRoute) {
+    const destToOriginToll = await calculateRouteTollCharges(
+      prisma,
+      vehicle_type_id,
+      route.next_visiting_location,
+      ctx.vehicle_origin
+    );
+    tollCharges += destToOriginToll;
   }
   
   const VEHICLE_TOLL_CHARGE = tollCharges;
