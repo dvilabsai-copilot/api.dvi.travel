@@ -32,10 +32,19 @@ export interface VehicleDayWisePricingDto {
   date: string; // "2025-12-26"
   dayLabel: string; // "Day 1 | 26 Dec 2025"
   route: string; // "Chennai → Mahabalipuram"
+  timeLimitId?: number;
+  slabTitle?: string;
+  slabHoursLimit?: number;
+  slabKmLimit?: number;
   pickupKms: number;
+  pickupDurationMinutes?: number;
   travelKms: number; // Running KM per day
+  travelDurationMinutes?: number;
   sightseeingKms: number; // Sightseeing KM per day
-  totalKms: number; // Total KMS per day (travel + sightseeing)
+  sightseeingDurationMinutes?: number;
+  dropDurationMinutes?: number;
+  totalDurationMinutes?: number;
+  totalKms: number; // Total KMS per day (pickup + travel + sightseeing + drop)
   rentalCharges: number;
   tollCharges: number;
   parkingCharges: number;
@@ -71,7 +80,7 @@ export interface VehicleDayWisePricingDto {
  * DAY-WISE KMS BREAKDOWN (in expanded row):
  *   - travelKms: total_running_km for that specific day
  *   - sightseeingKms: total_siteseeing_km for that specific day  
- *   - totalKms: total_travelled_km for that specific day (travel + sightseeing)
+ *   - totalKms: pickup + travel + sightseeing + drop for that specific day
  *   - Shows per-day breakdown, matching legacy PHP structure
  * 
  * Example:
@@ -2478,6 +2487,8 @@ const dayDistance = this.formatKm(totalDistanceNum);
       hoursLimit: number;
       kmLimit: number;
     }>>();
+    const slabInfoByTimeLimit = new Map<number, { title: string; hoursLimit: number; kmLimit: number }>();
+    const maxSlabByKey = new Map<string, { timeLimitId: number; hoursLimit: number; kmLimit: number }>();
     const slabHoursById = new Map<number, number>();
     for (const slab of slabRows) {
       const slabIdNum = Number(slab.time_limit_id || 0);
@@ -2493,6 +2504,26 @@ const dayDistance = this.formatKm(totalDistanceNum);
         hoursLimit: hoursLimitNum,
         kmLimit: Number(slab.km_limit || 0),
       });
+      slabInfoByTimeLimit.set(slabIdNum, {
+        title: String(slab.time_limit_title || '').trim() || `${Number(slab.hours_limit || 0)} HRS ${Number(slab.km_limit || 0)} KMS`,
+        hoursLimit: hoursLimitNum,
+        kmLimit: Number(slab.km_limit || 0),
+      });
+
+      const existingMax = maxSlabByKey.get(key);
+      const kmLimitNum = Number(slab.km_limit || 0);
+      if (
+        !existingMax ||
+        hoursLimitNum > existingMax.hoursLimit ||
+        (hoursLimitNum === existingMax.hoursLimit && kmLimitNum > existingMax.kmLimit) ||
+        (hoursLimitNum === existingMax.hoursLimit && kmLimitNum === existingMax.kmLimit && slabIdNum > existingMax.timeLimitId)
+      ) {
+        maxSlabByKey.set(key, {
+          timeLimitId: slabIdNum,
+          hoursLimit: hoursLimitNum,
+          kmLimit: kmLimitNum,
+        });
+      }
     }
 
     const parseTimeToSeconds = (value: any): number | null => {
@@ -2520,8 +2551,11 @@ const dayDistance = this.formatKm(totalDistanceNum);
 
       const slabHours = Number(slabHoursById.get(Number(vd.time_limit_id || 0)) || 0);
       const rate = Number(vehicleExtraHourRateMap.get(Number(vd.vehicle_id || 0)) || 0);
+      const slabKey = `${Number(vd.vendor_id || 0)}_${Number(vd.vendor_vehicle_type_id || 0)}`;
+      const maxSlab = maxSlabByKey.get(slabKey);
+      const isMaxSlab = Number(vd.time_limit_id || 0) === Number(maxSlab?.timeLimitId || 0);
 
-      if (slabHours <= 0 || rate <= 0 || serviceHours <= slabHours) return { count: 0, rate, charge: 0 };
+      if (!isMaxSlab || slabHours <= 0 || rate <= 0 || serviceHours <= slabHours) return { count: 0, rate, charge: 0 };
       const count = Math.ceil(serviceHours - slabHours);
       return { count, rate, charge: count * rate };
     };
@@ -2585,9 +2619,15 @@ for (const vd of dayWiseDetails) {
 
       // Build day-wise pricing breakdown from vehicle details
       // Build day-wise pricing breakdown from vehicle details
-      // KMS per day: running_km, siteseeing_km, and total_travelled_km (running + siteseeing)
+      // KMS per day: pickup, running, siteseeing, drop, and computed total.
       const dayWisePricing: VehicleDayWisePricingDto[] = [];
       const dayWiseMap = new Map<string, any>();
+
+      const parseDurationToMinutes = (value: any): number => {
+        const seconds = parseTimeToSeconds(value);
+        if (seconds === null) return 0;
+        return Math.max(0, Math.round(seconds / 60));
+      };
       
       for (const vd of dayWiseDetails) {
         const dateStr = (vd as any).itinerary_route_date?.toISOString?.()?.split('T')[0] || '';
@@ -2606,11 +2646,20 @@ for (const vd of dayWiseDetails) {
             extraHourRate: 0,
             extraHour: 0,
             extraKm: 0,
+            timeLimitId: 0,
+            slabTitle: '',
+            slabHoursLimit: 0,
+            slabKmLimit: 0,
             pickupKms: 0,
+            pickupDurationMinutes: 0,
             dropKms: 0,
+            dropDurationMinutes: 0,
             travelKms: 0, // running_km per day
+            travelDurationMinutes: 0,
             sightseeingKms: 0, // siteseeing_km per day
-            totalKms: 0 // total_travelled_km per day
+            sightseeingDurationMinutes: 0,
+            totalDurationMinutes: 0,
+            totalKms: 0 // pickup + running + sightseeing + drop per day
           });
         }
         
@@ -2633,21 +2682,40 @@ for (const vd of dayWiseDetails) {
         dayData.driver += parseFloat((vd as any).vehicle_driver_charges || 0);
         dayData.permit += parseFloat((vd as any).vehicle_permit_charges || 0);
         dayData.pickupKms += parseFloat(String((vd as any).total_pickup_km || 0)) || 0;
+        const pickupDurationMinutes = parseDurationToMinutes((vd as any).total_pickup_duration);
+        dayData.pickupDurationMinutes += pickupDurationMinutes;
         dayData.dropKms += parseFloat(String((vd as any).total_drop_km || 0)) || 0;
-        // Track all three KMS values per day
-       const runningKm = parseFloat(String((vd as any).total_running_km || 0)) || 0;
-const sightseeingKm = parseFloat(String((vd as any).total_siteseeing_km || 0)) || 0;
-const dbTotalKm = parseFloat(String((vd as any).total_travelled_km || 0)) || 0;
+        const dropDurationMinutes = parseDurationToMinutes((vd as any).total_drop_duration);
+        dayData.dropDurationMinutes += dropDurationMinutes;
+        const rowTimeLimitId = Number((vd as any).time_limit_id || 0);
+        const slabInfo = slabInfoByTimeLimit.get(rowTimeLimitId);
+        if (!dayData.timeLimitId && rowTimeLimitId > 0) {
+          dayData.timeLimitId = rowTimeLimitId;
+          dayData.slabTitle = slabInfo?.title || '';
+          dayData.slabHoursLimit = Number(slabInfo?.hoursLimit || 0);
+          dayData.slabKmLimit = Number(slabInfo?.kmLimit || 0);
+        } else if (dayData.timeLimitId > 0 && rowTimeLimitId > 0 && dayData.timeLimitId !== rowTimeLimitId) {
+          dayData.slabTitle = 'Mixed Slabs';
+        }
+        // Total KM in UI is defined as pickup + travel + sightseeing + drop.
+        const runningKm = parseFloat(String((vd as any).total_running_km || 0)) || 0;
+        const runningDurationMinutes = parseDurationToMinutes((vd as any).total_running_time);
+        const sightseeingKm = parseFloat(String((vd as any).total_siteseeing_km || 0)) || 0;
+        const sightseeingDurationMinutes = parseDurationToMinutes((vd as any).total_siteseeing_time);
+        const pickupKm = parseFloat(String((vd as any).total_pickup_km || 0)) || 0;
+        const dropKm = parseFloat(String((vd as any).total_drop_km || 0)) || 0;
+        const expectedTotalKm = Number((pickupKm + runningKm + sightseeingKm + dropKm).toFixed(2));
 
-const expectedTotalKm = Number((runningKm + sightseeingKm).toFixed(2));
-const safeTotalKm =
-  Math.abs(dbTotalKm - expectedTotalKm) <= 0.01
-    ? dbTotalKm
-    : expectedTotalKm;
-
-dayData.travelKms += runningKm;
-dayData.sightseeingKms += sightseeingKm;
-dayData.totalKms += safeTotalKm;
+        dayData.travelKms += runningKm;
+        dayData.travelDurationMinutes += runningDurationMinutes;
+        dayData.sightseeingKms += sightseeingKm;
+        dayData.sightseeingDurationMinutes += sightseeingDurationMinutes;
+        dayData.totalDurationMinutes +=
+          pickupDurationMinutes +
+          runningDurationMinutes +
+          sightseeingDurationMinutes +
+          dropDurationMinutes;
+        dayData.totalKms += expectedTotalKm;
       }
 
       // Convert map to array and format with day labels
@@ -2663,9 +2731,18 @@ dayData.totalKms += safeTotalKm;
           date: dateStr,
           dayLabel: `Day ${dayCounter} | ${dayName}`,
           route,
+          timeLimitId: dayData.timeLimitId || undefined,
+          slabTitle: dayData.slabTitle || undefined,
+          slabHoursLimit: dayData.slabHoursLimit || undefined,
+          slabKmLimit: dayData.slabKmLimit || undefined,
           pickupKms: dayData.pickupKms,
+          pickupDurationMinutes: dayData.pickupDurationMinutes || undefined,
           travelKms: dayData.travelKms,
+          travelDurationMinutes: dayData.travelDurationMinutes || undefined,
           sightseeingKms: dayData.sightseeingKms,
+          sightseeingDurationMinutes: dayData.sightseeingDurationMinutes || undefined,
+          dropDurationMinutes: dayData.dropDurationMinutes || undefined,
+          totalDurationMinutes: dayData.totalDurationMinutes || undefined,
           totalKms: dayData.totalKms,
           rentalCharges: dayData.rental,
           tollCharges: dayData.toll,
