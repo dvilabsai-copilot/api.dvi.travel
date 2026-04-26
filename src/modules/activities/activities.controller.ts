@@ -27,9 +27,24 @@ import { FilesInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname, join } from 'path';
 import { randomBytes } from 'crypto';
+import * as fs from 'fs';
 
-// Helper for uploads dir (configurable via env)
-const UPLOADS_DIR = process.env.UPLOADS_DIR || join(process.cwd(), 'uploads');
+function resolveBackendRoot(): string {
+  // Walk up from __dirname until we find package.json at the api root
+  let dir = __dirname;
+  while (dir !== join(dir, '..')) {
+    if (fs.existsSync(join(dir, 'package.json'))) return dir;
+    dir = join(dir, '..');
+  }
+  return process.cwd();
+}
+
+// Activity gallery stored alongside hotspot_gallery under public/uploads
+function activityGalleryDir(): string {
+  const dir = join(resolveBackendRoot(), 'public', 'uploads', 'activity_gallery');
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
 
 // Helper to generate unique file names
 function randomName(original: string) {
@@ -95,7 +110,7 @@ export class ActivitiesController {
   @UseInterceptors(
     FilesInterceptor('images', 12, {
       storage: diskStorage({
-        destination: (_req, _file, cb) => cb(null, UPLOADS_DIR),
+        destination: (_req, _file, cb) => cb(null, activityGalleryDir()),
         filename: (_req, file, cb) => cb(null, randomName(file.originalname)),
       }),
       limits: { fileSize: 10 * 1024 * 1024 }, // 10MB per file
@@ -130,6 +145,11 @@ export class ActivitiesController {
   }
 
   // === PRICE BOOK (month rows with day_1..day_31) ===
+  @Get(':id/pricebook')
+  async getPriceBook(@Param('id', ParseIntPipe) id: number) {
+    return this.service.getPriceBook(id);
+  }
+
   @Post(':id/pricebook')
   async savePriceBook(@Param('id', ParseIntPipe) id: number, @Body() dto: SavePriceBookDto) {
     return this.service.savePriceBook(id, dto);
