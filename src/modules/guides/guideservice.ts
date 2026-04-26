@@ -694,6 +694,33 @@ export class GuidesService {
     return { ok: true, guide_id: guideId };
   }
 
+  // ───────────────────────────── Get pricebook rows by date range ─────────────
+  async getPricebookByDateRange(guideId: number, startDate: string, endDate: string) {
+    guideId = ensureId(guideId);
+    const sd = startOfDayUTC(startDate);
+    const ed = startOfDayUTC(endDate);
+    if (!sd || !ed || ed < sd) throw new BadRequestException('Invalid date range');
+
+    const rows: any[] = [];
+    let current = new Date(Date.UTC(sd.getUTCFullYear(), sd.getUTCMonth(), 1));
+    const edFirst = new Date(Date.UTC(ed.getUTCFullYear(), ed.getUTCMonth(), 1));
+
+    while (current <= edFirst) {
+      const year = current.getUTCFullYear();
+      const month = monthName(current);
+      const monthRows = await this.prisma.dvi_guide_pricebook.findMany({
+        where: { guide_id: guideId, year: String(year), month, deleted: 0 } as any,
+        orderBy: [{ pax_count: 'asc' }, { slot_type: 'asc' }],
+      });
+      for (const row of monthRows) {
+        rows.push(row as any);
+      }
+      current = new Date(Date.UTC(year, current.getUTCMonth() + 1, 1));
+    }
+
+    return rows;
+  }
+
   // ───────────────────────────── Save Step 3 (reviews) ───────────────────────
   async addReview(input: GuideReviewSaveDto) {
     const guideId = ensureId(input.guide_id);
