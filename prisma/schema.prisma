@@ -6069,7 +6069,7 @@ model dvi_itinerary_reusable_templates {
   status               Int      @default(1) @db.TinyInt
   deleted              Int      @default(0) @db.TinyInt
 
-  @@index([source_location, destination_location, day_count, deleted, status], map: "idx_template_match")
+  @@index([source_location(length: 100), destination_location(length: 100), day_count, deleted, status], map: "idx_template_match")
 }
 
 /// Hotel search results cache - persists live TBO/HOBSE/ResAvenue results per quote+route+group
