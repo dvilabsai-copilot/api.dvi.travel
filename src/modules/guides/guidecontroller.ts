@@ -72,7 +72,7 @@ export class GuidesController {
   @Post('ajax/check-guide-email')
   async checkGuideEmailCompat(@Body() body: any) {
     const out = await this.guides.checkGuideEmailDuplicate(body ?? {});
-    if (out.success) return { success: true };
+    if (out.success || !out.exists) return { success: true };
     return {};
   }
 
