@@ -355,12 +355,16 @@ export class ActivitiesService {
       createdon: now,
     }));
 
-    const res = await this.prisma.dvi_activity_image_gallery_details.createMany({
-      data,
-      skipDuplicates: true,
-    });
 
-    return { count: res.count, files: files.map((f) => f.filename) };
+    const created = await Promise.all(
+      data.map((d) => this.prisma.dvi_activity_image_gallery_details.create({ data: d as any })),
+    );
+
+    return {
+      count: created.length,
+      files: created.map((r) => r.activity_image_gallery_name),
+      ids: created.map((r) => r.activity_image_gallery_details_id),
+    };
   }
 
   async deleteImage(activityId: number, imageId: number) {
@@ -430,6 +434,54 @@ export class ActivitiesService {
   }
 
   // ====== PRICEBOOK (month rows with 31 day columns) ======
+  async getPriceBook(activityId: number) {
+    const rows = await this.prisma.dvi_activity_pricebook.findMany({
+      where: { activity_id: activityId, deleted: 0, status: 1 },
+      orderBy: [{ nationality: 'asc' }, { price_type: 'asc' }],
+    });
+    if (!rows.length) return null;
+
+    // Derive start/end date from rows
+    const years = rows.map((r) => Number(r.year));
+    const minYear = Math.min(...years);
+    const maxYear = Math.max(...years);
+    const monthNums: number[] = [];
+    rows.forEach((r) => {
+      const m = new Date(`${r.year}-01-01`).getFullYear() === Number(r.year)
+        ? new Date(`1 ${r.month} 2000`).getMonth() + 1
+        : 1;
+      monthNums.push(m);
+    });
+    const minMonth = Math.min(...monthNums);
+    const maxMonth = Math.max(...monthNums);
+
+    const startDate = `${minYear}-${String(minMonth).padStart(2, '0')}-01`;
+    const lastDay = new Date(maxYear, maxMonth, 0).getDate();
+    const endDate = `${maxYear}-${String(maxMonth).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+
+    // Extract per-type prices from day_1 value (uniform per row)
+    const getPrice = (nat: number, type: number): number => {
+      const row = rows.find((r) => Number(r.nationality) === nat && Number(r.price_type) === type);
+      return row ? Number((row as any).day_1 ?? 0) : 0;
+    };
+
+    return {
+      start_date: startDate,
+      end_date: endDate,
+      hotspot_id: rows[0]?.hotspot_id ? Number(rows[0].hotspot_id) : null,
+      indian: {
+        adult_cost: getPrice(1, 1),
+        child_cost: getPrice(1, 2),
+        infant_cost: getPrice(1, 3),
+      },
+      nonindian: {
+        adult_cost: getPrice(2, 1),
+        child_cost: getPrice(2, 2),
+        infant_cost: getPrice(2, 3),
+      },
+    };
+  }
+
   async savePriceBook(
     activityId: number,
     dto: {

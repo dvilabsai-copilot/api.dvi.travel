@@ -63,11 +63,7 @@ async function bootstrap() {
   } catch {
     // no-op
   }
-  const httpAdapter = app.getHttpAdapter();
-  const expressApp = httpAdapter?.getInstance?.();
-  if (expressApp && typeof expressApp.use === 'function') {
-    expressApp.use('/uploads', express.static(uploadsRoot));
-  }
+  app.use('/uploads', express.static(uploadsRoot));
 
   // All routes start with /api/v1
   app.setGlobalPrefix('api/v1');
