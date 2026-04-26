@@ -304,6 +304,16 @@ export class GuidesController {
   }
 
   // ───────────────────────────── Save Step 2 (pricebook) ─────────────────────
+  @Get(':id/pricebook')
+  async getPricebook(
+    @Param('id', ParseIntPipe) id: number,
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+  ) {
+    const rows = await this.guides.getPricebookByDateRange(id, startDate, endDate);
+    return { rows };
+  }
+
   @Put(':id/pricebook')
   async savePricebook(
     @Param('id', ParseIntPipe) id: number,
