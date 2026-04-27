@@ -76,9 +76,10 @@ const GENDERS = [
 
 // Guide slots like UI chips
 const GUIDE_SLOTS = [
-  { id: 1, label: 'Slot 1: 9 AM to 1 PM' },
-  { id: 2, label: 'Slot 2: 2 PM to 4 PM' },
-  { id: 3, label: 'Slot 3: 6 PM to 9 PM' },
+  { id: 1, label: '8 AM to 1 PM' },
+  { id: 2, label: '1 PM to 6 PM' },
+  { id: 3, label: '8 AM to 6 PM' },
+  { id: 4, label: '6 PM to 9 PM' },
 ];
 
 // Pax buckets used in PHP screen
@@ -90,9 +91,10 @@ const GUIDE_PAX = [
 
 // Slot types used in pricebook
 const SLOT_TYPES = [
-  { id: 1, label: '9 AM to 1 PM' },
-  { id: 2, label: '9 AM to 4 PM' },
-  { id: 3, label: '6 PM to 9 PM' },
+  { id: 1, label: '8 AM to 1 PM' },
+  { id: 2, label: '1 PM to 6 PM' },
+  { id: 3, label: '8 AM to 6 PM' },
+  { id: 4, label: '6 PM to 9 PM' },
 ];
 
 // ───────────────────────────── local DTO shapes ─────────────────────────────
@@ -632,7 +634,7 @@ export class GuidesService {
 
       for (const row of input.pax_prices ?? []) {
         const pax = clamp(Number(row.pax_id), 1, 3);
-        const slot = clamp(Number(row.slot_id), 1, 3);
+        const slot = clamp(Number(row.slot_id), 1, 4);
         const rawPrice = String((row as any)?.price ?? '').trim();
 
         // PHP parity: only skip empty string, allow explicit 0 values.
