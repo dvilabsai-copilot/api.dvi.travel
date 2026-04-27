@@ -43,11 +43,11 @@ export class RateEntryDto {
 
   @IsOptional()
   @IsNumber()
-  NONA?: number;
+  NINE?: number;
 
   @IsOptional()
   @IsNumber()
-  DECA?: number;
+  TEN?: number;
 
   @IsOptional()
   @IsNumber()
