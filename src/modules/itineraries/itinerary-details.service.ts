@@ -2047,6 +2047,9 @@ for (let i = 0; i < cleanedRouteChain.length - 1; i++) {
   viaRouteDistanceNum += segmentKm;
 }
 
+
+
+// Sightseeing distance
 // Sightseeing distance
 const vehicleKmForRoute = vehicleKmByRouteId.get(
   Number(route.itinerary_route_ID || 0)
@@ -2054,17 +2057,34 @@ const vehicleKmForRoute = vehicleKmByRouteId.get(
 
 const sightseeingDistanceNum = Number(vehicleKmForRoute?.sightseeingKm || 0);
 
-// FINAL distance
+// Fallback travel segment distance
+const travelSegmentDistanceNum = segments.reduce((sum, segment: any) => {
+  if (segment?.type !== 'travel') return sum;
+
+  const distanceNum =
+    parseFloat(String(segment?.distance ?? '').replace(/[^0-9.]/g, '')) || 0;
+
+  return sum + distanceNum;
+}, 0);
+
+// FINAL intercity distance priority:
+// 1. VIA-chain distance
+// 2. stored route.no_of_km
+// 3. visible travel segment total
 const intercityDistanceNum =
   viaRouteDistanceNum > 0
     ? viaRouteDistanceNum
-    : storedIntercityDistanceNum;
+    : storedIntercityDistanceNum > 0
+      ? storedIntercityDistanceNum
+      : travelSegmentDistanceNum;
 
-const totalDistanceNum = intercityDistanceNum;
-// Format
+// Total day distance = intercity + sightseeing
+const totalDistanceNum = intercityDistanceNum + sightseeingDistanceNum;
+
 const intercityDistance = this.formatKm(intercityDistanceNum);
 const sightseeingDistance = this.formatKm(sightseeingDistanceNum);
 const dayDistance = this.formatKm(totalDistanceNum);
+
 
 // DEBUG (keep this for testing)
 console.log('[FINAL_DISTANCE_DEBUG]', {
@@ -2291,9 +2311,9 @@ console.log('[FINAL_DISTANCE_DEBUG]', {
     route.next_visiting_location ??
     plan.departure_location ??
     '',
-  distance: intercityDistance, // route-chain distance only
-intercityDistance,           // route-chain distance only
-sightseeingDistance,         // local sightseeing separately
+  distance: dayDistance,
+intercityDistance,
+sightseeingDistance,       // local sightseeing separately
   startTime: dayStartTimeText,
   endTime: dayEndTimeText,
   viaRoutes: viaRoutesList,
