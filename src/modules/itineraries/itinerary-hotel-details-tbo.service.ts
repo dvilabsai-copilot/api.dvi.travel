@@ -234,7 +234,12 @@ export class ItineraryHotelDetailsTboService {
       childCount: number = 0,
       childAges: number[] = [],
       roomCount: number = 1,
-      searchPreferences?: { mealPlanCode?: string; tboMealType?: string; starRatings?: number[] },
+      searchPreferences?: {
+        mealPlanCode?: string;
+        tboMealType?: string;
+        starRatings?: number[];
+        stdBudgetSelected?: boolean;
+      },
     ): Promise<Map<number, HotelSearchResult[] | null>> {
       let hotelsByRoute = await this.fetchHotelsForRoutes(
         routes,
