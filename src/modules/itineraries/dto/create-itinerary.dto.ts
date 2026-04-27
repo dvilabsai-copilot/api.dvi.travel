@@ -8,6 +8,7 @@ import {
   ValidateNested,
   IsISO8601,
   Min,
+  Matches,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -96,6 +97,12 @@ export class CreatePlanDto {
   @IsOptional()
   @IsInt()
   meal_plan_dinner?: number;
+
+  @ApiProperty({ example: 'CP', required: false })
+  @IsOptional()
+  @IsString()
+  @Matches(/^(CP|EP|MAP|AP)$/)
+  meal_plan_code?: string;
 
   @ApiProperty({
     example: 0,

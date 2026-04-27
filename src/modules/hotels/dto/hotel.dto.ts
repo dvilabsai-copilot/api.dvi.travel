@@ -107,6 +107,9 @@ export class HotelSearchDTO {
     minRating?: number;
     maxPrice?: number;
     facilities?: string[];
+    starRatings?: number[];
+    mealPlanCode?: string;
+    tboMealType?: string;
   };
 }
 

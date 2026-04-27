@@ -4704,6 +4704,7 @@ export class ItinerariesService {
           total_infants: plan.total_infants || 0,
           nationality: plan.nationality || 0,
           itinerary_preference: plan.itinerary_preference || 0,
+          meal_plan_code: (plan as any).meal_plan_code || null,
           meal_plan_breakfast: plan.meal_plan_breakfast || 0,
           meal_plan_lunch: plan.meal_plan_lunch || 0,
           meal_plan_dinner: plan.meal_plan_dinner || 0,
@@ -4868,7 +4869,7 @@ export class ItinerariesService {
           createdon: new Date(),
           status: 1,
           deleted: 0,
-        },
+        } as any,
       });
 
       // I. Update draft plan status

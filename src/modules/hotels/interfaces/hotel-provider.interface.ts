@@ -88,6 +88,9 @@ export interface HotelPreferences {
   maxPrice?: number;
   facilities?: string[];
   preferredProvider?: string;
+  starRatings?: number[];
+  mealPlanCode?: string;
+  tboMealType?: string;
 }
 
 export interface HotelConfirmationDTO {

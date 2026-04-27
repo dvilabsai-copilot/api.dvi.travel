@@ -212,6 +212,7 @@ export interface ItineraryDetailsResponseDto {
   children: number;
   infants: number;
   overallCost: string;
+  meal_plan_code?: string | null;
 
   // DAY / ROUTE TIMELINE
   days: {
@@ -3258,6 +3259,7 @@ for (const vd of dayWiseDetails) {
       children: plan.total_children ?? 0,
       infants: plan.total_infants ?? 0,
       overallCost: netPayable.toFixed(2), // Use calculated net payable
+      meal_plan_code: (plan as any).meal_plan_code ?? null,
 
       days,
 

@@ -4,6 +4,11 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
 import {
+  CANONICAL_HOTEL_RATE_PLANS,
+  HotelMealComposition,
+  TboMealType,
+} from '../hotels/hotel-rate-plans';
+import {
   EligibleVehicleTypesDto,
   EligibleVehicleTypesResponseDto,
 } from './dto/eligible-vehicle-types.dto';
@@ -23,6 +28,8 @@ export type MealPlanOption = {
   label: string;
   code: string;
   description: string;
+  mealComposition?: HotelMealComposition;
+  tboMealType?: TboMealType;
   includesBreakfast: number;
   includesLunch: number;
   includesDinner: number;
@@ -774,6 +781,8 @@ return mergedLocations.map((loc) => ({
           code,
           description,
           label: name ? `${code} - ${name}` : code,
+          mealComposition: CANONICAL_HOTEL_RATE_PLANS.find((plan) => plan.code === code)?.mealComposition,
+          tboMealType: CANONICAL_HOTEL_RATE_PLANS.find((plan) => plan.code === code)?.tboMealType,
           includesBreakfast,
           includesLunch,
           includesDinner,
@@ -785,45 +794,18 @@ return mergedLocations.map((loc) => ({
       return mapped;
     }
 
-    // Fallback to common defaults when master data is not seeded.
-    return [
-      {
-        id: 'EP',
-        code: 'EP',
-        label: 'EP - European Plan',
-        description: 'Room only (no meals)',
-        includesBreakfast: 0,
-        includesLunch: 0,
-        includesDinner: 0,
-      },
-      {
-        id: 'CP',
-        code: 'CP',
-        label: 'CP - Continental Plan',
-        description: 'Breakfast included',
-        includesBreakfast: 1,
-        includesLunch: 0,
-        includesDinner: 0,
-      },
-      {
-        id: 'MAP',
-        code: 'MAP',
-        label: 'MAP - Modified American Plan',
-        description: 'Breakfast + one major meal',
-        includesBreakfast: 1,
-        includesLunch: 0,
-        includesDinner: 1,
-      },
-      {
-        id: 'AP',
-        code: 'AP',
-        label: 'AP - American Plan',
-        description: 'All meals included',
-        includesBreakfast: 1,
-        includesLunch: 1,
-        includesDinner: 1,
-      },
-    ];
+    // Fallback to the canonical backend definitions when master data is not seeded.
+    return CANONICAL_HOTEL_RATE_PLANS.map((plan) => ({
+      id: plan.code,
+      code: plan.code,
+      label: `${plan.code} - ${plan.name}`,
+      description: plan.description,
+      mealComposition: plan.mealComposition,
+      tboMealType: plan.tboMealType,
+      includesBreakfast: plan.includesBreakfast,
+      includesLunch: plan.includesLunch,
+      includesDinner: plan.includesDinner,
+    }));
   }
 
   async getVehicleTypes(): Promise<SimpleOption[]> {
