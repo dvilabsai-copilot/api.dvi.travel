@@ -104,6 +104,128 @@ export class StaahService {
     return parsed;
   }
 
+  private normalizeStaahExternalId(value: unknown): string {
+    const raw = String(value ?? '').trim();
+    if (!raw) {
+      return raw;
+    }
+
+    // STAAH certification feedback: underscore characters are not supported in mapping IDs.
+    return raw.replace(/_/g, '');
+  }
+
+  private toStaahPublicId(value: unknown): string {
+    const raw = String(value ?? '').trim();
+    const normalized = this.normalizeStaahExternalId(raw);
+    return normalized || raw;
+  }
+
+  private async resolveStaahInternalIds(
+    propertyId: string,
+    incomingRoomId: string,
+    incomingRateId?: string,
+  ): Promise<{ roomId: string; rateId?: string }> {
+    const roomRaw = String(incomingRoomId || '').trim();
+    const rateRaw = String(incomingRateId || '').trim();
+    const normalizedRoom = this.normalizeStaahExternalId(roomRaw);
+    const normalizedRate = this.normalizeStaahExternalId(rateRaw);
+
+    const [hotel, ratePlans] = await Promise.all([
+      this.prisma.dvi_hotel.findFirst({
+        where: {
+          staah_property_id: propertyId,
+          staah_enabled: 1,
+          deleted: { not: true },
+        },
+        select: { hotel_id: true },
+      }),
+      this.prisma.staah_rateplan.findMany({
+        where: { staah_property_id: propertyId },
+        select: { room_id: true, rateplan_id: true },
+      }),
+    ]);
+
+    const rooms = hotel?.hotel_id
+      ? await this.prisma.dvi_hotel_rooms.findMany({
+          where: {
+            hotel_id: hotel.hotel_id,
+            status: 1,
+            deleted: 0,
+          },
+          select: {
+            room_ID: true,
+            room_ref_code: true,
+          },
+        })
+      : [];
+
+    let resolvedRoomId = roomRaw;
+    const knownRoomIds = new Set<string>();
+
+    for (const row of ratePlans) {
+      knownRoomIds.add(String(row.room_id));
+    }
+
+    for (const room of rooms) {
+      knownRoomIds.add(String(room.room_ID));
+      if (room.room_ref_code) {
+        knownRoomIds.add(String(room.room_ref_code));
+      }
+    }
+
+    if (!knownRoomIds.has(roomRaw) && normalizedRoom) {
+      const ratePlanRoomMatch = ratePlans.find(
+        (row) => this.normalizeStaahExternalId(row.room_id) === normalizedRoom,
+      );
+      if (ratePlanRoomMatch) {
+        resolvedRoomId = String(ratePlanRoomMatch.room_id);
+      } else {
+        const hotelRoomMatch = rooms.find((room) => {
+          const roomRef = String(room.room_ref_code || '').trim();
+          const roomPk = String(room.room_ID);
+          return (
+            (roomRef && this.normalizeStaahExternalId(roomRef) === normalizedRoom)
+            || this.normalizeStaahExternalId(roomPk) === normalizedRoom
+          );
+        });
+
+        if (hotelRoomMatch) {
+          resolvedRoomId = String(hotelRoomMatch.room_ref_code || hotelRoomMatch.room_ID);
+        }
+      }
+    }
+
+    if (!rateRaw) {
+      return { roomId: resolvedRoomId };
+    }
+
+    let resolvedRateId = rateRaw;
+    const roomScopedPlans = ratePlans.filter(
+      (row) => String(row.room_id) === resolvedRoomId,
+    );
+
+    const hasExactRateId = roomScopedPlans.some(
+      (row) => String(row.rateplan_id) === rateRaw,
+    ) || ratePlans.some((row) => String(row.rateplan_id) === rateRaw);
+
+    if (!hasExactRateId && normalizedRate) {
+      const rateMatch = roomScopedPlans.find(
+        (row) => this.normalizeStaahExternalId(row.rateplan_id) === normalizedRate,
+      ) || ratePlans.find(
+        (row) => this.normalizeStaahExternalId(row.rateplan_id) === normalizedRate,
+      );
+
+      if (rateMatch) {
+        resolvedRateId = String(rateMatch.rateplan_id);
+      }
+    }
+
+    return {
+      roomId: resolvedRoomId,
+      rateId: resolvedRateId,
+    };
+  }
+
   private hasDefinedValue(value: unknown): boolean {
     return value !== undefined && value !== null;
   }
@@ -489,25 +611,25 @@ export class StaahService {
     });
 
     const roomtypes = rooms.map((room) => ({
-      room_id: room.room_ref_code || String(room.room_ID),
-      OTA_room_id: room.room_ref_code || String(room.room_ID),
+      room_id: this.toStaahPublicId(room.room_ref_code || String(room.room_ID)),
+      OTA_room_id: this.toStaahPublicId(room.room_ref_code || String(room.room_ID)),
       room_name: room.room_title || 'Room',
     }));
 
     const plans = ratePlans.map((ratePlan) => ({
-      room_id: ratePlan.room_id,
-      rate_id: ratePlan.rateplan_id,
-      OTA_room_id: ratePlan.room_id,
-      OTA_rate_id: ratePlan.rateplan_id,
+      room_id: this.toStaahPublicId(ratePlan.room_id),
+      rate_id: this.toStaahPublicId(ratePlan.rateplan_id),
+      OTA_room_id: this.toStaahPublicId(ratePlan.room_id),
+      OTA_rate_id: this.toStaahPublicId(ratePlan.rateplan_id),
       rate_name: ratePlan.rateplan_name,
       currency: ratePlan.currency || 'INR',
     }));
 
     const roomRateMap = ratePlans.map((ratePlan) => ({
-      room_id: ratePlan.room_id,
-      rate_id: ratePlan.rateplan_id,
-      OTA_room_id: ratePlan.room_id,
-      OTA_rate_id: ratePlan.rateplan_id,
+      room_id: this.toStaahPublicId(ratePlan.room_id),
+      rate_id: this.toStaahPublicId(ratePlan.rateplan_id),
+      OTA_room_id: this.toStaahPublicId(ratePlan.room_id),
+      OTA_rate_id: this.toStaahPublicId(ratePlan.rateplan_id),
     }));
 
     return {
@@ -575,9 +697,9 @@ export class StaahService {
 
     return {
       room_rate_mapping: ratePlans.map((ratePlan) => ({
-        room_id: ratePlan.room_id,
+        room_id: this.toStaahPublicId(ratePlan.room_id),
         room_name: roomNameById.get(ratePlan.room_id) || 'Room',
-        rate_id: ratePlan.rateplan_id,
+        rate_id: this.toStaahPublicId(ratePlan.rateplan_id),
         rate_name: ratePlan.rateplan_name,
         manageable: 'Y',
       })),
@@ -590,6 +712,8 @@ export class StaahService {
     dto: InventoryUpdateRequestDto,
   ): Promise<InventoryUpdateResponseDto> {
     const { propertyid, room_id, data } = dto;
+    const resolvedIds = await this.resolveStaahInternalIds(propertyid, room_id, dto.rate_id);
+    const internalRoomId = resolvedIds.roomId;
 
     await this.logInbound('inventoryUpdate', propertyid, room_id, dto.rate_id, dto);
 
@@ -607,7 +731,7 @@ export class StaahService {
           where: {
             staah_property_id_room_id_start_date_end_date: {
               staah_property_id: propertyid,
-              room_id,
+              room_id: internalRoomId,
               start_date: new Date(inventoryEntry.start_date),
               end_date: new Date(inventoryEntry.end_date),
             },
@@ -618,7 +742,7 @@ export class StaahService {
           },
           create: {
             staah_property_id: propertyid,
-            room_id,
+            room_id: internalRoomId,
             start_date: new Date(inventoryEntry.start_date),
             end_date: new Date(inventoryEntry.end_date),
             free: inventoryEntry.free,
@@ -641,6 +765,9 @@ export class StaahService {
 
   async rateUpdate(dto: RateUpdateRequestDto): Promise<RateUpdateResponseDto> {
     const { propertyid, room_id, rate_id, data } = dto;
+    const resolvedIds = await this.resolveStaahInternalIds(propertyid, room_id, rate_id);
+    const internalRoomId = resolvedIds.roomId;
+    const internalRateId = resolvedIds.rateId || rate_id;
 
     await this.logInbound('rateUpdate', propertyid, room_id, rate_id, dto);
 
@@ -677,8 +804,8 @@ export class StaahService {
           where: {
             staah_property_id_room_id_rateplan_id_start_date_end_date: {
               staah_property_id: propertyid,
-              room_id,
-              rateplan_id: rate_id,
+              room_id: internalRoomId,
+              rateplan_id: internalRateId,
               start_date: startDate,
               end_date: endDate,
             },
@@ -689,8 +816,8 @@ export class StaahService {
           },
           create: {
             staah_property_id: propertyid,
-            room_id,
-            rateplan_id: rate_id,
+            room_id: internalRoomId,
+            rateplan_id: internalRateId,
             start_date: startDate,
             end_date: endDate,
             occupancy_rates: occupancyRates,
@@ -734,6 +861,13 @@ export class StaahService {
 
   async ariUpdate(dto: AriRequestDto): Promise<AriResponseDto> {
     await this.logInbound('ari', dto.propertyid, dto.room_id, dto.rate_id, dto);
+    const resolvedIds = await this.resolveStaahInternalIds(
+      dto.propertyid,
+      dto.room_id,
+      dto.rate_id,
+    );
+    const internalRoomId = resolvedIds.roomId;
+    const internalRateId = resolvedIds.rateId || dto.rate_id;
 
     const isValid = await this.validatePropertyMapping(dto.propertyid);
     if (!isValid) {
@@ -767,7 +901,7 @@ export class StaahService {
             await this.upsertAriInventoryRow(
               tx,
               dto.propertyid,
-              dto.room_id,
+              internalRoomId,
               startDate,
               endDate,
               row.inventory,
@@ -778,8 +912,8 @@ export class StaahService {
             await this.upsertAriRateRow(
               tx,
               dto.propertyid,
-              dto.room_id,
-              dto.rate_id,
+              internalRoomId,
+              internalRateId,
               startDate,
               endDate,
               row,
@@ -790,8 +924,8 @@ export class StaahService {
             await this.upsertAriRestrictionRows(
               tx,
               dto.propertyid,
-              dto.room_id,
-              dto.rate_id,
+              internalRoomId,
+              internalRateId,
               startDate,
               endDate,
               row,
@@ -821,6 +955,13 @@ export class StaahService {
     dto: RestrictionUpdateRequestDto,
   ): Promise<RestrictionUpdateResponseDto> {
     await this.logInbound('restrictionUpdate', dto.propertyid, dto.room_id, dto.rate_id, dto);
+    const resolvedIds = await this.resolveStaahInternalIds(
+      dto.propertyid,
+      dto.room_id,
+      dto.rate_id,
+    );
+    const internalRoomId = resolvedIds.roomId;
+    const internalRateId = resolvedIds.rateId || dto.rate_id;
 
     try {
       const isValid = await this.validatePropertyMapping(dto.propertyid);
@@ -837,8 +978,8 @@ export class StaahService {
 
         const identityWhere = {
           staah_property_id: dto.propertyid,
-          room_id: dto.room_id,
-          rateplan_id: dto.rate_id,
+          room_id: internalRoomId,
+          rateplan_id: internalRateId,
           start_date: startDate,
           end_date: endDate,
           type: row.type,
@@ -1039,6 +1180,13 @@ export class StaahService {
   async getArrInfo(dto: ArrInfoRequestDto): Promise<ArrInfoResponseDto> {
     const trackingId = this.createTrackingId();
     await this.logInbound('arrInfo', dto.propertyid, dto.room_id, dto.rate_id, dto);
+    const resolvedIds = await this.resolveStaahInternalIds(
+      dto.propertyid,
+      dto.room_id,
+      dto.rate_id,
+    );
+    const internalRoomId = resolvedIds.roomId;
+    const internalRateId = resolvedIds.rateId || dto.rate_id;
 
     const isValid = await this.validatePropertyMapping(dto.propertyid);
     if (!isValid) {
@@ -1057,7 +1205,7 @@ export class StaahService {
       this.prisma.staah_inventory.findMany({
         where: {
           staah_property_id: dto.propertyid,
-          room_id: dto.room_id,
+          room_id: internalRoomId,
           start_date: { lte: toDate },
           end_date: { gte: fromDate },
         },
@@ -1066,8 +1214,8 @@ export class StaahService {
       this.prisma.staah_rate.findMany({
         where: {
           staah_property_id: dto.propertyid,
-          room_id: dto.room_id,
-          rateplan_id: dto.rate_id,
+          room_id: internalRoomId,
+          rateplan_id: internalRateId,
           start_date: { lte: toDate },
           end_date: { gte: fromDate },
         },
@@ -1076,8 +1224,8 @@ export class StaahService {
       this.prisma.staah_restriction.findMany({
         where: {
           staah_property_id: dto.propertyid,
-          room_id: dto.room_id,
-          rateplan_id: dto.rate_id,
+          room_id: internalRoomId,
+          rateplan_id: internalRateId,
           start_date: { lte: toDate },
           end_date: { gte: fromDate },
         },
@@ -1086,8 +1234,8 @@ export class StaahService {
       this.prisma.staah_rateplan.findFirst({
         where: {
           staah_property_id: dto.propertyid,
-          room_id: dto.room_id,
-          rateplan_id: dto.rate_id,
+          room_id: internalRoomId,
+          rateplan_id: internalRateId,
         },
         select: {
           currency: true,
@@ -1134,6 +1282,13 @@ export class StaahService {
   async getYearInfoArr(dto: YearInfoArrRequestDto): Promise<YearInfoArrResponseDto> {
     const trackingId = this.createTrackingId();
     await this.logInbound('yearInfoArr', dto.propertyid, dto.room_id, dto.rate_id, dto);
+    const resolvedIds = await this.resolveStaahInternalIds(
+      dto.propertyid,
+      dto.room_id,
+      dto.rate_id,
+    );
+    const internalRoomId = resolvedIds.roomId;
+    const internalRateId = resolvedIds.rateId || dto.rate_id;
 
     const isValid = await this.validatePropertyMapping(dto.propertyid);
     if (!isValid) {
@@ -1148,31 +1303,31 @@ export class StaahService {
       this.prisma.staah_inventory.findMany({
         where: {
           staah_property_id: dto.propertyid,
-          room_id: dto.room_id,
+          room_id: internalRoomId,
         },
         orderBy: { start_date: 'asc' },
       }),
       this.prisma.staah_rate.findMany({
         where: {
           staah_property_id: dto.propertyid,
-          room_id: dto.room_id,
-          rateplan_id: dto.rate_id,
+          room_id: internalRoomId,
+          rateplan_id: internalRateId,
         },
         orderBy: { start_date: 'asc' },
       }),
       this.prisma.staah_restriction.findMany({
         where: {
           staah_property_id: dto.propertyid,
-          room_id: dto.room_id,
-          rateplan_id: dto.rate_id,
+          room_id: internalRoomId,
+          rateplan_id: internalRateId,
         },
         orderBy: [{ start_date: 'asc' }, { received_at: 'desc' }, { id: 'desc' }],
       }),
       this.prisma.staah_rateplan.findFirst({
         where: {
           staah_property_id: dto.propertyid,
-          room_id: dto.room_id,
-          rateplan_id: dto.rate_id,
+          room_id: internalRoomId,
+          rateplan_id: internalRateId,
         },
         select: {
           currency: true,
