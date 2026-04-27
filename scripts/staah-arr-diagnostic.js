@@ -24,10 +24,17 @@ if (fs.existsSync(envPath)) {
 
 const PROPERTY_ID = process.env.STAAH_PROPERTY_ID || 'STAAHTESTHOTEL1';
 const API_KEY = process.env.STAAH_API_KEY || '';
-const ROOM_ID = process.env.STAAH_ROOM_ID || 'DELUXE';
-const RATE_ID = process.env.STAAH_RATE_ID || 'ROOM';
+const ROOM_ID_RAW = process.env.STAAH_ROOM_ID || 'DELUXE';
+const RATE_ID_RAW = process.env.STAAH_RATE_ID || 'CP';
 const FETCH_URL = process.env.STAAH_FETCH_URL || 'https://channelconnect.otaswitch.com/common-cgi/dviholidays/test/services.pl';
 const REQUEST_TIMEOUT_MS = Number(process.env.STAAH_REQUEST_TIMEOUT_MS || 60000);
+
+function normalizeExternalId(value) {
+  return String(value || '').trim().replace(/_/g, '');
+}
+
+const ROOM_ID = normalizeExternalId(ROOM_ID_RAW) || 'DELUXE';
+const RATE_ID = normalizeExternalId(RATE_ID_RAW) || 'CP';
 
 const windows = [
   ['2026-07-20', '2026-07-20'],

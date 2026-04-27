@@ -8,9 +8,9 @@
  * Optional env overrides:
  *   STAAH_PROPERTY_ID=STAAHTESTHOTEL1
  *   STAAH_FETCH_URL=https://channelconnect.otaswitch.com/common-cgi/dviholidays/test/services.pl
- *   STAAH_BOOKING_URL=https://channels-stage.staah.net/booking/getapi/reservation/v2
+ *   STAAH_BOOKING_URL=https://reservation.otaswitch.com/getapi/reservation/v2
  *   STAAH_ROOM_ID=DELUXE
- *   STAAH_RATE_ID=ROOM
+ *   STAAH_RATE_ID=CP
  */
 
 const https = require('https');
@@ -34,11 +34,18 @@ if (fs.existsSync(envPath)) {
 
 const PROPERTY_ID = process.env.STAAH_PROPERTY_ID || 'STAAHTESTHOTEL1';
 const API_KEY     = process.env.STAAH_API_KEY || 'Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH';
-const ROOM_ID     = process.env.STAAH_ROOM_ID || 'DELUXE';
-const RATE_ID     = process.env.STAAH_RATE_ID || 'ROOM';
+const ROOM_ID_RAW = process.env.STAAH_ROOM_ID || 'DELUXE';
+const RATE_ID_RAW = process.env.STAAH_RATE_ID || 'CP';  // Canonical rate plan ID (no underscores)
 const FETCH_URL   = process.env.STAAH_FETCH_URL || 'https://channelconnect.otaswitch.com/common-cgi/dviholidays/test/services.pl';
-const BOOKING_URL = process.env.STAAH_BOOKING_URL || 'https://channels-stage.staah.net/booking/getapi/reservation/v2';
+const BOOKING_URL = process.env.STAAH_BOOKING_URL || 'https://reservation.otaswitch.com/getapi/reservation/v2';
 const REQUEST_TIMEOUT_MS = Number(process.env.STAAH_REQUEST_TIMEOUT_MS || 60000);
+
+function normalizeExternalId(value) {
+  return String(value || '').trim().replace(/_/g, '');
+}
+
+const ROOM_ID = normalizeExternalId(ROOM_ID_RAW) || 'DELUXE';
+const RATE_ID = normalizeExternalId(RATE_ID_RAW) || 'CP';
 
 const OUT_DIR = path.join(process.cwd(), `staah-booking-cert-${Date.now()}`);
 fs.mkdirSync(OUT_DIR, { recursive: true });
@@ -102,18 +109,32 @@ function nowStaahDateTime() {
   return `${yyyy}-${mm}-${dd}T${hh}:${mi}:${ss}`;
 }
 
-function hasAmountAfterTaxInArrResponse(body) {
-  const rows = Array.isArray(body?.data) ? body.data : [];
-  if (rows.length === 0) return false;
-
-  return rows.some((row) => {
+/**
+ * Validate ARR_info response structure per STAAH v2 contract.
+ * ARR_info pulls return availability records (inventory, restrictions, currency).
+ * Pricing data is NOT included in ARR_info responses.
+ */
+function validateArrInfoResponse(body) {
+  if (!body) return false;
+  
+  // Required top-level fields
+  if (!body.data || !Array.isArray(body.data)) return false;
+  if (body.data.length === 0) return false;
+  if (!body.currency) return false;
+  if (!body.trackingId) return false;
+  if (!body.propertyid) return false;
+  if (!body.rate_id) return false;
+  if (!body.room_id) return false;
+  
+  // Validate each data row has required fields
+  return body.data.every((row) => {
     if (!row || typeof row !== 'object') return false;
-    if (row.amountAfterTax !== undefined && row.amountAfterTax !== null) return true;
-    if (row.amountaftertax !== undefined && row.amountaftertax !== null) return true;
-    if (row.rates && typeof row.rates === 'object') {
-      return row.rates.amountAfterTax !== undefined && row.rates.amountAfterTax !== null;
-    }
-    return false;
+    // Each row must have at least date and one of: inventory, stopsell, or restrictions
+    const hasDate = row.date !== undefined && row.date !== null;
+    const hasInventory = row.inventory !== undefined && row.inventory !== null;
+    const hasStopsell = row.stopsell !== undefined && row.stopsell !== null;
+    const hasRestrictions = row.cta !== undefined || row.ctd !== undefined || row.minstay !== undefined;
+    return hasDate && (hasInventory || hasStopsell || hasRestrictions);
   });
 }
 
@@ -124,7 +145,6 @@ function makeBookingId(label) {
 function buildReservationPayload(options) {
   const {
     reservationId,
-    reservationDateTime,
     arrivalDate,
     departureDate,
     status,
@@ -148,7 +168,7 @@ function buildReservationPayload(options) {
     reservations: {
       reservation: [
         {
-              reservation_datetime: reservationDateTime || nowStaahDateTime(),
+          reservation_datetime: nowStaahDateTime(),
           propertyname: 'STAAH TEST',
           reservation_id: reservationId,
           payment_required: '15',
@@ -244,6 +264,54 @@ function buildArrInfoPayload(fromDate, toDate) {
   };
 }
 
+function buildMappingPayload() {
+  return {
+    propertyid: PROPERTY_ID,
+    apikey: API_KEY,
+    action: 'mapping',
+    version: '2',
+  };
+}
+
+function findUnderscoreMappingRows(body) {
+  const rows = Array.isArray(body?.room_rate_mapping) ? body.room_rate_mapping : [];
+  return rows.filter((row) => {
+    const roomId = String(row?.room_id || '');
+    const rateId = String(row?.rate_id || '');
+    return roomId.includes('_') || rateId.includes('_');
+  });
+}
+
+async function runMappingPrecheck() {
+  const payload = buildMappingPayload();
+  const res = await postJson(FETCH_URL, payload);
+  const badRows = findUnderscoreMappingRows(res.body);
+  const pass = res.status === 200 && badRows.length === 0;
+
+  console.log('\n=== PRECHECK_MAPPING ===');
+  console.log(`Status : ${res.status}  →  ${pass ? 'PASS ✓' : 'FAIL ✗'}`);
+  if (badRows.length > 0) {
+    console.log('Mapping rows with underscore IDs found:');
+    badRows.forEach((row, idx) => {
+      console.log(`  [${idx}] room_id=${row.room_id} rate_id=${row.rate_id}`);
+    });
+  }
+
+  saveEvidence('precheck_mapping', payload, res);
+  return {
+    label: 'PRECHECK_MAPPING',
+    excelRow: 0,
+    endpointName: 'fetch',
+    requestedAt: nowIsoSeconds(),
+    bookingId: '',
+    request: payload,
+    response: { status: res.status, body: res.body },
+    status: res.status,
+    pass,
+    body: res.body,
+  };
+}
+
 async function runTest({ label, excelRow, endpointName, url, payload, bookingId }) {
   console.log(`\n=== ${label} ===`);
   console.log(`POST ${url}`);
@@ -254,11 +322,11 @@ async function runTest({ label, excelRow, endpointName, url, payload, bookingId 
     let pass = res.status === 200;
 
     if (endpointName === 'fetch' && pass) {
-      const hasAmountAfterTax = hasAmountAfterTaxInArrResponse(res.body);
-      if (!hasAmountAfterTax) {
+      const isValidArr = validateArrInfoResponse(res.body);
+      if (!isValidArr) {
         pass = false;
       }
-      console.log(`ARR amountAfterTax present: ${hasAmountAfterTax ? 'YES' : 'NO'}`);
+      console.log(`ARR response valid: ${isValidArr ? 'YES' : 'NO'}`);
     }
 
     console.log(`Status : ${res.status}  →  ${pass ? 'PASS ✓' : 'FAIL ✗'}`);
@@ -306,6 +374,26 @@ async function main() {
   console.log(`Output dir  : ${OUT_DIR}`);
 
   const results = [];
+
+  try {
+    results.push(await runMappingPrecheck());
+  } catch (err) {
+    console.log(`\n=== PRECHECK_MAPPING ===`);
+    console.log(`Status : ERR  →  FAIL ✗`);
+    console.log(`Error  : ${err.message}`);
+    results.push({
+      label: 'PRECHECK_MAPPING',
+      excelRow: 0,
+      endpointName: 'fetch',
+      requestedAt: nowIsoSeconds(),
+      bookingId: '',
+      request: buildMappingPayload(),
+      response: { status: 'ERR', body: err.message },
+      status: 'ERR',
+      pass: false,
+      body: err.message,
+    });
+  }
 
   const bookingId1 = makeBookingId('S1');
   const bookingId2 = makeBookingId('S2');
