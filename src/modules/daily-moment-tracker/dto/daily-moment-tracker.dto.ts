@@ -9,6 +9,7 @@ import {
   IsOptional,
   IsString,
   Min,
+  Max,
 } from 'class-validator';
 
 export class ListDailyMomentQueryDto {
@@ -146,6 +147,7 @@ export class DailyMomentHotspotRowDto {
   itinerary_plan_ID!: number;
   itinerary_route_ID!: number;
   hotspot_ID!: number;
+  item_type!: number; // 4=hotspot,6=hotel,7=travel
 
   // display info
   hotspot_name!: string;
@@ -158,8 +160,234 @@ export class DailyMomentHotspotRowDto {
   duration_label!: string; // e.g. "1 Hour 30 Min"
 
   // visit status (for buttons)
-  driver_hotspot_status!: number; // 0 = Not-Visited, 1 = Visited
+  driver_hotspot_status!: number; // 0=pending, 1=visited, 2=not-visited
   driver_not_visited_description!: string | null;
   guide_hotspot_status!: number;
   guide_not_visited_description!: string | null;
+
+  // optional nested activities in day-view
+  activities?: DayViewActivityDto[];
+}
+
+// ─── Day-View DTOs ────────────────────────────────────────────────────────────
+
+export class DayViewKmDto {
+  opening_km!: string;
+  closing_km!: string;
+  opening_speedmeter_image?: string | null;
+  closing_speedmeter_image?: string | null;
+  running_km!: number;
+  completed!: boolean;
+}
+
+export class DayViewActivityDto {
+  confirmed_route_activity_ID!: number;
+  route_activity_ID!: number;
+  route_hotspot_ID!: number;
+  hotspot_ID!: number;
+  activity_ID!: number;
+  activity_title!: string;
+  driver_activity_status!: number;
+  driver_not_visited_description!: string | null;
+  guide_activity_status!: number;
+  guide_not_visited_description!: string | null;
+}
+
+export class DayViewGuideDto {
+  confirmed_route_guide_ID!: number;
+  guide_id!: number;
+  guide_name!: string;
+  guide_type!: number; // 1=whole-day, 2=per-route
+  driver_guide_status!: number; // 0=pending,1=visited,2=not-visited
+  driver_not_visited_description!: string | null;
+}
+
+export class DayViewDayDto {
+  day_number!: number;
+  itinerary_route_ID!: number;
+  confirmed_itinerary_route_ID?: number;
+  route_date!: string; // DD-MM-YYYY
+  from_location!: string;
+  to_location!: string;
+  trip_type!: 'Arrival' | 'Departure' | 'Ongoing';
+  arrival_flight_details!: string;
+  departure_flight_details!: string;
+  hotel_name!: string;
+  vehicle_type_title!: string;
+  vendor_name!: string;
+  meal_plan!: string;
+  vehicle_no!: string;
+  driver_name!: string;
+  driver_mobile!: string;
+  agent_name!: string;
+  special_remarks!: string;
+  km!: DayViewKmDto;
+  wholeday_guide!: DayViewGuideDto | null;
+  guides!: DayViewGuideDto[];
+  hotspots!: DailyMomentHotspotRowDto[];
+}
+
+export class DayViewPlanDto {
+  itinerary_plan_ID!: number;
+  quote_id!: string;
+  trip_start_date!: string;
+  trip_end_date!: string;
+  no_of_days!: number;
+  no_of_nights!: number;
+  arrival_location!: string;
+  departure_location!: string;
+  guest_name!: string;
+  guest_mobile!: string;
+  guest_email!: string;
+  travel_expert_name!: string;
+  travel_expert_mobile!: string;
+  travel_expert_email!: string;
+  days!: DayViewDayDto[];
+}
+
+// ─── Status Update DTOs ───────────────────────────────────────────────────────
+
+export class UpdateHotspotStatusDto {
+  @IsNotEmpty()
+  @Type(() => Number)
+  @IsInt()
+  confirmedRouteHotspotId!: number;
+
+  @IsInt()
+  @Min(0)
+  status!: number; // 1=visited, 2=not-visited
+
+  @IsOptional()
+  @IsString()
+  description?: string;
+}
+
+export class UpdateGuideStatusDto {
+  @IsNotEmpty()
+  @Type(() => Number)
+  @IsInt()
+  confirmedRouteGuideId!: number;
+
+  @IsInt()
+  @Min(0)
+  status!: number;
+
+  @IsOptional()
+  @IsString()
+  description?: string;
+}
+
+export class UpdateWholedayGuideStatusDto {
+  @IsNotEmpty()
+  @Type(() => Number)
+  @IsInt()
+  confirmedItineraryRouteId!: number; // PK of dvi_confirmed_itinerary_route_details
+
+  @IsInt()
+  @Min(0)
+  status!: number;
+
+  @IsOptional()
+  @IsString()
+  description?: string;
+}
+
+// ─── Rating DTOs ──────────────────────────────────────────────────────────────
+
+export class UpsertDriverRatingDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  driverFeedbackId?: number;
+
+  @Type(() => Number)
+  @IsInt()
+  itineraryPlanId!: number;
+
+  @Type(() => Number)
+  @IsInt()
+  itineraryRouteId!: number;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  customerRating!: number;
+
+  @IsOptional()
+  @IsString()
+  feedbackDescription?: string;
+}
+
+export class UpsertGuideRatingDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  guideReviewId?: number;
+
+  @Type(() => Number)
+  @IsInt()
+  itineraryPlanId!: number;
+
+  @Type(() => Number)
+  @IsInt()
+  itineraryRouteId!: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  guideId?: number;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  guideRating!: number;
+
+  @IsOptional()
+  @IsString()
+  guideDescription?: string;
+}
+
+export class UpdateActivityStatusDto {
+  @IsNotEmpty()
+  @Type(() => Number)
+  @IsInt()
+  confirmedRouteActivityId!: number;
+
+  @IsInt()
+  @Min(0)
+  status!: number;
+
+  @IsOptional()
+  @IsString()
+  description?: string;
+}
+
+// ─── Kilometer DTOs ───────────────────────────────────────────────────────────
+
+export class SaveOpeningKmDto {
+  @Type(() => Number)
+  @IsInt()
+  itineraryPlanId!: number;
+
+  @Type(() => Number)
+  @IsInt()
+  itineraryRouteId!: number;
+
+  @IsNotEmpty()
+  @IsString()
+  startingKilometer!: string;
+}
+
+export class SaveClosingKmDto {
+  @Type(() => Number)
+  @IsInt()
+  itineraryPlanId!: number;
+
+  @Type(() => Number)
+  @IsInt()
+  itineraryRouteId!: number;
+
+  @IsNotEmpty()
+  @IsString()
+  closingKilometer!: string;
 }
