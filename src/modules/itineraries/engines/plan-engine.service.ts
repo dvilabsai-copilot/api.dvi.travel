@@ -9,6 +9,10 @@ import {
   CreatePlanDto,
   CreateTravellerDto,
 } from "../dto/create-itinerary.dto";
+import {
+  inferCanonicalHotelRatePlanCode,
+  inferCanonicalHotelRatePlanCodeFromMealFlags,
+} from "../../hotels/hotel-rate-plans";
 
 type Tx = Prisma.TransactionClient;
 
@@ -254,9 +258,19 @@ export class PlanEngineService {
 
     const preferredRoomCount = this.getPreferredRoomCount(travellers || []);
 
-    const meal_plan_breakfast = Number((plan as any).meal_plan_breakfast ?? 1) ? 1 : 0;
+    const meal_plan_breakfast = Number((plan as any).meal_plan_breakfast ?? 0) ? 1 : 0;
     const meal_plan_lunch = Number((plan as any).meal_plan_lunch ?? 0) ? 1 : 0;
     const meal_plan_dinner = Number((plan as any).meal_plan_dinner ?? 0) ? 1 : 0;
+    const explicitMealPlanCode = inferCanonicalHotelRatePlanCode((plan as any).meal_plan_code);
+    const hasExplicitMealFlags = meal_plan_breakfast === 1 || meal_plan_lunch === 1 || meal_plan_dinner === 1;
+    const meal_plan_code = explicitMealPlanCode
+      || (hasExplicitMealFlags
+        ? inferCanonicalHotelRatePlanCodeFromMealFlags(
+            meal_plan_breakfast,
+            meal_plan_lunch,
+            meal_plan_dinner,
+          )
+        : null);
 
     const preferred_hotel_category = this.normalizeNumberList(
       (plan as any).preferred_hotel_category,
@@ -309,6 +323,7 @@ export class PlanEngineService {
       nationality: Number((plan as any).nationality ?? 0),
 
       // Meal plan flags
+      meal_plan_code,
       meal_plan_breakfast,
       meal_plan_lunch,
       meal_plan_dinner,

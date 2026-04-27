@@ -13,6 +13,11 @@ import {
   ItineraryHotelRoomDetailsResponseDto,
   ItineraryHotelRoomDto,
 } from './itinerary-hotel-details.service';
+import {
+  getTboMealTypeForCanonicalHotelRatePlan,
+  inferCanonicalHotelRatePlanCode,
+  inferCanonicalHotelRatePlanCodeFromMealFlags,
+} from '../hotels/hotel-rate-plans';
 
 /**
  * This service generates dynamic hotel packages from TBO API
@@ -28,6 +33,195 @@ export class ItineraryHotelDetailsTboService {
   /** Placeholder-only rows should be retried sooner to self-heal temporary supplier misses */
   private static readonly PLACEHOLDER_ONLY_DB_CACHE_TTL_MS = 5 * 60 * 1000;
   private static readonly PAGE_SIZE = 20;
+  private static readonly GLOBAL_SETTING_CACHE_TTL_MS = 60 * 1000;
+  private mealPlanSearchEnabledCache: { value: boolean; timestamp: number } | null = null;
+  private static readonly STAR_RATING_PATTERN = /([1-5])\s*\*?/;
+  private static readonly STD_OR_BUDGET_PATTERN = /\b(STD|STANDARD|BUDGET)\b/i;
+
+  private parseSelectedCategoryIds(raw: unknown): number[] {
+    if (Array.isArray(raw)) {
+      return raw
+        .map((value) => Number(value))
+        .filter((value) => Number.isInteger(value) && value > 0);
+    }
+
+    const text = String(raw ?? '').trim();
+    if (!text) return [];
+
+    return text
+      .split(',')
+      .map((part) => Number(part.trim()))
+      .filter((value) => Number.isInteger(value) && value > 0);
+  }
+
+  private extractStarRatingFromCategoryRow(row: any): number | null {
+    const candidates = [row?.hotel_category_title, row?.hotel_category_code];
+    for (const candidate of candidates) {
+      const text = String(candidate ?? '').trim();
+      if (!text) continue;
+      const match = ItineraryHotelDetailsTboService.STAR_RATING_PATTERN.exec(text);
+      if (match) {
+        const rating = Number(match[1]);
+        if (rating >= 1 && rating <= 5) return rating;
+      }
+    }
+    return null;
+  }
+
+  private async resolvePlanStarRatings(plan: any): Promise<number[]> {
+    const selectedCategoryIds = this.parseSelectedCategoryIds((plan as any)?.preferred_hotel_category);
+    if (selectedCategoryIds.length === 0) return [];
+
+    try {
+      const categories = await this.prisma.dvi_hotel_category.findMany({
+        where: {
+          hotel_category_id: { in: selectedCategoryIds },
+          deleted: 0,
+          status: 1,
+        } as any,
+        select: {
+          hotel_category_id: true,
+          hotel_category_title: true,
+          hotel_category_code: true,
+        } as any,
+      });
+
+      const ratings = Array.from(
+        new Set(
+          categories
+            .map((row) => this.extractStarRatingFromCategoryRow(row))
+            .filter((value): value is number => value !== null),
+        ),
+      ).sort((a, b) => a - b);
+
+      if (ratings.length > 0) return ratings;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`⚠️ Could not map preferred_hotel_category to star ratings: ${message}`);
+    }
+
+    // Safe fallback: when IDs are already star-like (1-5), use them directly.
+    return Array.from(
+      new Set(selectedCategoryIds.filter((value) => value >= 1 && value <= 5)),
+    ).sort((a, b) => a - b);
+  }
+
+  private async resolvePlanCategoryPreferences(
+    plan: any,
+  ): Promise<{ starRatings: number[]; stdBudgetSelected: boolean }> {
+    const selectedCategoryIds = this.parseSelectedCategoryIds((plan as any)?.preferred_hotel_category);
+    if (selectedCategoryIds.length === 0) {
+      return { starRatings: [], stdBudgetSelected: false };
+    }
+
+    try {
+      const categories = await this.prisma.dvi_hotel_category.findMany({
+        where: {
+          hotel_category_id: { in: selectedCategoryIds },
+          deleted: 0,
+          status: 1,
+        } as any,
+        select: {
+          hotel_category_id: true,
+          hotel_category_title: true,
+          hotel_category_code: true,
+        } as any,
+      });
+
+      const starRatings = Array.from(
+        new Set(
+          categories
+            .map((row) => this.extractStarRatingFromCategoryRow(row))
+            .filter((value): value is number => value !== null),
+        ),
+      ).sort((a, b) => a - b);
+
+      const stdBudgetSelected = categories.some((row) => {
+        const title = String((row as any)?.hotel_category_title || '').trim();
+        const code = String((row as any)?.hotel_category_code || '').trim();
+        return (
+          ItineraryHotelDetailsTboService.STD_OR_BUDGET_PATTERN.test(title)
+          || ItineraryHotelDetailsTboService.STD_OR_BUDGET_PATTERN.test(code)
+        );
+      });
+
+      return { starRatings, stdBudgetSelected };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`⚠️ Could not resolve category preferences from preferred_hotel_category: ${message}`);
+
+      const starRatings = Array.from(
+        new Set(selectedCategoryIds.filter((value) => value >= 1 && value <= 5)),
+      ).sort((a, b) => a - b);
+
+      return { starRatings, stdBudgetSelected: false };
+    }
+  }
+
+  private normalizeStarValue(value: unknown): number {
+    const raw = String(value ?? '').trim();
+    if (!raw) return 0;
+
+    const labelMatch = raw.match(/([1-5])\s*(?:\*|STAR)?/i);
+    if (labelMatch) {
+      const parsed = Number(labelMatch[1]);
+      if (parsed >= 1 && parsed <= 5) return parsed;
+    }
+
+    const numeric = Number(raw);
+    if (!Number.isFinite(numeric)) return 0;
+
+    if (numeric >= 1 && numeric <= 5) {
+      return Math.trunc(numeric);
+    }
+
+    const lastDigit = Math.trunc(numeric) % 10;
+    if (numeric >= 10 && numeric < 100 && lastDigit >= 1 && lastDigit <= 5) {
+      return lastDigit;
+    }
+
+    return 0;
+  }
+
+  private applyCategoryPreferenceFilter(
+    hotels: HotelSearchResult[],
+    preferences?: { starRatings?: number[]; stdBudgetSelected?: boolean },
+  ): HotelSearchResult[] {
+    const rows = Array.isArray(hotels) ? hotels : [];
+    const selectedStars = (preferences?.starRatings || []).filter((s) => Number.isInteger(s) && s >= 1 && s <= 5);
+    const stdBudgetSelected = Boolean(preferences?.stdBudgetSelected);
+
+    if (rows.length === 0 || (!stdBudgetSelected && selectedStars.length === 0)) {
+      return rows;
+    }
+
+    const rowsWithMeta = rows.map((hotel) => {
+      const price = Number((hotel as any).price || 0);
+      const star = this.normalizeStarValue((hotel as any).category ?? (hotel as any).rating);
+      return { hotel, price: Number.isFinite(price) ? price : 0, star };
+    });
+
+    const stdBudgetCandidates = rowsWithMeta.filter((row) => row.star > 0 && row.star < 3);
+    let stdBudgetThreshold = Number.POSITIVE_INFINITY;
+    if (stdBudgetSelected && stdBudgetCandidates.length > 0) {
+      const sortedPrices = [...stdBudgetCandidates]
+        .map((row) => row.price)
+        .sort((a, b) => a - b);
+      // "Low price" is interpreted as bottom 50% among sub-3-star supplier options.
+      stdBudgetThreshold = sortedPrices[Math.floor((sortedPrices.length - 1) / 2)];
+    }
+
+    const filtered = rowsWithMeta.filter((row) => {
+      const matchesStarSelection = selectedStars.length > 0 && selectedStars.includes(row.star);
+      const matchesStdBudget = stdBudgetSelected
+        && row.star > 0
+        && row.star < 3
+        && row.price <= stdBudgetThreshold;
+      return matchesStarSelection || matchesStdBudget;
+    });
+
+    return filtered.map((row) => row.hotel);
+  }
 
     /**
      * Fetch hotels for all routes, retrying ONCE if any provider/system failure (null) is detected.
@@ -40,6 +234,7 @@ export class ItineraryHotelDetailsTboService {
       childCount: number = 0,
       childAges: number[] = [],
       roomCount: number = 1,
+      searchPreferences?: { mealPlanCode?: string; tboMealType?: string; starRatings?: number[] },
     ): Promise<Map<number, HotelSearchResult[] | null>> {
       let hotelsByRoute = await this.fetchHotelsForRoutes(
         routes,
@@ -49,6 +244,7 @@ export class ItineraryHotelDetailsTboService {
         childCount,
         childAges,
         roomCount,
+        searchPreferences,
       );
 
       const hasProviderFailure = Array.from(hotelsByRoute.values()).some(
@@ -71,6 +267,7 @@ export class ItineraryHotelDetailsTboService {
           childCount,
           childAges,
           roomCount,
+          searchPreferences,
         );
 
         const retryStillFailed = Array.from(retryResult.values()).some(
@@ -105,6 +302,82 @@ export class ItineraryHotelDetailsTboService {
   private readonly logger = new Logger(ItineraryHotelDetailsTboService.name);
 
   private static readonly ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
+  private async isMealPlanSearchEnabled(): Promise<boolean> {
+    const cached = this.mealPlanSearchEnabledCache;
+    const now = Date.now();
+    if (
+      cached
+      && now - cached.timestamp <= ItineraryHotelDetailsTboService.GLOBAL_SETTING_CACHE_TTL_MS
+    ) {
+      return cached.value;
+    }
+
+    try {
+      const columnCheck = await this.prisma.$queryRawUnsafe<any[]>(`
+        SELECT COUNT(*) AS cnt
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'dvi_global_settings'
+          AND COLUMN_NAME = 'meal_plan_search_enabled'
+      `);
+
+      const columnExists = Number((columnCheck?.[0] as any)?.cnt || 0) > 0;
+      if (!columnExists) {
+        // Backward-compatible default when column is not yet present.
+        this.mealPlanSearchEnabledCache = { value: true, timestamp: now };
+        return true;
+      }
+
+      const settingsRows = await this.prisma.$queryRawUnsafe<any[]>(`
+        SELECT meal_plan_search_enabled
+        FROM dvi_global_settings
+        WHERE deleted = 0
+        ORDER BY global_settings_ID DESC
+        LIMIT 1
+      `);
+
+      const rawValue = (settingsRows?.[0] as any)?.meal_plan_search_enabled;
+      const enabled = rawValue === undefined || rawValue === null
+        ? true
+        : Number(rawValue) === 1 || rawValue === true;
+
+      this.mealPlanSearchEnabledCache = { value: enabled, timestamp: now };
+      return enabled;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(
+        `⚠️ Could not read meal_plan_search_enabled toggle from global settings. Falling back to enabled=true. Error: ${message}`,
+      );
+      this.mealPlanSearchEnabledCache = { value: true, timestamp: now };
+      return true;
+    }
+  }
+
+  private resolvePlanMealPreference(plan: any): { mealPlanCode?: string; tboMealType?: string } {
+    const explicitMealPlanCode = inferCanonicalHotelRatePlanCode((plan as any)?.meal_plan_code);
+    const breakfast = Number((plan as any)?.meal_plan_breakfast ?? 0);
+    const lunch = Number((plan as any)?.meal_plan_lunch ?? 0);
+    const dinner = Number((plan as any)?.meal_plan_dinner ?? 0);
+    const hasExplicitMealFlags = breakfast === 1 || lunch === 1 || dinner === 1;
+    const mealPlanCode = explicitMealPlanCode
+      || (hasExplicitMealFlags
+        ? inferCanonicalHotelRatePlanCodeFromMealFlags(
+            breakfast,
+            lunch,
+            dinner,
+          )
+        : null);
+
+    if (!mealPlanCode) {
+      return {};
+    }
+
+    return {
+      mealPlanCode,
+      tboMealType: getTboMealTypeForCanonicalHotelRatePlan(mealPlanCode) || undefined,
+    };
+  }
 
   // Cache for hotel details endpoint response (key = quoteId)
   private hotelDetailsCache = new Map<string, {
@@ -275,7 +548,27 @@ export class ItineraryHotelDetailsTboService {
     }
 
     const guestNationality = await this.resolveGuestNationality(plan);
+    const mealPlanSearchEnabled = await this.isMealPlanSearchEnabled();
+    const mealPreference = mealPlanSearchEnabled ? this.resolvePlanMealPreference(plan) : {};
+    const categoryPreferences = await this.resolvePlanCategoryPreferences(plan);
+    const starRatings = categoryPreferences.starRatings;
     this.logger.log(`🌙 Plan has ${noOfNights} nights`);
+    this.logger.log(
+      `🍽️ Global meal plan search toggle: ${mealPlanSearchEnabled ? 'ENABLED' : 'DISABLED'}`,
+    );
+    if (mealPlanSearchEnabled && mealPreference.mealPlanCode) {
+      this.logger.log(
+        `🍽️ Meal preference resolved from itinerary plan: ${mealPreference.mealPlanCode} (TBO=${mealPreference.tboMealType || 'n/a'})`,
+      );
+    } else if (!mealPlanSearchEnabled) {
+      this.logger.log('🍽️ Meal plan filtering skipped due to global setting (meal_plan_search_enabled=0)');
+    }
+    if (starRatings.length > 0) {
+      this.logger.log(`⭐ Hotel star filter resolved from preferred_hotel_category: [${starRatings.join(', ')}]`);
+    }
+    if (categoryPreferences.stdBudgetSelected) {
+      this.logger.log('⭐ STD/Budget category selected: applying sub-3-star + low-price filter.');
+    }
 
     // Read pax counts saved by the user when creating the itinerary
     const planAdultCount = Number((plan as any).total_adult || 0);
@@ -293,6 +586,11 @@ export class ItineraryHotelDetailsTboService {
       planChildCount,
       planChildAges,
       planRoomCount,
+      {
+        ...mealPreference,
+        starRatings,
+        stdBudgetSelected: categoryPreferences.stdBudgetSelected,
+      },
     );
     
     // Step 3.5: Fetch HOBSE hotels and merge with TBO hotels
@@ -458,10 +756,14 @@ export class ItineraryHotelDetailsTboService {
         for (const row of rows) {
           try {
             const payload = JSON.parse(row.full_payload || '{}') as ItineraryHotelRowDto;
+            const normalizedPayload: ItineraryHotelRowDto = {
+              ...payload,
+              category: this.normalizeStarCategoryValue((payload as any).category),
+            };
             const previousDayBillingMarker = previousDayBillingMarkerMap.get(
-              `${Number(payload.itineraryRouteId || 0)}-${groupType}`,
+              `${Number(normalizedPayload.itineraryRouteId || 0)}-${groupType}`,
             );
-            const payloadDayLabel = String(payload.day || '');
+            const payloadDayLabel = String(normalizedPayload.day || '');
             const payloadAlreadyPreviousDay = /\(Previous Day\)/i.test(payloadDayLabel);
             if (previousDayBillingMarker?.date && !payloadAlreadyPreviousDay) {
               const previousDayDate = new Date(previousDayBillingMarker.date as any)
@@ -473,13 +775,13 @@ export class ItineraryHotelDetailsTboService {
                 .replace(/\s+/g, ' ')
                 .trim();
               hotels.push({
-                ...payload,
+                ...normalizedPayload,
                 day: `${baseDayLabel} (Previous Day) | ${previousDayDate}`,
                 date: previousDayDate,
-                destination: previousDayBillingMarker.destination || payload.destination,
+                destination: previousDayBillingMarker.destination || normalizedPayload.destination,
               });
             }
-            hotels.push(payload);
+            hotels.push(normalizedPayload);
           } catch {
             hotels.push({
               groupType: row.group_type,
@@ -488,7 +790,7 @@ export class ItineraryHotelDetailsTboService {
               destination: '',
               hotelId: 0,
               hotelName: row.hotel_name,
-              category: Number(row.rating || 0),
+              category: this.normalizeStarCategoryValue(row.rating),
               roomType: row.room_type || '',
               mealPlan: row.meal_plan || '-',
               totalHotelCost: Number(row.price || 0),
@@ -617,6 +919,12 @@ export class ItineraryHotelDetailsTboService {
     childCount: number = 0,
     childAges: number[] = [],
     roomCount: number = 1,
+    searchPreferences?: {
+      mealPlanCode?: string;
+      tboMealType?: string;
+      starRatings?: number[];
+      stdBudgetSelected?: boolean;
+    },
   ): Promise<Map<number, HotelSearchResult[] | null>> {
     const hotelsByRoute = new Map<number, HotelSearchResult[] | null>();
 
@@ -642,6 +950,7 @@ export class ItineraryHotelDetailsTboService {
           childCount,
           childAges,
           roomCount,
+          searchPreferences,
         )
           .then((hotels) => {
             block.routeIds.forEach((routeId) => hotelsByRoute.set(routeId, hotels || []));
@@ -892,6 +1201,12 @@ export class ItineraryHotelDetailsTboService {
     childCount: number = 0,
     childAges: number[] = [],
     roomCount: number = 1,
+    searchPreferences?: {
+      mealPlanCode?: string;
+      tboMealType?: string;
+      starRatings?: number[];
+      stdBudgetSelected?: boolean;
+    },
   ): Promise<HotelSearchResult[]> {
     const destination = this.normalizeDestinationName(block.destination);
 
@@ -945,6 +1260,14 @@ export class ItineraryHotelDetailsTboService {
       childAges: safeChildCount > 0 ? safeChildAges : undefined,
       guestNationality,
       providers: ['tbo', 'resavenue'], // Only TBO + ResAvenue - HOBSE will be merged separately
+      preferences:
+        (searchPreferences?.mealPlanCode || (searchPreferences?.starRatings || []).length > 0)
+          ? {
+              mealPlanCode: searchPreferences?.mealPlanCode,
+              tboMealType: searchPreferences?.tboMealType,
+              starRatings: searchPreferences?.starRatings,
+            }
+          : undefined,
     };
 
     const attachRoomCountMeta = (rows: HotelSearchResult[], roomCountUsed: number): HotelSearchResult[] => {
@@ -958,11 +1281,12 @@ export class ItineraryHotelDetailsTboService {
       `   🏨 Searching hotels with cityCode: ${effectiveCityCode}, checkIn: ${block.checkInDate}, checkOut: ${block.checkOutDate}`,
     );
     const hotels = await this.hotelSearchService.searchHotels(searchCriteria);
+    const filteredHotels = this.applyCategoryPreferenceFilter(hotels || [], searchPreferences);
     this.logger.log(
-      `   ✅ Found ${hotels ? hotels.length : 0} hotels for stay block (${block.routeIds.join(',')}) (TBO only at this stage)`,
+      `   ✅ Found ${filteredHotels.length} hotels for stay block (${block.routeIds.join(',')}) after category filters`,
     );
 
-    if ((!hotels || hotels.length === 0) && safeChildCount > 0) {
+    if (filteredHotels.length === 0 && safeChildCount > 0) {
       if (safeRoomCount < 2) {
         this.logger.warn(
           `   ⚠️  No hotels for child-inclusive occupancy with ${safeRoomCount} room. Retrying with 2-room split for stay block (${block.routeIds.join(',')}).`,
@@ -974,12 +1298,13 @@ export class ItineraryHotelDetailsTboService {
         };
 
         const twoRoomHotels = await this.hotelSearchService.searchHotels(twoRoomCriteria);
+        const filteredTwoRoomHotels = this.applyCategoryPreferenceFilter(twoRoomHotels || [], searchPreferences);
         this.logger.log(
-          `   ✅ Two-room child-inclusive retry found ${twoRoomHotels ? twoRoomHotels.length : 0} hotels for stay block (${block.routeIds.join(',')})`,
+          `   ✅ Two-room child-inclusive retry found ${filteredTwoRoomHotels.length} hotels for stay block (${block.routeIds.join(',')}) after category filters`,
         );
 
-        if (twoRoomHotels && twoRoomHotels.length > 0) {
-          return attachRoomCountMeta(twoRoomHotels, 2);
+        if (filteredTwoRoomHotels.length > 0) {
+          return attachRoomCountMeta(filteredTwoRoomHotels, 2);
         }
       }
 
@@ -995,25 +1320,26 @@ export class ItineraryHotelDetailsTboService {
       };
 
       const fallbackHotels = await this.hotelSearchService.searchHotels(fallbackCriteria);
+      const filteredFallbackHotels = this.applyCategoryPreferenceFilter(fallbackHotels || [], searchPreferences);
       this.logger.log(
-        `   ✅ Adult-only fallback found ${fallbackHotels ? fallbackHotels.length : 0} hotels for stay block (${block.routeIds.join(',')})`,
+        `   ✅ Adult-only fallback found ${filteredFallbackHotels.length} hotels for stay block (${block.routeIds.join(',')}) after category filters`,
       );
 
-      if (fallbackHotels && fallbackHotels.length > 0) {
-        return attachRoomCountMeta(fallbackHotels, effectiveRoomCount);
+      if (filteredFallbackHotels.length > 0) {
+        return attachRoomCountMeta(filteredFallbackHotels, effectiveRoomCount);
       }
     }
     
-    if (hotels && hotels.length > 0) {
+    if (filteredHotels.length > 0) {
       this.logger.log(`   📋 TBO Hotels for stay block (${block.routeIds.join(',')}):`);
-      hotels.forEach((h, idx) => {
+      filteredHotels.forEach((h, idx) => {
         this.logger.log(`      ${idx + 1}. ${h.hotelName} (${h.provider}) - ₹${h.price}`);
       });
     } else {
       this.logger.log(`   ⚠️  WARNING: TBO search returned ZERO hotels for stay block (${block.routeIds.join(',')})!`);
     }
 
-    return attachRoomCountMeta(hotels || [], effectiveRoomCount);
+    return attachRoomCountMeta(filteredHotels, effectiveRoomCount);
   }
 
   /**
@@ -2061,7 +2387,7 @@ export class ItineraryHotelDetailsTboService {
           destination: destination,
           hotelId: hotelId,
           hotelName: displayHotelName,
-          category: hotel.rating ? parseInt(String(hotel.rating)) : 0,
+          category: this.normalizeStarCategoryValue((hotel as any).category ?? hotel.rating),
           roomType:
             Number((hotel as any).roomCountUsed || 1) > 1
               ? `${hotel.roomType || ''} (${Number((hotel as any).roomCountUsed)} Rooms)`
@@ -2418,7 +2744,7 @@ export class ItineraryHotelDetailsTboService {
           itineraryPlanHotelRoomDetailsId: roomDetailsId++,
           hotelId: parseInt(hotel.hotelCode) || 0,
           hotelName: hotel.hotelName || 'Hotel',
-          hotelCategory: this.getCategoryFromRating(hotel.category || hotel.rating),
+          hotelCategory: this.normalizeStarCategoryValue(hotel.category || hotel.rating),
           groupType: hotel.groupType || 1, // ✅ ADD: Include groupType (tier: 1-4)
           roomTypeId: actualRoomTypeId, // ✅ FIXED: Use actual TBO room type ID
           roomTypeName: actualRoomTypeName, // ✅ FIXED: Use actual TBO room type name
@@ -2488,17 +2814,31 @@ export class ItineraryHotelDetailsTboService {
   /**
    * Convert rating/category string to numeric category (1-4)
    */
-  private getCategoryFromRating(ratingOrCategory: string | number | undefined): number {
-    if (!ratingOrCategory) return 2; // Default to Mid-Range
-    
-    const val = typeof ratingOrCategory === 'string' 
-      ? parseInt(ratingOrCategory)
-      : ratingOrCategory;
-    
-    if (val >= 5 || val === 4) return 4; // Luxury (5-star)
-    if (val === 3) return 3; // Premium (3-star equivalent)
-    if (val === 2) return 2; // Mid-Range (2-star)
-    return 1; // Budget
+  private normalizeStarCategoryValue(ratingOrCategory: string | number | undefined | null): number {
+    const raw = String(ratingOrCategory ?? '').trim();
+    if (!raw) return 0;
+
+    // Supports "3*", "4-Star", "5 star" style labels.
+    const labelMatch = raw.match(/([1-5])\s*(?:\*|STAR)?/i);
+    if (labelMatch) {
+      const parsed = Number(labelMatch[1]);
+      if (parsed >= 1 && parsed <= 5) return parsed;
+    }
+
+    const numeric = Number(raw);
+    if (!Number.isFinite(numeric)) return 0;
+
+    if (numeric >= 1 && numeric <= 5) {
+      return Math.trunc(numeric);
+    }
+
+    // Legacy category IDs can appear as 13/14/15 where last digit encodes stars.
+    const lastDigit = Math.trunc(numeric) % 10;
+    if (numeric >= 10 && numeric < 100 && lastDigit >= 1 && lastDigit <= 5) {
+      return lastDigit;
+    }
+
+    return 0;
   }
 
   /**

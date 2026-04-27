@@ -14,6 +14,10 @@ import {
 } from '../interfaces/hotel-provider.interface';
 import { resolveProviderPassengerTitle } from '../../../common/utils/passenger-title.util';
 import { SupplementNormalizerService } from '../services/supplement-normalizer.service';
+import {
+  inferCanonicalHotelRatePlanCodeFromMealText,
+  getNormalizedMealPlanLabelFromMealText,
+} from '../hotel-rate-plans';
 
 @Injectable()
 export class TBOHotelProvider implements IHotelProvider {
@@ -203,6 +207,21 @@ export class TBOHotelProvider implements IHotelProvider {
       const requestChunks = hotelCodeChunks.length > 0 ? hotelCodeChunks : [''];
       const paxRooms = this.buildSearchPaxRooms(criteria);
       const guestNationality = this.normalizeNationality(criteria.guestNationality);
+      const selectedMealPlanCode = String(preferences?.mealPlanCode || '').trim().toUpperCase();
+      const selectedTboMealType = String(preferences?.tboMealType || '').trim();
+      const selectedStarRatings = Array.from(
+        new Set(
+          (preferences?.starRatings || [])
+            .map((value) => Number(value))
+            .filter((value) => Number.isInteger(value) && value >= 1 && value <= 5),
+        ),
+      ).sort((a, b) => a - b);
+      const tboStarRatingFilter = selectedStarRatings.length === 1 ? selectedStarRatings[0] : 0;
+      if (selectedStarRatings.length > 0) {
+        this.logger.log(
+          `   ⭐ Star filter requested: [${selectedStarRatings.join(', ')}] (TBO request StarRating=${tboStarRatingFilter})`,
+        );
+      }
       // Certification flow expects NoOfRooms=0 in search to fetch all available room options.
       const noOfRooms = 0;
 
@@ -222,9 +241,9 @@ export class TBOHotelProvider implements IHotelProvider {
             Filters: {
               Refundable: false,
               NoOfRooms: noOfRooms,
-              MealType: '',
+              MealType: selectedTboMealType,
               OrderBy: 0,
-              StarRating: 0,
+              StarRating: tboStarRatingFilter,
               HotelName: null,
             },
           },
@@ -258,12 +277,20 @@ export class TBOHotelProvider implements IHotelProvider {
       for (const hotel of hotels) {
         // Fetch actual hotel name from database (synced from TBO GetHotels API)
         const hotelMasterData = await this.getHotelMasterDataFromDb(hotel.HotelCode, resolvedTboCityCode);
+        const hotelRating = Number(hotelMasterData?.star_rating || 0);
+        if (selectedStarRatings.length > 0 && !selectedStarRatings.includes(hotelRating)) {
+          continue;
+        }
         const hotelDisplayName = hotelMasterData?.hotel_name ?? `Hotel ${hotel.HotelCode}`;
 
         // Process each room as a separate offering with the SAME real hotel name
         // (One HotelCode = One real hotel, not fake variants)
         for (let idx = 0; idx < (hotel.Rooms || []).length; idx++) {
           const room = hotel.Rooms[idx];
+          const inferredMealPlanCode = inferCanonicalHotelRatePlanCodeFromMealText(room.Inclusion);
+          if (selectedMealPlanCode && inferredMealPlanCode !== selectedMealPlanCode) {
+            continue;
+          }
           const totalFare = room.TotalFare || room.DayRates?.[0]?.[0]?.BasePrice || 0;
           const roomName = room.Name?.[0] || 'Standard Room';
           
@@ -301,14 +328,14 @@ export class TBOHotelProvider implements IHotelProvider {
             longitude:
               hotelMasterData?.hotel_longitude ??
               (hotel?.Longitude != null ? String(hotel.Longitude).trim() : null),
-            rating: hotelMasterData?.star_rating ?? 0,
+            rating: hotelRating,
             category: hotelMasterData?.star_rating ? `${hotelMasterData.star_rating}-Star` : '-',
             facilities: (room.Inclusion || '').split(',').map((f) => f.trim()),
             images: [],
             price: parseFloat(totalFare.toString()),
             currency: hotel.Currency || 'INR',
             roomType: roomName, // Room type name for display
-            mealPlan: (room.Inclusion || '').includes('Breakfast') ? 'Breakfast Included' : '-',
+            mealPlan: getNormalizedMealPlanLabelFromMealText(room.Inclusion),
             roomTypes: [roomTypeObj],
             // Use REAL BookingCode from TBO as searchReference
             searchReference: realBookingCode,
