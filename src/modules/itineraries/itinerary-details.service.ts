@@ -1949,16 +1949,115 @@ for (const row of vehicleKmRows) {
       const dayEndTimeText = this.formatTime(route.route_end_time as any);
 
       if (!hasReturnOrDropOff) {
-        segments.push({
-          type: 'return' as const,
-          time: dayEndTimeText,
-          note: null,
-        });
-      }
+          segments.push({
+            type: 'return' as const,
+            time: dayEndTimeText,
+            note: null,
+          });
+        }
+
+        const dayStartTimeText = this.formatTime(route.route_start_time as any);
+
+
+
+
+// ================= FIXED DISTANCE CALCULATION =================
+
+// Fetch via routes FIRST
+const viaRoutes = await this.prisma.dvi_itinerary_via_route_details.findMany({
+  where: {
+    itinerary_plan_ID: planId,
+    itinerary_route_ID: route.itinerary_route_ID,
+    deleted: 0,
+  },
+  orderBy: { itinerary_via_route_ID: 'asc' },
+});
+
+const viaRoutesList = viaRoutes.map((vr) => ({
+  id: Number(vr.itinerary_via_location_ID),
+  name: String(vr.itinerary_via_location_name || '').trim(),
+}));
 
 const storedIntercityDistanceNum =
   parseFloat(String((route as any).no_of_km ?? 0)) || 0;
 
+const sourceName =
+  location?.source_location ??
+  route.location_name ??
+  plan.arrival_location ??
+  '';
+
+const destinationName =
+  location?.destination_location ??
+  route.next_visiting_location ??
+  plan.departure_location ??
+  '';
+
+// Build FULL route chain
+const routeChain = [
+  sourceName,
+  ...viaRoutesList.map((v) => v.name),
+  destinationName,
+]
+  .map((v) => String(v || '').trim())
+  .filter(Boolean);
+
+// Remove duplicates (VERY IMPORTANT FIX)
+const cleanedRouteChain = routeChain.filter(
+  (value, index, self) =>
+    index === 0 || value.toLowerCase() !== self[index - 1].toLowerCase()
+);
+
+let viaRouteDistanceNum = 0;
+
+for (let i = 0; i < cleanedRouteChain.length - 1; i++) {
+  const from = cleanedRouteChain[i];
+  const to = cleanedRouteChain[i + 1];
+
+  // Try exact match first
+  let storedRoute = await this.prisma.dvi_stored_locations.findFirst({
+    where: {
+      deleted: 0,
+      source_location: from,
+      destination_location: to,
+    } as any,
+  });
+
+  // Try reverse match
+  if (!storedRoute) {
+    storedRoute = await this.prisma.dvi_stored_locations.findFirst({
+      where: {
+        deleted: 0,
+        source_location: to,
+        destination_location: from,
+      } as any,
+    });
+  }
+
+  const segmentKm =
+    parseFloat(
+      String(
+        (storedRoute as any)?.distance ??
+          (storedRoute as any)?.no_of_km ??
+          (storedRoute as any)?.location_distance ??
+          0
+      )
+    ) || 0;
+
+  viaRouteDistanceNum += segmentKm;
+}
+
+
+
+// Sightseeing distance
+// Sightseeing distance
+const vehicleKmForRoute = vehicleKmByRouteId.get(
+  Number(route.itinerary_route_ID || 0)
+);
+
+const sightseeingDistanceNum = Number(vehicleKmForRoute?.sightseeingKm || 0);
+
+// Fallback travel segment distance
 const travelSegmentDistanceNum = segments.reduce((sum, segment: any) => {
   if (segment?.type !== 'travel') return sum;
 
@@ -1968,62 +2067,36 @@ const travelSegmentDistanceNum = segments.reduce((sum, segment: any) => {
   return sum + distanceNum;
 }, 0);
 
-// Never show Inter-City as 0 when visible travel already exists
+// FINAL intercity distance priority:
+// 1. VIA-chain distance
+// 2. stored route.no_of_km
+// 3. visible travel segment total
 const intercityDistanceNum =
-  storedIntercityDistanceNum > 0
-    ? storedIntercityDistanceNum
-    : travelSegmentDistanceNum;
+  viaRouteDistanceNum > 0
+    ? viaRouteDistanceNum
+    : storedIntercityDistanceNum > 0
+      ? storedIntercityDistanceNum
+      : travelSegmentDistanceNum;
 
-const sightseeingDistanceNum = routeHotspots.reduce((sum, rh) => {
-  const itemType = Number((rh as any).item_type ?? 0);
-
-  // Ignore pure START row
-  if (itemType === 1) return sum;
-
-  const distanceStr = String((rh as any).hotspot_travelling_distance ?? '').trim();
-  const distanceNum = distanceStr ? parseFloat(distanceStr) : 0;
-
-  return sum + (Number.isNaN(distanceNum) ? 0 : distanceNum);
-}, 0);
-
-// Keep total realistic even when old DB has missing no_of_km
-const totalDistanceNum = Math.max(
-  intercityDistanceNum + sightseeingDistanceNum,
-  travelSegmentDistanceNum,
-);
+// Total day distance = intercity + sightseeing
+const totalDistanceNum = intercityDistanceNum + sightseeingDistanceNum;
 
 const intercityDistance = this.formatKm(intercityDistanceNum);
 const sightseeingDistance = this.formatKm(sightseeingDistanceNum);
 const dayDistance = this.formatKm(totalDistanceNum);
-//const dayDistance = this.formatKm(totalDistanceNum);
 
-  console.log('[DISTANCE_DEBUG_DAY]', {
-    planId,
-    routeId: route.itinerary_route_ID,
-    dayNumber: index + 1,
-    dayDistance,
-    intercityDistance,
-    sightseeingDistance,
-    // UI currently renders Travel badge from day.intercityDistance (fallback day.distance).
-    uiDisplayedValue: intercityDistance,
-  });
 
-      const dayStartTimeText = this.formatTime(route.route_start_time as any);
+// DEBUG (keep this for testing)
+console.log('[FINAL_DISTANCE_DEBUG]', {
+  routeChain: cleanedRouteChain,
+  viaRouteDistanceNum,
+  storedIntercityDistanceNum,
+  finalUsed: intercityDistanceNum,
+});
 
-      // Fetch via routes for this route
-      const viaRoutes = await this.prisma.dvi_itinerary_via_route_details.findMany({
-        where: {
-          itinerary_plan_ID: planId,
-          itinerary_route_ID: route.itinerary_route_ID,
-          deleted: 0,
-        },
-        orderBy: { itinerary_via_route_ID: 'asc' },
-      });
+// ================= END FIX =================
 
-      const viaRoutesList = viaRoutes.map(vr => ({
-        id: Number(vr.itinerary_via_location_ID),
-        name: vr.itinerary_via_location_name,
-      }));
+
 
       // FIX #1: Sort segments chronologically.
       // Strategy:
@@ -2238,9 +2311,9 @@ const dayDistance = this.formatKm(totalDistanceNum);
     route.next_visiting_location ??
     plan.departure_location ??
     '',
-  distance: dayDistance, // total distance
-  intercityDistance,     // city-to-city only
-  sightseeingDistance,   // local sightseeing only
+  distance: dayDistance,
+intercityDistance,
+sightseeingDistance,       // local sightseeing separately
   startTime: dayStartTimeText,
   endTime: dayEndTimeText,
   viaRoutes: viaRoutesList,
