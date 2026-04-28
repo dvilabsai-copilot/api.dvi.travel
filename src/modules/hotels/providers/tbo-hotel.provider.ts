@@ -33,6 +33,8 @@ export class TBOHotelProvider implements IHotelProvider {
   private readonly TBO_STATIC_API_URL = 'http://api.tbotechnology.in/TBOHolidays_HotelAPI';
   private readonly TBO_STATIC_USERNAME = process.env.TBO_STATIC_USERNAME || 'TBOStaticAPITest';
   private readonly TBO_STATIC_PASSWORD = process.env.TBO_STATIC_PASSWORD || 'Tbo@11530818';
+  private readonly SEARCH_USERNAME = process.env.TBO_SEARCH_USERNAME || process.env.TBO_USERNAME || 'Doview';
+  private readonly SEARCH_PASSWORD = process.env.TBO_SEARCH_PASSWORD || process.env.TBO_PASSWORD || 'Doview@12345';
   
   // Real Production Credentials (From Postman - Verified Working)
   private readonly USERNAME = process.env.TBO_USERNAME || 'Doview';
@@ -226,7 +228,7 @@ export class TBOHotelProvider implements IHotelProvider {
       const noOfRooms = 0;
 
       // Step 4: Make parallel searches for each chunk
-      const basicAuth = Buffer.from('TBOApi:TBOApi@123').toString('base64');
+      const basicAuth = Buffer.from(`${this.SEARCH_USERNAME}:${this.SEARCH_PASSWORD}`).toString('base64');
       const chunkPromises = requestChunks.map((chunk) =>
         this.executeTBOSearch(
           {
