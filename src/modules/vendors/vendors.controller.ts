@@ -273,6 +273,17 @@ export class VendorsController {
   }
 
   @Public()
+  @Get(':id/pricebook/outstation/preview')
+  @ApiOperation({ summary: 'Get outstation pricebook date-range preview (PHP ajax parity)' })
+  async getOutstationPricebookPreview(
+    @Param('id', ParseIntPipe) id: number,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ): Promise<any> {
+    return this.vendorsService.getVendorOutstationPricebookPreview(id, startDate, endDate);
+  }
+
+  @Public()
   @Post(':id/local-pricebook')
   @ApiOperation({ summary: 'Alias: update vendor local pricebook' })
   async updateLocalPricebookAlias(
@@ -391,6 +402,26 @@ export class VendorsController {
     @Body() body: any,
   ): Promise<any> {
     return this.vendorsService.upsertVendorLocalKmLimit(id, body);
+  }
+
+  @Public()
+  @Delete(':id/local-km-limits/:timeLimitId')
+  @ApiOperation({ summary: 'Soft-delete a vendor local KM limit' })
+  async deleteLocalKmLimit(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('timeLimitId', ParseIntPipe) timeLimitId: number,
+  ): Promise<void> {
+    return this.vendorsService.deleteLocalKmLimit(id, timeLimitId);
+  }
+
+  @Public()
+  @Delete(':id/outstation-km-limits/:kmsLimitId')
+  @ApiOperation({ summary: 'Soft-delete a vendor outstation KM limit' })
+  async deleteOutstationKmLimit(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('kmsLimitId', ParseIntPipe) kmsLimitId: number,
+  ): Promise<void> {
+    return this.vendorsService.deleteOutstationKmLimit(id, kmsLimitId);
   }
 
   /**
