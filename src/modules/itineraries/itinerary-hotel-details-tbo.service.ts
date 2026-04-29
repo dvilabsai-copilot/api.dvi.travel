@@ -2455,6 +2455,30 @@ export class ItineraryHotelDetailsTboService {
           itineraryPlanHotelDetailsId: hotelDetailsId || 0,
           date: dateLabel,
           hotelDistance,
+          facilities: this.normalizeSupplierStringList((hotel as any).facilities),
+          amenities: this.normalizeSupplierStringList(
+            (hotel as any).amenities ?? (hotel as any).Amenities,
+          ),
+          inclusions: this.normalizeSupplierStringList(
+            (hotel as any).inclusions ??
+            (hotel as any).Inclusions ??
+            (hotel as any).inclusion ??
+            (hotel as any).Inclusion ??
+            (hotel as any)?.rooms?.[0]?.inclusion ??
+            (hotel as any)?.rooms?.[0]?.Inclusion ??
+            (hotel as any)?.Rooms?.[0]?.inclusion ??
+            (hotel as any)?.Rooms?.[0]?.Inclusion,
+          ),
+          rateConditions: this.normalizeSupplierStringList(
+            (hotel as any).rateConditions ??
+            (hotel as any).RateConditions,
+          ).map((item) => item.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()).filter(Boolean),
+          mandatorySupplements: Array.isArray((hotel as any).mandatorySupplements)
+            ? (hotel as any).mandatorySupplements
+                .map((item: any) => String(item || '').trim())
+                .filter(Boolean)
+            : [],
+          supplementSummary: (hotel as any).supplementSummary || undefined,
         };
 
         const previousDayBillingMarker = previousDayBillingMarkerMap.get(`${routeId}-${pkg.groupType}`);
@@ -2879,6 +2903,29 @@ export class ItineraryHotelDetailsTboService {
     if (hotelPrice <= q2) return 2; // Mid-Range (25-50%)
     if (hotelPrice <= q3) return 3; // Premium (50-75%)
     return 4; // Luxury (top 25%)
+  }
+
+  private normalizeSupplierStringList(value: any): string[] {
+    if (value == null) return [];
+
+    const normalizeOne = (input: any): string[] => {
+      if (input == null) return [];
+      if (Array.isArray(input)) {
+        return input.flatMap((item) => normalizeOne(item));
+      }
+      if (typeof input === 'string') {
+        const text = input.trim();
+        if (!text) return [];
+
+        return text
+          .split(/\r?\n|\||,|;/)
+          .map((part) => String(part || '').trim())
+          .filter(Boolean);
+      }
+      return [String(input).trim()].filter(Boolean);
+    };
+
+    return Array.from(new Set(normalizeOne(value)));
   }
 
   /**

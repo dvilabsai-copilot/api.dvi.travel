@@ -35,6 +35,17 @@ export interface ItineraryHotelRowDto {
   date?: string;
   // Distance from route location to hotel (in kilometers) - calculated using Haversine formula
   hotelDistance?: string | null;
+  facilities?: string[];
+  amenities?: string[];
+  inclusions?: string[];
+  rateConditions?: string[];
+  mandatorySupplements?: string[];
+  supplementSummary?: {
+    hasSupplements?: boolean;
+    supplementCount?: number;
+    atPropertyChargeCount?: number;
+    requiresReview?: boolean;
+  };
 }
 
 export interface HotelPaginationMeta {
