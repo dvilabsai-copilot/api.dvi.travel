@@ -1,30 +1,16 @@
 {
+  "status": "partial",
+  "reason": "No hotels returned from search, so prebook/confirm could not be executed.",
   "search": {
-    "httpStatus": 200,
+    "httpStatus": 400,
     "guestNationalitySent": "US",
-    "foundHotels": 81,
-    "noOfRoomsUsed": 0,
-    "guestNationalitySeenInSearchLog": "US"
+    "foundHotels": 0,
+    "noOfRoomsUsed": null
   },
-  "prebook": {
-    "httpStatus": 201,
-    "paymentMode": "Limit",
-    "noOfRooms": 1,
-    "mandatorySupplementsPresent": false,
-    "cancellationPoliciesPresent": false,
-    "message": "Prebook completed for 1 hotel(s)"
-  },
-  "confirm": {
-    "httpStatus": 201,
-    "passengerTitlesSent": [
-      "Mr",
-      "Ms"
-    ],
-    "outcome": "success",
-    "message": "Quotation confirmed successfully"
-  },
+  "prebook": null,
+  "confirm": null,
   "staleSession": {
     "httpStatus": 400,
-    "message": "This hotel session has expired or booking code is invalid. Please run a fresh hotel search and prebook again."
+    "message": "Route ID 1 not found in this itinerary"
   }
 }

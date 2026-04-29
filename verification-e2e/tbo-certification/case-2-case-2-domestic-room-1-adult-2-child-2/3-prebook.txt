@@ -1,6 +1,6 @@
 ======== REQUEST ========
 {
-  "BookingCode": "1033444!TB!1!TB!a2d70791-2429-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+  "BookingCode": "1083629!TB!1!TB!f3263cda-434d-11f1-855f-720abae076dd!TB!N!TB!AFF!",
   "PaymentMode": "Limit",
   "GuestNationality": "AE",
   "NoOfRooms": 1,
@@ -24,37 +24,37 @@
   },
   "HotelResult": [
     {
-      "HotelCode": "1033444",
+      "HotelCode": "1083629",
       "Currency": "INR",
       "Rooms": [
         {
           "Name": [
-            "Executive Suite, Pool View, King Bed,1 King Bed,NonSmoking"
+            "Premium King Room with Smart Tv,1 King Bed"
           ],
-          "BookingCode": "1033444!TB!1!TB!a2d70791-2429-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
-          "Inclusion": "Free breakfast,Free valet parking,Free self parking",
+          "BookingCode": "1083629!TB!1!TB!f3263cda-434d-11f1-855f-720abae076dd!TB!N!TB!AFF!",
+          "Inclusion": "Breakfast buffet,Free self parking",
           "DayRates": [
             [
               {
-                "BasePrice": 44595.22
+                "BasePrice": 7255.6
               }
             ]
           ],
-          "TotalFare": 52692.68,
-          "TotalTax": 8097.47,
-          "NetAmount": 52700.492801128006,
-          "NetTax": 8105.281811528006,
+          "TotalFare": 8618.45,
+          "TotalTax": 1362.86,
+          "NetAmount": 8619.625879042,
+          "NetTax": 1364.0302761419998,
           "RoomPromotion": [
             "Member’s exclusive price"
           ],
           "CancelPolicies": [
             {
-              "FromDate": "19-03-2026 00:00:00",
+              "FromDate": "27-04-2026 00:00:00",
               "ChargeType": "Fixed",
               "CancellationCharge": 0
             },
             {
-              "FromDate": "22-04-2026 00:00:00",
+              "FromDate": "03-06-2026 00:00:00",
               "ChargeType": "Percentage",
               "CancellationCharge": 100
             }
@@ -64,69 +64,71 @@
           "WithTransfers": false,
           "Amenities": [
             "Premium bedding",
-            "In-room childcare (surcharge)",
+            "Electric kettle",
+            "Satellite TV service",
+            "In-room climate control (air conditioning)",
             "Blackout drapes/curtains",
-            "Bidet",
-            "Video-game console",
-            "In-room safe (laptop compatible)",
             "Desk",
-            "Designer toiletries",
             "Premium TV channels",
-            "Connecting/adjoining rooms available",
-            "Lever door handles",
-            "DVD player",
-            "Slippers",
-            "Wheelchair accessible",
-            "Air conditioning",
+            "Soap",
+            "Toothbrush and toothpaste available",
+            "Toilet paper",
+            "Shower only",
+            "Shampoo",
+            "Egyptian-cotton sheets",
             "Rollaway/extra beds (surcharge)",
-            "Pay movies",
             "Separate sitting area",
-            "Cable TV service",
             "Free newspaper",
-            "Non-Smoking",
-            "Television",
-            "Desk chair",
-            "Dining table",
-            "Turndown service",
+            "Thin carpet in room",
+            "Tile flooring in room",
+            "Smoking and Non-Smoking",
+            "Pillow menu",
+            "Iron/ironing board (on request)",
+            "Pillowtop mattress",
+            "Soundproofed rooms",
             "Laptop-friendly workspace",
-            "Separate dining area",
-            "Separate bathtub and shower",
+            "Microwave (on request)",
+            "Refrigerator",
             "Minibar",
             "Wardrobe or closet",
             "Free wired internet",
             "Coffee/tea maker",
             "Daily housekeeping",
+            "Individually decorated",
             "Free WiFi",
+            "Individually furnished",
             "Hypo-allergenic bedding available",
             "Phone",
+            "Dial-up Internet access (surcharge)",
+            "Restaurant dining guide",
             "Towels provided",
             "Bedsheets provided",
+            "Netflix",
+            "LED TV",
+            "Streaming services",
             "TV size measurement: inch",
             "Private bathroom",
-            "Bathrobes",
             "Free toiletries",
             "Hair dryer",
-            "Iron/ironing board",
+            "TV size: 42",
             "Rainfall showerhead",
-            "Deep soaking bathtub",
+            "In-room safe",
             "Room service (24 hours)",
-            "LCD TV",
             "Free bottled water",
-            "Free cribs/infant beds",
             "Separate bedroom"
           ],
-          "LastCancellationDeadline": "21-04-2026 23:59:59",
+          "LastCancellationDeadline": "02-06-2026 23:59:59",
           "PriceBreakUp": [
             {
-              "RoomRate": 44986.099665999995,
-              "RoomTax": 8097.464038000006,
-              "AgentCommission": 390.8886764,
+              "RoomRate": 7314.33061,
+              "RoomTax": 1362.855576,
+              "AgentCommission": 58.7350071,
               "TaxBreakup": [
                 {
                   "TaxType": "Tax_TDS",
-                  "TaxableAmount": 390.8886764,
+                  "TaxableAmount": 58.7350071,
                   "TaxPercentage": 2,
-                  "TaxAmount": 7.817773528
+                  "TaxAmount": 1.1747001419999998
                 }
               ]
             }
@@ -135,15 +137,16 @@
       ],
       "RateConditions": [
         "Early check out will attract full cancellation charge unless otherwise specified",
-        "CheckIn Time-Begin: 2:00 PM ",
-        " CheckIn Time-End: midnight",
-        "CheckOut Time: 12:00 PM",
-        "CheckIn Instructions: &lt;ul&gt;  &lt;li&gt;Extra-person charges may apply and vary depending on property policy&lt;/li&gt;&lt;li&gt;Government-issued photo identification and a credit card may be required at check-in for incidental charges&lt;/li&gt;&lt;li&gt;Special requests are subject to availability upon check-in and may incur additional charges; special requests cannot be guaranteed&lt;/li&gt;&lt;li&gt;This property accepts credit cards, debit cards, and cash&lt;/li&gt;&lt;li&gt;Cashless transactions are available&lt;/li&gt;&lt;li&gt;Parties and events (including family gatherings, birthday parties and weddings) are allowed on site&lt;/li&gt;&lt;li&gt;Safety features at this property include a carbon monoxide detector, a fire extinguisher, a smoke detector, a security system, a first aid kit, window guards, and outdoor lighting&lt;/li&gt;&lt;li&gt;This property has outdoor spaces, such as balconies, patios, terraces which may not be suitable for children; if you have concerns, we recommend contacting the property prior to your arrival to confirm they can accommodate you in a suitable room&lt;/li&gt;&lt;li&gt;This property affirms that it follows the cleaning and disinfection practices of Tajness - A Commitment Restrengthened (Taj Hotels)&lt;/li&gt;&lt;li&gt;Please note that cultural norms and guest policies may differ by country and by property; the policies listed are provided by the property&lt;/li&gt;  &lt;/ul&gt; &lt;ul&gt;  &lt;li&gt;Outside food and alcohol are not permitted on the premises.&lt;/li&gt;  &lt;/ul&gt; ",
-        " Special Instructions : This property offers transfers from the airport (surcharges may apply). To arrange pick-up, guests must contact the property 24 hours prior to arrival, using the contact information on the booking confirmation. Front desk staff will greet guests on arrival at the property. Information provided by the property may be translated using automated translation tools. To register at this property, guests who are Indian citizens must provide a valid photo identity card issued by the Government of India; Permanent Account Number (PAN) cards will not be accepted due to national regulations. Travelers who are not citizens of India must present a valid passport and visa. Indian citizens must show a PAN card at check-out for cash transactions exceeding INR 25,000.",
-        "Minimum CheckIn Age : 18",
-        "Optional Fees: &lt;ul&gt; &lt;li&gt;Fee for buffet breakfast: approximately INR 3200 for adults and INR 1800 for children&lt;/li&gt;&lt;li&gt;Airport shuttle fee: INR 5500 per vehicle (one-way, maximum occupancy 3)&lt;/li&gt;&lt;li&gt;Rollaway bed fee: INR 2500.0 per night&lt;/li&gt;&lt;/ul&gt; &lt;p&gt;The above list may not be comprehensive. Fees and deposits may not include tax and are subject to change. &lt;/p&gt;",
-        "Cards Accepted: Visa,Diners Club,Debit cards,Cash,American Express,JCB International,Mastercard",
-        "&lt;ul&gt;  &lt;li&gt;Reservations are required for massage services and spa treatments. Reservations can be made by contacting the hotel prior to arrival, using the contact information on the booking confirmation. &lt;/li&gt;&lt;li&gt;Children 12 years old and younger stay free when occupying the parent or guardian's room, using existing bedding. &lt;/li&gt;&lt;li&gt;Only registered guests are allowed in the guestrooms. &lt;/li&gt; &lt;li&gt;The property has connecting/adjoining rooms, which are subject to availability and can be requested by contacting the property using the number on the booking confirmation. &lt;/li&gt;&lt;li&gt;No pets and no service animals are allowed at this property. &lt;/li&gt;&lt;li&gt;Cashless payment methods are available for all transactions.&lt;/li&gt;&lt;li&gt;Contactless check-in and contactless check-out are available.&lt;/li&gt; &lt;/ul&gt;,Service animals not allowed,Pets not allowed,Property does not require health documentation at check-in,Professional property host/manager,Property follows a brand or regulatory agency's sanitization guidelines Tajness - A Commitment Restrengthened (Taj Hotels),Contactless check-out is available,Events/parties allowed,Cashless transactions are available,Contactless check-in is available,Property does not offer onsite COVID-19 testing"
+        "CheckIn Time-Begin: 1:00 PM ",
+        " CheckIn Time-End: 5:30 AM",
+        "CheckOut Time: 11:00 AM",
+        "CheckIn Instructions: &lt;ul&gt;  &lt;li&gt;Extra-person charges may apply and vary depending on property policy&lt;/li&gt;&lt;li&gt;Government-issued photo identification and a credit card, debit card, or cash deposit may be required at check-in for incidental charges&lt;/li&gt;&lt;li&gt;Special requests are subject to availability upon check-in and may incur additional charges; special requests cannot be guaranteed&lt;/li&gt;&lt;li&gt;This property accepts credit cards, debit cards, and cash&lt;/li&gt;&lt;li&gt;Safety features at this property include a fire extinguisher, a security system, a first aid kit, and window guards&lt;/li&gt;&lt;li&gt;Please note that cultural norms and guest policies may differ by country and by property; the policies listed are provided by the property&lt;/li&gt;  &lt;/ul&gt; ",
+        " Special Instructions : This property offers transfers from the airport and train station (surcharges may apply). Guests must contact the property with arrival details before travel, using the contact information on the booking confirmation. Front desk staff will greet guests on arrival at the property. Information provided by the property may be translated using automated translation tools. To register at this property, guests who are Indian citizens must provide a valid photo identity card issued by the Government of India; travelers who are not citizens of India must present a valid passport and visa.",
+        "Minimum CheckIn Age : 17",
+        "Mandatory Fees: &lt;p&gt;You'll be asked to pay the following charges at the property. Fees may include applicable taxes:&lt;/p&gt; &lt;ul&gt;&lt;li&gt;Christmas Eve (December 24) Gala Dinner per adult: INR 500&lt;/li&gt;&lt;li&gt;New Year's Eve (December 31) Gala Dinner per adult: INR 500&lt;/li&gt;&lt;/ul&gt; &lt;p&gt;We have included all charges provided to us by the property. &lt;/p&gt; ",
+        " Optional Fees: &lt;ul&gt; &lt;li&gt;Fee for buffet breakfast: approximately INR 1000 for adults and INR 1000 for children&lt;/li&gt;&lt;li&gt;Airport shuttle fee: INR 1500 per vehicle (maximum occupancy 3)&lt;/li&gt;&lt;li&gt;Airport shuttle fee per child: INR 1000 (from 5 to 12 years old)&lt;/li&gt; &lt;li&gt;Early check-in fee: 50 percent of room rate (subject to availability)&lt;/li&gt;&lt;li&gt;Rollaway bed fee: INR 2000.0 per day&lt;/li&gt;&lt;/ul&gt; &lt;p&gt;The above list may not be comprehensive. Fees and deposits may not include tax and are subject to change. &lt;/p&gt;",
+        "Cards Accepted: Visa,Diners Club,Debit cards,Discover,Cash,American Express,Mastercard",
+        "&lt;ul&gt;  &lt;li&gt;Up to 2 children 5 years old and younger stay free when occupying the parent or guardian's room, using existing bedding. &lt;/li&gt;&lt;li&gt;No pets and no service animals are allowed at this property. &lt;/li&gt;&lt;li&gt;Contactless check-in and contactless check-out are available.&lt;/li&gt; &lt;/ul&gt;,Service animals not allowed,Pets not allowed,Professional property host/manager,Contactless check-out is available,No cribs (infant beds) available,Contactless check-in is available,Essential workers only - NO"
       ]
     }
   ],
@@ -162,12 +165,13 @@
     "PackageDetailsMandatory": false,
     "DepartureDetailsMandatory": false,
     "GSTAllowed": false,
-    "CrpPANMandatory": false
+    "CrpPANMandatory": false,
+    "IsAgencyOwnPANAllowed": false
   }
 }
 
 ======== METADATA ========
-- timestamp: 2026-03-20T06:54:30.832Z
+- timestamp: 2026-04-28T22:02:31.634Z
 - endpoint: https://affiliate.tektravels.com/HotelAPI/PreBook
 - status code: 200
 - case id: 2

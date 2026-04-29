@@ -1,27 +1,27 @@
 ======== REQUEST ========
 {
-  "BookingId": 2096855,
-  "BookingRefId": "2096855",
-  "TokenId": "1b025632-6947-468e-81ad-3a11a801a822",
+  "BookingId": 2117425,
+  "BookingRefId": "2117425",
+  "TokenId": "77964213-591a-4e78-a4d7-0f6daf06c02a",
   "EndUserIp": "192.168.1.1"
 }
 
 ======== RESPONSE ========
 {
   "GetBookingDetailResult": {
-    "TBOReferenceNo": "TBNNKU21EG",
+    "TBOReferenceNo": "TB13FIIHFZ",
     "VoucherStatus": true,
     "ResponseStatus": 1,
     "Error": {
       "ErrorCode": 0,
       "ErrorMessage": ""
     },
-    "TraceId": "c2c202b4-2429-11f1-aada-ba9013e35c3f",
+    "TraceId": "136f29d6-434e-11f1-855f-720abae076dd",
     "Status": 1,
     "HotelBookingStatus": "Confirmed",
-    "ConfirmationNo": "7932645475239",
-    "BookingRefNo": "870361653876797",
-    "BookingId": 2096855,
+    "ConfirmationNo": "7033654494666",
+    "BookingRefNo": "635642451713455",
+    "BookingId": 2117425,
     "IsPriceChanged": false,
     "IsCancellationPolicyChanged": false,
     "Rooms": [
@@ -48,30 +48,30 @@
             "PassportExpDate": null,
             "PassportIssueDate": null,
             "PassportNo": null,
-            "PaxId": 260549,
+            "PaxId": 267223,
             "PaxType": 1,
             "Phoneno": "9000000100",
             "Title": "Mr"
           }
         ],
         "RequireAllPaxDetails": false,
-        "RoomId": 194078,
+        "RoomId": 198233,
         "RoomStatus": 0,
         "RoomIndex": 1,
         "RoomTypeCode": "219749644|",
-        "RoomDescription": "<p></p><p>160-sq-foot room with city views </p><br/><p><b>Layout</b> - Bedroom </p><p><b>Internet</b> - Free WiFi </p><p><b>Entertainment</b> - 36-inch LED TV with premium channels</p><p><b>Food and Drink</b> - Coffee/tea maker, minibar (fees may apply), electric kettle, and 24-hour room service</p><p><b>Sleep</b> - Pillowtop bed, hypo-allergenic bedding, blackout drapes/curtains, and bed sheets </p><p><b>Bathroom</b> - Private bathroom, slippers, and a shower with a rainfall showerhead</p><p><b>Practical</b> - Safe, free newspaper, and laptop workspace; rollaway beds (surcharge) available on request</p><p><b>Comfort</b> - Air conditioning and daily housekeeping</p><p><b>Accessibility</b> - Lever door handles</p><p><b>Need to Know</b> - Housekeeping on request</p><p>Smoking</p>",
+        "RoomDescription": "<p></p><p>160-sq-foot room with city views </p><br/><p><b>Layout</b> - Bedroom </p><p><b>Internet</b> - Free WiFi </p><p><b>Entertainment</b> - 36-inch LED TV with premium channels</p><p><b>Food and Drink</b> - Coffee/tea maker, minibar (fees may apply), electric kettle, and 24-hour room service</p><p><b>Sleep</b> - Pillowtop bed, hypo-allergenic bedding, blackout drapes/curtains, and bed sheets </p><p><b>Bathroom</b> - Private bathroom, slippers, and a shower with a rainfall showerhead</p><p><b>Practical</b> - Safe, free newspaper, and laptop workspace; rollaway beds (surcharge) available on request</p><p><b>Comfort</b> - Air conditioning and daily housekeeping</p><p><b>Accessibility</b> - Low-height counters and sink</p><p><b>Need to Know</b> - Housekeeping on request</p><p>Smoking</p>",
         "RoomTypeName": "Economy Double Room, 1 Double Bed,Smoking",
         "RatePlanCode": "219749644|284236478|37316|141",
         "RatePlan": 0,
         "IsPerStay": true,
         "PriceBreakUp": {
           "CurrencyCode": "INR",
-          "RoomRate": 3247.8,
-          "RoomTax": 164.42,
+          "RoomRate": 2772.32,
+          "RoomTax": 144.08,
           "RoomExtraGuestCharges": 0,
           "RoomChildCharges": 0,
           "ServiceFee": 0,
-          "AgentCommission": 20.81,
+          "AgentCommission": 14.87,
           "TaxBreakup": [
             {
               "TaxType": "Tax_CGST",
@@ -91,7 +91,7 @@
             },
             {
               "TaxType": "Tax_TDS",
-              "TaxAmount": 0.42
+              "TaxAmount": 0.3
             }
           ]
         },
@@ -148,24 +148,31 @@
         "SmokingPreference": "NoPreference",
         "BedTypes": [],
         "Supplements": [],
-        "LastCancellationDate": "2026-03-19T06:55:24",
+        "LastCancellationDate": "2026-04-27T23:59:59",
         "CancelPolicies": [
+          {
+            "CancellationCharge": 0,
+            "ChargeType": 1,
+            "Currency": "INR",
+            "FromDate": "27/04/2026 00:00:00",
+            "ToDate": "27/04/2026 23:59:59"
+          },
           {
             "CancellationCharge": 100,
             "ChargeType": 2,
             "Currency": "INR",
-            "FromDate": "19/03/2026 00:00:00",
-            "ToDate": "01/05/2026 23:59:59"
+            "FromDate": "28/04/2026 00:00:00",
+            "ToDate": "10/06/2026 23:59:59"
           }
         ],
         "CancellationPolicies": null,
-        "LastVoucherDate": "2026-03-19T06:55:24",
-        "CancellationPolicy": "Economy Double Room, 1 Double Bed,Smoking#^#100.00% of total amount will be charged, If cancelled between 19-Mar-2026 00:00:00 and 01-May-2026 23:59:59.|#!#",
+        "LastVoucherDate": "2026-04-27T23:59:59",
+        "CancellationPolicy": "Economy Double Room, 1 Double Bed,Smoking#^#No cancellation charge, If cancelled between 27-Apr-2026 00:00:00 and 27-Apr-2026 23:59:59.|100.00% of total amount will be charged, If cancelled between 28-Apr-2026 00:00:00 and 10-Jun-2026 23:59:59.|#!#",
         "Inclusion": "Free self parking"
       }
     ],
-    "NetAmount": 3391.83,
-    "NetTax": 164.84,
+    "NetAmount": 2901.83,
+    "NetTax": 144.38,
     "RateConditions": [
       "Early check out will attract full cancellation charge unless otherwise specified",
       "CheckIn Time-Begin: 12:00 PM ",
@@ -195,15 +202,15 @@
     },
     "HotelPolicyDetail": null,
     "IntHotelPassportDetails": null,
-    "InvoiceAmount": 3392,
-    "InvoiceCreatedOn": "2026-03-20T06:55:33",
-    "InvoiceNo": "MW/2526/27295",
+    "InvoiceAmount": 2902,
+    "InvoiceCreatedOn": "2026-04-28T22:03:39",
+    "InvoiceNo": "MW/2627/2786",
     "IsCorporate": false,
-    "LastCancellationDeadline": "2026-03-19T06:55:24",
+    "LastCancellationDeadline": "2026-04-27T23:59:59",
     "PostBookingRequestDetails": [],
     "HotelConfirmationNo": null,
     "HotelCode": "36078767",
-    "HotelId": 169111,
+    "HotelId": 172711,
     "HotelName": "Hotel Annapurna",
     "TBOHotelCode": "6107371",
     "StarRating": 3,
@@ -214,14 +221,14 @@
     "Longitude": "87.324099",
     "City": "Bishnupur",
     "CityId": 113128,
-    "CheckInDate": "2026-05-02T00:00:00",
-    "InitialCheckInDate": "2026-05-02T00:00:00",
-    "CheckOutDate": "2026-05-03T00:00:00",
-    "InitialCheckOutDate": "2026-05-03T00:00:00",
-    "LastCancellationDate": "2026-03-19T06:55:24",
-    "LastVoucherDate": "2026-03-19T06:55:24",
+    "CheckInDate": "2026-06-11T00:00:00",
+    "InitialCheckInDate": "2026-06-11T00:00:00",
+    "CheckOutDate": "2026-06-12T00:00:00",
+    "InitialCheckOutDate": "2026-06-12T00:00:00",
+    "LastCancellationDate": "2026-04-27T23:59:59",
+    "LastVoucherDate": "2026-04-27T23:59:59",
     "NoOfRooms": 1,
-    "BookingDate": "2026-03-20T06:55:32",
+    "BookingDate": "2026-04-28T22:03:39",
     "SpecialRequest": "",
     "IsDomestic": true,
     "BookingAllowedForRoamer": true
@@ -229,7 +236,7 @@
 }
 
 ======== METADATA ========
-- timestamp: 2026-03-20T06:55:35.506Z
+- timestamp: 2026-04-28T22:03:41.068Z
 - endpoint: https://hotelbe.tektravels.com/hotelservice.svc/rest/Getbookingdetail
 - status code: 200
 - case id: 5

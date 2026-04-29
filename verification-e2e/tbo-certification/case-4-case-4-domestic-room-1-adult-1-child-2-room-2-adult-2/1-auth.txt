@@ -9,7 +9,7 @@
 ======== RESPONSE ========
 {
   "Status": 1,
-  "TokenId": "dc1f20c6-bad5-4da8-921b-d8ab26da47f0",
+  "TokenId": "11ab5910-e23c-438a-b36f-7d8ab845318f",
   "Error": {
     "ErrorCode": 0,
     "ErrorMessage": ""
@@ -21,13 +21,13 @@
     "MemberId": 58166,
     "AgencyId": 57955,
     "LoginName": "Doview",
-    "LoginDetails": "Login Success at#@ 20/03/2026 12:24:43 #@ IPAddress: 139.5.249.210",
+    "LoginDetails": "Login Success at#@ 29/04/2026 03:32:45 #@ IPAddress: 139.5.249.174",
     "isPrimaryAgent": false
   }
 }
 
 ======== METADATA ========
-- timestamp: 2026-03-20T06:55:02.905Z
+- timestamp: 2026-04-28T22:03:03.565Z
 - endpoint: https://sharedapi.tektravels.com/SharedData.svc/rest/Authenticate
 - status code: 200
 - case id: 4

@@ -1,14 +1,14 @@
 Case: Case 7 - International (Room 1 – Adult 1) (Room 2 – Adult 1)
 Case ID: 7
-Date Range: 2026-05-06 -> 2026-05-07
+Date Range: 2026-06-15 -> 2026-06-16
 
 Runtime Values
-- TokenId: ec8ab1ad-1273-4200-ad3e-1a7c04504b2e
-- TraceId: d6991d7c-2429-11f1-aada-ba9013e35c3f
-- BookingCode: 1035259!TB!3!TB!d6991d7c-2429-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!
-- BookingId: 2096857
-- ConfirmationNo: 7793869704005
-- NetAmount: 49337.42
+- TokenId: f9a5e4a1-59f0-48c7-86e9-c23481e62c40
+- TraceId: 28c2ccbf-434e-11f1-855f-720abae076dd
+- BookingCode: 1035259!TB!5!TB!28c2ccbf-434e-11f1-855f-720abae076dd!TB!N!TB!AFF!
+- BookingId: 2117427
+- ConfirmationNo: 7511737483012
+- NetAmount: 38893.08
 - AgencyId: 57955
 - GuestNationality: US
 - PaymentMode: Limit

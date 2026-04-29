@@ -1,13 +1,13 @@
 ======== REQUEST ========
 {
-  "BookingCode": "6107371!TB!1!TB!c2c202b4-2429-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
-  "TokenId": "1b025632-6947-468e-81ad-3a11a801a822",
+  "BookingCode": "6107371!TB!2!TB!136f29d6-434e-11f1-855f-720abae076dd!TB!N!TB!AFF!",
+  "TokenId": "77964213-591a-4e78-a4d7-0f6daf06c02a",
   "IsVoucherBooking": true,
   "GuestNationality": "IN",
   "EndUserIp": "192.168.1.1",
   "RequestedBookingMode": 1,
   "TraceId": "",
-  "NetAmount": 3391.42,
+  "NetAmount": 2901.53,
   "HotelRoomsDetails": [
     {
       "HotelPassenger": [
@@ -47,20 +47,20 @@
       "ErrorCode": 0,
       "ErrorMessage": ""
     },
-    "TraceId": "c2c202b4-2429-11f1-aada-ba9013e35c3f",
+    "TraceId": "136f29d6-434e-11f1-855f-720abae076dd",
     "Status": 1,
     "HotelBookingStatus": "Confirmed",
-    "InvoiceNumber": "MW/2526/27295",
-    "ConfirmationNo": "7932645475239",
-    "BookingRefNo": "870361653876797",
-    "BookingId": 2096855,
+    "InvoiceNumber": "MW/2627/2786",
+    "ConfirmationNo": "7033654494666",
+    "BookingRefNo": "635642451713455",
+    "BookingId": 2117425,
     "IsPriceChanged": false,
     "IsCancellationPolicyChanged": false
   }
 }
 
 ======== METADATA ========
-- timestamp: 2026-03-20T06:55:34.662Z
+- timestamp: 2026-04-28T22:03:40.220Z
 - endpoint: https://hotelbe.tektravels.com/hotelservice.svc/rest/book/
 - status code: 200
 - case id: 5

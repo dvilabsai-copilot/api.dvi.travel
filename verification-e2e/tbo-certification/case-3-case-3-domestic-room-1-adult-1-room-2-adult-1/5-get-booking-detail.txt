@@ -1,27 +1,27 @@
 ======== REQUEST ========
 {
-  "BookingId": 2096853,
-  "BookingRefId": "2096853",
-  "TokenId": "2f9ade7e-ad68-47ed-a817-7cf29d78bd39",
+  "BookingId": 2117423,
+  "BookingRefId": "2117423",
+  "TokenId": "e48484a3-fd03-45bb-a4d5-cd3828a7d7ad",
   "EndUserIp": "192.168.1.1"
 }
 
 ======== RESPONSE ========
 {
   "GetBookingDetailResult": {
-    "TBOReferenceNo": "TBIX3OLR2I",
+    "TBOReferenceNo": "TBVSBYYOTW",
     "VoucherStatus": true,
     "ResponseStatus": 1,
     "Error": {
       "ErrorCode": 0,
       "ErrorMessage": ""
     },
-    "TraceId": "acfec62c-2429-11f1-aada-ba9013e35c3f",
+    "TraceId": "fccd02ff-434d-11f1-855f-720abae076dd",
     "Status": 1,
     "HotelBookingStatus": "Confirmed",
-    "ConfirmationNo": "7994300580192",
-    "BookingRefNo": "408280578712801,457675238050757",
-    "BookingId": 2096853,
+    "ConfirmationNo": "7483293045959",
+    "BookingRefNo": "861512115462328,590711251029549",
+    "BookingId": 2117423,
     "IsPriceChanged": false,
     "IsCancellationPolicyChanged": false,
     "Rooms": [
@@ -48,30 +48,30 @@
             "PassportExpDate": null,
             "PassportIssueDate": null,
             "PassportNo": null,
-            "PaxId": 260542,
+            "PaxId": 267216,
             "PaxType": 1,
             "Phoneno": "9000000100",
             "Title": "Mr"
           }
         ],
         "RequireAllPaxDetails": false,
-        "RoomId": 194074,
+        "RoomId": 198229,
         "RoomStatus": 0,
         "RoomIndex": 1,
-        "RoomTypeCode": "200129504|",
-        "RoomDescription": "<p></p><p>120 sq feet </p><br/><p><b>Layout</b> - Bedroom and sitting area</p><p><b>Internet</b> - Free WiFi </p><p><b>Entertainment</b> - 21-inch LCD TV with premium channels</p><p><b>Food and Drink</b> - Coffee/tea maker, 24-hour room service, and free bottled water</p><p><b>Sleep</b> - Bed sheets </p><p><b>Bathroom</b> - Shower with a rainfall showerhead</p><p><b>Practical</b> - Safe, free newspaper, and desk</p><p><b>Comfort</b> - Air conditioning and daily housekeeping</p><p><b>Need to Know</b> - No rollaway/extra beds available</p><p>Non-Smoking</p>",
-        "RoomTypeName": "Executive Room,2 Twin Beds,NonSmoking",
-        "RatePlanCode": "200129504|208258237|37341|141",
+        "RoomTypeCode": "446425|204",
+        "RoomDescription": "<p></p><p>183-sq-foot room with city views </p><br/><p><b>Internet</b> - Free WiFi and wired internet access</p><p><b>Entertainment</b> - Premium channels </p><p><b>Food and Drink</b> - Room service and free bottled water </p><p><b>Bathroom</b> - Private bathroom, shower, bathrobes, and a hair dryer</p><p><b>Practical</b> - Safe and wardrobe or closet; rollaway beds (surcharge) available on request</p><p><b>Comfort</b> - Air conditioning and daily housekeeping</p><p>Smoking And Non-Smoking</p>",
+        "RoomTypeName": "Standard Single Room, 1 Twin Bed",
+        "RatePlanCode": "446425|204835244|37336|141",
         "RatePlan": 0,
         "IsPerStay": true,
         "PriceBreakUp": {
           "CurrencyCode": "INR",
-          "RoomRate": 4362.32,
-          "RoomTax": 249.18,
+          "RoomRate": 8690.75,
+          "RoomTax": 1564.57,
           "RoomExtraGuestCharges": 0,
           "RoomChildCharges": 0,
           "ServiceFee": 0,
-          "AgentCommission": 36.19,
+          "AgentCommission": 73.36,
           "TaxBreakup": [
             {
               "TaxType": "Tax_CGST",
@@ -91,67 +91,55 @@
             },
             {
               "TaxType": "Tax_TDS",
-              "TaxAmount": 0.72
+              "TaxAmount": 1.47
             }
           ]
         },
         "RoomPromotion": null,
         "Amenities": [
-          "Non-Smoking",
-          "Television",
-          "Satellite TV service",
-          "Iron/ironing board (on request)",
-          "Soundproofed rooms",
-          "Wardrobe or closet",
-          "Coffee/tea maker",
-          "Ceiling fan",
-          "Daily housekeeping",
-          "Free WiFi",
-          "Bidet",
-          "Phone",
-          "Desk",
-          "No rollaway/extra beds",
           "Towels provided",
           "Premium TV channels",
-          "Bedsheets provided",
+          "Television",
+          "Smoking and Non-Smoking",
           "Shower only",
-          "Wireless internet access",
-          "TV size measurement: inch",
-          "Free toiletries",
+          "Room service",
+          "Private bathroom",
+          "Bathrobes",
+          "Wardrobe or closet",
+          "Free wired internet",
+          "Hair dryer",
+          "Daily housekeeping",
           "Air conditioning",
-          "TV size: 21",
-          "Rainfall showerhead",
+          "Free WiFi",
+          "Rollaway/extra beds (surcharge)",
           "In-room safe",
-          "Separate sitting area",
-          "Room service (24 hours)",
-          "LCD TV",
-          "Free bottled water",
-          "Free newspaper"
+          "Cable TV service",
+          "Free bottled water"
         ],
         "SmokingPreference": "NoPreference",
         "BedTypes": [],
         "Supplements": [],
-        "LastCancellationDate": "2026-04-24T23:59:59",
+        "LastCancellationDate": "2026-06-04T23:59:59",
         "CancelPolicies": [
           {
             "CancellationCharge": 0,
             "ChargeType": 1,
             "Currency": "INR",
-            "FromDate": "19/03/2026 00:00:00",
-            "ToDate": "24/04/2026 23:59:59"
+            "FromDate": "27/04/2026 00:00:00",
+            "ToDate": "04/06/2026 23:59:59"
           },
           {
             "CancellationCharge": 100,
             "ChargeType": 2,
             "Currency": "INR",
-            "FromDate": "25/04/2026 00:00:00",
-            "ToDate": "27/04/2026 23:59:59"
+            "FromDate": "05/06/2026 00:00:00",
+            "ToDate": "06/06/2026 23:59:59"
           }
         ],
         "CancellationPolicies": null,
-        "LastVoucherDate": "2026-04-24T23:59:59",
-        "CancellationPolicy": "Executive Room,2 Twin Beds,NonSmoking#^#No cancellation charge, If cancelled between 19-Mar-2026 00:00:00 and 24-Apr-2026 23:59:59.|100.00% of total amount will be charged, If cancelled between 25-Apr-2026 00:00:00 and 27-Apr-2026 23:59:59.|#!#",
-        "Inclusion": "Breakfast buffet,Late check-out (subject to availability),Early check-in (subject to availability),Free welcome drink,Free self parking"
+        "LastVoucherDate": "2026-06-04T23:59:59",
+        "CancellationPolicy": "Standard Single Room, 1 Twin Bed#^#No cancellation charge, If cancelled between 27-Apr-2026 00:00:00 and 04-Jun-2026 23:59:59.|100.00% of total amount will be charged, If cancelled between 05-Jun-2026 00:00:00 and 06-Jun-2026 23:59:59.|#!#",
+        "Inclusion": "Breakfast buffet,Free self parking Free breakfast"
       },
       {
         "AdultCount": 1,
@@ -176,30 +164,30 @@
             "PassportExpDate": null,
             "PassportIssueDate": null,
             "PassportNo": null,
-            "PaxId": 260543,
+            "PaxId": 267217,
             "PaxType": 1,
             "Phoneno": "9000000101",
             "Title": "Ms"
           }
         ],
         "RequireAllPaxDetails": false,
-        "RoomId": 194075,
+        "RoomId": 198230,
         "RoomStatus": 0,
         "RoomIndex": 2,
-        "RoomTypeCode": "200129504|",
-        "RoomDescription": "<p></p><p>120 sq feet </p><br/><p><b>Layout</b> - Bedroom and sitting area</p><p><b>Internet</b> - Free WiFi </p><p><b>Entertainment</b> - 21-inch LCD TV with premium channels</p><p><b>Food and Drink</b> - Coffee/tea maker, 24-hour room service, and free bottled water</p><p><b>Sleep</b> - Bed sheets </p><p><b>Bathroom</b> - Shower with a rainfall showerhead</p><p><b>Practical</b> - Safe, free newspaper, and desk</p><p><b>Comfort</b> - Air conditioning and daily housekeeping</p><p><b>Need to Know</b> - No rollaway/extra beds available</p><p>Non-Smoking</p>",
-        "RoomTypeName": "Executive Room,2 Twin Beds,NonSmoking",
-        "RatePlanCode": "200129504|208258237|37341|141",
+        "RoomTypeCode": "446425|204",
+        "RoomDescription": "<p></p><p>183-sq-foot room with city views </p><br/><p><b>Internet</b> - Free WiFi and wired internet access</p><p><b>Entertainment</b> - Premium channels </p><p><b>Food and Drink</b> - Room service and free bottled water </p><p><b>Bathroom</b> - Private bathroom, shower, bathrobes, and a hair dryer</p><p><b>Practical</b> - Safe and wardrobe or closet; rollaway beds (surcharge) available on request</p><p><b>Comfort</b> - Air conditioning and daily housekeeping</p><p>Smoking And Non-Smoking</p>",
+        "RoomTypeName": "Standard Single Room, 1 Twin Bed",
+        "RatePlanCode": "446425|204835244|37336|141",
         "RatePlan": 0,
         "IsPerStay": true,
         "PriceBreakUp": {
           "CurrencyCode": "INR",
-          "RoomRate": 4362.32,
-          "RoomTax": 249.18,
+          "RoomRate": 8690.75,
+          "RoomTax": 1564.57,
           "RoomExtraGuestCharges": 0,
           "RoomChildCharges": 0,
           "ServiceFee": 0,
-          "AgentCommission": 36.19,
+          "AgentCommission": 73.36,
           "TaxBreakup": [
             {
               "TaxType": "Tax_CGST",
@@ -219,83 +207,69 @@
             },
             {
               "TaxType": "Tax_TDS",
-              "TaxAmount": 0.72
+              "TaxAmount": 1.47
             }
           ]
         },
         "RoomPromotion": null,
         "Amenities": [
-          "Non-Smoking",
-          "Television",
-          "Satellite TV service",
-          "Iron/ironing board (on request)",
-          "Soundproofed rooms",
-          "Wardrobe or closet",
-          "Coffee/tea maker",
-          "Ceiling fan",
-          "Daily housekeeping",
-          "Free WiFi",
-          "Bidet",
-          "Phone",
-          "Desk",
-          "No rollaway/extra beds",
           "Towels provided",
           "Premium TV channels",
-          "Bedsheets provided",
+          "Television",
+          "Smoking and Non-Smoking",
           "Shower only",
-          "Wireless internet access",
-          "TV size measurement: inch",
-          "Free toiletries",
+          "Room service",
+          "Private bathroom",
+          "Bathrobes",
+          "Wardrobe or closet",
+          "Free wired internet",
+          "Hair dryer",
+          "Daily housekeeping",
           "Air conditioning",
-          "TV size: 21",
-          "Rainfall showerhead",
+          "Free WiFi",
+          "Rollaway/extra beds (surcharge)",
           "In-room safe",
-          "Separate sitting area",
-          "Room service (24 hours)",
-          "LCD TV",
-          "Free bottled water",
-          "Free newspaper"
+          "Cable TV service",
+          "Free bottled water"
         ],
         "SmokingPreference": "NoPreference",
         "BedTypes": [],
         "Supplements": [],
-        "LastCancellationDate": "2026-04-24T23:59:59",
+        "LastCancellationDate": "2026-06-04T23:59:59",
         "CancelPolicies": [
           {
             "CancellationCharge": 0,
             "ChargeType": 1,
             "Currency": "INR",
-            "FromDate": "19/03/2026 00:00:00",
-            "ToDate": "24/04/2026 23:59:59"
+            "FromDate": "27/04/2026 00:00:00",
+            "ToDate": "04/06/2026 23:59:59"
           },
           {
             "CancellationCharge": 100,
             "ChargeType": 2,
             "Currency": "INR",
-            "FromDate": "25/04/2026 00:00:00",
-            "ToDate": "27/04/2026 23:59:59"
+            "FromDate": "05/06/2026 00:00:00",
+            "ToDate": "06/06/2026 23:59:59"
           }
         ],
         "CancellationPolicies": null,
-        "LastVoucherDate": "2026-04-24T23:59:59",
-        "CancellationPolicy": "Executive Room,2 Twin Beds,NonSmoking#^#No cancellation charge, If cancelled between 19-Mar-2026 00:00:00 and 24-Apr-2026 23:59:59.|100.00% of total amount will be charged, If cancelled between 25-Apr-2026 00:00:00 and 27-Apr-2026 23:59:59.|#!#",
-        "Inclusion": "Breakfast buffet,Late check-out (subject to availability),Early check-in (subject to availability),Free welcome drink,Free self parking"
+        "LastVoucherDate": "2026-06-04T23:59:59",
+        "CancellationPolicy": "Standard Single Room, 1 Twin Bed#^#No cancellation charge, If cancelled between 27-Apr-2026 00:00:00 and 04-Jun-2026 23:59:59.|100.00% of total amount will be charged, If cancelled between 05-Jun-2026 00:00:00 and 06-Jun-2026 23:59:59.|#!#",
+        "Inclusion": "Breakfast buffet,Free self parking Free breakfast"
       }
     ],
-    "NetAmount": 9152.06,
-    "NetTax": 499.8,
+    "NetAmount": 20366.86,
+    "NetTax": 3132.08,
     "RateConditions": [
       "Early check out will attract full cancellation charge unless otherwise specified",
-      "Bedding type is not guaranteed and it will be allocated by hotel based on availability ",
-      " CheckIn Time-Begin: 1:00 PM ",
+      "CheckIn Time-Begin: 12:00 PM ",
       " CheckIn Time-End: midnight",
       "CheckOut Time: 12:00 PM",
-      "CheckIn Instructions: &lt;ul&gt;  &lt;li&gt;Extra-person charges may apply and vary depending on property policy&lt;/li&gt;&lt;li&gt;Government-issued photo identification and a credit card, debit card, or cash deposit may be required at check-in for incidental charges&lt;/li&gt;&lt;li&gt;Special requests are subject to availability upon check-in and may incur additional charges; special requests cannot be guaranteed&lt;/li&gt;&lt;li&gt;This property accepts credit cards, debit cards, and cash&lt;/li&gt;&lt;li&gt;This property reserves the right to pre-authorize the guest's credit card prior to arrival.&lt;/li&gt;&lt;li&gt;Safety features at this property include a fire extinguisher&lt;/li&gt;&lt;li&gt;Please note that cultural norms and guest policies may differ by country and by property; the policies listed are provided by the property&lt;/li&gt;  &lt;/ul&gt; ",
-      " Special Instructions : This property offers transfers from the airport (surcharges may apply). To arrange pick-up, guests must contact the property 24 hours prior to arrival, using the contact information on the booking confirmation. This property doesn't offer after-hours check-in. Front desk staff will greet guests on arrival at the property. Information provided by the property may be translated using automated translation tools. To register at this property, guests who are Indian citizens must provide a valid photo identity card issued by the Government of India; travelers who are not citizens of India must present a valid passport and visa.",
-      "Minimum CheckIn Age : 18",
-      "Optional Fees: &lt;ul&gt; &lt;li&gt;Airport shuttle fee: INR 250 per vehicle (one-way)&lt;/li&gt;&lt;li&gt;Rollaway bed fee: INR 1000.0 per day&lt;/li&gt;&lt;/ul&gt; &lt;p&gt;The above list may not be comprehensive. Fees and deposits may not include tax and are subject to change. &lt;/p&gt;",
-      "Cards Accepted: Visa,Debit cards,Cash,American Express,Mastercard",
-      "&lt;ul&gt;   &lt;li&gt;One child 5 years old or younger stays free when occupying the parent or guardian's room, using existing bedding. &lt;/li&gt;&lt;li&gt;Only registered guests are allowed in the guestrooms. &lt;/li&gt; &lt;li&gt;No pets and no service animals are allowed at this property. &lt;/li&gt; &lt;/ul&gt;,Service animals not allowed,Pets not allowed,Professional property host/manager,No cribs (infant beds) available,Essential workers only - NO",
+      "CheckIn Instructions: &lt;ul&gt;  &lt;li&gt;Extra-person charges may apply and vary depending on property policy&lt;/li&gt;&lt;li&gt;Government-issued photo identification and a credit card, debit card, or cash deposit may be required at check-in for incidental charges&lt;/li&gt;&lt;li&gt;Special requests are subject to availability upon check-in and may incur additional charges; special requests cannot be guaranteed&lt;/li&gt;&lt;li&gt;This property accepts credit cards&lt;/li&gt;&lt;li&gt;Safety features at this property include a fire extinguisher and a security system&lt;/li&gt;&lt;li&gt;Please note that cultural norms and guest policies may differ by country and by property; the policies listed are provided by the property&lt;/li&gt;  &lt;/ul&gt; ",
+      " Special Instructions : This property doesn't offer after-hours check-in. Front desk staff will greet guests on arrival at the property. Information provided by the property may be translated using automated translation tools. To register at this property, guests who are Indian citizens must provide a valid photo identity card issued by the Government of India; travelers who are not citizens of India must present a valid passport and visa.",
+      "Optional Fees: &lt;ul&gt; &lt;li&gt;Rollaway bed fee: INR 800 per night&lt;/li&gt;&lt;/ul&gt; &lt;p&gt;The above list may not be comprehensive. Fees and deposits may not include tax and are subject to change. &lt;/p&gt;",
+      "Cards Accepted: Visa,Mastercard",
+      "Pets not allowed,Professional property host/manager,No cribs (infant beds) available,Beach nearby",
       "Extra person charges may apply at check-in, as per the property's policy."
     ],
     "AgentRemarks": "",
@@ -314,33 +288,33 @@
     },
     "HotelPolicyDetail": null,
     "IntHotelPassportDetails": null,
-    "InvoiceAmount": 9152,
-    "InvoiceCreatedOn": "2026-03-20T06:54:55",
-    "InvoiceNo": "MW/2526/27293",
+    "InvoiceAmount": 20367,
+    "InvoiceCreatedOn": "2026-04-28T22:02:56",
+    "InvoiceNo": "MW/2627/2784",
     "IsCorporate": false,
-    "LastCancellationDeadline": "2026-04-24T23:59:59",
+    "LastCancellationDeadline": "2026-06-04T23:59:59",
     "PostBookingRequestDetails": [],
     "HotelConfirmationNo": null,
-    "HotelCode": "2597801",
-    "HotelId": 169109,
-    "HotelName": "Hotel Le Grande - Mumbai International Airport",
-    "TBOHotelCode": "1083636",
+    "HotelCode": "3160939",
+    "HotelId": 172709,
+    "HotelName": "Regency Hotel",
+    "TBOHotelCode": "1083571",
     "StarRating": 3,
-    "AddressLine1": "Near Bombay Cambridge School Off Sahar Road, JB Nagar Andheri E., Next to Bombay Cambridge SchoolJ.B",
+    "AddressLine1": "73 Nepean Sea Road, Mumbai 400006",
     "AddressLine2": "",
     "CountryCode": "IN",
-    "Latitude": "19.105393",
-    "Longitude": "72.862570",
+    "Latitude": "18.955081",
+    "Longitude": "72.798800",
     "City": "Mumbai",
     "CityId": 144306,
-    "CheckInDate": "2026-04-28T00:00:00",
-    "InitialCheckInDate": "2026-04-28T00:00:00",
-    "CheckOutDate": "2026-04-29T00:00:00",
-    "InitialCheckOutDate": "2026-04-29T00:00:00",
-    "LastCancellationDate": "2026-04-24T23:59:59",
-    "LastVoucherDate": "2026-04-24T23:59:59",
+    "CheckInDate": "2026-06-07T00:00:00",
+    "InitialCheckInDate": "2026-06-07T00:00:00",
+    "CheckOutDate": "2026-06-08T00:00:00",
+    "InitialCheckOutDate": "2026-06-08T00:00:00",
+    "LastCancellationDate": "2026-06-04T23:59:59",
+    "LastVoucherDate": "2026-06-04T23:59:59",
     "NoOfRooms": 2,
-    "BookingDate": "2026-03-20T06:54:54",
+    "BookingDate": "2026-04-28T22:02:56",
     "SpecialRequest": "",
     "IsDomestic": true,
     "BookingAllowedForRoamer": true
@@ -348,7 +322,7 @@
 }
 
 ======== METADATA ========
-- timestamp: 2026-03-20T06:54:57.415Z
+- timestamp: 2026-04-28T22:02:57.579Z
 - endpoint: https://hotelbe.tektravels.com/hotelservice.svc/rest/Getbookingdetail
 - status code: 200
 - case id: 3

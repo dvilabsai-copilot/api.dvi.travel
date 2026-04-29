@@ -1,6 +1,6 @@
 ======== REQUEST ========
 {
-  "BookingCode": "1033473!TB!3!TB!b79e9c3f-2429-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+  "BookingCode": "1124298!TB!1!TB!07a4ed3f-434e-11f1-855f-720abae076dd!TB!N!TB!AFF!",
   "PaymentMode": "Limit",
   "GuestNationality": "IN",
   "NoOfRooms": 2,
@@ -29,40 +29,44 @@
   },
   "HotelResult": [
     {
-      "HotelCode": "1033473",
+      "HotelCode": "1124298",
       "Currency": "INR",
       "Rooms": [
         {
           "Name": [
-            "Room, 1 King Bed,NonSmoking",
-            "Room, 1 King Bed,NonSmoking"
+            "Deluxe Room,2 Twin Beds,NonSmoking",
+            "Deluxe Room,2 Twin Beds,NonSmoking"
           ],
-          "BookingCode": "1033473!TB!3!TB!b79e9c3f-2429-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
-          "Inclusion": "Free breakfast,Free valet parking,Free self parking",
+          "BookingCode": "1124298!TB!1!TB!07a4ed3f-434e-11f1-855f-720abae076dd!TB!N!TB!AFF!",
+          "Inclusion": "Free breakfast,Free self parking",
           "DayRates": [
             [
               {
-                "BasePrice": 15868.92
+                "BasePrice": 4495.05
               }
             ],
             [
               {
-                "BasePrice": 16755.5
+                "BasePrice": 4508.78
               }
             ]
           ],
-          "TotalFare": 39803.990000000005,
-          "TotalTax": 7179.58,
-          "NetAmount": 39809.803831405,
-          "NetTax": 7185.389047155,
+          "TotalFare": 9488.630000000001,
+          "TotalTax": 484.8,
+          "NetAmount": 9489.637959823998,
+          "NetTax": 485.8071600239999,
+          "RoomPromotion": [
+            "Save:24%",
+            "Save:24%"
+          ],
           "CancelPolicies": [
             {
-              "FromDate": "19-03-2026 00:00:00",
+              "FromDate": "27-04-2026 00:00:00",
               "ChargeType": "Fixed",
               "CancellationCharge": 0
             },
             {
-              "FromDate": "28-04-2026 00:00:00",
+              "FromDate": "08-06-2026 00:00:00",
               "ChargeType": "Percentage",
               "CancellationCharge": 100
             }
@@ -71,152 +75,80 @@
           "IsRefundable": true,
           "WithTransfers": false,
           "Amenities": [
-            "Premium bedding",
-            "Electric kettle",
-            "Satellite TV service",
-            "Pet-friendly room",
-            "In-room childcare (surcharge)",
-            "In-room climate control (air conditioning)",
-            "Blackout drapes/curtains",
-            "In-room safe (laptop compatible)",
-            "Desk",
-            "Premium TV channels",
-            "Accessible bathtub",
-            "Mini-fridge",
-            "Connecting/adjoining rooms available",
-            "Toothbrush and toothpaste available",
-            "Doorbell/telephone notification",
-            "Visual fire alarm",
-            "Lever door handles",
-            "DVD player",
-            "Slippers",
-            "Wheelchair accessible",
-            "Rollaway/extra beds (surcharge)",
-            "Pay movies",
-            "Free newspaper",
-            "Office",
-            "Magnifying mirror",
-            "Non-Smoking",
-            "Area rug/s in room",
-            "Television",
-            "Desk chair",
-            "Change of bed sheets (on request)",
-            "Laptop-friendly workspace",
-            "Minibar",
-            "Wardrobe or closet",
-            "Bathtub or shower",
-            "Free wired internet",
-            "Coffee/tea maker",
-            "Daily housekeeping",
-            "Individually decorated",
-            "Free WiFi",
-            "Change of towels (on request)",
-            "Individually furnished",
-            "HDTV",
-            "Hypo-allergenic bedding available",
-            "Phone",
             "Towels provided",
-            "Bedsheets provided",
+            "Non-Smoking",
+            "Television",
+            "Bed sheets not available",
+            "Shower only",
+            "Wireless internet access",
             "TV size measurement: inch",
             "Private bathroom",
-            "Bathrobes",
+            "Wardrobe or closet",
             "Free toiletries",
-            "Hair dryer",
-            "TV size: 40",
-            "Iron/ironing board",
-            "Rainfall showerhead",
-            "Deep soaking bathtub",
+            "Ceiling fan",
+            "Daily housekeeping",
+            "Air conditioning",
+            "Rollaway/extra beds (free)",
+            "TV size: 20",
+            "Free WiFi",
+            "Phone",
+            "Separate sitting area",
+            "Desk",
             "Room service (24 hours)",
             "LCD TV",
-            "Free bottled water",
-            "Room and bed type depend on availability check-in",
-            "Free cribs/infant beds",
-            "Premium bedding",
-            "Electric kettle",
-            "Satellite TV service",
-            "Pet-friendly room",
-            "In-room childcare (surcharge)",
-            "In-room climate control (air conditioning)",
-            "Blackout drapes/curtains",
-            "In-room safe (laptop compatible)",
-            "Desk",
-            "Premium TV channels",
-            "Accessible bathtub",
-            "Mini-fridge",
-            "Connecting/adjoining rooms available",
-            "Toothbrush and toothpaste available",
-            "Doorbell/telephone notification",
-            "Visual fire alarm",
-            "Lever door handles",
-            "DVD player",
-            "Slippers",
-            "Wheelchair accessible",
-            "Rollaway/extra beds (surcharge)",
-            "Pay movies",
-            "Free newspaper",
-            "Office",
-            "Magnifying mirror",
-            "Non-Smoking",
-            "Area rug/s in room",
-            "Television",
-            "Desk chair",
-            "Change of bed sheets (on request)",
-            "Laptop-friendly workspace",
-            "Minibar",
-            "Wardrobe or closet",
-            "Bathtub or shower",
-            "Free wired internet",
-            "Coffee/tea maker",
-            "Daily housekeeping",
-            "Individually decorated",
-            "Free WiFi",
-            "Change of towels (on request)",
-            "Individually furnished",
-            "HDTV",
-            "Hypo-allergenic bedding available",
-            "Phone",
+            "Internet access",
+            "Cable TV service",
+            "Balcony",
             "Towels provided",
-            "Bedsheets provided",
+            "Non-Smoking",
+            "Television",
+            "Bed sheets not available",
+            "Shower only",
+            "Wireless internet access",
             "TV size measurement: inch",
             "Private bathroom",
-            "Bathrobes",
+            "Wardrobe or closet",
             "Free toiletries",
-            "Hair dryer",
-            "TV size: 40",
-            "Iron/ironing board",
-            "Rainfall showerhead",
-            "Deep soaking bathtub",
+            "Ceiling fan",
+            "Daily housekeeping",
+            "Air conditioning",
+            "Rollaway/extra beds (free)",
+            "TV size: 20",
+            "Free WiFi",
+            "Phone",
+            "Separate sitting area",
+            "Desk",
             "Room service (24 hours)",
             "LCD TV",
-            "Free bottled water",
-            "Room and bed type depend on availability check-in",
-            "Free cribs/infant beds"
+            "Internet access",
+            "Cable TV service",
+            "Balcony"
           ],
-          "LastCancellationDeadline": "27-04-2026 23:59:59",
+          "LastCancellationDeadline": "07-06-2026 23:59:59",
           "PriceBreakUp": [
             {
-              "RoomRate": 16009.315282999998,
-              "RoomTax": 3496.9789220000016,
-              "AgentCommission": 140.39616055000002,
+              "RoomRate": 4519.968151,
+              "RoomTax": 242.39844199999996,
+              "AgentCommission": 24.9178818,
               "TaxBreakup": [
                 {
                   "TaxType": "Tax_TDS",
-                  "TaxableAmount": 140.39616055000002,
+                  "TaxableAmount": 24.9178818,
                   "TaxPercentage": 2,
-                  "TaxAmount": 2.807923211
+                  "TaxAmount": 0.498357636
                 }
               ]
             },
             {
-              "RoomRate": 16906.020009,
-              "RoomTax": 3682.591714999999,
-              "AgentCommission": 150.52434720000002,
+              "RoomRate": 4534.37645,
+              "RoomTax": 242.39844199999996,
+              "AgentCommission": 25.5959194,
               "TaxBreakup": [
                 {
                   "TaxType": "Tax_TDS",
-                  "TaxableAmount": 150.52434720000002,
+                  "TaxableAmount": 25.5959194,
                   "TaxPercentage": 2,
-                  "TaxAmount": 3.010486944
+                  "TaxAmount": 0.511918388
                 }
               ]
             }
@@ -225,15 +157,15 @@
       ],
       "RateConditions": [
         "Early check out will attract full cancellation charge unless otherwise specified",
-        "CheckIn Time-Begin: 3:00 PM ",
-        " CheckIn Time-End: anytime",
-        "CheckOut Time: 12:00 PM",
-        "CheckIn Instructions: &lt;ul&gt;  &lt;li&gt;Extra-person charges may apply and vary depending on property policy&lt;/li&gt;&lt;li&gt;Government-issued photo identification and a credit card, debit card, or cash deposit may be required at check-in for incidental charges&lt;/li&gt;&lt;li&gt;Special requests are subject to availability upon check-in and may incur additional charges; special requests cannot be guaranteed&lt;/li&gt;&lt;li&gt;This property accepts credit cards; cash is not accepted&lt;/li&gt;&lt;li&gt;Cashless transactions are available&lt;/li&gt;&lt;li&gt;Onsite parties or group events are strictly prohibited&lt;/li&gt;&lt;li&gt;Safety features at this property include a fire extinguisher, a smoke detector, a security system, and a first aid kit&lt;/li&gt;&lt;li&gt;This property has outdoor spaces, such as balconies, patios, terraces which may not be suitable for children; if you have concerns, we recommend contacting the property prior to your arrival to confirm they can accommodate you in a suitable room&lt;/li&gt;&lt;li&gt;Please note that cultural norms and guest policies may differ by country and by property; the policies listed are provided by the property&lt;/li&gt;  &lt;/ul&gt; ",
-        " Special Instructions : This property offers transfers from the airport (surcharges may apply). To arrange pick-up, guests must contact the property 24 hours prior to arrival, using the contact information on the booking confirmation. Front desk staff will greet guests on arrival at the property. Information provided by the property may be translated using automated translation tools. To register at this property, guests who are Indian citizens must provide a valid photo identity card issued by the Government of India; travelers who are not citizens of India must present a valid passport and visa.",
+        "CheckIn Time-Begin: 12:00 PM ",
+        " CheckIn Time-End: midnight",
+        "CheckOut Time: 11:00 AM",
+        "CheckIn Instructions: &lt;ul&gt;  &lt;li&gt;Extra-person charges may apply and vary depending on property policy&lt;/li&gt;&lt;li&gt;Government-issued photo identification and a credit card, debit card, or cash deposit may be required at check-in for incidental charges&lt;/li&gt;&lt;li&gt;Special requests are subject to availability upon check-in and may incur additional charges; special requests cannot be guaranteed&lt;/li&gt;&lt;li&gt;This property accepts mobile payments and cash&lt;/li&gt;&lt;li&gt;Mobile payment options include: Google Pay, Paytm, PhonePe, and Amazon Pay&lt;/li&gt;&lt;li&gt;Safety features at this property include a fire extinguisher&lt;/li&gt;&lt;li&gt;This property has outdoor spaces, such as balconies, patios, terraces which may not be suitable for children; if you have concerns, we recommend contacting the property prior to your arrival to confirm they can accommodate you in a suitable room&lt;/li&gt;&lt;li&gt;Please note that cultural norms and guest policies may differ by country and by property; the policies listed are provided by the property&lt;/li&gt;  &lt;/ul&gt; ",
+        " Special Instructions : This property offers transfers from the airport (surcharges may apply). To arrange pick-up, guests must contact the property 48 hours prior to arrival, using the contact information on the booking confirmation. To make arrangements for check-in please contact the property at least 24 hours before arrival using the information on the booking confirmation. If you are planning to arrive after midnight please contact the property in advance using the information on the booking confirmation. Guests must contact the property in advance for check-in instructions. Front desk staff will greet guests on arrival at the property. Information provided by the property may be translated using automated translation tools.",
         "Minimum CheckIn Age : 18",
-        "Optional Fees: &lt;ul&gt; &lt;li&gt;Fee for buffet breakfast: approximately INR 1450 per person&lt;/li&gt;&lt;li&gt;Airport shuttle fee: INR 2200 per person (one-way)&lt;/li&gt;&lt;li&gt;Pet fee: INR 5000 per pet, per day&lt;/li&gt;&lt;li&gt;Service animals are exempt from fees&lt;/li&gt;&lt;li&gt;Early check-in is available for a fee (subject to availability)&lt;/li&gt;&lt;li&gt;Late check-out is available for a fee (subject to availability)&lt;/li&gt;&lt;li&gt;Rollaway bed fee: INR 1500.0 per day&lt;/li&gt;&lt;/ul&gt; &lt;p&gt;The above list may not be comprehensive. Fees and deposits may not include tax and are subject to change. &lt;/p&gt;",
-        "Cards Accepted: Visa,Diners Club,Debit cards not accepted,Cash not accepted,American Express,Mastercard,UnionPay",
-        "&lt;ul&gt;  &lt;li&gt;Reservations are required for massage services and spa treatments. Reservations can be made by contacting the hotel prior to arrival, using the contact information on the booking confirmation. &lt;/li&gt;&lt;li&gt;Only registered guests are allowed in the guestrooms. &lt;/li&gt; &lt;li&gt;The property has connecting/adjoining rooms, which are subject to availability and can be requested by contacting the property using the number on the booking confirmation. &lt;/li&gt;&lt;li&gt;Some facilities may have restricted access. Guests can contact the property for details using the contact information on the booking confirmation. &lt;/li&gt;&lt;li&gt;The property allows pets in specific rooms only and has other pet restrictions (surcharges apply and can be found in the Fees section). Guests can arrange to bring pets by contacting the property directly, using the contact information on the booking confirmation. &lt;/li&gt; &lt;li&gt;A car is recommended for transportation to and from this property. &lt;/li&gt;&lt;li&gt;Cashless payment methods are available for all transactions.&lt;/li&gt; &lt;/ul&gt;,Maximum number of pets per room 1,Pet max weight (per pet) in lb is 33,Only dogs and cats are allowed,Pet max weight (per pet) in kg is 15,Service animals are allowed,Service animals are exempt from fees/restrictions,Pets allowed,Professional property host/manager,Events/parties not allowed,EarthCheck,Cashless transactions are available,Car recommended,Essential workers only - NO,No elevators"
+        "Optional Fees: &lt;ul&gt; &lt;li&gt;Fee for continental breakfast: approximately INR 450 for adults and INR 450 for children&lt;/li&gt;&lt;li&gt;Airport shuttle fee: INR 840 per room&lt;/li&gt;&lt;/ul&gt; &lt;p&gt;The above list may not be comprehensive. Fees and deposits may not include tax and are subject to change. &lt;/p&gt;",
+        "Cards Accepted: Amazon Pay,Debit cards not accepted,Cash,Google Pay,PhonePe,Paytm",
+        "&lt;ul&gt;  &lt;li&gt;Local laws may restrict unmarried guests from sharing rooms. Guests are responsible for providing proof of marriage, if requested by the property. &lt;/li&gt;  &lt;li&gt;One child 4 years old or younger stays free when occupying the parent or guardian's room, using existing bedding. &lt;/li&gt;&lt;li&gt;Only registered guests are allowed in the guestrooms. &lt;/li&gt; &lt;li&gt;No pets and no service animals are allowed at this property. &lt;/li&gt;&lt;li&gt;Contactless check-in and contactless check-out are available.&lt;/li&gt; &lt;/ul&gt;,Service animals not allowed,Pets not allowed,Professional property host/manager,Contactless check-out is available,No cribs (infant beds) available,Contactless check-in is available,Essential workers only - NO"
       ]
     }
   ],
@@ -252,12 +184,13 @@
     "PackageDetailsMandatory": false,
     "DepartureDetailsMandatory": false,
     "GSTAllowed": false,
-    "CrpPANMandatory": false
+    "CrpPANMandatory": false,
+    "IsAgencyOwnPANAllowed": false
   }
 }
 
 ======== METADATA ========
-- timestamp: 2026-03-20T06:55:06.762Z
+- timestamp: 2026-04-28T22:03:06.564Z
 - endpoint: https://affiliate.tektravels.com/HotelAPI/PreBook
 - status code: 200
 - case id: 4

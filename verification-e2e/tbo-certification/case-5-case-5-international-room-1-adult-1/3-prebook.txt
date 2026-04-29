@@ -1,6 +1,6 @@
 ======== REQUEST ========
 {
-  "BookingCode": "6107371!TB!1!TB!c2c202b4-2429-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+  "BookingCode": "6107371!TB!2!TB!136f29d6-434e-11f1-855f-720abae076dd!TB!N!TB!AFF!",
   "PaymentMode": "Limit",
   "GuestNationality": "IN",
   "NoOfRooms": 1,
@@ -28,25 +28,30 @@
           "Name": [
             "Economy Double Room, 1 Double Bed,Smoking"
           ],
-          "BookingCode": "6107371!TB!1!TB!c2c202b4-2429-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "BookingCode": "6107371!TB!2!TB!136f29d6-434e-11f1-855f-720abae076dd!TB!N!TB!AFF!",
           "Inclusion": "Free self parking",
           "DayRates": [
             [
               {
-                "BasePrice": 3227
+                "BasePrice": 2757.45
               }
             ]
           ],
-          "TotalFare": 3391.42,
-          "TotalTax": 164.43,
-          "NetAmount": 3391.833088727,
-          "NetTax": 164.8402635769998,
+          "TotalFare": 2901.53,
+          "TotalTax": 144.08,
+          "NetAmount": 2901.8322661469997,
+          "NetTax": 144.3804789969996,
           "RoomPromotion": [
-            "Save:20%"
+            "Save:21%"
           ],
           "CancelPolicies": [
             {
-              "FromDate": "19-03-2026 00:00:00",
+              "FromDate": "27-04-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "28-04-2026 00:00:00",
               "ChargeType": "Percentage",
               "CancellationCharge": 100
             }
@@ -103,18 +108,18 @@
             "Free bottled water",
             "Free newspaper"
           ],
-          "LastCancellationDeadline": "18-03-2026 23:59:59",
+          "LastCancellationDeadline": "27-04-2026 23:59:59",
           "PriceBreakUp": [
             {
-              "RoomRate": 3247.800104,
-              "RoomTax": 164.4241179999998,
-              "AgentCommission": 20.80727885,
+              "RoomRate": 2772.326237,
+              "RoomTax": 144.08298999999963,
+              "AgentCommission": 14.874449849999996,
               "TaxBreakup": [
                 {
                   "TaxType": "Tax_TDS",
-                  "TaxableAmount": 20.80727885,
+                  "TaxableAmount": 14.874449849999996,
                   "TaxPercentage": 2,
-                  "TaxAmount": 0.41614557700000004
+                  "TaxAmount": 0.2974889969999999
                 }
               ]
             }
@@ -150,12 +155,13 @@
     "PackageDetailsMandatory": false,
     "DepartureDetailsMandatory": false,
     "GSTAllowed": false,
-    "CrpPANMandatory": false
+    "CrpPANMandatory": false,
+    "IsAgencyOwnPANAllowed": false
   }
 }
 
 ======== METADATA ========
-- timestamp: 2026-03-20T06:55:25.207Z
+- timestamp: 2026-04-28T22:03:28.941Z
 - endpoint: https://affiliate.tektravels.com/HotelAPI/PreBook
 - status code: 200
 - case id: 5

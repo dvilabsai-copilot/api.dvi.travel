@@ -1,6 +1,6 @@
 ======== REQUEST ========
 {
-  "BookingCode": "1035259!TB!2!TB!e48fd262-2429-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+  "BookingCode": "1035259!TB!2!TB!32f98ada-434e-11f1-855f-720abae076dd!TB!N!TB!AFF!",
   "PaymentMode": "Limit",
   "GuestNationality": "US",
   "NoOfRooms": 2,
@@ -37,32 +37,32 @@
             "Twin Hilton Guestroom with Sofa cum Bed, Bathtub,15% disc on FandB,Spa,2 Twin Beds,NonSmoking",
             "Twin Hilton Guestroom with Sofa cum Bed, Bathtub,15% disc on FandB,Spa,2 Twin Beds,NonSmoking"
           ],
-          "BookingCode": "1035259!TB!2!TB!e48fd262-2429-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "BookingCode": "1035259!TB!2!TB!32f98ada-434e-11f1-855f-720abae076dd!TB!N!TB!AFF!",
           "Inclusion": "Free valet parking,Free breakfast",
           "DayRates": [
             [
               {
-                "BasePrice": 14032.88
+                "BasePrice": 16354.52
               }
             ],
             [
               {
-                "BasePrice": 14406.57
+                "BasePrice": 16812.49
               }
             ]
           ],
-          "TotalFare": 34449.4,
-          "TotalTax": 6009.97,
-          "NetAmount": 34451.92105206,
-          "NetTax": 6012.481467059999,
+          "TotalFare": 39784.66,
+          "TotalTax": 6617.65,
+          "NetAmount": 39789.374558517,
+          "NetTax": 6622.3601848670005,
           "CancelPolicies": [
             {
-              "FromDate": "19-03-2026 00:00:00",
+              "FromDate": "27-04-2026 00:00:00",
               "ChargeType": "Fixed",
               "CancellationCharge": 0
             },
             {
-              "FromDate": "05-05-2026 00:00:00",
+              "FromDate": "15-06-2026 00:00:00",
               "ChargeType": "Percentage",
               "CancellationCharge": 100
             }
@@ -172,31 +172,31 @@
             "Free bottled water",
             "Free cribs/infant beds"
           ],
-          "LastCancellationDeadline": "04-05-2026 23:59:59",
+          "LastCancellationDeadline": "14-06-2026 23:59:59",
           "PriceBreakUp": [
             {
-              "RoomRate": 14095.554157,
-              "RoomTax": 2963.871859,
-              "AgentCommission": 62.676100649999995,
+              "RoomRate": 16469.533304,
+              "RoomTax": 3268.1412320000004,
+              "AgentCommission": 115.0121279,
               "TaxBreakup": [
                 {
                   "TaxType": "Tax_TDS",
-                  "TaxableAmount": 62.676100649999995,
+                  "TaxableAmount": 115.0121279,
                   "TaxPercentage": 2,
-                  "TaxAmount": 1.253522013
+                  "TaxAmount": 2.300242558
                 }
               ]
             },
             {
-              "RoomRate": 14470.169930999999,
-              "RoomTax": 3046.083918,
-              "AgentCommission": 63.60840235,
+              "RoomRate": 16933.141513,
+              "RoomTax": 3349.505744000001,
+              "AgentCommission": 120.64831545,
               "TaxBreakup": [
                 {
                   "TaxType": "Tax_TDS",
-                  "TaxableAmount": 63.60840235,
+                  "TaxableAmount": 120.64831545,
                   "TaxPercentage": 2,
-                  "TaxAmount": 1.2721680469999999
+                  "TaxAmount": 2.4129663089999998
                 }
               ]
             }
@@ -231,12 +231,13 @@
     "PackageDetailsMandatory": false,
     "DepartureDetailsMandatory": false,
     "GSTAllowed": false,
-    "CrpPANMandatory": false
+    "CrpPANMandatory": false,
+    "IsAgencyOwnPANAllowed": false
   }
 }
 
 ======== METADATA ========
-- timestamp: 2026-03-20T06:56:20.910Z
+- timestamp: 2026-04-28T22:04:19.136Z
 - endpoint: https://affiliate.tektravels.com/HotelAPI/PreBook
 - status code: 200
 - case id: 8

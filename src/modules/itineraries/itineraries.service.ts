@@ -4897,6 +4897,7 @@ export class ItinerariesService {
       routeId: number;
       provider: string;
       hotelCode: string;
+      hotelName?: string;
       bookingCode: string;
       roomType: string;
       checkInDate: string;
@@ -5002,6 +5003,9 @@ export class ItinerariesService {
         ...this.normalizeToArray(prebookResponse?.HotelResult)
           .flatMap((hotelResult: any) => this.normalizeToArray(hotelResult?.Rooms)),
       ].filter(Boolean);
+      const prebookBookingCode = String(
+        prebookResponse?.BookingCode || rawRoomDetails.find((room: any) => room?.BookingCode)?.BookingCode || hotel.bookingCode || '',
+      ).trim();
 
       const prebookCancelPoliciesDebug = rawRoomDetails
         .flatMap((room: any) => this.normalizeToArray(room?.CancelPolicies ?? room?.CancellationPolicy))
@@ -5047,18 +5051,50 @@ export class ItinerariesService {
         ...normalizedSupplements,
       ];
 
+      const hotelLevelResults = this.normalizeToArray(prebookResponse?.HotelResult);
+
       const roomPromotions = rawRoomDetails
         .flatMap((room: any) => this.normalizeToArray(room?.RoomPromotion ?? room?.RoomPromotions))
         .filter(Boolean);
-      const rateConditions = rawRoomDetails
-        .flatMap((room: any) => this.normalizeToArray(room?.RateConditions))
-        .filter(Boolean);
+      const rateConditions = [
+        ...rawRoomDetails.flatMap((room: any) =>
+          this.normalizeToArray(room?.RateConditions ?? room?.rateConditions),
+        ),
+        ...hotelLevelResults.flatMap((hotelResult: any) =>
+          this.normalizeToArray(
+            hotelResult?.RateConditions ??
+              hotelResult?.rateConditions ??
+              hotelResult?.RateCondition ??
+              hotelResult?.rateCondition,
+          ),
+        ),
+      ].filter(Boolean);
+      const amenities = [
+        ...rawRoomDetails.flatMap((room: any) =>
+          this.normalizeToArray(room?.Amenities ?? room?.amenities),
+        ),
+        ...hotelLevelResults.flatMap((hotelResult: any) =>
+          this.normalizeToArray(
+            hotelResult?.Amenities ?? hotelResult?.amenities ?? hotelResult?.Amenity,
+          ),
+        ),
+      ].filter(Boolean);
       const cancellationPolicies = rawRoomDetails
         .flatMap((room: any) => this.normalizeToArray(room?.CancelPolicies ?? room?.CancellationPolicy))
         .filter(Boolean);
-      const inclusions = rawRoomDetails
-        .flatMap((room: any) => this.normalizeToArray(room?.Inclusion))
-        .filter(Boolean);
+      const inclusions = [
+        ...rawRoomDetails.flatMap((room: any) =>
+          this.normalizeToArray(room?.Inclusion ?? room?.Inclusions ?? room?.inclusion ?? room?.inclusions),
+        ),
+        ...hotelLevelResults.flatMap((hotelResult: any) =>
+          this.normalizeToArray(
+            hotelResult?.Inclusion ??
+              hotelResult?.Inclusions ??
+              hotelResult?.inclusion ??
+              hotelResult?.inclusions,
+          ),
+        ),
+      ].filter(Boolean);
 
       const candidatePrices = [
         prebookResponse?.NetAmount,
@@ -5073,8 +5109,9 @@ export class ItinerariesService {
 
       prebookResults.push({
         routeId: hotel.routeId,
+        hotelName: hotel.hotelName || undefined,
         hotelCode: hotel.hotelCode,
-        bookingCode: prebookResponse?.BookingCode || hotel.bookingCode,
+        bookingCode: prebookBookingCode,
         updatedTotalPrice: finalPrice,
         finalPrice,
         totalAmount: finalPrice,
@@ -5085,6 +5122,7 @@ export class ItinerariesService {
         roomPromotion: roomPromotions.length ? roomPromotions.join(', ') : null,
         rateConditions,
         inclusions,
+        amenities,
         mandatorySupplements,
         // ✅ NEW: include normalized supplements
         normalizedSupplements: allNormalizedSupplements,
@@ -5092,6 +5130,25 @@ export class ItinerariesService {
         isPriceChanged: Boolean(prebookResponse?.IsPriceChanged),
         isCancellationPolicyChanged: Boolean(prebookResponse?.IsCancellationPolicyChanged),
         rawStatus: prebookResponse?.Status,
+        prebookContext: {
+          bookingCode: prebookBookingCode,
+          traceId: prebookResponse?.TraceId || '',
+          finalPrice,
+          cancellationPolicy: cancellationPolicies,
+          cancellationPoliciesText: cancellationPolicies.length
+            ? JSON.stringify(cancellationPolicies)
+            : null,
+          roomPromotion: roomPromotions.length ? roomPromotions.join(', ') : null,
+          rateConditions,
+          inclusions,
+          amenities,
+          mandatorySupplements,
+          normalizedSupplements: allNormalizedSupplements,
+          supplements: rawSupplements,
+          isPriceChanged: Boolean(prebookResponse?.IsPriceChanged),
+          isCancellationPolicyChanged: Boolean(prebookResponse?.IsCancellationPolicyChanged),
+          rawStatus: prebookResponse?.Status,
+        },
         certificationTrace: {
           guestNationality: selection.guestNationality,
           prebookRequest: prebookRequestPayload,
@@ -5252,6 +5309,7 @@ export class ItinerariesService {
         routeId: hotel.routeId,
         selection: {
           hotelCode: hotel.hotelCode,
+          hotelName: (hotel as any).hotelName,
           bookingCode: hotel.bookingCode,
           roomType: hotel.roomType,
           checkInDate: hotel.checkInDate,
@@ -5282,6 +5340,7 @@ export class ItinerariesService {
             gstCompanyName: p.gstCompanyName,
             pan: p.pan || p.panNo,
           })),
+          prebookContext: (hotel as any).prebookContext,
         },
       }));
 

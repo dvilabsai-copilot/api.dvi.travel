@@ -293,8 +293,24 @@ export class TBOHotelProvider implements IHotelProvider {
           if (selectedMealPlanCode && inferredMealPlanCode !== selectedMealPlanCode) {
             continue;
           }
-          const totalFare = room.TotalFare || room.DayRates?.[0]?.[0]?.BasePrice || 0;
+          const netAmount = room.NetAmount || room.TotalFare || room.DayRates?.[0]?.[0]?.BasePrice || 0;
+          const totalFare = room.TotalFare || room.NetAmount || room.DayRates?.[0]?.[0]?.BasePrice || 0;
           const roomName = room.Name?.[0] || 'Standard Room';
+          const inclusionText = String(room.Inclusion || '').trim();
+          const inclusions = inclusionText
+            ? inclusionText
+                .split(',')
+                .map((item: string) => item.trim())
+                .filter(Boolean)
+            : [];
+          const rateConditions = Array.isArray(room.RateConditions)
+            ? room.RateConditions
+            : room.RateConditions
+              ? [room.RateConditions]
+              : [];
+          const amenities = Array.isArray(room.Amenities)
+            ? room.Amenities.map((item: any) => String(item).trim()).filter(Boolean)
+            : [];
           
           // Use REAL BookingCode from TBO Search API response (not generated)
           const realBookingCode = room.BookingCode || `${hotel.HotelCode}_${room.TBORoomID}`;
@@ -312,7 +328,7 @@ export class TBOHotelProvider implements IHotelProvider {
             roomName: roomName,
             bedType: roomName.includes('King') ? 'King' : 'Twin',
             capacity: 2,
-            price: parseFloat(totalFare.toString()),
+            price: parseFloat(netAmount.toString()),
             cancellationPolicy: room.CancelPolicies?.[0]?.ChargeType || 'Non-refundable',
             // ✅ Add supplements to room type
             supplements: rawSupplements.length > 0 ? rawSupplements : undefined,
@@ -332,9 +348,14 @@ export class TBOHotelProvider implements IHotelProvider {
               (hotel?.Longitude != null ? String(hotel.Longitude).trim() : null),
             rating: hotelRating,
             category: hotelMasterData?.star_rating ? `${hotelMasterData.star_rating}-Star` : '-',
-            facilities: (room.Inclusion || '').split(',').map((f) => f.trim()),
+            facilities: Array.from(new Set([...inclusions, ...amenities])),
+            amenities,
+            inclusions,
+            rateConditions,
             images: [],
-            price: parseFloat(totalFare.toString()),
+            price: parseFloat(netAmount.toString()),
+            netAmount: parseFloat(netAmount.toString()),
+            totalFare: parseFloat(totalFare.toString()),
             currency: hotel.Currency || 'INR',
             roomType: roomName, // Room type name for display
             mealPlan: getNormalizedMealPlanLabelFromMealText(room.Inclusion),
