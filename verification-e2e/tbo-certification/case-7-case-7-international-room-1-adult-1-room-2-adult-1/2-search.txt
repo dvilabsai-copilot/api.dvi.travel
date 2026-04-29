@@ -1,7 +1,7 @@
 ======== REQUEST ========
 {
-  "CheckIn": "2026-05-06",
-  "CheckOut": "2026-05-07",
+  "CheckIn": "2026-06-15",
+  "CheckOut": "2026-06-16",
   "HotelCodes": "1035259,1035258",
   "GuestNationality": "US",
   "PaxRooms": [
@@ -44,30 +44,30 @@
             "Twin Hilton Guestroom with Sofa cum Bed, Bathtub,15% disc on FandB,Spa,2 Twin Beds,NonSmoking",
             "Twin Hilton Guestroom with Sofa cum Bed, Bathtub,15% disc on FandB,Spa,2 Twin Beds,NonSmoking"
           ],
-          "BookingCode": "1035259!TB!3!TB!d6991d7c-2429-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "BookingCode": "1035259!TB!5!TB!28c2ccbf-434e-11f1-855f-720abae076dd!TB!N!TB!AFF!",
           "Inclusion": "Free valet parking,Free breakfast",
           "DayRates": [
             [
               {
-                "BasePrice": 20634.38
+                "BasePrice": 16207.22
               }
             ],
             [
               {
-                "BasePrice": 20634.38
+                "BasePrice": 16207.22
               }
             ]
           ],
-          "TotalFare": 49337.24,
-          "TotalTax": 8068.48,
+          "TotalFare": 38893.08,
+          "TotalTax": 6478.64,
           "CancelPolicies": [
             {
-              "FromDate": "19-03-2026 00:00:00",
+              "FromDate": "27-04-2026 00:00:00",
               "ChargeType": "Fixed",
               "CancellationCharge": 0
             },
             {
-              "FromDate": "03-05-2026 00:00:00",
+              "FromDate": "13-06-2026 00:00:00",
               "ChargeType": "Percentage",
               "CancellationCharge": 100
             }
@@ -82,7 +82,7 @@
 }
 
 ======== METADATA ========
-- timestamp: 2026-03-20T06:55:55.589Z
+- timestamp: 2026-04-28T22:03:59.941Z
 - endpoint: https://affiliate.tektravels.com/HotelAPI/Search
 - status code: 200
 - case id: 7

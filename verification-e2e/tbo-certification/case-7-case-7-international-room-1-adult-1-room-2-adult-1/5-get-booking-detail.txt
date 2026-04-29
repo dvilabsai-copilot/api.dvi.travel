@@ -1,27 +1,27 @@
 ======== REQUEST ========
 {
-  "BookingId": 2096857,
-  "BookingRefId": "2096857",
-  "TokenId": "ec8ab1ad-1273-4200-ad3e-1a7c04504b2e",
+  "BookingId": 2117427,
+  "BookingRefId": "2117427",
+  "TokenId": "f9a5e4a1-59f0-48c7-86e9-c23481e62c40",
   "EndUserIp": "192.168.1.1"
 }
 
 ======== RESPONSE ========
 {
   "GetBookingDetailResult": {
-    "TBOReferenceNo": "TBS4OPDFQW",
+    "TBOReferenceNo": "TB563IQMNG",
     "VoucherStatus": true,
     "ResponseStatus": 1,
     "Error": {
       "ErrorCode": 0,
       "ErrorMessage": ""
     },
-    "TraceId": "d6991d7c-2429-11f1-aada-ba9013e35c3f",
+    "TraceId": "28c2ccbf-434e-11f1-855f-720abae076dd",
     "Status": 1,
     "HotelBookingStatus": "Confirmed",
-    "ConfirmationNo": "7793869704005",
-    "BookingRefNo": "386194671783293,233344946902161",
-    "BookingId": 2096857,
+    "ConfirmationNo": "7511737483012",
+    "BookingRefNo": "946569533512260,538895671228398",
+    "BookingId": 2117427,
     "IsPriceChanged": false,
     "IsCancellationPolicyChanged": false,
     "Rooms": [
@@ -48,14 +48,14 @@
             "PassportExpDate": null,
             "PassportIssueDate": null,
             "PassportNo": null,
-            "PaxId": 260554,
+            "PaxId": 267228,
             "PaxType": 1,
             "Phoneno": "9000000100",
             "Title": "Mr"
           }
         ],
         "RequireAllPaxDetails": false,
-        "RoomId": 194080,
+        "RoomId": 198235,
         "RoomStatus": 0,
         "RoomIndex": 1,
         "RoomTypeCode": "200304219|",
@@ -66,12 +66,12 @@
         "IsPerStay": true,
         "PriceBreakUp": {
           "CurrencyCode": "INR",
-          "RoomRate": 20799.65,
-          "RoomTax": 4034.32,
+          "RoomRate": 16321.22,
+          "RoomTax": 3239.32,
           "RoomExtraGuestCharges": 0,
           "RoomChildCharges": 0,
           "ServiceFee": 0,
-          "AgentCommission": 165.27,
+          "AgentCommission": 114,
           "TaxBreakup": [
             {
               "TaxType": "Tax_CGST",
@@ -91,7 +91,7 @@
             },
             {
               "TaxType": "Tax_TDS",
-              "TaxAmount": 3.31
+              "TaxAmount": 2.28
             }
           ]
         },
@@ -151,26 +151,26 @@
         "SmokingPreference": "NoPreference",
         "BedTypes": [],
         "Supplements": [],
-        "LastCancellationDate": "2026-05-02T23:59:59",
+        "LastCancellationDate": "2026-06-12T23:59:59",
         "CancelPolicies": [
           {
             "CancellationCharge": 0,
             "ChargeType": 1,
             "Currency": "INR",
-            "FromDate": "19/03/2026 00:00:00",
-            "ToDate": "02/05/2026 23:59:59"
+            "FromDate": "27/04/2026 00:00:00",
+            "ToDate": "12/06/2026 23:59:59"
           },
           {
             "CancellationCharge": 100,
             "ChargeType": 2,
             "Currency": "INR",
-            "FromDate": "03/05/2026 00:00:00",
-            "ToDate": "05/05/2026 23:59:59"
+            "FromDate": "13/06/2026 00:00:00",
+            "ToDate": "14/06/2026 23:59:59"
           }
         ],
         "CancellationPolicies": null,
-        "LastVoucherDate": "2026-05-02T23:59:59",
-        "CancellationPolicy": "Twin Hilton Guestroom with Sofa cum Bed, Bathtub,1#^#No cancellation charge, If cancelled between 19-Mar-2026 00:00:00 and 02-May-2026 23:59:59.|100.00% of total amount will be charged, If cancelled between 03-May-2026 00:00:00 and 05-May-2026 23:59:59.|#!#",
+        "LastVoucherDate": "2026-06-12T23:59:59",
+        "CancellationPolicy": "Twin Hilton Guestroom with Sofa cum Bed, Bathtub,1#^#No cancellation charge, If cancelled between 27-Apr-2026 00:00:00 and 12-Jun-2026 23:59:59.|100.00% of total amount will be charged, If cancelled between 13-Jun-2026 00:00:00 and 14-Jun-2026 23:59:59.|#!#",
         "Inclusion": "Free valet parking,Free breakfast"
       },
       {
@@ -196,14 +196,14 @@
             "PassportExpDate": null,
             "PassportIssueDate": null,
             "PassportNo": null,
-            "PaxId": 260555,
+            "PaxId": 267229,
             "PaxType": 1,
             "Phoneno": "9000000101",
             "Title": "Ms"
           }
         ],
         "RequireAllPaxDetails": false,
-        "RoomId": 194081,
+        "RoomId": 198236,
         "RoomStatus": 0,
         "RoomIndex": 2,
         "RoomTypeCode": "200304219|",
@@ -214,12 +214,12 @@
         "IsPerStay": true,
         "PriceBreakUp": {
           "CurrencyCode": "INR",
-          "RoomRate": 20799.65,
-          "RoomTax": 4034.32,
+          "RoomRate": 16321.22,
+          "RoomTax": 3239.32,
           "RoomExtraGuestCharges": 0,
           "RoomChildCharges": 0,
           "ServiceFee": 0,
-          "AgentCommission": 165.27,
+          "AgentCommission": 114,
           "TaxBreakup": [
             {
               "TaxType": "Tax_CGST",
@@ -239,7 +239,7 @@
             },
             {
               "TaxType": "Tax_TDS",
-              "TaxAmount": 3.31
+              "TaxAmount": 2.28
             }
           ]
         },
@@ -299,31 +299,31 @@
         "SmokingPreference": "NoPreference",
         "BedTypes": [],
         "Supplements": [],
-        "LastCancellationDate": "2026-05-02T23:59:59",
+        "LastCancellationDate": "2026-06-12T23:59:59",
         "CancelPolicies": [
           {
             "CancellationCharge": 0,
             "ChargeType": 1,
             "Currency": "INR",
-            "FromDate": "19/03/2026 00:00:00",
-            "ToDate": "02/05/2026 23:59:59"
+            "FromDate": "27/04/2026 00:00:00",
+            "ToDate": "12/06/2026 23:59:59"
           },
           {
             "CancellationCharge": 100,
             "ChargeType": 2,
             "Currency": "INR",
-            "FromDate": "03/05/2026 00:00:00",
-            "ToDate": "05/05/2026 23:59:59"
+            "FromDate": "13/06/2026 00:00:00",
+            "ToDate": "14/06/2026 23:59:59"
           }
         ],
         "CancellationPolicies": null,
-        "LastVoucherDate": "2026-05-02T23:59:59",
-        "CancellationPolicy": "Twin Hilton Guestroom with Sofa cum Bed, Bathtub,1#^#No cancellation charge, If cancelled between 19-Mar-2026 00:00:00 and 02-May-2026 23:59:59.|100.00% of total amount will be charged, If cancelled between 03-May-2026 00:00:00 and 05-May-2026 23:59:59.|#!#",
+        "LastVoucherDate": "2026-06-12T23:59:59",
+        "CancellationPolicy": "Twin Hilton Guestroom with Sofa cum Bed, Bathtub,1#^#No cancellation charge, If cancelled between 27-Apr-2026 00:00:00 and 12-Jun-2026 23:59:59.|100.00% of total amount will be charged, If cancelled between 13-Jun-2026 00:00:00 and 14-Jun-2026 23:59:59.|#!#",
         "Inclusion": "Free valet parking,Free breakfast"
       }
     ],
-    "NetAmount": 49344.02,
-    "NetTax": 8075.26,
+    "NetAmount": 38897.64,
+    "NetTax": 6483.2,
     "RateConditions": [
       "Early check out will attract full cancellation charge unless otherwise specified",
       "CheckIn Time-Begin: 3:00 PM",
@@ -352,15 +352,15 @@
     },
     "HotelPolicyDetail": null,
     "IntHotelPassportDetails": null,
-    "InvoiceAmount": 49344,
-    "InvoiceCreatedOn": "2026-03-20T06:56:08",
-    "InvoiceNo": "MW/2526/27297",
+    "InvoiceAmount": 38897,
+    "InvoiceCreatedOn": "2026-04-28T22:04:10",
+    "InvoiceNo": "MW/2627/2788",
     "IsCorporate": false,
-    "LastCancellationDeadline": "2026-05-02T23:59:59",
+    "LastCancellationDeadline": "2026-06-12T23:59:59",
     "PostBookingRequestDetails": [],
     "HotelConfirmationNo": null,
     "HotelCode": "6097535",
-    "HotelId": 169113,
+    "HotelId": 172713,
     "HotelName": "Hilton Bangalore Embassy GolfLinks",
     "TBOHotelCode": "1035259",
     "StarRating": 5,
@@ -371,14 +371,14 @@
     "Longitude": "77.646090",
     "City": "Bengaluru",
     "CityId": 111124,
-    "CheckInDate": "2026-05-06T00:00:00",
-    "InitialCheckInDate": "2026-05-06T00:00:00",
-    "CheckOutDate": "2026-05-07T00:00:00",
-    "InitialCheckOutDate": "2026-05-07T00:00:00",
-    "LastCancellationDate": "2026-05-02T23:59:59",
-    "LastVoucherDate": "2026-05-02T23:59:59",
+    "CheckInDate": "2026-06-15T00:00:00",
+    "InitialCheckInDate": "2026-06-15T00:00:00",
+    "CheckOutDate": "2026-06-16T00:00:00",
+    "InitialCheckOutDate": "2026-06-16T00:00:00",
+    "LastCancellationDate": "2026-06-12T23:59:59",
+    "LastVoucherDate": "2026-06-12T23:59:59",
     "NoOfRooms": 2,
-    "BookingDate": "2026-03-20T06:56:08",
+    "BookingDate": "2026-04-28T22:04:10",
     "SpecialRequest": "",
     "IsDomestic": true,
     "BookingAllowedForRoamer": true
@@ -386,7 +386,7 @@
 }
 
 ======== METADATA ========
-- timestamp: 2026-03-20T06:56:12.960Z
+- timestamp: 2026-04-28T22:04:11.603Z
 - endpoint: https://hotelbe.tektravels.com/hotelservice.svc/rest/Getbookingdetail
 - status code: 200
 - case id: 7

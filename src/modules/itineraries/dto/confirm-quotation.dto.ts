@@ -12,6 +12,7 @@ import {
   ValidateNested,
   IsIn,
   IsDateString,
+  IsObject,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -147,6 +148,11 @@ export class HotelSelectionDto {
   @IsString()
   hotelCode!: string;
 
+  @ApiProperty({ example: 'Sample Hotel', required: false })
+  @IsOptional()
+  @IsString()
+  hotelName?: string;
+
   @ApiProperty({ example: '1035259!TB!2!TB!27fe40ea-75db-11f0-8023-825b5693933e!TB!AFF!' })
   @IsString()
   bookingCode!: string;
@@ -199,6 +205,19 @@ export class HotelSelectionDto {
   @ValidateNested({ each: true })
   @Type(() => HotelRoomOccupancyDto)
   occupancies?: HotelRoomOccupancyDto[];
+
+  @ApiProperty({
+    example: {
+      bookingCode: '1035259!TB!...',
+      finalPrice: 5230.45,
+      traceId: 'trace-id',
+    },
+    required: false,
+    description: 'Prebook response context captured from the confirm popup review step',
+  })
+  @IsOptional()
+  @IsObject()
+  prebookContext?: Record<string, any>;
 }
 
 export class ConfirmQuotationDto {

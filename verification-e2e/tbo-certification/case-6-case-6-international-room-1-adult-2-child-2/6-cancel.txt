@@ -2,9 +2,9 @@
 {
   "RequestType": 4,
   "BookingMode": 5,
-  "BookingId": 2096856,
+  "BookingId": 2117426,
   "EndUserIp": "192.168.1.1",
-  "TokenId": "18cce9f1-8657-42f6-b24e-f2332c30eb44",
+  "TokenId": "93ebad47-1315-4cff-991d-c90f3b5c0d9d",
   "Remarks": "Certification cancel for case 6"
 }
 
@@ -22,13 +22,13 @@
       "ErrorCode": 0,
       "ErrorMessage": ""
     },
-    "TraceId": "cbd34015-2429-11f1-aada-ba9013e35c3f",
-    "ChangeRequestId": 381045,
-    "RefundedAmount": 22467,
-    "TotalPrice": 22466.78,
+    "TraceId": "1f0efd7f-434e-11f1-855f-720abae076dd",
+    "ChangeRequestId": 395368,
+    "RefundedAmount": 16262,
+    "TotalPrice": 16261.88,
     "ChangeRequestStatus": 3,
-    "CreditNoteNo": "MZ/2526/2964",
-    "CreditNoteCreatedOn": "2026-03-20T12:25:51",
+    "CreditNoteNo": "MZ/2627/459",
+    "CreditNoteCreatedOn": "2026-04-29T03:33:57",
     "GST": {
       "CGSTAmount": 0,
       "CGSTRate": 0,
@@ -40,12 +40,12 @@
       "SGSTRate": 0,
       "TaxableAmount": 0
     },
-    "ZendeskTicketId": 4815
+    "ZendeskTicketId": 5838
   }
 }
 
 ======== METADATA ========
-- timestamp: 2026-03-20T06:55:54.623Z
+- timestamp: 2026-04-28T22:03:59.008Z
 - endpoint: https://hotelbe.tektravels.com/hotelservice.svc/rest/SendChangeRequest
 - status code: 200
 - case id: 6

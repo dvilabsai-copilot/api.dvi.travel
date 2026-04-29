@@ -2,7 +2,7 @@
   "status": 400,
   "ok": false,
   "body": {
-    "message": "This hotel session has expired or booking code is invalid. Please run a fresh hotel search and prebook again.",
+    "message": "Route ID 1 not found in this itinerary",
     "error": "Bad Request",
     "statusCode": 400
   }

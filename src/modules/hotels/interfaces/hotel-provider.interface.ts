@@ -31,8 +31,13 @@ export interface HotelSearchResult {
   rating: number;
   category?: string; // Hotel category/star rating
   facilities: string[];
+  amenities?: string[];
+  inclusions?: string[];
+  rateConditions?: any[];
   images: string[];
   price: number;
+  netAmount?: number;
+  totalFare?: number;
   currency: string;
   roomTypes: RoomType[];
   roomType?: string; // Current room type name

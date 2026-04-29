@@ -16,6 +16,7 @@ import {
 
 interface TboHotelSelection {
   hotelCode: string;
+  hotelName?: string;
   bookingCode: string;
   roomType: string;
   checkInDate: string;
@@ -26,6 +27,7 @@ interface TboHotelSelection {
   searchInitiatedAt?: string;
   passengers: TboHotelPassenger[];
   occupancies?: TboRoomOccupancy[];
+  prebookContext?: Record<string, any>;
 }
 
 interface TboRoomOccupancy {
@@ -160,7 +162,7 @@ export class TboHotelBookingService {
     selection: TboHotelSelection,
   ): Promise<PreBookResponse> {
     try {
-      this.validateSelection(selection);
+      this.validateSelection(selection, true);
       this.logger.log(
         `🏨 PreBook: Hotel ${selection.hotelCode}, Booking Code: ${selection.bookingCode}`,
       );
@@ -540,6 +542,7 @@ export class TboHotelBookingService {
               bookedAmount: selection.netAmount,
               cancellationPolicy: preBookMeta?.cancellationPolicyText ?? null,
               rateConditions: preBookMeta?.rateConditions || null,
+              amenities: preBookMeta?.amenities || null,
               roomPromotions: preBookMeta?.roomPromotions || null,
               mandatorySupplements: preBookMeta?.mandatorySupplements || null,
               // ✅ NEW: normalized supplements for display/booking
@@ -591,9 +594,43 @@ export class TboHotelBookingService {
       try {
         this.validateSelection(selection);
 
-        // Step 1: PreBook the hotel
-        const preBookResponse = await this.preBookHotel(selection);
-        const preBookMeta = this.extractPreBookMeta(preBookResponse, selection);
+        let preBookResponse: PreBookResponse;
+        let preBookMeta: any;
+
+        if (selection.prebookContext?.bookingCode) {
+          preBookResponse = {
+            Status: selection.prebookContext.rawStatus || { Code: 200, Description: 'Successful' },
+            TraceId: selection.prebookContext.traceId || '',
+            BookingCode: selection.prebookContext.bookingCode,
+            HotelCode: selection.hotelCode,
+          };
+          preBookMeta = {
+            finalPrice:
+              selection.prebookContext.finalPrice !== null &&
+              selection.prebookContext.finalPrice !== undefined
+                ? Number(selection.prebookContext.finalPrice)
+                : null,
+            originalSearchPrice: Number(selection.netAmount),
+            isPriceChanged: Boolean(selection.prebookContext.isPriceChanged),
+            isCancellationPolicyChanged: Boolean(selection.prebookContext.isCancellationPolicyChanged),
+            cancellationPolicy: this.normalizeToArray(selection.prebookContext.cancellationPolicy),
+            cancellationPolicyText: selection.prebookContext.cancellationPoliciesText || null,
+            rateConditions: this.normalizeToArray(selection.prebookContext.rateConditions),
+            roomPromotions: this.normalizeToArray(selection.prebookContext.roomPromotion),
+            inclusions: this.normalizeToArray(selection.prebookContext.inclusions),
+            amenities: this.normalizeToArray(selection.prebookContext.amenities),
+            mandatorySupplements: this.normalizeToArray(selection.prebookContext.mandatorySupplements),
+            supplements: this.normalizeToArray(selection.prebookContext.supplements),
+            normalizedSupplements: this.normalizeToArray(selection.prebookContext.normalizedSupplements),
+            rawStatus: selection.prebookContext.rawStatus,
+          };
+          this.logger.log(
+            `↪ Using confirm-popup prebook context for hotel ${selection.hotelCode}; skipping duplicate provider prebook`,
+          );
+        } else {
+          preBookResponse = await this.preBookHotel(selection);
+          preBookMeta = this.extractPreBookMeta(preBookResponse, selection);
+        }
 
         const priceChangedAtPreBook =
           preBookMeta?.finalPrice !== null &&
@@ -605,10 +642,20 @@ export class TboHotelBookingService {
           Boolean(preBookMeta?.isPriceChanged) ||
           Boolean(preBookMeta?.isCancellationPolicyChanged);
 
+        const bookingSelection: TboHotelSelection = {
+          ...selection,
+          netAmount:
+            preBookMeta?.finalPrice !== null &&
+            preBookMeta?.finalPrice !== undefined &&
+            Number(preBookMeta.finalPrice) > 0
+              ? Number(preBookMeta.finalPrice)
+              : Number(selection.netAmount),
+        };
+
         // Step 2: Book the hotel with guest details
         const bookResponse = await this.bookHotel(
           preBookResponse,
-          selection,
+          bookingSelection,
           endUserIp,
         );
 
@@ -621,7 +668,7 @@ export class TboHotelBookingService {
           bookResponse,
           preBookResponse,
           preBookMeta,
-          selection,
+          bookingSelection,
           userId,
         );
 
@@ -743,7 +790,7 @@ export class TboHotelBookingService {
       .filter((age) => !Number.isNaN(age));
   }
 
-  private validateSelection(selection: TboHotelSelection): void {
+  private validateSelection(selection: TboHotelSelection, skipPassengerValidation = false): void {
     const bookingCode = String(selection.bookingCode || '').trim();
     if (!bookingCode || !bookingCode.includes('!TB!')) {
       throw new BadRequestException(
@@ -763,11 +810,11 @@ export class TboHotelBookingService {
       );
     }
 
-    if (!selection.passengers || selection.passengers.length === 0) {
+    if (!skipPassengerValidation && (!selection.passengers || selection.passengers.length === 0)) {
       throw new BadRequestException('At least one passenger is required for booking');
     }
 
-    for (let i = 0; i < selection.passengers.length; i++) {
+    for (let i = 0; i < (selection.passengers || []).length; i++) {
       const passenger = selection.passengers[i];
       if (!passenger.title) {
         throw new BadRequestException(`Passenger title is required at index ${i}`);
@@ -914,18 +961,50 @@ export class TboHotelBookingService {
       ...normalizedSupplements,
     ];
 
+    const hotelLevelResults = this.normalizeToArray(preBookResponse?.HotelResult);
+
     const roomPromotions = rawRoomDetails
       .flatMap((room: any) => this.normalizeToArray(room?.RoomPromotion ?? room?.RoomPromotions))
       .filter(Boolean);
-    const rateConditions = rawRoomDetails
-      .flatMap((room: any) => this.normalizeToArray(room?.RateConditions))
-      .filter(Boolean);
+    const rateConditions = [
+      ...rawRoomDetails.flatMap((room: any) =>
+        this.normalizeToArray(room?.RateConditions ?? room?.rateConditions),
+      ),
+      ...hotelLevelResults.flatMap((hotelResult: any) =>
+        this.normalizeToArray(
+          hotelResult?.RateConditions ??
+            hotelResult?.rateConditions ??
+            hotelResult?.RateCondition ??
+            hotelResult?.rateCondition,
+        ),
+      ),
+    ].filter(Boolean);
     const cancellationPolicies = rawRoomDetails
       .flatMap((room: any) => this.normalizeToArray(room?.CancelPolicies ?? room?.CancellationPolicy))
       .filter(Boolean);
-    const inclusions = rawRoomDetails
-      .flatMap((room: any) => this.normalizeToArray(room?.Inclusion))
-      .filter(Boolean);
+    const inclusions = [
+      ...rawRoomDetails.flatMap((room: any) =>
+        this.normalizeToArray(room?.Inclusion ?? room?.Inclusions ?? room?.inclusion ?? room?.inclusions),
+      ),
+      ...hotelLevelResults.flatMap((hotelResult: any) =>
+        this.normalizeToArray(
+          hotelResult?.Inclusion ??
+            hotelResult?.Inclusions ??
+            hotelResult?.inclusion ??
+            hotelResult?.inclusions,
+        ),
+      ),
+    ].filter(Boolean);
+    const amenities = [
+      ...rawRoomDetails.flatMap((room: any) =>
+        this.normalizeToArray(room?.Amenities ?? room?.amenities),
+      ),
+      ...hotelLevelResults.flatMap((hotelResult: any) =>
+        this.normalizeToArray(
+          hotelResult?.Amenities ?? hotelResult?.amenities ?? hotelResult?.Amenity,
+        ),
+      ),
+    ].filter(Boolean);
 
     const candidatePrices = [
       preBookResponse?.NetAmount,
@@ -946,6 +1025,7 @@ export class TboHotelBookingService {
       rateConditions,
       roomPromotions,
       inclusions,
+      amenities,
       // ✅ Return both raw and normalized supplements
       mandatorySupplements: rawMandatorySupplements, // Raw mandatory supplements (kept for backward compat)
       supplements: rawSupplements, // Raw supplements (if present)

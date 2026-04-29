@@ -1,14 +1,14 @@
 Case: Case 1 - Domestic (Room 1 – Adult 1)
 Case ID: 1
-Date Range: 2026-04-24 -> 2026-04-25
+Date Range: 2026-06-03 -> 2026-06-04
 
 Runtime Values
-- TokenId: 5c82186c-80be-4085-a0c7-48d4b36001e6
-- TraceId: 9803ea4d-2429-11f1-aada-ba9013e35c3f
-- BookingCode: 1088736!TB!1!TB!9803ea4d-2429-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!
-- BookingId: 2096850
-- ConfirmationNo: 7384878152184
-- NetAmount: 5984.03
+- TokenId: 816fc7e0-e2fb-4a33-9860-d00773d767e0
+- TraceId: e4290e71-434d-11f1-855f-720abae076dd
+- BookingCode: 1088749!TB!1!TB!e4290e71-434d-11f1-855f-720abae076dd!TB!N!TB!AFF!
+- BookingId: 2117421
+- ConfirmationNo: 7449623145642
+- NetAmount: 6459.33
 - AgencyId: 57955
 - GuestNationality: IN
 - PaymentMode: Limit

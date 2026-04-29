@@ -102,6 +102,21 @@ export interface ItineraryHotelRoomDto {
   roomId: number;
   bookingCode?: string;
   availableRoomTypes: RoomTypeOptionDto[];
+  mealPlan?: string;
+  numberOfNights?: number;
+  totalPrice?: number;
+  currency?: string;
+  facilities?: string[];
+  amenities?: string[];
+  inclusions?: string[];
+  rateConditions?: string[];
+  supplementSummary?: {
+    hasSupplements: boolean;
+    supplementCount: number;
+    atPropertyChargeCount: number;
+    requiresReview: boolean;
+  };
+  mandatorySupplements?: string[];
 
   // Pricing & tax
   pricePerNight: number;

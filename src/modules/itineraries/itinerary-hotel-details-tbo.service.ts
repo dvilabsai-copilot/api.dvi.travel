@@ -426,8 +426,44 @@ export class ItineraryHotelDetailsTboService {
     return null;
   }
 
+  private normalizeGuestNationality(value: any): string | null {
+    const normalized = String(value ?? '').trim().toUpperCase();
+    if (!normalized) return null;
+
+    if (/^[A-Z]{2}$/.test(normalized)) {
+      return normalized;
+    }
+
+    // Common aliases from UI/integrations.
+    const aliases: Record<string, string> = {
+      UAE: 'AE',
+      'UNITED ARAB EMIRATES': 'AE',
+    };
+
+    return aliases[normalized] ?? null;
+  }
+
+  private resolveLegacyNationalityId(nationalityId: number): string | null {
+    // Some historical quotes store country IDs that no longer exist in dvi_countries.
+    // Keep this map minimal and only for verified legacy IDs.
+    const legacyMap: Record<number, string> = {
+      284: 'AE',
+    };
+
+    return legacyMap[nationalityId] ?? null;
+  }
+
   private async resolveGuestNationality(plan: any): Promise<string> {
-    const nationalityId = Number((plan as any)?.nationality ?? 0);
+    const rawNationality = (plan as any)?.nationality;
+    const directIso = this.normalizeGuestNationality(rawNationality);
+    const nationalityId = Number(rawNationality ?? 0);
+
+    if (directIso && !Number.isFinite(nationalityId)) {
+      this.logger.log(
+        `✅ Resolved guestNationality directly from plan nationality value: ${rawNationality} -> ${directIso}`,
+      );
+      return directIso;
+    }
 
     // Prefer master-country mapping from DB (as requested).
     if (nationalityId > 0) {
@@ -449,6 +485,14 @@ export class ItineraryHotelDetailsTboService {
             `✅ Resolved guestNationality from country table: nationality=${nationalityId} -> ${iso2}`,
           );
           return iso2;
+        }
+
+        const legacyIso = this.resolveLegacyNationalityId(nationalityId);
+        if (legacyIso) {
+          this.logger.warn(
+            `⚠️ Resolved guestNationality using verified legacy nationality mapping: nationality=${nationalityId} -> ${legacyIso}`,
+          );
+          return legacyIso;
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -2742,6 +2786,21 @@ export class ItineraryHotelDetailsTboService {
         const firstRoomType = hotel.roomTypes?.[0];
         const actualRoomTypeId = firstRoomType?.roomTypeId || 1;
         const actualRoomTypeName = firstRoomType?.roomName || 'Standard Room';
+        const amenities = Array.isArray(hotel.amenities)
+          ? hotel.amenities.map((item: any) => String(item || '').trim()).filter(Boolean)
+          : [];
+        const inclusions = Array.isArray(hotel.inclusions)
+          ? hotel.inclusions.map((item: any) => String(item || '').trim()).filter(Boolean)
+          : [];
+        const rateConditions = (Array.isArray(hotel.rateConditions) ? hotel.rateConditions : [])
+          .map((item: any) => String(item || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim())
+          .filter(Boolean);
+        const facilities = Array.isArray(hotel.facilities)
+          ? hotel.facilities.map((item: any) => String(item || '').trim()).filter(Boolean)
+          : [];
+        const mandatorySupplements = (Array.isArray(firstRoomType?.supplements) ? firstRoomType.supplements : [])
+          .map((supplement: any) => String(supplement?.description || supplement?.type || '').trim())
+          .filter(Boolean);
 
         roomDetailsList.push({
           itineraryPlanId: planId,
@@ -2765,6 +2824,12 @@ export class ItineraryHotelDetailsTboService {
           totalPrice: Number(hotel.price || 0) * noOfNights,
           currency: hotel.currency || 'INR',
           mealPlan: hotel.mealPlan || 'Not Specified',
+          facilities,
+          amenities,
+          inclusions,
+          rateConditions,
+          supplementSummary: hotel.supplementSummary || undefined,
+          mandatorySupplements,
         } as any);
     });
 
