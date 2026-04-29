@@ -113,6 +113,32 @@ interface TboCancellationBookingRow {
   api_response: Record<string, any> | null;
 }
 
+const normalizeMealTypeLabel = (value: any, inclusionFallbacks: any[] = []): string | null => {
+  const raw = String(value ?? '').trim();
+  const fallbackText = inclusionFallbacks
+    .map((item) => String(item ?? '').trim())
+    .filter(Boolean)
+    .join(' ')
+    .toUpperCase();
+  const haystack = `${raw} ${fallbackText}`.trim().toUpperCase();
+
+  if (!haystack) return null;
+  if (raw === '1' || haystack.includes('BREAKFAST') || haystack.includes('CONTINENTAL PLAN')) return 'Breakfast';
+  if (raw === '2' || haystack.includes('LUNCH')) return 'Lunch';
+  if (raw === '3' || haystack.includes('DINNER')) return 'Dinner';
+  if (haystack.includes('FULL BOARD') || haystack.includes('ALL MEALS') || haystack.includes('AMERICAN PLAN')) {
+    return 'Breakfast, Lunch, Dinner';
+  }
+  if (haystack.includes('HALF BOARD') || haystack.includes('MODIFIED AMERICAN PLAN')) {
+    return 'Breakfast + 1 Meal';
+  }
+  if (haystack.includes('ROOM ONLY') || haystack.includes('EUROPEAN PLAN') || haystack.includes('NO MEAL')) {
+    return 'Room Only';
+  }
+
+  return raw || null;
+};
+
 @Injectable()
 export class TboHotelBookingService {
   private static readonly MAX_ROOMS = 6;
@@ -619,6 +645,7 @@ export class TboHotelBookingService {
             roomPromotions: this.normalizeToArray(selection.prebookContext.roomPromotion),
             inclusions: this.normalizeToArray(selection.prebookContext.inclusions),
             amenities: this.normalizeToArray(selection.prebookContext.amenities),
+            mealType: selection.prebookContext.mealType || null,
             mandatorySupplements: this.normalizeToArray(selection.prebookContext.mandatorySupplements),
             supplements: this.normalizeToArray(selection.prebookContext.supplements),
             normalizedSupplements: this.normalizeToArray(selection.prebookContext.normalizedSupplements),
@@ -1005,6 +1032,24 @@ export class TboHotelBookingService {
         ),
       ),
     ].filter(Boolean);
+    const mealTypeCandidates = [
+      ...rawRoomDetails.flatMap((room: any) =>
+        this.normalizeToArray(
+          room?.MealTypeName ?? room?.MealType ?? room?.mealTypeName ?? room?.mealType ?? room?.BoardBasis ?? room?.boardBasis,
+        ),
+      ),
+      ...hotelLevelResults.flatMap((hotelResult: any) =>
+        this.normalizeToArray(
+          hotelResult?.MealTypeName ??
+            hotelResult?.MealType ??
+            hotelResult?.mealTypeName ??
+            hotelResult?.mealType ??
+            hotelResult?.BoardBasis ??
+            hotelResult?.boardBasis,
+        ),
+      ),
+    ].filter(Boolean);
+    const mealType = normalizeMealTypeLabel(mealTypeCandidates[0], inclusions);
 
     const candidatePrices = [
       preBookResponse?.NetAmount,
@@ -1026,6 +1071,7 @@ export class TboHotelBookingService {
       roomPromotions,
       inclusions,
       amenities,
+      mealType,
       // ✅ Return both raw and normalized supplements
       mandatorySupplements: rawMandatorySupplements, // Raw mandatory supplements (kept for backward compat)
       supplements: rawSupplements, // Raw supplements (if present)

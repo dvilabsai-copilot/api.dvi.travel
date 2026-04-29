@@ -61,6 +61,32 @@ export class ItinerariesService {
     return [];
   }
 
+  private normalizeMealTypeLabel(value: any, inclusionFallbacks: any[] = []): string | null {
+    const raw = String(value ?? '').trim();
+    const fallbackText = inclusionFallbacks
+      .map((item) => String(item ?? '').trim())
+      .filter(Boolean)
+      .join(' ')
+      .toUpperCase();
+    const haystack = `${raw} ${fallbackText}`.trim().toUpperCase();
+
+    if (!haystack) return null;
+    if (raw === '1' || haystack.includes('BREAKFAST') || haystack.includes('CONTINENTAL PLAN')) return 'Breakfast';
+    if (raw === '2' || haystack.includes('LUNCH')) return 'Lunch';
+    if (raw === '3' || haystack.includes('DINNER')) return 'Dinner';
+    if (haystack.includes('FULL BOARD') || haystack.includes('ALL MEALS') || haystack.includes('AMERICAN PLAN')) {
+      return 'Breakfast, Lunch, Dinner';
+    }
+    if (haystack.includes('HALF BOARD') || haystack.includes('MODIFIED AMERICAN PLAN')) {
+      return 'Breakfast + 1 Meal';
+    }
+    if (haystack.includes('ROOM ONLY') || haystack.includes('EUROPEAN PLAN') || haystack.includes('NO MEAL')) {
+      return 'Room Only';
+    }
+
+    return raw || null;
+  }
+
   async createPlan(dto: CreateItineraryDto, req: any, shouldOptimizeRoute: boolean = false) {
     const u: any = (req as any).user ?? {};
     const userId = Number(u.userId ?? 1);
@@ -5095,6 +5121,24 @@ export class ItinerariesService {
           ),
         ),
       ].filter(Boolean);
+      const mealTypeCandidates = [
+        ...rawRoomDetails.flatMap((room: any) =>
+          this.normalizeToArray(
+            room?.MealTypeName ?? room?.MealType ?? room?.mealTypeName ?? room?.mealType ?? room?.BoardBasis ?? room?.boardBasis,
+          ),
+        ),
+        ...hotelLevelResults.flatMap((hotelResult: any) =>
+          this.normalizeToArray(
+            hotelResult?.MealTypeName ??
+              hotelResult?.MealType ??
+              hotelResult?.mealTypeName ??
+              hotelResult?.mealType ??
+              hotelResult?.BoardBasis ??
+              hotelResult?.boardBasis,
+          ),
+        ),
+      ].filter(Boolean);
+      const mealType = this.normalizeMealTypeLabel(mealTypeCandidates[0], inclusions);
 
       const candidatePrices = [
         prebookResponse?.NetAmount,
@@ -5123,6 +5167,7 @@ export class ItinerariesService {
         rateConditions,
         inclusions,
         amenities,
+        mealType,
         mandatorySupplements,
         // ✅ NEW: include normalized supplements
         normalizedSupplements: allNormalizedSupplements,
@@ -5142,6 +5187,7 @@ export class ItinerariesService {
           rateConditions,
           inclusions,
           amenities,
+          mealType,
           mandatorySupplements,
           normalizedSupplements: allNormalizedSupplements,
           supplements: rawSupplements,
