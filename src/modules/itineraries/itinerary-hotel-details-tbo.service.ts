@@ -373,6 +373,14 @@ export class ItineraryHotelDetailsTboService {
       ? Number(itineraryRouteId)
       : undefined;
 
+    // When callers pass only page/pageSize (without group/route filters),
+    // keep the full hotel matrix so tabs can render all groups and all days.
+    // Legacy clients that need paginated rows should pass groupType and/or itineraryRouteId.
+    if (!(normalizedGroupType && normalizedGroupType >= 1 && normalizedGroupType <= 4) &&
+        !(normalizedRouteId && normalizedRouteId > 0)) {
+      return response;
+    }
+
     let filteredHotels = [...(response.hotels || [])];
     if (normalizedGroupType && normalizedGroupType >= 1 && normalizedGroupType <= 4) {
       filteredHotels = filteredHotels.filter((h) => Number(h.groupType) === normalizedGroupType);
