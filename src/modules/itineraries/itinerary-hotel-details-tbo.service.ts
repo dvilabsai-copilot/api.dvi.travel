@@ -192,31 +192,13 @@ export class ItineraryHotelDetailsTboService {
    */
   async getHotelDetailsByQuoteIdFromTbo(
     quoteId: string,
-    page?: number,
-    pageSize?: number,
-    groupType?: number,
-    itineraryRouteId?: number,
   ): Promise<ItineraryHotelDetailsResponseDto> {
     const startTime = Date.now();
     this.logger.log(`\n📡 TBO HOTEL PACKAGES: Fetching dynamic packages for quote: ${quoteId}`);
 
-    const hasCompatibilityFilters =
-      page !== undefined ||
-      pageSize !== undefined ||
-      groupType !== undefined ||
-      itineraryRouteId !== undefined;
-
     const cached = this.getCachedHotelDetails(quoteId);
     if (cached) {
-      return hasCompatibilityFilters
-        ? this.applyCompatibilityFilters(
-            cached,
-            page,
-            pageSize,
-            groupType,
-            itineraryRouteId,
-          )
-        : cached;
+      return cached;
     }
 
     // Step 1: Get itinerary plan
@@ -309,7 +291,7 @@ export class ItineraryHotelDetailsTboService {
       const hobseCount = hotels.filter(h => h.provider === 'hobse').length;
       this.logger.log(`   Route ${routeId}: ${hotels.length} hotels (TBO: ${tboCount}, HOBSE: ${hobseCount})`);
       if (hotels.length > 0) {
-     //   this.logger.log(`      - ${hotels.map(h => `${h.hotelName} (${h.provider})`).join(', ')}`);
+        this.logger.log(`      - ${hotels.map(h => `${h.hotelName} (${h.provider})`).join(', ')}`);
       }
     });
     
@@ -317,7 +299,7 @@ export class ItineraryHotelDetailsTboService {
       this.logger.warn(`\n❌ WARNING: ALL ROUTES RETURNED ZERO HOTELS!\n`);
     }
     
-   // this.logger.log(`🏨 Hotels by Route: ${JSON.stringify(Object.fromEntries(hotelsByRoute))}`);
+    this.logger.log(`🏨 Hotels by Route: ${JSON.stringify(Object.fromEntries(hotelsByRoute))}`);
 
     // Step 4: Generate 4 price tier packages
     const packages = this.generatePricePackages(hotelsByRoute, routes);
@@ -338,71 +320,7 @@ export class ItineraryHotelDetailsTboService {
 
     this.setCachedHotelDetails(quoteId, response);
 
-    return hasCompatibilityFilters
-      ? this.applyCompatibilityFilters(
-          response,
-          page,
-          pageSize,
-          groupType,
-          itineraryRouteId,
-        )
-      : response;
-  }
-
-  // Backward-compatible alias used by older controllers/callers.
-  clearHotelCacheForQuote(quoteId: string): void {
-    this.clearCacheForQuote(quoteId);
-  }
-
-  private applyCompatibilityFilters(
-    response: ItineraryHotelDetailsResponseDto,
-    page?: number,
-    pageSize?: number,
-    groupType?: number,
-    itineraryRouteId?: number,
-  ): ItineraryHotelDetailsResponseDto {
-    const normalizedPage = Number.isFinite(Number(page)) ? Math.max(1, Number(page)) : 1;
-    const normalizedPageSize = Number.isFinite(Number(pageSize))
-      ? Math.min(100, Math.max(1, Number(pageSize)))
-      : 20;
-
-    const normalizedGroupType = Number.isFinite(Number(groupType))
-      ? Number(groupType)
-      : undefined;
-    const normalizedRouteId = Number.isFinite(Number(itineraryRouteId))
-      ? Number(itineraryRouteId)
-      : undefined;
-
-    let filteredHotels = [...(response.hotels || [])];
-    if (normalizedGroupType && normalizedGroupType >= 1 && normalizedGroupType <= 4) {
-      filteredHotels = filteredHotels.filter((h) => Number(h.groupType) === normalizedGroupType);
-    }
-    if (normalizedRouteId && normalizedRouteId > 0) {
-      filteredHotels = filteredHotels.filter((h) => Number(h.itineraryRouteId) === normalizedRouteId);
-    }
-
-    const total = filteredHotels.length;
-    const startIndex = (normalizedPage - 1) * normalizedPageSize;
-    const pagedHotels = filteredHotels.slice(startIndex, startIndex + normalizedPageSize);
-
-    const derivedGroupType =
-      normalizedGroupType && normalizedGroupType >= 1 && normalizedGroupType <= 4
-        ? normalizedGroupType
-        : 0;
-    const paginationKey = derivedGroupType || 0;
-
-    return {
-      ...response,
-      hotels: pagedHotels,
-      pagination: {
-        [paginationKey]: {
-          page: normalizedPage,
-          pageSize: normalizedPageSize,
-          total,
-          hasMore: startIndex + pagedHotels.length < total,
-        },
-      },
-    };
+    return response;
   }
 
   /**
@@ -721,7 +639,7 @@ export class ItineraryHotelDetailsTboService {
     if (hotels && hotels.length > 0) {
       this.logger.log(`   📋 TBO Hotels for stay block (${block.routeIds.join(',')}):`);
       hotels.forEach((h, idx) => {
-      //  this.logger.log(`      ${idx + 1}. ${h.hotelName} (${h.provider}) - ₹${h.price}`);
+        this.logger.log(`      ${idx + 1}. ${h.hotelName} (${h.provider}) - ₹${h.price}`);
       });
     } else {
       this.logger.log(`   ⚠️  WARNING: TBO search returned ZERO hotels for stay block (${block.routeIds.join(',')})!`);
@@ -960,7 +878,7 @@ export class ItineraryHotelDetailsTboService {
             groupType = Math.floor((i / numHotels) * 4) + 1;
             groupType = Math.min(groupType, 4);
           }
-       //   this.logger.debug(`      "${h.hotelName}" (₹${h.price}) -> Group ${groupType}`);
+          this.logger.debug(`      "${h.hotelName}" (₹${h.price}) -> Group ${groupType}`);
         });
       }
     }
