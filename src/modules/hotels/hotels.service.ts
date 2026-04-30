@@ -5,11 +5,6 @@ import { Prisma } from '@prisma/client';
 import { PaginationQueryDto } from './dto/pagination.dto';
 import { CreateHotelDto } from './dto/create-hotel.dto';
 import { UpdateHotelDto } from './dto/update-hotel.dto';
-import {
-  CANONICAL_HOTEL_RATE_PLANS,
-  getCanonicalHotelRatePlanDefinition,
-  inferCanonicalHotelRatePlanCode,
-} from './hotel-rate-plans';
 import { UiRoomItemDto as CreateRoomDto } from './dto/create-room.dto';
 import { CreateAmenityDto } from './dto/create-amenity.dto';
 import { CreatePriceBookDto } from './dto/create-pricebook.dto';
@@ -20,29 +15,6 @@ import * as path from 'path';
 @Injectable()
 export class HotelsService {
   constructor(private prisma: PrismaService) {}
-
-  private readonly axisroomsOccupancyPriority = [
-    'SINGLE',
-    'DOUBLE',
-    'TRIPLE',
-    'QUAD',
-    'PENTA',
-    'HEXA',
-    'HEPTA',
-    'OCTA',
-    'NONA',
-    'DECA',
-    'EXTRABED',
-    'EXTRAADULT',
-    'EXTRACHILD',
-    'EXTRAADULT2',
-    'EXTRACHILD2',
-    'EXTRAADULT3',
-    'EXTRACHILD3',
-    'EXTRAINFANT',
-    'CHILD_WITH_BED',
-    'CHILD_WITHOUT_BED',
-  ] as const;
 
   private readonly basicInfoRequiredKeys = [
     'hotel_name',
@@ -1143,928 +1115,6 @@ export class HotelsService {
     } as any);
   }
 
-  private monthCandidatesForDate(d: Date): string[] {
-    const monthNum = d.getMonth() + 1;
-    const longName = d.toLocaleString('en-US', { month: 'long' });
-    return [longName, String(monthNum).padStart(2, '0'), String(monthNum)];
-  }
-
-  private async ensureCanonicalHotelRatePlans(tx: any = this.prisma) {
-    for (const def of CANONICAL_HOTEL_RATE_PLANS) {
-      await tx.dvi_hotel_rate_plan_master.upsert({
-        where: { rate_plan_code: def.code },
-        update: {
-          default_rateplan_id: def.defaultRateplanId,
-          rate_plan_name: def.name,
-          description: def.description,
-          includes_breakfast: def.includesBreakfast,
-          includes_lunch: def.includesLunch,
-          includes_dinner: def.includesDinner,
-          sort_order: def.sortOrder,
-          status: 1,
-          deleted: 0,
-          updatedon: new Date(),
-        },
-        create: {
-          rate_plan_code: def.code,
-          default_rateplan_id: def.defaultRateplanId,
-          rate_plan_name: def.name,
-          description: def.description,
-          includes_breakfast: def.includesBreakfast,
-          includes_lunch: def.includesLunch,
-          includes_dinner: def.includesDinner,
-          sort_order: def.sortOrder,
-          status: 1,
-          deleted: 0,
-          createdon: new Date(),
-          updatedon: new Date(),
-        },
-      });
-    }
-  }
-
-  private orderedOccupancyKeys(occupancyRates: Record<string, number>) {
-    const ordered: string[] = [];
-    for (const key of this.axisroomsOccupancyPriority) {
-      if (Number.isFinite(Number(occupancyRates[key]))) ordered.push(key);
-    }
-    for (const key of Object.keys(occupancyRates)) {
-      if (!ordered.includes(key) && Number.isFinite(Number(occupancyRates[key]))) {
-        ordered.push(key);
-      }
-    }
-    return ordered;
-  }
-
-  private normalizeOccupancyRates(item: any): Record<string, number> {
-    const normalized: Record<string, number> = {};
-    const source = item?.occupancyRates;
-
-    if (source && typeof source === 'object' && !Array.isArray(source)) {
-      for (const [rawKey, rawValue] of Object.entries(source)) {
-        const key = String(rawKey || '').trim().toUpperCase();
-        const value = this.toNumStrict(rawValue);
-        if (key && value !== undefined) normalized[key] = value;
-      }
-    }
-
-    const roomPrice = this.toNumStrict(item?.roomPrice);
-    if (roomPrice !== undefined && normalized.SINGLE === undefined && normalized.DOUBLE === undefined) {
-      normalized.SINGLE = roomPrice;
-    }
-
-    const extraBed = this.toNumStrict(item?.extraBed);
-    if (extraBed !== undefined && normalized.EXTRABED === undefined) {
-      normalized.EXTRABED = extraBed;
-    }
-
-    const childWithBed = this.toNumStrict(item?.childWithBed);
-    if (childWithBed !== undefined) {
-      if (normalized.CHILD_WITH_BED === undefined) normalized.CHILD_WITH_BED = childWithBed;
-      normalized.EXTRACHILD = Math.max(Number(normalized.EXTRACHILD || 0), childWithBed);
-    }
-
-    const childWithoutBed = this.toNumStrict(item?.childWithoutBed);
-    if (childWithoutBed !== undefined) {
-      if (normalized.CHILD_WITHOUT_BED === undefined) normalized.CHILD_WITHOUT_BED = childWithoutBed;
-      normalized.EXTRACHILD = Math.max(Number(normalized.EXTRACHILD || 0), childWithoutBed);
-    }
-
-    return normalized;
-  }
-
-  private projectLegacyRoomRates(occupancyRates: Record<string, number>) {
-    const basePrice = Number.isFinite(Number(occupancyRates.DOUBLE))
-      ? Number(occupancyRates.DOUBLE)
-      : Number.isFinite(Number(occupancyRates.SINGLE))
-      ? Number(occupancyRates.SINGLE)
-      : undefined;
-
-    const extraBed = Number.isFinite(Number(occupancyRates.EXTRABED))
-      ? Number(occupancyRates.EXTRABED)
-      : undefined;
-
-    const childWithBed = Number.isFinite(Number(occupancyRates.CHILD_WITH_BED))
-      ? Number(occupancyRates.CHILD_WITH_BED)
-      : Number.isFinite(Number(occupancyRates.EXTRACHILD))
-      ? Number(occupancyRates.EXTRACHILD)
-      : undefined;
-
-    const childWithoutBed = Number.isFinite(Number(occupancyRates.CHILD_WITHOUT_BED))
-      ? Number(occupancyRates.CHILD_WITHOUT_BED)
-      : Number.isFinite(Number(occupancyRates.EXTRACHILD))
-      ? Number(occupancyRates.EXTRACHILD)
-      : undefined;
-
-    return { basePrice, extraBed, childWithBed, childWithoutBed };
-  }
-
-  async getRatePlans() {
-    await this.ensureCanonicalHotelRatePlans();
-    const rows = await this.prisma.dvi_hotel_rate_plan_master.findMany({
-      where: { deleted: 0, status: 1 } as any,
-      orderBy: [{ sort_order: 'asc' } as any, { hotel_rate_plan_master_id: 'asc' } as any],
-    });
-
-    return rows.map((row: any) => ({
-      ratePlanCode: row.rate_plan_code,
-      defaultRateplanId: row.default_rateplan_id,
-      ratePlanName: row.rate_plan_name,
-      description: row.description,
-      includesBreakfast: Number(row.includes_breakfast || 0),
-      includesLunch: Number(row.includes_lunch || 0),
-      includesDinner: Number(row.includes_dinner || 0),
-      sortOrder: Number(row.sort_order || 0),
-    }));
-  }
-
-  async getRoomRatePlans(hotel_id: number, roomId: number) {
-    const hid = Number(hotel_id);
-    const rid = Number(roomId);
-    if (!Number.isFinite(hid) || hid <= 0 || !Number.isFinite(rid) || rid <= 0) {
-      throw new Error('Invalid hotel_id or roomId');
-    }
-
-    await this.ensureCanonicalHotelRatePlans();
-
-    const [hotel, room, masterPlans] = await Promise.all([
-      this.prisma.dvi_hotel.findFirst({
-        where: { hotel_id: hid } as any,
-        select: { axisrooms_property_id: true } as any,
-      }),
-      this.prisma.dvi_hotel_rooms.findFirst({
-        where: { hotel_id: hid, room_ID: rid, deleted: 0, status: 1 } as any,
-        select: { room_ID: true, room_title: true, room_ref_code: true, room_type_id: true } as any,
-      }),
-      this.prisma.dvi_hotel_rate_plan_master.findMany({
-        where: { deleted: 0, status: 1 } as any,
-        orderBy: [{ sort_order: 'asc' } as any, { hotel_rate_plan_master_id: 'asc' } as any],
-      }),
-    ]);
-
-    if (!room) {
-      return {
-        roomId: rid,
-        axisroomsRoomId: null,
-        items: [],
-      };
-    }
-
-    const axisroomsRoomId = this.toStr(room.room_ref_code);
-    const propertyId = this.toStr(hotel?.axisrooms_property_id);
-
-    const [savedPlans, occupancyRates] = await Promise.all([
-      this.prisma.dvi_hotel_room_rate_plan.findMany({
-        where: { hotel_id: hid, room_id: rid, deleted: 0, status: 1 } as any,
-        orderBy: [{ hotel_room_rate_plan_id: 'asc' } as any],
-      }),
-      this.prisma.dvi_hotel_occupancy_rate.findMany({
-        where: { hotel_id: hid, room_id: rid } as any,
-        orderBy: [{ start_date: 'asc' } as any],
-      }),
-    ]);
-
-    const savedByRateplanId = new Map<string, any>();
-    for (const row of savedPlans as any[]) savedByRateplanId.set(String(row.rateplan_id), row);
-
-    // occupancy column on dvi_hotel_room_rate_plan is the canonical list of types for the rate plan
-    const axisroomsByRateplanId = savedByRateplanId; // re-use saved plans — they now carry occupancy JSON
-
-    const statsByRateplanId = new Map<string, any>();
-    for (const row of occupancyRates as any[]) {
-      const rateplanId = String(row.rateplan_id || '');
-      if (!rateplanId) continue;
-      const stats = statsByRateplanId.get(rateplanId) || {
-        occupancy: new Set<string>(),
-        startDate: null,
-        endDate: null,
-      };
-      const startDate = new Date(row.start_date).toISOString().slice(0, 10);
-      const endDate = new Date(row.end_date).toISOString().slice(0, 10);
-      if (!stats.startDate || startDate < stats.startDate) stats.startDate = startDate;
-      if (!stats.endDate || endDate > stats.endDate) stats.endDate = endDate;
-      const rates = row.occupancy_rates && typeof row.occupancy_rates === 'object'
-        ? row.occupancy_rates
-        : {};
-      for (const key of Object.keys(rates)) stats.occupancy.add(key);
-      statsByRateplanId.set(rateplanId, stats);
-    }
-
-    const items: any[] = [];
-    const seenRateplanIds = new Set<string>();
-
-    for (const plan of masterPlans as any[]) {
-      const canonicalDef = getCanonicalHotelRatePlanDefinition(plan.rate_plan_code);
-      const defaultRateplanId = String(plan.default_rateplan_id || canonicalDef?.defaultRateplanId || '');
-      const saved = savedByRateplanId.get(defaultRateplanId);
-      const external = axisroomsByRateplanId.get(defaultRateplanId);
-      const stats = statsByRateplanId.get(defaultRateplanId);
-      const occupancy = Array.from(
-        new Set<string>([
-          ...(Array.isArray(saved?.occupancy)
-            ? saved.occupancy.filter((item: unknown): item is string => typeof item === 'string')
-            : []),
-          ...(stats ? Array.from(stats.occupancy) : []),
-        ]),
-      );
-
-      items.push({
-        ratePlanCode: plan.rate_plan_code,
-        rateplanId: defaultRateplanId,
-        ratePlanName: saved?.rateplan_name || plan.rate_plan_name,
-        description: saved?.meal_plan_description || plan.description,
-        includesBreakfast: Number(plan.includes_breakfast || 0),
-        includesLunch: Number(plan.includes_lunch || 0),
-        includesDinner: Number(plan.includes_dinner || 0),
-        occupancy,
-        validity: stats ? { startDate: stats.startDate, endDate: stats.endDate } : null,
-        source: saved || external ? 'saved' : 'master',
-        isFallback: false,
-      });
-      seenRateplanIds.add(defaultRateplanId);
-    }
-
-    return {
-      roomId: Number(room.room_ID),
-      axisroomsRoomId,
-      roomName: this.toStr(room.room_title) || 'Room',
-      items,
-    };
-  }
-
-  private dayPrice(row: any, day: number): number {
-    const key = `day_${day}`;
-    const raw = row?.[key];
-    const n = Number(raw);
-    return Number.isFinite(n) ? n : 0;
-  }
-
-  private normalizeIsoQueryDate(date: Date): Date {
-    return new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  }
-
-  private expandDateRange(startDate: Date, endDate: Date): Date[] {
-    const start = this.normalizeIsoQueryDate(startDate);
-    const end = this.normalizeIsoQueryDate(endDate);
-
-    if (end < start) {
-      throw new BadRequestException('endDate must be greater than or equal to startDate');
-    }
-
-    const dates: Date[] = [];
-    for (let cursor = new Date(start); cursor <= end; cursor.setUTCDate(cursor.getUTCDate() + 1)) {
-      dates.push(new Date(cursor));
-    }
-    return dates;
-  }
-
-  private toIsoDay(date: Date): string {
-    return date.toISOString().slice(0, 10);
-  }
-
-  private getDayColumnValue(row: any, day: number) {
-    const key = `day_${day}`;
-    return row?.[key];
-  }
-
-  async getPricebookRangeView(
-    hotel_id: number,
-    startDate: Date,
-    endDate: Date,
-    options?: { roomId?: number; rateplanId?: string },
-  ) {
-    const id = Number(hotel_id);
-    const roomId = options?.roomId ? Number(options.roomId) : undefined;
-    const rateplanId = this.toStr(options?.rateplanId);
-
-    if (!Number.isFinite(id) || id <= 0) {
-      throw new BadRequestException('Invalid hotel_id');
-    }
-    if (!rateplanId) {
-      throw new BadRequestException('rateplanId is required');
-    }
-    if (roomId !== undefined && (!Number.isFinite(roomId) || roomId <= 0)) {
-      throw new BadRequestException('Invalid roomId');
-    }
-
-    const days = this.expandDateRange(startDate, endDate);
-    const dateKeys = days.map((date) => this.toIsoDay(date));
-    const occupancyOrder = this.axisroomsOccupancyPriority.filter(
-      (key) => key !== 'CHILD_WITH_BED' && key !== 'CHILD_WITHOUT_BED',
-    );
-
-    const hotel = await this.prisma.dvi_hotel.findFirst({
-      where: { hotel_id: id } as any,
-      select: { axisrooms_property_id: true } as any,
-    });
-
-    const roomWhere: any = {
-      hotel_id: id,
-      deleted: 0,
-      status: 1,
-    };
-    if (roomId !== undefined) roomWhere.room_ID = roomId;
-
-    const roomRows = await this.prisma.dvi_hotel_rooms.findMany({
-      where: roomWhere,
-      select: {
-        room_ID: true,
-        room_title: true,
-        room_type_id: true,
-        room_ref_code: true,
-      } as any,
-      orderBy: { room_ID: 'asc' } as any,
-    });
-
-    if (roomRows.length === 0) {
-      return { dates: dateKeys, rooms: [], occupancies: [] };
-    }
-
-    const roomTypeIds = Array.from(
-      new Set(roomRows.map((row) => Number(row.room_type_id)).filter((value) => Number.isFinite(value) && value > 0)),
-    );
-
-    const roomTypes = roomTypeIds.length
-      ? await this.prisma.dvi_hotel_roomtype.findMany({
-          where: { room_type_id: { in: roomTypeIds } } as any,
-          select: { room_type_id: true, room_type_title: true } as any,
-        })
-      : [];
-
-    const roomTypeById = new Map<number, string>();
-    for (const roomType of roomTypes) {
-      roomTypeById.set(Number(roomType.room_type_id), this.toStr(roomType.room_type_title) || 'N/A');
-    }
-
-    const propertyId = this.toStr(hotel?.axisrooms_property_id);
-    const roomRefCodes = roomRows
-      .map((row) => this.toStr(row.room_ref_code))
-      .filter((value): value is string => Boolean(value));
-
-    const roomIds = roomRows.map((row) => Number((row as any).room_ID)).filter((id) => id > 0);
-
-    const rateRows = roomIds.length
-      ? await this.prisma.dvi_hotel_occupancy_rate.findMany({
-          where: {
-            hotel_id: id,
-            room_id: { in: roomIds },
-            rateplan_id: rateplanId,
-            start_date: { lte: days[days.length - 1] } as any,
-            end_date: { gte: days[0] } as any,
-          } as any,
-          orderBy: [
-            { room_id: 'asc' } as any,
-            { received_at: 'desc' } as any,
-            { start_date: 'desc' } as any,
-          ],
-        })
-      : [];
-
-    // keyed by numeric room_id (string cast for map compat)
-    const rateRowsByRoomId = new Map<string, any[]>();
-    for (const rateRow of rateRows) {
-      const key = String((rateRow as any).room_id);
-      if (!key) continue;
-      const bucket = rateRowsByRoomId.get(key) || [];
-      bucket.push(rateRow);
-      rateRowsByRoomId.set(key, bucket);
-    }
-
-    const toMs = (value: any) => {
-      if (!value) return 0;
-      const ts = new Date(value).getTime();
-      return Number.isFinite(ts) ? ts : 0;
-    };
-
-    // For overlapping rows, merge occupancy keys from ALL covering rows with newer rows
-    // overriding older ones key-by-key. This ensures a partial update (e.g. only SINGLE=23)
-    // coming in as a narrow exact-range row does not shadow wider rows that carry other keys
-    // (TRIPLE, QUAD, PENTA …) that were not included in the partial payload.
-    const mergeRatesForDate = (roomRates: any[], date: Date): Record<string, unknown> => {
-      // Collect every row whose range covers this date
-      const covering = roomRates.filter((row) => {
-        return row.start_date <= date && row.end_date >= date;
-      });
-
-      // Sort oldest-first so that newer rows overwrite older per-key
-      covering.sort((a, b) => {
-        const tsDiff = toMs((a as any).received_at) - toMs((b as any).received_at);
-        if (tsDiff !== 0) return tsDiff;
-        // Tie-break: narrower (more specific) range wins ← later start_date is more specific
-        return toMs((a as any).start_date) - toMs((b as any).start_date);
-      });
-
-      const merged: Record<string, unknown> = {};
-      for (const row of covering) {
-        const occ =
-          row.occupancy_rates && typeof row.occupancy_rates === 'object'
-            ? (row.occupancy_rates as Record<string, unknown>)
-            : {};
-        Object.assign(merged, occ);
-      }
-      return merged;
-    };
-
-    const allOccupancyKeys = new Set<string>(occupancyOrder);
-    for (const rateRow of rateRows) {
-      const occupancyRates = rateRow.occupancy_rates && typeof rateRow.occupancy_rates === 'object'
-        ? (rateRow.occupancy_rates as Record<string, unknown>)
-        : {};
-      for (const key of Object.keys(occupancyRates)) {
-        if (key !== 'CHILD_WITH_BED' && key !== 'CHILD_WITHOUT_BED') allOccupancyKeys.add(key);
-      }
-    }
-
-    const orderedOccupancyKeys = [
-      ...occupancyOrder,
-      ...Array.from(allOccupancyKeys).filter((key) => !occupancyOrder.includes(key as any)),
-    ];
-
-    const rooms = roomRows.map((room) => {
-      const roomRates = rateRowsByRoomId.get(String(Number(room.room_ID))) || [];
-      const prices: Record<string, number> = {};
-
-      for (const date of days) {
-        const occupancyRates = mergeRatesForDate(roomRates, date);
-        const doublePrice = Number(occupancyRates.DOUBLE);
-        const singlePrice = Number(occupancyRates.SINGLE);
-        prices[this.toIsoDay(date)] = Number.isFinite(doublePrice)
-          ? doublePrice
-          : Number.isFinite(singlePrice)
-          ? singlePrice
-          : 0;
-      }
-
-      return {
-        roomId: Number(room.room_ID),
-        roomName: this.toStr(room.room_title) || 'N/A',
-        roomType: roomTypeById.get(Number(room.room_type_id || 0)) || 'N/A',
-        rateplanId,
-        prices,
-      };
-    });
-
-    const occupancies = roomRows.flatMap((room) => {
-      const roomRates = rateRowsByRoomId.get(String(Number(room.room_ID))) || [];
-      const roomName = this.toStr(room.room_title) || 'N/A';
-      const roomType = roomTypeById.get(Number(room.room_type_id || 0)) || 'N/A';
-
-      return orderedOccupancyKeys.map((occupancyType) => {
-        const values: Record<string, number> = {};
-
-        for (const date of days) {
-          const occupancyRates = mergeRatesForDate(roomRates, date);
-          const value = Number(occupancyRates[occupancyType]);
-          values[this.toIsoDay(date)] = Number.isFinite(value) ? value : 0;
-        }
-
-        return {
-          roomId: Number(room.room_ID),
-          roomName,
-          roomType,
-          rateplanId,
-          occupancyType,
-          values,
-        };
-      });
-    });
-
-    return {
-      dates: dateKeys,
-      rooms,
-      occupancies,
-    };
-  }
-
-  async getMealPricebookRangeView(
-    hotel_id: number,
-    startDate: Date,
-    endDate: Date,
-  ) {
-    const id = Number(hotel_id);
-    if (!Number.isFinite(id) || id <= 0) {
-      throw new BadRequestException('Invalid hotel_id');
-    }
-
-    const days = this.expandDateRange(startDate, endDate);
-    const dateKeys = days.map((date) => this.toIsoDay(date));
-    const rows = (await this.listMealPricebook(id)) as any[];
-    const rowsByMealType = new Map<number, any[]>();
-
-    for (const row of rows) {
-      const mealType = Number(row?.meal_type || 0);
-      if (!rowsByMealType.has(mealType)) {
-        rowsByMealType.set(mealType, []);
-      }
-      rowsByMealType.get(mealType)!.push(row);
-    }
-
-    const mealRows = [
-      { mealType: 1, label: 'Breakfast' },
-      { mealType: 2, label: 'Lunch' },
-      { mealType: 3, label: 'Dinner' },
-    ]
-      .map(({ mealType, label }) => {
-        const sourceRows = rowsByMealType.get(mealType) || [];
-        let hasExplicitValue = false;
-        const values: Record<string, number | null> = {};
-
-        for (const date of days) {
-          const iso = this.toIsoDay(date);
-          const candidates = this.monthCandidatesForDate(date);
-          const row = sourceRows.find(
-            (entry) =>
-              String(entry?.year) === String(date.getFullYear()) &&
-              candidates.includes(String(entry?.month ?? '')),
-          );
-          const raw = this.getDayColumnValue(row, date.getDate());
-          if (raw !== undefined && raw !== null && raw !== '') {
-            const num = Number(raw);
-            values[iso] = Number.isFinite(num) ? num : null;
-            hasExplicitValue = true;
-          } else {
-            values[iso] = null;
-          }
-        }
-
-        return {
-          mealType: label,
-          values,
-          hasExplicitValue,
-        };
-      })
-      .filter((row) => row.hasExplicitValue)
-      .map(({ hasExplicitValue: _hasExplicitValue, ...row }) => row);
-
-    return {
-      dates: dateKeys,
-      rows: mealRows,
-    };
-  }
-
-  async getAmenitiesPricebookRangeView(
-    hotel_id: number,
-    startDate: Date,
-    endDate: Date,
-  ) {
-    const id = Number(hotel_id);
-    if (!Number.isFinite(id) || id <= 0) {
-      throw new BadRequestException('Invalid hotel_id');
-    }
-
-    const days = this.expandDateRange(startDate, endDate);
-    const dateKeys = days.map((date) => this.toIsoDay(date));
-    const amenities = (await this.listAmenities(id)) as any[];
-    const amenityIds = amenities
-      .map((amenity) => Number(amenity?.hotel_amenities_id ?? amenity?.amenity_id ?? amenity?.id))
-      .filter((amenityId) => Number.isFinite(amenityId) && amenityId > 0);
-
-    if (!amenityIds.length) {
-      return { dates: dateKeys, rows: [] };
-    }
-
-    const rows = await this.prisma.dvi_hotel_amenities_price_book.findMany({
-      where: {
-        hotel_id: id,
-        hotel_amenities_id: { in: amenityIds },
-      } as any,
-      orderBy: [
-        { hotel_amenities_id: 'asc' } as any,
-        { pricetype: 'asc' } as any,
-        { year: 'asc' } as any,
-        { month: 'asc' } as any,
-      ],
-    } as any);
-
-    const grouped = new Map<string, any[]>();
-    for (const row of rows as any[]) {
-      const key = `${Number(row?.hotel_amenities_id || 0)}:${Number(row?.pricetype || 0)}`;
-      if (!grouped.has(key)) {
-        grouped.set(key, []);
-      }
-      grouped.get(key)!.push(row);
-    }
-
-    const amenityRows = amenities
-      .flatMap((amenity) => {
-        const amenityId = Number(amenity?.hotel_amenities_id ?? amenity?.amenity_id ?? amenity?.id);
-        const amenityName = amenity?.amenities_title ?? amenity?.name ?? 'Amenity';
-
-        return [
-          { priceTypeId: 1, priceType: 'Hour' },
-          { priceTypeId: 2, priceType: 'Day' },
-        ].map(({ priceTypeId, priceType }) => {
-          const sourceRows = grouped.get(`${amenityId}:${priceTypeId}`) || [];
-          let hasExplicitValue = false;
-          const values: Record<string, string | null> = {};
-
-          for (const date of days) {
-            const iso = this.toIsoDay(date);
-            const candidates = this.monthCandidatesForDate(date);
-            const row = sourceRows.find(
-              (entry) =>
-                String(entry?.year) === String(date.getFullYear()) &&
-                candidates.includes(String(entry?.month ?? '')),
-            );
-            const raw = this.getDayColumnValue(row, date.getDate());
-            if (raw !== undefined && raw !== null && raw !== '') {
-              values[iso] = String(raw);
-              hasExplicitValue = true;
-            } else {
-              values[iso] = null;
-            }
-          }
-
-          return {
-            amenityName,
-            priceType,
-            values,
-            hasExplicitValue,
-          };
-        });
-      })
-      .filter((row) => row.hasExplicitValue)
-      .map(({ hasExplicitValue: _hasExplicitValue, ...row }) => row);
-
-    return {
-      dates: dateKeys,
-      rows: amenityRows,
-    };
-  }
-
-  private async getCurrentDayPricebookForRatePlan(
-    hotel_id: number,
-    onDate: Date,
-    options: { roomId: number; rateplanId: string },
-  ) {
-    const id = Number(hotel_id);
-    const roomId = Number(options.roomId);
-    const rateplanId = this.toStr(options.rateplanId);
-    const date = this.normalizeIsoQueryDate(onDate);
-
-    if (!Number.isFinite(id) || id <= 0 || !Number.isFinite(roomId) || roomId <= 0 || !rateplanId) {
-      throw new Error('Invalid hotel rate plan selection');
-    }
-
-    const [hotel, room] = await Promise.all([
-      this.prisma.dvi_hotel.findFirst({
-        where: { hotel_id: id } as any,
-        select: { axisrooms_property_id: true } as any,
-      }),
-      this.prisma.dvi_hotel_rooms.findFirst({
-        where: { hotel_id: id, room_ID: roomId, deleted: 0, status: 1 } as any,
-        select: { room_ID: true, room_title: true, room_type_id: true, room_ref_code: true } as any,
-      }),
-    ]);
-
-    if (!room) {
-      return {
-        date: date.toISOString().slice(0, 10),
-        rooms: [],
-        extras: [],
-      };
-    }
-
-    const propertyId = this.toStr(hotel?.axisrooms_property_id);
-    const axisroomsRoomId = this.toStr(room.room_ref_code);
-    const roomTypeId = Number(room.room_type_id || 0);
-    const roomType = roomTypeId
-      ? await this.prisma.dvi_hotel_roomtype.findFirst({
-          where: { room_type_id: roomTypeId } as any,
-          select: { room_type_title: true } as any,
-        })
-      : null;
-
-    const meta = {
-      roomName: this.toStr(room.room_title) || 'N/A',
-      roomType: this.toStr(roomType?.room_type_title) || 'N/A',
-    };
-
-    let occupancyRates: Record<string, any> = {};
-    {
-      const rateRows = await this.prisma.dvi_hotel_occupancy_rate.findMany({
-        where: {
-          hotel_id: id,
-          room_id: roomId,
-          rateplan_id: rateplanId,
-          start_date: { lte: date } as any,
-          end_date: { gte: date } as any,
-        } as any,
-        orderBy: [
-          { received_at: 'asc' } as any,
-          { start_date: 'asc' } as any,
-        ],
-      });
-      // Merge all covering rows (oldest first) so newer partial updates win per-key
-      for (const row of rateRows) {
-        if (row.occupancy_rates && typeof row.occupancy_rates === 'object') {
-          Object.assign(occupancyRates, row.occupancy_rates as Record<string, any>);
-        }
-      }
-    }
-
-    const basePrice = Number.isFinite(Number(occupancyRates.DOUBLE))
-      ? Number(occupancyRates.DOUBLE)
-      : Number.isFinite(Number(occupancyRates.SINGLE))
-      ? Number(occupancyRates.SINGLE)
-      : 0;
-
-    const extraBed = Number.isFinite(Number(occupancyRates.EXTRABED)) ? Number(occupancyRates.EXTRABED) : 0;
-    const childWithBed = Number.isFinite(Number(occupancyRates.CHILD_WITH_BED))
-      ? Number(occupancyRates.CHILD_WITH_BED)
-      : Number.isFinite(Number(occupancyRates.EXTRACHILD))
-      ? Number(occupancyRates.EXTRACHILD)
-      : 0;
-    const childWithoutBed = Number.isFinite(Number(occupancyRates.CHILD_WITHOUT_BED))
-      ? Number(occupancyRates.CHILD_WITHOUT_BED)
-      : Number.isFinite(Number(occupancyRates.EXTRACHILD))
-      ? Number(occupancyRates.EXTRACHILD)
-      : 0;
-
-    return {
-      date: date.toISOString().slice(0, 10),
-      rooms: [{ ...meta, price: basePrice }],
-      extras: [
-        { ...meta, bedType: 'Extra Bed', price: extraBed },
-        { ...meta, bedType: 'Child with Bed', price: childWithBed },
-        { ...meta, bedType: 'Child without Bed', price: childWithoutBed },
-      ],
-    };
-  }
-
-  async getCurrentDayPricebook(
-    hotel_id: number,
-    onDate: Date = new Date(),
-    options?: { roomId?: number; rateplanId?: string },
-  ) {
-    if (options?.roomId && options?.rateplanId) {
-      return this.getCurrentDayPricebookForRatePlan(hotel_id, onDate, {
-        roomId: Number(options.roomId),
-        rateplanId: String(options.rateplanId),
-      });
-    }
-
-    const id = Number(hotel_id);
-    if (!Number.isFinite(id) || id <= 0) {
-      throw new Error('Invalid hotel_id');
-    }
-
-    const date = new Date(onDate.getFullYear(), onDate.getMonth(), onDate.getDate());
-    const year = String(date.getFullYear());
-    const day = date.getDate();
-    const monthCandidates = this.monthCandidatesForDate(date);
-
-    let priceRows = await this.prisma.dvi_hotel_room_price_book.findMany({
-      where: {
-        hotel_id: id,
-        deleted: 0,
-        status: 1,
-        year,
-        month: { in: monthCandidates },
-        price_type: { in: [0, 1, 2, 3] },
-      } as any,
-      orderBy: { hotel_price_book_id: 'desc' } as any,
-    });
-
-    if (priceRows.length === 0) {
-      priceRows = await this.prisma.dvi_hotel_room_price_book.findMany({
-        where: {
-          hotel_id: id,
-          deleted: 0,
-          status: 1,
-          year,
-          price_type: { in: [0, 1, 2, 3] },
-        } as any,
-        orderBy: { hotel_price_book_id: 'desc' } as any,
-      });
-    }
-
-    const latestByKey = new Map<string, any>();
-    for (const row of priceRows) {
-      const roomTypeId = Number(row.room_type_id || 0);
-      const key = `${Number(row.room_id)}-${roomTypeId}-${Number(row.price_type)}`;
-      if (!latestByKey.has(key)) latestByKey.set(key, row);
-    }
-
-    const roomRows = await this.prisma.dvi_hotel_rooms.findMany({
-      where: {
-        hotel_id: id,
-        deleted: 0,
-        status: 1,
-      } as any,
-      select: {
-        room_ID: true,
-        room_title: true,
-        room_type_id: true,
-      } as any,
-      orderBy: { room_ID: 'asc' } as any,
-    });
-
-    const roomTypeIds = Array.from(
-      new Set(roomRows.map((r) => Number(r.room_type_id)).filter((v) => Number.isFinite(v) && v > 0)),
-    );
-
-    const roomTypes = roomTypeIds.length
-      ? await this.prisma.dvi_hotel_roomtype.findMany({
-          where: { room_type_id: { in: roomTypeIds } } as any,
-          select: { room_type_id: true, room_type_title: true } as any,
-        })
-      : [];
-
-    const roomTypeById = new Map<number, string>();
-    for (const rt of roomTypes) {
-      roomTypeById.set(Number(rt.room_type_id), this.toStr(rt.room_type_title) || 'N/A');
-    }
-
-    const roomByKey = new Map<string, { roomId: number; roomName: string; roomType: string }>();
-    for (const r of roomRows) {
-      const roomId = Number(r.room_ID);
-      const roomTypeId = Number(r.room_type_id || 0);
-      const key = `${roomId}-${roomTypeId}`;
-      roomByKey.set(key, {
-        roomId,
-        roomName: this.toStr(r.room_title) || 'N/A',
-        roomType: roomTypeById.get(roomTypeId) || 'N/A',
-      });
-    }
-
-    const baseRoomKeys = Array.from(
-      new Set(
-        Array.from(latestByKey.values())
-          .filter((r) => Number(r.price_type) === 0)
-          .map((r) => `${Number(r.room_id)}-${Number(r.room_type_id)}`),
-      ),
-    );
-
-    const roomKeys = Array.from(roomByKey.keys());
-
-    const rooms = roomKeys.map((rk) => {
-      const meta = roomByKey.get(rk) || { roomId: 0, roomName: 'N/A', roomType: 'N/A' };
-      const row = latestByKey.get(`${rk}-0`);
-      return {
-        roomName: meta.roomName,
-        roomType: meta.roomType,
-        price: this.dayPrice(row, day),
-      };
-    });
-
-    const extras: Array<{ roomName: string; roomType: string; bedType: string; price: number }> = [];
-    const extraTypes: Array<{ priceType: number; bedType: string }> = [
-      { priceType: 1, bedType: 'Extra Bed' },
-      { priceType: 2, bedType: 'Child with Bed' },
-      { priceType: 3, bedType: 'Child without Bed' },
-    ];
-
-    for (const rk of roomKeys) {
-      const meta = roomByKey.get(rk) || { roomId: 0, roomName: 'N/A', roomType: 'N/A' };
-      for (const t of extraTypes) {
-        const row = latestByKey.get(`${rk}-${t.priceType}`);
-        extras.push({
-          roomName: meta.roomName,
-          roomType: meta.roomType,
-          bedType: t.bedType,
-          price: this.dayPrice(row, day),
-        });
-      }
-    }
-
-    return {
-      date: date.toISOString().slice(0, 10),
-      rooms,
-      extras,
-    };
-  }
-
-  private formatCurrentDateLabel(date: Date): string {
-    const weekday = date
-      .toLocaleString('en-US', { weekday: 'short' })
-      .toUpperCase();
-    const day = String(date.getDate()).padStart(2, '0');
-    const month = date
-      .toLocaleString('en-US', { month: 'short' })
-      .toUpperCase();
-    const year = date.getFullYear();
-    return `${weekday} - ${day} ${month}, ${year}`;
-  }
-
-  async getCurrentDayPricebookView(
-    hotel_id: number,
-    onDate: Date = new Date(),
-    options?: { roomId?: number; rateplanId?: string },
-  ) {
-    const base = await this.getCurrentDayPricebook(hotel_id, onDate, options);
-    const day = new Date(onDate.getFullYear(), onDate.getMonth(), onDate.getDate());
-
-    return {
-      currentDateLabel: this.formatCurrentDateLabel(day),
-      rooms: base.rooms,
-      extras: (base.extras || []).map((x) => ({
-        ...x,
-        bedType: `${x.bedType} Rate`,
-      })),
-    };
-  }
-
   addPrice(dto: CreatePriceBookDto) {
     return this.prisma.dvi_hotel_room_price_book.create({ data: dto as any });
   }
@@ -2364,13 +1414,8 @@ export class HotelsService {
         childWithBed?: number | string;
         childWithoutBed?: number | string;
         axisroomsRoomId?: string;
-        ratePlanCode?: string;
         rateplanId?: string;
         ratePlanName?: string;
-        occupancyRates?: Record<string, number | string>;
-        commissionPerc?: string;
-        taxPerc?: string;
-        currency?: string;
       }>;
     },
   ) {
@@ -2380,47 +1425,38 @@ export class HotelsService {
 
     const mkTask = async (
       roomId: number,
-      priceType: 0 | 1 | 2 | 3,
+      priceType: 1 | 2 | 3 | 4,
       start: Date,
       end: Date,
       value: number | string,
-      roomTypeId?: number,
     ) => {
       const buckets = this.splitRangeByMonth_forRoomsAndAmenities(start, end);
       for (const b of buckets) {
         const dayPatch = this.buildDayPatch_forRoomsAndAmenities(value, b.days, false);
-        const bucketDate = new Date(Number(b.year), Number(b.month) - 1, 1);
-        const monthCandidates = this.monthCandidatesForDate(bucketDate);
-        const canonicalMonth = monthCandidates[0] || b.month;
-
-        const whereClause: any = {
-          hotel_id: hid,
-          room_id: Number(roomId),
-          price_type: priceType,
-          year: b.year,
-          month: { in: monthCandidates },
-        };
-        if (roomTypeId) whereClause.room_type_id = roomTypeId;
-
         const existing = await this.prisma.dvi_hotel_room_price_book.findFirst({
-          where: whereClause,
-          select: { hotel_price_book_id: true } as any,
-          orderBy: { hotel_price_book_id: 'desc' } as any,
-        });
-
-        if (!existing) {
-          const createData: any = {
+          where: {
             hotel_id: hid,
             room_id: Number(roomId),
             price_type: priceType,
             year: b.year,
-            month: canonicalMonth,
-            status: 1,
-            deleted: 0,
-            ...dayPatch,
-          };
-          if (roomTypeId) createData.room_type_id = roomTypeId;
-          await this.prisma.dvi_hotel_room_price_book.create({ data: createData } as any);
+            month: b.month,
+          } as any,
+          select: { hotel_price_book_id: true } as any,
+        });
+
+        if (!existing) {
+          await this.prisma.dvi_hotel_room_price_book.create({
+            data: {
+              hotel_id: hid,
+              room_id: Number(roomId),
+              price_type: priceType,
+              year: b.year,
+              month: b.month,
+              status: 1,
+              deleted: 0,
+              ...dayPatch,
+            } as any,
+          } as any);
         } else {
           await this.prisma.dvi_hotel_room_price_book.update({
             where: { hotel_price_book_id: (existing as any).hotel_price_book_id } as any,
@@ -2442,24 +1478,8 @@ export class HotelsService {
     const axisroomsPropertyId = this.toStr(hotel?.axisrooms_property_id);
     const roomRefCache = new Map<number, string | undefined>();
 
-    await this.ensureCanonicalHotelRatePlans();
-
     let axisroomsSyncedCount = 0;
     let axisroomsSkippedCount = 0;
-
-    // Pre-fetch room_type_id for each room to ensure correct keying in the price book
-    const roomTypeCache = new Map<number, number>();
-    const allRoomIds = [...new Set(body.items.map((it) => Number(it.room_id)).filter((id) => id > 0))];
-    if (allRoomIds.length) {
-      const roomRows = await this.prisma.dvi_hotel_rooms.findMany({
-        where: { room_ID: { in: allRoomIds }, hotel_id: hid } as any,
-        select: { room_ID: true, room_type_id: true } as any,
-      });
-      for (const r of roomRows) {
-        const rtId = Number((r as any).room_type_id || 0);
-        if (rtId > 0) roomTypeCache.set(Number((r as any).room_ID), rtId);
-      }
-    }
 
     for (const it of body.items) {
       const roomId = Number(it.room_id);
@@ -2468,22 +1488,22 @@ export class HotelsService {
       if (!Number.isFinite(roomId) || roomId <= 0) continue;
       if (!start || !end) continue;
 
-      const roomTypeId = roomTypeCache.get(roomId);
+      if (it.roomPrice !== undefined && it.roomPrice !== '' && it.roomPrice !== null) {
+        await mkTask(roomId, 1, start, end, it.roomPrice);
+      }
+      if (it.extraBed !== undefined && it.extraBed !== '' && it.extraBed !== null) {
+        await mkTask(roomId, 2, start, end, it.extraBed);
+      }
+      if (it.childWithBed !== undefined && it.childWithBed !== '' && it.childWithBed !== null) {
+        await mkTask(roomId, 3, start, end, it.childWithBed);
+      }
+      if (it.childWithoutBed !== undefined && it.childWithoutBed !== '' && it.childWithoutBed !== null) {
+        await mkTask(roomId, 4, start, end, it.childWithoutBed);
+      }
 
-      const occupancyRates = this.normalizeOccupancyRates(it);
-      const legacyProjection = this.projectLegacyRoomRates(occupancyRates);
-
-      if (legacyProjection.basePrice !== undefined) {
-        await mkTask(roomId, 0 as any, start, end, legacyProjection.basePrice, roomTypeId);
-      }
-      if (legacyProjection.extraBed !== undefined) {
-        await mkTask(roomId, 1, start, end, legacyProjection.extraBed, roomTypeId);
-      }
-      if (legacyProjection.childWithBed !== undefined) {
-        await mkTask(roomId, 2, start, end, legacyProjection.childWithBed, roomTypeId);
-      }
-      if (legacyProjection.childWithoutBed !== undefined) {
-        await mkTask(roomId, 3, start, end, legacyProjection.childWithoutBed, roomTypeId);
+      const rateplanId = this.toStr(it.rateplanId);
+      if (!rateplanId) {
+        continue;
       }
 
       if (!axisroomsEnabled || !axisroomsPropertyId) {
@@ -2513,105 +1533,75 @@ export class HotelsService {
         continue;
       }
 
-      const occupancyKeys = Object.keys(occupancyRates);
-      if (occupancyKeys.length === 0) {
-        axisroomsSkippedCount++;
-        continue;
+      const ratePlanName = this.toStr(it.ratePlanName) || rateplanId;
+
+      const occupancyRates: Record<string, number> = {};
+      if (it.roomPrice !== undefined && it.roomPrice !== '' && it.roomPrice !== null) {
+        const single = Number(it.roomPrice);
+        if (Number.isFinite(single)) occupancyRates.SINGLE = single;
+      }
+      if (it.extraBed !== undefined && it.extraBed !== '' && it.extraBed !== null) {
+        const extraBed = Number(it.extraBed);
+        if (Number.isFinite(extraBed)) occupancyRates.EXTRABED = extraBed;
+      }
+      if (it.childWithBed !== undefined && it.childWithBed !== '' && it.childWithBed !== null) {
+        const childWithBed = Number(it.childWithBed);
+        if (Number.isFinite(childWithBed)) occupancyRates.CHILD_WITH_BED = childWithBed;
+      }
+      if (it.childWithoutBed !== undefined && it.childWithoutBed !== '' && it.childWithoutBed !== null) {
+        const childWithoutBed = Number(it.childWithoutBed);
+        if (Number.isFinite(childWithoutBed)) occupancyRates.CHILD_WITHOUT_BED = childWithoutBed;
       }
 
-      const canonicalDefinition = getCanonicalHotelRatePlanDefinition(
-        this.toStr(it.ratePlanCode) || this.toStr(it.rateplanId) || this.toStr(it.ratePlanName),
-      );
-      const canonicalCode = canonicalDefinition?.code || inferCanonicalHotelRatePlanCode(this.toStr(it.ratePlanCode)) || null;
-      const rateplanId = this.toStr(it.rateplanId)
-        || canonicalDefinition?.defaultRateplanId
-        || `AUTO_${axisroomsRoomId}`.slice(0, 64);
-
-      const ratePlanName = this.toStr(it.ratePlanName)
-        || canonicalDefinition?.name
-        || rateplanId;
-      const mealPlanDescription = canonicalDefinition?.description || ratePlanName;
-      const commissionPerc = this.toStr(it.commissionPerc) || '0.0';
-      const taxPerc = this.toStr(it.taxPerc) || '0.0';
-      const currency = this.toStr(it.currency) || 'INR';
-
-      await this.prisma.$transaction(async (tx) => {
-        await tx.dvi_hotel_room_rate_plan.upsert({
-          where: {
-            hotel_id_room_id_rateplan_id: {
-              hotel_id: hid,
-              room_id: roomId,
-              rateplan_id: rateplanId,
-            },
-          } as any,
-          update: {
-            room_type_id: roomTypeId || 0,
-            axisrooms_room_id: axisroomsRoomId,
-            rate_plan_code: canonicalCode,
-            rateplan_name: ratePlanName,
-            meal_plan_description: mealPlanDescription,
-            commission_perc: commissionPerc,
-            tax_perc: taxPerc,
-            currency,
-            occupancy: this.orderedOccupancyKeys(occupancyRates),
-            status: 1,
-            deleted: 0,
-            updatedon: new Date(),
-          } as any,
-          create: {
-            hotel_id: hid,
-            room_id: roomId,
-            room_type_id: roomTypeId || 0,
-            axisrooms_room_id: axisroomsRoomId,
-            rate_plan_code: canonicalCode,
+      await this.prisma.axisrooms_rateplan.upsert({
+        where: {
+          axisrooms_property_id_room_id_rateplan_id: {
+            axisrooms_property_id: axisroomsPropertyId,
+            room_id: axisroomsRoomId,
             rateplan_id: rateplanId,
-            rateplan_name: ratePlanName,
-            meal_plan_description: mealPlanDescription,
-            commission_perc: commissionPerc,
-            tax_perc: taxPerc,
-            currency,
-            occupancy: this.orderedOccupancyKeys(occupancyRates),
-            status: 1,
-            deleted: 0,
-            createdon: new Date(),
-            updatedon: new Date(),
-          } as any,
-        });
+          },
+        },
+        update: {
+          rateplan_name: ratePlanName,
+          occupancy: Object.keys(occupancyRates),
+        },
+        create: {
+          axisrooms_property_id: axisroomsPropertyId,
+          room_id: axisroomsRoomId,
+          rateplan_id: rateplanId,
+          rateplan_name: ratePlanName,
+          occupancy: Object.keys(occupancyRates),
+          commission_perc: '0.0',
+          tax_perc: '0.0',
+          currency: 'INR',
+        },
+      });
 
-        const existingOccRate = await tx.dvi_hotel_occupancy_rate.findFirst({
+      if (Object.keys(occupancyRates).length > 0) {
+        await this.prisma.axisrooms_rate.upsert({
           where: {
-            hotel_id: hid,
-            room_id: roomId,
-            rateplan_id: rateplanId,
-            start_date: start,
-            end_date: end,
-          } as any,
-          select: { id: true, occupancy_rates: true } as any,
-        });
-        if (existingOccRate) {
-          const merged = {
-            ...(typeof (existingOccRate as any).occupancy_rates === 'object' && (existingOccRate as any).occupancy_rates !== null
-              ? (existingOccRate as any).occupancy_rates as Record<string, number>
-              : {}),
-            ...occupancyRates,
-          };
-          await tx.dvi_hotel_occupancy_rate.update({
-            where: { id: (existingOccRate as any).id } as any,
-            data: { occupancy_rates: merged, received_at: new Date() } as any,
-          });
-        } else {
-          await tx.dvi_hotel_occupancy_rate.create({
-            data: {
-              hotel_id: hid,
-              room_id: roomId,
+            axisrooms_property_id_room_id_rateplan_id_start_date_end_date: {
+              axisrooms_property_id: axisroomsPropertyId,
+              room_id: axisroomsRoomId,
               rateplan_id: rateplanId,
               start_date: start,
               end_date: end,
-              occupancy_rates: occupancyRates,
-            } as any,
-          });
-        }
-      });
+            },
+          },
+          update: {
+            occupancy_rates: occupancyRates,
+            received_at: new Date(),
+          },
+          create: {
+            axisrooms_property_id: axisroomsPropertyId,
+            room_id: axisroomsRoomId,
+            rateplan_id: rateplanId,
+            start_date: start,
+            end_date: end,
+            occupancy_rates: occupancyRates,
+          },
+        });
+      }
 
       axisroomsSyncedCount++;
     }
@@ -2692,96 +1682,5 @@ export class HotelsService {
     return this.prisma.dvi_hotel_review_details.delete({
       where: { hotel_review_id: Number(review_id) } as any,
     });
-  }
-
-  // =====================================================================================
-  // Room Availability (dvi_hotel_room_availability)
-  // =====================================================================================
-
-  async upsertRoomAvailability(
-    hotelId: number,
-    roomId: number,
-    items: Array<{ startDate: string; endDate: string; freeRooms: number }>,
-  ) {
-    const hid = Number(hotelId);
-    const rid = Number(roomId);
-
-    if (!Number.isFinite(hid) || hid <= 0) throw new BadRequestException('Invalid hotel_id');
-    if (!Number.isFinite(rid) || rid <= 0) throw new BadRequestException('Invalid room_id');
-    if (!items?.length) throw new BadRequestException('items array is required');
-
-    const results: any[] = [];
-    for (const item of items) {
-      const startDate = this.toDate(item.startDate);
-      const endDate = this.toDate(item.endDate);
-      if (!startDate || !endDate) {
-        throw new BadRequestException(`Invalid date range: ${item.startDate} – ${item.endDate}`);
-      }
-      const free = Number(item.freeRooms);
-      if (!Number.isFinite(free) || free < 0) {
-        throw new BadRequestException('freeRooms must be a non-negative integer');
-      }
-
-      const row = await (this.prisma as any).dvi_hotel_room_availability.upsert({
-        where: {
-          hotel_id_room_id_start_date_end_date: {
-            hotel_id: hid,
-            room_id: rid,
-            start_date: startDate,
-            end_date: endDate,
-          },
-        },
-        update: { free: Math.round(free), received_at: new Date() },
-        create: {
-          hotel_id: hid,
-          room_id: rid,
-          start_date: startDate,
-          end_date: endDate,
-          free: Math.round(free),
-        },
-      });
-      results.push(row);
-    }
-
-    return { success: true, count: results.length };
-  }
-
-  async getRoomAvailabilityRangeView(
-    hotelId: number,
-    roomId: number,
-    startDate: Date,
-    endDate: Date,
-  ) {
-    const hid = Number(hotelId);
-    const rid = Number(roomId);
-
-    if (!Number.isFinite(hid) || hid <= 0) throw new BadRequestException('Invalid hotel_id');
-    if (!Number.isFinite(rid) || rid <= 0) throw new BadRequestException('Invalid room_id');
-
-    const days = this.expandDateRange(startDate, endDate);
-    const dateKeys = days.map((d) => this.toIsoDay(d));
-
-    // Overlap query: records that cover any part of the requested window
-    const records = await (this.prisma as any).dvi_hotel_room_availability.findMany({
-      where: {
-        hotel_id: hid,
-        room_id: rid,
-        start_date: { lte: endDate },
-        end_date: { gte: startDate },
-      },
-      orderBy: [{ start_date: 'asc' }, { received_at: 'desc' }],
-    });
-
-    const freeByDate: Record<string, number | null> = {};
-    for (const day of days) {
-      const key = this.toIsoDay(day);
-      // Find the most-recent record that covers this day
-      const match = records.find(
-        (r: any) => r.start_date <= day && r.end_date >= day,
-      );
-      freeByDate[key] = match ? Number(match.free) : null;
-    }
-
-    return { dates: dateKeys, freeRooms: freeByDate };
   }
 }
