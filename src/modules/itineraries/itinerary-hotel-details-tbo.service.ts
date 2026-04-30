@@ -1314,6 +1314,11 @@ export class ItineraryHotelDetailsTboService {
           itineraryPlanHotelDetailsId: hotelDetailsId || 0,
           date: dateLabel,
           hotelDistance,
+          inclusions: hotel.inclusions && hotel.inclusions.length > 0 ? hotel.inclusions : (hotel.facilities && hotel.facilities.length > 0 ? hotel.facilities : undefined),
+          amenities: hotel.amenities && hotel.amenities.length > 0 ? hotel.amenities : undefined,
+          facilities: hotel.facilities && hotel.facilities.length > 0 ? hotel.facilities : undefined,
+          rateConditions: hotel.rateConditions && hotel.rateConditions.length > 0 ? hotel.rateConditions : undefined,
+          supplementSummary: hotel.supplementSummary,
         });
 
         // Log HOBSE hotel codes for debugging
