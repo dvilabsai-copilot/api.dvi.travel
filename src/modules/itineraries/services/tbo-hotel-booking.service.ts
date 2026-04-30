@@ -151,8 +151,8 @@ export class TboHotelBookingService {
   private tokenExpiry: Date | null = null;
   private readonly authTokenTtlMs = 10 * 60 * 1000;
 
-  private readonly TBO_USERNAME = process.env.TBO_API_USERNAME || 'Doview';
-  private readonly TBO_PASSWORD = process.env.TBO_API_PASSWORD || 'Doview@12345';
+  private readonly TBO_USERNAME = process.env.TBO_API_USERNAME || process.env.TBO_USERNAME || 'Doview';
+  private readonly TBO_PASSWORD = process.env.TBO_API_PASSWORD || process.env.TBO_PASSWORD || 'Doview@12345';
   private readonly TBO_CLIENT_ID = process.env.TBO_CLIENT_ID || 'ApiIntegrationNew';
   private readonly AUTH_URL = 'https://sharedapi.tektravels.com/SharedData.svc/rest/Authenticate';
   private readonly PREBOOK_URL = 'https://affiliate.tektravels.com/HotelAPI/PreBook';
