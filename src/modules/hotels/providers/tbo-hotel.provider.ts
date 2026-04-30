@@ -33,12 +33,12 @@ export class TBOHotelProvider implements IHotelProvider {
   private readonly TBO_STATIC_API_URL = 'http://api.tbotechnology.in/TBOHolidays_HotelAPI';
   private readonly TBO_STATIC_USERNAME = process.env.TBO_STATIC_USERNAME || 'TBOStaticAPITest';
   private readonly TBO_STATIC_PASSWORD = process.env.TBO_STATIC_PASSWORD || 'Tbo@11530818';
-  private readonly SEARCH_USERNAME = process.env.TBO_SEARCH_USERNAME || process.env.TBO_USERNAME || 'Doview';
-  private readonly SEARCH_PASSWORD = process.env.TBO_SEARCH_PASSWORD || process.env.TBO_PASSWORD || 'Doview@12345';
+  private readonly SEARCH_USERNAME = process.env.TBO_SEARCH_USERNAME || process.env.TBO_API_USERNAME || process.env.TBO_USERNAME || 'Doview';
+  private readonly SEARCH_PASSWORD = process.env.TBO_SEARCH_PASSWORD || process.env.TBO_API_PASSWORD || process.env.TBO_PASSWORD || 'Doview@12345';
   
   // Real Production Credentials (From Postman - Verified Working)
-  private readonly USERNAME = process.env.TBO_USERNAME || 'Doview';
-  private readonly PASSWORD = process.env.TBO_PASSWORD || 'Doview@12345';
+  private readonly USERNAME = process.env.TBO_API_USERNAME || process.env.TBO_USERNAME || 'Doview';
+  private readonly PASSWORD = process.env.TBO_API_PASSWORD || process.env.TBO_PASSWORD || 'Doview@12345';
   
   private logger = new Logger(TBOHotelProvider.name);
   private readonly verboseHotelLookupLogs =
@@ -56,6 +56,14 @@ export class TBOHotelProvider implements IHotelProvider {
     }
     this.logger.log('🔐 TBO Hotel Provider initialized with production endpoints');
     this.logger.log(`Using credentials: ${this.USERNAME}`);
+    if (
+      (process.env.TBO_SEARCH_USERNAME && this.SEARCH_USERNAME !== this.USERNAME) ||
+      (process.env.TBO_SEARCH_PASSWORD && this.SEARCH_PASSWORD !== this.PASSWORD)
+    ) {
+      this.logger.warn(
+        '⚠️ TBO_SEARCH_* credentials differ from TBO_API/TBO credentials. Search and booking may use different accounts.',
+      );
+    }
   }
 
   getName(): string {
