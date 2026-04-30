@@ -279,12 +279,26 @@ export class PaymentsService {
         actualCurrency: String(order.currency || ''),
       });
 
-      validateGatewayAmountAndCurrency({
-        expectedAmountPaise,
-        expectedCurrency,
-        actualAmountPaise: Number(payment.amount || 0),
-        actualCurrency: String(payment.currency || ''),
-      });
+      const paymentAmountPaise = Number(payment.amount || 0);
+      const paymentCurrency = String(payment.currency || '');
+      if (paymentCurrency !== expectedCurrency) {
+        throw new BadRequestException(
+          `Currency mismatch. expected=${expectedCurrency} actual=${paymentCurrency}`,
+        );
+      }
+
+      if (paymentAmountPaise < expectedAmountPaise) {
+        throw new BadRequestException(
+          `Payment amount less than expected. expected=${expectedAmountPaise} actual=${paymentAmountPaise}`,
+        );
+      }
+
+      const gatewayExtraPaise = paymentAmountPaise - expectedAmountPaise;
+      if (gatewayExtraPaise > 0) {
+        this.logger.warn(
+          `Payment transition gateway_extra_amount flow=${validationContext.flow} order=${orderId} payment=${paymentId} extraPaise=${gatewayExtraPaise}`,
+        );
+      }
 
       if (String(order.receipt || '') !== String(txn.receipt || '')) {
         throw new BadRequestException('Razorpay order receipt mismatch');
