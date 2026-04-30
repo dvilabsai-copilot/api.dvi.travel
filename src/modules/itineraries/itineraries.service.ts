@@ -2805,6 +2805,16 @@ export class ItinerariesService {
     }));
   }
 
+  // Backward-compatible wrapper: anchor payload is accepted for older callers.
+  async getAvailableHotspotsForAnchor(data: {
+    planId: number;
+    routeId: number;
+    anchorType: 'after_travel';
+    anchorIndex: number;
+  }) {
+    return this.getAvailableHotspots(Number(data.routeId));
+  }
+
 
   /**
    * Add a hotspot to an itinerary route
@@ -3115,6 +3125,40 @@ export class ItinerariesService {
     return {
       success: true,
       message: 'Vehicle vendor selected successfully',
+    };
+  }
+
+  // Backward-compatible wrapper for legacy select-slab endpoint.
+  async selectVehicleSlab(data: {
+    planId: number;
+    vehicleTypeId: number;
+    vendorEligibleId?: number;
+    timeLimitId?: number;
+  }) {
+    if (!data?.vendorEligibleId) {
+      throw new BadRequestException(
+        'vendorEligibleId is required. Current service supports vendor selection flow only.',
+      );
+    }
+
+    return this.selectVehicleVendor({
+      planId: Number(data.planId),
+      vehicleTypeId: Number(data.vehicleTypeId),
+      vendorEligibleId: Number(data.vendorEligibleId),
+    });
+  }
+
+  // Backward-compatible wrapper for legacy auto-select endpoint.
+  async autoSelectVehicleSlabs(data: {
+    planId: number;
+    vehicleTypeId?: number;
+  }) {
+    return {
+      success: false,
+      message:
+        'Auto slab selection is not implemented in current service. Use vehicles/select-vendor for manual selection.',
+      planId: Number(data?.planId || 0),
+      vehicleTypeId: Number(data?.vehicleTypeId || 0) || undefined,
     };
   }
 
@@ -5630,7 +5674,15 @@ export class ItinerariesService {
   /**
    * Preview manual hotspot addition.
    */
-  async previewManualHotspot(planId: number, routeId: number, hotspotId: number) {
+  async previewManualHotspot(
+    planId: number,
+    routeId: number,
+    hotspotId: number,
+    _anchor?: {
+      anchorType?: 'after_travel';
+      anchorIndex?: number;
+    },
+  ) {
     const previewRollbackError = new Error('__PREVIEW_MANUAL_HOTSPOT_ROLLBACK__');
     let previewResult: any;
 
@@ -5747,7 +5799,16 @@ export class ItinerariesService {
   /**
    * Add a manual hotspot to a route and rebuild the timeline.
    */
-  async addManualHotspot(planId: number, routeId: number, hotspotId: number, userId: number) {
+  async addManualHotspot(
+    planId: number,
+    routeId: number,
+    hotspotId: number,
+    userId: number,
+    _anchor?: {
+      anchorType?: 'after_travel';
+      anchorIndex?: number;
+    },
+  ) {
     return this.prisma.$transaction(async (tx) => {
       const normalizedPlanId = Number(planId);
       const normalizedRouteId = Number(routeId);

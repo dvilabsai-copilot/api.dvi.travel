@@ -3045,8 +3045,6 @@ for (const vd of dayWiseDetails) {
         // (page=1, pageSize=20, all groups), then filter by selected group.
         const hotelDetailsFallback = await this.hotelDetailsTboService.getHotelDetailsByQuoteIdFromTbo(
           quoteId,
-          1,
-          20,
         );
 
         const fallbackRows = (hotelDetailsFallback.hotels || []).filter((h: any) => {
