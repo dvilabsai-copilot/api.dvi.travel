@@ -1553,36 +1553,41 @@ export class HotelsService {
         if (Number.isFinite(childWithoutBed)) occupancyRates.CHILD_WITHOUT_BED = childWithoutBed;
       }
 
-      await this.prisma.axisrooms_rateplan.upsert({
+      await this.prisma.dvi_hotel_room_rate_plan.upsert({
         where: {
-          axisrooms_property_id_room_id_rateplan_id: {
-            axisrooms_property_id: axisroomsPropertyId,
-            room_id: axisroomsRoomId,
+          hotel_id_room_id_rateplan_id: {
+            hotel_id: hid,
+            room_id: roomId,
             rateplan_id: rateplanId,
           },
         },
         update: {
+          axisrooms_room_id: axisroomsRoomId,
           rateplan_name: ratePlanName,
           occupancy: Object.keys(occupancyRates),
+          updatedon: new Date(),
         },
         create: {
-          axisrooms_property_id: axisroomsPropertyId,
-          room_id: axisroomsRoomId,
+          hotel_id: hid,
+          room_id: roomId,
+          axisrooms_room_id: axisroomsRoomId,
           rateplan_id: rateplanId,
           rateplan_name: ratePlanName,
           occupancy: Object.keys(occupancyRates),
           commission_perc: '0.0',
           tax_perc: '0.0',
           currency: 'INR',
+          createdon: new Date(),
+          updatedon: new Date(),
         },
       });
 
       if (Object.keys(occupancyRates).length > 0) {
-        await this.prisma.axisrooms_rate.upsert({
+        await this.prisma.dvi_hotel_occupancy_rate.upsert({
           where: {
-            axisrooms_property_id_room_id_rateplan_id_start_date_end_date: {
-              axisrooms_property_id: axisroomsPropertyId,
-              room_id: axisroomsRoomId,
+            hotel_id_room_id_rateplan_id_start_date_end_date: {
+              hotel_id: hid,
+              room_id: roomId,
               rateplan_id: rateplanId,
               start_date: start,
               end_date: end,
@@ -1593,8 +1598,8 @@ export class HotelsService {
             received_at: new Date(),
           },
           create: {
-            axisrooms_property_id: axisroomsPropertyId,
-            room_id: axisroomsRoomId,
+            hotel_id: hid,
+            room_id: roomId,
             rateplan_id: rateplanId,
             start_date: start,
             end_date: end,
