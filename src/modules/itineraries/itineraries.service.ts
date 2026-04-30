@@ -61,6 +61,48 @@ export class ItinerariesService {
     return [];
   }
 
+  private normalizeToUniqueStrings(items: any[]): string[] {
+    const seen = new Set<string>();
+    const out: string[] = [];
+
+    for (const item of items) {
+      let text = '';
+
+      if (typeof item === 'string' || typeof item === 'number' || typeof item === 'boolean') {
+        text = String(item).trim();
+      } else if (item && typeof item === 'object') {
+        text = String(item?.name || item?.text || item?.description || item?.label || '').trim();
+        if (!text) {
+          try {
+            text = JSON.stringify(item);
+          } catch {
+            text = '';
+          }
+        }
+      }
+
+      if (!text) continue;
+      const key = text.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(text);
+    }
+
+    return out;
+  }
+
+  private inferMealPlanFromInclusions(items: string[]): string | null {
+    const haystack = items.join(' ').toLowerCase();
+    if (!haystack) return null;
+
+    if (haystack.includes('full board')) return 'Full Board';
+    if (haystack.includes('half board')) return 'Half Board';
+    if (haystack.includes('room only') || haystack.includes('no meals')) return 'Room Only';
+    if (haystack.includes('breakfast')) return 'Breakfast Included';
+
+    return null;
+  }
+
   async createPlan(dto: CreateItineraryDto, req: any, shouldOptimizeRoute: boolean = false) {
     const u: any = (req as any).user ?? {};
     const userId = Number(u.userId ?? 1);
@@ -3806,18 +3848,82 @@ export class ItinerariesService {
         ...normalizedSupplements,
       ];
 
-      const roomPromotions = rawRoomDetails
-        .flatMap((room: any) => this.normalizeToArray(room?.RoomPromotion ?? room?.RoomPromotions))
-        .filter(Boolean);
-      const rateConditions = rawRoomDetails
-        .flatMap((room: any) => this.normalizeToArray(room?.RateConditions))
-        .filter(Boolean);
-      const cancellationPolicies = rawRoomDetails
-        .flatMap((room: any) => this.normalizeToArray(room?.CancelPolicies ?? room?.CancellationPolicy))
-        .filter(Boolean);
-      const inclusions = rawRoomDetails
-        .flatMap((room: any) => this.normalizeToArray(room?.Inclusion))
-        .filter(Boolean);
+      const hotelLevelResults = this.normalizeToArray(prebookResponse?.HotelResult);
+
+      const roomPromotions = this.normalizeToUniqueStrings([
+        ...rawRoomDetails.flatMap((room: any) => this.normalizeToArray(room?.RoomPromotion ?? room?.RoomPromotions)),
+        ...hotelLevelResults.flatMap((hotelResult: any) =>
+          this.normalizeToArray(hotelResult?.RoomPromotion ?? hotelResult?.RoomPromotions),
+        ),
+      ]);
+      const rateConditions = this.normalizeToUniqueStrings([
+        ...rawRoomDetails.flatMap((room: any) =>
+          this.normalizeToArray(room?.RateConditions ?? room?.rateConditions ?? room?.RateCondition),
+        ),
+        ...hotelLevelResults.flatMap((hotelResult: any) =>
+          this.normalizeToArray(
+            hotelResult?.RateConditions ??
+              hotelResult?.rateConditions ??
+              hotelResult?.RateCondition ??
+              hotelResult?.rateCondition,
+          ),
+        ),
+      ]);
+      const cancellationPolicies = this.normalizeToUniqueStrings([
+        ...rawRoomDetails.flatMap((room: any) =>
+          this.normalizeToArray(room?.CancelPolicies ?? room?.CancellationPolicy),
+        ),
+        ...hotelLevelResults.flatMap((hotelResult: any) =>
+          this.normalizeToArray(hotelResult?.CancelPolicies ?? hotelResult?.CancellationPolicy),
+        ),
+      ]);
+      const inclusions = this.normalizeToUniqueStrings([
+        ...rawRoomDetails.flatMap((room: any) =>
+          this.normalizeToArray(room?.Inclusion ?? room?.Inclusions ?? room?.inclusion ?? room?.inclusions),
+        ),
+        ...hotelLevelResults.flatMap((hotelResult: any) =>
+          this.normalizeToArray(
+            hotelResult?.Inclusion ??
+              hotelResult?.Inclusions ??
+              hotelResult?.inclusion ??
+              hotelResult?.inclusions,
+          ),
+        ),
+      ]);
+      const amenities = this.normalizeToUniqueStrings([
+        ...rawRoomDetails.flatMap((room: any) =>
+          this.normalizeToArray(room?.Amenities ?? room?.amenities ?? room?.Amenity),
+        ),
+        ...hotelLevelResults.flatMap((hotelResult: any) =>
+          this.normalizeToArray(
+            hotelResult?.Amenities ?? hotelResult?.amenities ?? hotelResult?.Amenity ?? hotelResult?.facilities,
+          ),
+        ),
+      ]);
+
+      const mealTypeCandidates = this.normalizeToUniqueStrings([
+        ...rawRoomDetails.flatMap((room: any) =>
+          this.normalizeToArray(
+            room?.MealTypeName ??
+              room?.MealType ??
+              room?.mealTypeName ??
+              room?.mealType ??
+              room?.BoardBasis ??
+              room?.boardBasis,
+          ),
+        ),
+        ...hotelLevelResults.flatMap((hotelResult: any) =>
+          this.normalizeToArray(
+            hotelResult?.MealTypeName ??
+              hotelResult?.MealType ??
+              hotelResult?.mealTypeName ??
+              hotelResult?.mealType ??
+              hotelResult?.BoardBasis ??
+              hotelResult?.boardBasis,
+          ),
+        ),
+      ]);
+      const mealType = mealTypeCandidates[0] || this.inferMealPlanFromInclusions(inclusions) || null;
 
       const candidatePrices = [
         prebookResponse?.NetAmount,
@@ -3844,6 +3950,9 @@ export class ItinerariesService {
         roomPromotion: roomPromotions.length ? roomPromotions.join(', ') : null,
         rateConditions,
         inclusions,
+        amenities,
+        mealType,
+        mealPlan: mealType,
         mandatorySupplements,
         // ✅ NEW: include normalized supplements
         normalizedSupplements: allNormalizedSupplements,
@@ -3868,6 +3977,7 @@ export class ItinerariesService {
       .filter(Boolean);
     const rateConditionsAll = prebookResults.flatMap((item) => item.rateConditions || []);
     const inclusionsAll = prebookResults.flatMap((item) => item.inclusions || []);
+    const amenitiesAll = prebookResults.flatMap((item) => item.amenities || []);
     const mandatorySupplementsAll = prebookResults.flatMap((item) => item.mandatorySupplements || []);
     // ✅ NEW: Extract normalized supplements from prebook results
     const normalizedSupplementsAll = prebookResults.flatMap((item) => item.normalizedSupplements || []);
@@ -3888,7 +3998,8 @@ export class ItinerariesService {
         : null,
       roomPromotion: roomPromotionsAll.length ? roomPromotionsAll.join(', ') : null,
       rateConditions: rateConditionsAll,
-      inclusions: inclusionsAll,
+      inclusions: this.normalizeToUniqueStrings(inclusionsAll),
+      amenities: this.normalizeToUniqueStrings(amenitiesAll),
       mandatorySupplements: mandatorySupplementsAll,
       // ✅ NEW: include normalized supplements for frontend display
       normalizedSupplements: normalizedSupplementsAll,
