@@ -251,33 +251,65 @@ export class PaymentsService {
       this.razorpay.payments.fetch(paymentId),
     ]);
 
-    validateGatewayAmountAndCurrency({
-      expectedAmountPaise: Number(txn.amount_paise || 0),
-      expectedCurrency: String(txn.currency || 'INR'),
-      actualAmountPaise: Number(order.amount || 0),
-      actualCurrency: String(order.currency || ''),
-    });
+    const expectedAmountPaise = Number(txn.amount_paise || 0);
+    const expectedCurrency = String(txn.currency || 'INR');
+    const validationContext = {
+      flow: String(txn.flow_type || ''),
+      txnId: Number(txn.payment_transaction_ID || 0),
+      entityId: Number(txn.entity_id || 0),
+      expectedAmountPaise,
+      expectedCurrency,
+      gatewayOrderAmountPaise: Number(order.amount || 0),
+      gatewayOrderCurrency: String(order.currency || ''),
+      gatewayOrderReceipt: String(order.receipt || ''),
+      txnReceipt: String(txn.receipt || ''),
+      gatewayPaymentAmountPaise: Number(payment.amount || 0),
+      gatewayPaymentCurrency: String(payment.currency || ''),
+      gatewayPaymentStatus: String(payment.status || ''),
+      gatewayPaymentOrderId: String(payment.order_id || ''),
+      requestedOrderId: String(orderId || ''),
+      requestedPaymentId: String(paymentId || ''),
+    };
 
-    validateGatewayAmountAndCurrency({
-      expectedAmountPaise: Number(txn.amount_paise || 0),
-      expectedCurrency: String(txn.currency || 'INR'),
-      actualAmountPaise: Number(payment.amount || 0),
-      actualCurrency: String(payment.currency || ''),
-    });
+    try {
+      validateGatewayAmountAndCurrency({
+        expectedAmountPaise,
+        expectedCurrency,
+        actualAmountPaise: Number(order.amount || 0),
+        actualCurrency: String(order.currency || ''),
+      });
 
-    if (String(order.receipt || '') !== String(txn.receipt || '')) {
-      throw new BadRequestException('Razorpay order receipt mismatch');
+      validateGatewayAmountAndCurrency({
+        expectedAmountPaise,
+        expectedCurrency,
+        actualAmountPaise: Number(payment.amount || 0),
+        actualCurrency: String(payment.currency || ''),
+      });
+
+      if (String(order.receipt || '') !== String(txn.receipt || '')) {
+        throw new BadRequestException('Razorpay order receipt mismatch');
+      }
+
+      if (String(payment.order_id || '') !== orderId) {
+        throw new BadRequestException('Payment order id mismatch');
+      }
+
+      if (!isAuthorizedOrCaptured(payment.status)) {
+        throw new BadRequestException(`Payment status is not authorized/captured: ${payment.status}`);
+      }
+
+      return { order, payment };
+    } catch (error: any) {
+      const message = String(error?.message || 'Payment gateway validation failed');
+      this.logger.error(
+        `Payment transition validation_failed flow=${validationContext.flow} order=${orderId} payment=${paymentId} reason=${message}`,
+      );
+      this.logger.error(`Payment transition validation_context ${JSON.stringify(validationContext)}`);
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(message);
     }
-
-    if (String(payment.order_id || '') !== orderId) {
-      throw new BadRequestException('Payment order id mismatch');
-    }
-
-    if (!isAuthorizedOrCaptured(payment.status)) {
-      throw new BadRequestException(`Payment status is not authorized/captured: ${payment.status}`);
-    }
-
-    return { order, payment };
   }
 
   private async updateTransactionSuccess(txnId: number, paymentId: string, signature: string) {
@@ -566,6 +598,9 @@ export class PaymentsService {
     dto: ConfirmRazorpayPaymentDto,
     checkSignature: boolean,
   ): Promise<NormalizedPaymentResult> {
+    this.logger.log(
+      `Payment transition confirm_requested flow=${flow} order=${dto.razorpay_order_id} payment=${dto.razorpay_payment_id}`,
+    );
     const txn = await this.getPendingTransaction(dto.razorpay_order_id, flow);
 
     if (checkSignature) {
@@ -577,6 +612,9 @@ export class PaymentsService {
       });
 
       if (!signatureValid) {
+        this.logger.warn(
+          `Payment transition signature_invalid flow=${flow} order=${dto.razorpay_order_id} payment=${dto.razorpay_payment_id}`,
+        );
         await this.updateTransactionFailed(txn.payment_transaction_ID, 'Invalid signature');
         throw new BadRequestException('Invalid payment signature');
       }
