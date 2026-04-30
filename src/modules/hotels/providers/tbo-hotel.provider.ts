@@ -1371,7 +1371,7 @@ export class TBOHotelProvider implements IHotelProvider {
         select: {
           tbo_hotel_code: true,
         },
-        take: 500, // Allow up to 500 hotels (batched into 100-code chunks by caller)
+    //    take: 500, // Allow up to 500 hotels (batched into 100-code chunks by caller)
       });
 
       if (!hotels || hotels.length === 0) {
@@ -1576,7 +1576,9 @@ export class TBOHotelProvider implements IHotelProvider {
     description: string = ''
   ): Promise<any[]> {
     try {
-      const logFullPayload = (process.env.TBO_LOG_FULL_PAYLOAD || 'false').toLowerCase() === 'true';
+      const logFullPayload = (process.env.TBO_LOG_FULL_PAYLOAD || 'true').toLowerCase() === 'true';
+     console.log(logFullPayload,'logFullPayload');
+     
       this.logger.log(`   📤 TBO Search Request ${description}:`);
       this.logger.log(`      - Check-in: ${searchRequest.CheckIn}`);
       this.logger.log(`      - Check-out: ${searchRequest.CheckOut}`);
@@ -1600,7 +1602,7 @@ export class TBOHotelProvider implements IHotelProvider {
 
       const responseTime = Date.now() - startTime;
       this.logger.log(`   ⏱️  TBO API Response Time ${description}: ${responseTime}ms`);
-      if (logFullPayload) {
+      if (logFullPayload && false) {
         this.logger.log(`   📦 TBO API Response JSON: ${JSON.stringify(response.data)}`);
       } else {
         const statusObj = response.data?.Status;

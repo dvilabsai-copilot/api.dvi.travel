@@ -21,7 +21,9 @@
     "cert:staah": "node verification-e2e/staah-certification/run-staah-certification.js",
     "verify:hotspot-parity": "tsx verification-e2e/hotspot-engine-parity/run-hotspot-engine-parity.ts",
     "verify:hotel-rateplans": "tsx scripts/verify-hotel-rate-plan-system.ts",
-    "verify:hotel-pricebook-range": "tsx scripts/verify-hotel-pricebook-range-view.ts"
+    "verify:hotel-pricebook-range": "tsx scripts/verify-hotel-pricebook-range-view.ts",
+    "sync:tbo:missing-city": "node scripts/sync-missing-tbo-hotels-by-city.js",
+    "sync:tbo:missing-city:dry": "node scripts/sync-missing-tbo-hotels-by-city.js --dry-run"
   },
   "dependencies": {
     "@nestjs/axios": "^4.0.1",
