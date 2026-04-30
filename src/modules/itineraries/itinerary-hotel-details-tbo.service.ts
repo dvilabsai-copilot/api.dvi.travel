@@ -192,13 +192,31 @@ export class ItineraryHotelDetailsTboService {
    */
   async getHotelDetailsByQuoteIdFromTbo(
     quoteId: string,
+    page?: number,
+    pageSize?: number,
+    groupType?: number,
+    itineraryRouteId?: number,
   ): Promise<ItineraryHotelDetailsResponseDto> {
     const startTime = Date.now();
     this.logger.log(`\n📡 TBO HOTEL PACKAGES: Fetching dynamic packages for quote: ${quoteId}`);
 
+    const hasCompatibilityFilters =
+      page !== undefined ||
+      pageSize !== undefined ||
+      groupType !== undefined ||
+      itineraryRouteId !== undefined;
+
     const cached = this.getCachedHotelDetails(quoteId);
     if (cached) {
-      return cached;
+      return hasCompatibilityFilters
+        ? this.applyCompatibilityFilters(
+            cached,
+            page,
+            pageSize,
+            groupType,
+            itineraryRouteId,
+          )
+        : cached;
     }
 
     // Step 1: Get itinerary plan
@@ -320,7 +338,71 @@ export class ItineraryHotelDetailsTboService {
 
     this.setCachedHotelDetails(quoteId, response);
 
-    return response;
+    return hasCompatibilityFilters
+      ? this.applyCompatibilityFilters(
+          response,
+          page,
+          pageSize,
+          groupType,
+          itineraryRouteId,
+        )
+      : response;
+  }
+
+  // Backward-compatible alias used by older controllers/callers.
+  clearHotelCacheForQuote(quoteId: string): void {
+    this.clearCacheForQuote(quoteId);
+  }
+
+  private applyCompatibilityFilters(
+    response: ItineraryHotelDetailsResponseDto,
+    page?: number,
+    pageSize?: number,
+    groupType?: number,
+    itineraryRouteId?: number,
+  ): ItineraryHotelDetailsResponseDto {
+    const normalizedPage = Number.isFinite(Number(page)) ? Math.max(1, Number(page)) : 1;
+    const normalizedPageSize = Number.isFinite(Number(pageSize))
+      ? Math.min(100, Math.max(1, Number(pageSize)))
+      : 20;
+
+    const normalizedGroupType = Number.isFinite(Number(groupType))
+      ? Number(groupType)
+      : undefined;
+    const normalizedRouteId = Number.isFinite(Number(itineraryRouteId))
+      ? Number(itineraryRouteId)
+      : undefined;
+
+    let filteredHotels = [...(response.hotels || [])];
+    if (normalizedGroupType && normalizedGroupType >= 1 && normalizedGroupType <= 4) {
+      filteredHotels = filteredHotels.filter((h) => Number(h.groupType) === normalizedGroupType);
+    }
+    if (normalizedRouteId && normalizedRouteId > 0) {
+      filteredHotels = filteredHotels.filter((h) => Number(h.itineraryRouteId) === normalizedRouteId);
+    }
+
+    const total = filteredHotels.length;
+    const startIndex = (normalizedPage - 1) * normalizedPageSize;
+    const pagedHotels = filteredHotels.slice(startIndex, startIndex + normalizedPageSize);
+
+    const derivedGroupType =
+      normalizedGroupType && normalizedGroupType >= 1 && normalizedGroupType <= 4
+        ? normalizedGroupType
+        : 0;
+    const paginationKey = derivedGroupType || 0;
+
+    return {
+      ...response,
+      hotels: pagedHotels,
+      pagination: {
+        [paginationKey]: {
+          page: normalizedPage,
+          pageSize: normalizedPageSize,
+          total,
+          hasMore: startIndex + pagedHotels.length < total,
+        },
+      },
+    };
   }
 
   /**
