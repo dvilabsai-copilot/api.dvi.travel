@@ -514,6 +514,11 @@ export class TimelineBuilder {
     tx: Tx,
     planId: number,
     existingHotspots?: any[],
+    options?: {
+      manualPlacementByRoute?: Record<number, {
+        hotspotOrder?: number;
+      }>;
+    },
   ): Promise<{ hotspotRows: HotspotDetailRow[]; parkingRows: ParkingChargeRow[] }> {
     const buildStart = Date.now();
     this.logTimeline('[TIMELINE] buildTimelineForPlan started for planId:', planId, existingHotspots ? `with ${existingHotspots.length} pre-loaded hotspots` : '');
@@ -1654,6 +1659,56 @@ export class TimelineBuilder {
         routeTripStartIso === '2026-05-15' &&
         routeTripEndIso === '2026-05-20';
       
+      const manualPlacementByRoute = options?.manualPlacementByRoute || {};
+      const manualExistingForRoute = (existingHotspots || []).filter((row: any) =>
+        Number(row?.itinerary_route_ID || 0) === Number(route.itinerary_route_ID) &&
+        Number(row?.hotspot_plan_own_way || 0) === 1 &&
+        Number(row?.deleted || 0) === 0 &&
+        Number(row?.hotspot_ID || 0) > 0,
+      );
+
+      if (manualExistingForRoute.length > 0) {
+        const selectedById = new Map<number, any>();
+        for (const sh of selectedHotspots as any[]) {
+          const id = Number((sh as any).hotspot_ID || 0);
+          if (id > 0 && !selectedById.has(id)) {
+            selectedById.set(id, sh);
+          }
+        }
+
+        const mergedManuals = manualExistingForRoute.map((manual: any, index: number) => {
+          const hotspotId = Number(manual?.hotspot_ID || 0);
+          const preferredOrder = Number((manualPlacementByRoute as any)?.[Number(route.itinerary_route_ID)]?.hotspotOrder || 0);
+          const manualOrder = preferredOrder > 0
+            ? preferredOrder
+            : Number(manual?.hotspot_order || index + 1 || 1);
+          const existing = selectedById.get(hotspotId) || {};
+
+          return {
+            ...existing,
+            hotspot_ID: hotspotId,
+            display_order: manualOrder,
+            hotspot_priority: Number((existing as any)?.hotspot_priority ?? (manualOrder || 0)),
+            matched_bucket: 'manual',
+            isManualSelection: true,
+          } as any;
+        });
+
+        for (const manual of mergedManuals) {
+          selectedById.set(Number((manual as any).hotspot_ID || 0), manual);
+        }
+
+        selectedHotspots = Array.from(selectedById.values()).sort((a: any, b: any) => {
+          const ao = Number((a as any).display_order || Number.MAX_SAFE_INTEGER);
+          const bo = Number((b as any).display_order || Number.MAX_SAFE_INTEGER);
+          if (ao !== bo) return ao - bo;
+          const am = (a as any).isManualSelection ? 0 : 1;
+          const bm = (b as any).isManualSelection ? 0 : 1;
+          if (am !== bm) return am - bm;
+          return Number((a as any).hotspot_ID || 0) - Number((b as any).hotspot_ID || 0);
+        });
+      }
+
       this.logTimeline('[TIMELINE] Selected hotspots for route:', selectedHotspots.length);
       if (
         String(
@@ -1679,8 +1734,9 @@ export class TimelineBuilder {
         for (const sh of selectedHotspots) {
           const bucket = (sh as any).matched_bucket as string | undefined;
           const hotspotPriority = Number((sh as any).hotspot_priority ?? 0);
+          const isManualSelection = Boolean((sh as any).isManualSelection);
 
-          if (!isKerala40985ParityPlan && hotspotPriority === 0) {
+          if (!isKerala40985ParityPlan && !isManualSelection && hotspotPriority === 0) {
             this.logHotspotCandidateEvaluation({
               routeId: route.itinerary_route_ID,
               hotspotId: Number(sh.hotspot_ID || 0),
@@ -1701,7 +1757,7 @@ export class TimelineBuilder {
             continue;
           }
 
-          if (!isKerala40985ParityPlan && hotspotPriority > 3) {
+          if (!isKerala40985ParityPlan && !isManualSelection && hotspotPriority > 3) {
             this.logHotspotCandidateEvaluation({
               routeId: route.itinerary_route_ID,
               hotspotId: Number(sh.hotspot_ID || 0),
@@ -1722,7 +1778,7 @@ export class TimelineBuilder {
             continue;
           }
 
-          if (!isKerala40985ParityPlan && isRouteSourceTerminal && hotspotPriority === 1) {
+          if (!isKerala40985ParityPlan && !isManualSelection && isRouteSourceTerminal && hotspotPriority === 1) {
             this.logHotspotCandidateEvaluation({
               routeId: route.itinerary_route_ID,
               hotspotId: Number(sh.hotspot_ID || 0),

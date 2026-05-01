@@ -35,6 +35,12 @@ export class HotspotEngineService {
       protectedRouteHotspotIds?: number[];
       protectedHotspotIds?: number[];
       anchorOrderByRoute?: Record<number, number>;
+      preferredManualPlacementByRoute?: Record<number, {
+        hotspotOrder?: number;
+        hotspotStartTime?: Date | string | null;
+        hotspotEndTime?: Date | string | null;
+        replacedHotspotId?: number;
+      }>;
     },
   ): Promise<{
     shiftedItems: any[];
@@ -85,8 +91,27 @@ export class HotspotEngineService {
     // 3) Build new timeline rows in memory (WITHOUT manual hotspots)
     // Pass existing hotspots (including deleted ones) to the builder
     // The builder/selector will filter out deleted:1 hotspots so they are NOT re-added
+    const manualPlacementByRoute: Record<number, { hotspotOrder?: number }> = {};
+    for (const manualHotspot of manualHotspots) {
+      const routeId = Number((manualHotspot as any)?.itinerary_route_ID || 0);
+      if (!routeId) continue;
+
+      const preferredPlacement = (options?.preferredManualPlacementByRoute as any)?.[routeId] || null;
+      const preferredOrder = Number(preferredPlacement?.hotspotOrder || 0);
+      const anchorOrder = Number((options?.anchorOrderByRoute as any)?.[routeId] || 0);
+      const manualOrder = preferredOrder > 0
+        ? preferredOrder
+        : (anchorOrder > 0 ? anchorOrder : Number((manualHotspot as any)?.hotspot_order || 0));
+
+      if (manualOrder > 0) {
+        manualPlacementByRoute[routeId] = { hotspotOrder: manualOrder };
+      }
+    }
+
     const { hotspotRows, parkingRows } =
-      await this.timelineBuilder.buildTimelineForPlan(tx, planId, existingHotspots);
+      await this.timelineBuilder.buildTimelineForPlan(tx, planId, existingHotspots, {
+        manualPlacementByRoute,
+      });
 
     console.log('[ManualHotspot][rebuildRouteHotspots] start', {
       planId,
@@ -119,6 +144,20 @@ export class HotspotEngineService {
     }
 
     const anchorOrderByRoute = options?.anchorOrderByRoute || {};
+    const preferredManualPlacementByRoute = options?.preferredManualPlacementByRoute || {};
+
+    const manualRouteHotspotKeys = new Set<string>(
+      manualHotspots.map((row: any) => `${Number(row?.itinerary_route_ID || 0)}|${Number(row?.hotspot_ID || 0)}`),
+    );
+
+    for (const row of hotspotRows as any[]) {
+      const rowRouteId = Number((row as any).itinerary_route_ID || 0);
+      const rowHotspotId = Number((row as any).hotspot_ID || 0);
+      if (Number((row as any).item_type || 0) === 4 && manualRouteHotspotKeys.has(`${rowRouteId}|${rowHotspotId}`)) {
+        (row as any).hotspot_plan_own_way = 1;
+        (row as any).isManual = true;
+      }
+    }
 
     const droppedAutoConflicts = new Set<string>();
     for (const row of hotspotRows as any[]) {
@@ -316,6 +355,10 @@ export class HotspotEngineService {
         const hotspotId = Number(manualHotspot.hotspot_ID || 0);
         const routeRows = rowsByRoute.get(routeId) || [];
 
+        if (routeRows.some((r: any) => Number(r?.item_type || 0) === 4 && Number(r?.hotspot_ID || 0) === hotspotId)) {
+          continue;
+        }
+
         const route = await (tx as any).dvi_itinerary_route_details.findUnique({
           where: { itinerary_route_ID: routeId },
           select: { route_start_time: true },
@@ -331,7 +374,9 @@ export class HotspotEngineService {
           },
         });
 
-        const durationMinutes = Math.max(1, Number(hotspotMaster?.hotspot_duration || 30));
+        const durationMinutes = this.parseHotspotDurationMinutes(
+          hotspotMaster?.hotspot_duration,
+        );
 
         const computeEndTime = (start: Date): Date => {
           return new Date(start.getTime() + durationMinutes * 60 * 1000);
@@ -367,32 +412,70 @@ export class HotspotEngineService {
           continue;
         }
 
-        // Find insertion point: insert after last visit hotspot
+        const sortedVisitRows = [...visitRows].sort((a: any, b: any) => {
+          const orderDiff = Number(a?.hotspot_order || 0) - Number(b?.hotspot_order || 0);
+          if (orderDiff !== 0) return orderDiff;
+          const aStart = a?.hotspot_start_time ? new Date(a.hotspot_start_time).getTime() : Number.MAX_SAFE_INTEGER;
+          const bStart = b?.hotspot_start_time ? new Date(b.hotspot_start_time).getTime() : Number.MAX_SAFE_INTEGER;
+          return aStart - bStart;
+        });
+
+        const preferredPlacement = (preferredManualPlacementByRoute as any)[routeId] || null;
+        const preferredPlacementOrder = Number(preferredPlacement?.hotspotOrder || 0);
+        const preferredPlacementStart = preferredPlacement?.hotspotStartTime
+          ? new Date(preferredPlacement.hotspotStartTime)
+          : null;
+        const preferredPlacementHasValidStart =
+          !!preferredPlacementStart && Number.isFinite(preferredPlacementStart.getTime()) && preferredPlacementStart.getTime() !== placeholderEpoch;
+        const preferredOrder = preferredPlacementOrder > 0
+          ? preferredPlacementOrder
+          : Number((anchorOrderByRoute as any)[routeId] || 0);
+        const anchorVisit = preferredOrder > 0
+          ? sortedVisitRows.find((r: any) => Number(r?.hotspot_order || 0) >= preferredOrder) || null
+          : null;
+        const anchorVisitIndex = anchorVisit
+          ? rowsByRoute.get(routeId)!.indexOf(anchorVisit)
+          : -1;
+
         const lastVisitIndex = Math.max(
           ...visitRows.map((r: any) => rowsByRoute.get(routeId)!.indexOf(r))
         );
-        const insertionPoint = lastVisitIndex + 1;
+        const insertionPoint = anchorVisitIndex >= 0 ? anchorVisitIndex : (lastVisitIndex + 1);
 
         // ════════════════════════════════════════════════════════════════
         // PROOF: Log last visit row details
         // ════════════════════════════════════════════════════════════════
-        const lastVisitRow = visitRows[visitRows.length - 1];
+        const previousVisitRow = preferredOrder > 0
+          ? [...sortedVisitRows]
+              .reverse()
+              .find((r: any) => Number(r?.hotspot_order || 0) < preferredOrder) || null
+          : null;
+        const lastVisitRow = sortedVisitRows[sortedVisitRows.length - 1];
+        const timingReferenceRow = previousVisitRow || (preferredOrder > 0 ? null : lastVisitRow);
         console.log(`\n[ManualHotspot][PROOF][${hotspotId}] LAST VISIT ROW DETAILS:`, {
           routeId,
           hotspotId: hotspotId,
-          lastVisitRow_route_hotspot_ID: lastVisitRow?.route_hotspot_ID,
-          lastVisitRow_hotspot_ID: lastVisitRow?.hotspot_ID,
-          lastVisitRow_item_type: lastVisitRow?.item_type,
-          lastVisitRow_hotspot_order: lastVisitRow?.hotspot_order,
-          lastVisitRow_hotspot_start_time: lastVisitRow?.hotspot_start_time,
-          lastVisitRow_hotspot_end_time: lastVisitRow?.hotspot_end_time,
-          lastVisitRow_hotspot_plan_own_way: lastVisitRow?.hotspot_plan_own_way,
+          preferredOrder,
+          insertionPoint,
+          preferredPlacement_replacedHotspotId: preferredPlacement?.replacedHotspotId,
+          preferredPlacement_hotspotOrder: preferredPlacement?.hotspotOrder,
+          preferredPlacement_hotspotStartTime: preferredPlacement?.hotspotStartTime,
+          preferredPlacement_hotspotEndTime: preferredPlacement?.hotspotEndTime,
+          timingReference_route_hotspot_ID: timingReferenceRow?.route_hotspot_ID,
+          timingReference_hotspot_ID: timingReferenceRow?.hotspot_ID,
+          timingReference_item_type: timingReferenceRow?.item_type,
+          timingReference_hotspot_order: timingReferenceRow?.hotspot_order,
+          timingReference_hotspot_start_time: timingReferenceRow?.hotspot_start_time,
+          timingReference_hotspot_end_time: timingReferenceRow?.hotspot_end_time,
+          timingReference_hotspot_plan_own_way: timingReferenceRow?.hotspot_plan_own_way,
         });
 
-        const lastVisitEndTime = lastVisitRow?.hotspot_end_time || lastVisitRow?.hotspot_start_time;
+        const lastVisitEndTime = timingReferenceRow?.hotspot_end_time || timingReferenceRow?.hotspot_start_time;
         console.log(`[ManualHotspot][PROOF] Extracted lastVisitEndTime:`, {
           value: lastVisitEndTime,
-          source: lastVisitRow?.hotspot_end_time ? 'hotspot_end_time' : 'hotspot_start_time',
+          source: timingReferenceRow?.hotspot_end_time
+            ? 'hotspot_end_time'
+            : (timingReferenceRow?.hotspot_start_time ? 'hotspot_start_time' : 'route_start_time'),
         });
 
         // ════════════════════════════════════════════════════════════════
@@ -402,12 +485,16 @@ export class HotspotEngineService {
         const hasValidLastVisitEnd =
           !!normalizedLastVisitEnd && Number.isFinite(normalizedLastVisitEnd.getTime()) &&
           normalizedLastVisitEnd.getTime() !== placeholderEpoch;
-        const manualStartTime = hasValidLastVisitEnd
-          ? normalizedLastVisitEnd!
-          : (route?.route_start_time ? new Date(route.route_start_time) : new Date());
+        const manualStartTime = preferredPlacementHasValidStart
+          ? preferredPlacementStart!
+          : (hasValidLastVisitEnd
+              ? normalizedLastVisitEnd!
+              : (route?.route_start_time ? new Date(route.route_start_time) : new Date()));
         console.log(`[ManualHotspot][PROOF] Calculated manualStartTime:`, {
           value: manualStartTime,
-          source: hasValidLastVisitEnd ? 'lastVisitEndTime' : (route?.route_start_time ? 'route_start_time' : 'new Date()'),
+          source: preferredPlacementHasValidStart
+            ? 'preferredPlacement.hotspotStartTime'
+            : (hasValidLastVisitEnd ? 'lastVisitEndTime' : (route?.route_start_time ? 'route_start_time' : 'new Date()')),
           lastVisitEndTime_exists: !!lastVisitEndTime,
           route_start_time: route?.route_start_time,
         });
@@ -431,7 +518,9 @@ export class HotspotEngineService {
         });
 
         // Update manual hotspot with real order and timing
-        manualHotspot.hotspot_order = Math.max(...visitRows.map((r: any) => Number(r.hotspot_order || 0))) + 1;
+        manualHotspot.hotspot_order = preferredOrder > 0
+          ? preferredOrder
+          : (Math.max(...visitRows.map((r: any) => Number(r.hotspot_order || 0))) + 1);
         manualHotspot.hotspot_start_time = manualStartTime;
         manualHotspot.hotspot_end_time = manualEndTime;
 
@@ -829,6 +918,10 @@ export class HotspotEngineService {
       droppedItems?: any[];
       shiftedItems?: any[];
       resolution?: any;
+      requestedAnchor?: {
+        anchorType?: 'after_travel';
+        anchorIndex?: number;
+      };
     },
   ): Promise<any> {
     console.log(`\n🔍 PREVIEW-ADD: planId=${planId}, routeId=${routeId}, hotspotId=${hotspotId}`);
@@ -925,7 +1018,9 @@ export class HotspotEngineService {
         ],
       });
 
-      const enrichedTimeline = await TimelineEnricher.enrich(tx, planId, persistedRows as any[]);
+      const enrichedTimeline = this.sortPreviewTimeline(
+        await TimelineEnricher.enrich(tx, planId, persistedRows as any[]),
+      );
       const newHotspotRow = enrichedTimeline.find(
         (r) => Number(r.itinerary_route_ID) === Number(routeId) &&
                Number(r.hotspot_ID) === Number(hotspotId) &&
@@ -966,6 +1061,13 @@ export class HotspotEngineService {
           !removedIds.has(Number(r.hotspot_ID || 0)),
       );
 
+      const anchorPreference = this.buildAnchorPreferenceOutcome(
+        enrichedTimeline,
+        routeId,
+        hotspotId,
+        options?.requestedAnchor,
+      );
+
       return {
         newHotspot: newHotspotRow || null,
         otherConflicts: otherConflicts.map((c: any) => ({
@@ -978,6 +1080,7 @@ export class HotspotEngineService {
         includedRouteIds: routeIdsToInclude,
         nextRouteIncluded: shouldIncludeNextDay,
         resolution: options?.resolution,
+        anchorPreference,
       };
     }
 
@@ -1004,19 +1107,34 @@ export class HotspotEngineService {
     );
 
     // 3) Enrich rows with UI fields
-    const enrichedTimeline = await TimelineEnricher.enrich(tx, planId, filteredRows);
+    const enrichedTimeline = this.sortPreviewTimeline(
+      await TimelineEnricher.enrich(tx, planId, filteredRows),
+    );
 
     // 4) Find the manual hotspot in persisted data (already inserted by ensureManualHotspotRow)
-    const newHotspotRow = enrichedTimeline.find(
-      (r) => Number(r.itinerary_route_ID) === Number(routeId) && 
-             Number(r.hotspot_ID) === Number(hotspotId) && 
-             r.item_type === 4
+    const selectedCandidates = enrichedTimeline.filter(
+      (r: any) =>
+        Number(r?.itinerary_route_ID) === Number(routeId) &&
+        Number(r?.hotspot_ID) === Number(hotspotId) &&
+        Number(r?.item_type) === 4,
     );
+    const preferConflict = options?.resolution?.stillUnschedulable === true;
+    const newHotspotRow = selectedCandidates.sort((a: any, b: any) => {
+      const aConflict = a?.isConflict === true ? 1 : 0;
+      const bConflict = b?.isConflict === true ? 1 : 0;
+      if (aConflict !== bConflict) {
+        return preferConflict ? (bConflict - aConflict) : (aConflict - bConflict);
+      }
+      const aStart = a?.hotspot_start_time ? new Date(a.hotspot_start_time).getTime() : Number.MAX_SAFE_INTEGER;
+      const bStart = b?.hotspot_start_time ? new Date(b.hotspot_start_time).getTime() : Number.MAX_SAFE_INTEGER;
+      return aStart - bStart;
+    })[0];
 
     // 5) Mark the newly added hotspot as conflict (since adaptive insertion failed)
     if (newHotspotRow) {
       (newHotspotRow as any).isConflict = true;
-      (newHotspotRow as any).conflictReason = 'Manual insertion could not fit in schedule.';
+      (newHotspotRow as any).conflictReason = 'Manual insertion could not fit within operating hours for this day after removing eligible lower-priority hotspots (priority > 3). Priorities 1-3 are preserved.';
+      (newHotspotRow as any).timeRange = 'Not schedulable';
       console.log(`📊 [FALLBACK] Marked hotspot ${hotspotId} as conflict (adaptive insertion failed)`);
     } else {
       console.warn(`⚠️ [FALLBACK] Could not find hotspot ${hotspotId} in persisted data`);
@@ -1027,6 +1145,13 @@ export class HotspotEngineService {
       (r) => r.item_type === 4 && 
              (r as any).isConflict && 
              !(Number(r.itinerary_route_ID) === Number(routeId) && Number(r.hotspot_ID) === Number(hotspotId))
+    );
+
+    const anchorPreference = this.buildAnchorPreferenceOutcome(
+      enrichedTimeline,
+      routeId,
+      hotspotId,
+      options?.requestedAnchor,
     );
 
     console.log(`[ManualHotspot][previewManualHotspotAdd] fallback result:`, {
@@ -1047,6 +1172,131 @@ export class HotspotEngineService {
       includedRouteIds: routeIdsToInclude,
       nextRouteIncluded: shouldIncludeNextDay,
       resolution: options?.resolution,
+      anchorPreference,
     };
+  }
+
+  private buildAnchorPreferenceOutcome(
+    fullTimeline: any[],
+    routeId: number,
+    hotspotId: number,
+    requestedAnchor?: {
+      anchorType?: 'after_travel';
+      anchorIndex?: number;
+    },
+  ) {
+    const requestedValid =
+      requestedAnchor?.anchorType === 'after_travel' &&
+      Number.isInteger(Number(requestedAnchor?.anchorIndex));
+
+    if (!requestedValid) {
+      return {
+        requested: null,
+        resolved: null,
+        honored: null,
+        reason: null,
+      };
+    }
+
+    const requestedIndex = Number(requestedAnchor!.anchorIndex);
+    const routeRows = (Array.isArray(fullTimeline) ? fullTimeline : []).filter(
+      (row: any) => Number(row?.itinerary_route_ID) === Number(routeId),
+    );
+
+    const selectedIdx = routeRows.findIndex(
+      (row: any) => Number(row?.item_type) === 4 && Number(row?.hotspot_ID) === Number(hotspotId),
+    );
+
+    const resolvedAnchorIndex = selectedIdx >= 0
+      ? routeRows
+          .slice(0, selectedIdx)
+          .filter((row: any) => Number(row?.item_type) === 3).length - 1
+      : null;
+
+    const selectedRow = selectedIdx >= 0 ? routeRows[selectedIdx] : null;
+    const honored = resolvedAnchorIndex !== null ? resolvedAnchorIndex === requestedIndex : false;
+
+    return {
+      requested: {
+        anchorType: 'after_travel' as const,
+        anchorIndex: requestedIndex,
+      },
+      resolved: resolvedAnchorIndex !== null
+        ? {
+            anchorType: 'after_travel' as const,
+            anchorIndex: resolvedAnchorIndex,
+            timeRange: selectedRow?.timeRange || null,
+          }
+        : null,
+      honored,
+      reason: honored
+        ? null
+        : (resolvedAnchorIndex === null
+          ? 'selected_hotspot_not_found_in_timeline'
+          : 'repositioned_by_timing_constraints'),
+    };
+  }
+
+  private sortPreviewTimeline(rows: any[]): any[] {
+    const itemTypePriority: Record<number, number> = {
+      1: 0,
+      3: 1,
+      4: 2,
+      5: 3,
+      6: 4,
+    };
+
+    const toTimestamp = (value: any): number => {
+      if (!value) return Number.MAX_SAFE_INTEGER;
+      const date = new Date(value);
+      return Number.isFinite(date.getTime()) ? date.getTime() : Number.MAX_SAFE_INTEGER;
+    };
+
+    return [...(Array.isArray(rows) ? rows : [])].sort((a: any, b: any) => {
+      const routeDiff = Number(a?.itinerary_route_ID || 0) - Number(b?.itinerary_route_ID || 0);
+      if (routeDiff !== 0) return routeDiff;
+
+      const timeDiff = toTimestamp(a?.hotspot_start_time) - toTimestamp(b?.hotspot_start_time);
+      if (timeDiff !== 0) return timeDiff;
+
+      const typeDiff = (itemTypePriority[Number(a?.item_type || 0)] ?? 99) - (itemTypePriority[Number(b?.item_type || 0)] ?? 99);
+      if (typeDiff !== 0) return typeDiff;
+
+      return Number(a?.hotspot_order || 0) - Number(b?.hotspot_order || 0);
+    });
+  }
+
+  private parseHotspotDurationMinutes(rawDuration: any): number {
+    if (!rawDuration) return 30;
+
+    // TIME fields frequently arrive as Date (1970-01-01 HH:MM:SS).
+    if (rawDuration instanceof Date) {
+      const mins =
+        rawDuration.getUTCHours() * 60 +
+        rawDuration.getUTCMinutes() +
+        Math.floor(rawDuration.getUTCSeconds() / 60);
+      return Math.max(1, mins || 30);
+    }
+
+    if (typeof rawDuration === 'string') {
+      const parts = rawDuration.trim().split(':').map((p) => Number(p || 0));
+      if (parts.length >= 2 && parts.every((n) => Number.isFinite(n))) {
+        const mins = (parts[0] * 60) + parts[1] + Math.floor((parts[2] || 0) / 60);
+        return Math.max(1, mins || 30);
+      }
+      const asNumber = Number(rawDuration);
+      if (Number.isFinite(asNumber) && asNumber > 0) {
+        return Math.max(1, Math.floor(asNumber));
+      }
+      return 30;
+    }
+
+    if (typeof rawDuration === 'number' && Number.isFinite(rawDuration)) {
+      // If a large epoch-like number sneaks in, treat it as invalid and use default.
+      if (rawDuration > 24 * 60 * 60) return 30;
+      return Math.max(1, Math.floor(rawDuration));
+    }
+
+    return 30;
   }
 }
