@@ -1305,11 +1305,15 @@ export class ItinerariesController {
       hotspotId: number;
       anchorType?: 'after_travel';
       anchorIndex?: number;
+      allowTopPriorityRemoval?: boolean;
+      selectedHotspotIds?: number[];
     },
   ) {
     return this.svc.previewManualHotspot(planId, body.routeId, body.hotspotId, {
       anchorType: body.anchorType,
       anchorIndex: body.anchorIndex,
+      allowTopPriorityRemoval: body.allowTopPriorityRemoval === true,
+      selectedHotspotIds: Array.isArray(body.selectedHotspotIds) ? body.selectedHotspotIds : undefined,
     });
   }
 
@@ -1323,6 +1327,7 @@ export class ItinerariesController {
       hotspotId: number;
       anchorType?: 'after_travel';
       anchorIndex?: number;
+      allowTopPriorityRemoval?: boolean;
     },
     @Req() req: any,
   ) {
@@ -1330,6 +1335,7 @@ export class ItinerariesController {
     return this.svc.addManualHotspot(planId, body.routeId, body.hotspotId, userId, {
       anchorType: body.anchorType,
       anchorIndex: body.anchorIndex,
+      allowTopPriorityRemoval: body.allowTopPriorityRemoval === true,
     });
   }
 
