@@ -398,11 +398,6 @@ export class ItineraryHotelDetailsTboService {
     groupType?: number,
     itineraryRouteId?: number,
   ): ItineraryHotelDetailsResponseDto {
-    const normalizedPage = Number.isFinite(Number(page)) ? Math.max(1, Number(page)) : 1;
-    const normalizedPageSize = Number.isFinite(Number(pageSize))
-      ? Math.min(100, Math.max(1, Number(pageSize)))
-      : 20;
-
     const normalizedGroupType = Number.isFinite(Number(groupType))
       ? Number(groupType)
       : undefined;
@@ -418,27 +413,11 @@ export class ItineraryHotelDetailsTboService {
       filteredHotels = filteredHotels.filter((h) => Number(h.itineraryRouteId) === normalizedRouteId);
     }
 
-    const total = filteredHotels.length;
-    const startIndex = (normalizedPage - 1) * normalizedPageSize;
-    const pagedHotels = filteredHotels.slice(startIndex, startIndex + normalizedPageSize);
-
-    const derivedGroupType =
-      normalizedGroupType && normalizedGroupType >= 1 && normalizedGroupType <= 4
-        ? normalizedGroupType
-        : 0;
-    const paginationKey = derivedGroupType || 0;
-
     return {
       ...response,
-      hotels: pagedHotels,
-      pagination: {
-        [paginationKey]: {
-          page: normalizedPage,
-          pageSize: normalizedPageSize,
-          total,
-          hasMore: startIndex + pagedHotels.length < total,
-        },
-      },
+      hotels: filteredHotels,
+      pagination: undefined,
+      routePagination: undefined,
     };
   }
 

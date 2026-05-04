@@ -3,6 +3,53 @@
 ## Overview
 This fix addresses critical issues where manual hotspots (user-selected attractions) were not being properly integrated into the rebuilt timeline, resulting in duplicate rows, out-of-order timelines, and placeholder values remaining in the persisted database.
 
+---
+
+## Latest Updates (May 2026)
+
+The following production behavior updates were implemented after the original timeline-integration fix.
+
+### 1) Explicit User Selection in Add Hotspot Modal (Frontend)
+
+**Change**: Removed automatic preview of the first hotspot when opening the Add Hotspot modal.
+
+**Previous behavior**:
+- Modal opened
+- First hotspot was auto-selected and auto-previewed
+- Right pane immediately showed "Calculating selected slot..." and "Confirm Add to Itinerary (1)" even without user action
+
+**Current behavior**:
+- Modal opens with no selected hotspot
+- User must explicitly choose a hotspot by searching or scrolling and clicking Preview
+- Confirm button remains disabled until explicit selection/preview
+
+**File changed**:
+- `dvi_frontend/src/pages/ItineraryDetails.tsx`
+
+### 2) Recovery for Mistakenly Deleted Hotspots (Backend)
+
+**Change**: Excluded (deleted) hotspots are no longer suppressed from the available hotspots list.
+
+**Reason**:
+- Users who accidentally deleted a hotspot could not see it in the left pane to restore it.
+- Recovery required route rebuild, which was unintuitive.
+
+**Current behavior**:
+- Deleted hotspots can appear again in left pane Add Hotspot list.
+- UI can show "Deleted from timeline" badge and user can preview/re-add directly.
+- Apply flow still handles exclusion-list cleanup when the user adds the hotspot again.
+
+**File changed**:
+- `api.dvi.travel/src/modules/itineraries/itineraries.service.ts`
+
+### 3) Confirmed User-Facing Outcome
+
+- No auto-preview side effects on modal open.
+- "Calculating selected slot..." appears only after explicit Preview action.
+- Mistakenly deleted hotspots are recoverable from the same Add Hotspot modal flow.
+
+---
+
 ## Root Causes Identified
 
 ### Bug #1: Old Placeholder Rows Not Deleted Before Persistence
