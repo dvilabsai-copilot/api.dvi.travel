@@ -3296,10 +3296,17 @@ export class ItinerariesService {
       orderBy: { vehicle_details_ID: 'asc' },
     });
 
+    // Fetch travellers so room-wise pax and child ages can be prefilled on edit.
+    const travellers = await (this.prisma as any).dvi_itinerary_traveller_details.findMany({
+      where: { itinerary_plan_ID: planId, deleted: 0 },
+      orderBy: { traveller_details_ID: 'asc' },
+    });
+
     return {
       plan,
       routes: routesWithVia,
       vehicles,
+      travellers,
     };
   }
 
@@ -3984,6 +3991,16 @@ export class ItinerariesService {
       );
       const finalPrice = finalPriceCandidate !== undefined ? Number(finalPriceCandidate) : 0;
 
+      const prebookNetAmountCandidates = [
+        prebookResponse?.NetAmount,
+        ...rawRoomDetails.map((room: any) => room?.NetAmount),
+      ];
+      const prebookNetAmountCandidate = prebookNetAmountCandidates.find(
+        (price) => typeof price === 'number' || (typeof price === 'string' && price !== ''),
+      );
+      const prebookNetAmount =
+        prebookNetAmountCandidate !== undefined ? Number(prebookNetAmountCandidate) : null;
+
       prebookResults.push({
         routeId: hotel.routeId,
         hotelCode: hotel.hotelCode,
@@ -4008,6 +4025,27 @@ export class ItinerariesService {
         isPriceChanged: Boolean(prebookResponse?.IsPriceChanged),
         isCancellationPolicyChanged: Boolean(prebookResponse?.IsCancellationPolicyChanged),
         rawStatus: prebookResponse?.Status,
+        prebookContext: {
+          bookingCode: prebookResponse?.BookingCode || hotel.bookingCode,
+          traceId: prebookResponse?.TraceId || '',
+          finalPrice,
+          prebookNetAmount,
+          isPriceChanged: Boolean(prebookResponse?.IsPriceChanged),
+          isCancellationPolicyChanged: Boolean(prebookResponse?.IsCancellationPolicyChanged),
+          cancellationPolicy: cancellationPolicies,
+          cancellationPoliciesText: cancellationPolicies.length
+            ? JSON.stringify(cancellationPolicies)
+            : null,
+          roomPromotion: roomPromotions.length ? roomPromotions.join(', ') : null,
+          rateConditions,
+          inclusions,
+          amenities,
+          mealType,
+          mandatorySupplements,
+          supplements: rawSupplements,
+          normalizedSupplements: allNormalizedSupplements,
+          rawStatus: prebookResponse?.Status,
+        },
         certificationTrace: {
           guestNationality: selection.guestNationality,
           prebookRequest: prebookRequestPayload,
@@ -4178,6 +4216,7 @@ export class ItinerariesService {
           guestNationality: hotel.guestNationality,
           netAmount: hotel.netAmount,
           searchInitiatedAt: (hotel as any).searchInitiatedAt,
+          prebookContext: (hotel as any).prebookContext,
           occupancies: hotel.occupancies?.map((occ) => ({
             adults: occ.adults,
             children: occ.children,

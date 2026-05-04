@@ -451,13 +451,58 @@ export class TboHotelBookingService {
     const rooms = [];
 
     if (occupancies && occupancies.length > 0) {
-      let cursor = 0;
+      const adultsPool = workingPassengers.filter((p) => Number(p.paxType) === 1);
+      const childrenPool = workingPassengers.filter((p) => Number(p.paxType) === 2);
+      const infantsPool = workingPassengers.filter((p) => Number(p.paxType) === 3);
 
+      const takeFromPool = (pool: TboHotelPassenger[], count: number): TboHotelPassenger[] => {
+        const picked = pool.slice(0, Math.max(count, 0));
+        pool.splice(0, picked.length);
+        return picked;
+      };
+
+      // Build each room to exactly match searched occupancies (adults/children per room).
+      // This avoids TBO HotelPassenger count mismatch errors caused by raw sequential slicing.
       for (let i = 0; i < occupancies.length; i++) {
         const occ = occupancies[i];
-        const needed = (occ.adults || 0) + (occ.children || 0);
-        const roomPassengers = workingPassengers.slice(cursor, cursor + needed);
-        cursor += needed;
+        const adultsNeeded = Math.max(Number(occ.adults || 0), 0);
+        const childrenNeeded = Math.max(Number(occ.children || 0), 0);
+        const expectedChildAges = (occ.childrenAges || [])
+          .map((age) => Number(age))
+          .filter((age) => Number.isFinite(age));
+
+        const roomAdults = takeFromPool(adultsPool, adultsNeeded);
+        const roomChildren: TboHotelPassenger[] = [];
+
+        // Match child passengers by expected room-wise ages from confirm occupancies
+        // so Book payload mirrors what user entered in popup for each room.
+        for (let j = 0; j < childrenNeeded; j++) {
+          const expectedAge = expectedChildAges[j];
+          let matchedIndex = -1;
+          if (Number.isFinite(expectedAge)) {
+            matchedIndex = childrenPool.findIndex(
+              (p) => Number((p as any)?.age) === Number(expectedAge),
+            );
+          }
+
+          if (matchedIndex < 0) {
+            matchedIndex = 0;
+          }
+
+          if (matchedIndex >= 0 && childrenPool[matchedIndex]) {
+            const [picked] = childrenPool.splice(matchedIndex, 1);
+            roomChildren.push(picked);
+          }
+        }
+
+        const roomPassengers: TboHotelPassenger[] = [...roomAdults, ...roomChildren];
+
+        // Keep room passenger count aligned even if upstream sent less data than occupancy.
+        while (roomPassengers.length < adultsNeeded + childrenNeeded) {
+          const fallback = adultsPool[0] || childrenPool[0] || infantsPool[0] || workingPassengers[0];
+          if (!fallback) break;
+          roomPassengers.push({ ...fallback });
+        }
 
         const mappedPassengers = roomPassengers.map((p, idx) => this.mapPassenger(p, idx));
         rooms.push({ HotelPassenger: mappedPassengers });
@@ -564,7 +609,7 @@ export class TboHotelBookingService {
             persistenceSnapshot: {
               childAges,
               passengerSnapshot,
-              prebookAmount: preBookMeta?.finalPrice ?? null,
+              prebookAmount: preBookMeta?.prebookNetAmount ?? null,
               bookedAmount: selection.netAmount,
               cancellationPolicy: preBookMeta?.cancellationPolicyText ?? null,
               rateConditions: preBookMeta?.rateConditions || null,
@@ -636,6 +681,7 @@ export class TboHotelBookingService {
               selection.prebookContext.finalPrice !== undefined
                 ? Number(selection.prebookContext.finalPrice)
                 : null,
+            prebookNetAmount: selection.prebookContext.prebookNetAmount,
             originalSearchPrice: Number(selection.netAmount),
             isPriceChanged: Boolean(selection.prebookContext.isPriceChanged),
             isCancellationPolicyChanged: Boolean(selection.prebookContext.isCancellationPolicyChanged),
@@ -655,8 +701,9 @@ export class TboHotelBookingService {
             `↪ Using confirm-popup prebook context for hotel ${selection.hotelCode}; skipping duplicate provider prebook`,
           );
         } else {
-          preBookResponse = await this.preBookHotel(selection);
-          preBookMeta = this.extractPreBookMeta(preBookResponse, selection);
+          throw new BadRequestException(
+            `Prebook context missing for hotel ${selection.hotelCode}. Please run prebook in confirm modal before final booking.`,
+          );
         }
 
         const priceChangedAtPreBook =
@@ -669,14 +716,19 @@ export class TboHotelBookingService {
           Boolean(preBookMeta?.isPriceChanged) ||
           Boolean(preBookMeta?.isCancellationPolicyChanged);
 
+        if (
+          preBookMeta?.prebookNetAmount === null ||
+          preBookMeta?.prebookNetAmount === undefined ||
+          String(preBookMeta.prebookNetAmount).trim() === ''
+        ) {
+          throw new BadRequestException(
+            `Prebook NetAmount missing for hotel ${selection.hotelCode}. Please run prebook again before booking.`,
+          );
+        }
+
         const bookingSelection: TboHotelSelection = {
           ...selection,
-          netAmount:
-            preBookMeta?.finalPrice !== null &&
-            preBookMeta?.finalPrice !== undefined &&
-            Number(preBookMeta.finalPrice) > 0
-              ? Number(preBookMeta.finalPrice)
-              : Number(selection.netAmount),
+          netAmount: Number(preBookMeta.prebookNetAmount),
         };
 
         // Step 2: Book the hotel with guest details
