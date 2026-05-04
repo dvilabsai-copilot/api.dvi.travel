@@ -1383,9 +1383,9 @@ export class TBOHotelProvider implements IHotelProvider {
       });
 
       if (!hotels || hotels.length === 0) {
-        this.logger.error(
-          `❌ PRIMARY: No hotels in tbo_hotel_master for city ${tboCityCode}. ` +
-          `Run sync: POST /api/v1/hotels/sync/all`
+        this.logger.warn(
+          `⚠️ PRIMARY: No hotels in tbo_hotel_master for city ${tboCityCode}. ` +
+          `Will try dvi_hotel fallback. If this city should be in master, sync city: POST /api/v1/hotels/sync/city/${tboCityCode}`
         );
 
         // Try fallback query from dvi_hotel table
@@ -1412,9 +1412,9 @@ export class TBOHotelProvider implements IHotelProvider {
           return codes;
         }
 
-        this.logger.error(
-          `❌ FALLBACK FAILED: No hotels in dvi_hotel either for city ${tboCityCode}. ` +
-          `Database is empty. Returning empty string.`
+        this.logger.warn(
+          `⚠️ FALLBACK FAILED: No hotels in dvi_hotel either for city ${tboCityCode}. ` +
+          `Returning empty string so caller can continue to static API fallback.`
         );
         return '';
       }

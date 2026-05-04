@@ -42,12 +42,6 @@ function hhmmFromMs(ms: number) {
   return `${hh}.${String(mm).padStart(2, "0")}`; // PHP-like "H.i"
 }
 
-// Global logging flag (PHP-style debug on/off via env)
-const ENABLE_LOG =
-  process.env.ENABLE_LOG === "1" ||
-  process.env.ENABLE_LOG === "true" ||
-  process.env.ENABLE_LOG === "yes";
-
 // ---------------------------------------------------------------------------
 // PHP SUM(CASE WHEN total_vehicle_qty=0 THEN 1 ELSE total_vehicle_qty END)
 // = SUM(total_vehicle_qty) + COUNT(total_vehicle_qty=0)
@@ -86,23 +80,9 @@ async function getPhpTotalVehicleQty(tx: any, whereBase: any): Promise<number> {
       throw err;
     }
 
-    if (ENABLE_LOG) {
-      console.warn(
-        "[vehiclesEngine] PHP_QTY_AGG transient disconnect; retrying once",
-        JSON.stringify({ code, message: err?.message || "" }),
-      );
-    }
-
     const retry = await runOnce();
     sumAgg = retry.sumAgg;
     zeroCount = retry.zeroCount;
-  }
-
-  if (ENABLE_LOG) {
-    console.log(
-      "[vehiclesEngine] PHP_QTY_AGG",
-      JSON.stringify({ whereBase, sumAgg, zeroCount }),
-    );
   }
 
   const sumVal = Number(sumAgg?._sum?.total_vehicle_qty ?? 0);
@@ -116,10 +96,7 @@ export class ItineraryVehiclesEngine {
   // ---------------------------------------------------------------------------
   // LOGGING
   // ---------------------------------------------------------------------------
-  private writeLog(line: string) {
-    if (!ENABLE_LOG) return;
-    console.log(`[vehiclesEngine] ${line}`);
-  }
+  private writeLog(_line: string) {}
 
   private escapeString(value: string): string {
     return value.replace(/'/g, "''");
@@ -236,24 +213,9 @@ export class ItineraryVehiclesEngine {
     return `INSERT INTO \`${table}\` (${cols}) VALUES (${vals});`;
   }
 
-  private logSql(label: string, sql: string, meta?: any) {
-    if (!ENABLE_LOG) return;
-    const line =
-      `[${new Date().toISOString()}] [vehiclesEngine] ${label}\n` +
-      `SQL: ${sql}\n` +
-      (meta ? `META: ${JSON.stringify(meta)}\n` : "");
-    console.log(line);
-    this.writeLog(line);
-  }
+  private logSql(_label: string, _sql: string, _meta?: any) {}
 
-  private log(label: string, payload: any) {
-    if (!ENABLE_LOG) return;
-    const line =
-      `[${new Date().toISOString()}] [vehiclesEngine] DEBUG ${label} ` +
-      JSON.stringify(payload);
-    console.log(line);
-    this.writeLog(line);
-  }
+  private log(_label: string, _payload: any) {}
 
   // ---------------------------------------------------------------------------
   // ROUTE KM SUMMARY (PHP-style helper; uses route.no_of_km ONLY)

@@ -413,8 +413,8 @@ export class ItinerariesController {
 
     try {
       // Use TBO service to fetch dynamic packages
-      const pageNum = page ? Math.max(1, parseInt(page, 10) || 1) : 1;
-      const pageSizeNum = pageSize ? Math.min(100, Math.max(1, parseInt(pageSize, 10) || 20)) : 20;
+      const pageNum = page ? Math.max(1, parseInt(page, 10) || 1) : undefined;
+      const pageSizeNum = pageSize ? Math.min(100, Math.max(1, parseInt(pageSize, 10) || 20)) : undefined;
       const groupTypeNum = groupType ? parseInt(groupType, 10) : undefined;
       const itineraryRouteIdNum = itineraryRouteId
         ? Math.max(0, parseInt(itineraryRouteId, 10) || 0)

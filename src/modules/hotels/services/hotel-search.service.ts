@@ -21,6 +21,7 @@ export class HotelSearchService {
   private static readonly MAX_ROOMS = 6;
   private static readonly MAX_ADULTS_PER_ROOM = 8;
   private static readonly MAX_CHILDREN_PER_ROOM = 4;
+  private static readonly DEFAULT_CHILD_AGE = 6;
   private providers: Map<string, IHotelProvider>;
   private readonly logger = new Logger(HotelSearchService.name);
 
@@ -125,6 +126,7 @@ export class HotelSearchService {
         const safeChildAges = Array.isArray(childAges)
           ? childAges.map((age) => Number(age)).filter((age) => !Number.isNaN(age))
           : [];
+        const normalizedChildAges = this.normalizeChildAges(safeChildCount, safeChildAges);
 
         if (safeAdultCount < 1) {
           throw new BadRequestException('At least one adult is required for hotel search');
@@ -142,10 +144,6 @@ export class HotelSearchService {
           );
         }
 
-        if (safeChildCount > 0 && safeChildAges.length !== safeChildCount) {
-          throw new BadRequestException('childAges length must match childCount');
-        }
-
         if (safeAdultCount + safeChildCount !== guestCount) {
           throw new BadRequestException(
             `guestCount (${guestCount}) must equal adultCount + childCount (${safeAdultCount + safeChildCount})`,
@@ -158,7 +156,7 @@ export class HotelSearchService {
             roomCount,
             safeAdultCount,
             safeChildCount,
-            safeChildAges,
+            normalizedChildAges,
           );
         }
       }
@@ -330,6 +328,37 @@ export class HotelSearchService {
     }
 
     return occupancies;
+  }
+
+  private normalizeChildAges(childCount: number, childAges: number[]): number[] {
+    if (childCount <= 0) {
+      return [];
+    }
+
+    const sanitized = (childAges || [])
+      .map((age) => Math.trunc(Number(age)))
+      .filter((age) => Number.isFinite(age))
+      .map((age) => Math.max(0, Math.min(11, age)));
+
+    if (sanitized.length > childCount) {
+      this.logger.warn(
+        `Received ${sanitized.length} child ages for childCount ${childCount}; trimming extras.`,
+      );
+      return sanitized.slice(0, childCount);
+    }
+
+    if (sanitized.length < childCount) {
+      const missing = childCount - sanitized.length;
+      this.logger.warn(
+        `Received ${sanitized.length} child ages for childCount ${childCount}; padding ${missing} age(s) with default ${HotelSearchService.DEFAULT_CHILD_AGE}.`,
+      );
+      return [
+        ...sanitized,
+        ...Array.from({ length: missing }, () => HotelSearchService.DEFAULT_CHILD_AGE),
+      ];
+    }
+
+    return sanitized;
   }
 
   private validateOccupancies(
