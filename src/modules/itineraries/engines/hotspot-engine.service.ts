@@ -791,6 +791,7 @@ export class HotspotEngineService {
         text, 
         timeRange, 
         locationId,
+        route_date,
         ...dbRow 
       } = row as any;
       
