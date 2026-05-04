@@ -456,7 +456,7 @@ export class ItinerariesController {
     name: 'quoteId',
     required: true,
     description: 'Quote ID generated for the itinerary',
-    example: 'DVI202604230',
+    example: 'DVI_EXAMPLE_QUOTE_ID',
   })
   @ApiQuery({ name: 'page', required: false, example: 1, type: Number })
   @ApiQuery({ name: 'pageSize', required: false, example: 20, type: Number })
@@ -1303,17 +1303,22 @@ export class ItinerariesController {
     body: {
       routeId: number;
       hotspotId: number;
+      hotspotIds?: number[];
       anchorType?: 'after_travel';
       anchorIndex?: number;
       allowTopPriorityRemoval?: boolean;
       selectedHotspotIds?: number[];
     },
   ) {
-    return this.svc.previewManualHotspot(planId, body.routeId, body.hotspotId, {
+    const resolvedHotspotIds = Array.isArray(body.hotspotIds) && body.hotspotIds.length > 0
+      ? body.hotspotIds
+      : [body.hotspotId, ...(Array.isArray(body.selectedHotspotIds) ? body.selectedHotspotIds : [])];
+
+    return this.svc.previewManualHotspotsBatch(planId, body.routeId, resolvedHotspotIds, {
       anchorType: body.anchorType,
       anchorIndex: body.anchorIndex,
       allowTopPriorityRemoval: body.allowTopPriorityRemoval === true,
-      selectedHotspotIds: Array.isArray(body.selectedHotspotIds) ? body.selectedHotspotIds : undefined,
+      focusHotspotId: Number(body.hotspotId || 0) > 0 ? Number(body.hotspotId) : undefined,
     });
   }
 
@@ -1336,6 +1341,30 @@ export class ItinerariesController {
       anchorType: body.anchorType,
       anchorIndex: body.anchorIndex,
       allowTopPriorityRemoval: body.allowTopPriorityRemoval === true,
+    });
+  }
+
+  @Post(':id/manual-hotspots/apply')
+  @ApiOperation({ summary: 'Apply manual hotspots to a route as one optimized batch' })
+  async applyManualHotspots(
+    @Param('id', ParseIntPipe) planId: number,
+    @Body()
+    body: {
+      routeId: number;
+      hotspotIds: number[];
+      anchorType?: 'after_travel';
+      anchorIndex?: number;
+      allowTopPriorityRemoval?: boolean;
+      forceConflictInsertion?: boolean;
+    },
+    @Req() req: any,
+  ) {
+    const userId = Number(req.user?.userId ?? 1);
+    return this.svc.applyManualHotspotsBatch(planId, body.routeId, body.hotspotIds, userId, {
+      anchorType: body.anchorType,
+      anchorIndex: body.anchorIndex,
+      allowTopPriorityRemoval: body.allowTopPriorityRemoval === true,
+      forceConflictInsertion: body.forceConflictInsertion === true,
     });
   }
 

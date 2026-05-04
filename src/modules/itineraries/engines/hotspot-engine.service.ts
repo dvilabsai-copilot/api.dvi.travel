@@ -67,6 +67,15 @@ export class HotspotEngineService {
     const manualHotspots = existingHotspots.filter((h: any) => 
       Number(h.hotspot_plan_own_way || 0) === 1 && Number(h.deleted || 0) === 0
     );
+    manualHotspots.sort((a: any, b: any) => {
+      const routeDiff = Number(a?.itinerary_route_ID || 0) - Number(b?.itinerary_route_ID || 0);
+      if (routeDiff !== 0) return routeDiff;
+
+      const orderDiff = Number(a?.hotspot_order || 0) - Number(b?.hotspot_order || 0);
+      if (orderDiff !== 0) return orderDiff;
+
+      return Number(a?.route_hotspot_ID || 0) - Number(b?.route_hotspot_ID || 0);
+    });
     const manualHotspotIds = new Set(manualHotspots.map((h: any) => Number(h.hotspot_ID || 0)));
 
     console.log('[ManualHotspot][rebuildRouteHotspots] extracted manual hotspots', {
@@ -361,7 +370,7 @@ export class HotspotEngineService {
 
         const route = await (tx as any).dvi_itinerary_route_details.findUnique({
           where: { itinerary_route_ID: routeId },
-          select: { route_start_time: true },
+          select: { route_start_time: true, itinerary_route_date: true },
         });
 
         const hotspotMaster = await (tx as any).dvi_hotspot_place.findUnique({
@@ -523,6 +532,101 @@ export class HotspotEngineService {
           : (Math.max(...visitRows.map((r: any) => Number(r.hotspot_order || 0))) + 1);
         manualHotspot.hotspot_start_time = manualStartTime;
         manualHotspot.hotspot_end_time = manualEndTime;
+
+        // ════════════════════════════════════════════════════════════════
+        // OPERATING HOURS CHECK: mark conflict if slot is outside open windows
+        // ════════════════════════════════════════════════════════════════
+        try {
+          // Determine day of week from route date.
+          // DB stores: hotspot_timing_day 0=Monday, 1=Tuesday, ..., 6=Sunday
+          // JS getUTCDay() returns:          0=Sunday, 1=Monday, ..., 6=Saturday
+          // Conversion: dbDay = (jsDay + 6) % 7
+          const routeDate = route?.itinerary_route_date ? new Date(route.itinerary_route_date) : null;
+          const routeDayOfWeek = routeDate ? ((routeDate.getUTCDay() + 6) % 7) : null;
+
+          const timingWhere: any = { hotspot_ID: hotspotId, deleted: 0, status: 1 };
+          if (routeDayOfWeek !== null) {
+            timingWhere.hotspot_timing_day = routeDayOfWeek;
+          }
+          const hotspotTimingRows = await (tx as any).dvi_hotspot_timing.findMany({
+            where: timingWhere,
+            select: {
+              hotspot_start_time: true,
+              hotspot_end_time: true,
+              hotspot_closed: true,
+              hotspot_open_all_time: true,
+            },
+          });
+
+          const isOpenAllTime = hotspotTimingRows.some(
+            (t: any) => Number(t.hotspot_open_all_time || 0) === 1 && Number(t.hotspot_closed || 0) !== 1,
+          );
+          const openWindows = hotspotTimingRows.filter(
+            (t: any) =>
+              Number(t.hotspot_closed || 0) !== 1 &&
+              Number(t.hotspot_open_all_time || 0) !== 1 &&
+              t.hotspot_start_time &&
+              t.hotspot_end_time,
+          );
+
+          // Check if the entire day is CLOSED (all timing rows for this day have hotspot_closed=1)
+          const isClosedAllDay = hotspotTimingRows.length > 0 &&
+            hotspotTimingRows.every((t: any) => Number(t.hotspot_closed || 0) === 1);
+
+          if (isClosedAllDay) {
+            manualHotspot.is_conflict = 1;
+            manualHotspot.conflict_reason = 'Closed on this day';
+          } else if (!isOpenAllTime && openWindows.length > 0) {
+            const proposedStartMins =
+              manualStartTime.getUTCHours() * 60 + manualStartTime.getUTCMinutes();
+            const proposedEndMins =
+              manualEndTime.getUTCHours() * 60 + manualEndTime.getUTCMinutes();
+
+            const fmtUtcTime = (d: Date): string => {
+              const h = d.getUTCHours();
+              const m = d.getUTCMinutes();
+              const ampm = h >= 12 ? 'PM' : 'AM';
+              const h12 = h % 12 || 12;
+              return `${String(h12).padStart(2, '0')}:${String(m).padStart(2, '0')} ${ampm}`;
+            };
+
+            const fitsAnyWindow = openWindows.some((t: any) => {
+              const winStart =
+                new Date(t.hotspot_start_time).getUTCHours() * 60 +
+                new Date(t.hotspot_start_time).getUTCMinutes();
+              const winEnd =
+                new Date(t.hotspot_end_time).getUTCHours() * 60 +
+                new Date(t.hotspot_end_time).getUTCMinutes();
+              // Allow visit to START within window (partial overlap acceptable)
+              return proposedStartMins >= winStart && proposedStartMins < winEnd;
+            });
+
+            if (!fitsAnyWindow) {
+              const windowLabels = openWindows
+                .map(
+                  (t: any) =>
+                    `${fmtUtcTime(new Date(t.hotspot_start_time))} - ${fmtUtcTime(new Date(t.hotspot_end_time))}`,
+                )
+                .join(', ');
+              manualHotspot.is_conflict = 1;
+              manualHotspot.conflict_reason = `Outside operating hours: ${windowLabels}`;
+              console.warn('[ManualHotspot][rebuildRouteHotspots] operating hours conflict', {
+                planId,
+                routeId,
+                hotspotId,
+                proposedStart: manualStartTime,
+                proposedEnd: manualEndTime,
+                operatingWindows: windowLabels,
+              });
+            }
+          }
+        } catch (timingCheckErr: any) {
+          // Non-fatal: if timing lookup fails, allow insertion without conflict flag
+          console.error('[ManualHotspot][rebuildRouteHotspots] operating hours check failed', {
+            hotspotId,
+            error: timingCheckErr?.message,
+          });
+        }
 
         console.log('[ManualHotspot][rebuildRouteHotspots] injected manual hotspot', {
           planId,

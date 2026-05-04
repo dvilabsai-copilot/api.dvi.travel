@@ -491,6 +491,26 @@ export class ItineraryDetailsService {
     return `${endTimeText} - ${startTimeText}`;
   }
 
+  private formatDurationFromDisplayRange(startTimeText: string | null, endTimeText: string | null): string | null {
+    if (!startTimeText || !endTimeText) return null;
+
+    const startMins = this.parseDisplayTimeMinutesStrict(startTimeText);
+    const endMins = this.parseDisplayTimeMinutesStrict(endTimeText);
+    if (startMins === null || endMins === null) return null;
+
+    let delta = endMins - startMins;
+    if (delta < 0) {
+      delta += 1440;
+    }
+    if (delta <= 0) return null;
+
+    const h = Math.floor(delta / 60);
+    const m = delta % 60;
+    if (h > 0 && m > 0) return `${h} Hours ${m} Min`;
+    if (h > 0) return `${h} Hours`;
+    return `${m} Min`;
+  }
+
   private extractRangeFromSegment(seg: any): {
     field: 'timeRange' | 'visitTime';
     suffix: string;
@@ -574,9 +594,7 @@ export class ItineraryDetailsService {
       throw new NotFoundException('Itinerary not found');
     }
     const planId = plan.itinerary_plan_ID;
-    const proofQuoteEnabled = quoteId === 'DVI202604230';
-    const proofHotspotId = 13;
-    const proofRouteHotspotId = 40060;
+    const proofQuoteEnabled = false;
 
     const confirmedPlan = await this.prisma.dvi_confirmed_itinerary_plan_details.findFirst({
       where: { itinerary_plan_ID: planId, deleted: 0 },
@@ -817,45 +835,27 @@ for (const row of vehicleKmRows) {
           ORDER BY hotspot_order ASC
         `) as any[];
 
-      // Bug 3 fix: stable tiebreaker so TRAVEL_TO_HOTEL (item_type=5) always
-      // precedes CHECKIN (item_type=6) when both share the same hotspot_order.
-      // Array.sort is in-place; the SQL primary sort by hotspot_order is preserved
-      // for all rows whose hotspot_order values differ.
+      // Build response segments in actual chronological order.
+      // hotspot_order is a persistence grouping key, not a reliable presentation order,
+      // because travel rows are often stored after their attraction rows.
       routeHotspots.sort((a: any, b: any) => {
-        const orderDiff = Number(a.hotspot_order ?? 0) - Number(b.hotspot_order ?? 0);
-        if (orderDiff !== 0) return orderDiff;
-        return Number(a.item_type ?? 0) - Number(b.item_type ?? 0);
-      });
+        const aStart = this.formatTime((a as any).hotspot_start_time ?? null);
+        const bStart = this.formatTime((b as any).hotspot_start_time ?? null);
+        const aStartMins = aStart ? this.timeToMinutes(aStart) : Number.MAX_SAFE_INTEGER;
+        const bStartMins = bStart ? this.timeToMinutes(bStart) : Number.MAX_SAFE_INTEGER;
+        if (aStartMins !== bStartMins) return aStartMins - bStartMins;
 
-      if (proofQuoteEnabled) {
-        const proofRawRow = routeHotspots.find(
-          (rh) => Number((rh as any).route_hotspot_ID) === proofRouteHotspotId,
-        );
-        if (proofRawRow) {
-          console.log('[ItineraryDetails][PROOF] Raw route hotspot row from details query', {
-            quoteId,
-            planId,
-            itineraryRouteId: route.itinerary_route_ID,
-            routeHotspotId: (proofRawRow as any).route_hotspot_ID,
-            hotspotId: (proofRawRow as any).hotspot_ID,
-            itemType: (proofRawRow as any).item_type,
-            hotspotStartTime: (proofRawRow as any).hotspot_start_time,
-            hotspotEndTime: (proofRawRow as any).hotspot_end_time,
-            hotspotOrder: (proofRawRow as any).hotspot_order,
-            isConflict: (proofRawRow as any).is_conflict,
-            conflictReason: (proofRawRow as any).conflict_reason,
-            deleted: (proofRawRow as any).deleted,
-            status: (proofRawRow as any).status,
-          });
-          console.log('[VisitTime][PROOF] Route day boundaries from route row', {
-            itineraryRouteId: route.itinerary_route_ID,
-            routeStartTimeRaw: route.route_start_time,
-            routeEndTimeRaw: route.route_end_time,
-            routeStartTimeDisplay: this.formatTime(route.route_start_time as any),
-            routeEndTimeDisplay: this.formatTime(route.route_end_time as any),
-          });
-        }
-      }
+        const aEnd = this.formatTime((a as any).hotspot_end_time ?? null);
+        const bEnd = this.formatTime((b as any).hotspot_end_time ?? null);
+        const aEndMins = aEnd ? this.timeToMinutes(aEnd) : Number.MAX_SAFE_INTEGER;
+        const bEndMins = bEnd ? this.timeToMinutes(bEnd) : Number.MAX_SAFE_INTEGER;
+        if (aEndMins !== bEndMins) return aEndMins - bEndMins;
+
+        const itemDiff = Number(a.item_type ?? 0) - Number(b.item_type ?? 0);
+        if (itemDiff !== 0) return itemDiff;
+
+        return Number(a.hotspot_order ?? 0) - Number(b.hotspot_order ?? 0);
+      });
 
       const hotspotIds = Array.from(
         new Set(
@@ -955,6 +955,8 @@ for (const row of vehicleKmRows) {
       
       // FIX #3: Track hotel arrival time for checkin anchoring
       let hotelArrivalTime: string | null = null;
+      let emittedTerminalSegment = false;
+      const suppressedLastRouteOrders = new Set<number>();
       const routeEndMins = this.timeToMinutes(this.formatTime(route.route_end_time as any) ?? '00:00 AM');
 
       const normalizeName = (value?: string | null) =>
@@ -1177,14 +1179,32 @@ for (const row of vehicleKmRows) {
         return false;
       })();
 
-      if (startHotspot && !(isLateArrivalDay1 && !hasAttractions)) {
-        const startTimeRange = `${this.formatTime((startHotspot as any).hotspot_start_time ?? null)} - ${this.formatTime((startHotspot as any).hotspot_end_time ?? null)}`;
+      if (!(isLateArrivalDay1 && !hasAttractions)) {
+        let startTimeRange: string | null = null;
 
-        segments.push({
-          type: 'start' as const,
-          title: index === 0 ? 'Start your Journey' : 'Start Your Day',
-          timeRange: startTimeRange,
-        });
+        if (startHotspot) {
+          startTimeRange = `${this.formatTime((startHotspot as any).hotspot_start_time ?? null)} - ${this.formatTime((startHotspot as any).hotspot_end_time ?? null)}`;
+        } else {
+          const routeStartText = this.formatTime(route.route_start_time as any);
+          const firstTimelineStartText = this.formatTime((routeHotspots[0] as any)?.hotspot_start_time ?? null);
+
+          if (routeStartText && firstTimelineStartText) {
+            const orderedStartRange = this.orderedTimeRange(routeStartText, firstTimelineStartText);
+            startTimeRange = orderedStartRange ?? `${routeStartText} - ${firstTimelineStartText}`;
+          } else if (routeStartText) {
+            const routeStartMins = this.timeToMinutes(routeStartText);
+            const fallbackEndText = this.minutesToDisplayTime(routeStartMins + 60);
+            startTimeRange = `${routeStartText} - ${fallbackEndText}`;
+          }
+        }
+
+        if (startTimeRange) {
+          segments.push({
+            type: 'start' as const,
+            title: index === 0 ? 'Start your Journey' : 'Start Your Day',
+            timeRange: startTimeRange,
+          });
+        }
       }
 
       for (const rh of routeHotspots) {
@@ -1373,6 +1393,10 @@ for (const row of vehicleKmRows) {
 
             previousStopName = toName;
           } else {
+            if (suppressedLastRouteOrders.has(Number((rh as any).hotspot_order || 0))) {
+              continue;
+            }
+
             // Regular travel to hotspot - use precomputed semantic mapping
             const semanticMapping = travelSegmentSemantics.get(rh.route_hotspot_ID);
             const fromName = semanticMapping?.from ?? previousStopName;  // Fallback only if not in map
@@ -1499,6 +1523,26 @@ for (const row of vehicleKmRows) {
           // ATTRACTION / HOTSPOT visit
           if (!master || !master.hotspot_name?.trim()) {
             continue;
+          }
+
+          if (index === routes.length - 1) {
+            const attractionEndMins = endTimeText ? this.timeToMinutes(endTimeText) : 0;
+            const overrunDropOffRow = routeHotspots.find((candidate: any) => {
+              const candidateType = Number((candidate as any).item_type ?? 0);
+              if (candidateType !== 7) return false;
+
+              const candidateStartText = this.formatTime((candidate as any).hotspot_start_time ?? null);
+              const candidateEndText = this.formatTime((candidate as any).hotspot_end_time ?? null);
+              const candidateStartMins = candidateStartText ? this.timeToMinutes(candidateStartText) : 0;
+              const candidateEndMins = candidateEndText ? this.timeToMinutes(candidateEndText) : 0;
+
+              return candidateStartMins === attractionEndMins && candidateEndMins > routeEndMins;
+            });
+
+            if (overrunDropOffRow) {
+              suppressedLastRouteOrders.add(Number((rh as any).hotspot_order || 0));
+              continue;
+            }
           }
 
           const stayDuration = (master as any).hotspot_duration ?? null;
@@ -1726,6 +1770,24 @@ for (const row of vehicleKmRows) {
             route.next_visiting_location ??
             "Hotel";
 
+          const normalizeLabel = (value?: string | null) =>
+            String(value ?? '').trim().toLowerCase();
+          const sourceCityName = location?.source_location ?? route.location_name ?? '';
+          const destinationCityName = location?.destination_location ?? route.next_visiting_location ?? '';
+          const isSameCityRoute =
+            normalizeLabel(sourceCityName) !== '' &&
+            normalizeLabel(sourceCityName) === normalizeLabel(destinationCityName);
+          const isCityFallbackDestination =
+            !hotelInfo?.hotel_name &&
+            normalizeLabel(toName) !== '' &&
+            normalizeLabel(toName) === normalizeLabel(destinationCityName);
+
+          // For local same-city days, skip misleading end-of-day travel rows when hotel destination
+          // cannot be resolved (city fallback only). The check-in row is still emitted.
+          if (isSameCityRoute && isCityFallbackDestination) {
+            continue;
+          }
+
           const travelStartMins = startTimeText ? this.timeToMinutes(startTimeText) : null;
 
           // Find the chronologically last attraction that actually happened before this row.
@@ -1831,7 +1893,9 @@ for (const row of vehicleKmRows) {
             to: toName,
             timeRange: travelToHotelTimeRange,
             distance: travelDistance,
-            duration: this.formatDuration(travelDuration),
+            duration:
+              this.formatDurationFromDisplayRange(startTimeText, endTimeText) ??
+              this.formatDuration(travelDuration),
             note: "This may vary due to traffic conditions",
             isConflict: (rh as any).is_conflict === 1,
             conflictReason: (rh as any).conflict_reason ?? null,
@@ -1890,6 +1954,7 @@ for (const row of vehicleKmRows) {
             hotelAddress: hotelAddress,
             time: checkInTime,
           });
+          emittedTerminalSegment = true;
 
           previousStopName = hotelName;
           continue;
@@ -1935,6 +2000,7 @@ for (const row of vehicleKmRows) {
             isConflict: (rh as any).isConflict === true,
             conflictReason: (rh as any).conflictReason ?? null,
           });
+          emittedTerminalSegment = true;
 
           previousStopName = toName;
           continue;
@@ -1942,10 +2008,7 @@ for (const row of vehicleKmRows) {
       }
 
       // RETURN block at the end of the day (only if no item_type 6 or 7 exists)
-      const hasReturnOrDropOff = routeHotspots.some((rh) => {
-        const itemType = Number((rh as any).item_type ?? 0);
-        return itemType === 6 || itemType === 7;
-      });
+      const hasReturnOrDropOff = emittedTerminalSegment;
 
       const dayEndTimeText = this.formatTime(route.route_end_time as any);
 
