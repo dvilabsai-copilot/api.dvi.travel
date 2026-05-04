@@ -133,11 +133,6 @@ export class HotspotSelector {
       const aId = Number(a.hotspot_ID);
       const bId = Number(b.hotspot_ID);
 
-      const aIsManual = manualHotspotIds.has(aId);
-      const bIsManual = manualHotspotIds.has(bId);
-      if (aIsManual && !bIsManual) return -1;
-      if (!aIsManual && bIsManual) return 1;
-
       const ap = Number(a.__priority ?? 9999);
       const bp = Number(b.__priority ?? 9999);
       return ap - bp;
@@ -162,8 +157,8 @@ export class HotspotSelector {
         manualHotspots.push({
           ...h,
           __bucket: "manual",
-          __priority: getPriority(h),
-          // ✅ manual counts as boundary/manual trigger for cutoff-policy
+          // ✅ manual hotspot scheduling priority is always 4 — never raw DB master priority
+          __priority: 4,
           isBoundaryMatch: true,
         });
       }
@@ -267,19 +262,24 @@ export class HotspotSelector {
     let merged: any[] = [];
 
     if (directToNext === 1) {
-      // ✅ Direct = YES
-      // 1) manual always
-      // 2) via if exists else boundary
-      // 3) destination
+      // ✅ Direct = YES: via/boundary + dest + manual, sorted by priority
       const hasVia = viaHotspots.length > 0;
-      merged = [...manualHotspots, ...(hasVia ? viaHotspots : boundaryHotspots), ...destHotspots];
+      const base = [...(hasVia ? viaHotspots : boundaryHotspots), ...destHotspots];
+      // Manual hotspots are mustInclude but sorted by effective P4 among others
+      merged = [...base, ...manualHotspots].sort((a, b) => {
+        const ap = Number(a.__priority ?? 9999);
+        const bp = Number(b.__priority ?? 9999);
+        return ap - bp;
+      });
     } else {
-      // ✅ Direct = NO
-      // 1) manual always
-      // 2) top-3 source
-      // 3) via
-      // 4) destination
-      merged = [...manualHotspots, ...sourceTop3, ...viaHotspots, ...destHotspots];
+      // ✅ Direct = NO: source + via + dest + manual, sorted by priority
+      const base = [...sourceTop3, ...viaHotspots, ...destHotspots];
+      // Manual hotspots are mustInclude but sorted by effective P4 among others
+      merged = [...base, ...manualHotspots].sort((a, b) => {
+        const ap = Number(a.__priority ?? 9999);
+        const bp = Number(b.__priority ?? 9999);
+        return ap - bp;
+      });
     }
 
     // ---------------------------------------------------------------------
@@ -329,8 +329,8 @@ export class HotspotSelector {
       result.push({
         hotspot_ID: id,
         city_order,
-        hotspot_priority: getPriority(h),
-        // ✅ Only true for manual/boundary trigger buckets
+        // ✅ Manual hotspot always schedules as P4, not raw DB master priority
+        hotspot_priority: h.__bucket === 'manual' ? 4 : getPriority(h),
         isBoundaryMatch: !!h.isBoundaryMatch,
       });
     }
