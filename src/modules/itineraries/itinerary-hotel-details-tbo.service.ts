@@ -31,15 +31,19 @@ export class ItineraryHotelDetailsTboService {
       routes: any[],
       noOfNights: number,
       guestNationality: string,
+      roomCount: number = 1,
       adultCount: number = 2,
       childCount: number = 0,
+      childAges: number[] = [],
     ): Promise<Map<number, HotelSearchResult[] | null>> {
       let hotelsByRoute = await this.fetchHotelsForRoutes(
         routes,
         noOfNights,
         guestNationality,
+        roomCount,
         adultCount,
         childCount,
+        childAges,
       );
 
       const hasProviderFailure = Array.from(hotelsByRoute.values()).some(
@@ -58,8 +62,10 @@ export class ItineraryHotelDetailsTboService {
           routes,
           noOfNights,
           guestNationality,
+          roomCount,
           adultCount,
           childCount,
+          childAges,
         );
 
         const retryStillFailed = Array.from(retryResult.values()).some(
@@ -139,6 +145,9 @@ export class ItineraryHotelDetailsTboService {
 
   private async resolveGuestNationality(plan: any): Promise<string> {
     const nationalityId = Number((plan as any)?.nationality ?? 0);
+    const rawNationality = String((plan as any)?.nationality ?? '')
+      .trim()
+      .toUpperCase();
 
     // Prefer master-country mapping from DB (as requested).
     if (nationalityId > 0) {
@@ -169,6 +178,14 @@ export class ItineraryHotelDetailsTboService {
       }
     }
 
+    // Some records may directly store ISO-2 code instead of FK id.
+    if (/^[A-Z]{2}$/.test(rawNationality)) {
+      this.logger.warn(
+        `⚠️ Using direct ISO-2 nationality from plan value: ${rawNationality}`,
+      );
+      return rawNationality;
+    }
+
     const envFallback = String(
       process.env.TBO_DEFAULT_GUEST_NATIONALITY || '',
     )
@@ -181,9 +198,10 @@ export class ItineraryHotelDetailsTboService {
       return envFallback;
     }
 
-    throw new BadRequestException(
-      'Unable to resolve guestNationality. Ensure country table mapping exists for plan nationality or set TBO_DEFAULT_GUEST_NATIONALITY.',
+    this.logger.warn(
+      '⚠️ Unable to resolve guestNationality from plan/country table/env. Falling back to IN.',
     );
+    return 'IN';
   }
 
   /**
@@ -256,17 +274,35 @@ export class ItineraryHotelDetailsTboService {
     this.logger.log(`🌙 Plan has ${noOfNights} nights`);
 
     // Read pax counts saved by the user when creating the itinerary
+    const planRoomCount = Math.max(Number((plan as any).preferred_room_count || 1), 1);
     const planAdultCount = Number((plan as any).total_adult || 0);
     const planChildCount = Number((plan as any).total_children || 0);
-    this.logger.log(`👥 Pax from plan: adults=${planAdultCount}, children=${planChildCount}`);
+    this.logger.log(
+      `👥 Pax from plan: rooms=${planRoomCount}, adults=${planAdultCount}, children=${planChildCount}`,
+    );
+
+    // Fetch child ages from saved travellers so the TBO search uses actual ages, not defaults.
+    let planChildAges: number[] = [];
+    if (planChildCount > 0) {
+      const childTravellers = await this.prisma.dvi_itinerary_traveller_details.findMany({
+        where: { itinerary_plan_ID: planId, traveller_type: 2, deleted: 0 },
+        orderBy: { traveller_details_ID: 'asc' },
+      });
+      planChildAges = childTravellers
+        .map((t) => Math.trunc(Number((t as any).traveller_age)))
+        .filter((age) => Number.isFinite(age) && age >= 0 && age <= 11);
+      this.logger.log(`👦 Child ages from travellers: [${planChildAges.join(', ')}]`);
+    }
 
     // Step 3: Fetch hotels from TBO for each route (except last route if it's departure day)
     const hotelsByRoute = await this.fetchHotelsForRoutesWithRetry(
       routes,
       noOfNights,
       guestNationality,
+      planRoomCount,
       planAdultCount,
       planChildCount,
+      planChildAges,
     );
     
     // Step 3.5: Fetch HOBSE hotels and merge with TBO hotels
@@ -285,6 +321,7 @@ export class ItineraryHotelDetailsTboService {
       routes,
       noOfNights,
       guestNationality,
+      planRoomCount,
       planAdultCount,
       planChildCount,
     );
@@ -373,14 +410,6 @@ export class ItineraryHotelDetailsTboService {
       ? Number(itineraryRouteId)
       : undefined;
 
-    // When callers pass only page/pageSize (without group/route filters),
-    // keep the full hotel matrix so tabs can render all groups and all days.
-    // Legacy clients that need paginated rows should pass groupType and/or itineraryRouteId.
-    if (!(normalizedGroupType && normalizedGroupType >= 1 && normalizedGroupType <= 4) &&
-        !(normalizedRouteId && normalizedRouteId > 0)) {
-      return response;
-    }
-
     let filteredHotels = [...(response.hotels || [])];
     if (normalizedGroupType && normalizedGroupType >= 1 && normalizedGroupType <= 4) {
       filteredHotels = filteredHotels.filter((h) => Number(h.groupType) === normalizedGroupType);
@@ -421,8 +450,10 @@ export class ItineraryHotelDetailsTboService {
     routes: any[],
     noOfNights: number,
     guestNationality: string,
+    roomCount: number = 1,
     adultCount: number = 2,
     childCount: number = 0,
+    childAges: number[] = [],
   ): Promise<Map<number, HotelSearchResult[] | null>> {
     const hotelsByRoute = new Map<number, HotelSearchResult[] | null>();
 
@@ -444,8 +475,10 @@ export class ItineraryHotelDetailsTboService {
           block,
           cityCodeMap,
           guestNationality,
+          roomCount,
           adultCount,
           childCount,
+          childAges,
         )
           .then((hotels) => {
             block.routeIds.forEach((routeId) => hotelsByRoute.set(routeId, hotels || []));
@@ -676,8 +709,10 @@ export class ItineraryHotelDetailsTboService {
     },
     cityCodeMap: Record<string, string>,
     guestNationality: string,
+    roomCount: number = 1,
     adultCount: number = 2,
     childCount: number = 0,
+    childAges: number[] = [],
   ): Promise<HotelSearchResult[]> {
     const destination = block.destination;
 
@@ -705,15 +740,17 @@ export class ItineraryHotelDetailsTboService {
     const safeAdultCount = adultCount > 0 ? adultCount : 1;
     const safeChildCount = childCount >= 0 ? childCount : 0;
     const guestCount = safeAdultCount + safeChildCount;
+    const safeRoomCount = Math.max(Number(roomCount || 1), 1);
 
     const searchCriteria = {
       cityCode: effectiveCityCode,
       checkInDate: block.checkInDate,
       checkOutDate: block.checkOutDate,
-      roomCount: 1,
+      roomCount: safeRoomCount,
       guestCount,
       adultCount: safeAdultCount,
       childCount: safeChildCount,
+      childAges: childAges.length > 0 ? childAges : undefined,
       guestNationality,
       providers: ['tbo', 'resavenue'], // Only TBO + ResAvenue - HOBSE will be merged separately
     };
@@ -816,6 +853,7 @@ export class ItineraryHotelDetailsTboService {
     routes: any[],
     noOfNights: number,
     guestNationality: string,
+    roomCount: number = 1,
     adultCount: number = 2,
     childCount: number = 0,
   ): Promise<Map<number, HotelSearchResult[]>> {
@@ -827,6 +865,7 @@ export class ItineraryHotelDetailsTboService {
     try {
       const safeAdultCount = adultCount > 0 ? adultCount : 1;
       const safeChildCount = childCount >= 0 ? childCount : 0;
+      const safeRoomCount = Math.max(Number(roomCount || 1), 1);
       const guestCount = safeAdultCount + safeChildCount;
 
       for (let routeIndex = 0; routeIndex < totalRoutes; routeIndex++) {
@@ -851,7 +890,7 @@ export class ItineraryHotelDetailsTboService {
             cityCode: destination, // ResAvenue provider accepts city names
             checkInDate: routeDate.toISOString().split('T')[0],
             checkOutDate: checkOutDate.toISOString().split('T')[0],
-            roomCount: 1,
+            roomCount: safeRoomCount,
             guestCount,
             adultCount: safeAdultCount,
             childCount: safeChildCount,
@@ -1433,6 +1472,21 @@ export class ItineraryHotelDetailsTboService {
     const noOfNights = Number((plan as any).no_of_nights || 0);
     this.logger.log(`🌙 Plan has ${noOfNights} nights`);
 
+    const planRoomCount2 = Math.max(Number((plan as any).preferred_room_count || 1), 1);
+    const planAdultCount2 = Number((plan as any).total_adult || 0);
+    const planChildCount2 = Number((plan as any).total_children || 0);
+
+    let planChildAges2: number[] = [];
+    if (planChildCount2 > 0) {
+      const childTravellers2 = await this.prisma.dvi_itinerary_traveller_details.findMany({
+        where: { itinerary_plan_ID: planId, traveller_type: 2, deleted: 0 },
+        orderBy: { traveller_details_ID: 'asc' },
+      });
+      planChildAges2 = childTravellers2
+        .map((t) => Math.trunc(Number((t as any).traveller_age)))
+        .filter((age) => Number.isFinite(age) && age >= 0 && age <= 11);
+    }
+
     // Step 3: Fetch FRESH hotels from TBO
     // OPTIMIZATION: If filterRouteId provided, only fetch hotels for that specific route
     let routesToProcess = routes;
@@ -1450,6 +1504,10 @@ export class ItineraryHotelDetailsTboService {
       routesToProcess,
       noOfNights,
       guestNationality,
+      planRoomCount2,
+      planAdultCount2,
+      planChildCount2,
+      planChildAges2,
     );
 
     // Step 4: Transform fresh TBO data into room details format
