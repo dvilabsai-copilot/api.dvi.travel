@@ -8,7 +8,7 @@ import { AppModule } from './app.module';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { PrismaService } from './prisma.service';
 import { BigIntSerializerInterceptor } from './common/interceptors/bigint-serializer.interceptor';
-import { ValidationPipe } from '@nestjs/common';
+import { RequestMethod, ValidationPipe } from '@nestjs/common';
 import * as express from 'express';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -65,8 +65,10 @@ async function bootstrap() {
   }
   app.use('/uploads', express.static(uploadsRoot));
 
-  // All routes start with /api/v1
-  app.setGlobalPrefix('api/v1');
+  // Keep existing REST prefix while allowing GraphQL v2 to live at /api/v2/graphql.
+  app.setGlobalPrefix('api/v1', {
+    exclude: [{ path: 'api/v2/graphql', method: RequestMethod.ALL }],
+  });
 
   // ✅ Enable DTO validation + numeric transform for query/params/body
   app.useGlobalPipes(
