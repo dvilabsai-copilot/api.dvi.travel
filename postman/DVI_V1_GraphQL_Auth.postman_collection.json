@@ -1,0 +1,218 @@
+{
+  "info": {
+    "_postman_id": "e2e10db3-153f-4a0b-a17c-2c23b8f30d50",
+    "name": "DVI API v1 + GraphQL v2 Auth Flow",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Run this collection in order: login -> v1 REST -> GraphQL v2. Login test stores accessToken into collection variable token."
+  },
+  "item": [
+    {
+      "name": "1) Auth - Login (Set Token)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/auth/login",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "auth",
+            "login"
+          ]
+        },
+        "description": "Uses values from LoginDto examples. Saves accessToken to collection variable token."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Login status is 200', function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "const json = pm.response.json();",
+              "const token = json.accessToken || json.token || (json.data && (json.data.accessToken || json.data.token));",
+              "",
+              "pm.test('Token exists in login response', function () {",
+              "  pm.expect(token).to.be.a('string').and.not.empty;",
+              "});",
+              "",
+              "pm.collectionVariables.set('token', token);",
+              "console.log('Saved token to collection variable token');"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "2) v1 - Dashboard Stats (Auth)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/dashboard/stats",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "dashboard",
+            "stats"
+          ]
+        },
+        "description": "Tests existing protected REST v1 endpoint using token captured from login."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('v1 dashboard status is 200', function () {",
+              "  pm.response.to.have.status(200);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "3) GraphQL v2 - dashboardSummaryV2 (Auth)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"query\": \"query DashboardSummaryV2 { dashboardSummaryV2 { stats { totalAgents totalDrivers totalItineraries confirmedBookings totalRevenue } profit { currentMonth lastMonth percentageChange } vehicles { total available onRoute upcoming } vendors { total branches inactive } drivers { total active inactive onRoute available } hotels { total rooms amenities bookings } dailyMoment { quoteId location } starPerformer { name phone performance } } }\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/v2/graphql",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v2",
+            "graphql"
+          ]
+        },
+        "description": "Tests protected GraphQL v2 endpoint using token from login."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('GraphQL status is 200', function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "const body = pm.response.json();",
+              "pm.test('GraphQL has no errors', function () {",
+              "  pm.expect(body.errors, JSON.stringify(body.errors || [])).to.be.undefined;",
+              "});",
+              "",
+              "pm.test('dashboardSummaryV2 payload exists', function () {",
+              "  pm.expect(body.data).to.have.property('dashboardSummaryV2');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "4) GraphQL v2 - Unauthorized Check (No Token)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"query\": \"query { dashboardSummaryV2 { stats { totalAgents } } }\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/v2/graphql",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v2",
+            "graphql"
+          ]
+        },
+        "description": "Optional security check. This request intentionally sends no Authorization header."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('GraphQL unauthorized response envelope is 200', function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "const body = pm.response.json();",
+              "pm.test('Unauthorized error is present', function () {",
+              "  pm.expect(Array.isArray(body.errors) && body.errors.length > 0).to.eql(true);",
+              "});"
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:4006"
+    },
+    {
+      "key": "email",
+      "value": "admin@dvi.co.in"
+    },
+    {
+      "key": "password",
+      "value": "Keerthi@2404ias"
+    },
+    {
+      "key": "token",
+      "value": ""
+    }
+  ]
+}

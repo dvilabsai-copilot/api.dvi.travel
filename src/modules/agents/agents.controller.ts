@@ -1,6 +1,6 @@
 // FILE: src/modules/agents/agents.controller.ts
 
-import { Controller, Get, Query } from "@nestjs/common";
+import { BadRequestException, Controller, Get, Query } from "@nestjs/common";
 import { AgentsService } from "./agents.service";
 import {
   AgentListItemDto,
@@ -71,6 +71,11 @@ export class AgentsController {
   async getAgentLabel(
     @Query("agentId") agentId: string,
   ): Promise<string> {
-    return this.service.getAgentLabel(Number(agentId));
+    const parsedAgentId = Number(agentId);
+    if (!Number.isFinite(parsedAgentId) || parsedAgentId <= 0) {
+      throw new BadRequestException("agentId must be a positive number");
+    }
+
+    return this.service.getAgentLabel(parsedAgentId);
   }
 }
