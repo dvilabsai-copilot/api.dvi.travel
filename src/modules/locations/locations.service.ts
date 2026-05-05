@@ -215,7 +215,30 @@ export class LocationsService {
   }
 
   async update(id: number, payload: any) {
-    await this.get(id);
+    const existing = await this.get(id);
+
+    const nextSource = this.normalizeLocationName(
+      payload?.source_location ?? existing.source_location,
+    );
+    const nextDestination = this.normalizeLocationName(
+      payload?.destination_location ?? existing.destination_location,
+    );
+    const nextDistance =
+      payload?.distance_km !== undefined
+        ? Number(payload.distance_km)
+        : Number(existing.distance_km ?? 0);
+
+    if (
+      nextSource &&
+      nextDestination &&
+      nextSource.toLowerCase() === nextDestination.toLowerCase() &&
+      (!Number.isFinite(nextDistance) || nextDistance < 10)
+    ) {
+      throw new BadRequestException(
+        'When source and destination are the same, minimum distance is 10 km',
+      );
+    }
+
     const data = this.mapDtoToSchema(payload);
     const updated = await this.prisma.dvi_stored_locations.update({
       where: { location_ID: BigInt(id) },
