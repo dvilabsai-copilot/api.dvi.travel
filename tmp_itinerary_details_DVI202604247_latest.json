@@ -1,0 +1,1190 @@
+{
+    "quoteId":  "DVI202604247",
+    "planId":  292,
+    "itineraryPreference":  3,
+    "isConfirmed":  false,
+    "dateRange":  "2026-05-03 to 2026-05-07",
+    "dayCount":  4,
+    "nightCount":  3,
+    "roomCount":  1,
+    "extraBed":  0,
+    "childWithBed":  0,
+    "childWithoutBed":  0,
+    "adults":  1,
+    "children":  0,
+    "infants":  0,
+    "overallCost":  "14794.00",
+    "meal_plan_code":  "CP",
+    "days":  [
+                 {
+                     "id":  2852,
+                     "dayNumber":  1,
+                     "date":  "2026-05-03T00:00:00.000Z",
+                     "locationId":  165946,
+                     "departure":  "Chennai International Airport",
+                     "arrival":  "Chennai",
+                     "distance":  "63.56 KM",
+                     "intercityDistance":  "16.61 KM",
+                     "sightseeingDistance":  "46.95 KM",
+                     "startTime":  "08:00 AM",
+                     "endTime":  "08:00 PM",
+                     "viaRoutes":  [
+
+                                   ],
+                     "segments":  [
+                                      {
+                                          "type":  "start",
+                                          "title":  "Start your Journey",
+                                          "timeRange":  "08:00 AM - 09:00 AM"
+                                      },
+                                      {
+                                          "type":  "travel",
+                                          "from":  "Chennai International Airport",
+                                          "to":  "Kapaleeshwarar Temple",
+                                          "timeRange":  "09:00 AM - 09:30 AM",
+                                          "distance":  "19.94 KM",
+                                          "duration":  "30 Min",
+                                          "note":  "This may vary due to traffic conditions",
+                                          "isConflict":  false,
+                                          "conflictReason":  null
+                                      },
+                                      {
+                                          "type":  "attraction",
+                                          "name":  "Kapaleeshwarar Temple",
+                                          "description":  "The Kapaleeshwarar temple is of typical Dravidian architectural style, with the gopuram overpowering the street on which the temple sits. This temple is also a testimonial for the vishwakarmas sthapathis. There are two entrances to the temple marked by the gopuram on either side.",
+                                          "visitTime":  "09:30 AM - 10:30 AM",
+                                          "duration":  "1 Hours",
+                                          "amount":  null,
+                                          "timings":  "05:30 AM - 12:00 PM, 04:00 PM - 08:00 PM",
+                                          "image":  "/uploads/hotspot_gallery/Kapaleeshwarar_Temple.png",
+                                          "galleryImages":  [
+                                                                "/uploads/hotspot_gallery/Kapaleeshwarar_Temple.png",
+                                                                "/uploads/hotspot_gallery/Kapaleeswarar_koil.png"
+                                                            ],
+                                          "videoUrl":  "https://youtu.be/6Z6oZZHvYIk",
+                                          "planOwnWay":  false,
+                                          "activities":  [
+
+                                                         ],
+                                          "hasAvailableActivities":  true,
+                                          "hotspotId":  4,
+                                          "routeHotspotId":  90726,
+                                          "locationId":  165946,
+                                          "priority":  1,
+                                          "isConflict":  false,
+                                          "conflictReason":  null,
+                                          "isManual":  false,
+                                          "isDeleted":  false
+                                      },
+                                      {
+                                          "type":  "hotspot",
+                                          "text":  "Click to Add Hotspot",
+                                          "locationId":  165946,
+                                          "anchorType":  "after_travel",
+                                          "anchorIndex":  0,
+                                          "anchorFrom":  "Chennai International Airport",
+                                          "anchorTo":  "Kapaleeshwarar Temple",
+                                          "anchorTimeRange":  "09:00 AM - 09:30 AM"
+                                      },
+                                      {
+                                          "type":  "travel",
+                                          "from":  "Kapaleeshwarar Temple",
+                                          "to":  "Parthasarathy Temple",
+                                          "timeRange":  "10:30 AM - 10:44 AM",
+                                          "distance":  "3.59 KM",
+                                          "duration":  "14 Min",
+                                          "note":  "This may vary due to traffic conditions",
+                                          "isConflict":  false,
+                                          "conflictReason":  null
+                                      },
+                                      {
+                                          "type":  "attraction",
+                                          "name":  "Parthasarathy Temple",
+                                          "description":  "Located in the neighbourhood of Thiruvallikeni, the temple is glorified in the Naalayira Divya Prabandham, the early medieval Tamil literature canon of the Alvar saints from the 6th to 9th centuries CE and is classified as among the 108 Divya Desams dedicated to Vishnu.",
+                                          "visitTime":  "10:44 AM - 11:44 AM",
+                                          "duration":  "1 Hours",
+                                          "amount":  null,
+                                          "timings":  "06:00 AM - 12:00 PM, 04:00 PM - 07:00 PM",
+                                          "image":  "/uploads/hotspot_gallery/Parthasarathy_Temple.jpg",
+                                          "galleryImages":  [
+                                                                "/uploads/hotspot_gallery/Parthasarathy_Temple.jpg"
+                                                            ],
+                                          "videoUrl":  "https://youtu.be/6Z6oZZHvYIk",
+                                          "planOwnWay":  false,
+                                          "activities":  [
+
+                                                         ],
+                                          "hasAvailableActivities":  false,
+                                          "hotspotId":  11,
+                                          "routeHotspotId":  90730,
+                                          "locationId":  165946,
+                                          "priority":  2,
+                                          "isConflict":  false,
+                                          "conflictReason":  null,
+                                          "isManual":  false,
+                                          "isDeleted":  false
+                                      },
+                                      {
+                                          "type":  "hotspot",
+                                          "text":  "Click to Add Hotspot",
+                                          "locationId":  165946,
+                                          "anchorType":  "after_travel",
+                                          "anchorIndex":  1,
+                                          "anchorFrom":  "Kapaleeshwarar Temple",
+                                          "anchorTo":  "Parthasarathy Temple",
+                                          "anchorTimeRange":  "10:30 AM - 10:44 AM"
+                                      },
+                                      {
+                                          "type":  "travel",
+                                          "from":  "Parthasarathy Temple",
+                                          "to":  "Marina Beach",
+                                          "timeRange":  "11:44 AM - 11:49 AM",
+                                          "distance":  "0.50 KM",
+                                          "duration":  "5 Min",
+                                          "note":  "This may vary due to traffic conditions",
+                                          "isConflict":  false,
+                                          "conflictReason":  null
+                                      },
+                                      {
+                                          "type":  "attraction",
+                                          "name":  "Marina Beach",
+                                          "description":  "Marina beach in Chennai along the Bay of Bengal is India\u0026#039;s longest and world\u0026#039;s second longest beach. This predominantly sandy of nearly 12 kilometers extends from Beasant Nagar in the south to Fort St. George in the north. Chennai Marina beach was renovated by Governor Mountstuart Elphinstone Grant Duff in 1880s.",
+                                          "visitTime":  "11:49 AM - 12:49 PM",
+                                          "duration":  "1 Hours",
+                                          "amount":  null,
+                                          "timings":  "Open 24 Hours",
+                                          "image":  "/uploads/hotspot_gallery/825478-beach.webp",
+                                          "galleryImages":  [
+                                                                "/uploads/hotspot_gallery/825478-beach.webp"
+                                                            ],
+                                          "videoUrl":  "https://youtu.be/6Z6oZZHvYIk",
+                                          "planOwnWay":  false,
+                                          "activities":  [
+
+                                                         ],
+                                          "hasAvailableActivities":  false,
+                                          "hotspotId":  5,
+                                          "routeHotspotId":  90734,
+                                          "locationId":  165946,
+                                          "priority":  3,
+                                          "isConflict":  false,
+                                          "conflictReason":  null,
+                                          "isManual":  false,
+                                          "isDeleted":  false
+                                      },
+                                      {
+                                          "type":  "hotspot",
+                                          "text":  "Click to Add Hotspot",
+                                          "locationId":  165946,
+                                          "anchorType":  "after_travel",
+                                          "anchorIndex":  2,
+                                          "anchorFrom":  "Parthasarathy Temple",
+                                          "anchorTo":  "Marina Beach",
+                                          "anchorTimeRange":  "11:44 AM - 11:49 AM"
+                                      },
+                                      {
+                                          "type":  "travel",
+                                          "from":  "Marina Beach",
+                                          "to":  "light house marina",
+                                          "timeRange":  "12:49 PM - 12:54 PM",
+                                          "distance":  "1.14 KM",
+                                          "duration":  "5 Min",
+                                          "note":  "This may vary due to traffic conditions",
+                                          "isConflict":  false,
+                                          "conflictReason":  null
+                                      },
+                                      {
+                                          "type":  "attraction",
+                                          "name":  "light house marina",
+                                          "description":  "Chennai light house is located on the east coast of Indian Subcontinent and looks towards the Bay of Bengal. It is one of the renowned attractions located on the well-known beach of Chennai known as the Marina beach. This lighthouse of Chennai was launched in 1977, January.",
+                                          "visitTime":  "03:00 PM - 03:45 PM",
+                                          "duration":  "45 Min",
+                                          "amount":  null,
+                                          "timings":  "10:00 AM - 01:00 PM, 03:00 PM - 05:30 PM",
+                                          "image":  "/uploads/hotspot_gallery/786367545Chennai_Lighthouse_Main.jpg",
+                                          "galleryImages":  [
+                                                                "/uploads/hotspot_gallery/786367545Chennai_Lighthouse_Main.jpg"
+                                                            ],
+                                          "videoUrl":  "https://www.youtube.com/watch?app=desktop\u0026amp;v=iqwxgU37Sck",
+                                          "planOwnWay":  false,
+                                          "activities":  [
+
+                                                         ],
+                                          "hasAvailableActivities":  false,
+                                          "hotspotId":  294,
+                                          "routeHotspotId":  90743,
+                                          "locationId":  165946,
+                                          "priority":  4,
+                                          "isConflict":  false,
+                                          "conflictReason":  null,
+                                          "isManual":  false,
+                                          "isDeleted":  false
+                                      },
+                                      {
+                                          "type":  "hotspot",
+                                          "text":  "Click to Add Hotspot",
+                                          "locationId":  165946,
+                                          "anchorType":  "after_travel",
+                                          "anchorIndex":  3,
+                                          "anchorFrom":  "Marina Beach",
+                                          "anchorTo":  "light house marina",
+                                          "anchorTimeRange":  "12:49 PM - 12:54 PM"
+                                      },
+                                      {
+                                          "type":  "travel",
+                                          "from":  "light house marina",
+                                          "to":  "Fort St.George Museum",
+                                          "timeRange":  "03:45 PM - 04:10 PM",
+                                          "distance":  "6.18 KM",
+                                          "duration":  "25 Min",
+                                          "note":  "This may vary due to traffic conditions",
+                                          "isConflict":  false,
+                                          "conflictReason":  null
+                                      },
+                                      {
+                                          "type":  "attraction",
+                                          "name":  "Fort St.George Museum",
+                                          "description":  "The museum began with a small collection of objects of the British Raj donated by the then Madras Presidency Government, the St. Mary\u0026#039;s Church authorities, the disbanded army units and others. Over the years many objects were acquired by various means and there are now 3661 registered antiquities in the collection.",
+                                          "visitTime":  "04:10 PM - 05:10 PM (outside operating hours)",
+                                          "duration":  "1 Hours",
+                                          "amount":  null,
+                                          "timings":  "09:00 AM - 05:00 PM",
+                                          "image":  "/uploads/hotspot_gallery/Fort_St._George,_Chennai_2.jpg",
+                                          "galleryImages":  [
+                                                                "/uploads/hotspot_gallery/Fort_St._George,_Chennai_2.jpg"
+                                                            ],
+                                          "videoUrl":  "https://youtu.be/6Z6oZZHvYIk",
+                                          "planOwnWay":  false,
+                                          "activities":  [
+
+                                                         ],
+                                          "hasAvailableActivities":  false,
+                                          "hotspotId":  6,
+                                          "routeHotspotId":  90748,
+                                          "locationId":  165946,
+                                          "priority":  5,
+                                          "isConflict":  false,
+                                          "conflictReason":  null,
+                                          "isManual":  false,
+                                          "isDeleted":  false
+                                      },
+                                      {
+                                          "type":  "hotspot",
+                                          "text":  "Click to Add Hotspot",
+                                          "locationId":  165946,
+                                          "anchorType":  "after_travel",
+                                          "anchorIndex":  4,
+                                          "anchorFrom":  "light house marina",
+                                          "anchorTo":  "Fort St.George Museum",
+                                          "anchorTimeRange":  "03:45 PM - 04:10 PM"
+                                      },
+                                      {
+                                          "type":  "travel",
+                                          "from":  "Fort St.George Museum",
+                                          "to":  "Guindy National Park",
+                                          "timeRange":  "05:10 PM - 05:33 PM",
+                                          "distance":  "15.60 KM",
+                                          "duration":  "23 Min",
+                                          "note":  "This may vary due to traffic conditions",
+                                          "isConflict":  false,
+                                          "conflictReason":  null
+                                      },
+                                      {
+                                          "type":  "attraction",
+                                          "name":  "Guindy National Park",
+                                          "description":  "Guindy National Park is a 2.70 km2 (1.04 sq mi) protected area of Tamil Nadu, located in Chennai, India, is the 8th-smallest National Park of India and one of the very few national parks situated inside a city.",
+                                          "visitTime":  "05:33 PM - 07:33 PM (outside operating hours)",
+                                          "duration":  "2 Hours",
+                                          "amount":  null,
+                                          "timings":  "09:00 AM - 05:30 PM",
+                                          "image":  "/uploads/hotspot_gallery/Guindy_National_Park.jpg",
+                                          "galleryImages":  [
+                                                                "/uploads/hotspot_gallery/Guindy_National_Park.jpg"
+                                                            ],
+                                          "videoUrl":  "https://youtu.be/6Z6oZZHvYIk",
+                                          "planOwnWay":  false,
+                                          "activities":  [
+
+                                                         ],
+                                          "hasAvailableActivities":  false,
+                                          "hotspotId":  10,
+                                          "routeHotspotId":  90754,
+                                          "locationId":  165946,
+                                          "priority":  6,
+                                          "isConflict":  false,
+                                          "conflictReason":  null,
+                                          "isManual":  false,
+                                          "isDeleted":  false
+                                      },
+                                      {
+                                          "type":  "hotspot",
+                                          "text":  "Click to Add Hotspot",
+                                          "locationId":  165946,
+                                          "anchorType":  "after_travel",
+                                          "anchorIndex":  5,
+                                          "anchorFrom":  "Fort St.George Museum",
+                                          "anchorTo":  "Guindy National Park",
+                                          "anchorTimeRange":  "05:10 PM - 05:33 PM"
+                                      },
+                                      {
+                                          "type":  "travel",
+                                          "from":  "Guindy National Park",
+                                          "to":  "Chennai",
+                                          "timeRange":  "07:33 PM - 08:00 PM",
+                                          "distance":  "14.83 KM",
+                                          "duration":  "15 Min",
+                                          "note":  "This may vary due to traffic conditions",
+                                          "isConflict":  false,
+                                          "conflictReason":  null
+                                      },
+                                      {
+                                          "type":  "checkin",
+                                          "hotelName":  "Chennai",
+                                          "hotelAddress":  "",
+                                          "time":  "08:00 PM"
+                                      }
+                                  ]
+                 },
+                 {
+                     "id":  2853,
+                     "dayNumber":  2,
+                     "date":  "2026-05-04T00:00:00.000Z",
+                     "locationId":  160082,
+                     "departure":  "Chennai",
+                     "arrival":  "Mahabalipuram",
+                     "distance":  "66.41 KM",
+                     "intercityDistance":  "52.07 KM",
+                     "sightseeingDistance":  "14.34 KM",
+                     "startTime":  "08:00 AM",
+                     "endTime":  "08:00 PM",
+                     "viaRoutes":  [
+
+                                   ],
+                     "segments":  [
+                                      {
+                                          "type":  "start",
+                                          "title":  "Start Your Day",
+                                          "timeRange":  "08:00 AM - 09:00 AM"
+                                      },
+                                      {
+                                          "type":  "travel",
+                                          "from":  "Chennai",
+                                          "to":  "Vadapalani Murugan Temple",
+                                          "timeRange":  "09:00 AM - 09:16 AM",
+                                          "distance":  "10.58 KM",
+                                          "duration":  "16 Min",
+                                          "note":  "This may vary due to traffic conditions",
+                                          "isConflict":  false,
+                                          "conflictReason":  null
+                                      },
+                                      {
+                                          "type":  "attraction",
+                                          "name":  "Vadapalani Murugan Temple",
+                                          "description":  "The Arulmigu Vadapalani Murugan Temple is a famous Hindu temple in Chennai, dedicated to Lord Murugan. It was founded in the late 19th century from a humble thatched hut and is now a grand temple known for its divine power, architectural details like the Rajagopuram with Skanda Purana scenes, and a unique idol of Lord Murugan wearing footwear, symbolizing his eagerness to help devotees. The temple complex includes numerous shrines to other deities, a temple tank, and large halls for events.",
+                                          "visitTime":  "09:16 AM - 10:16 AM",
+                                          "duration":  "1 Hours",
+                                          "amount":  null,
+                                          "timings":  "05:00 AM - 12:30 PM, 04:00 PM - 09:00 PM",
+                                          "image":  "/uploads/hotspot_gallery/unnamed (51).jpg",
+                                          "galleryImages":  [
+                                                                "/uploads/hotspot_gallery/unnamed (51).jpg"
+                                                            ],
+                                          "videoUrl":  "https://youtu.be/6Z6oZZHvYIk?si=lZVTgGxnVBeHDZL0",
+                                          "planOwnWay":  false,
+                                          "activities":  [
+
+                                                         ],
+                                          "hasAvailableActivities":  false,
+                                          "hotspotId":  746,
+                                          "routeHotspotId":  90725,
+                                          "locationId":  160082,
+                                          "priority":  9999,
+                                          "isConflict":  false,
+                                          "conflictReason":  null,
+                                          "isManual":  false,
+                                          "isDeleted":  false
+                                      },
+                                      {
+                                          "type":  "hotspot",
+                                          "text":  "Click to Add Hotspot",
+                                          "locationId":  160082,
+                                          "anchorType":  "after_travel",
+                                          "anchorIndex":  0,
+                                          "anchorFrom":  "Chennai",
+                                          "anchorTo":  "Vadapalani Murugan Temple",
+                                          "anchorTimeRange":  "09:00 AM - 09:16 AM"
+                                      },
+                                      {
+                                          "type":  "travel",
+                                          "from":  "Vadapalani Murugan Temple",
+                                          "to":  "T Nagar (only for Shopping)",
+                                          "timeRange":  "10:16 AM - 10:31 AM",
+                                          "distance":  "3.76 KM",
+                                          "duration":  "15 Min",
+                                          "note":  "This may vary due to traffic conditions",
+                                          "isConflict":  false,
+                                          "conflictReason":  null
+                                      },
+                                      {
+                                          "type":  "attraction",
+                                          "name":  "T Nagar (only for Shopping)",
+                                          "description":  "T. Nagar (Thyagaraya Nagar) is a bustling, well-planned commercial and residential hub in Chennai, known for being one of the city\u0026#039;s primary shopping districts, especially for textiles and jewelry. Developed in the 1920s, it is a densely populated area with a high concentration of retail stores and businesses, including the famous Ranganathan Street and Pondy Bazaar. Despite its commercial nature, it also serves as a residential area and is well-connected by road, rail, and metro.",
+                                          "visitTime":  "05:00 PM - 07:00 PM",
+                                          "duration":  "2 Hours",
+                                          "amount":  null,
+                                          "timings":  "05:00 PM - 10:00 PM",
+                                          "image":  "/uploads/hotspot_gallery/download (87).jpg",
+                                          "galleryImages":  [
+                                                                "/uploads/hotspot_gallery/download (87).jpg"
+                                                            ],
+                                          "videoUrl":  "https://youtu.be/2exKGVo4_4g?si=h11iYbzqftcwIfUf",
+                                          "planOwnWay":  false,
+                                          "activities":  [
+
+                                                         ],
+                                          "hasAvailableActivities":  false,
+                                          "hotspotId":  804,
+                                          "routeHotspotId":  90750,
+                                          "locationId":  160082,
+                                          "priority":  9999,
+                                          "isConflict":  false,
+                                          "conflictReason":  null,
+                                          "isManual":  false,
+                                          "isDeleted":  false
+                                      },
+                                      {
+                                          "type":  "hotspot",
+                                          "text":  "Click to Add Hotspot",
+                                          "locationId":  160082,
+                                          "anchorType":  "after_travel",
+                                          "anchorIndex":  1,
+                                          "anchorFrom":  "Vadapalani Murugan Temple",
+                                          "anchorTo":  "T Nagar (only for Shopping)",
+                                          "anchorTimeRange":  "10:16 AM - 10:31 AM"
+                                      },
+                                      {
+                                          "type":  "travel",
+                                          "from":  "T Nagar (only for Shopping)",
+                                          "to":  "Mahabalipuram",
+                                          "timeRange":  "07:00 PM - 08:00 PM",
+                                          "distance":  "70.26 KM",
+                                          "duration":  "1 Hours 10 Min",
+                                          "note":  "This may vary due to traffic conditions",
+                                          "isConflict":  false,
+                                          "conflictReason":  null
+                                      },
+                                      {
+                                          "type":  "checkin",
+                                          "hotelName":  "Mahabalipuram",
+                                          "hotelAddress":  "",
+                                          "time":  "08:00 PM"
+                                      }
+                                  ]
+                 },
+                 {
+                     "id":  2854,
+                     "dayNumber":  3,
+                     "date":  "2026-05-05T00:00:00.000Z",
+                     "locationId":  160334,
+                     "departure":  "Mahabalipuram",
+                     "arrival":  "Mahabalipuram",
+                     "distance":  "3.23 KM",
+                     "intercityDistance":  "0.22 KM",
+                     "sightseeingDistance":  "3.01 KM",
+                     "startTime":  "08:00 AM",
+                     "endTime":  "08:00 PM",
+                     "viaRoutes":  [
+
+                                   ],
+                     "segments":  [
+                                      {
+                                          "type":  "start",
+                                          "title":  "Start Your Day",
+                                          "timeRange":  "08:00 AM - 09:00 AM"
+                                      },
+                                      {
+                                          "type":  "travel",
+                                          "from":  "Mahabalipuram",
+                                          "to":  "Mahabalipuram  Group of Monuments",
+                                          "timeRange":  "09:00 AM - 09:05 AM",
+                                          "distance":  "1.11 KM",
+                                          "duration":  "5 Min",
+                                          "note":  "This may vary due to traffic conditions",
+                                          "isConflict":  false,
+                                          "conflictReason":  null
+                                      },
+                                      {
+                                          "type":  "attraction",
+                                          "name":  "Mahabalipuram  Group of Monuments",
+                                          "description":  "Mahabalipuram (or Mamallapuram), located along southeastern India\u0026#039;s Coromandel Coast, was a celebrated port city of the Pallavas. The group of monuments there consists of rock-cut cave temples, monolithic temples, bas-relief sculptures, and structural temples as well as the excavated remains of temples. The Group of Monuments at Mahabalipuram includes several categories of 7th and 8th-century CE structures built by the Pallava dynasty, such as the monolithic Pancha Rathas (Five Chariots), the Shore Temple, rock-cut caves (mandapas), and large rock reliefs like the Descent of the Ganges. Other notable monuments are the Tiger Cave, Arjuna\u0026#039;s Penance (another name for the Descent of the Ganges), and several excavated temples.",
+                                          "visitTime":  "09:05 AM - 01:05 PM",
+                                          "duration":  "4 Hours",
+                                          "amount":  null,
+                                          "timings":  "06:00 AM - 06:00 PM",
+                                          "image":  "/uploads/hotspot_gallery/mamallapuram-shore-temple-1653384265_2ee80b097acb596596e0.webp",
+                                          "galleryImages":  [
+                                                                "/uploads/hotspot_gallery/mamallapuram-shore-temple-1653384265_2ee80b097acb596596e0.webp"
+                                                            ],
+                                          "videoUrl":  "https://youtu.be/6Z6oZZHvYIk",
+                                          "planOwnWay":  false,
+                                          "activities":  [
+
+                                                         ],
+                                          "hasAvailableActivities":  false,
+                                          "hotspotId":  15,
+                                          "routeHotspotId":  90724,
+                                          "locationId":  160334,
+                                          "priority":  1,
+                                          "isConflict":  false,
+                                          "conflictReason":  null,
+                                          "isManual":  false,
+                                          "isDeleted":  false
+                                      },
+                                      {
+                                          "type":  "hotspot",
+                                          "text":  "Click to Add Hotspot",
+                                          "locationId":  160334,
+                                          "anchorType":  "after_travel",
+                                          "anchorIndex":  0,
+                                          "anchorFrom":  "Mahabalipuram",
+                                          "anchorTo":  "Mahabalipuram  Group of Monuments",
+                                          "anchorTimeRange":  "09:00 AM - 09:05 AM"
+                                      },
+                                      {
+                                          "type":  "travel",
+                                          "from":  "Mahabalipuram  Group of Monuments",
+                                          "to":  "Mahabalipuram Beach",
+                                          "timeRange":  "01:05 PM - 01:10 PM",
+                                          "distance":  "0.62 KM",
+                                          "duration":  "5 Min",
+                                          "note":  "This may vary due to traffic conditions",
+                                          "isConflict":  false,
+                                          "conflictReason":  null
+                                      },
+                                      {
+                                          "type":  "attraction",
+                                          "name":  "Mahabalipuram Beach",
+                                          "description":  "It\u0026rsquo;s a shore that witnessed several historic moments that defined the course of South India. The coastline evolved with time and is today one of the most visited tourist destinations in Tamil Nadu. The Mahabalipuram is a spot worth every hype.",
+                                          "visitTime":  "01:10 PM - 01:40 PM",
+                                          "duration":  "30 Min",
+                                          "amount":  null,
+                                          "timings":  "Open 24 Hours",
+                                          "image":  "/uploads/hotspot_gallery/mah beach2.jpeg",
+                                          "galleryImages":  [
+                                                                "/uploads/hotspot_gallery/mah beach2.jpeg",
+                                                                "/uploads/hotspot_gallery/mah beach.jpeg"
+                                                            ],
+                                          "videoUrl":  "https://www.youtube.com/watch?v=x3bMoDvAhYk",
+                                          "planOwnWay":  false,
+                                          "activities":  [
+
+                                                         ],
+                                          "hasAvailableActivities":  false,
+                                          "hotspotId":  455,
+                                          "routeHotspotId":  90739,
+                                          "locationId":  160334,
+                                          "priority":  4,
+                                          "isConflict":  false,
+                                          "conflictReason":  null,
+                                          "isManual":  false,
+                                          "isDeleted":  false
+                                      },
+                                      {
+                                          "type":  "hotspot",
+                                          "text":  "Click to Add Hotspot",
+                                          "locationId":  160334,
+                                          "anchorType":  "after_travel",
+                                          "anchorIndex":  1,
+                                          "anchorFrom":  "Mahabalipuram  Group of Monuments",
+                                          "anchorTo":  "Mahabalipuram Beach",
+                                          "anchorTimeRange":  "01:05 PM - 01:10 PM"
+                                      },
+                                      {
+                                          "type":  "travel",
+                                          "from":  "Mahabalipuram Beach",
+                                          "to":  "Arulmigu Sri Sthala Sayana Perumal Temple",
+                                          "timeRange":  "01:40 PM - 01:45 PM",
+                                          "distance":  "1.06 KM",
+                                          "duration":  "5 Min",
+                                          "note":  "This may vary due to traffic conditions",
+                                          "isConflict":  false,
+                                          "conflictReason":  null
+                                      },
+                                      {
+                                          "type":  "attraction",
+                                          "name":  "Arulmigu Sri Sthala Sayana Perumal Temple",
+                                          "description":  "Sthalasayana Perumal Temple is at Mahabalipuram. Constructed in the Dravidian style of architecture, the temple is glorified in the Naalayira Divya Prabandham, the early medieval Tamil canon of the Alvar saints from the 6th\u0026ndash;9th centuries CE",
+                                          "visitTime":  "04:00 PM - 05:00 PM",
+                                          "duration":  "1 Hours",
+                                          "amount":  null,
+                                          "timings":  "06:00 AM - 12:00 PM, 04:00 PM - 08:30 PM",
+                                          "image":  "/uploads/hotspot_gallery/unnamed - 2025-11-24T171905.320.jpg",
+                                          "galleryImages":  [
+                                                                "/uploads/hotspot_gallery/unnamed - 2025-11-24T171905.320.jpg"
+                                                            ],
+                                          "videoUrl":  "https://www.youtube.com/watch?v=ziA88IkD-Us",
+                                          "planOwnWay":  false,
+                                          "activities":  [
+
+                                                         ],
+                                          "hasAvailableActivities":  false,
+                                          "hotspotId":  456,
+                                          "routeHotspotId":  90746,
+                                          "locationId":  160334,
+                                          "priority":  5,
+                                          "isConflict":  false,
+                                          "conflictReason":  null,
+                                          "isManual":  false,
+                                          "isDeleted":  false
+                                      },
+                                      {
+                                          "type":  "hotspot",
+                                          "text":  "Click to Add Hotspot",
+                                          "locationId":  160334,
+                                          "anchorType":  "after_travel",
+                                          "anchorIndex":  2,
+                                          "anchorFrom":  "Mahabalipuram Beach",
+                                          "anchorTo":  "Arulmigu Sri Sthala Sayana Perumal Temple",
+                                          "anchorTimeRange":  "01:40 PM - 01:45 PM"
+                                      },
+                                      {
+                                          "type":  "travel",
+                                          "from":  "Arulmigu Sri Sthala Sayana Perumal Temple",
+                                          "to":  "Maritime  heritedge museum",
+                                          "timeRange":  "05:00 PM - 05:05 PM",
+                                          "distance":  "0.22 KM",
+                                          "duration":  "5 Min",
+                                          "note":  "This may vary due to traffic conditions",
+                                          "isConflict":  false,
+                                          "conflictReason":  null
+                                      },
+                                      {
+                                          "type":  "attraction",
+                                          "name":  "Maritime  heritedge museum",
+                                          "description":  "This museum is near to Light House and is a very informative regarding marine. The model of ships are very well being. Some old equipments and old methodologies ...",
+                                          "visitTime":  "05:05 PM - 06:05 PM",
+                                          "duration":  "1 Hours",
+                                          "amount":  null,
+                                          "timings":  "09:30 AM - 08:00 PM",
+                                          "image":  "/uploads/hotspot_gallery/download (13).jpeg",
+                                          "galleryImages":  [
+                                                                "/uploads/hotspot_gallery/download (13).jpeg",
+                                                                "/uploads/hotspot_gallery/images (5).jpeg"
+                                                            ],
+                                          "videoUrl":  "https://www.youtube.com/watch?v=ity4G8JgPAU",
+                                          "planOwnWay":  false,
+                                          "activities":  [
+
+                                                         ],
+                                          "hasAvailableActivities":  false,
+                                          "hotspotId":  344,
+                                          "routeHotspotId":  90751,
+                                          "locationId":  160334,
+                                          "priority":  9999,
+                                          "isConflict":  false,
+                                          "conflictReason":  null,
+                                          "isManual":  false,
+                                          "isDeleted":  false
+                                      },
+                                      {
+                                          "type":  "hotspot",
+                                          "text":  "Click to Add Hotspot",
+                                          "locationId":  160334,
+                                          "anchorType":  "after_travel",
+                                          "anchorIndex":  3,
+                                          "anchorFrom":  "Arulmigu Sri Sthala Sayana Perumal Temple",
+                                          "anchorTo":  "Maritime  heritedge museum",
+                                          "anchorTimeRange":  "05:00 PM - 05:05 PM"
+                                      },
+                                      {
+                                          "type":  "travel",
+                                          "from":  "Maritime  heritedge museum",
+                                          "to":  "Mahabalipuram",
+                                          "timeRange":  "06:05 PM - 07:10 PM",
+                                          "distance":  "1.09 KM",
+                                          "duration":  "5 Min",
+                                          "note":  "This may vary due to traffic conditions",
+                                          "isConflict":  false,
+                                          "conflictReason":  null
+                                      },
+                                      {
+                                          "type":  "checkin",
+                                          "hotelName":  "Mahabalipuram",
+                                          "hotelAddress":  "",
+                                          "time":  "07:10 PM"
+                                      }
+                                  ]
+                 },
+                 {
+                     "id":  2855,
+                     "dayNumber":  4,
+                     "date":  "2026-05-06T00:00:00.000Z",
+                     "locationId":  160085,
+                     "departure":  "Mahabalipuram",
+                     "arrival":  "Chennai International Airport",
+                     "distance":  "159.97 KM",
+                     "intercityDistance":  "55.60 KM",
+                     "sightseeingDistance":  "104.37 KM",
+                     "startTime":  "08:00 AM",
+                     "endTime":  "06:00 PM",
+                     "viaRoutes":  [
+
+                                   ],
+                     "segments":  [
+                                      {
+                                          "type":  "travel",
+                                          "from":  "Mahabalipuram",
+                                          "to":  "The Madras Crocodile Bank Trust and Centre for Herpetology",
+                                          "timeRange":  "09:00 AM - 09:32 AM",
+                                          "distance":  "21.44 KM",
+                                          "duration":  "32 Min",
+                                          "note":  "This may vary due to traffic conditions",
+                                          "isConflict":  false,
+                                          "conflictReason":  null
+                                      },
+                                      {
+                                          "type":  "attraction",
+                                          "name":  "The Madras Crocodile Bank Trust and Centre for Herpetology",
+                                          "description":  "The Madras Crocodile Bank Trust and Centre for Herpetology is a reptile zoo and herpetology research station, located 40 km south of Chennai, Tamil Nadu, India.",
+                                          "visitTime":  "09:32 AM - 11:02 AM",
+                                          "duration":  "1 Hours 30 Min",
+                                          "amount":  null,
+                                          "timings":  "09:00 AM - 05:00 PM",
+                                          "image":  "/uploads/hotspot_gallery/crockdile2.jpeg",
+                                          "galleryImages":  [
+                                                                "/uploads/hotspot_gallery/crockdile2.jpeg",
+                                                                "/uploads/hotspot_gallery/crockdile.jpeg"
+                                                            ],
+                                          "videoUrl":  "https://www.youtube.com/watch?v=Ij8PPRJ3kBs.",
+                                          "planOwnWay":  false,
+                                          "activities":  [
+
+                                                         ],
+                                          "hasAvailableActivities":  false,
+                                          "hotspotId":  453,
+                                          "routeHotspotId":  90727,
+                                          "locationId":  160085,
+                                          "priority":  2,
+                                          "isConflict":  false,
+                                          "conflictReason":  null,
+                                          "isManual":  false,
+                                          "isDeleted":  false
+                                      },
+                                      {
+                                          "type":  "hotspot",
+                                          "text":  "Click to Add Hotspot",
+                                          "locationId":  160085,
+                                          "anchorType":  "after_travel",
+                                          "anchorIndex":  0,
+                                          "anchorFrom":  "Mahabalipuram",
+                                          "anchorTo":  "The Madras Crocodile Bank Trust and Centre for Herpetology",
+                                          "anchorTimeRange":  "09:00 AM - 09:32 AM"
+                                      },
+                                      {
+                                          "type":  "travel",
+                                          "from":  "The Madras Crocodile Bank Trust and Centre for Herpetology",
+                                          "to":  "Dakshina Chitra Heritage Museum",
+                                          "timeRange":  "11:02 AM - 11:22 AM",
+                                          "distance":  "13.38 KM",
+                                          "duration":  "20 Min",
+                                          "note":  "This may vary due to traffic conditions",
+                                          "isConflict":  false,
+                                          "conflictReason":  null
+                                      },
+                                      {
+                                          "type":  "attraction",
+                                          "name":  "Dakshina Chitra Heritage Museum",
+                                          "description":  "DakshinaChitra is a living-history museum in the Indian state of Tamil Nadu, dedicated to South Indian heritage and culture. It is located 25 kilometres to the south of Chennai. Opened to the public on 14 December 1996, the museum was founded and is being managed by the Madras Craft Foundation",
+                                          "visitTime":  "11:22 AM - 12:22 PM",
+                                          "duration":  "1 Hours",
+                                          "amount":  null,
+                                          "timings":  "10:00 AM - 06:00 PM",
+                                          "image":  "/uploads/hotspot_gallery/daksh.jpeg",
+                                          "galleryImages":  [
+                                                                "/uploads/hotspot_gallery/daksh.jpeg",
+                                                                "/uploads/hotspot_gallery/dakshana.jpeg"
+                                                            ],
+                                          "videoUrl":  "https://www.youtube.com/watch?v=Gh-CHFKiq8s",
+                                          "planOwnWay":  false,
+                                          "activities":  [
+
+                                                         ],
+                                          "hasAvailableActivities":  false,
+                                          "hotspotId":  454,
+                                          "routeHotspotId":  90732,
+                                          "locationId":  160085,
+                                          "priority":  3,
+                                          "isConflict":  false,
+                                          "conflictReason":  null,
+                                          "isManual":  false,
+                                          "isDeleted":  false
+                                      },
+                                      {
+                                          "type":  "hotspot",
+                                          "text":  "Click to Add Hotspot",
+                                          "locationId":  160085,
+                                          "anchorType":  "after_travel",
+                                          "anchorIndex":  1,
+                                          "anchorFrom":  "The Madras Crocodile Bank Trust and Centre for Herpetology",
+                                          "anchorTo":  "Dakshina Chitra Heritage Museum",
+                                          "anchorTimeRange":  "11:02 AM - 11:22 AM"
+                                      },
+                                      {
+                                          "type":  "travel",
+                                          "from":  "Dakshina Chitra Heritage Museum",
+                                          "to":  "Government Museum Chennai",
+                                          "timeRange":  "12:22 PM - 01:04 PM",
+                                          "distance":  "41.59 KM",
+                                          "duration":  "42 Min",
+                                          "note":  "This may vary due to traffic conditions",
+                                          "isConflict":  false,
+                                          "conflictReason":  null
+                                      },
+                                      {
+                                          "type":  "attraction",
+                                          "name":  "Government Museum Chennai",
+                                          "description":  "The museum has mainly six buildings. The main building has a fine archaeological section representing all the major South Indian periods, including Chola, Vijayanagara, Hoysala and Chalukya. It also has a fine ethnology collection. The front building has a collection of arms, puppets and other art pieces.",
+                                          "visitTime":  "01:04 PM - 02:04 PM",
+                                          "duration":  "1 Hours",
+                                          "amount":  null,
+                                          "timings":  "09:30 AM - 05:00 PM",
+                                          "image":  "/uploads/hotspot_gallery/Government_Museum_Chennai.jpg",
+                                          "galleryImages":  [
+                                                                "/uploads/hotspot_gallery/Government_Museum_Chennai.jpg"
+                                                            ],
+                                          "videoUrl":  "https://youtu.be/6Z6oZZHvYIk",
+                                          "planOwnWay":  false,
+                                          "activities":  [
+
+                                                         ],
+                                          "hasAvailableActivities":  false,
+                                          "hotspotId":  7,
+                                          "routeHotspotId":  90737,
+                                          "locationId":  160085,
+                                          "priority":  6,
+                                          "isConflict":  false,
+                                          "conflictReason":  null,
+                                          "isManual":  false,
+                                          "isDeleted":  false
+                                      },
+                                      {
+                                          "type":  "hotspot",
+                                          "text":  "Click to Add Hotspot",
+                                          "locationId":  160085,
+                                          "anchorType":  "after_travel",
+                                          "anchorIndex":  2,
+                                          "anchorFrom":  "Dakshina Chitra Heritage Museum",
+                                          "anchorTo":  "Government Museum Chennai",
+                                          "anchorTimeRange":  "12:22 PM - 01:04 PM"
+                                      },
+                                      {
+                                          "type":  "travel",
+                                          "from":  "Government Museum Chennai",
+                                          "to":  "Santhome Cathedral Basilica",
+                                          "timeRange":  "02:04 PM - 02:33 PM",
+                                          "distance":  "7.20 KM",
+                                          "duration":  "29 Min",
+                                          "note":  "This may vary due to traffic conditions",
+                                          "isConflict":  false,
+                                          "conflictReason":  null
+                                      },
+                                      {
+                                          "type":  "attraction",
+                                          "name":  "Santhome Cathedral Basilica",
+                                          "description":  "With its white texture and spires, the Santhome Church stands majestically tall and makes you pause and appreciate its beauty. Built in neo-Gothic style, the church delights every visitor with its naturally lit interiors, rows of wooden pews and striking windows with coloured panes.",
+                                          "visitTime":  "02:33 PM - 03:33 PM",
+                                          "duration":  "1 Hours",
+                                          "amount":  null,
+                                          "timings":  "06:00 AM - 08:00 PM",
+                                          "image":  "/uploads/hotspot_gallery/Santhome_Cathedral_Basilica.jpg",
+                                          "galleryImages":  [
+                                                                "/uploads/hotspot_gallery/Santhome_Cathedral_Basilica.jpg"
+                                                            ],
+                                          "videoUrl":  "https://youtu.be/6Z6oZZHvYIk",
+                                          "planOwnWay":  false,
+                                          "activities":  [
+
+                                                         ],
+                                          "hasAvailableActivities":  false,
+                                          "hotspotId":  8,
+                                          "routeHotspotId":  90742,
+                                          "locationId":  160085,
+                                          "priority":  7,
+                                          "isConflict":  false,
+                                          "conflictReason":  null,
+                                          "isManual":  false,
+                                          "isDeleted":  false
+                                      },
+                                      {
+                                          "type":  "hotspot",
+                                          "text":  "Click to Add Hotspot",
+                                          "locationId":  160085,
+                                          "anchorType":  "after_travel",
+                                          "anchorIndex":  3,
+                                          "anchorFrom":  "Government Museum Chennai",
+                                          "anchorTo":  "Santhome Cathedral Basilica",
+                                          "anchorTimeRange":  "02:04 PM - 02:33 PM"
+                                      },
+                                      {
+                                          "type":  "travel",
+                                          "from":  "Santhome Cathedral Basilica",
+                                          "to":  "Vgp marine kingdom",
+                                          "timeRange":  "03:33 PM - 04:04 PM",
+                                          "distance":  "20.76 KM",
+                                          "duration":  "31 Min",
+                                          "note":  "This may vary due to traffic conditions",
+                                          "isConflict":  false,
+                                          "conflictReason":  null
+                                      },
+                                      {
+                                          "type":  "attraction",
+                                          "name":  "Vgp marine kingdom",
+                                          "description":  "India\u0026#039;s first and largest walk-through aquarium housing everything from small to big aquatic animals. The animals here are housed in life-size tanks and over-head aquariums to give you a larger-than-life experience.",
+                                          "visitTime":  "04:04 PM - 05:04 PM",
+                                          "duration":  "1 Hours",
+                                          "amount":  null,
+                                          "timings":  "09:30 AM - 07:30 PM",
+                                          "image":  "/uploads/hotspot_gallery/download (3).jpeg",
+                                          "galleryImages":  [
+                                                                "/uploads/hotspot_gallery/download (3).jpeg",
+                                                                "/uploads/hotspot_gallery/download (2).jpeg"
+                                                            ],
+                                          "videoUrl":  "https://www.youtube.com/watch?v=qomFUrXZgWU",
+                                          "planOwnWay":  false,
+                                          "activities":  [
+
+                                                         ],
+                                          "hasAvailableActivities":  false,
+                                          "hotspotId":  291,
+                                          "routeHotspotId":  90747,
+                                          "locationId":  160085,
+                                          "priority":  9999,
+                                          "isConflict":  false,
+                                          "conflictReason":  null,
+                                          "isManual":  false,
+                                          "isDeleted":  false
+                                      },
+                                      {
+                                          "type":  "hotspot",
+                                          "text":  "Click to Add Hotspot",
+                                          "locationId":  160085,
+                                          "anchorType":  "after_travel",
+                                          "anchorIndex":  4,
+                                          "anchorFrom":  "Santhome Cathedral Basilica",
+                                          "anchorTo":  "Vgp marine kingdom",
+                                          "anchorTimeRange":  "03:33 PM - 04:04 PM"
+                                      },
+                                      {
+                                          "type":  "travel",
+                                          "from":  "Vgp marine kingdom",
+                                          "to":  "Chennai International Airport",
+                                          "timeRange":  "05:32 PM - 05:37 PM",
+                                          "distance":  "0.00 KM",
+                                          "duration":  "5 Min",
+                                          "note":  "This may vary due to traffic conditions",
+                                          "isConflict":  false,
+                                          "conflictReason":  null
+                                      }
+                                  ]
+                 }
+             ],
+    "vehicles":  [
+                     {
+                         "vendorName":  "DVI-CHENNAI",
+                         "branchName":  "DVI-CHENNAI",
+                         "vehicleOrigin":  "Chennai Koyembedu",
+                         "totalQty":  "1",
+                         "totalAmount":  "14784.00",
+                         "vendorEligibleId":  1569,
+                         "vehicleTypeId":  1,
+                         "vehicleTypeName":  "Sedan",
+                         "isAssigned":  true,
+                         "selectedTimeLimitId":  74,
+                         "availableSlabs":  [
+                                                {
+                                                    "timeLimitId":  74,
+                                                    "title":  "10 HRS 100 KMS",
+                                                    "hoursLimit":  10,
+                                                    "kmLimit":  100
+                                                },
+                                                {
+                                                    "timeLimitId":  230,
+                                                    "title":  "12 HRS 120 KMS",
+                                                    "hoursLimit":  12,
+                                                    "kmLimit":  120
+                                                },
+                                                {
+                                                    "timeLimitId":  237,
+                                                    "title":  "15 HRS 150 KMS",
+                                                    "hoursLimit":  15,
+                                                    "kmLimit":  150
+                                                }
+                                            ],
+                         "rentalCharges":  12500,
+                         "tollCharges":  0,
+                         "parkingCharges":  0,
+                         "driverCharges":  0,
+                         "permitCharges":  0,
+                         "dayWisePricing":  [
+                                                {
+                                                    "date":  "2026-05-03",
+                                                    "dayLabel":  "Day 1 | Sun, May 3, 2026",
+                                                    "route":  "Chennai International Airport ? Chennai",
+                                                    "timeLimitId":  74,
+                                                    "slabTitle":  "10 HRS 100 KMS",
+                                                    "slabHoursLimit":  10,
+                                                    "slabKmLimit":  100,
+                                                    "pickupKms":  15.79,
+                                                    "pickupDurationMinutes":  63,
+                                                    "travelKms":  14.83,
+                                                    "travelDurationMinutes":  128,
+                                                    "sightseeingKms":  46.95,
+                                                    "sightseeingDurationMinutes":  567,
+                                                    "dropDurationMinutes":  50,
+                                                    "totalDurationMinutes":  808,
+                                                    "totalKms":  90.11,
+                                                    "rentalCharges":  2900,
+                                                    "tollCharges":  0,
+                                                    "parkingCharges":  0,
+                                                    "driverCharges":  0,
+                                                    "permitCharges":  0,
+                                                    "extraHourCount":  0,
+                                                    "extraHourRate":  250,
+                                                    "extraHourCharges":  0,
+                                                    "extraKmCharges":  0,
+                                                    "dropKms":  12.54,
+                                                    "totalCharges":  2900
+                                                },
+                                                {
+                                                    "date":  "2026-05-04",
+                                                    "dayLabel":  "Day 2 | Mon, May 4, 2026",
+                                                    "route":  "Chennai ? Mahabalipuram",
+                                                    "pickupKms":  0,
+                                                    "travelKms":  70.26,
+                                                    "travelDurationMinutes":  70,
+                                                    "sightseeingKms":  14.34,
+                                                    "sightseeingDurationMinutes":  271,
+                                                    "totalDurationMinutes":  341,
+                                                    "totalKms":  84.6,
+                                                    "rentalCharges":  3200,
+                                                    "tollCharges":  0,
+                                                    "parkingCharges":  0,
+                                                    "driverCharges":  0,
+                                                    "permitCharges":  0,
+                                                    "extraHourCount":  0,
+                                                    "extraHourRate":  250,
+                                                    "extraHourCharges":  0,
+                                                    "extraKmCharges":  0,
+                                                    "dropKms":  0,
+                                                    "totalCharges":  3200
+                                                },
+                                                {
+                                                    "date":  "2026-05-05",
+                                                    "dayLabel":  "Day 3 | Tue, May 5, 2026",
+                                                    "route":  "Mahabalipuram",
+                                                    "pickupKms":  0,
+                                                    "travelKms":  1.09,
+                                                    "travelDurationMinutes":  5,
+                                                    "sightseeingKms":  3.01,
+                                                    "sightseeingDurationMinutes":  470,
+                                                    "totalDurationMinutes":  475,
+                                                    "totalKms":  4.1,
+                                                    "rentalCharges":  3200,
+                                                    "tollCharges":  0,
+                                                    "parkingCharges":  0,
+                                                    "driverCharges":  0,
+                                                    "permitCharges":  0,
+                                                    "extraHourCount":  0,
+                                                    "extraHourRate":  250,
+                                                    "extraHourCharges":  0,
+                                                    "extraKmCharges":  0,
+                                                    "dropKms":  0,
+                                                    "totalCharges":  3200
+                                                },
+                                                {
+                                                    "date":  "2026-05-06",
+                                                    "dayLabel":  "Day 4 | Wed, May 6, 2026",
+                                                    "route":  "Mahabalipuram ? Chennai International Airport",
+                                                    "pickupKms":  0,
+                                                    "travelKms":  0,
+                                                    "travelDurationMinutes":  68,
+                                                    "sightseeingKms":  104.37,
+                                                    "sightseeingDurationMinutes":  484,
+                                                    "dropDurationMinutes":  63,
+                                                    "totalDurationMinutes":  615,
+                                                    "totalKms":  120.16,
+                                                    "rentalCharges":  3200,
+                                                    "tollCharges":  0,
+                                                    "parkingCharges":  0,
+                                                    "driverCharges":  0,
+                                                    "permitCharges":  0,
+                                                    "extraHourCount":  0,
+                                                    "extraHourRate":  250,
+                                                    "extraHourCharges":  0,
+                                                    "extraKmCharges":  0,
+                                                    "dropKms":  15.79,
+                                                    "totalCharges":  3200
+                                                }
+                                            ],
+                         "before6amDriver":  0,
+                         "before6amVendor":  0,
+                         "after8pmDriver":  0,
+                         "after8pmVendor":  0,
+                         "breakdown":  [
+                                           {
+                                               "label":  "Rental Charges",
+                                               "amount":  12500
+                                           }
+                                       ],
+                         "packageLabel":  "Outstation - 298.96999999999997KM",
+                         "totalDays":  4,
+                         "totalCostOfVehicle":  12500,
+                         "totalPickupKm":  15.79,
+                         "totalPickupDuration":  "1 Hours 3 Min",
+                         "totalDropKm":  28.33,
+                         "totalDropDuration":  "1 Hours 3 Min",
+                         "totalUsedKm":  298.96999999999997,
+                         "totalAllowedKm":  750,
+                         "extraKms":  0,
+                         "extraKmRate":  12,
+                         "extraKmCharge":  0,
+                         "extraHourCount":  0,
+                         "extraHourRate":  250,
+                         "extraHourCharge":  0,
+                         "subtotal":  12500,
+                         "vehicleGstPercentage":  5,
+                         "vehicleGstAmount":  640,
+                         "vendorMarginPercentage":  10,
+                         "vendorMarginAmount":  1280,
+                         "vendorMarginGstPercentage":  5,
+                         "vendorMarginGstAmount":  64,
+                         "grandTotal":  14784,
+                         "col1Distance":  "86.18 KM",
+                         "col2Distance":  "168.67 KM",
+                         "col3Distance":  "254.85 KM",
+                         "col1Duration":  "0 Min",
+                         "col2Duration":  "0 Min",
+                         "col3Duration":  "0 Min"
+                     }
+                 ],
+    "packageIncludes":  {
+                            "description":  "",
+                            "houseBoatNote":  "",
+                            "rateNote":  ""
+                        },
+    "costBreakdown":  {
+                          "hotelPaxCount":  1,
+                          "totalVehicleCost":  14784,
+                          "totalVehicleAmount":  14784,
+                          "totalVehicleQty":  1,
+                          "totalAllowedKm":  750,
+                          "totalTravelledKm":  298.97,
+                          "additionalMargin":  0,
+                          "totalAmount":  14784,
+                          "couponDiscount":  0,
+                          "agentMargin":  10,
+                          "totalRoundOff":  0,
+                          "netPayable":  14794,
+                          "companyName":  "Doview Holidays India Pvt ltd"
+                      }
+}

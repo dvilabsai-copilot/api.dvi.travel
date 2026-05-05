@@ -99,6 +99,12 @@ function formatLocalIsoSeconds(date = new Date()) {
   return `${y}-${m}-${d}T${hh}:${mm}:${ss}`;
 }
 
+function nowIstIsoSeconds() {
+  const now = new Date();
+  const istNow = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+  return formatLocalIsoSeconds(istNow);
+}
+
 function toMoneyString(value) {
   return Number(value || 0).toFixed(2);
 }
@@ -128,9 +134,9 @@ function buildReservationPayload(options) {
 
   const roomAmountAfterTaxNum = Number(amountAfterTax || 0);
   const totalTaxNum = Number(totalTax || 0);
-  const totalAmountAfterTax = toMoneyString(roomAmountAfterTaxNum);
+  const totalAmountAfterTax = toMoneyString(roomAmountAfterTaxNum + totalTaxNum);
   const totalTaxAmount = toMoneyString(totalTaxNum);
-  const runtimeReservationDateTime = reservationDateTime || formatLocalIsoSeconds();
+  const runtimeReservationDateTime = reservationDateTime || nowIstIsoSeconds();
 
   return {
     propertyid: PROPERTY_ID,
@@ -237,6 +243,14 @@ function buildArrInfoPayload(fromDate, toDate) {
 }
 
 async function runTest({ label, excelRow, endpointName, url, payload, bookingId }) {
+  if (endpointName === 'booking') {
+    const reservation = payload?.reservations?.reservation?.[0];
+    if (reservation) {
+      // Ensure runtime current datetime for each booking operation.
+      reservation.reservation_datetime = nowIstIsoSeconds();
+    }
+  }
+
   console.log(`\n=== ${label} ===`);
   console.log(`POST ${url}`);
   console.log('Payload:', JSON.stringify(payload, null, 2));
