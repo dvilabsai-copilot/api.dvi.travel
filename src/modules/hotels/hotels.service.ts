@@ -272,6 +272,7 @@ export class HotelsService {
           hotel_category: true,
           hotel_power_backup: true,
           hotel_hotspot_status: true,
+          axisrooms_property_id: true,
         },
       }),
       this.prisma.dvi_hotel.count({ where }),
@@ -285,6 +286,7 @@ export class HotelsService {
       hotel_city: h.hotel_city,
       hotel_mobile: h.hotel_mobile,
       status: h.status,
+      axisrooms_property_id: (h as any).axisrooms_property_id ?? null,
     }));
 
     return { page, limit, total, rows };
@@ -439,11 +441,12 @@ export class HotelsService {
         hotel_category: true,
         hotel_power_backup: true,
         hotel_hotspot_status: true,
+        axisrooms_property_id: true,
       },
     });
   }
 
-  create(dto: CreateHotelDto) {
+  async create(dto: CreateHotelDto) {
     const data = this.mapHotelDto(dto);
     this.validateBasicInfoRequired(data);
     if ((data as any).deleted === undefined) (data as any).deleted = false;
@@ -452,7 +455,12 @@ export class HotelsService {
     if ((data as any).hotel_hotspot_status === undefined) (data as any).hotel_hotspot_status = 0;
     if ((data as any).hotel_margin === undefined) (data as any).hotel_margin = 0;
 
-    return this.prisma.dvi_hotel.create({ data } as any);
+    const hotel = await this.prisma.dvi_hotel.create({ data } as any);
+    const axisroomsPropertyId = `AX_DVI_HOTEL_${(hotel as any).hotel_id}`;
+    return this.prisma.dvi_hotel.update({
+      where: { hotel_id: (hotel as any).hotel_id },
+      data: { axisrooms_property_id: axisroomsPropertyId } as any,
+    });
   }
 
   async update(hotel_id: number, dto: UpdateHotelDto) {
