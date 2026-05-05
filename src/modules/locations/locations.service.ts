@@ -574,6 +574,15 @@ private async createReplicatedLocationRows(
       continue;
     }
 
+    const isSelfRoute =
+      newSource.source_location.toLowerCase() ===
+      candidate.source_location.toLowerCase();
+
+    if (isSelfRoute) {
+      // Self-route is created unconditionally below with the minimum 10 km distance.
+      continue;
+    }
+
     const forwardNameKey = pairKey(newSource.source_location, candidate.source_location);
     const forwardCoordKey = coordKey(
       newSource.source_location_lattitude,
@@ -595,14 +604,6 @@ private async createReplicatedLocationRows(
       existingCoordPairs.add(forwardCoordKey);
     } else {
       skippedCount += 1;
-    }
-
-    const isSelfRoute =
-      newSource.source_location.toLowerCase() ===
-      candidate.source_location.toLowerCase();
-
-    if (isSelfRoute) {
-      continue;
     }
 
     const reverseNameKey = pairKey(candidate.source_location, newSource.source_location);
@@ -632,13 +633,14 @@ private async createReplicatedLocationRows(
     }
   }
 
+  // Always create the self-route (A → A) with the minimum required distance of 10 km,
+  // unless one already exists in the database.
+  const SELF_ROUTE_MIN_DISTANCE_KM = 10;
   const selfNameKey = pairKey(newSource.source_location, newSource.source_location);
-  if (rowsToInsert.length === 0 && !existingNamePairs.has(selfNameKey)) {
-    rowsToInsert.push({
-      ...this.buildLocationRowData(newSource, newSource, 0, locationDescription),
-      distance: 0,
-      duration: '0 hours 0 mins',
-    });
+  if (!existingNamePairs.has(selfNameKey)) {
+    rowsToInsert.push(
+      this.buildLocationRowData(newSource, newSource, SELF_ROUTE_MIN_DISTANCE_KM, locationDescription),
+    );
   }
 
   return this.prisma.$transaction(async (tx) => {
