@@ -201,15 +201,9 @@ export class TboHotelBookingService {
         return this.generateMockPreBookResponse(selection);
       }
 
-      const roomCount = this.resolveRoomCount(selection);
-
-      // Keep payload backward compatible and include certification-safe occupancy metadata.
       const payload = {
         BookingCode: selection.bookingCode,
         PaymentMode: 'Limit',
-        GuestNationality: this.normalizeNationality(selection.guestNationality),
-        NoOfRooms: roomCount,
-        PaxRooms: this.buildPaxRooms(selection),
       };
 
       this.logger.log(`📤 Full PreBook Payload (JSON): ${JSON.stringify(payload)}`);
@@ -660,6 +654,15 @@ export class TboHotelBookingService {
     groupType: number = 1, // Hotel group type (not used here - draft records already saved)
   ) {
     const results = [];
+    const processedBookingMap = new Map<
+      string,
+      {
+        bookResponse: BookResponse;
+        preBookResponse: PreBookResponse;
+        preBookMeta: any;
+        bookingSelection: TboHotelSelection;
+      }
+    >();
 
     for (const { routeId, selection } of selections) {
       try {
@@ -731,12 +734,35 @@ export class TboHotelBookingService {
           netAmount: Number(preBookMeta.prebookNetAmount),
         };
 
-        // Step 2: Book the hotel with guest details
-        const bookResponse = await this.bookHotel(
-          preBookResponse,
-          bookingSelection,
-          endUserIp,
-        );
+        const dedupeKey = [
+          String(preBookResponse?.BookingCode || '').trim(),
+          String(preBookResponse?.TraceId || '').trim(),
+          String(selection.hotelCode || '').trim(),
+        ].join('|');
+
+        const alreadyProcessed = processedBookingMap.get(dedupeKey);
+        let bookResponse: BookResponse;
+
+        if (alreadyProcessed) {
+          this.logger.warn(
+            `↻ Reusing existing booking for duplicate BookingCode/TraceId on route ${routeId} (hotel ${selection.hotelCode})`,
+          );
+          bookResponse = alreadyProcessed.bookResponse;
+        } else {
+          // Step 2: Book the hotel with guest details
+          bookResponse = await this.bookHotel(
+            preBookResponse,
+            bookingSelection,
+            endUserIp,
+          );
+
+          processedBookingMap.set(dedupeKey, {
+            bookResponse,
+            preBookResponse,
+            preBookMeta,
+            bookingSelection,
+          });
+        }
 
         // Step 3: Save confirmation to database
         const savedConfirmation = await this.saveTboBookingConfirmation(

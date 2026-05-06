@@ -3262,6 +3262,18 @@ export class ItinerariesService {
       throw new BadRequestException(`Plan ${planId} not found`);
     }
 
+    const nationalityId = Number((plan as any).nationality || 0);
+    if (nationalityId > 0) {
+      const country = await this.prisma.dvi_countries.findFirst({
+        where: { id: nationalityId, deleted: 0, status: 1 },
+        select: { shortname: true },
+      });
+      const iso2 = String(country?.shortname || '').trim().toUpperCase();
+      if (/^[A-Z]{2}$/.test(iso2)) {
+        (plan as any).nationality_iso2 = iso2;
+      }
+    }
+
     // Fetch routes
     const routes = await this.prisma.dvi_itinerary_route_details.findMany({
       where: { itinerary_plan_ID: planId, deleted: 0 },
