@@ -12,75 +12,67 @@ const TOKEN =
 const DETAILS_ID_FALLBACK = process.env.DETAILS_ID || 'DVI202604247';
 
 const createPayload = {
+  // Itinerary through Madurai + Rameswaram — cities with ResAvenue hotels:
+  //   Madurai  -> Poppys Hotel Madurai         (resavenue_hotel_code: 18)
+  //   Rameswaram -> Vinayaga by Poppys          (resavenue_hotel_code: 20)
   plan: {
-
     agent_id: 8,
     staff_id: 0,
     location_id: 0,
-    arrival_point: 'Chennai International Airport',
-    departure_point: 'Chennai International Airport',
+    arrival_point: 'Madurai',
+    departure_point: 'Madurai',
     itinerary_preference: 3,
     itinerary_type: 2,
-    preferred_hotel_category: [2],
+    preferred_hotel_category: [3],
     hotel_facilities: [],
-    trip_start_date: '2026-05-13T08:00:00+05:30',
-    trip_end_date: '2026-05-16T20:00:00+05:30',
-    pick_up_date_and_time: '2026-05-13T08:00:00+05:30',
+    trip_start_date: '2026-06-15T08:00:00+05:30',
+    trip_end_date: '2026-06-17T20:00:00+05:30',
+    pick_up_date_and_time: '2026-06-15T08:00:00+05:30',
     arrival_type: 1,
     departure_type: 1,
-    no_of_nights: 3,
-    no_of_days: 4,
-    budget: 15000,
+    no_of_nights: 2,
+    no_of_days: 3,
+    budget: 30000,
     entry_ticket_required: 0,
     guide_for_itinerary: 0,
-    nationality: 229,
+    nationality: 99,
     food_type: 0,
     meal_plan_code: 'CP',
     meal_plan_breakfast: 1,
     meal_plan_lunch: 0,
     meal_plan_dinner: 0,
     adult_count: 2,
-    child_count: 2,
+    child_count: 0,
     infant_count: 0,
-    special_instructions: '',
+    special_instructions: 'ResAvenue hotel test - Madurai/Rameswaram',
   },
   routes: [
     {
-      location_name: 'Chennai International Airport',
-      next_visiting_location: 'Chennai',
-      itinerary_route_date: '2026-05-13T00:00:00+05:30',
+      location_name: 'Madurai',
+      next_visiting_location: 'Rameswaram',
+      itinerary_route_date: '2026-06-15T00:00:00+05:30',
       no_of_days: 1,
-      no_of_km: 16.61,
+      no_of_km: 163,
       direct_to_next_visiting_place: 0,
       via_route: '',
       via_routes: [],
     },
     {
-      location_name: 'Chennai',
-      next_visiting_location: 'Mahabalipuram',
-      itinerary_route_date: '2026-05-14T00:00:00+05:30',
+      location_name: 'Rameswaram',
+      next_visiting_location: 'Madurai',
+      itinerary_route_date: '2026-06-16T00:00:00+05:30',
       no_of_days: 2,
-      no_of_km: 52.07,
+      no_of_km: 163,
       direct_to_next_visiting_place: 0,
       via_route: '',
       via_routes: [],
     },
     {
-      location_name: 'Mahabalipuram',
-      next_visiting_location: 'Pondicherry',
-      itinerary_route_date: '2026-05-15T00:00:00+05:30',
+      location_name: 'Madurai',
+      next_visiting_location: 'Madurai',
+      itinerary_route_date: '2026-06-17T00:00:00+05:30',
       no_of_days: 3,
-      no_of_km: 86.57,
-      direct_to_next_visiting_place: 0,
-      via_route: '',
-      via_routes: [],
-    },
-    {
-      location_name: 'Pondicherry',
-      next_visiting_location: 'Chennai International Airport',
-      itinerary_route_date: '2026-05-16T00:00:00+05:30',
-      no_of_days: 4,
-      no_of_km: 40.17,
+      no_of_km: 0,
       direct_to_next_visiting_place: 0,
       via_route: '',
       via_routes: [],
@@ -89,9 +81,7 @@ const createPayload = {
   vehicles: [{ vehicle_type_id: 1, vehicle_count: 1 }],
   travellers: [
     { room_id: 1, traveller_type: 1 },
-    { room_id: 1, traveller_type: 2, traveller_age: '7', child_bed_type: 1 },
-    { room_id: 2, traveller_type: 1 },
-    { room_id: 2, traveller_type: 2, traveller_age: '6', child_bed_type: 1 },
+    { room_id: 1, traveller_type: 1 },
   ],
   previousDayBillingDecisionProvided: false,
   previousDayBillingConfirmed: false,
@@ -389,6 +379,52 @@ async function main() {
 
   logHeader('DONE');
   console.log('Repro complete. Review response + waiting summary above.');
+
+  // ─── STEP 3: Fetch hotel options (ResAvenue + TBO) for this itinerary ───
+  logHeader('STEP 3: FETCH HOTEL DETAILS (ResAvenue + TBO)');
+  const hotelDetailsUrl = `${BASE_URL}/api/v1/itineraries/hotel_details/${detailsId}`;
+  console.log('[INFO] Fetching hotel packages — this may take 30-60s while calling live APIs...');
+  const hotelDetailsResult = await requestJson(hotelDetailsUrl, { method: 'GET' });
+
+  if (!hotelDetailsResult.ok) {
+    console.error(`[ERROR] hotel_details failed: HTTP ${hotelDetailsResult.status}`);
+  } else {
+    // Summarize what providers returned hotels
+    const hd = hotelDetailsResult.json;
+    const routes = hd?.routes || hd?.data?.routes || [];
+    if (routes.length === 0) {
+      console.log('[INFO] No routes found in hotel_details response. Raw response above.');
+    } else {
+      console.log(`\n[HOTEL SUMMARY] ${routes.length} route(s) returned hotel options:\n`);
+      for (const route of routes) {
+        const city = route.city || route.locationName || route.destination || '(city?)';
+        const hotels = route.hotels || route.hotelOptions || route.results || [];
+        console.log(`  Route: ${city} — ${hotels.length} hotel(s)`);
+        for (const h of hotels) {
+          const provider = h.provider || h.source || '?';
+          const name = h.hotelName || h.name || h.hotel_name || '(no name)';
+          const price = h.price || h.totalPrice || h.minPrice || '?';
+          console.log(`    [${provider}] ${name} — ₹${price}`);
+        }
+      }
+    }
+
+    // Also check packages (TBO returns grouped packages)
+    const packages = hd?.packages || hd?.data?.packages || [];
+    if (packages.length > 0) {
+      console.log(`\n[HOTEL PACKAGES] ${packages.length} package(s) found:`);
+      for (const pkg of packages) {
+        console.log(`  Package: ${pkg.label || pkg.type || pkg.category || 'Unknown'} — ₹${pkg.totalPrice || pkg.price || '?'}`);
+        const pkgHotels = pkg.hotels || [];
+        for (const h of pkgHotels) {
+          const provider = h.provider || h.source || '?';
+          const name = h.hotelName || h.name || '(no name)';
+          console.log(`    [${provider}] ${name}`);
+        }
+      }
+    }
+  }
+
 }
 
 main().catch((error) => {

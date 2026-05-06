@@ -23,6 +23,7 @@ import { TimeConverter } from "./engines/helpers/time-converter";
 import { TboHotelBookingService } from "./services/tbo-hotel-booking.service";
 import { ResAvenueHotelBookingService } from "./services/resavenue-hotel-booking.service";
 import { HobseHotelBookingService } from "./services/hobse-hotel-booking.service";
+import { AxisRoomsBookingPushService } from "./services/axisrooms-booking-push.service";
 import { ItineraryHotelDetailsTboService } from "./itinerary-hotel-details-tbo.service";
 import { TimelineEnricher } from "./engines/helpers/timeline.enricher";
 import { normalizePassengerTitle } from "../../common/utils/passenger-title.util";
@@ -72,6 +73,7 @@ export class ItinerariesService {
     private readonly tboHotelBooking: TboHotelBookingService,
     private readonly resavenueHotelBooking: ResAvenueHotelBookingService,
     private readonly hobseHotelBooking: HobseHotelBookingService,
+    private readonly axisroomsBookingPushService: AxisRoomsBookingPushService,
     private readonly hotelDetailsTboService: ItineraryHotelDetailsTboService,
     private readonly supplementNormalizer: SupplementNormalizerService,
   ) {}
@@ -4204,11 +4206,17 @@ export class ItinerariesService {
     console.log('[Hotel Booking] Hotels:', JSON.stringify(dto.hotel_bookings, null, 2));
 
     // Group hotels by provider
-    const tboHotels = dto.hotel_bookings.filter(h => h.provider === 'tbo');
-    const resavenueHotels = dto.hotel_bookings.filter(h => h.provider === 'ResAvenue');
-    const hobseHotels = dto.hotel_bookings.filter(h => h.provider === 'HOBSE');
+    const normalizedHotelBookings = dto.hotel_bookings.map((hotel) => ({
+      ...hotel,
+      __provider: String(hotel?.provider || '').trim().toLowerCase(),
+    }));
 
-    console.log('[Hotel Booking] TBO:', tboHotels.length, 'ResAvenue:', resavenueHotels.length, 'HOBSE:', hobseHotels.length);
+    const tboHotels = normalizedHotelBookings.filter((h) => h.__provider === 'tbo');
+    const resavenueHotels = normalizedHotelBookings.filter((h) => h.__provider === 'resavenue');
+    const hobseHotels = normalizedHotelBookings.filter((h) => h.__provider === 'hobse');
+    const axisroomsHotels = normalizedHotelBookings.filter((h) => h.__provider === 'axisrooms');
+
+    console.log('[Hotel Booking] TBO:', tboHotels.length, 'ResAvenue:', resavenueHotels.length, 'HOBSE:', hobseHotels.length, 'AxisRooms:', axisroomsHotels.length);
 
     const allBookingResults: any[] = [];
 
@@ -4334,6 +4342,33 @@ export class ItinerariesService {
           }
         );
         allBookingResults.push(...hobseBookingResults);
+      }
+
+      // Process AxisRooms hotels if any (outbound push to AxisRooms endpoint)
+      if (axisroomsHotels.length > 0) {
+        console.log('[AxisRooms Booking Push] Processing', axisroomsHotels.length, 'hotel(s)');
+
+        const axisroomsPushResults = [];
+        for (const hotel of axisroomsHotels) {
+          const pushResult = await this.axisroomsBookingPushService.pushForHotelSelection({
+            bookingStatus: 'confirmed',
+            confirmedItineraryPlanId: baseResult.confirmed_itinerary_plan_ID,
+            itineraryPlanId: baseResult.itinerary_plan_ID,
+            hotel,
+            fallbackBookedBy: (dto as any)?.primary_guest_name || 'DVI User',
+            fallbackEmail: (dto as any)?.primary_guest_email_id || '',
+            fallbackPhone: (dto as any)?.primary_guest_contact_no || '',
+          });
+
+          axisroomsPushResults.push({
+            provider: 'axisrooms',
+            routeId: hotel.routeId,
+            hotelCode: hotel.hotelCode,
+            ...pushResult,
+          });
+        }
+
+        allBookingResults.push(...axisroomsPushResults);
       }
 
       // Add all booking results to response

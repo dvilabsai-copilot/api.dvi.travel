@@ -525,7 +525,7 @@ export class TboHotelBookingService {
 
   private mapPassenger(p: TboHotelPassenger, index: number) {
     return {
-      Title: resolveProviderPassengerTitle(p.title),
+      Title: this.resolveTboPassengerTitle(p.title),
       FirstName: p.firstName,
       MiddleName: p.middleName || '',
       LastName: p.lastName,
@@ -570,7 +570,7 @@ export class TboHotelBookingService {
 
       const childAges = this.getChildAgesFromSelection(selection);
       const passengerSnapshot = selection.passengers.map((p) => ({
-        title: resolveProviderPassengerTitle(p.title),
+        title: this.resolveTboPassengerTitle(p.title),
         paxType: p.paxType,
         age: p.age,
         firstName: p.firstName,
@@ -654,6 +654,10 @@ export class TboHotelBookingService {
     groupType: number = 1, // Hotel group type (not used here - draft records already saved)
   ) {
     const results = [];
+    const lockedGuestNationality = await this.resolveBookingNationalityFromPlan(itineraryPlanId);
+    this.logger.log(
+      `🔐 TBO booking nationality locked to itinerary plan ${itineraryPlanId}: ${lockedGuestNationality}`,
+    );
     const processedBookingMap = new Map<
       string,
       {
@@ -731,6 +735,7 @@ export class TboHotelBookingService {
 
         const bookingSelection: TboHotelSelection = {
           ...selection,
+          guestNationality: lockedGuestNationality,
           netAmount: Number(preBookMeta.prebookNetAmount),
         };
 
@@ -854,6 +859,46 @@ export class TboHotelBookingService {
     throw new BadRequestException(
       'GuestNationality is required. Provide guestNationality in request or set TBO_DEFAULT_GUEST_NATIONALITY.',
     );
+  }
+
+  private async resolveBookingNationalityFromPlan(itineraryPlanId: number): Promise<string> {
+    const plan = await this.prisma.dvi_itinerary_plan_details.findUnique({
+      where: { itinerary_plan_ID: itineraryPlanId },
+      select: { nationality: true } as any,
+    });
+
+    const raw = String((plan as any)?.nationality ?? '').trim();
+    if (/^[A-Za-z]{2}$/.test(raw)) {
+      return this.normalizeNationality(raw);
+    }
+
+    const nationalityId = Number(raw);
+    if (Number.isFinite(nationalityId) && nationalityId > 0) {
+      const country = await this.prisma.dvi_countries.findFirst({
+        where: { id: nationalityId, deleted: 0, status: 1 },
+        select: { shortname: true },
+      });
+      const iso2 = String(country?.shortname || '').trim().toUpperCase();
+      if (/^[A-Z]{2}$/.test(iso2)) {
+        return this.normalizeNationality(iso2);
+      }
+    }
+
+    this.logger.warn(
+      `⚠️ Could not resolve plan nationality for itinerary_plan_ID=${itineraryPlanId}; using configured/default fallback for TBO booking payload.`,
+    );
+    return this.normalizeNationality();
+  }
+
+  private resolveTboPassengerTitle(title?: string): 'Mr' | 'Ms' | 'Mrs' {
+    const normalized = resolveProviderPassengerTitle(title);
+    if (normalized === 'Mrs' || normalized === 'Ms') {
+      return normalized;
+    }
+    if (normalized === 'Miss') {
+      return 'Ms';
+    }
+    return 'Mr';
   }
 
   private resolveRoomCount(selection: TboHotelSelection): number {
