@@ -114,6 +114,11 @@ export class ItineraryHotelDetailsTboService {
     timestamp: number;
   }>();
 
+  private isTboOnlyFetchEnabled(): boolean {
+    const raw = String(process.env.HOTEL_FETCH_TBO_ONLY || '').trim().toLowerCase();
+    return raw === 'true' || raw === '1' || raw === 'yes';
+  }
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly hotelSearchService: HotelSearchService,
@@ -142,6 +147,56 @@ export class ItineraryHotelDetailsTboService {
 
     return null;
   }
+
+  // Legacy mapping: IDs 101-295 were used by the old hardcoded dropdown list.
+  // These do not match dvi_countries IDs, so we map them to country names for name-based lookup.
+  private static readonly LEGACY_NATIONALITY_NAME: Record<number, string> = {
+    101: 'India', 102: 'Afghanistan', 103: 'Albania', 104: 'Algeria', 105: 'Andorra',
+    106: 'Angola', 107: 'Antigua and Barbuda', 108: 'Argentina', 109: 'Armenia',
+    110: 'Australia', 111: 'Austria', 112: 'Azerbaijan', 113: 'Bahamas', 114: 'Bahrain',
+    115: 'Bangladesh', 116: 'Barbados', 117: 'Belarus', 118: 'Belgium', 119: 'Belize',
+    120: 'Benin', 121: 'Bhutan', 122: 'Bolivia', 123: 'Bosnia and Herzegovina',
+    124: 'Botswana', 125: 'Brazil', 126: 'Brunei', 127: 'Bulgaria', 128: 'Burkina Faso',
+    129: 'Burundi', 130: 'Cabo Verde', 131: 'Cambodia', 132: 'Cameroon', 133: 'Canada',
+    134: 'Central African Republic', 135: 'Chad', 136: 'Chile', 137: 'China',
+    138: 'Colombia', 139: 'Comoros', 140: 'Congo', 141: 'Costa Rica', 142: 'Croatia',
+    143: 'Cuba', 144: 'Cyprus', 145: 'Czech Republic',
+    146: 'Democratic Republic of the Congo', 147: 'Denmark', 148: 'Djibouti',
+    149: 'Dominica', 150: 'Dominican Republic', 151: 'Ecuador', 152: 'Egypt',
+    153: 'El Salvador', 154: 'Equatorial Guinea', 155: 'Eritrea', 156: 'Estonia',
+    157: 'Eswatini', 158: 'Ethiopia', 159: 'Fiji', 160: 'Finland', 161: 'France',
+    162: 'Gabon', 163: 'Gambia', 164: 'Georgia', 165: 'Germany', 166: 'Ghana',
+    167: 'Greece', 168: 'Grenada', 169: 'Guatemala', 170: 'Guinea', 171: 'Guinea-Bissau',
+    172: 'Guyana', 173: 'Haiti', 174: 'Honduras', 175: 'Hungary', 176: 'Iceland',
+    177: 'India', 178: 'Indonesia', 179: 'Iran', 180: 'Iraq', 181: 'Ireland',
+    182: 'Israel', 183: 'Italy', 184: 'Jamaica', 185: 'Japan', 186: 'Jordan',
+    187: 'Kazakhstan', 188: 'Kenya', 189: 'Kiribati', 190: 'Kuwait', 191: 'Kyrgyzstan',
+    192: 'Laos', 193: 'Latvia', 194: 'Lebanon', 195: 'Lesotho', 196: 'Liberia',
+    197: 'Libya', 198: 'Liechtenstein', 199: 'Lithuania', 200: 'Luxembourg',
+    201: 'Madagascar', 202: 'Malawi', 203: 'Malaysia', 204: 'Maldives', 205: 'Mali',
+    206: 'Malta', 207: 'Marshall Islands', 208: 'Mauritania', 209: 'Mauritius',
+    210: 'Mexico', 211: 'Micronesia', 212: 'Moldova', 213: 'Monaco', 214: 'Mongolia',
+    215: 'Montenegro', 216: 'Morocco', 217: 'Mozambique', 218: 'Myanmar', 219: 'Namibia',
+    220: 'Nauru', 221: 'Nepal', 222: 'Netherlands', 223: 'New Zealand', 224: 'Nicaragua',
+    225: 'Niger', 226: 'Nigeria', 227: 'North Korea', 228: 'North Macedonia',
+    229: 'Norway', 230: 'Oman', 231: 'Pakistan', 232: 'Palau', 233: 'Panama',
+    234: 'Papua New Guinea', 235: 'Paraguay', 236: 'Peru', 237: 'Philippines',
+    238: 'Poland', 239: 'Portugal', 240: 'Qatar', 241: 'Romania', 242: 'Russia',
+    243: 'Rwanda', 244: 'Saint Kitts and Nevis', 245: 'Saint Lucia',
+    246: 'Saint Vincent and the Grenadines', 247: 'Samoa', 248: 'San Marino',
+    249: 'Sao Tome and Principe', 250: 'Saudi Arabia', 251: 'Senegal', 252: 'Serbia',
+    253: 'Seychelles', 254: 'Sierra Leone', 255: 'Singapore', 256: 'Slovakia',
+    257: 'Slovenia', 258: 'Solomon Islands', 259: 'Somalia', 260: 'South Africa',
+    261: 'South Korea', 262: 'South Sudan', 263: 'Spain', 264: 'Sri Lanka',
+    265: 'Sudan', 266: 'Suriname', 267: 'Sweden', 268: 'Switzerland', 269: 'Syria',
+    270: 'Taiwan', 271: 'Tajikistan', 272: 'Tanzania', 273: 'Thailand',
+    274: 'Timor-Leste', 275: 'Togo', 276: 'Tonga', 277: 'Trinidad and Tobago',
+    278: 'Tunisia', 279: 'Turkey', 280: 'Turkmenistan', 281: 'Tuvalu', 282: 'Uganda',
+    283: 'Ukraine', 284: 'United Arab Emirates', 285: 'United Kingdom',
+    286: 'United States', 287: 'Uruguay', 288: 'Uzbekistan', 289: 'Vanuatu',
+    290: 'Vatican City', 291: 'Venezuela', 292: 'Vietnam', 293: 'Yemen',
+    294: 'Zambia', 295: 'Zimbabwe',
+  };
 
   private async resolveGuestNationality(plan: any): Promise<string> {
     const nationalityId = Number((plan as any)?.nationality ?? 0);
@@ -177,6 +232,30 @@ export class ItineraryHotelDetailsTboService {
         );
       }
     }
+
+      // Fallback: legacy hardcoded dropdown used IDs 101-295 which differ from dvi_countries IDs.
+      // Resolve by looking up the country name from the legacy map and then querying dvi_countries by name.
+      if (nationalityId >= 101 && nationalityId <= 295) {
+        const legacyName = ItineraryHotelDetailsTboService.LEGACY_NATIONALITY_NAME[nationalityId];
+        if (legacyName) {
+          try {
+            const countryByName = await this.prisma.dvi_countries.findFirst({
+              where: { name: { contains: legacyName }, deleted: 0, status: 1 },
+              select: { shortname: true, name: true },
+            });
+            const iso2 = this.extractIso2FromCountryRow(countryByName);
+            if (iso2) {
+              this.logger.log(
+                `✅ Resolved guestNationality via legacy name lookup: nationality=${nationalityId} (${legacyName}) -> ${iso2}`,
+              );
+              return iso2;
+            }
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            this.logger.warn(`⚠️ Legacy name lookup failed for "${legacyName}": ${msg}`);
+          }
+        }
+      }
 
     // Some records may directly store ISO-2 code instead of FK id.
     if (/^[A-Z]{2}$/.test(rawNationality)) {
@@ -305,38 +384,45 @@ export class ItineraryHotelDetailsTboService {
       planChildAges,
     );
     
-    // Step 3.5: Fetch HOBSE hotels and merge with TBO hotels
-    // First, create a HOBSE-specific city code map using hobse_city_code
-    const hobseCityCodeMap = await this.batchMapDestinationsToHobseCityCodes(routes);
-    const hobseHotelsByRoute = await this.fetchHobseHotelsForRoutes(routes, noOfNights, hobseCityCodeMap);
-    
-    // Merge HOBSE hotels into the TBO hotel map
-    hobseHotelsByRoute.forEach((hobseHotels, routeId) => {
-      const existingHotels = hotelsByRoute.get(routeId) || [];
-      hotelsByRoute.set(routeId, [...existingHotels, ...hobseHotels]);
-    });
+    const tboOnlyFetch = this.isTboOnlyFetchEnabled();
+    if (tboOnlyFetch) {
+      this.logger.warn(
+        '⚠️ HOTEL_FETCH_TBO_ONLY enabled: skipping HOBSE/ResAvenue provider fetch and returning only TBO hotels',
+      );
+    } else {
+      // Step 3.5: Fetch HOBSE hotels and merge with TBO hotels
+      // First, create a HOBSE-specific city code map using hobse_city_code
+      const hobseCityCodeMap = await this.batchMapDestinationsToHobseCityCodes(routes);
+      const hobseHotelsByRoute = await this.fetchHobseHotelsForRoutes(routes, noOfNights, hobseCityCodeMap);
 
-    // Step 3.6: Fetch ResAvenue hotels explicitly (in case they weren't included in TBO search)
-    const resavenueHotelsByRoute = await this.fetchResavenueHotelsForRoutes(
-      routes,
-      noOfNights,
-      guestNationality,
-      planRoomCount,
-      planAdultCount,
-      planChildCount,
-    );
-    
-    // Merge ResAvenue hotels into the hotel map
-    resavenueHotelsByRoute.forEach((resavenueHotels, routeId) => {
-      const existingHotels = hotelsByRoute.get(routeId) || [];
-      // Avoid duplicates: check if hotel already exists by hotel code + provider
-      const hotelStrs = existingHotels.map(h => `${h.hotelCode}|${h.provider}`);
-      const newHotels = resavenueHotels.filter(h => !hotelStrs.includes(`${h.hotelCode}|${h.provider}`));
-      if (newHotels.length > 0) {
-        this.logger.log(`   ✅ Added ${newHotels.length} new ResAvenue hotel(s) to route ${routeId}`);
-      }
-      hotelsByRoute.set(routeId, [...existingHotels, ...newHotels]);
-    });
+      // Merge HOBSE hotels into the TBO hotel map
+      hobseHotelsByRoute.forEach((hobseHotels, routeId) => {
+        const existingHotels = hotelsByRoute.get(routeId) || [];
+        hotelsByRoute.set(routeId, [...existingHotels, ...hobseHotels]);
+      });
+
+      // Step 3.6: Fetch ResAvenue hotels explicitly (in case they weren't included in TBO search)
+      const resavenueHotelsByRoute = await this.fetchResavenueHotelsForRoutes(
+        routes,
+        noOfNights,
+        guestNationality,
+        planRoomCount,
+        planAdultCount,
+        planChildCount,
+      );
+
+      // Merge ResAvenue hotels into the hotel map
+      resavenueHotelsByRoute.forEach((resavenueHotels, routeId) => {
+        const existingHotels = hotelsByRoute.get(routeId) || [];
+        // Avoid duplicates: check if hotel already exists by hotel code + provider
+        const hotelStrs = existingHotels.map(h => `${h.hotelCode}|${h.provider}`);
+        const newHotels = resavenueHotels.filter(h => !hotelStrs.includes(`${h.hotelCode}|${h.provider}`));
+        if (newHotels.length > 0) {
+          this.logger.log(`   ✅ Added ${newHotels.length} new ResAvenue hotel(s) to route ${routeId}`);
+        }
+        hotelsByRoute.set(routeId, [...existingHotels, ...newHotels]);
+      });
+    }
     
     // Debug: Check if any hotels were found
     const hotelEntries = Array.from(hotelsByRoute.entries());
@@ -721,6 +807,9 @@ export class ItineraryHotelDetailsTboService {
     const guestCount = safeAdultCount + safeChildCount;
     const safeRoomCount = Math.max(Number(roomCount || 1), 1);
 
+    const tboOnlyFetch = this.isTboOnlyFetchEnabled();
+    const searchProviders = tboOnlyFetch ? ['tbo'] : ['tbo', 'resavenue'];
+
     const searchCriteria = {
       cityCode: effectiveCityCode,
       checkInDate: block.checkInDate,
@@ -731,7 +820,7 @@ export class ItineraryHotelDetailsTboService {
       childCount: safeChildCount,
       childAges: childAges.length > 0 ? childAges : undefined,
       guestNationality,
-      providers: ['tbo', 'resavenue'], // Only TBO + ResAvenue - HOBSE will be merged separately
+      providers: searchProviders,
     };
 
     this.logger.log(

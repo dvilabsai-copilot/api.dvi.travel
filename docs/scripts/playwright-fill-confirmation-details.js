@@ -1,6 +1,6 @@
 const { chromium } = require('playwright');
 
-const DEFAULT_URL = 'http://localhost:8080/itinerary-details/DVI2026057';
+const DEFAULT_URL = 'http://localhost:8080/itinerary-details/DVI20260518';
 
 function parseArg(name, fallback) {
   const prefix = `--${name}=`;
