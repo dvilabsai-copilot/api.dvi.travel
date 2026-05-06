@@ -613,13 +613,14 @@ export class AxisRoomsService {
                   end_date: new Date(inv.endDate),
                 },
               },
-              update: { free: inv.free, received_at: new Date() },
+              update: { free: inv.free, source: 'axisrooms', received_at: new Date() },
               create: {
                 hotel_id: hid,
                 room_id: rid,
                 start_date: new Date(inv.startDate),
                 end_date: new Date(inv.endDate),
                 free: inv.free,
+                source: 'axisrooms',
               },
             });
           }
@@ -738,7 +739,7 @@ export class AxisRoomsService {
             };
             await this.prisma.dvi_hotel_occupancy_rate.update({
               where: { id: (existingOccRate as any).id } as any,
-              data: { occupancy_rates: merged, received_at: new Date() } as any,
+              data: { occupancy_rates: merged, source: 'axisrooms', received_at: new Date() } as any,
             });
           } else {
             await this.prisma.dvi_hotel_occupancy_rate.create({
@@ -749,6 +750,7 @@ export class AxisRoomsService {
                 start_date: parsedStart,
                 end_date: parsedEnd,
                 occupancy_rates: occupancyRates,
+                source: 'axisrooms',
               } as any,
             });
           }

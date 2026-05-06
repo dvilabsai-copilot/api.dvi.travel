@@ -176,6 +176,25 @@ async function fillByLabel(modal, labelText, value, type = 'input') {
   await field.fill(value);
 }
 
+async function setNationalityIfEditable(input, desiredNationality, scopeLabel) {
+  const normalizedDesired = String(desiredNationality || 'IN').trim().toUpperCase() || 'IN';
+  const editable = await input.isEditable().catch(() => false);
+
+  if (editable) {
+    await input.fill(normalizedDesired);
+    return normalizedDesired;
+  }
+
+  const lockedValue = String((await input.inputValue().catch(() => '')) || '').trim().toUpperCase();
+  if (/^[A-Z]{2}$/.test(lockedValue) && lockedValue !== normalizedDesired) {
+    console.log(
+      `[FORM] ${scopeLabel} nationality is locked as ${lockedValue}; requested ${normalizedDesired}. Keeping locked value.`,
+    );
+  }
+
+  return /^[A-Z]{2}$/.test(lockedValue) ? lockedValue : normalizedDesired;
+}
+
 async function fillPassengerCard(modal, nameLabel, nameValue, ageValue, nationality = 'IN', overwriteAge = true) {
   const nameLabelLocator = modal.locator('label', { hasText: nameLabel }).first();
   await nameLabelLocator.waitFor({ state: 'visible', timeout: 5000 });
@@ -187,7 +206,8 @@ async function fillPassengerCard(modal, nameLabel, nameValue, ageValue, national
   if (overwriteAge) {
     await card.getByPlaceholder('Age').first().fill(ageValue);
   }
-  await card.getByPlaceholder('IN').first().fill(nationality);
+  const nationalityInput = card.getByPlaceholder('IN').first();
+  await setNationalityIfEditable(nationalityInput, nationality, nameLabel);
 }
 
 async function normalizePassengerRows(modal, labelPrefix, addButtonRegex, desiredCount) {
@@ -431,8 +451,12 @@ async function run() {
       ? existingNationality
       : String(process.env.DEFAULT_NATIONALITY || 'IN').trim().toUpperCase();
 
-    // Keep/create primary nationality in sync with itinerary-provided value.
-    await primaryNationalityInput.fill(baseNationality);
+    // Keep/create primary nationality in sync with itinerary-provided value when editable.
+    const effectiveNationality = await setNationalityIfEditable(
+      primaryNationalityInput,
+      baseNationality,
+      'Primary guest',
+    );
     await modal.getByPlaceholder('Enter the Email ID').fill('arun.kumar@example.com');
 
     // Optional PAN: fill only when explicitly provided to avoid TBO rejecting demo/test PAN values.
@@ -444,7 +468,7 @@ async function run() {
     }
 
     // Add/fill dynamic expected passenger counts from validation messages
-    await fillDynamicPassengers(modal, baseNationality, passengerSeed);
+    await fillDynamicPassengers(modal, effectiveNationality, passengerSeed);
     await ensureAdultAges(modal, passengerSeed);
 
     // Tick prebook acknowledgement/review checkbox required for final booking.

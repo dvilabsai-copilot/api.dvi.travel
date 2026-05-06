@@ -2827,6 +2827,7 @@ model dvi_global_settings {
   hotel_terms_condition                  String?   @db.Text
   hotel_voucher_terms_condition          String?   @db.Text
   vehicle_voucher_terms_condition        String?   @db.Text
+  meal_plan_search_enabled               Int       @default(0) @db.TinyInt
   site_title                             String?   @db.VarChar(50)
   company_name                           String?   @db.VarChar(200)
   company_address                        String?   @db.VarChar(200)
@@ -5870,6 +5871,7 @@ model dvi_hotel_occupancy_rate {
   start_date      DateTime @db.Date
   end_date        DateTime @db.Date
   occupancy_rates Json
+  source          String   @default("manual") @db.VarChar(20) // 'axisrooms' | 'staah' | 'manual'
   received_at     DateTime @default(now()) @db.DateTime(0)
 
   @@unique([hotel_id, room_id, rateplan_id, start_date, end_date], map: "uniq_dvi_hotel_occupancy_rate")
@@ -5877,6 +5879,7 @@ model dvi_hotel_occupancy_rate {
   @@index([room_id], map: "idx_dvi_hotel_occupancy_rate_room")
   @@index([rateplan_id], map: "idx_dvi_hotel_occupancy_rate_rateplan")
   @@index([start_date], map: "idx_dvi_hotel_occupancy_rate_start")
+  @@index([source], map: "idx_dvi_hotel_occupancy_rate_source")
 }
 
 /// AxisRooms Inventory Updates
@@ -5890,12 +5893,14 @@ model dvi_hotel_room_availability {
   start_date  DateTime @db.Date
   end_date    DateTime @db.Date
   free        Int
+  source      String   @default("manual") @db.VarChar(20) // 'axisrooms' | 'staah' | 'manual'
   received_at DateTime @default(now()) @db.DateTime(0)
 
   @@unique([hotel_id, room_id, start_date, end_date], map: "uniq_dvi_hotel_room_availability")
   @@index([hotel_id], map: "idx_dvi_hotel_room_avail_hotel")
   @@index([room_id], map: "idx_dvi_hotel_room_avail_room")
   @@index([start_date], map: "idx_dvi_hotel_room_avail_start")
+  @@index([source], map: "idx_dvi_hotel_room_avail_source")
 }
 
 model axisrooms_inventory {
