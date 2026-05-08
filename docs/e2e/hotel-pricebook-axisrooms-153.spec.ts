@@ -1,10 +1,22 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 
+// Parse --key=value or --key value from process.argv (passed after `--` in playwright CLI)
+function arg(name: string): string | undefined {
+  const flag = `--${name}=`;
+  const eqEntry = process.argv.find((a) => a.startsWith(flag));
+  if (eqEntry) return eqEntry.slice(flag.length);
+  const idx = process.argv.indexOf(`--${name}`);
+  if (idx !== -1 && idx + 1 < process.argv.length) return process.argv[idx + 1];
+  return undefined;
+}
+
 const USER_EMAIL = process.env.E2E_HOTEL_USER ?? process.env.E2E_VENDOR_USER ?? 'admin@dvi.co.in';
 const USER_PASSWORD =
   process.env.E2E_HOTEL_PASSWORD ?? process.env.E2E_VENDOR_PASSWORD ?? 'Keerthi@2404ias';
 
-const HOTEL_ID = Number(process.env.E2E_AXIS_HOTEL_ID ?? '153');
+const PROPERTY_ID = arg('property_id') ?? process.env.E2E_AXIS_PROPERTY_ID ?? 'AX_DVI_HOTEL_153';
+const HOTEL_ID = Number(arg('hotel_id') ?? process.env.E2E_AXIS_HOTEL_ID ?? '153');
+const ROOM_ID = Number(arg('room_id') ?? process.env.E2E_AXIS_ROOM_ID ?? '189');
 const ROOM_REF_CODE = process.env.E2E_AXIS_ROOM_REF_CODE ?? 'DVIRHON666981';
 const ROOM_TITLE = process.env.E2E_AXIS_ROOM_TITLE ?? 'Executive';
 const RATEPLAN_ID = process.env.E2E_AXIS_RATEPLAN_ID ?? 'CP_PLAN';
@@ -69,7 +81,7 @@ function parseISODate(value: string): Date {
   return dt;
 }
 
-test('hotel 153 pricebook update persists occupancy pricing for target room and rate plan', async ({
+test(`${PROPERTY_ID} pricebook update persists occupancy pricing for target room and rate plan`, async ({
   page,
   request,
   baseURL,
@@ -137,7 +149,7 @@ test('hotel 153 pricebook update persists occupancy pricing for target room and 
   });
 
   const currentDayViewResponse = await request.get(
-    `${API_BASE_URL}/hotels/${HOTEL_ID}/pricebook/current-day-view?date=${START_DATE}&roomId=189&rateplanId=${RATEPLAN_ID}`,
+    `${API_BASE_URL}/hotels/${HOTEL_ID}/pricebook/current-day-view?date=${START_DATE}&roomId=${ROOM_ID}&rateplanId=${RATEPLAN_ID}`,
     {
       headers: {
         Authorization: `Bearer ${token}`,

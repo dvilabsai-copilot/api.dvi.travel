@@ -39,6 +39,7 @@ export interface ItineraryHotelRowDto {
   amenities?: string[];
   inclusions?: string[];
   rateConditions?: string[];
+  cancellationPolicy?: string[];
   mandatorySupplements?: string[];
   supplementSummary?: {
     hasSupplements?: boolean;
@@ -111,6 +112,7 @@ export interface ItineraryHotelRoomDto {
   roomTypeId: number;
   roomTypeName: string;
   roomId: number;
+  provider?: string;
   bookingCode?: string;
   availableRoomTypes: RoomTypeOptionDto[];
   mealPlan?: string;
@@ -121,6 +123,7 @@ export interface ItineraryHotelRoomDto {
   amenities?: string[];
   inclusions?: string[];
   rateConditions?: string[];
+  cancellationPolicy?: string[];
   supplementSummary?: {
     hasSupplements: boolean;
     supplementCount: number;
