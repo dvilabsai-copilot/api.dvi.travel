@@ -292,6 +292,272 @@ export class HotelsService {
     return { page, limit, total, rows };
   }
 
+  async listAxisroomsHotels(q: { search?: string; page?: number; limit?: number }) {
+    const page = Math.max(1, Number(q?.page ?? 1));
+    const limit = Math.max(1, Math.min(100, Number(q?.limit ?? 10)));
+    const search = String(q?.search ?? '').trim().toLowerCase();
+
+    const logs = await this.prisma.$queryRaw<any[]>`
+      SELECT axisrooms_property_id, type, COUNT(*) AS total_count, MAX(received_at) AS last_sync_at
+      FROM axisrooms_inbound_log
+      WHERE axisrooms_property_id IS NOT NULL
+        AND (
+          JSON_EXTRACT(payload, '$.synthetic_backfill') IS NULL
+          OR JSON_EXTRACT(payload, '$.synthetic_backfill') = false
+        )
+      GROUP BY axisrooms_property_id, type
+    `;
+
+    const byProperty = new Map<
+      string,
+      {
+        last_sync_at: Date | null;
+        inventory_updates: number;
+        rate_updates: number;
+        restriction_updates: number;
+        total_updates: number;
+      }
+    >();
+
+    for (const row of logs as any[]) {
+      const propertyId = this.toStr(row?.axisrooms_property_id);
+      if (!propertyId) continue;
+
+      const current =
+        byProperty.get(propertyId) ||
+        {
+          last_sync_at: null,
+          inventory_updates: 0,
+          rate_updates: 0,
+          restriction_updates: 0,
+          total_updates: 0,
+        };
+
+      const count = Number((row as any)?.total_count || 0);
+      current.total_updates += count;
+
+      const t = String(row?.type || '').toLowerCase();
+      if (t === 'inventoryupdate') current.inventory_updates += count;
+      if (t === 'rateupdate') current.rate_updates += count;
+      if (t === 'restrictionupdate') current.restriction_updates += count;
+
+      const maxDate = (row as any)?.last_sync_at ? new Date((row as any).last_sync_at) : null;
+      if (maxDate && (!current.last_sync_at || maxDate > current.last_sync_at)) {
+        current.last_sync_at = maxDate;
+      }
+
+      byProperty.set(propertyId, current);
+    }
+
+    const propertyIds = Array.from(byProperty.keys());
+    if (!propertyIds.length) {
+      return { page, limit, total: 0, rows: [] };
+    }
+
+    const hotels = await this.prisma.dvi_hotel.findMany({
+      where: {
+        AND: [
+          this.notDeletedBool as any,
+          { axisrooms_property_id: { in: propertyIds } as any },
+        ],
+      } as any,
+      select: {
+        hotel_id: true,
+        hotel_name: true,
+        hotel_code: true,
+        axisrooms_property_id: true,
+        axisrooms_enabled: true,
+      } as any,
+    });
+
+    let rows = (hotels as any[])
+      .map((h) => {
+        const propertyId = this.toStr(h.axisrooms_property_id) || '';
+        const stat = byProperty.get(propertyId);
+        if (!stat) return null;
+        return {
+          hotel_id: Number(h.hotel_id),
+          hotel_name: h.hotel_name || '',
+          hotel_code: h.hotel_code || '',
+          axisrooms_property_id: propertyId,
+          axisrooms_enabled: Number(h.axisrooms_enabled || 0) === 1,
+          last_sync_at: stat.last_sync_at ? stat.last_sync_at.toISOString() : null,
+          inventory_updates: stat.inventory_updates,
+          rate_updates: stat.rate_updates,
+          restriction_updates: stat.restriction_updates,
+          total_updates: stat.total_updates,
+        };
+      })
+      .filter((x) => !!x) as any[];
+
+    if (search) {
+      rows = rows.filter((r) =>
+        [r.hotel_name, r.hotel_code, r.axisrooms_property_id].some((v) =>
+          String(v || '').toLowerCase().includes(search),
+        ),
+      );
+    }
+
+    rows.sort((a, b) => {
+      const ad = a.last_sync_at ? new Date(a.last_sync_at).getTime() : 0;
+      const bd = b.last_sync_at ? new Date(b.last_sync_at).getTime() : 0;
+      if (bd !== ad) return bd - ad;
+      return String(a.hotel_name).localeCompare(String(b.hotel_name));
+    });
+
+    const total = rows.length;
+    const start = (page - 1) * limit;
+    const paged = rows.slice(start, start + limit);
+
+    return { page, limit, total, rows: paged };
+  }
+
+  async getAxisroomsHotelPreview(hotelId: number) {
+    const id = Number(hotelId || 0);
+    if (!Number.isFinite(id) || id <= 0) {
+      throw new BadRequestException('Invalid hotel_id');
+    }
+
+    const hotel = await this.prisma.dvi_hotel.findFirst({
+      where: {
+        AND: [this.notDeletedBool as any, { hotel_id: id }],
+      } as any,
+      select: {
+        hotel_id: true,
+        hotel_name: true,
+        hotel_code: true,
+        axisrooms_property_id: true,
+        axisrooms_enabled: true,
+      } as any,
+    });
+
+    const propertyId = this.toStr((hotel as any)?.axisrooms_property_id);
+    if (!hotel || !propertyId) {
+      throw new BadRequestException('Hotel is not mapped with AxisRooms property id');
+    }
+
+    const latestInboundRows = await this.prisma.$queryRaw<any[]>`
+      SELECT id, type, received_at
+      FROM axisrooms_inbound_log
+      WHERE axisrooms_property_id = ${propertyId}
+        AND (
+          JSON_EXTRACT(payload, '$.synthetic_backfill') IS NULL
+          OR JSON_EXTRACT(payload, '$.synthetic_backfill') = false
+        )
+      ORDER BY received_at DESC, id DESC
+      LIMIT 1
+    `;
+    const latestInbound = Array.isArray(latestInboundRows) && latestInboundRows.length
+      ? latestInboundRows[0]
+      : null;
+
+    const [inventoryRows, restrictionRows, rateRows, roomMasterRows, ratePlanRows] = await Promise.all([
+      this.prisma.axisrooms_inventory.findMany({
+        where: { axisrooms_property_id: propertyId },
+        orderBy: { received_at: 'desc' },
+        take: 50,
+      }),
+      this.prisma.axisrooms_restriction.findMany({
+        where: { axisrooms_property_id: propertyId },
+        orderBy: { received_at: 'desc' },
+        take: 50,
+      }),
+      this.prisma.dvi_hotel_occupancy_rate.findMany({
+        where: { hotel_id: id, source: 'axisrooms' as any } as any,
+        orderBy: { received_at: 'desc' },
+        take: 50,
+      }),
+      this.prisma.axisrooms_room.findMany({
+        where: { axisrooms_property_id: propertyId },
+        select: { room_id: true, room_name: true },
+      }),
+      this.prisma.dvi_hotel_room_rate_plan.findMany({
+        where: {
+          hotel_id: id,
+          deleted: 0,
+          status: 1,
+        } as any,
+        select: {
+          axisrooms_room_id: true,
+          rateplan_id: true,
+          rateplan_name: true,
+        } as any,
+      }),
+    ]);
+
+    const roomNameByAxisId = new Map<string, string>();
+    for (const r of roomMasterRows as any[]) {
+      const rid = this.toStr(r.room_id);
+      if (rid) roomNameByAxisId.set(rid, this.toStr(r.room_name) || rid);
+    }
+
+    const ratePlanNameByKey = new Map<string, string>();
+    for (const rp of ratePlanRows as any[]) {
+      const rid = this.toStr(rp.axisrooms_room_id);
+      const rpid = this.toStr(rp.rateplan_id);
+      if (!rid || !rpid) continue;
+      ratePlanNameByKey.set(`${rid}__${rpid}`, this.toStr(rp.rateplan_name) || rpid);
+    }
+
+    const rates = (rateRows as any[]).map((r) => ({
+      id: r.id,
+      room_id: r.room_id,
+      rateplan_id: r.rateplan_id,
+      room_name: null,
+      rateplan_name: Array.from(ratePlanNameByKey.entries()).find(([k]) => k.endsWith(`__${String(r.rateplan_id)}`))?.[1] || String(r.rateplan_id),
+      start_date: r.start_date,
+      end_date: r.end_date,
+      occupancy_rates: r.occupancy_rates,
+      received_at: r.received_at,
+    }));
+
+    const restrictions = (restrictionRows as any[]).map((r) => ({
+      id: r.id,
+      room_id: r.room_id,
+      room_name: roomNameByAxisId.get(String(r.room_id)) || String(r.room_id),
+      rateplan_id: r.rateplan_id,
+      rateplan_name: ratePlanNameByKey.get(`${String(r.room_id)}__${String(r.rateplan_id)}`) || String(r.rateplan_id),
+      start_date: r.start_date,
+      end_date: r.end_date,
+      type: r.type,
+      value: r.value,
+      received_at: r.received_at,
+    }));
+
+    const inventory = (inventoryRows as any[]).map((r) => ({
+      id: r.id,
+      room_id: r.room_id,
+      room_name: roomNameByAxisId.get(String(r.room_id)) || String(r.room_id),
+      start_date: r.start_date,
+      end_date: r.end_date,
+      free: r.free,
+      received_at: r.received_at,
+    }));
+
+    return {
+      hotel_id: Number((hotel as any).hotel_id),
+      hotel_name: (hotel as any).hotel_name || '',
+      hotel_code: (hotel as any).hotel_code || '',
+      axisrooms_property_id: propertyId,
+      axisrooms_enabled: Number((hotel as any).axisrooms_enabled || 0) === 1,
+      latest_inbound: latestInbound
+        ? {
+            id: latestInbound.id,
+            type: latestInbound.type,
+            received_at: latestInbound.received_at,
+          }
+        : null,
+      summary: {
+        rates_count: rates.length,
+        restrictions_count: restrictions.length,
+        inventory_count: inventory.length,
+      },
+      rates,
+      restrictions,
+      inventory,
+    };
+  }
+
   async options(term: string, limit = 50) {
     const AND: Prisma.dvi_hotelWhereInput[] = [this.notDeletedBool as any];
 
