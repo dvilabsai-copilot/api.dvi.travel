@@ -1,6 +1,6 @@
 const { chromium } = require('playwright');
 
-const DEFAULT_URL = 'https://dvi.travel/itinerary-details/DVI20260524';
+const DEFAULT_URL = 'https://dvi.travel/itinerary-details/DVI20260525';
 
 function parseArg(name, fallback) {
   const prefix = `--${name}=`;
@@ -15,6 +15,91 @@ function hasFlag(name) {
 function extractQuoteId(url) {
   const match = String(url || '').match(/\/itinerary-details\/([^/?#]+)/i);
   return match ? decodeURIComponent(match[1]) : '';
+}
+
+async function loadRouteDayMapFromApi(page, url) {
+  const quoteId = extractQuoteId(url);
+  if (!quoteId) return {};
+
+  const apiBase = String(process.env.DVI_API_BASE || 'https://dvi.travel/api/v1').replace(/\/+$/, '');
+
+  return page.evaluate(async ({ quoteId, apiBase }) => {
+    try {
+      const token =
+        localStorage.getItem('accessToken') ||
+        localStorage.getItem('token') ||
+        localStorage.getItem('authToken') ||
+        '';
+      if (!token) return {};
+
+      const res = await fetch(`${apiBase}/itineraries/details/${encodeURIComponent(quoteId)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return {};
+
+      const details = await res.json();
+      const days = Array.isArray(details?.days) ? details.days : [];
+      const out = {};
+      for (const d of days) {
+        const dayNumber = Number(d?.dayNumber || 0);
+        const routeId = Number(d?.id || 0);
+        if (dayNumber > 0 && routeId > 0) {
+          out[dayNumber] = routeId;
+        }
+      }
+      return out;
+    } catch {
+      return {};
+    }
+  }, { quoteId, apiBase });
+}
+
+async function chooseProviderForDay(page, dayNumber, providerName) {
+  const dayRegex = new RegExp(`\\bDay\\s*${dayNumber}\\b`, 'i');
+  const row = page
+    .locator('table tbody tr')
+    .filter({ hasText: dayRegex })
+    .first();
+
+  await row.waitFor({ state: 'visible', timeout: 20000 });
+  await row.click();
+
+  const expanded = row
+    .locator('xpath=following-sibling::tr[1]')
+    .first();
+  await expanded.waitFor({ state: 'visible', timeout: 15000 });
+
+  const providerRegex = new RegExp(providerName, 'i');
+  const providerBadge = expanded.locator('span').filter({ hasText: providerRegex }).first();
+  const found = await providerBadge.isVisible({ timeout: 10000 }).catch(() => false);
+
+  if (!found) {
+    const labels = (await expanded.locator('span').allTextContents())
+      .map((t) => String(t || '').trim())
+      .filter((t) => /tbo|resavenue|hobse|axisrooms/i.test(t));
+    throw new Error(
+      `Provider ${providerName} not found in Day ${dayNumber} expanded options. Available badges: ${labels.join(', ')}`,
+    );
+  }
+
+  const card = providerBadge.locator('xpath=ancestor::div[contains(@class,"rounded-lg")][1]');
+  const selectedButton = card.getByRole('button', { name: /^Selected$/i }).first();
+  if (await selectedButton.isVisible().catch(() => false)) {
+    console.log(`[HOTEL SELECT] Day ${dayNumber}: ${providerName} already selected.`);
+    return;
+  }
+
+  const chooseButton = card.getByRole('button', { name: /^Choose$/i }).first();
+  await chooseButton.waitFor({ state: 'visible', timeout: 10000 });
+  await chooseButton.click();
+
+  const confirmDialogBtn = page.getByRole('button', { name: /^Confirm$/i }).first();
+  if (await confirmDialogBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+    await confirmDialogBtn.click();
+  }
+
+  await page.waitForTimeout(800);
+  console.log(`[HOTEL SELECT] Day ${dayNumber}: selected provider ${providerName}.`);
 }
 
 async function loadPassengerSeedFromApi(page, url) {
@@ -176,6 +261,25 @@ async function fillByLabel(modal, labelText, value, type = 'input') {
   await field.fill(value);
 }
 
+async function setNationalityIfEditable(input, desiredNationality, scopeLabel) {
+  const normalizedDesired = String(desiredNationality || 'IN').trim().toUpperCase() || 'IN';
+  const editable = await input.isEditable().catch(() => false);
+
+  if (editable) {
+    await input.fill(normalizedDesired);
+    return normalizedDesired;
+  }
+
+  const lockedValue = String((await input.inputValue().catch(() => '')) || '').trim().toUpperCase();
+  if (/^[A-Z]{2}$/.test(lockedValue) && lockedValue !== normalizedDesired) {
+    console.log(
+      `[FORM] ${scopeLabel} nationality is locked as ${lockedValue}; requested ${normalizedDesired}. Keeping locked value.`,
+    );
+  }
+
+  return /^[A-Z]{2}$/.test(lockedValue) ? lockedValue : normalizedDesired;
+}
+
 async function fillPassengerCard(modal, nameLabel, nameValue, ageValue, nationality = 'IN', overwriteAge = true) {
   const nameLabelLocator = modal.locator('label', { hasText: nameLabel }).first();
   await nameLabelLocator.waitFor({ state: 'visible', timeout: 5000 });
@@ -187,7 +291,8 @@ async function fillPassengerCard(modal, nameLabel, nameValue, ageValue, national
   if (overwriteAge) {
     await card.getByPlaceholder('Age').first().fill(ageValue);
   }
-  await card.getByPlaceholder('IN').first().fill(nationality);
+  const nationalityInput = card.getByPlaceholder('IN').first();
+  await setNationalityIfEditable(nationalityInput, nationality, nameLabel);
 }
 
 async function normalizePassengerRows(modal, labelPrefix, addButtonRegex, desiredCount) {
@@ -363,13 +468,43 @@ async function run() {
   const url = parseArg('url', process.env.ITINERARY_URL || DEFAULT_URL);
   const headless = hasFlag('headless');
   const shouldSubmit = hasFlag('submit');
+  const preferredProvider = parseArg('provider', process.env.PREFERRED_PROVIDER || 'TBO');
+  const allowMixedProviders = hasFlag('allow-mixed-providers');
   const keepOpen = !headless && (hasFlag('keep-open') || !hasFlag('close'));
   let prebookRequestCount = 0;
   let confirmRequestCount = 0;
+  let latestConfirmPayload = null;
+  let latestConfirmResponse = null;
+  let mixedProviderDialogMessage = null;
 
   const browser = await chromium.launch({ headless });
   const context = await browser.newContext();
   const page = await context.newPage();
+
+  page.on('dialog', async (dialog) => {
+    const msg = String(dialog.message() || '');
+    const type = dialog.type();
+    console.log(`[BROWSER DIALOG] type=${type} message=${msg}`);
+
+    const isMixedProviderPrompt = type === 'confirm' && /mixed providers detected/i.test(msg);
+    if (isMixedProviderPrompt) {
+      mixedProviderDialogMessage = msg;
+      if (allowMixedProviders) {
+        await dialog.accept();
+        console.log('[BROWSER DIALOG] Mixed-provider prompt accepted due to --allow-mixed-providers flag.');
+      } else {
+        await dialog.dismiss();
+        console.log('[BROWSER DIALOG] Mixed-provider prompt dismissed; confirmation blocked.');
+      }
+      return;
+    }
+
+    if (type === 'confirm') {
+      await dialog.accept();
+      return;
+    }
+    await dialog.dismiss();
+  });
 
   page.on('request', (req) => {
     const urlText = String(req.url() || '');
@@ -381,6 +516,11 @@ async function run() {
       if (body) {
         console.log('[API PAYLOAD]');
         console.log(body);
+        try {
+          latestConfirmPayload = JSON.parse(body);
+        } catch {
+          latestConfirmPayload = null;
+        }
       }
     }
     if (urlText.includes('/itineraries/hotels/prebook')) {
@@ -397,8 +537,14 @@ async function run() {
         const body = await res.text();
         console.log('[API RESPONSE BODY]');
         console.log(body);
-      } catch {
-        // Ignore response parse errors in logger.
+        try {
+          latestConfirmResponse = JSON.parse(body);
+        } catch {
+          latestConfirmResponse = { raw: body };
+        }
+      } catch (err) {
+        console.log('[API RESPONSE TEXT ERROR]', err.message);
+        latestConfirmResponse = null;
       }
     }
   });
@@ -411,6 +557,12 @@ async function run() {
       await page.goto(url, { waitUntil: 'domcontentloaded' });
     }
     await page.waitForLoadState('networkidle');
+
+    const routeDayMap = await loadRouteDayMapFromApi(page, url);
+    console.log('[HOTEL SELECT] Route day map:', JSON.stringify(routeDayMap));
+    for (const day of [1, 2, 3, 4]) {
+      await chooseProviderForDay(page, day, preferredProvider);
+    }
 
     const passengerSeed = await loadPassengerSeedFromApi(page, url);
 
@@ -431,8 +583,12 @@ async function run() {
       ? existingNationality
       : String(process.env.DEFAULT_NATIONALITY || 'IN').trim().toUpperCase();
 
-    // Keep/create primary nationality in sync with itinerary-provided value.
-    await primaryNationalityInput.fill(baseNationality);
+    // Keep/create primary nationality in sync with itinerary-provided value when editable.
+    const effectiveNationality = await setNationalityIfEditable(
+      primaryNationalityInput,
+      baseNationality,
+      'Primary guest',
+    );
     await modal.getByPlaceholder('Enter the Email ID').fill('arun.kumar@example.com');
 
     // Optional PAN: fill only when explicitly provided to avoid TBO rejecting demo/test PAN values.
@@ -444,7 +600,7 @@ async function run() {
     }
 
     // Add/fill dynamic expected passenger counts from validation messages
-    await fillDynamicPassengers(modal, baseNationality, passengerSeed);
+    await fillDynamicPassengers(modal, effectiveNationality, passengerSeed);
     await ensureAdultAges(modal, passengerSeed);
 
     // Tick prebook acknowledgement/review checkbox required for final booking.
@@ -465,21 +621,96 @@ async function run() {
 
     if (shouldSubmit) {
       const prebookBeforeSubmit = prebookRequestCount;
-      console.log('Clicking Confirm Booking...');
-      await modal.getByRole('button', { name: /confirm booking/i }).click();
+      let submitAttempt = 0;
+      while (submitAttempt < 3 && confirmRequestCount <= 0) {
+        submitAttempt += 1;
+        console.log(`Clicking Confirm Booking... (attempt ${submitAttempt}/3)`);
+        await modal.getByRole('button', { name: /confirm booking/i }).first().click();
+
+        await page.waitForTimeout(1200);
+
+        if (mixedProviderDialogMessage && !allowMixedProviders) {
+          throw new Error(
+            `Mixed-provider confirmation dialog appeared and was dismissed. Booking intentionally blocked. Message: ${mixedProviderDialogMessage}`,
+          );
+        }
+
+        if (confirmRequestCount > 0) break;
+
+        const checkedAfterClick = await checkPrebookAcknowledgement(modal);
+        if (checkedAfterClick) {
+          console.log('[FORM] Prebook acknowledgement checked after submit attempt. Retrying confirm.');
+        }
+
+        const proceedButton = modal.getByRole('button', { name: /proceed|continue|confirm/i }).first();
+        if (await proceedButton.isVisible().catch(() => false)) {
+          await proceedButton.click();
+          await page.waitForTimeout(1000);
+        }
+      }
+
       await page
         .waitForResponse(
           (res) => String(res.url() || '').includes('/itineraries/confirm-quotation'),
           { timeout: 15000 },
         )
         .catch(() => null);
-      await page.waitForTimeout(1200);
+      await page.waitForTimeout(2500);
       const prebookAfterSubmit = prebookRequestCount;
       console.log(
         `[API TRACE] prebook requests before submit: ${prebookBeforeSubmit}, after submit: ${prebookAfterSubmit}, delta on submit: ${prebookAfterSubmit - prebookBeforeSubmit}`,
       );
       console.log(`[API TRACE] confirm-quotation requests seen: ${confirmRequestCount}`);
-      console.log('Submit clicked. Check toast/API response in app logs.');
+
+      if (confirmRequestCount <= 0) {
+        throw new Error('Confirm API was not called. Booking not submitted.');
+      }
+
+      if (!latestConfirmPayload) {
+        throw new Error('Confirm payload not captured from /confirm-quotation request.');
+      }
+
+      const hotelBookings = Array.isArray(latestConfirmPayload?.hotel_bookings)
+        ? latestConfirmPayload.hotel_bookings
+        : [];
+      console.log(`[ASSERT] hotel_bookings count: ${hotelBookings.length}`);
+
+      if (!latestConfirmResponse || typeof latestConfirmResponse !== 'object') {
+        throw new Error('Confirm response body not captured; cannot validate provider booking success.');
+      }
+
+      const bookingResults =
+        (Array.isArray(latestConfirmResponse?.bookingResults) && latestConfirmResponse.bookingResults) ||
+        (Array.isArray(latestConfirmResponse?.data?.bookingResults) && latestConfirmResponse.data.bookingResults) ||
+        (Array.isArray(latestConfirmResponse?.result?.bookingResults) && latestConfirmResponse.result.bookingResults) ||
+        [];
+
+      if (!Array.isArray(bookingResults) || bookingResults.length === 0) {
+        throw new Error('confirm-quotation returned no bookingResults array; cannot verify provider booking success.');
+      }
+
+      const successCount = bookingResults.filter((r) => {
+        const status = String(r?.status || '').toLowerCase();
+        const successFlag = r?.success;
+        return status === 'confirmed' || status === 'success' || successFlag === true;
+      }).length;
+
+      console.log(`[RESULT] Total bookings attempted: ${bookingResults.length}`);
+      console.log(`[RESULT] Successful bookings: ${successCount}/${bookingResults.length}`);
+
+      if (successCount < bookingResults.length) {
+        const failures = bookingResults.filter((r) => {
+          const status = String(r?.status || '').toLowerCase();
+          const successFlag = r?.success;
+          return !(status === 'confirmed' || status === 'success' || successFlag === true);
+        });
+        const failureSummary = failures
+          .map((f) => `Route ${f.routeId} (${f.provider}): ${f.error || f.message || f.status || 'Unknown error'}`)
+          .join(' | ');
+        throw new Error(`Not all provider bookings succeeded (${successCount}/${bookingResults.length}). ${failureSummary}`);
+      }
+
+      console.log('Submit clicked. Booking verified as all-success.');
     } else {
       console.log('Filled successfully. Run with --submit to click Confirm Booking.');
     }

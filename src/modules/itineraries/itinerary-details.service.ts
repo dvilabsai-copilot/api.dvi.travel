@@ -597,7 +597,7 @@ export class ItineraryDetailsService {
     const proofQuoteEnabled = false;
 
     const confirmedPlan = await this.prisma.dvi_confirmed_itinerary_plan_details.findFirst({
-      where: { itinerary_plan_ID: planId, deleted: 0 },
+      where: { itinerary_plan_ID: planId, deleted: 0, status: 1 },
     });
 
     // ------------------------- ROUTES + HOTSPOTS ----------------------

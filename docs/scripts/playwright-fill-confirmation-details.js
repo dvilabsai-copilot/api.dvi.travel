@@ -1,6 +1,6 @@
 const { chromium } = require('playwright');
 
-const DEFAULT_URL = 'http://localhost:8080/itinerary-details/DVI20260518';
+const DEFAULT_URL = 'http://localhost:8080/itinerary-details/DVI20260534';
 
 function parseArg(name, fallback) {
   const prefix = `--${name}=`;
@@ -12,9 +12,251 @@ function hasFlag(name) {
   return process.argv.includes(`--${name}`);
 }
 
+function parseListArg(name, fallbackList) {
+  const raw = parseArg(name, '');
+  if (!raw) return fallbackList;
+  return String(raw)
+    .split(',')
+    .map((v) => String(v || '').trim())
+    .filter(Boolean);
+}
+
 function extractQuoteId(url) {
   const match = String(url || '').match(/\/itinerary-details\/([^/?#]+)/i);
   return match ? decodeURIComponent(match[1]) : '';
+}
+
+function normalizeProviderBadgeText(value) {
+  return String(value || '')
+    .replace(/[^a-z]/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function canonicalProviderName(value) {
+  const normalized = normalizeProviderBadgeText(value).toLowerCase();
+  if (normalized.includes('resavenue')) return 'ResAvenue';
+  if (normalized.includes('axisrooms')) return 'AxisRooms';
+  if (normalized.includes('hobse')) return 'HOBSE';
+  if (normalized.includes('tbo')) return 'TBO';
+  return '';
+}
+
+function normalizeProviderPreference(value, fallback = '') {
+  const canonical = canonicalProviderName(value);
+  if (canonical) return canonical;
+  const raw = String(value || '').trim();
+  return raw || fallback;
+}
+
+function parseProviderFallbackMode(raw) {
+  const mode = String(raw || 'strict').trim().toLowerCase();
+  if (mode === 'first-available' || mode === 'first_available') return 'first-available';
+  if (mode === 'fallback-provider' || mode === 'fallback_provider') return 'fallback-provider';
+  if (mode === 'skip-unavailable' || mode === 'skip_unavailable' || mode === 'skip-day' || mode === 'skip_day') {
+    return 'skip-unavailable';
+  }
+  return 'strict';
+}
+
+async function resolveDayRow(page, dayNumber) {
+  await page.locator('table tbody').first().waitFor({ state: 'visible', timeout: 30000 });
+  const availableDays = [];
+
+  for (let pass = 0; pass < 10; pass++) {
+    const rows = page.locator('table tbody tr').filter({ hasText: /Day\s*\d+\s*\|/i });
+    const rowCount = await rows.count();
+
+    for (let i = 0; i < rowCount; i++) {
+      const text = String((await rows.nth(i).textContent().catch(() => '')) || '');
+      const match = text.match(/Day\s*(\d+)\s*\|/i);
+      const currentDay = match ? Number(match[1]) : NaN;
+      if (Number.isFinite(currentDay) && !availableDays.includes(currentDay)) {
+        availableDays.push(currentDay);
+      }
+    }
+
+    if (rowCount >= dayNumber) {
+      return { row: rows.nth(dayNumber - 1), availableDays };
+    }
+
+    await page.evaluate(() => {
+      const table = document.querySelector('table');
+      let node = table;
+      while (node) {
+        const el = node;
+        if (el instanceof HTMLElement && el.scrollHeight > el.clientHeight + 10) {
+          el.scrollTop += 900;
+          return;
+        }
+        node = node.parentElement;
+      }
+      window.scrollBy(0, 900);
+    }).catch(() => {});
+    await page.waitForTimeout(250);
+  }
+
+  throw new Error(
+    `Day ${dayNumber} row not found in itinerary table. Available day rows: ${availableDays.length ? availableDays.join(', ') : 'none'}.`,
+  );
+}
+
+async function getAvailableProvidersForDay(page, dayNumber) {
+  const { row, availableDays } = await resolveDayRow(page, dayNumber);
+  await row.scrollIntoViewIfNeeded().catch(() => {});
+  await row.waitFor({ state: 'visible', timeout: 10000 });
+  await row.click();
+
+  const expanded = row
+    .locator('xpath=following-sibling::tr[1]')
+    .first();
+
+  // Row click toggles expand/collapse; ensure it's actually expanded.
+  let expandedVisible = await expanded
+    .waitFor({ state: 'visible', timeout: 1200 })
+    .then(() => true)
+    .catch(() => false);
+  if (!expandedVisible) {
+    await row.click();
+    expandedVisible = await expanded
+      .waitFor({ state: 'visible', timeout: 2000 })
+      .then(() => true)
+      .catch(() => false);
+  }
+
+  if (!expandedVisible) {
+    throw new Error(`Day ${dayNumber} details did not expand.`);
+  }
+
+  const expandedCardScope = expanded
+    .locator('div.rounded-lg:visible')
+    .filter({ has: page.locator('button:has-text("Choose"), button:has-text("Selected")') });
+
+  await expandedCardScope.first().waitFor({ state: 'visible', timeout: 3000 }).catch(() => {});
+
+  const cardScope = expandedCardScope;
+  const rawLabels = (await expandedCardScope.locator('span:visible').allTextContents())
+    .map((text) => canonicalProviderName(text))
+    .filter(Boolean);
+
+  const availableProviders = [...new Set(rawLabels)];
+  return { row, expanded, cardScope, availableProviders, availableDays };
+}
+
+async function chooseProviderForDay(page, dayNumber, providerName, options = {}) {
+  const { expanded, cardScope, availableProviders, availableDays } = await getAvailableProvidersForDay(page, dayNumber);
+
+  const fallbackMode = parseProviderFallbackMode(options.fallbackMode);
+  const fallbackProvider = normalizeProviderPreference(options.fallbackProvider, 'TBO');
+  const requestedProvider = normalizeProviderPreference(providerName, 'TBO');
+
+  let selectedProvider = requestedProvider;
+  let usedFallback = false;
+
+  const findProviderCard = async (candidateProvider) => {
+    if (!candidateProvider) return null;
+    const providerRegex = new RegExp(candidateProvider, 'i');
+    const cardFromGrid = cardScope.filter({ hasText: providerRegex }).first();
+    const gridVisible = await cardFromGrid.isVisible({ timeout: 3000 }).catch(() => false);
+    if (gridVisible) return cardFromGrid;
+
+    if (expanded) {
+      const badge = expanded.locator('span').filter({ hasText: providerRegex }).first();
+      const badgeVisible = await badge.isVisible({ timeout: 3000 }).catch(() => false);
+      if (badgeVisible) {
+        const cardFromExpanded = badge.locator('xpath=ancestor::div[contains(@class,"rounded-lg")][1]');
+        const expandedVisible = await cardFromExpanded.isVisible({ timeout: 3000 }).catch(() => false);
+        if (expandedVisible) return cardFromExpanded;
+      }
+    }
+
+    return null;
+  };
+
+  let providerCard = await findProviderCard(requestedProvider);
+
+  if (!providerCard) {
+    const availabilityText = availableProviders.length > 0 ? availableProviders.join(', ') : 'none';
+    const hobseHint = requestedProvider === 'HOBSE'
+      ? ' HOBSE is not available in the UI for this day. This usually means HOBSE search is disabled or no HOBSE hotel was returned for that route.'
+      : '';
+
+    if (fallbackMode === 'fallback-provider') {
+      const fallbackCard = await findProviderCard(fallbackProvider);
+      if (fallbackCard) {
+        providerCard = fallbackCard;
+        selectedProvider = fallbackProvider;
+        usedFallback = true;
+        console.log(
+          `[HOTEL SELECT] Day ${dayNumber}: requested ${requestedProvider} unavailable, using fallback provider ${fallbackProvider}.`,
+        );
+      }
+    } else if (fallbackMode === 'first-available' && availableProviders.length > 0) {
+      const firstAvailable = availableProviders[0];
+      const firstCard = await findProviderCard(firstAvailable);
+      if (firstCard) {
+        providerCard = firstCard;
+        selectedProvider = firstAvailable;
+        usedFallback = true;
+        console.log(
+          `[HOTEL SELECT] Day ${dayNumber}: requested ${requestedProvider} unavailable, using first available provider ${firstAvailable}.`,
+        );
+      }
+    }
+
+    if (!providerCard) {
+      if (fallbackMode === 'skip-unavailable') {
+        console.log(
+          `[HOTEL SELECT] Day ${dayNumber}: requested ${requestedProvider} unavailable and no fallback candidate found. Skipping this day due to skip-unavailable mode.`,
+        );
+        return {
+          requestedProvider,
+          selectedProvider: '',
+          usedFallback: true,
+          availableProviders,
+          alreadySelected: false,
+          skipped: true,
+        };
+      }
+      throw new Error(
+        `Provider ${requestedProvider} not found in Day ${dayNumber}. Available providers: ${availabilityText}. Available day rows: ${availableDays.length ? availableDays.join(', ') : 'none'}. Fallback mode: ${fallbackMode}.${hobseHint}`,
+      );
+    }
+  }
+
+  const card = providerCard;
+  const selectedButton = card.getByRole('button', { name: /^Selected$/i }).first();
+  if (await selectedButton.isVisible().catch(() => false)) {
+    console.log(`[HOTEL SELECT] Day ${dayNumber}: ${selectedProvider} already selected.`);
+    return {
+      requestedProvider,
+      selectedProvider,
+      usedFallback,
+      availableProviders,
+      alreadySelected: true,
+      skipped: false,
+    };
+  }
+
+  const chooseButton = card.getByRole('button', { name: /^Choose$/i }).first();
+  await chooseButton.waitFor({ state: 'visible', timeout: 10000 });
+  await chooseButton.click();
+
+  const confirmDialogBtn = page.getByRole('button', { name: /^Confirm$/i }).first();
+  if (await confirmDialogBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+    await confirmDialogBtn.click();
+  }
+
+  await page.waitForTimeout(700);
+  console.log(`[HOTEL SELECT] Day ${dayNumber}: selected ${selectedProvider}.`);
+  return {
+    requestedProvider,
+    selectedProvider,
+    usedFallback,
+    availableProviders,
+    alreadySelected: false,
+    skipped: false,
+  };
 }
 
 async function loadPassengerSeedFromApi(page, url) {
@@ -383,13 +625,51 @@ async function run() {
   const url = parseArg('url', process.env.ITINERARY_URL || DEFAULT_URL);
   const headless = hasFlag('headless');
   const shouldSubmit = hasFlag('submit');
+  const preferredProvider = parseArg('provider', process.env.PREFERRED_PROVIDER || 'TBO');
+  const dayProviders = parseListArg('day-providers', [
+    'TBO',
+    'TBO',
+    'ResAvenue',
+    'AxisRooms',
+  ]);
+  const providerFallbackMode = parseProviderFallbackMode(
+    parseArg('provider-fallback-mode', process.env.PROVIDER_FALLBACK_MODE || 'strict'),
+  );
+  const fallbackProvider = normalizeProviderPreference(
+    parseArg('fallback-provider', process.env.FALLBACK_PROVIDER || preferredProvider),
+    'TBO',
+  );
+  const expectedRequestedProviders = [...new Set(dayProviders.map((provider) => normalizeProviderPreference(provider)).filter(Boolean))];
+  const allowMixedProviders = hasFlag('allow-mixed-providers');
   const keepOpen = !headless && (hasFlag('keep-open') || !hasFlag('close'));
   let prebookRequestCount = 0;
   let confirmRequestCount = 0;
+  let latestConfirmStatusCode = null;
+  let latestConfirmResponse = null;
+  let latestConfirmPayload = null;
+  let mixedProviderDialogMessage = null;
 
   const browser = await chromium.launch({ headless });
   const context = await browser.newContext();
   const page = await context.newPage();
+
+  page.on('dialog', async (dialog) => {
+    const type = dialog.type();
+    const msg = String(dialog.message() || '');
+    const isMixedProviderPrompt = type === 'confirm' && /mixed providers detected/i.test(msg);
+    if (isMixedProviderPrompt) {
+      mixedProviderDialogMessage = msg;
+      if (allowMixedProviders) {
+        await dialog.accept().catch(() => {});
+        console.log('[BROWSER DIALOG] Mixed-provider prompt accepted due to --allow-mixed-providers flag.');
+      } else {
+        await dialog.dismiss().catch(() => {});
+        console.log('[BROWSER DIALOG] Mixed-provider prompt dismissed; confirmation blocked.');
+      }
+      return;
+    }
+    await dialog.dismiss().catch(() => {});
+  });
 
   page.on('request', (req) => {
     const urlText = String(req.url() || '');
@@ -401,6 +681,11 @@ async function run() {
       if (body) {
         console.log('[API PAYLOAD]');
         console.log(body);
+        try {
+          latestConfirmPayload = JSON.parse(body);
+        } catch {
+          latestConfirmPayload = null;
+        }
       }
     }
     if (urlText.includes('/itineraries/hotels/prebook')) {
@@ -412,11 +697,17 @@ async function run() {
   page.on('response', async (res) => {
     const urlText = String(res.url() || '');
     if (urlText.includes('/itineraries/confirm-quotation')) {
+      latestConfirmStatusCode = res.status();
       console.log(`[API RESPONSE] confirm-quotation -> ${res.status()}`);
       try {
         const body = await res.text();
         console.log('[API RESPONSE BODY]');
         console.log(body);
+        try {
+          latestConfirmResponse = JSON.parse(body);
+        } catch {
+          latestConfirmResponse = { raw: body };
+        }
       } catch {
         // Ignore response parse errors in logger.
       }
@@ -431,6 +722,49 @@ async function run() {
       await page.goto(url, { waitUntil: 'domcontentloaded' });
     }
     await page.waitForLoadState('networkidle');
+
+    console.log('[HOTEL SELECT] Day providers:', JSON.stringify(dayProviders));
+    console.log(`[HOTEL SELECT] provider fallback mode: ${providerFallbackMode}; fallback provider: ${fallbackProvider}`);
+    const providerAvailability = [];
+    for (const day of [1, 2, 3, 4]) {
+      const { availableProviders } = await getAvailableProvidersForDay(page, day);
+      providerAvailability.push({ day, availableProviders });
+    }
+    providerAvailability.forEach(({ day, availableProviders }) => {
+      console.log(
+        `[HOTEL SELECT] Day ${day} available providers: ${availableProviders.length ? availableProviders.join(', ') : 'none'}`,
+      );
+    });
+
+    const selectedProviderDetails = [];
+    for (const day of [1, 2, 3, 4]) {
+      const providerForDay = dayProviders[day - 1] || preferredProvider;
+      const selection = await chooseProviderForDay(page, day, providerForDay, {
+        fallbackMode: providerFallbackMode,
+        fallbackProvider,
+      });
+      selectedProviderDetails.push({ day, ...selection });
+    }
+
+    const expectedSelectedProviders = [...new Set(
+      selectedProviderDetails
+        .filter((selection) => !selection?.skipped)
+        .map((selection) => normalizeProviderPreference(selection?.selectedProvider))
+        .filter(Boolean),
+    )];
+    const fallbackDays = selectedProviderDetails
+      .filter((selection) => selection?.usedFallback)
+      .map((selection) => `Day ${selection.day}: ${selection.requestedProvider} -> ${selection.selectedProvider}`);
+    if (fallbackDays.length > 0) {
+      console.log('[HOTEL SELECT] fallback selections:', fallbackDays.join(' | '));
+    }
+    const skippedDays = selectedProviderDetails
+      .filter((selection) => selection?.skipped)
+      .map((selection) => `Day ${selection.day}`);
+    if (skippedDays.length > 0) {
+      console.log('[HOTEL SELECT] skipped days due to unavailable providers:', skippedDays.join(', '));
+    }
+    console.log('[HOTEL SELECT] expected providers after selection:', expectedSelectedProviders.join(', '));
 
     const passengerSeed = await loadPassengerSeedFromApi(page, url);
 
@@ -489,21 +823,157 @@ async function run() {
 
     if (shouldSubmit) {
       const prebookBeforeSubmit = prebookRequestCount;
-      console.log('Clicking Confirm Booking...');
-      await modal.getByRole('button', { name: /confirm booking/i }).click();
-      await page
-        .waitForResponse(
-          (res) => String(res.url() || '').includes('/itineraries/confirm-quotation'),
-          { timeout: 15000 },
-        )
-        .catch(() => null);
-      await page.waitForTimeout(1200);
+      let confirmResponse = null;
+      let submitAttempt = 0;
+      while (submitAttempt < 3 && confirmRequestCount <= 0) {
+        submitAttempt += 1;
+        console.log(`Clicking Confirm Booking... (attempt ${submitAttempt}/3)`);
+        await modal.getByRole('button', { name: /confirm booking/i }).first().click();
+        await page.waitForTimeout(1200);
+
+        if (mixedProviderDialogMessage && !allowMixedProviders) {
+          throw new Error(
+            `Mixed-provider confirmation dialog appeared and was dismissed. Message: ${mixedProviderDialogMessage}`,
+          );
+        }
+
+        if (confirmRequestCount > 0) {
+          confirmResponse = await page
+            .waitForResponse(
+              (res) => String(res.url() || '').includes('/itineraries/confirm-quotation'),
+              { timeout: 60000 },
+            )
+            .catch(() => null);
+        }
+      }
+
+      if (!confirmResponse) {
+        confirmResponse = await page
+          .waitForResponse(
+            (res) => String(res.url() || '').includes('/itineraries/confirm-quotation'),
+            { timeout: 60000 },
+          )
+          .catch(() => null);
+      }
+
+      if (confirmResponse) {
+        try {
+          const body = await confirmResponse.text();
+          if (body) {
+            try {
+              latestConfirmResponse = JSON.parse(body);
+            } catch {
+              latestConfirmResponse = { raw: body };
+            }
+          }
+        } catch {
+          // Best effort: keep event-based capture fallback.
+        }
+      }
+
+      await page.waitForTimeout(2000);
       const prebookAfterSubmit = prebookRequestCount;
       console.log(
         `[API TRACE] prebook requests before submit: ${prebookBeforeSubmit}, after submit: ${prebookAfterSubmit}, delta on submit: ${prebookAfterSubmit - prebookBeforeSubmit}`,
       );
       console.log(`[API TRACE] confirm-quotation requests seen: ${confirmRequestCount}`);
-      console.log('Submit clicked. Check toast/API response in app logs.');
+
+      if (confirmRequestCount <= 0) {
+        throw new Error('Confirm API was not called. Booking not submitted.');
+      }
+
+      const hotelBookings = Array.isArray(latestConfirmPayload?.hotel_bookings)
+        ? latestConfirmPayload.hotel_bookings
+        : [];
+      console.log(`[ASSERT] hotel_bookings count: ${hotelBookings.length}`);
+      if (hotelBookings.length !== 4) {
+        throw new Error(`Expected exactly 4 hotel bookings in payload, found ${hotelBookings.length}.`);
+      }
+
+      const payloadProviders = [...new Set(
+        hotelBookings
+          .map((b) => normalizeProviderPreference(b?.provider))
+          .filter(Boolean),
+      )];
+      console.log('[ASSERT] providers in payload:', payloadProviders.join(', '));
+      const expectedProvidersForAssertions = expectedSelectedProviders.length > 0
+        ? expectedSelectedProviders
+        : expectedRequestedProviders;
+      const allowExtraProviders = providerFallbackMode === 'skip-unavailable';
+      const missingPayloadProviders = expectedProvidersForAssertions.filter(
+        (provider) => !payloadProviders.includes(provider),
+      );
+      if (missingPayloadProviders.length > 0 || (!allowExtraProviders && payloadProviders.length !== expectedProvidersForAssertions.length)) {
+        throw new Error(
+          `Payload providers did not match selected providers. Expected: ${expectedProvidersForAssertions.join(', ')}. Actual: ${payloadProviders.join(', ') || 'none'}. Missing: ${missingPayloadProviders.join(', ') || 'none'}.`,
+        );
+      }
+
+      if (!latestConfirmResponse || typeof latestConfirmResponse !== 'object') {
+        throw new Error('Confirm response body not captured; cannot verify booking success.');
+      }
+
+      const pendingBookings = Array.isArray(latestConfirmResponse?.pendingBookings)
+        ? latestConfirmResponse.pendingBookings
+        : Array.isArray(latestConfirmResponse?.data?.pendingBookings)
+          ? latestConfirmResponse.data.pendingBookings
+          : [];
+
+      if ((latestConfirmStatusCode !== null && latestConfirmStatusCode >= 400) || pendingBookings.length > 0) {
+        const pendingSummary = pendingBookings.length > 0
+          ? pendingBookings
+              .map((booking) => `${booking?.provider || 'unknown'}:${booking?.routeId || 'n/a'}:${booking?.hotelCode || 'n/a'}`)
+              .join(' | ')
+          : 'none';
+        throw new Error(
+          `Confirm API returned a partial/non-success response. HTTP status: ${latestConfirmStatusCode ?? 'unknown'}. Pending bookings: ${pendingSummary}.`,
+        );
+      }
+
+      const bookingResults =
+        (Array.isArray(latestConfirmResponse?.bookingResults) && latestConfirmResponse.bookingResults) ||
+        (Array.isArray(latestConfirmResponse?.data?.bookingResults) && latestConfirmResponse.data.bookingResults) ||
+        (Array.isArray(latestConfirmResponse?.result?.bookingResults) && latestConfirmResponse.result.bookingResults) ||
+        [];
+
+      if (!Array.isArray(bookingResults) || bookingResults.length !== 4) {
+        throw new Error(`Expected 4 booking results, found ${bookingResults.length}.`);
+      }
+
+      const successResults = bookingResults.filter((r) => {
+        const status = String(r?.status || '').toLowerCase();
+        return status === 'confirmed' || status === 'success' || r?.success === true;
+      });
+
+      const resultProviders = [...new Set(
+        bookingResults
+          .map((r) => normalizeProviderPreference(r?.provider))
+          .filter(Boolean),
+      )];
+
+      console.log(`[RESULT] successful bookings: ${successResults.length}/${bookingResults.length}`);
+      console.log('[RESULT] providers in results:', resultProviders.join(', '));
+
+      if (successResults.length !== 4) {
+        const failures = bookingResults
+          .filter((r) => {
+            const status = String(r?.status || '').toLowerCase();
+            return !(status === 'confirmed' || status === 'success' || r?.success === true);
+          })
+          .map((r) => `${r?.provider || 'unknown'}:${r?.error || r?.message || r?.status || 'failed'}`);
+        throw new Error(`Not all 4 bookings succeeded. Failures: ${failures.join(' | ')}`);
+      }
+
+      const missingResultProviders = expectedProvidersForAssertions.filter(
+        (provider) => !resultProviders.includes(provider),
+      );
+      if (resultProviders.length > 0 && (missingResultProviders.length > 0 || (!allowExtraProviders && resultProviders.length !== expectedProvidersForAssertions.length))) {
+        throw new Error(
+          `Booking result providers did not match selected providers. Expected: ${expectedProvidersForAssertions.join(', ')}. Actual: ${resultProviders.join(', ') || 'none'}. Missing: ${missingResultProviders.join(', ') || 'none'}.`,
+        );
+      }
+
+      console.log(`Submit clicked. Booking verified: ${hotelBookings.length} hotels, providers matched requested mix, all succeeded.`);
     } else {
       console.log('Filled successfully. Run with --submit to click Confirm Booking.');
     }

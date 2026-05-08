@@ -3412,11 +3412,33 @@ export class ItinerariesService {
       throw new NotFoundException('Itinerary plan not found');
     }
 
-    // TEMP: Allow re-confirmation for testing TBO booking flow
-    // TODO: Remove this when TBO booking is fully implemented
-    // if (plan.quotation_status === 1) {
-    //   throw new BadRequestException('Quotation is already confirmed');
-    // }
+    if (plan.quotation_status === 1) {
+      throw new BadRequestException('Quotation is already confirmed');
+    }
+
+    const existingConfirmedPlan = await this.prisma.dvi_confirmed_itinerary_plan_details.findFirst({
+      where: {
+        itinerary_plan_ID: dto.itinerary_plan_ID,
+        deleted: 0,
+      },
+      orderBy: {
+        confirmed_itinerary_plan_ID: 'desc',
+      },
+      select: {
+        confirmed_itinerary_plan_ID: true,
+      },
+    });
+
+    if (existingConfirmedPlan) {
+      return {
+        success: true,
+        message: 'Reusing existing confirmation context for pending hotel retries',
+        itinerary_plan_ID: dto.itinerary_plan_ID,
+        confirmed_itinerary_plan_ID: existingConfirmedPlan.confirmed_itinerary_plan_ID,
+        bookingResults: null,
+        reusedConfirmedPlan: true,
+      };
+    }
 
     const quoteId = plan.itinerary_quote_ID;
     if (!quoteId) {
@@ -3434,15 +3456,37 @@ export class ItinerariesService {
 
     // Parse arrival and departure dates
     const parseDateTime = (dateTimeStr: string) => {
-      // Format: "12-12-2025 9:00 AM"
-      const [datePart, timePart, meridiem] = dateTimeStr.split(' ');
-      const [day, month, year] = datePart.split('-');
-      let [hours, minutes] = timePart.split(':').map(Number);
-      
-      if (meridiem === 'PM' && hours !== 12) hours += 12;
-      if (meridiem === 'AM' && hours === 12) hours = 0;
-      
-      return new Date(Number(year), Number(month) - 1, Number(day), hours, Number(minutes));
+      const raw = String(dateTimeStr || '').trim();
+      if (!raw) {
+        throw new BadRequestException('Arrival/Departure datetime is required');
+      }
+
+      // Support existing format: "12-12-2025 9:00 AM"
+      const match = raw.match(/^(\d{1,2})-(\d{1,2})-(\d{4})\s+(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+      if (match) {
+        const day = Number(match[1]);
+        const month = Number(match[2]);
+        const year = Number(match[3]);
+        let hours = Number(match[4]);
+        const minutes = Number(match[5]);
+        const meridiem = String(match[6] || '').toUpperCase();
+
+        if (meridiem === 'PM' && hours !== 12) hours += 12;
+        if (meridiem === 'AM' && hours === 12) hours = 0;
+
+        const parsed = new Date(year, month - 1, day, hours, minutes);
+        if (Number.isNaN(parsed.getTime())) {
+          throw new BadRequestException(`Invalid datetime value: ${raw}`);
+        }
+        return parsed;
+      }
+
+      // Fallback for ISO-like inputs
+      const fallback = new Date(raw);
+      if (Number.isNaN(fallback.getTime())) {
+        throw new BadRequestException(`Invalid datetime format: ${raw}`);
+      }
+      return fallback;
     };
 
     const arrivalDateTime = parseDateTime(dto.arrival_date_time);
@@ -3454,17 +3498,24 @@ export class ItinerariesService {
       console.log(`[Confirm Quotation] Saving ${dto.hotel_bookings.length} draft hotel records with group_type=${groupType}`);
       
       for (const booking of dto.hotel_bookings) {
-        // For HOBSE: use hotel_code field (16-char alphanumeric like "40fec763d4c6e09e")
-        // For TBO/ResAvenue: use hotel_id field (numeric like 6102544)
-        const isHobse = booking.provider === 'HOBSE';
-        const hotelId = isHobse ? 0 : parseInt(booking.hotelCode);
+        if (!booking) {
+          continue;
+        }
+
+        // Provider is case-insensitive in frontend payload (tbo/hobse/resavenue/axisrooms)
+        const normalizedProvider = String((booking as any).provider || '').trim().toLowerCase();
+        const hotelCodeRaw = String((booking as any).hotelCode || '').trim();
+        const parsedHotelId = Number(hotelCodeRaw);
+        const hasNumericHotelId = Number.isFinite(parsedHotelId) && parsedHotelId > 0;
+        const shouldUseHotelCodeOnly = normalizedProvider === 'hobse' || !hasNumericHotelId;
+        const hotelId = shouldUseHotelCodeOnly ? 0 : parsedHotelId;
         
         // Check if draft hotel record already exists
-        const findWhere = isHobse
+        const findWhere = shouldUseHotelCodeOnly
           ? {
               itinerary_plan_id: dto.itinerary_plan_ID,
               itinerary_route_id: booking.routeId,
-              hotel_code: booking.hotelCode,
+              hotel_code: hotelCodeRaw,
               deleted: 0,
             }
           : {
@@ -3490,7 +3541,7 @@ export class ItinerariesService {
               updatedon: new Date(),
             },
           });
-          const hotelIdentifier = isHobse ? booking.hotelCode : hotelId;
+          const hotelIdentifier = shouldUseHotelCodeOnly ? hotelCodeRaw : hotelId;
           console.log(`✅ Updated draft hotel ${hotelIdentifier} for route ${booking.routeId} with group_type=${groupType}`);
         } else {
           // Create new draft hotel record
@@ -3506,9 +3557,9 @@ export class ItinerariesService {
             deleted: 0,
           };
 
-          if (isHobse) {
+          if (shouldUseHotelCodeOnly) {
             createData.hotel_id = 0;
-            createData.hotel_code = booking.hotelCode;
+            createData.hotel_code = hotelCodeRaw;
           } else {
             createData.hotel_id = hotelId;
           }
@@ -3516,7 +3567,7 @@ export class ItinerariesService {
           await this.prisma.dvi_itinerary_plan_hotel_details.create({
             data: createData,
           });
-          const hotelIdentifier = isHobse ? booking.hotelCode : hotelId;
+          const hotelIdentifier = shouldUseHotelCodeOnly ? hotelCodeRaw : hotelId;
           console.log(`✅ Created draft hotel ${hotelIdentifier} for route ${booking.routeId} with group_type=${groupType}`);
         }
       }
@@ -3606,7 +3657,8 @@ export class ItinerariesService {
           
           createdby: userId,
           createdon: new Date(),
-          status: 1,
+          // Keep provisional (status=0) until all provider bookings are successful.
+          status: dto.hotel_bookings && dto.hotel_bookings.length > 0 ? 0 : 1,
           deleted: 0,
         },
       });
@@ -3742,23 +3794,134 @@ export class ItinerariesService {
         },
       });
 
-      // I. Update draft plan status
+      // I. Keep quotation unconfirmed when hotel bookings are present.
+      // Final confirmation happens only after all provider bookings succeed.
       await tx.dvi_itinerary_plan_details.update({
         where: { itinerary_plan_ID: dto.itinerary_plan_ID },
         data: {
-          quotation_status: 1, // Confirmed
+          quotation_status: dto.hotel_bookings && dto.hotel_bookings.length > 0 ? 0 : 1,
           updatedon: new Date(),
         },
       });
 
       return {
         success: true,
-        message: 'Quotation confirmed successfully',
+        message:
+          dto.hotel_bookings && dto.hotel_bookings.length > 0
+            ? 'Confirmation context prepared. Quotation will be marked confirmed after all hotel bookings succeed.'
+            : 'Quotation confirmed successfully',
         itinerary_plan_ID: dto.itinerary_plan_ID,
         confirmed_itinerary_plan_ID: confirmedPlanId,
         bookingResults: null, // Will be set after transaction
       };
     });
+  }
+
+  private isBookingResultSuccess(result: any): boolean {
+    const status = String(result?.status || '').trim().toLowerCase();
+    const success = result?.success;
+    const bookingStatus = String(result?.booking_status || '').trim().toLowerCase();
+
+    return (
+      success === true ||
+      status === 'confirmed' ||
+      status === 'success' ||
+      status === 'already_confirmed' ||
+      bookingStatus === 'confirmed'
+    );
+  }
+
+  private bookingKey(provider: string, routeId: number): string {
+    return `${String(provider || '').trim().toLowerCase()}::${Number(routeId || 0)}`;
+  }
+
+  private async filterAlreadySuccessfulBookings(itineraryPlanId: number, bookings: any[]) {
+    const alreadySuccessKeys = new Set<string>();
+    const alreadyConfirmedResults: any[] = [];
+
+    const tboRows = await this.prisma.tbo_hotel_booking_confirmation.findMany({
+      where: {
+        itinerary_plan_ID: itineraryPlanId,
+        status: 1,
+        deleted: 0,
+      },
+      select: {
+        itinerary_route_ID: true,
+        tbo_hotel_code: true,
+        tbo_booking_reference_number: true,
+      },
+    });
+
+    for (const row of tboRows) {
+      const key = this.bookingKey('tbo', Number(row.itinerary_route_ID || 0));
+      alreadySuccessKeys.add(key);
+      alreadyConfirmedResults.push({
+        provider: 'tbo',
+        routeId: Number(row.itinerary_route_ID || 0),
+        hotelCode: row.tbo_hotel_code,
+        status: 'already_confirmed',
+        success: true,
+        bookingRef: row.tbo_booking_reference_number || null,
+      });
+    }
+
+    const raRows = await this.prisma.resavenue_hotel_booking_confirmation.findMany({
+      where: {
+        itinerary_plan_ID: itineraryPlanId,
+        status: 1,
+        deleted: 0,
+      },
+      select: {
+        itinerary_route_ID: true,
+        resavenue_hotel_code: true,
+        resavenue_booking_reference: true,
+      },
+    });
+
+    for (const row of raRows) {
+      const key = this.bookingKey('resavenue', Number(row.itinerary_route_ID || 0));
+      alreadySuccessKeys.add(key);
+      alreadyConfirmedResults.push({
+        provider: 'resavenue',
+        routeId: Number(row.itinerary_route_ID || 0),
+        hotelCode: row.resavenue_hotel_code,
+        status: 'already_confirmed',
+        success: true,
+        bookingRef: row.resavenue_booking_reference || null,
+      });
+    }
+
+    const hobseRows = await (this.prisma as any).hobse_hotel_booking_confirmation.findMany({
+      where: {
+        plan_id: itineraryPlanId,
+        booking_status: 'confirmed',
+      },
+      select: {
+        route_id: true,
+        hotel_code: true,
+        booking_id: true,
+      },
+    });
+
+    for (const row of hobseRows) {
+      const key = this.bookingKey('hobse', Number(row.route_id || 0));
+      alreadySuccessKeys.add(key);
+      alreadyConfirmedResults.push({
+        provider: 'hobse',
+        routeId: Number(row.route_id || 0),
+        hotelCode: row.hotel_code,
+        status: 'already_confirmed',
+        success: true,
+        bookingRef: row.booking_id || null,
+      });
+    }
+
+    const pendingBookings = bookings.filter((hotel) => {
+      const key = this.bookingKey(hotel.__provider, Number(hotel.routeId || 0));
+      return !alreadySuccessKeys.has(key);
+    });
+
+    return { pendingBookings, alreadyConfirmedResults };
   }
 
   async prebookHotels(payload: {
@@ -3767,6 +3930,7 @@ export class ItinerariesService {
       routeId: number;
       provider: string;
       hotelCode: string;
+      hotelName?: string;
       bookingCode: string;
       roomType: string;
       checkInDate: string;
@@ -4018,6 +4182,7 @@ export class ItinerariesService {
       prebookResults.push({
         routeId: hotel.routeId,
         hotelCode: hotel.hotelCode,
+        hotelName: hotel.hotelName || null,
         bookingCode: prebookResponse?.BookingCode || hotel.bookingCode,
         updatedTotalPrice: finalPrice,
         finalPrice,
@@ -4040,6 +4205,7 @@ export class ItinerariesService {
         isCancellationPolicyChanged: Boolean(prebookResponse?.IsCancellationPolicyChanged),
         rawStatus: prebookResponse?.Status,
         prebookContext: {
+          hotelName: hotel.hotelName || null,
           bookingCode: prebookResponse?.BookingCode || hotel.bookingCode,
           traceId: prebookResponse?.TraceId || '',
           finalPrice,
@@ -4205,20 +4371,31 @@ export class ItinerariesService {
     console.log('[Hotel Booking] Processing', dto.hotel_bookings.length, 'hotel(s)');
     console.log('[Hotel Booking] Hotels:', JSON.stringify(dto.hotel_bookings, null, 2));
 
-    // Group hotels by provider
+    // Group hotels by provider and skip bookings that are already successful in DB.
     const normalizedHotelBookings = dto.hotel_bookings.map((hotel) => ({
       ...hotel,
       __provider: String(hotel?.provider || '').trim().toLowerCase(),
     }));
 
-    const tboHotels = normalizedHotelBookings.filter((h) => h.__provider === 'tbo');
-    const resavenueHotels = normalizedHotelBookings.filter((h) => h.__provider === 'resavenue');
-    const hobseHotels = normalizedHotelBookings.filter((h) => h.__provider === 'hobse');
-    const axisroomsHotels = normalizedHotelBookings.filter((h) => h.__provider === 'axisrooms');
+    const { pendingBookings, alreadyConfirmedResults } =
+      await this.filterAlreadySuccessfulBookings(baseResult.itinerary_plan_ID, normalizedHotelBookings);
 
-    console.log('[Hotel Booking] TBO:', tboHotels.length, 'ResAvenue:', resavenueHotels.length, 'HOBSE:', hobseHotels.length, 'AxisRooms:', axisroomsHotels.length);
+    const tboHotels = pendingBookings.filter((h) => h.__provider === 'tbo');
+    const resavenueHotels = pendingBookings.filter((h) => h.__provider === 'resavenue');
+    const hobseHotels = pendingBookings.filter((h) => h.__provider === 'hobse');
+    const axisroomsHotels = pendingBookings.filter((h) => h.__provider === 'axisrooms');
 
-    const allBookingResults: any[] = [];
+    console.log(
+      '[Hotel Booking] Total:',
+      normalizedHotelBookings.length,
+      'Already success:',
+      alreadyConfirmedResults.length,
+      'Pending:',
+      pendingBookings.length,
+    );
+    console.log('[Hotel Booking] Pending -> TBO:', tboHotels.length, 'ResAvenue:', resavenueHotels.length, 'HOBSE:', hobseHotels.length, 'AxisRooms:', axisroomsHotels.length);
+
+    const allBookingResults: any[] = [...alreadyConfirmedResults];
 
     try {
       // Process TBO hotels if any
@@ -4271,7 +4448,12 @@ export class ItinerariesService {
           userId,
           Number(dto.hotel_group_type) || 1, // Pass the group_type
         );
-        allBookingResults.push(...tboBookingResults);
+        allBookingResults.push(
+          ...tboBookingResults.map((result: any) => ({
+            ...result,
+            provider: String(result?.provider || 'tbo').trim().toLowerCase(),
+          })),
+        );
       }
 
       // Process ResAvenue hotels if any
@@ -4318,7 +4500,12 @@ export class ItinerariesService {
           resavenueSelections,
           userId,
         );
-        allBookingResults.push(...resavenueBookingResults);
+        allBookingResults.push(
+          ...resavenueBookingResults.map((result: any) => ({
+            ...result,
+            provider: String(result?.provider || 'resavenue').trim().toLowerCase(),
+          })),
+        );
       }
 
       // Process HOBSE hotels if any
@@ -4341,7 +4528,12 @@ export class ItinerariesService {
             phone: (dto as any).contactPhone || '',
           }
         );
-        allBookingResults.push(...hobseBookingResults);
+        allBookingResults.push(
+          ...hobseBookingResults.map((result: any) => ({
+            ...result,
+            provider: String(result?.provider || 'hobse').trim().toLowerCase(),
+          })),
+        );
       }
 
       // Process AxisRooms hotels if any (outbound push to AxisRooms endpoint)
@@ -4371,22 +4563,65 @@ export class ItinerariesService {
         allBookingResults.push(...axisroomsPushResults);
       }
 
-      // Add all booking results to response
+      const successKeySet = new Set(
+        allBookingResults
+          .filter((r) => this.isBookingResultSuccess(r))
+          .map((r) => this.bookingKey(r?.provider, Number(r?.routeId || 0))),
+      );
+
+      const pendingAfterAttempt = normalizedHotelBookings
+        .filter((b) => !successKeySet.has(this.bookingKey(b.__provider, Number(b.routeId || 0))))
+        .map((b) => ({
+          provider: b.__provider,
+          routeId: Number(b.routeId || 0),
+          hotelCode: String(b.hotelCode || ''),
+          hotelName: String(b.hotelName || ''),
+        }));
+
+      if (pendingAfterAttempt.length > 0) {
+        throw new BadRequestException({
+          message: 'Partial booking success. Quotation remains unconfirmed. Retry will target only unsuccessful bookings.',
+          itinerary_plan_ID: baseResult.itinerary_plan_ID,
+          confirmed_itinerary_plan_ID: baseResult.confirmed_itinerary_plan_ID,
+          bookingResults: allBookingResults,
+          pendingBookings: pendingAfterAttempt,
+        });
+      }
+
+      await this.prisma.dvi_itinerary_plan_details.update({
+        where: { itinerary_plan_ID: baseResult.itinerary_plan_ID },
+        data: {
+          quotation_status: 1,
+          updatedon: new Date(),
+        },
+      });
+
+      await this.prisma.dvi_confirmed_itinerary_plan_details.update({
+        where: {
+          confirmed_itinerary_plan_ID: baseResult.confirmed_itinerary_plan_ID,
+        },
+        data: {
+          status: 1,
+          updatedon: new Date(),
+        },
+      });
+
       return {
         ...baseResult,
+        success: true,
+        message: 'Quotation confirmed successfully. All provider bookings succeeded.',
         bookingResults: allBookingResults,
       };
     } catch (error) {
       console.error('Error processing hotel bookings:', error);
-      // Return base result even if booking fails
-      // The quotation is already confirmed
-      return {
-        ...baseResult,
-        bookingResults: {
-          status: 'error',
-          message: error.message,
-        },
-      };
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException({
+        message: error.message || 'Hotel booking processing failed',
+        itinerary_plan_ID: baseResult.itinerary_plan_ID,
+        confirmed_itinerary_plan_ID: baseResult.confirmed_itinerary_plan_ID,
+      });
     }
   }
 

@@ -119,6 +119,11 @@ export class ItineraryHotelDetailsTboService {
     return raw === 'true' || raw === '1' || raw === 'yes';
   }
 
+  private isHobseSearchEnabled(): boolean {
+    const raw = String(process.env.HOBSE_SEARCH_ENABLED || '0').trim().toLowerCase();
+    return raw === 'true' || raw === '1' || raw === 'yes';
+  }
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly hotelSearchService: HotelSearchService,
@@ -390,16 +395,20 @@ export class ItineraryHotelDetailsTboService {
         '⚠️ HOTEL_FETCH_TBO_ONLY enabled: skipping HOBSE/ResAvenue/AxisRooms provider fetch and returning only TBO hotels',
       );
     } else {
-      // Step 3.5: Fetch HOBSE hotels and merge with TBO hotels
-      // First, create a HOBSE-specific city code map using hobse_city_code
-      const hobseCityCodeMap = await this.batchMapDestinationsToHobseCityCodes(routes);
-      const hobseHotelsByRoute = await this.fetchHobseHotelsForRoutes(routes, noOfNights, hobseCityCodeMap);
+      if (this.isHobseSearchEnabled()) {
+        // Step 3.5: Fetch HOBSE hotels and merge with TBO hotels
+        // First, create a HOBSE-specific city code map using hobse_city_code
+        const hobseCityCodeMap = await this.batchMapDestinationsToHobseCityCodes(routes);
+        const hobseHotelsByRoute = await this.fetchHobseHotelsForRoutes(routes, noOfNights, hobseCityCodeMap);
 
-      // Merge HOBSE hotels into the TBO hotel map
-      hobseHotelsByRoute.forEach((hobseHotels, routeId) => {
-        const existingHotels = hotelsByRoute.get(routeId) || [];
-        hotelsByRoute.set(routeId, [...existingHotels, ...hobseHotels]);
-      });
+        // Merge HOBSE hotels into the TBO hotel map
+        hobseHotelsByRoute.forEach((hobseHotels, routeId) => {
+          const existingHotels = hotelsByRoute.get(routeId) || [];
+          hotelsByRoute.set(routeId, [...existingHotels, ...hobseHotels]);
+        });
+      } else {
+        this.logger.warn('⚠️ HOBSE_SEARCH_ENABLED=0: skipping HOBSE hotel search results');
+      }
 
       // Step 3.6: Fetch ResAvenue hotels explicitly (in case they weren't included in TBO search)
       const resavenueHotelsByRoute = await this.fetchResavenueHotelsForRoutes(
@@ -1011,6 +1020,25 @@ export class ItineraryHotelDetailsTboService {
       .trim();
   }
 
+  private toIstDateOnly(value: unknown): Date {
+    const raw = new Date(String(value || ''));
+    if (Number.isNaN(raw.getTime())) {
+      throw new Error(`Invalid route date: ${String(value || '')}`);
+    }
+
+    const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+    const istMoment = new Date(raw.getTime() + IST_OFFSET_MS);
+    return new Date(Date.UTC(
+      istMoment.getUTCFullYear(),
+      istMoment.getUTCMonth(),
+      istMoment.getUTCDate(),
+      0,
+      0,
+      0,
+      0,
+    ));
+  }
+
   private extractAxisroomsRate(occupancyRates: unknown): number {
     try {
       const data = occupancyRates as Record<string, unknown>;
@@ -1053,6 +1081,7 @@ export class ItineraryHotelDetailsTboService {
         hotel_city: true,
         hotel_address: true,
         hotel_category: true,
+        hotel_cancel_policy: true,
       },
     });
 
@@ -1092,8 +1121,7 @@ export class ItineraryHotelDetailsTboService {
 
       const destinationRaw = String((route as any).next_visiting_location || '');
       const routeCityToken = this.normalizeCityToken(destinationRaw);
-      const routeDate = new Date((route as any).itinerary_route_date);
-      const dateOnly = new Date(routeDate.toISOString().split('T')[0]);
+      const dateOnly = this.toIstDateOnly((route as any).itinerary_route_date);
       const dateStamp = dateOnly.toISOString().split('T')[0].replace(/-/g, '');
 
       const cityHotels = axisroomsHotels.filter((h: any) => {
@@ -1114,6 +1142,29 @@ export class ItineraryHotelDetailsTboService {
       }
 
       const hotelIds = cityHotels.map((h: any) => Number((h as any).hotel_id)).filter((id) => Number.isFinite(id) && id > 0);
+
+      const amenityRows = await this.prisma.dvi_hotel_amenities.findMany({
+        where: {
+          hotel_id: { in: hotelIds },
+          deleted: 0,
+          status: 1,
+        } as any,
+        select: {
+          hotel_id: true,
+          amenities_title: true,
+        },
+      });
+      const amenitiesByHotel = new Map<number, string[]>();
+      for (const amenity of amenityRows as any[]) {
+        const hid = Number((amenity as any).hotel_id || 0);
+        if (!hid) continue;
+        const title = String((amenity as any).amenities_title || '').trim();
+        if (!title) continue;
+        if (!amenitiesByHotel.has(hid)) {
+          amenitiesByHotel.set(hid, []);
+        }
+        amenitiesByHotel.get(hid)!.push(title);
+      }
       const availRows = await this.prisma.dvi_hotel_room_availability.findMany({
         where: {
           hotel_id: { in: hotelIds },
@@ -1136,10 +1187,9 @@ export class ItineraryHotelDetailsTboService {
 
       const roomIds = Array.from(new Set(availRows.map((r) => Number((r as any).room_id)).filter((id) => Number.isFinite(id) && id > 0)));
 
-      // Strict AxisRooms gate: keep only rooms that have an active AxisRooms-sourced rate plan
-      // (axisrooms_room_id NOT NULL = written by inbound AxisRooms rateUpdate/productInfo call)
-      // AND whose occupancy rate rows carry source = 'axisrooms' (written by the same AxisRooms rateUpdate call).
-      // Both columns exist with safe defaults — no prisma db push issues, existing rows unaffected.
+      // AxisRooms gate: keep only rooms that have an active AxisRooms-mapped rate plan
+      // (axisrooms_room_id NOT NULL = mapped from inbound AxisRooms room/rateplan setup).
+      // Occupancy rows may be sourced from AxisRooms or manual admin updates; we do not hard-filter source here.
       const activeRatePlanRows = await this.prisma.dvi_hotel_room_rate_plan.findMany({
         where: {
           hotel_id: { in: hotelIds },
@@ -1152,8 +1202,27 @@ export class ItineraryHotelDetailsTboService {
           hotel_id: true,
           room_id: true,
           rateplan_id: true,
+          rateplan_name: true,
+          meal_plan_description: true,
         },
       });
+
+      const ratePlanMetaByHotelRoom = new Map<string, { rateConditions: string[]; inclusions: string[] }>();
+      for (const rp of activeRatePlanRows as any[]) {
+        const key = `${Number((rp as any).hotel_id)}|${Number((rp as any).room_id)}`;
+        if (!ratePlanMetaByHotelRoom.has(key)) {
+          ratePlanMetaByHotelRoom.set(key, { rateConditions: [], inclusions: [] });
+        }
+        const meta = ratePlanMetaByHotelRoom.get(key)!;
+        const rateCondition = String((rp as any).rateplan_name || '').trim();
+        const inclusion = String((rp as any).meal_plan_description || '').trim();
+        if (rateCondition) {
+          meta.rateConditions.push(rateCondition);
+        }
+        if (inclusion) {
+          meta.inclusions.push(inclusion);
+        }
+      }
 
       const validRatePlanKeySet = new Set<string>(
         activeRatePlanRows.map(
@@ -1165,7 +1234,6 @@ export class ItineraryHotelDetailsTboService {
         where: {
           hotel_id: { in: hotelIds },
           room_id: { in: roomIds },
-          source: 'axisrooms',
           start_date: { lte: dateOnly },
           end_date: { gte: dateOnly },
         },
@@ -1235,6 +1303,15 @@ export class ItineraryHotelDetailsTboService {
         }
 
         const roomName = roomTitleMap.get(selectedRoomId) || 'Room';
+        const hotelAmenities = Array.from(new Set(amenitiesByHotel.get(hid) || []));
+        const rateMeta = ratePlanMetaByHotelRoom.get(`${hid}|${selectedRoomId}`) || {
+          rateConditions: [],
+          inclusions: [],
+        };
+        const rateConditions = Array.from(new Set(rateMeta.rateConditions));
+        const inclusions = Array.from(new Set(rateMeta.inclusions));
+        const cancelPolicyText = String((hotel as any).hotel_cancel_policy || '').trim();
+
         axisroomsRouteHotels.push({
           provider: 'axisrooms',
           hotelCode: String(hid),
@@ -1242,7 +1319,11 @@ export class ItineraryHotelDetailsTboService {
           cityCode: String((hotel as any).hotel_city || destinationRaw),
           address: String((hotel as any).hotel_address || ''),
           rating: Number((hotel as any).hotel_category || 0),
-          facilities: [],
+          facilities: hotelAmenities,
+          amenities: hotelAmenities,
+          inclusions,
+          rateConditions,
+          cancellationPolicy: cancelPolicyText ? [cancelPolicyText] : [],
           images: [],
           price: Number(minRate),
           currency: 'INR',
@@ -1253,7 +1334,7 @@ export class ItineraryHotelDetailsTboService {
               bedType: '',
               capacity: 0,
               price: Number(minRate),
-              cancellationPolicy: '',
+              cancellationPolicy: cancelPolicyText,
             },
           ],
           roomType: roomName,
@@ -1731,6 +1812,11 @@ export class ItineraryHotelDetailsTboService {
           amenities: hotel.amenities && hotel.amenities.length > 0 ? hotel.amenities : undefined,
           facilities: hotel.facilities && hotel.facilities.length > 0 ? hotel.facilities : undefined,
           rateConditions: hotel.rateConditions && hotel.rateConditions.length > 0 ? hotel.rateConditions : undefined,
+          cancellationPolicy: Array.isArray((hotel as any).cancellationPolicy)
+            ? (hotel as any).cancellationPolicy
+            : (typeof (hotel as any).cancellationPolicy === 'string' && String((hotel as any).cancellationPolicy).trim()
+              ? [String((hotel as any).cancellationPolicy).trim()]
+              : undefined),
           supplementSummary: hotel.supplementSummary,
         });
 
@@ -1876,7 +1962,47 @@ export class ItineraryHotelDetailsTboService {
       planChildAges2,
     );
 
-    // Step 4: Transform fresh TBO data into room details format
+    // Merge non-TBO providers (HOBSE, ResAvenue, AxisRooms) — same logic as getHotelDetails
+    const tboOnlyFetch = this.isTboOnlyFetchEnabled();
+    if (!tboOnlyFetch) {
+      if (this.isHobseSearchEnabled()) {
+        const hobseCityCodeMap = await this.batchMapDestinationsToHobseCityCodes(routesToProcess);
+        const hobseHotelsByRoute = await this.fetchHobseHotelsForRoutes(routesToProcess, noOfNights, hobseCityCodeMap);
+        hobseHotelsByRoute.forEach((hobseHotels, routeId) => {
+          const existing = hotelsByRoute.get(routeId) || [];
+          hotelsByRoute.set(routeId, [...existing, ...hobseHotels]);
+        });
+      } else {
+        this.logger.warn('⚠️ HOBSE_SEARCH_ENABLED=0: skipping HOBSE hotel search results');
+      }
+
+      // ResAvenue
+      const resavenueHotelsByRoute = await this.fetchResavenueHotelsForRoutes(
+        routesToProcess,
+        noOfNights,
+        guestNationality,
+        planRoomCount2,
+        planAdultCount2,
+        planChildCount2,
+      );
+      resavenueHotelsByRoute.forEach((resavenueHotels, routeId) => {
+        const existing = hotelsByRoute.get(routeId) || [];
+        const hotelStrs = existing.map(h => `${h.hotelCode}|${h.provider}`);
+        const newHotels = resavenueHotels.filter(h => !hotelStrs.includes(`${h.hotelCode}|${h.provider}`));
+        hotelsByRoute.set(routeId, [...existing, ...newHotels]);
+      });
+
+      // AxisRooms
+      const axisroomsHotelsByRoute = await this.fetchAxisroomsHotelsForRoutes(routesToProcess, noOfNights);
+      axisroomsHotelsByRoute.forEach((axisroomsHotels, routeId) => {
+        const existing = hotelsByRoute.get(routeId) || [];
+        const hotelStrs = existing.map(h => `${String(h.hotelCode)}|${String(h.provider).toLowerCase()}`);
+        const newHotels = axisroomsHotels.filter(h => !hotelStrs.includes(`${String(h.hotelCode)}|${String(h.provider).toLowerCase()}`));
+        hotelsByRoute.set(routeId, [...existing, ...newHotels]);
+      });
+    }
+
+    // Step 4: Transform fresh data into room details format
     const roomDetailsList: ItineraryHotelRoomDto[] = [];
     let roomDetailsId = 1;
 
@@ -1935,7 +2061,10 @@ export class ItineraryHotelDetailsTboService {
         // ✅ FIXED: Use actual room type from TBO, not groupType
         const firstRoomType = hotel.roomTypes?.[0];
         const actualRoomTypeId = firstRoomType?.roomTypeId || 1;
-        const actualRoomTypeName = firstRoomType?.roomName || 'Standard Room';
+        // For non-TBO providers use hotel.roomType which matches hotel_details; for TBO use roomTypes[0].roomName
+        const actualRoomTypeName = String(hotel.provider || 'tbo').toLowerCase() !== 'tbo'
+          ? (hotel.roomType || firstRoomType?.roomName || 'Standard Room')
+          : (firstRoomType?.roomName || hotel.roomType || 'Standard Room');
 
         roomDetailsList.push({
           itineraryPlanId: planId,
@@ -1948,17 +2077,29 @@ export class ItineraryHotelDetailsTboService {
           roomTypeId: actualRoomTypeId, // ✅ FIXED: Use actual TBO room type ID
           roomTypeName: actualRoomTypeName, // ✅ FIXED: Use actual TBO room type name
           roomId: parseInt(hotel.hotelCode) || 0,
+          provider: String(hotel.provider || 'tbo').toLowerCase(),
           availableRoomTypes: (hotel.roomTypes || []).map((rt, idx) => ({
             roomTypeId: rt.roomTypeId || idx + 1,
             roomTypeTitle: rt.roomName,
             bookingCode: rt.roomCode,
           })),
-          bookingCode: firstRoomType?.roomCode || hotel.searchReference || undefined,
+          bookingCode: String(hotel.provider || 'tbo').toLowerCase() === 'tbo'
+            ? (firstRoomType?.roomCode || hotel.searchReference || undefined)
+            : (hotel.hotelCode || hotel.searchReference || undefined),
           pricePerNight: Number(hotel.price || 0),
           numberOfNights: noOfNights,
           totalPrice: Number(hotel.price || 0) * noOfNights,
           currency: hotel.currency || 'INR',
           mealPlan: hotel.mealPlan || 'Not Specified',
+          facilities: hotel.facilities || [],
+          amenities: hotel.amenities || [],
+          inclusions: hotel.inclusions || [],
+          rateConditions: (hotel.rateConditions || []) as string[],
+          cancellationPolicy: Array.isArray((hotel as any).cancellationPolicy)
+            ? (hotel as any).cancellationPolicy
+            : (typeof (hotel as any).cancellationPolicy === 'string' && String((hotel as any).cancellationPolicy).trim()
+              ? [String((hotel as any).cancellationPolicy).trim()]
+              : (firstRoomType?.cancellationPolicy ? [String(firstRoomType.cancellationPolicy)] : [])),
         } as any);
     });
 

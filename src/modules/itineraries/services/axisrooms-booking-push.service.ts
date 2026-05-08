@@ -9,7 +9,7 @@ export class AxisRoomsBookingPushService {
   private readonly logger = new Logger(AxisRoomsBookingPushService.name);
   private readonly pushUrl =
     process.env.AXISROOMS_PUSH_BOOKING_URL ||
-    'https://axisrooms.com/api/clientPushBookingNotif';
+    'https://interstellar.axisrooms.com/v1/bookingNotification/accept/axisrooms';
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -68,6 +68,7 @@ export class AxisRoomsBookingPushService {
 
   async pushBookingNotification(payload: Record<string, any>): Promise<{ success: boolean; message: string; response?: any; error?: string }> {
     const accessKey = String(process.env.AXISROOMS_PUSH_API_KEY || '').trim();
+    const headerToken = String(process.env.AXISROOMS_PUSH_TOKEN || accessKey).trim();
     if (!accessKey) {
       const msg = 'AXISROOMS_PUSH_API_KEY is not configured';
       this.logger.error(msg);
@@ -85,6 +86,7 @@ export class AxisRoomsBookingPushService {
         headers: {
           'Content-Type': 'application/json',
           Accept: 'application/json',
+          token: headerToken,
         },
       });
 

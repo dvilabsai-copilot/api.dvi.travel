@@ -34,6 +34,7 @@ export interface HotelSearchResult {
   amenities?: string[];
   inclusions?: string[];
   rateConditions?: any[];
+  cancellationPolicy?: any[] | string;
   images: string[];
   price: number;
   netAmount?: number;
