@@ -134,7 +134,22 @@ function buildReservationPayload(options) {
 
   const roomAmountAfterTaxNum = Number(amountAfterTax || 0);
   const totalTaxNum = Number(totalTax || 0);
-  const totalAmountAfterTax = toMoneyString(roomAmountAfterTaxNum + totalTaxNum);
+  const extraAdultNum = Number(extraAdult || 0);
+  const extraChildNum = Number(extraChild || 0);
+  const extraAdultRateNum = Number(extraAdultRate || 0);
+  const extraChildRateNum = Number(extraChildRate || 0);
+  const configuredBasePriceNum = Number(basePriceAmountAfterTax || 0);
+  const extrasTotalNum = (extraAdultNum * extraAdultRateNum) + (extraChildNum * extraChildRateNum);
+  const derivedBasePriceNum = Math.max(roomAmountAfterTaxNum - extrasTotalNum, 0);
+  const configuredIsConsistent = Math.abs((configuredBasePriceNum + extrasTotalNum) - roomAmountAfterTaxNum) < 0.01;
+  const effectiveBasePriceAfterTaxNum = configuredIsConsistent
+    ? configuredBasePriceNum
+    : derivedBasePriceNum;
+
+  // Keep amount-after-tax consistent at room and reservation levels.
+  // STAAH certification expects the reservation total to match room total when tax is included.
+  const roomTotalAmountAfterTaxNum = roomAmountAfterTaxNum + totalTaxNum;
+  const totalAmountAfterTax = toMoneyString(roomTotalAmountAfterTaxNum);
   const totalTaxAmount = toMoneyString(totalTaxNum);
   const runtimeReservationDateTime = reservationDateTime || nowIstIsoSeconds();
 
@@ -188,7 +203,7 @@ function buildReservationPayload(options) {
                   date: arrivalDate,
                   rate_id: RATE_ID,
                   rate_name: 'Test MK',
-                  amountaftertax: toMoneyString(basePriceAmountAfterTax),
+                  amountaftertax: toMoneyString(effectiveBasePriceAfterTaxNum),
                   extraGuests: {
                     extraAdult: extraAdult,
                     extraChild: extraChild,
@@ -206,7 +221,7 @@ function buildReservationPayload(options) {
                   value: totalTaxAmount,
                 },
               ],
-              amountaftertax: toMoneyString(roomAmountAfterTaxNum),
+              amountaftertax: toMoneyString(roomTotalAmountAfterTaxNum),
               remarks: roomRemarks,
               GuestCount: [
                 {
