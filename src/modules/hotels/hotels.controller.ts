@@ -234,6 +234,24 @@ export class HotelsController {
     return this.hotels.roomTypesByHotel(id);
   }
 
+  @Get('axisrooms')
+  listAxisroomsHotels(
+    @Query('search') search = '',
+    @Query('page') page = '1',
+    @Query('limit') limit = '10',
+  ) {
+    return this.hotels.listAxisroomsHotels({
+      search,
+      page: Number(page || 1),
+      limit: Number(limit || 10),
+    });
+  }
+
+  @Get('axisrooms/:id/preview')
+  getAxisroomsHotelPreview(@Param('id', ParseIntPipe) id: number) {
+    return this.hotels.getAxisroomsHotelPreview(id);
+  }
+
   // =============================================================================
   // Core Hotel CRUD
   // =============================================================================
