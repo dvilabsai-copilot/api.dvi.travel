@@ -27,6 +27,7 @@ import {
   CANONICAL_HOTEL_RATE_PLANS,
   getCanonicalHotelRatePlanDefinition,
 } from '../hotels/hotel-rate-plans';
+import { AxisroomsEmailNotifierService } from './axisrooms-email-notifier.service';
 
 @Injectable()
 export class AxisRoomsService {
@@ -52,7 +53,10 @@ export class AxisRoomsService {
     'EXTRAINFANT',
   ] as const;
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly axisroomsEmailNotifier: AxisroomsEmailNotifierService,
+  ) {}
 
   private normalizeId(value: string): string {
     return value?.trim();
@@ -591,7 +595,7 @@ export class AxisRoomsService {
       // Resolve string IDs → integer IDs (same pattern as ensureRatePlanExists)
       const hotelRow = await this.prisma.dvi_hotel.findFirst({
         where: { axisrooms_property_id: propertyId, deleted: { not: true } },
-        select: { hotel_id: true },
+        select: { hotel_id: true, hotel_name: true },
       });
 
       if (hotelRow?.hotel_id) {
@@ -630,6 +634,18 @@ export class AxisRoomsService {
       } else {
         this.logger.warn(`AxisRooms inventoryUpdate: propertyId "${propertyId}" not mapped to any hotel — skipping native write`);
       }
+
+      await this.axisroomsEmailNotifier.sendActionableUpdateEmail({
+        eventType: 'inventoryUpdate',
+        propertyId,
+        hotelId: hotelRow?.hotel_id ? Number(hotelRow.hotel_id) : undefined,
+        hotelName: (hotelRow as any)?.hotel_name || undefined,
+        roomId,
+        rowCount: Array.isArray(inventory) ? inventory.length : 0,
+        details: (inventory || []).map(
+          (inv) => `Inventory ${inv.startDate} to ${inv.endDate}: free=${inv.free}`,
+        ),
+      });
 
       return {
         message: AXISROOMS_MESSAGES.INVENTORY_UPDATE_SUCCESS,
@@ -679,7 +695,7 @@ export class AxisRoomsService {
         axisrooms_enabled: 1,
         deleted: { not: true },
       },
-      select: { hotel_id: true },
+      select: { hotel_id: true, hotel_name: true },
     });
 
     const mappedRoom = await this.prisma.dvi_hotel_rooms.findFirst({
@@ -768,6 +784,23 @@ export class AxisRoomsService {
         }
       }
 
+      await this.axisroomsEmailNotifier.sendActionableUpdateEmail({
+        eventType: 'rateUpdate',
+        propertyId,
+        hotelId: hotel?.hotel_id ? Number(hotel.hotel_id) : undefined,
+        hotelName: (hotel as any)?.hotel_name || undefined,
+        roomId,
+        rateplanId: internalRateplanId,
+        rowCount: Array.isArray(rate) ? rate.length : 0,
+        details: (rate || []).map((rateEntry) => {
+          const { startDate, endDate, ...incomingOccupancyRates } = rateEntry;
+          const occupancyParts = Object.entries(incomingOccupancyRates || {})
+            .filter(([, rawValue]) => this.toFiniteNumber(rawValue) !== undefined)
+            .map(([key, rawValue]) => `${key}=${this.toFiniteNumber(rawValue)}`);
+          return `Rate ${startDate} to ${endDate}: ${occupancyParts.join(', ') || 'no occupancy values'}`;
+        }),
+      });
+
       return {
         message: AXISROOMS_MESSAGES.RATE_UPDATE_SUCCESS,
         status: 'success',
@@ -793,6 +826,16 @@ export class AxisRoomsService {
       for (const property of dto.data) {
         const propertyId = this.normalizeId(property.propertyId);
         const { roomDetails } = property;
+        let insertedRowsForProperty = 0;
+
+        const hotel = await this.prisma.dvi_hotel.findFirst({
+          where: {
+            axisrooms_property_id: propertyId,
+            axisrooms_enabled: 1,
+            deleted: { not: true },
+          },
+          select: { hotel_id: true, hotel_name: true },
+        });
 
         const isValid = await this.validatePropertyMapping(propertyId);
         if (!isValid) {
@@ -836,9 +879,26 @@ export class AxisRoomsService {
                   value,
                 },
               });
+              insertedRowsForProperty += 1;
             }
           }
         }
+
+        await this.axisroomsEmailNotifier.sendActionableUpdateEmail({
+          eventType: 'restrictionUpdate',
+          propertyId,
+          hotelId: hotel?.hotel_id ? Number(hotel.hotel_id) : undefined,
+          hotelName: (hotel as any)?.hotel_name || undefined,
+          rowCount: insertedRowsForProperty,
+          details: roomDetails.flatMap((roomDetail) =>
+            roomDetail.ratePlanDetails.flatMap((ratePlanDetail) =>
+              (ratePlanDetail.restrictions?.periods || []).map(
+                (period) =>
+                  `Restriction room=${roomDetail.roomId}, ratePlan=${ratePlanDetail.ratePlanId}, type=${ratePlanDetail.restrictions.type}, value=${ratePlanDetail.restrictions.value}, ${period.startDate} to ${period.endDate}`,
+              ),
+            ),
+          ),
+        });
       }
 
       return {
