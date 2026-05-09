@@ -1,0 +1,13 @@
+{
+  "status": 200,
+  "body": [
+    {
+      "bookingId": "DVI-CERT-S3-1778204916537",
+      "status": "success",
+      "error_desc": ""
+    },
+    {
+      "trackingId": "990909AF-0C3A-4309-A7D8-8949618096F6"
+    }
+  ]
+}

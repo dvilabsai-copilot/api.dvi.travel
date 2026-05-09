@@ -1,0 +1,126 @@
+{
+  "propertyid": "STAAHTESTHOTEL1",
+  "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+  "action": "reservation_info",
+  "version": "2",
+  "reservations": {
+    "reservation": [
+      {
+        "reservation_datetime": "2026-05-08T23:42:30",
+        "propertyname": "STAAH TEST",
+        "reservation_id": "DVI-CERT-S4-1778263936809",
+        "payment_required": "15",
+        "payment_type": "Hotel Collect",
+        "commissionamount": "0.00",
+        "discountamount": "0.00",
+        "deposit": "0.00",
+        "totalamountaftertax": "2440.00",
+        "totaltax": "240.00",
+        "currencycode": "INR",
+        "status": "Cancel",
+        "customer": {
+          "address": "Ring Road",
+          "city": "Surat",
+          "country": "India",
+          "email": "rk@staah.com",
+          "salutation": "Mr.",
+          "first_name": "Test",
+          "last_name": "Test",
+          "remarks": "Please Provide Wine Upon Checking and Do not Disturb",
+          "telephone": "+91 97734 84053",
+          "zip": "395004"
+        },
+        "paymentcarddetail": {
+          "CardHolderName": "Test STAAH",
+          "CardType": "MC",
+          "ExpireDate": "07/28",
+          "CardNumber": "4111111111111111",
+          "cvv": "123"
+        },
+        "room": [
+          {
+            "arrival_date": "2026-10-06",
+            "departure_date": "2026-10-07",
+            "room_id": "DELUXEROOM",
+            "room_name": "Studio",
+            "price": [
+              {
+                "date": "2026-10-06",
+                "rate_id": "CPPLAN",
+                "rate_name": "Test MK CP",
+                "amountaftertax": "1200.00",
+                "extraGuests": {
+                  "extraAdult": "0",
+                  "extraChild": "0",
+                  "extraAdultRate": "0",
+                  "extraChildRate": "0"
+                }
+              }
+            ],
+            "salutation": "Mr.",
+            "first_name": "Test",
+            "last_name": "Test",
+            "taxes": [
+              {
+                "name": "service charge",
+                "value": "130.00"
+              }
+            ],
+            "amountaftertax": "1330.00",
+            "remarks": "No Smoking – Room 1",
+            "GuestCount": [
+              {
+                "AgeQualifyingCode": "10",
+                "Count": "2"
+              }
+            ]
+          },
+          {
+            "arrival_date": "2026-10-06",
+            "departure_date": "2026-10-07",
+            "room_id": "DELUXEROOM",
+            "room_name": "Studio",
+            "price": [
+              {
+                "date": "2026-10-06",
+                "rate_id": "EPPLAN",
+                "rate_name": "Test MK EP",
+                "amountaftertax": "1000.00",
+                "extraGuests": {
+                  "extraAdult": "0",
+                  "extraChild": "0",
+                  "extraAdultRate": "0",
+                  "extraChildRate": "0"
+                }
+              }
+            ],
+            "salutation": "Mr.",
+            "first_name": "Test",
+            "last_name": "Test",
+            "taxes": [
+              {
+                "name": "service charge",
+                "value": "110.00"
+              }
+            ],
+            "amountaftertax": "1110.00",
+            "remarks": "No Smoking – Room 2",
+            "GuestCount": [
+              {
+                "AgeQualifyingCode": "10",
+                "Count": "2"
+              }
+            ]
+          }
+        ],
+        "POS": "TEST",
+        "extraData": [
+          {
+            "name": "Key",
+            "value": "Value of key"
+          }
+        ]
+      }
+    ]
+  }
+}
