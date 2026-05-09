@@ -843,12 +843,13 @@ export class HotelsService {
 
   async create(dto: CreateHotelDto) {
     const data = this.mapHotelDto(dto);
-    this.validateBasicInfoRequired(data);
+    // Apply defaults BEFORE validation so required field checks pass
     if ((data as any).deleted === undefined) (data as any).deleted = false;
     if ((data as any).status === undefined) (data as any).status = 1;
     if ((data as any).hotel_power_backup === undefined) (data as any).hotel_power_backup = 0;
     if ((data as any).hotel_hotspot_status === undefined) (data as any).hotel_hotspot_status = 0;
     if ((data as any).hotel_margin === undefined) (data as any).hotel_margin = 0;
+    this.validateBasicInfoRequired(data);
 
     const hotel = await this.prisma.dvi_hotel.create({ data } as any);
     const axisroomsPropertyId = `AX_DVI_HOTEL_${(hotel as any).hotel_id}`;
@@ -886,6 +887,12 @@ export class HotelsService {
         },
       });
       const merged = { ...(current ?? {}), ...incoming };
+      // Apply defaults before validation
+      if ((merged as any).deleted === undefined) (merged as any).deleted = false;
+      if ((merged as any).status === undefined) (merged as any).status = 1;
+      if ((merged as any).hotel_power_backup === undefined) (merged as any).hotel_power_backup = 0;
+      if ((merged as any).hotel_hotspot_status === undefined) (merged as any).hotel_hotspot_status = 0;
+      if ((merged as any).hotel_margin === undefined) (merged as any).hotel_margin = 0;
       this.validateBasicInfoRequired(merged);
     }
 
