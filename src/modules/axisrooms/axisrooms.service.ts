@@ -642,6 +642,9 @@ export class AxisRoomsService {
         hotelName: (hotelRow as any)?.hotel_name || undefined,
         roomId,
         rowCount: Array.isArray(inventory) ? inventory.length : 0,
+        details: (inventory || []).map(
+          (inv) => `Inventory ${inv.startDate} to ${inv.endDate}: free=${inv.free}`,
+        ),
       });
 
       return {
@@ -789,6 +792,13 @@ export class AxisRoomsService {
         roomId,
         rateplanId: internalRateplanId,
         rowCount: Array.isArray(rate) ? rate.length : 0,
+        details: (rate || []).map((rateEntry) => {
+          const { startDate, endDate, ...incomingOccupancyRates } = rateEntry;
+          const occupancyParts = Object.entries(incomingOccupancyRates || {})
+            .filter(([, rawValue]) => this.toFiniteNumber(rawValue) !== undefined)
+            .map(([key, rawValue]) => `${key}=${this.toFiniteNumber(rawValue)}`);
+          return `Rate ${startDate} to ${endDate}: ${occupancyParts.join(', ') || 'no occupancy values'}`;
+        }),
       });
 
       return {
@@ -880,6 +890,14 @@ export class AxisRoomsService {
           hotelId: hotel?.hotel_id ? Number(hotel.hotel_id) : undefined,
           hotelName: (hotel as any)?.hotel_name || undefined,
           rowCount: insertedRowsForProperty,
+          details: roomDetails.flatMap((roomDetail) =>
+            roomDetail.ratePlanDetails.flatMap((ratePlanDetail) =>
+              (ratePlanDetail.restrictions?.periods || []).map(
+                (period) =>
+                  `Restriction room=${roomDetail.roomId}, ratePlan=${ratePlanDetail.ratePlanId}, type=${ratePlanDetail.restrictions.type}, value=${ratePlanDetail.restrictions.value}, ${period.startDate} to ${period.endDate}`,
+              ),
+            ),
+          ),
         });
       }
 

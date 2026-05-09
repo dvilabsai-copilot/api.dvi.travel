@@ -9,6 +9,7 @@ type AxisroomsEmailPayload = {
   roomId?: string;
   rateplanId?: string;
   rowCount?: number;
+  details?: string[];
 };
 
 @Injectable()
@@ -89,6 +90,13 @@ export class AxisroomsEmailNotifierService {
         `Rows/Periods: ${payload.rowCount ?? '-'}`,
         `Received At: ${new Date().toISOString()}`,
       ];
+
+      if (payload.details?.length) {
+        bodyLines.push('', 'Updated Values:');
+        for (const detail of payload.details) {
+          bodyLines.push(`- ${detail}`);
+        }
+      }
 
       await transporter.sendMail({
         from,
