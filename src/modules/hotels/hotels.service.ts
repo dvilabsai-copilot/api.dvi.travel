@@ -1638,58 +1638,116 @@ export class HotelsService {
     return s.length <= 20 ? s : s.slice(0, 20);
   }
 
-  private mapReviewDto(input: any) {
-    const data: any = {};
-    const hid = this.toNumStrict(input?.hotel_id);
-    if (hid !== undefined) data.hotel_id = hid;
 
-    const rating = this.toStr(input?.rating ?? input?.hotel_rating);
-    if (rating !== undefined) data.hotel_rating = rating;
+private mapReviewDto(input: any) {
+  const data: any = {};
 
-    const desc = this.truncate20(this.toStr(input?.description ?? input?.hotel_description));
-    if (desc !== undefined) data.hotel_description = desc;
+  const hid = this.toNumStrict(input?.hotel_id ?? input?.hotelId);
+  if (hid !== undefined) data.hotel_id = hid;
 
-    const status = this.toNumStrict(input?.status);
-    if (status !== undefined) data.status = status;
+  const rating = this.toStr(
+    input?.rating ??
+      input?.hotel_rating ??
+      input?.review_rating ??
+      input?.feedback_rating,
+  );
+  if (rating !== undefined) data.hotel_rating = rating;
 
-    Object.keys(data).forEach((k) => data[k] === undefined && delete data[k]);
-    return data;
+  const desc = this.toStr(
+    input?.description ??
+      input?.hotel_description ??
+      input?.review_description ??
+      input?.feedback_description ??
+      input?.feedback,
+  );
+  if (desc !== undefined) data.hotel_description = desc;
+
+  data.status = this.toNumStrict(input?.status) ?? 1;
+
+  return data;
+}
+
+
+  async listReviews(hotel_id: number) {
+  const id = Number(hotel_id);
+  if (!Number.isFinite(id) || id <= 0) return [];
+
+  const rows = await this.prisma.dvi_hotel_review_details.findMany({
+    where: { hotel_id: id } as any,
+    orderBy: { hotel_review_id: 'desc' } as any,
+  });
+
+  return rows.map((r: any) => ({
+  id: r.hotel_review_id,
+  hotel_review_id: r.hotel_review_id,
+  review_id: r.hotel_review_id,
+  hotel_id: r.hotel_id,
+
+  hotel_rating: r.hotel_rating,
+  rating: r.hotel_rating,
+
+  hotel_description: r.hotel_description,
+  description: r.hotel_description,
+
+  createdon: r.createdon,
+  createdAt: r.createdon,
+  status: r.status,
+}));
+}
+
+addReviewUnified(dto: any, createdBy?: number) {
+  console.log('ADD REVIEW DTO:', dto);
+
+  const data = this.mapReviewDto(dto);
+
+  console.log('ADD REVIEW MAPPED DATA:', data);
+
+  if (data.hotel_id === undefined) {
+    throw new BadRequestException('hotel_id is required');
   }
 
-  listReviews(hotel_id: number) {
-    const id = Number(hotel_id);
-    if (!Number.isFinite(id) || id <= 0) return [];
-    return this.prisma.dvi_hotel_review_details.findMany({
-      where: { hotel_id: id } as any,
-      orderBy: { hotel_review_id: 'desc' } as any,
-    });
+  if (!data.hotel_rating) {
+    throw new BadRequestException('hotel_rating is required');
   }
 
-  addReviewUnified(
-    dto: { hotel_id: number; rating?: string; description?: string; status?: number },
-    createdBy?: number,
-  ) {
-    const data = this.mapReviewDto(dto);
-    if (data.hotel_id === undefined) throw new Error('hotel_id is required');
-
-    const now = new Date();
-    if (Number.isFinite(createdBy as any)) data.createdby = Number(createdBy);
-    if (!data.createdon) data.createdon = now;
-    if (!data.updatedon) data.updatedon = now;
-
-    return this.prisma.dvi_hotel_review_details.create({ data } as any);
+  if (!data.hotel_description) {
+    throw new BadRequestException('hotel_description is required');
   }
 
-  updateReviewUnified(review_id: number, hotel_id: number, body: any, updatedBy?: number) {
-    const payload = this.mapReviewDto({ ...(body ?? {}), hotel_id });
-    payload.updatedon = new Date();
-    if (Number.isFinite(updatedBy as any)) payload.createdby = Number(updatedBy); // legacy column
-    return this.prisma.dvi_hotel_review_details.update({
-      where: { hotel_review_id: Number(review_id) } as any,
-      data: payload as any,
-      select: { hotel_review_id: true } as any,
-    });
+  const now = new Date();
+
+  if (Number.isFinite(createdBy as any)) {
+    data.createdby = Number(createdBy);
   }
+
+  data.createdon = now;
+  data.updatedon = now;
+
+  return this.prisma.dvi_hotel_review_details.create({
+    data,
+  } as any);
+}
+
+updateReviewUnified(review_id: number, hotel_id: number, body: any, updatedBy?: number) {
+  const payload = this.mapReviewDto({
+    ...(body ?? {}),
+    hotel_id,
+    hotelId: hotel_id,
+  });
+
+  delete payload.hotel_id;
+
+  payload.updatedon = new Date();
+
+  if (Number.isFinite(updatedBy as any)) {
+    payload.createdby = Number(updatedBy);
+  }
+
+  return this.prisma.dvi_hotel_review_details.update({
+    where: { hotel_review_id: Number(review_id) } as any,
+    data: payload as any,
+  });
+}
 
   removeReview(_hotel_id: number, review_id: number) {
     return this.prisma.dvi_hotel_review_details.delete({
