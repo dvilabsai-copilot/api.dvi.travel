@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+﻿import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
 import { ItineraryDetailsService } from './itinerary-details.service';
 import { ItineraryHotelDetailsService } from './itinerary-hotel-details.service';
@@ -141,14 +141,14 @@ export class ItineraryClipboardService {
     const days = Number(plan.no_of_days || 0);
 
     return `
-      <table width="700" align="left" border="0" cellpadding="0" cellspacing="0" style="border-collapse: collapse; background-color:#fff; font-family:Calibri; font-size:11px; color:#302c6e;">
+      <table width="700" align="left" border="1" cellpadding="0" cellspacing="0" style="border-collapse: collapse; background-color:#fff; font-family:Calibri; font-size:11px; color:#302c6e;">
         <tr>
           <td align="center" valign="middle" style="color:#302c6e; font-size:22px; line-height:40px; font-weight:600; text-align:center;">
             Tour Itinerary Plan
           </td>
         </tr>
       </table>
-      <table width="700" align="left" border="0" cellpadding="0" cellspacing="0" style="border-collapse:collapse; background:#fff; font-size:11px; line-height:1.2; font-family:Calibri; color:#302c6e;">
+      <table width="700" align="left" border="1" cellpadding="0" cellspacing="0" style="border-collapse:collapse; background:#fff; font-size:11px; line-height:1.2; font-family:Calibri; color:#302c6e;">
         <tr>
           <td width="25%" style="text-align:center; padding:3px; border:1px solid #b1b1b1;">
             <span style="color:#afafaf; font-weight:500; display:block;">Start Date & Time</span>
@@ -225,7 +225,8 @@ export class ItineraryClipboardService {
       additionalMarginDayLimit,
     } = args;
 
-    let html = '';
+    let groupSections = '';
+    const totalColumns = showRates ? 6 : 5;
 
     for (const groupType of selectedGroupTypes) {
       const groupRows = hotels
@@ -254,28 +255,29 @@ export class ItineraryClipboardService {
             .join('')
         : `<tr><td colspan="${showRates ? 6 : 5}" style="border: 1px solid #b1b1b1;text-align: center;">No hotel available</td></tr>`;
 
-      html += `
-        <table width="700" align="left" border="0" cellpadding="0" cellspacing="0" style="border-collapse: collapse; background-color:#fff; font-family:Calibri; font-size:11px; color:#302c6e;">
-          <tr>
-            <td align="center" valign="middle" style="color:#302c6e; font-size:18px; line-height:40px; font-weight:600;">Recommended Hotel - ${groupType}</td>
-          </tr>
-        </table>
-        <table width="100%" align="left" border="0" cellpadding="0" cellspacing="0" style="border-collapse: collapse; background-color:#fff; font-family:Calibri; font-size:11px; color:#302c6e;">
-          <tr>
-            <th style="background-color:#f2f2f2; text-align:left; padding:3px; border:1px solid #b1b1b1;">Day</th>
-            <th style="background-color:#f2f2f2; text-align:left; padding:3px; border:1px solid #b1b1b1;">Destination</th>
-            <th style="background-color:#f2f2f2; text-align:left; padding:3px; border:1px solid #b1b1b1;">Hotel Name - Category</th>
-            <th style="background-color:#f2f2f2; text-align:left; padding:3px; border:1px solid #b1b1b1;">Room Type - Count</th>
-            ${showRates ? '<th style="background-color:#f2f2f2; text-align:left; padding:3px; border:1px solid #b1b1b1;">Price</th>' : ''}
-            <th style="background-color:#f2f2f2; text-align:left; padding:3px; border:1px solid #b1b1b1;">Meal Plan</th>
-          </tr>
-          ${rowHtml}
-        </table>
-        <table width="700" align="left" border="0" cellpadding="0" cellspacing="0"><tr><td><span>&nbsp;</span></td></tr></table>
+      groupSections += `
+        <tr>
+          <td colspan="${totalColumns}" align="center" valign="middle" style="color:#302c6e; font-size:18px; line-height:32px; font-weight:600; border:1px solid #b1b1b1; padding:4px;">
+            Recommended Hotel - ${groupType}
+          </td>
+        </tr>
+        <tr>
+          <th style="background-color:#f2f2f2; text-align:left; padding:3px; border:1px solid #b1b1b1;">Day</th>
+          <th style="background-color:#f2f2f2; text-align:left; padding:3px; border:1px solid #b1b1b1;">Destination</th>
+          <th style="background-color:#f2f2f2; text-align:left; padding:3px; border:1px solid #b1b1b1;">Hotel Name - Category</th>
+          <th style="background-color:#f2f2f2; text-align:left; padding:3px; border:1px solid #b1b1b1;">Room Type - Count</th>
+          ${showRates ? '<th style="background-color:#f2f2f2; text-align:left; padding:3px; border:1px solid #b1b1b1;">Price</th>' : ''}
+          <th style="background-color:#f2f2f2; text-align:left; padding:3px; border:1px solid #b1b1b1;">Meal Plan</th>
+        </tr>
+        ${rowHtml}
       `;
     }
 
-    return html;
+    return `
+      <table width="700" align="left" border="1" cellpadding="0" cellspacing="0" style="border-collapse:collapse; background-color:#fff; font-family:Calibri; font-size:11px; color:#302c6e; table-layout:fixed;">
+        ${groupSections}
+      </table>
+    `;
   }
 
   private buildVehicleTitle(vehicle: any): string {
@@ -327,17 +329,14 @@ export class ItineraryClipboardService {
       : '<tr><td colspan="2" style="border:1px solid #b1b1b1; text-align:center; padding:3px;">No Vehicle available</td></tr>';
 
     return `
-      <table width="700" align="left" border="0" cellpadding="0" cellspacing="0" style="border-collapse: collapse; background-color:#fff; font-family:Calibri; font-size:11px; color:#302c6e;">
-        <tr><td align="center" valign="middle" style="color:#302c6e; font-size:18px; line-height:40px; font-weight:600;">Vehicle Details</td></tr>
-      </table>
-      <table width="700" align="left" border="0" cellpadding="0" cellspacing="0" style="border-collapse: collapse; background-color:#fff; font-family:Calibri; font-size:11px; color:#302c6e; table-layout:fixed;">
+      <table width="700" align="left" border="1" cellpadding="0" cellspacing="0" style="border-collapse: collapse; background-color:#fff; font-family:Calibri; font-size:11px; color:#302c6e; table-layout:fixed;">
+        <tr><td colspan="2" align="center" valign="middle" style="color:#302c6e; font-size:18px; line-height:40px; font-weight:600;">Vehicle Details</td></tr>
         <tr>
           <th style="background-color:#f2f2f2; text-align:left; padding:3px; border:1px solid #b1b1b1;">Vehicle Details</th>
           <th style="background-color:#f2f2f2; text-align:left; padding:3px; border:1px solid #b1b1b1;">Total Amount</th>
         </tr>
         ${rows}
       </table>
-      <table width="700" align="left" border="0" cellpadding="0" cellspacing="0"><tr><td><span>&nbsp;</span></td></tr></table>
     `;
   }
 
@@ -362,7 +361,7 @@ export class ItineraryClipboardService {
       : 'Total Room Cost';
 
     return `
-      <table width="700" align="left" border="0" cellpadding="0" cellspacing="0" style="border-collapse: collapse; background-color:#fff; font-family:Calibri; font-size:11px; color:#302c6e;">
+      <table width="700" align="left" border="1" cellpadding="0" cellspacing="0" style="border-collapse: collapse; background-color:#fff; font-family:Calibri; font-size:11px; color:#302c6e;">
         ${roomCost > 0 ? `<tr><th style="text-align:left; padding:3px; border:1px solid #b1b1b1;">${this.escapeHtml(roomLabel)}</th><td style="text-align:left; padding:3px; border:1px solid #b1b1b1;"><b>${this.escapeHtml(this.formatCurrencyInr(roomCost))}</b></td></tr>` : ''}
         ${extraBedCost > 0 ? `<tr><th style="text-align:left; padding:3px; border:1px solid #b1b1b1;">Extra Bed Cost (${this.escapeHtml(Number(cost.extraBed || 0))})</th><td style="text-align:left; padding:3px; border:1px solid #b1b1b1;"><b>${this.escapeHtml(this.formatCurrencyInr(extraBedCost))}</b></td></tr>` : ''}
         ${childWithBedCost > 0 ? `<tr><th style="text-align:left; padding:3px; border:1px solid #b1b1b1;">Child With Bed Cost (${this.escapeHtml(Number(cost.childWithBed || 0))})</th><td style="text-align:left; padding:3px; border:1px solid #b1b1b1;"><b>${this.escapeHtml(this.formatCurrencyInr(childWithBedCost))}</b></td></tr>` : ''}
@@ -373,7 +372,6 @@ export class ItineraryClipboardService {
         <tr><th style="text-align:left; padding:3px; border:1px solid #b1b1b1;">Total Round Off</th><td style="text-align:left; padding:3px; border:1px solid #b1b1b1;">${this.escapeHtml(roundOffLabel)}</td></tr>
         <tr><th style="text-align:left; padding:3px; border:1px solid #b1b1b1;">Net Payable To ${this.escapeHtml(cost.companyName || 'DVI')}</th><td style="text-align:left; padding:3px; border:1px solid #b1b1b1;"><b>${this.escapeHtml(this.formatCurrencyInr(Number(cost.netPayable || 0)))}</b></td></tr>
       </table>
-      <table width="700" align="left" border="0" cellpadding="0" cellspacing="0"><tr><td><span>&nbsp;</span></td></tr></table>
     `;
   }
 
@@ -391,7 +389,7 @@ export class ItineraryClipboardService {
       labels?.otherDayStartLabel?.trim() || 'Start Your Day';
 
     let html = `
-      <table width="700" align="left" border="0" cellpadding="0" cellspacing="0" style="border-collapse: collapse; background-color:#fff; font-family:Calibri; font-size:11px; color:#302c6e;">
+      <table width="700" align="left" border="1" cellpadding="0" cellspacing="0" style="border-collapse: collapse; background-color:#fff; font-family:Calibri; font-size:11px; color:#302c6e;">
         <tr><td align="center" valign="middle" style="color:#302c6e; font-size:18px; line-height:40px; font-weight:600;">Hotspot Details</td></tr>
       </table>
     `;
@@ -483,7 +481,7 @@ export class ItineraryClipboardService {
       }
 
       html += `
-        <table width="700" align="left" border="0" cellpadding="0" cellspacing="0" style="border-collapse: collapse; background-color:#fff; font-family:Calibri; font-size:11px; color:#302c6e; margin-top:8px;">
+        <table width="700" align="left" border="1" cellpadding="0" cellspacing="0" style="border-collapse: collapse; background-color:#fff; font-family:Calibri; font-size:11px; color:#302c6e; margin-top:8px;">
           <tr><td style="padding:3px; border:1px solid #b1b1b1;"><b>${dayTitle}${dayTimeRange} - ${routeTitle}${dayDistancePart}</b></td></tr>
           <tr><td style="padding:3px; border:1px solid #b1b1b1;">${lines.join('')}</td></tr>
         </table>
@@ -532,13 +530,13 @@ export class ItineraryClipboardService {
     }
 
     return `
-      <table width="700" align="left" border="0" cellpadding="0" cellspacing="0" style="border-collapse: collapse; background-color:#fff; font-family:Calibri; font-size:11px; color:#302c6e;">
+      <table width="700" align="left" border="1" cellpadding="0" cellspacing="0" style="border-collapse: collapse; background-color:#fff; font-family:Calibri; font-size:11px; color:#302c6e;">
         <tr><td align="center" valign="middle" style="color:#302c6e; font-size:20px; line-height:40px; font-weight:600; text-align:center;">Terms & Condition</td></tr>
       </table>
       <table width="700" align="left" border="1" cellpadding="5" cellspacing="0" style="border-collapse: collapse; background-color:#fff; font-family:Calibri; font-size:11px; color:#302c6e;">
         <tr>
           <td>
-            <table width="100%" align="left" border="0" cellpadding="0" cellspacing="0" style="border-collapse: collapse; background-color:#fff;">
+            <table width="100%" align="left" border="1" cellpadding="0" cellspacing="0" style="border-collapse: collapse; background-color:#fff;">
               <tr>
                 ${termsBody}
               </tr>
@@ -779,12 +777,14 @@ export class ItineraryClipboardService {
     const html = `
       <div style="margin:0; padding:0; background-color:#f9f9f9; font-family:Calibri; font-size:11px; color:#302c6e;">
         <div id="contentToCopy" style="font-family:Calibri; font-size:11px !important; color:#302c6e; width:700px;">
-          ${summaryHtml}
-          ${hotelsHtml}
-          ${vehiclesHtml}
-          ${costHtml}
-          ${hotspotHtml}
-          ${termsHtml}
+          <table width="700" align="left" border="1" cellpadding="0" cellspacing="0" style="border-collapse:collapse; background-color:#fff; font-family:Calibri; font-size:11px; color:#302c6e;">
+            <tr><td>${summaryHtml}</td></tr>
+            <tr><td>${hotelsHtml}</td></tr>
+            <tr><td>${vehiclesHtml}</td></tr>
+            <tr><td>${costHtml}</td></tr>
+            <tr><td>${hotspotHtml}</td></tr>
+            <tr><td>${termsHtml}</td></tr>
+          </table>
         </div>
       </div>
     `;
@@ -795,3 +795,4 @@ export class ItineraryClipboardService {
     };
   }
 }
+
