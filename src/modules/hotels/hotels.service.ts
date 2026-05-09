@@ -305,6 +305,7 @@ export class HotelsService {
           JSON_EXTRACT(payload, '$.synthetic_backfill') IS NULL
           OR JSON_EXTRACT(payload, '$.synthetic_backfill') = false
         )
+        AND LOWER(type) IN ('inventoryupdate', 'rateupdate', 'restrictionupdate')
       GROUP BY axisrooms_property_id, type
     `;
 
