@@ -247,6 +247,19 @@ export class HotelsController {
     });
   }
 
+  @Get('axisrooms/attempted')
+  listAxisroomsAttemptedNoUpdates(
+    @Query('search') search = '',
+    @Query('page') page = '1',
+    @Query('limit') limit = '50',
+  ) {
+    return this.hotels.listAxisroomsAttemptedNoUpdates({
+      search,
+      page: Number(page || 1),
+      limit: Number(limit || 50),
+    });
+  }
+
   @Get('axisrooms/:id/preview')
   getAxisroomsHotelPreview(@Param('id', ParseIntPipe) id: number) {
     return this.hotels.getAxisroomsHotelPreview(id);

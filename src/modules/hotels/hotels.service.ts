@@ -413,6 +413,134 @@ export class HotelsService {
     return { page, limit, total, rows: paged };
   }
 
+  async listAxisroomsAttemptedNoUpdates(q: { search?: string; page?: number; limit?: number }) {
+    const page = Math.max(1, Number(q?.page ?? 1));
+    const limit = Math.max(1, Math.min(500, Number(q?.limit ?? 50)));
+    const search = String(q?.search ?? '').trim().toLowerCase();
+
+    const logs = await this.prisma.$queryRaw<any[]>`
+      SELECT axisrooms_property_id, type, COUNT(*) AS total_count, MAX(received_at) AS last_sync_at
+      FROM axisrooms_inbound_log
+      WHERE axisrooms_property_id IS NOT NULL
+        AND (
+          JSON_EXTRACT(payload, '$.synthetic_backfill') IS NULL
+          OR JSON_EXTRACT(payload, '$.synthetic_backfill') = false
+        )
+      GROUP BY axisrooms_property_id, type
+    `;
+
+    const byProperty = new Map<
+      string,
+      {
+        last_sync_at: Date | null;
+        attempted_updates: number;
+        inventory_updates: number;
+        rate_updates: number;
+        restriction_updates: number;
+        product_info_updates: number;
+        rate_plan_info_updates: number;
+      }
+    >();
+
+    for (const row of logs as any[]) {
+      const propertyId = this.toStr(row?.axisrooms_property_id);
+      if (!propertyId) continue;
+
+      const current =
+        byProperty.get(propertyId) ||
+        {
+          last_sync_at: null,
+          attempted_updates: 0,
+          inventory_updates: 0,
+          rate_updates: 0,
+          restriction_updates: 0,
+          product_info_updates: 0,
+          rate_plan_info_updates: 0,
+        };
+
+      const count = Number((row as any)?.total_count || 0);
+      current.attempted_updates += count;
+
+      const t = String(row?.type || '').toLowerCase();
+      if (t === 'inventoryupdate') current.inventory_updates += count;
+      if (t === 'rateupdate') current.rate_updates += count;
+      if (t === 'restrictionupdate') current.restriction_updates += count;
+      if (t === 'productinfo') current.product_info_updates += count;
+      if (t === 'rateplaninfo') current.rate_plan_info_updates += count;
+
+      const maxDate = (row as any)?.last_sync_at ? new Date((row as any).last_sync_at) : null;
+      if (maxDate && (!current.last_sync_at || maxDate > current.last_sync_at)) {
+        current.last_sync_at = maxDate;
+      }
+
+      byProperty.set(propertyId, current);
+    }
+
+    const noActionPropertyIds = Array.from(byProperty.entries())
+      .filter(([, stat]) => (stat.inventory_updates + stat.rate_updates + stat.restriction_updates) === 0)
+      .map(([propertyId]) => propertyId);
+
+    if (!noActionPropertyIds.length) {
+      return { page, limit, total: 0, rows: [] };
+    }
+
+    const hotels = await this.prisma.dvi_hotel.findMany({
+      where: {
+        AND: [
+          this.notDeletedBool as any,
+          { axisrooms_property_id: { in: noActionPropertyIds } as any },
+        ],
+      } as any,
+      select: {
+        hotel_id: true,
+        hotel_name: true,
+        hotel_code: true,
+        axisrooms_property_id: true,
+        axisrooms_enabled: true,
+      } as any,
+    });
+
+    let rows = (hotels as any[])
+      .map((h) => {
+        const propertyId = this.toStr(h.axisrooms_property_id) || '';
+        const stat = byProperty.get(propertyId);
+        if (!stat) return null;
+        return {
+          hotel_id: Number(h.hotel_id),
+          hotel_name: h.hotel_name || '',
+          hotel_code: h.hotel_code || '',
+          axisrooms_property_id: propertyId,
+          axisrooms_enabled: Number(h.axisrooms_enabled || 0) === 1,
+          last_sync_at: stat.last_sync_at ? stat.last_sync_at.toISOString() : null,
+          attempted_updates: stat.attempted_updates,
+          product_info_updates: stat.product_info_updates,
+          rate_plan_info_updates: stat.rate_plan_info_updates,
+        };
+      })
+      .filter((x) => !!x) as any[];
+
+    if (search) {
+      rows = rows.filter((r) =>
+        [r.hotel_name, r.hotel_code, r.axisrooms_property_id].some((v) =>
+          String(v || '').toLowerCase().includes(search),
+        ),
+      );
+    }
+
+    rows.sort((a, b) => {
+      const ad = a.last_sync_at ? new Date(a.last_sync_at).getTime() : 0;
+      const bd = b.last_sync_at ? new Date(b.last_sync_at).getTime() : 0;
+      if (bd !== ad) return bd - ad;
+      return String(a.hotel_name).localeCompare(String(b.hotel_name));
+    });
+
+    const total = rows.length;
+    const start = (page - 1) * limit;
+    const paged = rows.slice(start, start + limit);
+
+    return { page, limit, total, rows: paged };
+  }
+
   async getAxisroomsHotelPreview(hotelId: number) {
     const id = Number(hotelId || 0);
     if (!Number.isFinite(id) || id <= 0) {
