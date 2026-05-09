@@ -322,6 +322,43 @@ export class ItinerariesService {
     });
     console.log('[PERF] rebuildEligibleVendorList:', Date.now() - postStart, 'ms');
 
+    // Ensure final assignment matches visible totals in itinerary details,
+    // especially for edit flow (plan.itinerary_plan_id) where stale assignment can persist.
+    if (result?.quoteId) {
+      try {
+        const details = await this.itineraryDetails.getItineraryDetails(result.quoteId);
+        const rows = Array.isArray((details as any)?.vehicles) ? (details as any).vehicles : [];
+
+        const byVehicleType = new Map<number, any[]>();
+        for (const row of rows) {
+          const vehicleTypeId = Number((row as any)?.vehicleTypeId || 0);
+          const vendorEligibleId = Number((row as any)?.vendorEligibleId || 0);
+          const totalAmount = Number((row as any)?.totalAmount || 0);
+          if (!vehicleTypeId || !vendorEligibleId || !Number.isFinite(totalAmount)) continue;
+          const list = byVehicleType.get(vehicleTypeId) || [];
+          list.push({ vendorEligibleId, totalAmount });
+          byVehicleType.set(vehicleTypeId, list);
+        }
+
+        for (const [vehicleTypeId, list] of byVehicleType.entries()) {
+          if (!list.length) continue;
+          list.sort((a, b) => {
+            if (a.totalAmount !== b.totalAmount) return a.totalAmount - b.totalAmount;
+            return a.vendorEligibleId - b.vendorEligibleId;
+          });
+
+          const chosen = list[0];
+          await this.selectVehicleVendor({
+            planId: result.planId,
+            vehicleTypeId,
+            vendorEligibleId: chosen.vendorEligibleId,
+          });
+        }
+      } catch (autoAssignErr) {
+        console.error('[ItinerariesService] Auto-select lowest vendor failed:', autoAssignErr);
+      }
+    }
+
     // Step 10: Persist a reusable template snapshot for this itinerary shape.
     try {
       await this.saveReusableTemplateFromPlan(result.planId, userId);

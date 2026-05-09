@@ -1,0 +1,32 @@
+{
+  "status": 200,
+  "body": {
+    "currency": "AED",
+    "data": [
+      {
+        "amountAfterTax": {
+          "Rate": "1098",
+          "extraadult": "0",
+          "extrachild": "0",
+          "obp": {
+            "person1": "1098",
+            "person2": "1098",
+            "person3": "1098",
+            "person4": "1098",
+            "person5": "1098",
+            "person6": "1098"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-10-06",
+        "inventory": "7",
+        "stopsell": "N"
+      }
+    ],
+    "propertyid": "STAAHTESTHOTEL1",
+    "rate_id": "CPPLAN",
+    "room_id": "DELUXEROOM",
+    "trackingId": "485B8235-2D6E-47C1-8432-09E85BDADDBB"
+  }
+}

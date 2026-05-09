@@ -1,0 +1,72 @@
+{
+  "status": 200,
+  "body": {
+    "currency": "AED",
+    "data": [
+      {
+        "amountAfterTax": {
+          "Rate": "1098",
+          "extraadult": "0",
+          "extrachild": "0",
+          "obp": {
+            "person1": "1098",
+            "person2": "1098",
+            "person3": "1098",
+            "person4": "1098",
+            "person5": "1098",
+            "person6": "1098"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-09-01",
+        "inventory": "5",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "1098",
+          "extraadult": "0",
+          "extrachild": "0",
+          "obp": {
+            "person1": "1098",
+            "person2": "1098",
+            "person3": "1098",
+            "person4": "1098",
+            "person5": "1098",
+            "person6": "1098"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-09-02",
+        "inventory": "5",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "1098",
+          "extraadult": "0",
+          "extrachild": "0",
+          "obp": {
+            "person1": "1098",
+            "person2": "1098",
+            "person3": "1098",
+            "person4": "1098",
+            "person5": "1098",
+            "person6": "1098"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-09-03",
+        "inventory": "8",
+        "stopsell": "N"
+      }
+    ],
+    "propertyid": "STAAHTESTHOTEL1",
+    "rate_id": "CPPLAN",
+    "room_id": "DELUXEROOM",
+    "trackingId": "E4AAFB96-A15C-4A7C-88FB-5DDB6BC7DFF7"
+  }
+}
