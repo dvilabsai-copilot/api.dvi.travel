@@ -308,6 +308,16 @@ export class ItineraryHotelDetailsTboService {
       groupType !== undefined ||
       itineraryRouteId !== undefined;
 
+    // Step 1: Get itinerary plan
+    const plan = await this.prisma.dvi_itinerary_plan_details.findFirst({
+      where: { itinerary_quote_ID: quoteId, deleted: 0 },
+    });
+
+    if (!plan) {
+      this.logger.warn(`⚠️  Quote ID not found: ${quoteId}`);
+      throw new NotFoundException('Itinerary not found');
+    }
+
     const cached = this.getCachedHotelDetails(quoteId);
     if (cached) {
       return hasCompatibilityFilters
@@ -319,16 +329,6 @@ export class ItineraryHotelDetailsTboService {
             itineraryRouteId,
           )
         : cached;
-    }
-
-    // Step 1: Get itinerary plan
-    const plan = await this.prisma.dvi_itinerary_plan_details.findFirst({
-      where: { itinerary_quote_ID: quoteId, deleted: 0 },
-    });
-
-    if (!plan) {
-      this.logger.warn(`⚠️  Quote ID not found: ${quoteId}`);
-      throw new NotFoundException('Itinerary not found');
     }
 
     const planId = plan.itinerary_plan_ID;

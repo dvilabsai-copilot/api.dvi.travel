@@ -18,6 +18,7 @@ import {
   inferCanonicalHotelRatePlanCodeFromMealText,
   getNormalizedMealPlanLabelFromMealText,
 } from '../hotel-rate-plans';
+import { TBOSearchResultsLogger } from '../../../common/utils/tbo-search-logger';
 
 @Injectable()
 export class TBOHotelProvider implements IHotelProvider {
@@ -267,6 +268,16 @@ export class TBOHotelProvider implements IHotelProvider {
 
       if (allHotels.length === 0) {
         this.logger.warn(`   📭 No hotels found for city: ${criteria.cityCode}`);
+        // Log empty result batch
+        TBOSearchResultsLogger.logBatchSummary({
+          description: `City ${criteria.cityCode} (TBO: ${resolvedTboCityCode})`,
+          totalHotels: hotelCodes?.split(',').length || 0,
+          chunksProcessed: requestChunks.length,
+          totalHotelsReturned: 0,
+          durationMs: Date.now() - startTime,
+          successCount: requestChunks.length,
+          failureCount: 0,
+        });
         return [];
       }
 
@@ -386,11 +397,34 @@ export class TBOHotelProvider implements IHotelProvider {
 
       this.logger.log(`✅ Successfully transformed ${results.length} hotels`);
       this.logger.debug(`📊 Hotel search output size: ${results.length}`);
+      
+      // Log batch summary to file
+      TBOSearchResultsLogger.logBatchSummary({
+        description: `City ${criteria.cityCode} (TBO: ${resolvedTboCityCode}) - ${criteria.checkInDate} to ${criteria.checkOutDate}`,
+        totalHotels: hotelCodes?.split(',').length || 0,
+        chunksProcessed: requestChunks.length,
+        totalHotelsReturned: results.length,
+        durationMs: Date.now() - startTime,
+        successCount: requestChunks.length,
+        failureCount: 0,
+      });
+      
       return results;
     } catch (error: any) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       this.logger.error(`❌ Hotel Search Error: ${errorMsg}`);
       this.logger.error(`   📋 Stack: ${error?.stack?.substring(0, 200)}`);
+      
+      // Log search error
+      TBOSearchResultsLogger.logSearchError({
+        cityCode: criteria.cityCode,
+        checkIn: criteria.checkInDate,
+        checkOut: criteria.checkOutDate,
+        error: errorMsg,
+        errorType: error?.constructor?.name || 'Unknown',
+        stack: error?.stack?.substring(0, 500),
+      });
+      
       // CRITICAL: Throw so service can distinguish provider/system failure from genuine empty result
       const { ServiceUnavailableException } = require('@nestjs/common');
       throw new ServiceUnavailableException(`TBO provider failed: ${errorMsg}`);
@@ -1599,6 +1633,25 @@ export class TBOHotelProvider implements IHotelProvider {
         this.logger.log(`   📦 TBO Search Request JSON: ${JSON.stringify(searchRequest)}`);
       }
 
+      // Log search request
+      const hotelCodeList = searchRequest.HotelCodes 
+        ? searchRequest.HotelCodes.split(',').map((c:string) => c.trim())
+        : [];
+      
+      TBOSearchResultsLogger.logSearchRequest({
+        cityCode: searchRequest.CityCode,
+        checkIn: searchRequest.CheckIn,
+        checkOut: searchRequest.CheckOut,
+        hotelCodes: hotelCodeList,
+        hotelCount: hotelCodeList.length,
+        guests: {
+          adults: searchRequest.PaxRooms[0].Adults,
+          children: searchRequest.PaxRooms[0].Children || 0,
+        },
+        guestNationality: searchRequest.GuestNationality,
+        filters: searchRequest.Filters,
+      });
+
       const startTime = Date.now();
       const response = await this.http.post(`${this.SEARCH_API_URL}/Search`, searchRequest, {
         timeout: 30000,
@@ -1623,17 +1676,89 @@ export class TBOHotelProvider implements IHotelProvider {
       const statusCode = typeof statusObj === 'object' ? statusObj?.Code : statusObj;
 
       if (statusCode !== 200) {
-        const description = typeof statusObj === 'object' ? statusObj?.Description : 'Unknown error';
-        this.logger.warn(`   ⚠️  TBO Search returned status: ${statusCode} - ${description}`);
+        const statusDescription = typeof statusObj === 'object' ? statusObj?.Description : 'Unknown error';
+        this.logger.warn(`   ⚠️  TBO Search returned status: ${statusCode} - ${statusDescription}`);
+        
+        // Log failed search response (try to capture partial hotel data if available)
+        const partialHotels = response.data?.HotelResult || [];
+        TBOSearchResultsLogger.logSearchResponse({
+          cityCode: searchRequest.CityCode,
+          checkIn: searchRequest.CheckIn,
+          checkOut: searchRequest.CheckOut,
+          hotelCodes: hotelCodeList,
+          requestDurationMs: responseTime,
+          statusCode,
+          statusDescription: `Failed - ${statusDescription}`,
+          hotelCount: partialHotels.length,
+          hotels: partialHotels.map((h: any) => ({
+            HotelCode: h.HotelCode,
+            HotelName: h.HotelName,
+             HotelCategory: h.HotelCategory,
+             HotelRating: h.HotelRating,
+             StarRating: h.StarRating,
+             Address: h.Address,
+            Latitude: h.Latitude,
+            Longitude: h.Longitude,
+            Currency: h.Currency,
+            RoomCount: (h.Rooms || []).length,
+          })),
+          error: `Search failed with status ${statusCode}: ${statusDescription}`,
+        });
+        
         return [];
       }
 
       const hotels = response.data.HotelResult || [];
       this.logger.log(`   ✅ This request returned ${hotels.length} hotels`);
+      
+      // Log successful search response with full hotel details
+      TBOSearchResultsLogger.logSearchResponse({
+        cityCode: searchRequest.CityCode,
+        checkIn: searchRequest.CheckIn,
+        checkOut: searchRequest.CheckOut,
+        hotelCodes: hotelCodeList,
+        requestDurationMs: responseTime,
+        statusCode,
+        statusDescription: 'Success',
+        hotelCount: hotels.length,
+        hotels: hotels.map((h: any) => ({
+          HotelCode: h.HotelCode,
+          HotelName: h.HotelName,
+           HotelCategory: h.HotelCategory,
+           HotelRating: h.HotelRating,
+           StarRating: h.StarRating,
+           Address: h.Address,
+          Latitude: h.Latitude,
+          Longitude: h.Longitude,
+          Currency: h.Currency,
+          RoomCount: (h.Rooms || []).length,
+          Rooms: (h.Rooms || []).map((room: any) => ({
+            RoomId: room.TBORoomID,
+            RoomName: room.Name?.[0],
+            NetAmount: room.NetAmount,
+            TotalFare: room.TotalFare,
+            Currency: h.Currency,
+            Inclusion: room.Inclusion,
+            CancelPolicies: room.CancelPolicies,
+            DayRates: room.DayRates,
+          })),
+        })),
+      });
+      
       return hotels;
     } catch (error: any) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       this.logger.error(`   ❌ TBO Search Error ${description}: ${errorMsg}`);
+      
+      // Log search error
+      TBOSearchResultsLogger.logSearchError({
+        cityCode: searchRequest.CityCode,
+        checkIn: searchRequest.CheckIn,
+        checkOut: searchRequest.CheckOut,
+        error: errorMsg,
+        errorType: error?.code || error?.constructor?.name || 'Unknown',
+      });
+      
       return [];
     }
   }
