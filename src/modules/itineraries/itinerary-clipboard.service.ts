@@ -389,7 +389,7 @@ export class ItineraryClipboardService {
       labels?.otherDayStartLabel?.trim() || 'Start Your Day';
 
     let html = `
-      <table width="700" align="left" border="1" cellpadding="0" cellspacing="0" style="border-collapse: collapse; background-color:#fff; font-family:Calibri; font-size:11px; color:#302c6e;">
+      <table width="700" align="center" border="1" cellpadding="0" cellspacing="0" style="border-collapse: collapse; background-color:#fff; font-family:Calibri; font-size:11px; color:#302c6e;">
         <tr><td align="center" valign="middle" style="color:#302c6e; font-size:18px; line-height:40px; font-weight:600;">Hotspot Details</td></tr>
       </table>
     `;
@@ -785,6 +785,7 @@ export class ItineraryClipboardService {
             <tr><td>${hotspotHtml}</td></tr>
             <tr><td>${termsHtml}</td></tr>
           </table>
+            <div style="clear:both; display:block; line-height:0; font-size:0; height:0;">&nbsp;</div>
         </div>
       </div>
     `;
