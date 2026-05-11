@@ -1050,6 +1050,25 @@ export class ItinerariesController {
     return this.svc.autoSelectVehicleSlabs(body);
   }
 
+  @Get('vehicles/build-status/:planId')
+  @ApiOperation({ summary: 'Get async vehicle build status for loader polling' })
+  @ApiParam({ name: 'planId', example: 17940, description: 'Itinerary Plan ID' })
+  @ApiOkResponse({ description: 'Vehicle build status (PENDING/PROCESSING/READY/FAILED)' })
+  async getVehicleBuildStatus(@Param('planId', ParseIntPipe) planId: number) {
+    return this.svc.getVehicleBuildStatus(planId);
+  }
+
+  @Post('vehicles/rebuild-async/:planId')
+  @ApiOperation({ summary: 'Trigger async vehicle rebuild manually (retry path)' })
+  @ApiParam({ name: 'planId', example: 17940, description: 'Itinerary Plan ID' })
+  @ApiOkResponse({ description: 'Vehicle rebuild accepted and status returned' })
+  async triggerVehicleBuild(
+    @Param('planId', ParseIntPipe) planId: number,
+    @Req() req?: Request,
+  ) {
+    return this.svc.triggerVehicleBuild(planId, req);
+  }
+
   @Get('edit/:id')
   @ApiOperation({ summary: 'Get itinerary raw plan data for editing' })
   @ApiParam({ name: 'id', example: 17940, description: 'Itinerary Plan ID' })

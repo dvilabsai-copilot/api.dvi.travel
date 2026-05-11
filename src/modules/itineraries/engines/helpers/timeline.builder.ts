@@ -620,6 +620,8 @@ export class TimelineBuilder {
       manualPlacementByRoute?: Record<number, {
         hotspotOrder?: number;
       }>;
+      /** When set, only process/rebuild this route instead of the entire plan. */
+      scopeToRouteId?: number;
     },
   ): Promise<{ hotspotRows: HotspotDetailRow[]; parkingRows: ParkingChargeRow[] }> {
     const buildStart = Date.now();
@@ -660,6 +662,15 @@ export class TimelineBuilder {
       return { hotspotRows: [], parkingRows: [] };
     }
 
+    // When scoped to a single route (preview mode), skip all other routes.
+    const scopedRoutes = options?.scopeToRouteId
+      ? routes.filter((r) => r.itinerary_route_ID === options!.scopeToRouteId)
+      : routes;
+
+    if (options?.scopeToRouteId && scopedRoutes.length === 0) {
+      return { hotspotRows: [], parkingRows: [] };
+    }
+
     // SCENARIO 2: Check if arrival city == departure city
     // If yes AND departure time > 4 PM, skip Day 1 local sightseeing and do it on last day
     const arrivalPoint = String(plan.arrival_location ?? '').trim();
@@ -685,6 +696,16 @@ export class TimelineBuilder {
       },
     })) || [];
     this.logTimeline('[TIMELINE] Fetch ALL hotspots ONCE:', Date.now() - opStart, 'ms, count:', allHotspots.length);
+
+    // ⚡ PERF: Pre-load global settings once so distanceHelper.getBufferTime never hits DB.
+    // Without this, every fromSourceAndDestination / fromCoordinates call issues a
+    // dvi_global_settings.findFirst query — that is 774+ serial queries just for hotspot scoring.
+    const globalSettingsForBuilder = await (tx as any).dvi_global_settings?.findFirst({
+      where: { status: 1, deleted: 0 },
+    });
+    if (globalSettingsForBuilder) {
+      this.distanceHelper.setGlobalSettings(globalSettingsForBuilder);
+    }
 
     // ⚡ Create hotspot lookup map for O(1) access (avoid repeated DB queries)
     const hotspotMap = new Map();
@@ -741,7 +762,7 @@ export class TimelineBuilder {
     let carryForwardOrder = 0;
     let carryForwardHotspots: CarryForwardHotspot[] = [];
 
-    for (const route of routes) {
+    for (const route of scopedRoutes) {
       const routeProcessStart = Date.now();
       this.logTimeline('[TIMELINE] Processing route', routeIndex + 1, '/', routes.length, '- routeId:', route.itinerary_route_ID);
 
@@ -4245,13 +4266,21 @@ export class TimelineBuilder {
           continue;
         }
 
+        // ⚡ PERF FIX 2: city-match BEFORE the expensive distance call.
+        // With 774 hotspots in DB, ~750 are in different cities and can be skipped immediately.
+        const hotspotPrimaryLocation = String((h.hotspot_location as string) || '')
+          .split('|')[0]
+          .trim();
+        const matchesSource = containsLocation(h.hotspot_location as string, targetLocation);
+        const matchesDestination = containsLocation(h.hotspot_location as string, nextLocation);
+        if (!matchesSource && !matchesDestination) {
+          continue;
+        }
+
         // PHP parity: use travel-distance engine for ordering, not haversine approximation.
         const hsLat = Number(h.hotspot_latitude ?? 0);
         const hsLon = Number(h.hotspot_longitude ?? 0);
         let distance = Number.POSITIVE_INFINITY;
-        const hotspotPrimaryLocation = String((h.hotspot_location as string) || '')
-          .split('|')[0]
-          .trim();
 
         if (startLat && startLon && hsLat && hsLon && hotspotPrimaryLocation) {
           const distanceResult = await this.distanceHelper.fromSourceAndDestination(
@@ -4297,9 +4326,6 @@ export class TimelineBuilder {
           continue;
         }
 
-        // PHP containsLocation() - exact match in pipe-delimited list, not substring
-        const matchesSource = containsLocation(h.hotspot_location as string, targetLocation);
-        const matchesDestination = containsLocation(h.hotspot_location as string, nextLocation);
         
         // PHP PARITY: Lines showing categorization:
         // if ($source_match) :
@@ -4356,13 +4382,21 @@ export class TimelineBuilder {
             continue;
           }
 
+          // ⚡ PERF: Check city match FIRST before any expensive distance calculation.
+          // ~750 of 774 hotspots are in completely different cities and can be skipped immediately.
+          const hotspotPrimaryLocation = String((h.hotspot_location as string) || '')
+            .split('|')[0]
+            .trim();
+          const matchesSourceEarly = containsLocation(h.hotspot_location as string, targetLocation);
+          const matchesDestEarly = containsLocation(h.hotspot_location as string, nextLocation);
+          if (!matchesSourceEarly && !matchesDestEarly) {
+            continue;
+          }
+
           // PHP parity: use travel-distance engine for ordering, not haversine approximation.
           const hsLat = Number(h.hotspot_latitude ?? 0);
           const hsLon = Number(h.hotspot_longitude ?? 0);
           let distance = Number.POSITIVE_INFINITY;
-          const hotspotPrimaryLocation = String((h.hotspot_location as string) || '')
-            .split('|')[0]
-            .trim();
 
           if (startLat && startLon && hsLat && hsLon && hotspotPrimaryLocation) {
             const distanceResult = await this.distanceHelper.fromSourceAndDestination(
