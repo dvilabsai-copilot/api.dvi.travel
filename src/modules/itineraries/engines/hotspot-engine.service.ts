@@ -41,6 +41,10 @@ export class HotspotEngineService {
         hotspotEndTime?: Date | string | null;
         replacedHotspotId?: number;
       }>;
+      /** Scope delete + rebuild to a single route. Used by preview simulations to avoid rebuilding every day. */
+      scopeToRouteId?: number;
+      /** Skip parking charge rebuild (safe for preview since it rolls back). */
+      skipParking?: boolean;
     },
   ): Promise<{
     shiftedItems: any[];
@@ -84,18 +88,23 @@ export class HotspotEngineService {
       manualHotspotIds: Array.from(manualHotspotIds),
     });
 
-    // 2) Delete ONLY active hotspot details before rebuilding. 
+    // 2) Delete ONLY active hotspot details before rebuilding.
     // We keep deleted: 1 records as "tombstones" to prevent auto-selection.
-    await (tx as any).dvi_itinerary_route_hotspot_details.deleteMany({
-      where: { 
-        itinerary_plan_ID: planId,
-        deleted: 0,
-      },
-    });
+    // When scoped to a single route (preview), only delete rows for that route to avoid
+    // wiping other days that are not being simulated.
+    const deleteWhere: any = { itinerary_plan_ID: planId, deleted: 0 };
+    if (options?.scopeToRouteId) {
+      deleteWhere.itinerary_route_ID = options.scopeToRouteId;
+    }
+    await (tx as any).dvi_itinerary_route_hotspot_details.deleteMany({ where: deleteWhere });
 
-    await (tx as any).dvi_itinerary_route_hotspot_parking_charge.deleteMany({
-      where: { itinerary_plan_ID: planId },
-    });
+    if (!options?.skipParking) {
+      const parkingWhere: any = { itinerary_plan_ID: planId };
+      if (options?.scopeToRouteId) {
+        parkingWhere.itinerary_route_ID = options.scopeToRouteId;
+      }
+      await (tx as any).dvi_itinerary_route_hotspot_parking_charge.deleteMany({ where: parkingWhere });
+    }
 
     // 3) Build new timeline rows in memory (WITHOUT manual hotspots)
     // Pass existing hotspots (including deleted ones) to the builder
@@ -120,6 +129,7 @@ export class HotspotEngineService {
     const { hotspotRows, parkingRows } =
       await this.timelineBuilder.buildTimelineForPlan(tx, planId, existingHotspots, {
         manualPlacementByRoute,
+        scopeToRouteId: options?.scopeToRouteId,
       });
 
     console.log('[ManualHotspot][rebuildRouteHotspots] start', {
