@@ -323,7 +323,7 @@ export class PlanEngineService {
       nationality: Number((plan as any).nationality ?? 0),
 
       // Meal plan flags
-      meal_plan_code,
+      // meal_plan_code,
       meal_plan_breakfast,
       meal_plan_lunch,
       meal_plan_dinner,
