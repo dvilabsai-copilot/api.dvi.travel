@@ -259,6 +259,14 @@ export class ResAvenueHotelProvider implements IHotelProvider {
         }
       }
 
+      const selectedStarRatings = Array.from(
+        new Set(
+          (preferences?.starRatings || [])
+            .map((rating) => Number(rating))
+            .filter((rating) => Number.isInteger(rating) && rating >= 1 && rating <= 5),
+        ),
+      );
+
       // Step 2: Query database for ResAvenue hotels in this city
       const hotels = await this.prisma.dvi_hotel.findMany({
         where: {
@@ -266,8 +274,20 @@ export class ResAvenueHotelProvider implements IHotelProvider {
           resavenue_hotel_code: { not: null },
           deleted: false,
           status: 1,
+          ...(selectedStarRatings.length > 0
+            ? {
+                // dvi_hotel.hotel_category now follows: 3=3*, 4=4*, 5=5*
+                hotel_category: { in: selectedStarRatings },
+              }
+            : {}),
         },
       });
+
+      if (selectedStarRatings.length > 0) {
+        this.logger.log(
+          `   ⭐ ResAvenue star filter applied: [${selectedStarRatings.join(', ')}]`,
+        );
+      }
 
       if (hotels.length === 0) {
         this.logger.log(`   📭 No ResAvenue hotels found in city: ${cityName}`);

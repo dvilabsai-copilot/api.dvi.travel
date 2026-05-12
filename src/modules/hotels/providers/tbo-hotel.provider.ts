@@ -386,11 +386,13 @@ export class TBOHotelProvider implements IHotelProvider {
 
       this.logger.log(`✅ Successfully transformed ${results.length} hotels`);
       this.logger.debug(`📊 Hotel search output size: ${results.length}`);
+      
       return results;
     } catch (error: any) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       this.logger.error(`❌ Hotel Search Error: ${errorMsg}`);
       this.logger.error(`   📋 Stack: ${error?.stack?.substring(0, 200)}`);
+      
       // CRITICAL: Throw so service can distinguish provider/system failure from genuine empty result
       const { ServiceUnavailableException } = require('@nestjs/common');
       throw new ServiceUnavailableException(`TBO provider failed: ${errorMsg}`);
@@ -1599,6 +1601,11 @@ export class TBOHotelProvider implements IHotelProvider {
         this.logger.log(`   📦 TBO Search Request JSON: ${JSON.stringify(searchRequest)}`);
       }
 
+      // Log search request
+      const hotelCodeList = searchRequest.HotelCodes 
+        ? searchRequest.HotelCodes.split(',').map((c:string) => c.trim())
+        : [];
+
       const startTime = Date.now();
       const response = await this.http.post(`${this.SEARCH_API_URL}/Search`, searchRequest, {
         timeout: 30000,
@@ -1623,17 +1630,19 @@ export class TBOHotelProvider implements IHotelProvider {
       const statusCode = typeof statusObj === 'object' ? statusObj?.Code : statusObj;
 
       if (statusCode !== 200) {
-        const description = typeof statusObj === 'object' ? statusObj?.Description : 'Unknown error';
-        this.logger.warn(`   ⚠️  TBO Search returned status: ${statusCode} - ${description}`);
+        const statusDescription = typeof statusObj === 'object' ? statusObj?.Description : 'Unknown error';
+        this.logger.warn(`   ⚠️  TBO Search returned status: ${statusCode} - ${statusDescription}`);
         return [];
       }
 
       const hotels = response.data.HotelResult || [];
       this.logger.log(`   ✅ This request returned ${hotels.length} hotels`);
+      
       return hotels;
     } catch (error: any) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       this.logger.error(`   ❌ TBO Search Error ${description}: ${errorMsg}`);
+      
       return [];
     }
   }

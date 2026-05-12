@@ -56,8 +56,22 @@ type ManualInsertionPosition = {
   positionLabel: string;
 };
 
+type VehicleBuildState = 'PENDING' | 'PROCESSING' | 'READY' | 'FAILED';
+
+type VehicleBuildStatus = {
+  planId: number;
+  status: VehicleBuildState;
+  startedAt: string | null;
+  finishedAt: string | null;
+  updatedAt: string;
+  error: string | null;
+  source: 'memory' | 'derived';
+};
+
 @Injectable()
 export class ItinerariesService {
+  private readonly vehicleBuildStatusMap = new Map<number, Omit<VehicleBuildStatus, 'source'>>();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly planEngine: PlanEngineService,
@@ -77,6 +91,213 @@ export class ItinerariesService {
     private readonly hotelDetailsTboService: ItineraryHotelDetailsTboService,
     private readonly supplementNormalizer: SupplementNormalizerService,
   ) {}
+
+  private setVehicleBuildStatus(
+    planId: number,
+    status: VehicleBuildState,
+    error?: string | null,
+  ): void {
+    const existing = this.vehicleBuildStatusMap.get(planId);
+    const nowIso = new Date().toISOString();
+    const startedAt =
+      status === 'PROCESSING'
+        ? (existing?.startedAt ?? nowIso)
+        : (existing?.startedAt ?? null);
+    const finishedAt = status === 'READY' || status === 'FAILED' ? nowIso : null;
+
+    this.vehicleBuildStatusMap.set(planId, {
+      planId,
+      status,
+      startedAt,
+      finishedAt,
+      updatedAt: nowIso,
+      error: error ?? null,
+    });
+  }
+
+  async getVehicleBuildStatus(planId: number): Promise<VehicleBuildStatus> {
+    const normalizedPlanId = Number(planId || 0);
+    if (!normalizedPlanId) {
+      throw new BadRequestException('planId is required');
+    }
+
+    const fromMemory = this.vehicleBuildStatusMap.get(normalizedPlanId);
+    if (fromMemory?.status === 'PROCESSING' || fromMemory?.status === 'FAILED') {
+      return {
+        ...fromMemory,
+        source: 'memory',
+      };
+    }
+
+    const [eligibleCount, detailsCount] = await Promise.all([
+      this.prisma.dvi_itinerary_plan_vendor_eligible_list.count({
+        where: {
+          itinerary_plan_id: normalizedPlanId,
+          status: 1,
+          deleted: 0,
+        },
+      }),
+      this.prisma.dvi_itinerary_plan_vendor_vehicle_details.count({
+        where: {
+          itinerary_plan_id: normalizedPlanId,
+          status: 1,
+          deleted: 0,
+        },
+      }),
+    ]);
+
+    const nowIso = new Date().toISOString();
+    if (eligibleCount > 0 || detailsCount > 0) {
+      const readyStatus: VehicleBuildStatus = {
+        planId: normalizedPlanId,
+        status: 'READY',
+        startedAt: fromMemory?.startedAt ?? null,
+        finishedAt: fromMemory?.finishedAt ?? nowIso,
+        updatedAt: nowIso,
+        error: null,
+        source: 'derived',
+      };
+      this.vehicleBuildStatusMap.set(normalizedPlanId, {
+        planId: readyStatus.planId,
+        status: readyStatus.status,
+        startedAt: readyStatus.startedAt,
+        finishedAt: readyStatus.finishedAt,
+        updatedAt: readyStatus.updatedAt,
+        error: null,
+      });
+      return readyStatus;
+    }
+
+    return {
+      planId: normalizedPlanId,
+      status: fromMemory?.status ?? 'PENDING',
+      startedAt: fromMemory?.startedAt ?? null,
+      finishedAt: fromMemory?.finishedAt ?? null,
+      updatedAt: fromMemory?.updatedAt ?? nowIso,
+      error: fromMemory?.error ?? null,
+      source: fromMemory ? 'memory' : 'derived',
+    };
+  }
+
+  private scheduleVehicleBuild(
+    planId: number,
+    vehicles: Array<{ vehicle_type_id: number; vehicle_count: number }>,
+    userId: number,
+    quoteId?: string,
+  ): void {
+    this.setVehicleBuildStatus(planId, 'PROCESSING', null);
+
+    void (async () => {
+      try {
+        const jobStart = Date.now();
+
+        // Permit rows must exist before vehicle calculations read them.
+        await this.prisma.$transaction(async (tx) => {
+          await this.routeEngine.rebuildPermitCharges(tx, planId, userId);
+          await this.vehiclesEngine.rebuildPlanVehicles(planId, vehicles, tx, userId);
+        }, { timeout: 120000, maxWait: 20000 });
+
+        await this.itineraryVehiclesEngine.rebuildEligibleVendorList({
+          planId,
+          createdBy: userId,
+        });
+
+        if (quoteId) {
+          await this.autoSelectLowestVehicleVendors(planId, quoteId);
+        }
+
+        this.setVehicleBuildStatus(planId, 'READY', null);
+        console.log('[PERF] asyncVehicleBuild total:', Date.now() - jobStart, 'ms', 'planId=', planId);
+      } catch (error: any) {
+        const message = String(error?.message || error || 'Vehicle build failed');
+        this.setVehicleBuildStatus(planId, 'FAILED', message);
+        console.error('[ItinerariesService] Async vehicle build failed:', {
+          planId,
+          message,
+        });
+      }
+    })();
+  }
+
+  private async autoSelectLowestVehicleVendors(planId: number, quoteId: string): Promise<void> {
+    try {
+      const details = await this.itineraryDetails.getItineraryDetails(quoteId);
+      const rows = Array.isArray((details as any)?.vehicles) ? (details as any).vehicles : [];
+
+      const byVehicleType = new Map<number, any[]>();
+      for (const row of rows) {
+        const vehicleTypeId = Number((row as any)?.vehicleTypeId || 0);
+        const vendorEligibleId = Number((row as any)?.vendorEligibleId || 0);
+        const totalAmount = Number((row as any)?.totalAmount || 0);
+        if (!vehicleTypeId || !vendorEligibleId || !Number.isFinite(totalAmount)) continue;
+        const list = byVehicleType.get(vehicleTypeId) || [];
+        list.push({ vendorEligibleId, totalAmount });
+        byVehicleType.set(vehicleTypeId, list);
+      }
+
+      for (const [vehicleTypeId, list] of byVehicleType.entries()) {
+        if (!list.length) continue;
+        list.sort((a, b) => {
+          if (a.totalAmount !== b.totalAmount) return a.totalAmount - b.totalAmount;
+          return a.vendorEligibleId - b.vendorEligibleId;
+        });
+
+        const chosen = list[0];
+        await this.selectVehicleVendor({
+          planId,
+          vehicleTypeId,
+          vendorEligibleId: chosen.vendorEligibleId,
+        });
+      }
+    } catch (autoAssignErr) {
+      console.error('[ItinerariesService] Auto-select lowest vendor failed:', autoAssignErr);
+    }
+  }
+
+  async triggerVehicleBuild(planId: number, req: any): Promise<VehicleBuildStatus> {
+    const normalizedPlanId = Number(planId || 0);
+    if (!normalizedPlanId) {
+      throw new BadRequestException('planId is required');
+    }
+
+    const u: any = (req as any)?.user ?? {};
+    const userId = Number(u.userId ?? 1);
+
+    const planRow = await this.prisma.dvi_itinerary_plan_details.findUnique({
+      where: { itinerary_plan_ID: normalizedPlanId },
+      select: { itinerary_quote_ID: true },
+    });
+
+    if (!planRow) {
+      throw new NotFoundException('Plan not found');
+    }
+
+    const planVehicles = await this.prisma.dvi_itinerary_plan_vehicle_details.findMany({
+      where: {
+        itinerary_plan_id: normalizedPlanId,
+        status: 1,
+        deleted: 0,
+      },
+      select: {
+        vehicle_type_id: true,
+        vehicle_count: true,
+      },
+    });
+
+    const vehicles = planVehicles.map((v) => ({
+      vehicle_type_id: Number(v.vehicle_type_id || 0),
+      vehicle_count: Number(v.vehicle_count || 0),
+    })).filter((v) => v.vehicle_type_id > 0 && v.vehicle_count > 0);
+
+    this.scheduleVehicleBuild(
+      normalizedPlanId,
+      vehicles,
+      userId,
+      String(planRow.itinerary_quote_ID || ''),
+    );
+
+    return this.getVehicleBuildStatus(normalizedPlanId);
+  }
 
   /**
    * Normalize field values to arrays safely.
@@ -264,15 +485,6 @@ export class ItinerariesService {
       );
       console.log('[PERF] rebuildTravellers:', Date.now() - opStart2, 'ms');
 
-      opStart2 = Date.now();
-      await this.vehiclesEngine.rebuildPlanVehicles(
-        planId,
-        dto.vehicles,
-        tx,
-        userId,
-      );
-      console.log('[PERF] rebuildPlanVehicles:', Date.now() - opStart2, 'ms');
-
       if (
         dto.plan.itinerary_preference === 1 ||
         dto.plan.itinerary_preference === 3
@@ -304,7 +516,7 @@ export class ItinerariesService {
         quoteId: planRow?.itinerary_quote_ID,
         routeIds: routes.map((r: any) => r.itinerary_route_ID),
         message:
-          "Plan created/updated with routes, vehicles, travellers, hotspots, and hotels.",
+          "Plan created/updated with routes, travellers, hotspots, and hotels. Vehicle build runs post-commit.",
       };
     }, { timeout: 120000, maxWait: 20000 }); // Increased to 120s while we optimize further
 
@@ -313,14 +525,13 @@ export class ItinerariesService {
     await this.hotspotEngine.rebuildParkingCharges(result.planId, userId);
     console.log('[PERF] rebuildParkingCharges:', Date.now() - postStart, 'ms');
 
-    // Rebuild vendor eligible list and vendor vehicle details AFTER transaction completes
-    // (requires committed routes & hotspots data)
-    postStart = Date.now();
-    await this.itineraryVehiclesEngine.rebuildEligibleVendorList({
-      planId: result.planId,
-      createdBy: userId,
-    });
-    console.log('[PERF] rebuildEligibleVendorList:', Date.now() - postStart, 'ms');
+    // Build vehicle pricing asynchronously after commit so createPlan returns quickly.
+    this.scheduleVehicleBuild(
+      result.planId,
+      Array.isArray(dto.vehicles) ? dto.vehicles : [],
+      userId,
+      result?.quoteId ? String(result.quoteId) : undefined,
+    );
 
     // Step 10: Persist a reusable template snapshot for this itinerary shape.
     try {
@@ -331,7 +542,10 @@ export class ItinerariesService {
 
     console.log('[PERF] TOTAL createPlan:', Date.now() - perfStart, 'ms');
 
-    return result;
+    return {
+      ...result,
+      vehicleBuildStatus: 'PROCESSING',
+    };
   }
 
   async saveReusableTemplate(data: { planId: number; templateName?: string }, userId: number) {
@@ -7129,6 +7343,7 @@ export class ItinerariesService {
         preferredManualPlacementByRoute: {
           [Number(routeId)]: { hotspotOrder: Number(position.anchorOrder) },
         },
+        previewOnly: true,
       },
     );
 
@@ -7500,6 +7715,8 @@ export class ItinerariesService {
         hotspotEndTime?: Date | string | null;
         replacedHotspotId?: number;
       }>;
+      /** When true, restricts delete+rebuild to this route only and skips parking. */
+      previewOnly?: boolean;
     },
   ) {
     await this.assignManualHotspotPreferredOrders(tx, Number(planId), Number(routeId), manualHotspotIds, anchor);
@@ -7515,6 +7732,8 @@ export class ItinerariesService {
         ? { [Number(routeId)]: Number(preferredOrder) }
         : undefined,
       preferredManualPlacementByRoute: rebuildOptions?.preferredManualPlacementByRoute,
+      scopeToRouteId: rebuildOptions?.previewOnly === true ? Number(routeId) : undefined,
+      skipParking: rebuildOptions?.previewOnly === true,
     });
   }
 

@@ -661,7 +661,8 @@ export class AxisRoomsService {
   }
 
   /**
-   * POST rateUpdate - Stores or updates rates with dynamic occupancy
+   * POST rateUpdate - Accepts payload but intentionally does not write to DB.
+   * Rates are managed from Admin dashboard flows.
    */
   async updateRate(
     dto: RateUpdateRequestDto,
@@ -679,8 +680,6 @@ export class AxisRoomsService {
     const internalRateplanId = canonicalRatePlanDefinition?.defaultRateplanId || rateplanId;
     const { rate } = dto.data;
 
-    await this.logInbound('rateUpdate', propertyId, roomId, rateplanId, dto);
-
     const isValid = await this.validatePropertyMapping(propertyId);
     if (!isValid) {
       return {
@@ -689,117 +688,10 @@ export class AxisRoomsService {
       };
     }
 
-    const hotel = await this.prisma.dvi_hotel.findFirst({
-      where: {
-        axisrooms_property_id: propertyId,
-        axisrooms_enabled: 1,
-        deleted: { not: true },
-      },
-      select: { hotel_id: true, hotel_name: true },
-    });
-
-    const mappedRoom = await this.prisma.dvi_hotel_rooms.findFirst({
-      where: {
-        hotel_id: Number(hotel?.hotel_id || 0),
-        room_ref_code: roomId,
-        deleted: 0,
-        status: 1,
-      },
-      select: { room_ID: true, room_type_id: true },
-    });
-
     try {
-      for (const rateEntry of rate) {
-        const { startDate, endDate, ...incomingOccupancyRates } = rateEntry;
-        const parsedStart = new Date(startDate);
-        const parsedEnd = new Date(endDate);
-
-        const occupancyRates: Record<string, number> = {};
-        for (const [rawKey, rawValue] of Object.entries(incomingOccupancyRates || {})) {
-          const key = String(rawKey || '').trim();
-          if (!key) continue;
-          const value = this.toFiniteNumber(rawValue);
-          if (value === undefined) continue;
-          occupancyRates[key] = value;
-        }
-
-        const occupancyKeys = Object.keys(occupancyRates);
-        if (occupancyKeys.length === 0) {
-          continue;
-        }
-
-        await this.ensureRatePlanExists(propertyId, roomId, internalRateplanId, {
-          ratePlanName: canonicalRatePlanDefinition?.code || undefined,
-          occupancy: occupancyKeys,
-        });
-
-        if (hotel?.hotel_id && mappedRoom?.room_ID) {
-          const hid2 = Number(hotel.hotel_id);
-          const rid2 = Number((mappedRoom as any).room_ID);
-          const existingOccRate = await this.prisma.dvi_hotel_occupancy_rate.findFirst({
-            where: {
-              hotel_id: hid2,
-              room_id: rid2,
-              rateplan_id: internalRateplanId,
-              start_date: parsedStart,
-              end_date: parsedEnd,
-            } as any,
-            select: { id: true, occupancy_rates: true } as any,
-          });
-          if (existingOccRate) {
-            const merged = {
-              ...(typeof (existingOccRate as any).occupancy_rates === 'object' && (existingOccRate as any).occupancy_rates !== null
-                ? (existingOccRate as any).occupancy_rates as Record<string, number>
-                : {}),
-              ...occupancyRates,
-            };
-            await this.prisma.dvi_hotel_occupancy_rate.update({
-              where: { id: (existingOccRate as any).id } as any,
-              data: { occupancy_rates: merged, source: 'axisrooms', received_at: new Date() } as any,
-            });
-          } else {
-            await this.prisma.dvi_hotel_occupancy_rate.create({
-              data: {
-                hotel_id: hid2,
-                room_id: rid2,
-                rateplan_id: internalRateplanId,
-                start_date: parsedStart,
-                end_date: parsedEnd,
-                occupancy_rates: occupancyRates,
-                source: 'axisrooms',
-              } as any,
-            });
-          }
-        }
-
-        if (hotel?.hotel_id && mappedRoom?.room_ID) {
-          await this.upsertHotelPricebookRows(
-            Number(hotel.hotel_id),
-            Number(mappedRoom.room_ID),
-            mappedRoom.room_type_id ? Number(mappedRoom.room_type_id) : null,
-            parsedStart,
-            parsedEnd,
-            occupancyRates,
-          );
-        }
-      }
-
-      await this.axisroomsEmailNotifier.sendActionableUpdateEmail({
-        eventType: 'rateUpdate',
-        propertyId,
-        hotelId: hotel?.hotel_id ? Number(hotel.hotel_id) : undefined,
-        hotelName: (hotel as any)?.hotel_name || undefined,
-        roomId,
-        rateplanId: internalRateplanId,
-        rowCount: Array.isArray(rate) ? rate.length : 0,
-        details: (rate || []).map((rateEntry) => {
-          const { startDate, endDate, ...incomingOccupancyRates } = rateEntry;
-          const occupancyParts = Object.entries(incomingOccupancyRates || {})
-            .filter(([, rawValue]) => this.toFiniteNumber(rawValue) !== undefined)
-            .map(([key, rawValue]) => `${key}=${this.toFiniteNumber(rawValue)}`);
-          return `Rate ${startDate} to ${endDate}: ${occupancyParts.join(', ') || 'no occupancy values'}`;
-        }),
-      });
+      this.logger.log(
+        `AxisRooms rateUpdate ignored for DB writes (propertyId=${propertyId}, roomId=${roomId}, rateplanId=${rateplanId}, rows=${Array.isArray(rate) ? rate.length : 0})`,
+      );
 
       return {
         message: AXISROOMS_MESSAGES.RATE_UPDATE_SUCCESS,

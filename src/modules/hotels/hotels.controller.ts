@@ -602,68 +602,67 @@ export class HotelsController {
   }
 
   /** POST /api/v1/hotels/:id/reviews  (UI primary) */
-  @Post(':id/reviews')
-  addReviewForHotel(
-    @Param('id', ParseIntPipe) id: number,
-    @Body() body: ReviewDto,
-    @Req() req: any,
-  ) {
-    return this.hotels.addReviewUnified(
-      {
-        hotel_id: id,
-        rating: body.rating as any,
-        description: body.description,
-        status: body.status,
-      },
-      Number(req?.user?.id) || 1,
-    );
-  }
+@Post(':id/reviews')
+addReviewForHotel(
+  @Param('id', ParseIntPipe) id: number,
+  @Body() body: any,
+  @Req() req: any,
+) {
+  return this.hotels.addReviewUnified(
+    {
+      ...(body ?? {}),
+      hotel_id: id,
+      hotelId: id,
+    },
+    Number(req?.user?.id) || 1,
+  );
+}
+
 
   /** Alias: POST /api/v1/hotels/:id/feedback */
   @Post(':id/feedback')
-  addFeedbackAlias(
-    @Param('id', ParseIntPipe) id: number,
-    @Body() body: ReviewDto,
-    @Req() req: any,
-  ) {
-    return this.hotels.addReviewUnified(
-      {
-        hotel_id: id,
-        rating: body.rating as any,
-        description: body.description,
-        status: body.status,
-      },
-      Number(req?.user?.id) || 1,
-    );
-  }
+addFeedbackAlias(
+  @Param('id', ParseIntPipe) id: number,
+  @Body() body: any,
+  @Req() req: any,
+) {
+  return this.hotels.addReviewUnified(
+    {
+      ...(body ?? {}),
+      hotel_id: id,
+      hotelId: id,
+    },
+    Number(req?.user?.id) || 1,
+  );
+}
 
   /** Root POST for cases where UI sends { hotel_id, ... } to /api/v1/hotels/reviews */
-  @Post('reviews')
-  addReviewRoot(
-    @Body() body: ReviewDto & { hotel_id?: number },
-    @Req() req: any,
-  ) {
-    const hid = Number((body as any)?.hotel_id);
-    if (!Number.isFinite(hid) || hid <= 0) {
-      throw new BadRequestException('hotel_id is required');
-    }
-    return this.hotels.addReviewUnified(
-      {
-        hotel_id: hid,
-        rating: body.rating as any,
-        description: body.description,
-        status: body.status,
-      },
-      Number(req?.user?.id) || 1,
-    );
+ @Post('reviews')
+addReviewRoot(
+  @Body() body: any,
+  @Req() req: any,
+) {
+  const hid = Number(body?.hotel_id ?? body?.hotelId);
+  if (!Number.isFinite(hid) || hid <= 0) {
+    throw new BadRequestException('hotel_id is required');
   }
+
+  return this.hotels.addReviewUnified(
+    {
+      ...(body ?? {}),
+      hotel_id: hid,
+      hotelId: hid,
+    },
+    Number(req?.user?.id) || 1,
+  );
+}
 
   /** PATCH /api/v1/hotels/:id/reviews/:reviewId */
   @Patch(':id/reviews/:reviewId')
   updateReview(
     @Param('id', ParseIntPipe) id: number,
     @Param('reviewId', ParseIntPipe) reviewId: number,
-    @Body() body: ReviewDto,
+    @Body() body: any,
     @Req() req: any,
   ) {
     return this.hotels.updateReviewUnified(
