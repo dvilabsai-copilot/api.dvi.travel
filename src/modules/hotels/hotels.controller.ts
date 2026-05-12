@@ -323,6 +323,15 @@ export class HotelsController {
     return this.hotels.listRooms(id);
   }
 
+  /** Rate plans for a specific room — used by Admin Price Book tab */
+  @Get(':id/rooms/:roomId/rateplans')
+  getRoomRatePlans(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('roomId', ParseIntPipe) roomId: number,
+  ) {
+    return this.hotels.getRoomRatePlans(id, roomId);
+  }
+
   // NEW: bulk rooms endpoint used by React RoomsStep
   // POST /api/v1/hotels/:id/rooms/bulk  with body: { items: [ { ...roomPayload } ] }
   @Post(':id/rooms/bulk')
@@ -567,6 +576,23 @@ export class HotelsController {
     @Body() dto: BulkRoomPricebookDto,
   ) {
     return this.hotels.bulkUpsertRoomPricebook(id, dto);
+  }
+
+  /** Room pricebook range-view — returns saved occupancy rates pivoted by date for the Admin Price Book grid */
+  @Get(':id/pricebook/range-view')
+  getRoomPricebookRangeView(
+    @Param('id', ParseIntPipe) id: number,
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+    @Query('roomId') roomId: string,
+    @Query('rateplanId') rateplanId: string,
+  ) {
+    return this.hotels.getRoomPricebookRangeView(id, {
+      startDate,
+      endDate,
+      roomId: Number(roomId),
+      rateplanId,
+    });
   }
 
   // =============================================================================
