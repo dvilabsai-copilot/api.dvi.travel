@@ -2,6 +2,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
 import { Prisma } from '@prisma/client';
+import { CANONICAL_HOTEL_RATE_PLANS } from './hotel-rate-plans';
 import { PaginationQueryDto } from './dto/pagination.dto';
 import { CreateHotelDto } from './dto/create-hotel.dto';
 import { UpdateHotelDto } from './dto/update-hotel.dto';
@@ -1185,6 +1186,53 @@ export class HotelsService {
     return data;
   }
 
+  /** Returns rate plans configured for a specific room within a hotel.
+   *  Falls back to all canonical plans if none are persisted yet, so the
+   *  admin UI always has something to enter rates against.
+   */
+  async getRoomRatePlans(hotel_id: number, room_id: number) {
+    const hid = Number(hotel_id);
+    const rid = Number(room_id);
+    if (!Number.isFinite(hid) || !Number.isFinite(rid)) return { items: [] };
+
+    const rows = await this.prisma.dvi_hotel_room_rate_plan.findMany({
+      where: { hotel_id: hid, room_id: rid, deleted: 0 } as any,
+      orderBy: { hotel_room_rate_plan_id: 'asc' } as any,
+    } as any);
+
+    if (rows.length > 0) {
+      const items = (rows as any[]).map((r) => {
+        const canonical = CANONICAL_HOTEL_RATE_PLANS.find(
+          (c) => c.defaultRateplanId === String(r.rateplan_id) || c.externalRateplanId === String(r.rateplan_id),
+        );
+        return {
+          rateplanId: String(r.rateplan_id),
+          ratePlanCode: canonical?.code ?? null,
+          ratePlanName: r.rateplan_name || canonical?.name || String(r.rateplan_id),
+          description: canonical?.description ?? null,
+          includesBreakfast: canonical?.includesBreakfast ?? 0,
+          includesLunch: canonical?.includesLunch ?? 0,
+          includesDinner: canonical?.includesDinner ?? 0,
+          isFallback: false,
+        };
+      });
+      return { items };
+    }
+
+    // No DB rows for this room — return canonical plans as fallback
+    const items = CANONICAL_HOTEL_RATE_PLANS.map((c) => ({
+      rateplanId: c.defaultRateplanId,
+      ratePlanCode: c.code,
+      ratePlanName: c.name,
+      description: c.description,
+      includesBreakfast: c.includesBreakfast,
+      includesLunch: c.includesLunch,
+      includesDinner: c.includesDinner,
+      isFallback: true,
+    }));
+    return { items };
+  }
+
   async listRooms(hotel_id: number) {
     const id = Number(hotel_id);
     if (!Number.isFinite(id) || id <= 0) return [];
@@ -1809,6 +1857,84 @@ export class HotelsService {
 
     await Promise.all(tasks);
     return { success: true, rows: tasks.length };
+  }
+
+  /** ROOMS: Read saved occupancy pricing rows for a date range, pivoted by date for the UI grid. */
+  async getRoomPricebookRangeView(
+    hotel_id: number,
+    query: { startDate: string; endDate: string; roomId: number; rateplanId: string },
+  ) {
+    const hid = Number(hotel_id);
+    const rid = Number(query.roomId);
+    const rateplanId = String(query.rateplanId || '');
+    const start = new Date(`${query.startDate}T00:00:00.000Z`);
+    const end = new Date(`${query.endDate}T00:00:00.000Z`);
+
+    if (!Number.isFinite(hid) || !Number.isFinite(rid) || !rateplanId || isNaN(start.getTime()) || isNaN(end.getTime())) {
+      return { dates: [], rooms: [], occupancies: [] };
+    }
+
+    // All rows that overlap the requested range, latest received_at first
+    const rows = await (this.prisma as any).dvi_hotel_occupancy_rate.findMany({
+      where: {
+        hotel_id: hid,
+        room_id: rid,
+        rateplan_id: rateplanId,
+        start_date: { lte: end },
+        end_date: { gte: start },
+      },
+      orderBy: { received_at: 'desc' },
+    });
+
+    // Build a date spine
+    const dates: string[] = [];
+    const cur = new Date(start);
+    while (cur <= end) {
+      dates.push(cur.toISOString().slice(0, 10));
+      cur.setUTCDate(cur.getUTCDate() + 1);
+    }
+
+    // For each date, find the latest row that covers it; collect its occupancy keys
+    const bestByDate = new Map<string, Record<string, number>>();
+    for (const date of dates) {
+      const dt = new Date(`${date}T00:00:00.000Z`);
+      const best = (rows as any[]).find(
+        (r: any) => new Date(r.start_date) <= dt && new Date(r.end_date) >= dt,
+      );
+      if (best) {
+        const occ = best.occupancy_rates as Record<string, number>;
+        if (occ && typeof occ === 'object') {
+          bestByDate.set(date, occ);
+        }
+      }
+    }
+
+    // Collect all occupancy keys that appear in at least one effective row
+    const allOccKeys = new Set<string>();
+    for (const occ of bestByDate.values()) {
+      Object.keys(occ).forEach((k) => allOccKeys.add(k));
+    }
+
+    // Build pivoted occupancy rows
+    const occupancies = [...allOccKeys].map((occKey) => {
+      const values: Record<string, number> = {};
+      for (const date of dates) {
+        const occ = bestByDate.get(date);
+        if (occ && occ[occKey] !== undefined) {
+          values[date] = occ[occKey];
+        }
+      }
+      return {
+        roomId: rid,
+        roomName: '',
+        roomType: '',
+        rateplanId,
+        occupancyType: occKey,
+        values,
+      };
+    });
+
+    return { dates, rooms: [], occupancies };
   }
 
   /** ROOMS: Bulk upsert price rows for date ranges. */
