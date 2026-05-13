@@ -856,7 +856,10 @@ export class HotelsService {
     const axisroomsPropertyId = `AX_DVI_HOTEL_${(hotel as any).hotel_id}`;
     return this.prisma.dvi_hotel.update({
       where: { hotel_id: (hotel as any).hotel_id },
-      data: { axisrooms_property_id: axisroomsPropertyId } as any,
+      data: {
+        axisrooms_property_id: axisroomsPropertyId,
+        axisrooms_enabled: 1,
+      } as any,
     });
   }
 
@@ -1135,8 +1138,16 @@ export class HotelsService {
 
     const roomTypeId = this.toNumStrict(input?.room_type_id);
     if (roomTypeId !== undefined) data.room_type_id = roomTypeId;
-    const roomTypeText = this.toStr(input?.room_type);
-    if (roomTypeText) data.room_ref_code = roomTypeText.slice(0, 60);
+
+    // Prefer explicit room reference code from UI/API payload.
+    // Keep legacy fallback from room_type text only when ref code is absent.
+    const roomRefCode = this.toStr(input?.room_ref_code ?? input?.roomRefCode);
+    if (roomRefCode) {
+      data.room_ref_code = roomRefCode.slice(0, 60);
+    } else {
+      const roomTypeText = this.toStr(input?.room_type);
+      if (roomTypeText) data.room_ref_code = roomTypeText.slice(0, 60);
+    }
 
     data.room_title = this.toStr(input?.room_title);
     data.preferred_for = this.toStr(input?.preferred_for);
