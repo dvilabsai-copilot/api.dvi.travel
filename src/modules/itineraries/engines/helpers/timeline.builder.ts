@@ -471,6 +471,93 @@ export class TimelineBuilder {
     return !!aa && !!bb && aa === bb;
   }
 
+  private getSameCityRouteKey(route: Partial<RouteRow> | null | undefined): string {
+    const sourceKey = this.canonicalCityKey(String((route as any)?.location_name || ''));
+    const destinationKey = this.canonicalCityKey(
+      String((route as any)?.next_visiting_location || ''),
+    );
+
+    if (!sourceKey || !destinationKey || sourceKey !== destinationKey) {
+      return '';
+    }
+
+    return sourceKey;
+  }
+
+  private buildReservedSameCityHotspotIdsByRoute(
+    routes: RouteRow[],
+    existingHotspots: any[] | undefined,
+    scopeToRouteId?: number,
+  ): Map<number, Set<number>> {
+    const routeCityKeyById = new Map<number, string>();
+    for (const route of routes) {
+      const routeId = Number((route as any)?.itinerary_route_ID || 0);
+      if (!routeId) continue;
+
+      const cityKey = this.getSameCityRouteKey(route);
+      if (!cityKey) continue;
+
+      routeCityKeyById.set(routeId, cityKey);
+    }
+
+    if (routeCityKeyById.size === 0 || !Array.isArray(existingHotspots) || existingHotspots.length === 0) {
+      return new Map<number, Set<number>>();
+    }
+
+    const cityReservedIds = new Map<string, Set<number>>();
+    const routeReservedIds = new Map<number, Set<number>>();
+
+    for (const row of existingHotspots) {
+      if (Number((row as any)?.deleted || 0) !== 0) continue;
+
+      const routeId = Number((row as any)?.itinerary_route_ID || 0);
+      const hotspotId = Number((row as any)?.hotspot_ID || 0);
+      if (!routeId || !hotspotId) continue;
+
+      const cityKey = routeCityKeyById.get(routeId);
+      if (!cityKey) continue;
+
+      const isManual = Number((row as any)?.hotspot_plan_own_way || 0) === 1;
+      const shouldReserveForOtherRoutes = scopeToRouteId ? true : isManual;
+      if (!shouldReserveForOtherRoutes) continue;
+
+      if (!cityReservedIds.has(cityKey)) {
+        cityReservedIds.set(cityKey, new Set<number>());
+      }
+      cityReservedIds.get(cityKey)!.add(hotspotId);
+
+      if (!routeReservedIds.has(routeId)) {
+        routeReservedIds.set(routeId, new Set<number>());
+      }
+      routeReservedIds.get(routeId)!.add(hotspotId);
+    }
+
+    const reservedByRoute = new Map<number, Set<number>>();
+    for (const route of routes) {
+      const routeId = Number((route as any)?.itinerary_route_ID || 0);
+      if (!routeId) continue;
+
+      const cityKey = routeCityKeyById.get(routeId);
+      if (!cityKey) continue;
+
+      const cityIds = cityReservedIds.get(cityKey);
+      if (!cityIds || cityIds.size === 0) continue;
+
+      const ownIds = routeReservedIds.get(routeId) || new Set<number>();
+      const reservedIds = new Set<number>();
+      for (const hotspotId of cityIds) {
+        if (ownIds.has(hotspotId)) continue;
+        reservedIds.add(hotspotId);
+      }
+
+      if (reservedIds.size > 0) {
+        reservedByRoute.set(routeId, reservedIds);
+      }
+    }
+
+    return reservedByRoute;
+  }
+
   // Match a hotspot location token to a route city using normalized city keys.
   // This is intentionally broader than strict token equality so entries like
   // "Chennai Egmore Station" can match route city "Chennai" globally.
@@ -670,6 +757,12 @@ export class TimelineBuilder {
     if (options?.scopeToRouteId && scopedRoutes.length === 0) {
       return { hotspotRows: [], parkingRows: [] };
     }
+
+    const reservedSameCityHotspotIdsByRoute = this.buildReservedSameCityHotspotIdsByRoute(
+      routes,
+      existingHotspots,
+      options?.scopeToRouteId,
+    );
 
     // SCENARIO 2: Check if arrival city == departure city
     // If yes AND departure time > 4 PM, skip Day 1 local sightseeing and do it on last day
@@ -1640,6 +1733,37 @@ export class TimelineBuilder {
           route.itinerary_route_ID,
           allHotspots,
         );
+      }
+
+      const reservedSameCityHotspotIds = reservedSameCityHotspotIdsByRoute.get(
+        Number(route.itinerary_route_ID || 0),
+      );
+      if (reservedSameCityHotspotIds && reservedSameCityHotspotIds.size > 0) {
+        const beforeCount = selectedHotspots.length;
+        selectedHotspots = selectedHotspots.filter((h: any) => {
+          if ((h as any).isManualSelection) return true;
+          const hotspotId = Number((h as any).hotspot_ID || 0);
+          return hotspotId > 0 && !reservedSameCityHotspotIds.has(hotspotId);
+        });
+
+        if (selectedHotspots.length !== beforeCount) {
+          this.logBookingRule({
+            rule: 'SAME_CITY_RESERVED_HOTSPOTS_FILTERED',
+            quoteId:
+              (plan as any).quote_id ??
+              (plan as any).quoteId ??
+              (plan as any).quote_ID ??
+              null,
+            planId,
+            routeId: route.itinerary_route_ID,
+            filteredCount: Math.max(0, beforeCount - selectedHotspots.length),
+            reservedHotspotIds: Array.from(reservedSameCityHotspotIds.values()),
+            reason:
+              options?.scopeToRouteId
+                ? 'Route-scoped rebuild: keep same-city hotspots already present on sibling routes from being auto-selected again.'
+                : 'Full rebuild: keep hotspots manually reserved on sibling same-city routes from being auto-selected earlier in the plan.',
+          });
+        }
       }
 
       if (didHotelFirstCheckin) {

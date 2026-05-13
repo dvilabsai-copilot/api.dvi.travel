@@ -7439,6 +7439,7 @@ export class ItinerariesService {
     manualHotspotIds: number[],
     options?: {
       allowTopPriorityRemoval?: boolean;
+      previewOnly?: boolean;
       anchorIndex?: number;
       anchorType?: 'after_travel';
       removedOptionalHotspots?: any[];
@@ -7533,6 +7534,7 @@ export class ItinerariesService {
           preferredManualPlacementByRoute: {
             [Number(routeId)]: { hotspotOrder: Number(selectedPosition.anchorOrder) },
           },
+          previewOnly: options?.previewOnly === true,
         },
       );
     }
@@ -8240,6 +8242,7 @@ export class ItinerariesService {
       normalizedManualHotspotIds,
       {
         allowTopPriorityRemoval,
+        previewOnly: isPreviewOnly,
         anchorType: anchor?.anchorType,
         anchorIndex: anchor?.anchorIndex,
         removedOptionalHotspots,
@@ -8327,6 +8330,7 @@ export class ItinerariesService {
         normalizedManualHotspotIds,
         {
           allowTopPriorityRemoval,
+          previewOnly: isPreviewOnly,
           anchorType: anchor?.anchorType,
           anchorIndex: anchor?.anchorIndex,
           removedOptionalHotspots,
@@ -8410,6 +8414,7 @@ export class ItinerariesService {
         normalizedManualHotspotIds,
         {
           allowTopPriorityRemoval: true,
+          previewOnly: isPreviewOnly,
           anchorType: anchor?.anchorType,
           anchorIndex: anchor?.anchorIndex,
           removedOptionalHotspots,
