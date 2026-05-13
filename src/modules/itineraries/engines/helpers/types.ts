@@ -63,3 +63,13 @@ export interface RebuildSummary {
   warningCount: number;
   hasCriticalIssues: boolean;
 }
+
+export interface RouteRejectionSummary {
+  totalRejectedCandidates: number;
+  totalSelectedCandidates: number;
+  routeEnd: number;
+  operatingHours: number;
+  duplicate: number;
+  noRemainingWindow: number;
+  other: number;
+}

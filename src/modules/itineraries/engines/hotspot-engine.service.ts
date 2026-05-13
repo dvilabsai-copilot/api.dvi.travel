@@ -10,6 +10,7 @@ import { OperatingHoursChecker } from "./helpers/timeline.operating-hours";
 import { TimeConverter } from "./helpers/time-converter";
 import {
   RebuildSummary,
+  RouteRejectionSummary,
   RebuildWarning,
 } from "./helpers/types";
 import { buildRebuildReport } from "./helpers/rebuild-report.helper";
@@ -46,6 +47,8 @@ export class HotspotEngineService {
       }>;
       /** Scope delete + rebuild to a single route. Used by preview simulations to avoid rebuilding every day. */
       scopeToRouteId?: number;
+      /** Emits route-focused persistence counters without forcing a scoped rebuild. */
+      debugFocusRouteId?: number;
       /** Skip parking charge rebuild (safe for preview since it rolls back). */
       skipParking?: boolean;
     },
@@ -54,6 +57,7 @@ export class HotspotEngineService {
     droppedItems: any[];
     rebuildSummary: RebuildSummary;
     warnings: RebuildWarning[];
+    routeRejectionSummaryByRoute: Record<number, RouteRejectionSummary>;
   }> {
     // 1) Fetch ALL current hotspots (manual and auto) INCLUDING soft-deleted ones for reference
     // Note: We include deleted:1 records, but the timeline builder/selector will exclude them
@@ -91,6 +95,53 @@ export class HotspotEngineService {
       manualHotspotIds: Array.from(manualHotspotIds),
     });
 
+    const debugRebuildPersistence =
+      String(process.env.DEBUG_REBUILD_PERSISTENCE ?? "true").toLowerCase() !== "false";
+    const scopeRouteId = Number(options?.scopeToRouteId || 0) > 0
+      ? Number(options?.scopeToRouteId)
+      : null;
+    const focusRouteId = Number(options?.debugFocusRouteId || options?.scopeToRouteId || 0) > 0
+      ? Number(options?.debugFocusRouteId || options?.scopeToRouteId)
+      : null;
+
+    const logPersistence = (stage: string, details: Record<string, unknown> = {}) => {
+      if (!debugRebuildPersistence) return;
+      console.log("[RebuildPersist][RouteHotspotDetails]", {
+        planId,
+        scopeRouteId,
+        focusRouteId,
+        stage,
+        ...details,
+      });
+    };
+
+    const countActiveRows = async (itemType?: number, routeId?: number | null) => {
+      const where: any = {
+        itinerary_plan_ID: planId,
+        deleted: 0,
+      };
+      if (itemType) {
+        where.item_type = itemType;
+      }
+      if (routeId && routeId > 0) {
+        where.itinerary_route_ID = Number(routeId);
+      }
+      return (tx as any).dvi_itinerary_route_hotspot_details.count({ where });
+    };
+
+    const preDeletePlanRows = await countActiveRows();
+    const preDeletePlanVisitRows = await countActiveRows(4);
+    const preDeleteScopeRows = scopeRouteId ? await countActiveRows(undefined, scopeRouteId) : null;
+    const preDeleteScopeVisitRows = scopeRouteId ? await countActiveRows(4, scopeRouteId) : null;
+    const preDeleteFocusVisitRows = focusRouteId ? await countActiveRows(4, focusRouteId) : null;
+    logPersistence("pre_delete_snapshot", {
+      preDeletePlanRows,
+      preDeletePlanVisitRows,
+      preDeleteScopeRows,
+      preDeleteScopeVisitRows,
+      preDeleteFocusVisitRows,
+    });
+
     // 2) Delete ONLY active hotspot details before rebuilding.
     // We keep deleted: 1 records as "tombstones" to prevent auto-selection.
     // When scoped to a single route (preview), only delete rows for that route to avoid
@@ -99,7 +150,24 @@ export class HotspotEngineService {
     if (options?.scopeToRouteId) {
       deleteWhere.itinerary_route_ID = options.scopeToRouteId;
     }
-    await (tx as any).dvi_itinerary_route_hotspot_details.deleteMany({ where: deleteWhere });
+    const deleteResult = await (tx as any).dvi_itinerary_route_hotspot_details.deleteMany({ where: deleteWhere });
+    logPersistence("delete_many_result", {
+      deletedCount: Number(deleteResult?.count || 0),
+      deleteWhere,
+    });
+
+    const postDeletePlanRows = await countActiveRows();
+    const postDeletePlanVisitRows = await countActiveRows(4);
+    const postDeleteScopeRows = scopeRouteId ? await countActiveRows(undefined, scopeRouteId) : null;
+    const postDeleteScopeVisitRows = scopeRouteId ? await countActiveRows(4, scopeRouteId) : null;
+    const postDeleteFocusVisitRows = focusRouteId ? await countActiveRows(4, focusRouteId) : null;
+    logPersistence("post_delete_snapshot", {
+      postDeletePlanRows,
+      postDeletePlanVisitRows,
+      postDeleteScopeRows,
+      postDeleteScopeVisitRows,
+      postDeleteFocusVisitRows,
+    });
 
     if (!options?.skipParking) {
       const parkingWhere: any = { itinerary_plan_ID: planId };
@@ -129,7 +197,7 @@ export class HotspotEngineService {
       }
     }
 
-    const { hotspotRows, parkingRows } =
+    const { hotspotRows, parkingRows, routeRejectionSummaryByRoute } =
       await this.timelineBuilder.buildTimelineForPlan(tx, planId, existingHotspots, {
         manualPlacementByRoute,
         scopeToRouteId: options?.scopeToRouteId,
@@ -798,6 +866,29 @@ export class HotspotEngineService {
       };
     });
 
+    const payloadVisitRows = dbHotspotRows.filter((row: any) => Number((row as any).item_type || 0) === 4).length;
+    const payloadScopeVisitRows = scopeRouteId
+      ? dbHotspotRows.filter(
+          (row: any) =>
+            Number((row as any).item_type || 0) === 4 &&
+            Number((row as any).itinerary_route_ID || 0) === Number(scopeRouteId),
+        ).length
+      : null;
+    const payloadFocusVisitRows = focusRouteId
+      ? dbHotspotRows.filter(
+          (row: any) =>
+            Number((row as any).item_type || 0) === 4 &&
+            Number((row as any).itinerary_route_ID || 0) === Number(focusRouteId),
+        ).length
+      : null;
+    logPersistence("create_many_payload_summary", {
+      payloadRowCount: dbHotspotRows.length,
+      payloadVisitRows,
+      payloadScopeVisitRows,
+      payloadFocusVisitRows,
+      filteredParkingRowCount: filteredParkingRows.length,
+    });
+
     const targetIndex = dbHotspotRows.findIndex((row: any) =>
       Number((row as any).itinerary_plan_ID || 0) === 268 &&
       Number((row as any).itinerary_route_ID || 0) === 1238 &&
@@ -847,8 +938,24 @@ export class HotspotEngineService {
       });
     }
 
-    await (tx as any).dvi_itinerary_route_hotspot_details.createMany({
+    const createManyResult = await (tx as any).dvi_itinerary_route_hotspot_details.createMany({
       data: dbHotspotRows,
+    });
+    logPersistence("create_many_result", {
+      createdCount: Number(createManyResult?.count || 0),
+    });
+
+    const postCreatePlanRows = await countActiveRows();
+    const postCreatePlanVisitRows = await countActiveRows(4);
+    const postCreateScopeRows = scopeRouteId ? await countActiveRows(undefined, scopeRouteId) : null;
+    const postCreateScopeVisitRows = scopeRouteId ? await countActiveRows(4, scopeRouteId) : null;
+    const postCreateFocusVisitRows = focusRouteId ? await countActiveRows(4, focusRouteId) : null;
+    logPersistence("post_create_snapshot", {
+      postCreatePlanRows,
+      postCreatePlanVisitRows,
+      postCreateScopeRows,
+      postCreateScopeVisitRows,
+      postCreateFocusVisitRows,
     });
 
     if (targetIndex >= 0) {
@@ -960,7 +1067,13 @@ export class HotspotEngineService {
       droppedItems,
     });
 
-    return { shiftedItems, droppedItems, rebuildSummary, warnings };
+    return {
+      shiftedItems,
+      droppedItems,
+      rebuildSummary,
+      warnings,
+      routeRejectionSummaryByRoute,
+    };
   }
 
   /**

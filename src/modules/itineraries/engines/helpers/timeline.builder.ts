@@ -14,7 +14,7 @@
 //     Later you can pass the real user id from controller → service → engine.
 
 import { Prisma } from "@prisma/client";
-import { HotspotDetailRow } from "./types";
+import { HotspotDetailRow, RouteRejectionSummary } from "./types";
 import { RefreshmentBuilder } from "./refreshment.builder";
 import { TravelSegmentBuilder } from "./travel-segment.builder";
 import { HotspotSegmentBuilder } from "./hotspot-segment.builder";
@@ -99,13 +99,15 @@ const FREE_TIME_THRESHOLD_SECONDS = 45 * 60;
 // If a hotspot won't open for this long, defer it (pass 1 only) so other hotspots fill the gap first.
 const LARGE_WAIT_DEFER_THRESHOLD_SECONDS = 90 * 60;
 const MIN_DESTINATION_HOTSPOTS_FOR_RESERVATION = 4;
+const MAX_SCHEDULER_OPTIMIZATION_CYCLES = 4;
+const MAX_MUST_VISIT_REPAIR_ATTEMPTS = 2;
 
 export class TimelineBuilder {
   private currentQuoteId: string | null = null;
   private readonly verboseTimelineLogs =
     (process.env.DEBUG_TIMELINE_LOGS || 'false').toLowerCase() === 'true';
   private readonly verboseTimelineProofLogs =
-    (process.env.DEBUG_TIMELINE_PROOF || 'false').toLowerCase() === 'true';
+    (process.env.DEBUG_TIMELINE_PROOF || 'true').toLowerCase() === 'true';
 
   private readonly refreshmentBuilder = new RefreshmentBuilder();
   private readonly travelBuilder = new TravelSegmentBuilder();
@@ -115,6 +117,17 @@ export class TimelineBuilder {
   // Make parkingBuilder public so HotspotEngineService can use it for rebuilding parking charges
   public readonly parkingBuilder = new ParkingChargeBuilder();
   private readonly distanceHelper = new DistanceHelper();
+  private readonly routeRejectionSummaryByRoute = new Map<number, RouteRejectionSummary>();
+  private readonly routeEndBufferMinutes = Math.max(
+    0,
+    Number.parseInt(process.env.HOTSPOT_ROUTE_END_BUFFER_MINUTES || '0', 10) || 0,
+  );
+  private readonly routeEndBufferRouteIds = new Set<number>(
+    String(process.env.HOTSPOT_ROUTE_END_BUFFER_ROUTE_IDS || '')
+      .split(',')
+      .map((value) => Number.parseInt(value.trim(), 10))
+      .filter((value) => Number.isFinite(value) && value > 0),
+  );
 
   private toDateOnly(value: Date): Date {
     return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()));
@@ -220,6 +233,11 @@ export class TimelineBuilder {
   private logBookingRule(payload: Record<string, unknown>): void {
     if (this.verboseTimelineProofLogs) {
       console.log('[BOOKING_RULE]', payload);
+      try {
+        this.appendProofTrace(`[BOOKING_RULE] ${JSON.stringify(payload)}`);
+      } catch {
+        // Best-effort debugging only.
+      }
     }
   }
 
@@ -277,6 +295,62 @@ export class TimelineBuilder {
     }
 
     return { openingTime, closingTime };
+  }
+
+  private isHotspotClosedOnDay(
+    timingMap: Map<number, Map<number, any[]>>,
+    hotspotId: number,
+    dayOfWeek: number,
+  ): boolean {
+    const timingRecords = timingMap.get(hotspotId)?.get(dayOfWeek) || [];
+    if (!timingRecords.length) return false;
+
+    return timingRecords.every((timing) => Number((timing as any)?.hotspot_closed || 0) === 1);
+  }
+
+  private isHotspotClosedOnAllDays(
+    timingMap: Map<number, Map<number, any[]>>,
+    hotspotId: number,
+  ): boolean {
+    const dayMap = timingMap.get(hotspotId);
+    if (!dayMap || dayMap.size === 0) return false;
+
+    const allRows = Array.from(dayMap.values()).flat();
+    if (!allRows.length) return false;
+
+    return allRows.every((timing) => Number((timing as any)?.hotspot_closed || 0) === 1);
+  }
+
+  private getRouteVisitDaysForClosedFilter(
+    route: RouteRow,
+    previousRoute: RouteRow | undefined,
+  ): Set<number> {
+    const visitDays = new Set<number>();
+
+    if (route.itinerary_route_date) {
+      const jsDay = new Date(route.itinerary_route_date).getDay();
+      visitDays.add((jsDay + 6) % 7); // PHP convention: Monday=0
+    }
+
+    if (!previousRoute?.itinerary_route_date) {
+      return visitDays;
+    }
+
+    const currentCityKey = this.canonicalCityKey(
+      String((route as any).location_name || (route as any).next_visiting_location || ''),
+    );
+    const prevDestKey = this.canonicalCityKey(String((previousRoute as any).next_visiting_location || ''));
+    const prevSourceKey = this.canonicalCityKey(String((previousRoute as any).location_name || ''));
+
+    const isSameCityStayAcrossDays = !!currentCityKey && (currentCityKey === prevDestKey || currentCityKey === prevSourceKey);
+    if (!isSameCityStayAcrossDays) {
+      return visitDays;
+    }
+
+    const prevJsDay = new Date(previousRoute.itinerary_route_date).getDay();
+    visitDays.add((prevJsDay + 6) % 7);
+
+    return visitDays;
   }
 
   private getDayTimeSlot(timeValue: string): DayTimeSlot {
@@ -412,6 +486,10 @@ export class TimelineBuilder {
     selected: boolean;
     rejectedReasons: string[];
   }): void {
+    this.recordHotspotCandidateEvaluation(payload);
+
+    const rejectionGateBreakdown = this.buildRejectionGateBreakdown(payload.rejectedReasons);
+
     const rejectedReason = payload.rejectedReasons.length
       ? payload.rejectedReasons.join('; ')
       : null;
@@ -431,12 +509,114 @@ export class TimelineBuilder {
       selected: payload.selected,
       rejectedReason,
       rejectedReasons: payload.rejectedReasons,
+      rejectionGateBreakdown,
     });
 
     if (this.verboseTimelineProofLogs) {
       console.log('[HOTSPOT_CANDIDATE_EVAL]', evalPayload);
       this.appendProofTrace(`[HOTSPOT_CANDIDATE_EVAL] ${evalPayload}`);
     }
+  }
+
+  private shouldApplyRouteEndBuffer(routeId: number): boolean {
+    if (this.routeEndBufferMinutes <= 0) return false;
+    if (this.routeEndBufferRouteIds.size === 0) return true;
+    return this.routeEndBufferRouteIds.has(routeId);
+  }
+
+  private getRouteEndBufferSeconds(routeId: number): number {
+    if (!this.shouldApplyRouteEndBuffer(routeId)) {
+      return 0;
+    }
+    return this.routeEndBufferMinutes * 60;
+  }
+
+  private classifyRejectionReason(reason: string): keyof RouteRejectionSummary {
+    const normalized = String(reason || '').toLowerCase();
+    if (normalized.includes('php_gate_route_end') || normalized.includes('route end')) {
+      return 'routeEnd';
+    }
+    if (normalized.includes('operating hours') || normalized.includes('closed')) {
+      return 'operatingHours';
+    }
+    if (normalized.includes('duplicate')) {
+      return 'duplicate';
+    }
+    if (normalized.includes('no remaining day window')) {
+      return 'noRemainingWindow';
+    }
+    return 'other';
+  }
+
+  private buildRejectionGateBreakdown(rejectedReasons: string[]): {
+    alreadyUsedOnAnotherRoute: boolean;
+    outsideOperatingHours: boolean;
+    routeEndDeadline: boolean;
+    duplicateSuppression: boolean;
+    noRemainingWindow: boolean;
+    other: boolean;
+  } {
+    const normalizedReasons = (Array.isArray(rejectedReasons) ? rejectedReasons : [])
+      .map((reason) => String(reason || '').toLowerCase());
+
+    const hasMatch = (...needles: string[]) =>
+      normalizedReasons.some((reason) => needles.some((needle) => reason.includes(needle)));
+
+    const alreadyUsedOnAnotherRoute = hasMatch('duplicate_plan_scope', 'already used on another route', 'already on another day');
+    const outsideOperatingHours = hasMatch('operating hours', 'outside operating hours', 'closed on this day');
+    const routeEndDeadline = hasMatch('php_gate_route_end', 'route end', 'exceeds route end');
+    const duplicateSuppression = hasMatch('duplicate', 'dedup', 'de-dup');
+    const noRemainingWindow = hasMatch('no remaining day window', 'no remaining window');
+
+    return {
+      alreadyUsedOnAnotherRoute,
+      outsideOperatingHours,
+      routeEndDeadline,
+      duplicateSuppression,
+      noRemainingWindow,
+      other: !alreadyUsedOnAnotherRoute && !outsideOperatingHours && !routeEndDeadline && !duplicateSuppression && !noRemainingWindow,
+    };
+  }
+
+  private recordHotspotCandidateEvaluation(payload: {
+    routeId: number;
+    selected: boolean;
+    rejectedReasons: string[];
+  }): void {
+    const routeId = Number(payload.routeId || 0);
+    if (!routeId) return;
+
+    const existing = this.routeRejectionSummaryByRoute.get(routeId) || {
+      totalRejectedCandidates: 0,
+      totalSelectedCandidates: 0,
+      routeEnd: 0,
+      operatingHours: 0,
+      duplicate: 0,
+      noRemainingWindow: 0,
+      other: 0,
+    };
+
+    if (payload.selected) {
+      existing.totalSelectedCandidates += 1;
+      this.routeRejectionSummaryByRoute.set(routeId, existing);
+      return;
+    }
+
+    if (!Array.isArray(payload.rejectedReasons) || payload.rejectedReasons.length === 0) {
+      this.routeRejectionSummaryByRoute.set(routeId, existing);
+      return;
+    }
+
+    existing.totalRejectedCandidates += 1;
+    const matchedCategories = new Set<keyof RouteRejectionSummary>();
+    for (const reason of payload.rejectedReasons) {
+      const category = this.classifyRejectionReason(reason);
+      if (matchedCategories.has(category)) continue;
+      matchedCategories.add(category);
+      existing[category] += 1;
+    }
+
+    this.routeRejectionSummaryByRoute.set(routeId, existing);
   }
 
   /**
@@ -710,7 +890,13 @@ export class TimelineBuilder {
       /** When set, only process/rebuild this route instead of the entire plan. */
       scopeToRouteId?: number;
     },
-  ): Promise<{ hotspotRows: HotspotDetailRow[]; parkingRows: ParkingChargeRow[] }> {
+  ): Promise<{
+    hotspotRows: HotspotDetailRow[];
+    parkingRows: ParkingChargeRow[];
+    routeRejectionSummaryByRoute: Record<number, RouteRejectionSummary>;
+  }> {
+    this.routeRejectionSummaryByRoute.clear();
+
     const buildStart = Date.now();
     this.logTimeline('[TIMELINE] buildTimelineForPlan started for planId:', planId, existingHotspots ? `with ${existingHotspots.length} pre-loaded hotspots` : '');
     
@@ -721,7 +907,7 @@ export class TimelineBuilder {
     this.logTimeline('[TIMELINE] Fetch plan:', Date.now() - opStart, 'ms');
 
     if (!plan) {
-      return { hotspotRows: [], parkingRows: [] };
+      return { hotspotRows: [], parkingRows: [], routeRejectionSummaryByRoute: {} };
     }
 
     this.currentQuoteId = String(
@@ -746,7 +932,7 @@ export class TimelineBuilder {
     this.logTimeline('[TIMELINE] Fetch routes:', Date.now() - opStart, 'ms, count:', routes.length);
 
     if (!routes.length) {
-      return { hotspotRows: [], parkingRows: [] };
+      return { hotspotRows: [], parkingRows: [], routeRejectionSummaryByRoute: {} };
     }
 
     // When scoped to a single route (preview mode), skip all other routes.
@@ -754,8 +940,16 @@ export class TimelineBuilder {
       ? routes.filter((r) => r.itinerary_route_ID === options!.scopeToRouteId)
       : routes;
 
+    const previousRouteByRouteId = new Map<number, RouteRow>();
+    for (let i = 1; i < routes.length; i++) {
+      previousRouteByRouteId.set(
+        Number((routes[i] as any).itinerary_route_ID || 0),
+        routes[i - 1],
+      );
+    }
+
     if (options?.scopeToRouteId && scopedRoutes.length === 0) {
-      return { hotspotRows: [], parkingRows: [] };
+      return { hotspotRows: [], parkingRows: [], routeRejectionSummaryByRoute: {} };
     }
 
     const reservedSameCityHotspotIdsByRoute = this.buildReservedSameCityHotspotIdsByRoute(
@@ -838,6 +1032,30 @@ export class TimelineBuilder {
     }
     this.logTimeline('[TIMELINE] Batch-fetched ALL timing data:', Date.now() - opStart, 'ms, records:', allTimings.length);
 
+    const permanentlyClosedHotspotIds = new Set<number>();
+    for (const h of allHotspots) {
+      const hotspotId = Number((h as any).hotspot_ID || 0);
+      if (!hotspotId) continue;
+      if (this.isHotspotClosedOnAllDays(timingMap, hotspotId)) {
+        permanentlyClosedHotspotIds.add(hotspotId);
+      }
+    }
+
+    const filteredHotspots = allHotspots.filter((h) => {
+      const hotspotId = Number((h as any).hotspot_ID || 0);
+      return hotspotId > 0 && !permanentlyClosedHotspotIds.has(hotspotId);
+    });
+
+    this.logBookingRule({
+      rule: 'HOTSPOT_PREFILTER_ALL_DAYS_CLOSED',
+      quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+      planId,
+      closedHotspotCount: permanentlyClosedHotspotIds.size,
+      closedHotspotSample: Array.from(permanentlyClosedHotspotIds.values()).slice(0, 30),
+      beforeCount: allHotspots.length,
+      afterCount: filteredHotspots.length,
+    });
+
     const hotspotRows: HotspotDetailRow[] = [];
     const parkingRows: ParkingChargeRow[] = [];
 
@@ -901,6 +1119,7 @@ export class TimelineBuilder {
         if (endSeconds < startSeconds) {
           endSeconds += 86400; // Add 24 hours in seconds for overnight windows
         }
+        endSeconds += this.getRouteEndBufferSeconds(route.itinerary_route_ID);
         return endSeconds;
       };
       
@@ -1572,7 +1791,7 @@ export class TimelineBuilder {
             tx,
             planId,
             route.itinerary_route_ID,
-            allHotspots,
+            filteredHotspots,
           );
         } else {
           // PHP parity: for Day-1 different-cities non-direct routes, do not suppress
@@ -1582,7 +1801,7 @@ export class TimelineBuilder {
             tx,
             planId,
             route.itinerary_route_ID,
-            allHotspots,
+            filteredHotspots,
             undefined,
             false,
           );
@@ -1638,7 +1857,7 @@ export class TimelineBuilder {
               tx,
               planId,
               route.itinerary_route_ID,
-              allHotspots,
+              filteredHotspots,
               undefined,
               false,
             );
@@ -1657,7 +1876,7 @@ export class TimelineBuilder {
               tx,
               planId,
               route.itinerary_route_ID,
-              allHotspots,
+              filteredHotspots,
               undefined, // No source limit for direct travel
             );
           } else {
@@ -1667,7 +1886,7 @@ export class TimelineBuilder {
               tx,
               planId,
               route.itinerary_route_ID,
-              allHotspots,
+              filteredHotspots,
               undefined, // No limit - schedule all top priority hotspots
               true, // Skip destination hotspots - they'll be added on Day 2
             );
@@ -1685,7 +1904,7 @@ export class TimelineBuilder {
             tx,
             planId,
             route.itinerary_route_ID,
-            allHotspots,
+            filteredHotspots,
             undefined, // No source limit for direct travel (will skip source anyway)
           );
         } else {
@@ -1696,7 +1915,7 @@ export class TimelineBuilder {
             tx,
             planId,
             route.itinerary_route_ID,
-            allHotspots,
+            filteredHotspots,
             undefined, // No limit - schedule all top priority hotspots
             true, // Skip destination hotspots - they'll be added on Day 2
           );
@@ -1714,7 +1933,7 @@ export class TimelineBuilder {
             tx,
             planId,
             route.itinerary_route_ID,
-            allHotspots,
+            filteredHotspots,
           );
         } else {
           // Normal last route
@@ -1722,7 +1941,7 @@ export class TimelineBuilder {
             tx,
             planId,
             route.itinerary_route_ID,
-            allHotspots,
+            filteredHotspots,
           );
         }
       } else {
@@ -1731,8 +1950,38 @@ export class TimelineBuilder {
           tx,
           planId,
           route.itinerary_route_ID,
-          allHotspots,
+          filteredHotspots,
         );
+      }
+
+      {
+        const previousRoute = previousRouteByRouteId.get(Number((route as any).itinerary_route_ID || 0));
+        const visitDays = this.getRouteVisitDaysForClosedFilter(route, previousRoute);
+
+        const beforeClosedFilterCount = selectedHotspots.length;
+        selectedHotspots = selectedHotspots.filter((h: any) => {
+          const hotspotId = Number((h as any).hotspot_ID || 0);
+          if (!hotspotId) return false;
+          if (permanentlyClosedHotspotIds.has(hotspotId)) return false;
+
+          for (const dayOfWeek of visitDays.values()) {
+            if (this.isHotspotClosedOnDay(timingMap, hotspotId, dayOfWeek)) {
+              return false;
+            }
+          }
+          return true;
+        });
+
+        if (selectedHotspots.length !== beforeClosedFilterCount) {
+          this.logBookingRule({
+            rule: 'HOTSPOT_PREFILTER_VISIT_DAY_CLOSED',
+            quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+            planId,
+            routeId: route.itinerary_route_ID,
+            visitDays: Array.from(visitDays.values()).sort((a, b) => a - b),
+            filteredCount: beforeClosedFilterCount - selectedHotspots.length,
+          });
+        }
       }
 
       const reservedSameCityHotspotIds = reservedSameCityHotspotIdsByRoute.get(
@@ -2739,7 +2988,13 @@ export class TimelineBuilder {
           }
         }
         
-        const maxPasses = 4; // pass 1 = strict, pass 2 = deferred strict, pass 3 = rejected retry, pass 4 = filler
+        const PASS_STRICT = 1;
+        const PASS_FILLER_PRIMARY = 2;
+        const PASS_DEFERRED_PRIMARY = 3;
+        const PASS_REJECTED_RETRY = 4;
+        const PASS_FILLER_SECONDARY = 5;
+        const PASS_DEFERRED_SECONDARY = 6;
+        const maxPasses = PASS_DEFERRED_SECONDARY;
         let pass = 1;
         let addedInLastPass = true;
         const deferredPriorityHotspots: SelectedHotspot[] = [];
@@ -2747,9 +3002,89 @@ export class TimelineBuilder {
         const rejectedRetryHotspots: SelectedHotspot[] = [];
         const rejectedRetryHotspotIds = new Set<number>();
         const sourceCutoffRejectedHotspotIds = new Set<number>();
+        const strictHotspotIdSet = new Set<number>(
+          strictHotspots
+            .map((hs) => Number((hs as any).hotspot_ID || 0))
+            .filter((id) => id > 0),
+        );
+        let optimizationCycle = 1;
+        let mustVisitRepairAttempts = 0;
+        let previousCycleStateHash = '';
+        const isCycle4GapFillRoute =
+          this.isSameCity(String(sourceCity || currentLocationName), String(destinationCity || route.next_visiting_location || currentLocationName));
+
+        const previousRouteForCurrent = previousRouteByRouteId.get(Number((route as any).itinerary_route_ID || 0));
+        const previousDaySameCityHotspotIds = new Set<number>();
+        if (previousRouteForCurrent) {
+          const currentCityKey = this.canonicalCityKey(String((route as any).location_name || (route as any).next_visiting_location || ''));
+          const prevDestKey = this.canonicalCityKey(String((previousRouteForCurrent as any).next_visiting_location || ''));
+          const prevSourceKey = this.canonicalCityKey(String((previousRouteForCurrent as any).location_name || ''));
+          const isSameCityAcrossDays = !!currentCityKey && (currentCityKey === prevDestKey || currentCityKey === prevSourceKey);
+
+          if (isSameCityAcrossDays) {
+            const prevRouteId = Number((previousRouteForCurrent as any).itinerary_route_ID || 0);
+            for (const row of hotspotRows) {
+              if (
+                Number((row as any).itinerary_route_ID || 0) === prevRouteId &&
+                Number((row as any).item_type || 0) === 4
+              ) {
+                const hotspotId = Number((row as any).hotspot_ID || 0);
+                if (hotspotId > 0) previousDaySameCityHotspotIds.add(hotspotId);
+              }
+            }
+          }
+        }
+
+        const buildRemainingGapIntervals = () => {
+          let currentSeconds = timeToSeconds(currentTime);
+          if (currentSeconds < routeStartSeconds) currentSeconds += 86400;
+          const remainingSeconds = Math.max(0, routeEndSeconds - currentSeconds);
+          return [{ start: currentSeconds, end: routeEndSeconds, durationSeconds: remainingSeconds }];
+        };
+
+        const buildSchedulingStateHash = () => {
+          const scheduled = selectedHotspots
+            .map((hs) => Number((hs as any).hotspot_ID || 0))
+            .filter((id) => id > 0 && addedHotspotIds.has(id))
+            .sort((a, b) => a - b)
+            .join(',');
+          const deferred = Array.from(deferredPriorityHotspotIds.values()).sort((a, b) => a - b).join(',');
+          const retried = Array.from(rejectedRetryHotspotIds.values()).sort((a, b) => a - b).join(',');
+          return `${scheduled}|${deferred}|${retried}|${currentTime}`;
+        };
+
+        const scoreFillerHotspot = (hs: SelectedHotspot): number => {
+          const hotspotId = Number((hs as any).hotspot_ID || 0);
+          const distanceKm = Number((hs as any).hotspot_distance ?? 9999);
+          const priority = Number((hs as any).hotspot_priority ?? 0);
+          const bucket = String((hs as any).matched_bucket || '').toLowerCase();
+          const routeDay = route.itinerary_route_date ? new Date(route.itinerary_route_date).getDay() : 0;
+          const dayOfWeek = (routeDay + 6) % 7;
+          const timingSummary = this.getTimingWindowSummary(timingMap, hotspotId, dayOfWeek);
+          const nowSecondsRaw = timeToSeconds(currentTime);
+          let nowSeconds = nowSecondsRaw;
+          if (nowSeconds < routeStartSeconds) nowSeconds += 86400;
+
+          const remainingIntervals = buildRemainingGapIntervals();
+          const remainingGapSeconds = remainingIntervals.reduce((sum, g) => sum + Math.max(0, g.durationSeconds), 0);
+          const openingSecs = timingSummary.openingTime ? timeToSeconds(timingSummary.openingTime) : null;
+          let waitPenaltyMinutes = 0;
+          if (openingSecs !== null) {
+            let openingCandidate = openingSecs;
+            while (openingCandidate < nowSeconds) openingCandidate += 86400;
+            waitPenaltyMinutes = Math.max(0, Math.floor((openingCandidate - nowSeconds) / 60));
+          }
+
+          const bucketBias = bucket === 'destination' ? 18 : (bucket === 'via' ? 8 : 0);
+          const distanceScore = Number.isFinite(distanceKm) ? Math.max(0, 60 - Math.floor(distanceKm)) : 0;
+          const waitScore = Math.max(0, 80 - waitPenaltyMinutes);
+          const windowFitScore = Math.min(50, Math.floor(remainingGapSeconds / 900));
+
+          return (priority * 10) + bucketBias + distanceScore + waitScore + windowFitScore;
+        };
 
         const queueRejectedHotspotForRetry = (hotspot: SelectedHotspot, reason: string): boolean => {
-          if (pass !== 1) return false;
+          if (pass !== PASS_STRICT) return false;
           const hotspotId = Number(hotspot?.hotspot_ID || 0);
           if (hotspotId <= 0) return false;
           if (addedHotspotIds.has(hotspotId)) return false;
@@ -2774,16 +3109,34 @@ export class TimelineBuilder {
         // PHP includeHotspotInItinerary parity:
         // no precomputed "latest allowed to still reach destination" cutoff.
         
-        while (pass <= maxPasses) {
+        while (optimizationCycle <= MAX_SCHEDULER_OPTIMIZATION_CYCLES) {
+          pass = 1;
+          let addedInCurrentCycle = false;
+
+          this.logBookingRule({
+            rule: 'SCHEDULER_OPTIMIZATION_CYCLE_STARTED',
+            quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+            planId,
+            routeId: route.itinerary_route_ID,
+            cycle: optimizationCycle,
+            remainingIntervals: buildRemainingGapIntervals(),
+          });
+
+          while (pass <= maxPasses) {
           addedInLastPass = false;
           const hotspotsToTry =
-            pass === 1
+            pass === PASS_STRICT
               ? (strictPassHotspots as Array<SelectedHotspot>)
-              : pass === 2
-                ? (deferredPriorityHotspots as Array<SelectedHotspot>)
-                : pass === 3
-                  ? (rejectedRetryHotspots as Array<SelectedHotspot>)
-                  : (fillerHotspots as Array<SelectedHotspot>);
+              : (pass === PASS_FILLER_PRIMARY || pass === PASS_FILLER_SECONDARY)
+                ? [...(fillerHotspots as Array<SelectedHotspot>)].sort((a, b) => scoreFillerHotspot(b) - scoreFillerHotspot(a))
+                : (pass === PASS_DEFERRED_PRIMARY || pass === PASS_DEFERRED_SECONDARY)
+                  ? [...(deferredPriorityHotspots as Array<SelectedHotspot>)].sort((a, b) => {
+                      const pa = Number((a as any).hotspot_priority ?? 0);
+                      const pb = Number((b as any).hotspot_priority ?? 0);
+                      if (pa !== pb) return pa - pb;
+                      return Number((a as any).hotspot_distance ?? 9999) - Number((b as any).hotspot_distance ?? 9999);
+                    })
+                  : (rejectedRetryHotspots as Array<SelectedHotspot>);
 
           if (hotspotsToTry.length === 0) {
             pass++;
@@ -2799,7 +3152,7 @@ export class TimelineBuilder {
         const bucket = (sh as any).matched_bucket as string | undefined;
         const hotspotId = Number((sh as any).hotspot_ID || 0);
         const allowSourceCutoffRetryBypass =
-          pass === 3 && sourceCutoffRejectedHotspotIds.has(hotspotId);
+          pass === PASS_REJECTED_RETRY && sourceCutoffRejectedHotspotIds.has(hotspotId);
         const allowSoftOperatingHoursForDay1SameCity = isFirstRoute && isArrivalCityStayRoute;
 
 
@@ -2882,7 +3235,7 @@ export class TimelineBuilder {
           if (bucket === 'via'    && currentSecs >= viaCutoffSecs)    cutoffHit = true;
           if (bucket === 'destination' && currentSecs >= destCutoffSecs) cutoffHit = true;
           if (cutoffHit) {
-            if (pass === 1 && bucket === 'source') {
+            if (pass === PASS_STRICT && bucket === 'source') {
               sourceCutoffRejectedHotspotIds.add(hotspotId);
               queueRejectedHotspotForRetry(
                 sh,
@@ -3038,7 +3391,7 @@ export class TimelineBuilder {
             selected: false,
             rejectedReasons: [
               routeEndRejectionReason,
-              ...(pass === 1 && isStageAPriority ? ['Deferred: will retry in must-visit pass'] : []),
+              ...(pass === PASS_STRICT && isStageAPriority ? ['Deferred: will retry in must-visit pass'] : []),
             ],
           });
           continue;
@@ -3096,7 +3449,7 @@ export class TimelineBuilder {
           // so that other candidates can fill the gap first. In pass 2 currentTime will be
           // later (after those visits) and the remaining wait will be much smaller.
           const waitGapForDefer = nextWindowStartSeconds - absoluteTimeAfterTravel;
-          if (pass === 1 && waitGapForDefer >= LARGE_WAIT_DEFER_THRESHOLD_SECONDS) {
+          if (pass === PASS_STRICT && waitGapForDefer >= LARGE_WAIT_DEFER_THRESHOLD_SECONDS) {
             queueRejectedHotspotForRetry(
               sh,
               `large_wait_gap:${Math.floor(waitGapForDefer / 60)}min opens_at:${operatingHoursCheck.nextWindowStart}`,
@@ -3133,7 +3486,7 @@ export class TimelineBuilder {
               planId,
               routeId: route.itinerary_route_ID,
               hotspotId: sh.hotspot_ID,
-              reason: `Wait gap ${Math.floor(waitGapForDefer / 60)} min >= ${LARGE_WAIT_DEFER_THRESHOLD_SECONDS / 60} min threshold; deferred to pass 2`,
+              reason: `Wait gap ${Math.floor(waitGapForDefer / 60)} min >= ${LARGE_WAIT_DEFER_THRESHOLD_SECONDS / 60} min threshold; deferred until after filler-gap passes`,
               opensAt: operatingHoursCheck.nextWindowStart,
               currentTime,
             });
@@ -3300,7 +3653,7 @@ export class TimelineBuilder {
             selected: false,
             rejectedReasons: [
               operatingHoursCheck.isClosedForDay ? 'Rejected: closed on this day' : 'Rejected: outside operating hours',
-              ...(pass === 1 && isStageAPriority && !operatingHoursCheck.isClosedForDay
+              ...(pass === PASS_STRICT && isStageAPriority && !operatingHoursCheck.isClosedForDay
                 ? ['Deferred: will retry in must-visit pass']
                 : []),
             ],
@@ -3308,6 +3661,7 @@ export class TimelineBuilder {
           continue;
         }
         addedInLastPass = true; // Mark that we added something in this pass
+        addedInCurrentCycle = true;
         // 2.c) Build TRAVEL SEGMENT (item_type = 3)
         // PHP BEHAVIOR: Travel and Visit segments share the SAME hotspot_order
         const currentOrder = order;
@@ -3461,7 +3815,404 @@ export class TimelineBuilder {
       
       // End of hotspot scheduling loop
       pass++;
-      } // End of while loop for multi-pass scheduling
+      } // End of pass loop for this optimization cycle
+
+      const unscheduledStrictIds = Array.from(strictHotspotIdSet.values()).filter((id) => !addedHotspotIds.has(id));
+      const remainingFillerHotspotIds = (fillerHotspots as Array<SelectedHotspot>)
+        .map((h) => Number((h as any).hotspot_ID || 0))
+        .filter((id) => id > 0 && !addedHotspotIds.has(id));
+
+      if (isCycle4GapFillRoute && optimizationCycle === MAX_SCHEDULER_OPTIMIZATION_CYCLES) {
+        const jsDayForGapFill = route.itinerary_route_date
+          ? new Date(route.itinerary_route_date).getDay()
+          : 0;
+        const dayOfWeekForGapFill = (jsDayForGapFill + 6) % 7;
+
+        const persistedRouteRows = await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
+          where: {
+            itinerary_plan_ID: planId,
+            itinerary_route_ID: route.itinerary_route_ID,
+            item_type: 4,
+            status: 1,
+            deleted: 0,
+          },
+          select: { hotspot_ID: true },
+        });
+
+        const persistedRouteHotspotIds = new Set<number>(
+          persistedRouteRows
+            .map((row: any) => Number(row.hotspot_ID || 0))
+            .filter((id: number) => id > 0),
+        );
+
+        const routePlannedHotspotIds = new Set<number>(persistedRouteHotspotIds.values());
+        for (const row of hotspotRows as Array<any>) {
+          if (Number(row?.itinerary_route_ID || 0) !== Number(route.itinerary_route_ID || 0)) continue;
+          if (Number(row?.item_type || 0) !== 4) continue;
+          const id = Number(row?.hotspot_ID || 0);
+          if (id > 0) {
+            routePlannedHotspotIds.add(id);
+          }
+        }
+
+        const cycle4PrefilterRejects: Array<{ hotspotId: number; reason: string }> = [];
+
+        const cycle4Candidates = (selectedHotspots as Array<SelectedHotspot>)
+          .filter((h) => {
+            const hotspotId = Number((h as any).hotspot_ID || 0);
+            if (hotspotId <= 0) return false;
+            if (routePlannedHotspotIds.has(hotspotId)) {
+              cycle4PrefilterRejects.push({ hotspotId, reason: 'already_persisted_or_planned_on_route' });
+              return false;
+            }
+            if (previousDaySameCityHotspotIds.has(hotspotId)) {
+              cycle4PrefilterRejects.push({ hotspotId, reason: 'exists_on_previous_day_same_city' });
+              return false;
+            }
+            if (permanentlyClosedHotspotIds.has(hotspotId)) {
+              cycle4PrefilterRejects.push({ hotspotId, reason: 'closed_all_days' });
+              return false;
+            }
+            if (this.isHotspotClosedOnDay(timingMap, hotspotId, dayOfWeekForGapFill)) {
+              cycle4PrefilterRejects.push({ hotspotId, reason: 'closed_on_visit_day' });
+              return false;
+            }
+            return true;
+          })
+          .sort((a, b) => {
+            const ap = Number((a as any).hotspot_priority ?? 0);
+            const bp = Number((b as any).hotspot_priority ?? 0);
+            if (ap !== bp) return bp - ap;
+            const ad = Number((a as any).hotspot_distance ?? Number.POSITIVE_INFINITY);
+            const bd = Number((b as any).hotspot_distance ?? Number.POSITIVE_INFINITY);
+            if (ad !== bd) return ad - bd;
+            return Number((a as any).hotspot_ID || 0) - Number((b as any).hotspot_ID || 0);
+          });
+
+        this.logBookingRule({
+          rule: 'CYCLE4_SAME_CITY_GAP_FILL_START',
+          quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+          planId,
+          routeId: route.itinerary_route_ID,
+          cycle: optimizationCycle,
+          previousDayExcludedIds: Array.from(previousDaySameCityHotspotIds.values()).slice(0, 30),
+          persistedRouteHotspotCount: persistedRouteHotspotIds.size,
+          prefilterRejectedCount: cycle4PrefilterRejects.length,
+          prefilterRejectedSample: cycle4PrefilterRejects.slice(0, 40),
+          candidateCount: cycle4Candidates.length,
+        });
+
+        for (const sh of cycle4Candidates) {
+          let cycle4CurrentSeconds = timeToSeconds(currentTime);
+          if (cycle4CurrentSeconds < routeStartSeconds) {
+            cycle4CurrentSeconds += 86400;
+          }
+          if (cycle4CurrentSeconds >= routeEndSeconds) {
+            this.logBookingRule({
+              rule: 'CYCLE4_SAME_CITY_GAP_FILL_REJECTED',
+              quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+              planId,
+              routeId: route.itinerary_route_ID,
+              hotspotId: Number((sh as any).hotspot_ID || 0),
+              reason: 'route_time_window_exhausted_before_candidate',
+              currentTime,
+              routeEndTime,
+            });
+            break;
+          }
+
+          const hotspotData = hotspotMap.get((sh as any).hotspot_ID);
+          if (!hotspotData) {
+            this.logBookingRule({
+              rule: 'CYCLE4_SAME_CITY_GAP_FILL_REJECTED',
+              quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+              planId,
+              routeId: route.itinerary_route_ID,
+              hotspotId: Number((sh as any).hotspot_ID || 0),
+              reason: 'missing_hotspot_metadata',
+            });
+            continue;
+          }
+
+          const hotspotLocationName = (hotspotData.hotspot_location as string) || currentLocationName;
+          const hotspotDuration = hotspotData.hotspot_duration || '01:00:00';
+          const destCoords = {
+            lat: Number(hotspotData.hotspot_latitude ?? 0),
+            lon: Number(hotspotData.hotspot_longitude ?? 0),
+          };
+
+          const travelTimeToHotspot = await this.calculateTravelTimeWithCoords(
+            tx,
+            currentLocationName,
+            hotspotLocationName,
+            currentCoords,
+            destCoords,
+          );
+
+          const travelDurationSeconds = timeToSeconds(travelTimeToHotspot);
+          const hotspotDurationSeconds = timeToSeconds(hotspotDuration);
+          let absoluteTimeAfterTravel = cycle4CurrentSeconds + travelDurationSeconds;
+          let absoluteTimeAfterSightseeing = absoluteTimeAfterTravel + hotspotDurationSeconds;
+          let timeAfterTravel = secondsToTime(absoluteTimeAfterTravel);
+          let timeAfterSightseeing = secondsToTime(absoluteTimeAfterSightseeing);
+
+          let operatingHoursCheck = this.checkHotspotOperatingHoursFromMap(
+            timingMap,
+            (sh as any).hotspot_ID,
+            dayOfWeekForGapFill,
+            absoluteTimeAfterTravel,
+            absoluteTimeAfterSightseeing,
+          );
+
+          if (!operatingHoursCheck.canVisitNow && operatingHoursCheck.nextWindowStart) {
+            let nextWindowStartSeconds = timeToSeconds(operatingHoursCheck.nextWindowStart);
+            while (nextWindowStartSeconds < absoluteTimeAfterTravel) {
+              nextWindowStartSeconds += 86400;
+            }
+
+            const waitedVisitEndSeconds = nextWindowStartSeconds + hotspotDurationSeconds;
+            if (waitedVisitEndSeconds <= routeEndSeconds) {
+              const waitedCheck = this.checkHotspotOperatingHoursFromMap(
+                timingMap,
+                (sh as any).hotspot_ID,
+                dayOfWeekForGapFill,
+                nextWindowStartSeconds,
+                waitedVisitEndSeconds,
+              );
+
+              if (waitedCheck.canVisitNow) {
+                absoluteTimeAfterTravel = nextWindowStartSeconds;
+                absoluteTimeAfterSightseeing = waitedVisitEndSeconds;
+                timeAfterTravel = secondsToTime(absoluteTimeAfterTravel);
+                timeAfterSightseeing = secondsToTime(absoluteTimeAfterSightseeing);
+                operatingHoursCheck = { canVisitNow: true, nextWindowStart: null, isClosedForDay: false };
+              }
+            }
+          }
+
+          if (operatingHoursCheck.isClosedForDay || !operatingHoursCheck.canVisitNow) {
+            this.logBookingRule({
+              rule: 'CYCLE4_SAME_CITY_GAP_FILL_REJECTED',
+              quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+              planId,
+              routeId: route.itinerary_route_ID,
+              hotspotId: Number((sh as any).hotspot_ID || 0),
+              reason: operatingHoursCheck.isClosedForDay
+                ? 'closed_for_day_at_visit_time'
+                : 'outside_operating_hours_for_visit_window',
+              proposedStart: timeAfterTravel,
+              proposedEnd: timeAfterSightseeing,
+              nextWindowStart: operatingHoursCheck.nextWindowStart ?? null,
+            });
+            continue;
+          }
+
+          if (absoluteTimeAfterSightseeing > routeEndSeconds) {
+            this.logBookingRule({
+              rule: 'CYCLE4_SAME_CITY_GAP_FILL_REJECTED',
+              quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+              planId,
+              routeId: route.itinerary_route_ID,
+              hotspotId: Number((sh as any).hotspot_ID || 0),
+              reason: 'visit_overflows_route_end_after_travel_and_duration',
+              proposedStart: timeAfterTravel,
+              proposedEnd: timeAfterSightseeing,
+              routeEndTime,
+            });
+            continue;
+          }
+
+          const currentOrder = order;
+          const travelLocationType = this.getTravelLocationType(
+            currentLocationName,
+            hotspotLocationName,
+          );
+
+          const { row: travelRow, nextTime: tToHotspot } =
+            await this.travelBuilder.buildTravelSegment(tx, {
+              planId,
+              routeId: route.itinerary_route_ID,
+              order: currentOrder,
+              item_type: 3,
+              travelLocationType,
+              startTime: currentTime,
+              userId: createdByUserId,
+              sourceLocationName: currentLocationName,
+              destinationLocationName: hotspotLocationName,
+              hotspotId: (sh as any).hotspot_ID,
+              fromHotspotId: lastAddedHotspotId ?? undefined,
+              sourceCoords: currentCoords,
+              destCoords,
+            });
+
+          hotspotRows.push(travelRow);
+          currentTime = tToHotspot;
+
+          const gapBeforeVisitSeconds = Math.max(0, timeToSeconds(timeAfterTravel) - timeToSeconds(currentTime));
+          if (gapBeforeVisitSeconds >= FREE_TIME_THRESHOLD_SECONDS) {
+            hotspotRows.push(
+              this.buildFreeTimeBreakRow({
+                planId,
+                routeId: route.itinerary_route_ID,
+                order: currentOrder,
+                startTime: currentTime,
+                endTime: timeAfterTravel,
+                userId: createdByUserId,
+              }),
+            );
+            currentTime = timeAfterTravel;
+          }
+
+          if (timeToSeconds(timeAfterTravel) > timeToSeconds(currentTime)) {
+            currentTime = timeAfterTravel;
+          }
+
+          currentLocationName = hotspotLocationName;
+          currentCoords = destCoords;
+
+          const { row: hotspotRow, nextTime: tAfterHotspot } =
+            await this.hotspotBuilder.build(tx, {
+              planId,
+              routeId: route.itinerary_route_ID,
+              order: currentOrder,
+              hotspotId: (sh as any).hotspot_ID,
+              startTime: currentTime,
+              userId: createdByUserId,
+              totalAdult: plan.total_adult,
+              totalChildren: plan.total_children,
+              totalInfants: plan.total_infants,
+              nationality: plan.nationality,
+              itineraryPreference: plan.itinerary_preference,
+              isConflict: false,
+              conflictReason: '',
+            });
+
+          hotspotRows.push(hotspotRow);
+          routePlannedHotspotIds.add(Number((sh as any).hotspot_ID || 0));
+          addedHotspotIds.add((sh as any).hotspot_ID);
+          lastAddedHotspotId = (sh as any).hotspot_ID;
+          order++;
+          currentTime = tAfterHotspot;
+          addedInCurrentCycle = true;
+
+          const parkingRowsForHotspot = await this.parkingBuilder.buildForHotspot(tx, {
+            planId,
+            routeId: route.itinerary_route_ID,
+            hotspotId: (sh as any).hotspot_ID,
+            userId: createdByUserId,
+          });
+
+          if (parkingRowsForHotspot && parkingRowsForHotspot.length > 0) {
+            parkingRows.push(...parkingRowsForHotspot);
+          }
+
+          this.logBookingRule({
+            rule: 'CYCLE4_SAME_CITY_GAP_FILL_ADDED',
+            quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+            planId,
+            routeId: route.itinerary_route_ID,
+            hotspotId: Number((sh as any).hotspot_ID || 0),
+            visitTime: `${timeAfterTravel} - ${timeAfterSightseeing}`,
+          });
+        }
+      }
+      const stateHash = buildSchedulingStateHash();
+      const cycleMadeProgress = addedInCurrentCycle || stateHash !== previousCycleStateHash;
+
+      this.logBookingRule({
+        rule: 'SCHEDULER_CYCLE_SUMMARY',
+        quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+        planId,
+        routeId: route.itinerary_route_ID,
+        cycle: optimizationCycle,
+        addedInCurrentCycle,
+        cycleMadeProgress,
+        previousCycleStateHash,
+        stateHash,
+        strictTotal: strictHotspotIdSet.size,
+        strictUnscheduled: unscheduledStrictIds.length,
+        fillerRemaining: remainingFillerHotspotIds.length,
+        fillerRemainingSample: remainingFillerHotspotIds.slice(0, 10),
+      });
+
+      if (unscheduledStrictIds.length === 0) {
+        if (isCycle4GapFillRoute && optimizationCycle < MAX_SCHEDULER_OPTIMIZATION_CYCLES) {
+          this.logBookingRule({
+            rule: 'SCHEDULER_CONTINUE_TO_CYCLE4_GAP_FILL',
+            quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+            planId,
+            routeId: route.itinerary_route_ID,
+            cycle: optimizationCycle,
+            reason: 'Strict hotspots are satisfied; continue until cycle 4 to run isolated same-city gap fill pass.',
+          });
+          previousCycleStateHash = stateHash;
+          optimizationCycle++;
+          continue;
+        }
+
+        this.logBookingRule({
+          rule: 'SCHEDULER_EXIT_NO_STRICT_PENDING',
+          quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+          planId,
+          routeId: route.itinerary_route_ID,
+          cycle: optimizationCycle,
+          reason: 'No strict hotspots pending; optimization loop exits by design even when filler hotspots remain.',
+          fillerRemaining: remainingFillerHotspotIds.length,
+          fillerRemainingSample: remainingFillerHotspotIds.slice(0, 10),
+        });
+        this.logBookingRule({
+          rule: 'MUST_VISIT_GUARANTEE_SATISFIED',
+          quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+          planId,
+          routeId: route.itinerary_route_ID,
+          cycle: optimizationCycle,
+        });
+        break;
+      }
+
+      if (!cycleMadeProgress && mustVisitRepairAttempts < MAX_MUST_VISIT_REPAIR_ATTEMPTS) {
+        const repairQueued: number[] = [];
+        for (const hotspotId of unscheduledStrictIds) {
+          const hotspot = strictPassHotspots.find((h) => Number((h as any).hotspot_ID || 0) === hotspotId);
+          if (!hotspot) continue;
+          if (addedHotspotIds.has(hotspotId)) continue;
+          if (deferredPriorityHotspotIds.has(hotspotId) || rejectedRetryHotspotIds.has(hotspotId)) continue;
+          deferredPriorityHotspots.push(hotspot);
+          deferredPriorityHotspotIds.add(hotspotId);
+          rejectedRetryHotspots.push(hotspot);
+          rejectedRetryHotspotIds.add(hotspotId);
+          repairQueued.push(hotspotId);
+        }
+
+        mustVisitRepairAttempts++;
+        this.logBookingRule({
+          rule: 'MUST_VISIT_REPAIR_CYCLE_QUEUED',
+          quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+          planId,
+          routeId: route.itinerary_route_ID,
+          cycle: optimizationCycle,
+          repairAttempt: mustVisitRepairAttempts,
+          unscheduledStrictIds,
+          queuedForRepair: repairQueued,
+          reason: 'No further scheduling progress; forcing must-visit retry queues for repair cycle.',
+        });
+      } else if (!cycleMadeProgress || optimizationCycle >= MAX_SCHEDULER_OPTIMIZATION_CYCLES) {
+        this.logBookingRule({
+          rule: 'MUST_VISIT_GUARANTEE_UNRESOLVED',
+          quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+          planId,
+          routeId: route.itinerary_route_ID,
+          unscheduledStrictIds,
+          repairAttempts: mustVisitRepairAttempts,
+          maxCycles: MAX_SCHEDULER_OPTIMIZATION_CYCLES,
+          reason: 'Must-visit hotspots remain unscheduled after bounded optimization/repair cycles.',
+        });
+        break;
+      }
+
+      previousCycleStateHash = stateHash;
+      optimizationCycle++;
+      } // End of optimization cycles
 
       {
         let currentSeconds = timeToSeconds(currentTime);
@@ -3942,7 +4693,9 @@ export class TimelineBuilder {
       });
     }
 
-    return { hotspotRows, parkingRows };
+    const routeRejectionSummaryByRoute = Object.fromEntries(this.routeRejectionSummaryByRoute.entries());
+
+    return { hotspotRows, parkingRows, routeRejectionSummaryByRoute };
   }
 
   /**
