@@ -3015,12 +3015,44 @@ export class ItinerariesService {
     const seen = new Set<number>();
     const ordered: any[] = [];
 
+    const logPoolSuppression = (payload: {
+      hotspotId: number;
+      hotspotName?: string | null;
+      reason: 'already_used_on_another_route' | 'duplicate_in_final_de_dup';
+      source?: string;
+    }) => {
+      console.log('[HOTSPOT_POOL_SUPPRESSION]', JSON.stringify({
+        routeId,
+        hotspotId: payload.hotspotId,
+        hotspotName: payload.hotspotName ?? null,
+        reason: payload.reason,
+        source: payload.source ?? null,
+      }));
+    };
+
     const pushUnique = (h: any) => {
       const id = Number(h?.hotspot_ID);
-      if (!id || seen.has(id)) return;
+      if (!id) return;
+      if (seen.has(id)) {
+        logPoolSuppression({
+          hotspotId: id,
+          hotspotName: h?.hotspot_name ?? null,
+          reason: 'duplicate_in_final_de_dup',
+          source: String(h?.hotspot_location ?? h?.matched_bucket ?? 'unknown'),
+        });
+        return;
+      }
       // Keep excluded hotspots visible so users can re-add items deleted by mistake.
       // Excluded badge and behavior are handled in the UI / apply flow.
-      if (otherRouteAddedIds.has(id)) return; // ✅ Already on another day — suppress entirely
+      if (otherRouteAddedIds.has(id)) {
+        logPoolSuppression({
+          hotspotId: id,
+          hotspotName: h?.hotspot_name ?? null,
+          reason: 'already_used_on_another_route',
+          source: String(h?.hotspot_location ?? h?.matched_bucket ?? 'unknown'),
+        });
+        return; // ✅ Already on another day — suppress entirely
+      }
       seen.add(id);
       ordered.push(h);
     };
@@ -8632,7 +8664,38 @@ export class ItinerariesService {
         },
       });
 
-      const rebuildResult = await this.hotspotEngine.rebuildRouteHotspots(tx, normalizedPlanId);
+      const preRouteVisitCount = await (tx as any).dvi_itinerary_route_hotspot_details.count({
+        where: {
+          itinerary_plan_ID: normalizedPlanId,
+          itinerary_route_ID: normalizedRouteId,
+          item_type: 4,
+          deleted: 0,
+        },
+      });
+      console.log('[RouteRebuild][TRACE] before hotspot-engine rebuild', {
+        planId: normalizedPlanId,
+        routeId: normalizedRouteId,
+        preRouteVisitCount,
+      });
+
+      const rebuildResult = await this.hotspotEngine.rebuildRouteHotspots(tx, normalizedPlanId, undefined, {
+        debugFocusRouteId: normalizedRouteId,
+      });
+
+      const postRouteVisitCount = await (tx as any).dvi_itinerary_route_hotspot_details.count({
+        where: {
+          itinerary_plan_ID: normalizedPlanId,
+          itinerary_route_ID: normalizedRouteId,
+          item_type: 4,
+          deleted: 0,
+        },
+      });
+      console.log('[RouteRebuild][TRACE] after hotspot-engine rebuild', {
+        planId: normalizedPlanId,
+        routeId: normalizedRouteId,
+        postRouteVisitCount,
+        rebuildSummaryScheduledCount: Number(rebuildResult?.rebuildSummary?.totalHotspotsScheduled || 0),
+      });
 
       return {
         success: true,
@@ -8641,6 +8704,7 @@ export class ItinerariesService {
         message: 'Day hotspots rebuilt successfully',
         rebuildSummary: rebuildResult.rebuildSummary,
         warnings: rebuildResult.warnings,
+        routeRejectionSummaryByRoute: rebuildResult.routeRejectionSummaryByRoute,
       };
     }, { timeout: 60000 });
   }
