@@ -13,6 +13,29 @@ import { CreateReviewDto } from './dto/create-review.dto';
 import * as fs from 'fs';
 import * as path from 'path';
 
+const PRICEBOOK_OCCUPANCY_KEYS = [
+  'SINGLE',
+  'DOUBLE',
+  'TRIPLE',
+  'QUAD',
+  'PENTA',
+  'HEXA',
+  'HEPTA',
+  'OCTA',
+  'NONA',
+  'DECA',
+  'EXTRABED',
+  'CHILD_WITH_BED',
+  'CHILD_WITHOUT_BED',
+  'EXTRAADULT',
+  'EXTRACHILD',
+  'EXTRAADULT2',
+  'EXTRACHILD2',
+  'EXTRAADULT3',
+  'EXTRACHILD3',
+  'EXTRAINFANT',
+] as const;
+
 @Injectable()
 export class HotelsService {
   constructor(private prisma: PrismaService) {}
@@ -1138,16 +1161,8 @@ export class HotelsService {
 
     const roomTypeId = this.toNumStrict(input?.room_type_id);
     if (roomTypeId !== undefined) data.room_type_id = roomTypeId;
-
-    // Prefer explicit room reference code from UI/API payload.
-    // Keep legacy fallback from room_type text only when ref code is absent.
-    const roomRefCode = this.toStr(input?.room_ref_code ?? input?.roomRefCode);
-    if (roomRefCode) {
-      data.room_ref_code = roomRefCode.slice(0, 60);
-    } else {
-      const roomTypeText = this.toStr(input?.room_type);
-      if (roomTypeText) data.room_ref_code = roomTypeText.slice(0, 60);
-    }
+    const roomTypeText = this.toStr(input?.room_type);
+    if (roomTypeText) data.room_ref_code = roomTypeText.slice(0, 60);
 
     data.room_title = this.toStr(input?.room_title);
     data.preferred_for = this.toStr(input?.preferred_for);
@@ -1956,6 +1971,7 @@ export class HotelsService {
         room_id: number;
         startDate: string | Date;
         endDate: string | Date;
+        occupancyRates?: Record<string, number | string>;
         roomPrice?: number | string;
         extraBed?: number | string;
         childWithBed?: number | string;
@@ -2083,21 +2099,78 @@ export class HotelsService {
       const ratePlanName = this.toStr(it.ratePlanName) || rateplanId;
 
       const occupancyRates: Record<string, number> = {};
-      if (it.roomPrice !== undefined && it.roomPrice !== '' && it.roomPrice !== null) {
-        const single = Number(it.roomPrice);
-        if (Number.isFinite(single)) occupancyRates.SINGLE = single;
+      const rawOccupancyRates =
+        it.occupancyRates && typeof it.occupancyRates === 'object'
+          ? (it.occupancyRates as Record<string, unknown>)
+          : undefined;
+
+      if (rawOccupancyRates) {
+        for (const [key, value] of Object.entries(rawOccupancyRates)) {
+          const occupancyKey = this.toStr(key)?.toUpperCase();
+          const numericValue = this.toNumStrict(value);
+          if (!occupancyKey || numericValue === undefined) continue;
+          occupancyRates[occupancyKey] = numericValue;
+        }
       }
-      if (it.extraBed !== undefined && it.extraBed !== '' && it.extraBed !== null) {
-        const extraBed = Number(it.extraBed);
-        if (Number.isFinite(extraBed)) occupancyRates.EXTRABED = extraBed;
+
+      if (Object.keys(occupancyRates).length === 0) {
+        if (it.roomPrice !== undefined && it.roomPrice !== '' && it.roomPrice !== null) {
+          const single = Number(it.roomPrice);
+          if (Number.isFinite(single)) occupancyRates.SINGLE = single;
+        }
+        if (it.extraBed !== undefined && it.extraBed !== '' && it.extraBed !== null) {
+          const extraBed = Number(it.extraBed);
+          if (Number.isFinite(extraBed)) occupancyRates.EXTRABED = extraBed;
+        }
+        if (it.childWithBed !== undefined && it.childWithBed !== '' && it.childWithBed !== null) {
+          const childWithBed = Number(it.childWithBed);
+          if (Number.isFinite(childWithBed)) occupancyRates.CHILD_WITH_BED = childWithBed;
+        }
+        if (it.childWithoutBed !== undefined && it.childWithoutBed !== '' && it.childWithoutBed !== null) {
+          const childWithoutBed = Number(it.childWithoutBed);
+          if (Number.isFinite(childWithoutBed)) occupancyRates.CHILD_WITHOUT_BED = childWithoutBed;
+        }
       }
-      if (it.childWithBed !== undefined && it.childWithBed !== '' && it.childWithBed !== null) {
-        const childWithBed = Number(it.childWithBed);
-        if (Number.isFinite(childWithBed)) occupancyRates.CHILD_WITH_BED = childWithBed;
+
+      const existingOccupancyRate = await (this.prisma as any).dvi_hotel_occupancy_rate.findFirst({
+        where: {
+          hotel_id: hid,
+          room_id: roomId,
+          rateplan_id: rateplanId,
+          start_date: { lte: end },
+          end_date: { gte: start },
+        },
+        orderBy: { received_at: 'desc' },
+        select: { occupancy_rates: true } as any,
+      });
+
+      const existingOccupancyRates =
+        existingOccupancyRate &&
+        typeof existingOccupancyRate.occupancy_rates === 'object' &&
+        existingOccupancyRate.occupancy_rates !== null
+          ? (existingOccupancyRate.occupancy_rates as Record<string, unknown>)
+          : undefined;
+
+      const mergedOccupancyRates: Record<string, number> = {};
+      if (existingOccupancyRates) {
+        for (const [key, value] of Object.entries(existingOccupancyRates)) {
+          const numericValue = this.toNumStrict(value);
+          if (numericValue !== undefined) {
+            mergedOccupancyRates[this.toStr(key)?.toUpperCase() || key] = numericValue;
+          }
+        }
       }
-      if (it.childWithoutBed !== undefined && it.childWithoutBed !== '' && it.childWithoutBed !== null) {
-        const childWithoutBed = Number(it.childWithoutBed);
-        if (Number.isFinite(childWithoutBed)) occupancyRates.CHILD_WITHOUT_BED = childWithoutBed;
+
+      for (const [key, value] of Object.entries(occupancyRates)) {
+        mergedOccupancyRates[key] = value;
+      }
+
+      if (!existingOccupancyRates && Object.keys(mergedOccupancyRates).length > 0) {
+        for (const key of PRICEBOOK_OCCUPANCY_KEYS) {
+          if (mergedOccupancyRates[key] === undefined) {
+            mergedOccupancyRates[key] = 0;
+          }
+        }
       }
 
       await this.prisma.dvi_hotel_room_rate_plan.upsert({
@@ -2111,7 +2184,7 @@ export class HotelsService {
         update: {
           axisrooms_room_id: axisroomsRoomId,
           rateplan_name: ratePlanName,
-          occupancy: Object.keys(occupancyRates),
+          occupancy: Object.keys(mergedOccupancyRates),
           updatedon: new Date(),
         },
         create: {
@@ -2120,7 +2193,7 @@ export class HotelsService {
           axisrooms_room_id: axisroomsRoomId,
           rateplan_id: rateplanId,
           rateplan_name: ratePlanName,
-          occupancy: Object.keys(occupancyRates),
+          occupancy: Object.keys(mergedOccupancyRates),
           commission_perc: '0.0',
           tax_perc: '0.0',
           currency: 'INR',
@@ -2129,28 +2202,27 @@ export class HotelsService {
         },
       });
 
-      if (Object.keys(occupancyRates).length > 0) {
-        await this.prisma.dvi_hotel_occupancy_rate.upsert({
+      if (Object.keys(mergedOccupancyRates).length > 0) {
+        // Delete any existing overlapping rows for the same hotel/room/rateplan so that
+        // saving new prices always overwrites stale data for the same date range.
+        await (this.prisma as any).dvi_hotel_occupancy_rate.deleteMany({
           where: {
-            hotel_id_room_id_rateplan_id_start_date_end_date: {
-              hotel_id: hid,
-              room_id: roomId,
-              rateplan_id: rateplanId,
-              start_date: start,
-              end_date: end,
-            },
+            hotel_id: hid,
+            room_id: roomId,
+            rateplan_id: rateplanId,
+            start_date: { lte: end },
+            end_date: { gte: start },
           },
-          update: {
-            occupancy_rates: occupancyRates,
-            received_at: new Date(),
-          },
-          create: {
+        });
+
+        await this.prisma.dvi_hotel_occupancy_rate.create({
+          data: {
             hotel_id: hid,
             room_id: roomId,
             rateplan_id: rateplanId,
             start_date: start,
             end_date: end,
-            occupancy_rates: occupancyRates,
+            occupancy_rates: mergedOccupancyRates,
           },
         });
       }

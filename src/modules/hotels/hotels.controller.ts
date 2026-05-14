@@ -23,6 +23,7 @@ import {
   IsDateString,
   IsInt,
   IsNumber,
+  IsObject,
   IsOptional,
   IsString,
   ValidateNested,
@@ -109,6 +110,10 @@ class BulkRoomPricebookItemDto {
   @Type(() => Number)
   @IsNumber()
   childWithoutBed?: number | string;
+
+  @IsOptional()
+  @IsObject()
+  occupancyRates?: Record<string, number | string>;
 
   @IsOptional()
   @IsString()
