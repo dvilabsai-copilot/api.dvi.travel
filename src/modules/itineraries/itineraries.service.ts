@@ -3015,12 +3015,44 @@ export class ItinerariesService {
     const seen = new Set<number>();
     const ordered: any[] = [];
 
+    const logPoolSuppression = (payload: {
+      hotspotId: number;
+      hotspotName?: string | null;
+      reason: 'already_used_on_another_route' | 'duplicate_in_final_de_dup';
+      source?: string;
+    }) => {
+      console.log('[HOTSPOT_POOL_SUPPRESSION]', JSON.stringify({
+        routeId,
+        hotspotId: payload.hotspotId,
+        hotspotName: payload.hotspotName ?? null,
+        reason: payload.reason,
+        source: payload.source ?? null,
+      }));
+    };
+
     const pushUnique = (h: any) => {
       const id = Number(h?.hotspot_ID);
-      if (!id || seen.has(id)) return;
+      if (!id) return;
+      if (seen.has(id)) {
+        logPoolSuppression({
+          hotspotId: id,
+          hotspotName: h?.hotspot_name ?? null,
+          reason: 'duplicate_in_final_de_dup',
+          source: String(h?.hotspot_location ?? h?.matched_bucket ?? 'unknown'),
+        });
+        return;
+      }
       // Keep excluded hotspots visible so users can re-add items deleted by mistake.
       // Excluded badge and behavior are handled in the UI / apply flow.
-      if (otherRouteAddedIds.has(id)) return; // ✅ Already on another day — suppress entirely
+      if (otherRouteAddedIds.has(id)) {
+        logPoolSuppression({
+          hotspotId: id,
+          hotspotName: h?.hotspot_name ?? null,
+          reason: 'already_used_on_another_route',
+          source: String(h?.hotspot_location ?? h?.matched_bucket ?? 'unknown'),
+        });
+        return; // ✅ Already on another day — suppress entirely
+      }
       seen.add(id);
       ordered.push(h);
     };
@@ -7439,6 +7471,7 @@ export class ItinerariesService {
     manualHotspotIds: number[],
     options?: {
       allowTopPriorityRemoval?: boolean;
+      previewOnly?: boolean;
       anchorIndex?: number;
       anchorType?: 'after_travel';
       removedOptionalHotspots?: any[];
@@ -7533,6 +7566,7 @@ export class ItinerariesService {
           preferredManualPlacementByRoute: {
             [Number(routeId)]: { hotspotOrder: Number(selectedPosition.anchorOrder) },
           },
+          previewOnly: options?.previewOnly === true,
         },
       );
     }
@@ -8240,6 +8274,7 @@ export class ItinerariesService {
       normalizedManualHotspotIds,
       {
         allowTopPriorityRemoval,
+        previewOnly: isPreviewOnly,
         anchorType: anchor?.anchorType,
         anchorIndex: anchor?.anchorIndex,
         removedOptionalHotspots,
@@ -8327,6 +8362,7 @@ export class ItinerariesService {
         normalizedManualHotspotIds,
         {
           allowTopPriorityRemoval,
+          previewOnly: isPreviewOnly,
           anchorType: anchor?.anchorType,
           anchorIndex: anchor?.anchorIndex,
           removedOptionalHotspots,
@@ -8410,6 +8446,7 @@ export class ItinerariesService {
         normalizedManualHotspotIds,
         {
           allowTopPriorityRemoval: true,
+          previewOnly: isPreviewOnly,
           anchorType: anchor?.anchorType,
           anchorIndex: anchor?.anchorIndex,
           removedOptionalHotspots,
@@ -8627,7 +8664,38 @@ export class ItinerariesService {
         },
       });
 
-      const rebuildResult = await this.hotspotEngine.rebuildRouteHotspots(tx, normalizedPlanId);
+      const preRouteVisitCount = await (tx as any).dvi_itinerary_route_hotspot_details.count({
+        where: {
+          itinerary_plan_ID: normalizedPlanId,
+          itinerary_route_ID: normalizedRouteId,
+          item_type: 4,
+          deleted: 0,
+        },
+      });
+      console.log('[RouteRebuild][TRACE] before hotspot-engine rebuild', {
+        planId: normalizedPlanId,
+        routeId: normalizedRouteId,
+        preRouteVisitCount,
+      });
+
+      const rebuildResult = await this.hotspotEngine.rebuildRouteHotspots(tx, normalizedPlanId, undefined, {
+        debugFocusRouteId: normalizedRouteId,
+      });
+
+      const postRouteVisitCount = await (tx as any).dvi_itinerary_route_hotspot_details.count({
+        where: {
+          itinerary_plan_ID: normalizedPlanId,
+          itinerary_route_ID: normalizedRouteId,
+          item_type: 4,
+          deleted: 0,
+        },
+      });
+      console.log('[RouteRebuild][TRACE] after hotspot-engine rebuild', {
+        planId: normalizedPlanId,
+        routeId: normalizedRouteId,
+        postRouteVisitCount,
+        rebuildSummaryScheduledCount: Number(rebuildResult?.rebuildSummary?.totalHotspotsScheduled || 0),
+      });
 
       return {
         success: true,
@@ -8636,6 +8704,7 @@ export class ItinerariesService {
         message: 'Day hotspots rebuilt successfully',
         rebuildSummary: rebuildResult.rebuildSummary,
         warnings: rebuildResult.warnings,
+        routeRejectionSummaryByRoute: rebuildResult.routeRejectionSummaryByRoute,
       };
     }, { timeout: 60000 });
   }
@@ -9657,7 +9726,7 @@ export class ItinerariesService {
     if (!routes || routes.length <= 2) return routes;
 
     const debugOptimization = process.env.DEBUG_ROUTE_OPTIMIZER === 'true';
-    const exhaustiveSafeLimit = 8;
+    const exhaustiveSafeLimit = 10;
     const log = (msg: string) => console.log(msg);
     const logDebug = (msg: string) => {
       if (debugOptimization) {
@@ -9665,53 +9734,43 @@ export class ItinerariesService {
       }
     };
 
-    // Logging every permutation is unsafe in production because factorial growth quickly floods logs.
-    log(`[RouteOptimization] Start optimization. routeCount=${routes.length}`);
+    const sourceLocations = routes.map((r) => String(r?.location_name || '').trim());
+    const nextVisitingLocations = routes.map((r) => String(r?.next_visiting_location || '').trim());
+    const start = sourceLocations[0] || '';
+    const end = nextVisitingLocations[nextVisitingLocations.length - 1] || '';
 
-    // Broken chains indicate route reconstruction corruption; optimizing them can amplify bad data.
-    if (this.hasBrokenChain(routes)) {
-      log('[RouteOptimization] ⚠️ Broken route chain detected. Skipping optimization and returning original routes.');
+    if (!start || !end) {
+      log('[RouteOptimization] ⚠️ Missing start/end location. Returning original route order.');
       return routes;
     }
 
-    const context = this.extractRouteOptimizationContext(routes);
-    this.logOptimizationSummary(context, log, debugOptimization);
+    // PHP parity: use raw middle chain from next_visiting_location (excluding final end), no normalization/deduping.
+    const middleLocations = nextVisitingLocations.slice(0, -1);
 
-    const inputValidation = this.validateOptimizationInputs(context);
-    if (!inputValidation.isValid) {
-      log(`[RouteOptimization] ⚠️ Invalid optimization inputs (${inputValidation.reason}). Returning original route order.`);
+    log(`[RouteOptimization] Start optimization (PHP parity). routeCount=${routes.length}, start=${start}, end=${end}, middleCount=${middleLocations.length}`);
+
+    if (middleLocations.length <= 1) {
+      log(`[RouteOptimization] Skipping optimization. movableStopCount=${middleLocations.length}`);
       return routes;
-    }
-
-    // When 0/1 movable stops remain after normalization, exhaustive search adds no value.
-    if (context.movableStops.length <= 1) {
-      log(`[RouteOptimization] Skipping optimization. movableStopCount=${context.movableStops.length}`);
-      const anchorSafeLocations = this.removeConsecutiveDuplicateLocations([
-        context.start,
-        ...context.movableStops.map((s) => s.name),
-        context.end,
-      ]);
-      return this.buildOptimizedRouteDtos(routes, anchorSafeLocations, log);
     }
 
     let bestRouteLocations: string[] = [];
-    const middleLocations = context.movableStops.map((s) => s.name);
 
-    // Hard cap prevents factorial explosion in production even after normalization.
-    if (middleLocations.length <= exhaustiveSafeLimit) {
-      log(`[RouteOptimization] Using exhaustive permutation. candidateCount=${middleLocations.length}`);
+    // PHP parity: switch by total route count.
+    if (routes.length <= exhaustiveSafeLimit) {
+      log(`[RouteOptimization] Using exhaustive permutation (PHP parity). candidateCount=${middleLocations.length}`);
       bestRouteLocations = await this.optimizeWith_ExhaustivePermutation(
-        context.start,
-        context.end,
+        start,
+        end,
         middleLocations,
         log,
         logDebug,
       );
     } else {
-      log(`[RouteOptimization] Using nearest-neighbor + annealing. candidateCount=${middleLocations.length}`);
+      log(`[RouteOptimization] Using nearest-neighbor + annealing (PHP parity). candidateCount=${middleLocations.length}`);
       bestRouteLocations = await this.optimizeWith_NearestNeighborAndAnnealing(
-        context.start,
-        context.end,
+        start,
+        end,
         middleLocations,
         logDebug,
       );
@@ -9722,7 +9781,7 @@ export class ItinerariesService {
       return routes;
     }
 
-    const optimizedRoutes = this.buildOptimizedRouteDtos(routes, bestRouteLocations, log);
+    const optimizedRoutes = this.buildOptimizedRouteDtos(routes, bestRouteLocations, log, { phpParity: true });
     const finalChain = optimizedRoutes.map(r => `${r.location_name}→${r.next_visiting_location}`).join(' | ');
     log(`[RouteOptimization] ✅ Completed. optimizedRouteCount=${optimizedRoutes.length}. chain=${finalChain}`);
     return optimizedRoutes;
@@ -9996,16 +10055,30 @@ export class ItinerariesService {
     }
   }
 
-  private buildOptimizedRouteDtos(routes: any[], routeLocations: string[], log: (msg: string) => void): any[] {
-    const cleanedLocations = this.removeConsecutiveDuplicateLocations(routeLocations);
+  private buildOptimizedRouteDtos(
+    routes: any[],
+    routeLocations: string[],
+    log: (msg: string) => void,
+    options?: { phpParity?: boolean },
+  ): any[] {
+    const cleanedLocations = options?.phpParity
+      ? routeLocations.map((loc) => String(loc || '').trim()).filter((loc) => !!loc)
+      : this.removeConsecutiveDuplicateLocations(routeLocations);
 
     if (cleanedLocations.length < 2) {
       log('[RouteOptimization] ⚠️ Optimized route locations are invalid after cleanup. Returning original route order.');
       return routes;
     }
 
+    if (options?.phpParity && cleanedLocations.length !== routes.length + 1) {
+      log(`[RouteOptimization] ⚠️ PHP parity route length mismatch. expected=${routes.length + 1}, actual=${cleanedLocations.length}. Returning original route order.`);
+      return routes;
+    }
+
     const optimizedRoutes: any[] = [];
-    const routeCount = cleanedLocations.length - 1;
+    const routeCount = options?.phpParity
+      ? routes.length
+      : cleanedLocations.length - 1;
 
     for (let i = 0; i < routeCount; i++) {
       const templateRoute = routes[Math.min(i, routes.length - 1)];

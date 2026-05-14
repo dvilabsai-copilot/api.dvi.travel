@@ -1,0 +1,13 @@
+{
+  "planId": 380,
+  "quoteId": "DVI20260588",
+  "routeIds": [
+    4170,
+    4171,
+    4172,
+    4173,
+    4174
+  ],
+  "message": "Plan created/updated with routes, travellers, hotspots, and hotels. Vehicle build runs post-commit.",
+  "vehicleBuildStatus": "PROCESSING"
+}

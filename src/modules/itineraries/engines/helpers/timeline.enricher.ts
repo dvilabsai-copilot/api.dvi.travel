@@ -80,6 +80,11 @@ export class TimelineEnricher {
           break;
         case 2:
         case 3:
+          if (Number((row as any).allow_break_hours ?? 0) === 1) {
+            text = "Waiting / Buffer";
+            type = "break";
+            break;
+          }
           const route = routeMap.get(Number(row.itinerary_route_ID)) as any || {};
           const hotspotDataTravel = row.hotspot_ID ? hotspotMap.get(Number(row.hotspot_ID)) : null;
           const toName = hotspotDataTravel
