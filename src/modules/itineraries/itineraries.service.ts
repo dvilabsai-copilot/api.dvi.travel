@@ -9726,7 +9726,7 @@ export class ItinerariesService {
     if (!routes || routes.length <= 2) return routes;
 
     const debugOptimization = process.env.DEBUG_ROUTE_OPTIMIZER === 'true';
-    const exhaustiveSafeLimit = 8;
+    const exhaustiveSafeLimit = 10;
     const log = (msg: string) => console.log(msg);
     const logDebug = (msg: string) => {
       if (debugOptimization) {
@@ -9734,53 +9734,43 @@ export class ItinerariesService {
       }
     };
 
-    // Logging every permutation is unsafe in production because factorial growth quickly floods logs.
-    log(`[RouteOptimization] Start optimization. routeCount=${routes.length}`);
+    const sourceLocations = routes.map((r) => String(r?.location_name || '').trim());
+    const nextVisitingLocations = routes.map((r) => String(r?.next_visiting_location || '').trim());
+    const start = sourceLocations[0] || '';
+    const end = nextVisitingLocations[nextVisitingLocations.length - 1] || '';
 
-    // Broken chains indicate route reconstruction corruption; optimizing them can amplify bad data.
-    if (this.hasBrokenChain(routes)) {
-      log('[RouteOptimization] ⚠️ Broken route chain detected. Skipping optimization and returning original routes.');
+    if (!start || !end) {
+      log('[RouteOptimization] ⚠️ Missing start/end location. Returning original route order.');
       return routes;
     }
 
-    const context = this.extractRouteOptimizationContext(routes);
-    this.logOptimizationSummary(context, log, debugOptimization);
+    // PHP parity: use raw middle chain from next_visiting_location (excluding final end), no normalization/deduping.
+    const middleLocations = nextVisitingLocations.slice(0, -1);
 
-    const inputValidation = this.validateOptimizationInputs(context);
-    if (!inputValidation.isValid) {
-      log(`[RouteOptimization] ⚠️ Invalid optimization inputs (${inputValidation.reason}). Returning original route order.`);
+    log(`[RouteOptimization] Start optimization (PHP parity). routeCount=${routes.length}, start=${start}, end=${end}, middleCount=${middleLocations.length}`);
+
+    if (middleLocations.length <= 1) {
+      log(`[RouteOptimization] Skipping optimization. movableStopCount=${middleLocations.length}`);
       return routes;
-    }
-
-    // When 0/1 movable stops remain after normalization, exhaustive search adds no value.
-    if (context.movableStops.length <= 1) {
-      log(`[RouteOptimization] Skipping optimization. movableStopCount=${context.movableStops.length}`);
-      const anchorSafeLocations = this.removeConsecutiveDuplicateLocations([
-        context.start,
-        ...context.movableStops.map((s) => s.name),
-        context.end,
-      ]);
-      return this.buildOptimizedRouteDtos(routes, anchorSafeLocations, log);
     }
 
     let bestRouteLocations: string[] = [];
-    const middleLocations = context.movableStops.map((s) => s.name);
 
-    // Hard cap prevents factorial explosion in production even after normalization.
-    if (middleLocations.length <= exhaustiveSafeLimit) {
-      log(`[RouteOptimization] Using exhaustive permutation. candidateCount=${middleLocations.length}`);
+    // PHP parity: switch by total route count.
+    if (routes.length <= exhaustiveSafeLimit) {
+      log(`[RouteOptimization] Using exhaustive permutation (PHP parity). candidateCount=${middleLocations.length}`);
       bestRouteLocations = await this.optimizeWith_ExhaustivePermutation(
-        context.start,
-        context.end,
+        start,
+        end,
         middleLocations,
         log,
         logDebug,
       );
     } else {
-      log(`[RouteOptimization] Using nearest-neighbor + annealing. candidateCount=${middleLocations.length}`);
+      log(`[RouteOptimization] Using nearest-neighbor + annealing (PHP parity). candidateCount=${middleLocations.length}`);
       bestRouteLocations = await this.optimizeWith_NearestNeighborAndAnnealing(
-        context.start,
-        context.end,
+        start,
+        end,
         middleLocations,
         logDebug,
       );
@@ -9791,7 +9781,7 @@ export class ItinerariesService {
       return routes;
     }
 
-    const optimizedRoutes = this.buildOptimizedRouteDtos(routes, bestRouteLocations, log);
+    const optimizedRoutes = this.buildOptimizedRouteDtos(routes, bestRouteLocations, log, { phpParity: true });
     const finalChain = optimizedRoutes.map(r => `${r.location_name}→${r.next_visiting_location}`).join(' | ');
     log(`[RouteOptimization] ✅ Completed. optimizedRouteCount=${optimizedRoutes.length}. chain=${finalChain}`);
     return optimizedRoutes;
@@ -10065,16 +10055,30 @@ export class ItinerariesService {
     }
   }
 
-  private buildOptimizedRouteDtos(routes: any[], routeLocations: string[], log: (msg: string) => void): any[] {
-    const cleanedLocations = this.removeConsecutiveDuplicateLocations(routeLocations);
+  private buildOptimizedRouteDtos(
+    routes: any[],
+    routeLocations: string[],
+    log: (msg: string) => void,
+    options?: { phpParity?: boolean },
+  ): any[] {
+    const cleanedLocations = options?.phpParity
+      ? routeLocations.map((loc) => String(loc || '').trim()).filter((loc) => !!loc)
+      : this.removeConsecutiveDuplicateLocations(routeLocations);
 
     if (cleanedLocations.length < 2) {
       log('[RouteOptimization] ⚠️ Optimized route locations are invalid after cleanup. Returning original route order.');
       return routes;
     }
 
+    if (options?.phpParity && cleanedLocations.length !== routes.length + 1) {
+      log(`[RouteOptimization] ⚠️ PHP parity route length mismatch. expected=${routes.length + 1}, actual=${cleanedLocations.length}. Returning original route order.`);
+      return routes;
+    }
+
     const optimizedRoutes: any[] = [];
-    const routeCount = cleanedLocations.length - 1;
+    const routeCount = options?.phpParity
+      ? routes.length
+      : cleanedLocations.length - 1;
 
     for (let i = 0; i < routeCount; i++) {
       const templateRoute = routes[Math.min(i, routes.length - 1)];
