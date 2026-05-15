@@ -576,16 +576,22 @@ export function determineTravelType(
   //      ($previous_destination_location_city == $source_location_city)) && 
   //     $check_local_via_route_city == true)
   
-  if (
-    source_city === destination_city &&
-    source_city === vehicle_origin_city &&
-    (route_count === 1 || route_count === total_routes || previous_destination_city === source_city) &&
-    check_local_via_route_city
-  ) {
-    return 1; // LOCAL
+    // NestJS note: The PHP vehicle_origin_city check is relaxed for middle-route same-city
+    // continuation days.  When the vehicle has already arrived in the current city on the
+    // previous day (previous_destination_city === source_city), the origin-city requirement
+    // is waived so that local sightseeing days within outstation trips are correctly priced
+    // using a LOCAL slab (e.g. BLR vehicle doing COORG→COORG on day 2 of a BLR→COORG trip).
+    if (source_city === destination_city && check_local_via_route_city) {
+      const isOriginCityFirstOrLast =
+        source_city === vehicle_origin_city &&
+        (route_count === 1 || route_count === total_routes);
+      const isContinuationDay = previous_destination_city === source_city;
+      if (isOriginCityFirstOrLast || isContinuationDay) {
+        return 1; // LOCAL
+      }
+    }
+    return 2; // OUTSTATION
   }
-  return 2; // OUTSTATION
-}
 
 /**
  * Calculate time in HH.MM format from hours
@@ -1092,12 +1098,18 @@ export async function calculateRouteVehicleDetails(
 
   TOTAL_RUNNING_KM = String(baseRunningKm.toFixed(2));
 
-  const applyPickupForThisRoute =
-    sourceCoords && (travel_type === 1 || route_count === 1);
-  const applyDropForThisRoute =
-    destCoords && (travel_type === 1 || route_count === total_routes);
+  const isBaseCityLocalRoute =
+    travel_type === 1 &&
+    sourceCity === ctx.vehicle_origin_city &&
+    destCity === ctx.vehicle_origin_city;
 
-  // LOCAL routes: pickup/drop are applied daily.
+  const applyPickupForThisRoute =
+    !!sourceCoords && (isBaseCityLocalRoute || route_count === 1);
+  const applyDropForThisRoute =
+    !!destCoords && (isBaseCityLocalRoute || route_count === total_routes);
+
+  // LOCAL routes in the vehicle's base city: pickup/drop are applied daily.
+  // LOCAL continuation days away from the base city: vehicle stays with the passengers.
   // OUTSTATION routes: pickup on Day 1 and drop on last day.
   if (applyPickupForThisRoute && sourceCoords) {
     const pickupDistance = calculateDistanceAndDuration(
@@ -1298,11 +1310,18 @@ export async function calculateRouteVehicleDetails(
   } else {
     // OUTSTATION - use day-based pricebook
     time_limit_id = 0;
-    TOTAL_LOCAL_EXTRA_KM = 0;
-    TOTAL_LOCAL_EXTRA_KM_CHARGES = 0;
     TOTAL_LOCAL_EXTRA_HOURS = 0;
     TOTAL_LOCAL_EXTRA_HOUR_CHARGES = 0;
-    TOTAL_ALLOWED_LOCAL_KM = 0;
+    TOTAL_ALLOWED_LOCAL_KM = ctx.get_kms_limit; // per-day allowed KM for outstation
+
+    // Per-day extra KM (for display on day row; aggregate is also computed in engine)
+    if (totalKmNum > TOTAL_ALLOWED_LOCAL_KM) {
+      TOTAL_LOCAL_EXTRA_KM = totalKmNum - TOTAL_ALLOWED_LOCAL_KM;
+      TOTAL_LOCAL_EXTRA_KM_CHARGES = TOTAL_LOCAL_EXTRA_KM * ctx.extra_km_charge;
+    } else {
+      TOTAL_LOCAL_EXTRA_KM = 0;
+      TOTAL_LOCAL_EXTRA_KM_CHARGES = 0;
+    }
 
     // Get OUTSTATION pricing from day-based pricebook
     vehicle_cost_for_the_day = await getOutstationVehiclePricingByDate(

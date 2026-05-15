@@ -53,6 +53,7 @@ export interface VehicleDayWisePricingDto {
   extraHourCount: number;
   extraHourRate: number;
   extraHourCharges: number;
+  extraKms: number;
   extraKmCharges: number;
   dropKms: number;
   totalCharges: number;
@@ -3133,6 +3134,7 @@ for (const vd of dayWiseDetails) {
             extraHourCount: 0,
             extraHourRate: 0,
             extraHour: 0,
+            extraKms: 0,
             extraKm: 0,
             timeLimitId: 0,
             slabTitle: '',
@@ -3164,6 +3166,7 @@ for (const vd of dayWiseDetails) {
         dayData.extraHourCount += extraHourBreakup.count;
         dayData.extraHourRate = extraHourBreakup.rate || dayData.extraHourRate;
         dayData.extraHour += dayExtraHourCharge;
+        dayData.extraKms += parseFloat(String((vd as any).total_extra_km || 0)) || 0;
         dayData.extraKm += parseFloat(String((vd as any).total_extra_km_charges || 0)) || 0;
         dayData.toll += parseFloat((vd as any).vehicle_toll_charges || 0);
         dayData.parking += parseFloat((vd as any).vehicle_parking_charges || 0);
@@ -3240,6 +3243,7 @@ for (const vd of dayWiseDetails) {
           extraHourCount: dayData.extraHourCount,
           extraHourRate: dayData.extraHourRate,
           extraHourCharges: dayData.extraHour,
+          extraKms: dayData.extraKms,
           extraKmCharges: dayData.extraKm,
           dropKms: dayData.dropKms,
           totalCharges:
