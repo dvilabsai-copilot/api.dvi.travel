@@ -197,14 +197,34 @@ if (search) {
 
     const itineraryDistanceLimit = await this.getItineraryDistanceLimit();
     const existingSources = await this.getDistinctExistingSourceLocations();
+   const citySeed =
+  newSourceSeed.source_location_city &&
+  newSourceSeed.source_location_city.toLowerCase() !==
+    newSourceSeed.source_location.toLowerCase()
+    ? {
+        source_location: newSourceSeed.source_location_city,
+        source_location_city: newSourceSeed.source_location_city,
+        source_location_state: newSourceSeed.source_location_state,
+        source_location_lattitude: newSourceSeed.source_location_lattitude,
+        source_location_longitude: newSourceSeed.source_location_longitude,
+      }
+    : null;
 
     const result = await this.createReplicatedLocationRows(
-      newSourceSeed,
-      existingSources,
-      itineraryDistanceLimit,
-      payload?.location_description,
-    );
+  newSourceSeed,
+  existingSources,
+  itineraryDistanceLimit,
+  payload?.location_description,
+);
 
+if (citySeed) {
+  await this.createReplicatedLocationRows(
+    citySeed,
+    [newSourceSeed, ...existingSources],
+    itineraryDistanceLimit,
+    payload?.location_description,
+  );
+}
     if (result.createdRows.length === 1) {
       return this.mapRowToResponse(result.createdRows[0]);
     }
