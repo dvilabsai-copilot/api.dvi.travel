@@ -58,17 +58,27 @@ export class LocationsService {
 
   const where: any = { deleted: 0 };
 
-  if (q.source) where.source_location = q.source;
-  if (q.destination) where.destination_location = q.destination;
+const source = String(q.source || "").trim();
+const destination = String(q.destination || "").trim();
+const search = String(q.search || "").trim();
 
-  if (q.search) {
-    where.OR = [
-      { source_location: { contains: q.search } },
-      { destination_location: { contains: q.search } },
-      { source_location_city: { contains: q.search } },
-      { destination_location_city: { contains: q.search } },
-    ];
-  }
+if (source) {
+  where.source_location = source;
+}
+
+if (destination) {
+  where.destination_location = destination;
+}
+
+if (search) {
+  where.OR = [
+    { source_location: { contains: search } },
+    { destination_location: { contains: search } },
+    { source_location_city: { contains: search } },
+    { destination_location_city: { contains: search } },
+  ];
+}
+
 
   const orderBy: any[] = q.source
     ? [
