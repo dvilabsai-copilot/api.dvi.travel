@@ -232,6 +232,27 @@ async function main() {
   const targetBeforeIds = targetBefore.map((r) => r.hotspotId);
   const controlBeforeIds = controlBefore.map((r) => r.hotspotId);
   const controlAfterIds = controlAfter.map((r) => r.hotspotId);
+
+  const secondRes = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  const secondRaw = await secondRes.text();
+  let secondBody: any = null;
+  try {
+    secondBody = secondRaw ? JSON.parse(secondRaw) : null;
+  } catch {
+    secondBody = { raw: secondRaw };
+  }
+
+  const targetAfterSecond = await getRouteAttractions(TARGET_ROUTE_ID);
+  const controlAfterSecond = await getRouteAttractions(CONTROL_ROUTE_ID);
+  const targetAfterSecondIds = targetAfterSecond.map((r) => r.hotspotId);
+  const controlAfterSecondIds = controlAfterSecond.map((r) => r.hotspotId);
   const chosenSlotSource = String(body?.manualInsertionFit?.chosenSlotSource || '').toUpperCase();
   const bestSlotRouteFitType = String(body?.manualInsertionFit?.bestSlot?.routeFitType || '').toUpperCase();
   const isMatrixSafeSuccessPath =
@@ -248,7 +269,18 @@ async function main() {
   } else {
     assert('1) HTTP 201', res.status === 201);
     assert('2) response.success true', body?.success === true);
-    assert('3) response.inserted true', body?.inserted === true);
+    const alreadyExists = String(body?.code || '') === 'MANUAL_HOTSPOT_ALREADY_EXISTS_IN_ROUTE';
+    assert('3) response is inserted or already-exists idempotent', body?.inserted === true || alreadyExists);
+    if (alreadyExists) {
+      assert('4) already-exists keeps target route stable', JSON.stringify(targetAfterIds) === JSON.stringify(targetBeforeIds));
+      assert('5) already-exists keeps control route stable', JSON.stringify(controlAfterIds) === JSON.stringify(controlBeforeIds));
+      assert('6) second apply also returns already-exists', String(secondBody?.code || '') === 'MANUAL_HOTSPOT_ALREADY_EXISTS_IN_ROUTE');
+      assert('7) second apply does not mutate target route order', JSON.stringify(targetAfterSecondIds) === JSON.stringify(targetAfterIds));
+      assert('8) second apply does not mutate control route order', JSON.stringify(controlAfterSecondIds) === JSON.stringify(controlAfterIds));
+      console.log('Info: idempotent path validated (hotspot already active in route).');
+      console.log('\nAll assertions passed.');
+      return;
+    }
     if (isMatrixSafeSuccessPath) {
       assert(
         '4) code is matrix-slot or low-priority-removal matrix success',
@@ -283,6 +315,25 @@ async function main() {
       }
       if (!controlHadTo) {
         assert(`10) Control route does not gain hotspot ${TO_HOTSPOT_ID}`, !controlAfterIds.includes(TO_HOTSPOT_ID));
+      }
+
+      assert('11) second apply returns already-exists code for idempotency',
+        String(secondBody?.code || '') === 'MANUAL_HOTSPOT_ALREADY_EXISTS_IN_ROUTE',
+      );
+      assert('12) second apply does not mutate target route order',
+        JSON.stringify(targetAfterSecondIds) === JSON.stringify(targetAfterIds),
+      );
+      assert('13) second apply does not mutate control route order',
+        JSON.stringify(controlAfterSecondIds) === JSON.stringify(controlAfterIds),
+      );
+      if (String(body?.code || '') === 'MANUAL_HOTSPOT_INSERTED_WITH_LOW_PRIORITY_REMOVAL') {
+        const firstRemovedCount = Array.isArray(body?.resolution?.removedOptionalHotspots)
+          ? body.resolution.removedOptionalHotspots.length
+          : 0;
+        const secondRemovedCount = Array.isArray(secondBody?.resolution?.removedOptionalHotspots)
+          ? secondBody.resolution.removedOptionalHotspots.length
+          : 0;
+        assert('14) second apply does not remove more low-priority hotspots', secondRemovedCount <= firstRemovedCount);
       }
     } else {
       assert('4) matrix-safe code is not emitted for non-BEST_FIT/non-route-fit apply', body?.code !== 'MANUAL_HOTSPOT_INSERTED_WITH_MATRIX_SLOT');

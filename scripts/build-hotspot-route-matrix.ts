@@ -12,6 +12,11 @@ type InputArgs = {
   retryFailed: boolean;
   rebuildDone: boolean;
   limit: number;
+  popularPairs: boolean;
+  seedOnly: boolean;
+  minUsage: number;
+  sourceDb: string;
+  targetDb: string;
 };
 
 type Config = {
@@ -111,6 +116,13 @@ function usage() {
   console.log('  --limit=<n>         Same as above.');
   console.log('  --help              Show help text.');
   console.log('');
+  console.log('Popular pairs mode:');
+  console.log('  --popular-pairs     Build matrix only for popular consecutive hotspot pairs from source DB.');
+  console.log('  --min-usage <n>     Minimum usage count threshold for popular pairs (default: 100).');
+  console.log('  --source-db <db>    Source database name (default: env SOURCE_DB_NAME or dvi_travels).');
+  console.log('  --target-db <db>    Target database name (default: env TARGET_DB_NAME or dvi_main).');
+  console.log('  --seed-only         Only populate hotspot_popular_pair_seed, skip OSRM calls.');
+  console.log('');
   console.log('Environment controls:');
   console.log('  OSRM_BASE_URL (default: http://localhost:5000/route/v1/driving)');
   console.log('  OSRM_DELAY_MS (default: 1500)');
@@ -173,6 +185,17 @@ function toOptionalInt(raw: string | undefined): number | undefined {
   return value;
 }
 
+const DB_NAME_REGEX = /^[a-zA-Z0-9_]+$/;
+
+function validateDbName(name: string): string {
+  if (!DB_NAME_REGEX.test(name)) {
+    throw new Error(
+      `Invalid database name: "${name}". Only alphanumeric and underscore characters are allowed.`,
+    );
+  }
+  return name;
+}
+
 function buildConfig(): Config {
   const config: Config = {
     osrmBaseUrl: process.env.OSRM_BASE_URL?.trim() || 'http://localhost:5000/route/v1/driving',
@@ -229,6 +252,8 @@ function normalizeArgs(raw: RawArgs, config: Config): InputArgs {
   const apply = Boolean(raw.apply);
   const retryFailed = Boolean(raw['retry-failed']);
   const rebuildDone = Boolean(raw['rebuild-done']);
+  const popularPairs = Boolean(raw['popular-pairs']);
+  const seedOnly = Boolean(raw['seed-only']);
 
   const limitValue = raw.limit;
   const limit =
@@ -240,11 +265,38 @@ function normalizeArgs(raw: RawArgs, config: Config): InputArgs {
     throw new Error('Invalid --limit. It must be a positive integer.');
   }
 
+  const minUsageRaw = raw['min-usage'];
+  const minUsage =
+    typeof minUsageRaw === 'string' && minUsageRaw.trim() !== ''
+      ? Number(minUsageRaw)
+      : 100;
+
+  if (!Number.isInteger(minUsage) || minUsage <= 0) {
+    throw new Error('Invalid --min-usage. It must be a positive integer.');
+  }
+
+  const sourceDb = validateDbName(
+    typeof raw['source-db'] === 'string' && raw['source-db'].trim()
+      ? raw['source-db'].trim()
+      : (process.env.SOURCE_DB_NAME?.trim() || 'dvi_travels'),
+  );
+
+  const targetDb = validateDbName(
+    typeof raw['target-db'] === 'string' && raw['target-db'].trim()
+      ? raw['target-db'].trim()
+      : (process.env.TARGET_DB_NAME?.trim() || 'dvi_main'),
+  );
+
   return {
     apply,
     retryFailed,
     rebuildDone,
     limit,
+    popularPairs,
+    seedOnly,
+    minUsage,
+    sourceDb,
+    targetDb,
   };
 }
 
@@ -1117,6 +1169,11 @@ function printConfig(input: InputArgs, config: Config) {
         retryFailed: input.retryFailed,
         rebuildDone: input.rebuildDone,
         limit: input.limit,
+        popularPairs: input.popularPairs,
+        seedOnly: input.seedOnly,
+        minUsage: input.minUsage,
+        sourceDb: input.sourceDb,
+        targetDb: input.targetDb,
         env: {
           osrmBaseUrl: config.osrmBaseUrl,
           osrmDelayMs: config.osrmDelayMs,
@@ -1139,6 +1196,511 @@ function printConfig(input: InputArgs, config: Config) {
   );
 }
 
+// ─── Popular-pairs mode: types and helpers ────────────────────────────────────
+
+type PopularPairSeedRow = {
+  from_hotspot_id: number;
+  to_hotspot_id: number;
+  usage_count: number;
+};
+
+type PopularPairRunSummary = {
+  mode: 'dry-run' | 'apply';
+  sourceDb: string;
+  targetDb: string;
+  minUsage: number;
+  popularPairsFound: number;
+  seededPairs: number;
+  validPairsWithCoordinates: number;
+  processed: number;
+  done: number;
+  failed: number;
+  skippedExistingDone: number;
+  skippedExistingFailed: number;
+  skippedMissingHotspot: number;
+  osrmCalls: number;
+  startedAt: string;
+  completedAt?: string;
+};
+
+async function ensurePopularPairSeedTable(targetDb: string): Promise<void> {
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS \`${targetDb}\`.\`hotspot_popular_pair_seed\` (
+      from_hotspot_id INT NOT NULL,
+      to_hotspot_id INT NOT NULL,
+      usage_count INT NOT NULL DEFAULT 0,
+      source_label VARCHAR(100) NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (from_hotspot_id, to_hotspot_id),
+      KEY idx_usage_count (usage_count)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  `);
+}
+
+async function fetchPopularPairs(
+  sourceDb: string,
+  minUsage: number,
+  limit: number,
+): Promise<PopularPairSeedRow[]> {
+  // sourceDb is already validated by validateDbName before this call
+  const rows = await prisma.$queryRawUnsafe<PopularPairSeedRow[]>(
+    `WITH ordered_hotspots AS (
+      SELECT
+        itinerary_plan_ID,
+        itinerary_route_ID,
+        hotspot_ID AS from_hotspot_id,
+        LEAD(hotspot_ID) OVER (
+          PARTITION BY itinerary_plan_ID, itinerary_route_ID
+          ORDER BY hotspot_order
+        ) AS to_hotspot_id
+      FROM \`${sourceDb}\`.\`dvi_itinerary_route_hotspot_details\`
+      WHERE hotspot_ID > 0
+        AND item_type = 4
+        AND deleted = 0
+        AND status = 1
+    )
+    SELECT
+      from_hotspot_id,
+      to_hotspot_id,
+      COUNT(*) AS usage_count
+    FROM ordered_hotspots
+    WHERE to_hotspot_id IS NOT NULL
+      AND from_hotspot_id <> to_hotspot_id
+    GROUP BY from_hotspot_id, to_hotspot_id
+    HAVING usage_count >= ?
+    ORDER BY usage_count DESC
+    LIMIT ?`,
+    minUsage,
+    limit,
+  );
+
+  return rows.map((row) => ({
+    from_hotspot_id: Number(row.from_hotspot_id),
+    to_hotspot_id: Number(row.to_hotspot_id),
+    usage_count: Number(row.usage_count),
+  }));
+}
+
+async function upsertPopularPairSeeds(
+  pairs: PopularPairSeedRow[],
+  sourceLabel: string,
+  apply: boolean,
+  targetDb: string,
+): Promise<number> {
+  if (!apply || !pairs.length) return 0;
+
+  let count = 0;
+  for (const pair of pairs) {
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO \`${targetDb}\`.\`hotspot_popular_pair_seed\` (from_hotspot_id, to_hotspot_id, usage_count, source_label, created_at, updated_at)
+      VALUES (?, ?, ?, ?, NOW(), NOW())
+      ON DUPLICATE KEY UPDATE
+        usage_count = VALUES(usage_count),
+        source_label = VALUES(source_label),
+        updated_at = NOW()`,
+      pair.from_hotspot_id,
+      pair.to_hotspot_id,
+      pair.usage_count,
+      sourceLabel,
+    );
+    count += 1;
+  }
+  return count;
+}
+
+async function fetchHotspotsForIds(ids: number[], targetDb: string): Promise<Map<number, Hotspot>> {
+  if (!ids.length) return new Map<number, Hotspot>();
+
+  // targetDb already validated; ids are numbers — safe to build IN clause
+  const placeholders = ids.map(() => '?').join(', ');
+  const rows = await prisma.$queryRawUnsafe<
+    Array<{
+      hotspot_ID: number;
+      hotspot_name: string | null;
+      hotspot_latitude: string | null;
+      hotspot_longitude: string | null;
+    }>
+  >(
+    `SELECT hotspot_ID, hotspot_name, hotspot_latitude, hotspot_longitude
+     FROM \`${targetDb}\`.\`dvi_hotspot_place\`
+     WHERE hotspot_ID IN (${placeholders}) AND deleted = 0`,
+    ...ids,
+  );
+
+  const map = new Map<number, Hotspot>();
+  for (const row of rows) {
+    const lat = parseCoordinate(row.hotspot_latitude);
+    const lng = parseCoordinate(row.hotspot_longitude);
+    if (lat === null || lng === null) continue;
+    map.set(row.hotspot_ID, {
+      id: row.hotspot_ID,
+      name: normalizeName(row.hotspot_name) || `Hotspot-${row.hotspot_ID}`,
+      lat,
+      lng,
+    });
+  }
+  return map;
+}
+
+async function loadExistingStatusesForPairs(
+  pairs: Array<{ fromId: number; toId: number }>,
+  targetDb: string,
+): Promise<Map<string, ProcessStatus>> {
+  if (!pairs.length) return new Map<string, ProcessStatus>();
+
+  const fromIds = Array.from(new Set(pairs.map((p) => p.fromId)));
+  const toIds = Array.from(new Set(pairs.map((p) => p.toId)));
+
+  // targetDb already validated; ids are numbers — safe to build IN clauses
+  const fromPlaceholders = fromIds.map(() => '?').join(', ');
+  const toPlaceholders = toIds.map(() => '?').join(', ');
+
+  const rows = await prisma.$queryRawUnsafe<ExistingStatusRow[]>(
+    `SELECT from_hotspot_id, to_hotspot_id, process_status
+     FROM \`${targetDb}\`.\`hotspot_route_matrix\`
+     WHERE from_hotspot_id IN (${fromPlaceholders})
+       AND to_hotspot_id IN (${toPlaceholders})`,
+    ...fromIds,
+    ...toIds,
+  );
+
+  const map = new Map<string, ProcessStatus>();
+  for (const row of rows) {
+    map.set(pairKey(row.from_hotspot_id, row.to_hotspot_id), row.process_status);
+  }
+  return map;
+}
+
+// ─── targetDb-qualified helpers (used by popular-pairs mode only) ─────────────
+
+async function ensureHelperTablesForDb(targetDb: string): Promise<void> {
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS \`${targetDb}\`.\`hotspot_route_matrix\` (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      from_hotspot_id INT NOT NULL,
+      to_hotspot_id INT NOT NULL,
+      from_name TEXT NULL,
+      to_name TEXT NULL,
+      from_lat DOUBLE NULL,
+      from_lng DOUBLE NULL,
+      to_lat DOUBLE NULL,
+      to_lng DOUBLE NULL,
+      haversine_km DOUBLE NULL,
+      osrm_distance_km DOUBLE NULL,
+      osrm_duration_min DOUBLE NULL,
+      route_coordinates LONGTEXT NULL,
+      process_status ENUM('PENDING','DONE','FAILED','SKIPPED') NOT NULL DEFAULT 'PENDING',
+      error_message TEXT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      UNIQUE KEY uniq_hotspot_route_pair (from_hotspot_id, to_hotspot_id),
+      KEY idx_hotspot_route_status (process_status)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS \`${targetDb}\`.\`hotspot_route_between_map\` (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      from_hotspot_id INT NOT NULL,
+      to_hotspot_id INT NOT NULL,
+      between_hotspot_id INT NOT NULL,
+      between_hotspot_name TEXT NULL,
+      distance_from_route_meters DOUBLE NULL,
+      detour_km DOUBLE NULL,
+      detour_ratio DOUBLE NULL,
+      route_fit_type VARCHAR(40) NOT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      UNIQUE KEY uniq_hotspot_route_between (from_hotspot_id, to_hotspot_id, between_hotspot_id),
+      KEY idx_hotspot_route_between_fit (route_fit_type)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  `);
+
+  const routeFitTypeColumn = await prisma.$queryRawUnsafe<Array<{ data_type: string; column_type: string }>>(
+    `SELECT DATA_TYPE AS data_type, COLUMN_TYPE AS column_type
+     FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = ?
+       AND TABLE_NAME = 'hotspot_route_between_map'
+       AND COLUMN_NAME = 'route_fit_type'
+     LIMIT 1`,
+    targetDb,
+  );
+
+  if (routeFitTypeColumn.length && routeFitTypeColumn[0].data_type.toLowerCase() === 'enum') {
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE \`${targetDb}\`.\`hotspot_route_between_map\` MODIFY COLUMN route_fit_type VARCHAR(40) NOT NULL`,
+    );
+  }
+
+  const columnsToEnsure: Array<[string, string]> = [
+    ['ab_osrm_distance_km', 'DOUBLE NULL'],
+    ['ac_osrm_distance_km', 'DOUBLE NULL'],
+    ['cb_osrm_distance_km', 'DOUBLE NULL'],
+    ['inserted_route_distance_km', 'DOUBLE NULL'],
+    ['road_detour_km', 'DOUBLE NULL'],
+    ['road_detour_ratio', 'DOUBLE NULL'],
+    ['candidate_progress_on_ab_ratio', 'DOUBLE NULL'],
+    ['destination_progress_on_ac_ratio', 'DOUBLE NULL'],
+    ['candidate_distance_from_ab_route_meters', 'DOUBLE NULL'],
+    ['destination_distance_from_ac_route_meters', 'DOUBLE NULL'],
+    ['crosses_destination_before_candidate', 'TINYINT(1) NOT NULL DEFAULT 0'],
+    ['route_decision_reason', 'TEXT NULL'],
+  ];
+
+  for (const [columnName, columnDefinition] of columnsToEnsure) {
+    const existing = await prisma.$queryRawUnsafe<Array<{ column_name: string }>>(
+      `SELECT COLUMN_NAME AS column_name
+       FROM INFORMATION_SCHEMA.COLUMNS
+       WHERE TABLE_SCHEMA = ?
+         AND TABLE_NAME = 'hotspot_route_between_map'
+         AND COLUMN_NAME = ?
+       LIMIT 1`,
+      targetDb,
+      columnName,
+    );
+
+    if (!existing.length) {
+      await prisma.$executeRawUnsafe(
+        `ALTER TABLE \`${targetDb}\`.\`hotspot_route_between_map\` ADD COLUMN \`${columnName}\` ${columnDefinition}`,
+      );
+    }
+  }
+}
+
+async function upsertRouteMatrixStatusForDb(
+  targetDb: string,
+  pair: Pair,
+  payload: {
+    haversineKm: number;
+    processStatus: ProcessStatus;
+    osrmDistanceKm?: number | null;
+    osrmDurationMin?: number | null;
+    routeCoordinatesJson?: string | null;
+    errorMessage?: string | null;
+  },
+): Promise<void> {
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO \`${targetDb}\`.\`hotspot_route_matrix\` (
+      from_hotspot_id, to_hotspot_id, from_name, to_name,
+      from_lat, from_lng, to_lat, to_lng,
+      haversine_km, osrm_distance_km, osrm_duration_min,
+      route_coordinates, process_status, error_message,
+      created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+    ON DUPLICATE KEY UPDATE
+      from_name = VALUES(from_name),
+      to_name = VALUES(to_name),
+      from_lat = VALUES(from_lat),
+      from_lng = VALUES(from_lng),
+      to_lat = VALUES(to_lat),
+      to_lng = VALUES(to_lng),
+      haversine_km = VALUES(haversine_km),
+      osrm_distance_km = VALUES(osrm_distance_km),
+      osrm_duration_min = VALUES(osrm_duration_min),
+      route_coordinates = VALUES(route_coordinates),
+      process_status = VALUES(process_status),
+      error_message = VALUES(error_message),
+      updated_at = NOW()`,
+    pair.from.id,
+    pair.to.id,
+    pair.from.name,
+    pair.to.name,
+    pair.from.lat,
+    pair.from.lng,
+    pair.to.lat,
+    pair.to.lng,
+    payload.haversineKm,
+    payload.osrmDistanceKm ?? null,
+    payload.osrmDurationMin ?? null,
+    payload.routeCoordinatesJson ?? null,
+    payload.processStatus,
+    payload.errorMessage ?? null,
+  );
+}
+
+async function runPopularPairsMode(input: InputArgs, config: Config): Promise<void> {
+  const popularPairSummary: PopularPairRunSummary = {
+    mode: input.apply ? 'apply' : 'dry-run',
+    sourceDb: input.sourceDb,
+    targetDb: input.targetDb,
+    minUsage: input.minUsage,
+    popularPairsFound: 0,
+    seededPairs: 0,
+    validPairsWithCoordinates: 0,
+    processed: 0,
+    done: 0,
+    failed: 0,
+    skippedExistingDone: 0,
+    skippedExistingFailed: 0,
+    skippedMissingHotspot: 0,
+    osrmCalls: 0,
+    startedAt: new Date().toISOString(),
+  };
+
+  // Proxy RunSummary used solely so fetchOsrmRouteWithRetry can increment osrmCalls
+  const osrmProxy: RunSummary = {
+    mode: input.apply ? 'apply' : 'dry-run',
+    retryFailed: input.retryFailed,
+    rebuildDone: input.rebuildDone,
+    eligibleHotspots: 0,
+    candidatePairsScanned: 0,
+    queuedPairs: 0,
+    skippedExistingDone: 0,
+    skippedExistingFailed: 0,
+    processed: 0,
+    done: 0,
+    skippedDistance: 0,
+    failed: 0,
+    pendingMarked: 0,
+    onRouteRowsInserted: 0,
+    minorDetourRowsInserted: 0,
+    osrmCalls: 0,
+    startedAt: new Date().toISOString(),
+  };
+
+  await ensureHelperTablesForDb(input.targetDb);
+  await ensurePopularPairSeedTable(input.targetDb);
+
+  console.log(
+    `Fetching popular pairs from ${input.sourceDb} (minUsage=${input.minUsage}, limit=${input.limit})...`,
+  );
+
+  const popularPairs = await fetchPopularPairs(input.sourceDb, input.minUsage, input.limit);
+  popularPairSummary.popularPairsFound = popularPairs.length;
+  console.log(`Found ${popularPairs.length} popular pairs.`);
+
+  if (!popularPairs.length) {
+    popularPairSummary.completedAt = new Date().toISOString();
+    console.log('No popular pairs found matching the minUsage threshold.');
+    console.log(JSON.stringify(popularPairSummary, null, 2));
+    return;
+  }
+
+  const seededCount = await upsertPopularPairSeeds(popularPairs, input.sourceDb, input.apply, input.targetDb);
+  popularPairSummary.seededPairs = seededCount;
+
+  if (input.apply) {
+    console.log(`Seeded/updated ${seededCount} pairs in hotspot_popular_pair_seed.`);
+  } else {
+    console.log(`[dry-run] Would seed ${popularPairs.length} pairs in hotspot_popular_pair_seed.`);
+  }
+
+  if (input.seedOnly) {
+    popularPairSummary.completedAt = new Date().toISOString();
+    console.log('--seed-only: Stopping before OSRM calls.');
+    console.log(JSON.stringify(popularPairSummary, null, 2));
+    return;
+  }
+
+  const uniqueIds = Array.from(
+    new Set(popularPairs.flatMap((p) => [p.from_hotspot_id, p.to_hotspot_id])),
+  );
+  const hotspotMap = await fetchHotspotsForIds(uniqueIds, input.targetDb);
+
+  const pairsToProcess: Array<{ seed: PopularPairSeedRow; from: Hotspot; to: Hotspot }> = [];
+  for (const seed of popularPairs) {
+    const from = hotspotMap.get(seed.from_hotspot_id);
+    const to = hotspotMap.get(seed.to_hotspot_id);
+    if (!from || !to) {
+      popularPairSummary.skippedMissingHotspot += 1;
+      console.warn(
+        `SKIP pair ${seed.from_hotspot_id}->${seed.to_hotspot_id}: hotspot missing or has no valid coordinates.`,
+      );
+      continue;
+    }
+    pairsToProcess.push({ seed, from, to });
+  }
+
+  popularPairSummary.validPairsWithCoordinates = pairsToProcess.length;
+  console.log(`${pairsToProcess.length} pairs have valid hotspot coordinates.`);
+
+  if (!pairsToProcess.length) {
+    popularPairSummary.completedAt = new Date().toISOString();
+    console.log(JSON.stringify(popularPairSummary, null, 2));
+    return;
+  }
+
+  const pairRefs = pairsToProcess.map((p) => ({ fromId: p.from.id, toId: p.to.id }));
+  const existingStatuses = await loadExistingStatusesForPairs(pairRefs, input.targetDb);
+
+  for (let i = 0; i < pairsToProcess.length; i += 1) {
+    const { from, to, seed } = pairsToProcess[i];
+    const pair: Pair = { from, to };
+    const key = pairKey(from.id, to.id);
+    const status = existingStatuses.get(key);
+    const label = `[${i + 1}/${pairsToProcess.length}]`;
+
+    if (status === 'DONE' && !input.rebuildDone) {
+      popularPairSummary.skippedExistingDone += 1;
+      console.log(`${label} SKIP (DONE) ${from.id}->${to.id}`);
+      continue;
+    }
+
+    if (status === 'FAILED' && !input.retryFailed) {
+      popularPairSummary.skippedExistingFailed += 1;
+      console.log(`${label} SKIP (FAILED) ${from.id}->${to.id}`);
+      continue;
+    }
+
+    popularPairSummary.processed += 1;
+    const pairHaversineKm = haversineKm(from.lat, from.lng, to.lat, to.lng);
+
+    if (input.apply) {
+      await upsertRouteMatrixStatusForDb(input.targetDb, pair, {
+        haversineKm: Number(pairHaversineKm.toFixed(6)),
+        processStatus: 'PENDING',
+      });
+    }
+
+    try {
+      const route = await fetchOsrmRouteWithRetry(pair, config, osrmProxy);
+
+      if (input.apply) {
+        await upsertRouteMatrixStatusForDb(input.targetDb, pair, {
+          haversineKm: Number(pairHaversineKm.toFixed(6)),
+          processStatus: 'DONE',
+          osrmDistanceKm: route.distanceKm,
+          osrmDurationMin: route.durationMin,
+          routeCoordinatesJson: JSON.stringify(route.coordinates),
+          errorMessage: null,
+        });
+      }
+
+      popularPairSummary.done += 1;
+      console.log(
+        `${label} DONE ${from.id}->${to.id} distance=${route.distanceKm.toFixed(2)}km duration=${route.durationMin.toFixed(1)}min usage=${seed.usage_count}`,
+      );
+    } catch (error) {
+      popularPairSummary.failed += 1;
+      const message = error instanceof Error ? error.message : String(error);
+
+      if (input.apply) {
+        await upsertRouteMatrixStatusForDb(input.targetDb, pair, {
+          haversineKm: Number(pairHaversineKm.toFixed(6)),
+          processStatus: 'FAILED',
+          errorMessage: message.slice(0, 2000),
+        });
+      }
+
+      console.error(`${label} FAILED ${from.id}->${to.id} ${message}`);
+    }
+  }
+
+  popularPairSummary.osrmCalls = osrmProxy.osrmCalls;
+  popularPairSummary.completedAt = new Date().toISOString();
+  console.log('\nPopular pairs run summary:');
+  console.log(JSON.stringify(popularPairSummary, null, 2));
+
+  if (!input.apply) {
+    console.log('Dry-run complete. Re-run with --apply to persist matrix rows.');
+  }
+}
+
+// ─── Main entry point ────────────────────────────────────────────────────────
+
 async function main() {
   const rawArgs = parseArgs(process.argv.slice(2));
   if (rawArgs.help) {
@@ -1149,6 +1711,11 @@ async function main() {
   const config = buildConfig();
   const input = normalizeArgs(rawArgs, config);
   printConfig(input, config);
+
+  if (input.popularPairs) {
+    await runPopularPairsMode(input, config);
+    return;
+  }
 
   await ensureHelperTables();
 
@@ -1302,6 +1869,30 @@ main()
   .finally(async () => {
     await prisma.$disconnect();
   });
+
+// ─── Example commands ────────────────────────────────────────────────────────
+//
+// Standard all-hotspot mode (existing):
+//   npx tsx scripts/build-hotspot-route-matrix.ts --apply --limit 200
+//
+// Popular-pairs mode — dry-run:
+//   npx tsx scripts/build-hotspot-route-matrix.ts --popular-pairs --min-usage 100 --limit 100
+//
+// Popular-pairs mode — seed only (upsert hotspot_popular_pair_seed, no OSRM):
+//   npx tsx scripts/build-hotspot-route-matrix.ts --popular-pairs --seed-only --min-usage 100 --apply
+//
+// Popular-pairs mode — build matrix:
+//   npx tsx scripts/build-hotspot-route-matrix.ts --popular-pairs --min-usage 100 --limit 500 --apply
+//
+// Popular-pairs mode — rebuild already-done rows:
+//   npx tsx scripts/build-hotspot-route-matrix.ts --popular-pairs --min-usage 100 --limit 500 --apply --rebuild-done
+//
+// Popular-pairs mode — retry failed rows:
+//   npx tsx scripts/build-hotspot-route-matrix.ts --popular-pairs --min-usage 50 --limit 500 --apply --retry-failed
+//
+// Custom source / target databases:
+//   npx tsx scripts/build-hotspot-route-matrix.ts --popular-pairs --source-db dvi_travels --target-db dvi_main --min-usage 100 --limit 300 --apply
+
 
 
 

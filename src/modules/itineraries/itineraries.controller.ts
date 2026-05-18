@@ -351,7 +351,7 @@ export class ItinerariesController {
   ) {
     // Check if route optimization is requested
     const shouldOptimizeRoute = type === 'itineary_basic_info_with_optimized_route';
-    return this.svc.createPlan(dto, req, shouldOptimizeRoute);
+    return this.svc.createPlan(dto, req, shouldOptimizeRoute, type);
   }
 
   @Get('details/:quoteId')
@@ -1420,7 +1420,13 @@ export class ItinerariesController {
 
     if (String(result?.code || '') === 'MANUAL_INSERT_EXCEEDS_DAY_END') {
       res.status(409);
-    } else if (result?.success === false || result?.inserted === false) {
+    } else if (
+      result?.success === false
+      || (
+        result?.inserted === false
+        && String(result?.code || '') !== 'MANUAL_HOTSPOT_ALREADY_EXISTS_IN_ROUTE'
+      )
+    ) {
       res.status(409);
     }
 
