@@ -39,6 +39,7 @@ import {
 import { LatestItineraryQueryDto } from './dto/latest-itinerary-query.dto';
 import { ConfirmQuotationDto } from './dto/confirm-quotation.dto';
 import { CancelItineraryDto } from './dto/cancel-itinerary.dto';
+import { CancelHotelVouchersDto } from './dto/cancel-hotel-vouchers.dto';
 import {
   GetHotelRoomCategoriesDto,
   UpdateRoomCategoryDto,
@@ -1242,6 +1243,14 @@ export class ItinerariesController {
   }
 
   // Hotel Voucher Endpoints
+  @Get(':id/hotel-vouchers/cancellation-policies')
+  @ApiOperation({ summary: 'Get all cancellation policies for itinerary hotels' })
+  async getAllHotelCancellationPolicies(
+    @Param('id', ParseIntPipe) itineraryPlanId: number,
+  ) {
+    return this.hotelVoucherService.getAllCancellationPolicies(itineraryPlanId);
+  }
+
   @Get(':id/hotel-vouchers/:hotelId/cancellation-policies')
   @ApiOperation({ summary: 'Get cancellation policies for a specific hotel' })
   async getHotelCancellationPolicies(
@@ -1292,6 +1301,21 @@ export class ItinerariesController {
     const userId = Number(req.user?.userId ?? 1);
     return this.hotelVoucherService.createHotelVouchers(
       { ...dto, itineraryPlanId },
+      userId,
+    );
+  }
+
+  @Post(':id/hotel-cancellations')
+  @ApiOperation({ summary: 'Cancel hotels for selected routes/hotel details or full itinerary' })
+  async cancelHotelVouchers(
+    @Param('id', ParseIntPipe) itineraryPlanId: number,
+    @Body() dto: CancelHotelVouchersDto,
+    @Req() req: any,
+  ) {
+    const userId = Number(req.user?.userId ?? 1);
+    return this.hotelVoucherService.cancelHotelsForItinerary(
+      itineraryPlanId,
+      dto,
       userId,
     );
   }
@@ -1375,16 +1399,32 @@ export class ItinerariesController {
       anchorIndex?: number;
       allowTopPriorityRemoval?: boolean;
       forceConflictInsertion?: boolean;
+      matrixPreferredSlot?: {
+        fromHotspotId?: number;
+        toHotspotId?: number;
+        slotIndex?: number;
+        source?: 'BEST_FIT';
+      };
     },
     @Req() req: any,
+    @Res({ passthrough: true }) res: Response,
   ) {
     const userId = Number(req.user?.userId ?? 1);
-    return this.svc.applyManualHotspotsBatch(planId, body.routeId, body.hotspotIds, userId, {
+    const result: any = await this.svc.applyManualHotspotsBatch(planId, body.routeId, body.hotspotIds, userId, {
       anchorType: body.anchorType,
       anchorIndex: body.anchorIndex,
       allowTopPriorityRemoval: body.allowTopPriorityRemoval === true,
       forceConflictInsertion: body.forceConflictInsertion === true,
+      matrixPreferredSlot: body.matrixPreferredSlot,
     });
+
+    if (String(result?.code || '') === 'MANUAL_INSERT_EXCEEDS_DAY_END') {
+      res.status(409);
+    } else if (result?.success === false || result?.inserted === false) {
+      res.status(409);
+    }
+
+    return result;
   }
 
   @Delete(':id/manual-hotspot/:hotspotId')

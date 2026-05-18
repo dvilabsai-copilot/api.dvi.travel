@@ -1,6 +1,12 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
-import { LocationResponseDto } from './dto/location.dto';
+import { normalizeCityName } from '../itineraries/utils/city-normalization.util';
+import {
+  BetweenHotspotFiltersQueryDto,
+  BetweenHotspotQueryDto,
+  LocationResponseDto,
+} from './dto/location.dto';
 
 type ListQuery = {
   search?: string;
@@ -24,9 +30,52 @@ type AutosuggestQuery = {
   type?: string;
 };
 
+type StoredLocationContextRow = {
+  location_ID: bigint;
+  source_location: string | null;
+  source_location_city: string | null;
+  destination_location: string | null;
+  destination_location_city: string | null;
+};
+
+type BetweenRoutePairCandidateRow = {
+  from_hotspot_id: number;
+  from_hotspot_name: string | null;
+  from_hotspot_location: string | null;
+  to_hotspot_id: number;
+  to_hotspot_name: string | null;
+  to_hotspot_location: string | null;
+};
+
+type BetweenHotspotCandidateRow = {
+  hotspotId: number;
+  hotspotName: string | null;
+  hotspotLocation: string | null;
+};
+
+type LocationScope = {
+  locationId: number;
+  sourceKeys: string[];
+  destinationKeys: string[];
+  sourceLocation: string;
+  sourceCity: string;
+  destinationLocation: string;
+  destinationCity: string;
+  locationName: string;
+};
+
 @Injectable()
 export class LocationsService {
   constructor(private readonly prisma: PrismaService) {}
+
+  private static readonly CITY_KEY_SYNONYMS: Record<string, string[]> = {
+    bengaluru: ['bengaluru', 'bangalore'],
+    chennai: ['chennai', 'madras'],
+    kolkata: ['kolkata', 'calcutta'],
+    mumbai: ['mumbai', 'bombay'],
+    puducherry: ['puducherry', 'pondicherry'],
+    thiruvananthapuram: ['thiruvananthapuram', 'trivandrum', 'tvm'],
+  };
 
   /**
    * Convert database row to API response format
@@ -126,6 +175,462 @@ if (search) {
     return {
       sources: src.map((x) => x.source_location).filter(Boolean),
       destinations: dst.map((x) => x.destination_location).filter(Boolean),
+    };
+  }
+
+  private parseBooleanQuery(value: unknown): boolean {
+    return ['1', 'true', 'yes'].includes(String(value ?? '').trim().toLowerCase());
+  }
+
+  private canonicalCityKey(name: string): string {
+    const raw = String(name ?? '').split('|')[0]?.trim() ?? '';
+    if (!raw) return '';
+
+    const beforeComma = raw.split(',')[0]?.trim() ?? '';
+    const normalizedPrimary = normalizeCityName(beforeComma);
+    if (normalizedPrimary) return normalizedPrimary;
+
+    return normalizeCityName(raw);
+  }
+
+  private expandCityKeySynonyms(key: string): string[] {
+    const normalizedKey = this.canonicalCityKey(key);
+    if (!normalizedKey) return [];
+
+    const configured = LocationsService.CITY_KEY_SYNONYMS[normalizedKey] || [normalizedKey];
+    const keys = new Set<string>();
+
+    for (const value of configured) {
+      const canonical = this.canonicalCityKey(value);
+      if (canonical) {
+        keys.add(canonical);
+      }
+
+      const raw = String(value ?? '').trim().toLowerCase();
+      if (raw) {
+        keys.add(raw);
+      }
+    }
+
+    keys.add(normalizedKey);
+    return Array.from(keys);
+  }
+
+  private buildLocationSideKeys(...values: Array<string | null | undefined>): string[] {
+    const keys = new Set<string>();
+
+    for (const value of values) {
+      const canonical = this.canonicalCityKey(String(value ?? ''));
+      if (!canonical) continue;
+
+      for (const expanded of this.expandCityKeySynonyms(canonical)) {
+        if (expanded) {
+          keys.add(expanded);
+        }
+      }
+    }
+
+    return Array.from(keys);
+  }
+
+  private hotspotLocationMatchesKeys(
+    hotspotLocation: string | null | undefined,
+    targetKeys: string[],
+  ): boolean {
+    if (!targetKeys.length) return false;
+
+    const parts = String(hotspotLocation || '')
+      .split('|')
+      .map((part) => this.canonicalCityKey(part))
+      .filter(Boolean);
+
+    if (!parts.length) return false;
+
+    for (const part of parts) {
+      for (const key of targetKeys) {
+        if (part === key) return true;
+        if (part.startsWith(`${key} `)) return true;
+        if (part.includes(` ${key} `)) return true;
+        if (part.endsWith(` ${key}`)) return true;
+      }
+    }
+
+    return false;
+  }
+
+  private buildLocationDisplayName(row: StoredLocationContextRow): string {
+    const source = this.normalizeLocationName(row.source_location);
+    const destination = this.normalizeLocationName(row.destination_location);
+    const sourceKey = this.canonicalCityKey(source);
+    const destinationKey = this.canonicalCityKey(destination);
+
+    if (source && (!destination || sourceKey === destinationKey)) {
+      return source;
+    }
+
+    if (source && destination) {
+      return `${source} -> ${destination}`;
+    }
+
+    return source || destination || `Location ${Number(row.location_ID)}`;
+  }
+
+  private mapLocationScope(row: StoredLocationContextRow): LocationScope {
+    return {
+      locationId: Number(row.location_ID),
+      sourceKeys: this.buildLocationSideKeys(row.source_location, row.source_location_city),
+      destinationKeys: this.buildLocationSideKeys(row.destination_location, row.destination_location_city),
+      sourceLocation: this.normalizeLocationName(row.source_location),
+      sourceCity: this.normalizeLocationName(row.source_location_city),
+      destinationLocation: this.normalizeLocationName(row.destination_location),
+      destinationCity: this.normalizeLocationName(row.destination_location_city),
+      locationName: this.buildLocationDisplayName(row),
+    };
+  }
+
+  private async getLocationContextRow(locationId: number): Promise<StoredLocationContextRow | null> {
+    if (!locationId) return null;
+
+    return this.prisma.dvi_stored_locations.findFirst({
+      where: { location_ID: BigInt(locationId), deleted: 0 },
+      select: {
+        location_ID: true,
+        source_location: true,
+        source_location_city: true,
+        destination_location: true,
+        destination_location_city: true,
+      },
+    });
+  }
+
+  private locationMatchesRoutePair(
+    scope: LocationScope,
+    pair: BetweenRoutePairCandidateRow,
+  ): boolean {
+    return (
+      this.hotspotLocationMatchesKeys(pair.from_hotspot_location, scope.sourceKeys) &&
+      this.hotspotLocationMatchesKeys(pair.to_hotspot_location, scope.destinationKeys)
+    );
+  }
+
+  private async getBetweenRoutePairCandidates(
+    onlyUsable: boolean,
+    sourceHotspotId?: number,
+  ): Promise<BetweenRoutePairCandidateRow[]> {
+    const whereConditions: Prisma.Sql[] = [];
+
+    if (onlyUsable) {
+      whereConditions.push(Prisma.sql`bm.route_fit_type IN ('ON_ROUTE', 'MINOR_DETOUR')`);
+    }
+
+    if (sourceHotspotId) {
+      whereConditions.push(Prisma.sql`bm.from_hotspot_id = ${sourceHotspotId}`);
+    }
+
+    const whereSql = whereConditions.length
+      ? Prisma.sql`WHERE ${Prisma.join(whereConditions, ' AND ')}`
+      : Prisma.empty;
+
+    return this.prisma.$queryRaw<BetweenRoutePairCandidateRow[]>(Prisma.sql`
+      SELECT DISTINCT
+        bm.from_hotspot_id,
+        hs.hotspot_name AS from_hotspot_name,
+        hs.hotspot_location AS from_hotspot_location,
+        bm.to_hotspot_id,
+        hd.hotspot_name AS to_hotspot_name,
+        hd.hotspot_location AS to_hotspot_location
+      FROM hotspot_route_between_map bm
+      JOIN dvi_hotspot_place hs
+        ON hs.hotspot_ID = bm.from_hotspot_id
+       AND hs.deleted = 0
+      JOIN dvi_hotspot_place hd
+        ON hd.hotspot_ID = bm.to_hotspot_id
+       AND hd.deleted = 0
+      ${whereSql}
+      ORDER BY hs.hotspot_name ASC, hd.hotspot_name ASC
+    `);
+  }
+
+  private async getFilterLocationRows(search: string): Promise<StoredLocationContextRow[]> {
+    if (!search) {
+      return this.prisma.dvi_stored_locations.findMany({
+        where: { deleted: 0 },
+        select: {
+          location_ID: true,
+          source_location: true,
+          source_location_city: true,
+          destination_location: true,
+          destination_location_city: true,
+        },
+        orderBy: { location_ID: 'desc' },
+      });
+    }
+
+    return this.prisma.dvi_stored_locations.findMany({
+      where: {
+        deleted: 0,
+        OR: [
+          { source_location: { contains: search } },
+          { source_location_city: { contains: search } },
+          { destination_location: { contains: search } },
+          { destination_location_city: { contains: search } },
+        ],
+      },
+      select: {
+        location_ID: true,
+        source_location: true,
+        source_location_city: true,
+        destination_location: true,
+        destination_location_city: true,
+      },
+      orderBy: { location_ID: 'desc' },
+    });
+  }
+
+  private mapHotspotOption(
+    row: BetweenHotspotCandidateRow,
+    scope: LocationScope,
+  ): { hotspotId: number; hotspotName: string; locationId: number; locationName: string } {
+    return {
+      hotspotId: Number(row.hotspotId),
+      hotspotName: String(row.hotspotName || ''),
+      locationId: scope.locationId,
+      locationName: scope.locationName,
+    };
+  }
+
+  private matchesSearch(texts: Array<string | null | undefined>, search: string): boolean {
+    if (!search) return true;
+
+    const haystack = texts
+      .map((value) => String(value ?? '').trim().toLowerCase())
+      .filter(Boolean)
+      .join(' ');
+
+    return haystack.includes(search);
+  }
+
+  async getBetweenHotspotFilterOptions(q: BetweenHotspotFiltersQueryDto) {
+    const locationId = Number(q.locationId || 0);
+    const sourceHotspotId = Number(q.sourceHotspotId || 0);
+    const onlyUsable = this.parseBooleanQuery(q.onlyUsable);
+    const search = String(q.search ?? '').trim().toLowerCase();
+
+    const pairCandidates = await this.getBetweenRoutePairCandidates(onlyUsable, sourceHotspotId || undefined);
+
+    if (!locationId) {
+      const locationRows = await this.getFilterLocationRows(search);
+      const locations = locationRows
+        .map((row) => this.mapLocationScope(row))
+        .filter((scope) => pairCandidates.some((pair) => this.locationMatchesRoutePair(scope, pair)))
+        .map((scope) => ({
+          locationId: scope.locationId,
+          locationName: scope.locationName,
+        }))
+        .sort((a, b) => a.locationName.localeCompare(b.locationName));
+
+      return {
+        locations,
+        sourceHotspots: [],
+        destinationHotspots: [],
+      };
+    }
+
+    const locationRow = await this.getLocationContextRow(locationId);
+    if (!locationRow) {
+      throw new NotFoundException('Location context not found.');
+    }
+
+    const scope = this.mapLocationScope(locationRow);
+    const matchingPairs = pairCandidates.filter((pair) => this.locationMatchesRoutePair(scope, pair));
+
+    const locations = matchingPairs.length
+      ? [{ locationId: scope.locationId, locationName: scope.locationName }]
+      : [];
+
+    const sourceHotspotMap = new Map<number, { hotspotId: number; hotspotName: string; locationId: number; locationName: string }>();
+    for (const pair of matchingPairs) {
+      const candidate: BetweenHotspotCandidateRow = {
+        hotspotId: pair.from_hotspot_id,
+        hotspotName: pair.from_hotspot_name,
+        hotspotLocation: pair.from_hotspot_location,
+      };
+
+      if (!this.hotspotLocationMatchesKeys(candidate.hotspotLocation, scope.sourceKeys)) {
+        continue;
+      }
+
+      if (!this.matchesSearch([candidate.hotspotName, candidate.hotspotLocation, scope.locationName], search)) {
+        continue;
+      }
+
+      if (!sourceHotspotMap.has(candidate.hotspotId)) {
+        sourceHotspotMap.set(candidate.hotspotId, this.mapHotspotOption(candidate, scope));
+      }
+    }
+
+    const sourceHotspots = Array.from(sourceHotspotMap.values()).sort((a, b) => a.hotspotName.localeCompare(b.hotspotName));
+
+    let destinationHotspots: Array<{ hotspotId: number; hotspotName: string; locationId: number; locationName: string }> = [];
+    if (sourceHotspotId) {
+      const destinationMap = new Map<number, { hotspotId: number; hotspotName: string; locationId: number; locationName: string }>();
+
+      for (const pair of matchingPairs) {
+        if (Number(pair.from_hotspot_id) !== sourceHotspotId) {
+          continue;
+        }
+
+        const candidate: BetweenHotspotCandidateRow = {
+          hotspotId: pair.to_hotspot_id,
+          hotspotName: pair.to_hotspot_name,
+          hotspotLocation: pair.to_hotspot_location,
+        };
+
+        if (!this.hotspotLocationMatchesKeys(candidate.hotspotLocation, scope.destinationKeys)) {
+          continue;
+        }
+
+        if (!this.matchesSearch([candidate.hotspotName, candidate.hotspotLocation, scope.locationName], search)) {
+          continue;
+        }
+
+        if (!destinationMap.has(candidate.hotspotId)) {
+          destinationMap.set(candidate.hotspotId, this.mapHotspotOption(candidate, scope));
+        }
+      }
+
+      destinationHotspots = Array.from(destinationMap.values()).sort((a, b) => a.hotspotName.localeCompare(b.hotspotName));
+    }
+
+    return {
+      locations,
+      sourceHotspots,
+      destinationHotspots,
+    };
+  }
+
+  async getBetweenHotspots(q: BetweenHotspotQueryDto) {
+    const sourceHotspotId = Number(q.sourceHotspotId || 0);
+    const destinationHotspotId = Number(q.destinationHotspotId || 0);
+    const locationId = q.locationId ? Number(q.locationId) : 0;
+    const onlyUsable = this.parseBooleanQuery(q.onlyUsable);
+    const search = String(q.search ?? '').trim().toLowerCase();
+    const page = Math.max(1, Number(q.page) || 1);
+    const pageSize = Math.min(200, Math.max(1, Number(q.pageSize) || 50));
+
+    if (!sourceHotspotId || !destinationHotspotId) {
+      throw new BadRequestException('sourceHotspotId and destinationHotspotId are required.');
+    }
+
+    const [sourceHotspot, destinationHotspot] = await this.prisma.$transaction([
+      this.prisma.dvi_hotspot_place.findFirst({
+        where: { hotspot_ID: sourceHotspotId, deleted: 0 },
+        select: { hotspot_ID: true, hotspot_name: true, hotspot_location: true },
+      }),
+      this.prisma.dvi_hotspot_place.findFirst({
+        where: { hotspot_ID: destinationHotspotId, deleted: 0 },
+        select: { hotspot_ID: true, hotspot_name: true, hotspot_location: true },
+      }),
+    ]);
+
+    if (!sourceHotspot || !destinationHotspot) {
+      throw new NotFoundException('Source or destination hotspot not found.');
+    }
+
+    let locationContext: LocationScope | null = null;
+
+    if (locationId) {
+      const locationRow = await this.getLocationContextRow(locationId);
+      if (!locationRow) {
+        throw new NotFoundException('Location context not found.');
+      }
+
+      locationContext = this.mapLocationScope(locationRow);
+
+      const sourceMatchesLocation = this.hotspotLocationMatchesKeys(
+        sourceHotspot.hotspot_location,
+        locationContext.sourceKeys,
+      );
+      const destinationMatchesLocation = this.hotspotLocationMatchesKeys(
+        destinationHotspot.hotspot_location,
+        locationContext.destinationKeys,
+      );
+
+      if (!sourceMatchesLocation || !destinationMatchesLocation) {
+        return {
+          sourceHotspot,
+          destinationHotspot,
+          locationContext,
+          rows: [],
+          total: 0,
+          page,
+          pageSize,
+        };
+      }
+    }
+
+    const whereConditions: Prisma.Sql[] = [
+      Prisma.sql`bm.from_hotspot_id = ${sourceHotspotId}`,
+      Prisma.sql`bm.to_hotspot_id = ${destinationHotspotId}`,
+    ];
+
+    if (onlyUsable) {
+      whereConditions.push(Prisma.sql`bm.route_fit_type IN ('ON_ROUTE', 'MINOR_DETOUR')`);
+    }
+
+    if (search) {
+      const pattern = `%${search}%`;
+      whereConditions.push(
+        Prisma.sql`(
+          LOWER(COALESCE(c.hotspot_name, '')) LIKE ${pattern}
+          OR LOWER(COALESCE(c.hotspot_location, '')) LIKE ${pattern}
+        )`,
+      );
+    }
+
+    const whereSql = Prisma.sql`${Prisma.join(whereConditions, ' AND ')}`;
+
+    const countRows = await this.prisma.$queryRaw<Array<{ total: bigint }>>(Prisma.sql`
+      SELECT COUNT(*) AS total
+      FROM hotspot_route_between_map bm
+      JOIN dvi_hotspot_place c ON c.hotspot_ID = bm.between_hotspot_id
+      WHERE ${whereSql}
+    `);
+
+    const rows = await this.prisma.$queryRaw<Array<Record<string, unknown>>>(Prisma.sql`
+      SELECT
+        bm.from_hotspot_id,
+        bm.to_hotspot_id,
+        bm.between_hotspot_id,
+        c.hotspot_name AS between_hotspot_name,
+        c.hotspot_location AS between_hotspot_location,
+        c.hotspot_latitude AS between_hotspot_latitude,
+        c.hotspot_longitude AS between_hotspot_longitude,
+        bm.route_fit_type,
+        bm.road_detour_km,
+        bm.road_detour_ratio,
+        bm.candidate_distance_from_ab_route_meters,
+        bm.route_decision_reason,
+        bm.updated_at
+      FROM hotspot_route_between_map bm
+      JOIN dvi_hotspot_place c ON c.hotspot_ID = bm.between_hotspot_id
+      WHERE ${whereSql}
+      ORDER BY
+        FIELD(bm.route_fit_type, 'ON_ROUTE', 'MINOR_DETOUR', 'BACKTRACK', 'OFF_ROUTE'),
+        bm.road_detour_km ASC,
+        bm.between_hotspot_id ASC
+      LIMIT ${pageSize}
+      OFFSET ${(page - 1) * pageSize}
+    `);
+
+    return {
+      sourceHotspot,
+      destinationHotspot,
+      locationContext,
+      rows,
+      total: Number(countRows[0]?.total ?? 0),
+      page,
+      pageSize,
     };
   }
 
