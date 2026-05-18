@@ -6826,97 +6826,294 @@ export class ItinerariesService {
     };
   }
 
-  private buildMatrixRouteTimelineAfterLowPriorityRemoval(
+  private async buildMatrixRouteTimelineAfterLowPriorityRemoval(
+    tx: any,
     timeline: any[],
     removedHotspotIds: number[],
-  ): any[] {
+  ): Promise<any[]> {
     const ordered = this.sortTimelineSegmentsForPreview(Array.isArray(timeline) ? timeline : []);
     const removedSet = new Set<number>(removedHotspotIds.map((id: any) => Number(id)).filter((id: number) => id > 0));
     if (ordered.length === 0 || removedSet.size === 0) return ordered;
 
-    const removedNames = new Set<string>();
-    for (const row of ordered) {
+    const isAttractionRow = (row: any): boolean => {
       const type = String(row?.type || '').toLowerCase();
-      const hid = Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || 0);
-      if (type === 'attraction' && removedSet.has(hid)) {
-        const name = String(row?.name || row?.label || '').trim().toLowerCase();
-        if (name) removedNames.add(name);
-      }
-    }
-
-    const coreRows: any[] = [];
-    const hotelRows: any[] = [];
-
-    for (const row of ordered) {
+      return type === 'attraction' || Number(row?.item_type || 0) === 4;
+    };
+    const isTravelRow = (row: any): boolean => {
       const type = String(row?.type || '').toLowerCase();
-      const hid = Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || 0);
-
-      if (type === 'attraction' && removedSet.has(hid)) {
-        continue;
-      }
-
-      if (type === 'travel') {
-        const toName = String(row?.toName || row?.label || row?.name || '').trim().toLowerCase();
-        if (toName && removedNames.has(toName)) {
-          continue;
-        }
-      }
-
-      if (type === 'hotel') {
-        hotelRows.push({ ...row });
-      } else {
-        coreRows.push({ ...row });
-      }
-    }
-
-    const timelineOut: any[] = [];
-    let cursor = this.parseSegmentStartMinutes(coreRows[0]) ?? 8 * 60;
-    let travelTarget = '';
-
-    for (const row of coreRows) {
+      return type === 'travel' || Number(row?.item_type || 0) === 3 || Number(row?.item_type || 0) === 5;
+    };
+    const isHotelLikeRow = (row: any): boolean => {
       const type = String(row?.type || '').toLowerCase();
-      if (type === 'travel') {
-        const target = String(row?.toName || row?.label || row?.name || '').trim().toLowerCase();
-        if (target && target === travelTarget) {
-          continue;
-        }
-        travelTarget = target;
-      } else {
-        travelTarget = '';
-      }
-
+      const text = String(row?.text || row?.name || '').toLowerCase();
+      return type === 'hotel' || Number(row?.item_type || 0) === 6 || text.includes('check-in at hotel');
+    };
+    const isTravelToHotelRow = (row: any): boolean => {
+      const type = String(row?.type || '').toLowerCase();
+      const text = String(row?.text || row?.name || '').toLowerCase();
+      return (type === 'travel' || Number(row?.item_type || 0) === 3 || Number(row?.item_type || 0) === 5)
+        && text.includes('travel to hotel');
+    };
+    const scheduleRowAtCursor = (row: any, cursorMinutes: number, forcedDuration?: number | null) => {
+      const type = String(row?.type || '').toLowerCase();
+      const fallbackDuration = type === 'hotel' ? 0 : (type === 'travel' ? 10 : 60);
       const duration = Math.max(
         0,
         Number(
-          this.getPreviewRowDurationMinutes(row)
-          || row?.matrixDurationMin
-          || (type === 'travel' ? 10 : type === 'hotel' ? 0 : 60),
+          forcedDuration
+          ?? this.getPreviewRowDurationMinutes(row)
+          ?? row?.matrixDurationMin
+          ?? fallbackDuration,
         ),
       );
-
-      const startMin = cursor;
+      const startMin = cursorMinutes;
       const endMin = startMin + duration;
-      cursor = endMin;
+      return {
+        cursor: endMin,
+        row: {
+          ...row,
+          timeRange: this.minutesRangeToTimeString(startMin, endMin),
+          hotspot_start_time: null,
+          hotspot_end_time: null,
+        },
+      };
+    };
 
-      timelineOut.push({
-        ...row,
-        timeRange: this.minutesToTimeRange(startMin, endMin),
-      });
+    const removedNameSet = new Set<string>();
+    for (const row of ordered) {
+      if (!isAttractionRow(row)) continue;
+      const hid = Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || 0);
+      if (!removedSet.has(hid)) continue;
+      const name = String(row?.text || row?.name || '').trim().toLowerCase();
+      if (name) removedNameSet.add(name);
     }
 
-    for (const row of hotelRows) {
-      timelineOut.push({
-        ...row,
-        timeRange: this.minutesToTimeRange(cursor, cursor),
+    const attractionRows = ordered.filter((row: any) => isAttractionRow(row));
+    const keptAttractions = attractionRows.filter((row: any) => {
+      const hid = Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || 0);
+      return hid > 0 && !removedSet.has(hid);
+    });
+    if (keptAttractions.length === 0) return ordered;
+
+    const firstKeptAttraction = keptAttractions[0];
+    const firstKeptIndex = ordered.findIndex((row: any) => row === firstKeptAttraction);
+    const prefixRows = ordered
+      .slice(0, Math.max(0, firstKeptIndex))
+      .filter((row: any) => !isHotelLikeRow(row) && !isTravelToHotelRow(row))
+      .filter((row: any) => {
+        const rowId = Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || row?.hotspot_id || 0);
+        if (rowId > 0 && removedSet.has(rowId)) return false;
+        const rowText = String(row?.text || row?.name || row?.toName || row?.to || '').trim().toLowerCase();
+        for (const removedName of removedNameSet) {
+          if (removedName && rowText.includes(removedName)) return false;
+        }
+        return true;
+      });
+
+    const hotelTravelTemplate = [...ordered].reverse().find((row: any) => isTravelToHotelRow(row)) || null;
+    const hotelRows = ordered.filter((row: any) => isHotelLikeRow(row)).map((row: any) => ({ ...row }));
+
+    const rebuilt: any[] = [];
+    let cursor = this.parseSegmentStartMinutes(ordered[0]) ?? 8 * 60;
+
+    for (const row of prefixRows) {
+      const scheduled = scheduleRowAtCursor(row, cursor);
+      cursor = scheduled.cursor;
+      rebuilt.push(scheduled.row);
+    }
+
+    const firstAttractionScheduled = scheduleRowAtCursor(firstKeptAttraction, cursor);
+    cursor = firstAttractionScheduled.cursor;
+    rebuilt.push(firstAttractionScheduled.row);
+
+    for (let idx = 1; idx < keptAttractions.length; idx += 1) {
+      const fromAttraction = keptAttractions[idx - 1];
+      const toAttraction = keptAttractions[idx];
+
+      const fromId = Number(fromAttraction?.locationId || fromAttraction?.hotspot_ID || fromAttraction?.hotspotId || 0);
+      const toId = Number(toAttraction?.locationId || toAttraction?.hotspot_ID || toAttraction?.hotspotId || 0);
+      const leg = await this.getCachedRouteMatrixLeg(tx, fromId, toId);
+
+      const fallbackRow = ordered.find((row: any) => {
+        if (!isTravelRow(row) || isTravelToHotelRow(row)) return false;
+        const toName = String(row?.toName || row?.text || row?.name || '').trim().toLowerCase();
+        const targetName = String(toAttraction?.text || toAttraction?.name || '').trim().toLowerCase();
+        return !!toName && !!targetName && toName.includes(targetName);
+      }) || null;
+
+      const estimatedDuration = Number(
+        fallbackRow?.matrixDurationMin
+        || this.getPreviewRowDurationMinutes(fallbackRow)
+        || this.estimateDurationFromDistance(leg.distanceKm)
+        || 10,
+      );
+      const durationMin = leg.durationMin != null
+        ? Math.max(1, Math.round(Number(leg.durationMin)))
+        : Math.max(1, Math.round(Number(estimatedDuration || 10)));
+      const distanceKm = leg.distanceKm != null
+        ? Number(leg.distanceKm)
+        : (fallbackRow?.matrixDistanceKm != null ? Number(fallbackRow.matrixDistanceKm) : null);
+      const fromLabel = String(fromAttraction?.text || fromAttraction?.name || `Hotspot #${fromId}`).trim();
+      const toLabel = String(toAttraction?.text || toAttraction?.name || `Hotspot #${toId}`).trim();
+
+      if (leg.durationMin == null) {
+        console.warn(`Cached matrix missing for ${fromLabel} -> ${toLabel}; estimated duration used.`);
+      }
+
+      const reconnectTravelRow = {
+        ...(fallbackRow || {}),
+        type: 'travel',
+        item_type: Number(fallbackRow?.item_type || 3),
+        text: `Travel to ${toLabel}`,
+        name: `Travel to ${toLabel}`,
+        fromName: fromLabel,
+        toName: toLabel,
+        matrixDistanceKm: distanceKm,
+        distanceKm: distanceKm,
+        travelDistanceKm: distanceKm,
+        matrixDurationMin: durationMin,
+        duration: `${durationMin} min`,
+        distance: distanceKm != null ? `${Number(distanceKm).toFixed(1)} km` : (fallbackRow?.distance || null),
+        isMatrixReconnectedTravel: true,
+        isEstimatedTravel: leg.durationMin == null,
+      };
+
+      const scheduledTravel = scheduleRowAtCursor(reconnectTravelRow, cursor, durationMin);
+      cursor = scheduledTravel.cursor;
+      rebuilt.push(scheduledTravel.row);
+
+      const scheduledAttraction = scheduleRowAtCursor(toAttraction, cursor);
+      cursor = scheduledAttraction.cursor;
+      rebuilt.push(scheduledAttraction.row);
+    }
+
+    const hotelTravelDuration = Math.max(
+      1,
+      Math.round(
+        Number(
+          hotelTravelTemplate?.matrixDurationMin
+          || this.getPreviewRowDurationMinutes(hotelTravelTemplate)
+          || 10,
+        ),
+      ),
+    );
+    if (hotelTravelTemplate) {
+      const scheduledHotelTravel = scheduleRowAtCursor(
+        {
+          ...hotelTravelTemplate,
+          isMatrixReconnectedTravel: true,
+          matrixDurationMin: hotelTravelDuration,
+          duration: `${hotelTravelDuration} min`,
+        },
+        cursor,
+        hotelTravelDuration,
+      );
+      cursor = scheduledHotelTravel.cursor;
+      rebuilt.push(scheduledHotelTravel.row);
+    }
+
+    for (const hotelRow of hotelRows) {
+      rebuilt.push({
+        ...hotelRow,
+        timeRange: this.minutesRangeToTimeString(cursor, cursor),
+        hotspot_start_time: null,
+        hotspot_end_time: null,
         isZeroDurationHotel: true,
       });
     }
 
-    return timelineOut.map((row: any, idx: number) => ({
+    return rebuilt.map((row: any, index: number) => ({
       ...row,
-      previewOrder: idx,
-      matrixPreviewOrder: idx,
+      previewOrder: index,
+      matrixPreviewOrder: index,
     }));
+  }
+
+  private validateResolvedLowPriorityTimeline(
+    timeline: any[],
+    plannedRemovals: Array<any>,
+    dayEndMinutes: number,
+  ): string | null {
+    const rows = Array.isArray(timeline) ? timeline : [];
+    const removals = Array.isArray(plannedRemovals) ? plannedRemovals : [];
+    if (rows.length === 0) return 'Resolved timeline is empty.';
+
+    const removedIds = new Set<number>(
+      removals
+        .map((row: any) => Number(row?.id || row?.hotspotId || row?.hotspot_ID || row?.locationId || 0))
+        .filter((id: number) => Number.isFinite(id) && id > 0),
+    );
+    const removedNames = new Set<string>(
+      removals
+        .map((row: any) => String(row?.name || row?.hotspotName || '').trim().toLowerCase())
+        .filter(Boolean),
+    );
+
+    const isAttractionRow = (row: any) => {
+      const type = String(row?.type || '').toLowerCase();
+      return type === 'attraction' || Number(row?.item_type || 0) === 4;
+    };
+    const isTravelRow = (row: any) => {
+      const type = String(row?.type || '').toLowerCase();
+      return type === 'travel' || Number(row?.item_type || 0) === 3 || Number(row?.item_type || 0) === 5;
+    };
+    const isHotelRow = (row: any) => {
+      const type = String(row?.type || '').toLowerCase();
+      const text = String(row?.text || row?.name || '').toLowerCase();
+      return type === 'hotel' || Number(row?.item_type || 0) === 6 || text.includes('check-in at hotel');
+    };
+
+    for (const row of rows) {
+      const rowId = Number(row?.locationId || row?.hotspotId || row?.hotspot_ID || row?.hotspot_id || 0);
+      const rowText = String(row?.text || row?.name || row?.toName || row?.to || '').trim().toLowerCase();
+      if (rowId > 0 && removedIds.has(rowId)) return `Resolved timeline still contains removed hotspot id ${rowId}.`;
+      for (const removedName of removedNames) {
+        if (removedName && rowText.includes(removedName)) {
+          return `Resolved timeline still contains removed hotspot name ${removedName}.`;
+        }
+      }
+      if (isTravelRow(row)) {
+        const toName = String(row?.toName || row?.text || row?.name || '').trim().toLowerCase();
+        for (const removedName of removedNames) {
+          if (removedName && toName.includes(removedName)) {
+            return `Travel row still points to removed hotspot ${removedName}.`;
+          }
+        }
+      }
+    }
+
+    const attractionIndices = rows
+      .map((row: any, index: number) => ({ row, index }))
+      .filter((entry: any) => isAttractionRow(entry.row));
+
+    for (let i = 1; i < attractionIndices.length; i += 1) {
+      const attractionIndex = attractionIndices[i].index;
+      const prevRow = rows[attractionIndex - 1];
+      if (!prevRow || !isTravelRow(prevRow)) {
+        return `Attraction at index ${attractionIndex} is not preceded by a travel row.`;
+      }
+    }
+
+    const hotelIndex = rows.findIndex((row: any) => isHotelRow(row));
+    if (hotelIndex < 0) return 'Resolved timeline has no hotel/check-in row.';
+    const hasRowsAfterHotel = rows.slice(hotelIndex + 1).some((row: any) => {
+      const type = String(row?.type || '').toLowerCase();
+      return type !== '';
+    });
+    if (hasRowsAfterHotel) return 'Hotel/check-in row is not last in resolved timeline.';
+
+    const finalEnd = rows.reduce((max: number, row: any) => {
+      const end = this.parseSegmentEndMinutes(row);
+      return end == null ? max : Math.max(max, end);
+    }, 0);
+    if (finalEnd > dayEndMinutes) {
+      return `Resolved timeline still exceeds day end by ${finalEnd - dayEndMinutes} minutes.`;
+    }
+
+    const orderSequential = rows.every((row: any, index: number) => Number(row?.matrixPreviewOrder ?? row?.previewOrder) === index);
+    if (!orderSequential) return 'matrixPreviewOrder/previewOrder is not sequential.';
+
+    return null;
   }
 
   private minutesToTimeRange(startMinutes: number, endMinutes: number): string {
@@ -6928,6 +7125,74 @@ export class ItinerariesService {
     };
 
     return `${toDisplay(startMinutes)} - ${toDisplay(endMinutes)}`;
+  }
+
+  private sanitizeResolvedLowPriorityTimeline(
+    timeline: any[],
+    plannedRemovals: Array<any>,
+  ): any[] {
+    const source = Array.isArray(timeline) ? timeline : [];
+    const removals = Array.isArray(plannedRemovals) ? plannedRemovals : [];
+
+    const removedIds = new Set<number>(
+      removals
+        .map((row: any) => Number(row?.id || row?.hotspotId || row?.hotspot_ID || row?.locationId || 0))
+        .filter((id: number) => Number.isFinite(id) && id > 0),
+    );
+    const removedNames = new Set<string>(
+      removals
+        .map((row: any) => String(row?.name || row?.hotspotName || '').trim().toLowerCase())
+        .filter(Boolean),
+    );
+
+    return source
+      .filter((row: any) => {
+        const rowId = Number(row?.locationId || row?.hotspotId || row?.hotspot_ID || row?.hotspot_id || 0);
+        const rowText = String(row?.text || row?.name || row?.toName || row?.to || '').trim().toLowerCase();
+
+        if (rowId > 0 && removedIds.has(rowId)) return false;
+
+        for (const removedName of removedNames) {
+          if (removedName && rowText.includes(removedName)) return false;
+        }
+
+        return true;
+      })
+      .map((row: any, idx: number) => ({
+        ...row,
+        previewOrder: idx,
+        matrixPreviewOrder: idx,
+      }));
+  }
+
+  private timelineContainsPlannedRemovalRows(
+    timeline: any[],
+    plannedRemovals: Array<any>,
+  ): boolean {
+    const source = Array.isArray(timeline) ? timeline : [];
+    const removals = Array.isArray(plannedRemovals) ? plannedRemovals : [];
+    if (source.length === 0 || removals.length === 0) return false;
+
+    const removedIds = new Set<number>(
+      removals
+        .map((row: any) => Number(row?.id || row?.hotspotId || row?.hotspot_ID || row?.locationId || 0))
+        .filter((id: number) => Number.isFinite(id) && id > 0),
+    );
+    const removedNames = new Set<string>(
+      removals
+        .map((row: any) => String(row?.name || row?.hotspotName || '').trim().toLowerCase())
+        .filter(Boolean),
+    );
+
+    return source.some((row: any) => {
+      const rowId = Number(row?.locationId || row?.hotspotId || row?.hotspot_ID || row?.hotspot_id || 0);
+      const rowText = String(row?.text || row?.name || row?.toName || row?.to || '').trim().toLowerCase();
+      if (rowId > 0 && removedIds.has(rowId)) return true;
+      for (const removedName of removedNames) {
+        if (removedName && rowText.includes(removedName)) return true;
+      }
+      return false;
+    });
   }
 
   private async resolveLowPriorityRemovalForMatrixOverflowInTx(
@@ -6943,11 +7208,19 @@ export class ItinerariesService {
     },
   ): Promise<{
     resolved: boolean;
+    originalOverflowMinutes: number;
     overflowMinutes: number;
     finalOverflowMinutes: number;
     finalTimeline: any[];
-    removedHotspots: Array<{ id: number; name: string; priority: number; reason: string }>;
+    finalArrivalTime: string | null;
+    removedHotspots: Array<{ id: number; name: string; priority: number; durationMinutes: number; reason: string }>;
     candidateHotspots: Array<{ id: number; name: string; priority: number; estimatedMinutes: number }>;
+    simulationAttempts: Array<{
+      removedHotspotIds: number[];
+      removedHotspotNames: string[];
+      finalHotelCheckIn: string | null;
+      finalOverflowMinutes: number;
+    }>;
     message: string;
   }> {
     const planId = Number(params?.planId || 0);
@@ -6961,11 +7234,14 @@ export class ItinerariesService {
     if (!planId || !routeId || !selectedHotspotId || currentTimeline.length === 0) {
       return {
         resolved: false,
+        originalOverflowMinutes: overflowMinutes,
         overflowMinutes,
         finalOverflowMinutes: overflowMinutes,
         finalTimeline: currentTimeline,
+        finalArrivalTime: null,
         removedHotspots: [],
         candidateHotspots: [],
+        simulationAttempts: [],
         message: 'Unable to evaluate low-priority removals for matrix overflow.',
       };
     }
@@ -7018,23 +7294,44 @@ export class ItinerariesService {
     }
 
     const durationByHotspot = new Map<number, number>();
+    const timelinePriorityByHotspot = new Map<number, number>();
+    const timelineNameByHotspot = new Map<number, string>();
     for (const row of currentTimeline || []) {
       const type = String(row?.type || '').toLowerCase();
       const hid = Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || 0);
-      if (type !== 'attraction' || !hid || durationByHotspot.has(hid)) continue;
-      const duration = Math.max(0, Number(this.getPreviewRowDurationMinutes(row) || 60));
-      durationByHotspot.set(hid, duration);
+      if (type !== 'attraction' || !hid) continue;
+
+      if (!durationByHotspot.has(hid)) {
+        const duration = Math.max(0, Number(this.getPreviewRowDurationMinutes(row) || 60));
+        durationByHotspot.set(hid, duration);
+      }
+
+      const rowPriority = Number(row?.priority || 0);
+      if (!timelinePriorityByHotspot.has(hid) && Number.isFinite(rowPriority) && rowPriority > 0) {
+        timelinePriorityByHotspot.set(hid, rowPriority);
+      }
+
+      const rowName = String(row?.text || row?.name || '').trim();
+      if (!timelineNameByHotspot.has(hid) && rowName) {
+        timelineNameByHotspot.set(hid, rowName);
+      }
     }
 
-    const candidateHotspots = routeHotspotIds
+    const candidateSourceIds = Array.from(new Set([
+      ...routeHotspotIds,
+      ...Array.from(timelinePriorityByHotspot.keys()),
+      ...Array.from(durationByHotspot.keys()),
+    ]));
+
+    const candidateHotspots = candidateSourceIds
       .filter((id: number) => id !== selectedHotspotId)
       .map((id: number) => ({
         id,
-        name: nameByHotspot.get(id) || `Hotspot #${id}`,
-        priority: Number(priorityByHotspot.get(id) || 4),
+        name: timelineNameByHotspot.get(id) || nameByHotspot.get(id) || `Hotspot #${id}`,
+        priority: Number(timelinePriorityByHotspot.get(id) || priorityByHotspot.get(id) || 0),
         estimatedMinutes: Number(durationByHotspot.get(id) || 60),
       }))
-      .filter((row: any) => Number(row.priority || 4) > selectedManualPriority)
+      .filter((row: any) => Number(row.priority || 0) > selectedManualPriority)
       .sort((a: any, b: any) => {
         if (a.priority !== b.priority) return b.priority - a.priority;
         if (a.estimatedMinutes !== b.estimatedMinutes) return a.estimatedMinutes - b.estimatedMinutes;
@@ -7044,28 +7341,40 @@ export class ItinerariesService {
     if (candidateHotspots.length === 0) {
       return {
         resolved: false,
+        originalOverflowMinutes: overflowMinutes,
         overflowMinutes,
         finalOverflowMinutes: overflowMinutes,
         finalTimeline: currentTimeline,
+        finalArrivalTime: null,
         removedHotspots: [],
         candidateHotspots,
+        simulationAttempts: [],
         message: 'No same-route lower-priority hotspots are available for overflow resolution.',
       };
     }
 
-    const removed: Array<{ id: number; name: string; priority: number; reason: string }> = [];
+    const removed: Array<{ id: number; name: string; priority: number; durationMinutes: number; reason: string }> = [];
     let finalTimeline = currentTimeline;
     let finalOverflowMinutes = overflowMinutes;
+    let finalArrivalTime: string | null = null;
+    const simulationAttempts: Array<{
+      removedHotspotIds: number[];
+      removedHotspotNames: string[];
+      finalHotelCheckIn: string | null;
+      finalOverflowMinutes: number;
+    }> = [];
 
     for (const candidate of candidateHotspots) {
       removed.push({
         id: candidate.id,
         name: candidate.name,
         priority: candidate.priority,
-        reason: 'Removed to resolve day-end overflow in matrix-safe apply.',
+        durationMinutes: Number(candidate.estimatedMinutes || 0),
+        reason: `Removed because it is lower priority than the selected manual hotspot (P${selectedManualPriority}) and the route still exceeded day end.`,
       });
 
-      finalTimeline = this.buildMatrixRouteTimelineAfterLowPriorityRemoval(
+      finalTimeline = await this.buildMatrixRouteTimelineAfterLowPriorityRemoval(
+        tx,
         currentTimeline,
         removed.map((row: any) => Number(row.id)),
       );
@@ -7075,27 +7384,55 @@ export class ItinerariesService {
         return end === null ? max : Math.max(max, end);
       }, 0);
       finalOverflowMinutes = Math.max(0, maxEndMinutes - dayEndMinutes);
+      finalArrivalTime = maxEndMinutes > 0 ? this.minutesRangeToTimeString(maxEndMinutes, maxEndMinutes) : null;
+
+      simulationAttempts.push({
+        removedHotspotIds: removed.map((row: any) => Number(row.id)).filter((id: number) => id > 0),
+        removedHotspotNames: removed.map((row: any) => String(row?.name || '')).filter(Boolean),
+        finalHotelCheckIn: finalArrivalTime,
+        finalOverflowMinutes,
+      });
 
       if (finalOverflowMinutes <= 0) {
+        const invariantError = this.validateResolvedLowPriorityTimeline(
+          finalTimeline,
+          removed,
+          dayEndMinutes,
+        );
+        if (invariantError) {
+          throw new ConflictException({
+            success: false,
+            inserted: false,
+            code: 'LOW_PRIORITY_RESOLVED_TIMELINE_INVALID',
+            message: invariantError,
+          });
+        }
+
         return {
           resolved: true,
+          originalOverflowMinutes: overflowMinutes,
           overflowMinutes,
           finalOverflowMinutes: 0,
           finalTimeline,
+          finalArrivalTime,
           removedHotspots: removed,
           candidateHotspots,
-          message: `Resolved overflow by removing ${removed.length} lower-priority hotspot(s) from the same route.`,
+          simulationAttempts,
+          message: 'Adding this manual hotspot exceeds the day end. The following lower-priority hotspots will be removed to keep hotel check-in within 8:00 PM.',
         };
       }
     }
 
     return {
       resolved: false,
+      originalOverflowMinutes: overflowMinutes,
       overflowMinutes,
       finalOverflowMinutes,
       finalTimeline: currentTimeline,
+      finalArrivalTime,
       removedHotspots: [],
       candidateHotspots,
+      simulationAttempts,
       message: `Could not resolve ${overflowMinutes} minute overflow using same-route lower-priority removals.`,
     };
   }
@@ -7386,6 +7723,9 @@ export class ItinerariesService {
           lowPriorityRemovalPlan: {
             resolved: false,
             candidates: lowPriorityPlan.candidateHotspots,
+            finalOverflowMinutes: lowPriorityPlan.finalOverflowMinutes,
+            finalArrivalTime: lowPriorityPlan.finalArrivalTime,
+            simulationAttempts: lowPriorityPlan.simulationAttempts,
           },
         });
       }
@@ -7667,7 +8007,7 @@ export class ItinerariesService {
         ? 'MANUAL_HOTSPOT_INSERTED_WITH_LOW_PRIORITY_REMOVAL'
         : 'MANUAL_HOTSPOT_INSERTED_WITH_MATRIX_SLOT',
       message: removedLowPriorityHotspots.length > 0
-        ? `Manual hotspot inserted using matrix slot after removing ${removedLowPriorityHotspots.length} lower-priority hotspot(s).`
+        ? 'Manual hotspot inserted. Lower-priority hotspots were removed to keep the day within schedule.'
         : 'Manual hotspot inserted using matrix best slot.',
       planId,
       routeId,
@@ -7679,6 +8019,7 @@ export class ItinerariesService {
       resolution: {
         manualInsertionFit,
         requiresConfirmation: false,
+        removedLowPriorityHotspots: removedLowPriorityHotspots,
         removedOptionalHotspots: removedLowPriorityHotspots,
         removedTopPriorityHotspots: [],
         topPriorityAffected: [],
@@ -7714,7 +8055,9 @@ export class ItinerariesService {
         selectedManualConflictCount: 0,
         scheduledSelectedManualCount: 1,
         unscheduledManualCount: 0,
-        reason: 'Manual hotspot inserted with matrix-safe route-local apply.',
+          reason: removedLowPriorityHotspots.length > 0
+            ? 'Route overflow resolved by removing lower-priority hotspots from the same route.'
+            : 'Manual hotspot inserted with matrix-safe route-local apply.',
       },
     };
   }
@@ -7886,6 +8229,63 @@ export class ItinerariesService {
       return null;
     } catch {
       return null;
+    }
+  }
+
+  private async getCachedRouteDistanceKm(
+    tx: any,
+    fromHotspotId: number,
+    toHotspotId: number,
+  ): Promise<number | null> {
+    try {
+      const result: any = await (tx as any).$queryRawUnsafe(`
+        SELECT osrm_distance_km
+        FROM hotspot_route_matrix
+        WHERE from_hotspot_id = ?
+          AND to_hotspot_id = ?
+          AND process_status = 'DONE'
+        LIMIT 1
+      `, fromHotspotId, toHotspotId);
+      if (Array.isArray(result) && result.length > 0) {
+        const distanceKm = Number(result[0]?.osrm_distance_km ?? null);
+        return Number.isFinite(distanceKm) && distanceKm > 0 ? distanceKm : null;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async getCachedRouteMatrixLeg(
+    tx: any,
+    fromHotspotId: number,
+    toHotspotId: number,
+  ): Promise<{ distanceKm: number | null; durationMin: number | null }> {
+    if (!tx || !fromHotspotId || !toHotspotId) {
+      return { distanceKm: null, durationMin: null };
+    }
+    try {
+      const result: any = await (tx as any).$queryRawUnsafe(`
+        SELECT osrm_distance_km, osrm_duration_min
+        FROM hotspot_route_matrix
+        WHERE from_hotspot_id = ?
+          AND to_hotspot_id = ?
+          AND process_status = 'DONE'
+        LIMIT 1
+      `, fromHotspotId, toHotspotId);
+
+      if (!Array.isArray(result) || result.length === 0) {
+        return { distanceKm: null, durationMin: null };
+      }
+
+      const distanceKm = Number(result[0]?.osrm_distance_km ?? null);
+      const durationMin = Number(result[0]?.osrm_duration_min ?? null);
+      return {
+        distanceKm: Number.isFinite(distanceKm) && distanceKm > 0 ? distanceKm : null,
+        durationMin: Number.isFinite(durationMin) && durationMin > 0 ? durationMin : null,
+      };
+    } catch {
+      return { distanceKm: null, durationMin: null };
     }
   }
 
@@ -9074,14 +9474,54 @@ export class ItinerariesService {
 
       manualInsertionFit.lowPriorityRemovalPlanPreview = {
         resolved: lowPriorityRemovalPlanPreview.resolved,
-        overflowMinutes: lowPriorityRemovalPlanPreview.overflowMinutes,
+        originalOverflowMinutes: lowPriorityRemovalPlanPreview.originalOverflowMinutes,
+        overflowMinutes: lowPriorityRemovalPlanPreview.originalOverflowMinutes,
         finalOverflowMinutes: lowPriorityRemovalPlanPreview.finalOverflowMinutes,
         plannedRemovals: lowPriorityRemovalPlanPreview.removedHotspots,
         candidates: lowPriorityRemovalPlanPreview.candidateHotspots,
+        simulationAttempts: lowPriorityRemovalPlanPreview.simulationAttempts,
         message: lowPriorityRemovalPlanPreview.message,
       };
 
       if (lowPriorityRemovalPlanPreview.resolved) {
+        const finalResolvedTimeline = this.sanitizeResolvedLowPriorityTimeline(
+          Array.isArray(lowPriorityRemovalPlanPreview.finalTimeline) ? lowPriorityRemovalPlanPreview.finalTimeline : adjustedPreviewTimeline,
+          lowPriorityRemovalPlanPreview.removedHotspots || [],
+        );
+
+        const invariantMessage = this.validateResolvedLowPriorityTimeline(
+          finalResolvedTimeline,
+          lowPriorityRemovalPlanPreview.removedHotspots || [],
+          dayEndMinutes,
+        );
+        if (invariantMessage) {
+          if (String(process.env.NODE_ENV || '').toLowerCase() !== 'production') {
+            throw new ConflictException({
+              success: false,
+              inserted: false,
+              code: 'LOW_PRIORITY_RESOLVED_TIMELINE_INVALID',
+              message: invariantMessage,
+            });
+          }
+          console.error(invariantMessage);
+        }
+
+        manualInsertionFit.exceedsDayEnd = false;
+        manualInsertionFit.dayOverflowMinutes = 0;
+        manualInsertionFit.overflowResolved = true;
+        manualInsertionFit.removedLowPriorityHotspots = lowPriorityRemovalPlanPreview.removedHotspots || [];
+        manualInsertionFit.finalArrivalTime = lowPriorityRemovalPlanPreview.finalArrivalTime || manualInsertionFit.finalArrivalTime;
+        manualInsertionFit.rescheduleApplied = true;
+        manualInsertionFit.fullTimelineIsResolvedRemovalPlan = true;
+        manualInsertionFit.timelineSource = 'LOW_PRIORITY_REMOVAL_FINAL_TIMELINE';
+        manualInsertionFit.lowPriorityRemovalPlanPreview = {
+          ...manualInsertionFit.lowPriorityRemovalPlanPreview,
+          resolved: true,
+          plannedRemovals: lowPriorityRemovalPlanPreview.removedHotspots || [],
+          finalTimelineHotspotIds: finalResolvedTimeline
+            .map((row: any) => Number(row?.locationId || row?.hotspotId || row?.hotspot_ID || row?.hotspot_id || 0))
+            .filter((id: number) => Number.isFinite(id) && id > 0),
+        };
         finalRequiresConfirmation = false;
         finalValidation = {
           ...finalValidation,
@@ -9090,12 +9530,9 @@ export class ItinerariesService {
           requiresPriorityConfirmation: false,
           stillUnschedulable: false,
           routeEndOverflowMinutes: 0,
-          reason: 'Route overflow can be resolved by removing lower-priority hotspots from the same route.',
+          reason: 'Route overflow resolved by removing lower-priority hotspots from the same route.',
         };
-        // Replace the overflowing preview timeline with the clean resolved timeline.
-        if (Array.isArray(lowPriorityRemovalPlanPreview.finalTimeline) && lowPriorityRemovalPlanPreview.finalTimeline.length > 0) {
-          adjustedPreviewTimeline = lowPriorityRemovalPlanPreview.finalTimeline;
-        }
+        adjustedPreviewTimeline = finalResolvedTimeline;
       }
     }
 

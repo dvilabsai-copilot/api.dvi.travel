@@ -44,6 +44,18 @@ function findAttractionIndexByText(rows: any[], textNeedle: string): number {
   });
 }
 
+function parseMinutes(timeValue: string | null | undefined): number | null {
+  if (!timeValue) return null;
+  const match = String(timeValue).trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (!match) return null;
+  let hour = Number(match[1]);
+  const minute = Number(match[2]);
+  const ampm = String(match[3]).toUpperCase();
+  if (ampm === 'AM' && hour === 12) hour = 0;
+  if (ampm === 'PM' && hour !== 12) hour += 12;
+  return (hour * 60) + minute;
+}
+
 async function main() {
   let token = AUTH_TOKEN;
   if (!token) {
@@ -72,6 +84,12 @@ async function main() {
     anchorIndex: 0,
     allowTopPriorityRemoval: false,
     selectedHotspotIds: [HOTSPOT_ID],
+    matrixPreferredSlot: {
+      fromHotspotId: 228,
+      toHotspotId: 218,
+      slotIndex: 0,
+      source: 'BEST_FIT',
+    },
   };
 
   console.log('=== REQUEST ===');
@@ -163,6 +181,11 @@ async function main() {
     }));
   });
 
+  console.log('\n--- required proof: lowPriorityRemovalPlanPreview ---');
+  console.log(JSON.stringify(manualInsertionFit?.lowPriorityRemovalPlanPreview ?? null, null, 2));
+  console.log('\n--- required proof: plannedRemovals ---');
+  console.log(JSON.stringify(manualInsertionFit?.lowPriorityRemovalPlanPreview?.plannedRemovals ?? [], null, 2));
+
   const cheeyapparaIdx = findAttractionIndexByText(fullTimeline, 'cheeyappara');
   const aToCIdx = fullTimeline.findIndex((row: any) => row?.isMatrixSplitTravel === true && row?.matrixTravelLeg === 'A_TO_C');
   const pothameduIdx = fullTimeline.findIndex((row: any) => Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || 0) === HOTSPOT_ID);
@@ -181,6 +204,17 @@ async function main() {
   const travelToEravikulamRows = fullTimeline
     .map((row: any, index: number) => ({ row, index }))
     .filter(({ row }) => String(row?.text || row?.name || '').toLowerCase().includes('travel to eravikulam'));
+  const mattupettyTravelIdx = mattupettyIdx > 0 ? mattupettyIdx - 1 : -1;
+  const mattupettyTravelRow = mattupettyTravelIdx >= 0 ? fullTimeline[mattupettyTravelIdx] : null;
+
+  const survivingSequence = fullTimeline
+    .filter((row: any) => {
+      const type = String(row?.type || '').toLowerCase();
+      const text = String(row?.text || row?.name || '').toLowerCase();
+      return type === 'attraction' || text.includes('check-in at hotel');
+    })
+    .map((row: any) => String(row?.text || row?.name || '').trim())
+    .filter(Boolean);
 
   console.log('\n--- order indices ---');
   console.log({
@@ -195,6 +229,7 @@ async function main() {
     echoIdx,
     hotelIdx,
   });
+  console.log('surviving sequence:', survivingSequence.join(' -> '));
 
   console.log('\n=== ASSERTIONS ===');
   assert('1) manualInsertionFit must exist', !!manualInsertionFit);
@@ -233,17 +268,30 @@ async function main() {
     ),
   );
 
-  assert('9) core order: Cheeyappara < A_TO_C < Pothamedu < C_TO_B < Eravikulam < Rose < Photo < Mattupetty < Echo < Hotel',
-    cheeyapparaIdx >= 0
-      && aToCIdx > cheeyapparaIdx
-      && pothameduIdx > aToCIdx
-      && cToBIdx > pothameduIdx
-      && eravikulamIdx > cToBIdx
-      && roseIdx > eravikulamIdx
-      && photoIdx > roseIdx
-      && mattupettyIdx > photoIdx
-      && echoIdx > mattupettyIdx
-      && hotelIdx > echoIdx,
+  const resolvedRemovalIds = new Set<number>(
+    Array.isArray(manualInsertionFit?.lowPriorityRemovalPlanPreview?.plannedRemovals)
+      ? manualInsertionFit.lowPriorityRemovalPlanPreview.plannedRemovals
+          .map((row: any) => Number(row?.id || 0))
+          .filter((id: number) => id > 0)
+      : [],
+  );
+
+  const expectedRemainingOrder = [
+    { label: 'Cheeyappara', index: cheeyapparaIdx, hotspotId: 228 },
+    { label: 'A_TO_C', index: aToCIdx, hotspotId: -1 },
+    { label: 'Pothamedu', index: pothameduIdx, hotspotId: HOTSPOT_ID },
+    { label: 'C_TO_B', index: cToBIdx, hotspotId: -2 },
+    { label: 'Eravikulam', index: eravikulamIdx, hotspotId: 218 },
+    { label: 'Munnar Rose Garden', index: roseIdx, hotspotId: 220 },
+    { label: 'Photo view point', index: photoIdx, hotspotId: 484 },
+    { label: 'Mattupetty Dam & Lake', index: mattupettyIdx, hotspotId: 172 },
+    { label: 'Echo Point', index: echoIdx, hotspotId: 171 },
+    { label: 'Hotel', index: hotelIdx, hotspotId: -3 },
+  ].filter((row) => row.hotspotId < 0 || !resolvedRemovalIds.has(row.hotspotId));
+
+  assert('9) core order remains forward after applying any resolved low-priority removals',
+    expectedRemainingOrder.every((row) => row.index >= 0)
+      && expectedRemainingOrder.every((row, idx) => idx === 0 || row.index > expectedRemainingOrder[idx - 1].index),
   );
 
   assert('10) hotel index is after all attractions',
@@ -339,25 +387,121 @@ async function main() {
 
   // ── overflow / low-priority removal plan assertions ───────────────────────
   const lowPriPlan = manualInsertionFit?.lowPriorityRemovalPlanPreview;
-  if (manualInsertionFit?.exceedsDayEnd === true) {
+  const selectedPriority = 4;
+  const routeEndMinutes = 20 * 60;
+  const originalFinalArrival = parseEnd(String(lowPriPlan?.simulationAttempts?.[0]?.finalHotelCheckIn || manualInsertionFit?.finalArrivalTime || ''))
+    || parseStart(String(lowPriPlan?.simulationAttempts?.[0]?.finalHotelCheckIn || manualInsertionFit?.finalArrivalTime || ''))
+    || null;
+  const finalHotelRow = [...fullTimeline].reverse().find((row: any) => {
+    const type = String(row?.type || '').toLowerCase();
+    const text = String(row?.text || row?.name || '').toLowerCase();
+    return type === 'hotel' || text.includes('check-in at hotel');
+  }) || null;
+  const finalHotelCheckIn = parseEnd(finalHotelRow?.timeRange) || parseStart(finalHotelRow?.timeRange) || null;
+
+  console.log('\n--- low-priority removal simulation ---');
+  console.log('routeEndMinutes:', routeEndMinutes, '(8:00 PM)');
+  console.log('original final hotel check-in:', manualInsertionFit?.finalArrivalTime || null);
+  console.log('original overflow minutes:', lowPriPlan?.originalOverflowMinutes ?? manualInsertionFit?.dayOverflowMinutes ?? null);
+  console.log('candidate removals sorted by priority:', JSON.stringify(lowPriPlan?.candidates ?? [], null, 2));
+  if (Array.isArray(lowPriPlan?.simulationAttempts)) {
+    lowPriPlan.simulationAttempts.forEach((attempt: any, idx: number) => {
+      console.log(`attempt ${idx + 1}:`, JSON.stringify(attempt, null, 2));
+    });
+  }
+  console.log('final planned removals:', JSON.stringify(lowPriPlan?.plannedRemovals ?? [], null, 2));
+  console.log('final preview timeline:');
+  fullTimeline.forEach((row: any, index: number) => {
+    console.log(`${index}: ${row?.type || 'NA'} | ${row?.text || row?.name || ''} | ${row?.timeRange || ''}`);
+  });
+
+  if ((Number(lowPriPlan?.originalOverflowMinutes || 0) > 0) || manualInsertionFit?.overflowResolved === true) {
     console.log('\n--- overflow detected, checking removal plan ---');
-    assert('23) lowPriorityRemovalPlanPreview must exist when exceedsDayEnd=true',
+    assert('23) lowPriorityRemovalPlanPreview must exist when final hotel check-in originally exceeded route end',
       !!lowPriPlan,
     );
     if (lowPriPlan?.resolved === true) {
       const plannedRemovals: any[] = Array.isArray(lowPriPlan?.plannedRemovals) ? lowPriPlan.plannedRemovals : [];
-      const selectedPriority = 4; // Pothamedu is P4 (manual hotspot priority)
-      assert('24) All removed hotspots must have priority > selected manual priority (P4)',
+      const removedIds = plannedRemovals.map((row: any) => Number(row?.id || 0)).filter((id: number) => id > 0);
+      const removedNames = plannedRemovals
+        .map((row: any) => String(row?.name || '').trim().toLowerCase())
+        .filter(Boolean);
+      const timelineContainsPlannedRemovalById = fullTimeline.some((row: any) => {
+        const rowId = Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || 0);
+        return rowId > 0 && removedIds.includes(rowId);
+      });
+      const timelineContainsPlannedRemovalByName = fullTimeline.some((row: any) => {
+        const rowText = String(row?.text || row?.name || row?.toName || row?.to || '').trim().toLowerCase();
+        return removedNames.some((name: string) => name && rowText.includes(name));
+      });
+      const finalCheckInMinutes = parseMinutes(finalHotelCheckIn);
+      const hasOffRouteRows = fullTimeline.some((row: any) => {
+        const rowRouteId = Number(
+          row?.itinerary_route_ID
+          ?? row?.itineraryRouteId
+          ?? row?.itinerary_route_id
+          ?? row?.route_id
+          ?? row?.routeId
+          ?? 0,
+        );
+        return Number.isFinite(rowRouteId) && rowRouteId > 0 && rowRouteId !== ROUTE_ID;
+      });
+
+      console.log('contains planned removal by hotspot ID:', timelineContainsPlannedRemovalById);
+      console.log('contains planned removal by name:', timelineContainsPlannedRemovalByName);
+      console.log('final hotel/checkin time:', finalHotelCheckIn);
+
+      assert('24) final hotel check-in must be at or before 8:00 PM when resolved',
+        finalCheckInMinutes !== null && finalCheckInMinutes <= routeEndMinutes,
+      );
+      assert('25) removed hotspots must not appear in finalTimeline',
+        timelineContainsPlannedRemovalById === false,
+      );
+      assert('26) removed hotspot names/travel rows must not appear in finalTimeline',
+        timelineContainsPlannedRemovalByName === false,
+      );
+      assert('27) All removed hotspots must have priority > selected manual priority (P4)',
         plannedRemovals.every((row: any) => Number(row?.priority || 0) > selectedPriority),
       );
-      assert('25) No P1/P2/P3 hotspots removed',
+      assert('28) No P1/P2/P3 hotspots removed',
         plannedRemovals.every((row: any) => Number(row?.priority || 0) > 3),
       );
-      assert('26) Selected hotspot (219) not in removal list',
-        plannedRemovals.every((row: any) => Number(row?.id || 0) !== HOTSPOT_ID),
+      assert('29) Selected hotspot (219) remains in final timeline',
+        fullTimeline.some((row: any) => Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || 0) === HOTSPOT_ID),
       );
-      assert('27) finalOverflowMinutes must be 0 when resolved',
+      assert('30) P1/P2/P3 route anchors remain (Cheeyappara + Eravikulam in this case)',
+        fullTimeline.some((row: any) => Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || 0) === 228)
+        && fullTimeline.some((row: any) => Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || 0) === 218),
+      );
+      assert('31) finalOverflowMinutes must be 0 when resolved',
         Number(lowPriPlan?.finalOverflowMinutes || 0) === 0,
+      );
+      assert('32) no rows from another route/day are present in preview timeline',
+        hasOffRouteRows === false,
+      );
+      assert('33) there is a travel row immediately before Mattupetty when Mattupetty remains',
+        mattupettyIdx < 0 || (
+          !!mattupettyTravelRow
+          && String(mattupettyTravelRow?.type || '').toLowerCase() === 'travel'
+        ),
+      );
+      const photoRemoved = removedIds.includes(484);
+      assert('34) Mattupetty predecessor travel row reconnects to the previous surviving stop',
+        mattupettyIdx < 0 || (
+          photoRemoved
+            ? (
+              String(mattupettyTravelRow?.fromName || '').toLowerCase().includes('eravikulam')
+              && String(mattupettyTravelRow?.toName || mattupettyTravelRow?.text || '').toLowerCase().includes('mattupetty')
+            )
+            : String(mattupettyTravelRow?.toName || mattupettyTravelRow?.text || '').toLowerCase().includes('mattupetty')
+        ),
+      );
+    } else {
+      assert('24) unresolved plan must include a clear reason',
+        String(lowPriPlan?.message || '').trim().length > 0,
+      );
+      assert('25) unresolved plan must include candidate list',
+        Array.isArray(lowPriPlan?.candidates),
       );
     }
   } else {
