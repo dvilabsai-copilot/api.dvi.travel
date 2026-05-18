@@ -30,6 +30,7 @@ import { normalizePassengerTitle } from "../../common/utils/passenger-title.util
 import { SupplementNormalizerService } from "../../modules/hotels/services/supplement-normalizer.service";
 import { normalizeCityName } from "./utils/city-normalization.util";
 import { haversineKm } from "./utils/distance-utils";
+import { buildMissingManualHotspotMatrix as buildMissingManualHotspotMatrixHelper } from './helpers/manual-hotspot-matrix-builder';
 
 type ManualInsertionCandidateResult = {
   success: boolean;
@@ -86,6 +87,7 @@ type VehicleBuildStatus = {
 @Injectable()
 export class ItinerariesService {
   private readonly vehicleBuildStatusMap = new Map<number, Omit<VehicleBuildStatus, 'source'>>();
+  private readonly manualHotspotMatrixBuildLocks = new Set<string>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -6685,6 +6687,112 @@ export class ItinerariesService {
     return previewResult;
   }
 
+  async buildMissingManualHotspotMatrix(params: {
+    planId: number;
+    routeId: number;
+    candidateHotspotId: number;
+    userId?: number;
+  }): Promise<{
+    success: boolean;
+    planId: number;
+    routeId: number;
+    candidateHotspotId: number;
+    candidateName: string;
+    slotPairs: number;
+    successCount: number;
+    failedCount: number;
+    rows: Array<{
+      fromHotspotId: number;
+      fromName: string;
+      toHotspotId: number;
+      toName: string;
+      routeFitType?: string;
+      abDistanceKm?: number;
+      acDistanceKm?: number;
+      cbDistanceKm?: number;
+      roadDetourKm?: number;
+      error?: string;
+    }>;
+    code?: string;
+    message?: string;
+    osrmSource?: string;
+    publicDemoWarning?: boolean;
+  }> {
+    const planId = Number(params?.planId || 0);
+    const routeId = Number(params?.routeId || 0);
+    const candidateHotspotId = Number(params?.candidateHotspotId || 0);
+    const userId = Number(params?.userId || 0);
+
+    if (!Number.isInteger(planId) || planId <= 0) {
+      throw new BadRequestException('planId must be a positive integer');
+    }
+    if (!Number.isInteger(routeId) || routeId <= 0) {
+      throw new BadRequestException('routeId must be a positive integer');
+    }
+    if (!Number.isInteger(candidateHotspotId) || candidateHotspotId <= 0) {
+      throw new BadRequestException('candidateHotspotId must be a positive integer');
+    }
+
+    const lockKey = `${planId}:${routeId}:${candidateHotspotId}`;
+    if (this.manualHotspotMatrixBuildLocks.has(lockKey)) {
+      return {
+        success: false,
+        code: 'MATRIX_BUILD_ALREADY_RUNNING',
+        message: 'Matrix build is already running for this hotspot. Please wait.',
+        planId,
+        routeId,
+        candidateHotspotId,
+        candidateName: '',
+        slotPairs: 0,
+        successCount: 0,
+        failedCount: 0,
+        rows: [],
+      };
+    }
+
+    this.manualHotspotMatrixBuildLocks.add(lockKey);
+    try {
+      const result = await buildMissingManualHotspotMatrixHelper({
+        prisma: this.prisma,
+        input: {
+          planId,
+          routeId,
+          candidateHotspotId,
+          userId,
+        },
+        options: {
+          osrmBaseUrl: String(process.env.OSRM_BASE_URL || 'https://router.project-osrm.org/route/v1/driving').trim(),
+          osrmDelayMs: Number(process.env.OSRM_DELAY_MS || 800),
+          osrmTimeoutMs: Number(process.env.OSRM_TIMEOUT_MS || 20000),
+          logger: console,
+        },
+      });
+
+      return {
+        ...result,
+        success: result.successCount > 0 && result.failedCount === 0,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        code: 'MATRIX_BUILD_FAILED',
+        message: String(error?.message || 'Matrix build failed.'),
+        planId,
+        routeId,
+        candidateHotspotId,
+        candidateName: '',
+        slotPairs: 0,
+        successCount: 0,
+        failedCount: 0,
+        rows: [],
+        osrmSource: String(process.env.OSRM_BASE_URL || 'https://router.project-osrm.org/route/v1/driving').trim(),
+        publicDemoWarning: String(process.env.OSRM_BASE_URL || 'https://router.project-osrm.org/route/v1/driving').includes('router.project-osrm.org'),
+      };
+    } finally {
+      this.manualHotspotMatrixBuildLocks.delete(lockKey);
+    }
+  }
+
   /**
    * Add a manual hotspot to a route and rebuild the timeline.
    */
@@ -7019,7 +7127,19 @@ export class ItinerariesService {
   ): Promise<any[]> {
     const ordered = this.sortTimelineSegmentsForPreview(Array.isArray(timeline) ? timeline : []);
     const removedSet = new Set<number>(removedHotspotIds.map((id: any) => Number(id)).filter((id: number) => id > 0));
-    if (ordered.length === 0 || removedSet.size === 0) return ordered;
+    
+    // Detailed logging to track hotspot 220
+    console.log('[buildMatrixRouteTimelineAfterLowPriorityRemoval] START', {
+      inputRemovedHotspotIds: removedHotspotIds,
+      removedSetContents: Array.from(removedSet),
+      orderedTimelineLength: ordered.length,
+      contains220: Array.from(removedSet).includes(220),
+    });
+    
+    if (ordered.length === 0 || removedSet.size === 0) {
+      console.log('[buildMatrixRouteTimelineAfterLowPriorityRemoval] Early return - empty timeline or no removals');
+      return ordered;
+    }
 
     const isAttractionRow = (row: any): boolean => {
       const type = String(row?.type || '').toLowerCase();
@@ -7065,6 +7185,17 @@ export class ItinerariesService {
       };
     };
 
+    // Helper: Check if a row matches a removed hotspot ID
+    const containsRemovedHotspotId = (row: any): boolean => {
+      const rowId = Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || row?.hotspot_id || 0);
+      if (rowId > 0 && removedSet.has(rowId)) return true;
+      const toHotspotId = Number(row?.toHotspotId || 0);
+      if (toHotspotId > 0 && removedSet.has(toHotspotId)) return true;
+      const fromHotspotId = Number(row?.fromHotspotId || 0);
+      if (fromHotspotId > 0 && removedSet.has(fromHotspotId)) return true;
+      return false;
+    };
+
     const removedNameSet = new Set<string>();
     for (const row of ordered) {
       if (!isAttractionRow(row)) continue;
@@ -7079,7 +7210,24 @@ export class ItinerariesService {
       const hid = Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || 0);
       return hid > 0 && !removedSet.has(hid);
     });
-    if (keptAttractions.length === 0) return ordered;
+    
+    // Log attractions analysis
+    console.log('[buildMatrixRouteTimelineAfterLowPriorityRemoval] ATTRACTIONS ANALYSIS', {
+      totalAttractionRows: attractionRows.length,
+      keptAttractionsCount: keptAttractions.length,
+      keptIds: keptAttractions.map((r: any) => Number(r?.locationId || r?.hotspot_ID || r?.hotspotId || 0)),
+      allAttractionIds: attractionRows.map((r: any) => ({
+        id: Number(r?.locationId || r?.hotspot_ID || r?.hotspotId || 0),
+        text: r?.text,
+        isRemoved: removedSet.has(Number(r?.locationId || r?.hotspot_ID || r?.hotspotId || 0)),
+      })),
+    });
+    
+    if (keptAttractions.length === 0) {
+      console.log('[buildMatrixRouteTimelineAfterLowPriorityRemoval] Early return - no kept attractions');
+      return ordered;
+    }
+
 
     const firstKeptAttraction = keptAttractions[0];
     const firstKeptIndex = ordered.findIndex((row: any) => row === firstKeptAttraction);
@@ -7087,12 +7235,27 @@ export class ItinerariesService {
       .slice(0, Math.max(0, firstKeptIndex))
       .filter((row: any) => !isHotelLikeRow(row) && !isTravelToHotelRow(row))
       .filter((row: any) => {
-        const rowId = Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || row?.hotspot_id || 0);
-        if (rowId > 0 && removedSet.has(rowId)) return false;
-        const rowText = String(row?.text || row?.name || row?.toName || row?.to || '').trim().toLowerCase();
-        for (const removedName of removedNameSet) {
-          if (removedName && rowText.includes(removedName)) return false;
+        // Only remove if this row IS a removed hotspot (for attractions)
+        // or if this travel row points TO a removed hotspot
+        const isAttractionRow = () => {
+          const type = String(row?.type || '').toLowerCase();
+          return type === 'attraction' || Number(row?.item_type || 0) === 4;
+        };
+        const isTravelRow = () => {
+          const type = String(row?.type || '').toLowerCase();
+          return type === 'travel' || Number(row?.item_type || 0) === 3 || Number(row?.item_type || 0) === 5;
+        };
+
+        if (isAttractionRow()) {
+          const hid = Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || row?.hotspot_id || 0);
+          if (hid > 0 && removedSet.has(hid)) return false;
         }
+
+        if (isTravelRow()) {
+          const toHotspotId = Number(row?.toHotspotId || 0);
+          if (toHotspotId > 0 && removedSet.has(toHotspotId)) return false;
+        }
+
         return true;
       });
 
@@ -7165,6 +7328,14 @@ export class ItinerariesService {
         duration: `${durationMin} min`,
         distance: distanceKm != null ? `${Number(distanceKm).toFixed(1)} km` : (fallbackRow?.distance || null),
         isMatrixReconnectedTravel: true,
+        // CRITICAL: Clear hotspot ID fields from fallbackRow to ensure this travel row doesn't get filtered as removed hotspot
+        id: undefined,
+        locationId: undefined,
+        hotspot_ID: undefined,
+        hotspotId: undefined,
+        hotspot_id: undefined,
+        toHotspotId: toId, // Set toHotspotId to the destination hotspot
+        fromHotspotId: fromId, // Set fromHotspotId to the source hotspot
         isEstimatedTravel: leg.durationMin == null,
       };
 
@@ -7214,6 +7385,14 @@ export class ItinerariesService {
           isMatrixReconnectedTravel: true,
           matrixDurationMin: hotelTravelDuration,
           duration: `${hotelTravelDuration} min`,
+          // CRITICAL: Clear hotspot ID fields to prevent false matching with removed hotspots
+          id: undefined,
+          locationId: undefined,
+          hotspot_ID: undefined,
+          hotspotId: undefined,
+          hotspot_id: undefined,
+          toHotspotId: undefined,
+          fromHotspotId: undefined,
         },
         cursor,
         hotelTravelDuration,
@@ -7233,7 +7412,61 @@ export class ItinerariesService {
     }
 
     const normalizedRebuilt = this.normalizeTravelLabelsToNextStop(rebuilt);
-    return normalizedRebuilt.map((row: any, index: number) => ({
+    
+    // Final sanitization: remove only rows that ARE removed hotspots or point TO removed hotspots
+    const sanitized = normalizedRebuilt.filter((row: any) => {
+      const isAttractionRow = () => {
+        const type = String(row?.type || '').toLowerCase();
+        return type === 'attraction' || Number(row?.item_type || 0) === 4;
+      };
+      const isTravelRow = () => {
+        const type = String(row?.type || '').toLowerCase();
+        return type === 'travel' || Number(row?.item_type || 0) === 3 || Number(row?.item_type || 0) === 5;
+      };
+
+      // Remove if this attraction IS a removed hotspot
+      if (isAttractionRow()) {
+        const hid = Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || row?.hotspot_id || 0);
+        return hid <= 0 || !removedSet.has(hid);
+      }
+
+      // Remove if this travel row points TO a removed hotspot
+      if (isTravelRow()) {
+        const toHotspotId = Number(row?.toHotspotId || 0);
+        if (toHotspotId > 0 && removedSet.has(toHotspotId)) return false;
+      }
+
+      return true;
+    });
+    
+    // Log final timeline before returning
+    const finalAttractionIds = sanitized
+      .filter((row: any) => {
+        const type = String(row?.type || '').toLowerCase();
+        return type === 'attraction' || Number(row?.item_type || 0) === 4;
+      })
+      .map((row: any) => Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || row?.hotspot_id || 0))
+      .filter((id: number) => id > 0);
+    
+    console.log('[buildMatrixRouteTimelineAfterLowPriorityRemoval] BEFORE RETURN', {
+      sanitizedLength: sanitized.length,
+      finalAttractionIds,
+      still_contains_220: finalAttractionIds.includes(220),
+      removedSet: Array.from(removedSet),
+    });
+    
+    if (finalAttractionIds.includes(220)) {
+      console.error('[buildMatrixRouteTimelineAfterLowPriorityRemoval] CRITICAL: Hotspot 220 still in sanitized result!');
+      console.error('Sanitized rows containing 220:');
+      for (const row of sanitized) {
+        const hid = Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || row?.hotspot_id || 0);
+        if (hid === 220) {
+          console.error(`  Row type=${row?.type} id=${hid} text="${row?.text}" name="${row?.name}"`);
+        }
+      }
+    }
+    
+    return sanitized.map((row: any, index: number) => ({
       ...row,
       previewOrder: index,
       matrixPreviewOrder: index,
@@ -7273,6 +7506,28 @@ export class ItinerariesService {
       const text = String(row?.text || row?.name || '').toLowerCase();
       return type === 'hotel' || Number(row?.item_type || 0) === 6 || text.includes('check-in at hotel');
     };
+
+    // Debug: Log what we're checking
+    const timelineHotspotIds = rows
+      .map((row: any) => Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || row?.hotspot_id || 0))
+      .filter((id: number) => id > 0);
+    const planDuplicates = timelineHotspotIds.filter((id: number) => removedIds.has(id));
+    
+    if (planDuplicates.length > 0) {
+      console.error('[validateResolvedLowPriorityTimeline] FAIL: Removed hotspot IDs still in timeline:', {
+        removedIds: Array.from(removedIds),
+        duplicateIds: planDuplicates,
+        timelineHotspotIds,
+        timelineLength: rows.length,
+      });
+      console.error('[validateResolvedLowPriorityTimeline] Matching rows:');
+      for (const row of rows) {
+        const rowId = Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || row?.hotspot_id || 0);
+        if (rowId > 0 && removedIds.has(rowId)) {
+          console.error(`  - Row type=${row?.type} id=${rowId} text="${row?.text}" toName="${row?.toName}"`);
+        }
+      }
+    }
 
     for (const row of rows) {
       const rowId = Number(row?.locationId || row?.hotspotId || row?.hotspot_ID || row?.hotspot_id || 0);
@@ -7968,7 +8223,7 @@ export class ItinerariesService {
         inserted: false,
         alreadyExists: true,
         code: 'MANUAL_HOTSPOT_ALREADY_EXISTS_IN_ROUTE',
-        message: 'Selected hotspot is already added to this route.',
+        message: 'This hotspot is already added to this route.',
         planId,
         routeId,
         hotspotIds: effectiveSelectedHotspotIds,
@@ -7976,7 +8231,7 @@ export class ItinerariesService {
     }
 
     if (newSelectedHotspotIds.length > 1) {
-      throw new BadRequestException('Matrix-safe apply supports one new manual hotspot at a time. Please preview and apply one hotspot.');
+      throw new BadRequestException('Matrix-safe apply supports one new manual hotspot at a time. Please preview and add one hotspot.');
     }
 
     const selectedHotspotId = Number(newSelectedHotspotIds[0]);
@@ -11642,11 +11897,23 @@ export class ItinerariesService {
     let chosenSlotSource: 'BEST_FIT' | 'REQUESTED_SLOT' | 'FALLBACK_TIMING' | 'NO_MATRIX_DATA';
     let warning: string | null = null;
 
-    const hasAnyUsableMatrixData = allSlotResults.some((slot) =>
-      this.isUsableMatrixRouteFitType(String(slot?.routeFitType || '').toUpperCase()),
+    // Explicit state detection: distinguish between no matrix data and no feasible slot
+    const usableTypes = ['ON_ROUTE', 'MINOR_DETOUR', 'BACKTRACK', 'OFF_ROUTE'];
+    const feasibleTypes = ['ON_ROUTE', 'MINOR_DETOUR'];
+
+    const hasAnyMatrixData = allSlotResults.some((slot) =>
+      usableTypes.includes(String(slot?.routeFitType || '').toUpperCase())
     );
 
-    if (!hasAnyUsableMatrixData) {
+    const hasFeasibleMatrixSlot = allSlotResults.some((slot) =>
+      feasibleTypes.includes(String(slot?.routeFitType || '').toUpperCase())
+    );
+
+    const hasOnlyOffRouteOrBacktrack =
+      hasAnyMatrixData && !hasFeasibleMatrixSlot;
+
+    // Case 1: MATRIX_MISSING — no real route-fit rows exist
+    if (!hasAnyMatrixData) {
       const normalizedSlots = allSlotResults.map((slot) => ({
         ...slot,
         selectedAsBest: false,
@@ -11662,11 +11929,44 @@ export class ItinerariesService {
         chosenSlot: null,
         chosenSlotSource: 'NO_MATRIX_DATA',
         routeFitAvailable: false,
+        hasAnyMatrixData: false,
+        hasFeasibleMatrixSlot: false,
         requiresMatrixBuild: true,
         canAutoMove: false,
         canApply: false,
+        code: 'MANUAL_HOTSPOT_MATRIX_DATA_MISSING',
+        previewBlockReason: 'MATRIX_MISSING',
         warning: 'Route-fit matrix data is missing for this candidate and current route. Build matrix before preview/apply.',
         allSlotResults: normalizedSlots,
+      };
+    }
+
+    // Case 2: MATRIX_BUILT_BUT_NO_FEASIBLE_SLOT — matrix exists but all slots are OFF_ROUTE or BACKTRACK
+    if (hasOnlyOffRouteOrBacktrack) {
+      const normalizedAllSlotResults = allSlotResults.map((slot) => ({
+        ...slot,
+        selectedAsBest: false,
+        routePossible: false,
+        finalDecisionReason: 'Not selected: route-fit data exists but this hotspot is off-route/backtracking.',
+      }));
+
+      return {
+        selectedHotspotId: candidateHotspotId,
+        selectedHotspotName: candidateHotspotName,
+        requestedSlot,
+        bestSlot: null,
+        chosenSlot: null,
+        chosenSlotSource: 'NO_MATRIX_DATA',
+        routeFitAvailable: true,
+        hasAnyMatrixData: true,
+        hasFeasibleMatrixSlot: false,
+        requiresMatrixBuild: false,
+        canAutoMove: false,
+        canApply: false,
+        code: 'MANUAL_HOTSPOT_NO_FEASIBLE_ROUTE_SLOT',
+        previewBlockReason: 'NO_FEASIBLE_ROUTE_SLOT',
+        warning: 'Matrix data exists, but this hotspot is off-route/backtracking for all current route slots.',
+        allSlotResults: normalizedAllSlotResults,
       };
     }
 
@@ -11724,7 +12024,7 @@ export class ItinerariesService {
       warning = 'No usable route-fit slot available for this candidate.';
     }
 
-    const routeFitAvailable = hasAnyUsableMatrixData;
+    const routeFitAvailable = hasAnyMatrixData;
     const canAutoMove = chosenSlotSource === 'BEST_FIT' && this.isFeasibleFitType(String(chosenSlot?.routeFitType || '').toUpperCase());
     const canApply = canAutoMove
       && Number(chosenSlot?.fromHotspotId || 0) > 0
@@ -11755,9 +12055,13 @@ export class ItinerariesService {
       allSlotResults: normalizedAllSlotResults,
       chosenSlotSource,
       routeFitAvailable,
-      requiresMatrixBuild: !canApply,
+      hasAnyMatrixData,
+      hasFeasibleMatrixSlot,
+      requiresMatrixBuild: false,
       canAutoMove,
       canApply,
+      code: 'MANUAL_HOTSPOT_PREVIEW_READY',
+      previewBlockReason: null,
       warning,
     };
   }

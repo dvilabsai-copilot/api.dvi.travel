@@ -12,6 +12,10 @@ type InputArgs = {
   retryFailed: boolean;
   rebuildDone: boolean;
   limit: number;
+  backfillBetweenNames: boolean;
+  popularBetweenMap: boolean;
+  includeOffRoute: boolean;
+  candidateMinUsage: number;
   popularPairs: boolean;
   seedOnly: boolean;
   minUsage: number;
@@ -38,6 +42,7 @@ type Config = {
 type Hotspot = {
   id: number;
   name: string;
+  location: string | null;
   lat: number;
   lng: number;
 };
@@ -55,7 +60,11 @@ type OsrmRoute = {
 
 type BetweenCandidate = {
   fromHotspotId: number;
+  fromHotspotName: string;
+  fromHotspotLocation: string | null;
   toHotspotId: number;
+  toHotspotName: string;
+  toHotspotLocation: string | null;
   betweenHotspotId: number;
   betweenHotspotName: string;
   distanceFromRouteMeters: number;
@@ -115,6 +124,7 @@ function usage() {
   console.log('  --limit <n>         Override BATCH_LIMIT for this run.');
   console.log('  --limit=<n>         Same as above.');
   console.log('  --help              Show help text.');
+  console.log('  --backfill-between-names  Backfill between-map from/to/between hotspot names in target DB and exit.');
   console.log('');
   console.log('Popular pairs mode:');
   console.log('  --popular-pairs     Build matrix only for popular consecutive hotspot pairs from source DB.');
@@ -122,6 +132,9 @@ function usage() {
   console.log('  --source-db <db>    Source database name (default: env SOURCE_DB_NAME or dvi_travels).');
   console.log('  --target-db <db>    Target database name (default: env TARGET_DB_NAME or dvi_main).');
   console.log('  --seed-only         Only populate hotspot_popular_pair_seed, skip OSRM calls.');
+  console.log('  --popular-between-map   Build hotspot_route_between_map for popular A->B pairs.');
+  console.log('  --candidate-min-usage <n>  Min usage for candidate C hotspot load (default: 2000).');
+  console.log('  --include-off-route   Also upsert OFF_ROUTE rows (default: false).');
   console.log('');
   console.log('Environment controls:');
   console.log('  OSRM_BASE_URL (default: http://localhost:5000/route/v1/driving)');
@@ -252,6 +265,9 @@ function normalizeArgs(raw: RawArgs, config: Config): InputArgs {
   const apply = Boolean(raw.apply);
   const retryFailed = Boolean(raw['retry-failed']);
   const rebuildDone = Boolean(raw['rebuild-done']);
+  const backfillBetweenNames = Boolean(raw['backfill-between-names']);
+  const popularBetweenMap = Boolean(raw['popular-between-map']);
+  const includeOffRoute = Boolean(raw['include-off-route']);
   const popularPairs = Boolean(raw['popular-pairs']);
   const seedOnly = Boolean(raw['seed-only']);
 
@@ -275,6 +291,16 @@ function normalizeArgs(raw: RawArgs, config: Config): InputArgs {
     throw new Error('Invalid --min-usage. It must be a positive integer.');
   }
 
+  const candidateMinUsageRaw = raw['candidate-min-usage'];
+  const candidateMinUsage =
+    typeof candidateMinUsageRaw === 'string' && candidateMinUsageRaw.trim() !== ''
+      ? Number(candidateMinUsageRaw)
+      : 2000;
+
+  if (!Number.isInteger(candidateMinUsage) || candidateMinUsage <= 0) {
+    throw new Error('Invalid --candidate-min-usage. It must be a positive integer.');
+  }
+
   const sourceDb = validateDbName(
     typeof raw['source-db'] === 'string' && raw['source-db'].trim()
       ? raw['source-db'].trim()
@@ -292,6 +318,10 @@ function normalizeArgs(raw: RawArgs, config: Config): InputArgs {
     retryFailed,
     rebuildDone,
     limit,
+    backfillBetweenNames,
+    popularBetweenMap,
+    includeOffRoute,
+    candidateMinUsage,
     popularPairs,
     seedOnly,
     minUsage,
@@ -455,7 +485,11 @@ async function ensureHelperTables(): Promise<void> {
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS hotspot_route_between_map (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      from_hotspot_name TEXT NULL,
+      from_hotspot_location TEXT NULL,
       from_hotspot_id INT NOT NULL,
+      to_hotspot_name TEXT NULL,
+      to_hotspot_location TEXT NULL,
       to_hotspot_id INT NOT NULL,
       between_hotspot_id INT NOT NULL,
       between_hotspot_name TEXT NULL,
@@ -488,6 +522,10 @@ async function ensureHelperTables(): Promise<void> {
   }
 
   const columnsToEnsure = [
+    ['from_hotspot_name', 'TEXT NULL'],
+    ['from_hotspot_location', 'TEXT NULL'],
+    ['to_hotspot_name', 'TEXT NULL'],
+    ['to_hotspot_location', 'TEXT NULL'],
     ['ab_osrm_distance_km', 'DOUBLE NULL'],
     ['ac_osrm_distance_km', 'DOUBLE NULL'],
     ['cb_osrm_distance_km', 'DOUBLE NULL'],
@@ -524,6 +562,7 @@ async function fetchHotspots(config: Config): Promise<Hotspot[]> {
     select: {
       hotspot_ID: true,
       hotspot_name: true,
+      hotspot_location: true,
       hotspot_latitude: true,
       hotspot_longitude: true,
     },
@@ -548,6 +587,7 @@ async function fetchHotspots(config: Config): Promise<Hotspot[]> {
     normalized.push({
       id: row.hotspot_ID,
       name,
+      location: normalizeName(row.hotspot_location) || null,
       lat,
       lng,
     });
@@ -906,7 +946,11 @@ async function replaceBetweenMapRows(
     await prisma.$executeRaw`
       INSERT INTO hotspot_route_between_map (
         from_hotspot_id,
+        from_hotspot_name,
+        from_hotspot_location,
         to_hotspot_id,
+        to_hotspot_name,
+        to_hotspot_location,
         between_hotspot_id,
         between_hotspot_name,
         distance_from_route_meters,
@@ -927,7 +971,11 @@ async function replaceBetweenMapRows(
         updated_at
       ) VALUES (
         ${row.fromHotspotId},
+        ${row.fromHotspotName},
+        ${row.fromHotspotLocation},
         ${row.toHotspotId},
+        ${row.toHotspotName},
+        ${row.toHotspotLocation},
         ${row.betweenHotspotId},
         ${row.betweenHotspotName},
         ${row.distanceFromRouteMeters},
@@ -948,6 +996,10 @@ async function replaceBetweenMapRows(
         NOW()
       )
       ON DUPLICATE KEY UPDATE
+        from_hotspot_name = VALUES(from_hotspot_name),
+        from_hotspot_location = VALUES(from_hotspot_location),
+        to_hotspot_name = VALUES(to_hotspot_name),
+        to_hotspot_location = VALUES(to_hotspot_location),
         between_hotspot_name = VALUES(between_hotspot_name),
         distance_from_route_meters = VALUES(distance_from_route_meters),
         candidate_distance_from_ab_route_meters = VALUES(candidate_distance_from_ab_route_meters),
@@ -1138,7 +1190,11 @@ async function evaluateBetweenHotspots(
 
     rows.push({
       fromHotspotId: pair.from.id,
+      fromHotspotName: pair.from.name,
+      fromHotspotLocation: pair.from.location,
       toHotspotId: pair.to.id,
+      toHotspotName: pair.to.name,
+      toHotspotLocation: pair.to.location,
       betweenHotspotId: candidate.id,
       betweenHotspotName: candidate.name,
       distanceFromRouteMeters: Number(candidateOnAb.distanceMeters.toFixed(3)),
@@ -1169,6 +1225,10 @@ function printConfig(input: InputArgs, config: Config) {
         retryFailed: input.retryFailed,
         rebuildDone: input.rebuildDone,
         limit: input.limit,
+        backfillBetweenNames: input.backfillBetweenNames,
+        popularBetweenMap: input.popularBetweenMap,
+        includeOffRoute: input.includeOffRoute,
+        candidateMinUsage: input.candidateMinUsage,
         popularPairs: input.popularPairs,
         seedOnly: input.seedOnly,
         minUsage: input.minUsage,
@@ -1318,11 +1378,12 @@ async function fetchHotspotsForIds(ids: number[], targetDb: string): Promise<Map
     Array<{
       hotspot_ID: number;
       hotspot_name: string | null;
+      hotspot_location: string | null;
       hotspot_latitude: string | null;
       hotspot_longitude: string | null;
     }>
   >(
-    `SELECT hotspot_ID, hotspot_name, hotspot_latitude, hotspot_longitude
+    `SELECT hotspot_ID, hotspot_name, hotspot_location, hotspot_latitude, hotspot_longitude
      FROM \`${targetDb}\`.\`dvi_hotspot_place\`
      WHERE hotspot_ID IN (${placeholders}) AND deleted = 0`,
     ...ids,
@@ -1336,6 +1397,7 @@ async function fetchHotspotsForIds(ids: number[], targetDb: string): Promise<Map
     map.set(row.hotspot_ID, {
       id: row.hotspot_ID,
       name: normalizeName(row.hotspot_name) || `Hotspot-${row.hotspot_ID}`,
+      location: normalizeName(row.hotspot_location) || null,
       lat,
       lng,
     });
@@ -1403,7 +1465,11 @@ async function ensureHelperTablesForDb(targetDb: string): Promise<void> {
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS \`${targetDb}\`.\`hotspot_route_between_map\` (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      from_hotspot_name TEXT NULL,
+      from_hotspot_location TEXT NULL,
       from_hotspot_id INT NOT NULL,
+      to_hotspot_name TEXT NULL,
+      to_hotspot_location TEXT NULL,
       to_hotspot_id INT NOT NULL,
       between_hotspot_id INT NOT NULL,
       between_hotspot_name TEXT NULL,
@@ -1436,6 +1502,10 @@ async function ensureHelperTablesForDb(targetDb: string): Promise<void> {
   }
 
   const columnsToEnsure: Array<[string, string]> = [
+    ['from_hotspot_name', 'TEXT NULL'],
+    ['from_hotspot_location', 'TEXT NULL'],
+    ['to_hotspot_name', 'TEXT NULL'],
+    ['to_hotspot_location', 'TEXT NULL'],
     ['ab_osrm_distance_km', 'DOUBLE NULL'],
     ['ac_osrm_distance_km', 'DOUBLE NULL'],
     ['cb_osrm_distance_km', 'DOUBLE NULL'],
@@ -1468,6 +1538,32 @@ async function ensureHelperTablesForDb(targetDb: string): Promise<void> {
       );
     }
   }
+}
+
+async function backfillBetweenMapNames(targetDb: string): Promise<number> {
+  const updated = await prisma.$executeRawUnsafe(
+    `UPDATE \`${targetDb}\`.\`hotspot_route_between_map\` bm
+     LEFT JOIN \`${targetDb}\`.\`dvi_hotspot_place\` hp_from
+       ON hp_from.hotspot_ID = bm.from_hotspot_id
+     LEFT JOIN \`${targetDb}\`.\`dvi_hotspot_place\` hp_to
+       ON hp_to.hotspot_ID = bm.to_hotspot_id
+     LEFT JOIN \`${targetDb}\`.\`dvi_hotspot_place\` hp_between
+       ON hp_between.hotspot_ID = bm.between_hotspot_id
+     SET
+       bm.from_hotspot_name = hp_from.hotspot_name,
+       bm.from_hotspot_location = hp_from.hotspot_location,
+       bm.to_hotspot_name = hp_to.hotspot_name,
+       bm.to_hotspot_location = hp_to.hotspot_location,
+       bm.between_hotspot_name = COALESCE(bm.between_hotspot_name, hp_between.hotspot_name)
+     WHERE
+       bm.from_hotspot_name IS NULL
+       OR bm.from_hotspot_location IS NULL
+       OR bm.to_hotspot_name IS NULL
+       OR bm.to_hotspot_location IS NULL
+       OR bm.between_hotspot_name IS NULL`,
+  );
+
+  return Number(updated);
 }
 
 async function upsertRouteMatrixStatusForDb(
@@ -1699,6 +1795,526 @@ async function runPopularPairsMode(input: InputArgs, config: Config): Promise<vo
   }
 }
 
+type PopularBetweenMapSummary = {
+  mode: 'dry-run' | 'apply';
+  sourceDb: string;
+  targetDb: string;
+  includeOffRoute: boolean;
+  candidateMinUsage: number;
+  popularPairsLoaded: number;
+  candidateHotspotsLoaded: number;
+  pairsProcessed: number;
+  pairsSkippedMissingAB: number;
+  candidatesChecked: number;
+  candidatesSkippedHaversine: number;
+  matrixLegsBuilt: number;
+  betweenRowsInserted: number;
+  onRouteRowsInserted: number;
+  minorDetourRowsInserted: number;
+  backtrackRowsInserted: number;
+  offRouteRowsInserted: number;
+  failed: number;
+  osrmCalls: number;
+  startedAt: string;
+  completedAt?: string;
+};
+
+type RouteMatrixRowForDb = {
+  process_status: ProcessStatus;
+  osrm_distance_km: number | null;
+  osrm_duration_min: number | null;
+  route_coordinates: string | null;
+};
+
+function parseRouteCoordinates(raw: string | null): [number, number][] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (item): item is [number, number] =>
+        Array.isArray(item) && item.length === 2 && Number.isFinite(item[0]) && Number.isFinite(item[1]),
+    );
+  } catch {
+    return [];
+  }
+}
+
+async function getLatestRouteMatrixRowForDb(
+  targetDb: string,
+  fromHotspotId: number,
+  toHotspotId: number,
+): Promise<RouteMatrixRowForDb | null> {
+  const rows = await prisma.$queryRawUnsafe<RouteMatrixRowForDb[]>(
+    `SELECT process_status, osrm_distance_km, osrm_duration_min, route_coordinates
+     FROM \`${targetDb}\`.\`hotspot_route_matrix\`
+     WHERE from_hotspot_id = ?
+       AND to_hotspot_id = ?
+     ORDER BY updated_at DESC
+     LIMIT 1`,
+    fromHotspotId,
+    toHotspotId,
+  );
+
+  return rows[0] ?? null;
+}
+
+async function getDoneRouteMatrixLegForDb(
+  targetDb: string,
+  fromHotspotId: number,
+  toHotspotId: number,
+): Promise<RouteMatrixLeg | null> {
+  const row = await getLatestRouteMatrixRowForDb(targetDb, fromHotspotId, toHotspotId);
+  if (!row || row.process_status !== 'DONE') return null;
+  if (typeof row.osrm_distance_km !== 'number' || !Number.isFinite(row.osrm_distance_km)) return null;
+
+  return {
+    osrmDistanceKm: row.osrm_distance_km,
+    osrmDurationMin: row.osrm_duration_min,
+    coordinates: parseRouteCoordinates(row.route_coordinates),
+  };
+}
+
+async function ensureRouteLegForDb(
+  targetDb: string,
+  from: Hotspot,
+  to: Hotspot,
+  config: Config,
+  input: InputArgs,
+  summary: RunSummary,
+  requireCoordinates: boolean,
+  matrixCounter: { built: number },
+): Promise<RouteMatrixLeg> {
+  const existingRow = await getLatestRouteMatrixRowForDb(targetDb, from.id, to.id);
+
+  if (existingRow?.process_status === 'DONE' && !input.rebuildDone) {
+    const doneLeg = await getDoneRouteMatrixLegForDb(targetDb, from.id, to.id);
+    if (doneLeg && (!requireCoordinates || doneLeg.coordinates.length > 1)) {
+      return doneLeg;
+    }
+  }
+
+  if (existingRow?.process_status === 'FAILED' && !input.retryFailed) {
+    throw new Error(`Existing FAILED leg ${from.id}->${to.id} and --retry-failed is not enabled.`);
+  }
+
+  if (!input.apply) {
+    throw new Error(`Missing route leg ${from.id}->${to.id} in dry-run mode.`);
+  }
+
+  const pair: Pair = { from, to };
+  const pairHaversineKm = haversineKm(from.lat, from.lng, to.lat, to.lng);
+
+  await upsertRouteMatrixStatusForDb(targetDb, pair, {
+    haversineKm: Number(pairHaversineKm.toFixed(6)),
+    processStatus: 'PENDING',
+  });
+
+  const route = await fetchOsrmRouteWithRetry(pair, config, summary);
+
+  await upsertRouteMatrixStatusForDb(targetDb, pair, {
+    haversineKm: Number(pairHaversineKm.toFixed(6)),
+    processStatus: 'DONE',
+    osrmDistanceKm: route.distanceKm,
+    osrmDurationMin: route.durationMin,
+    routeCoordinatesJson: JSON.stringify(route.coordinates),
+    errorMessage: null,
+  });
+
+  matrixCounter.built += 1;
+
+  return {
+    osrmDistanceKm: route.distanceKm,
+    osrmDurationMin: route.durationMin,
+    coordinates: route.coordinates,
+  };
+}
+
+async function fetchPopularPairsFromSeed(targetDb: string, limit: number): Promise<PopularPairSeedRow[]> {
+  const rows = await prisma.$queryRawUnsafe<PopularPairSeedRow[]>(
+    `SELECT from_hotspot_id, to_hotspot_id, usage_count
+     FROM \`${targetDb}\`.\`hotspot_popular_pair_seed\`
+     WHERE from_hotspot_id <> to_hotspot_id
+     ORDER BY usage_count DESC
+     LIMIT ?`,
+    limit,
+  );
+
+  return rows.map((row) => ({
+    from_hotspot_id: Number(row.from_hotspot_id),
+    to_hotspot_id: Number(row.to_hotspot_id),
+    usage_count: Number(row.usage_count),
+  }));
+}
+
+async function fetchCandidateHotspotIdsByUsage(sourceDb: string, minUsage: number): Promise<number[]> {
+  const rows = await prisma.$queryRawUnsafe<Array<{ hotspot_ID: number; usage_count: number }>>(
+    `SELECT hotspot_ID, COUNT(*) AS usage_count
+     FROM \`${sourceDb}\`.\`dvi_itinerary_route_hotspot_details\`
+     WHERE hotspot_ID > 0
+       AND item_type = 4
+       AND deleted = 0
+       AND status = 1
+     GROUP BY hotspot_ID
+     HAVING usage_count >= ?
+     ORDER BY usage_count DESC`,
+    minUsage,
+  );
+
+  return rows.map((item) => Number(item.hotspot_ID));
+}
+
+async function upsertBetweenMapRowsForDb(
+  targetDb: string,
+  rows: BetweenCandidate[],
+): Promise<{
+  betweenRowsInserted: number;
+  onRouteRowsInserted: number;
+  minorDetourRowsInserted: number;
+  backtrackRowsInserted: number;
+  offRouteRowsInserted: number;
+}> {
+  let betweenRowsInserted = 0;
+  let onRouteRowsInserted = 0;
+  let minorDetourRowsInserted = 0;
+  let backtrackRowsInserted = 0;
+  let offRouteRowsInserted = 0;
+
+  for (const row of rows) {
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO \`${targetDb}\`.\`hotspot_route_between_map\` (
+        from_hotspot_id,
+        from_hotspot_name,
+        from_hotspot_location,
+        to_hotspot_id,
+        to_hotspot_name,
+        to_hotspot_location,
+        between_hotspot_id,
+        between_hotspot_name,
+        distance_from_route_meters,
+        candidate_distance_from_ab_route_meters,
+        candidate_progress_on_ab_ratio,
+        destination_distance_from_ac_route_meters,
+        destination_progress_on_ac_ratio,
+        crosses_destination_before_candidate,
+        ab_osrm_distance_km,
+        ac_osrm_distance_km,
+        cb_osrm_distance_km,
+        inserted_route_distance_km,
+        road_detour_km,
+        road_detour_ratio,
+        route_decision_reason,
+        route_fit_type,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+      ON DUPLICATE KEY UPDATE
+        from_hotspot_name = VALUES(from_hotspot_name),
+        from_hotspot_location = VALUES(from_hotspot_location),
+        to_hotspot_name = VALUES(to_hotspot_name),
+        to_hotspot_location = VALUES(to_hotspot_location),
+        between_hotspot_name = VALUES(between_hotspot_name),
+        distance_from_route_meters = VALUES(distance_from_route_meters),
+        candidate_distance_from_ab_route_meters = VALUES(candidate_distance_from_ab_route_meters),
+        candidate_progress_on_ab_ratio = VALUES(candidate_progress_on_ab_ratio),
+        destination_distance_from_ac_route_meters = VALUES(destination_distance_from_ac_route_meters),
+        destination_progress_on_ac_ratio = VALUES(destination_progress_on_ac_ratio),
+        crosses_destination_before_candidate = VALUES(crosses_destination_before_candidate),
+        ab_osrm_distance_km = VALUES(ab_osrm_distance_km),
+        ac_osrm_distance_km = VALUES(ac_osrm_distance_km),
+        cb_osrm_distance_km = VALUES(cb_osrm_distance_km),
+        inserted_route_distance_km = VALUES(inserted_route_distance_km),
+        road_detour_km = VALUES(road_detour_km),
+        road_detour_ratio = VALUES(road_detour_ratio),
+        route_decision_reason = VALUES(route_decision_reason),
+        route_fit_type = VALUES(route_fit_type),
+        updated_at = NOW()`,
+      row.fromHotspotId,
+      row.fromHotspotName,
+      row.fromHotspotLocation,
+      row.toHotspotId,
+      row.toHotspotName,
+      row.toHotspotLocation,
+      row.betweenHotspotId,
+      row.betweenHotspotName,
+      row.distanceFromRouteMeters,
+      row.candidateDistanceFromAbRouteMeters,
+      row.candidateProgressOnAbRatio,
+      row.destinationDistanceFromAcRouteMeters,
+      row.destinationProgressOnAcRatio,
+      row.crossesDestinationBeforeCandidate ? 1 : 0,
+      row.abOsrmDistanceKm,
+      row.acOsrmDistanceKm,
+      row.cbOsrmDistanceKm,
+      row.insertedRouteDistanceKm,
+      row.roadDetourKm,
+      row.roadDetourRatio,
+      row.routeDecisionReason,
+      row.routeFitType,
+    );
+
+    betweenRowsInserted += 1;
+    if (row.routeFitType === 'ON_ROUTE') onRouteRowsInserted += 1;
+    if (row.routeFitType === 'MINOR_DETOUR') minorDetourRowsInserted += 1;
+    if (row.routeFitType === 'BACKTRACK') backtrackRowsInserted += 1;
+    if (row.routeFitType === 'OFF_ROUTE') offRouteRowsInserted += 1;
+  }
+
+  return {
+    betweenRowsInserted,
+    onRouteRowsInserted,
+    minorDetourRowsInserted,
+    backtrackRowsInserted,
+    offRouteRowsInserted,
+  };
+}
+
+async function evaluatePopularBetweenCandidate(
+  targetDb: string,
+  pair: Pair,
+  candidate: Hotspot,
+  abLeg: RouteMatrixLeg,
+  config: Config,
+  input: InputArgs,
+  summary: RunSummary,
+  matrixCounter: { built: number },
+): Promise<BetweenCandidate> {
+  const candidateOnAb = findNearestProgressOnRoute({ lat: candidate.lat, lng: candidate.lng }, abLeg.coordinates);
+
+  const acLeg = await ensureRouteLegForDb(targetDb, pair.from, candidate, config, input, summary, true, matrixCounter);
+  const cbLeg = await ensureRouteLegForDb(targetDb, candidate, pair.to, config, input, summary, false, matrixCounter);
+
+  const abOsrmDistanceKm = abLeg.osrmDistanceKm;
+  const insertedRouteDistanceKm = acLeg.osrmDistanceKm + cbLeg.osrmDistanceKm;
+  const roadDetourKm = Math.max(0, insertedRouteDistanceKm - abOsrmDistanceKm);
+  const roadDetourRatio = abOsrmDistanceKm > 0 ? roadDetourKm / abOsrmDistanceKm : Number.POSITIVE_INFINITY;
+
+  const backtrack = detectBacktrackByRouteOrder({ lat: pair.to.lat, lng: pair.to.lng }, acLeg.coordinates, config);
+
+  let routeFitType: RouteFitType;
+  let routeDecisionReason: string;
+
+  if (backtrack.crossesDestinationBeforeCandidate) {
+    routeFitType = 'BACKTRACK';
+    routeDecisionReason = 'Route to candidate crosses destination before candidate; candidate is after destination.';
+  } else if (roadDetourKm > config.maxInsertDetourKm || roadDetourRatio > config.maxInsertDetourRatio) {
+    routeFitType = 'OFF_ROUTE';
+    routeDecisionReason = 'Candidate adds too much road detour.';
+  } else if (
+    candidateOnAb.distanceMeters <= config.maxNearRouteMeters &&
+    roadDetourKm <= 3 &&
+    roadDetourRatio <= 0.15
+  ) {
+    routeFitType = 'ON_ROUTE';
+    routeDecisionReason = 'Candidate is near AB route and has minimal road detour.';
+  } else if (
+    candidateOnAb.distanceMeters <= config.maxNearRouteMeters * 2 &&
+    roadDetourKm <= config.maxInsertDetourKm &&
+    roadDetourRatio <= config.maxInsertDetourRatio
+  ) {
+    routeFitType = 'MINOR_DETOUR';
+    routeDecisionReason = 'Candidate is near AB route with acceptable road detour.';
+  } else {
+    routeFitType = 'OFF_ROUTE';
+    routeDecisionReason = 'Candidate is too far from route corridor or detour constraints.';
+  }
+
+  return {
+    fromHotspotId: pair.from.id,
+    fromHotspotName: pair.from.name,
+    fromHotspotLocation: pair.from.location,
+    toHotspotId: pair.to.id,
+    toHotspotName: pair.to.name,
+    toHotspotLocation: pair.to.location,
+    betweenHotspotId: candidate.id,
+    betweenHotspotName: candidate.name,
+    distanceFromRouteMeters: Number(candidateOnAb.distanceMeters.toFixed(3)),
+    roadDetourKm: Number(roadDetourKm.toFixed(6)),
+    roadDetourRatio: Number(roadDetourRatio.toFixed(6)),
+    acOsrmDistanceKm: Number(acLeg.osrmDistanceKm.toFixed(6)),
+    cbOsrmDistanceKm: Number(cbLeg.osrmDistanceKm.toFixed(6)),
+    abOsrmDistanceKm: Number(abOsrmDistanceKm.toFixed(6)),
+    insertedRouteDistanceKm: Number(insertedRouteDistanceKm.toFixed(6)),
+    candidateProgressOnAbRatio: Number(candidateOnAb.progressRatio.toFixed(6)),
+    destinationProgressOnAcRatio: Number(backtrack.destinationProgressOnAcRatio.toFixed(6)),
+    candidateDistanceFromAbRouteMeters: Number(candidateOnAb.distanceMeters.toFixed(3)),
+    destinationDistanceFromAcRouteMeters: Number(backtrack.destinationDistanceFromAcRouteMeters.toFixed(3)),
+    crossesDestinationBeforeCandidate: backtrack.crossesDestinationBeforeCandidate,
+    routeDecisionReason,
+    routeFitType,
+  };
+}
+
+async function runPopularBetweenMapMode(input: InputArgs, config: Config): Promise<void> {
+  const summary: PopularBetweenMapSummary = {
+    mode: input.apply ? 'apply' : 'dry-run',
+    sourceDb: input.sourceDb,
+    targetDb: input.targetDb,
+    includeOffRoute: input.includeOffRoute,
+    candidateMinUsage: input.candidateMinUsage,
+    popularPairsLoaded: 0,
+    candidateHotspotsLoaded: 0,
+    pairsProcessed: 0,
+    pairsSkippedMissingAB: 0,
+    candidatesChecked: 0,
+    candidatesSkippedHaversine: 0,
+    matrixLegsBuilt: 0,
+    betweenRowsInserted: 0,
+    onRouteRowsInserted: 0,
+    minorDetourRowsInserted: 0,
+    backtrackRowsInserted: 0,
+    offRouteRowsInserted: 0,
+    failed: 0,
+    osrmCalls: 0,
+    startedAt: new Date().toISOString(),
+  };
+
+  const osrmProxy: RunSummary = {
+    mode: input.apply ? 'apply' : 'dry-run',
+    retryFailed: input.retryFailed,
+    rebuildDone: input.rebuildDone,
+    eligibleHotspots: 0,
+    candidatePairsScanned: 0,
+    queuedPairs: 0,
+    skippedExistingDone: 0,
+    skippedExistingFailed: 0,
+    processed: 0,
+    done: 0,
+    skippedDistance: 0,
+    failed: 0,
+    pendingMarked: 0,
+    onRouteRowsInserted: 0,
+    minorDetourRowsInserted: 0,
+    osrmCalls: 0,
+    startedAt: new Date().toISOString(),
+  };
+
+  await ensureHelperTablesForDb(input.targetDb);
+
+  const popularPairs = await fetchPopularPairsFromSeed(input.targetDb, input.limit);
+  summary.popularPairsLoaded = popularPairs.length;
+  if (!popularPairs.length) {
+    summary.completedAt = new Date().toISOString();
+    console.log('No popular pairs found in hotspot_popular_pair_seed.');
+    console.log(JSON.stringify(summary, null, 2));
+    return;
+  }
+
+  const candidateIds = await fetchCandidateHotspotIdsByUsage(input.sourceDb, input.candidateMinUsage);
+  if (!candidateIds.length) {
+    summary.completedAt = new Date().toISOString();
+    console.log('No candidate hotspots found from source usage query.');
+    console.log(JSON.stringify(summary, null, 2));
+    return;
+  }
+
+  const pairIds = new Set<number>();
+  for (const pair of popularPairs) {
+    pairIds.add(pair.from_hotspot_id);
+    pairIds.add(pair.to_hotspot_id);
+  }
+
+  const allHotspotIds = Array.from(new Set<number>(Array.from(pairIds).concat(candidateIds)));
+  const hotspotMap = await fetchHotspotsForIds(allHotspotIds, input.targetDb);
+  const candidateHotspots = candidateIds
+    .map((id) => hotspotMap.get(id))
+    .filter((item): item is Hotspot => Boolean(item));
+
+  summary.candidateHotspotsLoaded = candidateHotspots.length;
+
+  const matrixCounter = { built: 0 };
+
+  for (const pairSeed of popularPairs) {
+    const from = hotspotMap.get(pairSeed.from_hotspot_id);
+    const to = hotspotMap.get(pairSeed.to_hotspot_id);
+
+    if (!from || !to) {
+      summary.failed += 1;
+      console.warn(`SKIP missing hotspot details ${pairSeed.from_hotspot_id}->${pairSeed.to_hotspot_id}`);
+      continue;
+    }
+
+    const pair: Pair = { from, to };
+    const abLeg = await getDoneRouteMatrixLegForDb(input.targetDb, from.id, to.id);
+
+    if (!abLeg) {
+      summary.pairsSkippedMissingAB += 1;
+      console.warn(`SKIP missing AB matrix ${from.id}->${to.id}`);
+      continue;
+    }
+
+    summary.pairsProcessed += 1;
+
+    const rowsToUpsert: BetweenCandidate[] = [];
+
+    for (const candidate of candidateHotspots) {
+      if (candidate.id === from.id || candidate.id === to.id) continue;
+
+      summary.candidatesChecked += 1;
+
+      const acHaversine = haversineKm(from.lat, from.lng, candidate.lat, candidate.lng);
+      const cbHaversine = haversineKm(candidate.lat, candidate.lng, to.lat, to.lng);
+      if (acHaversine > 80 || cbHaversine > 80) {
+        summary.candidatesSkippedHaversine += 1;
+        continue;
+      }
+
+      try {
+        const candidateRow = await evaluatePopularBetweenCandidate(
+          input.targetDb,
+          pair,
+          candidate,
+          abLeg,
+          config,
+          input,
+          osrmProxy,
+          matrixCounter,
+        );
+
+        if (!input.includeOffRoute && candidateRow.routeFitType === 'OFF_ROUTE') {
+          continue;
+        }
+
+        rowsToUpsert.push(candidateRow);
+      } catch (error) {
+        summary.failed += 1;
+        const message = error instanceof Error ? error.message : String(error);
+        console.warn(`CANDIDATE FAILED ${from.id}->${candidate.id}->${to.id} ${message}`);
+      }
+    }
+
+    if (!rowsToUpsert.length) {
+      continue;
+    }
+
+    if (input.apply) {
+      const inserted = await upsertBetweenMapRowsForDb(input.targetDb, rowsToUpsert);
+      summary.betweenRowsInserted += inserted.betweenRowsInserted;
+      summary.onRouteRowsInserted += inserted.onRouteRowsInserted;
+      summary.minorDetourRowsInserted += inserted.minorDetourRowsInserted;
+      summary.backtrackRowsInserted += inserted.backtrackRowsInserted;
+      summary.offRouteRowsInserted += inserted.offRouteRowsInserted;
+    } else {
+      summary.betweenRowsInserted += rowsToUpsert.length;
+      summary.onRouteRowsInserted += rowsToUpsert.filter((item) => item.routeFitType === 'ON_ROUTE').length;
+      summary.minorDetourRowsInserted += rowsToUpsert.filter((item) => item.routeFitType === 'MINOR_DETOUR').length;
+      summary.backtrackRowsInserted += rowsToUpsert.filter((item) => item.routeFitType === 'BACKTRACK').length;
+      summary.offRouteRowsInserted += rowsToUpsert.filter((item) => item.routeFitType === 'OFF_ROUTE').length;
+    }
+  }
+
+  summary.matrixLegsBuilt = matrixCounter.built;
+  summary.osrmCalls = osrmProxy.osrmCalls;
+  summary.completedAt = new Date().toISOString();
+
+  console.log('Popular between-map run summary:');
+  console.log(JSON.stringify(summary, null, 2));
+
+  if (!input.apply) {
+    console.log('Dry-run complete. Re-run with --apply to persist between-map rows.');
+  }
+}
+
 // ─── Main entry point ────────────────────────────────────────────────────────
 
 async function main() {
@@ -1711,6 +2327,18 @@ async function main() {
   const config = buildConfig();
   const input = normalizeArgs(rawArgs, config);
   printConfig(input, config);
+
+  if (input.backfillBetweenNames) {
+    await ensureHelperTablesForDb(input.targetDb);
+    const updatedCount = await backfillBetweenMapNames(input.targetDb);
+    console.log(`Backfill complete in ${input.targetDb}. Updated rows: ${updatedCount}`);
+    return;
+  }
+
+  if (input.popularBetweenMap) {
+    await runPopularBetweenMapMode(input, config);
+    return;
+  }
 
   if (input.popularPairs) {
     await runPopularPairsMode(input, config);

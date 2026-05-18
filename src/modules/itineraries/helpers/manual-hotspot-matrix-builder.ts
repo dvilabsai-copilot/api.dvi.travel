@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaService } from '../../../prisma.service';
 
 type RouteFitType = 'ON_ROUTE' | 'MINOR_DETOUR' | 'BACKTRACK' | 'OFF_ROUTE';
 
@@ -16,53 +16,58 @@ type RouteLeg = {
   coordinates: [number, number][];
 };
 
-const prisma = new PrismaClient();
+type SlotResultRow = {
+  fromHotspotId: number;
+  fromName: string;
+  toHotspotId: number;
+  toName: string;
+  routeFitType?: string;
+  abDistanceKm?: number;
+  acDistanceKm?: number;
+  cbDistanceKm?: number;
+  roadDetourKm?: number;
+  error?: string;
+};
 
-const OSRM_BASE_URL = String(
-  process.env.OSRM_BASE_URL || 'https://router.project-osrm.org/route/v1/driving'
-).trim();
-const OSRM_DELAY_MS = Number(process.env.OSRM_DELAY_MS || 800);
-const OSRM_TIMEOUT_MS = Number(process.env.OSRM_TIMEOUT_MS || 20000);
-const DESTINATION_CROSSING_RADIUS_METERS = Number(process.env.DESTINATION_CROSSING_RADIUS_METERS || 1200);
-const DESTINATION_CROSSING_MAX_PROGRESS_RATIO = Number(process.env.DESTINATION_CROSSING_MAX_PROGRESS_RATIO || 0.9);
+export type ManualHotspotMatrixBuildResult = {
+  success: boolean;
+  planId: number;
+  routeId: number;
+  candidateHotspotId: number;
+  candidateName: string;
+  slotPairs: number;
+  successCount: number;
+  failedCount: number;
+  rows: SlotResultRow[];
+  osrmSource: string;
+  publicDemoWarning: boolean;
+  hasAnyMatrixData: boolean;
+  hasFeasibleMatrixSlot: boolean;
+  allSlotsAreOffRouteOrBacktrack: boolean;
+  nextPreviewExpectedState: 'FEASIBLE_PREVIEW' | 'NO_FEASIBLE_ROUTE_SLOT';
+};
 
-function toInt(value: string | undefined, fallback: number): number {
-  const parsed = Number(value);
-  if (Number.isInteger(parsed) && parsed > 0) return parsed;
-  return fallback;
-}
+export type ManualHotspotMatrixBuildParams = {
+  planId: number;
+  routeId: number;
+  candidateHotspotId: number;
+  userId?: number;
+};
 
-function parseCliArgs(): { planId: number; routeId: number; candidateHotspotId: number } {
-  const args = process.argv.slice(2);
-  const raw: Record<string, string> = {};
+export type ManualHotspotMatrixBuildOptions = {
+  osrmBaseUrl?: string;
+  osrmDelayMs?: number;
+  osrmTimeoutMs?: number;
+  destinationCrossingRadiusMeters?: number;
+  destinationCrossingMaxProgressRatio?: number;
+  logger?: Pick<Console, 'log' | 'warn' | 'error'>;
+};
 
-  for (let i = 0; i < args.length; i += 1) {
-    const token = args[i];
-    if (!token.startsWith('--')) continue;
+const DEFAULT_OSRM_BASE_URL = 'https://router.project-osrm.org/route/v1/driving';
 
-    if (token.includes('=')) {
-      const [k, v] = token.slice(2).split('=', 2);
-      raw[k] = String(v || '').trim();
-      continue;
-    }
-
-    const key = token.slice(2);
-    const next = args[i + 1];
-    if (next && !next.startsWith('--')) {
-      raw[key] = String(next).trim();
-      i += 1;
-    }
-  }
-
-  const planId = toInt(raw.planId || process.env.PLAN_ID, 0);
-  const routeId = toInt(raw.routeId || process.env.ROUTE_ID, 0);
-  const candidateHotspotId = toInt(raw.candidateHotspotId || process.env.CANDIDATE_HOTSPOT_ID, 0);
-
-  if (!planId || !routeId || !candidateHotspotId) {
-    throw new Error('Missing required input. Use --planId --routeId --candidateHotspotId (or PLAN_ID/ROUTE_ID/CANDIDATE_HOTSPOT_ID).');
-  }
-
-  return { planId, routeId, candidateHotspotId };
+function toFinitePositive(value: any, fallback: number): number {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
 function degToRad(deg: number): number {
@@ -180,7 +185,12 @@ function buildDecisionReason(routeFitType: RouteFitType): string {
   return 'Candidate is off route and adds high detour.';
 }
 
-async function ensureHelperTables(): Promise<void> {
+async function sleep(ms: number): Promise<void> {
+  if (!Number.isFinite(ms) || ms <= 0) return;
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function ensureHelperTables(prisma: PrismaService): Promise<void> {
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS hotspot_route_matrix (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -264,7 +274,7 @@ async function ensureHelperTables(): Promise<void> {
   }
 }
 
-async function fetchHotspotMeta(ids: number[]): Promise<Map<number, HotspotMeta>> {
+async function fetchHotspotMeta(prisma: PrismaService, ids: number[]): Promise<Map<number, HotspotMeta>> {
   const uniqueIds = Array.from(new Set(ids.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)));
   if (uniqueIds.length === 0) return new Map<number, HotspotMeta>();
 
@@ -298,14 +308,21 @@ async function fetchHotspotMeta(ids: number[]): Promise<Map<number, HotspotMeta>
   return map;
 }
 
-async function fetchOsrmRoute(from: HotspotMeta, to: HotspotMeta): Promise<RouteLeg> {
+async function fetchOsrmRoute(params: {
+  from: HotspotMeta;
+  to: HotspotMeta;
+  osrmBaseUrl: string;
+  timeoutMs: number;
+  logger: Pick<Console, 'log' | 'warn' | 'error'>;
+}): Promise<RouteLeg> {
+  const { from, to, osrmBaseUrl, timeoutMs, logger } = params;
   const coordinates = `${from.lng},${from.lat};${to.lng},${to.lat}`;
-  const url = `${OSRM_BASE_URL}/${coordinates}?overview=full&geometries=geojson&steps=false`;
+  const url = `${osrmBaseUrl}/${coordinates}?overview=full&geometries=geojson&steps=false`;
 
-  console.log(`[OSRM] ${from.id}->${to.id} ${url}`);
+  logger.log(`[OSRM] ${from.id}->${to.id} ${url}`);
 
   const controller = new AbortController();
-  const timeoutHandle = setTimeout(() => controller.abort(), OSRM_TIMEOUT_MS);
+  const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const response = await fetch(url, { signal: controller.signal });
@@ -332,7 +349,7 @@ async function fetchOsrmRoute(from: HotspotMeta, to: HotspotMeta): Promise<Route
     };
   } catch (error: any) {
     if (error?.name === 'AbortError') {
-      throw new Error(`OSRM request timeout (${OSRM_TIMEOUT_MS}ms) for ${from.id}->${to.id}`);
+      throw new Error(`OSRM request timeout (${timeoutMs}ms) for ${from.id}->${to.id}`);
     }
     throw error;
   } finally {
@@ -340,7 +357,7 @@ async function fetchOsrmRoute(from: HotspotMeta, to: HotspotMeta): Promise<Route
   }
 }
 
-async function getCachedLeg(fromId: number, toId: number): Promise<RouteLeg | null> {
+async function getCachedLeg(prisma: PrismaService, fromId: number, toId: number): Promise<RouteLeg | null> {
   const rows = await prisma.$queryRawUnsafe<Array<any>>(`
     SELECT osrm_distance_km, osrm_duration_min, route_coordinates
     FROM hotspot_route_matrix
@@ -378,6 +395,7 @@ async function getCachedLeg(fromId: number, toId: number): Promise<RouteLeg | nu
 }
 
 async function upsertMatrixLeg(
+  prisma: PrismaService,
   from: HotspotMeta,
   to: HotspotMeta,
   leg: RouteLeg | null,
@@ -436,25 +454,39 @@ async function upsertMatrixLeg(
   );
 }
 
-async function ensureLeg(from: HotspotMeta, to: HotspotMeta): Promise<RouteLeg> {
-  const cached = await getCachedLeg(from.id, to.id);
+async function ensureLeg(params: {
+  prisma: PrismaService;
+  from: HotspotMeta;
+  to: HotspotMeta;
+  osrmBaseUrl: string;
+  osrmDelayMs: number;
+  osrmTimeoutMs: number;
+  logger: Pick<Console, 'log' | 'warn' | 'error'>;
+}): Promise<RouteLeg> {
+  const { prisma, from, to, osrmBaseUrl, osrmDelayMs, osrmTimeoutMs, logger } = params;
+
+  const cached = await getCachedLeg(prisma, from.id, to.id);
   if (cached) return cached;
 
   try {
-    const fetched = await fetchOsrmRoute(from, to);
-    await upsertMatrixLeg(from, to, fetched, 'DONE', null);
-    if (Number.isFinite(OSRM_DELAY_MS) && OSRM_DELAY_MS > 0) {
-      await new Promise((resolve) => setTimeout(resolve, OSRM_DELAY_MS));
-    }
+    const fetched = await fetchOsrmRoute({
+      from,
+      to,
+      osrmBaseUrl,
+      timeoutMs: osrmTimeoutMs,
+      logger,
+    });
+    await upsertMatrixLeg(prisma, from, to, fetched, 'DONE', null);
+    await sleep(osrmDelayMs);
     return fetched;
   } catch (error: any) {
     const message = String(error?.message || error || 'OSRM fetch failed');
-    await upsertMatrixLeg(from, to, null, 'FAILED', message);
+    await upsertMatrixLeg(prisma, from, to, null, 'FAILED', message);
     throw new Error(`Failed to build matrix leg ${from.id}->${to.id}: ${message}`);
   }
 }
 
-async function upsertBetweenMapRow(params: {
+async function upsertBetweenMapRow(prisma: PrismaService, params: {
   from: HotspotMeta;
   to: HotspotMeta;
   candidate: HotspotMeta;
@@ -546,9 +578,42 @@ async function upsertBetweenMapRow(params: {
   );
 }
 
-async function main(): Promise<void> {
-  const { planId, routeId, candidateHotspotId } = parseCliArgs();
-  await ensureHelperTables();
+export async function buildMissingManualHotspotMatrix(params: {
+  prisma: PrismaService;
+  input: ManualHotspotMatrixBuildParams;
+  options?: ManualHotspotMatrixBuildOptions;
+}): Promise<ManualHotspotMatrixBuildResult> {
+  const { prisma, input } = params;
+  const opts = params.options || {};
+
+  const planId = Number(input.planId || 0);
+  const routeId = Number(input.routeId || 0);
+  const candidateHotspotId = Number(input.candidateHotspotId || 0);
+
+  if (!Number.isInteger(planId) || planId <= 0) {
+    throw new Error('Invalid planId. Expected positive integer.');
+  }
+  if (!Number.isInteger(routeId) || routeId <= 0) {
+    throw new Error('Invalid routeId. Expected positive integer.');
+  }
+  if (!Number.isInteger(candidateHotspotId) || candidateHotspotId <= 0) {
+    throw new Error('Invalid candidateHotspotId. Expected positive integer.');
+  }
+
+  const osrmBaseUrl = String(opts.osrmBaseUrl || process.env.OSRM_BASE_URL || DEFAULT_OSRM_BASE_URL).trim();
+  const osrmDelayMs = toFinitePositive(opts.osrmDelayMs ?? process.env.OSRM_DELAY_MS, 800);
+  const osrmTimeoutMs = toFinitePositive(opts.osrmTimeoutMs ?? process.env.OSRM_TIMEOUT_MS, 20000);
+  const destinationCrossingRadiusMeters = toFinitePositive(
+    opts.destinationCrossingRadiusMeters ?? process.env.DESTINATION_CROSSING_RADIUS_METERS,
+    1200,
+  );
+  const destinationCrossingMaxProgressRatio = toFinitePositive(
+    opts.destinationCrossingMaxProgressRatio ?? process.env.DESTINATION_CROSSING_MAX_PROGRESS_RATIO,
+    0.9,
+  );
+  const logger = opts.logger || console;
+
+  await ensureHelperTables(prisma);
 
   const routeRows = await prisma.dvi_itinerary_route_hotspot_details.findMany({
     where: {
@@ -577,7 +642,7 @@ async function main(): Promise<void> {
     throw new Error('Route has fewer than two active attraction hotspots. Cannot build matrix slots.');
   }
 
-  const allMeta = await fetchHotspotMeta([...routeHotspotIds, Number(candidateHotspotId)]);
+  const allMeta = await fetchHotspotMeta(prisma, [...routeHotspotIds, Number(candidateHotspotId)]);
   const candidate = allMeta.get(Number(candidateHotspotId));
   if (!candidate) {
     throw new Error(`Candidate hotspot ${candidateHotspotId} is missing coordinates or does not exist.`);
@@ -595,17 +660,18 @@ async function main(): Promise<void> {
     throw new Error('No consecutive hotspot slot pairs found on route.');
   }
 
-  console.log(`[START] planId=${planId} routeId=${routeId} candidateHotspotId=${candidateHotspotId} (${candidate.name})`);
-  console.log(`[START] slotPairs=${pairs.length}`);
+  logger.log(`[MATRIX_BUILD_START] planId=${planId} routeId=${routeId} candidateHotspotId=${candidateHotspotId} (${candidate.name})`);
+  logger.log(`[MATRIX_BUILD_START] slotPairs=${pairs.length} osrm=${osrmBaseUrl}`);
 
   let successCount = 0;
   let failedCount = 0;
+  const rows: SlotResultRow[] = [];
 
   for (const pair of pairs) {
     try {
-      const ab = await ensureLeg(pair.from, pair.to);
-      const ac = await ensureLeg(pair.from, candidate);
-      const cb = await ensureLeg(candidate, pair.to);
+      const ab = await ensureLeg({ prisma, from: pair.from, to: pair.to, osrmBaseUrl, osrmDelayMs, osrmTimeoutMs, logger });
+      const ac = await ensureLeg({ prisma, from: pair.from, to: candidate, osrmBaseUrl, osrmDelayMs, osrmTimeoutMs, logger });
+      const cb = await ensureLeg({ prisma, from: candidate, to: pair.to, osrmBaseUrl, osrmDelayMs, osrmTimeoutMs, logger });
 
       const candidateOnAb = findNearestProgressOnRoute({ lat: candidate.lat, lng: candidate.lng }, ab.coordinates);
       const destinationOnAc = findNearestProgressOnRoute({ lat: pair.to.lat, lng: pair.to.lng }, ac.coordinates);
@@ -614,8 +680,8 @@ async function main(): Promise<void> {
       const roadDetourKm = Math.max(0, insertedDistanceKm - ab.distanceKm);
       const roadDetourRatio = ab.distanceKm > 0 ? roadDetourKm / ab.distanceKm : 0;
       const crossesDestinationBeforeCandidate =
-        destinationOnAc.distanceMeters <= DESTINATION_CROSSING_RADIUS_METERS
-        && destinationOnAc.progressRatio < DESTINATION_CROSSING_MAX_PROGRESS_RATIO;
+        destinationOnAc.distanceMeters <= destinationCrossingRadiusMeters
+        && destinationOnAc.progressRatio < destinationCrossingMaxProgressRatio;
 
       const routeFitType = classifyRouteFit({
         roadDetourKm,
@@ -626,7 +692,7 @@ async function main(): Promise<void> {
 
       const routeDecisionReason = buildDecisionReason(routeFitType);
 
-      await upsertBetweenMapRow({
+      await upsertBetweenMapRow(prisma, {
         from: pair.from,
         to: pair.to,
         candidate,
@@ -645,23 +711,58 @@ async function main(): Promise<void> {
       });
 
       successCount += 1;
-      console.log(
-        `[OK] ${pair.from.name} -> ${pair.to.name} | fit=${routeFitType} | AB=${ab.distanceKm.toFixed(2)}km AC=${ac.distanceKm.toFixed(2)}km CB=${cb.distanceKm.toFixed(2)}km detour=${roadDetourKm.toFixed(2)}km`,
+      rows.push({
+        fromHotspotId: pair.from.id,
+        fromName: pair.from.name,
+        toHotspotId: pair.to.id,
+        toName: pair.to.name,
+        routeFitType,
+        abDistanceKm: Number(ab.distanceKm.toFixed(3)),
+        acDistanceKm: Number(ac.distanceKm.toFixed(3)),
+        cbDistanceKm: Number(cb.distanceKm.toFixed(3)),
+        roadDetourKm: Number(roadDetourKm.toFixed(3)),
+      });
+
+      logger.log(
+        `[MATRIX_BUILD_OK] ${pair.from.name} -> ${pair.to.name} | fit=${routeFitType} | AB=${ab.distanceKm.toFixed(2)}km AC=${ac.distanceKm.toFixed(2)}km CB=${cb.distanceKm.toFixed(2)}km detour=${roadDetourKm.toFixed(2)}km`,
       );
     } catch (error: any) {
       failedCount += 1;
-      console.error(`[FAIL] ${pair.from.name} -> ${pair.to.name}: ${String(error?.message || error)}`);
+      const errorMsg = String(error?.message || error || 'Unknown matrix build error');
+      rows.push({
+        fromHotspotId: pair.from.id,
+        fromName: pair.from.name,
+        toHotspotId: pair.to.id,
+        toName: pair.to.name,
+        error: errorMsg,
+      });
+      logger.error(`[MATRIX_BUILD_FAIL] ${pair.from.name} -> ${pair.to.name}: ${errorMsg}`);
     }
   }
 
-  console.log(`[DONE] success=${successCount} failed=${failedCount} total=${pairs.length}`);
-}
+  logger.log(`[MATRIX_BUILD_DONE] success=${successCount} failed=${failedCount} total=${pairs.length}`);
 
-main()
-  .catch((error) => {
-    console.error('[ERROR]', error);
-    process.exitCode = 1;
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
+  const hasFeasibleMatrixSlot = rows.some((row) =>
+    ['ON_ROUTE', 'MINOR_DETOUR'].includes(String(row.routeFitType || '').toUpperCase())
+  );
+
+  return {
+    success: failedCount === 0,
+    planId,
+    routeId,
+    candidateHotspotId,
+    candidateName: candidate.name,
+    slotPairs: pairs.length,
+    successCount,
+    failedCount,
+    rows,
+    osrmSource: osrmBaseUrl,
+    publicDemoWarning: osrmBaseUrl.includes('router.project-osrm.org'),
+    hasAnyMatrixData: successCount > 0,
+    hasFeasibleMatrixSlot,
+    allSlotsAreOffRouteOrBacktrack: successCount > 0 && !hasFeasibleMatrixSlot,
+    nextPreviewExpectedState: hasFeasibleMatrixSlot
+      ? 'FEASIBLE_PREVIEW'
+      : 'NO_FEASIBLE_ROUTE_SLOT',
+  };
+}

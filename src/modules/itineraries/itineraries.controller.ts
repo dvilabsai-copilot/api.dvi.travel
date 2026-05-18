@@ -1387,6 +1387,36 @@ export class ItinerariesController {
     });
   }
 
+  @Post(':planId/routes/:routeId/manual-hotspots/:candidateHotspotId/build-matrix')
+  @ApiOperation({ summary: 'Build focused manual hotspot matrix for selected route slot pairs' })
+  async buildManualHotspotMatrix(
+    @Param('planId') planId: string,
+    @Param('routeId') routeId: string,
+    @Param('candidateHotspotId') candidateHotspotId: string,
+    @Req() req: any,
+  ) {
+    const normalizedPlanId = Number(planId || 0);
+    const normalizedRouteId = Number(routeId || 0);
+    const normalizedCandidateHotspotId = Number(candidateHotspotId || 0);
+
+    if (!Number.isInteger(normalizedPlanId) || normalizedPlanId <= 0) {
+      throw new BadRequestException('planId must be a positive integer');
+    }
+    if (!Number.isInteger(normalizedRouteId) || normalizedRouteId <= 0) {
+      throw new BadRequestException('routeId must be a positive integer');
+    }
+    if (!Number.isInteger(normalizedCandidateHotspotId) || normalizedCandidateHotspotId <= 0) {
+      throw new BadRequestException('candidateHotspotId must be a positive integer');
+    }
+
+    return this.svc.buildMissingManualHotspotMatrix({
+      planId: normalizedPlanId,
+      routeId: normalizedRouteId,
+      candidateHotspotId: normalizedCandidateHotspotId,
+      userId: Number(req?.user?.userId || 1),
+    });
+  }
+
   @Post(':id/manual-hotspots/apply')
   @ApiOperation({ summary: 'Apply manual hotspots to a route as one optimized batch' })
   async applyManualHotspots(
