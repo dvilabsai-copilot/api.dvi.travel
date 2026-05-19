@@ -1046,12 +1046,13 @@ export class ItinerariesController {
   @ApiOperation({ summary: 'Rebuild hotspots for a route (clears exclusions and rebuilds fresh)' })
   @ApiParam({ name: 'id', example: 33977, description: 'Plan ID' })
   @ApiParam({ name: 'routeId', example: 207447, description: 'Route ID' })
-  async rebuildRoute(
-    @Param('id', ParseIntPipe) planId: number,
-    @Param('routeId', ParseIntPipe) routeId: number,
-  ) {
-    return this.svc.rebuildRoute(planId, routeId);
-  }
+ async rebuildRoute(
+  @Param('id', ParseIntPipe) planId: number,
+  @Param('routeId', ParseIntPipe) routeId: number,
+  @Body() body: { excludedHotspotIds?: number[] },
+) {
+  return this.svc.rebuildRoute(planId, routeId, body);
+}
 
   @Patch(':id/route/:routeId/times')
   @ApiOperation({ summary: 'Update route start and end times' })

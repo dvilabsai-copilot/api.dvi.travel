@@ -3355,29 +3355,57 @@ export class ItinerariesService {
    * Rebuild a route: Clear excluded hotspots and rebuild fresh
    * This lets user get new auto-selected hotspots to replace deleted ones
    */
-  async rebuildRoute(planId: number, routeId: number) {
-    const userId = 1;
 
-    return this.prisma.$transaction(async (tx) => {
-      // Clear the excluded_hotspot_ids so all hotspots can be auto-selected again
-      await (tx as any).dvi_itinerary_route_details.update({
-        where: { itinerary_route_ID: routeId },
-        data: {
-          excluded_hotspot_ids: [],
-          updatedon: new Date(),
-        },
-      });
+  async rebuildRoute(
+  planId: number,
+  routeId: number,
+  payload?: { excludedHotspotIds?: number[] },
+) {
+    // console.log("[rebuildRoute] excludedHotspotIds:", payload?.excludedHotspotIds);
+  return this.prisma.$transaction(async (tx) => {
+    const route = await (tx as any).dvi_itinerary_route_details.findFirst({
+      where: {
+        itinerary_plan_ID: planId,
+        itinerary_route_ID: routeId,
+        deleted: 0,
+      },
+      select: {
+        excluded_hotspot_ids: true,
+      },
+    });
 
-      // Rebuild the timeline with fresh selection
-      await this.hotspotEngine.rebuildRouteHotspots(tx, planId);
+    if (!route) {
+      throw new BadRequestException('Route not found');
+    }
 
-      return { 
-        success: true,
-        message: 'Route rebuilt with fresh hotspot selection',
-      };
-    }, { timeout: 60000 });
-  }
+    const existingExcluded = Array.isArray(route.excluded_hotspot_ids)
+      ? route.excluded_hotspot_ids.map(Number)
+      : [];
 
+    const incomingExcluded = Array.isArray(payload?.excludedHotspotIds)
+      ? payload.excludedHotspotIds.map(Number)
+      : [];
+
+    const finalExcluded = Array.from(
+      new Set([...existingExcluded, ...incomingExcluded])
+    ).filter((id) => Number.isFinite(id) && id > 0);
+
+    await (tx as any).dvi_itinerary_route_details.update({
+      where: { itinerary_route_ID: routeId },
+      data: {
+        excluded_hotspot_ids: finalExcluded,
+        updatedon: new Date(),
+      },
+    });
+
+    await this.hotspotEngine.rebuildRouteHotspots(tx, planId);
+
+    return {
+      success: true,
+      message: 'Route rebuilt without deleted hotspots',
+    };
+  }, { timeout: 60000 });
+}
   /**
    * Update route start and end times and rebuild the timeline.
    */
