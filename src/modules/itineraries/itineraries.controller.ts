@@ -39,6 +39,7 @@ import {
 import { LatestItineraryQueryDto } from './dto/latest-itinerary-query.dto';
 import { ConfirmQuotationDto } from './dto/confirm-quotation.dto';
 import { CancelItineraryDto } from './dto/cancel-itinerary.dto';
+import { CancelHotelVouchersDto } from './dto/cancel-hotel-vouchers.dto';
 import {
   GetHotelRoomCategoriesDto,
   UpdateRoomCategoryDto,
@@ -350,7 +351,7 @@ export class ItinerariesController {
   ) {
     // Check if route optimization is requested
     const shouldOptimizeRoute = type === 'itineary_basic_info_with_optimized_route';
-    return this.svc.createPlan(dto, req, shouldOptimizeRoute);
+    return this.svc.createPlan(dto, req, shouldOptimizeRoute, type);
   }
 
   @Get('details/:quoteId')
@@ -1242,6 +1243,14 @@ export class ItinerariesController {
   }
 
   // Hotel Voucher Endpoints
+  @Get(':id/hotel-vouchers/cancellation-policies')
+  @ApiOperation({ summary: 'Get all cancellation policies for itinerary hotels' })
+  async getAllHotelCancellationPolicies(
+    @Param('id', ParseIntPipe) itineraryPlanId: number,
+  ) {
+    return this.hotelVoucherService.getAllCancellationPolicies(itineraryPlanId);
+  }
+
   @Get(':id/hotel-vouchers/:hotelId/cancellation-policies')
   @ApiOperation({ summary: 'Get cancellation policies for a specific hotel' })
   async getHotelCancellationPolicies(
@@ -1292,6 +1301,21 @@ export class ItinerariesController {
     const userId = Number(req.user?.userId ?? 1);
     return this.hotelVoucherService.createHotelVouchers(
       { ...dto, itineraryPlanId },
+      userId,
+    );
+  }
+
+  @Post(':id/hotel-cancellations')
+  @ApiOperation({ summary: 'Cancel hotels for selected routes/hotel details or full itinerary' })
+  async cancelHotelVouchers(
+    @Param('id', ParseIntPipe) itineraryPlanId: number,
+    @Body() dto: CancelHotelVouchersDto,
+    @Req() req: any,
+  ) {
+    const userId = Number(req.user?.userId ?? 1);
+    return this.hotelVoucherService.cancelHotelsForItinerary(
+      itineraryPlanId,
+      dto,
       userId,
     );
   }
@@ -1363,6 +1387,36 @@ export class ItinerariesController {
     });
   }
 
+  @Post(':planId/routes/:routeId/manual-hotspots/:candidateHotspotId/build-matrix')
+  @ApiOperation({ summary: 'Build focused manual hotspot matrix for selected route slot pairs' })
+  async buildManualHotspotMatrix(
+    @Param('planId') planId: string,
+    @Param('routeId') routeId: string,
+    @Param('candidateHotspotId') candidateHotspotId: string,
+    @Req() req: any,
+  ) {
+    const normalizedPlanId = Number(planId || 0);
+    const normalizedRouteId = Number(routeId || 0);
+    const normalizedCandidateHotspotId = Number(candidateHotspotId || 0);
+
+    if (!Number.isInteger(normalizedPlanId) || normalizedPlanId <= 0) {
+      throw new BadRequestException('planId must be a positive integer');
+    }
+    if (!Number.isInteger(normalizedRouteId) || normalizedRouteId <= 0) {
+      throw new BadRequestException('routeId must be a positive integer');
+    }
+    if (!Number.isInteger(normalizedCandidateHotspotId) || normalizedCandidateHotspotId <= 0) {
+      throw new BadRequestException('candidateHotspotId must be a positive integer');
+    }
+
+    return this.svc.buildMissingManualHotspotMatrix({
+      planId: normalizedPlanId,
+      routeId: normalizedRouteId,
+      candidateHotspotId: normalizedCandidateHotspotId,
+      userId: Number(req?.user?.userId || 1),
+    });
+  }
+
   @Post(':id/manual-hotspots/apply')
   @ApiOperation({ summary: 'Apply manual hotspots to a route as one optimized batch' })
   async applyManualHotspots(
@@ -1375,16 +1429,38 @@ export class ItinerariesController {
       anchorIndex?: number;
       allowTopPriorityRemoval?: boolean;
       forceConflictInsertion?: boolean;
+      matrixPreferredSlot?: {
+        fromHotspotId?: number;
+        toHotspotId?: number;
+        slotIndex?: number;
+        source?: 'BEST_FIT';
+      };
     },
     @Req() req: any,
+    @Res({ passthrough: true }) res: Response,
   ) {
     const userId = Number(req.user?.userId ?? 1);
-    return this.svc.applyManualHotspotsBatch(planId, body.routeId, body.hotspotIds, userId, {
+    const result: any = await this.svc.applyManualHotspotsBatch(planId, body.routeId, body.hotspotIds, userId, {
       anchorType: body.anchorType,
       anchorIndex: body.anchorIndex,
       allowTopPriorityRemoval: body.allowTopPriorityRemoval === true,
       forceConflictInsertion: body.forceConflictInsertion === true,
+      matrixPreferredSlot: body.matrixPreferredSlot,
     });
+
+    if (String(result?.code || '') === 'MANUAL_INSERT_EXCEEDS_DAY_END') {
+      res.status(409);
+    } else if (
+      result?.success === false
+      || (
+        result?.inserted === false
+        && String(result?.code || '') !== 'MANUAL_HOTSPOT_ALREADY_EXISTS_IN_ROUTE'
+      )
+    ) {
+      res.status(409);
+    }
+
+    return result;
   }
 
   @Delete(':id/manual-hotspot/:hotspotId')

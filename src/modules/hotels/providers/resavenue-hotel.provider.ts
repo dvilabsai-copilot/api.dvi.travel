@@ -64,6 +64,16 @@ interface RoomRatesPayload {
   };
 }
 
+interface ResAvenueTraceContext {
+  cityCode?: string;
+  checkInDate?: string;
+  checkOutDate?: string;
+  guestCount?: number;
+  roomCount?: number;
+  hotelCode?: string;
+  hotelName?: string;
+}
+
 function normalizeResAvenueBaseUrl(rawUrl: string): string {
   const fallback = 'http://203.109.97.241:8080/ChannelController';
   const value = String(rawUrl || '').trim();
@@ -90,6 +100,81 @@ export class ResAvenueHotelProvider implements IHotelProvider {
   private http: AxiosInstance = axios;
   private logFile = path.join(process.cwd(), 'resavenue-hotel-provider.log');
 
+  private sanitizeForLog(value: unknown): unknown {
+    if (Array.isArray(value)) {
+      return value.map((item) => this.sanitizeForLog(item));
+    }
+
+    if (value && typeof value === 'object') {
+      const source = value as Record<string, unknown>;
+      const output: Record<string, unknown> = {};
+
+      Object.entries(source).forEach(([key, nestedValue]) => {
+        if (key.toLowerCase().includes('password')) {
+          output[key] = '***REDACTED***';
+          return;
+        }
+        output[key] = this.sanitizeForLog(nestedValue);
+      });
+
+      return output;
+    }
+
+    return value;
+  }
+
+  private logOutboundApi(
+    action: string,
+    endpoint: string,
+    payload: Record<string, unknown>,
+    traceContext?: ResAvenueTraceContext,
+  ) {
+    const payloadText = JSON.stringify(this.sanitizeForLog(payload));
+    const contextText = traceContext ? JSON.stringify(traceContext) : '{}';
+    const message =
+      `RESAVENUE_API_TRACE | action=${action} | endpoint=${endpoint} | context=${contextText} | payload=${payloadText}`;
+    this.logger.log(message);
+    this.fileLog(message);
+  }
+
+  private logOutboundApiResponse(
+    action: string,
+    endpoint: string,
+    responseData: unknown,
+    traceContext?: ResAvenueTraceContext,
+  ) {
+    const responseText = JSON.stringify(this.sanitizeForLog(responseData));
+    const contextText = traceContext ? JSON.stringify(traceContext) : '{}';
+    const message =
+      `RESAVENUE_API_TRACE | action=${action} | endpoint=${endpoint} | context=${contextText} | response=${responseText}`;
+    this.logger.log(message);
+    this.fileLog(message);
+  }
+
+  private logOutboundApiError(
+    action: string,
+    endpoint: string,
+    error: unknown,
+    traceContext?: ResAvenueTraceContext,
+  ) {
+    const err = error as {
+      message?: string;
+      response?: {
+        status?: number;
+        data?: unknown;
+      };
+    };
+    const status = err?.response?.status ?? 'NA';
+    const messageText = err?.message ?? 'Unknown error';
+    const responseText = err?.response?.data ? JSON.stringify(err.response.data) : 'null';
+    const contextText = traceContext ? JSON.stringify(traceContext) : '{}';
+    const message =
+      `RESAVENUE_API_TRACE | action=${action} | endpoint=${endpoint} | context=${contextText} | errorStatus=${status} | ` +
+      `errorMessage=${messageText} | errorResponse=${responseText}`;
+    this.logger.error(message);
+    this.fileLog(message);
+  }
+
   constructor(private readonly prisma: PrismaService) {
     this.logger.log('🏨 ResAvenue Hotel Provider initialized');
     this.logger.log(`Using endpoint: ${this.BASE_URL}`);
@@ -115,21 +200,25 @@ export class ResAvenueHotelProvider implements IHotelProvider {
    * Get property details (master data: room types, rate plans)
    */
   private async getPropertyDetails(hotelCode: string): Promise<any> {
-    try {
-      const response = await this.http.post(
-        `${this.BASE_URL}/PropertyDetails`,
-        {
-          OTA_HotelDetailsRQ: {
-            POS: {
-              Username: this.USERNAME,
-              Password: this.PASSWORD,
-              ID_Context: this.ID_CONTEXT,
-            },
-            TimeStamp: '20261015T15:22:50',
-            EchoToken: `details-${Date.now()}`,
-            HotelCode: hotelCode,
-          },
+    const endpoint = `${this.BASE_URL}/PropertyDetails`;
+    const requestBody = {
+      OTA_HotelDetailsRQ: {
+        POS: {
+          Username: this.USERNAME,
+          Password: this.PASSWORD,
+          ID_Context: this.ID_CONTEXT,
         },
+        TimeStamp: '20261015T15:22:50',
+        EchoToken: `details-${Date.now()}`,
+        HotelCode: hotelCode,
+      },
+    };
+
+    try {
+      this.logOutboundApi('getPropertyDetails', endpoint, requestBody);
+      const response = await this.http.post(
+        endpoint,
+        requestBody,
         {
           headers: {
             'Content-Type': 'application/json',
@@ -139,8 +228,11 @@ export class ResAvenueHotelProvider implements IHotelProvider {
         }
       );
 
+      this.logOutboundApiResponse('getPropertyDetails', endpoint, response.data);
+
       return response.data?.OTA_HotelDetailsRS?.[0] || null;
     } catch (error) {
+      this.logOutboundApiError('getPropertyDetails', endpoint, error);
       this.logger.error(`Failed to fetch property details for hotel ${hotelCode}: ${error.message}`);
       return null;
     }
@@ -153,26 +245,31 @@ export class ResAvenueHotelProvider implements IHotelProvider {
     hotelCode: string,
     startDate: string,
     endDate: string,
-    invCodes: number[]
+    invCodes: number[],
+    traceContext?: ResAvenueTraceContext,
   ): Promise<ResAvenueInventory[]> {
-    try {
-      const response = await this.http.post(
-        `${this.BASE_URL}/PropertyDetails`,
-        {
-          OTA_HotelInventoryRQ: {
-            POS: {
-              Username: this.USERNAME,
-              Password: this.PASSWORD,
-              ID_Context: this.ID_CONTEXT,
-            },
-            TimeStamp: '20261015T15:22:50',
-            EchoToken: `inv-${Date.now()}`,
-            HotelCode: hotelCode,
-            Start: startDate,
-            End: endDate,
-            InvCodes: invCodes,
-          },
+    const endpoint = `${this.BASE_URL}/PropertyDetails`;
+    const requestBody = {
+      OTA_HotelInventoryRQ: {
+        POS: {
+          Username: this.USERNAME,
+          Password: this.PASSWORD,
+          ID_Context: this.ID_CONTEXT,
         },
+        TimeStamp: '20261015T15:22:50',
+        EchoToken: `inv-${Date.now()}`,
+        HotelCode: hotelCode,
+        Start: startDate,
+        End: endDate,
+        InvCodes: invCodes,
+      },
+    };
+
+    try {
+      this.logOutboundApi('getInventory', endpoint, requestBody, traceContext);
+      const response = await this.http.post(
+        endpoint,
+        requestBody,
         {
           headers: {
             'Content-Type': 'application/json',
@@ -182,8 +279,20 @@ export class ResAvenueHotelProvider implements IHotelProvider {
         }
       );
 
-      return response.data?.OTA_HotelInventoryRS?.Inventories || [];
+      const inventories = response.data?.OTA_HotelInventoryRS?.Inventories || [];
+      this.logOutboundApiResponse(
+        'getInventory',
+        endpoint,
+        {
+          inventoryCount: inventories.length,
+          invCodesReturned: inventories.map((inv: ResAvenueInventory) => inv.InvCode),
+        },
+        traceContext,
+      );
+
+      return inventories;
     } catch (error) {
+      this.logOutboundApiError('getInventory', endpoint, error, traceContext);
       this.logger.error(`Failed to fetch inventory for hotel ${hotelCode}: ${error.message}`);
       return [];
     }
@@ -196,24 +305,29 @@ export class ResAvenueHotelProvider implements IHotelProvider {
     hotelCode: string,
     startDate: string,
     endDate: string,
-    rateCodes: number[]
+    rateCodes: number[],
+    traceContext?: ResAvenueTraceContext,
   ): Promise<ResAvenueRate[]> {
-    try {
-      const response = await this.http.post(
-        `${this.BASE_URL}/PropertyDetails`,
-        {
-          OTA_HotelRateRQ: {
-            POS: {
-              Username: this.USERNAME,
-              Password: this.PASSWORD,
-              ID_Context: this.ID_CONTEXT,
-            },
-            HotelCode: hotelCode,
-            Start: startDate,
-            End: endDate,
-            RateCodes: rateCodes,
-          },
+    const endpoint = `${this.BASE_URL}/PropertyDetails`;
+    const requestBody = {
+      OTA_HotelRateRQ: {
+        POS: {
+          Username: this.USERNAME,
+          Password: this.PASSWORD,
+          ID_Context: this.ID_CONTEXT,
         },
+        HotelCode: hotelCode,
+        Start: startDate,
+        End: endDate,
+        RateCodes: rateCodes,
+      },
+    };
+
+    try {
+      this.logOutboundApi('getRates', endpoint, requestBody, traceContext);
+      const response = await this.http.post(
+        endpoint,
+        requestBody,
         {
           headers: {
             'Content-Type': 'application/json',
@@ -223,22 +337,34 @@ export class ResAvenueHotelProvider implements IHotelProvider {
         }
       );
 
-      return response.data?.OTA_HotelRateRS?.Rates || [];
+      const rates = response.data?.OTA_HotelRateRS?.Rates || [];
+      this.logOutboundApiResponse(
+        'getRates',
+        endpoint,
+        {
+          ratePlanCount: rates.length,
+          rateCodesReturned: rates.map((rate: ResAvenueRate) => rate.RateCode),
+        },
+        traceContext,
+      );
+
+      return rates;
     } catch (error) {
+      this.logOutboundApiError('getRates', endpoint, error, traceContext);
       this.logger.error(`Failed to fetch rates for hotel ${hotelCode}: ${error.message}`);
       return [];
     }
   }
 
-  /**
-   * Main search method - searches for hotels by city
-   */
   async search(
     criteria: HotelSearchCriteria,
     preferences?: HotelPreferences,
   ): Promise<HotelSearchResult[]> {
     const startTime = Date.now();
-    this.logger.log(`\n   🏨 RESAVENUE PROVIDER: Starting hotel search for city: ${criteria.cityCode}`);
+    this.logger.log(`\n   🏨 RESAVENUE PROVIDER: Starting search`);
+    this.logger.log(`   📥 Input cityCode: "${criteria.cityCode}"`);
+    this.logger.log(`   📅 Dates: ${criteria.checkInDate} to ${criteria.checkOutDate}`);
+    this.logger.log(`   ?? Guests: ${criteria.guestCount}`);
 
     try {
       // Step 1: Resolve city name from city code (supports both TBO codes and city names)
@@ -254,9 +380,10 @@ export class ResAvenueHotelProvider implements IHotelProvider {
           cityName = city.name;
           this.logger.log(`   🗺️  Resolved TBO code ${criteria.cityCode} → ${cityName}`);
         } else {
-          this.logger.warn(`   ⚠️  Could not resolve TBO city code: ${criteria.cityCode}`);
-          return [];
+          this.logger.warn(`   ⚠️  Could not resolve TBO city code: ${criteria.cityCode}, treating as city name`);
         }
+      } else {
+        this.logger.log(`   🗺️  Using city name directly: ${cityName}`);
       }
 
       const selectedStarRatings = Array.from(
@@ -268,6 +395,7 @@ export class ResAvenueHotelProvider implements IHotelProvider {
       );
 
       // Step 2: Query database for ResAvenue hotels in this city
+      this.logger.log(`   🔍 Querying database for hotels in city: "${cityName}"`);
       const hotels = await this.prisma.dvi_hotel.findMany({
         where: {
           hotel_city: cityName,
@@ -290,11 +418,15 @@ export class ResAvenueHotelProvider implements IHotelProvider {
       }
 
       if (hotels.length === 0) {
-        this.logger.log(`   📭 No ResAvenue hotels found in city: ${cityName}`);
+        this.logger.warn(`   ❌ No ResAvenue hotels found in city: "${cityName}"`);
+        this.logger.warn(`      This could mean: city name mismatch, no hotels, or all deleted`);
         return [];
       }
 
-      this.logger.log(`   📋 Found ${hotels.length} ResAvenue hotel(s) in ${cityName}`);
+      this.logger.log(`   ✅ Found ${hotels.length} ResAvenue hotel(s) in ${cityName}:`);
+      hotels.forEach(h => {
+        this.logger.log(`      - ${h.hotel_name} (Code: ${h.resavenue_hotel_code}, Category: ${h.hotel_category}*)`);
+      });
 
       // Step 3: For each hotel, fetch live data from ResAvenue
       const hotelSearchPromises = hotels.map((hotel) =>
@@ -363,9 +495,19 @@ export class ResAvenueHotelProvider implements IHotelProvider {
       }
 
       // Step 3: Fetch live inventory and rates for the date range
+      const traceContext: ResAvenueTraceContext = {
+        cityCode: criteria.cityCode,
+        checkInDate: criteria.checkInDate,
+        checkOutDate: criteria.checkOutDate,
+        guestCount: criteria.guestCount,
+        roomCount: criteria.roomCount,
+        hotelCode,
+        hotelName: hotel.hotel_name,
+      };
+
       const [inventories, rates] = await Promise.all([
-        this.getInventory(hotelCode, criteria.checkInDate, criteria.checkOutDate, invCodes),
-        this.getRates(hotelCode, criteria.checkInDate, criteria.checkOutDate, rateCodes),
+        this.getInventory(hotelCode, criteria.checkInDate, criteria.checkOutDate, invCodes, traceContext),
+        this.getRates(hotelCode, criteria.checkInDate, criteria.checkOutDate, rateCodes, traceContext),
       ]);
 
       if (inventories.length === 0 || rates.length === 0) {
@@ -387,12 +529,14 @@ export class ResAvenueHotelProvider implements IHotelProvider {
         return null;
       }
 
-      // Calculate minimum price
-      const minPrice = Math.min(...availableRooms.map((r) => r.price));
+      // Calculate minimum price and select cheapest room for display
+      const sortedRooms = [...availableRooms].sort((a, b) => a.price - b.price);
+      const minPrice = sortedRooms[0].price;
+      const cheapestRoom = sortedRooms[0];
 
       // Build search result
       const result: HotelSearchResult = {
-        provider: 'ResAvenue',
+        provider: 'resavenue',
         hotelCode: hotelCode,
         hotelName: hotel.hotel_name,
         cityCode: hotel.hotel_city,
@@ -403,6 +547,8 @@ export class ResAvenueHotelProvider implements IHotelProvider {
         images: [],
         price: minPrice,
         currency: 'INR',
+        roomType: cheapestRoom.roomName || '',
+        mealPlan: null, // ResAvenue doesn't provide meal plan in inventory response
         roomTypes: availableRooms,
         searchReference: `RESAVENUE-${hotelCode}-${Date.now()}`,
         expiresAt: new Date(Date.now() + 30 * 60 * 1000), // 30 minutes
@@ -692,7 +838,7 @@ export class ResAvenueHotelProvider implements IHotelProvider {
       this.logger.log(`   📊 Room Rates: ${roomRatesPayload.RoomRate.Rates.length} night(s)`);
 
       return {
-        provider: 'ResAvenue',
+        provider: 'resavenue',
         confirmationReference: uniqueBookingRef,
         hotelCode: bookingDetails.hotelCode,
         hotelName: '',

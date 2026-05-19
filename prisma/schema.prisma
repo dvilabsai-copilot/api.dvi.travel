@@ -6108,3 +6108,66 @@ model dvi_itinerary_hotel_search_cache {
   @@index([quote_id, synced_at], map: "idx_hotel_cache_stale_check")
   @@index([route_id], map: "idx_hotel_cache_route")
 }
+
+model hotspot_route_matrix {
+  id                 BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  from_hotspot_id    Int
+  to_hotspot_id      Int
+  from_name          String?   @db.Text
+  to_name            String?   @db.Text
+  from_lat           Float?    @db.Double
+  from_lng           Float?    @db.Double
+  to_lat             Float?    @db.Double
+  to_lng             Float?    @db.Double
+  haversine_km       Float?    @db.Double
+  osrm_distance_km   Float?    @db.Double
+  osrm_duration_min  Float?    @db.Double
+  route_coordinates  String?   @db.LongText
+  process_status     hotspot_route_matrix_process_status @default(PENDING)
+  error_message      String?   @db.Text
+  created_at         DateTime  @default(now()) @db.DateTime(0)
+  updated_at         DateTime  @default(now()) @updatedAt @db.DateTime(0)
+
+  @@unique([from_hotspot_id, to_hotspot_id], map: "uniq_hotspot_route_pair")
+  @@index([process_status], map: "idx_hotspot_route_status")
+}
+
+enum hotspot_route_matrix_process_status {
+  PENDING
+  DONE
+  FAILED
+  SKIPPED
+}
+
+model hotspot_route_between_map {
+  id                                        BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  from_hotspot_id                           Int
+  from_hotspot_name                         String?   @db.Text
+  from_hotspot_location                     String?   @db.Text
+  to_hotspot_id                             Int
+  to_hotspot_name                           String?   @db.Text
+  to_hotspot_location                       String?   @db.Text
+  between_hotspot_id                        Int
+  between_hotspot_name                      String?   @db.Text
+  distance_from_route_meters                Float?    @db.Double
+  detour_km                                 Float?    @db.Double
+  detour_ratio                              Float?    @db.Double
+  route_fit_type                            String    @db.VarChar(40)
+  candidate_distance_from_ab_route_meters   Float?    @db.Double
+  candidate_progress_on_ab_ratio            Float?    @db.Double
+  destination_distance_from_ac_route_meters Float?    @db.Double
+  destination_progress_on_ac_ratio          Float?    @db.Double
+  crosses_destination_before_candidate      Boolean   @default(false) @db.TinyInt
+  ab_osrm_distance_km                       Float?    @db.Double
+  ac_osrm_distance_km                       Float?    @db.Double
+  cb_osrm_distance_km                       Float?    @db.Double
+  inserted_route_distance_km                Float?    @db.Double
+  road_detour_km                            Float?    @db.Double
+  road_detour_ratio                         Float?    @db.Double
+  route_decision_reason                     String?   @db.Text
+  created_at                                DateTime  @default(now()) @db.DateTime(0)
+  updated_at                                DateTime  @default(now()) @updatedAt @db.DateTime(0)
+
+  @@unique([from_hotspot_id, to_hotspot_id, between_hotspot_id], map: "uniq_hotspot_route_between")
+  @@index([route_fit_type], map: "idx_hotspot_route_between_fit")
+}

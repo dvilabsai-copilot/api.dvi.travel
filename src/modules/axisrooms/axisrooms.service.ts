@@ -27,7 +27,6 @@ import {
   CANONICAL_HOTEL_RATE_PLANS,
   getCanonicalHotelRatePlanDefinition,
 } from '../hotels/hotel-rate-plans';
-import { AxisroomsEmailNotifierService } from './axisrooms-email-notifier.service';
 
 @Injectable()
 export class AxisRoomsService {
@@ -55,7 +54,6 @@ export class AxisRoomsService {
 
   constructor(
     private prisma: PrismaService,
-    private readonly axisroomsEmailNotifier: AxisroomsEmailNotifierService,
   ) {}
 
   private normalizeId(value: string): string {
@@ -635,18 +633,6 @@ export class AxisRoomsService {
         this.logger.warn(`AxisRooms inventoryUpdate: propertyId "${propertyId}" not mapped to any hotel — skipping native write`);
       }
 
-      await this.axisroomsEmailNotifier.sendActionableUpdateEmail({
-        eventType: 'inventoryUpdate',
-        propertyId,
-        hotelId: hotelRow?.hotel_id ? Number(hotelRow.hotel_id) : undefined,
-        hotelName: (hotelRow as any)?.hotel_name || undefined,
-        roomId,
-        rowCount: Array.isArray(inventory) ? inventory.length : 0,
-        details: (inventory || []).map(
-          (inv) => `Inventory ${inv.startDate} to ${inv.endDate}: free=${inv.free}`,
-        ),
-      });
-
       return {
         message: AXISROOMS_MESSAGES.INVENTORY_UPDATE_SUCCESS,
         status: 'success',
@@ -776,21 +762,6 @@ export class AxisRoomsService {
           }
         }
 
-        await this.axisroomsEmailNotifier.sendActionableUpdateEmail({
-          eventType: 'restrictionUpdate',
-          propertyId,
-          hotelId: hotel?.hotel_id ? Number(hotel.hotel_id) : undefined,
-          hotelName: (hotel as any)?.hotel_name || undefined,
-          rowCount: insertedRowsForProperty,
-          details: roomDetails.flatMap((roomDetail) =>
-            roomDetail.ratePlanDetails.flatMap((ratePlanDetail) =>
-              (ratePlanDetail.restrictions?.periods || []).map(
-                (period) =>
-                  `Restriction room=${roomDetail.roomId}, ratePlan=${ratePlanDetail.ratePlanId}, type=${ratePlanDetail.restrictions.type}, value=${ratePlanDetail.restrictions.value}, ${period.startDate} to ${period.endDate}`,
-              ),
-            ),
-          ),
-        });
       }
 
       return {

@@ -609,6 +609,153 @@ export class ItineraryDetailsService {
     }
   }
 
+  private normalizeConfirmedTravelLabelsFromSequence(
+    segments: any[],
+    fallbackHotelName?: string | null,
+  ): any[] {
+    const rows = Array.isArray(segments) ? segments : [];
+    if (rows.length === 0) return rows;
+
+    const cleanName = (value?: string | null): string => String(value ?? '').trim();
+    const lower = (value?: string | null): string => cleanName(value).toLowerCase();
+    const canonicalStopName = (value?: string | null): string => {
+      const raw = cleanName(value);
+      if (!raw) return '';
+      return raw
+        .replace(/&amp;/gi, '&')
+        .replace(/&quot;/gi, '"')
+        .replace(/&#39;/gi, "'")
+        .replace(/&lt;/gi, '<')
+        .replace(/&gt;/gi, '>')
+        .replace(/\s*\([^)]*\)\s*$/g, '')
+        .trim();
+    };
+
+    const getAttractionName = (row: any): string => canonicalStopName(row?.name || row?.text);
+    const getCheckinName = (row: any): string => cleanName(row?.hotelName) || cleanName(fallbackHotelName) || 'Hotel';
+    const getTravelFrom = (row: any): string =>
+      cleanName(row?.from)
+      || cleanName(row?.fromName)
+      || cleanName(row?.displayFromName);
+    const getTravelTo = (row: any): string =>
+      cleanName(row?.to)
+      || cleanName(row?.toName)
+      || cleanName(row?.displayToName);
+
+    const isAttraction = (row: any): boolean => row?.type === 'attraction';
+    const isTravel = (row: any): boolean => row?.type === 'travel';
+    const isCheckin = (row: any): boolean => row?.type === 'checkin';
+
+    const findPreviousVisibleStopName = (fromIndex: number): string => {
+      for (let i = fromIndex - 1; i >= 0; i -= 1) {
+        const row = rows[i];
+        if (isAttraction(row)) {
+          const name = getAttractionName(row);
+          if (name) return name;
+        }
+        if (isCheckin(row)) {
+          const name = getCheckinName(row);
+          if (name) return name;
+        }
+      }
+      return '';
+    };
+
+    const findNextSemanticStop = (fromIndex: number): { type: 'attraction' | 'checkin'; name: string } | null => {
+      for (let i = fromIndex + 1; i < rows.length; i += 1) {
+        const row = rows[i];
+        if (isAttraction(row)) {
+          const name = getAttractionName(row);
+          if (name) return { type: 'attraction', name };
+        }
+        if (isCheckin(row)) {
+          const name = getCheckinName(row);
+          if (name) return { type: 'checkin', name };
+        }
+      }
+      return null;
+    };
+
+    let previousStopName = '';
+
+    for (let index = 0; index < rows.length; index += 1) {
+      const row = rows[index];
+
+      if (isAttraction(row)) {
+        const attractionName = getAttractionName(row);
+        if (attractionName) {
+          previousStopName = attractionName;
+        }
+        continue;
+      }
+
+      if (isCheckin(row)) {
+        const checkinName = getCheckinName(row);
+        if (checkinName) {
+          previousStopName = checkinName;
+        }
+        continue;
+      }
+
+      if (!isTravel(row)) continue;
+
+      const persistedFrom = getTravelFrom(row);
+      const persistedTo = getTravelTo(row);
+
+      if (!previousStopName) {
+        previousStopName = persistedFrom || findPreviousVisibleStopName(index) || '';
+      }
+
+      const nextStop = findNextSemanticStop(index);
+      const nextName = cleanName(nextStop?.name);
+
+      let resolvedFrom = cleanName(previousStopName) || persistedFrom || 'Route Start';
+      let resolvedTo = '';
+
+      if (nextStop?.type === 'attraction' && nextName) {
+        resolvedTo = nextName;
+      } else if (nextStop?.type === 'checkin' && nextName) {
+        resolvedTo = nextName;
+      } else {
+        resolvedTo = persistedTo || cleanName(fallbackHotelName) || 'Hotel';
+      }
+
+      // Guard: non-final travel should not keep destination as route/city/hotel label
+      // when the immediate next visible stop is an attraction.
+      if (
+        nextStop?.type === 'attraction'
+        && nextName
+        && lower(resolvedTo) === lower(cleanName(fallbackHotelName) || '')
+      ) {
+        resolvedTo = nextName;
+      }
+
+      // First-leg guard: if the persisted origin is only the city label (for example "Munnar")
+      // but the route hotel is more specific (for example "Munnar Queen"), prefer hotel label.
+      if (
+        nextStop?.type === 'attraction'
+        && cleanName(fallbackHotelName)
+        && resolvedFrom
+        && lower(resolvedFrom) !== lower(cleanName(fallbackHotelName))
+        && lower(cleanName(fallbackHotelName)).includes(lower(resolvedFrom))
+      ) {
+        resolvedFrom = cleanName(fallbackHotelName);
+      }
+
+      row.from = resolvedFrom;
+      row.to = resolvedTo;
+      row.fromName = resolvedFrom;
+      row.toName = resolvedTo;
+      row.displayFromName = resolvedFrom;
+      row.displayToName = resolvedTo;
+      row.text = `Travelling from ${resolvedFrom} to ${resolvedTo}`;
+
+      previousStopName = resolvedTo;
+    }
+
+    return rows;
+  }
+
   // ---------------------------------------------------------------------------
   // Itinerary DETAILS (parity-ish with PHP, WITHOUT hotels)
   // ---------------------------------------------------------------------------
@@ -2694,6 +2841,11 @@ console.log('[FINAL_DISTANCE_DEBUG]', {
           segments.unshift(startSegment);
         }
       }
+
+      this.normalizeConfirmedTravelLabelsFromSequence(
+        segments,
+        routeHotelNameForDay,
+      );
 
       // Ensure timeline never moves backward when source rows contain overlaps/reversed ranges.
       this.normalizeSegmentChronology(segments);

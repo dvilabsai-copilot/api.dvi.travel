@@ -27,6 +27,11 @@
     "verify:hotel-pricebook-range": "tsx scripts/verify-hotel-pricebook-range-view.ts",
     "backfill:locations:self-route": "tsx scripts/backfill-location-self-routes.ts",
     "backfill:locations:self-route:apply": "tsx scripts/backfill-location-self-routes.ts --apply",
+    "build:hotspot-matrix": "tsx scripts/build-hotspot-route-matrix.ts",
+    "build:hotspot-matrix:apply": "tsx scripts/build-hotspot-route-matrix.ts --apply",
+    "build:hotspot-matrix:retry": "tsx scripts/build-hotspot-route-matrix.ts --apply --retry-failed",
+    "verify:hotspot:between": "node scripts/verify-hotspot-between-cheeyappara-eravikulam.js",
+    "verify:hotspot:not-between": "node scripts/verify-hotspot-not-between-eravikulam-rosegarden.js",
     "sync:tbo:missing-city": "node scripts/sync-missing-tbo-hotels-by-city.js",
     "sync:tbo:missing-city:dry": "node scripts/sync-missing-tbo-hotels-by-city.js --dry-run"
   },
