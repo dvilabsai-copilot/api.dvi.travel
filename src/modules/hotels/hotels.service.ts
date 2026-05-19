@@ -1328,8 +1328,36 @@ export class HotelsService {
       },
     } as any);
 
+    const roomRatePlanRows = await this.prisma.dvi_hotel_room_rate_plan.findMany({
+      where: {
+        hotel_id: id,
+        status: 1,
+        deleted: 0,
+        axisrooms_room_id: { not: null },
+      } as any,
+      select: {
+        room_id: true,
+        axisrooms_room_id: true,
+      } as any,
+      orderBy: { hotel_room_rate_plan_id: 'asc' } as any,
+    });
+
+    const axisroomsRoomIdByRoomId = new Map<number, string>();
+    for (const row of roomRatePlanRows as any[]) {
+      const rid = Number(row.room_id);
+      const roomCode = String(row.axisrooms_room_id || '').trim();
+      if (!Number.isFinite(rid) || !roomCode) continue;
+      if (!axisroomsRoomIdByRoomId.has(rid)) {
+        axisroomsRoomIdByRoomId.set(rid, roomCode);
+      }
+    }
+
     return rows.map((r: any) => ({
       ...r,
+      room_ref_code:
+        String(r.room_ref_code || '').trim() ||
+        axisroomsRoomIdByRoomId.get(Number(r.room_ID)) ||
+        null,
       check_in_time: this.toHHmm(r.check_in_time),
       check_out_time: this.toHHmm(r.check_out_time),
       createdon: this.toISOorNull(r.createdon),
