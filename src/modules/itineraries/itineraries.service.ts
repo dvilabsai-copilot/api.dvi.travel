@@ -8962,12 +8962,29 @@ export class ItinerariesService {
   ): any[] {
     if (!Array.isArray(previewTimeline) || !manualInsertionFit) return previewTimeline;
 
-    // Get the effective slot (chosen or best)
-    let effectiveSlot = manualInsertionFit.chosenSlot || manualInsertionFit.bestSlot;
-    if (!effectiveSlot) return previewTimeline;
-
     const selectedIdNum = Number(selectedHotspotId || 0);
     if (selectedIdNum <= 0) return previewTimeline;
+
+    const isInvalidSlot = (slot: any): boolean => {
+      if (!slot) return true;
+      return (
+        Number(slot?.fromHotspotId || 0) === selectedIdNum
+        || Number(slot?.toHotspotId || 0) === selectedIdNum
+      );
+    };
+
+    // Prefer chosenSlot when valid; otherwise fallback to bestSlot; then first valid allSlotResults row.
+    let effectiveSlot = !isInvalidSlot(manualInsertionFit?.chosenSlot)
+      ? manualInsertionFit.chosenSlot
+      : (!isInvalidSlot(manualInsertionFit?.bestSlot)
+          ? manualInsertionFit.bestSlot
+          : null);
+
+    if (!effectiveSlot && Array.isArray(manualInsertionFit?.allSlotResults)) {
+      effectiveSlot = manualInsertionFit.allSlotResults.find((row: any) => !isInvalidSlot(row)) || null;
+    }
+
+    if (!effectiveSlot) return previewTimeline;
 
     // Reject slots that include the selected hotspot as an endpoint
     if (
@@ -8985,7 +9002,7 @@ export class ItinerariesService {
     let selectedRow: any = null;
     for (let i = 0; i < adjustedTimeline.length; i++) {
       const row = adjustedTimeline[i];
-      const rowHotspotId = Number(row?.locationId || row?.hotspot_ID || 0);
+      const rowHotspotId = Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || row?.hotspot_id || 0);
       if (rowHotspotId === selectedIdNum) {
         selectedRowIndex = i;
         selectedRow = row;
@@ -9003,7 +9020,7 @@ export class ItinerariesService {
 
     for (let i = 0; i < adjustedTimeline.length; i++) {
       const row = adjustedTimeline[i];
-      const rowHotspotId = Number(row?.locationId || row?.hotspot_ID || 0);
+      const rowHotspotId = Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || row?.hotspot_id || 0);
       if (fromRowIndex === -1 && rowHotspotId === fromIdNum) {
         fromRowIndex = i;
       }
@@ -9057,8 +9074,12 @@ export class ItinerariesService {
       } else {
         // Does not fit in the time gap
         isTimingConflict = true;
-        conflictReason = `Selected hotspot (${selectedDurationMinutes} min) does not fit in the available time gap (${availableGapMinutes} min) between ${fromRow?.text || 'from'} and ${toRow?.text || 'to'}.`;
+        conflictReason = 'Selected hotspot fits route-wise but does not fit current time gap.';
       }
+    } else {
+      // Missing timing anchors; never keep stale fallback time for matrix-positioned row.
+      isTimingConflict = true;
+      conflictReason = 'Selected hotspot fits route-wise but does not fit current time gap.';
     }
 
     // Create adjusted row with matrix positioning metadata
@@ -9086,6 +9107,8 @@ export class ItinerariesService {
       adjustedRow.conflictReason = conflictReason;
       adjustedRow.timeRange = 'Needs reschedule';
     } else if (calculatedTimeRange) {
+      adjustedRow.isConflict = false;
+      adjustedRow.conflictReason = null;
       adjustedRow.timeRange = calculatedTimeRange;
     }
 
@@ -10421,6 +10444,13 @@ export class ItinerariesService {
       routeEndMinutes: routeEndMinutesPreview,
     });
 
+    // Final deterministic overlay: ensure selected row is between matrix slot boundaries and stale times are not shown.
+    adjustedPreviewTimeline = this.applyManualInsertionFitToPreviewTimeline(
+      adjustedPreviewTimeline,
+      manualInsertionFit,
+      Number(focusHotspotId),
+    );
+
     // ── Fix confirmation logic: don't mark requiresConfirmation for feasible matrix slots ──
     // If the matrix bestSlot is feasible (ON_ROUTE/MINOR_DETOUR) and no hotspots are actually removed,
     // there is no reason to ask for confirmation. The anchor boundary hotspots are not "removed".
@@ -10428,12 +10458,26 @@ export class ItinerariesService {
       manualInsertionFit?.bestSlot?.routeFitType === 'ON_ROUTE' ||
       manualInsertionFit?.bestSlot?.routeFitType === 'MINOR_DETOUR';
 
-    const actuallyRemovedTopPriority = Array.isArray(adaptive.removedTopPriorityHotspots)
-      && adaptive.removedTopPriorityHotspots.length > 0;
+    const adjustedTimelineAttractionIds = new Set<number>(
+      (Array.isArray(adjustedPreviewTimeline) ? adjustedPreviewTimeline : [])
+        .map((row: any) => Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || row?.hotspot_id || 0))
+        .filter((id: number) => Number.isFinite(id) && id > 0),
+    );
+
+    const removedTopPriorityCandidates = Array.isArray(adaptive.removedTopPriorityHotspots)
+      ? adaptive.removedTopPriorityHotspots
+      : [];
+
+    // Treat as truly removed only when the hotspot no longer exists in adjusted preview timeline.
+    const actuallyRemovedTopPriorityRows = removedTopPriorityCandidates.filter((row: any) => {
+      const id = Number(row?.id || row?.hotspotId || row?.hotspot_ID || row?.locationId || 0);
+      return id > 0 && !adjustedTimelineAttractionIds.has(id);
+    });
+    const actuallyRemovedTopPriority = actuallyRemovedTopPriorityRows.length > 0;
 
     let finalRequiresConfirmation = adaptive.requiresConfirmation;
     let finalTopPriorityAffected = adaptive.topPriorityAffected || [];
-    let finalRemovedTopPriority = adaptive.removedTopPriorityHotspots || [];
+    let finalRemovedTopPriority = actuallyRemovedTopPriorityRows;
 
     if (matrixFeasible && !actuallyRemovedTopPriority) {
       // Matrix found a good fit and no hotspots are actually removed, so no confirmation needed

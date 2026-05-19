@@ -101,6 +101,10 @@ function namesContain(haystack: any, needle: string): boolean {
   return String(haystack || '').toLowerCase().includes(String(needle || '').toLowerCase());
 }
 
+function getRowHotspotId(row: any): number {
+  return Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || row?.hotspot_id || 0);
+}
+
 async function main() {
   const { planId, routeId, candidateHotspotId } = parseArgs();
   const token = await loginAndGetToken();
@@ -138,6 +142,7 @@ async function main() {
 
   const fit = json?.manualInsertionFit || json?.resolution?.manualInsertionFit || null;
   const validation = json?.validation || json?.resolution?.validation || null;
+  const resolution = json?.resolution || null;
   const fullTimeline: any[] = Array.isArray(json?.fullTimeline)
     ? json.fullTimeline
     : (Array.isArray(json?.routeTimeline) ? json.routeTimeline : []);
@@ -150,6 +155,9 @@ async function main() {
   console.log('chosenSlot:', fit?.chosenSlot || null);
   console.log('selectedManualPriority:', fit?.selectedManualPriority ?? null);
   console.log('validation:', validation || null);
+  console.log('resolution.requiresConfirmation:', resolution?.requiresConfirmation ?? null);
+  console.log('resolution.topPriorityAffected:', resolution?.topPriorityAffected || []);
+  console.log('resolution.removedTopPriorityHotspots:', resolution?.removedTopPriorityHotspots || []);
 
   assertCheck('manualInsertionFit exists', !!fit);
 
@@ -184,6 +192,55 @@ async function main() {
   const chosenSlot = fit?.chosenSlot || null;
   const chosenType = String(chosenSlot?.routeFitType || '').toUpperCase();
   const lowPriorityPlan = fit?.lowPriorityRemovalPlanPreview || null;
+
+  const fromHotspotId = Number(chosenSlot?.fromHotspotId || fit?.bestSlot?.fromHotspotId || 0);
+  const toHotspotId = Number(chosenSlot?.toHotspotId || fit?.bestSlot?.toHotspotId || 0);
+  const fromTimelineIndex = fullTimeline.findIndex((row: any) => getRowHotspotId(row) === fromHotspotId);
+  const selectedTimelineIndex = fullTimeline.findIndex((row: any) => getRowHotspotId(row) === Number(candidateHotspotId));
+  const toTimelineIndex = fullTimeline.findIndex((row: any) => getRowHotspotId(row) === toHotspotId);
+
+  const spotlightIndexes = new Set<number>();
+  [fromTimelineIndex, selectedTimelineIndex, toTimelineIndex].forEach((idx) => {
+    if (idx >= 0) {
+      spotlightIndexes.add(idx - 1);
+      spotlightIndexes.add(idx);
+      spotlightIndexes.add(idx + 1);
+    }
+  });
+
+  const spotlightRows = Array.from(spotlightIndexes)
+    .filter((idx) => idx >= 0 && idx < fullTimeline.length)
+    .sort((a, b) => a - b)
+    .map((idx) => {
+      const row = fullTimeline[idx] || {};
+      return {
+        idx,
+        type: row?.type || null,
+        hotspotId: getRowHotspotId(row) || null,
+        text: row?.text || row?.name || null,
+        timeRange: row?.timeRange || null,
+        isMatrixPositioned: row?.isMatrixPositioned === true,
+        matrixTravelLeg: row?.matrixTravelLeg || null,
+        isConflict: row?.isConflict === true,
+        conflictReason: row?.conflictReason || null,
+      };
+    });
+
+  const selectedRow = selectedTimelineIndex >= 0 ? fullTimeline[selectedTimelineIndex] : null;
+
+  console.log('--- timeline spotlight (from/candidate/to) ---');
+  console.log(JSON.stringify(spotlightRows, null, 2));
+  console.log('--- selected row fields ---');
+  console.log(JSON.stringify({
+    idx: selectedTimelineIndex,
+    hotspotId: selectedRow ? getRowHotspotId(selectedRow) : null,
+    text: selectedRow?.text || selectedRow?.name || null,
+    timeRange: selectedRow?.timeRange || null,
+    isMatrixPositioned: selectedRow?.isMatrixPositioned === true,
+    matrixFit: selectedRow?.matrixFit || null,
+    isConflict: selectedRow?.isConflict === true,
+    conflictReason: selectedRow?.conflictReason || null,
+  }, null, 2));
 
   assertCheck('requiresMatrixBuild false in matrix-available mode', fit?.requiresMatrixBuild !== true);
   assertCheck('chosenSlot exists', !!chosenSlot);

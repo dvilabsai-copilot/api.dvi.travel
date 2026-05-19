@@ -210,18 +210,33 @@ export class ItineraryHotelDetailsTboService {
       }
 
       const filteredHotels = hotels.filter((hotel) => {
+        let included = true;
+        let filterReason = '';
+        
         if (shouldFilterByCategory) {
           const categoryCandidates = this.getHotelCategoryCandidates(hotel);
           const categoryMatch = categoryCandidates.some((cat) => preferredCategorySet.has(cat));
-          if (!categoryMatch) return false;
+          if (!categoryMatch) {
+            included = false;
+            filterReason = `Category mismatch: ${categoryCandidates.join(',')} not in ${preferredCategories.join(',')}`;
+          }
         }
 
-        if (shouldFilterByMeal) {
+        if (included && shouldFilterByMeal) {
           const hotelMealCode = this.inferMealPlanCodeFromHotel(hotel);
-          if (!hotelMealCode || hotelMealCode !== preferredMealPlanCode) return false;
+          // Only reject if hotel HAS meal plan data but it doesn't match.
+          // Allow hotels that don't have meal plan data (e.g., ResAvenue).
+          if (hotelMealCode && hotelMealCode !== preferredMealPlanCode) {
+            included = false;
+            filterReason = `Meal plan mismatch: ${hotelMealCode} != ${preferredMealPlanCode}`;
+          }
+        }
+        
+        if (!included && hotel.provider === 'resavenue') {
+          this.logger.warn(`   ⚠️  Filtering out ResAvenue: ${hotel.hotelName} - Reason: ${filterReason}`);
         }
 
-        return true;
+        return included;
       });
 
       this.logger.log(
@@ -543,6 +558,7 @@ export class ItineraryHotelDetailsTboService {
       }
 
       // Step 3.6: Fetch ResAvenue hotels explicitly (in case they weren't included in TBO search)
+      this.logger.log(`\n🏨 STEP 3.6: Starting ResAvenue hotel fetch for ${routes.length} routes...`);
       const resavenueHotelsByRoute = await this.fetchResavenueHotelsForRoutes(
         routes,
         noOfNights,
@@ -551,6 +567,16 @@ export class ItineraryHotelDetailsTboService {
         planAdultCount,
         planChildCount,
       );
+      
+      // Debug: Check what ResAvenue returned
+      let totalResavenueHotels = 0;
+      resavenueHotelsByRoute.forEach((hotels, routeId) => {
+        totalResavenueHotels += hotels.length;
+        if (hotels.length > 0) {
+          this.logger.log(`   ✅ Route ${routeId} has ${hotels.length} ResAvenue hotels: ${hotels.map(h => `${h.hotelName} (${h.hotelCode})`).join(', ')}`);
+        }
+      });
+      this.logger.log(`🏨 ResAvenue Total: ${totalResavenueHotels} hotels across all routes`);
 
       // Merge ResAvenue hotels into the hotel map
       resavenueHotelsByRoute.forEach((resavenueHotels, routeId) => {
@@ -559,9 +585,16 @@ export class ItineraryHotelDetailsTboService {
         const hotelStrs = existingHotels.map(h => `${h.hotelCode}|${h.provider}`);
         const newHotels = resavenueHotels.filter(h => !hotelStrs.includes(`${h.hotelCode}|${h.provider}`));
         if (newHotels.length > 0) {
-          this.logger.log(`   âœ… Added ${newHotels.length} new ResAvenue hotel(s) to route ${routeId}`);
+          this.logger.log(`   ✅ Added ${newHotels.length} new ResAvenue hotel(s) to route ${routeId}`);
+          newHotels.forEach(h => {
+            this.logger.log(`      - ${h.hotelName} (${h.hotelCode}, Category: ${h.category}, Meal: ${h.mealPlan}, Price: ₹${h.price})`);
+          });
+        } else if (resavenueHotels.length > 0) {
+          this.logger.log(`   ℹ️  No new ResAvenue hotels (duplicates: ${resavenueHotels.length})`);
         }
-        hotelsByRoute.set(routeId, [...existingHotels, ...newHotels]);
+        const merged = [...existingHotels, ...newHotels];
+        this.logger.log(`   Route ${routeId}: Total hotels now = ${merged.length}`);
+        hotelsByRoute.set(routeId, merged);
       });
 
       // Step 3.7: Load saved meal plans per route for AxisRooms filtering
@@ -2045,7 +2078,7 @@ export class ItineraryHotelDetailsTboService {
           hotelName: displayHotelName,
           category: hotel.rating ? parseInt(String(hotel.rating)) : 0,
           roomType: hotel.roomType || '',
-          mealPlan: hotel.mealPlan || '-',
+          mealPlan: hotel.mealPlan || '',
           totalHotelCost: Math.round(hotel.price),
           totalHotelTaxAmount: 0,
           searchReference: hotel.searchReference,
