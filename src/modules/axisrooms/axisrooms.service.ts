@@ -60,6 +60,14 @@ export class AxisRoomsService {
     return value?.trim();
   }
 
+  private extractHotelIdFromPropertyId(propertyId: string): number | null {
+    const raw = String(propertyId || '').trim();
+    const match = raw.match(/^AX_DVI_HOTEL_(\d+)$/i);
+    if (!match) return null;
+    const parsed = Number(match[1]);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  }
+
   private monthName(date: Date): string {
     return date.toLocaleString('en-US', { month: 'long' });
   }
@@ -322,16 +330,19 @@ export class AxisRoomsService {
 
     await this.logInbound('productInfo', propertyId, null, null, dto);
 
-    // Find hotel by propertyId
-    const hotel = await this.prisma.dvi_hotel.findFirst({
+    // Resolve all mapped hotels for this property and pick deterministically.
+    const mappedHotels = await this.prisma.dvi_hotel.findMany({
       where: {
         axisrooms_property_id: propertyId,
         axisrooms_enabled: 1,
         deleted: { not: true },
       },
+      select: {
+        hotel_id: true,
+      },
     });
 
-    if (!hotel) {
+    if (!mappedHotels.length) {
       return {
         message: AXISROOMS_MESSAGES.INVALID_PROPERTY_ID,
         status: 'failure',
@@ -339,10 +350,24 @@ export class AxisRoomsService {
       };
     }
 
+    const expectedHotelId = this.extractHotelIdFromPropertyId(propertyId);
+    const matchedBySuffix =
+      expectedHotelId !== null
+        ? mappedHotels.find((h) => Number(h.hotel_id) === expectedHotelId)
+        : undefined;
+    const selectedHotelId = Number((matchedBySuffix || mappedHotels[0]).hotel_id || 0);
+
+    if (mappedHotels.length > 1) {
+      const allHotelIds = mappedHotels.map((h) => Number(h.hotel_id)).join(',');
+      this.logger.warn(
+        `AxisRooms productInfo duplicate property mapping for ${propertyId} (hotel_ids=${allHotelIds}). Selected hotel_id=${selectedHotelId}`,
+      );
+    }
+
     // Get rooms for this hotel
     const rooms = await this.prisma.dvi_hotel_rooms.findMany({
       where: {
-        hotel_id: hotel.hotel_id,
+        hotel_id: selectedHotelId,
         deleted: 0,
         status: 1,
       },
@@ -353,6 +378,31 @@ export class AxisRoomsService {
         room_ref_code: true,
       },
     });
+
+    // Fallback mapping: some legacy hotels have missing room_ref_code but
+    // dvi_hotel_room_rate_plan still carries the external AxisRooms room id.
+    const roomRatePlanRows = await this.prisma.dvi_hotel_room_rate_plan.findMany({
+      where: {
+        hotel_id: selectedHotelId,
+        status: 1,
+        deleted: 0,
+        axisrooms_room_id: { not: null },
+      } as any,
+      select: {
+        room_id: true,
+        axisrooms_room_id: true,
+      } as any,
+    });
+
+    const axisroomsRoomIdByRoomId = new Map<number, string>();
+    for (const row of roomRatePlanRows as any[]) {
+      const rid = Number(row.room_id);
+      const externalRoomId = String(row.axisrooms_room_id || '').trim();
+      if (!Number.isFinite(rid) || !externalRoomId) continue;
+      if (!axisroomsRoomIdByRoomId.has(rid)) {
+        axisroomsRoomIdByRoomId.set(rid, externalRoomId);
+      }
+    }
 
     if (!rooms || rooms.length === 0) {
       return {
@@ -385,8 +435,12 @@ export class AxisRoomsService {
 
     // Build response data
     const data: ProductInfoDataDto[] = rooms.map((room) => {
-      // Prefer room_ref_code, fallback to room_ID as string
-      const id = room.room_ref_code || String(room.room_ID);
+      // Prefer explicit room_ref_code, then mapped AxisRooms room id, and
+      // finally numeric room_ID as the last fallback.
+      const id =
+        String(room.room_ref_code || '').trim() ||
+        axisroomsRoomIdByRoomId.get(Number(room.room_ID)) ||
+        String(room.room_ID);
       
       // Prefer room_type_title, fallback to room_title, final fallback "Room"
       const roomTypeName = roomTypeMap.get(room.room_type_id);
