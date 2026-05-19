@@ -26,6 +26,7 @@ type AutosuggestQuery = {
 
 @Injectable()
 export class LocationsService {
+
   constructor(private readonly prisma: PrismaService) {}
 
   /**
@@ -79,6 +80,16 @@ if (search) {
   ];
 }
 
+if (source && destination) {
+  try {
+    await this.ensureExactLocationRouteExists(source, destination);
+  } catch (error) {
+    console.error(
+      '[locations] Failed to auto-create exact route',
+      { source, destination, error },
+    );
+  }
+}
 
   const orderBy: any[] = q.source
     ? [
@@ -473,6 +484,158 @@ private async getDistinctExistingSourceLocations(): Promise<SourceLocationSeed[]
   }
 
   return Array.from(dedupMap.values());
+}
+
+private isCityLevelSeed(seed: SourceLocationSeed): boolean {
+  const location = this.normalizeLocationName(seed.source_location).toLowerCase();
+  const city = this.normalizeLocationName(seed.source_location_city).toLowerCase();
+
+  return Boolean(location && city && location === city);
+}
+
+private async findSeedByLocationOrCityName(
+  name: string,
+): Promise<SourceLocationSeed | null> {
+  const normalizedName = this.normalizeLocationName(name);
+  if (!normalizedName) return null;
+
+  const rows = await this.prisma.dvi_stored_locations.findMany({
+    where: {
+      deleted: 0,
+      OR: [
+        { source_location: normalizedName },
+        { destination_location: normalizedName },
+        { source_location_city: normalizedName },
+        { destination_location_city: normalizedName },
+      ],
+    },
+    select: {
+      source_location: true,
+      source_location_city: true,
+      source_location_state: true,
+      source_location_lattitude: true,
+      source_location_longitude: true,
+      destination_location: true,
+      destination_location_city: true,
+      destination_location_state: true,
+      destination_location_lattitude: true,
+      destination_location_longitude: true,
+    },
+    take: 50,
+  });
+
+  for (const row of rows) {
+    if (
+      this.normalizeLocationName(row.source_location).toLowerCase() ===
+      normalizedName.toLowerCase()
+    ) {
+      return {
+        source_location: normalizedName,
+        source_location_city: this.normalizeLocationName(row.source_location_city),
+        source_location_state: this.normalizeLocationName(row.source_location_state),
+        source_location_lattitude: this.normalizeLocationName(row.source_location_lattitude),
+        source_location_longitude: this.normalizeLocationName(row.source_location_longitude),
+      };
+    }
+
+    if (
+      this.normalizeLocationName(row.destination_location).toLowerCase() ===
+      normalizedName.toLowerCase()
+    ) {
+      return {
+        source_location: normalizedName,
+        source_location_city: this.normalizeLocationName(row.destination_location_city),
+        source_location_state: this.normalizeLocationName(row.destination_location_state),
+        source_location_lattitude: this.normalizeLocationName(row.destination_location_lattitude),
+        source_location_longitude: this.normalizeLocationName(row.destination_location_longitude),
+      };
+    }
+  }
+
+  for (const row of rows) {
+    if (
+      this.normalizeLocationName(row.source_location_city).toLowerCase() ===
+      normalizedName.toLowerCase()
+    ) {
+      return {
+        source_location: normalizedName,
+        source_location_city: normalizedName,
+        source_location_state: this.normalizeLocationName(row.source_location_state),
+        source_location_lattitude: this.normalizeLocationName(row.source_location_lattitude),
+        source_location_longitude: this.normalizeLocationName(row.source_location_longitude),
+      };
+    }
+
+    if (
+      this.normalizeLocationName(row.destination_location_city).toLowerCase() ===
+      normalizedName.toLowerCase()
+    ) {
+      return {
+        source_location: normalizedName,
+        source_location_city: normalizedName,
+        source_location_state: this.normalizeLocationName(row.destination_location_state),
+        source_location_lattitude: this.normalizeLocationName(row.destination_location_lattitude),
+        source_location_longitude: this.normalizeLocationName(row.destination_location_longitude),
+      };
+    }
+  }
+
+  return null;
+}
+
+private async ensureExactLocationRouteExists(
+  sourceName: string,
+  destinationName: string,
+): Promise<void> {
+  const source = this.normalizeLocationName(sourceName);
+  const destination = this.normalizeLocationName(destinationName);
+
+  if (!source || !destination) return;
+
+  const existing = await this.prisma.dvi_stored_locations.findFirst({
+    where: {
+      deleted: 0,
+      source_location: source,
+      destination_location: destination,
+    },
+    select: { location_ID: true },
+  });
+
+  if (existing) return;
+
+  const sourceSeed = await this.findSeedByLocationOrCityName(source);
+  const destinationSeed = await this.findSeedByLocationOrCityName(destination);
+
+  if (!sourceSeed || !destinationSeed) return;
+
+  const sourceLat = this.toCoordinate(sourceSeed.source_location_lattitude);
+  const sourceLng = this.toCoordinate(sourceSeed.source_location_longitude);
+  const destinationLat = this.toCoordinate(destinationSeed.source_location_lattitude);
+  const destinationLng = this.toCoordinate(destinationSeed.source_location_longitude);
+
+  if (
+    sourceLat === null ||
+    sourceLng === null ||
+    destinationLat === null ||
+    destinationLng === null
+  ) {
+    return;
+  }
+
+  const isSameLocation = source.toLowerCase() === destination.toLowerCase();
+
+  const distanceKm = isSameLocation
+    ? 10
+    : this.calculateDistanceKm(
+        sourceLat,
+        sourceLng,
+        destinationLat,
+        destinationLng,
+      );
+
+  await this.prisma.dvi_stored_locations.create({
+    data: this.buildLocationRowData(sourceSeed, destinationSeed, distanceKm),
+  });
 }
 
 private async forwardRouteExists(
