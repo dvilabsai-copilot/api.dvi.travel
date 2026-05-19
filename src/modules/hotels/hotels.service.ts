@@ -1161,8 +1161,8 @@ export class HotelsService {
 
     const roomTypeId = this.toNumStrict(input?.room_type_id);
     if (roomTypeId !== undefined) data.room_type_id = roomTypeId;
-    const roomTypeText = this.toStr(input?.room_type);
-    if (roomTypeText) data.room_ref_code = roomTypeText.slice(0, 60);
+    const roomRefCode = this.toStr(input?.room_ref_code ?? input?.roomCode ?? input?.room_ref);
+    if (roomRefCode) data.room_ref_code = roomRefCode.slice(0, 60);
 
     data.room_title = this.toStr(input?.room_title);
     data.preferred_for = this.toStr(input?.preferred_for);
@@ -1227,21 +1227,56 @@ export class HotelsService {
     } as any);
 
     if (rows.length > 0) {
-      const items = (rows as any[]).map((r) => {
-        const canonical = CANONICAL_HOTEL_RATE_PLANS.find(
-          (c) => c.defaultRateplanId === String(r.rateplan_id) || c.externalRateplanId === String(r.rateplan_id),
-        );
-        return {
-          rateplanId: String(r.rateplan_id),
-          ratePlanCode: canonical?.code ?? null,
-          ratePlanName: r.rateplan_name || canonical?.name || String(r.rateplan_id),
+      const itemsByCanonicalCode = new Map<string, any>();
+      const nonCanonicalItems: any[] = [];
+
+      for (const r of rows as any[]) {
+        const rawRateplanId = String(r.rateplan_id || '');
+        const rawRateplanName = String(r.rateplan_name || '');
+        const rawRateplanCode = String(r.rate_plan_code || '').trim().toUpperCase();
+        const canonical =
+          CANONICAL_HOTEL_RATE_PLANS.find(
+            (c) =>
+              c.defaultRateplanId === rawRateplanId ||
+              c.externalRateplanId === rawRateplanId ||
+              c.code === rawRateplanCode ||
+              c.code === rawRateplanName.trim().toUpperCase(),
+          ) || null;
+
+        const item = {
+          rateplanId: rawRateplanId,
+          ratePlanCode: canonical?.code ?? (rawRateplanCode || null),
+          ratePlanName: rawRateplanName || canonical?.name || rawRateplanId,
           description: canonical?.description ?? null,
           includesBreakfast: canonical?.includesBreakfast ?? 0,
           includesLunch: canonical?.includesLunch ?? 0,
           includesDinner: canonical?.includesDinner ?? 0,
           isFallback: false,
         };
-      });
+
+        if (canonical) {
+          itemsByCanonicalCode.set(canonical.code, item);
+        } else {
+          nonCanonicalItems.push(item);
+        }
+      }
+
+      const items = [
+        ...CANONICAL_HOTEL_RATE_PLANS.map((c) =>
+          itemsByCanonicalCode.get(c.code) || {
+            rateplanId: c.defaultRateplanId,
+            ratePlanCode: c.code,
+            ratePlanName: c.name,
+            description: c.description,
+            includesBreakfast: c.includesBreakfast,
+            includesLunch: c.includesLunch,
+            includesDinner: c.includesDinner,
+            isFallback: true,
+          },
+        ),
+        ...nonCanonicalItems,
+      ];
+
       return { items };
     }
 
@@ -1319,11 +1354,23 @@ export class HotelsService {
     });
   }
 
-  updateRoom(dto: Partial<CreateRoomDto> & { room_id?: number; room_ID?: number; hotel_id: number }) {
+  async updateRoom(dto: Partial<CreateRoomDto> & { room_id?: number; room_ID?: number; hotel_id: number }) {
     const roomId = (dto as any).room_id ?? (dto as any).room_ID;
     if (!roomId) throw new Error('room_id is required to update a room');
 
+    const existingRoom = await this.prisma.dvi_hotel_rooms.findFirst({
+      where: { room_ID: Number(roomId) } as any,
+      select: { room_ref_code: true } as any,
+    });
+
     const data = this.mapRoomDto(dto);
+    const roomRefCode = this.toStr((dto as any).room_ref_code ?? (dto as any).roomCode ?? (dto as any).room_ref);
+    if (!roomRefCode) {
+      const existingRoomRefCode = this.toStr(existingRoom?.room_ref_code);
+      if (existingRoomRefCode && !this.toStr(data.room_ref_code)) {
+        data.room_ref_code = existingRoomRefCode;
+      }
+    }
     delete (data as any).hotel_id;
     // always touch updatedon
     (data as any).updatedon = new Date();
