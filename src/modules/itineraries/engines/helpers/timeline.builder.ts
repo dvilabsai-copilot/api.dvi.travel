@@ -4698,6 +4698,304 @@ export class TimelineBuilder {
       optimizationCycle++;
       } // End of optimization cycles
 
+      // ================================================================
+      // CYCLE 5: MANUAL_HOTSPOT_FORCE_INSERT
+      // ================================================================
+      // Force-insert any remaining manual hotspots by removing lower-priority auto hotspots if needed
+      {
+        if (this.verboseTimelineProofLogs) {
+          this.logBookingRule({
+            rule: 'CYCLE5_MANUAL_HOTSPOT_FORCE_INSERT_START',
+            quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+            planId,
+            routeId: route.itinerary_route_ID,
+            cycle: 5,
+          });
+        }
+
+        // Find manual hotspots that haven't been added yet
+        const manualHotspotsOnRoute = (selectedHotspots as Array<SelectedHotspot>)
+          .filter((h) => (h as any).isManualSelection === true)
+          .filter((h) => !addedHotspotIds.has(Number((h as any).hotspot_ID || 0)));
+
+        for (const manualHotspot of manualHotspotsOnRoute) {
+          const manualHotspotId = Number((manualHotspot as any).hotspot_ID || 0);
+          if (manualHotspotId <= 0) continue;
+
+          if (this.verboseTimelineProofLogs) {
+            this.logBookingRule({
+              rule: 'CYCLE5_ATTEMPTING_MANUAL_HOTSPOT_INSERT',
+              quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+              planId,
+              routeId: route.itinerary_route_ID,
+              manualHotspotId,
+              currentTime,
+            });
+          }
+
+          const hotspotData = hotspotMap.get(manualHotspotId);
+          if (!hotspotData) {
+            this.logBookingRule({
+              rule: 'CYCLE5_MANUAL_HOTSPOT_REJECTED',
+              quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+              planId,
+              routeId: route.itinerary_route_ID,
+              manualHotspotId,
+              reason: 'missing_hotspot_metadata',
+            });
+            continue;
+          }
+
+          const hotspotLocationName = (hotspotData.hotspot_location as string) || currentLocationName;
+          const hotspotDuration = hotspotData.hotspot_duration || '01:00:00';
+          const destCoords = {
+            lat: Number(hotspotData.hotspot_latitude ?? 0),
+            lon: Number(hotspotData.hotspot_longitude ?? 0),
+          };
+
+          const sharedManualFeasibility = await this.evaluateCandidateInsertion({
+            tx,
+            route,
+            isLastRoute,
+            routeStartSeconds,
+            routeEndSeconds,
+            currentTime,
+            currentLocationName,
+            currentCoords,
+            destinationCoords: destCityCoords,
+            dayOfWeek: (route.itinerary_route_date
+              ? new Date(route.itinerary_route_date).getDay()
+              : 0 + 6) % 7,
+            hotspotId: manualHotspotId,
+            hotspotLocationName,
+            hotspotDuration,
+            hotspotCoords: destCoords,
+            timingMap,
+            plan,
+            destinationCity,
+            lastRouteArrivalDeadlineSeconds,
+            allowWaitUntilOpen: true,
+            rejectIfOutsideOperatingWindow: false, // Very permissive for manual
+          });
+
+          let canInsert = sharedManualFeasibility.feasible;
+
+          // If direct insert failed, try removing lower-priority auto hotspots
+          if (!canInsert) {
+            this.logBookingRule({
+              rule: 'CYCLE5_DIRECT_INSERT_FAILED_ATTEMPTING_EVICTION',
+              quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+              planId,
+              routeId: route.itinerary_route_ID,
+              manualHotspotId,
+              reason: sharedManualFeasibility.reason || 'shared_feasibility_rejected',
+            });
+
+            // Collect all auto-hotspots on this route (not manual, prefer removing lower priority first)
+            const autoHotspotsOnRoute: Array<{ hotspotId: number; rowIndex: number; priority: number; hotspotRow: any }> = [];
+            for (let i = 0; i < hotspotRows.length; i++) {
+              const row = hotspotRows[i];
+              if (
+                Number((row as any).itinerary_route_ID || 0) === Number(route.itinerary_route_ID || 0) &&
+                Number((row as any).item_type || 0) === 4 // Only hotspot segments
+              ) {
+                const rowHotspotId = Number((row as any).hotspot_ID || 0);
+                if (rowHotspotId > 0 && rowHotspotId !== manualHotspotId) {
+                  const rowHotspotData = hotspotMap.get(rowHotspotId);
+                  const priority = Number((rowHotspotData as any)?.hotspot_priority ?? 0);
+                  autoHotspotsOnRoute.push({
+                    hotspotId: rowHotspotId,
+                    rowIndex: i,
+                    priority,
+                    hotspotRow: row,
+                  });
+                }
+              }
+            }
+
+            // Sort by priority (lowest first) so we remove the least important ones
+            autoHotspotsOnRoute.sort((a, b) => a.priority - b.priority);
+
+            // Try removing hotspots until we have space
+            for (const autoHotspot of autoHotspotsOnRoute) {
+              // Remove the travel segment before this hotspot (item_type = 3)
+              let travelRowIndex = -1;
+              for (let i = autoHotspot.rowIndex - 1; i >= 0; i--) {
+                const row = hotspotRows[i];
+                if (!row) continue; // indices may be stale after a prior splice
+                if (
+                  Number((row as any).itinerary_route_ID || 0) === Number(route.itinerary_route_ID || 0) &&
+                  Number((row as any).item_type || 0) === 3 // Travel segment
+                ) {
+                  travelRowIndex = i;
+                  break;
+                }
+              }
+
+              // Remove the hotspot and its travel segment
+              if (travelRowIndex >= 0) {
+                hotspotRows.splice(travelRowIndex, 2); // Remove travel + hotspot
+              } else {
+                hotspotRows.splice(autoHotspot.rowIndex, 1); // Just remove hotspot
+              }
+
+              addedHotspotIds.delete(autoHotspot.hotspotId);
+
+              this.logBookingRule({
+                rule: 'CYCLE5_EVICTED_AUTO_HOTSPOT_FOR_MANUAL',
+                quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+                planId,
+                routeId: route.itinerary_route_ID,
+                evictedHotspotId: autoHotspot.hotspotId,
+                evictedPriority: autoHotspot.priority,
+                manualHotspotId,
+              });
+
+              // Recalculate timing for manual hotspot after eviction
+              const reevaluatedManualFeasibility = await this.evaluateCandidateInsertion({
+                tx,
+                route,
+                isLastRoute,
+                routeStartSeconds,
+                routeEndSeconds,
+                currentTime,
+                currentLocationName,
+                currentCoords,
+                destinationCoords: destCityCoords,
+                dayOfWeek: (route.itinerary_route_date
+                  ? new Date(route.itinerary_route_date).getDay()
+                  : 0 + 6) % 7,
+                hotspotId: manualHotspotId,
+                hotspotLocationName,
+                hotspotDuration,
+                hotspotCoords: destCoords,
+                timingMap,
+                plan,
+                destinationCity,
+                lastRouteArrivalDeadlineSeconds,
+                allowWaitUntilOpen: true,
+                rejectIfOutsideOperatingWindow: false,
+              });
+
+              if (reevaluatedManualFeasibility.feasible) {
+                canInsert = true;
+                break;
+              }
+            }
+          }
+
+          // Now insert the manual hotspot if we have space
+          if (canInsert) {
+            const timeAfterTravel = sharedManualFeasibility.timeAfterTravel || currentTime;
+            const timeAfterSightseeing = sharedManualFeasibility.timeAfterSightseeing || timeAfterTravel;
+            const currentOrder = order;
+
+            // Recalculate current state after any evictions
+            let cycle5CurrentSeconds = timeToSeconds(currentTime);
+            if (cycle5CurrentSeconds < routeStartSeconds) {
+              cycle5CurrentSeconds += 86400;
+            }
+
+            const travelLocationType = this.getTravelLocationType(currentLocationName, hotspotLocationName);
+            const { row: travelRow, nextTime: tToHotspot } =
+              await this.travelBuilder.buildTravelSegment(tx, {
+                planId,
+                routeId: route.itinerary_route_ID,
+                order: currentOrder,
+                item_type: 3,
+                travelLocationType,
+                startTime: currentTime,
+                userId: createdByUserId,
+                sourceLocationName: currentLocationName,
+                destinationLocationName: hotspotLocationName,
+                hotspotId: manualHotspotId,
+                fromHotspotId: lastAddedHotspotId ?? undefined,
+                sourceCoords: currentCoords,
+                destCoords,
+              });
+
+            hotspotRows.push(travelRow);
+            currentTime = tToHotspot;
+
+            const gapBeforeVisitSeconds = Math.max(0, timeToSeconds(timeAfterTravel) - timeToSeconds(currentTime));
+            if (gapBeforeVisitSeconds >= FREE_TIME_THRESHOLD_SECONDS) {
+              hotspotRows.push(
+                this.buildFreeTimeBreakRow({
+                  planId,
+                  routeId: route.itinerary_route_ID,
+                  order: currentOrder,
+                  startTime: currentTime,
+                  endTime: timeAfterTravel,
+                  userId: createdByUserId,
+                }),
+              );
+              currentTime = timeAfterTravel;
+            }
+
+            if (timeToSeconds(timeAfterTravel) > timeToSeconds(currentTime)) {
+              currentTime = timeAfterTravel;
+            }
+
+            currentLocationName = hotspotLocationName;
+            currentCoords = destCoords;
+
+            const { row: hotspotRow, nextTime: tAfterHotspot } =
+              await this.hotspotBuilder.build(tx, {
+                planId,
+                routeId: route.itinerary_route_ID,
+                order: currentOrder,
+                hotspotId: manualHotspotId,
+                startTime: currentTime,
+                userId: createdByUserId,
+                totalAdult: plan.total_adult,
+                totalChildren: plan.total_children,
+                totalInfants: plan.total_infants,
+                nationality: plan.nationality,
+                itineraryPreference: plan.itinerary_preference,
+                isConflict: false,
+                conflictReason: '',
+              });
+
+            hotspotRows.push(hotspotRow);
+            addedHotspotIds.add(manualHotspotId);
+            lastAddedHotspotId = manualHotspotId;
+            order++;
+            currentTime = tAfterHotspot;
+
+            const parkingRowsForManual = await this.parkingBuilder.buildForHotspot(tx, {
+              planId,
+              routeId: route.itinerary_route_ID,
+              hotspotId: manualHotspotId,
+              userId: createdByUserId,
+            });
+
+            if (parkingRowsForManual && parkingRowsForManual.length > 0) {
+              parkingRows.push(...parkingRowsForManual);
+            }
+
+            this.logBookingRule({
+              rule: 'CYCLE5_MANUAL_HOTSPOT_FORCE_INSERTED',
+              quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+              planId,
+              routeId: route.itinerary_route_ID,
+              manualHotspotId,
+              startTime: timeAfterTravel,
+              endTime: timeAfterSightseeing,
+            });
+          } else {
+            this.logBookingRule({
+              rule: 'CYCLE5_MANUAL_HOTSPOT_FORCE_INSERT_FAILED',
+              quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+              planId,
+              routeId: route.itinerary_route_ID,
+              manualHotspotId,
+              reason: 'Could not insert even after removing lower-priority auto hotspots',
+              currentTime,
+            });
+          }
+        }
+      }
+
       {
         let currentSeconds = timeToSeconds(currentTime);
         if (currentSeconds < routeStartSeconds) {
