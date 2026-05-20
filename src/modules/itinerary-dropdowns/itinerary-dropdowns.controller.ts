@@ -25,7 +25,7 @@ export class ItineraryDropdownsController {
    * - Source locations (default):  ?type=source
    * - Destination locations:       ?type=destination&source=Chennai
    */
-  @Get('locations')
+    @Get('locations')
   @ApiOperation({
     summary: 'List source / destination locations',
     description:
@@ -44,11 +44,38 @@ export class ItineraryDropdownsController {
     description: 'Source location (required when type=destination)',
     example: 'Chennai',
   })
+  @ApiQuery({
+    name: 'day_no',
+    required: false,
+    description: 'Current itinerary day number (optional)',
+    example: 1,
+  })
+  @ApiQuery({
+    name: 'total_no_of_days',
+    required: false,
+    description: 'Total itinerary days (optional)',
+    example: 5,
+  })
+  @ApiQuery({
+    name: 'departure_location',
+    required: false,
+    description: 'Final departure location (optional)',
+    example: 'Chennai',
+  })
   locations(
     @Query('type') type: 'source' | 'destination' = 'source',
     @Query('source') source?: string,
+    @Query('day_no') dayNo?: string,
+    @Query('total_no_of_days') totalNoOfDays?: string,
+    @Query('departure_location') departureLocation?: string,
   ) {
-    return this.svc.getLocations(type, source);
+    return this.svc.getLocations(
+      type,
+      source,
+      dayNo,
+      totalNoOfDays,
+      departureLocation,
+    );
   }
 
   @Get('itinerary-types')
@@ -85,6 +112,12 @@ export class ItineraryDropdownsController {
   @ApiOperation({ summary: 'List food preferences' })
   foodPreferences() {
     return this.svc.getFoodPreferences();
+  }
+
+  @Get('meal-plans')
+  @ApiOperation({ summary: 'List meal plans (CP/EP/MAP/AP) with meanings' })
+  mealPlans() {
+    return this.svc.getMealPlans();
   }
 
   @Get('vehicle-types')

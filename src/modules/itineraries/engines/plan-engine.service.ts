@@ -9,6 +9,10 @@ import {
   CreatePlanDto,
   CreateTravellerDto,
 } from "../dto/create-itinerary.dto";
+import {
+  inferCanonicalHotelRatePlanCode,
+  inferCanonicalHotelRatePlanCodeFromMealFlags,
+} from "../../hotels/hotel-rate-plans";
 
 type Tx = Prisma.TransactionClient;
 
@@ -61,6 +65,52 @@ export class PlanEngineService {
       }
     }
     return maxRoom || 1;
+  }
+
+  /**
+   * PHP parity:
+   * - child_bed_type: 1 => without bed, 2 => with bed
+   * - total_extra_bed: +1 per room where adult count is greater than 2
+   */
+  private getBedAndChildTotals(travellers: CreateTravellerDto[]): {
+    totalExtraBed: number;
+    totalChildWithBed: number;
+    totalChildWithoutBed: number;
+  } {
+    let totalChildWithBed = 0;
+    let totalChildWithoutBed = 0;
+    const adultsByRoom = new Map<number, number>();
+
+    for (const t of travellers || []) {
+      if (!t) continue;
+
+      if (Number(t.traveller_type) === 1) {
+        const roomId = Number(t.room_id || 0);
+        if (roomId > 0) {
+          adultsByRoom.set(roomId, (adultsByRoom.get(roomId) || 0) + 1);
+        }
+        continue;
+      }
+
+      if (Number(t.traveller_type) === 2) {
+        const bedType = Number(t.child_bed_type ?? 0);
+        if (bedType === 2) totalChildWithBed += 1;
+        if (bedType === 1) totalChildWithoutBed += 1;
+      }
+    }
+
+    let totalExtraBed = 0;
+    for (const adultCount of adultsByRoom.values()) {
+      if (adultCount > 2) {
+        totalExtraBed += 1;
+      }
+    }
+
+    return {
+      totalExtraBed,
+      totalChildWithBed,
+      totalChildWithoutBed,
+    };
   }
 
   private normalizeStringList(list: string[] | undefined | null): string {
@@ -200,15 +250,27 @@ export class PlanEngineService {
     const totalChildren = Number(plan.child_count ?? 0);
     const totalInfants = Number(plan.infant_count ?? 0);
 
-    const totalExtraBed = 0;
-    const totalChildWithBed = 0;
-    const totalChildWithoutBed = 0;
+    const {
+      totalExtraBed,
+      totalChildWithBed,
+      totalChildWithoutBed,
+    } = this.getBedAndChildTotals(travellers || []);
 
     const preferredRoomCount = this.getPreferredRoomCount(travellers || []);
 
-    const meal_plan_breakfast = 1;
-    const meal_plan_lunch = 0;
-    const meal_plan_dinner = 0;
+    const meal_plan_breakfast = Number((plan as any).meal_plan_breakfast ?? 0) ? 1 : 0;
+    const meal_plan_lunch = Number((plan as any).meal_plan_lunch ?? 0) ? 1 : 0;
+    const meal_plan_dinner = Number((plan as any).meal_plan_dinner ?? 0) ? 1 : 0;
+    const explicitMealPlanCode = inferCanonicalHotelRatePlanCode((plan as any).meal_plan_code);
+    const hasExplicitMealFlags = meal_plan_breakfast === 1 || meal_plan_lunch === 1 || meal_plan_dinner === 1;
+    const meal_plan_code = explicitMealPlanCode
+      || (hasExplicitMealFlags
+        ? inferCanonicalHotelRatePlanCodeFromMealFlags(
+            meal_plan_breakfast,
+            meal_plan_lunch,
+            meal_plan_dinner,
+          )
+        : null);
 
     const preferred_hotel_category = this.normalizeNumberList(
       (plan as any).preferred_hotel_category,
@@ -261,6 +323,7 @@ export class PlanEngineService {
       nationality: Number((plan as any).nationality ?? 0),
 
       // Meal plan flags
+      meal_plan_code,
       meal_plan_breakfast,
       meal_plan_lunch,
       meal_plan_dinner,

@@ -1,6 +1,20 @@
-import { Controller, Post, Get, Param, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  Controller,
+  Post,
+  Get,
+  Param,
+  Logger,
+  Query,
+  UploadedFile,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 import { TboSoapSyncService } from '../services/tbo-soap-sync.service';
+import { TboHotelMasterSyncService } from '../services/tbo-hotel-master-sync.service';
 import { HobseHotelMasterSyncService } from '../services/hobse-hotel-master-sync.service';
+import { HobseHotelCsvImportService } from '../services/hobse-hotel-csv-import.service';
 
 /**
  * Hotel Master Sync Controller
@@ -14,7 +28,9 @@ export class HotelMasterSyncController {
 
   constructor(
     private readonly tboSoapService: TboSoapSyncService,
+    private readonly tboHotelMasterSyncService: TboHotelMasterSyncService,
     private readonly hobseHotelMasterSyncService: HobseHotelMasterSyncService,
+    private readonly hobseHotelCsvImportService: HobseHotelCsvImportService,
   ) {}
 
   /**
@@ -43,6 +59,82 @@ export class HotelMasterSyncController {
       return {
         success: false,
         message: `Sync failed: ${error.message}`,
+      };
+    }
+  }
+
+  /**
+   * Sync all India cities from CityList API + GetHotels into tbo_hotel_master
+   * POST /api/v1/hotels/sync/all-india
+   */
+  @Post('all-india')
+  async syncAllIndiaCitiesAndHotels() {
+    try {
+      this.logger.log('🔄 Starting full India sync using CityList API (CountryCode=IN)...');
+      const results = await this.tboHotelMasterSyncService.syncAllCities();
+
+      const summary = Array.from(results.entries()).map(([cityKey, count]) => {
+        const [cityCode, ...nameParts] = cityKey.split('|');
+        return {
+          cityCode,
+          cityName: nameParts.join('|'),
+          hotelsAdded: count,
+        };
+      });
+
+      return {
+        success: true,
+        message: 'India cities and hotels synced successfully from CityList API',
+        totalCities: results.size,
+        totalHotels: Array.from(results.values()).reduce((a, b) => a + b, 0),
+        summary,
+      };
+    } catch (error: any) {
+      this.logger.error(`❌ India CityList sync failed: ${error.message}`);
+      return {
+        success: false,
+        message: `India CityList sync failed: ${error.message}`,
+      };
+    }
+  }
+
+  /**
+   * Preview all India city codes from CityList API
+   * GET /api/v1/hotels/sync/all-india/cities
+   */
+  @Get('all-india/cities')
+  async getAllIndiaCitiesFromApi() {
+    const cities = await this.tboHotelMasterSyncService.fetchIndiaCitiesFromCityListApi();
+    return {
+      success: true,
+      count: cities.length,
+      cities,
+    };
+  }
+
+  /**
+   * Test one city sync through all-india service path
+   * POST /api/v1/hotels/sync/all-india/city/:cityCode
+   */
+  @Post('all-india/city/:cityCode')
+  async syncSingleIndiaCity(@Param('cityCode') cityCode: string) {
+    try {
+      this.logger.log(`🔄 Starting single-city India sync for cityCode=${cityCode}`);
+      const inserted = await this.tboHotelMasterSyncService.syncHotelsForCity(cityCode);
+      const coordinateSample = await this.tboHotelMasterSyncService.getHotelCoordinateSampleByCity(cityCode, 5);
+      return {
+        success: true,
+        cityCode,
+        inserted,
+        coordinateSample,
+        message: `Single-city sync completed for ${cityCode}`,
+      };
+    } catch (error: any) {
+      this.logger.error(`❌ Single-city India sync failed for ${cityCode}: ${error.message}`);
+      return {
+        success: false,
+        cityCode,
+        message: `Single-city India sync failed: ${error.message}`,
       };
     }
   }
@@ -106,5 +198,48 @@ export class HotelMasterSyncController {
         message: `HOBSE sync failed: ${error.message}`,
       };
     }
+  }
+
+  /**
+   * Import HOBSE/Justa hotels from uploaded CSV/XLS/XLSX into dvi_hotel + dvi_cities mapping
+   * POST /api/v1/hotels/sync/hobse/import/csv?createMissingCities=true
+   * multipart/form-data with file field: "file"
+   */
+  @Post('hobse/import/csv')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: 15 * 1024 * 1024 },
+    }),
+  )
+  async importHobseCsv(
+    @UploadedFile() file: Express.Multer.File,
+    @Query('createMissingCities') createMissingCities = 'false',
+  ) {
+    if (!file) {
+      throw new BadRequestException('No file uploaded. Use multipart/form-data with field name "file"');
+    }
+
+    const ext = (file.originalname?.split('.').pop() || '').toLowerCase();
+    if (!['csv', 'xls', 'xlsx'].includes(ext)) {
+      throw new BadRequestException('Unsupported file type. Allowed: .csv, .xls, .xlsx');
+    }
+
+    const allowCreateMissingCities = String(createMissingCities).toLowerCase() === 'true';
+    this.logger.log(
+      `🔄 Starting CSV import for ${file.originalname} | createMissingCities=${allowCreateMissingCities}`,
+    );
+
+    const summary = await this.hobseHotelCsvImportService.importFromFileBuffer(file.buffer, {
+      createMissingCities: allowCreateMissingCities,
+    });
+
+    return {
+      success: true,
+      message: 'CSV import completed',
+      fileName: file.originalname,
+      createMissingCities: allowCreateMissingCities,
+      summary,
+    };
   }
 }

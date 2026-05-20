@@ -1,0 +1,71 @@
+======== REQUEST ========
+{
+  "BookingCode": "1088749!TB!1!TB!e4290e71-434d-11f1-855f-720abae076dd!TB!N!TB!AFF!",
+  "TokenId": "816fc7e0-e2fb-4a33-9860-d00773d767e0",
+  "IsVoucherBooking": true,
+  "GuestNationality": "IN",
+  "EndUserIp": "192.168.1.1",
+  "RequestedBookingMode": 1,
+  "TraceId": "",
+  "NetAmount": 6459.33,
+  "HotelRoomsDetails": [
+    {
+      "HotelPassenger": [
+        {
+          "Title": "Mr",
+          "FirstName": "Arun",
+          "MiddleName": "",
+          "LastName": "Sharma",
+          "Email": "adult1@cert.example.com",
+          "PaxType": 1,
+          "LeadPassenger": true,
+          "Age": 30,
+          "Phoneno": "9000000100",
+          "PaxId": 0,
+          "GSTCompanyAddress": null,
+          "GSTCompanyContactNumber": null,
+          "GSTCompanyName": null,
+          "GSTNumber": null,
+          "GSTCompanyEmail": null,
+          "PAN": "AAAPL1234C",
+          "PassportNo": null,
+          "PassportIssueDate": null,
+          "PassportExpDate": null
+        }
+      ]
+    }
+  ]
+}
+
+======== RESPONSE ========
+{
+  "BookResult": {
+    "TBOReferenceNo": null,
+    "VoucherStatus": true,
+    "ResponseStatus": 1,
+    "Error": {
+      "ErrorCode": 0,
+      "ErrorMessage": ""
+    },
+    "TraceId": "e4290e71-434d-11f1-855f-720abae076dd",
+    "Status": 1,
+    "HotelBookingStatus": "Confirmed",
+    "InvoiceNumber": "MW/2627/2782",
+    "ConfirmationNo": "7449623145642",
+    "BookingRefNo": "561321502784594",
+    "BookingId": 2117421,
+    "IsPriceChanged": false,
+    "IsCancellationPolicyChanged": false
+  }
+}
+
+======== METADATA ========
+- timestamp: 2026-04-28T22:02:22.269Z
+- endpoint: https://hotelbe.tektravels.com/hotelservice.svc/rest/book/
+- status code: 200
+- case id: 1
+- step name: book
+- method: POST
+- status: success
+- error: none
+- skipped reason: none

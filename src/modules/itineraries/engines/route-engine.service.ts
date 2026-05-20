@@ -42,7 +42,70 @@ export class RouteEngineService {
    * --------------------------------------------------------*/
 
   private pad2(n: number): string {
-    return String(Math.max(0, n | 0)).padStart(2, "0");
+  return String(Math.max(0, n | 0)).padStart(2, "0");
+}
+
+private normalizeKmValue(value: unknown): string {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+
+  const numeric = parseFloat(raw.replace(/[^0-9.]/g, ""));
+  if (Number.isNaN(numeric) || numeric <= 0) return "";
+
+  return numeric.toFixed(2);
+}
+
+  /**
+   * Parse dvi_stored_locations.duration into seconds.
+   * Supports values like:
+   * - "49 mins"
+   * - "1 hour 56 mins"
+   * - "1 day 2 hours 15 mins"
+   * - numeric strings (treated as minutes)
+   */
+  private parseDurationToSeconds(duration: unknown): number | null {
+    if (duration == null) return null;
+
+    if (typeof duration === "number" && Number.isFinite(duration)) {
+      return Math.max(0, Math.floor(duration)) * 60;
+    }
+
+    const s = String(duration).trim().toLowerCase();
+    if (!s) return null;
+
+    let days = 0;
+    let hours = 0;
+    let mins = 0;
+
+    const dMatch = s.match(/(\d+)\s*day/);
+    const hMatch = s.match(/(\d+)\s*hour/);
+    const mMatch = s.match(/(\d+)\s*min/);
+
+    if (dMatch) days = Number(dMatch[1] || 0);
+    if (hMatch) hours = Number(hMatch[1] || 0);
+    if (mMatch) mins = Number(mMatch[1] || 0);
+
+    if (!dMatch && !hMatch && !mMatch) {
+      const n = Number(s);
+      if (Number.isFinite(n)) return Math.max(0, Math.floor(n)) * 60;
+      return null;
+    }
+
+    return (days * 1440 + hours * 60 + mins) * 60;
+  }
+
+  /**
+   * Fallback estimator when stored_locations.duration is missing.
+   * Keeps short hops conservative for airport reporting reliability.
+   */
+  private estimateTravelSecondsFromKm(distanceKmText: string): number {
+    const km = Number.parseFloat(String(distanceKmText || "0").replace(/[^0-9.]/g, ""));
+    if (!Number.isFinite(km) || km <= 0) return 30 * 60;
+
+    if (km <= 5) return 30 * 60;
+    if (km <= 20) return Math.ceil((km / 25) * 60) * 60;
+    if (km <= 80) return Math.ceil((km / 35) * 60) * 60;
+    return Math.ceil((km / 45) * 60) * 60;
   }
 
   private toHmsFromDate(d: Date): string {
@@ -149,18 +212,25 @@ export class RouteEngineService {
    * `$distanceKM = 0;` branch.
    */
   private async resolveSourceLocationAndKm(
-    tx: Tx,
-    sourceName: string,
-    destName: string,
-  ): Promise<{ locationId: bigint; distanceKm: string }> {
-    const trimmedSource = String(sourceName ?? "").trim();
-    const trimmedDest = String(destName ?? "").trim();
+  tx: Tx,
+  sourceName: string,
+  destName: string,
+): Promise<{ locationId: bigint; distanceKm: string; travelSeconds: number | null }> {
+  const trimmedSource = String(sourceName ?? "").trim();
+  const trimmedDest = String(destName ?? "").trim();
 
-    if (!trimmedSource || !trimmedDest) {
-      return { locationId: BigInt(0), distanceKm: "" };
-    }
+  if (!trimmedSource || !trimmedDest) {
+    return { locationId: BigInt(0), distanceKm: "", travelSeconds: null };
+  }
 
-    const row = await (tx as any).dvi_stored_locations.findFirst({
+  const normalizeText = (value: string) =>
+    value.replace(/\s+/g, " ").trim().toLowerCase();
+
+  const normalizedSource = normalizeText(trimmedSource);
+  const normalizedDest = normalizeText(trimmedDest);
+
+  let row =
+    await (tx as any).dvi_stored_locations.findFirst({
       where: {
         source_location: trimmedSource,
         destination_location: trimmedDest,
@@ -172,34 +242,62 @@ export class RouteEngineService {
       select: {
         location_ID: true,
         distance: true,
+        duration: true,
       },
     });
 
-    if (!row) {
-      return { locationId: BigInt(0), distanceKm: "" };
-    }
+  if (!row) {
+    const rows = await (tx as any).dvi_stored_locations.findMany({
+      where: { deleted: 0 },
+      orderBy: { location_ID: "desc" },
+      select: {
+        location_ID: true,
+        source_location: true,
+        destination_location: true,
+        distance: true,
+        duration: true,
+      },
+    });
 
-    const rawId = (row as any).location_ID ?? 0;
-
-    let locationId: bigint;
-    try {
-      if (typeof rawId === "bigint") {
-        locationId = rawId;
-      } else if (typeof rawId === "number") {
-        locationId = BigInt(Math.trunc(rawId));
-      } else {
-        locationId = BigInt(String(rawId));
-      }
-    } catch {
-      locationId = BigInt(0);
-    }
-
-    const distanceRaw = (row as any).distance;
-    const distanceKm =
-      distanceRaw === null || distanceRaw === undefined ? "" : String(distanceRaw);
-
-    return { locationId, distanceKm };
+    row =
+      rows.find((r: any) => {
+        const src = normalizeText(String(r.source_location ?? ""));
+        const dest = normalizeText(String(r.destination_location ?? ""));
+        return src === normalizedSource && dest === normalizedDest;
+      }) ||
+      rows.find((r: any) => {
+        const src = normalizeText(String(r.source_location ?? ""));
+        const dest = normalizeText(String(r.destination_location ?? ""));
+        return src === normalizedDest && dest === normalizedSource;
+      }) ||
+      null;
   }
+
+  if (!row) {
+    return { locationId: BigInt(0), distanceKm: "", travelSeconds: null };
+  }
+
+  const rawId = (row as any).location_ID ?? 0;
+
+  let locationId: bigint;
+  try {
+    if (typeof rawId === "bigint") {
+      locationId = rawId;
+    } else if (typeof rawId === "number") {
+      locationId = BigInt(Math.trunc(rawId));
+    } else {
+      locationId = BigInt(String(rawId));
+    }
+  } catch {
+    locationId = BigInt(0);
+  }
+
+  const distanceRaw = (row as any).distance;
+  const distanceKm = this.normalizeKmValue(distanceRaw);
+  const travelSeconds = this.parseDurationToSeconds((row as any).duration ?? null);
+
+  return { locationId, distanceKm, travelSeconds };
+}
 
   /**
    * Normalize the base trip start date (date-only) from the plan.
@@ -224,6 +322,91 @@ export class RouteEngineService {
     return new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), base.getUTCDate()));
   }
 
+  private normalizeLocationName(value: string): string {
+    return String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
+  }
+
+  /**
+   * PHP parity guard: when incoming route rows contain blank placeholders,
+   * rebuild a stable day-chain by inserting stay-day legs at intermediate cities.
+   */
+  private normalizeSparseRouteDays(routes: CreateRouteDto[]): CreateRouteDto[] {
+    if (!Array.isArray(routes) || routes.length <= 1) return routes;
+
+    const totalRows = routes.length;
+    const trimmed = routes.map((r: any) => ({
+      source: String(r?.location_name ?? "").trim(),
+      dest: String(r?.next_visiting_location ?? "").trim(),
+    }));
+
+    const sparseRowCount = trimmed.filter((r) => !r.source || !r.dest).length;
+    if (sparseRowCount === 0) return routes;
+
+    const anchors: string[] = [];
+    const pushAnchor = (name: string) => {
+      const n = String(name || "").trim();
+      if (!n) return;
+      const prev = anchors[anchors.length - 1] || "";
+      if (this.normalizeLocationName(prev) !== this.normalizeLocationName(n)) {
+        anchors.push(n);
+      }
+    };
+
+    for (const row of trimmed) {
+      if (row.source) pushAnchor(row.source);
+      if (row.dest) pushAnchor(row.dest);
+    }
+
+    if (anchors.length < 2) return routes;
+
+    const intermediateStops = anchors.slice(1, -1);
+    if (!intermediateStops.length) return routes;
+
+    const extraStayDays = Math.max(0, totalRows - (anchors.length - 1));
+    if (extraStayDays <= 0) return routes;
+
+    const stayAlloc = new Map<string, number>();
+    for (const stop of intermediateStops) {
+      stayAlloc.set(stop, 0);
+    }
+
+    for (let i = 0; i < extraStayDays; i++) {
+      const stop = intermediateStops[i % intermediateStops.length];
+      stayAlloc.set(stop, Number(stayAlloc.get(stop) ?? 0) + 1);
+    }
+
+    const legPairs: Array<{ source: string; dest: string }> = [];
+    let current = anchors[0];
+    for (let i = 1; i < anchors.length; i++) {
+      const next = anchors[i];
+      const stayCount = Number(stayAlloc.get(current) ?? 0);
+      for (let s = 0; s < stayCount; s++) {
+        legPairs.push({ source: current, dest: current });
+      }
+      legPairs.push({ source: current, dest: next });
+      current = next;
+    }
+
+    if (legPairs.length !== totalRows) return routes;
+
+    return routes.map((r: any, idx) => {
+      const originalSource = String((r as any)?.location_name ?? "").trim();
+      const originalDest = String((r as any)?.next_visiting_location ?? "").trim();
+      const mappedSource = legPairs[idx].source;
+      const mappedDest = legPairs[idx].dest;
+      const pairChanged =
+        this.normalizeLocationName(originalSource) !== this.normalizeLocationName(mappedSource) ||
+        this.normalizeLocationName(originalDest) !== this.normalizeLocationName(mappedDest);
+
+      return {
+        ...r,
+        location_name: mappedSource,
+        next_visiting_location: mappedDest,
+        __normalizedPairChanged: pairChanged,
+      };
+    });
+  }
+
   /**
    * Main entry: rebuild all routes for a plan.
    */
@@ -239,7 +422,8 @@ export class RouteEngineService {
     const departureLocation = String(anyPlan.departure_point ?? "").trim();
     const departureType = Number(anyPlan.departure_type ?? 0) || 0;
 
-    const totalRoutes = Array.isArray(routes) ? routes.length : 0;
+    const normalizedRoutes = this.normalizeSparseRouteDays(Array.isArray(routes) ? routes : []);
+    const totalRoutes = normalizedRoutes.length;
 
     // If no routes, wipe existing and return.
     if (!totalRoutes) {
@@ -249,11 +433,10 @@ export class RouteEngineService {
       return [];
     }
 
-    // Compute trip-level times + last-day end time.
+    // Compute trip-level wall-clock start/end from request payload.
     const { tripStartTimeHms, tripEndTimeHms } = this.extractTripTimes(plan);
     const bufferSec = this.getDepartureBufferSeconds(departureType);
     const tripEndSec = this.parseHmsToSeconds(tripEndTimeHms);
-    const lastDayEndSec = Math.max(0, tripEndSec - bufferSec);
 
     const baseDate = this.getTripStartDateOnly(plan);
 
@@ -266,19 +449,34 @@ export class RouteEngineService {
     let dayOffset = 0; // PHP increments $no_of_days by 1 per leg.
 
     for (let idx = 0; idx < totalRoutes; idx++) {
-      const r: any = routes[idx] || {};
+      const r: any = normalizedRoutes[idx] || {};
       const isFirst = idx === 0;
       const isLast = idx === totalRoutes - 1;
 
       const sourceName = String(r.location_name ?? "").trim();
       const destName = String(r.next_visiting_location ?? "").trim();
 
-      // location_id + no_of_km from master stored locations table
-      const { locationId, distanceKm } = await this.resolveSourceLocationAndKm(
-        tx,
-        sourceName,
-        destName,
-      );
+      // location_id from master stored locations table
+// no_of_km should prefer request payload value, with master distance as fallback
+  const { locationId, distanceKm, travelSeconds } = await this.resolveSourceLocationAndKm(
+  tx,
+  sourceName,
+  destName,
+);
+
+const requestKm = this.normalizeKmValue(r.no_of_km);
+const pairChanged = Boolean((r as any).__normalizedPairChanged);
+
+const fallbackKm =
+  this.normalizeKmValue(r.distance) ||
+  this.normalizeKmValue(r.total_distance) ||
+  this.normalizeKmValue(r.intercityDistance);
+
+const finalKm = pairChanged
+  ? distanceKm || fallbackKm || requestKm || ""
+  : requestKm || distanceKm || fallbackKm || "";
+
+      const dayNumber = dayOffset + 1;
 
       // itinerary_route_date = trip_start_date + dayOffset (one day per leg)
       const routeDate = new Date(baseDate.getTime());
@@ -289,6 +487,10 @@ export class RouteEngineService {
       let startHms: string;
       if (r.route_start_time) {
         startHms = r.route_start_time;
+      } else if (isLast) {
+        // Last route still gets the timeline builder's 1-hour pre-sightseeing buffer,
+        // so keep route start at 08:00 to make sightseeing begin at 09:00.
+        startHms = "08:00:00";
       } else if (totalRoutes === 1 || (isFirst && sourceName === arrivalLocation)) {
         // First leg matching arrival location → trip_start_time (IST wall-clock)
         startHms = tripStartTimeHms;
@@ -302,42 +504,46 @@ export class RouteEngineService {
       if (r.route_end_time) {
         endHms = r.route_end_time;
       } else {
-        // PHP behavior: All sightseeing routes end at 20:00, regardless of being last route
-        // The trip_end_time is for the actual flight/train departure, not sightseeing end
-        endHms = "20:00:00";
+        if (isLast) {
+            // The last route's configured end is the latest allowed ARRIVAL at the
+            // departure terminal. The timeline builder separately reserves transfer
+            // time when picking hotspots and when anchoring the final return segment.
+          const dayStartSec = this.parseHmsToSeconds(startHms);
+
+          // Guard: route end should never be earlier than route start.
+            endHms = this.secondsToHms(Math.max(dayStartSec, tripEndSec - bufferSec));
+        } else {
+          endHms = "20:00:00";
+        }
       }
 
       // Prisma requires a Date object for @db.Time fields. This helper builds a Date-like
       // value that Prisma can write into MySQL TIME. The IMPORTANT part is: startHms/endHms
       // must be IST wall-clock (fixed above), not UTC-shifted.
-      const row = await (tx as any).dvi_itinerary_route_details.create({
-        data: {
-          itinerary_plan_ID: planId,
-          location_id: locationId,
-          location_name: sourceName,
-          itinerary_route_date: routeDate,
-          no_of_days: 1, // PHP: $selected_NO_OF_DAYS = 1
-          no_of_km: distanceKm, // from master distance; "" or "0" if missing
-          direct_to_next_visiting_place: Number(r.direct_to_next_visiting_place || 0),
-          next_visiting_location: destName,
-          route_start_time: timeStringToPrismaTime(startHms),
-          route_end_time: timeStringToPrismaTime(endHms),
-          createdby: userId,
-          createdon: new Date(),
-          updatedon: null,
-          status: 1,
-          deleted: 0,
-        },
-      });
+     const row = await (tx as any).dvi_itinerary_route_details.create({
+  data: {
+    itinerary_plan_ID: planId,
+    location_id: locationId,
+    location_name: sourceName,
+    itinerary_route_date: routeDate,
+    no_of_days: dayNumber,
+    no_of_km: finalKm, // prefer request payload value; fallback to master distance
+    direct_to_next_visiting_place: Number(r.direct_to_next_visiting_place || 0),
+    next_visiting_location: destName,
+    route_start_time: timeStringToPrismaTime(startHms),
+    route_end_time: timeStringToPrismaTime(endHms),
+    createdby: userId,
+    createdon: new Date(),
+    updatedon: null,
+    status: 1,
+    deleted: 0,
+  },
+});
 
       created.push(row);
 
-      // keep variables referenced (avoid lint complaints if you use them later)
-      void isLast;
-      void lastDayEndSec;
+      // keep variable referenced (avoid lint complaints if reused later)
       void departureLocation;
-      void bufferSec;
-      void tripEndTimeHms;
     }
 
     return created;

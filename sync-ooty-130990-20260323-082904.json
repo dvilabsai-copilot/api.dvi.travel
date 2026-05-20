@@ -1,0 +1,38 @@
+{
+    "success":  true,
+    "cityCode":  "130990",
+    "inserted":  490,
+    "coordinateSample":  [
+                             {
+                                 "hotelCode":  "1040949",
+                                 "hotelName":  "Sunshine Inn",
+                                 "latitude":  "",
+                                 "longitude":  ""
+                             },
+                             {
+                                 "hotelCode":  "1040951",
+                                 "hotelName":  "OYO 10950 Hotel Hills Palace",
+                                 "latitude":  "",
+                                 "longitude":  ""
+                             },
+                             {
+                                 "hotelCode":  "1040953",
+                                 "hotelName":  "Haveli Atithi Bhavan",
+                                 "latitude":  "",
+                                 "longitude":  ""
+                             },
+                             {
+                                 "hotelCode":  "1040954",
+                                 "hotelName":  "Palve Sugavasam",
+                                 "latitude":  "",
+                                 "longitude":  ""
+                             },
+                             {
+                                 "hotelCode":  "1040967",
+                                 "hotelName":  "Nahar\u0027s Nilgiris Hotel",
+                                 "latitude":  "",
+                                 "longitude":  ""
+                             }
+                         ],
+    "message":  "Single-city sync completed for 130990"
+}

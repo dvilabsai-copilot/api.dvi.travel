@@ -1,0 +1,11 @@
+{
+  "cityCode": "Bangalore",
+  "checkInDate": "2026-04-16",
+  "checkOutDate": "2026-04-17",
+  "roomCount": 1,
+  "guestCount": 2,
+  "guestNationality": "US",
+  "providers": [
+    "tbo"
+  ]
+}

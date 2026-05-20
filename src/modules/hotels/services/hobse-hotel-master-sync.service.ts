@@ -19,7 +19,9 @@ export class HobseHotelMasterSyncService {
   private http: AxiosInstance;
 
   private readonly HOBSE_BASE_URL =
-    process.env.HOBSE_BASE_URL || 'https://api.hobse.com/v1/qa';
+    (process.env.HOBSE_BASE_URL || 'https://api.hobse.com/v1')
+      .replace(/\/htl\/?$/, '')
+      .replace(/\/+$/, '');
 
   private readonly HOBSE_CLIENT_TOKEN = process.env.HOBSE_CLIENT_TOKEN || '';
   private readonly HOBSE_ACCESS_TOKEN = process.env.HOBSE_ACCESS_TOKEN || '';

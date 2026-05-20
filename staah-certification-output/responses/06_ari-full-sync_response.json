@@ -1,0 +1,580 @@
+{
+  "status": "success",
+  "error_desc": "",
+  "trackingId": "A2A45EBD-3F79-461C-8AE5-7FF7B1599B0E",
+  "propertyid": "STAAHTESTHOTEL1",
+  "room_id": "DELUXE_ROOM",
+  "rate_id": "CP_PLAN",
+  "currency": "INR",
+  "data": [
+    {
+      "start_date": "2026-01-01",
+      "end_date": "2026-12-31",
+      "free": 6,
+      "occupancy_rates": {
+        "amountAfterTax": {
+          "obp": {
+            "person1": "5460",
+            "person2": "5985",
+            "person3": "6510"
+          },
+          "Rate": "5460",
+          "extraadult": "945",
+          "extrachild": "683"
+        },
+        "amountBeforeTax": {
+          "obp": {
+            "person1": "5200",
+            "person2": "5700",
+            "person3": "6200"
+          },
+          "Rate": "5200",
+          "extraadult": "900.00",
+          "extrachild": "650.00"
+        }
+      },
+      "restrictions": {
+        "cta": "N",
+        "ctd": "N",
+        "maxstay": "14",
+        "minstay": "1",
+        "stopsell": "N"
+      }
+    },
+    {
+      "start_date": "2026-06-01",
+      "end_date": "2026-06-10",
+      "free": 11,
+      "occupancy_rates": {
+        "amountAfterTax": {
+          "obp": {
+            "person1": "4515",
+            "person2": "4935",
+            "person3": "5355"
+          },
+          "Rate": "4515",
+          "extraadult": "735",
+          "extrachild": "525"
+        },
+        "amountBeforeTax": {
+          "obp": {
+            "person1": "4300",
+            "person2": "4700",
+            "person3": "5100"
+          },
+          "Rate": "4300",
+          "extraadult": "700.00",
+          "extrachild": "500.00"
+        }
+      },
+      "restrictions": {
+        "cta": "N",
+        "ctd": "N",
+        "maxstay": "10",
+        "minstay": "1",
+        "stopsell": "N"
+      }
+    },
+    {
+      "start_date": "2026-10-01",
+      "end_date": "2026-10-03",
+      "free": 8,
+      "occupancy_rates": {
+        "DOUBLE": 5200,
+        "SINGLE": 4200,
+        "TRIPLE": 6200
+      }
+    },
+    {
+      "start_date": "2026-10-04",
+      "end_date": "2026-10-06",
+      "free": 5
+    },
+    {
+      "start_date": "2026-10-11",
+      "end_date": "2026-10-11",
+      "free": 9,
+      "occupancy_rates": {
+        "amountAfterTax": {
+          "obp": {
+            "person1": "4900",
+            "person2": "5400",
+            "person3": "5700"
+          },
+          "Rate": "4900",
+          "extraadult": "800",
+          "extrachild": "600"
+        },
+        "amountBeforeTax": {
+          "obp": {
+            "person1": "4900",
+            "person2": "5400",
+            "person3": "5700"
+          },
+          "Rate": "4900",
+          "extraadult": "800.00",
+          "extrachild": "600.00"
+        }
+      },
+      "restrictions": {
+        "cta": "N",
+        "ctd": "N",
+        "maxstay": "5",
+        "maxstay_through": "3",
+        "minstay": "1",
+        "minstay_through": "1",
+        "stopsell": "N"
+      }
+    },
+    {
+      "start_date": "2026-11-01",
+      "end_date": "2026-11-05",
+      "restrictions": {
+        "Status": "Open"
+      }
+    },
+    {
+      "start_date": "2026-11-10",
+      "end_date": "2026-11-12",
+      "restrictions": {
+        "Status": "Close"
+      }
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2026-12-15",
+      "free": 9,
+      "occupancy_rates": {
+        "amountAfterTax": {
+          "obp": {
+            "person1": "4900",
+            "person2": "5400",
+            "person3": "5700"
+          },
+          "Rate": "4900",
+          "extraadult": "800",
+          "extrachild": "600"
+        },
+        "amountBeforeTax": {
+          "obp": {
+            "person1": "4900",
+            "person2": "5400",
+            "person3": "5700"
+          },
+          "Rate": "4900",
+          "extraadult": "800.00",
+          "extrachild": "600.00"
+        }
+      },
+      "restrictions": {
+        "cta": "N",
+        "ctd": "N",
+        "maxstay": "5",
+        "maxstay_through": "3",
+        "minstay": "1",
+        "minstay_through": "1",
+        "stopsell": "N"
+      }
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2027-01-11",
+      "free": 7,
+      "occupancy_rates": {
+        "amountAfterTax": {
+          "obp": {
+            "person1": "5355",
+            "person2": "5880",
+            "person3": "6195"
+          },
+          "Rate": "5355",
+          "extraadult": "945",
+          "extrachild": "683"
+        },
+        "amountBeforeTax": {
+          "obp": {
+            "person1": "5100",
+            "person2": "5600",
+            "person3": "5900"
+          },
+          "Rate": "5100",
+          "extraadult": "900.00",
+          "extrachild": "650.00"
+        }
+      },
+      "restrictions": {
+        "cta": "N",
+        "ctd": "N",
+        "maxstay": "7",
+        "minstay": "2",
+        "stopsell": "N"
+      }
+    }
+  ],
+  "inventory": [
+    {
+      "start_date": "2026-01-01",
+      "end_date": "2026-12-31",
+      "free": 6
+    },
+    {
+      "start_date": "2026-06-01",
+      "end_date": "2026-06-10",
+      "free": 11
+    },
+    {
+      "start_date": "2026-10-01",
+      "end_date": "2026-10-03",
+      "free": 8
+    },
+    {
+      "start_date": "2026-10-04",
+      "end_date": "2026-10-06",
+      "free": 5
+    },
+    {
+      "start_date": "2026-10-11",
+      "end_date": "2026-10-11",
+      "free": 9
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2026-12-15",
+      "free": 9
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2027-01-11",
+      "free": 7
+    }
+  ],
+  "rates": [
+    {
+      "start_date": "2026-01-01",
+      "end_date": "2026-12-31",
+      "occupancy_rates": {
+        "amountAfterTax": {
+          "obp": {
+            "person1": "5460",
+            "person2": "5985",
+            "person3": "6510"
+          },
+          "Rate": "5460",
+          "extraadult": "945",
+          "extrachild": "683"
+        },
+        "amountBeforeTax": {
+          "obp": {
+            "person1": "5200",
+            "person2": "5700",
+            "person3": "6200"
+          },
+          "Rate": "5200",
+          "extraadult": "900.00",
+          "extrachild": "650.00"
+        }
+      }
+    },
+    {
+      "start_date": "2026-06-01",
+      "end_date": "2026-06-10",
+      "occupancy_rates": {
+        "amountAfterTax": {
+          "obp": {
+            "person1": "4515",
+            "person2": "4935",
+            "person3": "5355"
+          },
+          "Rate": "4515",
+          "extraadult": "735",
+          "extrachild": "525"
+        },
+        "amountBeforeTax": {
+          "obp": {
+            "person1": "4300",
+            "person2": "4700",
+            "person3": "5100"
+          },
+          "Rate": "4300",
+          "extraadult": "700.00",
+          "extrachild": "500.00"
+        }
+      }
+    },
+    {
+      "start_date": "2026-10-01",
+      "end_date": "2026-10-03",
+      "occupancy_rates": {
+        "DOUBLE": 5200,
+        "SINGLE": 4200,
+        "TRIPLE": 6200
+      }
+    },
+    {
+      "start_date": "2026-10-11",
+      "end_date": "2026-10-11",
+      "occupancy_rates": {
+        "amountAfterTax": {
+          "obp": {
+            "person1": "4900",
+            "person2": "5400",
+            "person3": "5700"
+          },
+          "Rate": "4900",
+          "extraadult": "800",
+          "extrachild": "600"
+        },
+        "amountBeforeTax": {
+          "obp": {
+            "person1": "4900",
+            "person2": "5400",
+            "person3": "5700"
+          },
+          "Rate": "4900",
+          "extraadult": "800.00",
+          "extrachild": "600.00"
+        }
+      }
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2026-12-15",
+      "occupancy_rates": {
+        "amountAfterTax": {
+          "obp": {
+            "person1": "4900",
+            "person2": "5400",
+            "person3": "5700"
+          },
+          "Rate": "4900",
+          "extraadult": "800",
+          "extrachild": "600"
+        },
+        "amountBeforeTax": {
+          "obp": {
+            "person1": "4900",
+            "person2": "5400",
+            "person3": "5700"
+          },
+          "Rate": "4900",
+          "extraadult": "800.00",
+          "extrachild": "600.00"
+        }
+      }
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2027-01-11",
+      "occupancy_rates": {
+        "amountAfterTax": {
+          "obp": {
+            "person1": "5355",
+            "person2": "5880",
+            "person3": "6195"
+          },
+          "Rate": "5355",
+          "extraadult": "945",
+          "extrachild": "683"
+        },
+        "amountBeforeTax": {
+          "obp": {
+            "person1": "5100",
+            "person2": "5600",
+            "person3": "5900"
+          },
+          "Rate": "5100",
+          "extraadult": "900.00",
+          "extrachild": "650.00"
+        }
+      }
+    }
+  ],
+  "restrictions": [
+    {
+      "start_date": "2026-01-01",
+      "end_date": "2026-12-31",
+      "type": "cta",
+      "value": "N"
+    },
+    {
+      "start_date": "2026-01-01",
+      "end_date": "2026-12-31",
+      "type": "ctd",
+      "value": "N"
+    },
+    {
+      "start_date": "2026-01-01",
+      "end_date": "2026-12-31",
+      "type": "maxstay",
+      "value": "14"
+    },
+    {
+      "start_date": "2026-01-01",
+      "end_date": "2026-12-31",
+      "type": "minstay",
+      "value": "1"
+    },
+    {
+      "start_date": "2026-01-01",
+      "end_date": "2026-12-31",
+      "type": "stopsell",
+      "value": "N"
+    },
+    {
+      "start_date": "2026-06-01",
+      "end_date": "2026-06-10",
+      "type": "cta",
+      "value": "N"
+    },
+    {
+      "start_date": "2026-06-01",
+      "end_date": "2026-06-10",
+      "type": "ctd",
+      "value": "N"
+    },
+    {
+      "start_date": "2026-06-01",
+      "end_date": "2026-06-10",
+      "type": "maxstay",
+      "value": "10"
+    },
+    {
+      "start_date": "2026-06-01",
+      "end_date": "2026-06-10",
+      "type": "minstay",
+      "value": "1"
+    },
+    {
+      "start_date": "2026-06-01",
+      "end_date": "2026-06-10",
+      "type": "stopsell",
+      "value": "N"
+    },
+    {
+      "start_date": "2026-10-11",
+      "end_date": "2026-10-11",
+      "type": "cta",
+      "value": "N"
+    },
+    {
+      "start_date": "2026-10-11",
+      "end_date": "2026-10-11",
+      "type": "ctd",
+      "value": "N"
+    },
+    {
+      "start_date": "2026-10-11",
+      "end_date": "2026-10-11",
+      "type": "maxstay",
+      "value": "5"
+    },
+    {
+      "start_date": "2026-10-11",
+      "end_date": "2026-10-11",
+      "type": "maxstay_through",
+      "value": "3"
+    },
+    {
+      "start_date": "2026-10-11",
+      "end_date": "2026-10-11",
+      "type": "minstay",
+      "value": "1"
+    },
+    {
+      "start_date": "2026-10-11",
+      "end_date": "2026-10-11",
+      "type": "minstay_through",
+      "value": "1"
+    },
+    {
+      "start_date": "2026-10-11",
+      "end_date": "2026-10-11",
+      "type": "stopsell",
+      "value": "N"
+    },
+    {
+      "start_date": "2026-11-01",
+      "end_date": "2026-11-05",
+      "type": "Status",
+      "value": "Open"
+    },
+    {
+      "start_date": "2026-11-10",
+      "end_date": "2026-11-12",
+      "type": "Status",
+      "value": "Close"
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2026-12-15",
+      "type": "cta",
+      "value": "N"
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2026-12-15",
+      "type": "ctd",
+      "value": "N"
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2026-12-15",
+      "type": "maxstay",
+      "value": "5"
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2026-12-15",
+      "type": "maxstay_through",
+      "value": "3"
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2026-12-15",
+      "type": "minstay",
+      "value": "1"
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2026-12-15",
+      "type": "minstay_through",
+      "value": "1"
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2026-12-15",
+      "type": "stopsell",
+      "value": "N"
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2027-01-11",
+      "type": "cta",
+      "value": "N"
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2027-01-11",
+      "type": "ctd",
+      "value": "N"
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2027-01-11",
+      "type": "maxstay",
+      "value": "7"
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2027-01-11",
+      "type": "minstay",
+      "value": "2"
+    },
+    {
+      "start_date": "2026-12-15",
+      "end_date": "2027-01-11",
+      "type": "stopsell",
+      "value": "N"
+    }
+  ]
+}

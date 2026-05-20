@@ -1,0 +1,9 @@
+{
+  "status": 400,
+  "ok": false,
+  "body": {
+    "message": "Route ID 1 not found in this itinerary",
+    "error": "Bad Request",
+    "statusCode": 400
+  }
+}

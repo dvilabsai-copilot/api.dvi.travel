@@ -1,0 +1,44 @@
+{
+    "success":  true,
+    "message":  "Prebook completed for 1 hotel(s)",
+    "itinerary_plan_ID":  1,
+    "hotels":  [
+                   {
+                       "routeId":  1,
+                       "hotelCode":  "1056437",
+                       "bookingCode":  "1056437!TB!1!TB!f1039de5-20c3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+                       "updatedTotalPrice":  0,
+                       "finalPrice":  0,
+                       "totalAmount":  0,
+                       "cancellationPolicy":  [
+
+                                              ],
+                       "cancellationPoliciesText":  null,
+                       "roomPromotion":  null,
+                       "rateConditions":  [
+
+                                          ],
+                       "mandatorySupplements":  [
+
+                                                ],
+                       "isPriceChanged":  false,
+                       "isCancellationPolicyChanged":  false,
+                       "rawStatus":  {
+                                         "Code":  200,
+                                         "Description":  "Successful"
+                                     }
+                   }
+               ],
+    "updatedTotalPrice":  0,
+    "finalPrice":  0,
+    "totalAmount":  0,
+    "cancellationPolicy":  null,
+    "cancellationPoliciesText":  null,
+    "roomPromotion":  null,
+    "rateConditions":  [
+
+                       ],
+    "mandatorySupplements":  [
+
+                             ]
+}

@@ -2,13 +2,13 @@
 AxisRooms API Test Log
 ============================================================
 Test Name: 1-product-info
-Timestamp: 2026-03-09T04:57:06.791Z
+Timestamp: 2026-03-13T12:30:38.502Z
 Status: SUCCESS
 ============================================================
 
 REQUEST:
 --------
-URL: http://127.0.0.1:4006/api/v1/axisrooms/productInfo
+URL: https://dvi.travel/api/v1/axisrooms/productInfo
 Method: POST
 Headers:
 {}
@@ -26,19 +26,19 @@ RESPONSE:
 Status: 200
 Headers:
 {
+  "server": "nginx/1.24.0 (Ubuntu)",
+  "date": "Fri, 13 Mar 2026 12:30:36 GMT",
+  "content-type": "application/json; charset=utf-8",
+  "content-length": "165",
+  "connection": "keep-alive",
   "x-powered-by": "Express",
   "access-control-allow-origin": "*",
-  "content-type": "application/json; charset=utf-8",
-  "content-length": "124",
-  "etag": "W/\"7c-t0ASdLhv1UMlgS4t/Mru1dONrLw\"",
-  "date": "Mon, 09 Mar 2026 04:57:06 GMT",
-  "connection": "keep-alive",
-  "keep-alive": "timeout=5"
+  "etag": "W/\"a5-hlbhWvMlHEmvkaHP0Q8DHYeV4Y4\""
 }
 
 Data:
 {
-  "message": "",
+  "message": "Product information fetched successfully.",
   "status": "success",
   "data": [
     {

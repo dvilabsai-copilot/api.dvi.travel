@@ -28,6 +28,34 @@ export class HotelPricingService {
 
   constructor(private readonly prisma: PrismaService) {}
 
+  private async filterHotelsWithValidRates<T extends { hotel_id: number }>(
+    hotels: T[],
+    onDate?: Date,
+  ): Promise<T[]> {
+    if (!onDate || hotels.length === 0) return hotels;
+
+    const dc = dayCol(onDate);
+    const y = String(onDate.getFullYear());
+    const m = monthName(onDate);
+    const hotelIds = hotels.map((hotel) => Number(hotel.hotel_id)).filter(Boolean);
+
+    if (hotelIds.length === 0) return [];
+
+    const validRows: Array<{ hotel_id: number }> = await this.prisma.dvi_hotel_room_price_book.findMany({
+      where: {
+        hotel_id: { in: hotelIds },
+        year: y,
+        month: m,
+        [dc]: { gt: 0 },
+      },
+      select: { hotel_id: true },
+      distinct: ['hotel_id'],
+    });
+
+    const validHotelIds = new Set(validRows.map((row) => Number(row.hotel_id)));
+    return hotels.filter((hotel) => validHotelIds.has(Number(hotel.hotel_id)));
+  }
+
   /** Simple money round (2 decimals) */
   money(v: any) {
     const n = Number(v ?? 0);
@@ -122,20 +150,13 @@ export class HotelPricingService {
         });
 
         if (hotels.length > 0) {
-          // Filter hotels to only those with valid rates for the date
-          if (onDate) {
-            const validHotels = [];
-            for (const h of hotels) {
-              const hasRates = await this.hasValidRates(h.hotel_id, onDate);
-              if (hasRates) {
-                validHotels.push(h);
-              }
-            }
-            if (validHotels.length > 0) {
-              const hotel = validHotels[Math.floor(Math.random() * validHotels.length)];
-              return hotel;
-            }
-          } else {
+          const validHotels = await this.filterHotelsWithValidRates(hotels, onDate);
+          if (validHotels.length > 0) {
+            const hotel = validHotels[Math.floor(Math.random() * validHotels.length)];
+            return hotel;
+          }
+
+          if (!onDate) {
             const hotel = hotels[Math.floor(Math.random() * hotels.length)];
             return hotel;
           }
@@ -159,17 +180,12 @@ export class HotelPricingService {
       });
 
       if (stateHotels.length > 0) {
-        if (onDate) {
-          const validStateHotels = [];
-          for (const h of stateHotels) {
-            if (await this.hasValidRates(h.hotel_id, onDate)) {
-              validStateHotels.push(h);
-            }
-          }
-          if (validStateHotels.length > 0) {
-            return validStateHotels[Math.floor(Math.random() * validStateHotels.length)];
-          }
-        } else {
+        const validStateHotels = await this.filterHotelsWithValidRates(stateHotels, onDate);
+        if (validStateHotels.length > 0) {
+          return validStateHotels[Math.floor(Math.random() * validStateHotels.length)];
+        }
+
+        if (!onDate) {
           return stateHotels[Math.floor(Math.random() * stateHotels.length)];
         }
       }
@@ -190,21 +206,14 @@ export class HotelPricingService {
     });
 
     if (fallbacks.length > 0) {
-      // Filter fallback hotels by valid rates
-      if (onDate) {
-        const validFallbacks = [];
-        for (const h of fallbacks) {
-          if (await this.hasValidRates(h.hotel_id, onDate)) {
-            validFallbacks.push(h);
-          }
-        }
-        if (validFallbacks.length > 0) {
-          const selected = validFallbacks[Math.floor(Math.random() * validFallbacks.length)];
-          return selected;
-        }
-        // No hotels with valid rates found at all
-        return null;
+      const validFallbacks = await this.filterHotelsWithValidRates(fallbacks, onDate);
+      if (validFallbacks.length > 0) {
+        const selected = validFallbacks[Math.floor(Math.random() * validFallbacks.length)];
+        return selected;
       }
+
+      if (onDate) return null;
+
       // No date filtering
       const selected = fallbacks[Math.floor(Math.random() * fallbacks.length)];
       return selected;
@@ -255,6 +264,31 @@ export class HotelPricingService {
     }
 
     // 2. If no city match, try state fallback
+    // 1b. If no hotels found with preferred category in city, try ANY category in city
+    if (allHotels.length === 0 && cityTrim) {
+      const { candidates: candidatesAny } = await this.resolveCityCandidates(cityTrim);
+      const whereAny: any = { deleted: false, status: 1 };
+      for (const c of candidatesAny) {
+        const hotels = await this.prisma.dvi_hotel.findMany({
+          where: { ...whereAny, hotel_city: c },
+          select: {
+            hotel_id: true,
+            hotel_name: true,
+            hotel_margin: true,
+            hotel_margin_gst_type: true,
+            hotel_margin_gst_percentage: true,
+            hotel_hotspot_status: true,
+            hotel_city: true,
+            hotel_state: true,
+          },
+        });
+        if (hotels.length > 0) {
+          allHotels = allHotels.concat(hotels);
+        }
+      }
+    }
+
+    // 2. If no city match, try state fallback
     if (allHotels.length === 0 && targetStateId) {
       const stateHotels = await this.prisma.dvi_hotel.findMany({
         where: { ...whereBase, hotel_state: targetStateId },
@@ -289,17 +323,7 @@ export class HotelPricingService {
       });
     }
 
-    // Filter by valid rates if date provided
-    if (onDate && allHotels.length > 0) {
-      const validHotels = [];
-      for (const h of allHotels) {
-        const hasRates = await this.hasValidRates(h.hotel_id, onDate);
-        if (hasRates) {
-          validHotels.push(h);
-        }
-      }
-      allHotels = validHotels;
-    }
+    allHotels = await this.filterHotelsWithValidRates(allHotels, onDate);
 
     return allHotels.slice(0, limit);
   }

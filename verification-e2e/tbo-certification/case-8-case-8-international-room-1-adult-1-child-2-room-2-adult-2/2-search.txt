@@ -1,0 +1,170 @@
+======== REQUEST ========
+{
+  "CheckIn": "2026-06-17",
+  "CheckOut": "2026-06-18",
+  "HotelCodes": "1035259,1035258",
+  "GuestNationality": "US",
+  "PaxRooms": [
+    {
+      "Adults": 1,
+      "Children": 2,
+      "ChildrenAges": [
+        6,
+        9
+      ]
+    },
+    {
+      "Adults": 2,
+      "Children": 0,
+      "ChildrenAges": []
+    }
+  ],
+  "ResponseTime": 23,
+  "IsDetailedResponse": true,
+  "Filters": {
+    "Refundable": true,
+    "NoOfRooms": 0,
+    "MealType": "WithMeal",
+    "OrderBy": 0,
+    "StarRating": 0,
+    "HotelName": null
+  }
+}
+
+======== RESPONSE ========
+{
+  "Status": {
+    "Code": 200,
+    "Description": "Successful"
+  },
+  "HotelResult": [
+    {
+      "HotelCode": "1035259",
+      "Currency": "INR",
+      "Rooms": [
+        {
+          "Name": [
+            "Twin Hilton Guestroom with Sofa cum Bed, Bathtub,15% disc on FandB,Spa,2 Twin Beds,NonSmoking",
+            "Twin Hilton Guestroom with Sofa cum Bed, Bathtub,15% disc on FandB,Spa,2 Twin Beds,NonSmoking"
+          ],
+          "BookingCode": "1035259!TB!2!TB!32f98ada-434e-11f1-855f-720abae076dd!TB!N!TB!AFF!",
+          "Inclusion": "Free valet parking,Free breakfast",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 16354.52
+              }
+            ],
+            [
+              {
+                "BasePrice": 16812.49
+              }
+            ]
+          ],
+          "TotalFare": 39784.66,
+          "TotalTax": 6617.65,
+          "CancelPolicies": [
+            {
+              "FromDate": "27-04-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "15-06-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "BreakFast",
+          "IsRefundable": true,
+          "WithTransfers": false
+        },
+        {
+          "Name": [
+            "King Hilton Guestroom with Sofa cum Bed, Bathtub,15% disc on FandB,Spa,1 King Bed,NonSmoking",
+            "King Hilton Guestroom with Sofa cum Bed, Bathtub,15% disc on FandB,Spa,1 King Bed,NonSmoking"
+          ],
+          "BookingCode": "1035259!TB!3!TB!32f98ada-434e-11f1-855f-720abae076dd!TB!N!TB!AFF!",
+          "Inclusion": "Free valet parking,Breakfast buffet",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 16689.73
+              }
+            ],
+            [
+              {
+                "BasePrice": 17251.31
+              }
+            ]
+          ],
+          "TotalFare": 40396.8,
+          "TotalTax": 6455.76,
+          "CancelPolicies": [
+            {
+              "FromDate": "27-04-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "15-06-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "BreakFast",
+          "IsRefundable": true,
+          "WithTransfers": false
+        },
+        {
+          "Name": [
+            "Studio, Accessible,1 King Bed,NonSmoking",
+            "Studio, Accessible,1 King Bed,NonSmoking"
+          ],
+          "BookingCode": "1035259!TB!4!TB!32f98ada-434e-11f1-855f-720abae076dd!TB!N!TB!AFF!",
+          "Inclusion": "Free valet parking,Breakfast buffet",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 16689.73
+              }
+            ],
+            [
+              {
+                "BasePrice": 17251.31
+              }
+            ]
+          ],
+          "TotalFare": 40396.8,
+          "TotalTax": 6455.76,
+          "CancelPolicies": [
+            {
+              "FromDate": "27-04-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "15-06-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "BreakFast",
+          "IsRefundable": true,
+          "WithTransfers": false
+        }
+      ]
+    }
+  ]
+}
+
+======== METADATA ========
+- timestamp: 2026-04-28T22:04:16.947Z
+- endpoint: https://affiliate.tektravels.com/HotelAPI/Search
+- status code: 200
+- case id: 8
+- step name: search
+- method: POST
+- status: success
+- error: none
+- skipped reason: none

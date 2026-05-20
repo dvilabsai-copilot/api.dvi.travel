@@ -1,0 +1,56 @@
+======== REQUEST ========
+{
+  "RequestType": 4,
+  "BookingMode": 5,
+  "BookingId": 2117426,
+  "EndUserIp": "192.168.1.1",
+  "TokenId": "93ebad47-1315-4cff-991d-c90f3b5c0d9d",
+  "Remarks": "Certification cancel for case 6"
+}
+
+======== RESPONSE ========
+{
+  "HotelChangeRequestResult": {
+    "B2B2BStatus": false,
+    "CancellationChargeBreakUp": {
+      "CancellationFees": 0,
+      "CancellationServiceCharge": 0
+    },
+    "TotalServiceCharge": 0,
+    "ResponseStatus": 1,
+    "Error": {
+      "ErrorCode": 0,
+      "ErrorMessage": ""
+    },
+    "TraceId": "1f0efd7f-434e-11f1-855f-720abae076dd",
+    "ChangeRequestId": 395368,
+    "RefundedAmount": 16262,
+    "TotalPrice": 16261.88,
+    "ChangeRequestStatus": 3,
+    "CreditNoteNo": "MZ/2627/459",
+    "CreditNoteCreatedOn": "2026-04-29T03:33:57",
+    "GST": {
+      "CGSTAmount": 0,
+      "CGSTRate": 0,
+      "CessAmount": 0,
+      "CessRate": 0,
+      "IGSTAmount": 0,
+      "IGSTRate": 18,
+      "SGSTAmount": 0,
+      "SGSTRate": 0,
+      "TaxableAmount": 0
+    },
+    "ZendeskTicketId": 5838
+  }
+}
+
+======== METADATA ========
+- timestamp: 2026-04-28T22:03:59.008Z
+- endpoint: https://hotelbe.tektravels.com/hotelservice.svc/rest/SendChangeRequest
+- status code: 200
+- case id: 6
+- step name: cancel
+- method: POST
+- status: success
+- error: none
+- skipped reason: none

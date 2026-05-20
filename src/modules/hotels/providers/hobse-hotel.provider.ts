@@ -48,9 +48,10 @@ export class HobseHotelProvider implements IHotelProvider {
   private readonly logger = new Logger(HobseHotelProvider.name);
   private http: AxiosInstance = axios;
 
-  // e.g. https://api.hobse.com/v1/qa
   private readonly BASE_URL =
-    process.env.HOBSE_BASE_URL || 'https://api.hobse.com/v1/qa';
+    (process.env.HOBSE_BASE_URL || 'https://api.hobse.com/v1')
+      .replace(/\/htl\/?$/, '')
+      .replace(/\/+$/, '');
 
   private readonly CLIENT_TOKEN = process.env.HOBSE_CLIENT_TOKEN || '';
   private readonly ACCESS_TOKEN = process.env.HOBSE_ACCESS_TOKEN || '';
@@ -70,9 +71,8 @@ export class HobseHotelProvider implements IHotelProvider {
   }
 
   private buildParams(method: string, data: any): HobseEnvelope {
-    // Ensure method has htl/ prefix for the request envelope
     const methodWithPrefix = method.startsWith('htl/') ? method : `htl/${method}`;
-    
+
     return {
       hobse: {
         version: '1.0',
@@ -96,7 +96,8 @@ export class HobseHotelProvider implements IHotelProvider {
    */
   private async postForm<T = any>(method: string, data: any): Promise<HobseEnvelope<T>> {
     try {
-      const url = `${this.BASE_URL}/${method}`; // BASE_URL already includes /htl, just append method name
+      const endpointMethod = method.startsWith('htl/') ? method.slice(4) : method;
+      const url = `${this.BASE_URL}/htl/${endpointMethod}`;
       const paramsEnvelope = this.buildParams(method, data);
 
       const form = new URLSearchParams();
@@ -726,7 +727,7 @@ export class HobseHotelProvider implements IHotelProvider {
         channelBookingId: input.channelBookingId,
         pmsBookingId: '',
         priceOwnerType: this.PRICE_OWNER_TYPE,
-        bookingStatus: '0',
+        bookingStatus: '1',
         tariffMode: this.TARIFF_MODE,
         tariffReferenceCode: tariffReferenceCode || '',
         checkInDate: input.checkInDate,
@@ -748,8 +749,8 @@ export class HobseHotelProvider implements IHotelProvider {
           adultCount: String(input.adultCount),
           childCount: String(input.childCount),
           infantCount: String(input.infantCount),
-          tariff: best.tariff,
-          tax: best.tax,
+          tariff: totalTariff,
+          tax: totalTax,
         },
       ],
       guestData: {

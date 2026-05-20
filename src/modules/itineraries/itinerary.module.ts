@@ -12,6 +12,7 @@ import { ItineraryExportService } from './itinerary-export.service';
 import { TboHotelBookingService } from './services/tbo-hotel-booking.service';
 import { ResAvenueHotelBookingService } from './services/resavenue-hotel-booking.service';
 import { HobseHotelBookingService } from './services/hobse-hotel-booking.service';
+import { AxisRoomsBookingPushService } from './services/axisrooms-booking-push.service';
 import { HotelVoucherService } from './hotel-voucher.service';
 import { HotelEngineService } from './engines/hotel-engine.service';
 import { HotelPricingService } from './hotels/hotel-pricing.service';
@@ -29,7 +30,9 @@ import { ViaRoutesEngine } from './engines/via-routes.engine';
 import { RouteValidationService } from './validation/route-validation.service';
 import { RouteSuggestionsService } from './route-suggestions.service';
 import { RouteSuggestionsV2Service } from './route-suggestions-v2.service';
+import { ArrivalHotelPolicyService } from './services/arrival-hotel-policy.service';
 import { HotelsModule } from '../hotels/hotels.module';
+import { ItineraryClipboardService } from './itinerary-clipboard.service';
 
 @Module({
   imports: [HotelsModule],
@@ -44,6 +47,7 @@ import { HotelsModule } from '../hotels/hotels.module';
     TboHotelBookingService,
     ResAvenueHotelBookingService,
     HobseHotelBookingService,
+    AxisRoomsBookingPushService,
     HotelVoucherService,
 
     // existing engines you already had
@@ -62,6 +66,8 @@ import { HotelsModule } from '../hotels/hotels.module';
     RouteValidationService,
     RouteSuggestionsService,
     RouteSuggestionsV2Service,
+    ItineraryClipboardService,
+    ArrivalHotelPolicyService,
   ],
 })
 export class ItinerariesModule {}

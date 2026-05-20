@@ -1,0 +1,72 @@
+{
+  "itinerary_plan_ID": 1,
+  "agent": 125,
+  "primary_guest_salutation": "Mr",
+  "primary_guest_name": "Proof Primary",
+  "primary_guest_contact_no": "9876543210",
+  "primary_guest_age": "33",
+  "primary_guest_alternative_contact_no": "",
+  "primary_guest_email_id": "proof.primary@example.com",
+  "adult_name": [],
+  "adult_age": [],
+  "child_name": [],
+  "child_age": [],
+  "infant_name": [],
+  "infant_age": [],
+  "arrival_date_time": "16-04-2026 09:00 AM",
+  "arrival_place": "Bangalore",
+  "arrival_flight_details": "",
+  "departure_date_time": "17-04-2026 07:00 PM",
+  "departure_place": "Bangalore",
+  "departure_flight_details": "",
+  "price_confirmation_type": "old",
+  "hotel_group_type": "1",
+  "hotel_bookings": [
+    {
+      "provider": "tbo",
+      "routeId": 1,
+      "hotelCode": "1056437",
+      "bookingCode": "1056437!TB!1!TB!51eb8069-20cf-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+      "roomType": "Deluxe Twin Room, 1 Bedroom,2 Double Beds and 2 Large Twin Beds,NonSmoking",
+      "checkInDate": "2026-04-16",
+      "checkOutDate": "2026-04-17",
+      "numberOfRooms": 1,
+      "guestNationality": "US",
+      "netAmount": 1389.22,
+      "occupancies": [
+        {
+          "adults": 2,
+          "children": 0,
+          "childrenAges": []
+        }
+      ],
+      "passengers": [
+        {
+          "title": "Mr",
+          "firstName": "Proof",
+          "middleName": "",
+          "lastName": "UserOne",
+          "email": "proof.one@example.com",
+          "paxType": 1,
+          "leadPassenger": true,
+          "age": 33,
+          "phoneNo": "9876543210",
+          "pan": "AAAPL1234C"
+        },
+        {
+          "title": "Ms",
+          "firstName": "Proof",
+          "middleName": "",
+          "lastName": "UserTwo",
+          "email": "proof.two@example.com",
+          "paxType": 1,
+          "leadPassenger": false,
+          "age": 29,
+          "phoneNo": "9876543211",
+          "pan": "AFZPK7190K"
+        }
+      ]
+    }
+  ],
+  "endUserIp": "192.168.1.1"
+}

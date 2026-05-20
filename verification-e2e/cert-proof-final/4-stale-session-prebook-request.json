@@ -1,0 +1,37 @@
+{
+  "itinerary_plan_ID": 1,
+  "hotel_bookings": [
+    {
+      "provider": "tbo",
+      "routeId": 1,
+      "hotelCode": "UNKNOWN",
+      "bookingCode": "INVALID_BOOKING_CODE_FOR_SESSION_TEST",
+      "roomType": "Any",
+      "checkInDate": "2026-04-16",
+      "checkOutDate": "2026-04-17",
+      "numberOfRooms": 1,
+      "guestNationality": "US",
+      "netAmount": 0,
+      "occupancies": [
+        {
+          "adults": 2,
+          "children": 0,
+          "childrenAges": []
+        }
+      ],
+      "passengers": [
+        {
+          "title": "Mr",
+          "firstName": "Session",
+          "lastName": "Tester",
+          "paxType": 1,
+          "leadPassenger": true,
+          "age": 30,
+          "phoneNo": "9876543210",
+          "pan": "AAAPL1234C"
+        }
+      ]
+    }
+  ],
+  "endUserIp": "192.168.1.1"
+}

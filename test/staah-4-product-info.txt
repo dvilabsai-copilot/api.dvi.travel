@@ -1,0 +1,59 @@
+============================================================
+STAAH API Test Log
+============================================================
+Test Name: staah-4-product-info
+Timestamp: 2026-03-13T21:38:29.541Z
+Status: SUCCESS
+============================================================
+
+REQUEST:
+--------
+URL: http://127.0.0.1:4006/api/v1/staah/productInfo
+Method: POST
+Headers:
+{}
+
+Body:
+{
+  "apikey": "staah-local-test-key",
+  "propertyid": "STAAHTESTHOTEL1",
+  "action": "property_info",
+  "version": "2"
+}
+
+RESPONSE:
+---------
+Status: 200
+Headers:
+{
+  "x-powered-by": "Express",
+  "access-control-allow-origin": "*",
+  "content-type": "application/json; charset=utf-8",
+  "content-length": "348",
+  "etag": "W/\"15c-skytCDd2e5ixtgb+UmeO7OT4xF8\"",
+  "date": "Fri, 13 Mar 2026 21:38:29 GMT",
+  "connection": "keep-alive",
+  "keep-alive": "timeout=5"
+}
+
+Data:
+{
+  "currency": "INR",
+  "propertyname": "Test Hotel for STAAH",
+  "checkintime": "",
+  "checkouttime": "",
+  "contactinfo": {
+    "zip": "",
+    "latitude": "",
+    "longitude": "",
+    "country": "India",
+    "addressline": "123 Test Street",
+    "city": "Test City",
+    "fax": "",
+    "telephone": "",
+    "location": "Test City"
+  },
+  "trackingId": "B1E510BD-A20C-4B66-BC59-AC9C5CFADB38",
+  "status": "success",
+  "error_desc": ""
+}

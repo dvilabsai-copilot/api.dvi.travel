@@ -1,0 +1,317 @@
+======== REQUEST ========
+{
+  "BookingId": 2117426,
+  "BookingRefId": "2117426",
+  "TokenId": "93ebad47-1315-4cff-991d-c90f3b5c0d9d",
+  "EndUserIp": "192.168.1.1"
+}
+
+======== RESPONSE ========
+{
+  "GetBookingDetailResult": {
+    "TBOReferenceNo": "TB327IUT4E",
+    "VoucherStatus": true,
+    "ResponseStatus": 1,
+    "Error": {
+      "ErrorCode": 0,
+      "ErrorMessage": ""
+    },
+    "TraceId": "1f0efd7f-434e-11f1-855f-720abae076dd",
+    "Status": 1,
+    "HotelBookingStatus": "Confirmed",
+    "ConfirmationNo": "7454820250117",
+    "BookingRefNo": "299224560462700",
+    "BookingId": 2117426,
+    "IsPriceChanged": false,
+    "IsCancellationPolicyChanged": false,
+    "Rooms": [
+      {
+        "AdultCount": 2,
+        "AvailabilityType": "NotAvailable",
+        "ChildAge": [
+          3,
+          4
+        ],
+        "ChildCount": 2,
+        "HotelPassenger": [
+          {
+            "Age": 30,
+            "Email": "adult1@cert.example.com",
+            "FileDocument": null,
+            "FirstName": "Arun",
+            "GSTCompanyAddress": null,
+            "GSTCompanyContactNumber": null,
+            "GSTCompanyEmail": null,
+            "GSTCompanyName": null,
+            "GSTNumber": null,
+            "GuardianDetail": null,
+            "LastName": "Sharma",
+            "LeadPassenger": true,
+            "MiddleName": null,
+            "PAN": "AAAPL1234C",
+            "PassportExpDate": null,
+            "PassportIssueDate": null,
+            "PassportNo": null,
+            "PaxId": 267224,
+            "PaxType": 1,
+            "Phoneno": "9000000100",
+            "Title": "Mr"
+          },
+          {
+            "Age": 31,
+            "Email": "adult2@cert.example.com",
+            "FileDocument": null,
+            "FirstName": "Meera",
+            "GSTCompanyAddress": null,
+            "GSTCompanyContactNumber": null,
+            "GSTCompanyEmail": null,
+            "GSTCompanyName": null,
+            "GSTNumber": null,
+            "GuardianDetail": null,
+            "LastName": "Iyer",
+            "LeadPassenger": false,
+            "MiddleName": null,
+            "PAN": "AAAPL1234C",
+            "PassportExpDate": null,
+            "PassportIssueDate": null,
+            "PassportNo": null,
+            "PaxId": 267225,
+            "PaxType": 1,
+            "Phoneno": "9000000101",
+            "Title": "Ms"
+          },
+          {
+            "Age": 3,
+            "Email": "child1@cert.example.com",
+            "FileDocument": null,
+            "FirstName": "Ira",
+            "GSTCompanyAddress": null,
+            "GSTCompanyContactNumber": null,
+            "GSTCompanyEmail": null,
+            "GSTCompanyName": null,
+            "GSTNumber": null,
+            "GuardianDetail": null,
+            "LastName": "Sharma",
+            "LeadPassenger": false,
+            "MiddleName": null,
+            "PAN": "AAAAA9999C",
+            "PassportExpDate": null,
+            "PassportIssueDate": null,
+            "PassportNo": null,
+            "PaxId": 267226,
+            "PaxType": 2,
+            "Phoneno": "9111111100",
+            "Title": "Miss"
+          },
+          {
+            "Age": 4,
+            "Email": "child2@cert.example.com",
+            "FileDocument": null,
+            "FirstName": "Neel",
+            "GSTCompanyAddress": null,
+            "GSTCompanyContactNumber": null,
+            "GSTCompanyEmail": null,
+            "GSTCompanyName": null,
+            "GSTNumber": null,
+            "GuardianDetail": null,
+            "LastName": "Iyer",
+            "LeadPassenger": false,
+            "MiddleName": null,
+            "PAN": "AAAAA9999D",
+            "PassportExpDate": null,
+            "PassportIssueDate": null,
+            "PassportNo": null,
+            "PaxId": 267227,
+            "PaxType": 2,
+            "Phoneno": "9111111101",
+            "Title": "Miss"
+          }
+        ],
+        "RequireAllPaxDetails": false,
+        "RoomId": 198234,
+        "RoomStatus": 0,
+        "RoomIndex": 1,
+        "RoomTypeCode": "201784222|",
+        "RoomDescription": "<p></p><p>1033 sq feet </p><br/><p><b>Layout</b> - Bedroom, living room, and dining area</p><p><b>Internet</b> - Free WiFi </p><p><b>Entertainment</b> - Flat-screen TV with cable channels</p><p><b>Food and Drink</b> - Kitchen with refrigerator, stovetop, microwave, and cookware/dishware</p><p><b>Sleep</b> - Bed sheets </p><p><b>Bathroom</b> - 2 bathrooms, shower/tub combination, free toiletries, and a bidet</p><p><b>Practical</b> - Washing machine, safe, and free newspaper; rollaway beds (surcharge) and cribs (free) available on request</p><p><b>Comfort</b> - Air conditioning and daily housekeeping</p><p><b>Accessibility</b> - Wheelchair accessible</p><p><b>Need to Know</b> - Toothbrush and toothpaste not available</p><p>Smoking And Non-Smoking</p>",
+        "RoomTypeName": "Apartment, 1 Bedroom,1 King Bed",
+        "RatePlanCode": "201784222|288405761|37321|141",
+        "RatePlan": 0,
+        "IsPerStay": true,
+        "PriceBreakUp": {
+          "CurrencyCode": "INR",
+          "RoomRate": 13092.06,
+          "RoomTax": 3226.61,
+          "RoomExtraGuestCharges": 0,
+          "RoomChildCharges": 0,
+          "ServiceFee": 0,
+          "AgentCommission": 94.8,
+          "TaxBreakup": [
+            {
+              "TaxType": "Tax_CGST",
+              "TaxAmount": 0
+            },
+            {
+              "TaxType": "Tax_IGST",
+              "TaxAmount": 0
+            },
+            {
+              "TaxType": "Tax_SGST",
+              "TaxAmount": 0
+            },
+            {
+              "TaxType": "Tax_TCS",
+              "TaxAmount": 0
+            },
+            {
+              "TaxType": "Tax_TDS",
+              "TaxAmount": 1.9
+            }
+          ]
+        },
+        "RoomPromotion": null,
+        "Amenities": [
+          "Television",
+          "Smoking and Non-Smoking",
+          "Electric kettle",
+          "Separate dining area",
+          "Wardrobe or closet",
+          "Coffee/tea maker",
+          "Daily housekeeping",
+          "Free WiFi",
+          "Bidet",
+          "Desk",
+          "Towels provided",
+          "Bedsheets provided",
+          "Toaster",
+          "Washing machine",
+          "Toothbrush and toothpaste not available",
+          "TV size measurement: inch",
+          "Stovetop",
+          "Shower/tub combination",
+          "Free toiletries",
+          "Wheelchair accessible",
+          "Air conditioning",
+          "Iron/ironing board",
+          "Rollaway/extra beds (surcharge)",
+          "In-room safe",
+          "Full-sized refrigerator/freezer",
+          "Kitchen",
+          "Cookware, dishware, and utensils",
+          "Separate sitting area",
+          "Room service (24 hours)",
+          "Flat-panel TV",
+          "Microwave",
+          "Cable TV service",
+          "Free bottled water",
+          "Free newspaper",
+          "Free cribs/infant beds"
+        ],
+        "SmokingPreference": "NoPreference",
+        "BedTypes": [],
+        "Supplements": [
+          {
+            "SupplementId": "20178",
+            "Description": null,
+            "Type": 0,
+            "Price": 15,
+            "Currency": "AED"
+          }
+        ],
+        "LastCancellationDate": "2026-06-11T23:59:59",
+        "CancelPolicies": [
+          {
+            "CancellationCharge": 0,
+            "ChargeType": 1,
+            "Currency": "INR",
+            "FromDate": "27/04/2026 00:00:00",
+            "ToDate": "11/06/2026 23:59:59"
+          },
+          {
+            "CancellationCharge": 100,
+            "ChargeType": 2,
+            "Currency": "INR",
+            "FromDate": "12/06/2026 00:00:00",
+            "ToDate": "12/06/2026 23:59:59"
+          }
+        ],
+        "CancellationPolicies": null,
+        "LastVoucherDate": "2026-06-11T23:59:59",
+        "CancellationPolicy": "Apartment, 1 Bedroom,1 King Bed#^#No cancellation charge, If cancelled between 27-Apr-2026 00:00:00 and 11-Jun-2026 23:59:59.|100.00% of total amount will be charged, If cancelled between 12-Jun-2026 00:00:00 and 12-Jun-2026 23:59:59.|#!#",
+        "Inclusion": "Free breakfast,Free self parking"
+      }
+    ],
+    "NetAmount": 16225.77,
+    "NetTax": 3228.51,
+    "RateConditions": [
+      "Early check out will attract full cancellation charge unless otherwise specified",
+      "CheckIn Time-Begin: 2:00 PM ",
+      " CheckIn Time-End: midnight",
+      "CheckOut Time: 12:00 PM",
+      "CheckIn Instructions: &lt;ul&gt;  &lt;li&gt;Extra-person charges may apply and vary depending on property policy&lt;/li&gt;&lt;li&gt;Government-issued photo identification and a credit card, debit card, or cash deposit may be required at check-in for incidental charges&lt;/li&gt;&lt;li&gt;Special requests are subject to availability upon check-in and may incur additional charges; special requests cannot be guaranteed&lt;/li&gt;&lt;li&gt;This property accepts credit cards; cash is not accepted&lt;/li&gt;&lt;li&gt;Host has not indicated whether there is a carbon monoxide detector on the property; consider bringing a portable detector with you on the trip&lt;/li&gt;&lt;li&gt;Host has indicated there is a smoke detector on the property&lt;/li&gt;&lt;li&gt;Safety features at this property include a fire extinguisher and a security system&lt;/li&gt;&lt;li&gt;This property is professionally cleaned&lt;/li&gt;  &lt;/ul&gt; ",
+      " Special Instructions : This property offers transfers from the airport (surcharges may apply). Guests must contact the property with arrival details before travel, using the contact information on the booking confirmation. Front desk staff will greet guests on arrival at the property. Information provided by the property may be translated using automated translation tools.",
+      "Minimum CheckIn Age : 21",
+      "Mandatory Fees: &lt;p&gt;You'll be asked to pay the following charges at the property. Fees may include applicable taxes:&lt;/p&gt; &lt;ul&gt;&lt;li&gt;A tax is imposed by the city: AED 15.00 per accommodation, per night&lt;/li&gt;A tourism fee is imposed by the city and collected at the property. The fee is AED 15.00 for the first bedroom per night, and increases by AED 15.00 per night for each additional bedroom. &lt;/ul&gt; &lt;p&gt;We have included all charges provided to us by the property. &lt;/p&gt; ",
+      " Optional Fees: &lt;ul&gt; &lt;li&gt;Fee for buffet breakfast: approximately AED 30 for adults and AED 25 for children&lt;/li&gt;&lt;li&gt;Airport shuttle fee: AED 75 per vehicle (one way)&lt;/li&gt;&lt;li&gt;Rollaway bed fee: AED 100.0 per night&lt;/li&gt;&lt;/ul&gt; &lt;p&gt;The above list may not be comprehensive. Fees and deposits may not include tax and are subject to change. &lt;/p&gt;",
+      "Cards Accepted: Visa,Debit cards not accepted,Cash not accepted,American Express,Mastercard",
+      "&lt;ul&gt;  &lt;li&gt;The property is professionally cleaned.&lt;/li&gt; &lt;/ul&gt;,Pets not allowed,Professional property host/manager,Property uses a professional cleaning service",
+      "Extra person charges may apply at check-in, as per the property's policy."
+    ],
+    "AgentRemarks": "",
+    "BookingSource": "EANPackage",
+    "BookingStatus": 2,
+    "CreditNoteGSTIN": null,
+    "GSTIN": null,
+    "GuestNationality": "IN",
+    "HotelItineraryTracking": {
+      "CampaignId": null,
+      "CampaignName": null,
+      "IsLovedByIndians": false,
+      "IsSelectedFromSimilar": false,
+      "ItineraryTrackingJson": null,
+      "SearchType": 1
+    },
+    "HotelPolicyDetail": null,
+    "IntHotelPassportDetails": null,
+    "InvoiceAmount": 16225,
+    "InvoiceCreatedOn": "2026-04-28T22:03:53",
+    "InvoiceNo": "MW/2627/2787",
+    "IsCorporate": false,
+    "LastCancellationDeadline": "2026-06-11T23:59:59",
+    "PostBookingRequestDetails": [],
+    "HotelConfirmationNo": null,
+    "HotelCode": "16623092",
+    "HotelId": 172712,
+    "HotelName": "Rolla Residence Hotel Apartment",
+    "TBOHotelCode": "1258480",
+    "StarRating": 3,
+    "AddressLine1": "Al Rolla Road Bur Dubai, Near Al-Khaleej Centre and Al Fahidi Metro StationP.O. Box: 29490Dubai",
+    "AddressLine2": "",
+    "CountryCode": "AE",
+    "Latitude": "25.256367",
+    "Longitude": "55.289415",
+    "City": "Dubai",
+    "CityId": 115936,
+    "CheckInDate": "2026-06-13T00:00:00",
+    "InitialCheckInDate": "2026-06-13T00:00:00",
+    "CheckOutDate": "2026-06-14T00:00:00",
+    "InitialCheckOutDate": "2026-06-14T00:00:00",
+    "LastCancellationDate": "2026-06-11T23:59:59",
+    "LastVoucherDate": "2026-06-11T23:59:59",
+    "NoOfRooms": 1,
+    "BookingDate": "2026-04-28T22:03:53",
+    "SpecialRequest": "",
+    "IsDomestic": false,
+    "BookingAllowedForRoamer": true
+  }
+}
+
+======== METADATA ========
+- timestamp: 2026-04-28T22:03:54.267Z
+- endpoint: https://hotelbe.tektravels.com/hotelservice.svc/rest/Getbookingdetail
+- status code: 200
+- case id: 6
+- step name: get-booking-detail
+- method: POST
+- status: success
+- error: none
+- skipped reason: none

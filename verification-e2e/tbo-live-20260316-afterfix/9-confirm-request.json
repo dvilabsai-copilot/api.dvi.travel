@@ -1,0 +1,29 @@
+{
+    "searchReference":  "1056437!TB!1!TB!f1039de5-20c3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+    "itineraryPlanId":  1,
+    "rooms":  [
+                  {
+                      "guestCount":  2,
+                      "roomCode":  "1056437!TB!1!TB!f1039de5-20c3-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+                      "quantity":  1
+                  }
+              ],
+    "checkInDate":  "2026-04-16",
+    "hotelCode":  "1056437",
+    "contactPhone":  "+919876543210",
+    "roomCount":  1,
+    "checkOutDate":  "2026-04-17",
+    "contactEmail":  "test.user@example.com",
+    "guests":  [
+                   {
+                       "phone":  "+919876543210",
+                       "firstName":  "Test",
+                       "lastName":  "User",
+                       "nationality":  "IN",
+                       "email":  "test.user@example.com",
+                       "title":  "Mr"
+                   }
+               ],
+    "contactName":  "Test User",
+    "guestNationality":  "IN"
+}

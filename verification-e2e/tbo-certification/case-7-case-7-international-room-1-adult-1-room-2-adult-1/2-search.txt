@@ -1,0 +1,93 @@
+======== REQUEST ========
+{
+  "CheckIn": "2026-06-15",
+  "CheckOut": "2026-06-16",
+  "HotelCodes": "1035259,1035258",
+  "GuestNationality": "US",
+  "PaxRooms": [
+    {
+      "Adults": 1,
+      "Children": 0,
+      "ChildrenAges": []
+    },
+    {
+      "Adults": 1,
+      "Children": 0,
+      "ChildrenAges": []
+    }
+  ],
+  "ResponseTime": 23,
+  "IsDetailedResponse": true,
+  "Filters": {
+    "Refundable": true,
+    "NoOfRooms": 0,
+    "MealType": "WithMeal",
+    "OrderBy": 0,
+    "StarRating": 0,
+    "HotelName": null
+  }
+}
+
+======== RESPONSE ========
+{
+  "Status": {
+    "Code": 200,
+    "Description": "Successful"
+  },
+  "HotelResult": [
+    {
+      "HotelCode": "1035259",
+      "Currency": "INR",
+      "Rooms": [
+        {
+          "Name": [
+            "Twin Hilton Guestroom with Sofa cum Bed, Bathtub,15% disc on FandB,Spa,2 Twin Beds,NonSmoking",
+            "Twin Hilton Guestroom with Sofa cum Bed, Bathtub,15% disc on FandB,Spa,2 Twin Beds,NonSmoking"
+          ],
+          "BookingCode": "1035259!TB!5!TB!28c2ccbf-434e-11f1-855f-720abae076dd!TB!N!TB!AFF!",
+          "Inclusion": "Free valet parking,Free breakfast",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 16207.22
+              }
+            ],
+            [
+              {
+                "BasePrice": 16207.22
+              }
+            ]
+          ],
+          "TotalFare": 38893.08,
+          "TotalTax": 6478.64,
+          "CancelPolicies": [
+            {
+              "FromDate": "27-04-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "13-06-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "BreakFast",
+          "IsRefundable": true,
+          "WithTransfers": false
+        }
+      ]
+    }
+  ]
+}
+
+======== METADATA ========
+- timestamp: 2026-04-28T22:03:59.941Z
+- endpoint: https://affiliate.tektravels.com/HotelAPI/Search
+- status code: 200
+- case id: 7
+- step name: search
+- method: POST
+- status: success
+- error: none
+- skipped reason: none

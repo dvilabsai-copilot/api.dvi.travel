@@ -1,0 +1,73 @@
+{
+  "itinerary_plan_ID": 33,
+  "agent": 125,
+  "primary_guest_salutation": "Mr",
+  "primary_guest_name": "Real Flow",
+  "primary_guest_contact_no": "9876543210",
+  "primary_guest_age": "34",
+  "primary_guest_alternative_contact_no": "",
+  "primary_guest_email_id": "real.flow@example.com",
+  "adult_name": [
+    "Second Adult"
+  ],
+  "adult_age": [
+    "30"
+  ],
+  "child_name": [],
+  "child_age": [],
+  "infant_name": [],
+  "infant_age": [],
+  "arrival_date_time": "16-04-2026 12:00 AM",
+  "arrival_place": "Bangalore",
+  "arrival_flight_details": "",
+  "departure_date_time": "17-04-2026 12:00 AM",
+  "departure_place": "Bangalore",
+  "departure_flight_details": "",
+  "price_confirmation_type": "old",
+  "hotel_group_type": "1",
+  "hotel_bookings": [
+    {
+      "provider": "HOBSE",
+      "routeId": 438,
+      "hotelCode": "973d8ea763c57027",
+      "bookingCode": "{\"provider\":\"HOBSE\",\"hotelId\":\"973d8ea763c57027\",\"cityId\":\"170\",\"checkInDate\":\"2026-04-17\",\"checkOutDate\":\"2026-04-18\",\"priceOwnerType\":\"2\",\"partnerId\":\"a14fc9d3a3e31230\",\"partnerTypeId\":\"4\",\"tariffMode\":\"B2B\",\"roomCode\":\"9089a12b869057d1\",\"occupancyTypeCode\":\"cddc3772b32d5464\",\"ratePlanCode\":\"2e8fbda786b1ac11\"}",
+      "roomType": "Studio Apartment",
+      "checkInDate": "2026-04-17",
+      "checkOutDate": "2026-04-18",
+      "numberOfRooms": 1,
+      "guestNationality": "IN",
+      "netAmount": 4820,
+      "passengers": [
+        {
+          "title": "Mr",
+          "firstName": "Real",
+          "lastName": "Flow",
+          "paxType": 1,
+          "leadPassenger": true,
+          "age": 34,
+          "phoneNo": "9876543210",
+          "panNo": "ABCDE1234F",
+          "passportNo": "N1234567"
+        },
+        {
+          "title": "Mrs",
+          "firstName": "Real",
+          "lastName": "Flow",
+          "paxType": 1,
+          "leadPassenger": false,
+          "age": 30,
+          "phoneNo": "9876543210",
+          "panNo": "ABCDE1234F",
+          "passportNo": "N1234568"
+        }
+      ]
+    }
+  ],
+  "primaryGuest": {
+    "salutation": "Mr",
+    "name": "Real Flow",
+    "phone": "9876543210",
+    "email": "real.flow@example.com"
+  },
+  "endUserIp": "127.0.0.1"
+}

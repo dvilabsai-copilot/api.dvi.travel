@@ -1,0 +1,57 @@
+{
+  "success": true,
+  "message": "Found 1 hotels",
+  "data": {
+    "totalResults": 1,
+    "hotels": [
+      {
+        "provider": "HOBSE",
+        "hotelCode": "973d8ea763c57027",
+        "hotelName": "juSTa Residences - AIPL Joy Street, Gurgaon",
+        "cityCode": "Gurgaon",
+        "address": "93R5 QRV, Badshahpur Sohna Rd Hwy, Badshahpur, Sector 66, Gurugram, Haryana 122018",
+        "rating": 5,
+        "category": "5-Star",
+        "facilities": [],
+        "images": [],
+        "price": 4820,
+        "currency": "INR",
+        "roomTypes": [
+          {
+            "roomCode": "9089a12b869057d1",
+            "roomName": "Studio Apartment",
+            "bedType": "Double",
+            "capacity": 2,
+            "price": 4820,
+            "cancellationPolicy": ""
+          },
+          {
+            "roomCode": "9089a12b869057d1",
+            "roomName": "Studio Apartment",
+            "bedType": "Double",
+            "capacity": 2,
+            "price": 6320,
+            "cancellationPolicy": ""
+          }
+        ],
+        "roomType": "Studio Apartment",
+        "mealPlan": "European Plan",
+        "searchReference": "{\"provider\":\"HOBSE\",\"hotelId\":\"973d8ea763c57027\",\"cityId\":\"170\",\"checkInDate\":\"2026-04-17\",\"checkOutDate\":\"2026-04-18\",\"priceOwnerType\":\"2\",\"partnerId\":\"a14fc9d3a3e31230\",\"partnerTypeId\":\"4\",\"tariffMode\":\"B2B\",\"roomCode\":\"9089a12b869057d1\",\"occupancyTypeCode\":\"cddc3772b32d5464\",\"ratePlanCode\":\"2e8fbda786b1ac11\"}",
+        "expiresAt": "2026-03-22T06:14:06.287Z"
+      }
+    ],
+    "filters": {
+      "ratings": [
+        5
+      ],
+      "priceRange": {
+        "min": 4820,
+        "max": 4820
+      },
+      "facilities": [],
+      "providers": [
+        "HOBSE"
+      ]
+    }
+  }
+}

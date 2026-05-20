@@ -1,0 +1,419 @@
+======== REQUEST ========
+{
+  "BookingId": 2117424,
+  "BookingRefId": "2117424",
+  "TokenId": "11ab5910-e23c-438a-b36f-7d8ab845318f",
+  "EndUserIp": "192.168.1.1"
+}
+
+======== RESPONSE ========
+{
+  "GetBookingDetailResult": {
+    "TBOReferenceNo": "TBY4IZ4NJF",
+    "VoucherStatus": true,
+    "ResponseStatus": 1,
+    "Error": {
+      "ErrorCode": 0,
+      "ErrorMessage": ""
+    },
+    "TraceId": "07a4ed3f-434e-11f1-855f-720abae076dd",
+    "Status": 1,
+    "HotelBookingStatus": "Confirmed",
+    "ConfirmationNo": "7672848995636",
+    "BookingRefNo": "224350273178425,531316186106065",
+    "BookingId": 2117424,
+    "IsPriceChanged": false,
+    "IsCancellationPolicyChanged": false,
+    "Rooms": [
+      {
+        "AdultCount": 1,
+        "AvailabilityType": "NotAvailable",
+        "ChildAge": [
+          3,
+          4
+        ],
+        "ChildCount": 2,
+        "HotelPassenger": [
+          {
+            "Age": 30,
+            "Email": "adult1@cert.example.com",
+            "FileDocument": null,
+            "FirstName": "Arun",
+            "GSTCompanyAddress": null,
+            "GSTCompanyContactNumber": null,
+            "GSTCompanyEmail": null,
+            "GSTCompanyName": null,
+            "GSTNumber": null,
+            "GuardianDetail": null,
+            "LastName": "Sharma",
+            "LeadPassenger": true,
+            "MiddleName": null,
+            "PAN": "AAAPL1234C",
+            "PassportExpDate": null,
+            "PassportIssueDate": null,
+            "PassportNo": null,
+            "PaxId": 267218,
+            "PaxType": 1,
+            "Phoneno": "9000000100",
+            "Title": "Mr"
+          },
+          {
+            "Age": 3,
+            "Email": "child1@cert.example.com",
+            "FileDocument": null,
+            "FirstName": "Ira",
+            "GSTCompanyAddress": null,
+            "GSTCompanyContactNumber": null,
+            "GSTCompanyEmail": null,
+            "GSTCompanyName": null,
+            "GSTNumber": null,
+            "GuardianDetail": null,
+            "LastName": "Sharma",
+            "LeadPassenger": false,
+            "MiddleName": null,
+            "PAN": null,
+            "PassportExpDate": null,
+            "PassportIssueDate": null,
+            "PassportNo": null,
+            "PaxId": 267219,
+            "PaxType": 2,
+            "Phoneno": "9111111100",
+            "Title": "Miss"
+          },
+          {
+            "Age": 4,
+            "Email": "child2@cert.example.com",
+            "FileDocument": null,
+            "FirstName": "Neel",
+            "GSTCompanyAddress": null,
+            "GSTCompanyContactNumber": null,
+            "GSTCompanyEmail": null,
+            "GSTCompanyName": null,
+            "GSTNumber": null,
+            "GuardianDetail": null,
+            "LastName": "Iyer",
+            "LeadPassenger": false,
+            "MiddleName": null,
+            "PAN": null,
+            "PassportExpDate": null,
+            "PassportIssueDate": null,
+            "PassportNo": null,
+            "PaxId": 267220,
+            "PaxType": 2,
+            "Phoneno": "9111111101",
+            "Title": "Miss"
+          }
+        ],
+        "RequireAllPaxDetails": false,
+        "RoomId": 198231,
+        "RoomStatus": 0,
+        "RoomIndex": 1,
+        "RoomTypeCode": "200592613|",
+        "RoomDescription": "<p></p><p>150-sq-foot room with a balcony </p><br/><p><b>Layout</b> - Bedroom and sitting area</p><p><b>Internet</b> - Free WiFi </p><p><b>Entertainment</b> - 20-inch LCD TV with cable channels</p><p><b>Food and Drink</b> - 24-hour room service</p><p><b>Bathroom</b> - Private bathroom, shower, free toiletries, and towels</p><p><b>Practical</b> - Desk, phone, and wardrobe or closet; rollaway beds (free) available on request</p><p><b>Comfort</b> - Air conditioning and daily housekeeping</p><p><b>Need to Know</b> - Bed sheets not available</p><p>Non-Smoking</p>",
+        "RoomTypeName": "Deluxe Room,2 Twin Beds,NonSmoking",
+        "RatePlanCode": "200592613|202938741|37341|141",
+        "RatePlan": 0,
+        "IsPerStay": true,
+        "PriceBreakUp": {
+          "CurrencyCode": "INR",
+          "RoomRate": 4519.97,
+          "RoomTax": 242.4,
+          "RoomExtraGuestCharges": 0,
+          "RoomChildCharges": 0,
+          "ServiceFee": 0,
+          "AgentCommission": 24.92,
+          "TaxBreakup": [
+            {
+              "TaxType": "Tax_CGST",
+              "TaxAmount": 0
+            },
+            {
+              "TaxType": "Tax_IGST",
+              "TaxAmount": 0
+            },
+            {
+              "TaxType": "Tax_SGST",
+              "TaxAmount": 0
+            },
+            {
+              "TaxType": "Tax_TCS",
+              "TaxAmount": 0
+            },
+            {
+              "TaxType": "Tax_TDS",
+              "TaxAmount": 0.5
+            }
+          ]
+        },
+        "RoomPromotion": null,
+        "Amenities": [
+          "Towels provided",
+          "Non-Smoking",
+          "Television",
+          "Bed sheets not available",
+          "Shower only",
+          "Wireless internet access",
+          "TV size measurement: inch",
+          "Private bathroom",
+          "Wardrobe or closet",
+          "Free toiletries",
+          "Ceiling fan",
+          "Daily housekeeping",
+          "Air conditioning",
+          "Rollaway/extra beds (free)",
+          "TV size: 20",
+          "Free WiFi",
+          "Phone",
+          "Separate sitting area",
+          "Desk",
+          "Room service (24 hours)",
+          "LCD TV",
+          "Internet access",
+          "Cable TV service",
+          "Balcony"
+        ],
+        "SmokingPreference": "NoPreference",
+        "BedTypes": [],
+        "Supplements": [],
+        "LastCancellationDate": "2026-06-07T23:59:59",
+        "CancelPolicies": [
+          {
+            "CancellationCharge": 0,
+            "ChargeType": 1,
+            "Currency": "INR",
+            "FromDate": "27/04/2026 00:00:00",
+            "ToDate": "07/06/2026 23:59:59"
+          },
+          {
+            "CancellationCharge": 100,
+            "ChargeType": 2,
+            "Currency": "INR",
+            "FromDate": "08/06/2026 00:00:00",
+            "ToDate": "08/06/2026 23:59:59"
+          }
+        ],
+        "CancellationPolicies": null,
+        "LastVoucherDate": "2026-06-07T23:59:59",
+        "CancellationPolicy": "Deluxe Room,2 Twin Beds,NonSmoking#^#No cancellation charge, If cancelled between 27-Apr-2026 00:00:00 and 07-Jun-2026 23:59:59.|100.00% of total amount will be charged, If cancelled between 08-Jun-2026 00:00:00 and 08-Jun-2026 23:59:59.|#!#",
+        "Inclusion": "Free breakfast,Free self parking"
+      },
+      {
+        "AdultCount": 2,
+        "AvailabilityType": "NotAvailable",
+        "ChildCount": 0,
+        "HotelPassenger": [
+          {
+            "Age": 31,
+            "Email": "adult2@cert.example.com",
+            "FileDocument": null,
+            "FirstName": "Meera",
+            "GSTCompanyAddress": null,
+            "GSTCompanyContactNumber": null,
+            "GSTCompanyEmail": null,
+            "GSTCompanyName": null,
+            "GSTNumber": null,
+            "GuardianDetail": null,
+            "LastName": "Iyer",
+            "LeadPassenger": true,
+            "MiddleName": null,
+            "PAN": "AAAPL1234C",
+            "PassportExpDate": null,
+            "PassportIssueDate": null,
+            "PassportNo": null,
+            "PaxId": 267221,
+            "PaxType": 1,
+            "Phoneno": "9000000101",
+            "Title": "Ms"
+          },
+          {
+            "Age": 32,
+            "Email": "adult3@cert.example.com",
+            "FileDocument": null,
+            "FirstName": "Kavya",
+            "GSTCompanyAddress": null,
+            "GSTCompanyContactNumber": null,
+            "GSTCompanyEmail": null,
+            "GSTCompanyName": null,
+            "GSTNumber": null,
+            "GuardianDetail": null,
+            "LastName": "Verma",
+            "LeadPassenger": false,
+            "MiddleName": null,
+            "PAN": "AAAPL1234C",
+            "PassportExpDate": null,
+            "PassportIssueDate": null,
+            "PassportNo": null,
+            "PaxId": 267222,
+            "PaxType": 1,
+            "Phoneno": "9000000102",
+            "Title": "Mrs"
+          }
+        ],
+        "RequireAllPaxDetails": false,
+        "RoomId": 198232,
+        "RoomStatus": 0,
+        "RoomIndex": 2,
+        "RoomTypeCode": "200592613|",
+        "RoomDescription": "<p></p><p>150-sq-foot room with a balcony </p><br/><p><b>Layout</b> - Bedroom and sitting area</p><p><b>Internet</b> - Free WiFi </p><p><b>Entertainment</b> - 20-inch LCD TV with cable channels</p><p><b>Food and Drink</b> - 24-hour room service</p><p><b>Bathroom</b> - Private bathroom, shower, free toiletries, and towels</p><p><b>Practical</b> - Desk, phone, and wardrobe or closet; rollaway beds (free) available on request</p><p><b>Comfort</b> - Air conditioning and daily housekeeping</p><p><b>Need to Know</b> - Bed sheets not available</p><p>Non-Smoking</p>",
+        "RoomTypeName": "Deluxe Room,2 Twin Beds,NonSmoking",
+        "RatePlanCode": "200592613|202938741|37341|141",
+        "RatePlan": 0,
+        "IsPerStay": true,
+        "PriceBreakUp": {
+          "CurrencyCode": "INR",
+          "RoomRate": 4534.38,
+          "RoomTax": 242.4,
+          "RoomExtraGuestCharges": 0,
+          "RoomChildCharges": 0,
+          "ServiceFee": 0,
+          "AgentCommission": 25.6,
+          "TaxBreakup": [
+            {
+              "TaxType": "Tax_CGST",
+              "TaxAmount": 0
+            },
+            {
+              "TaxType": "Tax_IGST",
+              "TaxAmount": 0
+            },
+            {
+              "TaxType": "Tax_SGST",
+              "TaxAmount": 0
+            },
+            {
+              "TaxType": "Tax_TCS",
+              "TaxAmount": 0
+            },
+            {
+              "TaxType": "Tax_TDS",
+              "TaxAmount": 0.51
+            }
+          ]
+        },
+        "RoomPromotion": null,
+        "Amenities": [
+          "Towels provided",
+          "Non-Smoking",
+          "Television",
+          "Bed sheets not available",
+          "Shower only",
+          "Wireless internet access",
+          "TV size measurement: inch",
+          "Private bathroom",
+          "Wardrobe or closet",
+          "Free toiletries",
+          "Ceiling fan",
+          "Daily housekeeping",
+          "Air conditioning",
+          "Rollaway/extra beds (free)",
+          "TV size: 20",
+          "Free WiFi",
+          "Phone",
+          "Separate sitting area",
+          "Desk",
+          "Room service (24 hours)",
+          "LCD TV",
+          "Internet access",
+          "Cable TV service",
+          "Balcony"
+        ],
+        "SmokingPreference": "NoPreference",
+        "BedTypes": [],
+        "Supplements": [],
+        "LastCancellationDate": "2026-06-07T23:59:59",
+        "CancelPolicies": [
+          {
+            "CancellationCharge": 0,
+            "ChargeType": 1,
+            "Currency": "INR",
+            "FromDate": "27/04/2026 00:00:00",
+            "ToDate": "07/06/2026 23:59:59"
+          },
+          {
+            "CancellationCharge": 100,
+            "ChargeType": 2,
+            "Currency": "INR",
+            "FromDate": "08/06/2026 00:00:00",
+            "ToDate": "08/06/2026 23:59:59"
+          }
+        ],
+        "CancellationPolicies": null,
+        "LastVoucherDate": "2026-06-07T23:59:59",
+        "CancellationPolicy": "Deluxe Room,2 Twin Beds,NonSmoking#^#No cancellation charge, If cancelled between 27-Apr-2026 00:00:00 and 07-Jun-2026 23:59:59.|100.00% of total amount will be charged, If cancelled between 08-Jun-2026 00:00:00 and 08-Jun-2026 23:59:59.|#!#",
+        "Inclusion": "Free breakfast,Free self parking"
+      }
+    ],
+    "NetAmount": 9489.64,
+    "NetTax": 485.81,
+    "RateConditions": [
+      "Early check out will attract full cancellation charge unless otherwise specified",
+      "CheckIn Time-Begin: 12:00 PM ",
+      " CheckIn Time-End: midnight",
+      "CheckOut Time: 11:00 AM",
+      "CheckIn Instructions: &lt;ul&gt;  &lt;li&gt;Extra-person charges may apply and vary depending on property policy&lt;/li&gt;&lt;li&gt;Government-issued photo identification and a credit card, debit card, or cash deposit may be required at check-in for incidental charges&lt;/li&gt;&lt;li&gt;Special requests are subject to availability upon check-in and may incur additional charges; special requests cannot be guaranteed&lt;/li&gt;&lt;li&gt;This property accepts mobile payments and cash&lt;/li&gt;&lt;li&gt;Mobile payment options include: Google Pay, Paytm, PhonePe, and Amazon Pay&lt;/li&gt;&lt;li&gt;Safety features at this property include a fire extinguisher&lt;/li&gt;&lt;li&gt;This property has outdoor spaces, such as balconies, patios, terraces which may not be suitable for children; if you have concerns, we recommend contacting the property prior to your arrival to confirm they can accommodate you in a suitable room&lt;/li&gt;&lt;li&gt;Please note that cultural norms and guest policies may differ by country and by property; the policies listed are provided by the property&lt;/li&gt;  &lt;/ul&gt; ",
+      " Special Instructions : This property offers transfers from the airport (surcharges may apply). To arrange pick-up, guests must contact the property 48 hours prior to arrival, using the contact information on the booking confirmation. To make arrangements for check-in please contact the property at least 24 hours before arrival using the information on the booking confirmation. If you are planning to arrive after midnight please contact the property in advance using the information on the booking confirmation. Guests must contact the property in advance for check-in instructions. Front desk staff will greet guests on arrival at the property. Information provided by the property may be translated using automated translation tools.",
+      "Minimum CheckIn Age : 18",
+      "Optional Fees: &lt;ul&gt; &lt;li&gt;Fee for continental breakfast: approximately INR 450 for adults and INR 450 for children&lt;/li&gt;&lt;li&gt;Airport shuttle fee: INR 840 per room&lt;/li&gt;&lt;/ul&gt; &lt;p&gt;The above list may not be comprehensive. Fees and deposits may not include tax and are subject to change. &lt;/p&gt;",
+      "Cards Accepted: Amazon Pay,Debit cards not accepted,Cash,Google Pay,PhonePe,Paytm",
+      "&lt;ul&gt;  &lt;li&gt;Local laws may restrict unmarried guests from sharing rooms. Guests are responsible for providing proof of marriage, if requested by the property. &lt;/li&gt;  &lt;li&gt;One child 4 years old or younger stays free when occupying the parent or guardian's room, using existing bedding. &lt;/li&gt;&lt;li&gt;Only registered guests are allowed in the guestrooms. &lt;/li&gt; &lt;li&gt;No pets and no service animals are allowed at this property. &lt;/li&gt;&lt;li&gt;Contactless check-in and contactless check-out are available.&lt;/li&gt; &lt;/ul&gt;,Service animals not allowed,Pets not allowed,Professional property host/manager,Contactless check-out is available,No cribs (infant beds) available,Contactless check-in is available,Essential workers only - NO",
+      "Extra person charges may apply at check-in, as per the property's policy."
+    ],
+    "AgentRemarks": "",
+    "BookingSource": "EANPackage",
+    "BookingStatus": 2,
+    "CreditNoteGSTIN": null,
+    "GSTIN": null,
+    "GuestNationality": "IN",
+    "HotelItineraryTracking": {
+      "CampaignId": null,
+      "CampaignName": null,
+      "IsLovedByIndians": false,
+      "IsSelectedFromSimilar": false,
+      "ItineraryTrackingJson": null,
+      "SearchType": 1
+    },
+    "HotelPolicyDetail": null,
+    "IntHotelPassportDetails": null,
+    "InvoiceAmount": 9489,
+    "InvoiceCreatedOn": "2026-04-28T22:03:17",
+    "InvoiceNo": "MW/2627/2785",
+    "IsCorporate": false,
+    "LastCancellationDeadline": "2026-06-07T23:59:59",
+    "PostBookingRequestDetails": [],
+    "HotelConfirmationNo": null,
+    "HotelCode": "7659680",
+    "HotelId": 172710,
+    "HotelName": "Hotel Accord",
+    "TBOHotelCode": "1124298",
+    "StarRating": 3,
+    "AddressLine1": "32, Pandit Jawaharlal Nehru Rd, behind Canara Bank, Sen Nagar, Santacruz East, Mumbai, Maharashtra 4",
+    "AddressLine2": "",
+    "CountryCode": "IN",
+    "Latitude": "19.080844",
+    "Longitude": "72.843668",
+    "City": "Mumbai",
+    "CityId": 144306,
+    "CheckInDate": "2026-06-09T00:00:00",
+    "InitialCheckInDate": "2026-06-09T00:00:00",
+    "CheckOutDate": "2026-06-10T00:00:00",
+    "InitialCheckOutDate": "2026-06-10T00:00:00",
+    "LastCancellationDate": "2026-06-07T23:59:59",
+    "LastVoucherDate": "2026-06-07T23:59:59",
+    "NoOfRooms": 2,
+    "BookingDate": "2026-04-28T22:03:16",
+    "SpecialRequest": "",
+    "IsDomestic": true,
+    "BookingAllowedForRoamer": true
+  }
+}
+
+======== METADATA ========
+- timestamp: 2026-04-28T22:03:17.934Z
+- endpoint: https://hotelbe.tektravels.com/hotelservice.svc/rest/Getbookingdetail
+- status code: 200
+- case id: 4
+- step name: get-booking-detail
+- method: POST
+- status: success
+- error: none
+- skipped reason: none

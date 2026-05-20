@@ -8,7 +8,16 @@ import { AppModule } from './app.module';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { PrismaService } from './prisma.service';
 import { BigIntSerializerInterceptor } from './common/interceptors/bigint-serializer.interceptor';
-import { ValidationPipe } from '@nestjs/common';
+import { RequestMethod, ValidationPipe } from '@nestjs/common';
+import * as express from 'express';
+import * as fs from 'fs';
+import * as path from 'path';
+
+function resolveBackendRoot(): string {
+  // Works for both src/main.ts (dev) and dist/main.js (prod).
+  const candidate = path.resolve(__dirname, '..');
+  return fs.existsSync(path.join(candidate, 'package.json')) ? candidate : process.cwd();
+}
 
 // ---- Safe JSON patches (do NOT change other app behavior) ----
 (BigInt.prototype as any).toJSON = function () {
@@ -29,8 +38,37 @@ try {
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { cors: true });
 
-  // All routes start with /api/v1
-  app.setGlobalPrefix('api/v1');
+  // Trust reverse proxy when explicitly configured (required for accurate client IP behind Nginx/LB).
+  const trustProxyRaw = String(process.env.TRUST_PROXY || '').trim().toLowerCase();
+  if (trustProxyRaw) {
+    const trustProxyValue =
+      trustProxyRaw === 'true'
+        ? true
+        : trustProxyRaw === 'false'
+          ? false
+          : /^\d+$/.test(trustProxyRaw)
+            ? Number(trustProxyRaw)
+            : trustProxyRaw;
+    const httpAdapter = app.getHttpAdapter();
+    const expressApp = httpAdapter?.getInstance?.();
+    if (expressApp && typeof expressApp.set === 'function') {
+      expressApp.set('trust proxy', trustProxyValue);
+    }
+  }
+
+  // Serve publicly accessible files from <appRoot>/public/uploads at /uploads/*
+  const uploadsRoot = path.join(resolveBackendRoot(), 'public', 'uploads');
+  try {
+    fs.mkdirSync(uploadsRoot, { recursive: true });
+  } catch {
+    // no-op
+  }
+  app.use('/uploads', express.static(uploadsRoot));
+
+  // Keep existing REST prefix while allowing GraphQL v2 to live at /api/v2/graphql.
+  app.setGlobalPrefix('api/v1', {
+    exclude: [{ path: 'api/v2/graphql', method: RequestMethod.ALL }],
+  });
 
   // ✅ Enable DTO validation + numeric transform for query/params/body
   app.useGlobalPipes(

@@ -1,0 +1,9 @@
+{
+  "status": 400,
+  "ok": false,
+  "body": {
+    "message": "Check-in date cannot be in the past",
+    "error": "Bad Request",
+    "statusCode": 400
+  }
+}

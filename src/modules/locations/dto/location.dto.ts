@@ -2,6 +2,70 @@ import { ApiProperty, PartialType } from '@nestjs/swagger';
 import { IsString, IsNotEmpty, IsOptional, IsNumber, IsArray, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 
+export class BetweenHotspotFiltersQueryDto {
+  @ApiProperty({ required: false, description: 'Stored location ID from dvi_stored_locations' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  locationId?: number;
+
+  @ApiProperty({ required: false, description: 'Source hotspot ID used to narrow destination hotspot options' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  sourceHotspotId?: number;
+
+  @ApiProperty({ required: false, description: 'When true, return only ON_ROUTE and MINOR_DETOUR rows' })
+  @IsOptional()
+  @IsString()
+  onlyUsable?: string;
+
+  @ApiProperty({ required: false, description: 'Optional text filter for location or hotspot names' })
+  @IsOptional()
+  @IsString()
+  search?: string;
+}
+
+export class BetweenHotspotQueryDto {
+  @ApiProperty({ required: false, description: 'Stored location ID from dvi_stored_locations' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  locationId?: number;
+
+  @ApiProperty({ required: true, description: 'Source hotspot ID' })
+  @Type(() => Number)
+  @IsNumber()
+  sourceHotspotId!: number;
+
+  @ApiProperty({ required: true, description: 'Destination hotspot ID' })
+  @Type(() => Number)
+  @IsNumber()
+  destinationHotspotId!: number;
+
+  @ApiProperty({ required: false, description: 'When true, return only ON_ROUTE and MINOR_DETOUR rows' })
+  @IsOptional()
+  @IsString()
+  onlyUsable?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  @ApiProperty({ required: false, default: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  page?: number;
+
+  @ApiProperty({ required: false, default: 50 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  pageSize?: number;
+}
+
 // Response DTO: all fields returned by location endpoints
 export class LocationResponseDto {
   @ApiProperty() location_ID!: number;
@@ -20,7 +84,7 @@ export class LocationResponseDto {
   @ApiProperty({ nullable: true }) location_description!: string | null;
 }
 
-// CREATE DTO: Source fields ONLY (no destination/distance/duration)
+// CREATE DTO: source required, destination optional
 export class CreateLocationDto {
   @ApiProperty()
   @IsNotEmpty()
@@ -46,6 +110,41 @@ export class CreateLocationDto {
   @IsNotEmpty()
   @IsString()
   source_longitude!: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  destination_location?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  destination_city?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  destination_state?: string;
+
+  @ApiProperty({ required: false, description: 'Numeric value as string' })
+  @IsOptional()
+  @IsString()
+  destination_latitude?: string;
+
+  @ApiProperty({ required: false, description: 'Numeric value as string' })
+  @IsOptional()
+  @IsString()
+  destination_longitude?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  duration_text?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  location_description?: string | null;
 }
 
 // UPDATE DTO: All fields optional (partial)
@@ -155,4 +254,82 @@ export class BulkTollPayloadDto {
   @ValidateNested({ each: true })
   @Type(() => TollChargeUpsertDto)
   items!: TollChargeUpsertDto[];
+}
+
+export class ViaRouteResponseDto {
+  @ApiProperty() count!: string;
+  @ApiProperty() via_route_location_ID!: number;
+  @ApiProperty() location_id!: number;
+  @ApiProperty() via_route_location!: string;
+  @ApiProperty() via_route_location_lattitude!: string;
+  @ApiProperty() via_route_location_longitude!: string;
+  @ApiProperty() via_route_location_city!: string;
+  @ApiProperty() via_route_location_state!: string;
+  @ApiProperty() distance_from_source_to_via_route!: string;
+  @ApiProperty() duration_from_source_to_via_route!: string;
+  @ApiProperty() modify!: string;
+}
+
+export class LocationPreviewCreateViaRouteDto {
+  @ApiProperty()
+  @IsNotEmpty()
+  @IsString()
+  via_route_location!: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  via_route_location_lattitude?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  via_route_location_longitude?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  via_route_location_city?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  via_route_location_state?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  distance_from_source_location?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  duration_from_source_location?: string;
+}
+
+export class UpdateViaRouteDto extends PartialType(LocationPreviewCreateViaRouteDto) {}
+export class CreateSuggestedRouteDto {
+  @ApiProperty()
+  @IsNotEmpty()
+  @IsString()
+  routes!: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  no_of_nights?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  route_details?: string;
+}
+
+export class UpdateSuggestedRouteDto extends PartialType(CreateSuggestedRouteDto) {}
+export class SuggestedRouteResponseDto {
+  @ApiProperty() count!: string;
+  @ApiProperty() routes!: string;
+  @ApiProperty() no_of_nights!: string;
+  @ApiProperty() route_details!: string;
+  @ApiProperty() modify!: string;
 }

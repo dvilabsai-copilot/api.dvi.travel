@@ -2,13 +2,13 @@
 AxisRooms API Test Log
 ============================================================
 Test Name: 4-rate-update
-Timestamp: 2026-03-09T04:57:06.841Z
+Timestamp: 2026-03-13T12:30:38.718Z
 Status: SUCCESS
 ============================================================
 
 REQUEST:
 --------
-URL: http://127.0.0.1:4006/api/v1/axisrooms/rateUpdate
+URL: https://dvi.travel/api/v1/axisrooms/rateUpdate
 Method: POST
 Headers:
 {}
@@ -46,18 +46,18 @@ RESPONSE:
 Status: 200
 Headers:
 {
+  "server": "nginx/1.24.0 (Ubuntu)",
+  "date": "Fri, 13 Mar 2026 12:30:36 GMT",
+  "content-type": "application/json; charset=utf-8",
+  "content-length": "60",
+  "connection": "keep-alive",
   "x-powered-by": "Express",
   "access-control-allow-origin": "*",
-  "content-type": "application/json; charset=utf-8",
-  "content-length": "33",
-  "etag": "W/\"21-EaizrEQ5ZkFQOW1tpdnLKL43OS8\"",
-  "date": "Mon, 09 Mar 2026 04:57:06 GMT",
-  "connection": "keep-alive",
-  "keep-alive": "timeout=5"
+  "etag": "W/\"3c-DJpPwVTAc0jDRIRlqHgtVRdeGJU\""
 }
 
 Data:
 {
-  "message": "",
+  "message": "Rates updated successfully.",
   "status": "success"
 }

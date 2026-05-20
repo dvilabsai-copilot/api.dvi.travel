@@ -1,0 +1,245 @@
+======== REQUEST ========
+{
+  "BookingCode": "1035259!TB!5!TB!28c2ccbf-434e-11f1-855f-720abae076dd!TB!N!TB!AFF!",
+  "PaymentMode": "Limit",
+  "GuestNationality": "US",
+  "NoOfRooms": 2,
+  "PaxRooms": [
+    {
+      "Adults": 1,
+      "Children": 0,
+      "ChildrenAges": []
+    },
+    {
+      "Adults": 1,
+      "Children": 0,
+      "ChildrenAges": []
+    }
+  ]
+}
+
+======== RESPONSE ========
+{
+  "Status": {
+    "Code": 200,
+    "Description": "Successful"
+  },
+  "HotelResult": [
+    {
+      "HotelCode": "1035259",
+      "Currency": "INR",
+      "Rooms": [
+        {
+          "Name": [
+            "Twin Hilton Guestroom with Sofa cum Bed, Bathtub,15% disc on FandB,Spa,2 Twin Beds,NonSmoking",
+            "Twin Hilton Guestroom with Sofa cum Bed, Bathtub,15% disc on FandB,Spa,2 Twin Beds,NonSmoking"
+          ],
+          "BookingCode": "1035259!TB!5!TB!28c2ccbf-434e-11f1-855f-720abae076dd!TB!N!TB!AFF!",
+          "Inclusion": "Free valet parking,Free breakfast",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 16207.22
+              }
+            ],
+            [
+              {
+                "BasePrice": 16207.22
+              }
+            ]
+          ],
+          "TotalFare": 38893.08,
+          "TotalTax": 6478.64,
+          "NetAmount": 38897.644085859996,
+          "NetTax": 6483.20907086,
+          "CancelPolicies": [
+            {
+              "FromDate": "27-04-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "13-06-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "BreakFast",
+          "IsRefundable": true,
+          "WithTransfers": false,
+          "Amenities": [
+            "In-room climate control (air conditioning)",
+            "Blackout drapes/curtains",
+            "Kitchenette",
+            "Desk",
+            "Premium TV channels",
+            "Connecting/adjoining rooms available",
+            "DVD player",
+            "Down comforter",
+            "Air conditioning",
+            "Cable/satellite TV service",
+            "Rollaway/extra beds (surcharge)",
+            "Sofa bed",
+            "Separate sitting area",
+            "Alarm clock",
+            "Cable TV service",
+            "Non-Smoking",
+            "Television",
+            "Soundproofed rooms",
+            "Laptop-friendly workspace",
+            "Separate bathtub and shower",
+            "Minibar",
+            "Wardrobe or closet",
+            "Number of days between towel changes: 3",
+            "Daily housekeeping",
+            "Number of days between bed sheet changes: 3",
+            "Individually decorated",
+            "Phone",
+            "Dial-up internet access",
+            "High-speed internet access",
+            "Separate living room",
+            "Restaurant dining guide",
+            "Towels provided",
+            "Bedsheets provided",
+            "LED TV",
+            "TV size measurement: inch",
+            "Stovetop",
+            "Private bathroom",
+            "Bathrobes",
+            "Free toiletries",
+            "Hair dryer",
+            "TV size: 40",
+            "Iron/ironing board",
+            "Rainfall showerhead",
+            "In-room safe",
+            "Cookware, dishware, and utensils",
+            "Room service (24 hours)",
+            "LCD TV",
+            "Microwave",
+            "Free bottled water",
+            "Free cribs/infant beds",
+            "In-room climate control (air conditioning)",
+            "Blackout drapes/curtains",
+            "Kitchenette",
+            "Desk",
+            "Premium TV channels",
+            "Connecting/adjoining rooms available",
+            "DVD player",
+            "Down comforter",
+            "Air conditioning",
+            "Cable/satellite TV service",
+            "Rollaway/extra beds (surcharge)",
+            "Sofa bed",
+            "Separate sitting area",
+            "Alarm clock",
+            "Cable TV service",
+            "Non-Smoking",
+            "Television",
+            "Soundproofed rooms",
+            "Laptop-friendly workspace",
+            "Separate bathtub and shower",
+            "Minibar",
+            "Wardrobe or closet",
+            "Number of days between towel changes: 3",
+            "Daily housekeeping",
+            "Number of days between bed sheet changes: 3",
+            "Individually decorated",
+            "Phone",
+            "Dial-up internet access",
+            "High-speed internet access",
+            "Separate living room",
+            "Restaurant dining guide",
+            "Towels provided",
+            "Bedsheets provided",
+            "LED TV",
+            "TV size measurement: inch",
+            "Stovetop",
+            "Private bathroom",
+            "Bathrobes",
+            "Free toiletries",
+            "Hair dryer",
+            "TV size: 40",
+            "Iron/ironing board",
+            "Rainfall showerhead",
+            "In-room safe",
+            "Cookware, dishware, and utensils",
+            "Room service (24 hours)",
+            "LCD TV",
+            "Microwave",
+            "Free bottled water",
+            "Free cribs/infant beds"
+          ],
+          "LastCancellationDeadline": "12-06-2026 23:59:59",
+          "PriceBreakUp": [
+            {
+              "RoomRate": 16321.212579,
+              "RoomTax": 3239.324634,
+              "AgentCommission": 113.9950715,
+              "TaxBreakup": [
+                {
+                  "TaxType": "Tax_TDS",
+                  "TaxableAmount": 113.9950715,
+                  "TaxPercentage": 2,
+                  "TaxAmount": 2.2799014300000002
+                }
+              ]
+            },
+            {
+              "RoomRate": 16321.212579,
+              "RoomTax": 3239.324634,
+              "AgentCommission": 113.9950715,
+              "TaxBreakup": [
+                {
+                  "TaxType": "Tax_TDS",
+                  "TaxableAmount": 113.9950715,
+                  "TaxPercentage": 2,
+                  "TaxAmount": 2.2799014300000002
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "RateConditions": [
+        "Early check out will attract full cancellation charge unless otherwise specified",
+        "CheckIn Time-Begin: 3:00 PM",
+        "CheckOut Time: 12:00 PM",
+        "CheckIn Instructions: &lt;ul&gt;  &lt;li&gt;Extra-person charges may apply and vary depending on property policy&lt;/li&gt;&lt;li&gt;Government-issued photo identification and a credit card, debit card, or cash deposit may be required at check-in for incidental charges&lt;/li&gt;&lt;li&gt;Special requests are subject to availability upon check-in and may incur additional charges; special requests cannot be guaranteed&lt;/li&gt;&lt;li&gt;This property accepts credit cards, debit cards, and cash&lt;/li&gt;&lt;li&gt;Safety features at this property include a carbon monoxide detector, a fire extinguisher, a smoke detector, a security system, and a first aid kit&lt;/li&gt;&lt;li&gt;Please note that cultural norms and guest policies may differ by country and by property; the policies listed are provided by the property&lt;/li&gt;  &lt;/ul&gt; ",
+        " Special Instructions : Front desk staff will greet guests on arrival at the property. Information provided by the property may be translated using automated translation tools. To register at this property, guests who are Indian citizens must provide a valid photo identity card issued by the Government of India; travelers who are not citizens of India must present a valid passport and visa.",
+        "Minimum CheckIn Age : 18",
+        "Optional Fees: &lt;ul&gt; &lt;li&gt;Fee for buffet breakfast: approximately INR 1299 for adults and INR 649 for children&lt;/li&gt;&lt;li&gt;A late check-out fee will be charged&lt;/li&gt;&lt;li&gt;Rollaway bed fee: INR 1500.0 per night&lt;/li&gt;&lt;/ul&gt; &lt;p&gt;The above list may not be comprehensive. Fees and deposits may not include tax and are subject to change. &lt;/p&gt;",
+        "Cards Accepted: Visa,Diners Club,Debit cards,Cash,American Express,Mastercard",
+        "&lt;ul&gt;  &lt;li&gt;The property has connecting/adjoining rooms, which are subject to availability and can be requested by contacting the property using the number on the booking confirmation. &lt;/li&gt;&lt;li&gt;No pets and no service animals are allowed at this property. &lt;/li&gt;&lt;li&gt;Contactless check-out is available.&lt;/li&gt;&lt;li&gt;This property welcomes guests of all sexual orientations and gender identities (LGBTQ+ friendly).&lt;/li&gt; &lt;/ul&gt;,Service animals not allowed,Pets not allowed,Professional property host/manager,Contactless check-out is available,LGBTQIA+  friendly,Essential workers only - NO,No elevators"
+      ]
+    }
+  ],
+  "ValidationInfo": {
+    "PanMandatory": false,
+    "PassportMandatory": false,
+    "CorporateBookingAllowed": false,
+    "PanCountRequired": 0,
+    "SamePaxNameAllowed": true,
+    "SpaceAllowed": true,
+    "SpecialCharAllowed": false,
+    "PaxNameMinLength": 1,
+    "PaxNameMaxLength": 50,
+    "CharLimit": true,
+    "PackageFare": false,
+    "PackageDetailsMandatory": false,
+    "DepartureDetailsMandatory": false,
+    "GSTAllowed": false,
+    "CrpPANMandatory": false,
+    "IsAgencyOwnPANAllowed": false
+  }
+}
+
+======== METADATA ========
+- timestamp: 2026-04-28T22:04:02.014Z
+- endpoint: https://affiliate.tektravels.com/HotelAPI/PreBook
+- status code: 200
+- case id: 7
+- step name: prebook
+- method: POST
+- status: success
+- error: none
+- skipped reason: none

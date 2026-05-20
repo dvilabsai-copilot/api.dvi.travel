@@ -1,4 +1,4 @@
-// FILE: src/modules/itineraries/itinerary-hotel-details-tbo.service.ts
+﻿// FILE: src/modules/itineraries/itinerary-hotel-details-tbo.service.ts
 
 import { Injectable, NotFoundException, Logger, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
@@ -12,6 +12,13 @@ import {
   ItineraryHotelRoomDetailsResponseDto,
   ItineraryHotelRoomDto,
 } from './itinerary-hotel-details.service';
+import { haversineKm } from './utils/distance-utils';
+import {
+  HOTEL_RATE_PLAN_BY_CODE,
+  inferCanonicalHotelRatePlanCode,
+  inferCanonicalHotelRatePlanCodeFromMealFlags,
+  inferCanonicalHotelRatePlanCodeFromMealText,
+} from '../hotels/hotel-rate-plans';
 
 /**
  * This service generates dynamic hotel packages from TBO API
@@ -19,7 +26,92 @@ import {
  */
 @Injectable()
 export class ItineraryHotelDetailsTboService {
+  private static readonly HOTEL_DETAILS_CACHE_TTL_MS = 5 * 60 * 1000;
+  private static readonly HOTEL_ROOM_DETAILS_CACHE_TTL_MS = 5 * 60 * 1000;
+  private static readonly MAX_CACHE_ENTRIES = 200;
+
+    /**
+     * Fetch hotels for all routes, retrying ONCE if any provider/system failure (null) is detected.
+     */
+    private async fetchHotelsForRoutesWithRetry(
+      routes: any[],
+      noOfNights: number,
+      guestNationality: string,
+      roomCount: number = 1,
+      adultCount: number = 2,
+      childCount: number = 0,
+      childAges: number[] = [],
+    ): Promise<Map<number, HotelSearchResult[] | null>> {
+      let hotelsByRoute = await this.fetchHotelsForRoutes(
+        routes,
+        noOfNights,
+        guestNationality,
+        roomCount,
+        adultCount,
+        childCount,
+        childAges,
+      );
+
+      const hasProviderFailure = Array.from(hotelsByRoute.values()).some(
+        (value) => value === null,
+      );
+
+      if (hasProviderFailure) {
+        this.logger.warn(
+          'ðŸš¨ Hotel search had provider/system failure on first attempt. Retrying once...'
+        );
+
+        // small delay to allow DB sync / provider readiness
+        await new Promise((resolve) => setTimeout(resolve, 800));
+
+        const retryResult = await this.fetchHotelsForRoutes(
+          routes,
+          noOfNights,
+          guestNationality,
+          roomCount,
+          adultCount,
+          childCount,
+          childAges,
+        );
+
+        const retryStillFailed = Array.from(retryResult.values()).some(
+          (value) => value === null,
+        );
+
+        // compare number of successful routes (non-empty arrays)
+        const retrySuccessCount = Array.from(retryResult.values()).filter(
+          (v) => Array.isArray(v) && v.length > 0,
+        ).length;
+
+        const firstSuccessCount = Array.from(hotelsByRoute.values()).filter(
+          (v) => Array.isArray(v) && v.length > 0,
+        ).length;
+
+        this.logger.log(
+          `ðŸ“Š Comparing results â†’ First: ${firstSuccessCount}, Retry: ${retrySuccessCount}`,
+        );
+
+        // return whichever has more valid hotel data
+        if (retrySuccessCount >= firstSuccessCount) {
+          this.logger.log('âœ… Using retry result (better or equal)');
+          return retryResult;
+        } else {
+          this.logger.log('âš ï¸ Using first attempt result (better)');
+          return hotelsByRoute;
+        }
+      }
+
+      return hotelsByRoute;
+    }
   private readonly logger = new Logger(ItineraryHotelDetailsTboService.name);
+
+  private static readonly ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
+  // Cache for hotel details endpoint response (key = quoteId)
+  private hotelDetailsCache = new Map<string, {
+    data: ItineraryHotelDetailsResponseDto;
+    timestamp: number;
+  }>();
   
   // Cache structure: key = "quoteId:routeId" or "quoteId" (no route filter)
   // Stores the entire response to avoid re-fetching TBO data
@@ -28,11 +120,299 @@ export class ItineraryHotelDetailsTboService {
     timestamp: number;
   }>();
 
+  private isTboOnlyFetchEnabled(): boolean {
+    const raw = String(process.env.HOTEL_FETCH_TBO_ONLY || '').trim().toLowerCase();
+    return raw === 'true' || raw === '1' || raw === 'yes';
+  }
+
+  private isHobseSearchEnabled(): boolean {
+    const raw = String(process.env.HOBSE_SEARCH_ENABLED || '0').trim().toLowerCase();
+    return raw === 'true' || raw === '1' || raw === 'yes';
+  }
+
+  private normalizeNumberList(value: unknown): number[] {
+    if (Array.isArray(value)) {
+      return value
+        .map((v) => Number(v))
+        .filter((n) => Number.isFinite(n) && n > 0)
+        .map((n) => Math.trunc(n));
+    }
+
+    const raw = String(value ?? '').trim();
+    if (!raw) return [];
+
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed
+          .map((v) => Number(v))
+          .filter((n) => Number.isFinite(n) && n > 0)
+          .map((n) => Math.trunc(n));
+      }
+    } catch {
+      // fall through to CSV parsing
+    }
+
+    return raw
+      .split(',')
+      .map((v) => Number(v.trim()))
+      .filter((n) => Number.isFinite(n) && n > 0)
+      .map((n) => Math.trunc(n));
+  }
+
+  private getHotelCategoryCandidates(hotel: HotelSearchResult): number[] {
+    const candidates = new Set<number>();
+
+    const ratingNum = Number((hotel as any).rating);
+    if (Number.isFinite(ratingNum) && ratingNum > 0) {
+      candidates.add(Math.trunc(ratingNum));
+    }
+
+    const categoryRaw = String((hotel as any).category ?? '').trim();
+    if (categoryRaw) {
+      const match = categoryRaw.match(/\d+/);
+      if (match) {
+        const categoryNum = Number(match[0]);
+        if (Number.isFinite(categoryNum) && categoryNum > 0) {
+          candidates.add(Math.trunc(categoryNum));
+        }
+      }
+    }
+
+    return Array.from(candidates);
+  }
+
+  private inferMealPlanCodeFromHotel(hotel: HotelSearchResult): string | null {
+    const direct = inferCanonicalHotelRatePlanCode(String((hotel as any).mealPlan ?? ''));
+    if (direct) return direct;
+    return inferCanonicalHotelRatePlanCodeFromMealText(String((hotel as any).mealPlan ?? ''));
+  }
+
+  private applyPlanPreferenceFilters(
+    hotelsByRoute: Map<number, HotelSearchResult[] | null>,
+    preferredCategories: number[],
+    preferredMealPlanCode: string | null,
+  ): Map<number, HotelSearchResult[] | null> {
+    const shouldFilterByCategory = preferredCategories.length > 0;
+    const shouldFilterByMeal = !!preferredMealPlanCode;
+
+    if (!shouldFilterByCategory && !shouldFilterByMeal) {
+      return hotelsByRoute;
+    }
+
+    const preferredCategorySet = new Set(preferredCategories);
+    const filteredMap = new Map<number, HotelSearchResult[] | null>();
+
+    hotelsByRoute.forEach((hotels, routeId) => {
+      if (!Array.isArray(hotels)) {
+        filteredMap.set(routeId, hotels);
+        return;
+      }
+
+      const filteredHotels = hotels.filter((hotel) => {
+        let included = true;
+        let filterReason = '';
+        
+        if (shouldFilterByCategory) {
+          const categoryCandidates = this.getHotelCategoryCandidates(hotel);
+          const categoryMatch = categoryCandidates.some((cat) => preferredCategorySet.has(cat));
+          if (!categoryMatch) {
+            included = false;
+            filterReason = `Category mismatch: ${categoryCandidates.join(',')} not in ${preferredCategories.join(',')}`;
+          }
+        }
+
+        if (included && shouldFilterByMeal) {
+          const hotelMealCode = this.inferMealPlanCodeFromHotel(hotel);
+          // Only reject if hotel HAS meal plan data but it doesn't match.
+          // Allow hotels that don't have meal plan data (e.g., ResAvenue).
+          if (hotelMealCode && hotelMealCode !== preferredMealPlanCode) {
+            included = false;
+            filterReason = `Meal plan mismatch: ${hotelMealCode} != ${preferredMealPlanCode}`;
+          }
+        }
+        
+        if (!included && hotel.provider === 'resavenue') {
+          this.logger.warn(`   ⚠️  Filtering out ResAvenue: ${hotel.hotelName} - Reason: ${filterReason}`);
+        }
+
+        return included;
+      });
+
+      this.logger.log(
+        `   Preference filter route ${routeId}: before=${hotels.length}, after=${filteredHotels.length}, ` +
+          `category=${shouldFilterByCategory ? preferredCategories.join(',') : 'ANY'}, meal=${preferredMealPlanCode || 'ANY'}`,
+      );
+
+      filteredMap.set(routeId, filteredHotels);
+    });
+
+    return filteredMap;
+  }
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly hotelSearchService: HotelSearchService,
     private readonly hobseProvider: HobseHotelProvider,
   ) {}
+
+  private extractIso2FromCountryRow(row: any): string | null {
+    if (!row || typeof row !== 'object') return null;
+
+    const candidates = [
+      row.shortname,
+      row.country_code,
+      row.iso2,
+      row.iso_code,
+      row.sortname,
+      row.alpha2,
+      row.code,
+    ];
+
+    for (const value of candidates) {
+      const normalized = String(value ?? '').trim().toUpperCase();
+      if (/^[A-Z]{2}$/.test(normalized)) {
+        return normalized;
+      }
+    }
+
+    return null;
+  }
+
+  // Legacy mapping: IDs 101-295 were used by the old hardcoded dropdown list.
+  // These do not match dvi_countries IDs, so we map them to country names for name-based lookup.
+  private static readonly LEGACY_NATIONALITY_NAME: Record<number, string> = {
+    101: 'India', 102: 'Afghanistan', 103: 'Albania', 104: 'Algeria', 105: 'Andorra',
+    106: 'Angola', 107: 'Antigua and Barbuda', 108: 'Argentina', 109: 'Armenia',
+    110: 'Australia', 111: 'Austria', 112: 'Azerbaijan', 113: 'Bahamas', 114: 'Bahrain',
+    115: 'Bangladesh', 116: 'Barbados', 117: 'Belarus', 118: 'Belgium', 119: 'Belize',
+    120: 'Benin', 121: 'Bhutan', 122: 'Bolivia', 123: 'Bosnia and Herzegovina',
+    124: 'Botswana', 125: 'Brazil', 126: 'Brunei', 127: 'Bulgaria', 128: 'Burkina Faso',
+    129: 'Burundi', 130: 'Cabo Verde', 131: 'Cambodia', 132: 'Cameroon', 133: 'Canada',
+    134: 'Central African Republic', 135: 'Chad', 136: 'Chile', 137: 'China',
+    138: 'Colombia', 139: 'Comoros', 140: 'Congo', 141: 'Costa Rica', 142: 'Croatia',
+    143: 'Cuba', 144: 'Cyprus', 145: 'Czech Republic',
+    146: 'Democratic Republic of the Congo', 147: 'Denmark', 148: 'Djibouti',
+    149: 'Dominica', 150: 'Dominican Republic', 151: 'Ecuador', 152: 'Egypt',
+    153: 'El Salvador', 154: 'Equatorial Guinea', 155: 'Eritrea', 156: 'Estonia',
+    157: 'Eswatini', 158: 'Ethiopia', 159: 'Fiji', 160: 'Finland', 161: 'France',
+    162: 'Gabon', 163: 'Gambia', 164: 'Georgia', 165: 'Germany', 166: 'Ghana',
+    167: 'Greece', 168: 'Grenada', 169: 'Guatemala', 170: 'Guinea', 171: 'Guinea-Bissau',
+    172: 'Guyana', 173: 'Haiti', 174: 'Honduras', 175: 'Hungary', 176: 'Iceland',
+    177: 'India', 178: 'Indonesia', 179: 'Iran', 180: 'Iraq', 181: 'Ireland',
+    182: 'Israel', 183: 'Italy', 184: 'Jamaica', 185: 'Japan', 186: 'Jordan',
+    187: 'Kazakhstan', 188: 'Kenya', 189: 'Kiribati', 190: 'Kuwait', 191: 'Kyrgyzstan',
+    192: 'Laos', 193: 'Latvia', 194: 'Lebanon', 195: 'Lesotho', 196: 'Liberia',
+    197: 'Libya', 198: 'Liechtenstein', 199: 'Lithuania', 200: 'Luxembourg',
+    201: 'Madagascar', 202: 'Malawi', 203: 'Malaysia', 204: 'Maldives', 205: 'Mali',
+    206: 'Malta', 207: 'Marshall Islands', 208: 'Mauritania', 209: 'Mauritius',
+    210: 'Mexico', 211: 'Micronesia', 212: 'Moldova', 213: 'Monaco', 214: 'Mongolia',
+    215: 'Montenegro', 216: 'Morocco', 217: 'Mozambique', 218: 'Myanmar', 219: 'Namibia',
+    220: 'Nauru', 221: 'Nepal', 222: 'Netherlands', 223: 'New Zealand', 224: 'Nicaragua',
+    225: 'Niger', 226: 'Nigeria', 227: 'North Korea', 228: 'North Macedonia',
+    229: 'Norway', 230: 'Oman', 231: 'Pakistan', 232: 'Palau', 233: 'Panama',
+    234: 'Papua New Guinea', 235: 'Paraguay', 236: 'Peru', 237: 'Philippines',
+    238: 'Poland', 239: 'Portugal', 240: 'Qatar', 241: 'Romania', 242: 'Russia',
+    243: 'Rwanda', 244: 'Saint Kitts and Nevis', 245: 'Saint Lucia',
+    246: 'Saint Vincent and the Grenadines', 247: 'Samoa', 248: 'San Marino',
+    249: 'Sao Tome and Principe', 250: 'Saudi Arabia', 251: 'Senegal', 252: 'Serbia',
+    253: 'Seychelles', 254: 'Sierra Leone', 255: 'Singapore', 256: 'Slovakia',
+    257: 'Slovenia', 258: 'Solomon Islands', 259: 'Somalia', 260: 'South Africa',
+    261: 'South Korea', 262: 'South Sudan', 263: 'Spain', 264: 'Sri Lanka',
+    265: 'Sudan', 266: 'Suriname', 267: 'Sweden', 268: 'Switzerland', 269: 'Syria',
+    270: 'Taiwan', 271: 'Tajikistan', 272: 'Tanzania', 273: 'Thailand',
+    274: 'Timor-Leste', 275: 'Togo', 276: 'Tonga', 277: 'Trinidad and Tobago',
+    278: 'Tunisia', 279: 'Turkey', 280: 'Turkmenistan', 281: 'Tuvalu', 282: 'Uganda',
+    283: 'Ukraine', 284: 'United Arab Emirates', 285: 'United Kingdom',
+    286: 'United States', 287: 'Uruguay', 288: 'Uzbekistan', 289: 'Vanuatu',
+    290: 'Vatican City', 291: 'Venezuela', 292: 'Vietnam', 293: 'Yemen',
+    294: 'Zambia', 295: 'Zimbabwe',
+  };
+
+  private async resolveGuestNationality(plan: any): Promise<string> {
+    const nationalityId = Number((plan as any)?.nationality ?? 0);
+    const rawNationality = String((plan as any)?.nationality ?? '')
+      .trim()
+      .toUpperCase();
+
+    // Prefer master-country mapping from DB (as requested).
+    if (nationalityId > 0) {
+      try {
+        const country = await this.prisma.dvi_countries.findFirst({
+          where: {
+            id: nationalityId,
+            deleted: 0,
+            status: 1,
+          },
+          select: {
+            shortname: true,
+            name: true,
+          },
+        });
+        const iso2 = this.extractIso2FromCountryRow(country);
+        if (iso2) {
+          this.logger.log(
+            `âœ… Resolved guestNationality from country table: nationality=${nationalityId} -> ${iso2}`,
+          );
+          return iso2;
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger.warn(
+          `âš ï¸ Could not resolve country mapping from table dvi_countries for nationality=${nationalityId}: ${message}`,
+        );
+      }
+    }
+
+      // Fallback: legacy hardcoded dropdown used IDs 101-295 which differ from dvi_countries IDs.
+      // Resolve by looking up the country name from the legacy map and then querying dvi_countries by name.
+      if (nationalityId >= 101 && nationalityId <= 295) {
+        const legacyName = ItineraryHotelDetailsTboService.LEGACY_NATIONALITY_NAME[nationalityId];
+        if (legacyName) {
+          try {
+            const countryByName = await this.prisma.dvi_countries.findFirst({
+              where: { name: { contains: legacyName }, deleted: 0, status: 1 },
+              select: { shortname: true, name: true },
+            });
+            const iso2 = this.extractIso2FromCountryRow(countryByName);
+            if (iso2) {
+              this.logger.log(
+                `âœ… Resolved guestNationality via legacy name lookup: nationality=${nationalityId} (${legacyName}) -> ${iso2}`,
+              );
+              return iso2;
+            }
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            this.logger.warn(`âš ï¸ Legacy name lookup failed for "${legacyName}": ${msg}`);
+          }
+        }
+      }
+
+    // Some records may directly store ISO-2 code instead of FK id.
+    if (/^[A-Z]{2}$/.test(rawNationality)) {
+      this.logger.warn(
+        `âš ï¸ Using direct ISO-2 nationality from plan value: ${rawNationality}`,
+      );
+      return rawNationality;
+    }
+
+    const envFallback = String(
+      process.env.TBO_DEFAULT_GUEST_NATIONALITY || '',
+    )
+      .trim()
+      .toUpperCase();
+    if (/^[A-Z]{2}$/.test(envFallback)) {
+      this.logger.warn(
+        `âš ï¸ Using TBO_DEFAULT_GUEST_NATIONALITY fallback: ${envFallback}`,
+      );
+      return envFallback;
+    }
+
+    this.logger.warn(
+      'âš ï¸ Unable to resolve guestNationality from plan/country table/env. Falling back to IN.',
+    );
+    return 'IN';
+  }
 
   /**
    * Get hotel details with dynamic packages from TBO API
@@ -40,9 +420,19 @@ export class ItineraryHotelDetailsTboService {
    */
   async getHotelDetailsByQuoteIdFromTbo(
     quoteId: string,
+    page?: number,
+    pageSize?: number,
+    groupType?: number,
+    itineraryRouteId?: number,
   ): Promise<ItineraryHotelDetailsResponseDto> {
     const startTime = Date.now();
-    this.logger.log(`\n📡 TBO HOTEL PACKAGES: Fetching dynamic packages for quote: ${quoteId}`);
+    this.logger.log(`\nðŸ“¡ TBO HOTEL PACKAGES: Fetching dynamic packages for quote: ${quoteId}`);
+
+    const hasCompatibilityFilters =
+      page !== undefined ||
+      pageSize !== undefined ||
+      groupType !== undefined ||
+      itineraryRouteId !== undefined;
 
     // Step 1: Get itinerary plan
     const plan = await this.prisma.dvi_itinerary_plan_details.findFirst({
@@ -50,12 +440,47 @@ export class ItineraryHotelDetailsTboService {
     });
 
     if (!plan) {
-      this.logger.warn(`⚠️  Quote ID not found: ${quoteId}`);
+      this.logger.warn(`âš ï¸  Quote ID not found: ${quoteId}`);
       throw new NotFoundException('Itinerary not found');
     }
 
+    // CACHE DISABLED - Always fetch fresh data from database
+    // const cached = this.getCachedHotelDetails(quoteId);
+    // if (cached) {
+    //   return hasCompatibilityFilters
+    //     ? this.applyCompatibilityFilters(
+    //         cached,
+    //         page,
+    //         pageSize,
+    //         groupType,
+    //         itineraryRouteId,
+    //       )
+    //     : cached;
+    // }
+
     const planId = plan.itinerary_plan_ID;
-    this.logger.log(`✅ Found plan ID: ${planId}`);
+    const guestNationality = await this.resolveGuestNationality(plan);
+    const preferredCategories = this.normalizeNumberList((plan as any).preferred_hotel_category);
+    const explicitMealPlanCode = inferCanonicalHotelRatePlanCode(String((plan as any).meal_plan_code || ''));
+    const mealPlanBreakfast = Number((plan as any).meal_plan_breakfast ?? 0) ? 1 : 0;
+    const mealPlanLunch = Number((plan as any).meal_plan_lunch ?? 0) ? 1 : 0;
+    const mealPlanDinner = Number((plan as any).meal_plan_dinner ?? 0) ? 1 : 0;
+    const hasExplicitMealFlags =
+      mealPlanBreakfast === 1 || mealPlanLunch === 1 || mealPlanDinner === 1;
+    const fallbackMealPlanCode = hasExplicitMealFlags
+      ? inferCanonicalHotelRatePlanCodeFromMealFlags(
+          mealPlanBreakfast,
+          mealPlanLunch,
+          mealPlanDinner,
+        )
+      : null;
+    const preferredMealPlanCode = explicitMealPlanCode || fallbackMealPlanCode;
+
+    this.logger.log(`âœ… Found plan ID: ${planId}`);
+    this.logger.log(
+      `ðŸŽ›ï¸ Plan hotel prefs: categories=${preferredCategories.length ? preferredCategories.join(',') : 'ANY'}, ` +
+        `mealPlan=${preferredMealPlanCode || 'ANY'}`,
+    );
 
     // Step 2: Get itinerary routes (days and destinations)
     const routes = await this.prisma.dvi_itinerary_route_details.findMany({
@@ -63,72 +488,227 @@ export class ItineraryHotelDetailsTboService {
       orderBy: { itinerary_route_date: 'asc' },
     });
 
-    this.logger.log(`📅 Routes Query Result: ${JSON.stringify({
+    this.logger.log(`ðŸ“… Routes Query Result: ${JSON.stringify({
       total: routes.length,
       routes: routes.map(r => ({ id: (r as any).itinerary_route_ID, location: (r as any).location_name, date: (r as any).itinerary_route_date }))
     })}`);
 
     if (routes.length === 0) {
-      this.logger.warn(`⚠️  No routes found for plan ${planId}`);
+      this.logger.warn(`âš ï¸  No routes found for plan ${planId}`);
       throw new BadRequestException('Itinerary has no routes');
     }
 
-    this.logger.log(`📅 Found ${routes.length} routes to process`);
+    this.logger.log(`ðŸ“… Found ${routes.length} routes to process`);
 
     // Get number of nights from plan to determine which routes need hotels
     const noOfNights = Number((plan as any).no_of_nights || 0);
-    this.logger.log(`🌙 Plan has ${noOfNights} nights`);
+    this.logger.log(`ðŸŒ™ Plan has ${noOfNights} nights`);
+
+    // Read pax counts saved by the user when creating the itinerary
+    const planRoomCount = Math.max(Number((plan as any).preferred_room_count || 1), 1);
+    const planAdultCount = Number((plan as any).total_adult || 0);
+    const planChildCount = Number((plan as any).total_children || 0);
+    this.logger.log(
+      `ðŸ‘¥ Pax from plan: rooms=${planRoomCount}, adults=${planAdultCount}, children=${planChildCount}`,
+    );
+
+    // Fetch child ages from saved travellers so the TBO search uses actual ages, not defaults.
+    let planChildAges: number[] = [];
+    if (planChildCount > 0) {
+      const childTravellers = await this.prisma.dvi_itinerary_traveller_details.findMany({
+        where: { itinerary_plan_ID: planId, traveller_type: 2, deleted: 0 },
+        orderBy: { traveller_details_ID: 'asc' },
+      });
+      planChildAges = childTravellers
+        .map((t) => Math.trunc(Number((t as any).traveller_age)))
+        .filter((age) => Number.isFinite(age) && age >= 0 && age <= 11);
+      this.logger.log(`ðŸ‘¦ Child ages from travellers: [${planChildAges.join(', ')}]`);
+    }
 
     // Step 3: Fetch hotels from TBO for each route (except last route if it's departure day)
-    const hotelsByRoute = await this.fetchHotelsForRoutes(routes, noOfNights);
+    const hotelsByRoute = await this.fetchHotelsForRoutesWithRetry(
+      routes,
+      noOfNights,
+      guestNationality,
+      planRoomCount,
+      planAdultCount,
+      planChildCount,
+      planChildAges,
+    );
     
-    // Step 3.5: Fetch HOBSE hotels and merge with TBO hotels
-    // First, create a city code map for HOBSE (maps destination to TBO city code)
-    const cityCodeMap = await this.batchMapDestinationsToCityCodes(routes);
-    const hobseHotelsByRoute = await this.fetchHobseHotelsForRoutes(routes, noOfNights, cityCodeMap);
+    const tboOnlyFetch = this.isTboOnlyFetchEnabled();
+    if (tboOnlyFetch) {
+      this.logger.warn(
+        'âš ï¸ HOTEL_FETCH_TBO_ONLY enabled: skipping HOBSE/ResAvenue/AxisRooms provider fetch and returning only TBO hotels',
+      );
+    } else {
+      if (this.isHobseSearchEnabled()) {
+        // Step 3.5: Fetch HOBSE hotels and merge with TBO hotels
+        // First, create a HOBSE-specific city code map using hobse_city_code
+        const hobseCityCodeMap = await this.batchMapDestinationsToHobseCityCodes(routes);
+        const hobseHotelsByRoute = await this.fetchHobseHotelsForRoutes(routes, noOfNights, hobseCityCodeMap);
+
+        // Merge HOBSE hotels into the TBO hotel map
+        hobseHotelsByRoute.forEach((hobseHotels, routeId) => {
+          const existingHotels = hotelsByRoute.get(routeId) || [];
+          hotelsByRoute.set(routeId, [...existingHotels, ...hobseHotels]);
+        });
+      } else {
+        this.logger.warn('âš ï¸ HOBSE_SEARCH_ENABLED=0: skipping HOBSE hotel search results');
+      }
+
+      // Step 3.6: Fetch ResAvenue hotels explicitly (in case they weren't included in TBO search)
+      this.logger.log(`\n🏨 STEP 3.6: Starting ResAvenue hotel fetch for ${routes.length} routes...`);
+      const resavenueHotelsByRoute = await this.fetchResavenueHotelsForRoutes(
+        routes,
+        noOfNights,
+        guestNationality,
+        planRoomCount,
+        planAdultCount,
+        planChildCount,
+      );
+      
+      // Debug: Check what ResAvenue returned
+      let totalResavenueHotels = 0;
+      resavenueHotelsByRoute.forEach((hotels, routeId) => {
+        totalResavenueHotels += hotels.length;
+        if (hotels.length > 0) {
+          this.logger.log(`   ✅ Route ${routeId} has ${hotels.length} ResAvenue hotels: ${hotels.map(h => `${h.hotelName} (${h.hotelCode})`).join(', ')}`);
+        }
+      });
+      this.logger.log(`🏨 ResAvenue Total: ${totalResavenueHotels} hotels across all routes`);
+
+      // Merge ResAvenue hotels into the hotel map
+      resavenueHotelsByRoute.forEach((resavenueHotels, routeId) => {
+        const existingHotels = hotelsByRoute.get(routeId) || [];
+        // Avoid duplicates: check if hotel already exists by hotel code + provider
+        const hotelStrs = existingHotels.map(h => `${h.hotelCode}|${h.provider}`);
+        const newHotels = resavenueHotels.filter(h => !hotelStrs.includes(`${h.hotelCode}|${h.provider}`));
+        if (newHotels.length > 0) {
+          this.logger.log(`   ✅ Added ${newHotels.length} new ResAvenue hotel(s) to route ${routeId}`);
+          newHotels.forEach(h => {
+            this.logger.log(`      - ${h.hotelName} (${h.hotelCode}, Category: ${h.category}, Meal: ${h.mealPlan}, Price: ₹${h.price})`);
+          });
+        } else if (resavenueHotels.length > 0) {
+          this.logger.log(`   ℹ️  No new ResAvenue hotels (duplicates: ${resavenueHotels.length})`);
+        }
+        const merged = [...existingHotels, ...newHotels];
+        this.logger.log(`   Route ${routeId}: Total hotels now = ${merged.length}`);
+        hotelsByRoute.set(routeId, merged);
+      });
+
+      // Step 3.7: Load saved meal plans per route for AxisRooms filtering
+      const savedMealPlansByRoute = await this.loadSavedMealPlansPerRoute(planId, routes);
+
+      // Step 3.8: Fetch AxisRooms-enabled hotels from local DB and merge with existing providers.
+      const axisroomsHotelsByRoute = await this.fetchAxisroomsHotelsForRoutes(
+        routes,
+        noOfNights,
+        savedMealPlansByRoute,
+        preferredMealPlanCode,
+      );
+      axisroomsHotelsByRoute.forEach((axisroomsHotels, routeId) => {
+        const existingHotels = hotelsByRoute.get(routeId) || [];
+        const hotelStrs = existingHotels.map((h) => `${String(h.hotelCode)}|${String(h.provider).toLowerCase()}`);
+        const newHotels = axisroomsHotels.filter(
+          (h) => !hotelStrs.includes(`${String(h.hotelCode)}|${String(h.provider).toLowerCase()}`),
+        );
+        if (newHotels.length > 0) {
+          this.logger.log(`   âœ… Added ${newHotels.length} new AxisRooms hotel(s) to route ${routeId}`);
+        }
+        hotelsByRoute.set(routeId, [...existingHotels, ...newHotels]);
+      });
+    }
     
-    // Merge HOBSE hotels into the TBO hotel map
-    hobseHotelsByRoute.forEach((hobseHotels, routeId) => {
-      const existingHotels = hotelsByRoute.get(routeId) || [];
-      hotelsByRoute.set(routeId, [...existingHotels, ...hobseHotels]);
-    });
-    
+    const filteredHotelsByRoute = this.applyPlanPreferenceFilters(
+      hotelsByRoute,
+      preferredCategories,
+      preferredMealPlanCode,
+    );
+
     // Debug: Check if any hotels were found
-    const hotelEntries = Array.from(hotelsByRoute.entries());
-    this.logger.log(`\n📊 HOTEL FETCH RESULTS (TBO + HOBSE):`);
+    const hotelEntries = Array.from(filteredHotelsByRoute.entries());
+    this.logger.log(`\nðŸ“Š HOTEL FETCH RESULTS (ALL ENABLED PROVIDERS):`);
     hotelEntries.forEach(([routeId, hotels]) => {
       const tboCount = hotels.filter(h => h.provider === 'tbo').length;
       const hobseCount = hotels.filter(h => h.provider === 'hobse').length;
-      this.logger.log(`   Route ${routeId}: ${hotels.length} hotels (TBO: ${tboCount}, HOBSE: ${hobseCount})`);
+      const resavenueCount = hotels.filter(h => h.provider === 'resavenue').length;
+      const axisroomsCount = hotels.filter(h => h.provider === 'axisrooms').length;
+      this.logger.log(`   Route ${routeId}: ${hotels.length} hotels (TBO: ${tboCount}, HOBSE: ${hobseCount}, ResAvenue: ${resavenueCount}, AxisRooms: ${axisroomsCount})`);
       if (hotels.length > 0) {
-        this.logger.log(`      - ${hotels.map(h => `${h.hotelName} (${h.provider})`).join(', ')}`);
+     //   this.logger.log(`      - ${hotels.map(h => `${h.hotelName} (${h.provider})`).join(', ')}`);
       }
     });
     
     if (hotelEntries.every(([_, hotels]) => hotels.length === 0)) {
-      this.logger.warn(`\n❌ WARNING: ALL ROUTES RETURNED ZERO HOTELS!\n`);
+      this.logger.warn(`\nâŒ WARNING: ALL ROUTES RETURNED ZERO HOTELS!\n`);
     }
     
-    this.logger.log(`🏨 Hotels by Route: ${JSON.stringify(Object.fromEntries(hotelsByRoute))}`);
+   // this.logger.log(`ðŸ¨ Hotels by Route: ${JSON.stringify(Object.fromEntries(hotelsByRoute))}`);
 
     // Step 4: Generate 4 price tier packages
-    const packages = this.generatePricePackages(hotelsByRoute, routes);
+    const packages = this.generatePricePackages(filteredHotelsByRoute, routes);
 
     // Step 5: Build response
     const response = await this.buildHotelDetailsResponse(
       quoteId,
       planId,
       packages,
-      hotelsByRoute,
+      filteredHotelsByRoute,
       routes,
       noOfNights,
     );
 
     const duration = Date.now() - startTime;
-    this.logger.log(`✅ Generated ${packages.length} hotel packages`);
-    this.logger.log(`⏱️  Total TBO Service Time: ${duration}ms\n`);
+    this.logger.log(`âœ… Generated ${packages.length} hotel packages`);
+    this.logger.log(`â±ï¸  Total TBO Service Time: ${duration}ms\n`);
 
-    return response;
+    // this.setCachedHotelDetails(quoteId, response);
+
+    return hasCompatibilityFilters
+      ? this.applyCompatibilityFilters(
+          response,
+          page,
+          pageSize,
+          groupType,
+          itineraryRouteId,
+        )
+      : response;
+  }
+
+  // Backward-compatible alias used by older controllers/callers.
+  clearHotelCacheForQuote(quoteId: string): void {
+    this.clearCacheForQuote(quoteId);
+  }
+
+  private applyCompatibilityFilters(
+    response: ItineraryHotelDetailsResponseDto,
+    page?: number,
+    pageSize?: number,
+    groupType?: number,
+    itineraryRouteId?: number,
+  ): ItineraryHotelDetailsResponseDto {
+    const normalizedGroupType = Number.isFinite(Number(groupType))
+      ? Number(groupType)
+      : undefined;
+    const normalizedRouteId = Number.isFinite(Number(itineraryRouteId))
+      ? Number(itineraryRouteId)
+      : undefined;
+
+    let filteredHotels = [...(response.hotels || [])];
+    if (normalizedGroupType && normalizedGroupType >= 1 && normalizedGroupType <= 4) {
+      filteredHotels = filteredHotels.filter((h) => Number(h.groupType) === normalizedGroupType);
+    }
+    if (normalizedRouteId && normalizedRouteId > 0) {
+      filteredHotels = filteredHotels.filter((h) => Number(h.itineraryRouteId) === normalizedRouteId);
+    }
+
+    return {
+      ...response,
+      hotels: filteredHotels,
+      pagination: undefined,
+      routePagination: undefined,
+    };
   }
 
   /**
@@ -138,65 +718,164 @@ export class ItineraryHotelDetailsTboService {
   private async fetchHotelsForRoutes(
     routes: any[],
     noOfNights: number,
-  ): Promise<Map<number, HotelSearchResult[]>> {
-    const hotelsByRoute = new Map<number, HotelSearchResult[]>();
-    const totalRoutes = routes.length;
+    guestNationality: string,
+    roomCount: number = 1,
+    adultCount: number = 2,
+    childCount: number = 0,
+    childAges: number[] = [],
+  ): Promise<Map<number, HotelSearchResult[] | null>> {
+    const hotelsByRoute = new Map<number, HotelSearchResult[] | null>();
 
-    // 🔥 OPTIMIZATION 1: Batch load ALL cities upfront instead of querying per route
+    // ðŸ”¥ OPTIMIZATION 1: Batch load ALL cities upfront instead of querying per route
     const cityCodeMap = await this.batchMapDestinationsToCityCodes(routes);
-    this.logger.log(`✅ Pre-loaded ${Object.keys(cityCodeMap).length} city codes for all routes`);
+    this.logger.log(`âœ… Pre-loaded ${Object.keys(cityCodeMap).length} city codes for all routes`);
 
-    // 🔥 OPTIMIZATION 2: Prepare all hotel search tasks for parallel execution
+    // Build stay blocks so TBO search is done once per destination-stay window,
+    // not once per day/route.
+    const stayBlocks = this.buildStayBlocks(routes, noOfNights);
+    this.logger.log(`ðŸ§© Built ${stayBlocks.length} stay block(s) for consolidated TBO search`);
+
+    // ðŸ”¥ OPTIMIZATION 2: Prepare all hotel search tasks for parallel execution
     const searchTasks: Promise<void>[] = [];
 
-    for (let routeIndex = 0; routeIndex < routes.length; routeIndex++) {
-      const route = routes[routeIndex];
-      const routeId = (route as any).itinerary_route_ID;
-      
-      // Skip hotel generation for the last route (departure day) if routeIndex >= noOfNights
-      const isLastRoute = routeIndex === totalRoutes - 1;
-      if (isLastRoute && routeIndex >= noOfNights) {
-        this.logger.log(`   ⏭️  Skipping route ${routeIndex + 1} (last route - departure day, no hotel needed)`);
-        continue;
-      }
-      
-      // Push search task to run in parallel
+    for (const block of stayBlocks) {
       searchTasks.push(
-        this.searchHotelsForRoute(route, routeIndex, cityCodeMap, hotelsByRoute).catch(error => {
-          const routeId = (route as any).itinerary_route_ID;
-          const errorMsg = error instanceof Error ? error.message : String(error);
-          this.logger.error(`❌ HOTEL SEARCH ERROR for route ${routeId}: ${errorMsg}`);
-          hotelsByRoute.set(routeId, []);
-        })
+        this.searchHotelsForStayBlock(
+          block,
+          cityCodeMap,
+          guestNationality,
+          roomCount,
+          adultCount,
+          childCount,
+          childAges,
+        )
+          .then((hotels) => {
+            block.routeIds.forEach((routeId) => hotelsByRoute.set(routeId, hotels || []));
+          })
+          .catch((error) => {
+            const errorMsg = error instanceof Error ? error.message : String(error);
+            this.logger.error(
+              `âŒ HOTEL SEARCH ERROR for stay block ${block.destination} (${block.checkInDate} -> ${block.checkOutDate}): ${errorMsg}`,
+            );
+            block.routeIds.forEach((routeId) => hotelsByRoute.set(routeId, null)); // null = provider failure
+          }),
       );
     }
 
-    // 🔥 OPTIMIZATION 3: Execute all searches in parallel instead of sequentially
-    this.logger.log(`⏳ Starting ${searchTasks.length} parallel hotel searches...`);
+    // ðŸ”¥ OPTIMIZATION 3: Execute all searches in parallel instead of sequentially
+    this.logger.log(`â³ Starting ${searchTasks.length} parallel hotel searches...`);
     await Promise.all(searchTasks);
-    this.logger.log(`✅ All parallel searches completed`);
+    this.logger.log(`âœ… All parallel searches completed`);
 
     return hotelsByRoute;
   }
 
+  private buildStayBlocks(
+    routes: any[],
+    noOfNights: number,
+  ): Array<{
+    destination: string;
+    checkInDate: string;
+    checkOutDate: string;
+    routeIds: number[];
+  }> {
+    const blocks: Array<{
+      destination: string;
+      checkInDate: string;
+      checkOutDate: string;
+      routeIds: number[];
+    }> = [];
+
+    const totalRoutes = routes.length;
+    let currentBlock: {
+      destination: string;
+      checkInDate: string;
+      checkOutDate: string;
+      routeIds: number[];
+      lastDate: Date;
+    } | null = null;
+
+    for (let routeIndex = 0; routeIndex < routes.length; routeIndex++) {
+      const route = routes[routeIndex];
+      const isLastRoute = routeIndex === totalRoutes - 1;
+      if (isLastRoute && routeIndex >= noOfNights) {
+        this.logger.log(`   â­ï¸  Skipping route ${routeIndex + 1} (last route - departure day, no hotel needed)`);
+        continue;
+      }
+
+      const routeId = Number((route as any).itinerary_route_ID);
+      const destination = String((route as any).next_visiting_location || '').trim();
+      const routeDate = new Date((route as any).itinerary_route_date);
+      const checkInDate = routeDate.toISOString().split('T')[0];
+      const nextDay = new Date(routeDate.getTime() + ItineraryHotelDetailsTboService.ONE_DAY_MS);
+      const checkOutDate = nextDay.toISOString().split('T')[0];
+
+      if (!currentBlock) {
+        currentBlock = {
+          destination,
+          checkInDate,
+          checkOutDate,
+          routeIds: [routeId],
+          lastDate: routeDate,
+        };
+        continue;
+      }
+
+      const isSameDestination = destination === currentBlock.destination;
+      const isConsecutiveDay =
+        routeDate.getTime() - currentBlock.lastDate.getTime() === ItineraryHotelDetailsTboService.ONE_DAY_MS;
+
+      if (isSameDestination && isConsecutiveDay) {
+        currentBlock.checkOutDate = checkOutDate;
+        currentBlock.routeIds.push(routeId);
+        currentBlock.lastDate = routeDate;
+      } else {
+        blocks.push({
+          destination: currentBlock.destination,
+          checkInDate: currentBlock.checkInDate,
+          checkOutDate: currentBlock.checkOutDate,
+          routeIds: currentBlock.routeIds,
+        });
+        currentBlock = {
+          destination,
+          checkInDate,
+          checkOutDate,
+          routeIds: [routeId],
+          lastDate: routeDate,
+        };
+      }
+    }
+
+    if (currentBlock) {
+      blocks.push({
+        destination: currentBlock.destination,
+        checkInDate: currentBlock.checkInDate,
+        checkOutDate: currentBlock.checkOutDate,
+        routeIds: currentBlock.routeIds,
+      });
+    }
+
+    return blocks;
+  }
+
   /**
    * Batch load city codes for all destinations in one pass
-   * Reduces database queries from N×3 (N routes × 3 attempts) to 1 query
+   * Reduces database queries from NÃ—3 (N routes Ã— 3 attempts) to 1 query
    */
   private async batchMapDestinationsToCityCodes(routes: any[]): Promise<Record<string, string>> {
     const cityCodeMap: Record<string, string> = {};
     
     // Extract unique destinations from all routes
     const uniqueDestinations = [...new Set(routes.map(r => (r as any).next_visiting_location))];
-    this.logger.log(`📍 Extracting city codes for ${uniqueDestinations.length} unique destinations`);
+    this.logger.log(`ðŸ“ Extracting city codes for ${uniqueDestinations.length} unique destinations`);
 
     if (uniqueDestinations.length === 0) return cityCodeMap;
 
-    // ⚡ Load ALL cities from database in ONE query instead of per-route queries
+    // âš¡ Load ALL cities from database in ONE query instead of per-route queries
     const allCities = await this.prisma.dvi_cities.findMany({
       select: { name: true, tbo_city_code: true },
     });
-    this.logger.log(`✅ Loaded ${allCities.length} cities from database in single query`);
+    this.logger.log(`âœ… Loaded ${allCities.length} cities from database in single query`);
 
     // Build a map for fast lookup
     const cityNameMap: Record<string, string> = {};
@@ -230,10 +909,10 @@ export class ItineraryHotelDetailsTboService {
       }
 
       if (cityCode) {
-        this.logger.log(`✅ "${destination}" → TBO Code: ${cityCode}`);
+        this.logger.log(`âœ… "${destination}" â†’ TBO Code: ${cityCode}`);
         cityCodeMap[destination] = cityCode;
       } else {
-        this.logger.warn(`❌ No city code found for: "${destination}"`);
+        this.logger.warn(`âŒ No city code found for: "${destination}"`);
       }
     });
 
@@ -241,56 +920,131 @@ export class ItineraryHotelDetailsTboService {
   }
 
   /**
+     * Batch load HOBSE city codes for all destinations using hobse_city_code field.
+     */
+    private async batchMapDestinationsToHobseCityCodes(routes: any[]): Promise<Record<string, string>> {
+      const cityCodeMap: Record<string, string> = {};
+      const uniqueDestinations = [...new Set(routes.map(r => (r as any).next_visiting_location))] as string[];
+
+      this.logger.log(`ðŸ“ Loading HOBSE city codes for ${uniqueDestinations.length} unique destinations`);
+      if (uniqueDestinations.length === 0) return cityCodeMap;
+
+      const allCities = await this.prisma.dvi_cities.findMany({
+        select: { name: true, hobse_city_code: true } as any,
+      });
+      this.logger.log(`âœ… Loaded ${allCities.length} cities for HOBSE code lookup`);
+
+      const cityNameMap: Record<string, string> = {};
+      const cityPrefixMap: Record<string, string> = {};
+
+      allCities.forEach((city: any) => {
+        if (city.hobse_city_code) {
+          cityNameMap[city.name.toLowerCase()] = String(city.hobse_city_code);
+          const prefix = city.name.split(',')[0].trim().toLowerCase();
+          cityPrefixMap[prefix] = String(city.hobse_city_code);
+        }
+      });
+
+      uniqueDestinations.forEach(destination => {
+        if (!destination) return;
+        const lower = destination.toLowerCase();
+        let code = cityNameMap[lower];
+
+        if (!code) {
+          const firstPart = destination.split(/[,\(\-]/)[0].trim().toLowerCase();
+          code = cityNameMap[firstPart] || cityPrefixMap[firstPart];
+        }
+
+        if (code) {
+          this.logger.log(`âœ… HOBSE "${destination}" -> code: ${code}`);
+          cityCodeMap[destination] = code;
+        } else {
+          this.logger.warn(`âŒ No HOBSE city code found for: "${destination}"`);
+        }
+      });
+
+      return cityCodeMap;
+  }
+
+  /**
    * Search hotels for a single route (used in parallel execution)
    */
-  private async searchHotelsForRoute(
-    route: any,
-    routeIndex: number,
+  private async searchHotelsForStayBlock(
+    block: {
+      destination: string;
+      checkInDate: string;
+      checkOutDate: string;
+      routeIds: number[];
+    },
     cityCodeMap: Record<string, string>,
-    hotelsByRoute: Map<number, HotelSearchResult[]>,
-  ): Promise<void> {
-    const routeId = (route as any).itinerary_route_ID;
-    const destination = (route as any).next_visiting_location;
-    const routeDate = new Date((route as any).itinerary_route_date);
+    guestNationality: string,
+    roomCount: number = 1,
+    adultCount: number = 2,
+    childCount: number = 0,
+    childAges: number[] = [],
+  ): Promise<HotelSearchResult[]> {
+    const destination = block.destination;
 
-    // Set check-out to next day (standard 1-night stay)
-    const checkOutDate = new Date(routeDate);
-    checkOutDate.setDate(checkOutDate.getDate() + 1);
-
-    this.logger.log(`🔍 Route ${routeId}: Searching hotels for "${destination}" (${routeDate.toISOString().split('T')[0]})`);
+    this.logger.log(
+      `ðŸ” Stay block (${block.routeIds.join(',')}): Searching hotels for "${destination}" (${block.checkInDate} -> ${block.checkOutDate})`,
+    );
 
     // Get city code from pre-loaded map (no database query!)
     const cityCode = cityCodeMap[destination];
-    
+
+    // Fallback: if dvi_cities mapping is missing, use destination text directly.
+    const effectiveCityCode = cityCode || destination;
     if (!cityCode) {
-      this.logger.warn(`❌ Route ${routeId}: No city code for "${destination}" - skipping`);
-      hotelsByRoute.set(routeId, []);
-      return;
+      this.logger.warn(
+        `âš ï¸ Stay block (${block.routeIds.join(',')}): No mapped TBO city code for "${destination}". Falling back to destination text lookup.`,
+      );
     }
+
+    // Use pax counts from the plan; guarantee at least 1 adult so TBO validation passes
+    if (adultCount <= 0) {
+      this.logger.warn(
+        `âš ï¸ Stay block (${block.routeIds.join(',')}): adultCount is ${adultCount} (not saved in plan?) - defaulting to 1`,
+      );
+    }
+    const safeAdultCount = adultCount > 0 ? adultCount : 1;
+    const safeChildCount = childCount >= 0 ? childCount : 0;
+    const guestCount = safeAdultCount + safeChildCount;
+    const safeRoomCount = Math.max(Number(roomCount || 1), 1);
+
+    const tboOnlyFetch = this.isTboOnlyFetchEnabled();
+    const searchProviders = tboOnlyFetch ? ['tbo'] : ['tbo', 'resavenue'];
 
     const searchCriteria = {
-      cityCode,
-      checkInDate: routeDate.toISOString().split('T')[0],
-      checkOutDate: checkOutDate.toISOString().split('T')[0],
-      roomCount: 1,
-      guestCount: 2,
-      providers: ['tbo', 'resavenue'], // Only TBO + ResAvenue - HOBSE will be merged separately
+      cityCode: effectiveCityCode,
+      checkInDate: block.checkInDate,
+      checkOutDate: block.checkOutDate,
+      roomCount: safeRoomCount,
+      guestCount,
+      adultCount: safeAdultCount,
+      childCount: safeChildCount,
+      childAges: childAges.length > 0 ? childAges : undefined,
+      guestNationality,
+      providers: searchProviders,
     };
 
-    this.logger.log(`   🏨 Searching hotels with cityCode: ${cityCode}`);
+    this.logger.log(
+      `   ðŸ¨ Searching hotels with cityCode: ${effectiveCityCode}, checkIn: ${block.checkInDate}, checkOut: ${block.checkOutDate}`,
+    );
     const hotels = await this.hotelSearchService.searchHotels(searchCriteria);
-    this.logger.log(`   ✅ Found ${hotels ? hotels.length : 0} hotels for route ${routeId} (TBO only at this stage)`);
+    this.logger.log(
+      `   âœ… Found ${hotels ? hotels.length : 0} hotels for stay block (${block.routeIds.join(',')}) (TBO only at this stage)`,
+    );
     
     if (hotels && hotels.length > 0) {
-      this.logger.log(`   📋 TBO Hotels for route ${routeId}:`);
+      this.logger.log(`   ðŸ“‹ TBO Hotels for stay block (${block.routeIds.join(',')}):`);
       hotels.forEach((h, idx) => {
-        this.logger.log(`      ${idx + 1}. ${h.hotelName} (${h.provider}) - ₹${h.price}`);
+      //  this.logger.log(`      ${idx + 1}. ${h.hotelName} (${h.provider}) - â‚¹${h.price}`);
       });
     } else {
-      this.logger.log(`   ⚠️  WARNING: TBO search returned ZERO hotels for route ${routeId}!`);
+      this.logger.log(`   âš ï¸  WARNING: TBO search returned ZERO hotels for stay block (${block.routeIds.join(',')})!`);
     }
-    
-    hotelsByRoute.set(routeId, hotels || []);
+
+    return hotels || [];
   }
 
   /**
@@ -305,7 +1059,7 @@ export class ItineraryHotelDetailsTboService {
     const hotelsByRoute = new Map<number, HotelSearchResult[]>();
     const totalRoutes = routes.length;
 
-    this.logger.log(`\n🏨 HOBSE HOTEL FETCH: Attempting to fetch HOBSE hotels for ${routes.length} routes`);
+    this.logger.log(`\nðŸ¨ HOBSE HOTEL FETCH: Attempting to fetch HOBSE hotels for ${routes.length} routes`);
 
     try {
       for (let routeIndex = 0; routeIndex < routes.length; routeIndex++) {
@@ -315,20 +1069,19 @@ export class ItineraryHotelDetailsTboService {
         // Skip hotel generation for the last route (departure day) if routeIndex >= noOfNights
         const isLastRoute = routeIndex === totalRoutes - 1;
         if (isLastRoute && routeIndex >= noOfNights) {
-          this.logger.log(`   ⏭️  Skipping HOBSE route ${routeIndex + 1} (last route - departure day)`);
+          this.logger.log(`   â­ï¸  Skipping HOBSE route ${routeIndex + 1} (last route - departure day)`);
           continue;
         }
         
         const destination = (route as any).next_visiting_location;
-        // Get the city code from the map instead of using the destination name
+        // Get the HOBSE city code from the pre-built map
         const cityCode = cityCodeMap[destination];
         
         if (!cityCode) {
-          this.logger.warn(`   ⚠️  No city code mapping for destination "${destination}" - skipping HOBSE search`);
+          this.logger.warn(`   âš ï¸  No HOBSE city code for destination "${destination}" - skipping HOBSE search`);
           hotelsByRoute.set(routeId, []);
           continue;
         }
-        
         const routeDate = new Date((route as any).itinerary_route_date);
         const checkOutDate = new Date(routeDate);
         checkOutDate.setDate(checkOutDate.getDate() + 1);
@@ -344,30 +1097,547 @@ export class ItineraryHotelDetailsTboService {
           });
 
           if (hobseHotels && hobseHotels.length > 0) {
-            this.logger.log(`   ✅ HOBSE Route ${routeId}: Found ${hobseHotels.length} hotels in ${destination}`);
+            this.logger.log(`   âœ… HOBSE Route ${routeId}: Found ${hobseHotels.length} hotels in ${destination}`);
             hotelsByRoute.set(routeId, hobseHotels);
           } else {
-            this.logger.log(`   ℹ️  HOBSE Route ${routeId}: No hotels found in ${destination}`);
+            this.logger.log(`   â„¹ï¸  HOBSE Route ${routeId}: No hotels found in ${destination}`);
             hotelsByRoute.set(routeId, []);
           }
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : String(error);
-          this.logger.warn(`   ⚠️  HOBSE Route ${routeId} search failed: ${errorMsg}`);
+          this.logger.warn(`   âš ï¸  HOBSE Route ${routeId} search failed: ${errorMsg}`);
           hotelsByRoute.set(routeId, []);
         }
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
-      this.logger.error(`❌ HOBSE HOTEL FETCH FAILED: ${errorMsg}`);
+      this.logger.error(`âŒ HOBSE HOTEL FETCH FAILED: ${errorMsg}`);
     }
 
     return hotelsByRoute;
   }
 
   /**
-   * Generate 4 price tier packages: Budget, Mid-Range, Premium, Luxury
-   * Ensures INCREASING price order: Budget < Mid-Range < Premium < Luxury
+   * Fetch ResAvenue hotels for each route
+   * Searches for properties using destination city names
    */
+  private async fetchResavenueHotelsForRoutes(
+    routes: any[],
+    noOfNights: number,
+    guestNationality: string,
+    roomCount: number = 1,
+    adultCount: number = 2,
+    childCount: number = 0,
+  ): Promise<Map<number, HotelSearchResult[]>> {
+    const hotelsByRoute = new Map<number, HotelSearchResult[]>();
+    const totalRoutes = routes.length;
+
+    this.logger.log(`\nðŸ¨ RESAVENUE HOTEL FETCH: Attempting to fetch ResAvenue hotels for ${routes.length} routes`);
+
+    try {
+      const safeAdultCount = adultCount > 0 ? adultCount : 1;
+      const safeChildCount = childCount >= 0 ? childCount : 0;
+      const safeRoomCount = Math.max(Number(roomCount || 1), 1);
+      const guestCount = safeAdultCount + safeChildCount;
+
+      for (let routeIndex = 0; routeIndex < totalRoutes; routeIndex++) {
+        const route = routes[routeIndex];
+        const routeId = (route as any).itinerary_route_ID;
+        
+        // Skip hotel generation for the last route (departure day) if routeIndex >= noOfNights
+        const isLastRoute = routeIndex === totalRoutes - 1;
+        if (isLastRoute && routeIndex >= noOfNights) {
+          this.logger.log(`   â­ï¸  Skipping ResAvenue route ${routeIndex + 1} (last route - departure day)`);
+          continue;
+        }
+        
+        const destination = (route as any).next_visiting_location;
+        const routeDate = new Date((route as any).itinerary_route_date);
+        const checkOutDate = new Date(routeDate);
+        checkOutDate.setDate(checkOutDate.getDate() + 1);
+
+        try {
+          // Search ResAvenue hotels using city name directly
+          const resavenueHotels = await this.hotelSearchService.searchHotels({
+            cityCode: destination, // ResAvenue provider accepts city names
+            checkInDate: routeDate.toISOString().split('T')[0],
+            checkOutDate: checkOutDate.toISOString().split('T')[0],
+            roomCount: safeRoomCount,
+            guestCount,
+            adultCount: safeAdultCount,
+            childCount: safeChildCount,
+            guestNationality,
+            providers: ['resavenue'], // Only ResAvenue
+          });
+
+          if (resavenueHotels && resavenueHotels.length > 0) {
+            this.logger.log(`   âœ… ResAvenue Route ${routeId}: Found ${resavenueHotels.length} hotels in ${destination}`);
+            hotelsByRoute.set(routeId, resavenueHotels);
+          } else {
+            this.logger.log(`   â„¹ï¸  ResAvenue Route ${routeId}: No hotels found in ${destination}`);
+            hotelsByRoute.set(routeId, []);
+          }
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          this.logger.warn(`   âš ï¸  ResAvenue Route ${routeId} search failed: ${errorMsg}`);
+          hotelsByRoute.set(routeId, []);
+        }
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      this.logger.error(`âŒ RESAVENUE HOTEL FETCH FAILED: ${errorMsg}`);
+    }
+
+    return hotelsByRoute;
+  }
+
+  private normalizeCityToken(value: string): string {
+    return String(value || '')
+      .trim()
+      .toLowerCase()
+      .split(/[,(\-]/)[0]
+      .trim();
+  }
+
+  private toIstDateOnly(value: unknown): Date {
+    const raw = new Date(String(value || ''));
+    if (Number.isNaN(raw.getTime())) {
+      throw new Error(`Invalid route date: ${String(value || '')}`);
+    }
+
+    const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+    const istMoment = new Date(raw.getTime() + IST_OFFSET_MS);
+    return new Date(Date.UTC(
+      istMoment.getUTCFullYear(),
+      istMoment.getUTCMonth(),
+      istMoment.getUTCDate(),
+      0,
+      0,
+      0,
+      0,
+    ));
+  }
+
+  private extractAxisroomsRate(occupancyRates: unknown): number {
+    try {
+      const data = occupancyRates as Record<string, unknown>;
+      if (!data || typeof data !== 'object') return 0;
+
+      const preferredKeys = ['SINGLE', 'DOUBLE', 'TRIPLE', 'QUAD', 'EXTRABED'];
+      for (const key of preferredKeys) {
+        const value = Number(data[key]);
+        if (Number.isFinite(value) && value > 0) return value;
+      }
+
+      for (const value of Object.values(data)) {
+        const num = Number(value);
+        if (Number.isFinite(num) && num > 0) return num;
+      }
+    } catch {
+      return 0;
+    }
+
+    return 0;
+  }
+
+  /**
+   * Load saved meal plan codes for each route in the itinerary
+   * Maps route IDs to their configured meal plan codes (e.g., "AP", "CP", "EP", "MAP")
+   */
+  private async loadSavedMealPlansPerRoute(
+    planId: number,
+    routes: any[],
+  ): Promise<Map<number, string>> {
+    const mealPlansByRoute = new Map<number, string>();
+    
+    try {
+      // Fetch saved hotel details with rateplan_id to determine meal plan
+      const savedHotels = await (this.prisma as any).dvi_itinerary_plan_hotel_details.findMany({
+        where: {
+          itinerary_plan_id: planId,
+          deleted: 0,
+        },
+        select: {
+          itinerary_route_id: true,
+          group_type: true,
+        },
+      });
+
+      // For now, just track that this route has a saved hotel (we'll filter by first rate plan found)
+      for (const hotel of savedHotels as any[]) {
+        const routeId = Number((hotel as any).itinerary_route_id || 0);
+        if (routeId > 0) {
+          mealPlansByRoute.set(routeId, 'SAVED'); // Mark as saved (not a fresh search)
+        }
+      }
+
+      if (mealPlansByRoute.size > 0) {
+        this.logger.log(`âœ… Found ${mealPlansByRoute.size} routes with saved hotels`);
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`âš ï¸ Failed to load saved hotel indicators: ${errorMsg}`);
+    }
+
+    return mealPlansByRoute;
+  }
+
+  private async fetchAxisroomsHotelsForRoutes(
+    routes: any[],
+    noOfNights: number,
+    savedMealPlansByRoute?: Map<number, string>,
+    preferredMealPlanCode?: string | null,
+  ): Promise<Map<number, HotelSearchResult[]>> {
+    const hotelsByRoute = new Map<number, HotelSearchResult[]>();
+    const totalRoutes = routes.length;
+
+    this.logger.log(`\nðŸ¨ AXISROOMS HOTEL FETCH: Attempting to fetch AxisRooms hotels for ${routes.length} routes`);
+
+    const axisroomsHotels = await this.prisma.dvi_hotel.findMany({
+      where: {
+        axisrooms_enabled: 1,
+        status: 1,
+        OR: [{ deleted: false }, { deleted: null }],
+      } as any,
+      select: {
+        hotel_id: true,
+        hotel_name: true,
+        hotel_city: true,
+        hotel_address: true,
+        hotel_category: true,
+        hotel_cancel_policy: true,
+      },
+    });
+
+    if (!axisroomsHotels.length) {
+      this.logger.log('   â„¹ï¸  No axisrooms-enabled hotels found in local DB');
+      return hotelsByRoute;
+    }
+
+    // hotel_city may be stored as a numeric city ID string (e.g. "1979") or a plain name.
+    // Build a map from city id -> city name so both cases resolve correctly.
+    const numericCityIds = Array.from(
+      new Set(
+        axisroomsHotels
+          .map((h: any) => Number((h as any).hotel_city))
+          .filter((id) => Number.isFinite(id) && id > 0),
+      ),
+    );
+    const cityIdNameMap = new Map<number, string>();
+    if (numericCityIds.length > 0) {
+      const cityRows = await this.prisma.dvi_cities.findMany({
+        where: { id: { in: numericCityIds } },
+        select: { id: true, name: true },
+      });
+      for (const c of cityRows as any[]) {
+        cityIdNameMap.set(Number((c as any).id), String((c as any).name || ''));
+      }
+    }
+
+    for (let routeIndex = 0; routeIndex < totalRoutes; routeIndex++) {
+      const route = routes[routeIndex];
+      const routeId = Number((route as any).itinerary_route_ID);
+      const isLastRoute = routeIndex === totalRoutes - 1;
+      if (isLastRoute && routeIndex >= noOfNights) {
+        this.logger.log(`   â­ï¸  Skipping AxisRooms route ${routeIndex + 1} (last route - departure day)`);
+        continue;
+      }
+
+      const destinationRaw = String((route as any).next_visiting_location || '');
+      const routeCityToken = this.normalizeCityToken(destinationRaw);
+      const dateOnly = this.toIstDateOnly((route as any).itinerary_route_date);
+      const dateStamp = dateOnly.toISOString().split('T')[0].replace(/-/g, '');
+
+      const cityHotels = axisroomsHotels.filter((h: any) => {
+        const rawCity = String((h as any).hotel_city || '');
+        // Resolve: if it looks like a numeric ID, look up the actual city name
+        const numId = Number(rawCity);
+        const resolvedCity = (Number.isFinite(numId) && numId > 0 && cityIdNameMap.has(numId))
+          ? cityIdNameMap.get(numId)!
+          : rawCity;
+        const hotelCityToken = this.normalizeCityToken(resolvedCity);
+        return !!hotelCityToken && hotelCityToken === routeCityToken;
+      });
+
+      if (!cityHotels.length) {
+        hotelsByRoute.set(routeId, []);
+        this.logger.log(`   â„¹ï¸  AxisRooms Route ${routeId}: No axisrooms hotels mapped for city ${destinationRaw}`);
+        continue;
+      }
+
+      const hotelIds = cityHotels.map((h: any) => Number((h as any).hotel_id)).filter((id) => Number.isFinite(id) && id > 0);
+
+      const amenityRows = await this.prisma.dvi_hotel_amenities.findMany({
+        where: {
+          hotel_id: { in: hotelIds },
+          deleted: 0,
+          status: 1,
+        } as any,
+        select: {
+          hotel_id: true,
+          amenities_title: true,
+        },
+      });
+      const amenitiesByHotel = new Map<number, string[]>();
+      for (const amenity of amenityRows as any[]) {
+        const hid = Number((amenity as any).hotel_id || 0);
+        if (!hid) continue;
+        const title = String((amenity as any).amenities_title || '').trim();
+        if (!title) continue;
+        if (!amenitiesByHotel.has(hid)) {
+          amenitiesByHotel.set(hid, []);
+        }
+        amenitiesByHotel.get(hid)!.push(title);
+      }
+      const availRows = await this.prisma.dvi_hotel_room_availability.findMany({
+        where: {
+          hotel_id: { in: hotelIds },
+          start_date: { lte: dateOnly },
+          end_date: { gte: dateOnly },
+          free: { gt: 0 },
+        },
+        select: {
+          hotel_id: true,
+          room_id: true,
+          free: true,
+        },
+      });
+
+      if (!availRows.length) {
+        hotelsByRoute.set(routeId, []);
+        this.logger.log(`   â„¹ï¸  AxisRooms Route ${routeId}: No available inventory for ${destinationRaw} on ${dateOnly.toISOString().split('T')[0]}`);
+        continue;
+      }
+
+      const roomIds = Array.from(new Set(availRows.map((r) => Number((r as any).room_id)).filter((id) => Number.isFinite(id) && id > 0)));
+
+      // AxisRooms gate: keep only rooms that have an active AxisRooms-mapped rate plan
+      // (axisrooms_room_id NOT NULL = mapped from inbound AxisRooms room/rateplan setup).
+      // Occupancy rows may be sourced from AxisRooms or manual admin updates; we do not hard-filter source here.
+      const activeRatePlanRows = await this.prisma.dvi_hotel_room_rate_plan.findMany({
+        where: {
+          hotel_id: { in: hotelIds },
+          room_id: { in: roomIds },
+          axisrooms_room_id: { not: null },
+          deleted: 0,
+          status: 1,
+        } as any,
+        select: {
+          hotel_id: true,
+          room_id: true,
+          rateplan_id: true,
+          rateplan_name: true,
+          meal_plan_description: true,
+        },
+      });
+
+      const ratePlanMetaByHotelRoom = new Map<string, { rateConditions: string[]; inclusions: string[] }>();
+      for (const rp of activeRatePlanRows as any[]) {
+        const key = `${Number((rp as any).hotel_id)}|${Number((rp as any).room_id)}`;
+        if (!ratePlanMetaByHotelRoom.has(key)) {
+          ratePlanMetaByHotelRoom.set(key, { rateConditions: [], inclusions: [] });
+        }
+        const meta = ratePlanMetaByHotelRoom.get(key)!;
+        const rateCondition = String((rp as any).rateplan_name || '').trim();
+        const inclusion = String((rp as any).meal_plan_description || '').trim();
+        if (rateCondition) {
+          meta.rateConditions.push(rateCondition);
+        }
+        if (inclusion) {
+          meta.inclusions.push(inclusion);
+        }
+      }
+              const mealPlanByRatePlan = new Map<string, string>();
+              for (const rp of activeRatePlanRows as any[]) {
+                const rateplanId = String((rp as any).rateplan_id || '').trim();
+                const mealPlanDesc = String((rp as any).meal_plan_description || '').trim();
+                if (rateplanId && mealPlanDesc && !mealPlanByRatePlan.has(rateplanId)) {
+                  mealPlanByRatePlan.set(rateplanId, mealPlanDesc);
+                }
+              }
+              const validRatePlanKeySet = new Set<string>(
+        activeRatePlanRows.map(
+          (rp: any) => `${Number((rp as any).hotel_id)}|${Number((rp as any).room_id)}|${String((rp as any).rateplan_id || '')}`,
+        ),
+      );
+
+      const occupancyRowsRaw = await this.prisma.dvi_hotel_occupancy_rate.findMany({
+        where: {
+          hotel_id: { in: hotelIds },
+          room_id: { in: roomIds },
+          start_date: { lte: dateOnly },
+          end_date: { gte: dateOnly },
+        },
+        select: {
+          hotel_id: true,
+          room_id: true,
+          rateplan_id: true,
+          occupancy_rates: true,
+        },
+      });
+
+      const occupancyRows = occupancyRowsRaw.filter((row: any) => {
+        const key = `${Number((row as any).hotel_id)}|${Number((row as any).room_id)}|${String((row as any).rateplan_id || '')}`;
+        return validRatePlanKeySet.has(key);
+      });
+
+      const roomMeta = await this.prisma.dvi_hotel_rooms.findMany({
+        where: {
+          room_ID: { in: roomIds as any },
+          deleted: 0,
+        } as any,
+        select: {
+          room_ID: true,
+          room_title: true,
+        },
+      });
+      const roomTitleMap = new Map<number, string>(
+        roomMeta.map((r: any) => [Number((r as any).room_ID), String((r as any).room_title || 'Room')]),
+      );
+
+      const availableRoomByHotel = new Map<number, Set<number>>();
+      for (const row of availRows as any[]) {
+        const hid = Number((row as any).hotel_id);
+        const rid = Number((row as any).room_id);
+        if (!availableRoomByHotel.has(hid)) {
+          availableRoomByHotel.set(hid, new Set<number>());
+        }
+        availableRoomByHotel.get(hid)!.add(rid);
+      }
+
+      const axisroomsRouteHotels: HotelSearchResult[] = [];
+
+      for (const hotel of cityHotels as any[]) {
+        const hid = Number((hotel as any).hotel_id);
+        const roomSet = availableRoomByHotel.get(hid);
+        if (!roomSet || roomSet.size === 0) {
+          continue;
+        }
+
+        // Group occupancy rows by rateplan_id and extract rate from each plan
+        const ratesByPlan = new Map<string, { rate: number; roomId: number }>();
+
+        for (const occ of occupancyRows as any[]) {
+          if (Number((occ as any).hotel_id) !== hid) continue;
+          const rid = Number((occ as any).room_id);
+          if (!roomSet.has(rid)) continue;
+
+          const rateplanId = String((occ as any).rateplan_id || '').trim();
+          if (!rateplanId) continue;
+
+          // Only extract rate if we haven't found one for this rate plan yet
+          if (!ratesByPlan.has(rateplanId)) {
+            const extractedRate = this.extractAxisroomsRate((occ as any).occupancy_rates);
+            if (extractedRate > 0) {
+              ratesByPlan.set(rateplanId, { rate: extractedRate, roomId: rid });
+            }
+          }
+        }
+
+        if (ratesByPlan.size === 0) {
+          this.logger.warn(
+            `   ??  AxisRooms Route ${routeId}: Hotel ${hid} - No valid rates found in any occupancy row for this hotel/room (checked ${occupancyRows.filter((o: any) => Number((o as any).hotel_id) === hid).length} rows)`
+          );
+          continue; // No valid rates found for any meal plan
+        }
+
+        const preferredCode = String(preferredMealPlanCode || '').trim().toUpperCase();
+        const preferredDef = preferredCode
+          ? HOTEL_RATE_PLAN_BY_CODE.get(preferredCode as any)
+          : undefined;
+        const preferredRatePlanCandidates = [
+          String(preferredDef?.defaultRateplanId || '').trim(),
+          String(preferredDef?.externalRateplanId || '').trim(),
+        ].filter((x) => !!x);
+
+        let selectedRateplanId = '';
+        let selectedRate = Number.POSITIVE_INFINITY;
+        let selectedRoomId = 0;
+
+        for (const candidate of preferredRatePlanCandidates) {
+          const hit = ratesByPlan.get(candidate);
+          if (hit) {
+            selectedRateplanId = candidate;
+            selectedRate = Number(hit.rate);
+            selectedRoomId = Number(hit.roomId);
+            break;
+          }
+        }
+
+        // Fallback: if preferred meal plan isn't present for this hotel, pick the lowest available rate plan.
+        if (!selectedRateplanId) {
+          for (const [rpid, hit] of ratesByPlan.entries()) {
+            const rateVal = Number(hit.rate);
+            if (Number.isFinite(rateVal) && rateVal > 0 && rateVal < selectedRate) {
+              selectedRateplanId = rpid;
+              selectedRate = rateVal;
+              selectedRoomId = Number(hit.roomId);
+            }
+          }
+        }
+
+        if (!selectedRateplanId || !Number.isFinite(selectedRate) || selectedRate <= 0 || !selectedRoomId) {
+          continue;
+        }
+
+        const rate = selectedRate;
+
+        const roomName = roomTitleMap.get(selectedRoomId) || 'Room';
+        const hotelAmenities = Array.from(new Set(amenitiesByHotel.get(hid) || []));
+        const rateMeta = ratePlanMetaByHotelRoom.get(`${hid}|${selectedRoomId}`) || {
+
+          rateConditions: [],
+          inclusions: [],
+        };
+        const rateConditions = Array.from(new Set(rateMeta.rateConditions));
+        const inclusions = Array.from(new Set(rateMeta.inclusions));
+        const cancelPolicyText = String((hotel as any).hotel_cancel_policy || '').trim();
+
+        const selectedMealPlan = mealPlanByRatePlan.get(selectedRateplanId) || '-';
+
+        axisroomsRouteHotels.push({
+          provider: 'axisrooms',
+          hotelCode: String(hid),
+          hotelName: String((hotel as any).hotel_name || `Hotel ${hid}`),
+          cityCode: String((hotel as any).hotel_city || destinationRaw),
+          address: String((hotel as any).hotel_address || ''),
+          rating: Number((hotel as any).hotel_category || 0),
+          facilities: hotelAmenities,
+          amenities: hotelAmenities,
+          inclusions,
+          rateConditions,
+          cancellationPolicy: cancelPolicyText ? [cancelPolicyText] : [],
+          images: [],
+          price: Number(rate),
+          currency: 'INR',
+          roomTypes: [
+            {
+              roomCode: String(selectedRoomId),
+              roomName,
+              bedType: '',
+              capacity: 0,
+              price: Number(rate),
+              cancellationPolicy: cancelPolicyText,
+            },
+          ],
+          roomType: roomName,
+          mealPlan: selectedMealPlan,
+          searchReference: `AX-${hid}-${dateStamp}`,
+          expiresAt: new Date(Date.now() + 15 * 60 * 1000),
+        });
+      }
+
+      hotelsByRoute.set(routeId, axisroomsRouteHotels);
+      const droppedByRatePlanGate = Math.max(occupancyRowsRaw.length - occupancyRows.length, 0);
+      this.logger.log(
+        `   âœ… AxisRooms Route ${routeId}: Found ${axisroomsRouteHotels.length} hotels in ${destinationRaw} (ratePlan-gated, droppedRows=${droppedByRatePlanGate})`,
+      );
+    }
+
+    return hotelsByRoute;
+  }
+
+
   private generatePricePackages(
     hotelsByRoute: Map<number, HotelSearchResult[]>,
     routes: any[],
@@ -386,7 +1656,7 @@ export class ItineraryHotelDetailsTboService {
     ];
 
     // Debug: Log all available hotels
-    this.logger.log(`\n   📊 PRICE TIER GENERATION DEBUG (PER-DESTINATION):`);
+    this.logger.log(`\n   ðŸ“Š PRICE TIER GENERATION DEBUG (PER-DESTINATION):`);
     this.logger.log(`   Total routes: ${routes.length}`);
     hotelsByRoute.forEach((hotels, routeId) => {
       const prices = hotels.map(h => h.price).join(', ');
@@ -402,10 +1672,14 @@ export class ItineraryHotelDetailsTboService {
     
     for (const route of routes) {
       const routeId = (route as any).itinerary_route_ID;
-      const availableHotels = hotelsByRoute.get(routeId) || [];
+      const availableHotels = hotelsByRoute.get(routeId);
 
-      if (availableHotels.length === 0) {
-        this.logger.warn(`      ⚠️  No hotels available for route ${routeId}`);
+      if (availableHotels === null) {
+        this.logger.warn(`      ðŸš¨ Provider/system failure for route ${routeId} â€” skipping placeholder row. See previous logs for error.`);
+        continue;
+      }
+      if (!Array.isArray(availableHotels) || availableHotels.length === 0) {
+        this.logger.warn(`      âš ï¸  No hotels available for route ${routeId}`);
         continue;
       }
 
@@ -419,7 +1693,7 @@ export class ItineraryHotelDetailsTboService {
           const key = `${routeId}-${hotel.hotelCode || hotel.hotelName}`;
           hotelGroupAssignments.set(`${key}:${groupType}`, groupType);
         }
-        this.logger.debug(`   Route ${routeId}: 1 hotel - "${hotel.hotelName}" (₹${hotel.price}) assigned to ALL groups`);
+        this.logger.debug(`   Route ${routeId}: 1 hotel - "${hotel.hotelName}" (â‚¹${hotel.price}) assigned to ALL groups`);
       } else {
         // Multiple hotels: distribute across groups by price order
         const numHotels = sortedHotels.length;
@@ -451,7 +1725,7 @@ export class ItineraryHotelDetailsTboService {
             groupType = Math.floor((i / numHotels) * 4) + 1;
             groupType = Math.min(groupType, 4);
           }
-          this.logger.debug(`      "${h.hotelName}" (₹${h.price}) -> Group ${groupType}`);
+       //   this.logger.debug(`      "${h.hotelName}" (â‚¹${h.price}) -> Group ${groupType}`);
         });
       }
     }
@@ -463,9 +1737,13 @@ export class ItineraryHotelDetailsTboService {
 
       for (const route of routes) {
         const routeId = (route as any).itinerary_route_ID;
-        const availableHotels = hotelsByRoute.get(routeId) || [];
+        const availableHotels = hotelsByRoute.get(routeId);
 
-        if (availableHotels.length === 0) {
+        if (availableHotels === null) {
+          this.logger.warn(`   ðŸš¨ Provider/system failure for route ${routeId} â€” not inserting placeholder row. See previous logs for error.`);
+          continue;
+        }
+        if (!Array.isArray(availableHotels) || availableHotels.length === 0) {
           this.logger.debug(`   Tier ${groupType}, Route ${routeId}: No hotels available`);
           // CREATE PLACEHOLDER FOR NO HOTELS - price 0
           const placeholderHotel: any = {
@@ -481,6 +1759,8 @@ export class ItineraryHotelDetailsTboService {
           continue;
         }
 
+        let foundForGroup = false;
+
         // Get hotels that belong to this tier for this route
         for (const hotel of availableHotels) {
           const key = `${routeId}-${hotel.hotelCode || hotel.hotelName}`;
@@ -489,6 +1769,26 @@ export class ItineraryHotelDetailsTboService {
           if (assignedGroupType === groupType) {
             const hotelWithRoute = { ...hotel, routeId } as HotelSearchResult & { routeId: number };
             tieredHotels.push(hotelWithRoute);
+            foundForGroup = true;
+          }
+        }
+
+        // Overlap fallback: if this route has hotels but none mapped to current tier,
+        // pick deterministic fallback by sorted price index so every tier has data.
+        if (!foundForGroup && availableHotels.length > 0) {
+          const sortedHotels = [...availableHotels].sort((a, b) => (a.price || 0) - (b.price || 0));
+          const fallbackIndex = Math.min(groupType - 1, sortedHotels.length - 1);
+          const fallbackHotel = sortedHotels[fallbackIndex];
+          if (fallbackHotel) {
+            const fallbackWithRoute = {
+              ...fallbackHotel,
+              routeId,
+              __fallbackAssigned: true,
+            } as HotelSearchResult & { routeId: number };
+            tieredHotels.push(fallbackWithRoute);
+            this.logger.debug(
+              `   Tier ${groupType}, Route ${routeId}: overlap fallback -> ${fallbackHotel.hotelName}`,
+            );
           }
         }
       }
@@ -501,13 +1801,13 @@ export class ItineraryHotelDetailsTboService {
           label: labels[tier],
           hotels: tieredHotels,
         });
-        this.logger.log(`   ✅ Group ${groupType} (${labels[tier]}): ${tieredHotels.length} hotels total, ₹${totalPrice} combined`);
+        this.logger.log(`   âœ… Group ${groupType} (${labels[tier]}): ${tieredHotels.length} hotels total, â‚¹${totalPrice} combined`);
       } else {
-        this.logger.log(`   ⚠️  Group ${groupType} (${labels[tier]}): No hotels found for any route`);
+        this.logger.log(`   âš ï¸  Group ${groupType} (${labels[tier]}): No hotels found for any route`);
       }
     }
 
-    this.logger.log(`📦 Generated ${packages.length} price tier packages\n`);
+    this.logger.log(`ðŸ“¦ Generated ${packages.length} price tier packages\n`);
     return packages;
   }
 
@@ -522,6 +1822,15 @@ export class ItineraryHotelDetailsTboService {
     routes: any[],
     noOfNights: number,
   ): Promise<ItineraryHotelDetailsResponseDto> {
+    const plan = await this.prisma.dvi_itinerary_plan_details.findFirst({
+      where: { itinerary_plan_ID: planId, deleted: 0 },
+      select: { hotel_rates_visibility: true },
+    });
+
+    const hotelRatesVisible =
+      Number((plan as any)?.hotel_rates_visibility || 0) === 1 ||
+      (plan as any)?.hotel_rates_visibility === true;
+
     // Build hotel tabs (one per package with total cost)
     const hotelTabs: ItineraryHotelTabDto[] = packages.map((pkg) => {
       const totalAmount = pkg.hotels.reduce((sum, h) => sum + h.price, 0);
@@ -574,6 +1883,135 @@ export class ItineraryHotelDetailsTboService {
       ])
     );
 
+    // Preload route destination coordinates and hotel coordinates for distance calculation.
+    const routeLocationIds = Array.from(
+      new Set(
+        routes
+          .map((r: any) => Number((r as any).location_id || 0))
+          .filter((id: number) => id > 0),
+      ),
+    );
+
+    const storedLocations = routeLocationIds.length
+      ? await this.prisma.dvi_stored_locations.findMany({
+          where: { location_ID: { in: routeLocationIds }, deleted: 0 },
+          select: {
+            location_ID: true,
+            destination_location_lattitude: true,
+            destination_location_longitude: true,
+          },
+        })
+      : [];
+
+    const routeDestinationCoordsByLocationId = new Map<number, { lat: number; lon: number }>();
+    for (const loc of storedLocations as any[]) {
+      const lat = Number((loc as any).destination_location_lattitude ?? 0);
+      const lon = Number((loc as any).destination_location_longitude ?? 0);
+      if (Number.isFinite(lat) && Number.isFinite(lon) && lat !== 0 && lon !== 0) {
+        routeDestinationCoordsByLocationId.set(Number((loc as any).location_ID), { lat, lon });
+      }
+    }
+
+    const providerCodeSet = new Set<string>();
+    for (const pkg of packages) {
+      for (const h of pkg.hotels) {
+        const provider = String((h as any).provider || 'tbo').trim().toLowerCase();
+        const code = String((h as any).hotelCode || '').trim();
+        if (!code) continue;
+        providerCodeSet.add(`${provider}|${code}`);
+      }
+    }
+
+    const tboCodes = Array.from(providerCodeSet)
+      .filter((k) => k.startsWith('tbo|'))
+      .map((k) => k.slice(4));
+    const resavenueCodes = Array.from(providerCodeSet)
+      .filter((k) => k.startsWith('resavenue|'))
+      .map((k) => k.slice('resavenue|'.length));
+    const hobseCodes = Array.from(providerCodeSet)
+      .filter((k) => k.startsWith('hobse|'))
+      .map((k) => k.slice(6));
+    const axisroomsCodes = Array.from(providerCodeSet)
+      .filter((k) => k.startsWith('axisrooms|'))
+      .map((k) => k.slice('axisrooms|'.length));
+    const axisroomsHotelIds = axisroomsCodes
+      .map((code) => Number(code))
+      .filter((id) => Number.isFinite(id) && id > 0);
+
+    const hotelMasters = providerCodeSet.size
+      ? await this.prisma.dvi_hotel.findMany({
+          where: {
+            OR: [
+              ...(tboCodes.length
+                ? [{ tbo_hotel_code: { in: tboCodes } }]
+                : []),
+              ...(resavenueCodes.length
+                ? [{ resavenue_hotel_code: { in: resavenueCodes } }]
+                : []),
+              ...(hobseCodes.length
+                ? [{ hotel_code: { in: hobseCodes } }]
+                : []),
+              ...(axisroomsHotelIds.length
+                ? [{ hotel_id: { in: axisroomsHotelIds } }]
+                : []),
+            ],
+          },
+          select: {
+            hotel_id: true,
+            tbo_hotel_code: true,
+            resavenue_hotel_code: true,
+            hotel_code: true,
+            hotel_latitude: true,
+            hotel_longitude: true,
+          },
+        })
+      : [];
+
+    const hotelCoordsByProviderCode = new Map<string, { lat: number; lon: number }>();
+    for (const hm of hotelMasters as any[]) {
+      const lat = Number((hm as any).hotel_latitude ?? 0);
+      const lon = Number((hm as any).hotel_longitude ?? 0);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon) || lat === 0 || lon === 0) {
+        continue;
+      }
+
+      const tboCode = String((hm as any).tbo_hotel_code || '').trim();
+      const resavenueCode = String((hm as any).resavenue_hotel_code || '').trim();
+      const hobseCode = String((hm as any).hotel_code || '').trim();
+      const axisroomsHotelId = Number((hm as any).hotel_id || 0);
+
+      if (tboCode) hotelCoordsByProviderCode.set(`tbo|${tboCode}`, { lat, lon });
+      if (resavenueCode) hotelCoordsByProviderCode.set(`resavenue|${resavenueCode}`, { lat, lon });
+      if (hobseCode) hotelCoordsByProviderCode.set(`hobse|${hobseCode}`, { lat, lon });
+      if (axisroomsHotelId > 0) hotelCoordsByProviderCode.set(`axisrooms|${axisroomsHotelId}`, { lat, lon });
+    }
+
+    // Fallback: TBO static master has wider code coverage than dvi_hotel in many environments.
+    if (tboCodes.length > 0) {
+      const tboMasterRows = await this.prisma.tbo_hotel_master.findMany({
+        where: { tbo_hotel_code: { in: tboCodes } },
+        select: {
+          tbo_hotel_code: true,
+          hotel_latitude: true,
+          hotel_longitude: true,
+        },
+      });
+
+      for (const row of tboMasterRows as any[]) {
+        const code = String((row as any).tbo_hotel_code || '').trim();
+        const lat = Number((row as any).hotel_latitude ?? 0);
+        const lon = Number((row as any).hotel_longitude ?? 0);
+        if (!code || !Number.isFinite(lat) || !Number.isFinite(lon) || lat === 0 || lon === 0) {
+          continue;
+        }
+
+        const key = `tbo|${code}`;
+        if (!hotelCoordsByProviderCode.has(key)) {
+          hotelCoordsByProviderCode.set(key, { lat, lon });
+        }
+      }
+    }
+
     // Build hotel rows (detail rows for each package)
     const hotelRows: ItineraryHotelRowDto[] = [];
 
@@ -582,7 +2020,7 @@ export class ItineraryHotelDetailsTboService {
         // Find the route using the routeId attached to the hotel
         const route = routes.find((r: any) => r.itinerary_route_ID === hotel.routeId);
         if (!route) {
-          this.logger.warn(`⚠️  Route ${hotel.routeId} not found for hotel ${hotel.hotelName}`);
+          this.logger.warn(`âš ï¸  Route ${hotel.routeId} not found for hotel ${hotel.hotelName}`);
           continue;
         }
         
@@ -590,7 +2028,7 @@ export class ItineraryHotelDetailsTboService {
         const routeIndex = routes.indexOf(route);
         const isLastRoute = routeIndex === routes.length - 1;
         if (isLastRoute && routeIndex >= noOfNights) {
-          this.logger.log(`   ⏭️  Skipping route ${hotel.routeId} from response (departure day)`);
+          this.logger.log(`   â­ï¸  Skipping route ${hotel.routeId} from response (departure day)`);
           continue;
         }
         
@@ -610,6 +2048,27 @@ export class ItineraryHotelDetailsTboService {
         const hotelDetailsId = lookupKey ? detailsMap.get(lookupKey) : undefined;
         const voucherCancelled = hotelDetailsId ? (voucherStatusMap.get(hotelDetailsId) || false) : false;
 
+        let hotelDistance: string | null = null;
+        const routeLocationId = Number((route as any).location_id || 0);
+        const routeCoords = routeDestinationCoordsByLocationId.get(routeLocationId);
+        const providerCodeKey = `${String(hotel.provider || 'tbo').trim().toLowerCase()}|${String(hotel.hotelCode || '').trim()}`;
+        const hotelCoords = hotelCoordsByProviderCode.get(providerCodeKey);
+        if (routeCoords && hotelCoords) {
+          try {
+            const distanceKm = haversineKm(
+              routeCoords.lat,
+              routeCoords.lon,
+              hotelCoords.lat,
+              hotelCoords.lon,
+            );
+            if (Number.isFinite(distanceKm) && distanceKm > 0) {
+              hotelDistance = `${distanceKm.toFixed(2)} KM`;
+            }
+          } catch {
+            hotelDistance = null;
+          }
+        }
+
         hotelRows.push({
           groupType: pkg.groupType,
           itineraryRouteId: routeId,
@@ -619,31 +2078,82 @@ export class ItineraryHotelDetailsTboService {
           hotelName: displayHotelName,
           category: hotel.rating ? parseInt(String(hotel.rating)) : 0,
           roomType: hotel.roomType || '',
-          mealPlan: hotel.mealPlan || '-',
+          mealPlan: hotel.mealPlan || '',
           totalHotelCost: Math.round(hotel.price),
           totalHotelTaxAmount: 0,
           searchReference: hotel.searchReference,
-          bookingCode: hotel.hotelCode, // Use actual hotelCode (works for both TBO and HOBSE - can be numeric or UUID string)
+          bookingCode:
+            (hotel.provider || 'tbo').toLowerCase() === 'tbo'
+              ? hotel.searchReference || hotel.roomTypes?.[0]?.roomCode || undefined
+              : hotel.hotelCode,
           provider: hotel.provider || 'tbo',
           voucherCancelled: voucherCancelled,
           itineraryPlanHotelDetailsId: hotelDetailsId || 0,
           date: dateLabel,
+          hotelDistance,
+          inclusions: hotel.inclusions && hotel.inclusions.length > 0 ? hotel.inclusions : (hotel.facilities && hotel.facilities.length > 0 ? hotel.facilities : undefined),
+          amenities: hotel.amenities && hotel.amenities.length > 0 ? hotel.amenities : undefined,
+          facilities: hotel.facilities && hotel.facilities.length > 0 ? hotel.facilities : undefined,
+          rateConditions: hotel.rateConditions && hotel.rateConditions.length > 0 ? hotel.rateConditions : undefined,
+          cancellationPolicy: Array.isArray((hotel as any).cancellationPolicy)
+            ? (hotel as any).cancellationPolicy
+            : (typeof (hotel as any).cancellationPolicy === 'string' && String((hotel as any).cancellationPolicy).trim()
+              ? [String((hotel as any).cancellationPolicy).trim()]
+              : undefined),
+          supplementSummary: hotel.supplementSummary,
         });
 
         // Log HOBSE hotel codes for debugging
         if (hotel.provider === 'HOBSE') {
-          this.logger.debug(`✅ HOBSE Hotel Response: hotelCode="${hotel.hotelCode}", provider="${hotel.provider}"`);
+          this.logger.debug(`âœ… HOBSE Hotel Response: hotelCode="${hotel.hotelCode}", provider="${hotel.provider}"`);
         }
       }
     }
 
+    const supplierHotelRows = hotelRows.filter(
+      (row) => row.hotelId > 0 && row.hotelName !== 'No Hotels Available',
+    );
+    const placeholderRows = hotelRows.filter(
+      (row) => row.hotelName === 'No Hotels Available',
+    );
+
+    const searchableRouteIds = routes
+      .filter((route, index) => {
+        const isLastRoute = index === routes.length - 1;
+        return !(isLastRoute && index >= noOfNights);
+      })
+      .map((route: any) => Number(route.itinerary_route_ID));
+
+    const totalSearchRoutes = searchableRouteIds.length;
+    const emptySearchRoutes = searchableRouteIds.filter((routeId) => {
+      const routeHotels = hotelsByRoute.get(routeId) || [];
+      return routeHotels.length === 0;
+    }).length;
+
+    const hasSupplierHotels = supplierHotelRows.length > 0;
+    const isPlaceholderOnly = !hasSupplierHotels && placeholderRows.length > 0;
+    const availabilityMessage = isPlaceholderOnly
+      ? 'Supplier search completed but no available rooms were returned for the selected city/date criteria.'
+      : hasSupplierHotels
+        ? 'Live supplier hotels are available for the current itinerary selection.'
+        : 'No hotel data available yet. Try refreshing search or adjusting criteria.';
+
     return {
       quoteId,
       planId,
-      hotelRatesVisible: true,
+      hotelRatesVisible,
       hotelTabs,
       hotels: hotelRows,
       totalRoomCount: hotelRows.length,
+      hotelAvailability: {
+        hasSupplierHotels,
+        supplierHotelCount: supplierHotelRows.length,
+        placeholderRowCount: placeholderRows.length,
+        totalSearchRoutes,
+        emptySearchRoutes,
+        isPlaceholderOnly,
+        message: availabilityMessage,
+      },
     };
   }
 
@@ -659,12 +2169,12 @@ export class ItineraryHotelDetailsTboService {
     filterRouteId?: number,
   ): Promise<ItineraryHotelRoomDetailsResponseDto> {
     const startTime = Date.now();
-    this.logger.log(`\n📡 FRESH ROOM DETAILS FROM TBO: Fetching live data for quote: ${quoteId}`);
+    this.logger.log(`\nðŸ“¡ FRESH ROOM DETAILS FROM TBO: Fetching live data for quote: ${quoteId}`);
     if (filterRouteId) {
-      this.logger.log(`🔍 Filtering to route ID: ${filterRouteId}`);
+      this.logger.log(`ðŸ” Filtering to route ID: ${filterRouteId}`);
     }
 
-    // ✅ CHECK CACHE FIRST (per-route caching)
+    // âœ… CHECK CACHE FIRST (per-route caching)
     const cachedResult = this.getCachedRoomDetails(quoteId, filterRouteId);
     if (cachedResult) {
       return cachedResult;
@@ -676,12 +2186,12 @@ export class ItineraryHotelDetailsTboService {
     });
 
     if (!plan) {
-      this.logger.warn(`⚠️  Quote ID not found: ${quoteId}`);
+      this.logger.warn(`âš ï¸  Quote ID not found: ${quoteId}`);
       throw new NotFoundException('Itinerary not found');
     }
 
     const planId = plan.itinerary_plan_ID;
-    this.logger.log(`✅ Found plan ID: ${planId}`);
+    this.logger.log(`âœ… Found plan ID: ${planId}`);
 
     // Step 2: Get itinerary routes (days and destinations)
     const routes = await this.prisma.dvi_itinerary_route_details.findMany({
@@ -690,12 +2200,27 @@ export class ItineraryHotelDetailsTboService {
     });
 
     if (routes.length === 0) {
-      this.logger.warn(`⚠️  No routes found for plan ${planId}`);
+      this.logger.warn(`âš ï¸  No routes found for plan ${planId}`);
       throw new BadRequestException('Itinerary has no routes');
     }
 
     const noOfNights = Number((plan as any).no_of_nights || 0);
-    this.logger.log(`🌙 Plan has ${noOfNights} nights`);
+    this.logger.log(`ðŸŒ™ Plan has ${noOfNights} nights`);
+
+    const planRoomCount2 = Math.max(Number((plan as any).preferred_room_count || 1), 1);
+    const planAdultCount2 = Number((plan as any).total_adult || 0);
+    const planChildCount2 = Number((plan as any).total_children || 0);
+
+    let planChildAges2: number[] = [];
+    if (planChildCount2 > 0) {
+      const childTravellers2 = await this.prisma.dvi_itinerary_traveller_details.findMany({
+        where: { itinerary_plan_ID: planId, traveller_type: 2, deleted: 0 },
+        orderBy: { traveller_details_ID: 'asc' },
+      });
+      planChildAges2 = childTravellers2
+        .map((t) => Math.trunc(Number((t as any).traveller_age)))
+        .filter((age) => Number.isFinite(age) && age >= 0 && age <= 11);
+    }
 
     // Step 3: Fetch FRESH hotels from TBO
     // OPTIMIZATION: If filterRouteId provided, only fetch hotels for that specific route
@@ -703,57 +2228,126 @@ export class ItineraryHotelDetailsTboService {
     if (filterRouteId) {
       routesToProcess = routes.filter(r => (r as any).itinerary_route_ID === filterRouteId);
       if (routesToProcess.length === 0) {
-        this.logger.warn(`⚠️  Route ID ${filterRouteId} not found`);
+        this.logger.warn(`âš ï¸  Route ID ${filterRouteId} not found`);
         throw new BadRequestException(`Route ID ${filterRouteId} not found in this itinerary`);
       }
-      this.logger.log(`✅ Optimized: Fetching hotels for 1 route only (filtered)`);
+      this.logger.log(`âœ… Optimized: Fetching hotels for 1 route only (filtered)`);
     }
 
-    const hotelsByRoute = await this.fetchHotelsForRoutes(routesToProcess, noOfNights);
+    const guestNationality = await this.resolveGuestNationality(plan);
+    const hotelsByRoute = await this.fetchHotelsForRoutes(
+      routesToProcess,
+      noOfNights,
+      guestNationality,
+      planRoomCount2,
+      planAdultCount2,
+      planChildCount2,
+      planChildAges2,
+    );
 
-    // Step 4: Transform fresh TBO data into room details format
+    // Merge non-TBO providers (HOBSE, ResAvenue, AxisRooms) â€” same logic as getHotelDetails
+    const tboOnlyFetch = this.isTboOnlyFetchEnabled();
+    if (!tboOnlyFetch) {
+      if (this.isHobseSearchEnabled()) {
+        const hobseCityCodeMap = await this.batchMapDestinationsToHobseCityCodes(routesToProcess);
+        const hobseHotelsByRoute = await this.fetchHobseHotelsForRoutes(routesToProcess, noOfNights, hobseCityCodeMap);
+        hobseHotelsByRoute.forEach((hobseHotels, routeId) => {
+          const existing = hotelsByRoute.get(routeId) || [];
+          hotelsByRoute.set(routeId, [...existing, ...hobseHotels]);
+        });
+      } else {
+        this.logger.warn('âš ï¸ HOBSE_SEARCH_ENABLED=0: skipping HOBSE hotel search results');
+      }
+
+      // ResAvenue
+      const resavenueHotelsByRoute = await this.fetchResavenueHotelsForRoutes(
+        routesToProcess,
+        noOfNights,
+        guestNationality,
+        planRoomCount2,
+        planAdultCount2,
+        planChildCount2,
+      );
+      resavenueHotelsByRoute.forEach((resavenueHotels, routeId) => {
+        const existing = hotelsByRoute.get(routeId) || [];
+        const hotelStrs = existing.map(h => `${h.hotelCode}|${h.provider}`);
+        const newHotels = resavenueHotels.filter(h => !hotelStrs.includes(`${h.hotelCode}|${h.provider}`));
+        hotelsByRoute.set(routeId, [...existing, ...newHotels]);
+      });
+
+      // AxisRooms
+      const axisroomsHotelsByRoute = await this.fetchAxisroomsHotelsForRoutes(routesToProcess, noOfNights);
+      axisroomsHotelsByRoute.forEach((axisroomsHotels, routeId) => {
+        const existing = hotelsByRoute.get(routeId) || [];
+        const hotelStrs = existing.map(h => `${String(h.hotelCode)}|${String(h.provider).toLowerCase()}`);
+        const newHotels = axisroomsHotels.filter(h => !hotelStrs.includes(`${String(h.hotelCode)}|${String(h.provider).toLowerCase()}`));
+        hotelsByRoute.set(routeId, [...existing, ...newHotels]);
+      });
+    }
+
+    // Step 4: Transform fresh data into room details format
     const roomDetailsList: ItineraryHotelRoomDto[] = [];
     let roomDetailsId = 1;
 
-    // Create a map to track unique hotels per route
-    const hotelsByRouteAndGroup = new Map<string, any[]>();
+    // Build route-scoped room candidates with group coverage fallback.
+    // PHP behavior allows overlap fallback when a recommendation bucket would be empty.
+    const routeHotelRows: Array<{ routeId: number; hotel: any }> = [];
 
-    // Group hotels by route and hotelCode
     hotelsByRoute.forEach((hotelsForRoute, routeId) => {
       // FILTER: Only process this route if filterRouteId is not provided OR if it matches
       if (filterRouteId && routeId !== filterRouteId) {
-        this.logger.debug(`🔍 Skipping route ${routeId} (filter: ${filterRouteId})`);
+        this.logger.debug(`ðŸ” Skipping route ${routeId} (filter: ${filterRouteId})`);
         return;
       }
 
-      // ✅ Extract all prices for this route to calculate quartiles
       const allPrices = hotelsForRoute.map((h: HotelSearchResult) => h.price || 0);
+      const sortedHotels = [...hotelsForRoute].sort((a, b) => (a.price || 0) - (b.price || 0));
+
+      const byGroup = new Map<number, any[]>();
 
       hotelsForRoute.forEach((hotel: HotelSearchResult) => {
-        // ✅ Assign groupType based on PRICE QUARTILE, not array position
         const hotelPrice = hotel.price || 0;
         const groupType = this.getGroupTypeFromPrice(hotelPrice, allPrices);
-        const key = `${routeId}-${hotel.hotelCode || hotel.hotelName}`;
-        
-        if (!hotelsByRouteAndGroup.has(key)) {
-          hotelsByRouteAndGroup.set(key, []);
-        }
-        hotelsByRouteAndGroup.get(key)!.push({ ...hotel, groupType });
+        if (!byGroup.has(groupType)) byGroup.set(groupType, []);
+        byGroup.get(groupType)!.push({ ...hotel, groupType, __fallbackAssigned: false });
       });
+
+      // Ensure all 4 groups are represented when a route has at least one hotel.
+      for (let groupType = 1; groupType <= 4; groupType++) {
+        const groupHotels = byGroup.get(groupType) ?? [];
+        if (groupHotels.length === 0 && sortedHotels.length > 0) {
+          const fallbackIndex = Math.min(groupType - 1, sortedHotels.length - 1);
+          const fallbackHotel = sortedHotels[fallbackIndex];
+          if (fallbackHotel) {
+            byGroup.set(groupType, [
+              {
+                ...fallbackHotel,
+                groupType,
+                __fallbackAssigned: true,
+              },
+            ]);
+          }
+        }
+      }
+
+      for (let groupType = 1; groupType <= 4; groupType++) {
+        const groupHotels = byGroup.get(groupType) ?? [];
+        groupHotels.forEach((hotel) => routeHotelRows.push({ routeId, hotel }));
+      }
     });
 
     // Build room entries from fresh TBO data
-    // ✅ FIXED: Iterate through ALL hotels in each group, not just the first one
-    hotelsByRouteAndGroup.forEach((hotelArray, _key) => {
-      const routeId = parseInt(_key.split('-')[0]);
+    routeHotelRows.forEach(({ routeId, hotel }) => {
       const route = routes.find(r => (r as any).itinerary_route_ID === routeId);
+      if (!route) return;
 
-      // ✅ Loop through ALL unique hotels in this route/group (not just first)
-      hotelArray.forEach((hotel: any) => {
-        // ✅ FIXED: Use actual room type from TBO, not groupType
+        // âœ… FIXED: Use actual room type from TBO, not groupType
         const firstRoomType = hotel.roomTypes?.[0];
         const actualRoomTypeId = firstRoomType?.roomTypeId || 1;
-        const actualRoomTypeName = firstRoomType?.roomName || 'Standard Room';
+        // For non-TBO providers use hotel.roomType which matches hotel_details; for TBO use roomTypes[0].roomName
+        const actualRoomTypeName = String(hotel.provider || 'tbo').toLowerCase() !== 'tbo'
+          ? (hotel.roomType || firstRoomType?.roomName || 'Standard Room')
+          : (firstRoomType?.roomName || hotel.roomType || 'Standard Room');
 
         roomDetailsList.push({
           itineraryPlanId: planId,
@@ -762,32 +2356,45 @@ export class ItineraryHotelDetailsTboService {
           hotelId: parseInt(hotel.hotelCode) || 0,
           hotelName: hotel.hotelName || 'Hotel',
           hotelCategory: this.getCategoryFromRating(hotel.category || hotel.rating),
-          groupType: hotel.groupType || 1, // ✅ ADD: Include groupType (tier: 1-4)
-          roomTypeId: actualRoomTypeId, // ✅ FIXED: Use actual TBO room type ID
-          roomTypeName: actualRoomTypeName, // ✅ FIXED: Use actual TBO room type name
+          groupType: hotel.groupType || 1, // âœ… ADD: Include groupType (tier: 1-4)
+          roomTypeId: actualRoomTypeId, // âœ… FIXED: Use actual TBO room type ID
+          roomTypeName: actualRoomTypeName, // âœ… FIXED: Use actual TBO room type name
           roomId: parseInt(hotel.hotelCode) || 0,
+          provider: String(hotel.provider || 'tbo').toLowerCase(),
           availableRoomTypes: (hotel.roomTypes || []).map((rt, idx) => ({
             roomTypeId: rt.roomTypeId || idx + 1,
             roomTypeTitle: rt.roomName,
+            bookingCode: rt.roomCode,
           })),
+          bookingCode: String(hotel.provider || 'tbo').toLowerCase() === 'tbo'
+            ? (firstRoomType?.roomCode || hotel.searchReference || undefined)
+            : (hotel.hotelCode || hotel.searchReference || undefined),
           pricePerNight: Number(hotel.price || 0),
           numberOfNights: noOfNights,
           totalPrice: Number(hotel.price || 0) * noOfNights,
           currency: hotel.currency || 'INR',
           mealPlan: hotel.mealPlan || 'Not Specified',
+          facilities: hotel.facilities || [],
+          amenities: hotel.amenities || [],
+          inclusions: hotel.inclusions || [],
+          rateConditions: (hotel.rateConditions || []) as string[],
+          cancellationPolicy: Array.isArray((hotel as any).cancellationPolicy)
+            ? (hotel as any).cancellationPolicy
+            : (typeof (hotel as any).cancellationPolicy === 'string' && String((hotel as any).cancellationPolicy).trim()
+              ? [String((hotel as any).cancellationPolicy).trim()]
+              : (firstRoomType?.cancellationPolicy ? [String(firstRoomType.cancellationPolicy)] : [])),
         } as any);
-      });
     });
 
     const duration = Date.now() - startTime;
-    this.logger.log(`✅ FRESH ROOM DETAILS GENERATED`);
-    this.logger.log(`📊 Room Entries: ${roomDetailsList.length}`);
+    this.logger.log(`âœ… FRESH ROOM DETAILS GENERATED`);
+    this.logger.log(`ðŸ“Š Room Entries: ${roomDetailsList.length}`);
     if (filterRouteId) {
-      this.logger.log(`🔍 Filter Applied: Route ID ${filterRouteId}`);
+      this.logger.log(`ðŸ” Filter Applied: Route ID ${filterRouteId}`);
     } else {
-      this.logger.log(`📅 All Routes Included`);
+      this.logger.log(`ðŸ“… All Routes Included`);
     }
-    this.logger.log(`⏱️  Duration: ${duration}ms\n`);
+    this.logger.log(`â±ï¸  Duration: ${duration}ms\n`);
 
     const result = {
       quoteId: (plan as any).itinerary_quote_ID ?? '',
@@ -795,7 +2402,7 @@ export class ItineraryHotelDetailsTboService {
       rooms: roomDetailsList,
     };
 
-    // ✅ CACHE THE RESULT for future requests
+    // âœ… CACHE THE RESULT for future requests
     this.setCachedRoomDetails(quoteId, result, filterRouteId);
 
     return result;
@@ -862,7 +2469,12 @@ export class ItineraryHotelDetailsTboService {
     const cached = this.hotelRoomDetailsCache.get(cacheKey);
     
     if (cached) {
-      this.logger.log(`💾 [CACHE HIT] Using cached data for ${cacheKey}`);
+      if (this.isCacheExpired(cached.timestamp, ItineraryHotelDetailsTboService.HOTEL_ROOM_DETAILS_CACHE_TTL_MS)) {
+        this.hotelRoomDetailsCache.delete(cacheKey);
+        this.logger.debug(`ðŸ’¾ [CACHE EXPIRED] Removed stale room cache for ${cacheKey}`);
+        return null;
+      }
+      this.logger.log(`ðŸ’¾ [CACHE HIT] Using cached data for ${cacheKey}`);
       return cached.data;
     }
     
@@ -878,11 +2490,64 @@ export class ItineraryHotelDetailsTboService {
     routeId?: number,
   ): void {
     const cacheKey = this.getCacheKey(quoteId, routeId);
+    this.evictOldestIfNeeded(this.hotelRoomDetailsCache);
     this.hotelRoomDetailsCache.set(cacheKey, {
       data,
       timestamp: Date.now(),
     });
-    this.logger.log(`💾 [CACHE SET] Cached data for ${cacheKey}`);
+    this.logger.log(`ðŸ’¾ [CACHE SET] Cached data for ${cacheKey}`);
+  }
+
+  private getCachedHotelDetails(quoteId: string): ItineraryHotelDetailsResponseDto | null {
+    const cached = this.hotelDetailsCache.get(quoteId);
+    if (!cached) {
+      return null;
+    }
+
+    if (this.isCacheExpired(cached.timestamp, ItineraryHotelDetailsTboService.HOTEL_DETAILS_CACHE_TTL_MS)) {
+      this.hotelDetailsCache.delete(quoteId);
+      this.logger.debug(`ðŸ’¾ [CACHE EXPIRED] Removed stale hotel details cache for ${quoteId}`);
+      return null;
+    }
+
+    this.logger.log(`ðŸ’¾ [CACHE HIT] Hotel details from cache for ${quoteId}`);
+    return cached.data;
+  }
+
+  private setCachedHotelDetails(
+    quoteId: string,
+    data: ItineraryHotelDetailsResponseDto,
+  ): void {
+    this.evictOldestIfNeeded(this.hotelDetailsCache);
+    this.hotelDetailsCache.set(quoteId, {
+      data,
+      timestamp: Date.now(),
+    });
+    this.logger.log(`ðŸ’¾ [CACHE SET] Hotel details cached for ${quoteId}`);
+  }
+
+  private isCacheExpired(timestamp: number, ttlMs: number): boolean {
+    return Date.now() - timestamp > ttlMs;
+  }
+
+  private evictOldestIfNeeded<T extends { timestamp: number }>(cache: Map<string, T>): void {
+    if (cache.size < ItineraryHotelDetailsTboService.MAX_CACHE_ENTRIES) {
+      return;
+    }
+
+    let oldestKey: string | null = null;
+    let oldestTs = Number.MAX_SAFE_INTEGER;
+
+    cache.forEach((value, key) => {
+      if (value.timestamp < oldestTs) {
+        oldestTs = value.timestamp;
+        oldestKey = key;
+      }
+    });
+
+    if (oldestKey) {
+      cache.delete(oldestKey);
+    }
   }
 
   /**
@@ -891,6 +2556,8 @@ export class ItineraryHotelDetailsTboService {
    */
   clearCacheForQuote(quoteId: string): void {
     const keysToDelete: string[] = [];
+
+    this.hotelDetailsCache.delete(quoteId);
     
     for (const key of this.hotelRoomDetailsCache.keys()) {
       if (key.startsWith(`${quoteId}:`)) { // Matches "quoteId:routeId"
@@ -903,7 +2570,7 @@ export class ItineraryHotelDetailsTboService {
     
     for (const key of keysToDelete) {
       this.hotelRoomDetailsCache.delete(key);
-      this.logger.log(`🗑️  [CACHE CLEARED] Removed cache for ${key}`);
+      this.logger.log(`ðŸ—‘ï¸  [CACHE CLEARED] Removed cache for ${key}`);
     }
   }
 
@@ -911,9 +2578,12 @@ export class ItineraryHotelDetailsTboService {
    * Get current cache size and stats (for debugging)
    */
   getCacheStats(): { size: number; entries: string[] } {
+    const detailEntries = Array.from(this.hotelDetailsCache.keys()).map((k) => `details:${k}`);
+    const roomEntries = Array.from(this.hotelRoomDetailsCache.keys()).map((k) => `rooms:${k}`);
+
     return {
-      size: this.hotelRoomDetailsCache.size,
-      entries: Array.from(this.hotelRoomDetailsCache.keys()),
+      size: this.hotelDetailsCache.size + this.hotelRoomDetailsCache.size,
+      entries: [...detailEntries, ...roomEntries],
     };
   }
 }

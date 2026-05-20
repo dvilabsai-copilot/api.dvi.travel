@@ -1,0 +1,651 @@
+======== REQUEST ========
+{
+  "CheckIn": "2026-06-05",
+  "CheckOut": "2026-06-06",
+  "HotelCodes": "1011651,1013091,1013522,1016336,1016348,1018954,1033444,1033447,1033459,1033462,1033471,1033473,1033475,1033915,1033941,1033943,1033947,1047331,1048435,1048438,1048447,1048448,1048478,1048480,1048496,1048519,1048521,1048536,1057396,1059857,1059858,1059865,1059867,1083502,1083504,1083518,1083522,1083524,1083530,1083544,1083547,1083550,1083554,1083558,1083563,1083565,1083567,1083569,1083571,1083573,1083575,1083577,1083579,1083595,1083598,1083601,1083608,1083629,1083636,1083638,1083643,1083645,1083648,1083650,1083655,1083658,1083665,1083670,1088694,1088712,1088715,1088718,1088731,1088736,1088749,1088751,1089855,1108672,1108722,1110054,1110056,1110057,1110065,1110070,1110073,1110096,1110105,1110106,1124174,1124199,1124202,1124205,1124208,1124211,1124262,1124290,1124298,1124299,1124300,1124301",
+  "GuestNationality": "AE",
+  "NoOfRooms": 1,
+  "PaxRooms": [
+    {
+      "Adults": 2,
+      "Children": 2,
+      "ChildrenAges": [
+        3,
+        4
+      ]
+    }
+  ],
+  "ResponseTime": 23,
+  "IsDetailedResponse": true,
+  "Filters": {
+    "Refundable": true,
+    "NoOfRooms": 0,
+    "MealType": "WithMeal",
+    "OrderBy": 0,
+    "StarRating": 0,
+    "HotelName": null
+  }
+}
+
+======== RESPONSE ========
+{
+  "Status": {
+    "Code": 200,
+    "Description": "Successful"
+  },
+  "HotelResult": [
+    {
+      "HotelCode": "1083629",
+      "Currency": "INR",
+      "Rooms": [
+        {
+          "Name": [
+            "Premium King Room with Smart Tv,1 King Bed,NonSmoking"
+          ],
+          "BookingCode": "1083629!TB!1!TB!f3263cda-434d-11f1-855f-720abae076dd!TB!N!TB!AFF!",
+          "Inclusion": "Breakfast buffet,Free self parking",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 7255.6
+              }
+            ]
+          ],
+          "TotalFare": 8618.37,
+          "TotalTax": 1362.77,
+          "RoomPromotion": [
+            "Member’s exclusive price"
+          ],
+          "CancelPolicies": [
+            {
+              "FromDate": "27-04-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "03-06-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "BreakFast",
+          "IsRefundable": true,
+          "WithTransfers": false
+        },
+        {
+          "Name": [
+            "Jugnu Room with Grand Jacuzzi,1 King Bed,NonSmoking"
+          ],
+          "BookingCode": "1083629!TB!2!TB!f3263cda-434d-11f1-855f-720abae076dd!TB!N!TB!AFF!",
+          "Inclusion": "Free breakfast,Free self parking",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 21106
+              }
+            ]
+          ],
+          "TotalFare": 25070.82,
+          "TotalTax": 3964.82,
+          "RoomPromotion": [
+            "Member’s exclusive price"
+          ],
+          "CancelPolicies": [
+            {
+              "FromDate": "27-04-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "03-06-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "BreakFast",
+          "IsRefundable": true,
+          "WithTransfers": false
+        }
+      ]
+    },
+    {
+      "HotelCode": "1089855",
+      "Currency": "INR",
+      "Rooms": [
+        {
+          "Name": [
+            "Mirable,1 Double Bed,NonSmoking"
+          ],
+          "BookingCode": "1089855!TB!2!TB!f3263cda-434d-11f1-855f-720abae076dd!TB!N!TB!AFF!",
+          "Inclusion": "Breakfast buffet,Free valet parking,Free self parking",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 8369.4
+              }
+            ]
+          ],
+          "TotalFare": 9899.14,
+          "TotalTax": 1529.74,
+          "RoomPromotion": [
+            "Book now and save"
+          ],
+          "CancelPolicies": [
+            {
+              "FromDate": "27-04-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "04-06-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "BreakFast",
+          "IsRefundable": true,
+          "WithTransfers": false,
+          "BeddingGroup": "Bedding type is not guaranteed and it will be allocated by hotel based on availability"
+        },
+        {
+          "Name": [
+            "Mirable,1 Double Bed,NonSmoking"
+          ],
+          "BookingCode": "1089855!TB!3!TB!f3263cda-434d-11f1-855f-720abae076dd!TB!N!TB!AFF!",
+          "Inclusion": "Half board",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 9215.55
+              }
+            ]
+          ],
+          "TotalFare": 10897.84,
+          "TotalTax": 1682.3,
+          "RoomPromotion": [
+            "Book now and save"
+          ],
+          "CancelPolicies": [
+            {
+              "FromDate": "27-04-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "04-06-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "Half_Board",
+          "IsRefundable": true,
+          "WithTransfers": false,
+          "BeddingGroup": "Bedding type is not guaranteed and it will be allocated by hotel based on availability"
+        },
+        {
+          "Name": [
+            "Mirable,2 Twin Beds,NonSmoking"
+          ],
+          "BookingCode": "1089855!TB!4!TB!f3263cda-434d-11f1-855f-720abae076dd!TB!N!TB!AFF!",
+          "Inclusion": "Full board",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 10062.42
+              }
+            ]
+          ],
+          "TotalFare": 11898.2,
+          "TotalTax": 1835.79,
+          "RoomPromotion": [
+            "Book now and save"
+          ],
+          "CancelPolicies": [
+            {
+              "FromDate": "27-04-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "04-06-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "Full_Board",
+          "IsRefundable": true,
+          "WithTransfers": false,
+          "BeddingGroup": "Bedding type is not guaranteed and it will be allocated by hotel based on availability"
+        },
+        {
+          "Name": [
+            "Suite,1 Queen Bed,NonSmoking"
+          ],
+          "BookingCode": "1089855!TB!5!TB!f3263cda-434d-11f1-855f-720abae076dd!TB!N!TB!AFF!",
+          "Inclusion": "Full Breakfast,Free valet parking,Free self parking",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 15557.83
+              }
+            ]
+          ],
+          "TotalFare": 18387.7,
+          "TotalTax": 2829.87,
+          "RoomPromotion": [
+            "Book now and save"
+          ],
+          "CancelPolicies": [
+            {
+              "FromDate": "27-04-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "04-06-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "BreakFast",
+          "IsRefundable": true,
+          "WithTransfers": false
+        }
+      ]
+    },
+    {
+      "HotelCode": "1033444",
+      "Currency": "INR",
+      "Rooms": [
+        {
+          "Name": [
+            "Executive Suite, Pool View, King Bed,1 King Bed,NonSmoking"
+          ],
+          "BookingCode": "1033444!TB!1!TB!f3263cda-434d-11f1-855f-720abae076dd!TB!N!TB!AFF!",
+          "Inclusion": "Free breakfast,Free valet parking,Free self parking",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 43022.42
+              }
+            ]
+          ],
+          "TotalFare": 50894.43,
+          "TotalTax": 7872.02,
+          "RoomPromotion": [
+            "Member’s exclusive price"
+          ],
+          "CancelPolicies": [
+            {
+              "FromDate": "27-04-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "02-06-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "BreakFast",
+          "IsRefundable": true,
+          "WithTransfers": false
+        },
+        {
+          "Name": [
+            "Luxury Suite, 1 King Bed,NonSmoking"
+          ],
+          "BookingCode": "1033444!TB!2!TB!f3263cda-434d-11f1-855f-720abae076dd!TB!N!TB!AFF!",
+          "Inclusion": "Free breakfast,Free valet parking,Free self parking",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 44772.26
+              }
+            ]
+          ],
+          "TotalFare": 52964.57,
+          "TotalTax": 8192.3,
+          "RoomPromotion": [
+            "Member’s exclusive price"
+          ],
+          "CancelPolicies": [
+            {
+              "FromDate": "27-04-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "02-06-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "BreakFast",
+          "IsRefundable": true,
+          "WithTransfers": false
+        },
+        {
+          "Name": [
+            "Executive Suite, Pool View, King Bed,1 King Bed,NonSmoking"
+          ],
+          "BookingCode": "1033444!TB!3!TB!f3263cda-434d-11f1-855f-720abae076dd!TB!N!TB!AFF!",
+          "Inclusion": "Free dinner,Free breakfast,Free valet parking,Free self parking",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 55724.1
+              }
+            ]
+          ],
+          "TotalFare": 65930.17,
+          "TotalTax": 10206.08,
+          "CancelPolicies": [
+            {
+              "FromDate": "27-04-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "02-06-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "Half_Board",
+          "IsRefundable": true,
+          "WithTransfers": false
+        },
+        {
+          "Name": [
+            "Grande Luxury, Grand Suite, 1 King Bed, Sea View,NonSmoking"
+          ],
+          "BookingCode": "1033444!TB!4!TB!f3263cda-434d-11f1-855f-720abae076dd!TB!N!TB!AFF!",
+          "Inclusion": "Free breakfast,Free valet parking,Free self parking",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 69931.87
+              }
+            ]
+          ],
+          "TotalFare": 82740.84,
+          "TotalTax": 12808.98,
+          "RoomPromotion": [
+            "Member’s exclusive price"
+          ],
+          "CancelPolicies": [
+            {
+              "FromDate": "27-04-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "02-06-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "BreakFast",
+          "IsRefundable": true,
+          "WithTransfers": false
+        },
+        {
+          "Name": [
+            "Royal Suite, 1 King Bed, Sea View,NonSmoking"
+          ],
+          "BookingCode": "1033444!TB!5!TB!f3263cda-434d-11f1-855f-720abae076dd!TB!N!TB!AFF!",
+          "Inclusion": "Free breakfast,Free valet parking,Free self parking",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 177691.79
+              }
+            ]
+          ],
+          "TotalFare": 210268.87,
+          "TotalTax": 32577.08,
+          "RoomPromotion": [
+            "Member’s exclusive price"
+          ],
+          "CancelPolicies": [
+            {
+              "FromDate": "27-04-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "02-06-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "BreakFast",
+          "IsRefundable": true,
+          "WithTransfers": false
+        }
+      ]
+    },
+    {
+      "HotelCode": "1059865",
+      "Currency": "INR",
+      "Rooms": [
+        {
+          "Name": [
+            "Two Bedroom Apartment"
+          ],
+          "BookingCode": "1059865!TB!1!TB!f3263cda-434d-11f1-855f-720abae076dd!TB!N!TB!AFF!",
+          "Inclusion": "BREAKFAST,PARKING,FREE WIFI",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 27818.27
+              }
+            ]
+          ],
+          "TotalFare": 33465.48,
+          "TotalTax": 5647.21,
+          "CancelPolicies": [
+            {
+              "FromDate": "27-04-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "02-06-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "BreakFast",
+          "IsRefundable": true,
+          "WithTransfers": false
+        }
+      ]
+    },
+    {
+      "HotelCode": "1033471",
+      "Currency": "INR",
+      "Rooms": [
+        {
+          "Name": [
+            "Executive Suite, 1 King Bed, City View,NonSmoking"
+          ],
+          "BookingCode": "1033471!TB!1!TB!f3263cda-434d-11f1-855f-720abae076dd!TB!N!TB!AFF!",
+          "Inclusion": "Free one-way airport transfer,Free breakfast,Late check-out (subject to availability),Free self parking",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 25306.99
+              }
+            ]
+          ],
+          "TotalFare": 29940.45,
+          "TotalTax": 4633.45,
+          "CancelPolicies": [
+            {
+              "FromDate": "27-04-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "03-06-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "BreakFast",
+          "IsRefundable": true,
+          "WithTransfers": false
+        },
+        {
+          "Name": [
+            "SeleQtions Suite, 1 King Bed, City View,NonSmoking"
+          ],
+          "BookingCode": "1033471!TB!2!TB!f3263cda-434d-11f1-855f-720abae076dd!TB!N!TB!AFF!",
+          "Inclusion": "Free one-way airport transfer,Free breakfast,Late check-out (subject to availability),Free self parking",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 28682.6
+              }
+            ]
+          ],
+          "TotalFare": 33931.46,
+          "TotalTax": 5248.86,
+          "CancelPolicies": [
+            {
+              "FromDate": "27-04-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "03-06-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "BreakFast",
+          "IsRefundable": true,
+          "WithTransfers": false
+        },
+        {
+          "Name": [
+            "Executive Suite, 1 King Bed, City View,NonSmoking"
+          ],
+          "BookingCode": "1033471!TB!3!TB!f3263cda-434d-11f1-855f-720abae076dd!TB!N!TB!AFF!",
+          "Inclusion": "Half board",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 32849.65
+              }
+            ]
+          ],
+          "TotalFare": 38857.83,
+          "TotalTax": 6008.18,
+          "CancelPolicies": [
+            {
+              "FromDate": "27-04-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "03-06-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "Half_Board",
+          "IsRefundable": true,
+          "WithTransfers": false
+        }
+      ]
+    },
+    {
+      "HotelCode": "1033941",
+      "Currency": "INR",
+      "Rooms": [
+        {
+          "Name": [
+            "Two Bedroom Executive Apartment,1 King Bed and 1 Queen Bed,NonSmoking"
+          ],
+          "BookingCode": "1033941!TB!4!TB!f3263cda-434d-11f1-855f-720abae076dd!TB!N!TB!AFF!",
+          "Inclusion": "Free breakfast,Free valet parking,Free self parking",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 8111.45
+              }
+            ]
+          ],
+          "TotalFare": 9647.12,
+          "TotalTax": 1535.67,
+          "RoomPromotion": [
+            "Book early and save"
+          ],
+          "CancelPolicies": [
+            {
+              "FromDate": "27-04-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "04-06-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "BreakFast",
+          "IsRefundable": true,
+          "WithTransfers": false
+        },
+        {
+          "Name": [
+            "Three Bedroom Executive Apartment,1 Twin Bed, 1 Queen Bed and 1 King Bed,NonSmoking"
+          ],
+          "BookingCode": "1033941!TB!5!TB!f3263cda-434d-11f1-855f-720abae076dd!TB!N!TB!AFF!",
+          "Inclusion": "Free breakfast,Free valet parking,Free self parking",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 8830.89
+              }
+            ]
+          ],
+          "TotalFare": 10504.79,
+          "TotalTax": 1673.91,
+          "RoomPromotion": [
+            "Book early and save"
+          ],
+          "CancelPolicies": [
+            {
+              "FromDate": "27-04-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "04-06-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "BreakFast",
+          "IsRefundable": true,
+          "WithTransfers": false
+        }
+      ]
+    }
+  ]
+}
+
+======== METADATA ========
+- timestamp: 2026-04-28T22:02:29.799Z
+- endpoint: https://affiliate.tektravels.com/HotelAPI/Search
+- status code: 200
+- case id: 2
+- step name: search
+- method: POST
+- status: success
+- error: none
+- skipped reason: none

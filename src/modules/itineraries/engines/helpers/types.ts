@@ -38,3 +38,38 @@ export interface HotspotDetailRow {
   status: 0 | 1;
   deleted: 0 | 1;
 }
+
+export enum RebuildWarningSeverity {
+  GREEN = 'green',
+  YELLOW = 'yellow',
+  ORANGE = 'orange',
+  RED = 'red',
+}
+
+export interface RebuildWarning {
+  code: string;
+  severity: RebuildWarningSeverity;
+  message: string;
+  routeId?: number;
+  hotspotId?: number;
+}
+
+export interface RebuildSummary {
+  planId: number;
+  totalHotspotsAttempted: number;
+  totalHotspotsScheduled: number;
+  totalHotspotsDropped: number;
+  totalHotspotsShifted: number;
+  warningCount: number;
+  hasCriticalIssues: boolean;
+}
+
+export interface RouteRejectionSummary {
+  totalRejectedCandidates: number;
+  totalSelectedCandidates: number;
+  routeEnd: number;
+  operatingHours: number;
+  duplicate: number;
+  noRemainingWindow: number;
+  other: number;
+}

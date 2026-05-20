@@ -1,12 +1,14 @@
 import { ApiProperty } from '@nestjs/swagger';
 import {
   IsArray,
+  IsBoolean,
   IsInt,
   IsOptional,
   IsString,
   ValidateNested,
   IsISO8601,
   Min,
+  Matches,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -80,6 +82,27 @@ export class CreatePlanDto {
   @ApiProperty({ example: 0 }) @IsInt() entry_ticket_required!: number;
   @ApiProperty({ example: 0 }) @IsInt() guide_for_itinerary!: number;
   @ApiProperty({ example: 0 }) @IsInt() nationality!: number;
+
+  @ApiProperty({ example: 1, required: false })
+  @IsOptional()
+  @IsInt()
+  meal_plan_breakfast?: number;
+
+  @ApiProperty({ example: 0, required: false })
+  @IsOptional()
+  @IsInt()
+  meal_plan_lunch?: number;
+
+  @ApiProperty({ example: 0, required: false })
+  @IsOptional()
+  @IsInt()
+  meal_plan_dinner?: number;
+
+  @ApiProperty({ example: 'CP', required: false })
+  @IsOptional()
+  @IsString()
+  @Matches(/^(CP|EP|MAP|AP)$/)
+  meal_plan_code?: string;
 
   @ApiProperty({
     example: 0,
@@ -201,6 +224,24 @@ export class CreateTravellerDto {
   @ApiProperty({ example: 1, description: '1=Adult, 2=Child, 3=Infant' })
   @IsInt()
   traveller_type!: number;
+
+  @ApiProperty({
+    example: '8',
+    required: false,
+    description: 'Child age as string. Optional for non-child travellers.',
+  })
+  @IsOptional()
+  @IsString()
+  traveller_age?: string;
+
+  @ApiProperty({
+    example: 1,
+    required: false,
+    description: 'Child bed type (0=NA, 1=Without Bed, 2=With Bed).',
+  })
+  @IsOptional()
+  @IsInt()
+  child_bed_type?: number;
 }
 
 export class CreateItineraryDto {
@@ -226,4 +267,24 @@ export class CreateItineraryDto {
   @ValidateNested({ each: true })
   @Type(() => CreateTravellerDto)
   travellers!: CreateTravellerDto[];
+
+  @ApiProperty({
+    example: false,
+    required: false,
+    description: 'Whether the user explicitly answered the Day 1 previous-day hotel billing confirmation.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  @Type(() => Boolean)
+  previousDayBillingDecisionProvided?: boolean;
+
+  @ApiProperty({
+    example: false,
+    required: false,
+    description: 'If provided, whether the user confirmed previous-day billing for early Day 1 arrival.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  @Type(() => Boolean)
+  previousDayBillingConfirmed?: boolean;
 }

@@ -1,0 +1,333 @@
+======== REQUEST ========
+{
+  "BookingId": 2117423,
+  "BookingRefId": "2117423",
+  "TokenId": "e48484a3-fd03-45bb-a4d5-cd3828a7d7ad",
+  "EndUserIp": "192.168.1.1"
+}
+
+======== RESPONSE ========
+{
+  "GetBookingDetailResult": {
+    "TBOReferenceNo": "TBVSBYYOTW",
+    "VoucherStatus": true,
+    "ResponseStatus": 1,
+    "Error": {
+      "ErrorCode": 0,
+      "ErrorMessage": ""
+    },
+    "TraceId": "fccd02ff-434d-11f1-855f-720abae076dd",
+    "Status": 1,
+    "HotelBookingStatus": "Confirmed",
+    "ConfirmationNo": "7483293045959",
+    "BookingRefNo": "861512115462328,590711251029549",
+    "BookingId": 2117423,
+    "IsPriceChanged": false,
+    "IsCancellationPolicyChanged": false,
+    "Rooms": [
+      {
+        "AdultCount": 1,
+        "AvailabilityType": "NotAvailable",
+        "ChildCount": 0,
+        "HotelPassenger": [
+          {
+            "Age": 30,
+            "Email": "adult1@cert.example.com",
+            "FileDocument": null,
+            "FirstName": "Arun",
+            "GSTCompanyAddress": null,
+            "GSTCompanyContactNumber": null,
+            "GSTCompanyEmail": null,
+            "GSTCompanyName": null,
+            "GSTNumber": null,
+            "GuardianDetail": null,
+            "LastName": "Sharma",
+            "LeadPassenger": true,
+            "MiddleName": null,
+            "PAN": "AAAPL1234C",
+            "PassportExpDate": null,
+            "PassportIssueDate": null,
+            "PassportNo": null,
+            "PaxId": 267216,
+            "PaxType": 1,
+            "Phoneno": "9000000100",
+            "Title": "Mr"
+          }
+        ],
+        "RequireAllPaxDetails": false,
+        "RoomId": 198229,
+        "RoomStatus": 0,
+        "RoomIndex": 1,
+        "RoomTypeCode": "446425|204",
+        "RoomDescription": "<p></p><p>183-sq-foot room with city views </p><br/><p><b>Internet</b> - Free WiFi and wired internet access</p><p><b>Entertainment</b> - Premium channels </p><p><b>Food and Drink</b> - Room service and free bottled water </p><p><b>Bathroom</b> - Private bathroom, shower, bathrobes, and a hair dryer</p><p><b>Practical</b> - Safe and wardrobe or closet; rollaway beds (surcharge) available on request</p><p><b>Comfort</b> - Air conditioning and daily housekeeping</p><p>Smoking And Non-Smoking</p>",
+        "RoomTypeName": "Standard Single Room, 1 Twin Bed",
+        "RatePlanCode": "446425|204835244|37336|141",
+        "RatePlan": 0,
+        "IsPerStay": true,
+        "PriceBreakUp": {
+          "CurrencyCode": "INR",
+          "RoomRate": 8690.75,
+          "RoomTax": 1564.57,
+          "RoomExtraGuestCharges": 0,
+          "RoomChildCharges": 0,
+          "ServiceFee": 0,
+          "AgentCommission": 73.36,
+          "TaxBreakup": [
+            {
+              "TaxType": "Tax_CGST",
+              "TaxAmount": 0
+            },
+            {
+              "TaxType": "Tax_IGST",
+              "TaxAmount": 0
+            },
+            {
+              "TaxType": "Tax_SGST",
+              "TaxAmount": 0
+            },
+            {
+              "TaxType": "Tax_TCS",
+              "TaxAmount": 0
+            },
+            {
+              "TaxType": "Tax_TDS",
+              "TaxAmount": 1.47
+            }
+          ]
+        },
+        "RoomPromotion": null,
+        "Amenities": [
+          "Towels provided",
+          "Premium TV channels",
+          "Television",
+          "Smoking and Non-Smoking",
+          "Shower only",
+          "Room service",
+          "Private bathroom",
+          "Bathrobes",
+          "Wardrobe or closet",
+          "Free wired internet",
+          "Hair dryer",
+          "Daily housekeeping",
+          "Air conditioning",
+          "Free WiFi",
+          "Rollaway/extra beds (surcharge)",
+          "In-room safe",
+          "Cable TV service",
+          "Free bottled water"
+        ],
+        "SmokingPreference": "NoPreference",
+        "BedTypes": [],
+        "Supplements": [],
+        "LastCancellationDate": "2026-06-04T23:59:59",
+        "CancelPolicies": [
+          {
+            "CancellationCharge": 0,
+            "ChargeType": 1,
+            "Currency": "INR",
+            "FromDate": "27/04/2026 00:00:00",
+            "ToDate": "04/06/2026 23:59:59"
+          },
+          {
+            "CancellationCharge": 100,
+            "ChargeType": 2,
+            "Currency": "INR",
+            "FromDate": "05/06/2026 00:00:00",
+            "ToDate": "06/06/2026 23:59:59"
+          }
+        ],
+        "CancellationPolicies": null,
+        "LastVoucherDate": "2026-06-04T23:59:59",
+        "CancellationPolicy": "Standard Single Room, 1 Twin Bed#^#No cancellation charge, If cancelled between 27-Apr-2026 00:00:00 and 04-Jun-2026 23:59:59.|100.00% of total amount will be charged, If cancelled between 05-Jun-2026 00:00:00 and 06-Jun-2026 23:59:59.|#!#",
+        "Inclusion": "Breakfast buffet,Free self parking Free breakfast"
+      },
+      {
+        "AdultCount": 1,
+        "AvailabilityType": "NotAvailable",
+        "ChildCount": 0,
+        "HotelPassenger": [
+          {
+            "Age": 31,
+            "Email": "adult2@cert.example.com",
+            "FileDocument": null,
+            "FirstName": "Meera",
+            "GSTCompanyAddress": null,
+            "GSTCompanyContactNumber": null,
+            "GSTCompanyEmail": null,
+            "GSTCompanyName": null,
+            "GSTNumber": null,
+            "GuardianDetail": null,
+            "LastName": "Iyer",
+            "LeadPassenger": true,
+            "MiddleName": null,
+            "PAN": "AAAPL1234C",
+            "PassportExpDate": null,
+            "PassportIssueDate": null,
+            "PassportNo": null,
+            "PaxId": 267217,
+            "PaxType": 1,
+            "Phoneno": "9000000101",
+            "Title": "Ms"
+          }
+        ],
+        "RequireAllPaxDetails": false,
+        "RoomId": 198230,
+        "RoomStatus": 0,
+        "RoomIndex": 2,
+        "RoomTypeCode": "446425|204",
+        "RoomDescription": "<p></p><p>183-sq-foot room with city views </p><br/><p><b>Internet</b> - Free WiFi and wired internet access</p><p><b>Entertainment</b> - Premium channels </p><p><b>Food and Drink</b> - Room service and free bottled water </p><p><b>Bathroom</b> - Private bathroom, shower, bathrobes, and a hair dryer</p><p><b>Practical</b> - Safe and wardrobe or closet; rollaway beds (surcharge) available on request</p><p><b>Comfort</b> - Air conditioning and daily housekeeping</p><p>Smoking And Non-Smoking</p>",
+        "RoomTypeName": "Standard Single Room, 1 Twin Bed",
+        "RatePlanCode": "446425|204835244|37336|141",
+        "RatePlan": 0,
+        "IsPerStay": true,
+        "PriceBreakUp": {
+          "CurrencyCode": "INR",
+          "RoomRate": 8690.75,
+          "RoomTax": 1564.57,
+          "RoomExtraGuestCharges": 0,
+          "RoomChildCharges": 0,
+          "ServiceFee": 0,
+          "AgentCommission": 73.36,
+          "TaxBreakup": [
+            {
+              "TaxType": "Tax_CGST",
+              "TaxAmount": 0
+            },
+            {
+              "TaxType": "Tax_IGST",
+              "TaxAmount": 0
+            },
+            {
+              "TaxType": "Tax_SGST",
+              "TaxAmount": 0
+            },
+            {
+              "TaxType": "Tax_TCS",
+              "TaxAmount": 0
+            },
+            {
+              "TaxType": "Tax_TDS",
+              "TaxAmount": 1.47
+            }
+          ]
+        },
+        "RoomPromotion": null,
+        "Amenities": [
+          "Towels provided",
+          "Premium TV channels",
+          "Television",
+          "Smoking and Non-Smoking",
+          "Shower only",
+          "Room service",
+          "Private bathroom",
+          "Bathrobes",
+          "Wardrobe or closet",
+          "Free wired internet",
+          "Hair dryer",
+          "Daily housekeeping",
+          "Air conditioning",
+          "Free WiFi",
+          "Rollaway/extra beds (surcharge)",
+          "In-room safe",
+          "Cable TV service",
+          "Free bottled water"
+        ],
+        "SmokingPreference": "NoPreference",
+        "BedTypes": [],
+        "Supplements": [],
+        "LastCancellationDate": "2026-06-04T23:59:59",
+        "CancelPolicies": [
+          {
+            "CancellationCharge": 0,
+            "ChargeType": 1,
+            "Currency": "INR",
+            "FromDate": "27/04/2026 00:00:00",
+            "ToDate": "04/06/2026 23:59:59"
+          },
+          {
+            "CancellationCharge": 100,
+            "ChargeType": 2,
+            "Currency": "INR",
+            "FromDate": "05/06/2026 00:00:00",
+            "ToDate": "06/06/2026 23:59:59"
+          }
+        ],
+        "CancellationPolicies": null,
+        "LastVoucherDate": "2026-06-04T23:59:59",
+        "CancellationPolicy": "Standard Single Room, 1 Twin Bed#^#No cancellation charge, If cancelled between 27-Apr-2026 00:00:00 and 04-Jun-2026 23:59:59.|100.00% of total amount will be charged, If cancelled between 05-Jun-2026 00:00:00 and 06-Jun-2026 23:59:59.|#!#",
+        "Inclusion": "Breakfast buffet,Free self parking Free breakfast"
+      }
+    ],
+    "NetAmount": 20366.86,
+    "NetTax": 3132.08,
+    "RateConditions": [
+      "Early check out will attract full cancellation charge unless otherwise specified",
+      "CheckIn Time-Begin: 12:00 PM ",
+      " CheckIn Time-End: midnight",
+      "CheckOut Time: 12:00 PM",
+      "CheckIn Instructions: &lt;ul&gt;  &lt;li&gt;Extra-person charges may apply and vary depending on property policy&lt;/li&gt;&lt;li&gt;Government-issued photo identification and a credit card, debit card, or cash deposit may be required at check-in for incidental charges&lt;/li&gt;&lt;li&gt;Special requests are subject to availability upon check-in and may incur additional charges; special requests cannot be guaranteed&lt;/li&gt;&lt;li&gt;This property accepts credit cards&lt;/li&gt;&lt;li&gt;Safety features at this property include a fire extinguisher and a security system&lt;/li&gt;&lt;li&gt;Please note that cultural norms and guest policies may differ by country and by property; the policies listed are provided by the property&lt;/li&gt;  &lt;/ul&gt; ",
+      " Special Instructions : This property doesn't offer after-hours check-in. Front desk staff will greet guests on arrival at the property. Information provided by the property may be translated using automated translation tools. To register at this property, guests who are Indian citizens must provide a valid photo identity card issued by the Government of India; travelers who are not citizens of India must present a valid passport and visa.",
+      "Optional Fees: &lt;ul&gt; &lt;li&gt;Rollaway bed fee: INR 800 per night&lt;/li&gt;&lt;/ul&gt; &lt;p&gt;The above list may not be comprehensive. Fees and deposits may not include tax and are subject to change. &lt;/p&gt;",
+      "Cards Accepted: Visa,Mastercard",
+      "Pets not allowed,Professional property host/manager,No cribs (infant beds) available,Beach nearby",
+      "Extra person charges may apply at check-in, as per the property's policy."
+    ],
+    "AgentRemarks": "",
+    "BookingSource": "EANPackage",
+    "BookingStatus": 2,
+    "CreditNoteGSTIN": null,
+    "GSTIN": null,
+    "GuestNationality": "IN",
+    "HotelItineraryTracking": {
+      "CampaignId": null,
+      "CampaignName": null,
+      "IsLovedByIndians": false,
+      "IsSelectedFromSimilar": false,
+      "ItineraryTrackingJson": null,
+      "SearchType": 1
+    },
+    "HotelPolicyDetail": null,
+    "IntHotelPassportDetails": null,
+    "InvoiceAmount": 20367,
+    "InvoiceCreatedOn": "2026-04-28T22:02:56",
+    "InvoiceNo": "MW/2627/2784",
+    "IsCorporate": false,
+    "LastCancellationDeadline": "2026-06-04T23:59:59",
+    "PostBookingRequestDetails": [],
+    "HotelConfirmationNo": null,
+    "HotelCode": "3160939",
+    "HotelId": 172709,
+    "HotelName": "Regency Hotel",
+    "TBOHotelCode": "1083571",
+    "StarRating": 3,
+    "AddressLine1": "73 Nepean Sea Road, Mumbai 400006",
+    "AddressLine2": "",
+    "CountryCode": "IN",
+    "Latitude": "18.955081",
+    "Longitude": "72.798800",
+    "City": "Mumbai",
+    "CityId": 144306,
+    "CheckInDate": "2026-06-07T00:00:00",
+    "InitialCheckInDate": "2026-06-07T00:00:00",
+    "CheckOutDate": "2026-06-08T00:00:00",
+    "InitialCheckOutDate": "2026-06-08T00:00:00",
+    "LastCancellationDate": "2026-06-04T23:59:59",
+    "LastVoucherDate": "2026-06-04T23:59:59",
+    "NoOfRooms": 2,
+    "BookingDate": "2026-04-28T22:02:56",
+    "SpecialRequest": "",
+    "IsDomestic": true,
+    "BookingAllowedForRoamer": true
+  }
+}
+
+======== METADATA ========
+- timestamp: 2026-04-28T22:02:57.579Z
+- endpoint: https://hotelbe.tektravels.com/hotelservice.svc/rest/Getbookingdetail
+- status code: 200
+- case id: 3
+- step name: get-booking-detail
+- method: POST
+- status: success
+- error: none
+- skipped reason: none

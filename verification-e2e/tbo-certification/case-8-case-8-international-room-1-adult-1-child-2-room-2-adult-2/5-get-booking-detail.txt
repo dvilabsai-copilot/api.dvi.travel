@@ -1,0 +1,470 @@
+======== REQUEST ========
+{
+  "BookingId": 2117428,
+  "BookingRefId": "2117428",
+  "TokenId": "2d00701a-acea-4f11-918a-b13cc3961125",
+  "EndUserIp": "192.168.1.1"
+}
+
+======== RESPONSE ========
+{
+  "GetBookingDetailResult": {
+    "TBOReferenceNo": "TB7C6DKFMM",
+    "VoucherStatus": true,
+    "ResponseStatus": 1,
+    "Error": {
+      "ErrorCode": 0,
+      "ErrorMessage": ""
+    },
+    "TraceId": "32f98ada-434e-11f1-855f-720abae076dd",
+    "Status": 1,
+    "HotelBookingStatus": "Confirmed",
+    "ConfirmationNo": "7470094887273",
+    "BookingRefNo": "219699003285890,263795947804969",
+    "BookingId": 2117428,
+    "IsPriceChanged": false,
+    "IsCancellationPolicyChanged": false,
+    "Rooms": [
+      {
+        "AdultCount": 1,
+        "AvailabilityType": "NotAvailable",
+        "ChildAge": [
+          6,
+          9
+        ],
+        "ChildCount": 2,
+        "HotelPassenger": [
+          {
+            "Age": 30,
+            "Email": "adult1@cert.example.com",
+            "FileDocument": null,
+            "FirstName": "Arun",
+            "GSTCompanyAddress": null,
+            "GSTCompanyContactNumber": null,
+            "GSTCompanyEmail": null,
+            "GSTCompanyName": null,
+            "GSTNumber": null,
+            "GuardianDetail": null,
+            "LastName": "Sharma",
+            "LeadPassenger": true,
+            "MiddleName": null,
+            "PAN": "AAAPL1234C",
+            "PassportExpDate": null,
+            "PassportIssueDate": null,
+            "PassportNo": null,
+            "PaxId": 267230,
+            "PaxType": 1,
+            "Phoneno": "9000000100",
+            "Title": "Mr"
+          },
+          {
+            "Age": 6,
+            "Email": "child1@cert.example.com",
+            "FileDocument": null,
+            "FirstName": "Ira",
+            "GSTCompanyAddress": null,
+            "GSTCompanyContactNumber": null,
+            "GSTCompanyEmail": null,
+            "GSTCompanyName": null,
+            "GSTNumber": null,
+            "GuardianDetail": null,
+            "LastName": "Sharma",
+            "LeadPassenger": false,
+            "MiddleName": null,
+            "PAN": null,
+            "PassportExpDate": null,
+            "PassportIssueDate": null,
+            "PassportNo": null,
+            "PaxId": 267231,
+            "PaxType": 2,
+            "Phoneno": "9111111100",
+            "Title": "Miss"
+          },
+          {
+            "Age": 9,
+            "Email": "child2@cert.example.com",
+            "FileDocument": null,
+            "FirstName": "Neel",
+            "GSTCompanyAddress": null,
+            "GSTCompanyContactNumber": null,
+            "GSTCompanyEmail": null,
+            "GSTCompanyName": null,
+            "GSTNumber": null,
+            "GuardianDetail": null,
+            "LastName": "Iyer",
+            "LeadPassenger": false,
+            "MiddleName": null,
+            "PAN": null,
+            "PassportExpDate": null,
+            "PassportIssueDate": null,
+            "PassportNo": null,
+            "PaxId": 267232,
+            "PaxType": 2,
+            "Phoneno": "9111111101",
+            "Title": "Miss"
+          }
+        ],
+        "RequireAllPaxDetails": false,
+        "RoomId": 198237,
+        "RoomStatus": 0,
+        "RoomIndex": 1,
+        "RoomTypeCode": "200304219|",
+        "RoomDescription": "<p></p><p>495-sq-foot room with courtyard views </p><br/><p><b>Layout</b> - Living room and sitting area</p><p><b>Entertainment</b> - 40-inch LCD TV, premium channels, and DVD player</p><p><b>Food and Drink</b> - Kitchenette with stovetop, microwave, and cookware/dishware</p><p><b>Sleep</b> - A down duvet, blackout drapes/curtains, and bed sheets </p><p><b>Bathroom</b> - Private bathroom, bathrobes, and a separate bathtub and shower with a rainfall showerhead</p><p><b>Practical</b> - Safe, twin sofa bed, and iron/ironing board; rollaway beds (surcharge) and cribs (free) available on request</p><p><b>Comfort</b> - Climate-controlled air conditioning, daily housekeeping, fresh towels every 3 days, fresh bed sheets every 3 days </p>\n<p>Non-Smoking</p><p>Connecting/adjoining rooms can be requested, subject to availability </p>",
+        "RoomTypeName": "Twin Hilton Guestroom with Sofa cum Bed, Bathtub,1",
+        "RatePlanCode": "200304219|384406715|37341|141",
+        "RatePlan": 0,
+        "IsPerStay": true,
+        "PriceBreakUp": {
+          "CurrencyCode": "INR",
+          "RoomRate": 16469.53,
+          "RoomTax": 3268.14,
+          "RoomExtraGuestCharges": 0,
+          "RoomChildCharges": 0,
+          "ServiceFee": 0,
+          "AgentCommission": 115.01,
+          "TaxBreakup": [
+            {
+              "TaxType": "Tax_CGST",
+              "TaxAmount": 0
+            },
+            {
+              "TaxType": "Tax_IGST",
+              "TaxAmount": 0
+            },
+            {
+              "TaxType": "Tax_SGST",
+              "TaxAmount": 0
+            },
+            {
+              "TaxType": "Tax_TCS",
+              "TaxAmount": 0
+            },
+            {
+              "TaxType": "Tax_TDS",
+              "TaxAmount": 2.3
+            }
+          ]
+        },
+        "RoomPromotion": null,
+        "Amenities": [
+          "In-room climate control (air conditioning)",
+          "Blackout drapes/curtains",
+          "Kitchenette",
+          "Desk",
+          "Premium TV channels",
+          "Connecting/adjoining rooms available",
+          "DVD player",
+          "Down comforter",
+          "Air conditioning",
+          "Cable/satellite TV service",
+          "Rollaway/extra beds (surcharge)",
+          "Sofa bed",
+          "Separate sitting area",
+          "Alarm clock",
+          "Cable TV service",
+          "Non-Smoking",
+          "Television",
+          "Soundproofed rooms",
+          "Laptop-friendly workspace",
+          "Separate bathtub and shower",
+          "Minibar",
+          "Wardrobe or closet",
+          "Number of days between towel changes: 3",
+          "Daily housekeeping",
+          "Number of days between bed sheet changes: 3",
+          "Individually decorated",
+          "Phone",
+          "Dial-up internet access",
+          "High-speed internet access",
+          "Separate living room",
+          "Restaurant dining guide",
+          "Towels provided",
+          "Bedsheets provided",
+          "LED TV",
+          "TV size measurement: inch",
+          "Stovetop",
+          "Private bathroom",
+          "Bathrobes",
+          "Free toiletries",
+          "Hair dryer",
+          "TV size: 40",
+          "Iron/ironing board",
+          "Rainfall showerhead",
+          "In-room safe",
+          "Cookware, dishware, and utensils",
+          "Room service (24 hours)",
+          "LCD TV",
+          "Microwave",
+          "Free bottled water",
+          "Free cribs/infant beds"
+        ],
+        "SmokingPreference": "NoPreference",
+        "BedTypes": [],
+        "Supplements": [],
+        "LastCancellationDate": "2026-06-14T23:59:59",
+        "CancelPolicies": [
+          {
+            "CancellationCharge": 0,
+            "ChargeType": 1,
+            "Currency": "INR",
+            "FromDate": "27/04/2026 00:00:00",
+            "ToDate": "14/06/2026 23:59:59"
+          },
+          {
+            "CancellationCharge": 100,
+            "ChargeType": 2,
+            "Currency": "INR",
+            "FromDate": "15/06/2026 00:00:00",
+            "ToDate": "16/06/2026 23:59:59"
+          }
+        ],
+        "CancellationPolicies": null,
+        "LastVoucherDate": "2026-06-14T23:59:59",
+        "CancellationPolicy": "Twin Hilton Guestroom with Sofa cum Bed, Bathtub,1#^#No cancellation charge, If cancelled between 27-Apr-2026 00:00:00 and 14-Jun-2026 23:59:59.|100.00% of total amount will be charged, If cancelled between 15-Jun-2026 00:00:00 and 16-Jun-2026 23:59:59.|#!#",
+        "Inclusion": "Free valet parking,Free breakfast"
+      },
+      {
+        "AdultCount": 2,
+        "AvailabilityType": "NotAvailable",
+        "ChildCount": 0,
+        "HotelPassenger": [
+          {
+            "Age": 31,
+            "Email": "adult2@cert.example.com",
+            "FileDocument": null,
+            "FirstName": "Meera",
+            "GSTCompanyAddress": null,
+            "GSTCompanyContactNumber": null,
+            "GSTCompanyEmail": null,
+            "GSTCompanyName": null,
+            "GSTNumber": null,
+            "GuardianDetail": null,
+            "LastName": "Iyer",
+            "LeadPassenger": true,
+            "MiddleName": null,
+            "PAN": "AAAPL1234C",
+            "PassportExpDate": null,
+            "PassportIssueDate": null,
+            "PassportNo": null,
+            "PaxId": 267233,
+            "PaxType": 1,
+            "Phoneno": "9000000101",
+            "Title": "Ms"
+          },
+          {
+            "Age": 32,
+            "Email": "adult3@cert.example.com",
+            "FileDocument": null,
+            "FirstName": "Kavya",
+            "GSTCompanyAddress": null,
+            "GSTCompanyContactNumber": null,
+            "GSTCompanyEmail": null,
+            "GSTCompanyName": null,
+            "GSTNumber": null,
+            "GuardianDetail": null,
+            "LastName": "Verma",
+            "LeadPassenger": false,
+            "MiddleName": null,
+            "PAN": "AAAPL1234C",
+            "PassportExpDate": null,
+            "PassportIssueDate": null,
+            "PassportNo": null,
+            "PaxId": 267234,
+            "PaxType": 1,
+            "Phoneno": "9000000102",
+            "Title": "Mrs"
+          }
+        ],
+        "RequireAllPaxDetails": false,
+        "RoomId": 198238,
+        "RoomStatus": 0,
+        "RoomIndex": 2,
+        "RoomTypeCode": "200304219|",
+        "RoomDescription": "<p></p><p>495-sq-foot room with courtyard views </p><br/><p><b>Layout</b> - Living room and sitting area</p><p><b>Entertainment</b> - 40-inch LCD TV, premium channels, and DVD player</p><p><b>Food and Drink</b> - Kitchenette with stovetop, microwave, and cookware/dishware</p><p><b>Sleep</b> - A down duvet, blackout drapes/curtains, and bed sheets </p><p><b>Bathroom</b> - Private bathroom, bathrobes, and a separate bathtub and shower with a rainfall showerhead</p><p><b>Practical</b> - Safe, twin sofa bed, and iron/ironing board; rollaway beds (surcharge) and cribs (free) available on request</p><p><b>Comfort</b> - Climate-controlled air conditioning, daily housekeeping, fresh towels every 3 days, fresh bed sheets every 3 days </p>\n<p>Non-Smoking</p><p>Connecting/adjoining rooms can be requested, subject to availability </p>",
+        "RoomTypeName": "Twin Hilton Guestroom with Sofa cum Bed, Bathtub,1",
+        "RatePlanCode": "200304219|384406715|37341|141",
+        "RatePlan": 0,
+        "IsPerStay": true,
+        "PriceBreakUp": {
+          "CurrencyCode": "INR",
+          "RoomRate": 16933.14,
+          "RoomTax": 3349.51,
+          "RoomExtraGuestCharges": 0,
+          "RoomChildCharges": 0,
+          "ServiceFee": 0,
+          "AgentCommission": 120.65,
+          "TaxBreakup": [
+            {
+              "TaxType": "Tax_CGST",
+              "TaxAmount": 0
+            },
+            {
+              "TaxType": "Tax_IGST",
+              "TaxAmount": 0
+            },
+            {
+              "TaxType": "Tax_SGST",
+              "TaxAmount": 0
+            },
+            {
+              "TaxType": "Tax_TCS",
+              "TaxAmount": 0
+            },
+            {
+              "TaxType": "Tax_TDS",
+              "TaxAmount": 2.42
+            }
+          ]
+        },
+        "RoomPromotion": null,
+        "Amenities": [
+          "In-room climate control (air conditioning)",
+          "Blackout drapes/curtains",
+          "Kitchenette",
+          "Desk",
+          "Premium TV channels",
+          "Connecting/adjoining rooms available",
+          "DVD player",
+          "Down comforter",
+          "Air conditioning",
+          "Cable/satellite TV service",
+          "Rollaway/extra beds (surcharge)",
+          "Sofa bed",
+          "Separate sitting area",
+          "Alarm clock",
+          "Cable TV service",
+          "Non-Smoking",
+          "Television",
+          "Soundproofed rooms",
+          "Laptop-friendly workspace",
+          "Separate bathtub and shower",
+          "Minibar",
+          "Wardrobe or closet",
+          "Number of days between towel changes: 3",
+          "Daily housekeeping",
+          "Number of days between bed sheet changes: 3",
+          "Individually decorated",
+          "Phone",
+          "Dial-up internet access",
+          "High-speed internet access",
+          "Separate living room",
+          "Restaurant dining guide",
+          "Towels provided",
+          "Bedsheets provided",
+          "LED TV",
+          "TV size measurement: inch",
+          "Stovetop",
+          "Private bathroom",
+          "Bathrobes",
+          "Free toiletries",
+          "Hair dryer",
+          "TV size: 40",
+          "Iron/ironing board",
+          "Rainfall showerhead",
+          "In-room safe",
+          "Cookware, dishware, and utensils",
+          "Room service (24 hours)",
+          "LCD TV",
+          "Microwave",
+          "Free bottled water",
+          "Free cribs/infant beds"
+        ],
+        "SmokingPreference": "NoPreference",
+        "BedTypes": [],
+        "Supplements": [],
+        "LastCancellationDate": "2026-06-14T23:59:59",
+        "CancelPolicies": [
+          {
+            "CancellationCharge": 0,
+            "ChargeType": 1,
+            "Currency": "INR",
+            "FromDate": "27/04/2026 00:00:00",
+            "ToDate": "14/06/2026 23:59:59"
+          },
+          {
+            "CancellationCharge": 100,
+            "ChargeType": 2,
+            "Currency": "INR",
+            "FromDate": "15/06/2026 00:00:00",
+            "ToDate": "16/06/2026 23:59:59"
+          }
+        ],
+        "CancellationPolicies": null,
+        "LastVoucherDate": "2026-06-14T23:59:59",
+        "CancellationPolicy": "Twin Hilton Guestroom with Sofa cum Bed, Bathtub,1#^#No cancellation charge, If cancelled between 27-Apr-2026 00:00:00 and 14-Jun-2026 23:59:59.|100.00% of total amount will be charged, If cancelled between 15-Jun-2026 00:00:00 and 16-Jun-2026 23:59:59.|#!#",
+        "Inclusion": "Free valet parking,Free breakfast"
+      }
+    ],
+    "NetAmount": 39789.38,
+    "NetTax": 6622.37,
+    "RateConditions": [
+      "Early check out will attract full cancellation charge unless otherwise specified",
+      "CheckIn Time-Begin: 3:00 PM",
+      "CheckOut Time: 12:00 PM",
+      "CheckIn Instructions: &lt;ul&gt;  &lt;li&gt;Extra-person charges may apply and vary depending on property policy&lt;/li&gt;&lt;li&gt;Government-issued photo identification and a credit card, debit card, or cash deposit may be required at check-in for incidental charges&lt;/li&gt;&lt;li&gt;Special requests are subject to availability upon check-in and may incur additional charges; special requests cannot be guaranteed&lt;/li&gt;&lt;li&gt;This property accepts credit cards, debit cards, and cash&lt;/li&gt;&lt;li&gt;Safety features at this property include a carbon monoxide detector, a fire extinguisher, a smoke detector, a security system, and a first aid kit&lt;/li&gt;&lt;li&gt;Please note that cultural norms and guest policies may differ by country and by property; the policies listed are provided by the property&lt;/li&gt;  &lt;/ul&gt; ",
+      " Special Instructions : Front desk staff will greet guests on arrival at the property. Information provided by the property may be translated using automated translation tools. To register at this property, guests who are Indian citizens must provide a valid photo identity card issued by the Government of India; travelers who are not citizens of India must present a valid passport and visa.",
+      "Minimum CheckIn Age : 18",
+      "Optional Fees: &lt;ul&gt; &lt;li&gt;Fee for buffet breakfast: approximately INR 1299 for adults and INR 649 for children&lt;/li&gt;&lt;li&gt;A late check-out fee will be charged&lt;/li&gt;&lt;li&gt;Rollaway bed fee: INR 1500.0 per night&lt;/li&gt;&lt;/ul&gt; &lt;p&gt;The above list may not be comprehensive. Fees and deposits may not include tax and are subject to change. &lt;/p&gt;",
+      "Cards Accepted: Visa,Diners Club,Debit cards,Cash,American Express,Mastercard",
+      "&lt;ul&gt;  &lt;li&gt;The property has connecting/adjoining rooms, which are subject to availability and can be requested by contacting the property using the number on the booking confirmation. &lt;/li&gt;&lt;li&gt;No pets and no service animals are allowed at this property. &lt;/li&gt;&lt;li&gt;Contactless check-out is available.&lt;/li&gt;&lt;li&gt;This property welcomes guests of all sexual orientations and gender identities (LGBTQ+ friendly).&lt;/li&gt; &lt;/ul&gt;,Service animals not allowed,Pets not allowed,Professional property host/manager,Contactless check-out is available,LGBTQIA+  friendly,Essential workers only - NO,No elevators",
+      "Extra person charges may apply at check-in, as per the property's policy."
+    ],
+    "AgentRemarks": "",
+    "BookingSource": "EANPackage",
+    "BookingStatus": 2,
+    "CreditNoteGSTIN": null,
+    "GSTIN": null,
+    "GuestNationality": "US",
+    "HotelItineraryTracking": {
+      "CampaignId": null,
+      "CampaignName": null,
+      "IsLovedByIndians": false,
+      "IsSelectedFromSimilar": false,
+      "ItineraryTrackingJson": null,
+      "SearchType": 1
+    },
+    "HotelPolicyDetail": null,
+    "IntHotelPassportDetails": null,
+    "InvoiceAmount": 39790,
+    "InvoiceCreatedOn": "2026-04-28T22:04:27",
+    "InvoiceNo": "MW/2627/2789",
+    "IsCorporate": false,
+    "LastCancellationDeadline": "2026-06-14T23:59:59",
+    "PostBookingRequestDetails": [],
+    "HotelConfirmationNo": null,
+    "HotelCode": "6097535",
+    "HotelId": 172714,
+    "HotelName": "Hilton Bangalore Embassy GolfLinks",
+    "TBOHotelCode": "1035259",
+    "StarRating": 5,
+    "AddressLine1": "off Intermediate Ring Road, Embassy Golf Links Business Park, Challaghatta, Bengaluru, Karnataka 560",
+    "AddressLine2": "",
+    "CountryCode": "IN",
+    "Latitude": "12.948319",
+    "Longitude": "77.646090",
+    "City": "Bengaluru",
+    "CityId": 111124,
+    "CheckInDate": "2026-06-17T00:00:00",
+    "InitialCheckInDate": "2026-06-17T00:00:00",
+    "CheckOutDate": "2026-06-18T00:00:00",
+    "InitialCheckOutDate": "2026-06-18T00:00:00",
+    "LastCancellationDate": "2026-06-14T23:59:59",
+    "LastVoucherDate": "2026-06-14T23:59:59",
+    "NoOfRooms": 2,
+    "BookingDate": "2026-04-28T22:04:27",
+    "SpecialRequest": "",
+    "IsDomestic": true,
+    "BookingAllowedForRoamer": true
+  }
+}
+
+======== METADATA ========
+- timestamp: 2026-04-28T22:04:28.406Z
+- endpoint: https://hotelbe.tektravels.com/hotelservice.svc/rest/Getbookingdetail
+- status code: 200
+- case id: 8
+- step name: get-booking-detail
+- method: POST
+- status: success
+- error: none
+- skipped reason: none

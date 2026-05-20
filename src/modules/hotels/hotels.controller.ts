@@ -17,6 +17,17 @@ import {
 } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
+import {
+  IsArray,
+  IsDateString,
+  IsInt,
+  IsNumber,
+  IsObject,
+  IsOptional,
+  IsString,
+  ValidateNested,
+} from 'class-validator';
 
 import { Express } from 'express';
 import { HotelsService } from './hotels.service';
@@ -29,30 +40,99 @@ import { UpdateHotelDto } from './dto/update-hotel.dto';
  * =======================================================================================
  */
 class UpsertHotelMealPriceBookDto {
+  @IsDateString()
   startDate!: string;
+
+  @IsDateString()
   endDate!: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
   breakfastCost?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
   lunchCost?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
   dinnerCost?: number;
 }
 
 class UpsertAmenityPricebookDto {
+  @IsDateString()
   startDate!: string;
+
+  @IsDateString()
   endDate!: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
   hoursCharge?: number | string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
   dayCharge?: number | string;
 }
 
+class BulkRoomPricebookItemDto {
+  @Type(() => Number)
+  @IsInt()
+  room_id!: number;
+
+  @IsDateString()
+  startDate!: string | Date;
+
+  @IsDateString()
+  endDate!: string | Date;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  roomPrice?: number | string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  extraBed?: number | string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  childWithBed?: number | string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  childWithoutBed?: number | string;
+
+  @IsOptional()
+  @IsObject()
+  occupancyRates?: Record<string, number | string>;
+
+  @IsOptional()
+  @IsString()
+  axisroomsRoomId?: string;
+
+  @IsOptional()
+  @IsString()
+  rateplanId?: string;
+
+  @IsOptional()
+  @IsString()
+  ratePlanName?: string;
+}
+
 class BulkRoomPricebookDto {
-  items!: Array<{
-    room_id: number;
-    startDate: string | Date;
-    endDate: string | Date;
-    roomPrice?: number | string;
-    extraBed?: number | string;
-    childWithBed?: number | string;
-    childWithoutBed?: number | string;
-  }>;
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => BulkRoomPricebookItemDto)
+  items!: BulkRoomPricebookItemDto[];
 }
 
 /** Minimal DTO for reviews */
@@ -91,12 +171,14 @@ export class HotelsController {
   }
 
   @Get('meta/states')
-  states(@Query('countryId') countryId: string) {
+  states(@Query('countryId') countryId: string, @Query('all') all?: string) {
+    if (String(all) === '1') return this.hotels.statesAll();
     return this.hotels.states(Number(countryId));
   }
 
   @Get('meta/cities')
-  cities(@Query('stateId') stateId: string) {
+  cities(@Query('stateId') stateId: string, @Query('all') all?: string) {
+    if (String(all) === '1') return this.hotels.citiesAll();
     return this.hotels.cities(Number(stateId));
   }
 
@@ -148,13 +230,44 @@ export class HotelsController {
   }
 
   @Get(':id/roomtypes')
-  roomTypesAliasPlain(@Param('id', ParseIntPipe) _id: number) {
-    return this.hotels.roomTypes();
+  roomTypesAliasPlain(@Param('id', ParseIntPipe) id: number) {
+    return this.hotels.roomTypesByHotel(id);
   }
 
   @Get(':id/room-types')
-  roomTypesAliasKebab(@Param('id', ParseIntPipe) _id: number) {
-    return this.hotels.roomTypes();
+  roomTypesAliasKebab(@Param('id', ParseIntPipe) id: number) {
+    return this.hotels.roomTypesByHotel(id);
+  }
+
+  @Get('axisrooms')
+  listAxisroomsHotels(
+    @Query('search') search = '',
+    @Query('page') page = '1',
+    @Query('limit') limit = '10',
+  ) {
+    return this.hotels.listAxisroomsHotels({
+      search,
+      page: Number(page || 1),
+      limit: Number(limit || 10),
+    });
+  }
+
+  @Get('axisrooms/attempted')
+  listAxisroomsAttemptedNoUpdates(
+    @Query('search') search = '',
+    @Query('page') page = '1',
+    @Query('limit') limit = '50',
+  ) {
+    return this.hotels.listAxisroomsAttemptedNoUpdates({
+      search,
+      page: Number(page || 1),
+      limit: Number(limit || 50),
+    });
+  }
+
+  @Get('axisrooms/:id/preview')
+  getAxisroomsHotelPreview(@Param('id', ParseIntPipe) id: number) {
+    return this.hotels.getAxisroomsHotelPreview(id);
   }
 
   // =============================================================================
@@ -215,6 +328,15 @@ export class HotelsController {
     return this.hotels.listRooms(id);
   }
 
+  /** Rate plans for a specific room — used by Admin Price Book tab */
+  @Get(':id/rooms/:roomId/rateplans')
+  getRoomRatePlans(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('roomId', ParseIntPipe) roomId: number,
+  ) {
+    return this.hotels.getRoomRatePlans(id, roomId);
+  }
+
   // NEW: bulk rooms endpoint used by React RoomsStep
   // POST /api/v1/hotels/:id/rooms/bulk  with body: { items: [ { ...roomPayload } ] }
   @Post(':id/rooms/bulk')
@@ -233,16 +355,32 @@ export class HotelsController {
     }
 
     const results: any[] = [];
+    const errors: any[] = [];
     for (const raw of items) {
       const payload = { ...(raw ?? {}), hotel_id: id };
-      const res = await this.hotels.saveRoom(payload as any);
-      results.push(res);
+      try {
+        const res = await this.hotels.saveRoom(payload as any);
+        results.push(res);
+      } catch (e: any) {
+        errors.push({
+          room_id: payload?.room_id ?? payload?.room_ID ?? null,
+          message: e?.message || 'Failed to save room row',
+        });
+      }
+    }
+
+    if (!results.length) {
+      throw new BadRequestException(
+        errors[0]?.message || 'Failed to save rooms',
+      );
     }
 
     return {
       success: true,
       count: results.length,
       items: results,
+      failedCount: errors.length,
+      errors,
     };
   }
 
@@ -445,6 +583,23 @@ export class HotelsController {
     return this.hotels.bulkUpsertRoomPricebook(id, dto);
   }
 
+  /** Room pricebook range-view — returns saved occupancy rates pivoted by date for the Admin Price Book grid */
+  @Get(':id/pricebook/range-view')
+  getRoomPricebookRangeView(
+    @Param('id', ParseIntPipe) id: number,
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+    @Query('roomId') roomId: string,
+    @Query('rateplanId') rateplanId: string,
+  ) {
+    return this.hotels.getRoomPricebookRangeView(id, {
+      startDate,
+      endDate,
+      roomId: Number(roomId),
+      rateplanId,
+    });
+  }
+
   // =============================================================================
   // Step 4A: Meal Price Book
   // =============================================================================
@@ -478,68 +633,67 @@ export class HotelsController {
   }
 
   /** POST /api/v1/hotels/:id/reviews  (UI primary) */
-  @Post(':id/reviews')
-  addReviewForHotel(
-    @Param('id', ParseIntPipe) id: number,
-    @Body() body: ReviewDto,
-    @Req() req: any,
-  ) {
-    return this.hotels.addReviewUnified(
-      {
-        hotel_id: id,
-        rating: body.rating as any,
-        description: body.description,
-        status: body.status,
-      },
-      Number(req?.user?.id) || 1,
-    );
-  }
+@Post(':id/reviews')
+addReviewForHotel(
+  @Param('id', ParseIntPipe) id: number,
+  @Body() body: any,
+  @Req() req: any,
+) {
+  return this.hotels.addReviewUnified(
+    {
+      ...(body ?? {}),
+      hotel_id: id,
+      hotelId: id,
+    },
+    Number(req?.user?.id) || 1,
+  );
+}
+
 
   /** Alias: POST /api/v1/hotels/:id/feedback */
   @Post(':id/feedback')
-  addFeedbackAlias(
-    @Param('id', ParseIntPipe) id: number,
-    @Body() body: ReviewDto,
-    @Req() req: any,
-  ) {
-    return this.hotels.addReviewUnified(
-      {
-        hotel_id: id,
-        rating: body.rating as any,
-        description: body.description,
-        status: body.status,
-      },
-      Number(req?.user?.id) || 1,
-    );
-  }
+addFeedbackAlias(
+  @Param('id', ParseIntPipe) id: number,
+  @Body() body: any,
+  @Req() req: any,
+) {
+  return this.hotels.addReviewUnified(
+    {
+      ...(body ?? {}),
+      hotel_id: id,
+      hotelId: id,
+    },
+    Number(req?.user?.id) || 1,
+  );
+}
 
   /** Root POST for cases where UI sends { hotel_id, ... } to /api/v1/hotels/reviews */
-  @Post('reviews')
-  addReviewRoot(
-    @Body() body: ReviewDto & { hotel_id?: number },
-    @Req() req: any,
-  ) {
-    const hid = Number((body as any)?.hotel_id);
-    if (!Number.isFinite(hid) || hid <= 0) {
-      throw new BadRequestException('hotel_id is required');
-    }
-    return this.hotels.addReviewUnified(
-      {
-        hotel_id: hid,
-        rating: body.rating as any,
-        description: body.description,
-        status: body.status,
-      },
-      Number(req?.user?.id) || 1,
-    );
+ @Post('reviews')
+addReviewRoot(
+  @Body() body: any,
+  @Req() req: any,
+) {
+  const hid = Number(body?.hotel_id ?? body?.hotelId);
+  if (!Number.isFinite(hid) || hid <= 0) {
+    throw new BadRequestException('hotel_id is required');
   }
+
+  return this.hotels.addReviewUnified(
+    {
+      ...(body ?? {}),
+      hotel_id: hid,
+      hotelId: hid,
+    },
+    Number(req?.user?.id) || 1,
+  );
+}
 
   /** PATCH /api/v1/hotels/:id/reviews/:reviewId */
   @Patch(':id/reviews/:reviewId')
   updateReview(
     @Param('id', ParseIntPipe) id: number,
     @Param('reviewId', ParseIntPipe) reviewId: number,
-    @Body() body: ReviewDto,
+    @Body() body: any,
     @Req() req: any,
   ) {
     return this.hotels.updateReviewUnified(
@@ -571,7 +725,7 @@ export class LocationsController {
     @Query('countryId') countryId?: string,
   ) {
     if (String(all) === '1') {
-      return this.hotels.states(Number(countryId ?? 0)) || [];
+      return this.hotels.statesAll();
     }
     return this.hotels.states(Number(countryId ?? 0));
   }
@@ -582,7 +736,7 @@ export class LocationsController {
     @Query('stateId') stateId?: string,
   ) {
     if (String(all) === '1') {
-      return this.hotels.cities(Number(stateId ?? 0)) || [];
+      return this.hotels.citiesAll();
     }
     return this.hotels.cities(Number(stateId ?? 0));
   }
@@ -598,7 +752,7 @@ export class RootStatesController {
     @Query('countryId') countryId?: string,
   ) {
     if (String(all) === '1') {
-      return this.hotels.states(Number(countryId ?? 0)) || [];
+      return this.hotels.statesAll();
     }
     return this.hotels.states(Number(countryId ?? 0));
   }
@@ -614,7 +768,7 @@ export class RootCitiesController {
     @Query('stateId') stateId?: string,
   ) {
     if (String(all) === '1') {
-      return this.hotels.cities(Number(stateId ?? 0)) || [];
+      return this.hotels.citiesAll();
     }
     return this.hotels.cities(Number(stateId ?? 0));
   }
@@ -630,7 +784,7 @@ export class DviGeoController {
     @Query('countryId') countryId?: string,
   ) {
     if (String(all) === '1') {
-      return this.hotels.states(Number(countryId ?? 0)) || [];
+      return this.hotels.statesAll();
     }
     return this.hotels.states(Number(countryId ?? 0));
   }
@@ -641,7 +795,7 @@ export class DviGeoController {
     @Query('stateId') stateId?: string,
   ) {
     if (String(all) === '1') {
-      return this.hotels.cities(Number(stateId ?? 0)) || [];
+      return this.hotels.citiesAll();
     }
     return this.hotels.cities(Number(stateId ?? 0));
   }
@@ -650,6 +804,19 @@ export class DviGeoController {
 @Controller()
 export class PreviewAliasesController {
   constructor(private readonly hotels: HotelsService) {}
+
+  // PHP JSON parity aliases:
+  // - engine/json/__JSONsearchhotel.php?phrase=...
+  // - engine/json/__JSONsearchroomtype.php?phrase=...
+  @Get('json/searchhotel')
+  searchHotelNames(@Query('phrase') phrase = '') {
+    return this.hotels.searchHotelNames(phrase);
+  }
+
+  @Get('json/searchroomtype')
+  searchRoomTypeNames(@Query('phrase') phrase = '') {
+    return this.hotels.searchRoomTypeNames(phrase);
+  }
 
   // ===== Amenities aliases that your UI calls =====
 

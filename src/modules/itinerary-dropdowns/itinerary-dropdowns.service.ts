@@ -4,6 +4,11 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
 import {
+  CANONICAL_HOTEL_RATE_PLANS,
+  HotelMealComposition,
+  TboMealType,
+} from '../hotels/hotel-rate-plans';
+import {
   EligibleVehicleTypesDto,
   EligibleVehicleTypesResponseDto,
 } from './dto/eligible-vehicle-types.dto';
@@ -18,10 +23,43 @@ export type LocationOption = {
   name: string;
 };
 
+export type MealPlanOption = {
+  id: string;
+  label: string;
+  code: string;
+  description: string;
+  mealComposition?: HotelMealComposition;
+  tboMealType?: TboMealType;
+  includesBreakfast: number;
+  includesLunch: number;
+  includesDinner: number;
+};
+
 type LocationType = 'source' | 'destination';
 
 function isNonEmptyString(v: unknown): v is string {
   return typeof v === 'string' && v.trim().length > 0;
+}
+
+function sortWithIndiaPinnedAndRetained(
+  options: SimpleOption[],
+): SimpleOption[] {
+  const normalized = options
+    .map((item) => ({
+      id: String(item.id),
+      label: String(item.label ?? '').trim(),
+    }))
+    .filter((item) => item.label.length > 0);
+
+  const alphabetical = [...normalized].sort((a, b) =>
+    a.label.localeCompare(b.label),
+  );
+
+  const india = alphabetical.find(
+    (item) => item.label.toLowerCase() === 'india',
+  );
+
+  return india ? [india, ...alphabetical] : alphabetical;
 }
 
 @Injectable()
@@ -279,27 +317,110 @@ export class ItineraryDropdownsService {
     }
   }
 
-  // ---------------------------------------------------------------------------
+    // ---------------------------------------------------------------------------
   // LOCATIONS (source / destination) from dvi_stored_locations like old PHP
   // ---------------------------------------------------------------------------
-  async getLocations(
-    type: LocationType = 'source',
-    sourceLocation?: string,
-  ): Promise<LocationOption[]> {
-    const isDestination = type === 'destination';
-
-    const rows = await this.prisma.dvi_stored_locations.findMany({
+  private async getItineraryDistanceLimit(): Promise<number | null> {
+    const row = await this.prisma.dvi_global_settings.findFirst({
       where: {
         deleted: 0,
         status: 1,
-        ...(isDestination && sourceLocation ? { source_location: sourceLocation } : {}),
       } as any,
       select: {
-        source_location: true,
-        destination_location: true,
+        itinerary_distance_limit: true,
       },
-      distinct: isDestination ? ['destination_location'] : ['source_location'],
     } as any);
+
+    if (!row || row.itinerary_distance_limit == null) return null;
+    return Number(row.itinerary_distance_limit);
+  }
+
+  async getLocations(
+    type: LocationType = 'source',
+    sourceLocation?: string,
+    dayNo?: string,
+    totalNoOfDays?: string,
+    departureLocation?: string,
+  ): Promise<LocationOption[]> {
+    const isDestination = type === 'destination';
+
+    let rows:
+      | Array<{ source_location?: string | null; destination_location?: string | null }>
+      | Array<{ destination_location?: string | null }>;
+
+    if (isDestination && isNonEmptyString(sourceLocation)) {
+      const trimmedSourceLocation = sourceLocation.trim();
+      const trimmedDepartureLocation = isNonEmptyString(departureLocation)
+        ? departureLocation.trim()
+        : '';
+      const parsedDayNo = Number(dayNo);
+      const parsedTotalNoOfDays = Number(totalNoOfDays);
+      const hasDayContext =
+        Number.isFinite(parsedDayNo) &&
+        parsedDayNo > 0 &&
+        Number.isFinite(parsedTotalNoOfDays) &&
+        parsedTotalNoOfDays > 0;
+
+      const whereClauses: string[] = ['deleted = 0', 'status = 1'];
+      const params: Array<string | number> = [];
+
+      if (
+        hasDayContext &&
+        parsedTotalNoOfDays - 1 === parsedDayNo &&
+        trimmedDepartureLocation
+      ) {
+        whereClauses.push('(source_location = ? OR source_location = ?)');
+        params.push(trimmedSourceLocation, trimmedDepartureLocation);
+      } else {
+        whereClauses.push('source_location = ?');
+        params.push(trimmedSourceLocation);
+      }
+
+      if (
+        hasDayContext &&
+        parsedTotalNoOfDays === parsedDayNo &&
+        trimmedDepartureLocation
+      ) {
+        whereClauses.push('destination_location = ?');
+        params.push(trimmedDepartureLocation);
+      }
+
+      const itineraryDistanceLimit = await this.getItineraryDistanceLimit();
+      if (
+        itineraryDistanceLimit != null &&
+        Number.isFinite(itineraryDistanceLimit) &&
+        itineraryDistanceLimit > 0
+      ) {
+        whereClauses.push('distance <= ?');
+        params.push(itineraryDistanceLimit);
+      }
+
+      rows = await (this.prisma as any).$queryRawUnsafe(
+        `
+        SELECT destination_location
+        FROM dvi_stored_locations
+        WHERE ${whereClauses.join(' AND ')}
+          AND destination_location IS NOT NULL
+          AND TRIM(destination_location) <> ''
+        GROUP BY destination_location
+        ORDER BY MIN(CAST(distance AS DECIMAL(10,2))) ASC, destination_location ASC
+        `,
+        ...params,
+      );
+    } else {
+      rows = await this.prisma.dvi_stored_locations.findMany({
+        where: {
+          deleted: 0,
+          status: 1,
+          ...(isDestination && sourceLocation ? { source_location: sourceLocation } : {}),
+        } as any,
+        select: {
+          source_location: true,
+          destination_location: true,
+        },
+        distinct: isDestination ? ['destination_location'] : ['source_location'],
+      } as any);
+    }
 
     let locations = rows
       .map((r) => (isDestination ? r.destination_location : r.source_location))
@@ -355,18 +476,35 @@ export class ItineraryDropdownsService {
       if (aliases?.length) allValidNames.push(...aliases);
     });
 
-    // 3. Filter locations: keep if it matches or contains a city name with hotels
-    locations = locations.filter((loc) => {
-      const lowerLoc = loc.toLowerCase();
-      return allValidNames.some(
-        (cityName) => lowerLoc.includes(cityName) || cityName.includes(lowerLoc),
-      );
-    });
+    // 3. Prefer locations that match a city having active hotels, but do NOT drop
+// newly added stored locations that may not yet map to an active hotel city.
+// This keeps the old itinerary ordering for the matched set while still showing
+// everything currently stored in dvi_stored_locations.
+const hotelMatchedLocations = locations.filter((loc) => {
+  const lowerLoc = loc.toLowerCase();
+  return allValidNames.some(
+    (cityName) => lowerLoc.includes(cityName) || cityName.includes(lowerLoc),
+  );
+});
 
-    return locations.map((loc) => ({
-      id: loc,
-      name: loc,
-    }));
+const seenLocationKeys = new Set<string>();
+const mergedLocations: string[] = [];
+
+for (const loc of [...hotelMatchedLocations, ...locations]) {
+  const trimmed = loc.trim();
+  if (!trimmed) continue;
+
+  const key = trimmed.toLowerCase();
+  if (seenLocationKeys.has(key)) continue;
+
+  seenLocationKeys.add(key);
+  mergedLocations.push(trimmed);
+}
+
+return mergedLocations.map((loc) => ({
+  id: loc,
+  name: loc,
+}));
   }
 
   async getItineraryTypes(): Promise<SimpleOption[]> {
@@ -399,11 +537,17 @@ export class ItineraryDropdownsService {
   }
 
   async getNationalities(): Promise<SimpleOption[]> {
-    return [
-      { id: '101', label: 'Indian T' },
-      { id: '2', label: 'Non Indian' },
-    ];
-  }
+  const rows = await this.prisma.dvi_countries.findMany({
+    where: { status: 1, deleted: 0 },
+    select: { id: true, name: true },
+    orderBy: { name: 'asc' },
+  });
+  const countries: SimpleOption[] = rows.map((r) => ({
+    id: String(r.id),
+    label: r.name,
+  }));
+  return sortWithIndiaPinnedAndRetained(countries);
+}
 
   async getFoodPreferences(): Promise<SimpleOption[]> {
     return [
@@ -411,6 +555,67 @@ export class ItineraryDropdownsService {
       { id: 'non-veg', label: 'Non-Vegetarian' },
       { id: 'egg', label: 'Eggetarian' },
     ];
+  }
+
+  async getMealPlans(): Promise<MealPlanOption[]> {
+    const rows = await this.prisma.dvi_hotel_rate_plan_master.findMany({
+      where: {
+        status: 1,
+        deleted: 0,
+      } as any,
+      select: {
+        rate_plan_code: true,
+        rate_plan_name: true,
+        description: true,
+        includes_breakfast: true,
+        includes_lunch: true,
+        includes_dinner: true,
+        sort_order: true,
+      },
+      orderBy: [{ sort_order: 'asc' }, { rate_plan_code: 'asc' }],
+    } as any);
+
+    const mapped = rows
+      .map((r: any): MealPlanOption | null => {
+        const code = String(r.rate_plan_code ?? '').trim().toUpperCase();
+        const name = String(r.rate_plan_name ?? '').trim();
+        if (!code) return null;
+
+        const description = String(r.description ?? '').trim();
+        const includesBreakfast = Number(r.includes_breakfast ?? 0) ? 1 : 0;
+        const includesLunch = Number(r.includes_lunch ?? 0) ? 1 : 0;
+        const includesDinner = Number(r.includes_dinner ?? 0) ? 1 : 0;
+
+        return {
+          id: code,
+          code,
+          description,
+          label: name ? `${code} - ${name}` : code,
+          mealComposition: CANONICAL_HOTEL_RATE_PLANS.find((plan) => plan.code === code)?.mealComposition,
+          tboMealType: CANONICAL_HOTEL_RATE_PLANS.find((plan) => plan.code === code)?.tboMealType,
+          includesBreakfast,
+          includesLunch,
+          includesDinner,
+        };
+      })
+      .filter((x): x is MealPlanOption => x !== null);
+
+    if (mapped.length > 0) {
+      return mapped;
+    }
+
+    // Fallback to the canonical backend definitions when master data is not seeded.
+    return CANONICAL_HOTEL_RATE_PLANS.map((plan) => ({
+      id: plan.code,
+      code: plan.code,
+      label: `${plan.code} - ${plan.name}`,
+      description: plan.description,
+      mealComposition: plan.mealComposition,
+      tboMealType: plan.tboMealType,
+      includesBreakfast: plan.includesBreakfast,
+      includesLunch: plan.includesLunch,
+      includesDinner: plan.includesDinner,
+    }));
   }
 
   async getVehicleTypes(): Promise<SimpleOption[]> {

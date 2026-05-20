@@ -1,8 +1,6 @@
 import { Injectable, InternalServerErrorException, Logger, Inject } from '@nestjs/common';
 import axios, { AxiosInstance } from 'axios';
 import { PrismaService } from '../../../prisma.service';
-import * as fs from 'fs';
-import * as path from 'path';
 import {
   IHotelProvider,
   HotelSearchResult,
@@ -14,49 +12,58 @@ import {
   HotelConfirmationDetails,
   CancellationResult,
 } from '../interfaces/hotel-provider.interface';
+import { resolveProviderPassengerTitle } from '../../../common/utils/passenger-title.util';
+import { SupplementNormalizerService } from '../services/supplement-normalizer.service';
+import {
+  inferCanonicalHotelRatePlanCodeFromMealText,
+  getNormalizedMealPlanLabelFromMealText,
+} from '../hotel-rate-plans';
 
 @Injectable()
 export class TBOHotelProvider implements IHotelProvider {
+  // TBO API Constraints - Certification Required
+  private static readonly MAX_ROOMS = 6;
+  private static readonly MAX_ADULTS_PER_ROOM = 8;
+  private static readonly MAX_CHILDREN_PER_ROOM = 4;
+
   // Production API Endpoints from Postman Collection
   private readonly SEARCH_API_URL = 'https://affiliate.tektravels.com/HotelAPI';
   private readonly BOOKING_API_URL = 'https://hotelbe.tektravels.com';
   private readonly SHARED_API_URL = 'https://sharedapi.tektravels.com';
+  private readonly TBO_STATIC_API_URL = 'http://api.tbotechnology.in/TBOHolidays_HotelAPI';
+  private readonly TBO_STATIC_USERNAME = process.env.TBO_STATIC_USERNAME || 'TBOStaticAPITest';
+  private readonly TBO_STATIC_PASSWORD = process.env.TBO_STATIC_PASSWORD || 'Tbo@11530818';
+  private readonly SEARCH_USERNAME = process.env.TBO_SEARCH_USERNAME || process.env.TBO_API_USERNAME || process.env.TBO_USERNAME || 'Doview';
+  private readonly SEARCH_PASSWORD = process.env.TBO_SEARCH_PASSWORD || process.env.TBO_API_PASSWORD || process.env.TBO_PASSWORD || 'Doview@12345';
   
   // Real Production Credentials (From Postman - Verified Working)
-  private readonly USERNAME = process.env.TBO_USERNAME || 'Doview';
-  private readonly PASSWORD = process.env.TBO_PASSWORD || 'Doview@12345';
+  private readonly USERNAME = process.env.TBO_API_USERNAME || process.env.TBO_USERNAME || 'Doview';
+  private readonly PASSWORD = process.env.TBO_API_PASSWORD || process.env.TBO_PASSWORD || 'Doview@12345';
   
   private logger = new Logger(TBOHotelProvider.name);
+  private readonly verboseHotelLookupLogs =
+    (process.env.TBO_VERBOSE_HOTEL_LOOKUP_LOGS || 'false').toLowerCase() === 'true';
   private tokenId: string | null = null;
   private tokenExpiry: Date | null = null;
   private http: AxiosInstance = axios;
-  private logFile = path.join(process.cwd(), 'tbo-hotel-provider.log');
 
-  private fileLog(message: string) {
-    const timestamp = new Date().toISOString();
-    const logMessage = `[${timestamp}] ${message}\n`;
-    try {
-      fs.appendFileSync(this.logFile, logMessage);
-    } catch (e) {
-      // Ignore file write errors
-    }
-  }
-
-  constructor(private readonly prisma: PrismaService) {
-    this.fileLog('═════════════════════════════════════════');
-    this.fileLog('TBOHotelProvider CONSTRUCTOR CALLED');
-    this.fileLog('═════════════════════════════════════════');
-    this.fileLog(`PrismaService type: ${typeof this.prisma}`);
-    this.fileLog(`PrismaService value: ${this.prisma ? 'DEFINED' : 'UNDEFINED'}`);
-    this.fileLog(`PrismaService constructor: ${this.prisma?.constructor?.name || 'N/A'}`);
-    console.log('🔐 TBOHotelProvider CONSTRUCTOR CALLED');
-    console.log('🔐 PrismaService received:', !!prisma, typeof prisma);
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly supplementNormalizer: SupplementNormalizerService,
+  ) {
     if (!prisma) {
-      console.error('🔴 PrismaService is NULL/UNDEFINED!');
-      this.fileLog('🔴 ERROR: PrismaService is NULL/UNDEFINED!');
+      this.logger.error('🔴 PrismaService is NULL/UNDEFINED!');
     }
     this.logger.log('🔐 TBO Hotel Provider initialized with production endpoints');
     this.logger.log(`Using credentials: ${this.USERNAME}`);
+    if (
+      (process.env.TBO_SEARCH_USERNAME && this.SEARCH_USERNAME !== this.USERNAME) ||
+      (process.env.TBO_SEARCH_PASSWORD && this.SEARCH_PASSWORD !== this.PASSWORD)
+    ) {
+      this.logger.warn(
+        '⚠️ TBO_SEARCH_* credentials differ from TBO_API/TBO credentials. Search and booking may use different accounts.',
+      );
+    }
   }
 
   getName(): string {
@@ -100,7 +107,7 @@ export class TBOHotelProvider implements IHotelProvider {
 
       const authTime = Date.now() - authStartTime;
       this.logger.log(`   ⏱️  TBO Auth Response Time: ${authTime}ms`);
-      this.logger.debug(`   📋 TBO Auth Response: ${JSON.stringify(response.data)}`);
+      this.logger.debug(`   📋 TBO Auth Status: ${response.data?.Status ?? 'unknown'}`);
 
       // TBO API returns Status: 1 for success, not Status.Code
       const status = response.data?.Status;
@@ -133,35 +140,31 @@ export class TBOHotelProvider implements IHotelProvider {
     preferences?: HotelPreferences,
   ): Promise<HotelSearchResult[]> {
     const startTime = Date.now();
-    this.fileLog('\n═════════════════════════════════════════');
-    this.fileLog('search() method called');
-    this.fileLog('═════════════════════════════════════════');
-    this.fileLog(`this.prisma type: ${typeof this.prisma}`);
-    this.fileLog(`this.prisma value: ${this.prisma ? 'DEFINED' : 'UNDEFINED'}`);
-    this.fileLog(`this.prisma.dvi_cities exists: ${!!this.prisma?.dvi_cities}`);
-    console.log('📡 TBOHotelProvider.search() called');
-    console.log('📡 this.prisma is:', !!this.prisma, typeof this.prisma);
     if (!this.prisma) {
-      console.error('🔴 this.prisma is NULL/UNDEFINED in search method!');
-      this.fileLog('🔴 ERROR: this.prisma is NULL/UNDEFINED in search method!');
+      this.logger.error('🔴 this.prisma is NULL/UNDEFINED in search method!');
       throw new Error('PrismaService not injected');
     }
     try {
       this.logger.log(`\n   📡 TBO PROVIDER: Starting hotel search for city: ${criteria.cityCode}`);
 
-      // Step 1: Get TBO city code mapping
-      // criteria.cityCode is already the TBO city code (from tbo_city_code field)
-      const tboCity = await this.prisma.dvi_cities.findFirst({
-        where: { tbo_city_code: criteria.cityCode },
-      });
-
-      if (!tboCity?.tbo_city_code) {
+      // Step 1: Resolve TBO city code from existing schema fields.
+      // Supports: direct TBO city code, dvi_cities.id, and fallback via dvi_hotel.tbo_city_code.
+      const resolvedCity = await this.resolveTboCityCode(criteria.cityCode);
+      if (!resolvedCity?.tboCityCode) {
         throw new Error(
-          `City ${criteria.cityCode} not mapped to TBO. TBO City Code: ${tboCity?.tbo_city_code}`
+          `Unable to resolve TBO city code for input: ${criteria.cityCode}. ` +
+          `Ensure dvi_cities.tbo_city_code or dvi_hotel.tbo_city_code is populated.`
         );
       }
 
-      this.logger.log(`   🗺️  City Mapping: TBO ${tboCity.tbo_city_code} → ${tboCity.name} (ID: ${tboCity.id})`);
+      const resolvedTboCityCode = resolvedCity.tboCityCode;
+      this.logger.log(
+        `   🗺️  City Mapping: input ${criteria.cityCode} → TBO ${resolvedTboCityCode}` +
+        `${resolvedCity.source ? ` (source: ${resolvedCity.source})` : ''}`
+      );
+
+      // Ensure DB has city/hotel master data for this TBO city before searching.
+      await this.ensureCityAndHotelsInDb(criteria.cityCode, resolvedTboCityCode);
 
       // Step 2: Get hotel codes from TBO SharedData API or master database
       // Instead of hardcoding, fetch from TBO's master hotel list
@@ -175,10 +178,20 @@ export class TBOHotelProvider implements IHotelProvider {
       } else {
         // Query database for hotel codes from tbo_hotel_master table
         // This table is synced daily from TBO's GetHotels API via cron/scheduler
-        hotelCodes = await this.getHotelCodesForCityFromDb(tboCity.tbo_city_code);
+        hotelCodes = await this.getHotelCodesForCityFromDb(resolvedTboCityCode);
         if (!hotelCodes) {
-          this.logger.warn(`   ⚠️  No hotel codes in database for city ${tboCity.tbo_city_code} - will search by city only`);
-          // Don't return empty - let TBO search by city without specific hotel codes
+          this.logger.warn(`   ⚠️  No hotel codes in database for city ${resolvedTboCityCode} - trying static TBOHotelCodeList fallback`);
+          hotelCodes = await this.fetchHotelCodesFromStaticApi(resolvedTboCityCode);
+
+          if (!hotelCodes) {
+            this.logger.error(
+              `   ❌ No hotel codes available for city ${resolvedTboCityCode} from DB or static API. ` +
+              `Skipping Search call because TBO requires HotelCodes.`
+            );
+            return [];
+          }
+
+          this.logger.log(`   ✅ Fallback fetched ${hotelCodes.split(',').length} hotel codes from static API`);
         } else {
           isUsingDatabaseCodes = true;
           this.logger.log(`   📋 Fetched ${hotelCodes.split(',').length} hotel codes from database`);
@@ -202,32 +215,45 @@ export class TBOHotelProvider implements IHotelProvider {
 
       // If no hotel codes, search by city only (one request)
       const requestChunks = hotelCodeChunks.length > 0 ? hotelCodeChunks : [''];
+      const paxRooms = this.buildSearchPaxRooms(criteria);
+      const guestNationality = this.normalizeNationality(criteria.guestNationality);
+      const selectedMealPlanCode = String(preferences?.mealPlanCode || '').trim().toUpperCase();
+      const selectedTboMealType = String(preferences?.tboMealType || '').trim();
+      const selectedStarRatings = Array.from(
+        new Set(
+          (preferences?.starRatings || [])
+            .map((value) => Number(value))
+            .filter((value) => Number.isInteger(value) && value >= 1 && value <= 5),
+        ),
+      ).sort((a, b) => a - b);
+      const tboStarRatingFilter = selectedStarRatings.length === 1 ? selectedStarRatings[0] : 0;
+      if (selectedStarRatings.length > 0) {
+        this.logger.log(
+          `   ⭐ Star filter requested: [${selectedStarRatings.join(', ')}] (TBO request StarRating=${tboStarRatingFilter})`,
+        );
+      }
+      // Certification flow expects NoOfRooms=0 in search to fetch all available room options.
+      const noOfRooms = 0;
 
       // Step 4: Make parallel searches for each chunk
-      const basicAuth = Buffer.from('TBOApi:TBOApi@123').toString('base64');
+      const basicAuth = Buffer.from(`${this.SEARCH_USERNAME}:${this.SEARCH_PASSWORD}`).toString('base64');
       const chunkPromises = requestChunks.map((chunk) =>
         this.executeTBOSearch(
           {
             CheckIn: this.formatDateToISO(criteria.checkInDate),
             CheckOut: this.formatDateToISO(criteria.checkOutDate),
             HotelCodes: chunk,
-            CityCode: tboCity.tbo_city_code,
-            GuestNationality: 'IN',
-            PaxRooms: [
-              {
-                Adults: Math.max(criteria.guestCount, 1),
-                Children: 0,
-                ChildrenAges: [],
-              },
-            ],
+            CityCode: resolvedTboCityCode,
+            GuestNationality: guestNationality,
+            PaxRooms: paxRooms,
             ResponseTime: 23.0,
             IsDetailedResponse: true,
             Filters: {
-              Refundable: true,
-              NoOfRooms: criteria.roomCount || 1,
-              MealType: 'WithMeal',
+              Refundable: false,
+              NoOfRooms: noOfRooms,
+              MealType: selectedTboMealType,
               OrderBy: 0,
-              StarRating: 0,
+              StarRating: tboStarRatingFilter,
               HotelName: null,
             },
           },
@@ -259,29 +285,62 @@ export class TBOHotelProvider implements IHotelProvider {
       const results: HotelSearchResult[] = [];
 
       for (const hotel of hotels) {
-        // Log the EXACT hotel data from TBO API
-        this.logger.log(`\n🏨 TBO Hotel Raw Data:`);
-        this.logger.log(`   - Full Hotel Object: ${JSON.stringify(hotel)}`);
-        this.logger.log(`   - HotelCode: ${hotel.HotelCode}`);
-        this.logger.log(`   - HotelName (from TBO): ${hotel.HotelName}`);
-        this.logger.log(`   - Hotel Keys: ${Object.keys(hotel).join(', ')}`);
-
         // Fetch actual hotel name from database (synced from TBO GetHotels API)
-        const hotelMasterData = await this.getHotelMasterDataFromDb(hotel.HotelCode, criteria.cityCode);
+        const hotelMasterData = await this.getHotelMasterDataFromDb(hotel.HotelCode, resolvedTboCityCode);
+        const hotelRating = Number(hotelMasterData?.star_rating || 0);
+        if (selectedStarRatings.length > 0 && !selectedStarRatings.includes(hotelRating)) {
+          continue;
+        }
         const hotelDisplayName = hotelMasterData?.hotel_name ?? `Hotel ${hotel.HotelCode}`;
-
-        this.logger.log(`   - Database Hotel Name: ${hotelDisplayName}`);
-        this.logger.log(`   - Using Name: ${hotelDisplayName}\n`);
 
         // Process each room as a separate offering with the SAME real hotel name
         // (One HotelCode = One real hotel, not fake variants)
         for (let idx = 0; idx < (hotel.Rooms || []).length; idx++) {
           const room = hotel.Rooms[idx];
-          const totalFare = room.TotalFare || room.DayRates?.[0]?.[0]?.BasePrice || 0;
+          const inferredMealPlanCode = inferCanonicalHotelRatePlanCodeFromMealText(room.Inclusion);
+          if (selectedMealPlanCode && inferredMealPlanCode !== selectedMealPlanCode) {
+            continue;
+          }
+          const netAmount = room.NetAmount || room.TotalFare || room.DayRates?.[0]?.[0]?.BasePrice || 0;
+          const totalFare = room.TotalFare || room.NetAmount || room.DayRates?.[0]?.[0]?.BasePrice || 0;
           const roomName = room.Name?.[0] || 'Standard Room';
+          const inclusionText = String(room.Inclusion || '').trim();
+          const inclusions = inclusionText
+            ? inclusionText
+                .split(',')
+                .map((item: string) => item.trim())
+                .filter(Boolean)
+            : [];
+          const rateConditions = Array.isArray(room.RateConditions)
+            ? room.RateConditions
+            : room.RateConditions
+              ? [room.RateConditions]
+              : [];
+          const amenities = Array.isArray(room.Amenities)
+            ? room.Amenities.map((item: any) => String(item).trim()).filter(Boolean)
+            : [];
           
           // Use REAL BookingCode from TBO Search API response (not generated)
           const realBookingCode = room.BookingCode || `${hotel.HotelCode}_${room.TBORoomID}`;
+
+          // ✅ Extract and normalize supplements from search response
+          const rawSupplements = room.Supplements || [];
+          const supplementSummary = this.supplementNormalizer.createSupplementSummary(
+            rawSupplements,
+            'search',
+          );
+
+          // Build room type with supplement details
+          const roomTypeObj: RoomType = {
+            roomCode: realBookingCode,
+            roomName: roomName,
+            bedType: roomName.includes('King') ? 'King' : 'Twin',
+            capacity: 2,
+            price: parseFloat(netAmount.toString()),
+            cancellationPolicy: room.CancelPolicies?.[0]?.ChargeType || 'Non-refundable',
+            // ✅ Add supplements to room type
+            supplements: rawSupplements.length > 0 ? rawSupplements : undefined,
+          };
 
           results.push({
             provider: 'tbo',
@@ -289,44 +348,467 @@ export class TBOHotelProvider implements IHotelProvider {
             hotelName: hotelDisplayName, // Real hotel name from database
             cityCode: criteria.cityCode,
             address: hotelMasterData?.hotel_address ?? '',
-            rating: hotelMasterData?.star_rating ?? 0,
+            latitude:
+              hotelMasterData?.hotel_latitude ??
+              (hotel?.Latitude != null ? String(hotel.Latitude).trim() : null),
+            longitude:
+              hotelMasterData?.hotel_longitude ??
+              (hotel?.Longitude != null ? String(hotel.Longitude).trim() : null),
+            rating: hotelRating,
             category: hotelMasterData?.star_rating ? `${hotelMasterData.star_rating}-Star` : '-',
-            facilities: (room.Inclusion || '').split(',').map((f) => f.trim()),
+            facilities: Array.from(new Set([...inclusions, ...amenities])),
+            amenities,
+            inclusions,
+            rateConditions,
             images: [],
-            price: parseFloat(totalFare.toString()),
+            price: parseFloat(netAmount.toString()),
+            netAmount: parseFloat(netAmount.toString()),
+            totalFare: parseFloat(totalFare.toString()),
             currency: hotel.Currency || 'INR',
             roomType: roomName, // Room type name for display
-            mealPlan: (room.Inclusion || '').includes('Breakfast') ? 'Breakfast Included' : '-',
-            roomTypes: [
-              {
-                roomCode: realBookingCode,
-                roomName: roomName,
-                bedType: roomName.includes('King') ? 'King' : 'Twin',
-                capacity: 2,
-                price: parseFloat(totalFare.toString()),
-                cancellationPolicy: room.CancelPolicies?.[0]?.ChargeType || 'Non-refundable',
-              },
-            ],
+            mealPlan: getNormalizedMealPlanLabelFromMealText(room.Inclusion),
+            roomTypes: [roomTypeObj],
             // Use REAL BookingCode from TBO as searchReference
             searchReference: realBookingCode,
             expiresAt: expiresAt,
+            // ✅ Add hotel-level supplement summary
+            supplementSummary: {
+              hasSupplements: supplementSummary.rawSupplements.length > 0,
+              supplementCount: supplementSummary.normalizedSupplements.length,
+              atPropertyChargeCount: supplementSummary.atPropertyCharges.length,
+              requiresReview:
+                supplementSummary.unknownTypeCharges.length > 0 ||
+                supplementSummary.mandatoryChargesCount > 0,
+            },
           });
         }
       }
 
       this.logger.log(`✅ Successfully transformed ${results.length} hotels`);
-      this.logger.log(`📊 Room type breakdown: ${results.map(r => r.price).join(', ')}`);
+      this.logger.debug(`📊 Hotel search output size: ${results.length}`);
+      
       return results;
     } catch (error: any) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       this.logger.error(`❌ Hotel Search Error: ${errorMsg}`);
       this.logger.error(`   📋 Stack: ${error?.stack?.substring(0, 200)}`);
       
-      // CRITICAL: Don't throw - return empty array for graceful handling
-      // This allows the system to generate placeholder "No Hotels Available" instead of crashing
-      this.logger.warn(`   ⚠️  Returning empty results instead of throwing error`);
+      // CRITICAL: Throw so service can distinguish provider/system failure from genuine empty result
+      const { ServiceUnavailableException } = require('@nestjs/common');
+      throw new ServiceUnavailableException(`TBO provider failed: ${errorMsg}`);
+    }
+  }
+
+  private async resolveTboCityCode(
+    cityInput?: string,
+  ): Promise<{ tboCityCode: string | null; source: string | null }> {
+    const normalized = (cityInput || '').toString().trim();
+    if (!normalized) {
+      return { tboCityCode: null, source: null };
+    }
+
+    // 1) Input is already a TBO city code present in dvi_cities.
+    const directCity = await this.prisma.dvi_cities.findFirst({
+      where: { tbo_city_code: normalized },
+      select: { tbo_city_code: true },
+    });
+    if (directCity?.tbo_city_code) {
+      return { tboCityCode: directCity.tbo_city_code, source: 'dvi_cities.tbo_city_code' };
+    }
+
+    // 2) Input might be dvi_cities.id.
+    const parsedId = Number(normalized);
+    if (!Number.isNaN(parsedId) && Number.isInteger(parsedId)) {
+      const byId = await this.prisma.dvi_cities.findFirst({
+        where: { id: parsedId },
+        select: { tbo_city_code: true, name: true },
+      });
+      if (byId?.tbo_city_code) {
+        return { tboCityCode: byId.tbo_city_code, source: 'dvi_cities.id' };
+      }
+
+      // ID exists but has no tbo_city_code: try static CityList using city name.
+      if (byId?.name) {
+        const fromStaticByIdName = await this.fetchTboCityCodeFromStaticCityList(byId.name);
+        if (fromStaticByIdName) {
+          return { tboCityCode: fromStaticByIdName, source: 'static-citylist-from-dvi_cities.id-name' };
+        }
+      }
+    }
+
+    // 3) Input might be city name in dvi_cities (case-insensitive where supported).
+    const byName = await this.prisma.dvi_cities.findFirst({
+      where: {
+        name: {
+          equals: normalized,
+        } as any,
+      },
+      select: { tbo_city_code: true },
+    });
+    if (byName?.tbo_city_code) {
+      return { tboCityCode: byName.tbo_city_code, source: 'dvi_cities.name' };
+    }
+
+    // 3b) Resolve by static CityList (Postman certification flow).
+    const fromStaticByName = await this.fetchTboCityCodeFromStaticCityList(normalized);
+    if (fromStaticByName) {
+      return { tboCityCode: fromStaticByName, source: 'static-citylist-by-name' };
+    }
+
+    // 4) Fallback to existing dvi_hotel.tbo_city_code usage (no schema changes).
+    // If the incoming value itself appears as tbo_city_code in dvi_hotel, accept it.
+    const hotelByDirectCode = await this.prisma.dvi_hotel.findFirst({
+      where: {
+        tbo_city_code: normalized,
+        deleted: false,
+      },
+      select: { tbo_city_code: true },
+    });
+    if (hotelByDirectCode?.tbo_city_code) {
+      return { tboCityCode: hotelByDirectCode.tbo_city_code, source: 'dvi_hotel.tbo_city_code-direct' };
+    }
+
+    // 5) If input is city name used in dvi_hotel.hotel_city, derive mapped tbo_city_code.
+    const hotelByCityName = await this.prisma.dvi_hotel.findFirst({
+      where: {
+        hotel_city: {
+          equals: normalized,
+        } as any,
+        tbo_city_code: { not: null },
+        deleted: false,
+      },
+      select: { tbo_city_code: true },
+      orderBy: { hotel_id: 'desc' },
+    });
+    if (hotelByCityName?.tbo_city_code) {
+      return { tboCityCode: hotelByCityName.tbo_city_code, source: 'dvi_hotel.hotel_city' };
+    }
+
+    // 6) Last resort: treat numeric input as direct TBO code when no mapping exists locally.
+    if (!Number.isNaN(parsedId) && Number.isInteger(parsedId)) {
+      return { tboCityCode: normalized, source: 'input-assumed-tbo-code' };
+    }
+
+    return { tboCityCode: null, source: null };
+  }
+
+  private async fetchTboCityCodeFromStaticCityList(cityName: string): Promise<string | null> {
+    try {
+      const basicAuth = Buffer.from(`${this.TBO_STATIC_USERNAME}:${this.TBO_STATIC_PASSWORD}`).toString('base64');
+      const response = await this.http.post(
+        `${this.TBO_STATIC_API_URL}/CityList`,
+        { CountryCode: 'IN' },
+        {
+          timeout: 30000,
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Basic ${basicAuth}`,
+          },
+        },
+      );
+
+      const cityList = response.data?.CityList;
+      const cities = Array.isArray(cityList) ? cityList : cityList ? [cityList] : [];
+      if (!cities.length) {
+        return null;
+      }
+
+      const target = cityName.trim().toLowerCase();
+      const extractName = (city: any) => {
+        const raw = String(city?.CityName || city?.Name || '').trim().toLowerCase();
+        // Static API names are often "City,   State".
+        return raw.split(',')[0].trim();
+      };
+      const extractCode = (city: any) => String(city?.CityCode || city?.Code || '').trim();
+
+      const exact = cities.find((c: any) => extractName(c) === target);
+      const exactCode = exact ? extractCode(exact) : '';
+      if (exactCode) {
+        return exactCode;
+      }
+
+      const partial = cities.find((c: any) => extractName(c).includes(target));
+      const partialCode = partial ? extractCode(partial) : '';
+      if (partialCode) {
+        return partialCode;
+      }
+
+      return null;
+    } catch (error: any) {
+      this.logger.warn(`   ⚠️  Static CityList lookup failed for ${cityName}: ${error?.message || error}`);
+      return null;
+    }
+  }
+
+  private async fetchCityNameFromStaticCityListByCode(tboCityCode: string): Promise<string | null> {
+    try {
+      const basicAuth = Buffer.from(`${this.TBO_STATIC_USERNAME}:${this.TBO_STATIC_PASSWORD}`).toString('base64');
+      const response = await this.http.post(
+        `${this.TBO_STATIC_API_URL}/CityList`,
+        { CountryCode: 'IN' },
+        {
+          timeout: 30000,
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Basic ${basicAuth}`,
+          },
+        },
+      );
+
+      const cityList = response.data?.CityList;
+      const cities = Array.isArray(cityList) ? cityList : cityList ? [cityList] : [];
+      if (!cities.length) {
+        return null;
+      }
+
+      const found = cities.find((c: any) => String(c?.CityCode || c?.Code || '').trim() === tboCityCode);
+      if (!found) {
+        return null;
+      }
+
+      const cityName = String(found?.CityName || found?.Name || '').trim();
+      return cityName || null;
+    } catch (error: any) {
+      this.logger.warn(`   ⚠️  Static CityList(by code) lookup failed for ${tboCityCode}: ${error?.message || error}`);
+      return null;
+    }
+  }
+
+  private parseStaticStarRating(starValue: any): number {
+    const text = String(starValue || '').toLowerCase().trim();
+    if (!text) return 0;
+
+    if (text.includes('five')) return 5;
+    if (text.includes('four')) return 4;
+    if (text.includes('three')) return 3;
+    if (text.includes('two')) return 2;
+    if (text.includes('one')) return 1;
+
+    const parsed = Number(text.replace(/[^0-9]/g, ''));
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  private async fetchHotelsFromStaticApi(tboCityCode: string): Promise<any[]> {
+    try {
+      const basicAuth = Buffer.from(`${this.TBO_STATIC_USERNAME}:${this.TBO_STATIC_PASSWORD}`).toString('base64');
+      const response = await this.http.post(
+        `${this.TBO_STATIC_API_URL}/TBOHotelCodeList`,
+        {
+          CityCode: tboCityCode,
+          IsDetailedResponse: 'true',
+        },
+        {
+          timeout: 45000,
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Basic ${basicAuth}`,
+          },
+        },
+      );
+
+      const hotels = response.data?.Hotels;
+      if (Array.isArray(hotels) && hotels.length > 0) {
+        return hotels;
+      }
+
+      const codeList = response.data?.HotelCodeList;
+      if (Array.isArray(codeList) && codeList.length > 0) {
+        return codeList;
+      }
+
+      return [];
+    } catch (error: any) {
+      this.logger.warn(`   ⚠️  Static TBOHotelCodeList failed for city ${tboCityCode}: ${error?.message || error}`);
       return [];
     }
+  }
+
+  private async ensureCityAndHotelsInDb(cityInput: string | undefined, tboCityCode: string): Promise<void> {
+    try {
+      const [existingCity, existingMaster, existingDviHotel] = await Promise.all([
+        this.prisma.dvi_cities.findFirst({
+          where: { tbo_city_code: tboCityCode },
+          select: { id: true },
+        }),
+        this.prisma.tbo_hotel_master.findFirst({
+          where: { tbo_city_code: tboCityCode, status: 1 },
+          select: { id: true },
+        }),
+        this.prisma.dvi_hotel.findFirst({
+          where: { tbo_city_code: tboCityCode, deleted: false },
+          select: { hotel_id: true },
+        }),
+      ]);
+
+      if (!existingCity) {
+        // dvi_cities requires state_id; we only backfill mapping if city row already exists by name/id.
+        await this.tryBackfillCityCodeMapping(cityInput, tboCityCode);
+      }
+
+      if (existingMaster || existingDviHotel) {
+        return;
+      }
+
+      const synced = await this.syncHotelsFromStaticApiToDb(tboCityCode);
+      this.logger.log(`   🔄 DB backfill from TBOHotelCodeList completed for city ${tboCityCode}: ${synced} hotel(s)`);
+    } catch (error: any) {
+      this.logger.warn(`   ⚠️  ensureCityAndHotelsInDb failed for ${tboCityCode}: ${error?.message || error}`);
+    }
+  }
+
+  private async tryBackfillCityCodeMapping(cityInput: string | undefined, tboCityCode: string): Promise<void> {
+    const normalized = (cityInput || '').toString().trim();
+    if (!normalized) {
+      return;
+    }
+
+    try {
+      const parsedId = Number(normalized);
+      if (!Number.isNaN(parsedId) && Number.isInteger(parsedId)) {
+        const cityById = await this.prisma.dvi_cities.findFirst({ where: { id: parsedId } });
+        if (cityById && !cityById.tbo_city_code) {
+          await this.prisma.dvi_cities.update({
+            where: { id: cityById.id },
+            data: { tbo_city_code: tboCityCode },
+          });
+          this.logger.log(`   ✅ Backfilled dvi_cities.id=${cityById.id} with TBO city code ${tboCityCode}`);
+          return;
+        }
+      }
+
+      const cityByName = await this.prisma.dvi_cities.findFirst({
+        where: { name: { equals: normalized } as any },
+      });
+      if (cityByName && !cityByName.tbo_city_code) {
+        await this.prisma.dvi_cities.update({
+          where: { id: cityByName.id },
+          data: { tbo_city_code: tboCityCode },
+        });
+        this.logger.log(`   ✅ Backfilled dvi_cities.name=${normalized} with TBO city code ${tboCityCode}`);
+        return;
+      }
+
+      const staticCityName = await this.fetchCityNameFromStaticCityListByCode(tboCityCode);
+      if (!staticCityName) {
+        return;
+      }
+
+      const dbCityByStaticName = await this.prisma.dvi_cities.findFirst({
+        where: { name: { equals: staticCityName } as any },
+      });
+      if (dbCityByStaticName && !dbCityByStaticName.tbo_city_code) {
+        await this.prisma.dvi_cities.update({
+          where: { id: dbCityByStaticName.id },
+          data: { tbo_city_code: tboCityCode },
+        });
+        this.logger.log(`   ✅ Backfilled dvi_cities.name=${staticCityName} with TBO city code ${tboCityCode}`);
+      }
+    } catch (error: any) {
+      this.logger.warn(`   ⚠️  City backfill skipped for ${tboCityCode}: ${error?.message || error}`);
+    }
+  }
+
+  private async syncHotelsFromStaticApiToDb(tboCityCode: string): Promise<number> {
+    const hotels = await this.fetchHotelsFromStaticApi(tboCityCode);
+    if (!hotels.length) {
+      return 0;
+    }
+
+    let synced = 0;
+    for (const hotel of hotels) {
+      const hotelCode = String(hotel?.HotelCode || hotel?.hotelCode || '').trim();
+      if (!hotelCode) {
+        continue;
+      }
+
+      const hotelName = String(hotel?.HotelName || hotel?.hotelName || '').trim() || null;
+      const hotelAddress = String(hotel?.Address || hotel?.hotelAddress || '').trim() || null;
+      const cityName = String(hotel?.CityName || hotel?.cityName || '').trim() || null;
+      const rating = this.parseStaticStarRating(hotel?.HotelRating || hotel?.hotelRating);
+      const latitude = String(hotel?.Latitude || '').trim() || null;
+      const longitude = String(hotel?.Longitude || '').trim() || null;
+      const countryName = String(hotel?.CountryName || '').trim() || null;
+
+      await this.prisma.tbo_hotel_master.upsert({
+        where: { tbo_hotel_code: hotelCode },
+        create: {
+          tbo_hotel_code: hotelCode,
+          tbo_city_code: tboCityCode,
+          hotel_name: hotelName,
+          hotel_address: hotelAddress,
+          city_name: cityName,
+          star_rating: rating,
+          status: 1,
+        },
+        update: {
+          tbo_city_code: tboCityCode,
+          hotel_name: hotelName,
+          hotel_address: hotelAddress,
+          city_name: cityName,
+          star_rating: rating,
+          status: 1,
+        },
+      });
+
+      const existingDviHotel = await this.prisma.dvi_hotel.findFirst({
+        where: {
+          tbo_hotel_code: hotelCode,
+          tbo_city_code: tboCityCode,
+        },
+        select: { hotel_id: true },
+      });
+
+      if (existingDviHotel) {
+        await this.prisma.dvi_hotel.update({
+          where: { hotel_id: existingDviHotel.hotel_id },
+          data: {
+            hotel_name: hotelName,
+            hotel_address: hotelAddress,
+            hotel_city: cityName,
+            hotel_country: countryName,
+            hotel_latitude: latitude,
+            hotel_longitude: longitude,
+            hotel_category: rating,
+            status: 1,
+            deleted: false,
+          },
+        });
+      } else {
+        await this.prisma.dvi_hotel.create({
+          data: {
+            hotel_name: hotelName,
+            hotel_code: hotelCode,
+            tbo_hotel_code: hotelCode,
+            tbo_city_code: tboCityCode,
+            hotel_country: countryName,
+            hotel_city: cityName,
+            hotel_address: hotelAddress,
+            hotel_latitude: latitude,
+            hotel_longitude: longitude,
+            hotel_category: rating,
+            createdby: 0,
+            status: 1,
+            deleted: false,
+          },
+        });
+      }
+
+      synced += 1;
+    }
+
+    return synced;
+  }
+
+  private async fetchHotelCodesFromStaticApi(tboCityCode: string): Promise<string> {
+    const hotels = await this.fetchHotelsFromStaticApi(tboCityCode);
+    if (!hotels.length) {
+      return '';
+    }
+
+    return hotels
+      .map((h: any) => String(h?.HotelCode || h?.hotelCode || '').trim())
+      .filter((c: string) => c.length > 0)
+      .join(',');
   }
 
   async confirmBooking(
@@ -383,12 +865,17 @@ export class TBOHotelProvider implements IHotelProvider {
       const bookRequest = {
         PreBookRefId: prebookRefId,
         HotelCode: bookingDetails.hotelCode,
+        GuestNationality: this.normalizeNationality(
+          bookingDetails.guestNationality || bookingDetails.guests?.[0]?.nationality,
+        ),
         GuestDetails: bookingDetails.guests.map((g) => ({
           FirstName: g.firstName,
           LastName: g.lastName,
           Email: g.email,
           MobileNo: g.phone,
-          Title: 'Mr', // Default title
+          Title: resolveProviderPassengerTitle(g.title),
+          PAN: g.pan || null,
+          PassportNo: g.passportNo || null,
         })),
         ContactDetails: {
           Name: bookingDetails.contactName,
@@ -550,6 +1037,10 @@ export class TBOHotelProvider implements IHotelProvider {
       const result = response.data?.HotelChangeRequestResult;
       if (!result || result.ResponseStatus !== 1) {
         this.logger.error(`❌ TBO Cancel Error Details: ${JSON.stringify(result)}`);
+        const recovered = await this.tryRecoverCancellationStatus(confirmationRef, result);
+        if (recovered) {
+          return recovered;
+        }
         throw new Error(
           `Cancellation failed: ${result?.Error?.ErrorMessage || 'Unknown error'}`
         );
@@ -569,11 +1060,61 @@ export class TBOHotelProvider implements IHotelProvider {
         this.logger.error(`❌ TBO API Error Response Status: ${error.response.status}`);
         this.logger.error(`❌ TBO API Error Response Body: ${JSON.stringify(error.response.data)}`);
       }
+
+      const recovered = await this.tryRecoverCancellationStatus(confirmationRef, error);
+      if (recovered) {
+        return recovered;
+      }
+
       this.logger.error(
         `❌ Cancel Booking Error: ${error.message}`,
         error.stack
       );
       throw new InternalServerErrorException('Failed to cancel booking');
+    }
+  }
+
+  private async tryRecoverCancellationStatus(
+    confirmationRef: string,
+    context: any,
+  ): Promise<CancellationResult | null> {
+    try {
+      this.logger.warn(
+        `⚠️ Cancel request did not return success for booking ${confirmationRef}. Verifying final status via GetBookingDetail...`,
+      );
+
+      const detail = await this.getConfirmation(String(confirmationRef));
+      const status = String(detail?.status || '').toLowerCase();
+      const isCancelled =
+        status.includes('cancel') ||
+        status.includes('void') ||
+        status.includes('refunded');
+
+      if (!isCancelled) {
+        this.logger.warn(
+          `⚠️ Recovery check completed but booking is not cancelled. status=${detail?.status || 'unknown'}`,
+        );
+        return null;
+      }
+
+      const fallbackRef =
+        String(context?.ChangeRequestId || context?.data?.HotelChangeRequestResult?.ChangeRequestId || confirmationRef);
+
+      this.logger.warn(
+        `✅ Cancellation recovered via BookingDetail for booking ${confirmationRef}. status=${detail.status}`,
+      );
+
+      return {
+        cancellationRef: fallbackRef,
+        refundAmount: 0,
+        charges: 0,
+        refundDays: 0,
+      };
+    } catch (recoveryError: any) {
+      this.logger.error(
+        `❌ Cancellation recovery check failed for booking ${confirmationRef}: ${recoveryError.message}`,
+      );
+      return null;
     }
   }
 
@@ -622,6 +1163,70 @@ export class TBOHotelProvider implements IHotelProvider {
     }));
   }
 
+  private normalizeNationality(nationality?: string): string {
+    const normalized = (nationality || '').trim().toUpperCase();
+    if (normalized) {
+      return normalized;
+    }
+
+    const fallback = (process.env.TBO_DEFAULT_GUEST_NATIONALITY || '').trim().toUpperCase();
+    if (fallback) {
+      this.logger.warn(
+        `⚠️ GuestNationality missing in request. Falling back to configured default ${fallback}.`,
+      );
+      return fallback;
+    }
+
+    throw new Error(
+      'GuestNationality is required. Provide guestNationality in request or set TBO_DEFAULT_GUEST_NATIONALITY.',
+    );
+  }
+
+  private buildSearchPaxRooms(criteria: HotelSearchCriteria): Array<{
+    Adults: number;
+    Children: number;
+    ChildrenAges: number[];
+  }> {
+    // DEFENSIVE VALIDATION: Ensure occupancies exist and comply with TBO limits
+    if (!criteria.occupancies || criteria.occupancies.length === 0) {
+      throw new InternalServerErrorException(
+        'Occupancies must be defined before building PaxRooms. This indicates a bug in the service layer.',
+      );
+    }
+
+    if (criteria.occupancies.length > TBOHotelProvider.MAX_ROOMS) {
+      throw new InternalServerErrorException(
+        `Number of rooms (${criteria.occupancies.length}) exceeds TBO limit of ${TBOHotelProvider.MAX_ROOMS}.`,
+      );
+    }
+
+    // Validate each occupancy before building PaxRooms payload
+    for (let i = 0; i < criteria.occupancies.length; i++) {
+      const occ = criteria.occupancies[i];
+
+      if (occ.adults > TBOHotelProvider.MAX_ADULTS_PER_ROOM || occ.adults < 0) {
+        throw new InternalServerErrorException(
+          `Occupancy[${i}].adults (${occ.adults}) violates TBO limit. ` +
+          `Must be 0-${TBOHotelProvider.MAX_ADULTS_PER_ROOM}.`,
+        );
+      }
+
+      if (occ.children > TBOHotelProvider.MAX_CHILDREN_PER_ROOM || occ.children < 0) {
+        throw new InternalServerErrorException(
+          `Occupancy[${i}].children (${occ.children}) violates TBO limit. ` +
+          `Must be 0-${TBOHotelProvider.MAX_CHILDREN_PER_ROOM}.`,
+        );
+      }
+    }
+
+    // Build PaxRooms with validated occupancies
+    return criteria.occupancies.map((occ) => ({
+      Adults: Math.max(occ.adults || 1, 1),
+      Children: Math.max(occ.children || 0, 0),
+      ChildrenAges: (occ.childrenAges || []).map((age) => Number(age)).filter((age) => !Number.isNaN(age)),
+    }));
+  }
+
   /**
    * Fetch hotel codes dynamically from TBO GetHotels API
    * Falls back to database if API fails
@@ -657,7 +1262,6 @@ export class TBOHotelProvider implements IHotelProvider {
       const status = response.data?.Status;
       if (status !== 1) {
         this.logger.warn(`⚠️  TBO API GetHotels returned status: ${status}. Falling back to database.`);
-        this.fileLog(`⚠️  TBO API status ${status} - falling back to database`);
         return await this.getHotelCodesFromDbFallback(tboCityCode);
       }
 
@@ -666,7 +1270,6 @@ export class TBOHotelProvider implements IHotelProvider {
 
       if (hotels.length === 0) {
         this.logger.warn(`⚠️  TBO API returned 0 hotels for city ${tboCityCode}. Falling back to database.`);
-        this.fileLog(`⚠️  TBO API returned 0 hotels - falling back to database`);
         return await this.getHotelCodesFromDbFallback(tboCityCode);
       }
 
@@ -677,12 +1280,10 @@ export class TBOHotelProvider implements IHotelProvider {
       }
 
       this.logger.log(`✅ Extracted ${hotelCodes.length} hotel codes from TBO GetHotels response`);
-      this.fileLog(`✅ TBO API SUCCESS: ${hotelCodes.length} hotels extracted`);
       return hotelCodes.join(',');
     } catch (error) {
       const err = error as Error;
       this.logger.error(`❌ TBO API GetHotels failed: ${err.message}. Falling back to database.`);
-      this.fileLog(`❌ TBO API Exception: ${err.message} - falling back to database`);
       return await this.getHotelCodesFromDbFallback(tboCityCode);
     }
   }
@@ -724,7 +1325,7 @@ export class TBOHotelProvider implements IHotelProvider {
         select: {
           tbo_hotel_code: true,
         },
-        take: 100, // Limit to 100 hotels
+        take: 500, // Allow up to 500 hotels (batched into 100-code chunks by caller)
       });
 
       if (!hotels || hotels.length === 0) {
@@ -732,7 +1333,6 @@ export class TBOHotelProvider implements IHotelProvider {
           `❌ DATABASE ERROR: No hotels found in tbo_hotel_master for city ${tboCityCode}. ` +
           `Make sure to run hotel sync: POST /hotels/sync/all`
         );
-        this.fileLog(`❌ DATABASE ERROR: No hotels in tbo_hotel_master for city ${tboCityCode}`);
         return '';
       }
 
@@ -743,7 +1343,6 @@ export class TBOHotelProvider implements IHotelProvider {
 
       this.logger.warn(`⚠️  Fallback Query SUCCESS: Found ${hotels.length} hotels in database`);
       this.logger.log(`📋 Hotel codes from DB: ${hotelCodes.substring(0, 100)}...`);
-      this.fileLog(`✅ Fallback DB query SUCCESS: ${hotels.length} hotels, codes: ${hotelCodes}`);
 
       return hotelCodes;
     } catch (error: any) {
@@ -751,7 +1350,6 @@ export class TBOHotelProvider implements IHotelProvider {
       this.logger.error(
         `🔴 DATABASE QUERY ERROR: Failed to fetch hotels from tbo_hotel_master: ${errorMsg}`
       );
-      this.fileLog(`🔴 DB Query Error: ${errorMsg}`);
       return '';
     }
   }
@@ -771,7 +1369,6 @@ export class TBOHotelProvider implements IHotelProvider {
 
       if (!this.prisma) {
         this.logger.error(`🔴 CRITICAL: PrismaService is NULL/UNDEFINED`);
-        this.fileLog('🔴 CRITICAL: PrismaService is NULL/UNDEFINED in getHotelCodesForCityFromDb');
         throw new Error('PrismaService not available');
       }
 
@@ -784,15 +1381,14 @@ export class TBOHotelProvider implements IHotelProvider {
         select: {
           tbo_hotel_code: true,
         },
-        take: 100,
+    //    take: 500, // Allow up to 500 hotels (batched into 100-code chunks by caller)
       });
 
       if (!hotels || hotels.length === 0) {
-        this.logger.error(
-          `❌ PRIMARY: No hotels in tbo_hotel_master for city ${tboCityCode}. ` +
-          `Run sync: POST /api/v1/hotels/sync/all`
+        this.logger.warn(
+          `⚠️ PRIMARY: No hotels in tbo_hotel_master for city ${tboCityCode}. ` +
+          `Will try dvi_hotel fallback. If this city should be in master, sync city: POST /api/v1/hotels/sync/city/${tboCityCode}`
         );
-        this.fileLog(`❌ PRIMARY Query Failed: No hotels for city ${tboCityCode}`);
 
         // Try fallback query from dvi_hotel table
         this.logger.log(`🔄 FALLBACK: Trying dvi_hotel table for city ${tboCityCode}`);
@@ -804,7 +1400,7 @@ export class TBOHotelProvider implements IHotelProvider {
           select: {
             tbo_hotel_code: true,
           },
-          take: 100,
+          take: 500, // Allow up to 500 hotels
         });
 
         if (dviHotels && dviHotels.length > 0) {
@@ -818,9 +1414,9 @@ export class TBOHotelProvider implements IHotelProvider {
           return codes;
         }
 
-        this.logger.error(
-          `❌ FALLBACK FAILED: No hotels in dvi_hotel either for city ${tboCityCode}. ` +
-          `Database is empty. Returning empty string.`
+        this.logger.warn(
+          `⚠️ FALLBACK FAILED: No hotels in dvi_hotel either for city ${tboCityCode}. ` +
+          `Returning empty string so caller can continue to static API fallback.`
         );
         return '';
       }
@@ -832,7 +1428,6 @@ export class TBOHotelProvider implements IHotelProvider {
 
       this.logger.log(`✅ PRIMARY SUCCESS: Found ${hotels.length} hotels in tbo_hotel_master`);
       this.logger.log(`📋 Hotel codes from DB: ${hotelCodes.substring(0, 100)}...`);
-      this.fileLog(`✅ PRIMARY Query SUCCESS: ${hotels.length} hotels, codes: ${hotelCodes}`);
 
       return hotelCodes;
     } catch (error: any) {
@@ -840,7 +1435,6 @@ export class TBOHotelProvider implements IHotelProvider {
       this.logger.error(
         `🔴 DATABASE QUERY ERROR: ${errorMsg}`
       );
-      this.fileLog(`🔴 DB Query Exception: ${errorMsg}`);
       return '';
     }
   }
@@ -869,15 +1463,21 @@ export class TBOHotelProvider implements IHotelProvider {
         });
 
         if (hotel) {
-          this.logger.log(`✅ Found hotel by code+city: ${hotelCode} (City: ${cityCode}) -> ${hotel.hotel_name}`);
+          if (this.verboseHotelLookupLogs) {
+            this.logger.log(`✅ Found hotel by code+city: ${hotelCode} (City: ${cityCode}) -> ${hotel.hotel_name}`);
+          }
           return {
             hotel_name: hotel.hotel_name,
             hotel_address: hotel.hotel_address || '',
+            hotel_latitude: hotel.hotel_latitude ?? null,
+            hotel_longitude: hotel.hotel_longitude ?? null,
             star_rating: hotel.hotel_category || 0,
           };
         }
 
-        this.logger.log(`🔍 Hotel ${hotelCode} not found in dvi_hotel for city ${cityCode}, searching globally...`);
+        if (this.verboseHotelLookupLogs) {
+          this.logger.log(`🔍 Hotel ${hotelCode} not found in dvi_hotel for city ${cityCode}, searching globally...`);
+        }
       }
 
       // Strategy 2: Search by hotel code only in dvi_hotel (global search)
@@ -889,16 +1489,22 @@ export class TBOHotelProvider implements IHotelProvider {
       });
 
       if (hotel) {
-        this.logger.log(`✅ Found hotel by code in dvi_hotel: ${hotelCode} -> ${hotel.hotel_name}`);
+        if (this.verboseHotelLookupLogs) {
+          this.logger.log(`✅ Found hotel by code in dvi_hotel: ${hotelCode} -> ${hotel.hotel_name}`);
+        }
         return {
           hotel_name: hotel.hotel_name,
           hotel_address: hotel.hotel_address || '',
+          hotel_latitude: hotel.hotel_latitude ?? null,
+          hotel_longitude: hotel.hotel_longitude ?? null,
           star_rating: hotel.hotel_category || 0,
         };
       }
 
       // Strategy 3: Fallback to tbo_hotel_master table (synced from TBO GetHotels API)
-      this.logger.log(`🔍 Hotel ${hotelCode} not found in dvi_hotel, checking tbo_hotel_master...`);
+      if (this.verboseHotelLookupLogs) {
+        this.logger.log(`🔍 Hotel ${hotelCode} not found in dvi_hotel, checking tbo_hotel_master...`);
+      }
       
       const tboHotel: any = await this.prisma.tbo_hotel_master.findFirst({
         where: {
@@ -909,10 +1515,14 @@ export class TBOHotelProvider implements IHotelProvider {
       });
 
       if (tboHotel) {
-        this.logger.log(`✅ Found hotel in tbo_hotel_master: ${hotelCode} -> ${tboHotel.hotel_name}`);
+        if (this.verboseHotelLookupLogs) {
+          this.logger.log(`✅ Found hotel in tbo_hotel_master: ${hotelCode} -> ${tboHotel.hotel_name}`);
+        }
         return {
           hotel_name: tboHotel.hotel_name || `Hotel ${hotelCode}`,
           hotel_address: tboHotel.hotel_address || '',
+          hotel_latitude: tboHotel.hotel_latitude ?? null,
+          hotel_longitude: tboHotel.hotel_longitude ?? null,
           star_rating: tboHotel.star_rating || 0,
         };
       }
@@ -976,12 +1586,25 @@ export class TBOHotelProvider implements IHotelProvider {
     description: string = ''
   ): Promise<any[]> {
     try {
+      const logFullPayload = (process.env.TBO_LOG_FULL_PAYLOAD || 'true').toLowerCase() === 'true';
+     console.log(logFullPayload,'logFullPayload');
+     
       this.logger.log(`   📤 TBO Search Request ${description}:`);
       this.logger.log(`      - Check-in: ${searchRequest.CheckIn}`);
       this.logger.log(`      - Check-out: ${searchRequest.CheckOut}`);
       this.logger.log(`      - City Code: ${searchRequest.CityCode}`);
       this.logger.log(`      - Hotel Codes: ${searchRequest.HotelCodes || '(All available hotels for city)'}`);
       this.logger.log(`      - Guests: ${searchRequest.PaxRooms[0].Adults} adults`);
+      this.logger.log(`      - GuestNationality: ${searchRequest.GuestNationality}`);
+      this.logger.log(`      - NoOfRooms(Filter): ${searchRequest.Filters?.NoOfRooms}`);
+      if (logFullPayload) {
+        this.logger.log(`   📦 TBO Search Request JSON: ${JSON.stringify(searchRequest)}`);
+      }
+
+      // Log search request
+      const hotelCodeList = searchRequest.HotelCodes 
+        ? searchRequest.HotelCodes.split(',').map((c:string) => c.trim())
+        : [];
 
       const startTime = Date.now();
       const response = await this.http.post(`${this.SEARCH_API_URL}/Search`, searchRequest, {
@@ -994,24 +1617,32 @@ export class TBOHotelProvider implements IHotelProvider {
 
       const responseTime = Date.now() - startTime;
       this.logger.log(`   ⏱️  TBO API Response Time ${description}: ${responseTime}ms`);
-      this.logger.debug(`   ⏱️  TBO API Response: ${JSON.stringify(response.data).substring(0, 300)}`);
+      if (logFullPayload && false) {
+        this.logger.log(`   📦 TBO API Response JSON: ${JSON.stringify(response.data)}`);
+      } else {
+        const statusObj = response.data?.Status;
+        const statusCode = typeof statusObj === 'object' ? statusObj?.Code : statusObj;
+        this.logger.debug(`   📥 TBO API response summary: status=${statusCode ?? 'unknown'}, hotels=${(response.data?.HotelResult || []).length}`);
+      }
 
       // Check response status
       const statusObj = response.data?.Status;
       const statusCode = typeof statusObj === 'object' ? statusObj?.Code : statusObj;
 
       if (statusCode !== 200) {
-        const description = typeof statusObj === 'object' ? statusObj?.Description : 'Unknown error';
-        this.logger.warn(`   ⚠️  TBO Search returned status: ${statusCode} - ${description}`);
+        const statusDescription = typeof statusObj === 'object' ? statusObj?.Description : 'Unknown error';
+        this.logger.warn(`   ⚠️  TBO Search returned status: ${statusCode} - ${statusDescription}`);
         return [];
       }
 
       const hotels = response.data.HotelResult || [];
       this.logger.log(`   ✅ This request returned ${hotels.length} hotels`);
+      
       return hotels;
     } catch (error: any) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       this.logger.error(`   ❌ TBO Search Error ${description}: ${errorMsg}`);
+      
       return [];
     }
   }

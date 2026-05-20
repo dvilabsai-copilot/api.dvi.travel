@@ -1,0 +1,108 @@
+{
+    "itinerary_plan_ID":  32,
+    "hotel_bookings":  [
+                           {
+                               "occupancies":  [
+                                                   {
+                                                       "adults":  1,
+                                                       "children":  0,
+                                                       "childrenAges":  [
+
+                                                                        ]
+                                                   }
+                                               ],
+                               "provider":  "tbo",
+                               "routeId":  432,
+                               "hotelCode":  "1739944",
+                               "bookingCode":  "1739944!TB!2!TB!5313fcd4-25c0-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+                               "roomType":  "Standard Double Room AC,2 Double Beds,NonSmoking",
+                               "checkInDate":  "2026-04-26",
+                               "checkOutDate":  "2026-04-27",
+                               "numberOfRooms":  1,
+                               "guestNationality":  "IN",
+                               "netAmount":  2099,
+                               "passengers":  [
+                                                  {
+                                                      "title":  "Mr",
+                                                      "firstName":  "Primary",
+                                                      "lastName":  "Guest",
+                                                      "nationality":  "IN",
+                                                      "email":  "primary@example.com",
+                                                      "paxType":  1,
+                                                      "leadPassenger":  true,
+                                                      "age":  32,
+                                                      "phoneNo":  "9876543210"
+                                                  }
+                                              ]
+                           },
+                           {
+                               "occupancies":  [
+                                                   {
+                                                       "adults":  1,
+                                                       "children":  0,
+                                                       "childrenAges":  [
+
+                                                                        ]
+                                                   }
+                                               ],
+                               "provider":  "tbo",
+                               "routeId":  433,
+                               "hotelCode":  "1383563",
+                               "bookingCode":  "1383563!TB!1!TB!5314b03f-25c0-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+                               "roomType":  "Premier Room, 1 Queen Bed, City View,NonSmoking",
+                               "checkInDate":  "2026-04-27",
+                               "checkOutDate":  "2026-04-28",
+                               "numberOfRooms":  1,
+                               "guestNationality":  "IN",
+                               "netAmount":  2028,
+                               "passengers":  [
+                                                  {
+                                                      "title":  "Mr",
+                                                      "firstName":  "Primary",
+                                                      "lastName":  "Guest",
+                                                      "nationality":  "IN",
+                                                      "email":  "primary@example.com",
+                                                      "paxType":  1,
+                                                      "leadPassenger":  true,
+                                                      "age":  32,
+                                                      "phoneNo":  "9876543210"
+                                                  }
+                                              ]
+                           },
+                           {
+                               "occupancies":  [
+                                                   {
+                                                       "adults":  1,
+                                                       "children":  0,
+                                                       "childrenAges":  [
+
+                                                                        ]
+                                                   }
+                                               ],
+                               "provider":  "tbo",
+                               "routeId":  434,
+                               "hotelCode":  "1742171",
+                               "bookingCode":  "1742171!TB!1!TB!53148aa4-25c0-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+                               "roomType":  "Standard Double Room, 1 Bedroom,1 King Bed,NonSmoking",
+                               "checkInDate":  "2026-04-28",
+                               "checkOutDate":  "2026-04-29",
+                               "numberOfRooms":  1,
+                               "guestNationality":  "IN",
+                               "netAmount":  2312,
+                               "passengers":  [
+                                                  {
+                                                      "title":  "Mr",
+                                                      "firstName":  "Primary",
+                                                      "lastName":  "Guest",
+                                                      "nationality":  "IN",
+                                                      "email":  "primary@example.com",
+                                                      "paxType":  1,
+                                                      "leadPassenger":  true,
+                                                      "age":  32,
+                                                      "phoneNo":  "9876543210"
+                                                  }
+                                              ]
+                           }
+                       ],
+    "endUserIp":  "139.5.249.210"
+}

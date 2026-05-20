@@ -1,0 +1,51 @@
+{
+  "itinerary_plan_ID": 1,
+  "hotel_bookings": [
+    {
+      "checkInDate": "2026-04-16",
+      "numberOfRooms": 1,
+      "netAmount": 1389.22,
+      "routeId": 1,
+      "roomType": "Deluxe Twin Room, 1 Bedroom,2 Double Beds and 2 Large Twin Beds,NonSmoking",
+      "hotelCode": "1056437",
+      "occupancies": [
+        {
+          "adults": 2,
+          "children": 0,
+          "childrenAges": []
+        }
+      ],
+      "checkOutDate": "2026-04-17",
+      "bookingCode": "1056437!TB!1!TB!8d1db8e0-20c6-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+      "passengers": [
+        {
+          "paxType": 1,
+          "leadPassenger": true,
+          "middleName": "",
+          "firstName": "Test",
+          "lastName": "User",
+          "phoneNo": "9876543210",
+          "pan": "AAAPL1234C",
+          "title": "Mr",
+          "age": 30,
+          "email": "test.user@example.com"
+        },
+        {
+          "paxType": 1,
+          "leadPassenger": false,
+          "middleName": "",
+          "firstName": "Test2",
+          "lastName": "User2",
+          "phoneNo": "9876543211",
+          "pan": "AFZPK7190K",
+          "title": "Mrs",
+          "age": 28,
+          "email": "test2.user@example.com"
+        }
+      ],
+      "provider": "tbo",
+      "guestNationality": "IN"
+    }
+  ],
+  "endUserIp": "192.168.1.1"
+}

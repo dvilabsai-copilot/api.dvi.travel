@@ -1,0 +1,71 @@
+# ------------------------------------------------------
+# THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
+# ------------------------------------------------------
+
+type DashboardDailyMomentV2Type {
+  location: String
+  quoteId: String
+}
+
+type DashboardDriversV2Type {
+  active: Int!
+  available: Int!
+  inactive: Int!
+  onRoute: Int!
+  total: Int!
+}
+
+type DashboardHotelsV2Type {
+  amenities: Int!
+  bookings: Int!
+  rooms: Int!
+  total: Int!
+}
+
+type DashboardProfitV2Type {
+  currentMonth: Float!
+  lastMonth: Float!
+  percentageChange: Float!
+}
+
+type DashboardStarPerformerV2Type {
+  name: String
+  performance: Float
+  phone: String
+}
+
+type DashboardStatsV2Type {
+  confirmedBookings: Int!
+  totalAgents: Int!
+  totalDrivers: Int!
+  totalItineraries: Int!
+  totalRevenue: Float!
+}
+
+type DashboardSummaryV2Type {
+  dailyMoment: DashboardDailyMomentV2Type
+  drivers: DashboardDriversV2Type!
+  hotels: DashboardHotelsV2Type!
+  profit: DashboardProfitV2Type!
+  starPerformer: DashboardStarPerformerV2Type
+  stats: DashboardStatsV2Type!
+  vehicles: DashboardVehiclesV2Type!
+  vendors: DashboardVendorsV2Type!
+}
+
+type DashboardVehiclesV2Type {
+  available: Int!
+  onRoute: Int!
+  total: Int!
+  upcoming: Int!
+}
+
+type DashboardVendorsV2Type {
+  branches: Int!
+  inactive: Int!
+  total: Int!
+}
+
+type Query {
+  dashboardSummaryV2: DashboardSummaryV2Type!
+}

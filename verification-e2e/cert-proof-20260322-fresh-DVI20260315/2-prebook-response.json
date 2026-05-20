@@ -1,0 +1,181 @@
+{
+    "success":  true,
+    "message":  "Prebook completed for 3 hotel(s)",
+    "itinerary_plan_ID":  32,
+    "hotels":  [
+                   {
+                       "routeId":  432,
+                       "hotelCode":  "1739944",
+                       "bookingCode":  "1739944!TB!2!TB!5313fcd4-25c0-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+                       "updatedTotalPrice":  0,
+                       "finalPrice":  0,
+                       "totalAmount":  0,
+                       "cancellationPolicy":  [
+
+                                              ],
+                       "cancellationPoliciesText":  null,
+                       "roomPromotion":  null,
+                       "rateConditions":  [
+
+                                          ],
+                       "inclusions":  [
+
+                                      ],
+                       "mandatorySupplements":  [
+
+                                                ],
+                       "normalizedSupplements":  [
+
+                                                 ],
+                       "supplements":  [
+
+                                       ],
+                       "isPriceChanged":  false,
+                       "isCancellationPolicyChanged":  false,
+                       "rawStatus":  {
+                                         "Code":  200,
+                                         "Description":  "Successful"
+                                     },
+                       "certificationTrace":  {
+                                                  "guestNationality":  "IN",
+                                                  "prebookRequest":  {
+                                                                         "BookingCode":  "1739944!TB!2!TB!5313fcd4-25c0-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+                                                                         "PaymentMode":  "Limit",
+                                                                         "GuestNationality":  "IN",
+                                                                         "NoOfRooms":  1,
+                                                                         "PaxRooms":  [
+                                                                                          {
+                                                                                              "Adults":  1,
+                                                                                              "Children":  0,
+                                                                                              "ChildrenAges":  [
+
+                                                                                                               ]
+                                                                                          }
+                                                                                      ]
+                                                                     }
+                                              }
+                   },
+                   {
+                       "routeId":  433,
+                       "hotelCode":  "1383563",
+                       "bookingCode":  "1383563!TB!1!TB!5314b03f-25c0-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+                       "updatedTotalPrice":  0,
+                       "finalPrice":  0,
+                       "totalAmount":  0,
+                       "cancellationPolicy":  [
+
+                                              ],
+                       "cancellationPoliciesText":  null,
+                       "roomPromotion":  null,
+                       "rateConditions":  [
+
+                                          ],
+                       "inclusions":  [
+
+                                      ],
+                       "mandatorySupplements":  [
+
+                                                ],
+                       "normalizedSupplements":  [
+
+                                                 ],
+                       "supplements":  [
+
+                                       ],
+                       "isPriceChanged":  false,
+                       "isCancellationPolicyChanged":  false,
+                       "rawStatus":  {
+                                         "Code":  200,
+                                         "Description":  "Successful"
+                                     },
+                       "certificationTrace":  {
+                                                  "guestNationality":  "IN",
+                                                  "prebookRequest":  {
+                                                                         "BookingCode":  "1383563!TB!1!TB!5314b03f-25c0-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+                                                                         "PaymentMode":  "Limit",
+                                                                         "GuestNationality":  "IN",
+                                                                         "NoOfRooms":  1,
+                                                                         "PaxRooms":  [
+                                                                                          {
+                                                                                              "Adults":  1,
+                                                                                              "Children":  0,
+                                                                                              "ChildrenAges":  [
+
+                                                                                                               ]
+                                                                                          }
+                                                                                      ]
+                                                                     }
+                                              }
+                   },
+                   {
+                       "routeId":  434,
+                       "hotelCode":  "1742171",
+                       "bookingCode":  "1742171!TB!1!TB!53148aa4-25c0-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+                       "updatedTotalPrice":  0,
+                       "finalPrice":  0,
+                       "totalAmount":  0,
+                       "cancellationPolicy":  [
+
+                                              ],
+                       "cancellationPoliciesText":  null,
+                       "roomPromotion":  null,
+                       "rateConditions":  [
+
+                                          ],
+                       "inclusions":  [
+
+                                      ],
+                       "mandatorySupplements":  [
+
+                                                ],
+                       "normalizedSupplements":  [
+
+                                                 ],
+                       "supplements":  [
+
+                                       ],
+                       "isPriceChanged":  false,
+                       "isCancellationPolicyChanged":  false,
+                       "rawStatus":  {
+                                         "Code":  200,
+                                         "Description":  "Successful"
+                                     },
+                       "certificationTrace":  {
+                                                  "guestNationality":  "IN",
+                                                  "prebookRequest":  {
+                                                                         "BookingCode":  "1742171!TB!1!TB!53148aa4-25c0-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+                                                                         "PaymentMode":  "Limit",
+                                                                         "GuestNationality":  "IN",
+                                                                         "NoOfRooms":  1,
+                                                                         "PaxRooms":  [
+                                                                                          {
+                                                                                              "Adults":  1,
+                                                                                              "Children":  0,
+                                                                                              "ChildrenAges":  [
+
+                                                                                                               ]
+                                                                                          }
+                                                                                      ]
+                                                                     }
+                                              }
+                   }
+               ],
+    "updatedTotalPrice":  0,
+    "finalPrice":  0,
+    "totalAmount":  0,
+    "cancellationPolicy":  null,
+    "cancellationPoliciesText":  null,
+    "roomPromotion":  null,
+    "rateConditions":  [
+
+                       ],
+    "inclusions":  [
+
+                   ],
+    "mandatorySupplements":  [
+
+                             ],
+    "normalizedSupplements":  [
+
+                              ]
+}

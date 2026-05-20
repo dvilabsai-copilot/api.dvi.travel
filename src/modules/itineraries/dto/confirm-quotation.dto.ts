@@ -7,15 +7,28 @@ import {
   Min,
   IsNumber,
   IsBoolean,
+  Max,
+  Matches,
+  ValidateNested,
+  IsIn,
+  IsDateString,
+  IsObject,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class HotelPassengerDto {
   @ApiProperty({ example: 'Mr' })
   @IsString()
+  @Matches(/^(mr|mrs|ms|miss|mx|dr)$/i, {
+    message: 'title must be one of Mr, Mrs, Ms, Miss, Mx, Dr',
+  })
   title!: string;
 
   @ApiProperty({ example: 'John' })
   @IsString()
+  @Matches(/^[A-Za-z][A-Za-z\s'-]{1,24}$/, {
+    message: 'firstName must be 2-25 characters and contain only letters, spaces, apostrophe or hyphen',
+  })
   firstName!: string;
 
   @ApiProperty({ example: '', required: false })
@@ -25,6 +38,9 @@ export class HotelPassengerDto {
 
   @ApiProperty({ example: 'Doe' })
   @IsString()
+  @Matches(/^[A-Za-z][A-Za-z\s'-]{1,24}$/, {
+    message: 'lastName must be 2-25 characters and contain only letters, spaces, apostrophe or hyphen',
+  })
   lastName!: string;
 
   @ApiProperty({ example: 'john@example.com', required: false })
@@ -34,6 +50,7 @@ export class HotelPassengerDto {
 
   @ApiProperty({ example: 1, description: '1=Adult, 2=Child' })
   @IsInt()
+  @IsIn([1, 2], { message: 'paxType must be 1 (Adult) or 2 (Child)' })
   paxType!: number;
 
   @ApiProperty({ example: true })
@@ -42,11 +59,16 @@ export class HotelPassengerDto {
 
   @ApiProperty({ example: 30 })
   @IsInt()
+  @Min(0)
+  @Max(120)
   age!: number;
 
   @ApiProperty({ example: '', required: false })
   @IsOptional()
   @IsString()
+  @Matches(/^[A-Z0-9]{6,20}$/i, {
+    message: 'passportNo must be 6-20 alphanumeric characters',
+  })
   passportNo?: string;
 
   @ApiProperty({ example: '', required: false })
@@ -77,7 +99,40 @@ export class HotelPassengerDto {
   @ApiProperty({ example: '', required: false })
   @IsOptional()
   @IsString()
+  @Matches(/^[A-Z]{5}[0-9]{4}[A-Z]$/, {
+    message: 'pan must be a valid PAN format (e.g. ABCDE1234F)',
+  })
   pan?: string;
+
+  @ApiProperty({ example: '', required: false })
+  @IsOptional()
+  @IsString()
+  @Matches(/^[A-Z]{5}[0-9]{4}[A-Z]$/, {
+    message: 'panNo must be a valid PAN format (e.g. ABCDE1234F)',
+  })
+  panNo?: string;
+}
+
+export class HotelRoomOccupancyDto {
+  @ApiProperty({ example: 2 })
+  @IsInt()
+  @Min(1)
+  @Max(8)
+  adults!: number;
+
+  @ApiProperty({ example: 1 })
+  @IsInt()
+  @Min(0)
+  @Max(4)
+  children!: number;
+
+  @ApiProperty({ type: [Number], example: [8], required: false })
+  @IsOptional()
+  @IsArray()
+  @IsInt({ each: true })
+  @Min(0, { each: true })
+  @Max(11, { each: true })
+  childrenAges?: number[];
 }
 
 export class HotelSelectionDto {
@@ -92,6 +147,11 @@ export class HotelSelectionDto {
   @ApiProperty({ example: '1035259' })
   @IsString()
   hotelCode!: string;
+
+  @ApiProperty({ example: 'Sample Hotel', required: false })
+  @IsOptional()
+  @IsString()
+  hotelName?: string;
 
   @ApiProperty({ example: '1035259!TB!2!TB!27fe40ea-75db-11f0-8023-825b5693933e!TB!AFF!' })
   @IsString()
@@ -111,19 +171,53 @@ export class HotelSelectionDto {
 
   @ApiProperty({ example: 1 })
   @IsInt()
+  @Min(1)
+  @Max(6)
   numberOfRooms!: number;
 
   @ApiProperty({ example: 'IN' })
   @IsString()
+  @Matches(/^[A-Z]{2}$/i, { message: 'guestNationality must be ISO-2 country code' })
   guestNationality!: string;
 
   @ApiProperty({ example: 5000 })
   @IsNumber()
   netAmount!: number;
 
+  @ApiProperty({
+    example: '2026-03-22T10:15:00.000Z',
+    required: false,
+    description: 'Timestamp when hotel search result/session was generated',
+  })
+  @IsOptional()
+  @IsDateString()
+  searchInitiatedAt?: string;
+
   @ApiProperty({ type: [HotelPassengerDto] })
   @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => HotelPassengerDto)
   passengers!: HotelPassengerDto[];
+
+  @ApiProperty({ type: [HotelRoomOccupancyDto], required: false })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => HotelRoomOccupancyDto)
+  occupancies?: HotelRoomOccupancyDto[];
+
+  @ApiProperty({
+    example: {
+      bookingCode: '1035259!TB!...',
+      finalPrice: 5230.45,
+      traceId: 'trace-id',
+    },
+    required: false,
+    description: 'Prebook response context captured from the confirm popup review step',
+  })
+  @IsOptional()
+  @IsObject()
+  prebookContext?: Record<string, any>;
 }
 
 export class ConfirmQuotationDto {
@@ -235,6 +329,8 @@ export class ConfirmQuotationDto {
   })
   @IsOptional()
   @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => HotelSelectionDto)
   hotel_bookings?: HotelSelectionDto[];
 
   @ApiProperty({ example: '192.168.1.1', required: false })

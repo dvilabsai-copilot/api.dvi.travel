@@ -40,4 +40,29 @@ export class VehicleAvailabilityQueryDto {
   @Type(() => Number)
   @IsInt()
   vehicleTypeId?: number;
+
+  @ApiPropertyOptional({
+    description: 'Optional filter by agent id',
+    type: Number,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  agentId?: number;
+
+  @ApiPropertyOptional({
+    description: 'Optional exact route-location label filter',
+    type: String,
+  })
+  @IsOptional()
+  @IsString()
+  locationLabel?: string;
+
+  @ApiPropertyOptional({
+    description: 'Alias for locationLabel (frontend backward compatibility)',
+    type: String,
+  })
+  @IsOptional()
+  @IsString()
+  locationId?: string;
 }

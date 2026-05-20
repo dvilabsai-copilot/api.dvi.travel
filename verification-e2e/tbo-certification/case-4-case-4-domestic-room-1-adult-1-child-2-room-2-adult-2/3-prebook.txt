@@ -1,0 +1,201 @@
+======== REQUEST ========
+{
+  "BookingCode": "1124298!TB!1!TB!07a4ed3f-434e-11f1-855f-720abae076dd!TB!N!TB!AFF!",
+  "PaymentMode": "Limit",
+  "GuestNationality": "IN",
+  "NoOfRooms": 2,
+  "PaxRooms": [
+    {
+      "Adults": 1,
+      "Children": 2,
+      "ChildrenAges": [
+        3,
+        4
+      ]
+    },
+    {
+      "Adults": 2,
+      "Children": 0,
+      "ChildrenAges": []
+    }
+  ]
+}
+
+======== RESPONSE ========
+{
+  "Status": {
+    "Code": 200,
+    "Description": "Successful"
+  },
+  "HotelResult": [
+    {
+      "HotelCode": "1124298",
+      "Currency": "INR",
+      "Rooms": [
+        {
+          "Name": [
+            "Deluxe Room,2 Twin Beds,NonSmoking",
+            "Deluxe Room,2 Twin Beds,NonSmoking"
+          ],
+          "BookingCode": "1124298!TB!1!TB!07a4ed3f-434e-11f1-855f-720abae076dd!TB!N!TB!AFF!",
+          "Inclusion": "Free breakfast,Free self parking",
+          "DayRates": [
+            [
+              {
+                "BasePrice": 4495.05
+              }
+            ],
+            [
+              {
+                "BasePrice": 4508.78
+              }
+            ]
+          ],
+          "TotalFare": 9488.630000000001,
+          "TotalTax": 484.8,
+          "NetAmount": 9489.637959823998,
+          "NetTax": 485.8071600239999,
+          "RoomPromotion": [
+            "Save:24%",
+            "Save:24%"
+          ],
+          "CancelPolicies": [
+            {
+              "FromDate": "27-04-2026 00:00:00",
+              "ChargeType": "Fixed",
+              "CancellationCharge": 0
+            },
+            {
+              "FromDate": "08-06-2026 00:00:00",
+              "ChargeType": "Percentage",
+              "CancellationCharge": 100
+            }
+          ],
+          "MealType": "BreakFast",
+          "IsRefundable": true,
+          "WithTransfers": false,
+          "Amenities": [
+            "Towels provided",
+            "Non-Smoking",
+            "Television",
+            "Bed sheets not available",
+            "Shower only",
+            "Wireless internet access",
+            "TV size measurement: inch",
+            "Private bathroom",
+            "Wardrobe or closet",
+            "Free toiletries",
+            "Ceiling fan",
+            "Daily housekeeping",
+            "Air conditioning",
+            "Rollaway/extra beds (free)",
+            "TV size: 20",
+            "Free WiFi",
+            "Phone",
+            "Separate sitting area",
+            "Desk",
+            "Room service (24 hours)",
+            "LCD TV",
+            "Internet access",
+            "Cable TV service",
+            "Balcony",
+            "Towels provided",
+            "Non-Smoking",
+            "Television",
+            "Bed sheets not available",
+            "Shower only",
+            "Wireless internet access",
+            "TV size measurement: inch",
+            "Private bathroom",
+            "Wardrobe or closet",
+            "Free toiletries",
+            "Ceiling fan",
+            "Daily housekeeping",
+            "Air conditioning",
+            "Rollaway/extra beds (free)",
+            "TV size: 20",
+            "Free WiFi",
+            "Phone",
+            "Separate sitting area",
+            "Desk",
+            "Room service (24 hours)",
+            "LCD TV",
+            "Internet access",
+            "Cable TV service",
+            "Balcony"
+          ],
+          "LastCancellationDeadline": "07-06-2026 23:59:59",
+          "PriceBreakUp": [
+            {
+              "RoomRate": 4519.968151,
+              "RoomTax": 242.39844199999996,
+              "AgentCommission": 24.9178818,
+              "TaxBreakup": [
+                {
+                  "TaxType": "Tax_TDS",
+                  "TaxableAmount": 24.9178818,
+                  "TaxPercentage": 2,
+                  "TaxAmount": 0.498357636
+                }
+              ]
+            },
+            {
+              "RoomRate": 4534.37645,
+              "RoomTax": 242.39844199999996,
+              "AgentCommission": 25.5959194,
+              "TaxBreakup": [
+                {
+                  "TaxType": "Tax_TDS",
+                  "TaxableAmount": 25.5959194,
+                  "TaxPercentage": 2,
+                  "TaxAmount": 0.511918388
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "RateConditions": [
+        "Early check out will attract full cancellation charge unless otherwise specified",
+        "CheckIn Time-Begin: 12:00 PM ",
+        " CheckIn Time-End: midnight",
+        "CheckOut Time: 11:00 AM",
+        "CheckIn Instructions: &lt;ul&gt;  &lt;li&gt;Extra-person charges may apply and vary depending on property policy&lt;/li&gt;&lt;li&gt;Government-issued photo identification and a credit card, debit card, or cash deposit may be required at check-in for incidental charges&lt;/li&gt;&lt;li&gt;Special requests are subject to availability upon check-in and may incur additional charges; special requests cannot be guaranteed&lt;/li&gt;&lt;li&gt;This property accepts mobile payments and cash&lt;/li&gt;&lt;li&gt;Mobile payment options include: Google Pay, Paytm, PhonePe, and Amazon Pay&lt;/li&gt;&lt;li&gt;Safety features at this property include a fire extinguisher&lt;/li&gt;&lt;li&gt;This property has outdoor spaces, such as balconies, patios, terraces which may not be suitable for children; if you have concerns, we recommend contacting the property prior to your arrival to confirm they can accommodate you in a suitable room&lt;/li&gt;&lt;li&gt;Please note that cultural norms and guest policies may differ by country and by property; the policies listed are provided by the property&lt;/li&gt;  &lt;/ul&gt; ",
+        " Special Instructions : This property offers transfers from the airport (surcharges may apply). To arrange pick-up, guests must contact the property 48 hours prior to arrival, using the contact information on the booking confirmation. To make arrangements for check-in please contact the property at least 24 hours before arrival using the information on the booking confirmation. If you are planning to arrive after midnight please contact the property in advance using the information on the booking confirmation. Guests must contact the property in advance for check-in instructions. Front desk staff will greet guests on arrival at the property. Information provided by the property may be translated using automated translation tools.",
+        "Minimum CheckIn Age : 18",
+        "Optional Fees: &lt;ul&gt; &lt;li&gt;Fee for continental breakfast: approximately INR 450 for adults and INR 450 for children&lt;/li&gt;&lt;li&gt;Airport shuttle fee: INR 840 per room&lt;/li&gt;&lt;/ul&gt; &lt;p&gt;The above list may not be comprehensive. Fees and deposits may not include tax and are subject to change. &lt;/p&gt;",
+        "Cards Accepted: Amazon Pay,Debit cards not accepted,Cash,Google Pay,PhonePe,Paytm",
+        "&lt;ul&gt;  &lt;li&gt;Local laws may restrict unmarried guests from sharing rooms. Guests are responsible for providing proof of marriage, if requested by the property. &lt;/li&gt;  &lt;li&gt;One child 4 years old or younger stays free when occupying the parent or guardian's room, using existing bedding. &lt;/li&gt;&lt;li&gt;Only registered guests are allowed in the guestrooms. &lt;/li&gt; &lt;li&gt;No pets and no service animals are allowed at this property. &lt;/li&gt;&lt;li&gt;Contactless check-in and contactless check-out are available.&lt;/li&gt; &lt;/ul&gt;,Service animals not allowed,Pets not allowed,Professional property host/manager,Contactless check-out is available,No cribs (infant beds) available,Contactless check-in is available,Essential workers only - NO"
+      ]
+    }
+  ],
+  "ValidationInfo": {
+    "PanMandatory": false,
+    "PassportMandatory": false,
+    "CorporateBookingAllowed": false,
+    "PanCountRequired": 0,
+    "SamePaxNameAllowed": true,
+    "SpaceAllowed": true,
+    "SpecialCharAllowed": false,
+    "PaxNameMinLength": 1,
+    "PaxNameMaxLength": 50,
+    "CharLimit": true,
+    "PackageFare": false,
+    "PackageDetailsMandatory": false,
+    "DepartureDetailsMandatory": false,
+    "GSTAllowed": false,
+    "CrpPANMandatory": false,
+    "IsAgencyOwnPANAllowed": false
+  }
+}
+
+======== METADATA ========
+- timestamp: 2026-04-28T22:03:06.564Z
+- endpoint: https://affiliate.tektravels.com/HotelAPI/PreBook
+- status code: 200
+- case id: 4
+- step name: prebook
+- method: POST
+- status: success
+- error: none
+- skipped reason: none

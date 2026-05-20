@@ -1,0 +1,146 @@
+﻿{
+    "Status":  {
+                   "Code":  200,
+                   "Description":  "Successful"
+               },
+    "HotelResult":  [
+                        {
+                            "HotelCode":  "1286299",
+                            "Currency":  "INR",
+                            "Rooms":  [
+                                          {
+                                              "Name":  [
+                                                           "Deluxe Room,1 Double Bed,NonSmoking"
+                                                       ],
+                                              "BookingCode":  "1286299!TB!1!TB!529076bd-2627-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+                                              "Inclusion":  "Free breakfast,Free self parking",
+                                              "DayRates":  [
+                                                               [
+                                                                   {
+                                                                       "BasePrice":  6990.47
+                                                                   },
+                                                                   {
+                                                                       "BasePrice":  6990.47
+                                                                   },
+                                                                   {
+                                                                       "BasePrice":  6990.47
+                                                                   },
+                                                                   {
+                                                                       "BasePrice":  6990.47
+                                                                   }
+                                                               ]
+                                                           ],
+                                              "TotalFare":  33118.33,
+                                              "TotalTax":  5156.48,
+                                              "CancelPolicies":  [
+                                                                     {
+                                                                         "FromDate":  "21-03-2026 00:00:00",
+                                                                         "ChargeType":  "Fixed",
+                                                                         "CancellationCharge":  0
+                                                                     },
+                                                                     {
+                                                                         "FromDate":  "19-04-2026 00:00:00",
+                                                                         "ChargeType":  "Percentage",
+                                                                         "CancellationCharge":  100
+                                                                     }
+                                                                 ],
+                                              "MealType":  "BreakFast",
+                                              "IsRefundable":  true,
+                                              "WithTransfers":  false,
+                                              "TBORoomID":  "16347",
+                                              "RoomID":  [
+                                                             "16347"
+                                                         ]
+                                          },
+                                          {
+                                              "Name":  [
+                                                           "Premier Room, 1 Double Bed,NonSmoking"
+                                                       ],
+                                              "BookingCode":  "1286299!TB!2!TB!529076bd-2627-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+                                              "Inclusion":  "Free breakfast,Free self parking",
+                                              "DayRates":  [
+                                                               [
+                                                                   {
+                                                                       "BasePrice":  7553.65
+                                                                   },
+                                                                   {
+                                                                       "BasePrice":  7553.65
+                                                                   },
+                                                                   {
+                                                                       "BasePrice":  7553.65
+                                                                   },
+                                                                   {
+                                                                       "BasePrice":  7553.65
+                                                                   }
+                                                               ]
+                                                           ],
+                                              "TotalFare":  35781.19,
+                                              "TotalTax":  5566.61,
+                                              "CancelPolicies":  [
+                                                                     {
+                                                                         "FromDate":  "21-03-2026 00:00:00",
+                                                                         "ChargeType":  "Fixed",
+                                                                         "CancellationCharge":  0
+                                                                     },
+                                                                     {
+                                                                         "FromDate":  "19-04-2026 00:00:00",
+                                                                         "ChargeType":  "Percentage",
+                                                                         "CancellationCharge":  100
+                                                                     }
+                                                                 ],
+                                              "MealType":  "BreakFast",
+                                              "IsRefundable":  true,
+                                              "WithTransfers":  false,
+                                              "TBORoomID":  "16354",
+                                              "RoomID":  [
+                                                             "16354"
+                                                         ]
+                                          },
+                                          {
+                                              "Name":  [
+                                                           "Deluxe Suite,1 Double Bed,NonSmoking"
+                                                       ],
+                                              "BookingCode":  "1286299!TB!3!TB!529076bd-2627-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+                                              "Inclusion":  "Free breakfast,Free self parking",
+                                              "DayRates":  [
+                                                               [
+                                                                   {
+                                                                       "BasePrice":  11130.88
+                                                                   },
+                                                                   {
+                                                                       "BasePrice":  11130.88
+                                                                   },
+                                                                   {
+                                                                       "BasePrice":  11130.88
+                                                                   },
+                                                                   {
+                                                                       "BasePrice":  11130.88
+                                                                   }
+                                                               ]
+                                                           ],
+                                              "TotalFare":  52727.68,
+                                              "TotalTax":  8204.18,
+                                              "CancelPolicies":  [
+                                                                     {
+                                                                         "FromDate":  "21-03-2026 00:00:00",
+                                                                         "ChargeType":  "Fixed",
+                                                                         "CancellationCharge":  0
+                                                                     },
+                                                                     {
+                                                                         "FromDate":  "19-04-2026 00:00:00",
+                                                                         "ChargeType":  "Percentage",
+                                                                         "CancellationCharge":  100
+                                                                     }
+                                                                 ],
+                                              "MealType":  "BreakFast",
+                                              "IsRefundable":  true,
+                                              "WithTransfers":  false,
+                                              "TBORoomID":  "16311",
+                                              "RoomID":  [
+                                                             "16311"
+                                                         ]
+                                          }
+                                      ]
+                        }
+                    ]
+}

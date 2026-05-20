@@ -1,0 +1,25 @@
+{
+    "success":  true,
+    "message":  "Found 0 hotels",
+    "data":  {
+                 "totalResults":  0,
+                 "hotels":  [
+
+                            ],
+                 "filters":  {
+                                 "ratings":  [
+
+                                             ],
+                                 "priceRange":  {
+                                                    "min":  null,
+                                                    "max":  null
+                                                },
+                                 "facilities":  [
+
+                                                ],
+                                 "providers":  [
+
+                                               ]
+                             }
+             }
+}

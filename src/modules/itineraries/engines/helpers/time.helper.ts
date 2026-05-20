@@ -94,3 +94,32 @@ export function minutesToDurationTime(minutes: number): string {
   const secs = Math.round(Math.max(0, minutes) * 60);
   return secondsToDurationTime(secs);
 }
+
+/**
+ * Wraps absolute seconds to 0-86399 range (24-hour day).
+ * Use ONLY for final display/storage formatting.
+ * ✅ Keep absolute seconds for ALL validation logic.
+ */
+export function wrapToDay(seconds: number): number {
+  if (!Number.isFinite(seconds)) return 0;
+  return ((seconds % 86400) + 86400) % 86400;
+}
+
+/**
+ * Checks if a time range spans midnight (end < start in same-day seconds).
+ * Returns { isOvernight: true/false, absoluteEndSeconds: adjusted end }
+ * 
+ * Example:
+ * - start=82800 (23:00), end=3600 (01:00) -> isOvernight=true, absoluteEndSeconds=90000
+ * - start=36000 (10:00), end=72000 (20:00) -> isOvernight=false, absoluteEndSeconds=72000
+ */
+export function normalizeTimeRange(
+  startSeconds: number,
+  endSeconds: number,
+): { isOvernight: boolean; absoluteEndSeconds: number } {
+  if (endSeconds < startSeconds) {
+    // Spans midnight: add 24 hours to end
+    return { isOvernight: true, absoluteEndSeconds: endSeconds + 86400 };
+  }
+  return { isOvernight: false, absoluteEndSeconds: endSeconds };
+}

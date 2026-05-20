@@ -1,0 +1,1869 @@
+{
+  "generatedAt": "2026-04-10T08:40:14.653Z",
+  "sourceInputArtifact": "C:\\wamp64\\www\\dvi_fullstack\\api.dvi.travel\\verification-e2e\\automation\\artifacts\\south-india-hotspot-analysis-1775807361587.json",
+  "sourceServerLog": "c:/wamp64/www/dvi_fullstack/api.dvi.travel/hotspot-debug-server.log",
+  "totals": {
+    "runCount": 10,
+    "decisionRows": 1118
+  },
+  "perItineraries": [
+    {
+      "itinerary": "TN-Coast-Chennai-Mahabalipuram-Pondicherry",
+      "runIndex": 1,
+      "quoteId": "DVI202604208",
+      "planId": 246,
+      "counts": {
+        "totalCandidates": 109,
+        "selected": 34,
+        "rejected": 73,
+        "deferred": 2,
+        "duplicates": 41,
+        "closed": 27,
+        "noTime": 5
+      },
+      "days": [
+        {
+          "dayNumber": 1,
+          "routeSource": "Chennai",
+          "routeDestination": "Mahabalipuram",
+          "selected": [
+            "Kapaleeshwarar Temple - priority 1 - 05:30:00-06:30:00 - open 05:30:00-20:00:00 - SELECTED",
+            "Parthasarathy Temple - priority 2 - 06:44:00-07:44:00 - open 06:00:00-19:00:00 - SELECTED",
+            "Marina Beach - priority 3 - 07:46:00-08:46:00 - open 00:00:00-23:59:59 - SELECTED",
+            "light house marina - priority 4 - 10:00:00-10:45:00 - open 10:00:00-17:30:00 - SELECTED",
+            "Fort St.George Museum - priority 5 - 11:10:00-12:10:00 - open 09:00:00-17:00:00 - SELECTED",
+            "Government Museum Chennai - priority 6 - 12:29:00-13:29:00 - open 09:30:00-17:00:00 - SELECTED",
+            "Guindy National Park - priority 6 - 13:47:00-15:47:00 - open 09:00:00-17:30:00 - SELECTED",
+            "Santhome Cathedral Basilica - priority 7 - 16:23:00-17:23:00 - open 06:00:00-20:00:00 - SELECTED",
+            "M G R  Memorial - priority 0 - 17:44:00-18:44:00 - open 09:00:00-21:30:00 - SELECTED",
+            "T Nagar (only for Shopping) - priority 0 - 19:21:00-21:21:00 - open 17:00:00-22:00:00 - SELECTED",
+            "Arignar Anna Zoological Park - priority 0 - 22:15:00-03:15:00 - open 09:00:00-17:00:00 - SELECTED"
+          ],
+          "rejected": [
+            "Guindy snake park - priority 18 - 18:00:00-20:00:00 - closes 17:30:00 - REJECTED",
+            "Thousand Lights Mosque - priority 0 - 19:04:00-20:04:00 - closes 20:00:00 - REJECTED",
+            "Anna tower park - priority 0 - 19:02:00-21:02:00 - closes 18:00:00 - REJECTED",
+            "Vadapalani Murugan Temple - priority 0 - 21:36:00-22:36:00 - closes 21:00:00 - REJECTED",
+            "PHOENIX MARKET CITY Chennai - priority 0 - 21:56:00-23:56:00 - closes 22:00:00 - REJECTED",
+            "Click art museum - priority 0 - 21:53:00-23:13:00 - closes 20:00:00 - REJECTED",
+            "Vgp marine kingdom - priority 0 - 21:54:00-22:54:00 - closes 20:00:00 - REJECTED"
+          ],
+          "deferred": [
+            "Sri Aurobindo Ashram - priority 2 - Rejected: deferred to next opening slot - DEFERRED"
+          ],
+          "duplicate": []
+        },
+        {
+          "dayNumber": 2,
+          "routeSource": "Mahabalipuram",
+          "routeDestination": "Pondicherry",
+          "selected": [
+            "Mahabalipuram  Group of Monuments - priority 1 - 09:04:00-13:04:00 - open 06:00:00-18:00:00 - SELECTED",
+            "Dakshina Chitra Heritage Museum - priority 3 - 13:57:00-14:57:00 - open 10:00:00-18:00:00 - SELECTED"
+          ],
+          "rejected": [
+            "Mahabalipuram - priority 2 - 13:37:00-15:07:00 - closes --:-- - REJECTED"
+          ],
+          "deferred": [],
+          "duplicate": []
+        },
+        {
+          "dayNumber": 3,
+          "routeSource": "Pondicherry",
+          "routeDestination": "Pondicherry",
+          "selected": [
+            "Manakula Vinayagar Temple - priority 3 - 10:04:00-10:34:00 - open 05:45:00-20:00:00 - SELECTED",
+            "French Colony - priority 4 - 10:39:00-11:39:00 - open 00:00:00-23:59:59 - SELECTED",
+            "The Pondicherry Museum - priority 5 - 11:43:00-12:13:00 - open 09:00:00-18:00:00 - SELECTED",
+            "Bharathi Park &amp; Aayi Mandapam - priority 6 - 12:14:00-12:59:00 - open 06:00:00-19:00:00 - SELECTED",
+            "Paradise Beach - priority 7 - 13:31:00-14:01:00 - open 09:00:00-18:00:00 - SELECTED",
+            "Promenade Beach - priority 8 - 14:31:00-15:31:00 - open 06:00:00-20:00:00 - SELECTED",
+            "The Basilica of the Sacred Heart of Jesus - priority 9 - 15:37:00-16:07:00 - open 06:00:00-19:00:00 - SELECTED",
+            "French War Memorial - priority 0 - 16:13:00-16:33:00 - open 00:00:00-23:59:59 - SELECTED",
+            "Pondi Marina Beach - priority 0 - 17:36:00-18:06:00 - open 00:00:00-23:59:59 - SELECTED"
+          ],
+          "rejected": [
+            "Auroville - priority 1 - 10:11:00-12:11:00 - closes --:-- - REJECTED",
+            "Botanical Garden - priority 11 - 16:11:00-17:11:00 - closes 17:00:00 - REJECTED",
+            "Pondicherry Backwater - priority 0 - 16:46:00-19:46:00 - closes 18:00:00 - REJECTED",
+            "Chunnambar Boathouse - priority 0 - 19:13:00-20:13:00 - closes 16:00:00 - REJECTED",
+            "Eden Beach - Blue flag Beach - priority 0 - 18:27:00-19:27:00 - closes 18:00:00 - REJECTED",
+            "Sri Aurobindo Ashram - priority 2 - 19:10:00-20:10:00 - closes 19:00:00 - REJECTED"
+          ],
+          "deferred": [
+            "Sri Aurobindo Ashram - priority 2 - 10:04:00-11:04:00 - opens 10:30:00 - DEFERRED"
+          ],
+          "duplicate": []
+        },
+        {
+          "dayNumber": 4,
+          "routeSource": "Pondicherry",
+          "routeDestination": "Pondicherry",
+          "selected": [
+            "Auroville - priority 1 - 10:11:00-12:11:00 - open 09:00:00-17:00:00 - SELECTED",
+            "Sri Aurobindo Ashram - priority 2 - 12:29:00-13:29:00 - open 10:30:00-19:00:00 - SELECTED",
+            "Botanical Garden - priority 11 - 13:38:00-14:38:00 - open 10:00:00-17:00:00 - SELECTED",
+            "Pondicherry Backwater - priority 0 - 14:47:00-17:47:00 - open 09:00:00-18:00:00 - SELECTED"
+          ],
+          "rejected": [
+            "Chunnambar Boathouse - priority 0 - 18:13:00-19:13:00 - closes 16:00:00 - REJECTED",
+            "Eden Beach - Blue flag Beach - priority 0 - 18:53:00-19:53:00 - closes 18:00:00 - REJECTED"
+          ],
+          "deferred": [],
+          "duplicate": [
+            "Manakula Vinayagar Temple - already inserted earlier - REJECTED",
+            "French Colony - already inserted earlier - REJECTED",
+            "The Pondicherry Museum - already inserted earlier - REJECTED",
+            "Bharathi Park &amp; Aayi Mandapam - already inserted earlier - REJECTED",
+            "Paradise Beach - already inserted earlier - REJECTED",
+            "Promenade Beach - already inserted earlier - REJECTED",
+            "The Basilica of the Sacred Heart of Jesus - already inserted earlier - REJECTED",
+            "French War Memorial - already inserted earlier - REJECTED",
+            "Pondi Marina Beach - already inserted earlier - REJECTED"
+          ]
+        },
+        {
+          "dayNumber": 5,
+          "routeSource": "Pondicherry",
+          "routeDestination": "Chennai",
+          "selected": [
+            "Chunnambar Boathouse - priority 0 - 10:10:00-11:10:00 - open 09:30:00-12:00:00 - SELECTED",
+            "Eden Beach - Blue flag Beach - priority 0 - 12:14:00-13:14:00 - open 06:00:00-18:00:00 - SELECTED",
+            "Vgp marine kingdom - priority 0 - 17:19:00-18:19:00 - open 09:30:00-19:30:00 - SELECTED"
+          ],
+          "rejected": [
+            "Guindy snake park - priority 18 - 17:32:00-19:32:00 - closes 17:30:00 - REJECTED"
+          ],
+          "deferred": [],
+          "duplicate": [
+            "Auroville - already inserted earlier - REJECTED",
+            "Sri Aurobindo Ashram - already inserted earlier - REJECTED",
+            "Manakula Vinayagar Temple - already inserted earlier - REJECTED",
+            "French Colony - already inserted earlier - REJECTED",
+            "The Pondicherry Museum - already inserted earlier - REJECTED",
+            "Bharathi Park &amp; Aayi Mandapam - already inserted earlier - REJECTED",
+            "Paradise Beach - already inserted earlier - REJECTED",
+            "Promenade Beach - already inserted earlier - REJECTED",
+            "The Basilica of the Sacred Heart of Jesus - already inserted earlier - REJECTED",
+            "Botanical Garden - already inserted earlier - REJECTED",
+            "French War Memorial - already inserted earlier - REJECTED",
+            "Pondicherry Backwater - already inserted earlier - REJECTED",
+            "Pondi Marina Beach - already inserted earlier - REJECTED",
+            "Kapaleeshwarar Temple - already inserted earlier - REJECTED",
+            "Parthasarathy Temple - already inserted earlier - REJECTED",
+            "Marina Beach - already inserted earlier - REJECTED",
+            "light house marina - already inserted earlier - REJECTED",
+            "Fort St.George Museum - already inserted earlier - REJECTED",
+            "Guindy National Park - already inserted earlier - REJECTED",
+            "Government Museum Chennai - already inserted earlier - REJECTED",
+            "Santhome Cathedral Basilica - already inserted earlier - REJECTED",
+            "Arignar Anna Zoological Park - already inserted earlier - REJECTED"
+          ]
+        },
+        {
+          "dayNumber": 6,
+          "routeSource": "Chennai",
+          "routeDestination": "Chennai",
+          "selected": [
+            "Guindy snake park - priority 18 - 10:15:00-12:15:00 - open 09:00:00-17:30:00 - SELECTED",
+            "Thousand Lights Mosque - priority 0 - 12:53:00-13:53:00 - open 05:30:00-21:00:00 - SELECTED",
+            "Anna tower park - priority 0 - 14:27:00-16:27:00 - open 07:00:00-18:00:00 - SELECTED",
+            "Vadapalani Murugan Temple - priority 0 - 16:49:00-17:49:00 - open 05:00:00-21:00:00 - SELECTED",
+            "PHOENIX MARKET CITY Chennai - priority 0 - 18:04:00-20:04:00 - open 10:00:00-22:00:00 - SELECTED"
+          ],
+          "rejected": [
+            "Click art museum - priority 0 - 20:04:00-20:04:00 - Rejected: no remaining day window - REJECTED",
+            "Vgp marine kingdom - priority 0 - 20:04:00-20:04:00 - Rejected: no remaining day window - REJECTED",
+            "Arignar Anna Zoological Park - priority 0 - 20:04:00-20:04:00 - Rejected: no remaining day window - REJECTED"
+          ],
+          "deferred": [],
+          "duplicate": [
+            "Kapaleeshwarar Temple - already inserted earlier - REJECTED",
+            "Parthasarathy Temple - already inserted earlier - REJECTED",
+            "Marina Beach - already inserted earlier - REJECTED",
+            "light house marina - already inserted earlier - REJECTED",
+            "Fort St.George Museum - already inserted earlier - REJECTED",
+            "Government Museum Chennai - already inserted earlier - REJECTED",
+            "Guindy National Park - already inserted earlier - REJECTED",
+            "Santhome Cathedral Basilica - already inserted earlier - REJECTED",
+            "M G R  Memorial - already inserted earlier - REJECTED",
+            "T Nagar (only for Shopping) - already inserted earlier - REJECTED"
+          ]
+        }
+      ],
+      "exampleHighlights": {
+        "selected": [
+          "Kapaleeshwarar Temple - priority 1 - SELECTED",
+          "Parthasarathy Temple - priority 2 - SELECTED",
+          "Sri Aurobindo Ashram - priority 2 - SELECTED",
+          "Marina Beach - priority 3 - SELECTED",
+          "Dakshina Chitra Heritage Museum - priority 3 - SELECTED"
+        ],
+        "rejected": [
+          "Thousand Lights Mosque - priority 0 - Rejected: closed at visit time - REJECTED",
+          "Anna tower park - priority 0 - Rejected: closed at visit time - REJECTED",
+          "Vadapalani Murugan Temple - priority 0 - Rejected: closed at visit time - REJECTED",
+          "Click art museum - priority 0 - Rejected: closed at visit time - REJECTED",
+          "Eden Beach - Blue flag Beach - priority 0 - Rejected: optional closed spot skipped; Rejected: closed at visit time - REJECTED"
+        ],
+        "deferred": [
+          "Sri Aurobindo Ashram - priority 2 - Rejected: deferred to next opening slot - DEFERRED",
+          "Sri Aurobindo Ashram - priority 2 - Rejected: deferred to next opening slot - DEFERRED"
+        ]
+      },
+      "clientSummary": "Out of 109 possible hotspots, 34 were selected. Most rejections happened due to duplicate hotspots, closing time conflicts, and insufficient time in the day."
+    },
+    {
+      "itinerary": "TN-Coast-Chennai-Mahabalipuram-Pondicherry",
+      "runIndex": 2,
+      "quoteId": "DVI202604209",
+      "planId": 247,
+      "counts": {
+        "totalCandidates": 109,
+        "selected": 34,
+        "rejected": 73,
+        "deferred": 2,
+        "duplicates": 41,
+        "closed": 27,
+        "noTime": 5
+      },
+      "days": [
+        {
+          "dayNumber": 1,
+          "routeSource": "Chennai",
+          "routeDestination": "Mahabalipuram",
+          "selected": [
+            "Kapaleeshwarar Temple - priority 1 - 05:30:00-06:30:00 - open 05:30:00-20:00:00 - SELECTED",
+            "Parthasarathy Temple - priority 2 - 06:44:00-07:44:00 - open 06:00:00-19:00:00 - SELECTED",
+            "Marina Beach - priority 3 - 07:46:00-08:46:00 - open 00:00:00-23:59:59 - SELECTED",
+            "light house marina - priority 4 - 10:00:00-10:45:00 - open 10:00:00-17:30:00 - SELECTED",
+            "Fort St.George Museum - priority 5 - 11:10:00-12:10:00 - open 09:00:00-17:00:00 - SELECTED",
+            "Government Museum Chennai - priority 6 - 12:29:00-13:29:00 - open 09:30:00-17:00:00 - SELECTED",
+            "Guindy National Park - priority 6 - 13:47:00-15:47:00 - open 09:00:00-17:30:00 - SELECTED",
+            "Santhome Cathedral Basilica - priority 7 - 16:23:00-17:23:00 - open 06:00:00-20:00:00 - SELECTED",
+            "M G R  Memorial - priority 0 - 17:44:00-18:44:00 - open 09:00:00-21:30:00 - SELECTED",
+            "T Nagar (only for Shopping) - priority 0 - 19:21:00-21:21:00 - open 17:00:00-22:00:00 - SELECTED",
+            "Arignar Anna Zoological Park - priority 0 - 22:15:00-03:15:00 - open 09:00:00-17:00:00 - SELECTED"
+          ],
+          "rejected": [
+            "Guindy snake park - priority 18 - 18:00:00-20:00:00 - closes 17:30:00 - REJECTED",
+            "Thousand Lights Mosque - priority 0 - 19:04:00-20:04:00 - closes 20:00:00 - REJECTED",
+            "Anna tower park - priority 0 - 19:02:00-21:02:00 - closes 18:00:00 - REJECTED",
+            "Vadapalani Murugan Temple - priority 0 - 21:36:00-22:36:00 - closes 21:00:00 - REJECTED",
+            "PHOENIX MARKET CITY Chennai - priority 0 - 21:56:00-23:56:00 - closes 22:00:00 - REJECTED",
+            "Click art museum - priority 0 - 21:53:00-23:13:00 - closes 20:00:00 - REJECTED",
+            "Vgp marine kingdom - priority 0 - 21:54:00-22:54:00 - closes 20:00:00 - REJECTED"
+          ],
+          "deferred": [
+            "Sri Aurobindo Ashram - priority 2 - Rejected: deferred to next opening slot - DEFERRED"
+          ],
+          "duplicate": []
+        },
+        {
+          "dayNumber": 2,
+          "routeSource": "Mahabalipuram",
+          "routeDestination": "Pondicherry",
+          "selected": [
+            "Mahabalipuram  Group of Monuments - priority 1 - 09:04:00-13:04:00 - open 06:00:00-18:00:00 - SELECTED",
+            "Dakshina Chitra Heritage Museum - priority 3 - 13:57:00-14:57:00 - open 10:00:00-18:00:00 - SELECTED"
+          ],
+          "rejected": [
+            "Mahabalipuram - priority 2 - 13:37:00-15:07:00 - closes --:-- - REJECTED"
+          ],
+          "deferred": [],
+          "duplicate": []
+        },
+        {
+          "dayNumber": 3,
+          "routeSource": "Pondicherry",
+          "routeDestination": "Pondicherry",
+          "selected": [
+            "Manakula Vinayagar Temple - priority 3 - 10:04:00-10:34:00 - open 05:45:00-20:00:00 - SELECTED",
+            "French Colony - priority 4 - 10:39:00-11:39:00 - open 00:00:00-23:59:59 - SELECTED",
+            "The Pondicherry Museum - priority 5 - 11:43:00-12:13:00 - open 09:00:00-18:00:00 - SELECTED",
+            "Bharathi Park &amp; Aayi Mandapam - priority 6 - 12:14:00-12:59:00 - open 06:00:00-19:00:00 - SELECTED",
+            "Paradise Beach - priority 7 - 13:31:00-14:01:00 - open 09:00:00-18:00:00 - SELECTED",
+            "Promenade Beach - priority 8 - 14:31:00-15:31:00 - open 06:00:00-20:00:00 - SELECTED",
+            "The Basilica of the Sacred Heart of Jesus - priority 9 - 15:37:00-16:07:00 - open 06:00:00-19:00:00 - SELECTED",
+            "French War Memorial - priority 0 - 16:13:00-16:33:00 - open 00:00:00-23:59:59 - SELECTED",
+            "Pondi Marina Beach - priority 0 - 17:36:00-18:06:00 - open 00:00:00-23:59:59 - SELECTED"
+          ],
+          "rejected": [
+            "Auroville - priority 1 - 10:11:00-12:11:00 - closes --:-- - REJECTED",
+            "Botanical Garden - priority 11 - 16:11:00-17:11:00 - closes 17:00:00 - REJECTED",
+            "Pondicherry Backwater - priority 0 - 16:46:00-19:46:00 - closes 18:00:00 - REJECTED",
+            "Chunnambar Boathouse - priority 0 - 19:13:00-20:13:00 - closes 16:00:00 - REJECTED",
+            "Eden Beach - Blue flag Beach - priority 0 - 18:27:00-19:27:00 - closes 18:00:00 - REJECTED",
+            "Sri Aurobindo Ashram - priority 2 - 19:10:00-20:10:00 - closes 19:00:00 - REJECTED"
+          ],
+          "deferred": [
+            "Sri Aurobindo Ashram - priority 2 - 10:04:00-11:04:00 - opens 10:30:00 - DEFERRED"
+          ],
+          "duplicate": []
+        },
+        {
+          "dayNumber": 4,
+          "routeSource": "Pondicherry",
+          "routeDestination": "Pondicherry",
+          "selected": [
+            "Auroville - priority 1 - 10:11:00-12:11:00 - open 09:00:00-17:00:00 - SELECTED",
+            "Sri Aurobindo Ashram - priority 2 - 12:29:00-13:29:00 - open 10:30:00-19:00:00 - SELECTED",
+            "Botanical Garden - priority 11 - 13:38:00-14:38:00 - open 10:00:00-17:00:00 - SELECTED",
+            "Pondicherry Backwater - priority 0 - 14:47:00-17:47:00 - open 09:00:00-18:00:00 - SELECTED"
+          ],
+          "rejected": [
+            "Chunnambar Boathouse - priority 0 - 18:13:00-19:13:00 - closes 16:00:00 - REJECTED",
+            "Eden Beach - Blue flag Beach - priority 0 - 18:53:00-19:53:00 - closes 18:00:00 - REJECTED"
+          ],
+          "deferred": [],
+          "duplicate": [
+            "Manakula Vinayagar Temple - already inserted earlier - REJECTED",
+            "French Colony - already inserted earlier - REJECTED",
+            "The Pondicherry Museum - already inserted earlier - REJECTED",
+            "Bharathi Park &amp; Aayi Mandapam - already inserted earlier - REJECTED",
+            "Paradise Beach - already inserted earlier - REJECTED",
+            "Promenade Beach - already inserted earlier - REJECTED",
+            "The Basilica of the Sacred Heart of Jesus - already inserted earlier - REJECTED",
+            "French War Memorial - already inserted earlier - REJECTED",
+            "Pondi Marina Beach - already inserted earlier - REJECTED"
+          ]
+        },
+        {
+          "dayNumber": 5,
+          "routeSource": "Pondicherry",
+          "routeDestination": "Chennai",
+          "selected": [
+            "Chunnambar Boathouse - priority 0 - 10:10:00-11:10:00 - open 09:30:00-12:00:00 - SELECTED",
+            "Eden Beach - Blue flag Beach - priority 0 - 12:14:00-13:14:00 - open 06:00:00-18:00:00 - SELECTED",
+            "Vgp marine kingdom - priority 0 - 17:19:00-18:19:00 - open 09:30:00-19:30:00 - SELECTED"
+          ],
+          "rejected": [
+            "Guindy snake park - priority 18 - 17:32:00-19:32:00 - closes 17:30:00 - REJECTED"
+          ],
+          "deferred": [],
+          "duplicate": [
+            "Auroville - already inserted earlier - REJECTED",
+            "Sri Aurobindo Ashram - already inserted earlier - REJECTED",
+            "Manakula Vinayagar Temple - already inserted earlier - REJECTED",
+            "French Colony - already inserted earlier - REJECTED",
+            "The Pondicherry Museum - already inserted earlier - REJECTED",
+            "Bharathi Park &amp; Aayi Mandapam - already inserted earlier - REJECTED",
+            "Paradise Beach - already inserted earlier - REJECTED",
+            "Promenade Beach - already inserted earlier - REJECTED",
+            "The Basilica of the Sacred Heart of Jesus - already inserted earlier - REJECTED",
+            "Botanical Garden - already inserted earlier - REJECTED",
+            "French War Memorial - already inserted earlier - REJECTED",
+            "Pondicherry Backwater - already inserted earlier - REJECTED",
+            "Pondi Marina Beach - already inserted earlier - REJECTED",
+            "Kapaleeshwarar Temple - already inserted earlier - REJECTED",
+            "Parthasarathy Temple - already inserted earlier - REJECTED",
+            "Marina Beach - already inserted earlier - REJECTED",
+            "light house marina - already inserted earlier - REJECTED",
+            "Fort St.George Museum - already inserted earlier - REJECTED",
+            "Guindy National Park - already inserted earlier - REJECTED",
+            "Government Museum Chennai - already inserted earlier - REJECTED",
+            "Santhome Cathedral Basilica - already inserted earlier - REJECTED",
+            "Arignar Anna Zoological Park - already inserted earlier - REJECTED"
+          ]
+        },
+        {
+          "dayNumber": 6,
+          "routeSource": "Chennai",
+          "routeDestination": "Chennai",
+          "selected": [
+            "Guindy snake park - priority 18 - 10:15:00-12:15:00 - open 09:00:00-17:30:00 - SELECTED",
+            "Thousand Lights Mosque - priority 0 - 12:53:00-13:53:00 - open 05:30:00-21:00:00 - SELECTED",
+            "Anna tower park - priority 0 - 14:27:00-16:27:00 - open 07:00:00-18:00:00 - SELECTED",
+            "Vadapalani Murugan Temple - priority 0 - 16:49:00-17:49:00 - open 05:00:00-21:00:00 - SELECTED",
+            "PHOENIX MARKET CITY Chennai - priority 0 - 18:04:00-20:04:00 - open 10:00:00-22:00:00 - SELECTED"
+          ],
+          "rejected": [
+            "Click art museum - priority 0 - 20:04:00-20:04:00 - Rejected: no remaining day window - REJECTED",
+            "Vgp marine kingdom - priority 0 - 20:04:00-20:04:00 - Rejected: no remaining day window - REJECTED",
+            "Arignar Anna Zoological Park - priority 0 - 20:04:00-20:04:00 - Rejected: no remaining day window - REJECTED"
+          ],
+          "deferred": [],
+          "duplicate": [
+            "Kapaleeshwarar Temple - already inserted earlier - REJECTED",
+            "Parthasarathy Temple - already inserted earlier - REJECTED",
+            "Marina Beach - already inserted earlier - REJECTED",
+            "light house marina - already inserted earlier - REJECTED",
+            "Fort St.George Museum - already inserted earlier - REJECTED",
+            "Government Museum Chennai - already inserted earlier - REJECTED",
+            "Guindy National Park - already inserted earlier - REJECTED",
+            "Santhome Cathedral Basilica - already inserted earlier - REJECTED",
+            "M G R  Memorial - already inserted earlier - REJECTED",
+            "T Nagar (only for Shopping) - already inserted earlier - REJECTED"
+          ]
+        }
+      ],
+      "exampleHighlights": {
+        "selected": [
+          "Kapaleeshwarar Temple - priority 1 - SELECTED",
+          "Parthasarathy Temple - priority 2 - SELECTED",
+          "Sri Aurobindo Ashram - priority 2 - SELECTED",
+          "Marina Beach - priority 3 - SELECTED",
+          "Dakshina Chitra Heritage Museum - priority 3 - SELECTED"
+        ],
+        "rejected": [
+          "Thousand Lights Mosque - priority 0 - Rejected: closed at visit time - REJECTED",
+          "Anna tower park - priority 0 - Rejected: closed at visit time - REJECTED",
+          "Vadapalani Murugan Temple - priority 0 - Rejected: closed at visit time - REJECTED",
+          "Click art museum - priority 0 - Rejected: closed at visit time - REJECTED",
+          "Eden Beach - Blue flag Beach - priority 0 - Rejected: optional closed spot skipped; Rejected: closed at visit time - REJECTED"
+        ],
+        "deferred": [
+          "Sri Aurobindo Ashram - priority 2 - Rejected: deferred to next opening slot - DEFERRED",
+          "Sri Aurobindo Ashram - priority 2 - Rejected: deferred to next opening slot - DEFERRED"
+        ]
+      },
+      "clientSummary": "Out of 109 possible hotspots, 34 were selected. Most rejections happened due to duplicate hotspots, closing time conflicts, and insufficient time in the day."
+    },
+    {
+      "itinerary": "Kerala-Trivandrum-Munnar-Alleppey",
+      "runIndex": 1,
+      "quoteId": "DVI202604210",
+      "planId": 248,
+      "counts": {
+        "totalCandidates": 73,
+        "selected": 23,
+        "rejected": 47,
+        "deferred": 3,
+        "duplicates": 13,
+        "closed": 10,
+        "noTime": 24
+      },
+      "days": [
+        {
+          "dayNumber": 1,
+          "routeSource": "Trivandrum",
+          "routeDestination": "Munnar",
+          "selected": [
+            "Sree Padmanabhaswamy Temple - priority 1 - 03:58:00-05:58:00 - open 03:30:00-19:20:00 - SELECTED",
+            "Shangumugham Beach - priority 4 - 06:19:00-07:19:00 - open 00:00:00-23:59:59 - SELECTED",
+            "Attukal Bhagavathy Temple - priority 7 - 07:48:00-08:48:00 - open 05:00:00-20:30:00 - SELECTED",
+            "Aazhimala Shiva Temple - priority 8 - 09:20:00-10:20:00 - open 05:30:00-20:00:00 - SELECTED",
+            "Sri Parasurama Swamy Temple - priority 9 - 17:00:00-18:00:00 - open 03:45:00-20:00:00 - SELECTED",
+            "Pazhavangaadi Sree Maha Ganapathy Temple - priority 13 - 18:29:00-19:59:00 - open 04:30:00-20:30:00 - SELECTED"
+          ],
+          "rejected": [
+            "Trivandrum - priority 6 - 07:57:00-09:27:00 - closes --:-- - REJECTED",
+            "Trivandrum - priority 11 - 18:17:00-19:17:00 - closes --:-- - REJECTED",
+            "Trivandrum - priority 14 - 21:38:00-23:38:00 - closes 18:00:00 - REJECTED"
+          ],
+          "deferred": [
+            "Alleppey - priority 0 - Rejected: deferred to next opening slot - DEFERRED",
+            "Alleppey - priority 0 - Rejected: deferred to next opening slot - DEFERRED"
+          ],
+          "duplicate": []
+        },
+        {
+          "dayNumber": 2,
+          "routeSource": "Munnar",
+          "routeDestination": "Munnar",
+          "selected": [
+            "Cheeyappara Waterfalls - priority 1 - 09:57:00-10:17:00 - open 08:00:00-19:00:00 - SELECTED",
+            "Valara Water Falls - priority 2 - 10:23:00-10:43:00 - open 06:00:00-21:00:00 - SELECTED",
+            "Eravikulam National Park ( closed in Feb &amp; Mar) - priority 3 - 11:36:00-14:36:00 - open 07:00:00-16:00:00 - SELECTED",
+            "TATA Tea Museum - priority 4 - 15:11:00-16:11:00 - open 09:00:00-17:00:00 - SELECTED",
+            "Mattupetty Dam &amp; Lake - priority 5 - 16:29:00-17:29:00 - open 09:30:00-18:30:00 - SELECTED",
+            "Echo Point - priority 6 - 17:59:00-18:44:00 - open 09:00:00-20:00:00 - SELECTED"
+          ],
+          "rejected": [],
+          "deferred": [],
+          "duplicate": []
+        },
+        {
+          "dayNumber": 3,
+          "routeSource": "Munnar",
+          "routeDestination": "Alleppey",
+          "selected": [
+            "spice garden munnar - priority 8 - 09:21:00-10:51:00 - open 09:00:00-18:00:00 - SELECTED",
+            "Munnar Rose Garden - priority 9 - 11:15:00-12:45:00 - open 08:00:00-18:00:00 - SELECTED",
+            "Kolukkumalai Tea Estate (Munnar) - priority 0 - 12:55:00-13:55:00 - open 09:00:00-17:00:00 - SELECTED"
+          ],
+          "rejected": [],
+          "deferred": [],
+          "duplicate": [
+            "Cheeyappara Waterfalls - already inserted earlier - REJECTED",
+            "Valara Water Falls - already inserted earlier - REJECTED",
+            "Eravikulam National Park ( closed in Feb &amp; Mar) - already inserted earlier - REJECTED",
+            "TATA Tea Museum - already inserted earlier - REJECTED",
+            "Mattupetty Dam &amp; Lake - already inserted earlier - REJECTED",
+            "Echo Point - already inserted earlier - REJECTED",
+            "Photo view point - already inserted earlier - REJECTED"
+          ]
+        },
+        {
+          "dayNumber": 4,
+          "routeSource": "Alleppey",
+          "routeDestination": "Alleppey",
+          "selected": [
+            "Mullakkal raja rajeshwari temple - priority 3 - 09:03:00-11:03:00 - open 05:00:00-21:00:00 - SELECTED",
+            "Revi Karunakar an Memorial Museum - priority 0 - 11:11:00-12:41:00 - open 09:00:00-17:00:00 - SELECTED",
+            "Alappuzha Light House - priority 0 - 13:00:00-14:00:00 - open 09:00:00-23:45:00 - SELECTED",
+            "Alleppey Beach - priority 0 - 14:03:00-15:03:00 - open 00:00:00-23:59:59 - SELECTED",
+            "INTERNATIONAL COIR MUSEUM - priority 0 - 15:21:00-16:51:00 - open 09:30:00-17:00:00 - SELECTED",
+            "Ambalappuzha Sri Krishna Temple - priority 0 - 17:37:00-18:37:00 - open 04:00:00-20:00:00 - SELECTED"
+          ],
+          "rejected": [
+            "Alleppey Backwater - priority 0 - 15:38:00-18:38:00 - closes 18:00:00 - REJECTED",
+            "Alleppey - priority 0 - 19:45:00-20:45:00 - closes 16:30:00 - REJECTED"
+          ],
+          "deferred": [],
+          "duplicate": []
+        },
+        {
+          "dayNumber": 5,
+          "routeSource": "Alleppey",
+          "routeDestination": "Kochi",
+          "selected": [
+            "Alleppey Backwater - priority 0 - 09:00:00-12:00:00 - open 07:00:00-18:00:00 - SELECTED",
+            "Marina Beach - priority 3 - 03:30:00-04:30:00 - open 00:00:00-23:59:59 - SELECTED"
+          ],
+          "rejected": [
+            "Alleppey - priority 0 - 04:30:00-04:30:00 - Rejected: no remaining day window - REJECTED"
+          ],
+          "deferred": [
+            "Alleppey - priority 0 - 13:41:00-14:41:00 - opens 09:00:00 - DEFERRED"
+          ],
+          "duplicate": [
+            "Mullakkal raja rajeshwari temple - already inserted earlier - REJECTED",
+            "Revi Karunakar an Memorial Museum - already inserted earlier - REJECTED",
+            "Alappuzha Light House - already inserted earlier - REJECTED",
+            "Alleppey Beach - already inserted earlier - REJECTED",
+            "INTERNATIONAL COIR MUSEUM - already inserted earlier - REJECTED",
+            "Ambalappuzha Sri Krishna Temple - already inserted earlier - REJECTED"
+          ]
+        }
+      ],
+      "exampleHighlights": {
+        "selected": [
+          "Sree Padmanabhaswamy Temple - priority 1 - SELECTED",
+          "Eravikulam National Park ( closed in Feb &amp; Mar) - priority 3 - SELECTED",
+          "Mullakkal raja rajeshwari temple - priority 3 - SELECTED",
+          "Marina Beach - priority 3 - SELECTED",
+          "Shangumugham Beach - priority 4 - SELECTED"
+        ],
+        "rejected": [
+          "Revi Karunakar an Memorial Museum - priority 0 - Rejected: duplicate - REJECTED",
+          "Alleppey Beach - priority 0 - Rejected: duplicate - REJECTED",
+          "INTERNATIONAL COIR MUSEUM - priority 0 - Rejected: duplicate - REJECTED",
+          "Ambalappuzha Sri Krishna Temple - priority 0 - Rejected: duplicate - REJECTED",
+          "Eravikulam National Park ( closed in Feb &amp; Mar) - priority 3 - Rejected: duplicate - REJECTED"
+        ],
+        "deferred": [
+          "Alleppey - priority 0 - Rejected: deferred to next opening slot - DEFERRED",
+          "Alleppey - priority 0 - Rejected: deferred to next opening slot - DEFERRED",
+          "Alleppey - priority 0 - Rejected: deferred to next opening slot - DEFERRED"
+        ]
+      },
+      "clientSummary": "Out of 73 possible hotspots, 23 were selected. Most rejections happened due to duplicate hotspots, closing time conflicts, and insufficient time in the day."
+    },
+    {
+      "itinerary": "Kerala-Trivandrum-Munnar-Alleppey",
+      "runIndex": 2,
+      "quoteId": "DVI202604211",
+      "planId": 249,
+      "counts": {
+        "totalCandidates": 73,
+        "selected": 23,
+        "rejected": 47,
+        "deferred": 3,
+        "duplicates": 13,
+        "closed": 10,
+        "noTime": 24
+      },
+      "days": [
+        {
+          "dayNumber": 1,
+          "routeSource": "Trivandrum",
+          "routeDestination": "Munnar",
+          "selected": [
+            "Sree Padmanabhaswamy Temple - priority 1 - 03:58:00-05:58:00 - open 03:30:00-19:20:00 - SELECTED",
+            "Shangumugham Beach - priority 4 - 06:19:00-07:19:00 - open 00:00:00-23:59:59 - SELECTED",
+            "Attukal Bhagavathy Temple - priority 7 - 07:48:00-08:48:00 - open 05:00:00-20:30:00 - SELECTED",
+            "Aazhimala Shiva Temple - priority 8 - 09:20:00-10:20:00 - open 05:30:00-20:00:00 - SELECTED",
+            "Sri Parasurama Swamy Temple - priority 9 - 17:00:00-18:00:00 - open 03:45:00-20:00:00 - SELECTED",
+            "Pazhavangaadi Sree Maha Ganapathy Temple - priority 13 - 18:29:00-19:59:00 - open 04:30:00-20:30:00 - SELECTED"
+          ],
+          "rejected": [
+            "Trivandrum - priority 6 - 07:57:00-09:27:00 - closes --:-- - REJECTED",
+            "Trivandrum - priority 11 - 18:17:00-19:17:00 - closes --:-- - REJECTED",
+            "Trivandrum - priority 14 - 21:38:00-23:38:00 - closes 18:00:00 - REJECTED"
+          ],
+          "deferred": [
+            "Alleppey - priority 0 - Rejected: deferred to next opening slot - DEFERRED",
+            "Alleppey - priority 0 - Rejected: deferred to next opening slot - DEFERRED"
+          ],
+          "duplicate": []
+        },
+        {
+          "dayNumber": 2,
+          "routeSource": "Munnar",
+          "routeDestination": "Munnar",
+          "selected": [
+            "Cheeyappara Waterfalls - priority 1 - 09:57:00-10:17:00 - open 08:00:00-19:00:00 - SELECTED",
+            "Valara Water Falls - priority 2 - 10:23:00-10:43:00 - open 06:00:00-21:00:00 - SELECTED",
+            "Eravikulam National Park ( closed in Feb &amp; Mar) - priority 3 - 11:36:00-14:36:00 - open 07:00:00-16:00:00 - SELECTED",
+            "TATA Tea Museum - priority 4 - 15:11:00-16:11:00 - open 09:00:00-17:00:00 - SELECTED",
+            "Mattupetty Dam &amp; Lake - priority 5 - 16:29:00-17:29:00 - open 09:30:00-18:30:00 - SELECTED",
+            "Echo Point - priority 6 - 17:59:00-18:44:00 - open 09:00:00-20:00:00 - SELECTED"
+          ],
+          "rejected": [],
+          "deferred": [],
+          "duplicate": []
+        },
+        {
+          "dayNumber": 3,
+          "routeSource": "Munnar",
+          "routeDestination": "Alleppey",
+          "selected": [
+            "spice garden munnar - priority 8 - 09:21:00-10:51:00 - open 09:00:00-18:00:00 - SELECTED",
+            "Munnar Rose Garden - priority 9 - 11:15:00-12:45:00 - open 08:00:00-18:00:00 - SELECTED",
+            "Kolukkumalai Tea Estate (Munnar) - priority 0 - 12:55:00-13:55:00 - open 09:00:00-17:00:00 - SELECTED"
+          ],
+          "rejected": [],
+          "deferred": [],
+          "duplicate": [
+            "Cheeyappara Waterfalls - already inserted earlier - REJECTED",
+            "Valara Water Falls - already inserted earlier - REJECTED",
+            "Eravikulam National Park ( closed in Feb &amp; Mar) - already inserted earlier - REJECTED",
+            "TATA Tea Museum - already inserted earlier - REJECTED",
+            "Mattupetty Dam &amp; Lake - already inserted earlier - REJECTED",
+            "Echo Point - already inserted earlier - REJECTED",
+            "Photo view point - already inserted earlier - REJECTED"
+          ]
+        },
+        {
+          "dayNumber": 4,
+          "routeSource": "Alleppey",
+          "routeDestination": "Alleppey",
+          "selected": [
+            "Mullakkal raja rajeshwari temple - priority 3 - 09:03:00-11:03:00 - open 05:00:00-21:00:00 - SELECTED",
+            "Revi Karunakar an Memorial Museum - priority 0 - 11:11:00-12:41:00 - open 09:00:00-17:00:00 - SELECTED",
+            "Alappuzha Light House - priority 0 - 13:00:00-14:00:00 - open 09:00:00-23:45:00 - SELECTED",
+            "Alleppey Beach - priority 0 - 14:03:00-15:03:00 - open 00:00:00-23:59:59 - SELECTED",
+            "INTERNATIONAL COIR MUSEUM - priority 0 - 15:21:00-16:51:00 - open 09:30:00-17:00:00 - SELECTED",
+            "Ambalappuzha Sri Krishna Temple - priority 0 - 17:37:00-18:37:00 - open 04:00:00-20:00:00 - SELECTED"
+          ],
+          "rejected": [
+            "Alleppey Backwater - priority 0 - 15:38:00-18:38:00 - closes 18:00:00 - REJECTED",
+            "Alleppey - priority 0 - 19:45:00-20:45:00 - closes 16:30:00 - REJECTED"
+          ],
+          "deferred": [],
+          "duplicate": []
+        },
+        {
+          "dayNumber": 5,
+          "routeSource": "Alleppey",
+          "routeDestination": "Kochi",
+          "selected": [
+            "Alleppey Backwater - priority 0 - 09:00:00-12:00:00 - open 07:00:00-18:00:00 - SELECTED",
+            "Marina Beach - priority 3 - 03:30:00-04:30:00 - open 00:00:00-23:59:59 - SELECTED"
+          ],
+          "rejected": [
+            "Alleppey - priority 0 - 04:30:00-04:30:00 - Rejected: no remaining day window - REJECTED"
+          ],
+          "deferred": [
+            "Alleppey - priority 0 - 13:41:00-14:41:00 - opens 09:00:00 - DEFERRED"
+          ],
+          "duplicate": [
+            "Mullakkal raja rajeshwari temple - already inserted earlier - REJECTED",
+            "Revi Karunakar an Memorial Museum - already inserted earlier - REJECTED",
+            "Alappuzha Light House - already inserted earlier - REJECTED",
+            "Alleppey Beach - already inserted earlier - REJECTED",
+            "INTERNATIONAL COIR MUSEUM - already inserted earlier - REJECTED",
+            "Ambalappuzha Sri Krishna Temple - already inserted earlier - REJECTED"
+          ]
+        }
+      ],
+      "exampleHighlights": {
+        "selected": [
+          "Sree Padmanabhaswamy Temple - priority 1 - SELECTED",
+          "Eravikulam National Park ( closed in Feb &amp; Mar) - priority 3 - SELECTED",
+          "Mullakkal raja rajeshwari temple - priority 3 - SELECTED",
+          "Marina Beach - priority 3 - SELECTED",
+          "Shangumugham Beach - priority 4 - SELECTED"
+        ],
+        "rejected": [
+          "Revi Karunakar an Memorial Museum - priority 0 - Rejected: duplicate - REJECTED",
+          "Alleppey Beach - priority 0 - Rejected: duplicate - REJECTED",
+          "INTERNATIONAL COIR MUSEUM - priority 0 - Rejected: duplicate - REJECTED",
+          "Ambalappuzha Sri Krishna Temple - priority 0 - Rejected: duplicate - REJECTED",
+          "Eravikulam National Park ( closed in Feb &amp; Mar) - priority 3 - Rejected: duplicate - REJECTED"
+        ],
+        "deferred": [
+          "Alleppey - priority 0 - Rejected: deferred to next opening slot - DEFERRED",
+          "Alleppey - priority 0 - Rejected: deferred to next opening slot - DEFERRED",
+          "Alleppey - priority 0 - Rejected: deferred to next opening slot - DEFERRED"
+        ]
+      },
+      "clientSummary": "Out of 73 possible hotspots, 23 were selected. Most rejections happened due to duplicate hotspots, closing time conflicts, and insufficient time in the day."
+    },
+    {
+      "itinerary": "Karnataka-Bengaluru-Mysuru-Ooty",
+      "runIndex": 1,
+      "quoteId": "DVI202604212",
+      "planId": 250,
+      "counts": {
+        "totalCandidates": 88,
+        "selected": 19,
+        "rejected": 65,
+        "deferred": 4,
+        "duplicates": 25,
+        "closed": 40,
+        "noTime": 0
+      },
+      "days": [
+        {
+          "dayNumber": 3,
+          "routeSource": "Mysuru",
+          "routeDestination": "Ooty",
+          "selected": [
+            "Ooty Lake - priority 1 - 10:00:00-11:00:00 - open 09:00:00-18:00:00 - SELECTED",
+            "Rose Garden - priority 2 - 11:18:00-12:18:00 - open 07:00:00-18:30:00 - SELECTED",
+            "Government Botanical Garden - priority 3 - 12:28:00-13:28:00 - open 07:00:00-18:30:00 - SELECTED",
+            "Doddabetta Peak - priority 3 - 13:47:00-14:47:00 - open 09:00:00-18:00:00 - SELECTED",
+            "The Tea Factory &amp; The Tea Museum - priority 5 - 14:59:00-15:59:00 - open 09:00:00-18:30:00 - SELECTED",
+            "Thread Garden - priority 19 - 16:21:00-17:51:00 - open 09:00:00-19:00:00 - SELECTED"
+          ],
+          "rejected": [
+            "Ooty - priority 6 - 17:44:00-21:44:00 - closes --:-- - REJECTED",
+            "Ooty - priority 21 - 18:27:00-19:27:00 - closes --:-- - REJECTED",
+            "Ooty - priority 0 - 17:59:00-19:59:00 - closes 05:30:00 - REJECTED",
+            "Ooty - priority 0 - 17:59:00-19:29:00 - closes 18:30:00 - REJECTED",
+            "Ooty - priority 0 - 17:55:00-18:55:00 - closes --:-- - REJECTED"
+          ],
+          "deferred": [
+            "Emerald Lake - priority 20 - 18:17:00-19:17:00 - opens 20:00:00 - DEFERRED"
+          ],
+          "duplicate": []
+        },
+        {
+          "dayNumber": 4,
+          "routeSource": "Ooty",
+          "routeDestination": "Ooty",
+          "selected": [
+            "Emerald Lake - priority 20 - 09:28:00-10:28:00 - open 08:00:00-18:00:00 - SELECTED",
+            "Eagles Dare Adventures - priority 0 - 11:01:00-13:01:00 - open 09:30:00-18:00:00 - SELECTED",
+            "Benchmark chocolate factory - priority 0 - 13:02:00-14:02:00 - open 09:00:00-18:30:00 - SELECTED",
+            "Pine Forest Ooty - priority 0 - 14:19:00-15:19:00 - open 08:00:00-18:00:00 - SELECTED",
+            "9th Mile Shooting Spot - priority 0 - 15:42:00-17:12:00 - open 08:00:00-18:00:00 - SELECTED",
+            "Wellington Lake - priority 0 - 17:56:00-18:56:00 - open 10:00:00-19:00:00 - SELECTED"
+          ],
+          "rejected": [
+            "Ooty - priority 6 - 10:52:00-14:52:00 - closes --:-- - REJECTED",
+            "Ooty - priority 21 - 10:53:00-11:53:00 - closes --:-- - REJECTED",
+            "Ooty - priority 0 - 10:57:00-12:57:00 - closes 05:30:00 - REJECTED",
+            "Ooty - priority 0 - 10:54:00-11:54:00 - closes --:-- - REJECTED",
+            "Ooty - priority 0 - 11:01:00-13:01:00 - closes --:-- - REJECTED",
+            "Ooty - priority 0 - 14:17:00-15:17:00 - closes --:-- - REJECTED",
+            "Ooty - priority 0 - 15:37:00-17:07:00 - closes --:-- - REJECTED",
+            "Ooty - priority 0 - 10:17:00-11:17:00 - closes --:-- - REJECTED",
+            "Ooty - priority 0 - 14:43:00-17:43:00 - closes --:-- - REJECTED",
+            "Ooty - priority 0 - 04:58:00-06:28:00 - closes --:-- - REJECTED",
+            "Ooty - priority 0 - 19:20:00-20:50:00 - closes 18:30:00 - REJECTED"
+          ],
+          "deferred": [
+            "Ooty - priority 0 - 10:56:00-12:26:00 - opens 09:15:00 - DEFERRED"
+          ],
+          "duplicate": [
+            "Ooty Lake - already inserted earlier - REJECTED",
+            "Rose Garden - already inserted earlier - REJECTED",
+            "Government Botanical Garden - already inserted earlier - REJECTED",
+            "Doddabetta Peak - already inserted earlier - REJECTED",
+            "The Tea Factory &amp; The Tea Museum - already inserted earlier - REJECTED",
+            "Thread Garden - already inserted earlier - REJECTED",
+            "Wax Museum Ooty - already inserted earlier - REJECTED"
+          ]
+        },
+        {
+          "dayNumber": 5,
+          "routeSource": "Ooty",
+          "routeDestination": "Coimbatore",
+          "selected": [
+            "Isha Aadhi Yogi Coimbatore - priority 1 - 11:13:00-12:13:00 - open 06:00:00-20:00:00 - SELECTED",
+            "Geede car museum - priority 2 - 13:05:00-14:05:00 - open 09:00:00-18:30:00 - SELECTED",
+            "TNAU Botanical Garden - priority 3 - 14:14:00-15:04:00 - open 08:00:00-18:00:00 - SELECTED",
+            "Tamil nadu police museum - priority 0 - 15:13:00-16:43:00 - open 10:00:00-19:00:00 - SELECTED"
+          ],
+          "rejected": [
+            "Ooty - priority 6 - 10:52:00-14:52:00 - closes --:-- - REJECTED",
+            "Ooty - priority 21 - 09:37:00-10:37:00 - closes --:-- - REJECTED",
+            "Ooty - priority 0 - 09:03:00-11:03:00 - closes 05:30:00 - REJECTED",
+            "Ooty - priority 0 - 09:07:00-10:07:00 - closes --:-- - REJECTED",
+            "Ooty - priority 0 - 09:17:00-11:17:00 - closes --:-- - REJECTED",
+            "Ooty - priority 0 - 09:30:00-10:30:00 - closes --:-- - REJECTED",
+            "Ooty - priority 0 - 09:35:00-11:05:00 - closes --:-- - REJECTED",
+            "Ooty - priority 0 - 00:37:00-01:37:00 - closes --:-- - REJECTED",
+            "Ooty - priority 0 - 04:28:00-07:28:00 - closes --:-- - REJECTED",
+            "Ooty - priority 0 - 19:14:00-20:44:00 - closes --:-- - REJECTED",
+            "Marudhamalai Murugan Temple - priority 2 - 19:22:00-20:22:00 - closes 19:00:00 - REJECTED",
+            "Ooty - priority 0 - 21:12:00-22:42:00 - closes 18:30:00 - REJECTED"
+          ],
+          "deferred": [
+            "Ooty - priority 0 - 09:05:00-10:35:00 - opens 09:15:00 - DEFERRED",
+            "Marudhamalai Murugan Temple - priority 2 - 12:46:00-13:46:00 - opens 06:00:00 - DEFERRED"
+          ],
+          "duplicate": [
+            "Ooty Lake - already inserted earlier - REJECTED",
+            "Rose Garden - already inserted earlier - REJECTED",
+            "Government Botanical Garden - already inserted earlier - REJECTED",
+            "Doddabetta Peak - already inserted earlier - REJECTED",
+            "The Tea Factory &amp; The Tea Museum - already inserted earlier - REJECTED",
+            "Thread Garden - already inserted earlier - REJECTED",
+            "Emerald Lake - already inserted earlier - REJECTED",
+            "Wax Museum Ooty - already inserted earlier - REJECTED",
+            "Eagles Dare Adventures - already inserted earlier - REJECTED",
+            "Benchmark chocolate factory - already inserted earlier - REJECTED",
+            "Pine Forest Ooty - already inserted earlier - REJECTED",
+            "9th Mile Shooting Spot - already inserted earlier - REJECTED",
+            "Wellington Lake - already inserted earlier - REJECTED"
+          ]
+        },
+        {
+          "dayNumber": 6,
+          "routeSource": "Coimbatore",
+          "routeDestination": "Coimbatore",
+          "selected": [
+            "Marudhamalai Murugan Temple - priority 2 - 10:18:00-11:18:00 - open 06:00:00-19:00:00 - SELECTED",
+            "Brookefields Mall - priority 0 - 12:37:00-14:37:00 - open 10:00:00-23:00:00 - SELECTED",
+            "Aliyar dam reserve park - priority 0 - 17:06:00-21:06:00 - open 00:00:00-23:59:59 - SELECTED"
+          ],
+          "rejected": [],
+          "deferred": [],
+          "duplicate": [
+            "Isha Aadhi Yogi Coimbatore - already inserted earlier - REJECTED",
+            "Geede car museum - already inserted earlier - REJECTED",
+            "TNAU Botanical Garden - already inserted earlier - REJECTED",
+            "Cross Cut Road - already inserted earlier - REJECTED",
+            "Tamil nadu police museum - already inserted earlier - REJECTED"
+          ]
+        }
+      ],
+      "exampleHighlights": {
+        "selected": [
+          "Ooty Lake - priority 1 - SELECTED",
+          "Geede car museum - priority 2 - SELECTED",
+          "Marudhamalai Murugan Temple - priority 2 - SELECTED",
+          "The Tea Factory &amp; The Tea Museum - priority 5 - SELECTED",
+          "Emerald Lake - priority 20 - SELECTED"
+        ],
+        "rejected": [
+          "Wax Museum Ooty - priority 0 - Rejected: duplicate - REJECTED",
+          "Wellington Lake - priority 0 - Rejected: duplicate - REJECTED",
+          "Tamil nadu police museum - priority 0 - Rejected: duplicate - REJECTED",
+          "Ooty Lake - priority 1 - Rejected: duplicate - REJECTED",
+          "Marudhamalai Murugan Temple - priority 2 - Rejected: optional closed spot skipped; Rejected: closed at visit time - REJECTED"
+        ],
+        "deferred": [
+          "Marudhamalai Murugan Temple - priority 2 - Rejected: deferred to next opening slot - DEFERRED",
+          "Emerald Lake - priority 20 - Rejected: deferred to next opening slot - DEFERRED",
+          "Ooty - priority 0 - Rejected: deferred to next opening slot - DEFERRED"
+        ]
+      },
+      "clientSummary": "Out of 88 possible hotspots, 19 were selected. Most rejections happened due to duplicate hotspots, closing time conflicts, and insufficient time in the day."
+    },
+    {
+      "itinerary": "Karnataka-Bengaluru-Mysuru-Ooty",
+      "runIndex": 2,
+      "quoteId": "DVI202604213",
+      "planId": 251,
+      "counts": {
+        "totalCandidates": 88,
+        "selected": 19,
+        "rejected": 65,
+        "deferred": 4,
+        "duplicates": 25,
+        "closed": 40,
+        "noTime": 0
+      },
+      "days": [
+        {
+          "dayNumber": 3,
+          "routeSource": "Mysuru",
+          "routeDestination": "Ooty",
+          "selected": [
+            "Ooty Lake - priority 1 - 10:00:00-11:00:00 - open 09:00:00-18:00:00 - SELECTED",
+            "Rose Garden - priority 2 - 11:18:00-12:18:00 - open 07:00:00-18:30:00 - SELECTED",
+            "Government Botanical Garden - priority 3 - 12:28:00-13:28:00 - open 07:00:00-18:30:00 - SELECTED",
+            "Doddabetta Peak - priority 3 - 13:47:00-14:47:00 - open 09:00:00-18:00:00 - SELECTED",
+            "The Tea Factory &amp; The Tea Museum - priority 5 - 14:59:00-15:59:00 - open 09:00:00-18:30:00 - SELECTED",
+            "Thread Garden - priority 19 - 16:21:00-17:51:00 - open 09:00:00-19:00:00 - SELECTED"
+          ],
+          "rejected": [
+            "Ooty - priority 6 - 17:44:00-21:44:00 - closes --:-- - REJECTED",
+            "Ooty - priority 21 - 18:27:00-19:27:00 - closes --:-- - REJECTED",
+            "Ooty - priority 0 - 17:59:00-19:59:00 - closes 05:30:00 - REJECTED",
+            "Ooty - priority 0 - 17:59:00-19:29:00 - closes 18:30:00 - REJECTED",
+            "Ooty - priority 0 - 17:55:00-18:55:00 - closes --:-- - REJECTED"
+          ],
+          "deferred": [
+            "Emerald Lake - priority 20 - 18:17:00-19:17:00 - opens 20:00:00 - DEFERRED"
+          ],
+          "duplicate": []
+        },
+        {
+          "dayNumber": 4,
+          "routeSource": "Ooty",
+          "routeDestination": "Ooty",
+          "selected": [
+            "Emerald Lake - priority 20 - 09:28:00-10:28:00 - open 08:00:00-18:00:00 - SELECTED",
+            "Eagles Dare Adventures - priority 0 - 11:01:00-13:01:00 - open 09:30:00-18:00:00 - SELECTED",
+            "Benchmark chocolate factory - priority 0 - 13:02:00-14:02:00 - open 09:00:00-18:30:00 - SELECTED",
+            "Pine Forest Ooty - priority 0 - 14:19:00-15:19:00 - open 08:00:00-18:00:00 - SELECTED",
+            "9th Mile Shooting Spot - priority 0 - 15:42:00-17:12:00 - open 08:00:00-18:00:00 - SELECTED",
+            "Wellington Lake - priority 0 - 17:56:00-18:56:00 - open 10:00:00-19:00:00 - SELECTED"
+          ],
+          "rejected": [
+            "Ooty - priority 6 - 10:52:00-14:52:00 - closes --:-- - REJECTED",
+            "Ooty - priority 21 - 10:53:00-11:53:00 - closes --:-- - REJECTED",
+            "Ooty - priority 0 - 10:57:00-12:57:00 - closes 05:30:00 - REJECTED",
+            "Ooty - priority 0 - 10:54:00-11:54:00 - closes --:-- - REJECTED",
+            "Ooty - priority 0 - 11:01:00-13:01:00 - closes --:-- - REJECTED",
+            "Ooty - priority 0 - 14:17:00-15:17:00 - closes --:-- - REJECTED",
+            "Ooty - priority 0 - 15:37:00-17:07:00 - closes --:-- - REJECTED",
+            "Ooty - priority 0 - 10:17:00-11:17:00 - closes --:-- - REJECTED",
+            "Ooty - priority 0 - 14:43:00-17:43:00 - closes --:-- - REJECTED",
+            "Ooty - priority 0 - 04:58:00-06:28:00 - closes --:-- - REJECTED",
+            "Ooty - priority 0 - 19:20:00-20:50:00 - closes 18:30:00 - REJECTED"
+          ],
+          "deferred": [
+            "Ooty - priority 0 - 10:56:00-12:26:00 - opens 09:15:00 - DEFERRED"
+          ],
+          "duplicate": [
+            "Ooty Lake - already inserted earlier - REJECTED",
+            "Rose Garden - already inserted earlier - REJECTED",
+            "Government Botanical Garden - already inserted earlier - REJECTED",
+            "Doddabetta Peak - already inserted earlier - REJECTED",
+            "The Tea Factory &amp; The Tea Museum - already inserted earlier - REJECTED",
+            "Thread Garden - already inserted earlier - REJECTED",
+            "Wax Museum Ooty - already inserted earlier - REJECTED"
+          ]
+        },
+        {
+          "dayNumber": 5,
+          "routeSource": "Ooty",
+          "routeDestination": "Coimbatore",
+          "selected": [
+            "Isha Aadhi Yogi Coimbatore - priority 1 - 11:13:00-12:13:00 - open 06:00:00-20:00:00 - SELECTED",
+            "Geede car museum - priority 2 - 13:05:00-14:05:00 - open 09:00:00-18:30:00 - SELECTED",
+            "TNAU Botanical Garden - priority 3 - 14:14:00-15:04:00 - open 08:00:00-18:00:00 - SELECTED",
+            "Tamil nadu police museum - priority 0 - 15:13:00-16:43:00 - open 10:00:00-19:00:00 - SELECTED"
+          ],
+          "rejected": [
+            "Ooty - priority 6 - 10:52:00-14:52:00 - closes --:-- - REJECTED",
+            "Ooty - priority 21 - 09:37:00-10:37:00 - closes --:-- - REJECTED",
+            "Ooty - priority 0 - 09:03:00-11:03:00 - closes 05:30:00 - REJECTED",
+            "Ooty - priority 0 - 09:07:00-10:07:00 - closes --:-- - REJECTED",
+            "Ooty - priority 0 - 09:17:00-11:17:00 - closes --:-- - REJECTED",
+            "Ooty - priority 0 - 09:30:00-10:30:00 - closes --:-- - REJECTED",
+            "Ooty - priority 0 - 09:35:00-11:05:00 - closes --:-- - REJECTED",
+            "Ooty - priority 0 - 00:37:00-01:37:00 - closes --:-- - REJECTED",
+            "Ooty - priority 0 - 04:28:00-07:28:00 - closes --:-- - REJECTED",
+            "Ooty - priority 0 - 19:14:00-20:44:00 - closes --:-- - REJECTED",
+            "Marudhamalai Murugan Temple - priority 2 - 19:22:00-20:22:00 - closes 19:00:00 - REJECTED",
+            "Ooty - priority 0 - 21:12:00-22:42:00 - closes 18:30:00 - REJECTED"
+          ],
+          "deferred": [
+            "Ooty - priority 0 - 09:05:00-10:35:00 - opens 09:15:00 - DEFERRED",
+            "Marudhamalai Murugan Temple - priority 2 - 12:46:00-13:46:00 - opens 06:00:00 - DEFERRED"
+          ],
+          "duplicate": [
+            "Ooty Lake - already inserted earlier - REJECTED",
+            "Rose Garden - already inserted earlier - REJECTED",
+            "Government Botanical Garden - already inserted earlier - REJECTED",
+            "Doddabetta Peak - already inserted earlier - REJECTED",
+            "The Tea Factory &amp; The Tea Museum - already inserted earlier - REJECTED",
+            "Thread Garden - already inserted earlier - REJECTED",
+            "Emerald Lake - already inserted earlier - REJECTED",
+            "Wax Museum Ooty - already inserted earlier - REJECTED",
+            "Eagles Dare Adventures - already inserted earlier - REJECTED",
+            "Benchmark chocolate factory - already inserted earlier - REJECTED",
+            "Pine Forest Ooty - already inserted earlier - REJECTED",
+            "9th Mile Shooting Spot - already inserted earlier - REJECTED",
+            "Wellington Lake - already inserted earlier - REJECTED"
+          ]
+        },
+        {
+          "dayNumber": 6,
+          "routeSource": "Coimbatore",
+          "routeDestination": "Coimbatore",
+          "selected": [
+            "Marudhamalai Murugan Temple - priority 2 - 10:18:00-11:18:00 - open 06:00:00-19:00:00 - SELECTED",
+            "Brookefields Mall - priority 0 - 12:37:00-14:37:00 - open 10:00:00-23:00:00 - SELECTED",
+            "Aliyar dam reserve park - priority 0 - 17:06:00-21:06:00 - open 00:00:00-23:59:59 - SELECTED"
+          ],
+          "rejected": [],
+          "deferred": [],
+          "duplicate": [
+            "Isha Aadhi Yogi Coimbatore - already inserted earlier - REJECTED",
+            "Geede car museum - already inserted earlier - REJECTED",
+            "TNAU Botanical Garden - already inserted earlier - REJECTED",
+            "Cross Cut Road - already inserted earlier - REJECTED",
+            "Tamil nadu police museum - already inserted earlier - REJECTED"
+          ]
+        }
+      ],
+      "exampleHighlights": {
+        "selected": [
+          "Ooty Lake - priority 1 - SELECTED",
+          "Geede car museum - priority 2 - SELECTED",
+          "Marudhamalai Murugan Temple - priority 2 - SELECTED",
+          "The Tea Factory &amp; The Tea Museum - priority 5 - SELECTED",
+          "Emerald Lake - priority 20 - SELECTED"
+        ],
+        "rejected": [
+          "Wax Museum Ooty - priority 0 - Rejected: duplicate - REJECTED",
+          "Wellington Lake - priority 0 - Rejected: duplicate - REJECTED",
+          "Tamil nadu police museum - priority 0 - Rejected: duplicate - REJECTED",
+          "Ooty Lake - priority 1 - Rejected: duplicate - REJECTED",
+          "Marudhamalai Murugan Temple - priority 2 - Rejected: optional closed spot skipped; Rejected: closed at visit time - REJECTED"
+        ],
+        "deferred": [
+          "Marudhamalai Murugan Temple - priority 2 - Rejected: deferred to next opening slot - DEFERRED",
+          "Emerald Lake - priority 20 - Rejected: deferred to next opening slot - DEFERRED",
+          "Ooty - priority 0 - Rejected: deferred to next opening slot - DEFERRED"
+        ]
+      },
+      "clientSummary": "Out of 88 possible hotspots, 19 were selected. Most rejections happened due to duplicate hotspots, closing time conflicts, and insufficient time in the day."
+    },
+    {
+      "itinerary": "AP-Telangana-Tirupati-Hyderabad",
+      "runIndex": 1,
+      "quoteId": "DVI202604214",
+      "planId": 252,
+      "counts": {
+        "totalCandidates": 159,
+        "selected": 30,
+        "rejected": 121,
+        "deferred": 8,
+        "duplicates": 60,
+        "closed": 27,
+        "noTime": 34
+      },
+      "days": [
+        {
+          "dayNumber": 1,
+          "routeSource": "Tirupati",
+          "routeDestination": "Hyderabad",
+          "selected": [
+            "Sri Venkateswara Swamy Temple (Tirupathi - Balaji Temple) - priority 1 - 04:30:00-16:30:00 - open 00:00:00-23:59:59 - SELECTED",
+            "Sri Kapileswara Swamy Temple | Tirupati - priority 2 - 16:49:00-17:49:00 - open 05:00:00-21:00:00 - SELECTED",
+            "Parasurameswara swamy - priority 0 - 18:26:00-19:26:00 - open 08:00:00-20:00:00 - SELECTED",
+            "Padmavathi Temple &amp; Tiruchanur Lake - priority 0 - 19:27:00-20:27:00 - open 12:30:00-21:00:00 - SELECTED",
+            "Silathoranam (Natural Arch) - priority 0 - 21:00:00-00:00:00 - open 06:00:00-18:00:00 - SELECTED",
+            "Papavinasanam Theertham - priority 0 - 00:22:00-01:22:00 - open 00:00:00-18:00:00 - SELECTED",
+            "Chandragiri Fort - priority 0 - 09:00:00-11:00:00 - open 09:00:00-17:00:00 - SELECTED"
+          ],
+          "rejected": [
+            "Sri Prasanna Venkateswara Swamy Temple, Appalayagunta - priority 0 - 20:46:00-21:46:00 - closes 20:00:00 - REJECTED",
+            "ISKCON Temple, Tirupati - priority 0 - 21:02:00-22:02:00 - closes 20:30:00 - REJECTED",
+            "Sri Venkateswara Zoological Park - priority 0 - 20:48:00-22:48:00 - closes 16:30:00 - REJECTED"
+          ],
+          "deferred": [],
+          "duplicate": []
+        },
+        {
+          "dayNumber": 2,
+          "routeSource": "Hyderabad",
+          "routeDestination": "Hyderabad",
+          "selected": [
+            "Kapaleeshwarar Temple - priority 1 - 10:00:00-11:00:00 - open 05:30:00-20:00:00 - SELECTED",
+            "Marina Beach - priority 3 - 11:13:00-12:13:00 - open 00:00:00-23:59:59 - SELECTED",
+            "Fort St.George Museum - priority 5 - 12:34:00-13:34:00 - open 09:00:00-17:00:00 - SELECTED",
+            "Government Museum Chennai - priority 6 - 13:53:00-14:53:00 - open 09:30:00-17:00:00 - SELECTED",
+            "Guindy National Park - priority 6 - 15:11:00-17:11:00 - open 09:00:00-17:30:00 - SELECTED",
+            "Santhome Cathedral Basilica - priority 7 - 17:47:00-18:47:00 - open 06:00:00-20:00:00 - SELECTED"
+          ],
+          "rejected": [
+            "Guindy snake park - priority 18 - 19:24:00-21:24:00 - closes 17:30:00 - REJECTED",
+            "light house marina - priority 4 - 20:08:00-20:08:00 - Rejected: no remaining day window - REJECTED",
+            "Parthasarathy Temple - priority 2 - 20:08:00-20:08:00 - Rejected: no remaining day window - REJECTED"
+          ],
+          "deferred": [
+            "Parthasarathy Temple - priority 2 - 11:14:00-12:14:00 - opens 06:00:00 - DEFERRED",
+            "light house marina - priority 4 - 12:18:00-13:03:00 - opens 10:00:00 - DEFERRED"
+          ],
+          "duplicate": []
+        },
+        {
+          "dayNumber": 3,
+          "routeSource": "Hyderabad",
+          "routeDestination": "Hyderabad",
+          "selected": [
+            "Parthasarathy Temple - priority 2 - 10:00:00-11:00:00 - open 06:00:00-19:00:00 - SELECTED",
+            "light house marina - priority 4 - 11:07:00-11:52:00 - open 10:00:00-17:30:00 - SELECTED",
+            "Guindy snake park - priority 18 - 12:08:00-14:08:00 - open 09:00:00-17:30:00 - SELECTED",
+            "Thousand Lights Mosque - priority 0 - 14:46:00-15:46:00 - open 05:30:00-21:00:00 - SELECTED",
+            "Vadapalani Murugan Temple - priority 0 - 16:13:00-17:13:00 - open 05:00:00-21:00:00 - SELECTED",
+            "PHOENIX MARKET CITY Chennai - priority 0 - 17:28:00-19:28:00 - open 10:00:00-22:00:00 - SELECTED",
+            "Arignar Anna Zoological Park - priority 0 - 20:10:00-01:10:00 - open 09:00:00-17:00:00 - SELECTED"
+          ],
+          "rejected": [
+            "National art gallery - priority 0 - 14:26:00-16:26:00 - closes --:-- - REJECTED",
+            "Anna tower park - priority 0 - 16:20:00-18:20:00 - closes 18:00:00 - REJECTED",
+            "B.M Birla planitourim. - priority 0 - 17:47:00-19:17:00 - closes 17:45:00 - REJECTED",
+            "Vgp snow kingdom - priority 0 - 19:49:00-20:49:00 - closes 20:00:00 - REJECTED",
+            "Click art museum - priority 0 - 19:49:00-21:09:00 - closes 20:00:00 - REJECTED",
+            "Vgp marine kingdom - priority 0 - 19:49:00-20:49:00 - closes 19:30:00 - REJECTED",
+            "Statue Of Equality - priority 2 - 01:10:00-01:10:00 - Rejected: no remaining day window - REJECTED",
+            "Nagarjuna Sagar Dam - priority 0 - 01:10:00-01:10:00 - Rejected: no remaining day window - REJECTED",
+            "T Nagar (only for Shopping) - priority 0 - 01:10:00-01:10:00 - Rejected: no remaining day window - REJECTED"
+          ],
+          "deferred": [
+            "T Nagar (only for Shopping) - priority 0 - 16:03:00-18:03:00 - opens 17:00:00 - DEFERRED"
+          ],
+          "duplicate": [
+            "Kapaleeshwarar Temple - already inserted earlier - REJECTED",
+            "Marina Beach - already inserted earlier - REJECTED",
+            "Fort St.George Museum - already inserted earlier - REJECTED",
+            "Government Museum Chennai - already inserted earlier - REJECTED",
+            "Guindy National Park - already inserted earlier - REJECTED",
+            "Santhome Cathedral Basilica - already inserted earlier - REJECTED",
+            "M G R  Memorial - already inserted earlier - REJECTED"
+          ]
+        },
+        {
+          "dayNumber": 4,
+          "routeSource": "Hyderabad",
+          "routeDestination": "Tirupati",
+          "selected": [
+            "National art gallery - priority 0 - 10:05:00-12:05:00 - open 09:00:00-17:00:00 - SELECTED",
+            "Anna tower park - priority 0 - 12:35:00-14:35:00 - open 07:00:00-18:00:00 - SELECTED",
+            "B.M Birla planitourim. - priority 0 - 14:55:00-16:25:00 - open 10:00:00-17:45:00 - SELECTED",
+            "Vgp snow kingdom - priority 0 - 16:50:00-17:50:00 - open 10:00:00-20:00:00 - SELECTED",
+            "Click art museum - priority 0 - 17:50:00-19:10:00 - open 10:00:00-20:00:00 - SELECTED",
+            "Statue Of Equality - priority 2 - 09:07:00-12:07:00 - open 08:30:00-20:30:00 - SELECTED"
+          ],
+          "rejected": [
+            "Vgp marine kingdom - priority 0 - 19:11:00-20:11:00 - closes 20:00:00 - REJECTED",
+            "T Nagar (only for Shopping) - priority 0 - 21:47:00-21:47:00 - Rejected: no remaining day window - REJECTED"
+          ],
+          "deferred": [
+            "T Nagar (only for Shopping) - priority 0 - 12:30:00-14:30:00 - opens 17:00:00 - DEFERRED"
+          ],
+          "duplicate": [
+            "Kapaleeshwarar Temple - already inserted earlier - REJECTED",
+            "Parthasarathy Temple - already inserted earlier - REJECTED",
+            "Marina Beach - already inserted earlier - REJECTED",
+            "light house marina - already inserted earlier - REJECTED",
+            "Fort St.George Museum - already inserted earlier - REJECTED",
+            "Government Museum Chennai - already inserted earlier - REJECTED",
+            "Guindy National Park - already inserted earlier - REJECTED",
+            "Santhome Cathedral Basilica - already inserted earlier - REJECTED",
+            "Guindy snake park - already inserted earlier - REJECTED",
+            "M G R  Memorial - already inserted earlier - REJECTED",
+            "Thousand Lights Mosque - already inserted earlier - REJECTED",
+            "Vadapalani Murugan Temple - already inserted earlier - REJECTED",
+            "PHOENIX MARKET CITY Chennai - already inserted earlier - REJECTED",
+            "Arignar Anna Zoological Park - already inserted earlier - REJECTED"
+          ]
+        },
+        {
+          "dayNumber": 5,
+          "routeSource": "Tirupati",
+          "routeDestination": "Tirupati",
+          "selected": [
+            "Sri Prasanna Venkateswara Swamy Temple, Appalayagunta - priority 0 - 10:19:00-11:19:00 - open 05:45:00-20:00:00 - SELECTED",
+            "ISKCON Temple, Tirupati - priority 0 - 11:52:00-12:52:00 - open 07:30:00-20:30:00 - SELECTED",
+            "Sri Venkateswara Zoological Park - priority 0 - 13:27:00-15:27:00 - open 08:30:00-16:30:00 - SELECTED"
+          ],
+          "rejected": [],
+          "deferred": [],
+          "duplicate": [
+            "Sri Venkateswara Swamy Temple (Tirupathi - Balaji Temple) - already inserted earlier - REJECTED",
+            "Sri Kapileswara Swamy Temple | Tirupati - already inserted earlier - REJECTED",
+            "Parasurameswara swamy - already inserted earlier - REJECTED",
+            "Padmavathi Temple &amp; Tiruchanur Lake - already inserted earlier - REJECTED",
+            "Silathoranam (Natural Arch) - already inserted earlier - REJECTED",
+            "Papavinasanam Theertham - already inserted earlier - REJECTED",
+            "Chandragiri Fort - already inserted earlier - REJECTED",
+            "Kapaleeshwarar Temple - already inserted earlier - REJECTED",
+            "Parthasarathy Temple - already inserted earlier - REJECTED",
+            "Marina Beach - already inserted earlier - REJECTED",
+            "light house marina - already inserted earlier - REJECTED",
+            "Fort St.George Museum - already inserted earlier - REJECTED",
+            "Government Museum Chennai - already inserted earlier - REJECTED",
+            "Guindy National Park - already inserted earlier - REJECTED",
+            "Santhome Cathedral Basilica - already inserted earlier - REJECTED",
+            "Guindy snake park - already inserted earlier - REJECTED",
+            "Anna tower park - already inserted earlier - REJECTED",
+            "Vadapalani Murugan Temple - already inserted earlier - REJECTED",
+            "National art gallery - already inserted earlier - REJECTED"
+          ]
+        },
+        {
+          "dayNumber": 6,
+          "routeSource": "Tirupati",
+          "routeDestination": "Tirupati",
+          "selected": [
+            "Vgp marine kingdom - priority 0 - 10:26:00-11:26:00 - open 09:30:00-19:30:00 - SELECTED"
+          ],
+          "rejected": [],
+          "deferred": [],
+          "duplicate": [
+            "Kapaleeshwarar Temple - already inserted earlier - REJECTED",
+            "Parthasarathy Temple - already inserted earlier - REJECTED",
+            "Marina Beach - already inserted earlier - REJECTED",
+            "light house marina - already inserted earlier - REJECTED",
+            "Fort St.George Museum - already inserted earlier - REJECTED",
+            "Government Museum Chennai - already inserted earlier - REJECTED",
+            "Guindy National Park - already inserted earlier - REJECTED",
+            "Santhome Cathedral Basilica - already inserted earlier - REJECTED",
+            "Guindy snake park - already inserted earlier - REJECTED",
+            "Anna tower park - already inserted earlier - REJECTED",
+            "Vadapalani Murugan Temple - already inserted earlier - REJECTED",
+            "National art gallery - already inserted earlier - REJECTED",
+            "T Nagar (only for Shopping) - already inserted earlier - REJECTED",
+            "Thousand Lights Mosque - already inserted earlier - REJECTED",
+            "PHOENIX MARKET CITY Chennai - already inserted earlier - REJECTED",
+            "M G R  Memorial - already inserted earlier - REJECTED",
+            "Arignar Anna Zoological Park - already inserted earlier - REJECTED",
+            "B.M Birla planitourim. - already inserted earlier - REJECTED",
+            "Vgp snow kingdom - already inserted earlier - REJECTED",
+            "Click art museum - already inserted earlier - REJECTED"
+          ]
+        }
+      ],
+      "exampleHighlights": {
+        "selected": [
+          "Sri Venkateswara Swamy Temple (Tirupathi - Balaji Temple) - priority 1 - SELECTED",
+          "Kapaleeshwarar Temple - priority 1 - SELECTED",
+          "Sri Kapileswara Swamy Temple | Tirupati - priority 2 - SELECTED",
+          "Parthasarathy Temple - priority 2 - SELECTED",
+          "Marina Beach - priority 3 - SELECTED"
+        ],
+        "rejected": [
+          "Sri Prasanna Venkateswara Swamy Temple, Appalayagunta - priority 0 - Rejected: closed at visit time - REJECTED",
+          "ISKCON Temple, Tirupati - priority 0 - Rejected: closed at visit time - REJECTED",
+          "Sri Venkateswara Zoological Park - priority 0 - Rejected: closed at visit time - REJECTED",
+          "Anna tower park - priority 0 - Rejected: optional closed spot skipped; Rejected: closed at visit time - REJECTED",
+          "Click art museum - priority 0 - Rejected: optional closed spot skipped; Rejected: closed at visit time - REJECTED"
+        ],
+        "deferred": [
+          "Parthasarathy Temple - priority 2 - Rejected: deferred to next opening slot - DEFERRED",
+          "T Nagar (only for Shopping) - priority 0 - Rejected: deferred to next opening slot - DEFERRED",
+          "light house marina - priority 4 - Rejected: deferred to next opening slot - DEFERRED"
+        ]
+      },
+      "clientSummary": "Out of 159 possible hotspots, 30 were selected. Most rejections happened due to duplicate hotspots, closing time conflicts, and insufficient time in the day."
+    },
+    {
+      "itinerary": "AP-Telangana-Tirupati-Hyderabad",
+      "runIndex": 2,
+      "quoteId": "DVI202604215",
+      "planId": 253,
+      "counts": {
+        "totalCandidates": 159,
+        "selected": 30,
+        "rejected": 121,
+        "deferred": 8,
+        "duplicates": 60,
+        "closed": 27,
+        "noTime": 34
+      },
+      "days": [
+        {
+          "dayNumber": 1,
+          "routeSource": "Tirupati",
+          "routeDestination": "Hyderabad",
+          "selected": [
+            "Sri Venkateswara Swamy Temple (Tirupathi - Balaji Temple) - priority 1 - 04:30:00-16:30:00 - open 00:00:00-23:59:59 - SELECTED",
+            "Sri Kapileswara Swamy Temple | Tirupati - priority 2 - 16:49:00-17:49:00 - open 05:00:00-21:00:00 - SELECTED",
+            "Parasurameswara swamy - priority 0 - 18:26:00-19:26:00 - open 08:00:00-20:00:00 - SELECTED",
+            "Padmavathi Temple &amp; Tiruchanur Lake - priority 0 - 19:27:00-20:27:00 - open 12:30:00-21:00:00 - SELECTED",
+            "Silathoranam (Natural Arch) - priority 0 - 21:00:00-00:00:00 - open 06:00:00-18:00:00 - SELECTED",
+            "Papavinasanam Theertham - priority 0 - 00:22:00-01:22:00 - open 00:00:00-18:00:00 - SELECTED",
+            "Chandragiri Fort - priority 0 - 09:00:00-11:00:00 - open 09:00:00-17:00:00 - SELECTED"
+          ],
+          "rejected": [
+            "Sri Prasanna Venkateswara Swamy Temple, Appalayagunta - priority 0 - 20:46:00-21:46:00 - closes 20:00:00 - REJECTED",
+            "ISKCON Temple, Tirupati - priority 0 - 21:02:00-22:02:00 - closes 20:30:00 - REJECTED",
+            "Sri Venkateswara Zoological Park - priority 0 - 20:48:00-22:48:00 - closes 16:30:00 - REJECTED"
+          ],
+          "deferred": [],
+          "duplicate": []
+        },
+        {
+          "dayNumber": 2,
+          "routeSource": "Hyderabad",
+          "routeDestination": "Hyderabad",
+          "selected": [
+            "Kapaleeshwarar Temple - priority 1 - 10:00:00-11:00:00 - open 05:30:00-20:00:00 - SELECTED",
+            "Marina Beach - priority 3 - 11:13:00-12:13:00 - open 00:00:00-23:59:59 - SELECTED",
+            "Fort St.George Museum - priority 5 - 12:34:00-13:34:00 - open 09:00:00-17:00:00 - SELECTED",
+            "Government Museum Chennai - priority 6 - 13:53:00-14:53:00 - open 09:30:00-17:00:00 - SELECTED",
+            "Guindy National Park - priority 6 - 15:11:00-17:11:00 - open 09:00:00-17:30:00 - SELECTED",
+            "Santhome Cathedral Basilica - priority 7 - 17:47:00-18:47:00 - open 06:00:00-20:00:00 - SELECTED"
+          ],
+          "rejected": [
+            "Guindy snake park - priority 18 - 19:24:00-21:24:00 - closes 17:30:00 - REJECTED",
+            "light house marina - priority 4 - 20:08:00-20:08:00 - Rejected: no remaining day window - REJECTED",
+            "Parthasarathy Temple - priority 2 - 20:08:00-20:08:00 - Rejected: no remaining day window - REJECTED"
+          ],
+          "deferred": [
+            "Parthasarathy Temple - priority 2 - 11:14:00-12:14:00 - opens 06:00:00 - DEFERRED",
+            "light house marina - priority 4 - 12:18:00-13:03:00 - opens 10:00:00 - DEFERRED"
+          ],
+          "duplicate": []
+        },
+        {
+          "dayNumber": 3,
+          "routeSource": "Hyderabad",
+          "routeDestination": "Hyderabad",
+          "selected": [
+            "Parthasarathy Temple - priority 2 - 10:00:00-11:00:00 - open 06:00:00-19:00:00 - SELECTED",
+            "light house marina - priority 4 - 11:07:00-11:52:00 - open 10:00:00-17:30:00 - SELECTED",
+            "Guindy snake park - priority 18 - 12:08:00-14:08:00 - open 09:00:00-17:30:00 - SELECTED",
+            "Thousand Lights Mosque - priority 0 - 14:46:00-15:46:00 - open 05:30:00-21:00:00 - SELECTED",
+            "Vadapalani Murugan Temple - priority 0 - 16:13:00-17:13:00 - open 05:00:00-21:00:00 - SELECTED",
+            "PHOENIX MARKET CITY Chennai - priority 0 - 17:28:00-19:28:00 - open 10:00:00-22:00:00 - SELECTED",
+            "Arignar Anna Zoological Park - priority 0 - 20:10:00-01:10:00 - open 09:00:00-17:00:00 - SELECTED"
+          ],
+          "rejected": [
+            "National art gallery - priority 0 - 14:26:00-16:26:00 - closes --:-- - REJECTED",
+            "Anna tower park - priority 0 - 16:20:00-18:20:00 - closes 18:00:00 - REJECTED",
+            "B.M Birla planitourim. - priority 0 - 17:47:00-19:17:00 - closes 17:45:00 - REJECTED",
+            "Vgp snow kingdom - priority 0 - 19:49:00-20:49:00 - closes 20:00:00 - REJECTED",
+            "Click art museum - priority 0 - 19:49:00-21:09:00 - closes 20:00:00 - REJECTED",
+            "Vgp marine kingdom - priority 0 - 19:49:00-20:49:00 - closes 19:30:00 - REJECTED",
+            "Statue Of Equality - priority 2 - 01:10:00-01:10:00 - Rejected: no remaining day window - REJECTED",
+            "Nagarjuna Sagar Dam - priority 0 - 01:10:00-01:10:00 - Rejected: no remaining day window - REJECTED",
+            "T Nagar (only for Shopping) - priority 0 - 01:10:00-01:10:00 - Rejected: no remaining day window - REJECTED"
+          ],
+          "deferred": [
+            "T Nagar (only for Shopping) - priority 0 - 16:03:00-18:03:00 - opens 17:00:00 - DEFERRED"
+          ],
+          "duplicate": [
+            "Kapaleeshwarar Temple - already inserted earlier - REJECTED",
+            "Marina Beach - already inserted earlier - REJECTED",
+            "Fort St.George Museum - already inserted earlier - REJECTED",
+            "Government Museum Chennai - already inserted earlier - REJECTED",
+            "Guindy National Park - already inserted earlier - REJECTED",
+            "Santhome Cathedral Basilica - already inserted earlier - REJECTED",
+            "M G R  Memorial - already inserted earlier - REJECTED"
+          ]
+        },
+        {
+          "dayNumber": 4,
+          "routeSource": "Hyderabad",
+          "routeDestination": "Tirupati",
+          "selected": [
+            "National art gallery - priority 0 - 10:05:00-12:05:00 - open 09:00:00-17:00:00 - SELECTED",
+            "Anna tower park - priority 0 - 12:35:00-14:35:00 - open 07:00:00-18:00:00 - SELECTED",
+            "B.M Birla planitourim. - priority 0 - 14:55:00-16:25:00 - open 10:00:00-17:45:00 - SELECTED",
+            "Vgp snow kingdom - priority 0 - 16:50:00-17:50:00 - open 10:00:00-20:00:00 - SELECTED",
+            "Click art museum - priority 0 - 17:50:00-19:10:00 - open 10:00:00-20:00:00 - SELECTED",
+            "Statue Of Equality - priority 2 - 09:07:00-12:07:00 - open 08:30:00-20:30:00 - SELECTED"
+          ],
+          "rejected": [
+            "Vgp marine kingdom - priority 0 - 19:11:00-20:11:00 - closes 20:00:00 - REJECTED",
+            "T Nagar (only for Shopping) - priority 0 - 21:47:00-21:47:00 - Rejected: no remaining day window - REJECTED"
+          ],
+          "deferred": [
+            "T Nagar (only for Shopping) - priority 0 - 12:30:00-14:30:00 - opens 17:00:00 - DEFERRED"
+          ],
+          "duplicate": [
+            "Kapaleeshwarar Temple - already inserted earlier - REJECTED",
+            "Parthasarathy Temple - already inserted earlier - REJECTED",
+            "Marina Beach - already inserted earlier - REJECTED",
+            "light house marina - already inserted earlier - REJECTED",
+            "Fort St.George Museum - already inserted earlier - REJECTED",
+            "Government Museum Chennai - already inserted earlier - REJECTED",
+            "Guindy National Park - already inserted earlier - REJECTED",
+            "Santhome Cathedral Basilica - already inserted earlier - REJECTED",
+            "Guindy snake park - already inserted earlier - REJECTED",
+            "M G R  Memorial - already inserted earlier - REJECTED",
+            "Thousand Lights Mosque - already inserted earlier - REJECTED",
+            "Vadapalani Murugan Temple - already inserted earlier - REJECTED",
+            "PHOENIX MARKET CITY Chennai - already inserted earlier - REJECTED",
+            "Arignar Anna Zoological Park - already inserted earlier - REJECTED"
+          ]
+        },
+        {
+          "dayNumber": 5,
+          "routeSource": "Tirupati",
+          "routeDestination": "Tirupati",
+          "selected": [
+            "Sri Prasanna Venkateswara Swamy Temple, Appalayagunta - priority 0 - 10:19:00-11:19:00 - open 05:45:00-20:00:00 - SELECTED",
+            "ISKCON Temple, Tirupati - priority 0 - 11:52:00-12:52:00 - open 07:30:00-20:30:00 - SELECTED",
+            "Sri Venkateswara Zoological Park - priority 0 - 13:27:00-15:27:00 - open 08:30:00-16:30:00 - SELECTED"
+          ],
+          "rejected": [],
+          "deferred": [],
+          "duplicate": [
+            "Sri Venkateswara Swamy Temple (Tirupathi - Balaji Temple) - already inserted earlier - REJECTED",
+            "Sri Kapileswara Swamy Temple | Tirupati - already inserted earlier - REJECTED",
+            "Parasurameswara swamy - already inserted earlier - REJECTED",
+            "Padmavathi Temple &amp; Tiruchanur Lake - already inserted earlier - REJECTED",
+            "Silathoranam (Natural Arch) - already inserted earlier - REJECTED",
+            "Papavinasanam Theertham - already inserted earlier - REJECTED",
+            "Chandragiri Fort - already inserted earlier - REJECTED",
+            "Kapaleeshwarar Temple - already inserted earlier - REJECTED",
+            "Parthasarathy Temple - already inserted earlier - REJECTED",
+            "Marina Beach - already inserted earlier - REJECTED",
+            "light house marina - already inserted earlier - REJECTED",
+            "Fort St.George Museum - already inserted earlier - REJECTED",
+            "Government Museum Chennai - already inserted earlier - REJECTED",
+            "Guindy National Park - already inserted earlier - REJECTED",
+            "Santhome Cathedral Basilica - already inserted earlier - REJECTED",
+            "Guindy snake park - already inserted earlier - REJECTED",
+            "Anna tower park - already inserted earlier - REJECTED",
+            "Vadapalani Murugan Temple - already inserted earlier - REJECTED",
+            "National art gallery - already inserted earlier - REJECTED"
+          ]
+        },
+        {
+          "dayNumber": 6,
+          "routeSource": "Tirupati",
+          "routeDestination": "Tirupati",
+          "selected": [
+            "Vgp marine kingdom - priority 0 - 10:26:00-11:26:00 - open 09:30:00-19:30:00 - SELECTED"
+          ],
+          "rejected": [],
+          "deferred": [],
+          "duplicate": [
+            "Kapaleeshwarar Temple - already inserted earlier - REJECTED",
+            "Parthasarathy Temple - already inserted earlier - REJECTED",
+            "Marina Beach - already inserted earlier - REJECTED",
+            "light house marina - already inserted earlier - REJECTED",
+            "Fort St.George Museum - already inserted earlier - REJECTED",
+            "Government Museum Chennai - already inserted earlier - REJECTED",
+            "Guindy National Park - already inserted earlier - REJECTED",
+            "Santhome Cathedral Basilica - already inserted earlier - REJECTED",
+            "Guindy snake park - already inserted earlier - REJECTED",
+            "Anna tower park - already inserted earlier - REJECTED",
+            "Vadapalani Murugan Temple - already inserted earlier - REJECTED",
+            "National art gallery - already inserted earlier - REJECTED",
+            "T Nagar (only for Shopping) - already inserted earlier - REJECTED",
+            "Thousand Lights Mosque - already inserted earlier - REJECTED",
+            "PHOENIX MARKET CITY Chennai - already inserted earlier - REJECTED",
+            "M G R  Memorial - already inserted earlier - REJECTED",
+            "Arignar Anna Zoological Park - already inserted earlier - REJECTED",
+            "B.M Birla planitourim. - already inserted earlier - REJECTED",
+            "Vgp snow kingdom - already inserted earlier - REJECTED",
+            "Click art museum - already inserted earlier - REJECTED"
+          ]
+        }
+      ],
+      "exampleHighlights": {
+        "selected": [
+          "Sri Venkateswara Swamy Temple (Tirupathi - Balaji Temple) - priority 1 - SELECTED",
+          "Kapaleeshwarar Temple - priority 1 - SELECTED",
+          "Sri Kapileswara Swamy Temple | Tirupati - priority 2 - SELECTED",
+          "Parthasarathy Temple - priority 2 - SELECTED",
+          "Marina Beach - priority 3 - SELECTED"
+        ],
+        "rejected": [
+          "Sri Prasanna Venkateswara Swamy Temple, Appalayagunta - priority 0 - Rejected: closed at visit time - REJECTED",
+          "ISKCON Temple, Tirupati - priority 0 - Rejected: closed at visit time - REJECTED",
+          "Sri Venkateswara Zoological Park - priority 0 - Rejected: closed at visit time - REJECTED",
+          "Anna tower park - priority 0 - Rejected: optional closed spot skipped; Rejected: closed at visit time - REJECTED",
+          "Click art museum - priority 0 - Rejected: optional closed spot skipped; Rejected: closed at visit time - REJECTED"
+        ],
+        "deferred": [
+          "Parthasarathy Temple - priority 2 - Rejected: deferred to next opening slot - DEFERRED",
+          "T Nagar (only for Shopping) - priority 0 - Rejected: deferred to next opening slot - DEFERRED",
+          "light house marina - priority 4 - Rejected: deferred to next opening slot - DEFERRED"
+        ]
+      },
+      "clientSummary": "Out of 159 possible hotspots, 30 were selected. Most rejections happened due to duplicate hotspots, closing time conflicts, and insufficient time in the day."
+    },
+    {
+      "itinerary": "Mixed-Chennai-Tirupati-Hyderabad-Mahabalipuram",
+      "runIndex": 1,
+      "quoteId": "DVI202604216",
+      "planId": 254,
+      "counts": {
+        "totalCandidates": 130,
+        "selected": 27,
+        "rejected": 99,
+        "deferred": 4,
+        "duplicates": 49,
+        "closed": 26,
+        "noTime": 24
+      },
+      "days": [
+        {
+          "dayNumber": 1,
+          "routeSource": "Chennai",
+          "routeDestination": "Tirupati",
+          "selected": [
+            "Kapaleeshwarar Temple - priority 1 - 05:30:00-06:30:00 - open 05:30:00-20:00:00 - SELECTED",
+            "Parthasarathy Temple - priority 2 - 06:44:00-07:44:00 - open 06:00:00-19:00:00 - SELECTED",
+            "Marina Beach - priority 3 - 07:46:00-08:46:00 - open 00:00:00-23:59:59 - SELECTED",
+            "light house marina - priority 4 - 10:00:00-10:45:00 - open 10:00:00-17:30:00 - SELECTED",
+            "Fort St.George Museum - priority 5 - 11:10:00-12:10:00 - open 09:00:00-17:00:00 - SELECTED",
+            "Government Museum Chennai - priority 6 - 12:29:00-13:29:00 - open 09:30:00-17:00:00 - SELECTED",
+            "Guindy National Park - priority 6 - 13:47:00-15:47:00 - open 09:00:00-17:30:00 - SELECTED",
+            "Santhome Cathedral Basilica - priority 7 - 16:23:00-17:23:00 - open 06:00:00-20:00:00 - SELECTED",
+            "M G R  Memorial - priority 0 - 17:44:00-18:44:00 - open 09:00:00-21:30:00 - SELECTED",
+            "T Nagar (only for Shopping) - priority 0 - 19:21:00-21:21:00 - open 17:00:00-22:00:00 - SELECTED",
+            "Arignar Anna Zoological Park - priority 0 - 22:15:00-03:15:00 - open 09:00:00-17:00:00 - SELECTED"
+          ],
+          "rejected": [
+            "Guindy snake park - priority 18 - 18:00:00-20:00:00 - closes 17:30:00 - REJECTED",
+            "National art gallery - priority 0 - 17:51:00-19:51:00 - closes 17:00:00 - REJECTED",
+            "Thousand Lights Mosque - priority 0 - 19:04:00-20:04:00 - closes 20:00:00 - REJECTED",
+            "Vivekanandar House - priority 0 - 18:54:00-19:54:00 - closes 19:00:00 - REJECTED",
+            "Anna tower park - priority 0 - 19:02:00-21:02:00 - closes 18:00:00 - REJECTED",
+            "Vadapalani Murugan Temple - priority 0 - 21:36:00-22:36:00 - closes 12:30:00 - REJECTED",
+            "B.M Birla planitourim. - priority 0 - 21:42:00-23:12:00 - closes 17:45:00 - REJECTED",
+            "PHOENIX MARKET CITY Chennai - priority 0 - 21:56:00-23:56:00 - closes 22:00:00 - REJECTED",
+            "Vgp snow kingdom - priority 0 - 21:53:00-22:53:00 - closes 20:00:00 - REJECTED",
+            "Click art museum - priority 0 - 21:53:00-23:13:00 - closes 20:00:00 - REJECTED",
+            "Vgp marine kingdom - priority 0 - 21:54:00-22:54:00 - closes 19:30:00 - REJECTED"
+          ],
+          "deferred": [],
+          "duplicate": []
+        },
+        {
+          "dayNumber": 3,
+          "routeSource": "Hyderabad",
+          "routeDestination": "Hyderabad",
+          "selected": [
+            "Guindy snake park - priority 18 - 10:00:00-12:00:00 - open 09:00:00-17:30:00 - SELECTED",
+            "National art gallery - priority 0 - 12:18:00-14:18:00 - open 09:00:00-17:00:00 - SELECTED",
+            "Thousand Lights Mosque - priority 0 - 14:28:00-15:28:00 - open 05:30:00-20:00:00 - SELECTED",
+            "B.M Birla planitourim. - priority 0 - 15:58:00-17:28:00 - open 10:00:00-17:45:00 - SELECTED",
+            "PHOENIX MARKET CITY Chennai - priority 0 - 17:50:00-19:50:00 - open 10:00:00-22:00:00 - SELECTED",
+            "Ramoji Film City - priority 1 - 09:24:00-16:24:00 - open 09:00:00-18:00:00 - SELECTED",
+            "Nagarjuna Sagar Dam - priority 0 - 20:13:00-01:13:00 - open 00:00:00-23:59:59 - SELECTED"
+          ],
+          "rejected": [
+            "Anna tower park - priority 0 - 16:02:00-18:02:00 - closes 18:00:00 - REJECTED",
+            "Vgp snow kingdom - priority 0 - 20:11:00-21:11:00 - closes 20:00:00 - REJECTED",
+            "Click art museum - priority 0 - 20:11:00-21:31:00 - closes 20:00:00 - REJECTED",
+            "Vgp marine kingdom - priority 0 - 20:11:00-21:11:00 - closes 20:00:00 - REJECTED",
+            "Statue Of Equality - priority 2 - 17:50:00-20:50:00 - closes 20:30:00 - REJECTED",
+            "Sri Chilkur Balaji Temple - priority 10 - 17:59:00-21:59:00 - closes 19:00:00 - REJECTED",
+            "Vivekanandar House - priority 0 - 01:13:00-01:13:00 - Rejected: no remaining day window - REJECTED",
+            "Vadapalani Murugan Temple - priority 0 - 01:13:00-01:13:00 - Rejected: no remaining day window - REJECTED"
+          ],
+          "deferred": [
+            "Vivekanandar House - priority 0 - 14:39:00-15:39:00 - opens 10:00:00 - DEFERRED",
+            "Vadapalani Murugan Temple - priority 0 - 15:55:00-16:55:00 - opens 05:00:00 - DEFERRED"
+          ],
+          "duplicate": [
+            "Kapaleeshwarar Temple - already inserted earlier - REJECTED",
+            "Parthasarathy Temple - already inserted earlier - REJECTED",
+            "Marina Beach - already inserted earlier - REJECTED",
+            "light house marina - already inserted earlier - REJECTED",
+            "Fort St.George Museum - already inserted earlier - REJECTED",
+            "Government Museum Chennai - already inserted earlier - REJECTED",
+            "Guindy National Park - already inserted earlier - REJECTED",
+            "Santhome Cathedral Basilica - already inserted earlier - REJECTED",
+            "M G R  Memorial - already inserted earlier - REJECTED",
+            "T Nagar (only for Shopping) - already inserted earlier - REJECTED",
+            "Arignar Anna Zoological Park - already inserted earlier - REJECTED"
+          ]
+        },
+        {
+          "dayNumber": 4,
+          "routeSource": "Hyderabad",
+          "routeDestination": "Mahabalipuram",
+          "selected": [
+            "Vivekanandar House - priority 0 - 10:03:00-11:03:00 - open 10:00:00-19:00:00 - SELECTED",
+            "Anna tower park - priority 0 - 11:22:00-13:22:00 - open 07:00:00-18:00:00 - SELECTED",
+            "Vgp snow kingdom - priority 0 - 14:06:00-15:06:00 - open 10:00:00-20:00:00 - SELECTED",
+            "Click art museum - priority 0 - 15:06:00-16:26:00 - open 10:00:00-20:00:00 - SELECTED",
+            "Vgp marine kingdom - priority 0 - 16:27:00-17:27:00 - open 09:00:00-20:00:00 - SELECTED"
+          ],
+          "rejected": [],
+          "deferred": [
+            "Vadapalani Murugan Temple - priority 0 - 13:44:00-14:44:00 - opens 05:00:00 - DEFERRED",
+            "Statue Of Equality - priority 2 - 07:24:00-10:24:00 - opens 08:30:00 - DEFERRED"
+          ],
+          "duplicate": [
+            "Kapaleeshwarar Temple - already inserted earlier - REJECTED",
+            "Parthasarathy Temple - already inserted earlier - REJECTED",
+            "Marina Beach - already inserted earlier - REJECTED",
+            "light house marina - already inserted earlier - REJECTED",
+            "Fort St.George Museum - already inserted earlier - REJECTED",
+            "Government Museum Chennai - already inserted earlier - REJECTED",
+            "Guindy National Park - already inserted earlier - REJECTED",
+            "Santhome Cathedral Basilica - already inserted earlier - REJECTED",
+            "Guindy snake park - already inserted earlier - REJECTED",
+            "M G R  Memorial - already inserted earlier - REJECTED",
+            "National art gallery - already inserted earlier - REJECTED",
+            "Thousand Lights Mosque - already inserted earlier - REJECTED",
+            "T Nagar (only for Shopping) - already inserted earlier - REJECTED",
+            "B.M Birla planitourim. - already inserted earlier - REJECTED",
+            "PHOENIX MARKET CITY Chennai - already inserted earlier - REJECTED",
+            "Arignar Anna Zoological Park - already inserted earlier - REJECTED",
+            "Ramoji Film City - already inserted earlier - REJECTED"
+          ]
+        },
+        {
+          "dayNumber": 5,
+          "routeSource": "Mahabalipuram",
+          "routeDestination": "Chennai",
+          "selected": [
+            "Mahabalipuram  Group of Monuments - priority 1 - 09:04:00-13:04:00 - open 06:00:00-18:00:00 - SELECTED",
+            "Dakshina Chitra Heritage Museum - priority 3 - 13:57:00-14:57:00 - open 10:00:00-18:00:00 - SELECTED",
+            "Mahabalipuram Beach - priority 4 - 15:51:00-16:21:00 - open 00:00:00-23:59:59 - SELECTED"
+          ],
+          "rejected": [
+            "Mahabalipuram - priority 2 - 13:37:00-15:07:00 - closes --:-- - REJECTED"
+          ],
+          "deferred": [],
+          "duplicate": []
+        },
+        {
+          "dayNumber": 6,
+          "routeSource": "Chennai",
+          "routeDestination": "Chennai",
+          "selected": [
+            "Vadapalani Murugan Temple - priority 0 - 10:11:00-11:11:00 - open 05:00:00-21:00:00 - SELECTED"
+          ],
+          "rejected": [],
+          "deferred": [],
+          "duplicate": [
+            "Kapaleeshwarar Temple - already inserted earlier - REJECTED",
+            "Parthasarathy Temple - already inserted earlier - REJECTED",
+            "Marina Beach - already inserted earlier - REJECTED",
+            "light house marina - already inserted earlier - REJECTED",
+            "Fort St.George Museum - already inserted earlier - REJECTED",
+            "Government Museum Chennai - already inserted earlier - REJECTED",
+            "Guindy National Park - already inserted earlier - REJECTED",
+            "Santhome Cathedral Basilica - already inserted earlier - REJECTED",
+            "Guindy snake park - already inserted earlier - REJECTED",
+            "National art gallery - already inserted earlier - REJECTED",
+            "M G R  Memorial - already inserted earlier - REJECTED",
+            "Thousand Lights Mosque - already inserted earlier - REJECTED",
+            "Vivekanandar House - already inserted earlier - REJECTED",
+            "Anna tower park - already inserted earlier - REJECTED",
+            "T Nagar (only for Shopping) - already inserted earlier - REJECTED",
+            "B.M Birla planitourim. - already inserted earlier - REJECTED",
+            "PHOENIX MARKET CITY Chennai - already inserted earlier - REJECTED",
+            "Vgp snow kingdom - already inserted earlier - REJECTED",
+            "Click art museum - already inserted earlier - REJECTED",
+            "Vgp marine kingdom - already inserted earlier - REJECTED",
+            "Arignar Anna Zoological Park - already inserted earlier - REJECTED"
+          ]
+        }
+      ],
+      "exampleHighlights": {
+        "selected": [
+          "Kapaleeshwarar Temple - priority 1 - SELECTED",
+          "Sri Venkateswara Swamy Temple (Tirupathi - Balaji Temple) - priority 1 - SELECTED",
+          "Parthasarathy Temple - priority 2 - SELECTED",
+          "Marina Beach - priority 3 - SELECTED",
+          "Dakshina Chitra Heritage Museum - priority 3 - SELECTED"
+        ],
+        "rejected": [
+          "Thousand Lights Mosque - priority 0 - Rejected: closed at visit time - REJECTED",
+          "Anna tower park - priority 0 - Rejected: closed at visit time - REJECTED",
+          "Vadapalani Murugan Temple - priority 0 - Rejected: closed at visit time - REJECTED",
+          "Click art museum - priority 0 - Rejected: closed at visit time - REJECTED",
+          "Anna tower park - priority 0 - Rejected: optional closed spot skipped; Rejected: closed at visit time - REJECTED"
+        ],
+        "deferred": [
+          "Vadapalani Murugan Temple - priority 0 - Rejected: deferred to next opening slot - DEFERRED",
+          "Vivekanandar House - priority 0 - Rejected: deferred to next opening slot - DEFERRED",
+          "Statue Of Equality - priority 2 - Rejected: deferred to next opening slot - DEFERRED"
+        ]
+      },
+      "clientSummary": "Out of 130 possible hotspots, 27 were selected. Most rejections happened due to duplicate hotspots, closing time conflicts, and insufficient time in the day."
+    },
+    {
+      "itinerary": "Mixed-Chennai-Tirupati-Hyderabad-Mahabalipuram",
+      "runIndex": 2,
+      "quoteId": "DVI202604217",
+      "planId": 255,
+      "counts": {
+        "totalCandidates": 130,
+        "selected": 27,
+        "rejected": 99,
+        "deferred": 4,
+        "duplicates": 49,
+        "closed": 26,
+        "noTime": 24
+      },
+      "days": [
+        {
+          "dayNumber": 1,
+          "routeSource": "Chennai",
+          "routeDestination": "Tirupati",
+          "selected": [
+            "Kapaleeshwarar Temple - priority 1 - 05:30:00-06:30:00 - open 05:30:00-20:00:00 - SELECTED",
+            "Parthasarathy Temple - priority 2 - 06:44:00-07:44:00 - open 06:00:00-19:00:00 - SELECTED",
+            "Marina Beach - priority 3 - 07:46:00-08:46:00 - open 00:00:00-23:59:59 - SELECTED",
+            "light house marina - priority 4 - 10:00:00-10:45:00 - open 10:00:00-17:30:00 - SELECTED",
+            "Fort St.George Museum - priority 5 - 11:10:00-12:10:00 - open 09:00:00-17:00:00 - SELECTED",
+            "Government Museum Chennai - priority 6 - 12:29:00-13:29:00 - open 09:30:00-17:00:00 - SELECTED",
+            "Guindy National Park - priority 6 - 13:47:00-15:47:00 - open 09:00:00-17:30:00 - SELECTED",
+            "Santhome Cathedral Basilica - priority 7 - 16:23:00-17:23:00 - open 06:00:00-20:00:00 - SELECTED",
+            "M G R  Memorial - priority 0 - 17:44:00-18:44:00 - open 09:00:00-21:30:00 - SELECTED",
+            "T Nagar (only for Shopping) - priority 0 - 19:21:00-21:21:00 - open 17:00:00-22:00:00 - SELECTED",
+            "Arignar Anna Zoological Park - priority 0 - 22:15:00-03:15:00 - open 09:00:00-17:00:00 - SELECTED"
+          ],
+          "rejected": [
+            "Guindy snake park - priority 18 - 18:00:00-20:00:00 - closes 17:30:00 - REJECTED",
+            "National art gallery - priority 0 - 17:51:00-19:51:00 - closes 17:00:00 - REJECTED",
+            "Thousand Lights Mosque - priority 0 - 19:04:00-20:04:00 - closes 20:00:00 - REJECTED",
+            "Vivekanandar House - priority 0 - 18:54:00-19:54:00 - closes 19:00:00 - REJECTED",
+            "Anna tower park - priority 0 - 19:02:00-21:02:00 - closes 18:00:00 - REJECTED",
+            "Vadapalani Murugan Temple - priority 0 - 21:36:00-22:36:00 - closes 12:30:00 - REJECTED",
+            "B.M Birla planitourim. - priority 0 - 21:42:00-23:12:00 - closes 17:45:00 - REJECTED",
+            "PHOENIX MARKET CITY Chennai - priority 0 - 21:56:00-23:56:00 - closes 22:00:00 - REJECTED",
+            "Vgp snow kingdom - priority 0 - 21:53:00-22:53:00 - closes 20:00:00 - REJECTED",
+            "Click art museum - priority 0 - 21:53:00-23:13:00 - closes 20:00:00 - REJECTED",
+            "Vgp marine kingdom - priority 0 - 21:54:00-22:54:00 - closes 19:30:00 - REJECTED"
+          ],
+          "deferred": [],
+          "duplicate": []
+        },
+        {
+          "dayNumber": 3,
+          "routeSource": "Hyderabad",
+          "routeDestination": "Hyderabad",
+          "selected": [
+            "Guindy snake park - priority 18 - 10:00:00-12:00:00 - open 09:00:00-17:30:00 - SELECTED",
+            "National art gallery - priority 0 - 12:18:00-14:18:00 - open 09:00:00-17:00:00 - SELECTED",
+            "Thousand Lights Mosque - priority 0 - 14:28:00-15:28:00 - open 05:30:00-20:00:00 - SELECTED",
+            "B.M Birla planitourim. - priority 0 - 15:58:00-17:28:00 - open 10:00:00-17:45:00 - SELECTED",
+            "PHOENIX MARKET CITY Chennai - priority 0 - 17:50:00-19:50:00 - open 10:00:00-22:00:00 - SELECTED",
+            "Ramoji Film City - priority 1 - 09:24:00-16:24:00 - open 09:00:00-18:00:00 - SELECTED",
+            "Nagarjuna Sagar Dam - priority 0 - 20:13:00-01:13:00 - open 00:00:00-23:59:59 - SELECTED"
+          ],
+          "rejected": [
+            "Anna tower park - priority 0 - 16:02:00-18:02:00 - closes 18:00:00 - REJECTED",
+            "Vgp snow kingdom - priority 0 - 20:11:00-21:11:00 - closes 20:00:00 - REJECTED",
+            "Click art museum - priority 0 - 20:11:00-21:31:00 - closes 20:00:00 - REJECTED",
+            "Vgp marine kingdom - priority 0 - 20:11:00-21:11:00 - closes 20:00:00 - REJECTED",
+            "Statue Of Equality - priority 2 - 17:50:00-20:50:00 - closes 20:30:00 - REJECTED",
+            "Sri Chilkur Balaji Temple - priority 10 - 17:59:00-21:59:00 - closes 19:00:00 - REJECTED",
+            "Vivekanandar House - priority 0 - 01:13:00-01:13:00 - Rejected: no remaining day window - REJECTED",
+            "Vadapalani Murugan Temple - priority 0 - 01:13:00-01:13:00 - Rejected: no remaining day window - REJECTED"
+          ],
+          "deferred": [
+            "Vivekanandar House - priority 0 - 14:39:00-15:39:00 - opens 10:00:00 - DEFERRED",
+            "Vadapalani Murugan Temple - priority 0 - 15:55:00-16:55:00 - opens 05:00:00 - DEFERRED"
+          ],
+          "duplicate": [
+            "Kapaleeshwarar Temple - already inserted earlier - REJECTED",
+            "Parthasarathy Temple - already inserted earlier - REJECTED",
+            "Marina Beach - already inserted earlier - REJECTED",
+            "light house marina - already inserted earlier - REJECTED",
+            "Fort St.George Museum - already inserted earlier - REJECTED",
+            "Government Museum Chennai - already inserted earlier - REJECTED",
+            "Guindy National Park - already inserted earlier - REJECTED",
+            "Santhome Cathedral Basilica - already inserted earlier - REJECTED",
+            "M G R  Memorial - already inserted earlier - REJECTED",
+            "T Nagar (only for Shopping) - already inserted earlier - REJECTED",
+            "Arignar Anna Zoological Park - already inserted earlier - REJECTED"
+          ]
+        },
+        {
+          "dayNumber": 4,
+          "routeSource": "Hyderabad",
+          "routeDestination": "Mahabalipuram",
+          "selected": [
+            "Vivekanandar House - priority 0 - 10:03:00-11:03:00 - open 10:00:00-19:00:00 - SELECTED",
+            "Anna tower park - priority 0 - 11:22:00-13:22:00 - open 07:00:00-18:00:00 - SELECTED",
+            "Vgp snow kingdom - priority 0 - 14:06:00-15:06:00 - open 10:00:00-20:00:00 - SELECTED",
+            "Click art museum - priority 0 - 15:06:00-16:26:00 - open 10:00:00-20:00:00 - SELECTED",
+            "Vgp marine kingdom - priority 0 - 16:27:00-17:27:00 - open 09:00:00-20:00:00 - SELECTED"
+          ],
+          "rejected": [],
+          "deferred": [
+            "Vadapalani Murugan Temple - priority 0 - 13:44:00-14:44:00 - opens 05:00:00 - DEFERRED",
+            "Statue Of Equality - priority 2 - 07:24:00-10:24:00 - opens 08:30:00 - DEFERRED"
+          ],
+          "duplicate": [
+            "Kapaleeshwarar Temple - already inserted earlier - REJECTED",
+            "Parthasarathy Temple - already inserted earlier - REJECTED",
+            "Marina Beach - already inserted earlier - REJECTED",
+            "light house marina - already inserted earlier - REJECTED",
+            "Fort St.George Museum - already inserted earlier - REJECTED",
+            "Government Museum Chennai - already inserted earlier - REJECTED",
+            "Guindy National Park - already inserted earlier - REJECTED",
+            "Santhome Cathedral Basilica - already inserted earlier - REJECTED",
+            "Guindy snake park - already inserted earlier - REJECTED",
+            "M G R  Memorial - already inserted earlier - REJECTED",
+            "National art gallery - already inserted earlier - REJECTED",
+            "Thousand Lights Mosque - already inserted earlier - REJECTED",
+            "T Nagar (only for Shopping) - already inserted earlier - REJECTED",
+            "B.M Birla planitourim. - already inserted earlier - REJECTED",
+            "PHOENIX MARKET CITY Chennai - already inserted earlier - REJECTED",
+            "Arignar Anna Zoological Park - already inserted earlier - REJECTED",
+            "Ramoji Film City - already inserted earlier - REJECTED"
+          ]
+        },
+        {
+          "dayNumber": 5,
+          "routeSource": "Mahabalipuram",
+          "routeDestination": "Chennai",
+          "selected": [
+            "Mahabalipuram  Group of Monuments - priority 1 - 09:04:00-13:04:00 - open 06:00:00-18:00:00 - SELECTED",
+            "Dakshina Chitra Heritage Museum - priority 3 - 13:57:00-14:57:00 - open 10:00:00-18:00:00 - SELECTED",
+            "Mahabalipuram Beach - priority 4 - 15:51:00-16:21:00 - open 00:00:00-23:59:59 - SELECTED"
+          ],
+          "rejected": [
+            "Mahabalipuram - priority 2 - 13:37:00-15:07:00 - closes --:-- - REJECTED"
+          ],
+          "deferred": [],
+          "duplicate": []
+        },
+        {
+          "dayNumber": 6,
+          "routeSource": "Chennai",
+          "routeDestination": "Chennai",
+          "selected": [
+            "Vadapalani Murugan Temple - priority 0 - 10:11:00-11:11:00 - open 05:00:00-21:00:00 - SELECTED"
+          ],
+          "rejected": [],
+          "deferred": [],
+          "duplicate": [
+            "Kapaleeshwarar Temple - already inserted earlier - REJECTED",
+            "Parthasarathy Temple - already inserted earlier - REJECTED",
+            "Marina Beach - already inserted earlier - REJECTED",
+            "light house marina - already inserted earlier - REJECTED",
+            "Fort St.George Museum - already inserted earlier - REJECTED",
+            "Government Museum Chennai - already inserted earlier - REJECTED",
+            "Guindy National Park - already inserted earlier - REJECTED",
+            "Santhome Cathedral Basilica - already inserted earlier - REJECTED",
+            "Guindy snake park - already inserted earlier - REJECTED",
+            "National art gallery - already inserted earlier - REJECTED",
+            "M G R  Memorial - already inserted earlier - REJECTED",
+            "Thousand Lights Mosque - already inserted earlier - REJECTED",
+            "Vivekanandar House - already inserted earlier - REJECTED",
+            "Anna tower park - already inserted earlier - REJECTED",
+            "T Nagar (only for Shopping) - already inserted earlier - REJECTED",
+            "B.M Birla planitourim. - already inserted earlier - REJECTED",
+            "PHOENIX MARKET CITY Chennai - already inserted earlier - REJECTED",
+            "Vgp snow kingdom - already inserted earlier - REJECTED",
+            "Click art museum - already inserted earlier - REJECTED",
+            "Vgp marine kingdom - already inserted earlier - REJECTED",
+            "Arignar Anna Zoological Park - already inserted earlier - REJECTED"
+          ]
+        }
+      ],
+      "exampleHighlights": {
+        "selected": [
+          "Kapaleeshwarar Temple - priority 1 - SELECTED",
+          "Sri Venkateswara Swamy Temple (Tirupathi - Balaji Temple) - priority 1 - SELECTED",
+          "Parthasarathy Temple - priority 2 - SELECTED",
+          "Marina Beach - priority 3 - SELECTED",
+          "Dakshina Chitra Heritage Museum - priority 3 - SELECTED"
+        ],
+        "rejected": [
+          "Thousand Lights Mosque - priority 0 - Rejected: closed at visit time - REJECTED",
+          "Anna tower park - priority 0 - Rejected: closed at visit time - REJECTED",
+          "Vadapalani Murugan Temple - priority 0 - Rejected: closed at visit time - REJECTED",
+          "Click art museum - priority 0 - Rejected: closed at visit time - REJECTED",
+          "Anna tower park - priority 0 - Rejected: optional closed spot skipped; Rejected: closed at visit time - REJECTED"
+        ],
+        "deferred": [
+          "Vadapalani Murugan Temple - priority 0 - Rejected: deferred to next opening slot - DEFERRED",
+          "Vivekanandar House - priority 0 - Rejected: deferred to next opening slot - DEFERRED",
+          "Statue Of Equality - priority 2 - Rejected: deferred to next opening slot - DEFERRED"
+        ]
+      },
+      "clientSummary": "Out of 130 possible hotspots, 27 were selected. Most rejections happened due to duplicate hotspots, closing time conflicts, and insufficient time in the day."
+    }
+  ]
+}

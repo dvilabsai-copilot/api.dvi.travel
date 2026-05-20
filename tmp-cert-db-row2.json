@@ -1,0 +1,202 @@
+{
+  "tbo_hotel_booking_confirmation_ID": 51,
+  "confirmed_itinerary_plan_ID": 129,
+  "itinerary_plan_ID": 1,
+  "itinerary_route_ID": 1,
+  "tbo_hotel_code": "1056437",
+  "tbo_booking_id": "2093541",
+  "tbo_booking_reference_number": "492149427502191",
+  "tbo_trace_id": "8d1db8e0-20c6-11f1-aada-ba9013e35c3f",
+  "booking_code": "1056437!TB!1!TB!8d1db8e0-20c6-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+  "check_in_date": "2026-04-16T00:00:00.000Z",
+  "check_out_date": "2026-04-17T00:00:00.000Z",
+  "number_of_rooms": 1,
+  "net_amount": 1389.22,
+  "guest_nationality": "IN",
+  "total_guests": 2,
+  "api_response": {
+    "preBookMeta": {
+      "rawStatus": {
+        "Code": 200,
+        "Description": "Successful"
+      },
+      "finalPrice": null,
+      "isPriceChanged": false,
+      "rateConditions": [],
+      "roomPromotions": [],
+      "cancellationPolicy": [],
+      "originalSearchPrice": 1389.22,
+      "mandatorySupplements": [],
+      "cancellationPolicyText": null,
+      "isCancellationPolicyChanged": false
+    },
+    "bookResponse": {
+      "BookResult": {
+        "Error": {
+          "ErrorCode": 0,
+          "ErrorMessage": ""
+        },
+        "Status": 1,
+        "TraceId": "8d1db8e0-20c6-11f1-aada-ba9013e35c3f",
+        "BookingId": 2093541,
+        "BookingRefNo": "492149427502191",
+        "VoucherStatus": false,
+        "ConfirmationNo": "7919755014183",
+        "IsPriceChanged": false,
+        "ResponseStatus": 1,
+        "TBOReferenceNo": null,
+        "HotelBookingStatus": "Confirmed",
+        "IsCancellationPolicyChanged": false
+      }
+    },
+    "preBookResponse": {
+      "Status": {
+        "Code": 200,
+        "Description": "Successful"
+      },
+      "HotelResult": [
+        {
+          "Rooms": [
+            {
+              "Name": [
+                "Deluxe Twin Room, 1 Bedroom,2 Double Beds and 2 Large Twin Beds,NonSmoking"
+              ],
+              "NetTax": 68.00547618600005,
+              "DayRates": [
+                [
+                  {
+                    "BasePrice": 1321.42
+                  }
+                ]
+              ],
+              "MealType": "Breakfast_For_2",
+              "TotalTax": 67.81,
+              "Amenities": [
+                "Towels provided",
+                "Premium TV channels",
+                "Non-Smoking",
+                "Television",
+                "Shower only",
+                "Premium bedding",
+                "TV size measurement: inch",
+                "Private bathroom",
+                "Free wired internet",
+                "Free toiletries",
+                "Ceiling fan",
+                "Daily housekeeping",
+                "Free WiFi",
+                "Iron/ironing board",
+                "In-room safe",
+                "Fireplace",
+                "Separate sitting area",
+                "Desk",
+                "Room service (24 hours)",
+                "Cable TV service",
+                "Free bottled water",
+                "Free newspaper"
+              ],
+              "Inclusion": "Free breakfast,Breakfast for 2,Free self parking Free breakfast",
+              "NetAmount": 1389.416003886,
+              "TotalFare": 1389.22,
+              "BookingCode": "1056437!TB!1!TB!8d1db8e0-20c6-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "IsRefundable": true,
+              "PriceBreakUp": [
+                {
+                  "RoomTax": 67.80376000000005,
+                  "RoomRate": 1331.496337,
+                  "TaxBreakup": [
+                    {
+                      "TaxType": "Tax_TDS",
+                      "TaxAmount": 0.201716186,
+                      "TaxPercentage": 2,
+                      "TaxableAmount": 10.0858093
+                    }
+                  ],
+                  "AgentCommission": 10.0858093
+                }
+              ],
+              "WithTransfers": false,
+              "CancelPolicies": [
+                {
+                  "FromDate": "14-03-2026 00:00:00",
+                  "ChargeType": "Fixed",
+                  "CancellationCharge": 0
+                },
+                {
+                  "FromDate": "15-04-2026 00:00:00",
+                  "ChargeType": "Percentage",
+                  "CancellationCharge": 100
+                }
+              ],
+              "LastCancellationDeadline": "14-04-2026 23:59:59"
+            }
+          ],
+          "Currency": "INR",
+          "HotelCode": "1056437",
+          "RateConditions": [
+            "Early check out will attract full cancellation charge unless otherwise specified",
+            "CheckIn Time-Begin: 11:00 AM",
+            "CheckOut Time: 11:00 AM",
+            "CheckIn Instructions: &lt;ul&gt;  &lt;li&gt;Extra-person charges may apply and vary depending on property policy&lt;/li&gt;&lt;li&gt;Government-issued photo identification and a credit card, debit card, or cash deposit may be required at check-in for incidental charges&lt;/li&gt;&lt;li&gt;Special requests are subject to availability upon check-in and may incur additional charges; special requests cannot be guaranteed&lt;/li&gt;&lt;li&gt;This property accepts credit cards&lt;/li&gt;  &lt;/ul&gt; ",
+            " Special Instructions : Front desk staff will greet guests on arrival at the property. Information provided by the property may be translated using automated translation tools.",
+            "Minimum CheckIn Age : 18",
+            "Cards Accepted: Visa,Diners Club,Mastercard",
+            "Pets not allowed,Professional property host/manager,No cribs (infant beds) available,No rollaway/extra beds available"
+          ]
+        }
+      ],
+      "ValidationInfo": {
+        "CharLimit": true,
+        "GSTAllowed": false,
+        "PackageFare": false,
+        "PanMandatory": false,
+        "SpaceAllowed": true,
+        "CrpPANMandatory": false,
+        "PanCountRequired": 0,
+        "PaxNameMaxLength": 50,
+        "PaxNameMinLength": 1,
+        "PassportMandatory": false,
+        "SamePaxNameAllowed": true,
+        "SpecialCharAllowed": false,
+        "CorporateBookingAllowed": false,
+        "PackageDetailsMandatory": false,
+        "DepartureDetailsMandatory": false
+      }
+    },
+    "persistenceSnapshot": {
+      "childAges": [],
+      "panDetails": [
+        "AAAPL1234C",
+        "AFZPK7190K"
+      ],
+      "bookedAmount": 1389.22,
+      "prebookAmount": null,
+      "rateConditions": [],
+      "roomPromotions": [],
+      "passportDetails": [],
+      "passengerSnapshot": [
+        {
+          "age": 30,
+          "title": "Mr",
+          "paxType": 1,
+          "lastName": "User",
+          "firstName": "Test"
+        },
+        {
+          "age": 28,
+          "title": "Mrs",
+          "paxType": 1,
+          "lastName": "User2",
+          "firstName": "Test2"
+        }
+      ],
+      "cancellationPolicy": null,
+      "mandatorySupplements": []
+    }
+  },
+  "createdby": 1,
+  "createdon": "2026-03-15T23:27:56.000Z",
+  "updatedon": null,
+  "status": 1,
+  "deleted": 0
+}

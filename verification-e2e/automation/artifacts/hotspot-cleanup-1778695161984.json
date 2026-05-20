@@ -1,0 +1,107 @@
+{
+  "generatedAt": "2026-05-13T17:59:22.041Z",
+  "mode": "apply",
+  "beforeCount": 5,
+  "afterCount": 0,
+  "explicitNames": [
+    "Live Hotspot 1775515744963",
+    "PW Timing Persist 1775727492729",
+    "Live Retry Hotspot 1775515791348",
+    "PW Hotspot 1775516207450",
+    "PW Hotspot 1775516310053",
+    "PW Hotspot 1775516882039"
+  ],
+  "removedHotspots": [
+    {
+      "hotspot_ID": 902,
+      "hotspot_name": "PW Timing Persist 1775935222018",
+      "hotspot_priority": 1,
+      "status": 1,
+      "deleted": 0
+    },
+    {
+      "hotspot_ID": 903,
+      "hotspot_name": "PW Timing Persist 1775935449324",
+      "hotspot_priority": 1,
+      "status": 1,
+      "deleted": 0
+    },
+    {
+      "hotspot_ID": 904,
+      "hotspot_name": "PW Timing Persist 1775935787478",
+      "hotspot_priority": 1,
+      "status": 1,
+      "deleted": 0
+    },
+    {
+      "hotspot_ID": 905,
+      "hotspot_name": "PW Timing Persist 1775936087214",
+      "hotspot_priority": 1,
+      "status": 1,
+      "deleted": 0
+    },
+    {
+      "hotspot_ID": 906,
+      "hotspot_name": "PW Timing Persist 1775936423044",
+      "hotspot_priority": 1,
+      "status": 1,
+      "deleted": 0
+    }
+  ],
+  "dependencyCountsBefore": {
+    "timing": [
+      {
+        "hotspot_ID": 902,
+        "count": 1
+      },
+      {
+        "hotspot_ID": 903,
+        "count": 1
+      },
+      {
+        "hotspot_ID": 904,
+        "count": 1
+      },
+      {
+        "hotspot_ID": 905,
+        "count": 1
+      },
+      {
+        "hotspot_ID": 906,
+        "count": 1
+      }
+    ],
+    "gallery": [],
+    "parking": [],
+    "activity": [],
+    "activityGallery": [],
+    "activityPriceBook": [],
+    "activityReview": [],
+    "activitySlot": []
+  },
+  "dependencyCountsAfter": {
+    "timing": [],
+    "gallery": [],
+    "parking": [],
+    "activity": [],
+    "activityGallery": [],
+    "activityPriceBook": [],
+    "activityReview": [],
+    "activitySlot": []
+  },
+  "deleteResult": {
+    "hotspotRows": 5,
+    "timingRows": 5,
+    "galleryRows": 0,
+    "parkingRows": 0,
+    "activityRows": 0,
+    "activityGalleryRows": 0,
+    "activityPriceBookRows": 0,
+    "activityReviewRows": 0,
+    "activitySlotRows": 0
+  },
+  "notes": [
+    "Soft-delete strategy used: set deleted=1 and status=0.",
+    "Only explicit Playwright/PW/Live test names and clear placeholder patterns were targeted."
+  ]
+}

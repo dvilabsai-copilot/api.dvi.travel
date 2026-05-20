@@ -1,6 +1,6 @@
 // FILE: src/modules/daily-moment-tracker/daily-moment-tracker.service.ts
 
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
 import {
   DailyMomentRowDto,
@@ -10,10 +10,24 @@ import {
   ListDailyMomentQueryDto,
   UpsertDailyMomentChargeDto,
   DailyMomentHotspotRowDto,
+  DayViewPlanDto,
+  DayViewDayDto,
+  DayViewGuideDto,
+  UpdateHotspotStatusDto,
+  UpdateGuideStatusDto,
+  UpdateWholedayGuideStatusDto,
+  UpsertDriverRatingDto,
+  UpsertGuideRatingDto,
+  SaveOpeningKmDto,
+  SaveClosingKmDto,
 } from './dto/daily-moment-tracker.dto';
 
 @Injectable()
 export class DailyMomentTrackerService {
+  private readonly logger = new Logger(DailyMomentTrackerService.name);
+  private readonly legacyPhpDbName =
+    process.env.LEGACY_PHP_DB_NAME?.trim() || 'dvi_travels';
+
   constructor(private readonly prisma: PrismaService) {}
 
   // ========= PUBLIC API METHODS =========
@@ -586,20 +600,22 @@ export class DailyMomentTrackerService {
     itineraryPlanId: number,
     itineraryRouteId: number,
   ): Promise<DailyMomentChargeRowDto[]> {
-    if (!itineraryPlanId || !itineraryRouteId) {
-      throw new BadRequestException(
-        'itineraryPlanId and itineraryRouteId are required',
-      );
+    if (!itineraryPlanId) {
+      throw new BadRequestException('itineraryPlanId is required');
+    }
+
+    const where: any = {
+      itinerary_plan_ID: itineraryPlanId,
+      deleted: 0,
+      status: 1,
+    };
+    if (itineraryRouteId > 0) {
+      where.itinerary_route_ID = itineraryRouteId;
     }
 
     const charges =
       await this.prisma.dvi_confirmed_itinerary_dailymoment_charge.findMany({
-        where: {
-          itinerary_plan_ID: itineraryPlanId,
-          itinerary_route_ID: itineraryRouteId,
-          deleted: 0,
-          status: 1,
-        },
+        where,
         orderBy: {
           driver_charge_ID: 'asc',
         },
@@ -942,6 +958,7 @@ export class DailyMomentTrackerService {
         guide_hotspot_status: row.guide_hotspot_status ?? 0,
         guide_not_visited_description:
           row.guide_not_visited_description ?? null,
+        item_type: row.item_type ?? 4,
       });
     });
 
@@ -1040,5 +1057,1061 @@ export class DailyMomentTrackerService {
     if (value === null || value === undefined) return '--';
     const plain = String(value).trim();
     return plain === '' ? '--' : value;
+  }
+
+  // ========= DAY VIEW =========
+
+  /**
+   * Full multi-day view for a given itinerary plan.
+   * Returns plan header + per-day data (routes, hotspots, guide, KM).
+   */
+  async getDayView(planId: number): Promise<DayViewPlanDto> {
+    if (!planId) throw new BadRequestException('planId is required');
+
+    let effectivePlanId = planId;
+    let plan =
+      await this.prisma.dvi_confirmed_itinerary_plan_details.findFirst({
+        where: { itinerary_plan_ID: effectivePlanId, deleted: 0, status: 1 },
+      });
+
+    if (!plan) {
+      const importedPlanId = await this.tryImportLegacyPhpPlan(planId);
+      if (importedPlanId) {
+        effectivePlanId = importedPlanId;
+        plan = await this.prisma.dvi_confirmed_itinerary_plan_details.findFirst({
+          where: { itinerary_plan_ID: effectivePlanId, deleted: 0, status: 1 },
+        });
+      }
+    }
+
+    if (!plan) throw new BadRequestException('Plan not found');
+
+    // Guest (primary customer)
+    const guest =
+      await this.prisma.dvi_confirmed_itinerary_customer_details.findFirst({
+        where: {
+          itinerary_plan_ID: effectivePlanId,
+          primary_customer: 1,
+          deleted: 0,
+          status: 1,
+        },
+      });
+
+    // Travel expert
+    let travelExpertName = '';
+    let travelExpertMobile = '';
+    let travelExpertEmail = '';
+    if (plan.staff_id) {
+      let staff = await this.prisma.dvi_staff.findFirst({
+        where: { staff_id: plan.staff_id, deleted: 0 },
+      });
+      if (!staff) {
+        // Staff not yet in dvi_main — try fetching directly from legacy DB
+        const legacyDb = this.legacyPhpDbName.replace(/`/g, '');
+        const legacyRows = await this.prisma.$queryRawUnsafe<
+          Array<{ staff_id: number; staff_name: string; staff_email: string; staff_mobile_number: string }>
+        >(
+          `SELECT staff_id, staff_name, staff_email, staff_mobile_number FROM \`${legacyDb}\`.dvi_staff WHERE staff_id = ? LIMIT 1`,
+          plan.staff_id,
+        ).catch(() => [] as any[]);
+        if (legacyRows.length) {
+          staff = legacyRows[0] as any;
+        } else {
+          // Try dvi_staff_details (the table used for travel experts in the legacy system)
+          const detailRows = await this.prisma.$queryRawUnsafe<
+            Array<{ staff_id: number; staff_name: string; staff_mobile: string; staff_email: string }>
+          >(
+            `SELECT staff_id, staff_name, staff_mobile, staff_email FROM \`${legacyDb}\`.dvi_staff_details WHERE staff_id = ? LIMIT 1`,
+            plan.staff_id,
+          ).catch(() => [] as any[]);
+          if (detailRows.length) {
+            const d = detailRows[0];
+            staff = { staff_id: d.staff_id, staff_name: d.staff_name, staff_mobile_number: d.staff_mobile, staff_email: d.staff_email, deleted: 0 } as any;
+          }
+        }
+      }
+      travelExpertName = staff?.staff_name ?? '';
+      travelExpertMobile = staff?.staff_mobile_number ?? '';
+      travelExpertEmail = staff?.staff_email ?? '';
+    }
+
+    // PHP parity fallback: derive travel expert from agent.travel_expert_id
+    // when plan.staff_id is not populated.
+    if (!travelExpertName && plan.agent_id) {
+      const agent = await this.prisma.dvi_agent.findFirst({
+        where: { agent_ID: plan.agent_id, deleted: 0, status: 1 },
+        select: { travel_expert_id: true },
+      });
+
+      if (agent?.travel_expert_id) {
+        const te = await this.prisma.dvi_staff_details.findFirst({
+          where: {
+            staff_id: agent.travel_expert_id,
+            deleted: 0,
+            status: 1,
+          },
+          select: {
+            staff_name: true,
+            staff_mobile: true,
+            staff_email: true,
+          },
+        });
+
+        travelExpertName = te?.staff_name ?? '';
+        travelExpertMobile = te?.staff_mobile ?? '';
+        travelExpertEmail = te?.staff_email ?? '';
+      }
+    }
+
+    // All routes for this plan
+    const routes =
+      await this.prisma.dvi_confirmed_itinerary_route_details.findMany({
+        where: { itinerary_plan_ID: effectivePlanId, deleted: 0, status: 1 },
+        orderBy: { no_of_days: 'asc' },
+      });
+
+    const routeIds = routes.map((r) => r.confirmed_itinerary_route_ID);
+
+    // KM data per route
+    const vehicleRows =
+      routeIds.length
+        ? await this.prisma.dvi_confirmed_itinerary_plan_vendor_vehicle_details.findMany(
+            {
+              where: {
+                itinerary_plan_id: effectivePlanId,
+                itinerary_route_id: { in: routes.map((r) => r.itinerary_route_ID) },
+                deleted: 0,
+                status: 1,
+              },
+              orderBy: { confirmed_itinerary_plan_vendor_vehicle_details_ID: 'asc' },
+            },
+          )
+        : [];
+    // keyed by itinerary_route_id (first row wins)
+    const kmByRouteId = new Map<number, (typeof vehicleRows)[0]>();
+    vehicleRows.forEach((v) => {
+      if (!kmByRouteId.has(v.itinerary_route_id)) {
+        kmByRouteId.set(v.itinerary_route_id, v);
+      }
+    });
+
+    // Hotspots per route
+    const hotspotRows =
+      routeIds.length
+        ? await this.prisma.dvi_confirmed_itinerary_route_hotspot_details.findMany(
+            {
+              where: {
+                itinerary_plan_ID: effectivePlanId,
+                itinerary_route_ID: { in: routes.map((r) => r.itinerary_route_ID) },
+                deleted: 0,
+                status: 1,
+              },
+              orderBy: { hotspot_order: 'asc' },
+            },
+          )
+        : [];
+
+    const hotspotMasterIds = [...new Set(hotspotRows.map((h) => h.hotspot_ID).filter(Boolean))];
+    const hotspotMasters = hotspotMasterIds.length
+      ? await this.prisma.dvi_hotspot_place.findMany({
+          where: { hotspot_ID: { in: hotspotMasterIds }, deleted: 0, status: 1 },
+        })
+      : [];
+    const hotspotMasterById = new Map<number, (typeof hotspotMasters)[0]>();
+    hotspotMasters.forEach((h) => hotspotMasterById.set(h.hotspot_ID, h));
+
+    // Guides per route
+    const guideRows =
+      routeIds.length
+        ? await this.prisma.dvi_confirmed_itinerary_route_guide_details.findMany(
+            {
+              where: {
+                itinerary_plan_ID: effectivePlanId,
+                itinerary_route_ID: { in: routes.map((r) => r.itinerary_route_ID) },
+                deleted: 0,
+                status: 1,
+              },
+            },
+          )
+        : [];
+
+    const guideIds = [...new Set(guideRows.map((g) => g.guide_id).filter(Boolean))];
+    const guideDetails = guideIds.length
+      ? await this.prisma.dvi_guide_details.findMany({
+          where: { guide_id: { in: guideIds }, deleted: 0, status: 1 },
+        })
+      : [];
+    const guideById = new Map<number, (typeof guideDetails)[0]>();
+    guideDetails.forEach((g) => guideById.set(g.guide_id, g));
+
+    // Activities per route+hotspot
+    const routeActivityRows = routeIds.length
+      ? await this.prisma.dvi_confirmed_itinerary_route_activity_details.findMany({
+          where: {
+            itinerary_plan_ID: effectivePlanId,
+            itinerary_route_ID: { in: routes.map((r) => r.itinerary_route_ID) },
+            deleted: 0,
+            status: 1,
+          },
+          orderBy: [{ itinerary_route_ID: 'asc' }, { route_hotspot_ID: 'asc' }, { activity_order: 'asc' }],
+        })
+      : [];
+
+    const activityIds = [...new Set(routeActivityRows.map((a) => a.activity_ID).filter(Boolean))];
+    const activityMasterRows = activityIds.length
+      ? await this.prisma.dvi_activity.findMany({
+          where: { activity_id: { in: activityIds }, deleted: 0, status: 1 },
+          select: { activity_id: true, activity_title: true },
+        })
+      : [];
+    const activityMasterById = new Map<number, (typeof activityMasterRows)[0]>();
+    activityMasterRows.forEach((a) => activityMasterById.set(a.activity_id, a));
+
+    const activitiesByRouteHotspot = new Map<string, (typeof routeActivityRows)[number][]>();
+    const firstActivityByRoute = new Map<number, (typeof routeActivityRows)[number]>();
+    routeActivityRows.forEach((a) => {
+      const hk = `${a.itinerary_route_ID}:${a.route_hotspot_ID}`;
+      const arr = activitiesByRouteHotspot.get(hk) ?? [];
+      arr.push(a);
+      activitiesByRouteHotspot.set(hk, arr);
+
+      if (!firstActivityByRoute.has(a.itinerary_route_ID)) {
+        firstActivityByRoute.set(a.itinerary_route_ID, a);
+      }
+    });
+
+    // Hotel + meal info
+    const hotelRoomRows = routeIds.length
+      ? await this.prisma.dvi_confirmed_itinerary_plan_hotel_room_details.findMany({
+          where: {
+            itinerary_plan_id: effectivePlanId,
+            itinerary_route_id: { in: routes.map((r) => r.itinerary_route_ID) },
+            deleted: 0,
+            status: 1,
+          },
+        })
+      : [];
+    const hotelIds = [...new Set(hotelRoomRows.map((h) => h.hotel_id).filter(Boolean))];
+    const hotels = hotelIds.length
+      ? await this.prisma.dvi_hotel.findMany({
+          where: { hotel_id: { in: hotelIds }, deleted: false, status: 1 },
+          select: { hotel_id: true, hotel_name: true },
+        })
+      : [];
+    const hotelById = new Map<number, (typeof hotels)[0]>();
+    hotels.forEach((h) => hotelById.set(h.hotel_id, h));
+    const hotelRoomsByRoute = new Map<number, (typeof hotelRoomRows)[number][]>();
+    hotelRoomRows.forEach((h) => {
+      const arr = hotelRoomsByRoute.get(h.itinerary_route_id) ?? [];
+      arr.push(h);
+      hotelRoomsByRoute.set(h.itinerary_route_id, arr);
+    });
+
+    // Vendor + vehicle + driver info
+    const vendorVehicleRows = routeIds.length
+      ? await this.prisma.dvi_confirmed_itinerary_plan_vendor_vehicle_details.findMany({
+          where: {
+            itinerary_plan_id: effectivePlanId,
+            itinerary_route_id: { in: routes.map((r) => r.itinerary_route_ID) },
+            deleted: 0,
+            status: 1,
+          },
+          orderBy: { confirmed_itinerary_plan_vendor_vehicle_details_ID: 'asc' },
+        })
+      : [];
+    const vendorVehicleByRoute = new Map<number, (typeof vendorVehicleRows)[0]>();
+    vendorVehicleRows.forEach((v) => {
+      if (!vendorVehicleByRoute.has(v.itinerary_route_id)) {
+        vendorVehicleByRoute.set(v.itinerary_route_id, v);
+      }
+    });
+    const vendorIds = [...new Set(vendorVehicleRows.map((v) => v.vendor_id).filter(Boolean))];
+    const vehicleTypeIds = [...new Set(vendorVehicleRows.map((v) => v.vehicle_type_id).filter(Boolean))];
+    const vehicleIds = [...new Set(vendorVehicleRows.map((v) => v.vehicle_id).filter(Boolean))];
+
+    const vendors = vendorIds.length
+      ? await this.prisma.dvi_vendor_details.findMany({
+          where: { vendor_id: { in: vendorIds }, deleted: 0, status: 1 },
+          select: { vendor_id: true, vendor_name: true },
+        })
+      : [];
+    const vendorById = new Map<number, (typeof vendors)[0]>();
+    vendors.forEach((v) => vendorById.set(v.vendor_id, v));
+
+    const vehicleTypes = vehicleTypeIds.length
+      ? await this.prisma.dvi_vehicle_type.findMany({
+          where: { vehicle_type_id: { in: vehicleTypeIds }, deleted: 0, status: 1 },
+          select: { vehicle_type_id: true, vehicle_type_title: true },
+        })
+      : [];
+    const vehicleTypeById = new Map<number, (typeof vehicleTypes)[0]>();
+    vehicleTypes.forEach((v) => vehicleTypeById.set(v.vehicle_type_id, v));
+
+    const vehicles = vehicleIds.length
+      ? await this.prisma.dvi_vehicle.findMany({
+          where: { vehicle_id: { in: vehicleIds }, deleted: 0, status: 1 },
+          select: { vehicle_id: true, registration_number: true },
+        })
+      : [];
+    const vehicleById = new Map<number, (typeof vehicles)[0]>();
+    vehicles.forEach((v) => vehicleById.set(v.vehicle_id, v));
+
+    const driverAssignment = await this.prisma.dvi_confirmed_itinerary_vendor_driver_assigned.findFirst({
+      where: { itinerary_plan_id: effectivePlanId, deleted: 0, status: 1 },
+      orderBy: { driver_assigned_on: 'desc' },
+    });
+    const driver = driverAssignment?.driver_id
+      ? await this.prisma.dvi_driver_details.findFirst({
+          where: { driver_id: driverAssignment.driver_id, deleted: 0, status: 1 },
+          select: { driver_name: true, driver_primary_mobile_number: true },
+        })
+      : null;
+
+    const agent = plan.agent_id
+      ? await this.prisma.dvi_agent.findFirst({
+          where: { agent_ID: plan.agent_id, deleted: 0, status: 1 },
+          select: { agent_name: true },
+        })
+      : null;
+
+    // Assemble days
+    const days: DayViewDayDto[] = routes.map((route, idx) => {
+      const routeId = route.itinerary_route_ID;
+      const km = kmByRouteId.get(routeId);
+      const openingKm = km?.driver_opening_km ?? '0';
+      const closingKm = km?.driver_closing_km ?? '0';
+      const completed = route.driver_trip_completed === 1;
+      const runningKm = completed
+        ? Math.max(0, Number(closingKm) - Number(openingKm))
+        : 0;
+
+      const dayHotspots: DailyMomentHotspotRowDto[] = hotspotRows
+        .filter((h) => h.itinerary_route_ID === routeId)
+        .map((h, hIdx) => {
+          const master = hotspotMasterById.get(h.hotspot_ID);
+          const { minutes, label } = this.calcDurationLabel(
+            h.hotspot_start_time,
+            h.hotspot_end_time,
+          );
+          const hk = `${routeId}:${h.route_hotspot_ID}`;
+          const activities = (activitiesByRouteHotspot.get(hk) ?? []).map((a) => ({
+            confirmed_route_activity_ID: a.confirmed_route_activity_ID,
+            route_activity_ID: a.route_activity_ID,
+            route_hotspot_ID: a.route_hotspot_ID,
+            hotspot_ID: a.hotspot_ID,
+            activity_ID: a.activity_ID,
+            activity_title: activityMasterById.get(a.activity_ID)?.activity_title ?? 'Activity',
+            driver_activity_status: a.driver_activity_status ?? 0,
+            driver_not_visited_description: a.driver_not_visited_description ?? null,
+            guide_activity_status: a.guide_activity_status ?? 0,
+            guide_not_visited_description: a.guide_not_visited_description ?? null,
+          }));
+          return {
+            serial_no: h.hotspot_order || hIdx + 1,
+            confirmed_route_hotspot_ID: h.confirmed_route_hotspot_ID,
+            route_hotspot_ID: h.route_hotspot_ID,
+            itinerary_plan_ID: h.itinerary_plan_ID,
+            itinerary_route_ID: h.itinerary_route_ID,
+            hotspot_ID: h.hotspot_ID,
+            item_type: h.item_type,
+            hotspot_name: (master?.hotspot_name ?? '').trim() || 'N/A',
+            hotspot_location: (master?.hotspot_location ?? '').trim() || '',
+            start_time: this.formatTimeHHMM(h.hotspot_start_time),
+            end_time: this.formatTimeHHMM(h.hotspot_end_time),
+            duration_minutes: minutes,
+            duration_label: label,
+            driver_hotspot_status: h.driver_hotspot_status ?? 0,
+            driver_not_visited_description: h.driver_not_visited_description ?? null,
+            guide_hotspot_status: h.guide_hotspot_status ?? 0,
+            guide_not_visited_description: h.guide_not_visited_description ?? null,
+            activities,
+          } as DailyMomentHotspotRowDto;
+        });
+
+      const dayGuides: DayViewGuideDto[] = guideRows
+        .filter((g) => g.itinerary_route_ID === routeId && g.guide_type === 2)
+        .map((g) => ({
+          confirmed_route_guide_ID: g.confirmed_route_guide_ID,
+          guide_id: g.guide_id,
+          guide_name: guideById.get(g.guide_id)?.guide_name ?? '',
+          guide_type: g.guide_type,
+          driver_guide_status: g.driver_guide_status ?? 0,
+          driver_not_visited_description: g.driver_not_visited_description ?? null,
+        }));
+
+      const wholedayGuideRow = guideRows.find(
+        (g) => g.itinerary_route_ID === routeId && g.guide_type === 1,
+      );
+      const wholedayGuide: DayViewGuideDto | null = wholedayGuideRow
+        ? {
+            confirmed_route_guide_ID: wholedayGuideRow.confirmed_route_guide_ID,
+            guide_id: wholedayGuideRow.guide_id,
+            guide_name: guideById.get(wholedayGuideRow.guide_id)?.guide_name ?? '',
+            guide_type: 1,
+            driver_guide_status: route.wholeday_guidehotspot_status ?? 0,
+            driver_not_visited_description: route.guide_not_visited_description ?? null,
+          }
+        : null;
+
+      const hotelRooms = hotelRoomsByRoute.get(routeId) ?? [];
+      const firstHotelRoom = hotelRooms[0];
+      const hotelName = firstHotelRoom?.hotel_id
+        ? hotelById.get(firstHotelRoom.hotel_id)?.hotel_name ?? ''
+        : '';
+      const mealBreakfast = hotelRooms.some((h) => h.breakfast_required === 1) ? 'B' : '-';
+      const mealLunch = hotelRooms.some((h) => h.lunch_required === 1) ? 'L' : '-';
+      const mealDinner = hotelRooms.some((h) => h.dinner_required === 1) ? 'D' : '-';
+
+      const vv = vendorVehicleByRoute.get(routeId);
+      const vendorName = vv?.vendor_id ? vendorById.get(vv.vendor_id)?.vendor_name ?? '' : '';
+      const vehicleTypeTitle = vv?.vehicle_type_id
+        ? vehicleTypeById.get(vv.vehicle_type_id)?.vehicle_type_title ?? ''
+        : '';
+      const vehicleNo = vv?.vehicle_id ? vehicleById.get(vv.vehicle_id)?.registration_number ?? '' : '';
+
+      const firstActivity = firstActivityByRoute.get(routeId);
+      const specialFromActivity = firstActivity?.activity_ID
+        ? (activityMasterById.get(firstActivity.activity_ID)?.activity_title ?? '').trim()
+        : '';
+      const specialInstructions = (plan.special_instructions ?? '').trim();
+      let specialRemarks = '';
+      if (specialFromActivity && specialInstructions) specialRemarks = `${specialFromActivity} / ${specialInstructions}`;
+      else if (specialFromActivity) specialRemarks = specialFromActivity;
+      else if (specialInstructions) specialRemarks = specialInstructions;
+
+      const tripStartDate = plan.trip_start_date_and_time
+        ? this.formatDateYYYYMMDD(plan.trip_start_date_and_time)
+        : '';
+      const tripEndDate = plan.trip_end_date_and_time
+        ? this.formatDateYYYYMMDD(plan.trip_end_date_and_time)
+        : '';
+      const routeDateYMD = this.formatDateYYYYMMDD(route.itinerary_route_date);
+      let tripType: 'Arrival' | 'Departure' | 'Ongoing' = 'Ongoing';
+      if (tripStartDate && routeDateYMD === tripStartDate) tripType = 'Arrival';
+      else if (tripEndDate && routeDateYMD === tripEndDate) tripType = 'Departure';
+
+      return {
+        day_number: idx + 1,
+        itinerary_route_ID: routeId,
+        confirmed_itinerary_route_ID: route.confirmed_itinerary_route_ID,
+        route_date: this.formatDateDDMMYYYY(route.itinerary_route_date),
+        from_location: route.location_name ?? '',
+        to_location: route.next_visiting_location ?? '',
+        trip_type: tripType,
+        arrival_flight_details: this.fieldOrDash(guest?.arrival_flight_details ?? ''),
+        departure_flight_details: this.fieldOrDash(guest?.departure_flight_details ?? ''),
+        hotel_name: this.fieldOrDash(hotelName),
+        vehicle_type_title: this.fieldOrDash(vehicleTypeTitle),
+        vendor_name: this.fieldOrDash(vendorName),
+        meal_plan: `${mealBreakfast} ${mealLunch} ${mealDinner}`.trim(),
+        vehicle_no: this.fieldOrDash(vehicleNo),
+        driver_name: this.fieldOrDash(driver?.driver_name ?? ''),
+        driver_mobile: this.fieldOrDash(driver?.driver_primary_mobile_number ?? ''),
+        agent_name: this.fieldOrDash(agent?.agent_name ?? ''),
+        special_remarks: this.fieldOrDash(specialRemarks),
+        km: {
+          opening_km: openingKm,
+          closing_km: closingKm,
+          opening_speedmeter_image: km?.opening_speedmeter_image ?? null,
+          closing_speedmeter_image: km?.closing_speedmeter_image ?? null,
+          running_km: runningKm,
+          completed,
+        },
+        wholeday_guide: wholedayGuide,
+        guides: dayGuides,
+        hotspots: dayHotspots,
+      } as unknown as DayViewDayDto;
+    });
+
+    return {
+      itinerary_plan_ID: plan.itinerary_plan_ID,
+      quote_id: plan.itinerary_quote_ID ?? '',
+      trip_start_date: this.formatDateDDMMYYYY(plan.trip_start_date_and_time),
+      trip_end_date: this.formatDateDDMMYYYY(plan.trip_end_date_and_time),
+      no_of_days: plan.no_of_days ?? 0,
+      no_of_nights: plan.no_of_nights ?? 0,
+      arrival_location: plan.arrival_location ?? '',
+      departure_location: plan.departure_location ?? '',
+      guest_name: guest?.customer_name ?? '',
+      guest_mobile: guest?.primary_contact_no ?? '',
+      guest_email: guest?.email_id ?? '',
+      travel_expert_name: travelExpertName,
+      travel_expert_mobile: travelExpertMobile,
+      travel_expert_email: travelExpertEmail,
+      days,
+    } as DayViewPlanDto;
+  }
+
+  /**
+   * Import a missing itinerary from legacy PHP DB (default db: dvi_travels)
+   * into current Nest DB (dvi_main). Returns resolved itinerary_plan_ID.
+   */
+  private async tryImportLegacyPhpPlan(
+    requestedPlanId: number,
+  ): Promise<number | null> {
+    const legacyDb = this.legacyPhpDbName.replace(/`/g, '');
+
+    try {
+      const sourcePlanRows = await this.prisma.$queryRawUnsafe<
+        Array<{ itinerary_plan_ID: number }>
+      >(
+        `
+          SELECT itinerary_plan_ID
+          FROM \`${legacyDb}\`.dvi_confirmed_itinerary_plan_details
+          WHERE deleted = 0
+            AND status = 1
+            AND (itinerary_plan_ID = ? OR confirmed_itinerary_plan_ID = ?)
+          LIMIT 1
+        `,
+        requestedPlanId,
+        requestedPlanId,
+      );
+
+      if (!sourcePlanRows.length) return null;
+
+      const sourceItineraryPlanId = Number(sourcePlanRows[0].itinerary_plan_ID);
+      if (!sourceItineraryPlanId) return null;
+
+      const alreadyExists =
+        await this.prisma.dvi_confirmed_itinerary_plan_details.findFirst({
+          where: {
+            itinerary_plan_ID: sourceItineraryPlanId,
+            deleted: 0,
+            status: 1,
+          },
+          select: { confirmed_itinerary_plan_ID: true },
+        });
+
+      if (alreadyExists) return sourceItineraryPlanId;
+
+      this.logger.warn(
+        `Plan ${requestedPlanId} missing in dvi_main; importing itinerary_plan_ID=${sourceItineraryPlanId} from ${legacyDb}`,
+      );
+
+      await this.prisma.$executeRawUnsafe(
+        `
+          INSERT IGNORE INTO dvi_confirmed_itinerary_plan_details
+          SELECT *
+          FROM \`${legacyDb}\`.dvi_confirmed_itinerary_plan_details
+          WHERE itinerary_plan_ID = ?
+        `,
+        sourceItineraryPlanId,
+      );
+
+      await this.prisma.$executeRawUnsafe(
+        `
+          INSERT IGNORE INTO dvi_confirmed_itinerary_customer_details
+          SELECT *
+          FROM \`${legacyDb}\`.dvi_confirmed_itinerary_customer_details
+          WHERE itinerary_plan_ID = ?
+        `,
+        sourceItineraryPlanId,
+      );
+
+      await this.prisma.$executeRawUnsafe(
+        `
+          INSERT IGNORE INTO dvi_confirmed_itinerary_route_details
+          SELECT *
+          FROM \`${legacyDb}\`.dvi_confirmed_itinerary_route_details
+          WHERE itinerary_plan_ID = ?
+        `,
+        sourceItineraryPlanId,
+      );
+
+      await this.prisma.$executeRawUnsafe(
+        `
+          INSERT IGNORE INTO dvi_confirmed_itinerary_route_hotspot_details
+          SELECT *
+          FROM \`${legacyDb}\`.dvi_confirmed_itinerary_route_hotspot_details
+          WHERE itinerary_plan_ID = ?
+        `,
+        sourceItineraryPlanId,
+      );
+
+      await this.prisma.$executeRawUnsafe(
+        `
+          INSERT IGNORE INTO dvi_confirmed_itinerary_route_guide_details
+          SELECT *
+          FROM \`${legacyDb}\`.dvi_confirmed_itinerary_route_guide_details
+          WHERE itinerary_plan_ID = ?
+        `,
+        sourceItineraryPlanId,
+      );
+
+      await this.prisma.$executeRawUnsafe(
+        `
+          INSERT IGNORE INTO dvi_confirmed_itinerary_plan_vendor_vehicle_details
+          SELECT *
+          FROM \`${legacyDb}\`.dvi_confirmed_itinerary_plan_vendor_vehicle_details
+          WHERE itinerary_plan_id = ?
+        `,
+        sourceItineraryPlanId,
+      );
+
+      const safeExec = async (sql: string, label: string) => {
+        try {
+          await this.prisma.$executeRawUnsafe(sql, sourceItineraryPlanId);
+        } catch (e) {
+          this.logger.warn(
+            `Legacy import: skipped ${label} for plan ${sourceItineraryPlanId} (${e instanceof Error ? e.message : String(e)})`,
+          );
+        }
+      };
+
+      await safeExec(
+        `
+          INSERT IGNORE INTO dvi_confirmed_itinerary_dailymoment_charge
+          SELECT *
+          FROM \`${legacyDb}\`.dvi_confirmed_itinerary_dailymoment_charge
+          WHERE itinerary_plan_ID = ?
+        `,
+        'dailymoment_charge',
+      );
+
+      await safeExec(
+        `
+          INSERT IGNORE INTO dvi_confirmed_itinerary_driver_feedback
+          SELECT *
+          FROM \`${legacyDb}\`.dvi_confirmed_itinerary_driver_feedback
+          WHERE itinerary_plan_ID = ?
+        `,
+        'driver_feedback',
+      );
+
+      await safeExec(
+        `
+          INSERT IGNORE INTO dvi_hotspot_place
+            (hotspot_ID, hotspot_type, hotspot_name, hotspot_description, hotspot_address,
+             hotspot_landmark, hotspot_location, hotspot_priority, hotspot_adult_entry_cost,
+             hotspot_child_entry_cost, hotspot_infant_entry_cost, hotspot_foreign_adult_entry_cost,
+             hotspot_foreign_child_entry_cost, hotspot_foreign_infant_entry_cost, hotspot_duration,
+             hotspot_rating, hotspot_latitude, hotspot_longitude, hotspot_video_url,
+             createdby, createdon, updatedon, status, deleted)
+          SELECT
+             hp.hotspot_ID, hp.hotspot_type, hp.hotspot_name, hp.hotspot_description, hp.hotspot_address,
+             hp.hotspot_landmark, hp.hotspot_location, hp.hotspot_priority, hp.hotspot_adult_entry_cost,
+             hp.hotspot_child_entry_cost, hp.hotspot_infant_entry_cost, hp.hotspot_foreign_adult_entry_cost,
+             hp.hotspot_foreign_child_entry_cost, hp.hotspot_foreign_infant_entry_cost, hp.hotspot_duration,
+             hp.hotspot_rating, hp.hotspot_latitude, hp.hotspot_longitude, hp.hotspot_video_url,
+             hp.createdby, hp.createdon, hp.updatedon, hp.status, hp.deleted
+          FROM \`${legacyDb}\`.dvi_hotspot_place hp
+          INNER JOIN \`${legacyDb}\`.dvi_confirmed_itinerary_route_hotspot_details rh
+            ON rh.hotspot_ID = hp.hotspot_ID
+          WHERE rh.itinerary_plan_ID = ?
+        `,
+        'hotspot_place_master',
+      );
+
+      await safeExec(
+        `
+          INSERT IGNORE INTO dvi_guide_details
+          SELECT gd.*
+          FROM \`${legacyDb}\`.dvi_guide_details gd
+          INNER JOIN \`${legacyDb}\`.dvi_confirmed_itinerary_route_guide_details rg
+            ON rg.guide_id = gd.guide_id
+          WHERE rg.itinerary_plan_ID = ?
+        `,
+        'guide_details_master',
+      );
+
+      await safeExec(
+        `
+          INSERT IGNORE INTO dvi_staff
+          SELECT st.*
+          FROM \`${legacyDb}\`.dvi_staff st
+          INNER JOIN \`${legacyDb}\`.dvi_confirmed_itinerary_plan_details pd
+            ON pd.staff_id = st.staff_id
+          WHERE pd.itinerary_plan_ID = ?
+        `,
+        'staff_master',
+      );
+
+      return sourceItineraryPlanId;
+    } catch (error) {
+      this.logger.error(
+        `Legacy PHP import failed for plan ${requestedPlanId}`,
+        error instanceof Error ? error.stack : String(error),
+      );
+      return null;
+    }
+  }
+
+  // ========= STATUS UPDATES =========
+
+  async updateHotspotStatus(dto: {
+    confirmedRouteHotspotId: number;
+    status: number;
+    description?: string;
+    perspective?: 'driver' | 'guide';
+  }): Promise<void> {
+    const perspective = dto.perspective ?? 'driver';
+    const data: Record<string, unknown> = { updatedon: new Date() };
+
+    if (perspective === 'driver') {
+      data.driver_hotspot_status = dto.status;
+      if (dto.status === 2) data.driver_not_visited_description = dto.description ?? '';
+      else data.driver_not_visited_description = null;
+    } else {
+      data.guide_hotspot_status = dto.status;
+      if (dto.status === 2) data.guide_not_visited_description = dto.description ?? '';
+      else data.guide_not_visited_description = null;
+    }
+
+    await this.prisma.dvi_confirmed_itinerary_route_hotspot_details.update({
+      where: { confirmed_route_hotspot_ID: dto.confirmedRouteHotspotId },
+      data: data as any,
+    });
+  }
+
+  async updateGuideStatus(dto: {
+    confirmedRouteGuideId: number;
+    status: number;
+    description?: string;
+  }): Promise<void> {
+    await this.prisma.dvi_confirmed_itinerary_route_guide_details.update({
+      where: { confirmed_route_guide_ID: dto.confirmedRouteGuideId },
+      data: {
+        driver_guide_status: dto.status,
+        driver_not_visited_description: dto.status === 2 ? (dto.description ?? '') : null,
+        updatedon: new Date(),
+      },
+    });
+  }
+
+  async updateWholedayGuideStatus(dto: {
+    confirmedItineraryRouteId: number;
+    status: number;
+    description?: string;
+  }): Promise<void> {
+    await this.prisma.dvi_confirmed_itinerary_route_details.update({
+      where: { confirmed_itinerary_route_ID: dto.confirmedItineraryRouteId },
+      data: {
+        wholeday_guidehotspot_status: dto.status,
+        guide_not_visited_description: dto.status === 2 ? (dto.description ?? '') : null,
+        updatedon: new Date(),
+      },
+    });
+  }
+
+  async updateActivityStatus(dto: {
+    confirmedRouteActivityId: number;
+    status: number;
+    description?: string;
+    perspective?: 'driver' | 'guide';
+  }): Promise<void> {
+    const perspective = dto.perspective ?? 'driver';
+    const data: Record<string, unknown> = { updatedon: new Date() };
+
+    if (perspective === 'driver') {
+      data.driver_activity_status = dto.status;
+      data.driver_not_visited_description =
+        dto.status === 2 ? (dto.description ?? '') : null;
+    } else {
+      data.guide_activity_status = dto.status;
+      data.guide_not_visited_description =
+        dto.status === 2 ? (dto.description ?? '') : null;
+    }
+
+    await this.prisma.dvi_confirmed_itinerary_route_activity_details.update({
+      where: { confirmed_route_activity_ID: dto.confirmedRouteActivityId },
+      data: data as any,
+    });
+  }
+
+  // ========= DELETE CHARGE =========
+
+  async deleteCharge(driverChargeId: number): Promise<void> {
+    if (!driverChargeId) throw new BadRequestException('id is required');
+    await this.prisma.dvi_confirmed_itinerary_dailymoment_charge.update({
+      where: { driver_charge_ID: driverChargeId },
+      data: { deleted: 1, updatedon: new Date() },
+    });
+  }
+
+  // ========= DRIVER RATING CRUD =========
+
+  async upsertDriverRating(dto: UpsertDriverRatingDto): Promise<{ driver_feedback_ID: number }> {
+    if (dto.driverFeedbackId) {
+      const updated =
+        await this.prisma.dvi_confirmed_itinerary_driver_feedback.update({
+          where: { driver_feedback_ID: dto.driverFeedbackId },
+          data: {
+            driver_rating: String(dto.customerRating),
+            driver_description: dto.feedbackDescription ?? '',
+            updatedon: new Date(),
+          },
+        });
+      return { driver_feedback_ID: updated.driver_feedback_ID };
+    }
+
+    const created =
+      await this.prisma.dvi_confirmed_itinerary_driver_feedback.create({
+        data: {
+          itinerary_plan_ID: dto.itineraryPlanId,
+          itinerary_route_ID: dto.itineraryRouteId,
+          driver_rating: String(dto.customerRating),
+          driver_description: dto.feedbackDescription ?? '',
+          createdon: new Date(),
+          status: 1,
+          deleted: 0,
+        },
+      });
+    return { driver_feedback_ID: created.driver_feedback_ID };
+  }
+
+  async deleteDriverRating(driverFeedbackId: number): Promise<void> {
+    if (!driverFeedbackId) throw new BadRequestException('id is required');
+    await this.prisma.dvi_confirmed_itinerary_driver_feedback.update({
+      where: { driver_feedback_ID: driverFeedbackId },
+      data: { deleted: 1, updatedon: new Date() },
+    });
+  }
+
+  async upsertGuideRating(dto: UpsertGuideRatingDto): Promise<{ guide_review_id: number }> {
+    let guideId = dto.guideId ?? 0;
+
+    if (!guideId) {
+      const routeGuide = await this.prisma.dvi_confirmed_itinerary_route_guide_details.findFirst({
+        where: {
+          itinerary_plan_ID: dto.itineraryPlanId,
+          itinerary_route_ID: dto.itineraryRouteId,
+          deleted: 0,
+          status: 1,
+        },
+        orderBy: { confirmed_route_guide_ID: 'asc' },
+      });
+      guideId = routeGuide?.guide_id ?? 0;
+    }
+
+    if (!guideId) {
+      throw new BadRequestException('guideId not found for itinerary route');
+    }
+
+    if (dto.guideReviewId) {
+      const updated = await this.prisma.dvi_guide_review_details.update({
+        where: { guide_review_id: dto.guideReviewId },
+        data: {
+          guide_id: guideId,
+          guide_rating: String(dto.guideRating),
+          guide_description: dto.guideDescription ?? '',
+          updatedon: new Date(),
+        },
+      });
+      return { guide_review_id: updated.guide_review_id };
+    }
+
+    const created = await this.prisma.dvi_guide_review_details.create({
+      data: {
+        guide_id: guideId,
+        guide_rating: String(dto.guideRating),
+        guide_description: dto.guideDescription ?? '',
+        createdon: new Date(),
+        status: 1,
+        deleted: 0,
+      },
+    });
+
+    await this.prisma.dvi_confirmed_itinerary_route_details.updateMany({
+      where: {
+        itinerary_plan_ID: dto.itineraryPlanId,
+        itinerary_route_ID: dto.itineraryRouteId,
+        deleted: 0,
+        status: 1,
+      },
+      data: { guide_trip_completed: 1, updatedon: new Date() },
+    });
+
+    return { guide_review_id: created.guide_review_id };
+  }
+
+  async deleteGuideRating(guideReviewId: number): Promise<void> {
+    if (!guideReviewId) throw new BadRequestException('id is required');
+    await this.prisma.dvi_guide_review_details.update({
+      where: { guide_review_id: guideReviewId },
+      data: { deleted: 1, updatedon: new Date() },
+    });
+  }
+
+  // ========= KILOMETER =========
+
+  async saveOpeningKm(dto: SaveOpeningKmDto): Promise<void> {
+    const { itineraryPlanId, itineraryRouteId, startingKilometer } = dto;
+    if (!startingKilometer || startingKilometer.trim() === '') {
+      throw new BadRequestException('startingKilometer is required');
+    }
+
+    // Update first matching vendor vehicle row for plan+route
+    const row =
+      await this.prisma.dvi_confirmed_itinerary_plan_vendor_vehicle_details.findFirst(
+        {
+          where: {
+            itinerary_plan_id: itineraryPlanId,
+            itinerary_route_id: itineraryRouteId,
+            deleted: 0,
+            status: 1,
+          },
+        },
+      );
+
+    if (!row) throw new BadRequestException('Vehicle row not found for this route');
+
+    await this.prisma.dvi_confirmed_itinerary_plan_vendor_vehicle_details.update(
+      {
+        where: {
+          confirmed_itinerary_plan_vendor_vehicle_details_ID:
+            row.confirmed_itinerary_plan_vendor_vehicle_details_ID,
+        },
+        data: { driver_opening_km: startingKilometer, updatedon: new Date() },
+      },
+    );
+  }
+
+  async saveClosingKm(dto: SaveClosingKmDto): Promise<void> {
+    const { itineraryPlanId, itineraryRouteId, closingKilometer } = dto;
+    if (!closingKilometer || closingKilometer.trim() === '') {
+      throw new BadRequestException('closingKilometer is required');
+    }
+
+    const row =
+      await this.prisma.dvi_confirmed_itinerary_plan_vendor_vehicle_details.findFirst(
+        {
+          where: {
+            itinerary_plan_id: itineraryPlanId,
+            itinerary_route_id: itineraryRouteId,
+            deleted: 0,
+            status: 1,
+          },
+        },
+      );
+
+    if (!row) throw new BadRequestException('Vehicle row not found for this route');
+
+    const openingKm = Number(row.driver_opening_km ?? '0');
+    const closingKmNum = Number(closingKilometer);
+
+    if (closingKmNum <= openingKm) {
+      throw new BadRequestException(
+        `Closing KM (${closingKmNum}) must be greater than Opening KM (${openingKm})`,
+      );
+    }
+
+    await this.prisma.dvi_confirmed_itinerary_plan_vendor_vehicle_details.update(
+      {
+        where: {
+          confirmed_itinerary_plan_vendor_vehicle_details_ID:
+            row.confirmed_itinerary_plan_vendor_vehicle_details_ID,
+        },
+        data: { driver_closing_km: closingKilometer, updatedon: new Date() },
+      },
+    );
+
+    // Mark route as completed
+    const route =
+      await this.prisma.dvi_confirmed_itinerary_route_details.findFirst({
+        where: {
+          itinerary_plan_ID: itineraryPlanId,
+          itinerary_route_ID: itineraryRouteId,
+          deleted: 0,
+          status: 1,
+        },
+      });
+    if (route) {
+      await this.prisma.dvi_confirmed_itinerary_route_details.update({
+        where: { confirmed_itinerary_route_ID: route.confirmed_itinerary_route_ID },
+        data: { driver_trip_completed: 1, updatedon: new Date() },
+      });
+    }
+  }
+
+  async saveDayImages(
+    itineraryPlanId: number,
+    itineraryRouteId: number,
+    files: Express.Multer.File[],
+    createdby: number,
+  ) {
+    if (!files?.length) return { count: 0, files: [] };
+
+    const now = new Date();
+    const created = await Promise.all(
+      files.map((f) =>
+        this.prisma.dvi_confirmed_driver_uploadimage.create({
+          data: {
+            itinerary_plan_ID: itineraryPlanId,
+            itinerary_route_ID: itineraryRouteId,
+            driver_upload_image: f.filename,
+            createdby,
+            createdon: now,
+            status: 1,
+            deleted: 0,
+          } as any,
+        }),
+      ),
+    );
+
+    return {
+      count: created.length,
+      files: created.map((r) => r.driver_upload_image),
+      ids: created.map((r) => r.driver_uploadimage_ID),
+    };
+  }
+
+  async saveOpeningKmImage(
+    itineraryPlanId: number,
+    itineraryRouteId: number,
+    file?: Express.Multer.File,
+  ): Promise<{ file: string }> {
+    if (!file) throw new BadRequestException('image file is required');
+
+    const row = await this.prisma.dvi_confirmed_itinerary_plan_vendor_vehicle_details.findFirst({
+      where: {
+        itinerary_plan_id: itineraryPlanId,
+        itinerary_route_id: itineraryRouteId,
+        deleted: 0,
+        status: 1,
+      },
+      orderBy: { confirmed_itinerary_plan_vendor_vehicle_details_ID: 'asc' },
+    });
+
+    if (!row) throw new BadRequestException('Vehicle row not found for this route');
+
+    await this.prisma.dvi_confirmed_itinerary_plan_vendor_vehicle_details.update({
+      where: {
+        confirmed_itinerary_plan_vendor_vehicle_details_ID:
+          row.confirmed_itinerary_plan_vendor_vehicle_details_ID,
+      },
+      data: { opening_speedmeter_image: file.filename, updatedon: new Date() },
+    });
+
+    return { file: file.filename };
+  }
+
+  async saveClosingKmImage(
+    itineraryPlanId: number,
+    itineraryRouteId: number,
+    file?: Express.Multer.File,
+  ): Promise<{ file: string }> {
+    if (!file) throw new BadRequestException('image file is required');
+
+    const row = await this.prisma.dvi_confirmed_itinerary_plan_vendor_vehicle_details.findFirst({
+      where: {
+        itinerary_plan_id: itineraryPlanId,
+        itinerary_route_id: itineraryRouteId,
+        deleted: 0,
+        status: 1,
+      },
+      orderBy: { confirmed_itinerary_plan_vendor_vehicle_details_ID: 'asc' },
+    });
+
+    if (!row) throw new BadRequestException('Vehicle row not found for this route');
+
+    await this.prisma.dvi_confirmed_itinerary_plan_vendor_vehicle_details.update({
+      where: {
+        confirmed_itinerary_plan_vendor_vehicle_details_ID:
+          row.confirmed_itinerary_plan_vendor_vehicle_details_ID,
+      },
+      data: { closing_speedmeter_image: file.filename, updatedon: new Date() },
+    });
+
+    return { file: file.filename };
   }
 }

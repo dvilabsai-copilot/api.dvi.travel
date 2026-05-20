@@ -1,0 +1,10 @@
+{
+    "checkOutDate":  "2026-04-17",
+    "roomCount":  1,
+    "providers":  [
+                      "tbo"
+                  ],
+    "guestCount":  2,
+    "cityCode":  "Rameswaram",
+    "checkInDate":  "2026-04-16"
+}

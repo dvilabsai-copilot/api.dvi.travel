@@ -55,58 +55,99 @@ export class ItineraryViaRoutesService {
    * Matches either source_location or destination_location in dvi_stored_locations
    * and returns the appropriate lat/long.
    */
-  private async getLocationCoordsByName(locationName: string) {
-    if (!locationName) return null;
+  private normalizeLocationName(value: string | null | undefined): string {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/\s*,\s*/g, ', ')
+    .replace(/,\s*india$/i, '');
+}
 
-    const row = await this.prisma.dvi_stored_locations.findFirst({
-      where: {
-        deleted: 0,
-        status: 1,
-        OR: [
-          { source_location: locationName },
-          { destination_location: locationName },
-        ],
-      },
-      select: {
-        source_location: true,
-        source_location_lattitude: true,
-        source_location_longitude: true,
-        destination_location: true,
-        destination_location_lattitude: true,
-        destination_location_longitude: true,
-      },
-    });
+private toCoords(latValue: any, lonValue: any) {
+  if (latValue == null || lonValue == null) return null;
 
-    if (!row) {
-      return null;
+  const lat = Number(latValue);
+  const lon = Number(lonValue);
+
+  if (Number.isNaN(lat) || Number.isNaN(lon)) return null;
+
+  return { lat, lon };
+}
+
+private async getLocationCoordsByName(locationName: string) {
+  const rawName = String(locationName || '').trim();
+  if (!rawName) return null;
+
+  const shortName = rawName.split(',')[0]?.trim() || rawName;
+  const normalizedInput = this.normalizeLocationName(rawName);
+  const normalizedShort = this.normalizeLocationName(shortName);
+
+  const rows = await this.prisma.dvi_stored_locations.findMany({
+    where: {
+      deleted: 0,
+      status: 1,
+      OR: [
+        { source_location: rawName },
+        { destination_location: rawName },
+        { source_location: shortName },
+        { destination_location: shortName },
+        { source_location: { contains: rawName } },
+        { destination_location: { contains: rawName } },
+        { source_location: { contains: shortName } },
+        { destination_location: { contains: shortName } },
+      ],
+    },
+    select: {
+      source_location: true,
+      source_location_lattitude: true,
+      source_location_longitude: true,
+      destination_location: true,
+      destination_location_lattitude: true,
+      destination_location_longitude: true,
+    },
+    take: 50,
+  });
+
+  for (const row of rows) {
+    const sourceName = this.normalizeLocationName(row.source_location);
+    const destinationName = this.normalizeLocationName(row.destination_location);
+
+    const sourceMatches =
+      sourceName === normalizedInput ||
+      sourceName === normalizedShort ||
+      normalizedInput.includes(sourceName) ||
+      sourceName.includes(normalizedShort);
+
+    if (sourceMatches) {
+      const coords = this.toCoords(
+        row.source_location_lattitude,
+        row.source_location_longitude,
+      );
+
+      if (coords) return coords;
     }
 
-    // Decide which side (source/destination) matches the given name
-    let latStr: string | null = null;
-    let lonStr: string | null = null;
+    const destinationMatches =
+      destinationName === normalizedInput ||
+      destinationName === normalizedShort ||
+      normalizedInput.includes(destinationName) ||
+      destinationName.includes(normalizedShort);
 
-    if (row.source_location === locationName) {
-      latStr = row.source_location_lattitude as unknown as string | null;
-      lonStr = row.source_location_longitude as unknown as string | null;
-    } else if (row.destination_location === locationName) {
-      latStr = row.destination_location_lattitude as unknown as string | null;
-      lonStr = row.destination_location_longitude as unknown as string | null;
+    if (destinationMatches) {
+      const coords = this.toCoords(
+        row.destination_location_lattitude,
+        row.destination_location_longitude,
+      );
+
+      if (coords) return coords;
     }
-
-    if (latStr == null || lonStr == null) {
-      return null;
-    }
-
-    const lat = Number(latStr);
-    const lon = Number(lonStr);
-
-    if (Number.isNaN(lat) || Number.isNaN(lon)) {
-      return null;
-    }
-
-    return { lat, lon };
   }
 
+  console.warn('[ViaRoutes] Unable to resolve coordinates for location:', rawName);
+
+  return null;
+}
   /**
    * Given via route IDs from dvi_stored_location_via_routes, resolve them to
    * location names and then fetch their coordinates from dvi_stored_locations.
@@ -550,6 +591,7 @@ async getForm(query: any) {
   }));
 
   // -------- 3.3 Options for dropdown: dvi_stored_location_via_routes ----
+      // -------- 3.3 Options for dropdown: via routes + matched route details ----
   let optionsRows: {
     via_route_location_ID: bigint;
     via_route_location: string | null;
@@ -557,22 +599,82 @@ async getForm(query: any) {
 
   if (locationId != null) {
     console.log('FETCHING VIA ROUTES FOR location_id:', locationId);
-    optionsRows = await this.prisma.dvi_stored_location_via_routes.findMany({
-      where: {
-        deleted: 0,
-        status: 1,
-        location_id: locationId,
-      },
-      orderBy: {
-        via_route_location: 'asc',
-      },
-      select: {
-        via_route_location_ID: true,
-        via_route_location: true,
-      },
-    });
 
-    console.log('VIA ROUTE OPTIONS FOUND:', optionsRows.length);
+    const baseViaRows =
+      await this.prisma.dvi_stored_location_via_routes.findMany({
+        where: {
+          deleted: 0,
+          status: 1,
+          location_id: locationId,
+        },
+        orderBy: {
+          via_route_location: 'asc',
+        },
+        select: {
+          via_route_location_ID: true,
+          via_route_location: true,
+        },
+      });
+
+    console.log('BASE VIA ROUTE OPTIONS FOUND:', baseViaRows.length);
+
+    const suggestedDetailRows = await this.prisma.$queryRawUnsafe<
+      Array<{ route_location_name: string | null }>
+    >(
+      `
+      SELECT
+        d.route_location_name
+      FROM dvi_stored_routes r
+      INNER JOIN dvi_stored_route_location_details d
+        ON d.stored_route_id = r.stored_route_ID
+       AND d.deleted = 0
+      WHERE r.deleted = 0
+        AND r.location_id = ?
+      ORDER BY d.stored_route_location_ID ASC
+      `,
+      Number(locationId),
+    );
+
+    console.log(
+      'SUGGESTED ROUTE DETAIL ROWS FOUND:',
+      suggestedDetailRows.length,
+    );
+
+    const baseViaMap = new Map<string, (typeof baseViaRows)[number]>();
+
+    for (const row of baseViaRows) {
+      const viaName = String(row.via_route_location ?? '').trim().toLowerCase();
+      if (!viaName) continue;
+      if (!baseViaMap.has(viaName)) {
+        baseViaMap.set(viaName, row);
+      }
+    }
+
+    const mergedRows: typeof baseViaRows = [...baseViaRows];
+    const seenViaIds = new Set(
+      baseViaRows.map((row) => row.via_route_location_ID.toString()),
+    );
+
+    for (const detailRow of suggestedDetailRows) {
+      const detailName = String(detailRow.route_location_name ?? '')
+        .trim()
+        .toLowerCase();
+
+      if (!detailName) continue;
+
+      const matchedViaRow = baseViaMap.get(detailName);
+      if (!matchedViaRow) continue;
+
+      const viaId = matchedViaRow.via_route_location_ID.toString();
+      if (seenViaIds.has(viaId)) continue;
+
+      seenViaIds.add(viaId);
+      mergedRows.push(matchedViaRow);
+    }
+
+    optionsRows = mergedRows;
+
+    console.log('FINAL VIA ROUTE OPTIONS AFTER MERGE:', optionsRows.length);
   } else {
     console.log('CANNOT FETCH VIA ROUTES - locationId is null');
   }

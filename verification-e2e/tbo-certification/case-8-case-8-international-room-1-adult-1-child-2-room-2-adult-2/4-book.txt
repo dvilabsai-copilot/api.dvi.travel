@@ -1,0 +1,159 @@
+======== REQUEST ========
+{
+  "BookingCode": "1035259!TB!2!TB!32f98ada-434e-11f1-855f-720abae076dd!TB!N!TB!AFF!",
+  "TokenId": "2d00701a-acea-4f11-918a-b13cc3961125",
+  "IsVoucherBooking": true,
+  "GuestNationality": "US",
+  "EndUserIp": "192.168.1.1",
+  "RequestedBookingMode": 1,
+  "TraceId": "",
+  "NetAmount": 39784.66,
+  "HotelRoomsDetails": [
+    {
+      "HotelPassenger": [
+        {
+          "Title": "Mr",
+          "FirstName": "Arun",
+          "MiddleName": "",
+          "LastName": "Sharma",
+          "Email": "adult1@cert.example.com",
+          "PaxType": 1,
+          "LeadPassenger": true,
+          "Age": 30,
+          "Phoneno": "9000000100",
+          "PaxId": 0,
+          "GSTCompanyAddress": null,
+          "GSTCompanyContactNumber": null,
+          "GSTCompanyName": null,
+          "GSTNumber": null,
+          "GSTCompanyEmail": null,
+          "PAN": "AAAPL1234C",
+          "PassportNo": null,
+          "PassportIssueDate": null,
+          "PassportExpDate": null
+        },
+        {
+          "Title": "Miss",
+          "FirstName": "Ira",
+          "MiddleName": "",
+          "LastName": "Sharma",
+          "Email": "child1@cert.example.com",
+          "PaxType": 2,
+          "LeadPassenger": false,
+          "Age": 6,
+          "Phoneno": "9111111100",
+          "PaxId": 0,
+          "GSTCompanyAddress": null,
+          "GSTCompanyContactNumber": null,
+          "GSTCompanyName": null,
+          "GSTNumber": null,
+          "GSTCompanyEmail": null,
+          "PAN": null,
+          "PassportNo": null,
+          "PassportIssueDate": null,
+          "PassportExpDate": null
+        },
+        {
+          "Title": "Miss",
+          "FirstName": "Neel",
+          "MiddleName": "",
+          "LastName": "Iyer",
+          "Email": "child2@cert.example.com",
+          "PaxType": 2,
+          "LeadPassenger": false,
+          "Age": 9,
+          "Phoneno": "9111111101",
+          "PaxId": 0,
+          "GSTCompanyAddress": null,
+          "GSTCompanyContactNumber": null,
+          "GSTCompanyName": null,
+          "GSTNumber": null,
+          "GSTCompanyEmail": null,
+          "PAN": null,
+          "PassportNo": null,
+          "PassportIssueDate": null,
+          "PassportExpDate": null
+        }
+      ]
+    },
+    {
+      "HotelPassenger": [
+        {
+          "Title": "Ms",
+          "FirstName": "Meera",
+          "MiddleName": "",
+          "LastName": "Iyer",
+          "Email": "adult2@cert.example.com",
+          "PaxType": 1,
+          "LeadPassenger": true,
+          "Age": 31,
+          "Phoneno": "9000000101",
+          "PaxId": 0,
+          "GSTCompanyAddress": null,
+          "GSTCompanyContactNumber": null,
+          "GSTCompanyName": null,
+          "GSTNumber": null,
+          "GSTCompanyEmail": null,
+          "PAN": "AAAPL1234C",
+          "PassportNo": null,
+          "PassportIssueDate": null,
+          "PassportExpDate": null
+        },
+        {
+          "Title": "Mrs",
+          "FirstName": "Kavya",
+          "MiddleName": "",
+          "LastName": "Verma",
+          "Email": "adult3@cert.example.com",
+          "PaxType": 1,
+          "LeadPassenger": false,
+          "Age": 32,
+          "Phoneno": "9000000102",
+          "PaxId": 0,
+          "GSTCompanyAddress": null,
+          "GSTCompanyContactNumber": null,
+          "GSTCompanyName": null,
+          "GSTNumber": null,
+          "GSTCompanyEmail": null,
+          "PAN": "AAAPL1234C",
+          "PassportNo": null,
+          "PassportIssueDate": null,
+          "PassportExpDate": null
+        }
+      ]
+    }
+  ]
+}
+
+======== RESPONSE ========
+{
+  "BookResult": {
+    "TBOReferenceNo": null,
+    "VoucherStatus": true,
+    "ResponseStatus": 1,
+    "Error": {
+      "ErrorCode": 0,
+      "ErrorMessage": ""
+    },
+    "TraceId": "32f98ada-434e-11f1-855f-720abae076dd",
+    "Status": 1,
+    "HotelBookingStatus": "Confirmed",
+    "InvoiceNumber": "MW/2627/2789",
+    "ConfirmationNo": "7470094887273",
+    "BookingRefNo": "219699003285890,263795947804969",
+    "BookingId": 2117428,
+    "IsPriceChanged": false,
+    "IsCancellationPolicyChanged": false
+  }
+}
+
+======== METADATA ========
+- timestamp: 2026-04-28T22:04:27.731Z
+- endpoint: https://hotelbe.tektravels.com/hotelservice.svc/rest/book/
+- status code: 200
+- case id: 8
+- step name: book
+- method: POST
+- status: success
+- error: none
+- skipped reason: none

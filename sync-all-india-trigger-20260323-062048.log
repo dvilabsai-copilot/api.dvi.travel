@@ -1,0 +1,7 @@
+START=2026-03-23T00:50:48.164Z
+BASE_URL=http://localhost:4006/api/v1
+SYNC_REQUEST_START=2026-03-23T00:50:48.319Z
+WATCH_LOG_FILE=C:\wamp64\www\dvi_fullstack\api.dvi.travel\server-logs-live.txt
+SYNC_REQUEST_END=2026-03-23T01:51:33.028Z
+RESULT_FILE=C:\wamp64\www\dvi_fullstack\api.dvi.travel\sync-all-india-result-20260323-062048.json
+STATUS=SUCCESS

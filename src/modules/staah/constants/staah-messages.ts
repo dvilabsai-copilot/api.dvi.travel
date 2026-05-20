@@ -1,0 +1,27 @@
+export const STAAH_MESSAGES = {
+  PRODUCT_INFO_SUCCESS: 'Product information fetched successfully.',
+  RATE_PLAN_INFO_SUCCESS: 'Rate plan information fetched successfully.',
+  INVENTORY_UPDATE_SUCCESS: 'Inventory updated successfully.',
+  RATE_UPDATE_SUCCESS: 'Rates updated successfully.',
+  RESTRICTION_UPDATE_SUCCESS: 'Restrictions updated successfully.',
+  RESERVATION_RECEIVED_SUCCESS: 'Reservation received successfully.',
+  RESERVATION_MODIFIED_SUCCESS: 'Reservation modification received successfully.',
+  RESERVATION_CANCELLED_SUCCESS: 'Reservation cancellation received successfully.',
+
+  INVALID_PROPERTY_ID: 'Invalid property ID.',
+  NO_PRODUCTS_FOUND: 'No products found for the given property ID.',
+  NO_RATEPLANS_FOUND: 'No rate plans found for the given property ID and room ID.',
+  UNAUTHORIZED: 'Unauthorized access. Invalid API key or source IP.',
+
+  INVENTORY_UPDATE_FAILED: 'Failed to update inventory.',
+  RATE_UPDATE_FAILED: 'Failed to update rates.',
+  RESTRICTION_UPDATE_FAILED: 'Failed to update restrictions.',
+  RESERVATION_RECEIVE_FAILED: 'Failed to process reservation payload.',
+  RESERVATION_MODIFY_FAILED: 'Failed to process reservation modification payload.',
+  RESERVATION_CANCEL_FAILED: 'Failed to process reservation cancellation payload.',
+  ARR_INFO_SUCCESS: 'ARI date-range data fetched successfully.',
+  YEAR_INFO_ARR_SUCCESS: 'ARI full-year data fetched successfully.',
+  ARR_INFO_NOT_FOUND: 'No ARI data found for the given property, room, rate plan, and date range.',
+  YEAR_INFO_ARR_NOT_FOUND: 'No ARI data found for the given property, room, and rate plan.',
+  INVALID_ARR_DATE_RANGE: 'Invalid ARR date range. from_date must be less than or equal to to_date.',
+};

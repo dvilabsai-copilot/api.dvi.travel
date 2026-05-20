@@ -1,0 +1,131 @@
+{
+  "success": true,
+  "message": "Prebook completed for 3 hotel(s)",
+  "itinerary_plan_ID": 24,
+  "hotels": [
+    {
+      "routeId": 400,
+      "hotelCode": "1739944",
+      "bookingCode": "1739944!TB!2!TB!ea101e32-25ba-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+      "updatedTotalPrice": 0,
+      "finalPrice": 0,
+      "totalAmount": 0,
+      "cancellationPolicy": [],
+      "cancellationPoliciesText": null,
+      "roomPromotion": null,
+      "rateConditions": [],
+      "inclusions": [],
+      "mandatorySupplements": [],
+      "normalizedSupplements": [],
+      "supplements": [],
+      "isPriceChanged": false,
+      "isCancellationPolicyChanged": false,
+      "rawStatus": {
+        "Code": 200,
+        "Description": "Successful"
+      },
+      "certificationTrace": {
+        "guestNationality": "IN",
+        "prebookRequest": {
+          "BookingCode": "1739944!TB!2!TB!ea101e32-25ba-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "PaymentMode": "Limit",
+          "GuestNationality": "IN",
+          "NoOfRooms": 1,
+          "PaxRooms": [
+            {
+              "Adults": 2,
+              "Children": 0,
+              "ChildrenAges": []
+            }
+          ]
+        }
+      }
+    },
+    {
+      "routeId": 401,
+      "hotelCode": "1383563",
+      "bookingCode": "1383563!TB!1!TB!ea10b02a-25ba-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+      "updatedTotalPrice": 0,
+      "finalPrice": 0,
+      "totalAmount": 0,
+      "cancellationPolicy": [],
+      "cancellationPoliciesText": null,
+      "roomPromotion": null,
+      "rateConditions": [],
+      "inclusions": [],
+      "mandatorySupplements": [],
+      "normalizedSupplements": [],
+      "supplements": [],
+      "isPriceChanged": false,
+      "isCancellationPolicyChanged": false,
+      "rawStatus": {
+        "Code": 200,
+        "Description": "Successful"
+      },
+      "certificationTrace": {
+        "guestNationality": "IN",
+        "prebookRequest": {
+          "BookingCode": "1383563!TB!1!TB!ea10b02a-25ba-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "PaymentMode": "Limit",
+          "GuestNationality": "IN",
+          "NoOfRooms": 1,
+          "PaxRooms": [
+            {
+              "Adults": 2,
+              "Children": 0,
+              "ChildrenAges": []
+            }
+          ]
+        }
+      }
+    },
+    {
+      "routeId": 402,
+      "hotelCode": "1742171",
+      "bookingCode": "1742171!TB!1!TB!ea1095d0-25ba-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+      "updatedTotalPrice": 0,
+      "finalPrice": 0,
+      "totalAmount": 0,
+      "cancellationPolicy": [],
+      "cancellationPoliciesText": null,
+      "roomPromotion": null,
+      "rateConditions": [],
+      "inclusions": [],
+      "mandatorySupplements": [],
+      "normalizedSupplements": [],
+      "supplements": [],
+      "isPriceChanged": false,
+      "isCancellationPolicyChanged": false,
+      "rawStatus": {
+        "Code": 200,
+        "Description": "Successful"
+      },
+      "certificationTrace": {
+        "guestNationality": "IN",
+        "prebookRequest": {
+          "BookingCode": "1742171!TB!1!TB!ea1095d0-25ba-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "PaymentMode": "Limit",
+          "GuestNationality": "IN",
+          "NoOfRooms": 1,
+          "PaxRooms": [
+            {
+              "Adults": 2,
+              "Children": 0,
+              "ChildrenAges": []
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "updatedTotalPrice": 0,
+  "finalPrice": 0,
+  "totalAmount": 0,
+  "cancellationPolicy": null,
+  "cancellationPoliciesText": null,
+  "roomPromotion": null,
+  "rateConditions": [],
+  "inclusions": [],
+  "mandatorySupplements": [],
+  "normalizedSupplements": []
+}

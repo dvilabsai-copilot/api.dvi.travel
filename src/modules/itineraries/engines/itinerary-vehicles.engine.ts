@@ -42,32 +42,47 @@ function hhmmFromMs(ms: number) {
   return `${hh}.${String(mm).padStart(2, "0")}`; // PHP-like "H.i"
 }
 
-// Global logging flag (PHP-style debug on/off via env)
-const ENABLE_LOG =
-  process.env.ENABLE_LOG === "1" ||
-  process.env.ENABLE_LOG === "true" ||
-  process.env.ENABLE_LOG === "yes";
-
 // ---------------------------------------------------------------------------
 // PHP SUM(CASE WHEN total_vehicle_qty=0 THEN 1 ELSE total_vehicle_qty END)
 // = SUM(total_vehicle_qty) + COUNT(total_vehicle_qty=0)
 // ---------------------------------------------------------------------------
 async function getPhpTotalVehicleQty(tx: any, whereBase: any): Promise<number> {
-  const [sumAgg, zeroCount] = await Promise.all([
-    tx.dvi_itinerary_plan_vendor_eligible_list.aggregate({
+  const runOnce = async () => {
+    // Use sequential calls on the same tx client for connection stability.
+    const sumAgg = await tx.dvi_itinerary_plan_vendor_eligible_list.aggregate({
       where: whereBase,
       _sum: { total_vehicle_qty: true },
-    }),
-    tx.dvi_itinerary_plan_vendor_eligible_list.count({
-      where: { ...whereBase, total_vehicle_qty: 0 },
-    }),
-  ]);
+    });
 
-  if (ENABLE_LOG) {
-    console.log(
-      "[vehiclesEngine] PHP_QTY_AGG",
-      JSON.stringify({ whereBase, sumAgg, zeroCount }),
-    );
+    const zeroCount = await tx.dvi_itinerary_plan_vendor_eligible_list.count({
+      where: { ...whereBase, total_vehicle_qty: 0 },
+    });
+
+    return { sumAgg, zeroCount };
+  };
+
+  let sumAgg: any;
+  let zeroCount: number;
+
+  try {
+    const result = await runOnce();
+    sumAgg = result.sumAgg;
+    zeroCount = result.zeroCount;
+  } catch (err: any) {
+    const code = String(err?.code || "");
+    const message = String(err?.message || "").toLowerCase();
+    const isTransientDisconnect =
+      code === "P1017" ||
+      message.includes("server has closed the connection") ||
+      message.includes("connection") && message.includes("closed");
+
+    if (!isTransientDisconnect) {
+      throw err;
+    }
+
+    const retry = await runOnce();
+    sumAgg = retry.sumAgg;
+    zeroCount = retry.zeroCount;
   }
 
   const sumVal = Number(sumAgg?._sum?.total_vehicle_qty ?? 0);
@@ -81,10 +96,7 @@ export class ItineraryVehiclesEngine {
   // ---------------------------------------------------------------------------
   // LOGGING
   // ---------------------------------------------------------------------------
-  private writeLog(line: string) {
-    if (!ENABLE_LOG) return;
-    console.log(`[vehiclesEngine] ${line}`);
-  }
+  private writeLog(_line: string) {}
 
   private escapeString(value: string): string {
     return value.replace(/'/g, "''");
@@ -201,24 +213,9 @@ export class ItineraryVehiclesEngine {
     return `INSERT INTO \`${table}\` (${cols}) VALUES (${vals});`;
   }
 
-  private logSql(label: string, sql: string, meta?: any) {
-    if (!ENABLE_LOG) return;
-    const line =
-      `[${new Date().toISOString()}] [vehiclesEngine] ${label}\n` +
-      `SQL: ${sql}\n` +
-      (meta ? `META: ${JSON.stringify(meta)}\n` : "");
-    console.log(line);
-    this.writeLog(line);
-  }
+  private logSql(_label: string, _sql: string, _meta?: any) {}
 
-  private log(label: string, payload: any) {
-    if (!ENABLE_LOG) return;
-    const line =
-      `[${new Date().toISOString()}] [vehiclesEngine] DEBUG ${label} ` +
-      JSON.stringify(payload);
-    console.log(line);
-    this.writeLog(line);
-  }
+  private log(_label: string, _payload: any) {}
 
   // ---------------------------------------------------------------------------
   // ROUTE KM SUMMARY (PHP-style helper; uses route.no_of_km ONLY)
@@ -252,9 +249,14 @@ export class ItineraryVehiclesEngine {
    * - Mark cheapest per vehicle type as assigned
    * - Build vendor_vehicle_details for ALL eligibles (not just assigned)
    */
-  async rebuildEligibleVendorList(args: { planId: number; createdBy: number }) {
+  async rebuildEligibleVendorList(args: {
+    planId: number;
+    createdBy: number;
+    selectedTimeLimitByEligible?: Record<number, number>;
+  }) {
     const planId = Number(args.planId);
     const createdBy = Number(args.createdBy ?? 0);
+    const selectedTimeLimitByEligible = args.selectedTimeLimitByEligible ?? {};
 
     if (!Number.isFinite(planId) || planId <= 0) {
       return { planId, inserted: 0, reason: "Invalid planId" };
@@ -392,8 +394,6 @@ export class ItineraryVehiclesEngine {
 
       eligibleCities = Array.from(citySet);
     }
-
-    const eligibleCityTokensLower = eligibleCities.map((c) => c.toLowerCase());
 
     // PHP: total km is sum of route.no_of_km ONLY
     const totalKmsNum = routes.reduce(
@@ -559,64 +559,33 @@ export class ItineraryVehiclesEngine {
         const vendorMarginGstType = Number(vendorDetails?.vendor_margin_gst_type ?? 2);
         const vendorMarginGstPercentage = Number(vendorDetails?.vendor_margin_gst_percentage ?? 5);
 
-        let allowedBranches: {
+        const branchWhere = {
+          vendor_id: vendorId,
+          status: 1,
+          deleted: 0,
+        };
+        this.logSql(
+          "VENDOR_BRANCHES_FIND_MANY_NO_FILTER",
+          this.buildSelectSql("dvi_vendor_branches", branchWhere),
+          { where: branchWhere },
+        );
+
+        const allowedBranches: {
           vendor_branch_id: number;
           vendor_branch_name: string | null;
           vendor_branch_location: string | null;
           vendor_branch_gst_type: number | null;
           vendor_branch_gst: number | null;
-        }[] = [];
-
-        if (eligibleCityTokensLower.length) {
-          const branchCityFilters = eligibleCityTokensLower.map((token) => ({
-            vendor_branch_location: { contains: token },
-          }));
-
-          const branchWhere = {
-            vendor_id: vendorId,
-            status: 1,
-            deleted: 0,
-            OR: branchCityFilters,
-          };
-          this.logSql(
-            "VENDOR_BRANCHES_FIND_MANY_FILTERED",
-            this.buildSelectSql("dvi_vendor_branches", branchWhere),
-            { where: branchWhere },
-          );
-
-          allowedBranches = await tx.dvi_vendor_branches.findMany({
-            where: branchWhere,
-            select: {
-              vendor_branch_id: true,
-              vendor_branch_name: true,
-              vendor_branch_location: true,
-              vendor_branch_gst_type: true,
-              vendor_branch_gst: true,
-            },
-          });
-        } else {
-          const branchWhere = {
-            vendor_id: vendorId,
-            status: 1,
-            deleted: 0,
-          };
-          this.logSql(
-            "VENDOR_BRANCHES_FIND_MANY_NO_FILTER",
-            this.buildSelectSql("dvi_vendor_branches", branchWhere),
-            { where: branchWhere },
-          );
-
-          allowedBranches = await tx.dvi_vendor_branches.findMany({
-            where: branchWhere,
-            select: {
-              vendor_branch_id: true,
-              vendor_branch_name: true,
-              vendor_branch_location: true,
-              vendor_branch_gst_type: true,
-              vendor_branch_gst: true,
-            },
-          });
-        }
+        }[] = await tx.dvi_vendor_branches.findMany({
+          where: branchWhere,
+          select: {
+            vendor_branch_id: true,
+            vendor_branch_name: true,
+            vendor_branch_location: true,
+            vendor_branch_gst_type: true,
+            vendor_branch_gst: true,
+          },
+        });
 
         const allowedBranchIds = allowedBranches
           .map((b) => Number(b.vendor_branch_id ?? 0))
@@ -629,6 +598,11 @@ export class ItineraryVehiclesEngine {
           vendor_branch_id: { in: allowedBranchIds },
           status: 1,
           deleted: 0,
+          ...(eligibleCities.length
+            ? {
+                owner_city: { in: eligibleCities },
+              }
+            : {}),
           OR: [
             { vehicle_type_id: vendorVehicleTypeId },
             ...(masterVehicleTypeId ? [{ vehicle_type_id: masterVehicleTypeId }] : []),
@@ -1195,6 +1169,7 @@ export class ItineraryVehiclesEngine {
           select: {
             vehicle_location_id: true,
             extra_km_charge: true,
+            extra_hour_charge: true,
             early_morning_charges: true,
             evening_charges: true,
             vendor_id: true,
@@ -1243,6 +1218,8 @@ export class ItineraryVehiclesEngine {
           vehicle_origin_latitude: vehicleLocationDetails.latitude,
           vehicle_origin_longitude: vehicleLocationDetails.longitude,
           extra_km_charge: toNum(vehicle.extra_km_charge),  // From dvi_vehicle
+          extra_hour_charge: toNum(vehicle.extra_hour_charge),
+          selected_time_limit_id: Number(selectedTimeLimitByEligible[eligibleId] ?? 0) || undefined,
           get_kms_limit: 250,  // Default outstation KM limit
           driver_batta: toNum(vendorVehicleType.driver_batta),
           food_cost: toNum(vendorVehicleType.food_cost),
@@ -1316,7 +1293,7 @@ export class ItineraryVehiclesEngine {
             if (!val) return null;
             if (val instanceof Date) return val;
             if (typeof val === 'string' && /^\d{2}:\d{2}:\d{2}$/.test(val)) {
-              return new Date(`1970-01-01T${val}Z`);
+              return timeStringToPrismaTime(val);
             }
             return null;
           }
@@ -1502,6 +1479,13 @@ export class ItineraryVehiclesEngine {
           travel_type: true,
           total_extra_km: true,
           total_extra_km_charges: true,
+          vehicle_driver_charges: true,
+          before_6_am_extra_time: true,
+          after_8_pm_extra_time: true,
+          before_6_am_charges_for_driver: true,
+          before_6_am_charges_for_vehicle: true,
+          after_8_pm_charges_for_driver: true,
+          after_8_pm_charges_for_vehicle: true,
         },
       });
       
@@ -1556,14 +1540,24 @@ export class ItineraryVehiclesEngine {
         }
       }, 0);
 
-      // Recalculate totals with the aggregated toll/permit charges
+      // Aggregate driver + 6AM/8PM charges from vehicle_details (PHP parity)
+      const totalDriverCharges = vehicleDetailsRecords.reduce((sum: number, r: any) => sum + Number(r.vehicle_driver_charges || 0), 0);
+      const totalBefore6amDriver = vehicleDetailsRecords.reduce((sum: number, r: any) => sum + Number(r.before_6_am_charges_for_driver || 0), 0);
+      const totalBefore6amVehicle = vehicleDetailsRecords.reduce((sum: number, r: any) => sum + Number(r.before_6_am_charges_for_vehicle || 0), 0);
+      const totalAfter8pmDriver = vehicleDetailsRecords.reduce((sum: number, r: any) => sum + Number(r.after_8_pm_charges_for_driver || 0), 0);
+      const totalAfter8pmVehicle = vehicleDetailsRecords.reduce((sum: number, r: any) => sum + Number(r.after_8_pm_charges_for_vehicle || 0), 0);
+      const totalBefore6amExtraTime = vehicleDetailsRecords.reduce((sum: number, r: any) => sum + Number(r.before_6_am_extra_time || 0), 0);
+      const totalAfter8pmExtraTime = vehicleDetailsRecords.reduce((sum: number, r: any) => sum + Number(r.after_8_pm_extra_time || 0), 0);
+
+      // Recalculate totals with the aggregated toll/permit/driver/6am/8pm charges
       const totalRentalNum = Number(eligible.total_rental_charges || 0);
       const totalParkingCharges = Number(eligible.total_parking_charges || 0);
-      const totalDriverCharges = Number(eligible.total_driver_charges || 0);
 
       const vehicleBaseTotal = totalRentalNum + totalExtraKmsCharge +
                                totalTollCharges + totalParkingCharges +
-                               totalDriverCharges + totalPermitCharges;
+                               totalDriverCharges + totalPermitCharges +
+                               totalBefore6amDriver + totalBefore6amVehicle +
+                               totalAfter8pmDriver + totalAfter8pmVehicle;
 
       const vehicleGstType = Number(eligible.vehicle_gst_type || 2);
       const vehicleGstPercentage = Number(eligible.vehicle_gst_percentage || 5);
@@ -1597,6 +1591,13 @@ export class ItineraryVehiclesEngine {
           total_allowed_local_kms: String(totalAllowedLocalKms),
           total_extra_local_kms: String(totalExtraLocalKms),
           total_extra_local_kms_charge: totalExtraLocalKmsCharge,
+          total_driver_charges: totalDriverCharges,
+          total_before_6_am_extra_time: String(totalBefore6amExtraTime),
+          total_after_8_pm_extra_time: String(totalAfter8pmExtraTime),
+          total_before_6_am_charges_for_driver: totalBefore6amDriver,
+          total_before_6_am_charges_for_vehicle: totalBefore6amVehicle,
+          total_after_8_pm_charges_for_driver: totalAfter8pmDriver,
+          total_after_8_pm_charges_for_vehicle: totalAfter8pmVehicle,
           total_toll_charges: totalTollCharges,
           total_permit_charges: totalPermitCharges,
           vehicle_gst_amount: vehicleGstAmount,
@@ -1608,6 +1609,51 @@ export class ItineraryVehiclesEngine {
         },
       });
       this.writeLog(`[vehiclesEngine] Updated eligible ${eligible.itinerary_plan_vendor_eligible_ID} with toll=${totalTollCharges}, permit=${totalPermitCharges}, kms=${totalKms}, allowed_kms=${totalAllowedKms}, extra_kms=${totalExtraKms}, local_allowed=${totalAllowedLocalKms}, local_extra=${totalExtraLocalKms}, local_extra_charge=${totalExtraLocalKmsCharge}`);
+    }
+
+    // Re-assign cheapest vendors AFTER final totals update.
+    // Earlier assignment can be based on provisional totals before toll/permit recalculation.
+    for (const [planVehicleTypeId, requiredCount] of requiredCountByType.entries()) {
+      await tx.dvi_itinerary_plan_vendor_eligible_list.updateMany({
+        where: {
+          itinerary_plan_id: planId,
+          vehicle_type_id: planVehicleTypeId,
+          status: 1,
+          deleted: 0,
+        },
+        data: { itineary_plan_assigned_status: 0 },
+      });
+
+      const finalPicks = await tx.dvi_itinerary_plan_vendor_eligible_list.findMany({
+        where: {
+          itinerary_plan_id: planId,
+          vehicle_type_id: planVehicleTypeId,
+          vehicle_grand_total: { gt: 0 },
+          status: 1,
+          deleted: 0,
+        },
+        orderBy: [
+          { vehicle_grand_total: "asc" },
+          { itinerary_plan_vendor_eligible_ID: "asc" },
+        ],
+        take: Math.max(0, requiredCount),
+        select: { itinerary_plan_vendor_eligible_ID: true, vehicle_grand_total: true },
+      });
+
+      const finalIds = finalPicks
+        .map((p: any) => Number(p.itinerary_plan_vendor_eligible_ID || 0))
+        .filter((id: number) => id > 0);
+
+      if (finalIds.length > 0) {
+        await tx.dvi_itinerary_plan_vendor_eligible_list.updateMany({
+          where: { itinerary_plan_vendor_eligible_ID: { in: finalIds } },
+          data: { itineary_plan_assigned_status: 1 },
+        });
+
+        this.writeLog(
+          `[vehiclesEngine] Final cheapest assigned for vehicle_type_id=${planVehicleTypeId}: ids=[${finalIds.join(',')}]`,
+        );
+      }
     }
 
     return { planId, inserted };

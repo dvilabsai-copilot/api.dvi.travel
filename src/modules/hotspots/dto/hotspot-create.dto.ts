@@ -90,6 +90,9 @@ export class HotspotCreateDto {
   @IsOptional() @IsString()
   hotspot_video_url?: string | null;
 
+  @IsOptional() @IsString()
+  hotspot_duration?: string | null;
+
   @IsOptional() @Type(() => Number) @IsInt()
   status?: number | null;   // default 1
 

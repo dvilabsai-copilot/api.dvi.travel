@@ -1,0 +1,10 @@
+{
+  "cityCode": "Rameswaram",
+  "checkInDate": "2026-04-16",
+  "checkOutDate": "2026-04-17",
+  "roomCount": 1,
+  "guestCount": 2,
+  "providers": [
+    "tbo"
+  ]
+}

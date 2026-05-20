@@ -1,0 +1,591 @@
+{
+  "itinerary": "DVI20260315",
+  "prebook": {
+    "status": 201,
+    "ok": true,
+    "request": {
+      "itinerary_plan_ID": 32,
+      "hotel_bookings": [
+        {
+          "occupancies": [
+            {
+              "adults": 1,
+              "children": 0,
+              "childrenAges": []
+            }
+          ],
+          "provider": "tbo",
+          "routeId": 432,
+          "hotelCode": "1739944",
+          "bookingCode": "1739944!TB!2!TB!5313fcd4-25c0-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "roomType": "Standard Double Room AC,2 Double Beds,NonSmoking",
+          "checkInDate": "2026-04-26",
+          "checkOutDate": "2026-04-27",
+          "numberOfRooms": 1,
+          "guestNationality": "IN",
+          "netAmount": 2099,
+          "passengers": [
+            {
+              "title": "Mr",
+              "firstName": "Primary",
+              "lastName": "Guest",
+              "nationality": "IN",
+              "email": "primary@example.com",
+              "paxType": 1,
+              "leadPassenger": true,
+              "age": 32,
+              "phoneNo": "9876543210"
+            }
+          ]
+        },
+        {
+          "occupancies": [
+            {
+              "adults": 1,
+              "children": 0,
+              "childrenAges": []
+            }
+          ],
+          "provider": "tbo",
+          "routeId": 433,
+          "hotelCode": "1383563",
+          "bookingCode": "1383563!TB!1!TB!5314b03f-25c0-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "roomType": "Premier Room, 1 Queen Bed, City View,NonSmoking",
+          "checkInDate": "2026-04-27",
+          "checkOutDate": "2026-04-28",
+          "numberOfRooms": 1,
+          "guestNationality": "IN",
+          "netAmount": 2028,
+          "passengers": [
+            {
+              "title": "Mr",
+              "firstName": "Primary",
+              "lastName": "Guest",
+              "nationality": "IN",
+              "email": "primary@example.com",
+              "paxType": 1,
+              "leadPassenger": true,
+              "age": 32,
+              "phoneNo": "9876543210"
+            }
+          ]
+        },
+        {
+          "occupancies": [
+            {
+              "adults": 1,
+              "children": 0,
+              "childrenAges": []
+            }
+          ],
+          "provider": "tbo",
+          "routeId": 434,
+          "hotelCode": "1742171",
+          "bookingCode": "1742171!TB!1!TB!53148aa4-25c0-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "roomType": "Standard Double Room, 1 Bedroom,1 King Bed,NonSmoking",
+          "checkInDate": "2026-04-28",
+          "checkOutDate": "2026-04-29",
+          "numberOfRooms": 1,
+          "guestNationality": "IN",
+          "netAmount": 2312,
+          "passengers": [
+            {
+              "title": "Mr",
+              "firstName": "Primary",
+              "lastName": "Guest",
+              "nationality": "IN",
+              "email": "primary@example.com",
+              "paxType": 1,
+              "leadPassenger": true,
+              "age": 32,
+              "phoneNo": "9876543210"
+            }
+          ]
+        }
+      ],
+      "endUserIp": "139.5.249.210"
+    },
+    "response": {
+      "success": true,
+      "message": "Prebook completed for 3 hotel(s)",
+      "itinerary_plan_ID": 32,
+      "hotels": [
+        {
+          "routeId": 432,
+          "hotelCode": "1739944",
+          "bookingCode": "1739944!TB!2!TB!5313fcd4-25c0-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "updatedTotalPrice": 0,
+          "finalPrice": 0,
+          "totalAmount": 0,
+          "cancellationPolicy": [],
+          "cancellationPoliciesText": null,
+          "roomPromotion": null,
+          "rateConditions": [],
+          "inclusions": [],
+          "mandatorySupplements": [],
+          "normalizedSupplements": [],
+          "supplements": [],
+          "isPriceChanged": false,
+          "isCancellationPolicyChanged": false,
+          "rawStatus": {
+            "Code": 200,
+            "Description": "Successful"
+          },
+          "certificationTrace": {
+            "guestNationality": "IN",
+            "prebookRequest": {
+              "BookingCode": "1739944!TB!2!TB!5313fcd4-25c0-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "PaymentMode": "Limit",
+              "GuestNationality": "IN",
+              "NoOfRooms": 1,
+              "PaxRooms": [
+                {
+                  "Adults": 1,
+                  "Children": 0,
+                  "ChildrenAges": []
+                }
+              ]
+            }
+          }
+        },
+        {
+          "routeId": 433,
+          "hotelCode": "1383563",
+          "bookingCode": "1383563!TB!1!TB!5314b03f-25c0-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "updatedTotalPrice": 0,
+          "finalPrice": 0,
+          "totalAmount": 0,
+          "cancellationPolicy": [],
+          "cancellationPoliciesText": null,
+          "roomPromotion": null,
+          "rateConditions": [],
+          "inclusions": [],
+          "mandatorySupplements": [],
+          "normalizedSupplements": [],
+          "supplements": [],
+          "isPriceChanged": false,
+          "isCancellationPolicyChanged": false,
+          "rawStatus": {
+            "Code": 200,
+            "Description": "Successful"
+          },
+          "certificationTrace": {
+            "guestNationality": "IN",
+            "prebookRequest": {
+              "BookingCode": "1383563!TB!1!TB!5314b03f-25c0-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "PaymentMode": "Limit",
+              "GuestNationality": "IN",
+              "NoOfRooms": 1,
+              "PaxRooms": [
+                {
+                  "Adults": 1,
+                  "Children": 0,
+                  "ChildrenAges": []
+                }
+              ]
+            }
+          }
+        },
+        {
+          "routeId": 434,
+          "hotelCode": "1742171",
+          "bookingCode": "1742171!TB!1!TB!53148aa4-25c0-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "updatedTotalPrice": 0,
+          "finalPrice": 0,
+          "totalAmount": 0,
+          "cancellationPolicy": [],
+          "cancellationPoliciesText": null,
+          "roomPromotion": null,
+          "rateConditions": [],
+          "inclusions": [],
+          "mandatorySupplements": [],
+          "normalizedSupplements": [],
+          "supplements": [],
+          "isPriceChanged": false,
+          "isCancellationPolicyChanged": false,
+          "rawStatus": {
+            "Code": 200,
+            "Description": "Successful"
+          },
+          "certificationTrace": {
+            "guestNationality": "IN",
+            "prebookRequest": {
+              "BookingCode": "1742171!TB!1!TB!53148aa4-25c0-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+              "PaymentMode": "Limit",
+              "GuestNationality": "IN",
+              "NoOfRooms": 1,
+              "PaxRooms": [
+                {
+                  "Adults": 1,
+                  "Children": 0,
+                  "ChildrenAges": []
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "updatedTotalPrice": 0,
+      "finalPrice": 0,
+      "totalAmount": 0,
+      "cancellationPolicy": null,
+      "cancellationPoliciesText": null,
+      "roomPromotion": null,
+      "rateConditions": [],
+      "inclusions": [],
+      "mandatorySupplements": [],
+      "normalizedSupplements": []
+    }
+  },
+  "confirm": {
+    "status": 201,
+    "ok": true,
+    "request": {
+      "itinerary_plan_ID": 32,
+      "agent": 8,
+      "primary_guest_salutation": "Mr",
+      "primary_guest_name": "Primary Guest",
+      "primary_guest_contact_no": "9876543210",
+      "primary_guest_age": "32",
+      "primary_guest_alternative_contact_no": "",
+      "primary_guest_email_id": "primary@example.com",
+      "adult_name": [],
+      "adult_age": [],
+      "child_name": [],
+      "child_age": [],
+      "infant_name": [],
+      "infant_age": [],
+      "arrival_date_time": "26-04-2026 1:30 PM",
+      "arrival_place": "Chennai International Airport",
+      "arrival_flight_details": "",
+      "departure_date_time": "29-04-2026 5:30 PM",
+      "departure_place": "Chennai International Airport",
+      "departure_flight_details": "",
+      "price_confirmation_type": "new",
+      "hotel_group_type": "1",
+      "hotel_bookings": [
+        {
+          "occupancies": [
+            {
+              "adults": 1,
+              "children": 0,
+              "childrenAges": []
+            }
+          ],
+          "provider": "tbo",
+          "routeId": 432,
+          "hotelCode": "1739944",
+          "bookingCode": "1739944!TB!2!TB!5313fcd4-25c0-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "roomType": "Standard Double Room AC,2 Double Beds,NonSmoking",
+          "checkInDate": "2026-04-26",
+          "checkOutDate": "2026-04-27",
+          "numberOfRooms": 1,
+          "guestNationality": "IN",
+          "netAmount": 2099,
+          "passengers": [
+            {
+              "title": "Mr",
+              "firstName": "Primary",
+              "lastName": "Guest",
+              "nationality": "IN",
+              "email": "primary@example.com",
+              "paxType": 1,
+              "leadPassenger": true,
+              "age": 32,
+              "phoneNo": "9876543210"
+            }
+          ]
+        },
+        {
+          "occupancies": [
+            {
+              "adults": 1,
+              "children": 0,
+              "childrenAges": []
+            }
+          ],
+          "provider": "tbo",
+          "routeId": 433,
+          "hotelCode": "1383563",
+          "bookingCode": "1383563!TB!1!TB!5314b03f-25c0-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "roomType": "Premier Room, 1 Queen Bed, City View,NonSmoking",
+          "checkInDate": "2026-04-27",
+          "checkOutDate": "2026-04-28",
+          "numberOfRooms": 1,
+          "guestNationality": "IN",
+          "netAmount": 2028,
+          "passengers": [
+            {
+              "title": "Mr",
+              "firstName": "Primary",
+              "lastName": "Guest",
+              "nationality": "IN",
+              "email": "primary@example.com",
+              "paxType": 1,
+              "leadPassenger": true,
+              "age": 32,
+              "phoneNo": "9876543210"
+            }
+          ]
+        },
+        {
+          "occupancies": [
+            {
+              "adults": 1,
+              "children": 0,
+              "childrenAges": []
+            }
+          ],
+          "provider": "tbo",
+          "routeId": 434,
+          "hotelCode": "1742171",
+          "bookingCode": "1742171!TB!1!TB!53148aa4-25c0-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+          "roomType": "Standard Double Room, 1 Bedroom,1 King Bed,NonSmoking",
+          "checkInDate": "2026-04-28",
+          "checkOutDate": "2026-04-29",
+          "numberOfRooms": 1,
+          "guestNationality": "IN",
+          "netAmount": 2312,
+          "passengers": [
+            {
+              "title": "Mr",
+              "firstName": "Primary",
+              "lastName": "Guest",
+              "nationality": "IN",
+              "email": "primary@example.com",
+              "paxType": 1,
+              "leadPassenger": true,
+              "age": 32,
+              "phoneNo": "9876543210"
+            }
+          ]
+        }
+      ],
+      "primaryGuest": {
+        "salutation": "Mr",
+        "name": "Primary Guest",
+        "phone": "9876543210",
+        "email": "primary@example.com"
+      },
+      "endUserIp": "139.5.249.210"
+    },
+    "response": {
+      "success": true,
+      "message": "Quotation confirmed successfully",
+      "itinerary_plan_ID": 32,
+      "confirmed_itinerary_plan_ID": 147,
+      "bookingResults": [
+        {
+          "routeId": 432,
+          "hotelCode": "1739944",
+          "bookingId": "2097731",
+          "status": "confirmed",
+          "preBook": {
+            "finalPrice": null,
+            "originalSearchPrice": 2099,
+            "isPriceChanged": false,
+            "isCancellationPolicyChanged": false,
+            "cancellationPolicy": [],
+            "cancellationPolicyText": null,
+            "rateConditions": [],
+            "roomPromotions": [],
+            "inclusions": [],
+            "mandatorySupplements": [],
+            "supplements": [],
+            "normalizedSupplements": [],
+            "rawStatus": {
+              "Code": 200,
+              "Description": "Successful"
+            }
+          },
+          "bookingRequest": {
+            "BookingCode": "1739944!TB!2!TB!5313fcd4-25c0-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+            "TokenId": "597590d0-d652-4193-a206-f652d468bc51",
+            "IsVoucherBooking": true,
+            "GuestNationality": "IN",
+            "EndUserIp": "127.0.0.1",
+            "RequestedBookingMode": 1,
+            "TraceId": "",
+            "NetAmount": 2099,
+            "HotelRoomsDetails": [
+              {
+                "HotelPassenger": [
+                  {
+                    "Title": "Mr",
+                    "FirstName": "Primary",
+                    "MiddleName": "",
+                    "LastName": "Guest",
+                    "Email": "primary@example.com",
+                    "PaxType": 1,
+                    "LeadPassenger": true,
+                    "Age": 32,
+                    "PassportNo": null,
+                    "PassportIssueDate": null,
+                    "PassportExpDate": null,
+                    "Phoneno": "9876543210",
+                    "PaxId": 0,
+                    "GSTCompanyAddress": null,
+                    "GSTCompanyContactNumber": null,
+                    "GSTCompanyName": null,
+                    "GSTNumber": null,
+                    "GSTCompanyEmail": null,
+                    "PAN": null
+                  }
+                ]
+              }
+            ]
+          },
+          "priceChanged": false,
+          "priceChangedMessage": null,
+          "mandatorySupplements": [],
+          "normalizedSupplements": [],
+          "supplements": [],
+          "confirmation": {
+            "tbo_hotel_booking_confirmation_ID": 68
+          }
+        },
+        {
+          "routeId": 433,
+          "hotelCode": "1383563",
+          "bookingId": "2097732",
+          "status": "confirmed",
+          "preBook": {
+            "finalPrice": null,
+            "originalSearchPrice": 2028,
+            "isPriceChanged": false,
+            "isCancellationPolicyChanged": false,
+            "cancellationPolicy": [],
+            "cancellationPolicyText": null,
+            "rateConditions": [],
+            "roomPromotions": [],
+            "inclusions": [],
+            "mandatorySupplements": [],
+            "supplements": [],
+            "normalizedSupplements": [],
+            "rawStatus": {
+              "Code": 200,
+              "Description": "Successful"
+            }
+          },
+          "bookingRequest": {
+            "BookingCode": "1383563!TB!1!TB!5314b03f-25c0-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+            "TokenId": "597590d0-d652-4193-a206-f652d468bc51",
+            "IsVoucherBooking": true,
+            "GuestNationality": "IN",
+            "EndUserIp": "127.0.0.1",
+            "RequestedBookingMode": 1,
+            "TraceId": "",
+            "NetAmount": 2028,
+            "HotelRoomsDetails": [
+              {
+                "HotelPassenger": [
+                  {
+                    "Title": "Mr",
+                    "FirstName": "Primary",
+                    "MiddleName": "",
+                    "LastName": "Guest",
+                    "Email": "primary@example.com",
+                    "PaxType": 1,
+                    "LeadPassenger": true,
+                    "Age": 32,
+                    "PassportNo": null,
+                    "PassportIssueDate": null,
+                    "PassportExpDate": null,
+                    "Phoneno": "9876543210",
+                    "PaxId": 0,
+                    "GSTCompanyAddress": null,
+                    "GSTCompanyContactNumber": null,
+                    "GSTCompanyName": null,
+                    "GSTNumber": null,
+                    "GSTCompanyEmail": null,
+                    "PAN": null
+                  }
+                ]
+              }
+            ]
+          },
+          "priceChanged": false,
+          "priceChangedMessage": null,
+          "mandatorySupplements": [],
+          "normalizedSupplements": [],
+          "supplements": [],
+          "confirmation": {
+            "tbo_hotel_booking_confirmation_ID": 69
+          }
+        },
+        {
+          "routeId": 434,
+          "hotelCode": "1742171",
+          "bookingId": "2097733",
+          "status": "confirmed",
+          "preBook": {
+            "finalPrice": null,
+            "originalSearchPrice": 2312,
+            "isPriceChanged": false,
+            "isCancellationPolicyChanged": false,
+            "cancellationPolicy": [],
+            "cancellationPolicyText": null,
+            "rateConditions": [],
+            "roomPromotions": [],
+            "inclusions": [],
+            "mandatorySupplements": [],
+            "supplements": [],
+            "normalizedSupplements": [],
+            "rawStatus": {
+              "Code": 200,
+              "Description": "Successful"
+            }
+          },
+          "bookingRequest": {
+            "BookingCode": "1742171!TB!1!TB!53148aa4-25c0-11f1-aada-ba9013e35c3f!TB!N!TB!AFF!",
+            "TokenId": "597590d0-d652-4193-a206-f652d468bc51",
+            "IsVoucherBooking": true,
+            "GuestNationality": "IN",
+            "EndUserIp": "127.0.0.1",
+            "RequestedBookingMode": 1,
+            "TraceId": "",
+            "NetAmount": 2312,
+            "HotelRoomsDetails": [
+              {
+                "HotelPassenger": [
+                  {
+                    "Title": "Mr",
+                    "FirstName": "Primary",
+                    "MiddleName": "",
+                    "LastName": "Guest",
+                    "Email": "primary@example.com",
+                    "PaxType": 1,
+                    "LeadPassenger": true,
+                    "Age": 32,
+                    "PassportNo": null,
+                    "PassportIssueDate": null,
+                    "PassportExpDate": null,
+                    "Phoneno": "9876543210",
+                    "PaxId": 0,
+                    "GSTCompanyAddress": null,
+                    "GSTCompanyContactNumber": null,
+                    "GSTCompanyName": null,
+                    "GSTNumber": null,
+                    "GSTCompanyEmail": null,
+                    "PAN": null
+                  }
+                ]
+              }
+            ]
+          },
+          "priceChanged": false,
+          "priceChangedMessage": null,
+          "mandatorySupplements": [],
+          "normalizedSupplements": [],
+          "supplements": [],
+          "confirmation": {
+            "tbo_hotel_booking_confirmation_ID": 70
+          }
+        }
+      ]
+    }
+  },
+  "notes": [
+    "inputCount:12"
+  ]
+}

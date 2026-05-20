@@ -1,0 +1,59 @@
+============================================================
+STAAH API Test Log
+============================================================
+Test Name: staah-3-invalid-property-id
+Timestamp: 2026-03-13T21:38:29.502Z
+Status: SUCCESS
+============================================================
+
+REQUEST:
+--------
+URL: http://127.0.0.1:4006/api/v1/staah/productInfo
+Method: POST
+Headers:
+{}
+
+Body:
+{
+  "apikey": "staah-local-test-key",
+  "propertyid": "INVALID_PROPERTY",
+  "action": "property_info",
+  "version": "2"
+}
+
+RESPONSE:
+---------
+Status: 200
+Headers:
+{
+  "x-powered-by": "Express",
+  "access-control-allow-origin": "*",
+  "content-type": "application/json; charset=utf-8",
+  "content-length": "307",
+  "etag": "W/\"133-x+Xat0ON9a3KTE82k93bGlp1xXU\"",
+  "date": "Fri, 13 Mar 2026 21:38:29 GMT",
+  "connection": "keep-alive",
+  "keep-alive": "timeout=5"
+}
+
+Data:
+{
+  "currency": "INR",
+  "propertyname": "",
+  "checkintime": "",
+  "checkouttime": "",
+  "contactinfo": {
+    "zip": "",
+    "latitude": "",
+    "longitude": "",
+    "country": "",
+    "addressline": "",
+    "city": "",
+    "fax": "",
+    "telephone": "",
+    "location": ""
+  },
+  "status": "fail",
+  "error_desc": "Invalid property ID.",
+  "trackingId": "AEE4B1B8-14FB-4CF2-BDDF-9FCE202AEB36"
+}

@@ -3,6 +3,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { Request } from 'express';
 import { PrismaService } from '../../prisma.service';
 import { LatestItineraryQueryDto } from './dto/latest-itinerary-query.dto';
+import { ItineraryHotelDetailsTboService } from './itinerary-hotel-details-tbo.service';
 
 // ---------------------------------------------------------------------------
 // DTOs for Itinerary Details response (shared shape with frontend)
@@ -13,18 +14,48 @@ export interface VehicleCostBreakdownItemDto {
   amount: number;
 }
 
+/** Convert "HH:MM:SS" or Prisma TIME buffer → "X Hours Y Min" label */
+function formatHmsDuration(raw: string | null | undefined): string {
+  if (!raw) return '0 Hours 0 Min';
+  // Prisma TIME fields come back as Buffer bytes or as e.g. "02:49:00"
+  const str = String(raw).trim();
+  const match = str.match(/^(\d{1,3}):(\d{2})(?::\d{2})?$/);
+  if (match) {
+    const h = parseInt(match[1], 10);
+    const m = parseInt(match[2], 10);
+    return `${h} Hours ${m} Min`;
+  }
+  return '0 Hours 0 Min';
+}
+
 export interface VehicleDayWisePricingDto {
   date: string; // "2025-12-26"
   dayLabel: string; // "Day 1 | 26 Dec 2025"
   route: string; // "Chennai → Mahabalipuram"
+  timeLimitId?: number;
+  slabTitle?: string;
+  slabHoursLimit?: number;
+  slabKmLimit?: number;
+  pickupKms: number;
+  pickupDurationMinutes?: number;
   travelKms: number; // Running KM per day
+  travelDurationMinutes?: number;
   sightseeingKms: number; // Sightseeing KM per day
-  totalKms: number; // Total KMS per day (travel + sightseeing)
+  sightseeingDurationMinutes?: number;
+  dropDurationMinutes?: number;
+  totalDurationMinutes?: number;
+  totalKms: number; // Total KMS per day (pickup + travel + sightseeing + drop)
   rentalCharges: number;
   tollCharges: number;
   parkingCharges: number;
   driverCharges: number;
   permitCharges: number;
+  extraHourCount: number;
+  extraHourRate: number;
+  extraHourCharges: number;
+  extraKms: number;
+  extraKmCharges: number;
+  dropKms: number;
   totalCharges: number;
 }
 
@@ -50,7 +81,7 @@ export interface VehicleDayWisePricingDto {
  * DAY-WISE KMS BREAKDOWN (in expanded row):
  *   - travelKms: total_running_km for that specific day
  *   - sightseeingKms: total_siteseeing_km for that specific day  
- *   - totalKms: total_travelled_km for that specific day (travel + sightseeing)
+ *   - totalKms: pickup + travel + sightseeing + drop for that specific day
  *   - Shows per-day breakdown, matching legacy PHP structure
  * 
  * Example:
@@ -68,6 +99,13 @@ export interface ItineraryVehicleRowDto {
   vehicleTypeId?: number;
   vehicleTypeName?: string;
   isAssigned?: boolean;
+  selectedTimeLimitId?: number;
+  availableSlabs?: Array<{
+    timeLimitId: number;
+    title: string;
+    hoursLimit: number;
+    kmLimit: number;
+  }>;
 
   // Optional detailed charges – can be filled from vendor-eligible table later
   rentalCharges?: number;
@@ -83,6 +121,30 @@ export interface ItineraryVehicleRowDto {
   
   // Day-wise pricing breakdown for expandable row
   dayWisePricing?: VehicleDayWisePricingDto[];
+
+  // Summary totals for the PHP-style expanded panel
+  totalDays?: number;
+  totalCostOfVehicle?: number;
+  totalPickupKm?: number;
+  totalPickupDuration?: string;
+  totalDropKm?: number;
+  totalDropDuration?: string;
+  totalUsedKm?: number;
+  totalAllowedKm?: number;
+  extraKms?: number;
+  extraKmRate?: number;
+  extraKmCharge?: number;
+  extraHourCount?: number;
+  extraHourRate?: number;
+  extraHourCharge?: number;
+  subtotal?: number;
+  vehicleGstPercentage?: number;
+  vehicleGstAmount?: number;
+  vendorMarginPercentage?: number;
+  vendorMarginAmount?: number;
+  vendorMarginGstPercentage?: number;
+  vendorMarginGstAmount?: number;
+  grandTotal?: number;
 
   // Optional UI helper fields for the vehicle card
   dayLabel?: string;
@@ -118,6 +180,10 @@ export interface CostBreakdownDto {
   totalGuideCost?: number;
   totalHotspotCost?: number;
   totalActivityCost?: number;
+  kmLimitWarning?: string;
+  totalAllowedKm?: number;
+  totalTravelledKm?: number;
+  totalExtraKm?: number;
   
   // Final calculations
   additionalMargin: number;
@@ -133,9 +199,12 @@ export interface CostBreakdownDto {
 export interface ItineraryDetailsResponseDto {
   quoteId: string;
   planId: number;
+  itineraryPreference?: number;
   isConfirmed?: boolean;
   confirmed_itinerary_plan_ID?: number; // ID needed for /confirmed/:id endpoint
   dateRange: string;
+  dayCount: number;
+  nightCount: number;
   roomCount: number;
   extraBed: number;
   childWithBed: number;
@@ -144,9 +213,24 @@ export interface ItineraryDetailsResponseDto {
   children: number;
   infants: number;
   overallCost: string;
+  meal_plan_code?: string | null;
 
   // DAY / ROUTE TIMELINE
-  days: any[]; // already shaped for FE (Start/Travel/Attraction/Return)
+  days: {
+  id: number;
+  dayNumber: number;
+  date: Date | string;
+  locationId: number;
+  departure: string;
+  arrival: string;
+  distance: string;
+  intercityDistance: string;
+  sightseeingDistance: string;
+  startTime: string;
+  endTime: string;
+  viaRoutes: { id: number; name: string }[];
+  segments: any[];
+}[]; // already shaped for FE (Start/Travel/Attraction/Return)
 
   // VEHICLES
   vehicles: ItineraryVehicleRowDto[];
@@ -162,11 +246,23 @@ export interface ItineraryDetailsResponseDto {
 
 @Injectable()
 export class ItineraryDetailsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly hotelDetailsTboService: ItineraryHotelDetailsTboService,
+  ) {}
+
+  // TODO: remove after validation
+  private logBookingRule(payload: Record<string, unknown>): void {
+    console.log('[BOOKING_RULE]', payload);
+  }
 
   // ---------------------------------------------------------------------------
   // Low-level helpers
   // ---------------------------------------------------------------------------
+
+  private formatKm(value: number): string {
+  return `${value.toFixed(2)} KM`;
+}
 
   private toBigIntOrZero(value?: number | string | bigint | null): bigint {
     if (typeof value === 'bigint') return value;
@@ -307,10 +403,26 @@ export class ItineraryDetailsService {
   /** Convert a TIME duration (stored as Date) to "X Hours" / "Y Min" */
   private formatDuration(d?: Date | string | null): string | null {
     if (!d) return null;
-    const dt = d instanceof Date ? d : new Date(d);
-    if (isNaN(dt.getTime())) return null;
+    let totalMinutes: number | null = null;
 
-    const totalMinutes = dt.getUTCHours() * 60 + dt.getUTCMinutes();   // ✅ Read UTC time value
+    if (d instanceof Date) {
+      if (isNaN(d.getTime())) return null;
+      totalMinutes = d.getUTCHours() * 60 + d.getUTCMinutes();
+    } else if (typeof d === 'string') {
+      const raw = d.trim();
+      const hhmmss = raw.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+
+      if (hhmmss) {
+        totalMinutes = Number(hhmmss[1]) * 60 + Number(hhmmss[2]);
+      } else {
+        const dt = new Date(raw);
+        if (!isNaN(dt.getTime())) {
+          totalMinutes = dt.getUTCHours() * 60 + dt.getUTCMinutes();
+        }
+      }
+    }
+
+    if (totalMinutes === null) return null;
     if (totalMinutes <= 0) return null;
 
     const h = Math.floor(totalMinutes / 60);
@@ -319,6 +431,34 @@ export class ItineraryDetailsService {
     if (h > 0 && m > 0) return `${h} Hours ${m} Min`;
     if (h > 0) return `${h} Hours`;
     return `${m} Min`;
+  }
+
+  /** Convert a TIME duration value to total minutes. */
+  private durationToMinutes(d?: Date | string | null): number | null {
+    if (!d) return null;
+
+    if (d instanceof Date) {
+      if (isNaN(d.getTime())) return null;
+      const total = d.getUTCHours() * 60 + d.getUTCMinutes();
+      return total > 0 ? total : null;
+    }
+
+    if (typeof d === 'string') {
+      const raw = d.trim();
+      const hhmmss = raw.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+      if (hhmmss) {
+        const total = Number(hhmmss[1]) * 60 + Number(hhmmss[2]);
+        return total > 0 ? total : null;
+      }
+
+      const dt = new Date(raw);
+      if (!isNaN(dt.getTime())) {
+        const total = dt.getUTCHours() * 60 + dt.getUTCMinutes();
+        return total > 0 ? total : null;
+      }
+    }
+
+    return null;
   }
 
   /** Convert time string "HH:MM AM/PM" to minutes since midnight */
@@ -338,6 +478,284 @@ export class ItineraryDetailsService {
     return hours * 60 + minutes;
   }
 
+  private parseDisplayTimeMinutesStrict(timeStr: string | null): number | null {
+    if (!timeStr) return null;
+    const match = timeStr.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+    if (!match) return null;
+
+    let hours = parseInt(match[1], 10);
+    const minutes = parseInt(match[2], 10);
+    const ampm = match[3].toUpperCase();
+
+    if (ampm === 'PM' && hours !== 12) hours += 12;
+    if (ampm === 'AM' && hours === 12) hours = 0;
+
+    return hours * 60 + minutes;
+  }
+
+  private minutesToDisplayTime(minutes: number): string {
+    const normalized = ((Math.round(minutes) % 1440) + 1440) % 1440;
+    let hh = Math.floor(normalized / 60);
+    const mm = normalized % 60;
+    const ampm = hh >= 12 ? 'PM' : 'AM';
+    hh = hh % 12;
+    if (hh === 0) hh = 12;
+    return `${this.pad2(hh)}:${this.pad2(mm)} ${ampm}`;
+  }
+
+  private orderedTimeRange(startTimeText: string | null, endTimeText: string | null): string | null {
+    if (!startTimeText || !endTimeText) return null;
+
+    const startMins = this.parseDisplayTimeMinutesStrict(startTimeText);
+    const endMins = this.parseDisplayTimeMinutesStrict(endTimeText);
+
+    if (startMins === null || endMins === null) {
+      return `${startTimeText} - ${endTimeText}`;
+    }
+
+    if (startMins <= endMins) {
+      return `${startTimeText} - ${endTimeText}`;
+    }
+
+    return `${endTimeText} - ${startTimeText}`;
+  }
+
+  private formatDurationFromDisplayRange(startTimeText: string | null, endTimeText: string | null): string | null {
+    if (!startTimeText || !endTimeText) return null;
+
+    const startMins = this.parseDisplayTimeMinutesStrict(startTimeText);
+    const endMins = this.parseDisplayTimeMinutesStrict(endTimeText);
+    if (startMins === null || endMins === null) return null;
+
+    let delta = endMins - startMins;
+    if (delta < 0) {
+      delta += 1440;
+    }
+    if (delta <= 0) return null;
+
+    const h = Math.floor(delta / 60);
+    const m = delta % 60;
+    if (h > 0 && m > 0) return `${h} Hours ${m} Min`;
+    if (h > 0) return `${h} Hours`;
+    return `${m} Min`;
+  }
+
+  private extractRangeFromSegment(seg: any): {
+    field: 'timeRange' | 'visitTime';
+    suffix: string;
+    start: number;
+    end: number;
+  } | null {
+    if (!seg) return null;
+
+    const field: 'timeRange' | 'visitTime' | null =
+      seg.type === 'attraction' ? 'visitTime' :
+      (seg.type === 'start' || seg.type === 'travel' || seg.type === 'return' || seg.type === 'break') ? 'timeRange' :
+      null;
+
+    if (!field || typeof seg[field] !== 'string') return null;
+
+    const raw = String(seg[field]);
+    const suffixStart = raw.indexOf(' (');
+    const core = (suffixStart >= 0 ? raw.slice(0, suffixStart) : raw).trim();
+    const suffix = suffixStart >= 0 ? raw.slice(suffixStart) : '';
+    const parts = core.split(' - ').map((p) => p.trim());
+    if (parts.length !== 2) return null;
+
+    const start = this.parseDisplayTimeMinutesStrict(parts[0]);
+    const end = this.parseDisplayTimeMinutesStrict(parts[1]);
+    if (start === null || end === null) return null;
+
+    return { field, suffix, start, end };
+  }
+
+  private normalizeSegmentChronology(segments: any[]): void {
+    let previousEnd: number | null = null;
+
+    for (const seg of segments) {
+      if (seg?.type === 'checkin' && typeof seg.time === 'string') {
+        const checkinTime = this.parseDisplayTimeMinutesStrict(String(seg.time).trim());
+        if (checkinTime !== null) {
+          const normalizedCheckinTime =
+            previousEnd !== null && checkinTime < previousEnd
+              ? previousEnd
+              : checkinTime;
+
+          seg.time = this.minutesToDisplayTime(normalizedCheckinTime);
+          previousEnd = normalizedCheckinTime;
+        }
+        continue;
+      }
+
+      const parsed = this.extractRangeFromSegment(seg);
+      if (!parsed) continue;
+
+      let start = parsed.start;
+      let end = parsed.end;
+      if (end < start) {
+        const temp = start;
+        start = end;
+        end = temp;
+      }
+
+      if (previousEnd !== null && start < previousEnd) {
+        const duration = Math.max(0, end - start);
+        start = previousEnd;
+        end = start + duration;
+      }
+
+      seg[parsed.field] = `${this.minutesToDisplayTime(start)} - ${this.minutesToDisplayTime(end)}${parsed.suffix}`;
+      previousEnd = end;
+    }
+  }
+
+  private normalizeConfirmedTravelLabelsFromSequence(
+    segments: any[],
+    fallbackHotelName?: string | null,
+  ): any[] {
+    const rows = Array.isArray(segments) ? segments : [];
+    if (rows.length === 0) return rows;
+
+    const cleanName = (value?: string | null): string => String(value ?? '').trim();
+    const lower = (value?: string | null): string => cleanName(value).toLowerCase();
+    const canonicalStopName = (value?: string | null): string => {
+      const raw = cleanName(value);
+      if (!raw) return '';
+      return raw
+        .replace(/&amp;/gi, '&')
+        .replace(/&quot;/gi, '"')
+        .replace(/&#39;/gi, "'")
+        .replace(/&lt;/gi, '<')
+        .replace(/&gt;/gi, '>')
+        .replace(/\s*\([^)]*\)\s*$/g, '')
+        .trim();
+    };
+
+    const getAttractionName = (row: any): string => canonicalStopName(row?.name || row?.text);
+    const getCheckinName = (row: any): string => cleanName(row?.hotelName) || cleanName(fallbackHotelName) || 'Hotel';
+    const getTravelFrom = (row: any): string =>
+      cleanName(row?.from)
+      || cleanName(row?.fromName)
+      || cleanName(row?.displayFromName);
+    const getTravelTo = (row: any): string =>
+      cleanName(row?.to)
+      || cleanName(row?.toName)
+      || cleanName(row?.displayToName);
+
+    const isAttraction = (row: any): boolean => row?.type === 'attraction';
+    const isTravel = (row: any): boolean => row?.type === 'travel';
+    const isCheckin = (row: any): boolean => row?.type === 'checkin';
+
+    const findPreviousVisibleStopName = (fromIndex: number): string => {
+      for (let i = fromIndex - 1; i >= 0; i -= 1) {
+        const row = rows[i];
+        if (isAttraction(row)) {
+          const name = getAttractionName(row);
+          if (name) return name;
+        }
+        if (isCheckin(row)) {
+          const name = getCheckinName(row);
+          if (name) return name;
+        }
+      }
+      return '';
+    };
+
+    const findNextSemanticStop = (fromIndex: number): { type: 'attraction' | 'checkin'; name: string } | null => {
+      for (let i = fromIndex + 1; i < rows.length; i += 1) {
+        const row = rows[i];
+        if (isAttraction(row)) {
+          const name = getAttractionName(row);
+          if (name) return { type: 'attraction', name };
+        }
+        if (isCheckin(row)) {
+          const name = getCheckinName(row);
+          if (name) return { type: 'checkin', name };
+        }
+      }
+      return null;
+    };
+
+    let previousStopName = '';
+
+    for (let index = 0; index < rows.length; index += 1) {
+      const row = rows[index];
+
+      if (isAttraction(row)) {
+        const attractionName = getAttractionName(row);
+        if (attractionName) {
+          previousStopName = attractionName;
+        }
+        continue;
+      }
+
+      if (isCheckin(row)) {
+        const checkinName = getCheckinName(row);
+        if (checkinName) {
+          previousStopName = checkinName;
+        }
+        continue;
+      }
+
+      if (!isTravel(row)) continue;
+
+      const persistedFrom = getTravelFrom(row);
+      const persistedTo = getTravelTo(row);
+
+      if (!previousStopName) {
+        previousStopName = persistedFrom || findPreviousVisibleStopName(index) || '';
+      }
+
+      const nextStop = findNextSemanticStop(index);
+      const nextName = cleanName(nextStop?.name);
+
+      let resolvedFrom = cleanName(previousStopName) || persistedFrom || 'Route Start';
+      let resolvedTo = '';
+
+      if (nextStop?.type === 'attraction' && nextName) {
+        resolvedTo = nextName;
+      } else if (nextStop?.type === 'checkin' && nextName) {
+        resolvedTo = nextName;
+      } else {
+        resolvedTo = persistedTo || cleanName(fallbackHotelName) || 'Hotel';
+      }
+
+      // Guard: non-final travel should not keep destination as route/city/hotel label
+      // when the immediate next visible stop is an attraction.
+      if (
+        nextStop?.type === 'attraction'
+        && nextName
+        && lower(resolvedTo) === lower(cleanName(fallbackHotelName) || '')
+      ) {
+        resolvedTo = nextName;
+      }
+
+      // First-leg guard: if the persisted origin is only the city label (for example "Munnar")
+      // but the route hotel is more specific (for example "Munnar Queen"), prefer hotel label.
+      if (
+        nextStop?.type === 'attraction'
+        && cleanName(fallbackHotelName)
+        && resolvedFrom
+        && lower(resolvedFrom) !== lower(cleanName(fallbackHotelName))
+        && lower(cleanName(fallbackHotelName)).includes(lower(resolvedFrom))
+      ) {
+        resolvedFrom = cleanName(fallbackHotelName);
+      }
+
+      row.from = resolvedFrom;
+      row.to = resolvedTo;
+      row.fromName = resolvedFrom;
+      row.toName = resolvedTo;
+      row.displayFromName = resolvedFrom;
+      row.displayToName = resolvedTo;
+      row.text = `Travelling from ${resolvedFrom} to ${resolvedTo}`;
+
+      previousStopName = resolvedTo;
+    }
+
+    return rows;
+  }
+
   // ---------------------------------------------------------------------------
   // Itinerary DETAILS (parity-ish with PHP, WITHOUT hotels)
   // ---------------------------------------------------------------------------
@@ -352,7 +770,7 @@ export class ItineraryDetailsService {
     });
     return plan ? plan.itinerary_plan_ID : null;
   }
-  
+
   async getItineraryDetails(
     quoteId: string,
     groupType?: number,
@@ -366,16 +784,63 @@ export class ItineraryDetailsService {
       throw new NotFoundException('Itinerary not found');
     }
     const planId = plan.itinerary_plan_ID;
+    const proofQuoteEnabled = false;
 
     const confirmedPlan = await this.prisma.dvi_confirmed_itinerary_plan_details.findFirst({
-      where: { itinerary_plan_ID: planId, deleted: 0 },
+      where: { itinerary_plan_ID: planId, deleted: 0, status: 1 },
     });
 
     // ------------------------- ROUTES + HOTSPOTS ----------------------
-    const routes = await this.prisma.dvi_itinerary_route_details.findMany({
-      where: { itinerary_plan_ID: planId, deleted: 0, status: 1 },
-      orderBy: { itinerary_route_ID: 'asc' },
+   const routes = await this.prisma.dvi_itinerary_route_details.findMany({
+  where: { itinerary_plan_ID: planId, deleted: 0, status: 1 },
+  orderBy: { itinerary_route_ID: 'asc' },
+});
+
+const vehicleKmRows =
+  await this.prisma.$queryRawUnsafe(`
+    SELECT
+      itinerary_route_id,
+      total_running_km,
+      total_siteseeing_km,
+      total_travelled_km
+    FROM dvi_itinerary_plan_vendor_vehicle_details
+    WHERE itinerary_plan_id = ${planId}
+      AND deleted = 0
+  `) as any[];
+
+const vehicleKmByRouteId = new Map<
+  number,
+  { runningKm: number; sightseeingKm: number; totalKm: number }
+>();
+
+for (const row of vehicleKmRows) {
+  const routeId = Number((row as any).itinerary_route_id || 0);
+  if (!routeId) continue;
+
+  const runningKm =
+    parseFloat(String((row as any).total_running_km || 0)) || 0;
+  const sightseeingKm =
+    parseFloat(String((row as any).total_siteseeing_km || 0)) || 0;
+  const totalKm =
+    parseFloat(String((row as any).total_travelled_km || 0)) || 0;
+
+  const existing = vehicleKmByRouteId.get(routeId);
+
+  if (!existing) {
+    vehicleKmByRouteId.set(routeId, {
+      runningKm,
+      sightseeingKm,
+      totalKm,
     });
+    continue;
+  }
+
+  vehicleKmByRouteId.set(routeId, {
+    runningKm: Math.max(existing.runningKm, runningKm),
+    sightseeingKm: Math.max(existing.sightseeingKm, sightseeingKm),
+    totalKm: Math.max(existing.totalKm, totalKm),
+  });
+}
 
     // ------------------------- HOTELS FOR TIMELINE ----------------------
     let timelineHotelRows: any[] = [];
@@ -388,6 +853,7 @@ export class ItineraryDetailsService {
         where: confirmedHotelWhere,
         select: {
           hotel_id: true,
+          hotel_code: true,
           itinerary_route_id: true,
           group_type: true,
         }
@@ -407,6 +873,7 @@ export class ItineraryDetailsService {
         where: timelineHotelWhere,
         select: {
           hotel_id: true,
+          hotel_code: true,
           itinerary_route_id: true,
           group_type: true,
         }
@@ -417,12 +884,18 @@ export class ItineraryDetailsService {
 
     // Build route -> hotel map
     // For TBO/ResAvenue hotels, we'll get names from the live search API later
-    const routeHotelIdMap = new Map(
-      timelineHotelRows.map((h) => [h.itinerary_route_id, h.hotel_id]),
+    const routeHotelRowMap = new Map(
+      timelineHotelRows.map((h) => [h.itinerary_route_id, h]),
     );
     
     // Try to get hotel names from dvi_hotel master (for local hotels)
-    const hotelIds = Array.from(new Set(timelineHotelRows.map(h => h.hotel_id)));
+    const hotelIds = Array.from(
+      new Set(
+        timelineHotelRows
+          .map((h) => Number(h.hotel_id ?? 0))
+          .filter((id) => id > 0),
+      ),
+    );
     const hotelMasters = hotelIds.length > 0
       ? await this.prisma.dvi_hotel.findMany({
           where: { hotel_id: { in: hotelIds } },
@@ -431,13 +904,130 @@ export class ItineraryDetailsService {
       : [];
     
     const hotelMasterMap = new Map(hotelMasters.map(h => [h.hotel_id, h]));
+
+    // For TBO hotels, also try to look up from tbo_hotel_booking_confirmation
+    const tboConfirmationRows = await this.prisma.tbo_hotel_booking_confirmation.findMany({
+      where: {
+        itinerary_plan_ID: planId,
+        status: 1,
+        deleted: 0,
+      },
+      select: {
+        itinerary_route_ID: true,
+        tbo_hotel_code: true,
+      },
+      distinct: ['itinerary_route_ID'],
+    });
+
+    const tboConfirmationMap = new Map(
+      tboConfirmationRows.map((r: any) => [Number(r.itinerary_route_ID), r.tbo_hotel_code]),
+    );
+
+    const tboHotelCodes = Array.from(
+      new Set(
+        [
+          ...timelineHotelRows.map((h: any) => String(h?.hotel_code ?? '').trim()),
+          ...tboConfirmationRows.map((r: any) => String(r?.tbo_hotel_code ?? '').trim()),
+        ].filter((code) => code.length > 0),
+      ),
+    );
+
+    const tboHotelMasters = tboHotelCodes.length
+      ? await this.prisma.tbo_hotel_master.findMany({
+          where: { tbo_hotel_code: { in: tboHotelCodes } },
+          select: {
+            tbo_hotel_code: true,
+            hotel_name: true,
+            hotel_address: true,
+          },
+        })
+      : [];
+
+    const tboHotelMasterMap = new Map(
+      tboHotelMasters.map((h) => [h.tbo_hotel_code, h]),
+    );
+
+    const liveRouteHotelFallbackMap = new Map<
+      number,
+      { hotel_name: string; hotel_address: string | null; hotel_code: string | null; price: number }
+    >();
+
+    try {
+      const fallbackHotelDetails = await this.hotelDetailsTboService.getHotelDetailsByQuoteIdFromTbo(
+        quoteId,
+      );
+
+      const effectiveGroupType = Number(groupType ?? 1);
+      for (const row of fallbackHotelDetails?.hotels || []) {
+        const routeIdNum = Number((row as any)?.itineraryRouteId ?? 0);
+        if (!routeIdNum) continue;
+
+        const rowGroupType = Number((row as any)?.groupType ?? 0);
+        if (rowGroupType !== effectiveGroupType) continue;
+
+        const hotelName = String((row as any)?.hotelName ?? '').trim();
+        if (!hotelName || hotelName.toLowerCase() === 'no hotels available') continue;
+
+        const price =
+          Number((row as any)?.totalHotelCost ?? 0) +
+          Number((row as any)?.totalHotelTaxAmount ?? 0);
+
+        const existing = liveRouteHotelFallbackMap.get(routeIdNum);
+        if (!existing || (Number.isFinite(price) && price > 0 && price < existing.price)) {
+          liveRouteHotelFallbackMap.set(routeIdNum, {
+            hotel_name: hotelName,
+            hotel_address: null,
+            hotel_code: String((row as any)?.hotelCode ?? '').trim() || null,
+            price: Number.isFinite(price) ? price : Number.MAX_SAFE_INTEGER,
+          });
+        }
+      }
+    } catch {
+      // Keep details endpoint resilient when live hotel-details fallback is unavailable.
+    }
     
     // Build final map with hotel info
     // If hotel not in master, we'll fetch from TBO/ResAvenue search results
     const routeHotelMap = new Map();
-    for (const [routeId, hotelId] of routeHotelIdMap.entries()) {
-      const masterInfo = hotelMasterMap.get(hotelId);
-      routeHotelMap.set(routeId, masterInfo || { hotel_id: hotelId, hotel_name: null, hotel_address: null });
+    for (const [routeId, hotelRow] of routeHotelRowMap.entries()) {
+      const hotelIdNum = Number((hotelRow as any)?.hotel_id ?? 0);
+      const masterInfo = hotelMasterMap.get(hotelIdNum);
+      
+      let hotelCode = String((hotelRow as any)?.hotel_code ?? '').trim();
+      // Fallback: check if there's a TBO confirmation for this route
+      if (!hotelCode && tboConfirmationMap.has(routeId)) {
+        hotelCode = String(tboConfirmationMap.get(routeId) ?? '').trim();
+      }
+
+      const liveFallback = liveRouteHotelFallbackMap.get(Number(routeId));
+      if (!hotelCode && liveFallback?.hotel_code) {
+        hotelCode = String(liveFallback.hotel_code).trim();
+      }
+      
+      const tboInfo = hotelCode.length ? tboHotelMasterMap.get(hotelCode) : null;
+
+      routeHotelMap.set(routeId, {
+        hotel_id: hotelIdNum,
+        hotel_name: liveFallback?.hotel_name ?? masterInfo?.hotel_name ?? tboInfo?.hotel_name ?? null,
+        hotel_address: liveFallback?.hotel_address ?? masterInfo?.hotel_address ?? tboInfo?.hotel_address ?? null,
+        hotel_code: hotelCode,
+      });
+    }
+
+    // Some quotes have no persisted hotel rows in plan tables; use live fallback by route.
+    for (const route of routes) {
+      const routeIdNum = Number((route as any)?.itinerary_route_ID ?? 0);
+      if (!routeIdNum || routeHotelMap.has(routeIdNum)) continue;
+
+      const liveFallback = liveRouteHotelFallbackMap.get(routeIdNum);
+      if (!liveFallback) continue;
+
+      routeHotelMap.set(routeIdNum, {
+        hotel_id: 0,
+        hotel_name: liveFallback.hotel_name,
+        hotel_address: liveFallback.hotel_address,
+        hotel_code: liveFallback.hotel_code ?? '',
+      });
     }
 
     const days: any[] = [];
@@ -492,8 +1082,32 @@ export class ItineraryDetailsService {
           FROM dvi_itinerary_route_hotspot_details
           WHERE itinerary_plan_ID = ${planId}
             AND itinerary_route_ID = ${route.itinerary_route_ID}
+            AND deleted = 0
+            AND status = 1
           ORDER BY hotspot_order ASC
         `) as any[];
+
+      // Build response segments in actual chronological order.
+      // hotspot_order is a persistence grouping key, not a reliable presentation order,
+      // because travel rows are often stored after their attraction rows.
+      routeHotspots.sort((a: any, b: any) => {
+        const aStart = this.formatTime((a as any).hotspot_start_time ?? null);
+        const bStart = this.formatTime((b as any).hotspot_start_time ?? null);
+        const aStartMins = aStart ? this.timeToMinutes(aStart) : Number.MAX_SAFE_INTEGER;
+        const bStartMins = bStart ? this.timeToMinutes(bStart) : Number.MAX_SAFE_INTEGER;
+        if (aStartMins !== bStartMins) return aStartMins - bStartMins;
+
+        const aEnd = this.formatTime((a as any).hotspot_end_time ?? null);
+        const bEnd = this.formatTime((b as any).hotspot_end_time ?? null);
+        const aEndMins = aEnd ? this.timeToMinutes(aEnd) : Number.MAX_SAFE_INTEGER;
+        const bEndMins = bEnd ? this.timeToMinutes(bEnd) : Number.MAX_SAFE_INTEGER;
+        if (aEndMins !== bEndMins) return aEndMins - bEndMins;
+
+        const itemDiff = Number(a.item_type ?? 0) - Number(b.item_type ?? 0);
+        if (itemDiff !== 0) return itemDiff;
+
+        return Number(a.hotspot_order ?? 0) - Number(b.hotspot_order ?? 0);
+      });
 
       const hotspotIds = Array.from(
         new Set(
@@ -533,7 +1147,45 @@ export class ItineraryDetailsService {
         hotspotTimingMap.get(t.hotspot_ID)!.push(t);
       }
 
+      // Bulk fetch hotspot gallery images
+      const hotspotGalleryRows = hotspotIds.length
+        ? await this.prisma.dvi_hotspot_gallery_details.findMany({
+            where: { hotspot_ID: { in: hotspotIds }, deleted: 0 },
+            orderBy: { hotspot_gallery_details_id: 'asc' },
+            select: { hotspot_ID: true, hotspot_gallery_name: true },
+          })
+        : [];
+      const hotspotGalleryMap = new Map<number, string[]>();
+      for (const g of hotspotGalleryRows) {
+        const name = (g.hotspot_gallery_name ?? '').toString().trim();
+        if (!name) continue;
+        const urls = hotspotGalleryMap.get(g.hotspot_ID) ?? [];
+        urls.push(`/uploads/hotspot_gallery/${name}`);
+        hotspotGalleryMap.set(g.hotspot_ID, urls);
+      }
+
       const segments: any[] = [];
+      let travelAnchorIndex = 0;
+
+      // Push CTA immediately before the upcoming travel segment so it renders:
+      //   Attraction → CTA → Travel → Attraction → CTA → Travel …
+      const pushHotspotAnchorPlaceholder = (payload: {
+        from: string;
+        to: string;
+        timeRange: string | null;
+      }) => {
+        segments.push({
+          type: 'hotspot' as const,
+          text: 'Click to Add Hotspot',
+          locationId: route.location_id ? Number(route.location_id) : null,
+          anchorType: 'after_travel' as const,
+          anchorIndex: travelAnchorIndex,
+          anchorFrom: payload.from,
+          anchorTo: payload.to,
+          anchorTimeRange: payload.timeRange,
+        });
+        travelAnchorIndex += 1;
+      };
 
       let previousStopName =
         location?.source_location ??
@@ -552,24 +1204,306 @@ export class ItineraryDetailsService {
       }
 
       let totalDistanceKm = 0;
+      let seenAttraction = false;
+      let emittedTravelBeforeFirstAttraction = false;
+      
+      // FIX #3: Track hotel arrival time for checkin anchoring
+      let hotelArrivalTime: string | null = null;
+      let emittedTerminalSegment = false;
+      const suppressedLastRouteOrders = new Set<number>();
+      const routeEndMins = this.timeToMinutes(this.formatTime(route.route_end_time as any) ?? '00:00 AM');
+
+      const normalizeName = (value?: string | null) =>
+        (value ?? '').trim().toLowerCase();
+
+      const isForcedManualConflictAttractionRow = (row: any): boolean => {
+        if (Number((row as any)?.item_type ?? 0) !== 4) return false;
+        const isConflict = Number((row as any)?.is_conflict ?? (row as any)?.isConflict ?? 0) === 1;
+        if (!isConflict) return false;
+        const reason = String((row as any)?.conflict_reason ?? (row as any)?.conflictReason ?? '');
+        return /forced manual insertion after user confirmation/i.test(reason);
+      };
+
+      const pendingForcedManualConflictRows = (routeHotspots || [])
+        .filter((row: any) => isForcedManualConflictAttractionRow(row))
+        .filter((row: any) => Number((row as any)?.hotspot_ID ?? 0) > 0);
+      const insertedForcedManualConflictHotspotIds = new Set<number>();
+
+      const getRouteHotelName = () => {
+        const hotelInfo = routeHotelMap.get(route.itinerary_route_ID);
+        return hotelInfo?.hotel_name ?? 'Hotel';
+      };
+
+      const findNextSemanticDestinationName = (
+        rows: any[],
+        currentIndex: number,
+      ): string | null => {
+        for (let nextIndex = currentIndex + 1; nextIndex < rows.length; nextIndex++) {
+          const nextRow = rows[nextIndex];
+          const nextItemType = Number((nextRow as any).item_type ?? 0);
+
+          if (nextItemType === 4) {
+            if (isForcedManualConflictAttractionRow(nextRow)) {
+              continue;
+            }
+            const nextMaster = nextRow.hotspot_ID
+              ? hotspotMap.get(nextRow.hotspot_ID as number) || null
+              : null;
+            const nextHotspotName = nextMaster?.hotspot_name?.trim();
+            if (nextHotspotName) {
+              return nextHotspotName;
+            }
+            continue;
+          }
+
+          if (nextItemType === 5 || nextItemType === 6) {
+            // Skip hotel-related rows; continue looking for next activity destination
+            continue;
+          }
+
+          if (nextItemType === 2 || nextItemType === 7) {
+            const nextLocationName =
+              route.next_visiting_location ??
+              location?.destination_location ??
+              plan.departure_location ??
+              null;
+            if (!nextLocationName) {
+              continue;
+            }
+            return nextLocationName === 'Hotel'
+              ? getRouteHotelName()
+              : nextLocationName;
+          }
+
+          if (nextItemType === 3) {
+            if (Number((nextRow as any).allow_break_hours ?? 0) === 1) {
+              continue;
+            }
+
+            const nextViaLocationName = (nextRow as any).via_location_name?.trim();
+            if (
+              Number((nextRow as any).allow_via_route ?? 0) === 1 &&
+              nextViaLocationName
+            ) {
+              return nextViaLocationName;
+            }
+
+            if (Number((nextRow as any).hotspot_ID ?? 0) === 0) {
+              const nextLocationName =
+                route.next_visiting_location ??
+                location?.destination_location ??
+                plan.departure_location ??
+                null;
+              if (!nextLocationName) {
+                continue;
+              }
+              return nextLocationName === 'Hotel'
+                ? getRouteHotelName()
+                : nextLocationName;
+            }
+          }
+        }
+
+        return null;
+      };
 
       // Find item_type 1 (START/BREAK) to get actual start time
       const startHotspot = routeHotspots.find(
         (rh) => Number((rh as any).item_type ?? 0) === 1,
       );
 
-      // Only add START segment if item_type 1 exists (match PHP behavior)
-      if (startHotspot) {
-        const startTimeRange = `${this.formatTime((startHotspot as any).hotspot_start_time ?? null)} - ${this.formatTime((startHotspot as any).hotspot_end_time ?? null)}`;
+      // ====== SEMANTIC RECONSTRUCTION ALGORITHM ======
+      // Reconstruct true origin/destination for each travel row by analyzing:
+      // 1. The hotspot_ID in the travel row (destination)
+      // 2. The sequence of visits and their times
+      // 3. Looking back for the actual "from" location
+      //
+      // Key insight: item_type=3 rows appear in DB after their corresponding  
+      // item_type=4 attractions (due to hotspot_order sorting), but chronologically
+      // they represent TRAVEL TO those attractions. The "from" is the previous
+      // different location we visited.
+      
+      const buildTravelSegmentSemantics = (): Map<number, {from: string; to: string}> => {
+        const travelSemantics = new Map<number, {from: string; to: string}>();
+        
+        // First pass: collect all attractions and their visit order
+        const visitSequence: Array<{hotspotId: number; hotspotName: string}> = [];
+        let routeStartLoc =
+          location?.source_location ??
+          route.location_name ??
+          plan.arrival_location ??
+          '';
 
-        segments.push({
-          type: 'start' as const,
-          title: index === 0 ? 'Start your Journey' : 'Start Your Day',
-          timeRange: startTimeRange,
-        });
+        // If this day starts from "Hotel" (previous-night stay), resolve the
+        // actual hotel name so the first travel segment reads
+        // "From PLA Residency, Thanjavur" instead of the bare city name.
+        if (index > 0) {
+          const prevRouteHotelInfo = routeHotelMap.get(
+            routes[index - 1].itinerary_route_ID,
+          );
+          if (prevRouteHotelInfo?.hotel_name) {
+            routeStartLoc = prevRouteHotelInfo.hotel_name;
+          }
+        }
+        
+        // Track the last unique location we're at
+        let lastUniqueLocation = routeStartLoc;
+
+        const getHotelCheckinTimeMinutes = (row: any): number | null => {
+          const start = this.formatTime((row as any)?.hotspot_start_time ?? null);
+          const end = this.formatTime((row as any)?.hotspot_end_time ?? null);
+          const checkInTime = end || start;
+          return checkInTime ? this.timeToMinutes(checkInTime) : null;
+        };
+
+        const hasPriorHotelCheckinBeforeTravel = (travelRow: any): boolean => {
+          const travelStart = this.formatTime((travelRow as any)?.hotspot_start_time ?? null);
+          if (!travelStart) return false;
+          const travelStartMins = this.timeToMinutes(travelStart);
+
+          return routeHotspots.some((candidate) => {
+            const candidateType = Number((candidate as any).item_type ?? 0);
+            if (candidateType !== 6) return false;
+            const checkInMins = getHotelCheckinTimeMinutes(candidate);
+            return checkInMins !== null && checkInMins <= travelStartMins;
+          });
+        };
+        
+        // Build visit sequence by collecting all attractions
+        for (const row of routeHotspots) {
+          const itemType = Number((row as any).item_type ?? 0);
+          const hotspotId = Number(row.hotspot_ID ?? 0);
+          
+          if (itemType === 4 && hotspotId > 0) {
+            if (isForcedManualConflictAttractionRow(row)) {
+              continue;
+            }
+            const master = hotspotMap.get(hotspotId);
+            if (master?.hotspot_name?.trim()) {
+              visitSequence.push({hotspotId, hotspotName: master.hotspot_name});
+              lastUniqueLocation = master.hotspot_name;
+            }
+          }
+        }
+        
+        // Second pass: determine origin for each travel row
+        for (const row of routeHotspots) {
+          const itemType = Number((row as any).item_type ?? 0);
+          const hotspotId = Number(row.hotspot_ID ?? 0);
+          
+          if (itemType === 3 && hotspotId > 0) {
+            // This is a travel row - determine its origin and destination
+            const destMaster = hotspotMap.get(hotspotId);
+            const destination = destMaster?.hotspot_name ?? lastUniqueLocation;
+            
+            // Find the origin by looking at what comes before this destination in visit sequence
+            let origin = routeStartLoc;  // Safe fallback
+            
+            // Find this hotspotId in the visit sequence
+            const destIndex = visitSequence.findIndex(v => v.hotspotId === hotspotId);
+            
+            if (destIndex > 0) {
+              // There's a previous visit - that's where we came from
+              origin = visitSequence[destIndex - 1].hotspotName;
+            } else if (destIndex === 0 && visitSequence.length > 0) {
+              // First destination: in hotel-first flows, first sightseeing starts from hotel.
+              origin = hasPriorHotelCheckinBeforeTravel(row)
+                ? getRouteHotelName()
+                : routeStartLoc;
+            } else {
+              // Destination not found in visits (shouldn't happen, but safe)
+              origin = routeStartLoc;
+            }
+            
+            travelSemantics.set(row.route_hotspot_ID, {
+              from: origin,
+              to: destination,
+            });
+          }
+        }
+        
+        return travelSemantics;
+      };
+      
+      // Build the semantic map once, before main loop
+      const travelSegmentSemantics = buildTravelSegmentSemantics();
+
+      // Only add START segment if item_type 1 exists (match PHP behavior)
+      // Exception: suppress START on late-arrival Day 1 that has no attractions
+      const hasAttractions = routeHotspots.some(
+        (rh) => Number((rh as any).item_type ?? 0) === 4,
+      );
+      const isLateArrivalDay1 = index === 0 && (() => {
+        const planStartTime = (plan as any).trip_start_date_and_time;
+        if (planStartTime instanceof Date) {
+          const h = planStartTime.getUTCHours();
+          return h >= 17 || h === 0;
+        }
+        // Fallback to route start time for this route
+        const routeStart = typeof route.route_start_time === 'string'
+          ? route.route_start_time
+          : route.route_start_time && typeof route.route_start_time === 'object'
+          ? `${String((route.route_start_time as any).getUTCHours()).padStart(2, '0')}:00`
+          : null;
+        if (routeStart) {
+          const h = parseInt(routeStart.split(':')[0], 10);
+          return h >= 17 || h === 0;
+        }
+        return false;
+      })();
+
+      if (!(isLateArrivalDay1 && !hasAttractions)) {
+        let startTimeRange: string | null = null;
+
+        if (startHotspot) {
+          startTimeRange = `${this.formatTime((startHotspot as any).hotspot_start_time ?? null)} - ${this.formatTime((startHotspot as any).hotspot_end_time ?? null)}`;
+        } else {
+          const routeStartText = this.formatTime(route.route_start_time as any);
+          const firstTimelineStartText = this.formatTime((routeHotspots[0] as any)?.hotspot_start_time ?? null);
+
+          if (routeStartText && firstTimelineStartText) {
+            const orderedStartRange = this.orderedTimeRange(routeStartText, firstTimelineStartText);
+            startTimeRange = orderedStartRange ?? `${routeStartText} - ${firstTimelineStartText}`;
+          } else if (routeStartText) {
+            const routeStartMins = this.timeToMinutes(routeStartText);
+            const fallbackEndText = this.minutesToDisplayTime(routeStartMins + 60);
+            startTimeRange = `${routeStartText} - ${fallbackEndText}`;
+          }
+        }
+
+        if (startTimeRange) {
+          segments.push({
+            type: 'start' as const,
+            title: index === 0 ? 'Start your Journey' : 'Start Your Day',
+            timeRange: startTimeRange,
+          });
+        }
       }
 
       for (const rh of routeHotspots) {
+        // ✅ NEW FILTER: Skip hotel rows marked as appearing before route start
+        // These are previous-day checkout rows incorrectly attached to current day
+        const isConflictMarked = (rh as any).is_conflict === 1 || (rh as any).isConflict === true;
+        const conflictReason = String((rh as any).conflict_reason || (rh as any).conflictReason || '');
+        
+        if (isConflictMarked && conflictReason.includes('HOTEL_ROW_BEFORE_ROUTE_START')) {
+          // Log the suppression for proof
+          if (proofQuoteEnabled) {
+            console.log('[HotelDayBoundaryAPI][PROOF] Suppressing hotel row before route start', {
+              quoteId,
+              routeId: route.itinerary_route_ID,
+              routeHotspotId: rh.route_hotspot_ID,
+              itemType: (rh as any).item_type,
+              itemTypeName: (rh as any).item_type === 5 ? 'TRAVEL_TO_HOTEL' : ((rh as any).item_type === 6 ? 'CHECKIN' : 'OTHER'),
+              startTime: this.formatTime((rh as any).hotspot_start_time ?? null),
+              endTime: this.formatTime((rh as any).hotspot_end_time ?? null),
+              conflictReason,
+              action: 'SKIPPED_FROM_RESPONSE',
+            });
+          }
+          continue;  // Skip this row, don't add segment to response
+        }
+
         const master = rh.hotspot_ID
           ? hotspotMap.get(rh.hotspot_ID as number) || null
           : null;
@@ -596,11 +1530,29 @@ export class ItineraryDetailsService {
         if (itemType === 1) {
           // PHP doesn't actually show a separate row here; we already pushed
           // the generic "Start your Journey" above, so just update previousStop.
-          previousStopName =
+          const newPreviousStopName = 
             location?.source_location ??
             route.location_name ??
             plan.arrival_location ??
             '';
+          
+          // [PROOF] Log START processing
+          if (proofQuoteEnabled) {
+            console.log('[ItemType1Start][PROOF]', {
+              quoteId,
+              routeId: route.itinerary_route_ID,
+              routeHotspotId: rh.route_hotspot_ID,
+              hotspotOrder: (rh as any).hotspot_order,
+              sourceLocation: location?.source_location ?? 'N/A',
+              routeLocationName: route.location_name ?? 'N/A',
+              planArrivalLocation: plan.arrival_location ?? 'N/A',
+              derivedStartLocation: newPreviousStopName,
+              timeRange: `${startTimeText} - ${endTimeText}`,
+              previousStopNameBefore: previousStopName,
+            });
+          }
+          
+          previousStopName = newPreviousStopName;
           continue;
         }
 
@@ -630,18 +1582,26 @@ export class ItineraryDetailsService {
             totalDistanceKm += distanceNum;
           }
 
+          const travelRange = this.orderedTimeRange(startTimeText, endTimeText);
+
+          pushHotspotAnchorPlaceholder({
+            from: previousStopName,
+            to: toName,
+            timeRange: travelRange,
+          });
           segments.push({
             type: "travel" as const,
             from: previousStopName,
             to: toName,
-            timeRange:
-              startTimeText && endTimeText
-                ? `${startTimeText} - ${endTimeText}`
-                : null,
+            timeRange: travelRange,
             distance: travelDistance,
             duration: this.formatDuration(travelDuration),
             note: "This may vary due to traffic conditions",
           });
+
+          if (!seenAttraction) {
+            emittedTravelBeforeFirstAttraction = true;
+          }
 
           previousStopName = toName;
           continue;
@@ -653,49 +1613,172 @@ export class ItineraryDetailsService {
           const allowViaRoute = (rh as any).allow_via_route ?? 0;
           const viaLocationName = (rh as any).via_location_name?.trim();
 
+          // [PROOF] Log item_type=3 entry state
+          if (proofQuoteEnabled) {
+            console.log('[ItemType3Entry][PROOF]', {
+              quoteId,
+              routeId: route.itinerary_route_ID,
+              routeHotspotId: rh.route_hotspot_ID,
+              hotspotOrder: (rh as any).hotspot_order,
+              hotspotId: rh.hotspot_ID,
+              hotspotName: master?.hotspot_name ?? 'N/A',
+              allowBreakHours,
+              allowViaRoute,
+              viaLocationName,
+              previousStopNameBeforeProcessing: previousStopName,
+              rowTimeStart: startTimeText,
+              rowTimeEnd: endTimeText,
+              rowDistance: travelDistance,
+              rowDuration: (rh as any).hotspot_traveling_time,
+            });
+          }
+
           if (allowBreakHours === 1) {
             // BREAK HOURS (Lunch break, waiting time, etc.)
             const toName = master?.hotspot_name ?? viaLocationName ?? previousStopName;
+            const breakRange = this.orderedTimeRange(startTimeText, endTimeText);
             
             segments.push({
               type: 'break' as const,
               location: toName,
               duration: this.formatDuration(travelDuration),
-              timeRange:
-                startTimeText && endTimeText
-                  ? `${startTimeText} - ${endTimeText}`
-                  : null,
+              timeRange: breakRange,
             });
           } else if (allowViaRoute === 1 && viaLocationName) {
             // VIA ROUTE (Travel via a location)
             const toName = viaLocationName;
+            const travelRange = this.orderedTimeRange(startTimeText, endTimeText);
 
             if (!Number.isNaN(distanceNum)) {
               totalDistanceKm += distanceNum;
             }
 
+            pushHotspotAnchorPlaceholder({
+              from: previousStopName,
+              to: toName,
+              timeRange: travelRange,
+            });
             segments.push({
               type: 'travel' as const,
               from: previousStopName,
               to: toName,
-              timeRange:
-                startTimeText && endTimeText
-                  ? `${startTimeText} - ${endTimeText}`
-                  : null,
+              timeRange: travelRange,
               distance: travelDistance,
               duration: this.formatDuration(travelDuration),
               note: 'This may vary due to traffic conditions',
             });
 
+            if (!seenAttraction) {
+              emittedTravelBeforeFirstAttraction = true;
+            }
+
             previousStopName = toName;
           } else {
-            // Regular travel to next hotspot or destination
-            // When hotspot_ID is 0, use route's next_visiting_location as destination
-            let toName =
+            if (suppressedLastRouteOrders.has(Number((rh as any).hotspot_order || 0))) {
+              continue;
+            }
+
+            // Regular travel to hotspot - use precomputed semantic mapping
+            const semanticMapping = travelSegmentSemantics.get(rh.route_hotspot_ID);
+            let fromName = semanticMapping?.from ?? previousStopName;  // Fallback only if not in map
+            let toName = semanticMapping?.to ?? 
               master?.hotspot_name ??
               viaLocationName ??
               (rh.hotspot_ID === 0 ? route.next_visiting_location : null) ??
               previousStopName;
+
+            // In force-conflict mode, keep the manually inserted conflict hotspot in sequence:
+            // Hotel -> [manual conflict hotspot] -> next scheduled attraction.
+            if (pendingForcedManualConflictRows.length > 0) {
+              for (const forcedRow of pendingForcedManualConflictRows) {
+                const forcedHotspotId = Number((forcedRow as any)?.hotspot_ID ?? 0);
+                if (!forcedHotspotId || insertedForcedManualConflictHotspotIds.has(forcedHotspotId)) {
+                  continue;
+                }
+
+                const forcedMaster = hotspotMap.get(forcedHotspotId);
+                const forcedName = String(forcedMaster?.hotspot_name ?? '').trim();
+                if (!forcedName) {
+                  insertedForcedManualConflictHotspotIds.add(forcedHotspotId);
+                  continue;
+                }
+
+                const preManualStart =
+                  this.formatTime((startHotspot as any)?.hotspot_start_time ?? null) ||
+                  this.formatTime(route.route_start_time as any) ||
+                  startTimeText;
+                const preManualEnd = startTimeText || preManualStart;
+                const preManualRange = this.orderedTimeRange(preManualStart, preManualEnd);
+                const forcedDurationMinutes = this.durationToMinutes((forcedMaster as any)?.hotspot_duration ?? null);
+                const conflictVisitStart = preManualEnd || preManualStart;
+                const conflictVisitStartMinutes = this.parseDisplayTimeMinutesStrict(conflictVisitStart);
+                const conflictVisitEnd =
+                  conflictVisitStartMinutes !== null && forcedDurationMinutes !== null
+                    ? this.minutesToDisplayTime(conflictVisitStartMinutes + forcedDurationMinutes)
+                    : conflictVisitStart;
+                const conflictVisitRange = this.orderedTimeRange(conflictVisitStart, conflictVisitEnd);
+                const conflictVisitTime = conflictVisitRange
+                  ? `${conflictVisitRange} (Manual override)`
+                  : 'Manual override';
+
+                const previousDayHotelName =
+                  index > 0
+                    ? routeHotelMap.get(routes[index - 1].itinerary_route_ID)?.hotel_name ?? null
+                    : null;
+                const travelFrom = previousDayHotelName || previousStopName?.trim() || fromName;
+                if (travelFrom && normalizeName(travelFrom) !== normalizeName(forcedName)) {
+                  pushHotspotAnchorPlaceholder({
+                    from: travelFrom,
+                    to: forcedName,
+                    timeRange: preManualRange,
+                  });
+
+                  segments.push({
+                    type: 'travel' as const,
+                    from: travelFrom,
+                    to: forcedName,
+                    timeRange: preManualRange,
+                    distance: '--',
+                    duration:
+                      this.formatDurationFromDisplayRange(preManualStart, preManualEnd) ||
+                      this.formatDuration('00:00:00'),
+                    note: 'This may vary due to traffic conditions',
+                    isConflict: true,
+                    conflictReason: 'Forced manual insertion after user confirmation.',
+                  });
+                }
+
+                segments.push({
+                  type: 'attraction' as const,
+                  name: forcedName,
+                  description: forcedMaster?.hotspot_description ?? '',
+                  visitTime: conflictVisitTime,
+                  duration: this.formatDuration((forcedMaster as any)?.hotspot_duration ?? null),
+                  amount: null,
+                  timings: '',
+                  image: (hotspotGalleryMap.get(forcedHotspotId) ?? [])[0] ?? null,
+                  galleryImages: hotspotGalleryMap.get(forcedHotspotId) ?? [],
+                  videoUrl: forcedMaster?.hotspot_video_url ?? null,
+                  planOwnWay: true,
+                  activities: [],
+                  hasAvailableActivities: false,
+                  hotspotId: forcedHotspotId,
+                  routeHotspotId: (forcedRow as any)?.route_hotspot_ID,
+                  locationId: route.location_id ? Number(route.location_id) : null,
+                  priority: Number((forcedMaster as any)?.hotspot_priority || 9999),
+                  isConflict: true,
+                  conflictReason: 'Forced manual insertion after user confirmation.',
+                  isManual: true,
+                  isDeleted: false,
+                });
+
+                insertedForcedManualConflictHotspotIds.add(forcedHotspotId);
+                previousStopName = forcedName;
+                fromName = forcedName;
+                seenAttraction = true;
+                emittedTravelBeforeFirstAttraction = true;
+              }
+            }
 
             if (toName === "Hotel") {
               const hotelInfo = routeHotelMap.get(route.itinerary_route_ID);
@@ -704,24 +1787,140 @@ export class ItineraryDetailsService {
               }
             }
 
+            const initiallyDerivedToName = toName;
+            let nextSemanticDestinationChosen: string | null = null;
+            let usedNextSemanticDestination = false;
+
+            if (proofQuoteEnabled) {
+              console.log('[Item3RegularTravelBeforeLookahead][PROOF]', {
+                quoteId,
+                routeId: route.itinerary_route_ID,
+                routeHotspotId: rh.route_hotspot_ID,
+                hotspotOrder: (rh as any).hotspot_order,
+                hotspotId: Number(rh.hotspot_ID ?? 0),
+                semanticMappingFound: !!semanticMapping,
+                derivedFromName: fromName,
+                derivedToNameInitial: initiallyDerivedToName,
+                rowTimes: `${startTimeText} - ${endTimeText}`,
+                rowDistance: travelDistance,
+              });
+            }
+
+            if (
+              normalizeName(fromName) === normalizeName(toName) &&
+              Number(rh.hotspot_ID ?? 0) > 0
+            ) {
+              const currentIndex = routeHotspots.indexOf(rh);
+              nextSemanticDestinationChosen =
+                currentIndex >= 0
+                  ? findNextSemanticDestinationName(routeHotspots, currentIndex)
+                  : null;
+
+              if (nextSemanticDestinationChosen) {
+                toName = nextSemanticDestinationChosen;
+                usedNextSemanticDestination = true;
+              }
+            }
+
+            if (proofQuoteEnabled) {
+              console.log('[Item3LookaheadResult][PROOF]', {
+                quoteId,
+                routeId: route.itinerary_route_ID,
+                routeHotspotId: rh.route_hotspot_ID,
+                fromEqualToCondition: normalizeName(fromName) === normalizeName(initiallyDerivedToName),
+                nextSemanticDestinationChosen,
+                usedNextSemanticDestination,
+                finalToName: toName,
+              });
+            }
+
+            const currentRowIndex = routeHotspots.indexOf(rh);
+            const hasUpcomingHotelSegment =
+              currentRowIndex >= 0 &&
+              routeHotspots
+                .slice(currentRowIndex + 1)
+                .some((nextRow) => {
+                  const nextType = Number((nextRow as any).item_type ?? 0);
+                  return nextType === 5 || nextType === 6;
+                });
+
+            const routeHotelName = getRouteHotelName();
+            const destinationCityLabel =
+              route.next_visiting_location ??
+              location?.destination_location ??
+              null;
+
+            // When this is the terminal city-level travel right before hotel rows,
+            // prefer the resolved hotel name so travel + checkin are consistent.
+            if (
+              hasUpcomingHotelSegment &&
+              Number(rh.hotspot_ID ?? 0) === 0 &&
+              destinationCityLabel &&
+              normalizeName(toName) === normalizeName(destinationCityLabel) &&
+              normalizeName(routeHotelName) !== '' &&
+              normalizeName(routeHotelName) !== 'hotel' &&
+              normalizeName(routeHotelName) !== normalizeName(destinationCityLabel)
+            ) {
+              toName = routeHotelName;
+            }
+
+            if (proofQuoteEnabled) {
+              console.log('[TravelSegment][PROOF]', {
+                quoteId,
+                routeId: route.itinerary_route_ID,
+                routeHotspotId: rh.route_hotspot_ID,
+                hotspotOrder: (rh as any).hotspot_order,
+                itemType: 3,
+                hotspotId: rh.hotspot_ID,
+                semanticFrom: fromName,
+                initiallyDerivedToName,
+                nextSemanticDestinationChosen,
+                finalFrom: fromName,
+                finalTo: toName,
+                fallbackUsed: !usedNextSemanticDestination,
+              });
+            }
+
             if (!Number.isNaN(distanceNum)) {
               totalDistanceKm += distanceNum;
             }
 
+            if (proofQuoteEnabled) {
+              console.log('[Item3SegmentEmitted][PROOF]', {
+                quoteId,
+                routeId: route.itinerary_route_ID,
+                routeHotspotId: rh.route_hotspot_ID,
+                type: 'travel',
+                from: fromName,
+                to: toName,
+                timeRange: this.orderedTimeRange(startTimeText, endTimeText),
+                distance: travelDistance,
+                duration: this.formatDuration(travelDuration),
+              });
+            }
+
+            const travelRange = this.orderedTimeRange(startTimeText, endTimeText);
+
+            pushHotspotAnchorPlaceholder({
+              from: fromName,
+              to: toName,
+              timeRange: travelRange,
+            });
             segments.push({
               type: "travel" as const,
-              from: previousStopName,
+              from: fromName,
               to: toName,
-              timeRange:
-                startTimeText && endTimeText
-                  ? `${startTimeText} - ${endTimeText}`
-                  : null,
+              timeRange: travelRange,
               distance: travelDistance,
               duration: this.formatDuration(travelDuration),
               note: "This may vary due to traffic conditions",
               isConflict: (rh as any).is_conflict === 1,
               conflictReason: (rh as any).conflict_reason ?? null,
             });
+
+            if (!seenAttraction) {
+              emittedTravelBeforeFirstAttraction = true;
+            }
 
             previousStopName = toName;
           }
@@ -734,6 +1933,76 @@ export class ItineraryDetailsService {
             continue;
           }
 
+          const isForcedManualConflictAttraction = isForcedManualConflictAttractionRow(rh);
+
+          if (!isForcedManualConflictAttraction && !seenAttraction && !emittedTravelBeforeFirstAttraction) {
+            const syntheticFrom = previousStopName?.trim() ||
+              location?.source_location ||
+              route.location_name ||
+              plan.arrival_location ||
+              '';
+            const syntheticTo = master.hotspot_name?.trim() || '';
+
+            const syntheticStart = this.formatTime((startHotspot as any)?.hotspot_start_time ?? null)
+              || this.formatTime(route.route_start_time as any)
+              || startTimeText;
+            const syntheticEnd = startTimeText || syntheticStart;
+            const syntheticRange = this.orderedTimeRange(syntheticStart, syntheticEnd);
+
+            const startMins = syntheticStart ? this.timeToMinutes(syntheticStart) : 0;
+            const endMins = syntheticEnd ? this.timeToMinutes(syntheticEnd) : startMins;
+            const durationMins = Math.max(0, endMins - startMins);
+            const durationH = Math.floor(durationMins / 60);
+            const durationM = durationMins % 60;
+            const durationHms = `${this.pad2(durationH)}:${this.pad2(durationM)}:00`;
+
+            if (
+              syntheticFrom &&
+              syntheticTo &&
+              normalizeName(syntheticFrom) !== normalizeName(syntheticTo)
+            ) {
+              pushHotspotAnchorPlaceholder({
+                from: syntheticFrom,
+                to: syntheticTo,
+                timeRange: syntheticRange,
+              });
+
+              segments.push({
+                type: 'travel' as const,
+                from: syntheticFrom,
+                to: syntheticTo,
+                timeRange: syntheticRange,
+                distance: '0.00 KM',
+                duration: this.formatDuration(durationHms),
+                note: 'This may vary due to traffic conditions',
+                isConflict: false,
+                conflictReason: null,
+              });
+            }
+
+            emittedTravelBeforeFirstAttraction = true;
+          }
+
+          if (index === routes.length - 1) {
+            const attractionEndMins = endTimeText ? this.timeToMinutes(endTimeText) : 0;
+            const overrunDropOffRow = routeHotspots.find((candidate: any) => {
+              const candidateType = Number((candidate as any).item_type ?? 0);
+              if (candidateType !== 7) return false;
+
+              const candidateStartText = this.formatTime((candidate as any).hotspot_start_time ?? null);
+              const candidateEndText = this.formatTime((candidate as any).hotspot_end_time ?? null);
+              const candidateStartMins = candidateStartText ? this.timeToMinutes(candidateStartText) : 0;
+              const candidateEndMins = candidateEndText ? this.timeToMinutes(candidateEndText) : 0;
+
+              return candidateStartMins === attractionEndMins && candidateEndMins > routeEndMins;
+            });
+
+            if (overrunDropOffRow) {
+              suppressedLastRouteOrders.add(Number((rh as any).hotspot_order || 0));
+              continue;
+            }
+          }
+
           const stayDuration = (master as any).hotspot_duration ?? null;
           const hotspotAmount = (rh as any).hotspot_amout ?? 0;
           const hotspotPlanOwnWay = (rh as any).hotspot_plan_own_way ?? 0;
@@ -741,6 +2010,14 @@ export class ItineraryDetailsService {
           
           const rawP = (master as any).hotspot_priority ?? (master as any).priority ?? 0;
           const priority = Number(rawP) === 0 ? 9999 : Number(rawP);
+
+          // Check if master catalog has activities for this hotspot
+          const catalogActivityCount = rh.hotspot_ID
+            ? await this.prisma.dvi_activity.count({
+                where: { hotspot_id: rh.hotspot_ID as number, deleted: 0, status: 1 },
+              })
+            : 0;
+          const hasAvailableActivities = catalogActivityCount > 0;
 
           // Fetch activities for this hotspot
           const activities = await this.prisma.dvi_itinerary_route_activity_details.findMany({
@@ -768,8 +2045,27 @@ export class ItineraryDetailsService {
 
           const activityMap = new Map(activityMasters.map(a => [a.activity_id, a]));
 
+          // Bulk fetch activity gallery images for this hotspot's activities
+          const activityGalleryRows = activityIds.length
+            ? await this.prisma.dvi_activity_image_gallery_details.findMany({
+                where: { activity_id: { in: activityIds }, deleted: 0 },
+                orderBy: { activity_image_gallery_details_id: 'asc' },
+                select: { activity_id: true, activity_image_gallery_name: true },
+              })
+            : [];
+          const activityGalleryMap = new Map<number, string[]>();
+          for (const g of activityGalleryRows) {
+            const id = g.activity_id ?? 0;
+            const name = (g.activity_image_gallery_name ?? '').toString().trim();
+            if (!name || !id) continue;
+            const urls = activityGalleryMap.get(id) ?? [];
+            urls.push(`/uploads/activity_gallery/${name}`);
+            activityGalleryMap.set(id, urls);
+          }
+
           const activityList = activities.map(actDetail => {
             const actMaster = activityMap.get(actDetail.activity_ID);
+            const actGallery = activityGalleryMap.get(actDetail.activity_ID) ?? [];
             return {
               id: actDetail.route_activity_ID,
               activityId: actDetail.activity_ID,
@@ -779,28 +2075,46 @@ export class ItineraryDetailsService {
               startTime: this.formatTime(actDetail.activity_start_time as any),
               endTime: this.formatTime(actDetail.activity_end_time as any),
               duration: this.formatDuration(actDetail.activity_traveling_time as any),
-              image: null, // Can be fetched from activity gallery if needed
+              image: actGallery[0] ?? null,
+              galleryImages: actGallery,
             };
           });
 
           // Check if there's wait time due to opening hours
-          let visitTimeDisplay = 
-            startTimeText && endTimeText
-              ? `${startTimeText} - ${endTimeText}`
-              : null;
+          const orderedVisitRange = this.orderedTimeRange(startTimeText, endTimeText);
+          let visitTimeDisplay = orderedVisitRange;
+
+          let timingValidationExecuted = false;
+          let timingValidationPassed = false;
+          let timingValidationSkippedReason: string | null = null;
 
           if (visitTimeDisplay && rh.hotspot_ID && route.itinerary_route_date) {
+            timingValidationExecuted = true;
             const timings = hotspotTimingMap.get(rh.hotspot_ID as number) || [];
             const dayOfWeek = (route.itinerary_route_date.getDay() + 6) % 7; // Mon=0 style
-            
-            const todayTimings = timings.filter(t => Number(t.hotspot_timing_day) === dayOfWeek && t.hotspot_closed !== 1);
-            
+
+            const dayTimings = timings.filter(t => Number(t.hotspot_timing_day) === dayOfWeek);
+            const todayTimings = dayTimings.filter(t => t.hotspot_closed !== 1);
+
+            if (dayTimings.length > 0 && todayTimings.length === 0) {
+              visitTimeDisplay = orderedVisitRange
+                ? `${orderedVisitRange} (closed on this day)`
+                : null;
+            }
+
             if (todayTimings.length > 0) {
               const isOpenAllTime = todayTimings.some(t => t.hotspot_open_all_time === 1);
               
               if (!isOpenAllTime) {
-                const arrivalMins = this.timeToMinutes(startTimeText);
-                const departureMins = this.timeToMinutes(endTimeText);
+                const visitStartText = orderedVisitRange
+                  ? String(orderedVisitRange).split(' - ')[0]?.trim()
+                  : startTimeText;
+                const visitEndText = orderedVisitRange
+                  ? String(orderedVisitRange).split(' - ')[1]?.trim()
+                  : endTimeText;
+
+                const arrivalMins = this.timeToMinutes(visitStartText);
+                const departureMins = this.timeToMinutes(visitEndText);
                 
                 // Check if visit fits in ANY window
                 const fitsInAnyWindow = todayTimings.some(t => {
@@ -817,20 +2131,42 @@ export class ItineraryDetailsService {
                     .sort((a, b) => this.timeToMinutes(a) - this.timeToMinutes(b))[0];
 
                   if (nextOpening) {
-                    visitTimeDisplay = `${startTimeText} - ${endTimeText} (opens at ${nextOpening})`;
+                    visitTimeDisplay = orderedVisitRange
+                      ? `${orderedVisitRange} (opens at ${nextOpening})`
+                      : null;
+                  } else {
+                    visitTimeDisplay = orderedVisitRange
+                      ? `${orderedVisitRange} (outside operating hours)`
+                      : null;
                   }
                 }
+                timingValidationPassed = fitsInAnyWindow;
+              } else {
+                timingValidationPassed = true;
               }
+            } else {
+              timingValidationSkippedReason = 'No open timings configured for the route day';
             }
+          } else {
+            timingValidationSkippedReason = 'Missing visit range, hotspot id, or route date';
+          }
+
+          if (isForcedManualConflictAttraction) {
+            // These rows are rendered via the synthetic sequence injected before regular travel.
+            // Skipping raw rows here prevents duplicate conflict attractions in timeline output.
+            continue;
           }
 
           // Format operating hours (timings)
           let operatingHours = '';
           const timings = rh.hotspot_ID ? hotspotTimingMap.get(rh.hotspot_ID as number) || [] : [];
           const dayOfWeek = route.itinerary_route_date ? (route.itinerary_route_date.getDay() + 6) % 7 : 0;
-          const todayTimings = timings.filter(t => Number(t.hotspot_timing_day) === dayOfWeek && t.hotspot_closed !== 1);
+          const dayTimings = timings.filter(t => Number(t.hotspot_timing_day) === dayOfWeek);
+          const todayTimings = dayTimings.filter(t => t.hotspot_closed !== 1);
 
-          if (todayTimings.length > 0) {
+          if (dayTimings.length > 0 && todayTimings.length === 0) {
+            operatingHours = 'Closed';
+          } else if (todayTimings.length > 0) {
             if (todayTimings.some(t => t.hotspot_open_all_time === 1)) {
               operatingHours = 'Open 24 Hours';
             } else {
@@ -848,10 +2184,12 @@ export class ItineraryDetailsService {
             duration: this.formatDuration(stayDuration),
             amount: hotspotAmount > 0 ? Number(hotspotAmount) : null,
             timings: operatingHours,
-            image: null,
+            image: (hotspotGalleryMap.get(rh.hotspot_ID as number) ?? [])[0] ?? null,
+            galleryImages: hotspotGalleryMap.get(rh.hotspot_ID as number) ?? [],
             videoUrl: hotspotVideoUrl,
             planOwnWay: hotspotPlanOwnWay === 1,
             activities: activityList,
+            hasAvailableActivities,
             hotspotId: rh.hotspot_ID as number,
             routeHotspotId: rh.route_hotspot_ID,
             locationId: route.location_id ? Number(route.location_id) : null,
@@ -863,30 +2201,173 @@ export class ItineraryDetailsService {
             isDeleted: (rh as any).deleted === 1,
           });
 
-          previousStopName = master.hotspot_name;
+          // [PROOF] Log attraction processing
+          if (proofQuoteEnabled) {
+            console.log('[AttractionProcessing][PROOF]', {
+              quoteId,
+              routeId: route.itinerary_route_ID,
+              routeHotspotId: rh.route_hotspot_ID,
+              hotspotOrder: (rh as any).hotspot_order,
+              hotspotId: rh.hotspot_ID,
+              hotspotName: master.hotspot_name,
+              visitTime: visitTimeDisplay,
+              previousStopNameBefore: previousStopName,
+            });
+          }
+
+          if (!isForcedManualConflictAttraction) {
+            previousStopName = master.hotspot_name;
+            seenAttraction = true;
+          }
+
           continue;
         }
 
         if (itemType === 5) {
           // TRAVEL TO HOTEL segment
-          // Show travel from last hotspot to hotel with time and distance
+          // Derive origin by chronology (latest attraction that ended at/before this travel start).
+          // Do NOT rely on row order; route rows are grouped by hotspot_order/item_type and can
+          // place future attractions before this travel-to-hotel row in the array.
+          
           const hotelInfo = routeHotelMap.get(route.itinerary_route_ID);
-          const toName = hotelInfo?.hotel_name ?? "Hotel";
+          const toName =
+            hotelInfo?.hotel_name ??
+            hotelInfo?.hotel_city ??
+            location?.destination_location ??
+            route.next_visiting_location ??
+            "Hotel";
+
+          const normalizeLabel = (value?: string | null) =>
+            String(value ?? '').trim().toLowerCase();
+          const sourceCityName = location?.source_location ?? route.location_name ?? '';
+          const destinationCityName = location?.destination_location ?? route.next_visiting_location ?? '';
+          const isSameCityRoute =
+            normalizeLabel(sourceCityName) !== '' &&
+            normalizeLabel(sourceCityName) === normalizeLabel(destinationCityName);
+          const isCityFallbackDestination =
+            !hotelInfo?.hotel_name &&
+            normalizeLabel(toName) !== '' &&
+            normalizeLabel(toName) === normalizeLabel(destinationCityName);
+
+          const travelStartMins = startTimeText ? this.timeToMinutes(startTimeText) : null;
+
+          // Find the chronologically last attraction that actually happened before this row.
+          // Fallback: use previous day's hotel name (if any), otherwise city name.
+          const prevDayHotelForItem5 = index > 0
+            ? routeHotelMap.get(routes[index - 1].itinerary_route_ID)?.hotel_name ?? null
+            : null;
+
+          let fromName =
+            prevDayHotelForItem5 ??
+            location?.source_location ??
+            route.location_name ??
+            plan.arrival_location ??
+            ""; // Safe fallback
+
+          if (travelStartMins !== null) {
+            let bestAttractionName: string | null = null;
+            let bestAttractionEnd = -1;
+
+            for (const candidate of routeHotspots) {
+              const candidateType = Number((candidate as any).item_type ?? 0);
+              if (candidateType !== 4 || Number(candidate.hotspot_ID ?? 0) <= 0) continue;
+
+              const candidateEndText = this.formatTime((candidate as any).hotspot_end_time ?? null);
+              if (!candidateEndText) continue;
+              const candidateEndMins = this.timeToMinutes(candidateEndText);
+
+              if (candidateEndMins <= travelStartMins && candidateEndMins >= bestAttractionEnd) {
+                const candidateMaster = hotspotMap.get(candidate.hotspot_ID as number);
+                if (candidateMaster?.hotspot_name?.trim()) {
+                  bestAttractionName = candidateMaster.hotspot_name;
+                  bestAttractionEnd = candidateEndMins;
+                }
+              }
+            }
+
+            if (bestAttractionName) {
+              fromName = bestAttractionName;
+            }
+          }
+
+          // Only suppress same-city hotel travel when the segment collapses into a redundant
+          // city-to-same-city label because the hotel could not be resolved beyond the city name.
+          if (
+            isSameCityRoute &&
+            isCityFallbackDestination &&
+            normalizeLabel(fromName) !== '' &&
+            normalizeLabel(fromName) === normalizeLabel(toName)
+          ) {
+            continue;
+          }
+
+          if (proofQuoteEnabled) {
+            console.log('[ItemType5TravelToHotel][PROOF]', {
+              quoteId,
+              routeId: route.itinerary_route_ID,
+              routeHotspotId: rh.route_hotspot_ID,
+              hotspotOrder: (rh as any).hotspot_order,
+              derivedFromName: fromName,
+              derivedToName: toName,
+              rowTimeStart: startTimeText,
+              rowTimeEnd: endTimeText,
+              rowDistance: travelDistance,
+            });
+          }
 
           if (!Number.isNaN(distanceNum)) {
             totalDistanceKm += distanceNum;
           }
 
+          // Handle reversed times in DB  for item_type=5
+          let travelToHotelTimeRange: string | null = null;
+          if (startTimeText && endTimeText) {
+            const startMins = this.timeToMinutes(startTimeText);
+            const endMins = this.timeToMinutes(endTimeText);
+            if (startMins > endMins) {
+              travelToHotelTimeRange = `${endTimeText} - ${startTimeText}`;
+              
+              // FIX #3: Store the actual ARRIVAL time (which is after reversal)
+              hotelArrivalTime = startTimeText;
+              
+              if (proofQuoteEnabled) {
+                console.log('[Item5TimeReversal][PROOF]', {
+                  quoteId,
+                  routeId: route.itinerary_route_ID,
+                  routeHotspotId: rh.route_hotspot_ID,
+                  storageOrder: `${startTimeText} - ${endTimeText}`,
+                  emitOrder: travelToHotelTimeRange,
+                  fromLocation: fromName,
+                  toLocation: toName,
+                  storedHotelArrivalTime: hotelArrivalTime,
+                });
+              }
+              
+              console.log('[TravelMapping][PROOF] item_type=5 reversed time range normalised', {
+                quoteId,
+                routeHotspotId: rh.route_hotspot_ID,
+                from: fromName,
+                to: toName,
+                storedRange: `${startTimeText} - ${endTimeText}`,
+                emittedRange: travelToHotelTimeRange,
+              });
+            } else {
+              travelToHotelTimeRange = `${startTimeText} - ${endTimeText}`;
+              
+              // FIX #3: Store the actual ARRIVAL time
+              hotelArrivalTime = endTimeText;
+            }
+          }
+
           segments.push({
             type: "travel" as const,
-            from: previousStopName,
+            from: fromName,
             to: toName,
-            timeRange:
-              startTimeText && endTimeText
-                ? `${startTimeText} - ${endTimeText}`
-                : null,
+            timeRange: travelToHotelTimeRange,
             distance: travelDistance,
-            duration: this.formatDuration(travelDuration),
+            duration:
+              this.formatDurationFromDisplayRange(startTimeText, endTimeText) ??
+              this.formatDuration(travelDuration),
             note: "This may vary due to traffic conditions",
             isConflict: (rh as any).is_conflict === 1,
             conflictReason: (rh as any).conflict_reason ?? null,
@@ -899,16 +2380,45 @@ export class ItineraryDetailsService {
         if (itemType === 6) {
           // HOTEL CHECK-IN / RETURN segment
           const hotelInfo = routeHotelMap.get(route.itinerary_route_ID);
-          const hotelName = hotelInfo?.hotel_name ?? "Hotel";
+          const hotelName =
+            hotelInfo?.hotel_name ??
+            hotelInfo?.hotel_city ??
+            location?.destination_location ??
+            route.next_visiting_location ??
+            "Hotel";
           const hotelAddress = hotelInfo?.hotel_address ?? "";
 
-          // ✅ Use ARRIVAL time for check-in (end time), not start time
-          // Fallback: startTimeText, then route end time
+          // FIX #3: Use hotel arrival time (from travel-to-hotel) if available
+          // Otherwise fallback to endTimeText from this checkin row, then startTimeText, then route end time
           const checkInTime =
+            hotelArrivalTime ??
             endTimeText ??
             startTimeText ??
             this.formatTime(route.route_end_time as any) ??
             null;
+
+          // [PROOF] Log checkin derivation
+          if (proofQuoteEnabled) {
+            console.log('[ItemType6CheckinEntry][PROOF]', {
+              quoteId,
+              routeId: route.itinerary_route_ID,
+              routeHotspotId: rh.route_hotspot_ID,
+              hotspotOrder: (rh as any).hotspot_order,
+              hotspotId: rh.hotspot_ID,
+              hotspotEndTimeRaw: (rh as any).hotspot_end_time,
+              hotspotStartTimeRaw: (rh as any).hotspot_start_time,
+              routeEndTime: route.route_end_time,
+              formattedEndTime: endTimeText,
+              formattedStartTime: startTimeText,
+              formattedRouteEndTime: this.formatTime(route.route_end_time as any),
+              usedHotelArrivalTime: !!hotelArrivalTime,
+              hotelArrivalTime,
+              selectedCheckInTime: checkInTime,
+              segmentIndexBeforeCheckin: segments.length,
+              previousStopNameAtThisPoint: previousStopName,
+              hotelNameResolved: hotelName,
+            });
+          }
 
           segments.push({
             type: "checkin" as const,
@@ -916,7 +2426,9 @@ export class ItineraryDetailsService {
             hotelAddress: hotelAddress,
             time: checkInTime,
           });
+          emittedTerminalSegment = true;
 
+          previousStopName = hotelName;
           continue;
         }
 
@@ -928,160 +2440,505 @@ export class ItineraryDetailsService {
             totalDistanceKm += distanceNum;
           }
 
+          // FIX #2: Validate that DROP_OFF doesn't exceed route end time
+          const dropOffEndMins = endTimeText ? this.timeToMinutes(endTimeText) : 0;
+          
+          if (dropOffEndMins > routeEndMins) {
+            // DROP_OFF row exceeds route end time - suppress it from normal segments
+            if (proofQuoteEnabled) {
+              console.log('[RouteEndValidation][DROPOFF_SUPPRESSED][PROOF]', {
+                quoteId,
+                routeId: route.itinerary_route_ID,
+                routeHotspotId: rh.route_hotspot_ID,
+                dropOffEndTime: endTimeText,
+                dropOffEndMins,
+                routeEndMins,
+                exceedsByMins: dropOffEndMins - routeEndMins,
+                reason: 'DROP_OFF exceeds route end time - segment suppressed',
+              });
+            }
+            // Skip this segment - do not emit
+            continue;
+          }
+
           segments.push({
             type: 'travel' as const,
             from: previousStopName,
             to: toName,
-            timeRange:
-              startTimeText && endTimeText
-                ? `${startTimeText} - ${endTimeText}`
-                : null,
+            timeRange: this.orderedTimeRange(startTimeText, endTimeText),
             distance: travelDistance,
             duration: this.formatDuration(travelDuration),
             note: 'This may vary due to traffic conditions',
             isConflict: (rh as any).isConflict === true,
             conflictReason: (rh as any).conflictReason ?? null,
           });
+          emittedTerminalSegment = true;
 
           previousStopName = toName;
           continue;
         }
       }
 
-      // Add "Click to Add Hotspot" segment after all hotspots
-      // This allows users to add more hotspots to the route
-      // Try to get location_id from route.location_id, or lookup by location_name if missing
-      let hotspotLocationId = route.location_id ? Number(route.location_id) : null;
-      
-      if (!hotspotLocationId) {
-        // Try multiple strategies to find the location
-        let foundLocation = null;
-        
-        // Strategy 1: Exact match on source_location with route.location_name
-        if (route.location_name) {
-          foundLocation = await this.prisma.dvi_stored_locations.findFirst({
-            where: {
-              source_location: route.location_name,
-              deleted: 0,
-            },
-          });
-        }
-        
-        // Strategy 2: If not found, try matching with next_visiting_location
-        if (!foundLocation && route.next_visiting_location) {
-          foundLocation = await this.prisma.dvi_stored_locations.findFirst({
-            where: {
-              OR: [
-                { source_location: route.next_visiting_location },
-                { destination_location: route.next_visiting_location },
-              ],
-              deleted: 0,
-            },
-          });
-        }
-        
-        // Strategy 3: Fuzzy match on location_name (contains)
-        if (!foundLocation && route.location_name) {
-          foundLocation = await this.prisma.dvi_stored_locations.findFirst({
-            where: {
-              OR: [
-                { source_location: { contains: route.location_name } },
-                { destination_location: { contains: route.location_name } },
-              ],
-              deleted: 0,
-            },
-          });
-        }
-        
-        if (foundLocation) {
-          hotspotLocationId = Number(foundLocation.location_ID);
-        }
-      }
-      
-      segments.push({
-        type: 'hotspot' as const,
-        text: 'Click to Add Hotspot',
-        locationId: hotspotLocationId,
-      });
-
       // RETURN block at the end of the day (only if no item_type 6 or 7 exists)
-      const hasReturnOrDropOff = routeHotspots.some((rh) => {
-        const itemType = Number((rh as any).item_type ?? 0);
-        return itemType === 6 || itemType === 7;
-      });
+      const hasReturnOrDropOff = emittedTerminalSegment;
 
       const dayEndTimeText = this.formatTime(route.route_end_time as any);
 
       if (!hasReturnOrDropOff) {
-        segments.push({
-          type: 'return' as const,
-          time: dayEndTimeText,
-          note: null,
+          segments.push({
+            type: 'return' as const,
+            time: dayEndTimeText,
+            note: null,
+          });
+        }
+
+        const dayStartTimeText = this.formatTime(route.route_start_time as any);
+
+
+
+
+// ================= FIXED DISTANCE CALCULATION =================
+
+// Fetch via routes FIRST
+const viaRoutes = await this.prisma.dvi_itinerary_via_route_details.findMany({
+  where: {
+    itinerary_plan_ID: planId,
+    itinerary_route_ID: route.itinerary_route_ID,
+    deleted: 0,
+  },
+  orderBy: { itinerary_via_route_ID: 'asc' },
+});
+
+const viaRoutesList = viaRoutes.map((vr) => ({
+  id: Number(vr.itinerary_via_location_ID),
+  name: String(vr.itinerary_via_location_name || '').trim(),
+}));
+
+const storedIntercityDistanceNum =
+  parseFloat(String((route as any).no_of_km ?? 0)) || 0;
+
+const sourceName =
+  location?.source_location ??
+  route.location_name ??
+  plan.arrival_location ??
+  '';
+
+const destinationName =
+  location?.destination_location ??
+  route.next_visiting_location ??
+  plan.departure_location ??
+  '';
+
+// Build FULL route chain
+const routeChain = [
+  sourceName,
+  ...viaRoutesList.map((v) => v.name),
+  destinationName,
+]
+  .map((v) => String(v || '').trim())
+  .filter(Boolean);
+
+// Remove duplicates (VERY IMPORTANT FIX)
+const cleanedRouteChain = routeChain.filter(
+  (value, index, self) =>
+    index === 0 || value.toLowerCase() !== self[index - 1].toLowerCase()
+);
+
+let viaRouteDistanceNum = 0;
+
+for (let i = 0; i < cleanedRouteChain.length - 1; i++) {
+  const from = cleanedRouteChain[i];
+  const to = cleanedRouteChain[i + 1];
+
+  // Try exact match first
+  let storedRoute = await this.prisma.dvi_stored_locations.findFirst({
+    where: {
+      deleted: 0,
+      source_location: from,
+      destination_location: to,
+    } as any,
+  });
+
+  // Try reverse match
+  if (!storedRoute) {
+    storedRoute = await this.prisma.dvi_stored_locations.findFirst({
+      where: {
+        deleted: 0,
+        source_location: to,
+        destination_location: from,
+      } as any,
+    });
+  }
+
+  const segmentKm =
+    parseFloat(
+      String(
+        (storedRoute as any)?.distance ??
+          (storedRoute as any)?.no_of_km ??
+          (storedRoute as any)?.location_distance ??
+          0
+      )
+    ) || 0;
+
+  viaRouteDistanceNum += segmentKm;
+}
+
+
+
+// Sightseeing distance
+// Sightseeing distance
+const vehicleKmForRoute = vehicleKmByRouteId.get(
+  Number(route.itinerary_route_ID || 0)
+);
+
+const sightseeingDistanceNum = Number(vehicleKmForRoute?.sightseeingKm || 0);
+
+// Fallback travel segment distance
+const travelSegmentDistanceNum = segments.reduce((sum, segment: any) => {
+  if (segment?.type !== 'travel') return sum;
+
+  const distanceNum =
+    parseFloat(String(segment?.distance ?? '').replace(/[^0-9.]/g, '')) || 0;
+
+  return sum + distanceNum;
+}, 0);
+
+// FINAL intercity distance priority:
+// 1. VIA-chain distance
+// 2. stored route.no_of_km
+// 3. visible travel segment total
+const intercityDistanceNum =
+  viaRouteDistanceNum > 0
+    ? viaRouteDistanceNum
+    : storedIntercityDistanceNum > 0
+      ? storedIntercityDistanceNum
+      : travelSegmentDistanceNum;
+
+// Total day distance = intercity + sightseeing
+const totalDistanceNum = intercityDistanceNum + sightseeingDistanceNum;
+
+const intercityDistance = this.formatKm(intercityDistanceNum);
+const sightseeingDistance = this.formatKm(sightseeingDistanceNum);
+const dayDistance = this.formatKm(totalDistanceNum);
+
+
+// DEBUG (keep this for testing)
+console.log('[FINAL_DISTANCE_DEBUG]', {
+  routeChain: cleanedRouteChain,
+  viaRouteDistanceNum,
+  storedIntercityDistanceNum,
+  finalUsed: intercityDistanceNum,
+});
+
+// ================= END FIX =================
+
+
+
+      // FIX #1: Sort segments chronologically.
+      // Strategy:
+      //   1. Lift out all anchor CTAs (type=hotspot) along with the index of the segment they
+      //      were inserted after (their preceding non-CTA neighbour index in the unsorted list).
+      //   2. Sort only the non-CTA segments by time.
+      //   3. Re-insert each CTA immediately after the sorted position of its preceding neighbour.
+      // This guarantees: Travel → Attraction → CTA → Travel → Attraction → CTA → …
+
+      // Step 1: extract CTAs and remember which non-CTA segment each followed.
+      type CtaEntry = { cta: any; afterSegmentRef: any | null };
+      const ctaEntries: CtaEntry[] = [];
+      const nonCtaSegments: any[] = [];
+
+      for (let i = 0; i < segments.length; i++) {
+        const seg = segments[i];
+        if (seg?.type === 'hotspot' && seg?.anchorType === 'after_travel') {
+          // Find the most recent non-CTA segment before this one.
+          let afterRef: any | null = null;
+          for (let j = i - 1; j >= 0; j--) {
+            if (!(segments[j]?.type === 'hotspot' && segments[j]?.anchorType === 'after_travel')) {
+              afterRef = segments[j];
+              break;
+            }
+          }
+          ctaEntries.push({ cta: seg, afterSegmentRef: afterRef });
+        } else {
+          nonCtaSegments.push(seg);
+        }
+      }
+
+      // Step 2: sort the non-CTA segments by time.
+      const typeOrder: Record<string, number> = {
+        'start': 0,
+        'travel': 1,
+        'attraction': 2,
+        'break': 3,
+        'checkin': 4,
+        'return': 5,
+      };
+
+      const getSegMinutes = (seg: any): number => {
+        let timeStr: string | null = null;
+        if (seg.type === 'start' || seg.type === 'travel' || seg.type === 'return' || seg.type === 'break') {
+          timeStr = seg.timeRange ? String(seg.timeRange).split(' - ')[0] : null;
+        } else if (seg.type === 'attraction') {
+          timeStr = seg.visitTime ? String(seg.visitTime).split(' - ')[0] : null;
+        } else if (seg.type === 'checkin') {
+          timeStr = seg.time ? String(seg.time).split(' - ')[0] : null;
+        }
+        const normalized = timeStr?.split('(')[0]?.trim() || null;
+        if (normalized) {
+          const strict = this.parseDisplayTimeMinutesStrict(normalized);
+          if (strict !== null) return strict;
+        }
+        return 1440;
+      };
+
+      const getSegEndMinutes = (seg: any): number => {
+        let timeStr: string | null = null;
+        if (seg.type === 'start' || seg.type === 'travel' || seg.type === 'return' || seg.type === 'break') {
+          timeStr = seg.timeRange ? String(seg.timeRange).split(' - ')[1] : null;
+        } else if (seg.type === 'attraction') {
+          timeStr = seg.visitTime ? String(seg.visitTime).split(' - ')[1] : null;
+        } else if (seg.type === 'checkin') {
+          timeStr = seg.time ? String(seg.time).split(' - ')[0] : null;
+        }
+
+        const normalized = timeStr?.split('(')[0]?.trim();
+        if (normalized) {
+          const strict = this.parseDisplayTimeMinutesStrict(normalized);
+          if (strict !== null) return strict;
+        }
+        return 1440;
+      };
+
+      nonCtaSegments.sort((a: any, b: any) => {
+        const aStart = getSegMinutes(a);
+        const bStart = getSegMinutes(b);
+        const diff = aStart - bStart;
+        if (diff !== 0) return diff;
+
+        const aEnd = getSegEndMinutes(a);
+        const bEnd = getSegEndMinutes(b);
+        const endDiff = aEnd - bEnd;
+        if (endDiff !== 0) return endDiff;
+
+        // Same-minute tie-break for dirty overlap data:
+        // if travel starts from an attraction location at the exact same minute,
+        // show the attraction first, then departure travel.
+        if (a?.type === 'travel' && b?.type === 'attraction') {
+          const aFrom = normalizeName(a?.from);
+          const aTo = normalizeName(a?.to);
+          const bName = normalizeName(b?.name);
+
+          if (aFrom.length > 0 && bName.length > 0 && aFrom === bName) {
+            return 1;
+          }
+          if (aTo.length > 0 && bName.length > 0 && aTo === bName) {
+            return -1;
+          }
+        }
+
+        if (a?.type === 'attraction' && b?.type === 'travel') {
+          const bFrom = normalizeName(b?.from);
+          const bTo = normalizeName(b?.to);
+          const aName = normalizeName(a?.name);
+
+          if (bFrom.length > 0 && aName.length > 0 && bFrom === aName) {
+            return -1;
+          }
+          if (bTo.length > 0 && aName.length > 0 && bTo === aName) {
+            return 1;
+          }
+        }
+
+        return (typeOrder[a.type] ?? 99) - (typeOrder[b.type] ?? 99);
+      });
+
+      // Step 3: splice each CTA back in right after its reference segment.
+      // Process in reverse anchorIndex order so earlier insertions don't shift later positions.
+      const sortedCtaEntries = [...ctaEntries].reverse();
+      for (const { cta, afterSegmentRef } of sortedCtaEntries) {
+        let insertAt = nonCtaSegments.length; // default: append
+        if (afterSegmentRef !== null) {
+          const refIdx = nonCtaSegments.indexOf(afterSegmentRef);
+          if (refIdx !== -1) {
+            insertAt = refIdx + 1;
+          }
+        }
+        nonCtaSegments.splice(insertAt, 0, cta);
+      }
+
+      // Replace segments in-place with the correctly ordered result.
+      segments.length = 0;
+      segments.push(...nonCtaSegments);
+
+      // In hotel-first flows, place start before check-in
+      // so the sequence reads: travel to hotel -> Start your Journey -> checkin.
+      const getSegmentStartMinutes = (seg: any): number | null => {
+        if (!seg) return null;
+
+        if (seg.type === 'start' || seg.type === 'travel' || seg.type === 'return' || seg.type === 'break') {
+          if (seg.timeRange) {
+            const start = String(seg.timeRange).split(' - ')[0]?.trim();
+            return start ? this.timeToMinutes(start) : null;
+          }
+          return null;
+        }
+
+        if (seg.type === 'attraction') {
+          if (seg.visitTime) {
+            const start = String(seg.visitTime).split(' - ')[0]?.trim();
+            return start ? this.timeToMinutes(start) : null;
+          }
+          return null;
+        }
+
+        if (seg.type === 'checkin') {
+          if (seg.time) {
+            const start = String(seg.time).split(' - ')[0]?.trim();
+            return start ? this.timeToMinutes(start) : null;
+          }
+          return null;
+        }
+
+        return null;
+      };
+
+      const startIndex = segments.findIndex((seg: any) => seg?.type === 'start');
+      const checkinIndex = segments.findIndex((seg: any) => seg?.type === 'checkin');
+      const routeHotelNameForDay = getRouteHotelName();
+      const routeHotelNameNormalized = normalizeName(routeHotelNameForDay);
+
+      const firstHotelDepartureTravel = segments.find((seg: any) => {
+        if (seg?.type !== 'travel') return false;
+        const fromNormalized = normalizeName(seg?.from);
+        const toNormalized = normalizeName(seg?.to);
+
+        return (
+          routeHotelNameNormalized.length > 0 &&
+          fromNormalized === routeHotelNameNormalized &&
+          toNormalized !== routeHotelNameNormalized
+        );
+      });
+
+      const checkinStartMins =
+        checkinIndex >= 0 ? getSegmentStartMinutes(segments[checkinIndex]) : null;
+      const firstHotelDepartureStartMins = getSegmentStartMinutes(firstHotelDepartureTravel);
+
+      const isHotelFirstFlow =
+        checkinIndex >= 0 &&
+        !!firstHotelDepartureTravel &&
+        checkinStartMins !== null &&
+        firstHotelDepartureStartMins !== null &&
+        checkinStartMins <= firstHotelDepartureStartMins;
+
+      if (isHotelFirstFlow && startIndex >= 0 && startIndex < checkinIndex) {
+        const [startSegment] = segments.splice(startIndex, 1);
+        const refreshedCheckinIndex = segments.findIndex((seg: any) => seg?.type === 'checkin');
+
+        if (refreshedCheckinIndex >= 0) {
+          // Insert START before CHECKIN
+          segments.splice(refreshedCheckinIndex, 0, startSegment);
+        } else {
+          segments.unshift(startSegment);
+        }
+      }
+
+      this.normalizeConfirmedTravelLabelsFromSequence(
+        segments,
+        routeHotelNameForDay,
+      );
+
+      // Ensure timeline never moves backward when source rows contain overlaps/reversed ranges.
+      this.normalizeSegmentChronology(segments);
+
+      if (proofQuoteEnabled) {
+        console.log('[SegmentChronology][SORT_APPLIED][PROOF]', {
+          quoteId,
+          routeId: route.itinerary_route_ID,
+          dayNumber: index + 1,
+          totalSegments: segments.length,
+          segmentOrder: segments.map((s: any) => {
+            const timeStr = s.timeRange ? s.timeRange.split(' - ')[0] : 'NO-TIME';
+            const label = s.type === 'travel' ? `${s.from}→${s.to}` : (s.name || s.hotelName || s.text || '');
+            return `${s.type}(${timeStr})[${label}]`;
+          }),
         });
       }
 
-      // Day distance: prefer total_running_kms from route (PHP header),
-      // otherwise fall back to summed travel distances.
-      let dayDistance: string | undefined = undefined;
-      const totalRunningRaw: any = (route as any).total_running_kms;
-      if (totalRunningRaw !== undefined && totalRunningRaw !== null) {
-        const n = parseFloat(String(totalRunningRaw));
-        if (!Number.isNaN(n)) {
-          dayDistance = `${n.toFixed(2)} KM`;
-        }
-      }
-      if (!dayDistance && totalDistanceKm > 0) {
-        dayDistance = `${totalDistanceKm.toFixed(2)} KM`;
-      }
-
-      const dayStartTimeText = this.formatTime(route.route_start_time as any);
-
-      // Fetch via routes for this route
-      const viaRoutes = await this.prisma.dvi_itinerary_via_route_details.findMany({
-        where: {
-          itinerary_plan_ID: planId,
-          itinerary_route_ID: route.itinerary_route_ID,
-          deleted: 0,
-        },
-        orderBy: { itinerary_via_route_ID: 'asc' },
-      });
-
-      const viaRoutesList = viaRoutes.map(vr => ({
-        id: Number(vr.itinerary_via_location_ID),
-        name: vr.itinerary_via_location_name,
-      }));
-
-      days.push({
-        id: route.itinerary_route_ID,
-        dayNumber: index + 1,
-        date: route.itinerary_route_date,
-        locationId: Number(route.location_id || 0),
-        departure:
-          location?.source_location ??
-          route.location_name ??
-          plan.arrival_location ??
-          '',
-        arrival:
-          location?.destination_location ??
-          route.next_visiting_location ??
-          plan.departure_location ??
-          '',
-        distance: dayDistance,
-        startTime: dayStartTimeText,
-        endTime: dayEndTimeText,
-        viaRoutes: viaRoutesList,
-        segments,
-      });
+     days.push({
+  id: route.itinerary_route_ID,
+  dayNumber: index + 1,
+  date: route.itinerary_route_date,
+  locationId: Number(route.location_id || 0),
+  departure:
+    location?.source_location ??
+    route.location_name ??
+    plan.arrival_location ??
+    '',
+  arrival:
+    location?.destination_location ??
+    route.next_visiting_location ??
+    plan.departure_location ??
+    '',
+  distance: dayDistance,
+intercityDistance,
+sightseeingDistance,       // local sightseeing separately
+  startTime: dayStartTimeText,
+  endTime: dayEndTimeText,
+  viaRoutes: viaRoutesList,
+  segments,
+});
     }
+
+    const itineraryPreference = Number((plan as any).itinerary_preference || 0);
+    const shouldIncludeVehicles = itineraryPreference === 2 || itineraryPreference === 3;
 
     // ------------------------------ VEHICLES ------------------------------
     // PHP displays vehicles directly from dvi_itinerary_plan_vendor_eligible_list
     // Each row in eligible list is already aggregated per vendor/branch/type/origin
-    const eligibleRows =
-      await this.prisma.dvi_itinerary_plan_vendor_eligible_list.findMany({
-        where: { itinerary_plan_id: planId, deleted: 0 },
-        orderBy: { itinerary_plan_vendor_eligible_ID: 'asc' },
-      });
+    const eligibleRows = shouldIncludeVehicles
+      ? await this.prisma.dvi_itinerary_plan_vendor_eligible_list.findMany({
+          where: { itinerary_plan_id: planId, deleted: 0 },
+          orderBy: { itinerary_plan_vendor_eligible_ID: 'asc' },
+        })
+      : [];
+
+    const assignedEligibleRows = eligibleRows.filter(
+      (e) => (e as any).itineary_plan_assigned_status === 1,
+    );
+
+    const totalAllowedKmFromAssigned = assignedEligibleRows.reduce(
+      (sum, e) => sum + (parseFloat(String((e as any).total_allowed_kms || 0)) || 0),
+      0,
+    );
+    const totalTravelledKmFromAssigned = assignedEligibleRows.reduce(
+      (sum, e) => sum + (parseFloat(String((e as any).total_kms || 0)) || 0),
+      0,
+    );
+    const totalExtraKmFromAssigned = assignedEligibleRows.reduce(
+      (sum, e) => sum + (parseFloat(String((e as any).total_extra_kms || 0)) || 0),
+      0,
+    );
+
+    let kmLimitWarning: string | undefined;
+    if (totalExtraKmFromAssigned > 0) {
+      kmLimitWarning = `Planner warning: assigned vehicles exceed allowed KM by ${totalExtraKmFromAssigned.toFixed(2)} km (extra KM charges may apply).`;
+    } else if (
+      totalAllowedKmFromAssigned > 0 &&
+      totalTravelledKmFromAssigned > totalAllowedKmFromAssigned
+    ) {
+      const overflow = totalTravelledKmFromAssigned - totalAllowedKmFromAssigned;
+      kmLimitWarning = `Planner warning: travelled KM exceed allowed KM by ${overflow.toFixed(2)} km.`;
+    }
+
+    this.logBookingRule({
+      rule: 'KM_LIMIT_WARNING',
+      quoteId,
+      planId,
+      emitted: Boolean(kmLimitWarning),
+      totalAllowedKm: Number(totalAllowedKmFromAssigned.toFixed(2)),
+      totalTravelledKm: Number(totalTravelledKmFromAssigned.toFixed(2)),
+      totalExtraKm: Number(totalExtraKmFromAssigned.toFixed(2)),
+    });
 
     // Fetch all vehicle type names to map vehicleTypeId -> vehicleTypeName
     const vehicleTypeIds = Array.from(
@@ -1101,60 +2958,67 @@ export class ItineraryDetailsService {
       vehicleTypes.map((vt: any) => [vt.vehicle_type_id, vt.vehicle_type_title || 'Unknown Vehicle Type'])
     );
 
-    // Also fetch day-wise vehicle details to calculate KM totals
-    const vehicleDetailsRows =
-      await this.prisma.$queryRawUnsafe(`
-        SELECT 
-          itinerary_plan_vendor_vehicle_details_ID,
-          itinerary_plan_vendor_eligible_ID,
-          itinerary_plan_id,
-          itinerary_route_id,
-          itinerary_route_date,
-          vehicle_type_id,
-          vehicle_qty,
-          vendor_id,
-          vendor_vehicle_type_id,
-          vehicle_id,
-          vendor_branch_id,
-          time_limit_id,
-          kms_limit_id,
-          travel_type,
-          itinerary_route_location_from,
-          itinerary_route_location_to,
-          total_running_km,
-          CAST(total_running_time AS CHAR) as total_running_time,
-          total_siteseeing_km,
-          CAST(total_siteseeing_time AS CHAR) as total_siteseeing_time,
-          total_pickup_km,
-          CAST(total_pickup_duration AS CHAR) as total_pickup_duration,
-          total_drop_km,
-          CAST(total_drop_duration AS CHAR) as total_drop_duration,
-          total_extra_km,
-          extra_km_rate,
-          total_extra_km_charges,
-          total_travelled_km,
-          total_travelled_time,
-          vehicle_rental_charges,
-          vehicle_toll_charges,
-          vehicle_parking_charges,
-          vehicle_driver_charges,
-          vehicle_permit_charges,
-          before_6_am_extra_time,
-          after_8_pm_extra_time,
-          before_6_am_charges_for_driver,
-          before_6_am_charges_for_vehicle,
-          after_8_pm_charges_for_driver,
-          after_8_pm_charges_for_vehicle,
-          total_vehicle_amount,
-          createdby,
-          createdon,
-          updatedon,
-          status,
-          deleted
-        FROM dvi_itinerary_plan_vendor_vehicle_details
-        WHERE itinerary_plan_id = ${planId} AND deleted = 0
-        ORDER BY itinerary_route_date ASC
-      `) as any[];
+    // Fetch vehicle details for ALL eligibles so every vendor shows day-wise breakdown on expand
+    const allEligibleIds = eligibleRows
+  .map((e) => Number((e as any).itinerary_plan_vendor_eligible_ID))
+  .filter((id) => id > 0);
+
+   const vehicleDetailsRows = allEligibleIds.length
+  ? await this.prisma.$queryRawUnsafe(`
+      SELECT 
+        itinerary_plan_vendor_vehicle_details_ID,
+        itinerary_plan_vendor_eligible_ID,
+        itinerary_plan_id,
+        itinerary_route_id,
+        itinerary_route_date,
+        vehicle_type_id,
+        vehicle_qty,
+        vendor_id,
+        vendor_vehicle_type_id,
+        vehicle_id,
+        vendor_branch_id,
+        time_limit_id,
+        kms_limit_id,
+        travel_type,
+        itinerary_route_location_from,
+        itinerary_route_location_to,
+        total_running_km,
+        CAST(total_running_time AS CHAR) as total_running_time,
+        total_siteseeing_km,
+        CAST(total_siteseeing_time AS CHAR) as total_siteseeing_time,
+        total_pickup_km,
+        CAST(total_pickup_duration AS CHAR) as total_pickup_duration,
+        total_drop_km,
+        CAST(total_drop_duration AS CHAR) as total_drop_duration,
+        total_extra_km,
+        extra_km_rate,
+        total_extra_km_charges,
+        total_travelled_km,
+        total_travelled_time,
+        vehicle_rental_charges,
+        vehicle_toll_charges,
+        vehicle_parking_charges,
+        vehicle_driver_charges,
+        vehicle_permit_charges,
+        before_6_am_extra_time,
+        after_8_pm_extra_time,
+        before_6_am_charges_for_driver,
+        before_6_am_charges_for_vehicle,
+        after_8_pm_charges_for_driver,
+        after_8_pm_charges_for_vehicle,
+        total_vehicle_amount,
+        createdby,
+        createdon,
+        updatedon,
+        status,
+        deleted
+      FROM dvi_itinerary_plan_vendor_vehicle_details
+      WHERE itinerary_plan_id = ${planId}
+        AND deleted = 0
+        AND itinerary_plan_vendor_eligible_ID IN (${allEligibleIds.join(",")})
+      ORDER BY itinerary_route_date ASC
+    `) as any[]
+  : [];
 
     // Group vehicle details by eligible ID to sum KMs
     const vehicleDetailsByEligible = new Map<number, any[]>();
@@ -1165,6 +3029,49 @@ export class ItineraryDetailsService {
       }
       vehicleDetailsByEligible.get(eligibleId)!.push(vd);
     }
+
+    const routeIds = Array.from(
+      new Set(
+        vehicleDetailsRows
+          .map((vd: any) => Number(vd.itinerary_route_id || 0))
+          .filter((id: number) => id > 0),
+      ),
+    );
+
+    const routeTimeRows = routeIds.length
+      ? await this.prisma.dvi_itinerary_route_details.findMany({
+          where: { itinerary_route_ID: { in: routeIds } },
+          select: {
+            itinerary_route_ID: true,
+            route_start_time: true,
+            route_end_time: true,
+          },
+        })
+      : [];
+    const routeTimeMap = new Map<number, { start: any; end: any }>(
+      routeTimeRows.map((r: any) => [
+        Number(r.itinerary_route_ID || 0),
+        { start: r.route_start_time, end: r.route_end_time },
+      ]),
+    );
+
+    const vehicleIds = Array.from(
+      new Set(
+        vehicleDetailsRows
+          .map((vd: any) => Number(vd.vehicle_id || 0))
+          .filter((id: number) => id > 0),
+      ),
+    );
+
+    const vehicleExtraRows = vehicleIds.length
+      ? await this.prisma.dvi_vehicle.findMany({
+          where: { vehicle_id: { in: vehicleIds }, deleted: 0, status: 1 },
+          select: { vehicle_id: true, extra_hour_charge: true },
+        })
+      : [];
+    const vehicleExtraHourRateMap = new Map<number, number>(
+      vehicleExtraRows.map((v: any) => [Number(v.vehicle_id || 0), Number(v.extra_hour_charge || 0)]),
+    );
 
     // 3) Load vendor branches (for names & origin location)
     const branchIds = Array.from(
@@ -1185,6 +3092,115 @@ export class ItineraryDetailsService {
       branches.map((b) => [b.vendor_branch_id, b]),
     );
 
+    const slabKeySet = new Set(
+      eligibleRows
+        .map((e) => `${Number((e as any).vendor_id || 0)}_${Number((e as any).vendor_vehicle_type_id || 0)}`)
+        .filter((k) => !k.startsWith('0_0')),
+    );
+    const slabWhereClauses = Array.from(slabKeySet)
+      .map((k) => {
+        const [vendorIdStr, vvtStr] = k.split('_');
+        return `(vendor_id = ${Number(vendorIdStr)} AND vendor_vehicle_type_id = ${Number(vvtStr)})`;
+      })
+      .join(' OR ');
+
+    const slabRows: Array<{
+      vendor_id: number;
+      vendor_vehicle_type_id: number;
+      time_limit_id: number;
+      time_limit_title: string | null;
+      hours_limit: number;
+      km_limit: number;
+    }> = slabWhereClauses
+      ? await this.prisma.$queryRawUnsafe(`
+          SELECT vendor_id, vendor_vehicle_type_id, time_limit_id, time_limit_title, hours_limit, km_limit
+          FROM dvi_time_limit
+          WHERE status = 1
+            AND deleted = 0
+            AND (${slabWhereClauses})
+          ORDER BY time_limit_id ASC
+        `)
+      : [];
+
+    const slabMap = new Map<string, Array<{
+      timeLimitId: number;
+      title: string;
+      hoursLimit: number;
+      kmLimit: number;
+    }>>();
+    const slabInfoByTimeLimit = new Map<number, { title: string; hoursLimit: number; kmLimit: number }>();
+    const maxSlabByKey = new Map<string, { timeLimitId: number; hoursLimit: number; kmLimit: number }>();
+    const slabHoursById = new Map<number, number>();
+    for (const slab of slabRows) {
+      const slabIdNum = Number(slab.time_limit_id || 0);
+      const hoursLimitNum = Number(slab.hours_limit || 0);
+      if (slabIdNum > 0 && !slabHoursById.has(slabIdNum)) {
+        slabHoursById.set(slabIdNum, hoursLimitNum);
+      }
+      const key = `${Number(slab.vendor_id || 0)}_${Number(slab.vendor_vehicle_type_id || 0)}`;
+      if (!slabMap.has(key)) slabMap.set(key, []);
+      slabMap.get(key)!.push({
+        timeLimitId: slabIdNum,
+        title: String(slab.time_limit_title || '').trim() || `${Number(slab.hours_limit || 0)} HRS ${Number(slab.km_limit || 0)} KMS`,
+        hoursLimit: hoursLimitNum,
+        kmLimit: Number(slab.km_limit || 0),
+      });
+      slabInfoByTimeLimit.set(slabIdNum, {
+        title: String(slab.time_limit_title || '').trim() || `${Number(slab.hours_limit || 0)} HRS ${Number(slab.km_limit || 0)} KMS`,
+        hoursLimit: hoursLimitNum,
+        kmLimit: Number(slab.km_limit || 0),
+      });
+
+      const existingMax = maxSlabByKey.get(key);
+      const kmLimitNum = Number(slab.km_limit || 0);
+      if (
+        !existingMax ||
+        hoursLimitNum > existingMax.hoursLimit ||
+        (hoursLimitNum === existingMax.hoursLimit && kmLimitNum > existingMax.kmLimit) ||
+        (hoursLimitNum === existingMax.hoursLimit && kmLimitNum === existingMax.kmLimit && slabIdNum > existingMax.timeLimitId)
+      ) {
+        maxSlabByKey.set(key, {
+          timeLimitId: slabIdNum,
+          hoursLimit: hoursLimitNum,
+          kmLimit: kmLimitNum,
+        });
+      }
+    }
+
+    const parseTimeToSeconds = (value: any): number | null => {
+      if (!value) return null;
+      if (value instanceof Date) {
+        return value.getUTCHours() * 3600 + value.getUTCMinutes() * 60 + value.getUTCSeconds();
+      }
+      const text = String(value).trim();
+      if (!/^\d{1,2}:\d{2}(:\d{2})?$/.test(text)) return null;
+      const parts = text.split(':').map((x) => Number(x || 0));
+      return (Number(parts[0] || 0) * 3600) + (Number(parts[1] || 0) * 60) + Number(parts[2] || 0);
+    };
+
+    const getExtraHourBreakupForRow = (vd: any): { count: number; rate: number; charge: number } => {
+      const routeInfo = routeTimeMap.get(Number(vd.itinerary_route_id || 0));
+      if (!routeInfo) return { count: 0, rate: 0, charge: 0 };
+
+      const startSec = parseTimeToSeconds(routeInfo.start);
+      const endSec = parseTimeToSeconds(routeInfo.end);
+      if (startSec === null || endSec === null) return { count: 0, rate: 0, charge: 0 };
+
+      let durationSec = endSec - startSec;
+      if (durationSec < 0) durationSec += 24 * 3600;
+      const serviceHours = durationSec / 3600;
+
+      const slabHours = Number(slabHoursById.get(Number(vd.time_limit_id || 0)) || 0);
+      const rate = Number(vehicleExtraHourRateMap.get(Number(vd.vehicle_id || 0)) || 0);
+      const slabKey = `${Number(vd.vendor_id || 0)}_${Number(vd.vendor_vehicle_type_id || 0)}`;
+      const maxSlab = maxSlabByKey.get(slabKey);
+      const isMaxSlab = Number(vd.time_limit_id || 0) === Number(maxSlab?.timeLimitId || 0);
+
+      if (!isMaxSlab || slabHours <= 0 || rate <= 0 || serviceHours <= slabHours) return { count: 0, rate, charge: 0 };
+      const count = Math.ceil(serviceHours - slabHours);
+      return { count, rate, charge: count * rate };
+    };
+
     // Build vehicles array directly from eligible list (like PHP does)
     const vehicles: ItineraryVehicleRowDto[] = eligibleRows.map((eligible) => {
       const branchId = (eligible as any).vendor_branch_id ?? 0;
@@ -1196,7 +3212,7 @@ export class ItineraryDetailsService {
       const totalAmount = (eligible as any).vehicle_grand_total ?? 0;
 
       // Get all charge breakdowns
-      const rentalCharges = (eligible as any).total_rental_charges ?? 0;
+      let rentalCharges = Number((eligible as any).total_rental_charges ?? 0);
       const tollCharges = (eligible as any).total_toll_charges ?? 0;
       const parkingCharges = (eligible as any).total_parking_charges ?? 0;
       const driverCharges = (eligible as any).total_driver_charges ?? 0;
@@ -1205,40 +3221,38 @@ export class ItineraryDetailsService {
       const before6amVendor = (eligible as any).total_before_6_am_charges_for_vehicle ?? 0;
       const after8pmDriver = (eligible as any).total_after_8_pm_charges_for_driver ?? 0;
       const after8pmVendor = (eligible as any).total_after_8_pm_charges_for_vehicle ?? 0;
+      let extraHourCharge = 0;
 
       // Calculate aggregated KMs from day-wise vehicle details
       const eligibleId = eligible.itinerary_plan_vendor_eligible_ID;
       const dayWiseDetails = vehicleDetailsByEligible.get(eligibleId) || [];
+      const selectedTimeLimitId = dayWiseDetails.length
+        ? Number((dayWiseDetails[0] as any).time_limit_id || 0)
+        : 0;
+      const slabKey = `${Number((eligible as any).vendor_id || 0)}_${Number((eligible as any).vendor_vehicle_type_id || 0)}`;
+      const availableSlabs = slabMap.get(slabKey) || [];
       
-      let totalRunningKm = 0;
-      let totalSiteseeingKm = 0;
-      let totalTravelledKm = 0;
-      
-      for (const vd of dayWiseDetails) {
-        totalRunningKm += parseFloat((vd as any).total_running_km || 0);
-        totalSiteseeingKm += parseFloat((vd as any).total_siteseeing_km || 0);
-        totalTravelledKm += parseFloat((vd as any).total_travelled_km || 0);
-      }
+     let totalRunningKm = 0;
+let totalSiteseeingKm = 0;
+let totalTravelledKm = 0;
 
-      // Build a breakdown list only for >0 amounts (for UI card)
-      const tmp: VehicleCostBreakdownItemDto[] = [];
-      const pushItem = (label: string, amount: number) => {
-        if (amount > 0) {
-          tmp.push({ label, amount });
-        }
-      };
+for (const vd of dayWiseDetails) {
+  const runningKm = parseFloat(String((vd as any).total_running_km || 0)) || 0;
+  const sightseeingKm = parseFloat(String((vd as any).total_siteseeing_km || 0)) || 0;
+  const dbTotalKm = parseFloat(String((vd as any).total_travelled_km || 0)) || 0;
 
-      pushItem('Rental Charges', rentalCharges);
-      pushItem('Toll Charges', tollCharges);
-      pushItem('Parking Charges', parkingCharges);
-      pushItem('Driver Charges', driverCharges);
-      pushItem('Permit Charges', permitCharges);
-      pushItem('Before 6 AM (Driver)', before6amDriver);
-      pushItem('Before 6 AM (Vehicle)', before6amVendor);
-      pushItem('After 8 PM (Driver)', after8pmDriver);
-      pushItem('After 8 PM (Vehicle)', after8pmVendor);
+  const expectedTotalKm = Number((runningKm + sightseeingKm).toFixed(2));
+  const safeTotalKm =
+    Math.abs(dbTotalKm - expectedTotalKm) <= 0.01
+      ? dbTotalKm
+      : expectedTotalKm;
 
-      const breakdown = tmp.length ? tmp : undefined;
+  totalRunningKm += runningKm;
+  totalSiteseeingKm += sightseeingKm;
+  totalTravelledKm += safeTotalKm;
+}
+
+      let breakdown: VehicleCostBreakdownItemDto[] | undefined;
 
       // Simple PHP-like package label: "Outstation - 250 KM"
       const totalKms = (eligible as any).total_kms ?? '';
@@ -1246,9 +3260,15 @@ export class ItineraryDetailsService {
 
       // Build day-wise pricing breakdown from vehicle details
       // Build day-wise pricing breakdown from vehicle details
-      // KMS per day: running_km, siteseeing_km, and total_travelled_km (running + siteseeing)
+      // KMS per day: pickup, running, siteseeing, drop, and computed total.
       const dayWisePricing: VehicleDayWisePricingDto[] = [];
       const dayWiseMap = new Map<string, any>();
+
+      const parseDurationToMinutes = (value: any): number => {
+        const seconds = parseTimeToSeconds(value);
+        if (seconds === null) return 0;
+        return Math.max(0, Math.round(seconds / 60));
+      };
       
       for (const vd of dayWiseDetails) {
         const dateStr = (vd as any).itinerary_route_date?.toISOString?.()?.split('T')[0] || '';
@@ -1263,9 +3283,25 @@ export class ItineraryDetailsService {
             parking: 0,
             driver: 0,
             permit: 0,
+            extraHourCount: 0,
+            extraHourRate: 0,
+            extraHour: 0,
+            extraKms: 0,
+            extraKm: 0,
+            timeLimitId: 0,
+            slabTitle: '',
+            slabHoursLimit: 0,
+            slabKmLimit: 0,
+            pickupKms: 0,
+            pickupDurationMinutes: 0,
+            dropKms: 0,
+            dropDurationMinutes: 0,
             travelKms: 0, // running_km per day
+            travelDurationMinutes: 0,
             sightseeingKms: 0, // siteseeing_km per day
-            totalKms: 0 // total_travelled_km per day
+            sightseeingDurationMinutes: 0,
+            totalDurationMinutes: 0,
+            totalKms: 0 // pickup + running + sightseeing + drop per day
           });
         }
         
@@ -1274,15 +3310,55 @@ export class ItineraryDetailsService {
           from: (vd as any).itinerary_route_location_from || '',
           to: (vd as any).itinerary_route_location_to || ''
         });
-        dayData.rental += parseFloat((vd as any).vehicle_rental_charges || 0);
+        const rawRental = parseFloat(String((vd as any).vehicle_rental_charges || 0)) || 0;
+        const extraHourBreakup = getExtraHourBreakupForRow(vd);
+        const dayExtraHourCharge = extraHourBreakup.charge;
+        const baseRental = Math.max(0, rawRental - dayExtraHourCharge);
+        dayData.rental += baseRental;
+        dayData.extraHourCount += extraHourBreakup.count;
+        dayData.extraHourRate = extraHourBreakup.rate || dayData.extraHourRate;
+        dayData.extraHour += dayExtraHourCharge;
+        dayData.extraKms += parseFloat(String((vd as any).total_extra_km || 0)) || 0;
+        dayData.extraKm += parseFloat(String((vd as any).total_extra_km_charges || 0)) || 0;
         dayData.toll += parseFloat((vd as any).vehicle_toll_charges || 0);
         dayData.parking += parseFloat((vd as any).vehicle_parking_charges || 0);
         dayData.driver += parseFloat((vd as any).vehicle_driver_charges || 0);
         dayData.permit += parseFloat((vd as any).vehicle_permit_charges || 0);
-        // Track all three KMS values per day
-        dayData.travelKms += parseFloat((vd as any).total_running_km || 0);
-        dayData.sightseeingKms += parseFloat((vd as any).total_siteseeing_km || 0);
-        dayData.totalKms += parseFloat((vd as any).total_travelled_km || 0);
+        dayData.pickupKms += parseFloat(String((vd as any).total_pickup_km || 0)) || 0;
+        const pickupDurationMinutes = parseDurationToMinutes((vd as any).total_pickup_duration);
+        dayData.pickupDurationMinutes += pickupDurationMinutes;
+        dayData.dropKms += parseFloat(String((vd as any).total_drop_km || 0)) || 0;
+        const dropDurationMinutes = parseDurationToMinutes((vd as any).total_drop_duration);
+        dayData.dropDurationMinutes += dropDurationMinutes;
+        const rowTimeLimitId = Number((vd as any).time_limit_id || 0);
+        const slabInfo = slabInfoByTimeLimit.get(rowTimeLimitId);
+        if (!dayData.timeLimitId && rowTimeLimitId > 0) {
+          dayData.timeLimitId = rowTimeLimitId;
+          dayData.slabTitle = slabInfo?.title || '';
+          dayData.slabHoursLimit = Number(slabInfo?.hoursLimit || 0);
+          dayData.slabKmLimit = Number(slabInfo?.kmLimit || 0);
+        } else if (dayData.timeLimitId > 0 && rowTimeLimitId > 0 && dayData.timeLimitId !== rowTimeLimitId) {
+          dayData.slabTitle = 'Mixed Slabs';
+        }
+        // Total KM in UI is defined as pickup + travel + sightseeing + drop.
+        const runningKm = parseFloat(String((vd as any).total_running_km || 0)) || 0;
+        const runningDurationMinutes = parseDurationToMinutes((vd as any).total_running_time);
+        const sightseeingKm = parseFloat(String((vd as any).total_siteseeing_km || 0)) || 0;
+        const sightseeingDurationMinutes = parseDurationToMinutes((vd as any).total_siteseeing_time);
+        const pickupKm = parseFloat(String((vd as any).total_pickup_km || 0)) || 0;
+        const dropKm = parseFloat(String((vd as any).total_drop_km || 0)) || 0;
+        const expectedTotalKm = Number((pickupKm + runningKm + sightseeingKm + dropKm).toFixed(2));
+
+        dayData.travelKms += runningKm;
+        dayData.travelDurationMinutes += runningDurationMinutes;
+        dayData.sightseeingKms += sightseeingKm;
+        dayData.sightseeingDurationMinutes += sightseeingDurationMinutes;
+        dayData.totalDurationMinutes +=
+          pickupDurationMinutes +
+          runningDurationMinutes +
+          sightseeingDurationMinutes +
+          dropDurationMinutes;
+        dayData.totalKms += expectedTotalKm;
       }
 
       // Convert map to array and format with day labels
@@ -1298,18 +3374,115 @@ export class ItineraryDetailsService {
           date: dateStr,
           dayLabel: `Day ${dayCounter} | ${dayName}`,
           route,
+          timeLimitId: dayData.timeLimitId || undefined,
+          slabTitle: dayData.slabTitle || undefined,
+          slabHoursLimit: dayData.slabHoursLimit || undefined,
+          slabKmLimit: dayData.slabKmLimit || undefined,
+          pickupKms: dayData.pickupKms,
+          pickupDurationMinutes: dayData.pickupDurationMinutes || undefined,
           travelKms: dayData.travelKms,
+          travelDurationMinutes: dayData.travelDurationMinutes || undefined,
           sightseeingKms: dayData.sightseeingKms,
+          sightseeingDurationMinutes: dayData.sightseeingDurationMinutes || undefined,
+          dropDurationMinutes: dayData.dropDurationMinutes || undefined,
+          totalDurationMinutes: dayData.totalDurationMinutes || undefined,
           totalKms: dayData.totalKms,
           rentalCharges: dayData.rental,
           tollCharges: dayData.toll,
           parkingCharges: dayData.parking,
           driverCharges: dayData.driver,
           permitCharges: dayData.permit,
-          totalCharges: dayData.rental + dayData.toll + dayData.parking + dayData.driver + dayData.permit
+          extraHourCount: dayData.extraHourCount,
+          extraHourRate: dayData.extraHourRate,
+          extraHourCharges: dayData.extraHour,
+          extraKms: dayData.extraKms,
+          extraKmCharges: dayData.extraKm,
+          dropKms: dayData.dropKms,
+          totalCharges:
+            dayData.rental +
+            dayData.extraHour +
+            dayData.extraKm +
+            dayData.toll +
+            dayData.parking +
+            dayData.driver +
+            dayData.permit
         });
         dayCounter++;
       }
+
+      const dayWiseRentalTotal = dayWisePricing.reduce((s, d) => s + Number(d.rentalCharges || 0), 0);
+      const dayWiseExtraHourCountTotal = dayWisePricing.reduce((s, d) => s + Number(d.extraHourCount || 0), 0);
+      const dayWiseExtraHourRate = Number(dayWisePricing.find((d) => Number(d.extraHourRate || 0) > 0)?.extraHourRate || 0);
+      const dayWiseExtraHourTotal = dayWisePricing.reduce((s, d) => s + Number(d.extraHourCharges || 0), 0);
+      const dayWiseExtraKmChargeTotal = dayWisePricing.reduce((s, d) => s + Number(d.extraKmCharges || 0), 0);
+      extraHourCharge = dayWiseExtraHourTotal;
+      if (dayWiseRentalTotal > 0) {
+        rentalCharges = dayWiseRentalTotal;
+      }
+
+      // Build a breakdown list only for >0 amounts (for UI card)
+      const tmp: VehicleCostBreakdownItemDto[] = [];
+      const pushItem = (label: string, amount: number) => {
+        if (amount > 0) {
+          tmp.push({ label, amount });
+        }
+      };
+
+      pushItem('Rental Charges', rentalCharges);
+      pushItem('Extra Hour Charges', extraHourCharge);
+      pushItem('Extra KM Charges', dayWiseExtraKmChargeTotal);
+      pushItem('Toll Charges', tollCharges);
+      pushItem('Parking Charges', parkingCharges);
+      pushItem('Driver Charges', driverCharges);
+      pushItem('Permit Charges', permitCharges);
+      pushItem('Before 6 AM (Driver)', before6amDriver);
+      pushItem('Before 6 AM (Vehicle)', before6amVendor);
+      pushItem('After 8 PM (Driver)', after8pmDriver);
+      pushItem('After 8 PM (Vehicle)', after8pmVendor);
+
+      breakdown = tmp.length ? tmp : undefined;
+
+      // Aggregate pickup/drop KMs from day-wise vehicle details
+      const totalPickupKm = dayWiseDetails.reduce((s: number, vd: any) => s + (parseFloat(String(vd.total_pickup_km || 0)) || 0), 0);
+      const totalDropKm = dayWiseDetails.reduce((s: number, vd: any) => s + (parseFloat(String(vd.total_drop_km || 0)) || 0), 0);
+      const firstDayVd = dayWiseDetails[0];
+      const lastDayVd = dayWiseDetails[dayWiseDetails.length - 1];
+      const totalPickupDuration = (firstDayVd as any)?.total_pickup_duration
+        ? formatHmsDuration(String((firstDayVd as any).total_pickup_duration))
+        : '0 Hours 0 Min';
+      const totalDropDuration = (lastDayVd as any)?.total_drop_duration
+        ? formatHmsDuration(String((lastDayVd as any).total_drop_duration))
+        : '0 Hours 0 Min';
+
+      // Summary fields from eligible_list
+      const noOfDays = dayWiseDetails.length || 1;
+      const eligAny = eligible as any;
+      const totalUsedKm = parseFloat(String(eligAny.total_kms || 0)) || 0;
+      const totalAllowedKm = parseFloat(String(eligAny.total_allowed_kms || 0)) || 0;
+      const extraKms =
+        parseFloat(String(eligAny.total_extra_kms || 0)) ||
+        parseFloat(String(eligAny.total_extra_local_kms || 0)) ||
+        0;
+      const extraKmRate = parseFloat(String(eligAny.extra_km_rate || 0)) || 0;
+      const extraKmCharge =
+        dayWiseExtraKmChargeTotal ||
+        parseFloat(String(eligAny.total_extra_kms_charge || 0)) ||
+        parseFloat(String(eligAny.total_extra_local_kms_charge || 0)) ||
+        0;
+      const totalCostOfVehicle = rentalCharges + tollCharges + parkingCharges + driverCharges + permitCharges
+        + Number(eligAny.total_before_6_am_charges_for_driver ?? 0)
+        + Number(eligAny.total_before_6_am_charges_for_vehicle ?? 0)
+        + Number(eligAny.total_after_8_pm_charges_for_driver ?? 0)
+        + Number(eligAny.total_after_8_pm_charges_for_vehicle ?? 0)
+        + extraHourCharge;
+      const subtotal = totalCostOfVehicle + extraKmCharge;
+      const vehicleGstPercentage = parseFloat(String(eligAny.vehicle_gst_percentage || 0)) || 0;
+      const vehicleGstAmount = parseFloat(String(eligAny.vehicle_gst_amount || 0)) || 0;
+      const vendorMarginPercentage = parseFloat(String(eligAny.vendor_margin_percentage || 0)) || 0;
+      const vendorMarginAmount = parseFloat(String(eligAny.vendor_margin_amount || 0)) || 0;
+      const vendorMarginGstPercentage = parseFloat(String(eligAny.vendor_margin_gst_percentage || 0)) || 0;
+      const vendorMarginGstAmount = parseFloat(String(eligAny.vendor_margin_gst_amount || 0)) || 0;
+      const grandTotal = parseFloat(String(eligAny.vehicle_grand_total || 0)) || 0;
 
       return {
         vendorName: branch?.vendor_branch_name ?? null,
@@ -1323,6 +3496,8 @@ export class ItineraryDetailsService {
         vehicleTypeId: vehicleTypeId,
         vehicleTypeName: vehicleTypeNameMap.get(vehicleTypeId) || 'Unknown Vehicle Type',
         isAssigned: (eligible as any).itineary_plan_assigned_status === 1,
+        selectedTimeLimitId,
+        availableSlabs,
 
         rentalCharges,
         tollCharges,
@@ -1336,12 +3511,36 @@ export class ItineraryDetailsService {
         after8pmVendor,
         breakdown,
         packageLabel,
-        
+
+        // PHP summary panel fields
+        totalDays: noOfDays,
+        totalCostOfVehicle,
+        totalPickupKm,
+        totalPickupDuration,
+        totalDropKm,
+        totalDropDuration,
+        totalUsedKm,
+        totalAllowedKm,
+        extraKms,
+        extraKmRate,
+        extraKmCharge,
+        extraHourCount: dayWiseExtraHourCountTotal,
+        extraHourRate: dayWiseExtraHourRate,
+        extraHourCharge,
+        subtotal,
+        vehicleGstPercentage,
+        vehicleGstAmount,
+        vendorMarginPercentage,
+        vendorMarginAmount,
+        vendorMarginGstPercentage,
+        vendorMarginGstAmount,
+        grandTotal,
+
         // KM columns for the UI card
         col1Distance: totalRunningKm > 0 ? `${totalRunningKm.toFixed(2)} KM` : '0.00 KM',
         col2Distance: totalSiteseeingKm > 0 ? `${totalSiteseeingKm.toFixed(2)} KM` : '0.00 KM',
         col3Distance: totalTravelledKm > 0 ? `${totalTravelledKm.toFixed(2)} KM` : '0.00 KM',
-        col1Duration: '0 Min', // Duration can be calculated if needed
+        col1Duration: '0 Min',
         col2Duration: '0 Min',
         col3Duration: '0 Min',
       };
@@ -1377,6 +3576,11 @@ export class ItineraryDetailsService {
       where: hotelWhere,
     });
 
+    // Exclude marker/placeholder rows from cost math.
+    let costHotelRows = hotelRows.filter(
+      (h) => Number((h as any).hotel_required || 0) !== 2,
+    );
+
     // Total room cost (excluding meals initially)
     let totalRoomCost = 0;
     let totalAmenitiesCost = 0;
@@ -1385,14 +3589,82 @@ export class ItineraryDetailsService {
     let childWithoutBedCost = 0;
     let totalMealCost = 0;
 
-    hotelRows.forEach(h => {
-      totalRoomCost += Number(h.total_room_cost || 0) + Number(h.hotel_margin_rate || 0) + Number(h.total_room_gst_amount || 0);
+    costHotelRows.forEach(h => {
+      const detailedRoomCost =
+        Number(h.total_room_cost || 0) +
+        Number(h.hotel_margin_rate || 0) +
+        Number(h.total_room_gst_amount || 0);
+      const fallbackRoomCost = Number(h.total_hotel_cost || 0);
+
+      // TBO/cache rows often populate only total_hotel_cost; fallback keeps room totals non-zero.
+      totalRoomCost += detailedRoomCost > 0 ? detailedRoomCost : fallbackRoomCost;
       totalAmenitiesCost += Number(h.total_amenities_cost || 0);
       extraBedCost += Number(h.total_extra_bed_cost || 0);
       childWithBedCost += Number(h.total_childwith_bed_cost || 0);
       childWithoutBedCost += Number(h.total_childwithout_bed_cost || 0);
       totalMealCost += Number(h.total_hotel_meal_plan_cost || 0);
     });
+
+    // For selected recommendation tabs, derive room total from live group-specific hotel details
+    // and override stale duplicated DB costs when they differ.
+    const getLiveSelectedGroupRoomCost = async (): Promise<number> => {
+      if (groupType === undefined) return 0;
+
+      try {
+        // Use the same default hotel_details dataset as frontend tabs
+        // (page=1, pageSize=20, all groups), then filter by selected group.
+        const hotelDetailsFallback = await this.hotelDetailsTboService.getHotelDetailsByQuoteIdFromTbo(
+          quoteId,
+        );
+
+        const fallbackRows = (hotelDetailsFallback.hotels || []).filter((h: any) => {
+          const rowGroupType = Number(h.groupType ?? 0);
+          return (
+            rowGroupType === Number(groupType) &&
+            String(h.hotelName || '') !== 'No Hotels Available'
+          );
+        });
+
+        const cheapestByStay = new Map<string, number>();
+        fallbackRows.forEach((h: any) => {
+          const routeId = Number(h.itineraryRouteId || 0);
+          const stayDate = String(h.date || '').trim();
+          if (!routeId || !stayDate) return;
+
+          const key = `${routeId}::${stayDate}`;
+          const amount = Number(h.totalHotelCost || 0) + Number(h.totalHotelTaxAmount || 0);
+          if (!Number.isFinite(amount) || amount <= 0) return;
+
+          const existing = cheapestByStay.get(key);
+          if (existing === undefined || amount < existing) {
+            cheapestByStay.set(key, amount);
+          }
+        });
+
+        const baseFallbackRoomCost = Array.from(cheapestByStay.values()).reduce(
+          (sum, v) => sum + Number(v || 0),
+          0,
+        );
+        const roomCountMultiplier = Math.max(Number(plan.preferred_room_count ?? 1), 1);
+        return baseFallbackRoomCost * roomCountMultiplier;
+      } catch {
+        return 0;
+      }
+    };
+
+    const liveSelectedGroupRoomCost = await getLiveSelectedGroupRoomCost();
+    const shouldUseLiveSelectedGroupCost =
+      liveSelectedGroupRoomCost > 0 &&
+      (totalRoomCost <= 0 || Math.abs(liveSelectedGroupRoomCost - totalRoomCost) > 0.01);
+
+    if (shouldUseLiveSelectedGroupCost) {
+      totalRoomCost = liveSelectedGroupRoomCost;
+      totalAmenitiesCost = 0;
+      extraBedCost = 0;
+      childWithBedCost = 0;
+      childWithoutBedCost = 0;
+      totalMealCost = 0;
+    }
 
     // Calculate per-person room cost (PHP logic)
     const totalAdults = plan.total_adult || 0;
@@ -1418,20 +3690,55 @@ export class ItineraryDetailsService {
 
     // 2. Vehicle costs already calculated
     const totalVehicleCost = totalVehicleAmount;
-    const totalVehicleQty = eligibleRows.reduce((sum, e) => sum + Number((e as any).total_vehicle_qty || 0), 0);
+    const totalVehicleQty = eligibleRows.reduce((sum, e) => {
+      const isAssigned = (e as any).itineary_plan_assigned_status === 1;
+      return sum + (isAssigned ? Number((e as any).total_vehicle_qty || 0) : 0);
+    }, 0);
 
     // 3. Calculate Guide, Hotspot, and Activity costs
     // For now set to 0, can be calculated from route activities/guides if needed
-    const totalGuideCost = 0;
-    const totalHotspotCost = 0;
-    const totalActivityCost = 0;
+    const [guideAgg, hotspotAgg, activityAgg] = await Promise.all([
+      this.prisma.dvi_itinerary_route_guide_details.aggregate({
+        where: { itinerary_plan_ID: planId, deleted: 0, status: 1 },
+        _sum: { guide_cost: true },
+      }),
+      this.prisma.dvi_itinerary_route_hotspot_details.aggregate({
+        where: {
+          itinerary_plan_ID: planId,
+          item_type: 4,
+          deleted: 0,
+          status: 1,
+        },
+        _sum: { hotspot_amout: true },
+      }),
+      this.prisma.dvi_itinerary_route_activity_details.aggregate({
+        where: { itinerary_plan_ID: planId, deleted: 0, status: 1 },
+        _sum: { activity_amout: true },
+      }),
+    ]);
+
+    const totalGuideCost = Number(guideAgg._sum.guide_cost || 0);
+    const totalHotspotCost = Number(hotspotAgg._sum.hotspot_amout || 0);
+    const totalActivityCost = Number(activityAgg._sum.activity_amout || 0);
+
+    this.logBookingRule({
+      rule: 'GUIDE_AGGREGATION',
+      quoteId,
+      planId,
+      totalGuideCost,
+      totalHotspotCost,
+      totalActivityCost,
+    });
 
     // 4. Calculate additional margin (10% for trips <= configured day limit)
     const itineraryNoDays = plan.no_of_days || 0;
     const additionalMarginPercentage = 10; // Could come from global settings
     const additionalMarginDayLimit = 3; // Could come from global settings
     
-    const subtotal = totalHotelAmount + totalVehicleCost;
+    const shouldIncludeHotels = itineraryPreference === 1 || itineraryPreference === 3;
+    const effectiveHotelAmount = shouldIncludeHotels ? totalHotelAmount : 0;
+
+    const subtotal = effectiveHotelAmount + totalVehicleCost;
     const additionalMargin = itineraryNoDays <= additionalMarginDayLimit 
       ? (subtotal * additionalMarginPercentage) / 100
       : 0;
@@ -1453,24 +3760,34 @@ export class ItineraryDetailsService {
 
     const costBreakdown: CostBreakdownDto = {
       // Hotel costs
-      totalRoomCost: totalRoomCostUpdated > 0 ? totalRoomCostUpdated : undefined,
-      roomCostPerPerson: roomCostPerPerson > 0 ? roomCostPerPerson : undefined,
-      hotelPaxCount: hotelPaxCount > 0 ? hotelPaxCount : undefined,
-      totalAmenitiesCost: totalAmenitiesCost > 0 ? totalAmenitiesCost : undefined,
-      extraBedCost: updatedExtraBedCost > 0 ? updatedExtraBedCost : undefined,
-      childWithBedCost: updatedChildWithBedCost > 0 ? updatedChildWithBedCost : undefined,
-      childWithoutBedCost: updatedChildWithoutBedCost > 0 ? updatedChildWithoutBedCost : undefined,
-      totalHotelAmount: totalHotelAmount > 0 ? totalHotelAmount : undefined,
+      totalRoomCost: shouldIncludeHotels && totalRoomCostUpdated > 0 ? totalRoomCostUpdated : undefined,
+      roomCostPerPerson: shouldIncludeHotels && roomCostPerPerson > 0 ? roomCostPerPerson : undefined,
+      hotelPaxCount: shouldIncludeHotels && hotelPaxCount > 0 ? hotelPaxCount : undefined,
+      totalAmenitiesCost: shouldIncludeHotels && totalAmenitiesCost > 0 ? totalAmenitiesCost : undefined,
+      extraBedCost: shouldIncludeHotels && updatedExtraBedCost > 0 ? updatedExtraBedCost : undefined,
+      childWithBedCost: shouldIncludeHotels && updatedChildWithBedCost > 0 ? updatedChildWithBedCost : undefined,
+      childWithoutBedCost: shouldIncludeHotels && updatedChildWithoutBedCost > 0 ? updatedChildWithoutBedCost : undefined,
+      totalHotelAmount: shouldIncludeHotels && effectiveHotelAmount > 0 ? effectiveHotelAmount : undefined,
       
       // Vehicle costs
-      totalVehicleCost: totalVehicleCost,
-      totalVehicleAmount: totalVehicleCost,
-      totalVehicleQty: totalVehicleQty > 0 ? totalVehicleQty : undefined,
+      totalVehicleCost: shouldIncludeVehicles ? totalVehicleCost : 0,
+      totalVehicleAmount: shouldIncludeVehicles ? totalVehicleCost : 0,
+      totalVehicleQty:
+        shouldIncludeVehicles && totalVehicleQty > 0 ? totalVehicleQty : undefined,
       
       // Activity/Guide costs
       totalGuideCost: totalGuideCost > 0 ? totalGuideCost : undefined,
       totalHotspotCost: totalHotspotCost > 0 ? totalHotspotCost : undefined,
       totalActivityCost: totalActivityCost > 0 ? totalActivityCost : undefined,
+      kmLimitWarning,
+      totalAllowedKm:
+        totalAllowedKmFromAssigned > 0 ? Number(totalAllowedKmFromAssigned.toFixed(2)) : undefined,
+      totalTravelledKm:
+        totalTravelledKmFromAssigned > 0
+          ? Number(totalTravelledKmFromAssigned.toFixed(2))
+          : undefined,
+      totalExtraKm:
+        totalExtraKmFromAssigned > 0 ? Number(totalExtraKmFromAssigned.toFixed(2)) : undefined,
       
       // Final calculations
       additionalMargin: additionalMargin,
@@ -1490,15 +3807,18 @@ export class ItineraryDetailsService {
           )}`
         : '';
 
-    // roomCount: ONLY from plan now. Hotels are handled by hotel endpoint.
-    const roomCount = plan.preferred_room_count ?? 0;
+    // Room count should be hidden for vehicle-only itineraries.
+    const roomCount = shouldIncludeHotels ? Number(plan.preferred_room_count ?? 0) : 0;
 
     const response: ItineraryDetailsResponseDto = {
       quoteId: plan.itinerary_quote_ID ?? '',
       planId: plan.itinerary_plan_ID,
+      itineraryPreference: Number((plan as any).itinerary_preference || 0),
       isConfirmed: !!confirmedPlan,
       confirmed_itinerary_plan_ID: confirmedPlan?.confirmed_itinerary_plan_ID,
       dateRange,
+      dayCount: Number((plan as any).no_of_days || days.length || 0),
+      nightCount: Number((plan as any).no_of_nights || 0),
       roomCount,
       extraBed: plan.total_extra_bed ?? 0,
       childWithBed: plan.total_child_with_bed ?? 0,
@@ -1507,6 +3827,7 @@ export class ItineraryDetailsService {
       children: plan.total_children ?? 0,
       infants: plan.total_infants ?? 0,
       overallCost: netPayable.toFixed(2), // Use calculated net payable
+      meal_plan_code: (plan as any).meal_plan_code ?? null,
 
       days,
 

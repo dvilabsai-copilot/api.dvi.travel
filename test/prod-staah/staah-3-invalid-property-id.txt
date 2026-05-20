@@ -1,0 +1,59 @@
+============================================================
+STAAH API Test Log
+============================================================
+Test Name: staah-3-invalid-property-id
+Timestamp: 2026-03-14T00:21:03.221Z
+Status: SUCCESS
+============================================================
+
+REQUEST:
+--------
+URL: https://dvi.travel/api/v1/staah-test/productInfo
+Method: POST
+Headers:
+{}
+
+Body:
+{
+  "apikey": "staah_C3g8K3b1wray989DVih37od3314r6444",
+  "propertyid": "INVALID_PROPERTY",
+  "action": "property_info",
+  "version": "2"
+}
+
+RESPONSE:
+---------
+Status: 200
+Headers:
+{
+  "server": "nginx/1.24.0 (Ubuntu)",
+  "date": "Sat, 14 Mar 2026 00:21:03 GMT",
+  "content-type": "application/json; charset=utf-8",
+  "content-length": "307",
+  "connection": "keep-alive",
+  "x-powered-by": "Express",
+  "access-control-allow-origin": "*",
+  "etag": "W/\"133-FSdDVr+CCUolqZZYmDopB0VLBAA\""
+}
+
+Data:
+{
+  "currency": "INR",
+  "propertyname": "",
+  "checkintime": "",
+  "checkouttime": "",
+  "contactinfo": {
+    "zip": "",
+    "latitude": "",
+    "longitude": "",
+    "country": "",
+    "addressline": "",
+    "city": "",
+    "fax": "",
+    "telephone": "",
+    "location": ""
+  },
+  "status": "fail",
+  "error_desc": "Invalid property ID.",
+  "trackingId": "03B54790-7759-4E15-A9C9-CF2F0EDB6F88"
+}

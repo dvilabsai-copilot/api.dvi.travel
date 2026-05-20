@@ -1,0 +1,589 @@
+{
+  "generatedAt": "2026-04-28T22:04:33.808Z",
+  "mode": "provider-level-direct-chain",
+  "capabilities": {
+    "hotelsSearchEndpoint": true,
+    "itinerariesPrebookEndpoint": true,
+    "itinerariesConfirmQuotationEndpoint": true,
+    "hotelsCancelEndpoint": true,
+    "providerGetBookingDetailMethod": true,
+    "providerGenerateVoucherMethod": false,
+    "providerCancelMethod": true
+  },
+  "notes": [
+    "This certification flow mirrors Postman provider-level chaining.",
+    "Backend public controllers differ from Postman chain for standalone provider operations.",
+    "No fake success is recorded; failures and skips are preserved in artifacts."
+  ],
+  "cases": [
+    {
+      "caseId": 1,
+      "caseName": "Case 1 - Domestic (Room 1 – Adult 1)",
+      "checkInDate": "2026-06-03",
+      "checkOutDate": "2026-06-04",
+      "runtime": {
+        "tokenId": "816fc7e0-e2fb-4a33-9860-d00773d767e0",
+        "traceId": "e4290e71-434d-11f1-855f-720abae076dd",
+        "bookingCode": "1088749!TB!1!TB!e4290e71-434d-11f1-855f-720abae076dd!TB!N!TB!AFF!",
+        "bookingId": "2117421",
+        "confirmationNo": "7449623145642",
+        "netAmount": 6459.33,
+        "agencyId": "57955",
+        "guestNationality": "IN",
+        "paymentMode": "Limit",
+        "noOfRooms": 1,
+        "searchFiltersNoOfRooms": 0,
+        "titleSet": [
+          "Mr"
+        ]
+      },
+      "steps": [
+        {
+          "stepNo": 1,
+          "stepName": "authenticate",
+          "status": "success",
+          "statusCode": 200,
+          "error": null
+        },
+        {
+          "stepNo": 2,
+          "stepName": "search",
+          "status": "success",
+          "statusCode": 200,
+          "error": null
+        },
+        {
+          "stepNo": 3,
+          "stepName": "prebook",
+          "status": "success",
+          "statusCode": 200,
+          "error": null
+        },
+        {
+          "stepNo": 4,
+          "stepName": "book",
+          "status": "success",
+          "statusCode": 200,
+          "error": null
+        },
+        {
+          "stepNo": 5,
+          "stepName": "get-booking-detail",
+          "status": "success",
+          "statusCode": 200,
+          "error": null
+        },
+        {
+          "stepNo": 6,
+          "stepName": "cancel",
+          "status": "success",
+          "statusCode": 200,
+          "error": null
+        }
+      ],
+      "mandatorySupplementsFound": 0,
+      "cancelPoliciesFound": 0,
+      "blockers": []
+    },
+    {
+      "caseId": 2,
+      "caseName": "Case 2 - Domestic (Room 1 – Adult 2, Child 2)",
+      "checkInDate": "2026-06-05",
+      "checkOutDate": "2026-06-06",
+      "runtime": {
+        "tokenId": "86298af7-9823-4b2b-b10e-b6850761a7fa",
+        "traceId": "f3263cda-434d-11f1-855f-720abae076dd",
+        "bookingCode": "1083629!TB!1!TB!f3263cda-434d-11f1-855f-720abae076dd!TB!N!TB!AFF!",
+        "bookingId": "2117422",
+        "confirmationNo": "7821985951585",
+        "netAmount": 8618.45,
+        "agencyId": "57955",
+        "guestNationality": "AE",
+        "paymentMode": "Limit",
+        "noOfRooms": 1,
+        "searchFiltersNoOfRooms": 0,
+        "titleSet": [
+          "Mr",
+          "Ms",
+          "Miss"
+        ]
+      },
+      "steps": [
+        {
+          "stepNo": 1,
+          "stepName": "authenticate",
+          "status": "success",
+          "statusCode": 200,
+          "error": null
+        },
+        {
+          "stepNo": 2,
+          "stepName": "search",
+          "status": "success",
+          "statusCode": 200,
+          "error": null
+        },
+        {
+          "stepNo": 3,
+          "stepName": "prebook",
+          "status": "success",
+          "statusCode": 200,
+          "error": null
+        },
+        {
+          "stepNo": 4,
+          "stepName": "book",
+          "status": "success",
+          "statusCode": 200,
+          "error": null
+        },
+        {
+          "stepNo": 5,
+          "stepName": "get-booking-detail",
+          "status": "success",
+          "statusCode": 200,
+          "error": null
+        },
+        {
+          "stepNo": 6,
+          "stepName": "cancel",
+          "status": "success",
+          "statusCode": 200,
+          "error": null
+        }
+      ],
+      "mandatorySupplementsFound": 0,
+      "cancelPoliciesFound": 0,
+      "blockers": []
+    },
+    {
+      "caseId": 3,
+      "caseName": "Case 3 - Domestic (Room 1 – Adult 1) (Room 2 – Adult 1)",
+      "checkInDate": "2026-06-07",
+      "checkOutDate": "2026-06-08",
+      "runtime": {
+        "tokenId": "e48484a3-fd03-45bb-a4d5-cd3828a7d7ad",
+        "traceId": "fccd02ff-434d-11f1-855f-720abae076dd",
+        "bookingCode": "1083571!TB!1!TB!fccd02ff-434d-11f1-855f-720abae076dd!TB!N!TB!AFF!",
+        "bookingId": "2117423",
+        "confirmationNo": "7483293045959",
+        "netAmount": 20363.92,
+        "agencyId": "57955",
+        "guestNationality": "IN",
+        "paymentMode": "Limit",
+        "noOfRooms": 2,
+        "searchFiltersNoOfRooms": 0,
+        "titleSet": [
+          "Mr",
+          "Ms"
+        ]
+      },
+      "steps": [
+        {
+          "stepNo": 1,
+          "stepName": "authenticate",
+          "status": "success",
+          "statusCode": 200,
+          "error": null
+        },
+        {
+          "stepNo": 2,
+          "stepName": "search",
+          "status": "success",
+          "statusCode": 200,
+          "error": null
+        },
+        {
+          "stepNo": 3,
+          "stepName": "prebook",
+          "status": "success",
+          "statusCode": 200,
+          "error": null
+        },
+        {
+          "stepNo": 4,
+          "stepName": "book",
+          "status": "success",
+          "statusCode": 200,
+          "error": null
+        },
+        {
+          "stepNo": 5,
+          "stepName": "get-booking-detail",
+          "status": "success",
+          "statusCode": 200,
+          "error": null
+        },
+        {
+          "stepNo": 6,
+          "stepName": "cancel",
+          "status": "success",
+          "statusCode": 200,
+          "error": null
+        }
+      ],
+      "mandatorySupplementsFound": 0,
+      "cancelPoliciesFound": 0,
+      "blockers": []
+    },
+    {
+      "caseId": 4,
+      "caseName": "Case 4 - Domestic (Room 1 – Adult 1, Child 2) (Room 2 – Adult 2)",
+      "checkInDate": "2026-06-09",
+      "checkOutDate": "2026-06-10",
+      "runtime": {
+        "tokenId": "11ab5910-e23c-438a-b36f-7d8ab845318f",
+        "traceId": "07a4ed3f-434e-11f1-855f-720abae076dd",
+        "bookingCode": "1124298!TB!1!TB!07a4ed3f-434e-11f1-855f-720abae076dd!TB!N!TB!AFF!",
+        "bookingId": "2117424",
+        "confirmationNo": "7672848995636",
+        "netAmount": 9488.630000000001,
+        "agencyId": "57955",
+        "guestNationality": "IN",
+        "paymentMode": "Limit",
+        "noOfRooms": 2,
+        "searchFiltersNoOfRooms": 0,
+        "titleSet": [
+          "Mr",
+          "Miss",
+          "Ms",
+          "Mrs"
+        ]
+      },
+      "steps": [
+        {
+          "stepNo": 1,
+          "stepName": "authenticate",
+          "status": "success",
+          "statusCode": 200,
+          "error": null
+        },
+        {
+          "stepNo": 2,
+          "stepName": "search",
+          "status": "success",
+          "statusCode": 200,
+          "error": null
+        },
+        {
+          "stepNo": 3,
+          "stepName": "prebook",
+          "status": "success",
+          "statusCode": 200,
+          "error": null
+        },
+        {
+          "stepNo": 4,
+          "stepName": "book",
+          "status": "success",
+          "statusCode": 200,
+          "error": null
+        },
+        {
+          "stepNo": 5,
+          "stepName": "get-booking-detail",
+          "status": "success",
+          "statusCode": 200,
+          "error": null
+        },
+        {
+          "stepNo": 6,
+          "stepName": "cancel",
+          "status": "success",
+          "statusCode": 200,
+          "error": null
+        }
+      ],
+      "mandatorySupplementsFound": 0,
+      "cancelPoliciesFound": 0,
+      "blockers": []
+    },
+    {
+      "caseId": 5,
+      "caseName": "Case 5 - International (Room 1 – Adult 1)",
+      "checkInDate": "2026-06-11",
+      "checkOutDate": "2026-06-12",
+      "runtime": {
+        "tokenId": "77964213-591a-4e78-a4d7-0f6daf06c02a",
+        "traceId": "136f29d6-434e-11f1-855f-720abae076dd",
+        "bookingCode": "6107371!TB!2!TB!136f29d6-434e-11f1-855f-720abae076dd!TB!N!TB!AFF!",
+        "bookingId": "2117425",
+        "confirmationNo": "7033654494666",
+        "netAmount": 2901.53,
+        "agencyId": "57955",
+        "guestNationality": "IN",
+        "paymentMode": "Limit",
+        "noOfRooms": 1,
+        "searchFiltersNoOfRooms": 0,
+        "titleSet": [
+          "Mr"
+        ]
+      },
+      "steps": [
+        {
+          "stepNo": 1,
+          "stepName": "authenticate",
+          "status": "success",
+          "statusCode": 200,
+          "error": null
+        },
+        {
+          "stepNo": 2,
+          "stepName": "search",
+          "status": "success",
+          "statusCode": 200,
+          "error": null
+        },
+        {
+          "stepNo": 3,
+          "stepName": "prebook",
+          "status": "success",
+          "statusCode": 200,
+          "error": null
+        },
+        {
+          "stepNo": 4,
+          "stepName": "book",
+          "status": "success",
+          "statusCode": 200,
+          "error": null
+        },
+        {
+          "stepNo": 5,
+          "stepName": "get-booking-detail",
+          "status": "success",
+          "statusCode": 200,
+          "error": null
+        },
+        {
+          "stepNo": 6,
+          "stepName": "cancel",
+          "status": "success",
+          "statusCode": 200,
+          "error": null
+        }
+      ],
+      "mandatorySupplementsFound": 0,
+      "cancelPoliciesFound": 0,
+      "blockers": []
+    },
+    {
+      "caseId": 6,
+      "caseName": "Case 6 - International (Room 1 – Adult 2, Child 2)",
+      "checkInDate": "2026-06-13",
+      "checkOutDate": "2026-06-14",
+      "runtime": {
+        "tokenId": "93ebad47-1315-4cff-991d-c90f3b5c0d9d",
+        "traceId": "1f0efd7f-434e-11f1-855f-720abae076dd",
+        "bookingCode": "1258480!TB!1!TB!1f0efd7f-434e-11f1-855f-720abae076dd!TB!N!TB!AFF!",
+        "bookingId": "2117426",
+        "confirmationNo": "7454820250117",
+        "netAmount": 16223.87,
+        "agencyId": "57955",
+        "guestNationality": "IN",
+        "paymentMode": "Limit",
+        "noOfRooms": 1,
+        "searchFiltersNoOfRooms": 0,
+        "titleSet": [
+          "Mr",
+          "Ms",
+          "Miss"
+        ]
+      },
+      "steps": [
+        {
+          "stepNo": 1,
+          "stepName": "authenticate",
+          "status": "success",
+          "statusCode": 200,
+          "error": null
+        },
+        {
+          "stepNo": 2,
+          "stepName": "search",
+          "status": "success",
+          "statusCode": 200,
+          "error": null
+        },
+        {
+          "stepNo": 3,
+          "stepName": "prebook",
+          "status": "success",
+          "statusCode": 200,
+          "error": null
+        },
+        {
+          "stepNo": 4,
+          "stepName": "book",
+          "status": "success",
+          "statusCode": 200,
+          "error": null
+        },
+        {
+          "stepNo": 5,
+          "stepName": "get-booking-detail",
+          "status": "success",
+          "statusCode": 200,
+          "error": null
+        },
+        {
+          "stepNo": 6,
+          "stepName": "cancel",
+          "status": "success",
+          "statusCode": 200,
+          "error": null
+        }
+      ],
+      "mandatorySupplementsFound": 0,
+      "cancelPoliciesFound": 0,
+      "blockers": []
+    },
+    {
+      "caseId": 7,
+      "caseName": "Case 7 - International (Room 1 – Adult 1) (Room 2 – Adult 1)",
+      "checkInDate": "2026-06-15",
+      "checkOutDate": "2026-06-16",
+      "runtime": {
+        "tokenId": "f9a5e4a1-59f0-48c7-86e9-c23481e62c40",
+        "traceId": "28c2ccbf-434e-11f1-855f-720abae076dd",
+        "bookingCode": "1035259!TB!5!TB!28c2ccbf-434e-11f1-855f-720abae076dd!TB!N!TB!AFF!",
+        "bookingId": "2117427",
+        "confirmationNo": "7511737483012",
+        "netAmount": 38893.08,
+        "agencyId": "57955",
+        "guestNationality": "US",
+        "paymentMode": "Limit",
+        "noOfRooms": 2,
+        "searchFiltersNoOfRooms": 0,
+        "titleSet": [
+          "Mr",
+          "Ms"
+        ]
+      },
+      "steps": [
+        {
+          "stepNo": 1,
+          "stepName": "authenticate",
+          "status": "success",
+          "statusCode": 200,
+          "error": null
+        },
+        {
+          "stepNo": 2,
+          "stepName": "search",
+          "status": "success",
+          "statusCode": 200,
+          "error": null
+        },
+        {
+          "stepNo": 3,
+          "stepName": "prebook",
+          "status": "success",
+          "statusCode": 200,
+          "error": null
+        },
+        {
+          "stepNo": 4,
+          "stepName": "book",
+          "status": "success",
+          "statusCode": 200,
+          "error": null
+        },
+        {
+          "stepNo": 5,
+          "stepName": "get-booking-detail",
+          "status": "success",
+          "statusCode": 200,
+          "error": null
+        },
+        {
+          "stepNo": 6,
+          "stepName": "cancel",
+          "status": "success",
+          "statusCode": 200,
+          "error": null
+        }
+      ],
+      "mandatorySupplementsFound": 0,
+      "cancelPoliciesFound": 0,
+      "blockers": []
+    },
+    {
+      "caseId": 8,
+      "caseName": "Case 8 - International (Room 1 – Adult 1, Child 2) (Room 2 – Adult 2)",
+      "checkInDate": "2026-06-17",
+      "checkOutDate": "2026-06-18",
+      "runtime": {
+        "tokenId": "2d00701a-acea-4f11-918a-b13cc3961125",
+        "traceId": "32f98ada-434e-11f1-855f-720abae076dd",
+        "bookingCode": "1035259!TB!2!TB!32f98ada-434e-11f1-855f-720abae076dd!TB!N!TB!AFF!",
+        "bookingId": "2117428",
+        "confirmationNo": "7470094887273",
+        "netAmount": 39784.66,
+        "agencyId": "57955",
+        "guestNationality": "US",
+        "paymentMode": "Limit",
+        "noOfRooms": 2,
+        "searchFiltersNoOfRooms": 0,
+        "titleSet": [
+          "Mr",
+          "Miss",
+          "Ms",
+          "Mrs"
+        ]
+      },
+      "steps": [
+        {
+          "stepNo": 1,
+          "stepName": "authenticate",
+          "status": "success",
+          "statusCode": 200,
+          "error": null
+        },
+        {
+          "stepNo": 2,
+          "stepName": "search",
+          "status": "success",
+          "statusCode": 200,
+          "error": null
+        },
+        {
+          "stepNo": 3,
+          "stepName": "prebook",
+          "status": "success",
+          "statusCode": 200,
+          "error": null
+        },
+        {
+          "stepNo": 4,
+          "stepName": "book",
+          "status": "success",
+          "statusCode": 200,
+          "error": null
+        },
+        {
+          "stepNo": 5,
+          "stepName": "get-booking-detail",
+          "status": "success",
+          "statusCode": 200,
+          "error": null
+        },
+        {
+          "stepNo": 6,
+          "stepName": "cancel",
+          "status": "success",
+          "statusCode": 200,
+          "error": null
+        }
+      ],
+      "mandatorySupplementsFound": 0,
+      "cancelPoliciesFound": 0,
+      "blockers": []
+    }
+  ],
+  "finalVerdict": {
+    "passed": 8,
+    "failed": 0,
+    "verdict": "READY"
+  }
+}

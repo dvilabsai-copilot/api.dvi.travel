@@ -26,17 +26,32 @@ export interface HotelSearchResult {
   hotelName: string;
   cityCode: string;
   address: string;
+  latitude?: number | string | null;
+  longitude?: number | string | null;
   rating: number;
   category?: string; // Hotel category/star rating
   facilities: string[];
+  amenities?: string[];
+  inclusions?: string[];
+  rateConditions?: any[];
+  cancellationPolicy?: any[] | string;
   images: string[];
   price: number;
+  netAmount?: number;
+  totalFare?: number;
   currency: string;
   roomTypes: RoomType[];
   roomType?: string; // Current room type name
   mealPlan?: string; // Meal plan info (if available)
   searchReference: string; // Used for confirmation
   expiresAt: Date; // When search result expires
+  // Supplement summary at hotel level
+  supplementSummary?: {
+    hasSupplements: boolean;
+    supplementCount: number;
+    atPropertyChargeCount: number;
+    requiresReview: boolean; // true if unknown types or mandatory charges
+  };
 }
 
 export interface RoomType {
@@ -46,6 +61,15 @@ export interface RoomType {
   capacity: number;
   price: number;
   cancellationPolicy: string;
+  // Supplements (optional - from search response)
+  supplements?: Array<{
+    type: string; // "AtProperty", etc
+    description: string;
+    amount: number;
+    currency: string;
+    chargeType?: string;
+    fromDate?: string;
+  }>;
 }
 
 export interface HotelSearchCriteria {
@@ -54,7 +78,15 @@ export interface HotelSearchCriteria {
   checkOutDate: string;
   roomCount: number;
   guestCount: number;
+  guestNationality?: string;
+  occupancies?: RoomOccupancy[];
   hotelCodes?: string; // Optional: specific hotel codes to search (comma-separated)
+}
+
+export interface RoomOccupancy {
+  adults: number;
+  children: number;
+  childrenAges?: number[];
 }
 
 export interface HotelPreferences {
@@ -62,6 +94,9 @@ export interface HotelPreferences {
   maxPrice?: number;
   facilities?: string[];
   preferredProvider?: string;
+  starRatings?: number[];
+  mealPlanCode?: string;
+  tboMealType?: string;
 }
 
 export interface HotelConfirmationDTO {
@@ -71,6 +106,7 @@ export interface HotelConfirmationDTO {
   checkInDate: string;
   checkOutDate: string;
   roomCount: number;
+  guestNationality?: string;
   guests: GuestDetails[];
   rooms: RoomSelection[];
   contactName: string;
@@ -81,10 +117,14 @@ export interface HotelConfirmationDTO {
 }
 
 export interface GuestDetails {
+  title?: string;
   firstName: string;
   lastName: string;
   email: string;
   phone: string;
+  nationality?: string;
+  pan?: string;
+  passportNo?: string;
 }
 
 export interface RoomSelection {

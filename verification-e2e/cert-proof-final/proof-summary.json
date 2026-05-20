@@ -1,0 +1,16 @@
+{
+  "status": "partial",
+  "reason": "No hotels returned from search, so prebook/confirm could not be executed.",
+  "search": {
+    "httpStatus": 400,
+    "guestNationalitySent": "US",
+    "foundHotels": 0,
+    "noOfRoomsUsed": null
+  },
+  "prebook": null,
+  "confirm": null,
+  "staleSession": {
+    "httpStatus": 400,
+    "message": "Route ID 1 not found in this itinerary"
+  }
+}

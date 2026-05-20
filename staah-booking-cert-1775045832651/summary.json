@@ -1,0 +1,112 @@
+{
+  "generatedAt": "2026-04-01T12:17:14.191Z",
+  "propertyId": "STAAHTESTHOTEL1",
+  "url": "https://channels-stage.staah.net/booking/getapi/reservation/v2",
+  "results": [
+    {
+      "label": "S1_01_Pre-Book",
+      "status": 200,
+      "pass": true,
+      "body": [
+        {
+          "bookingId": "",
+          "status": "fail",
+          "error_desc": "Invalid Booking Status"
+        },
+        {
+          "trackingId": "2A72A157-F8F1-4A70-956D-B660A2C40364"
+        }
+      ]
+    },
+    {
+      "label": "S1_02_Confirm",
+      "status": 200,
+      "pass": true,
+      "body": [
+        {
+          "bookingId": "DVI-CERT-S1-1775045832655",
+          "status": "success",
+          "error_desc": ""
+        },
+        {
+          "trackingId": "F6F0269B-B879-442D-98A8-E6AB38233899"
+        }
+      ]
+    },
+    {
+      "label": "S1_03_Pre-Modify",
+      "status": 200,
+      "pass": true,
+      "body": [
+        {
+          "bookingId": "",
+          "status": "fail",
+          "error_desc": "Invalid Booking Status"
+        },
+        {
+          "trackingId": "0C6E8E0B-AFB2-4964-98C6-2EB6ADA125BC"
+        }
+      ]
+    },
+    {
+      "label": "S1_04_Modify",
+      "status": 200,
+      "pass": true,
+      "body": [
+        {
+          "bookingId": "",
+          "status": "fail",
+          "error_desc": "Invalid Booking Status"
+        },
+        {
+          "trackingId": "A924EFB1-084F-46FF-A5E3-C1102D78DA9D"
+        }
+      ]
+    },
+    {
+      "label": "S1_05_Cancel",
+      "status": 200,
+      "pass": true,
+      "body": [
+        {
+          "bookingId": "DVI-CERT-S1-1775045832655",
+          "status": "success",
+          "error_desc": ""
+        },
+        {
+          "trackingId": "D55E60BD-FAFA-427C-BBCD-DFBF78858E48"
+        }
+      ]
+    },
+    {
+      "label": "S2_01_Confirm",
+      "status": 200,
+      "pass": true,
+      "body": [
+        {
+          "bookingId": "DVI-CERT-S2-1775045833584",
+          "status": "success",
+          "error_desc": ""
+        },
+        {
+          "trackingId": "CAE2030F-2579-4BD5-A79C-FEABE792344B"
+        }
+      ]
+    },
+    {
+      "label": "S2_02_Cancel",
+      "status": 200,
+      "pass": true,
+      "body": [
+        {
+          "bookingId": "DVI-CERT-S2-1775045833584",
+          "status": "success",
+          "error_desc": ""
+        },
+        {
+          "trackingId": "EF43149C-CBF3-4CD7-98E6-1246E4B7D1A0"
+        }
+      ]
+    }
+  ]
+}

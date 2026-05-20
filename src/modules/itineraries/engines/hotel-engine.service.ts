@@ -75,6 +75,10 @@ export class HotelEngineService {
     let hotelPickCount = 0;
     let roomPriceCount = 0;
     let mealPriceCount = 0;
+    const hotelSearchCache = new Map<string, Promise<any[]>>();
+    const roomPricesCache = new Map<string, Promise<any[]>>();
+    const mealPricesCache = new Map<string, Promise<any>>();
+    const roomTypeCache = new Map<number, Promise<number>>();
 
     const totalRoutes = routes.length;
     
@@ -115,13 +119,22 @@ export class HotelEngineService {
     const hotelResults = await Promise.all(
       hotelTasks.map(async (task) => {
         hotelPickCount++;
-        // Get multiple hotels for the user to choose from
-        const hotels = await this.hotelPricing.getHotelsByCategory(
-          preferredCategory,
-          task.city,
-          task.routeDate,
-          10  // Get up to 10 hotels per category
-        );
+        const routeDateKey = task.routeDate.toISOString().slice(0, 10);
+        const hotelCacheKey = `${preferredCategory}|${task.city}|${routeDateKey}`;
+
+        // Route hotel search is identical across group tabs, so share one in-flight lookup.
+        let hotelsPromise = hotelSearchCache.get(hotelCacheKey);
+        if (!hotelsPromise) {
+          hotelsPromise = this.hotelPricing.getHotelsByCategory(
+            preferredCategory,
+            task.city,
+            task.routeDate,
+            10
+          );
+          hotelSearchCache.set(hotelCacheKey, hotelsPromise);
+        }
+
+        const hotels = await hotelsPromise;
 
         if (!hotels || hotels.length === 0) {
           return {
@@ -132,9 +145,23 @@ export class HotelEngineService {
 
         // For each hotel, get room prices and meal prices
         const hotelDetailsPromises = hotels.map(async (hotel) => {
+          const hotelDateKey = `${hotel.hotel_id}|${routeDateKey}`;
+
+          let roomPricesPromise = roomPricesCache.get(hotelDateKey);
+          if (!roomPricesPromise) {
+            roomPricesPromise = this.hotelPricing.getRoomPrices(hotel.hotel_id, task.routeDate);
+            roomPricesCache.set(hotelDateKey, roomPricesPromise);
+          }
+
+          let mealPricesPromise = mealPricesCache.get(hotelDateKey);
+          if (!mealPricesPromise) {
+            mealPricesPromise = this.hotelPricing.getMealPrice(hotel.hotel_id, task.routeDate);
+            mealPricesCache.set(hotelDateKey, mealPricesPromise);
+          }
+
           const [roomPrices, mealPrices] = await Promise.all([
-            this.hotelPricing.getRoomPrices(hotel.hotel_id, task.routeDate),
-            this.hotelPricing.getMealPrice(hotel.hotel_id, task.routeDate),
+            roomPricesPromise,
+            mealPricesPromise,
           ]);
 
           roomPriceCount++;
@@ -144,11 +171,15 @@ export class HotelEngineService {
           
           let roomTypeId = 0;
           if (roomPrice.room_id > 0) {
-            const roomMaster = await (tx as any).dvi_hotel_rooms.findFirst({
-              where: { room_ID: roomPrice.room_id },
-              select: { room_type_id: true },
-            });
-            roomTypeId = roomMaster?.room_type_id || 0;
+            let roomTypePromise = roomTypeCache.get(roomPrice.room_id);
+            if (!roomTypePromise) {
+              roomTypePromise = (tx as any).dvi_hotel_rooms.findFirst({
+                where: { room_ID: roomPrice.room_id },
+                select: { room_type_id: true },
+              }).then((roomMaster: any) => roomMaster?.room_type_id || 0);
+              roomTypeCache.set(roomPrice.room_id, roomTypePromise);
+            }
+            roomTypeId = await roomTypePromise;
           }
 
           return {
