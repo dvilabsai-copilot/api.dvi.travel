@@ -515,8 +515,13 @@ export class HotspotEngineService {
         const preferredPlacementStart = preferredPlacement?.hotspotStartTime
           ? new Date(preferredPlacement.hotspotStartTime)
           : null;
+        const preferredPlacementEnd = preferredPlacement?.hotspotEndTime
+          ? new Date(preferredPlacement.hotspotEndTime)
+          : null;
         const preferredPlacementHasValidStart =
           !!preferredPlacementStart && Number.isFinite(preferredPlacementStart.getTime()) && preferredPlacementStart.getTime() !== placeholderEpoch;
+        const preferredPlacementHasValidEnd =
+          !!preferredPlacementEnd && Number.isFinite(preferredPlacementEnd.getTime()) && preferredPlacementEnd.getTime() !== placeholderEpoch;
         const preferredOrder = preferredPlacementOrder > 0
           ? preferredPlacementOrder
           : Number((anchorOrderByRoute as any)[routeId] || 0);
@@ -532,6 +537,23 @@ export class HotspotEngineService {
         );
         const insertionPoint = anchorVisitIndex >= 0 ? anchorVisitIndex : (lastVisitIndex + 1);
 
+        const anchorTravelRow = preferredOrder > 0
+          ? [...routeRows]
+              .filter((row: any) => Number(row?.item_type || 0) === 3 && Number(row?.hotspot_order || 0) === preferredOrder)
+              .sort((a: any, b: any) => {
+                const ai = rowsByRoute.get(routeId)!.indexOf(a);
+                const bi = rowsByRoute.get(routeId)!.indexOf(b);
+
+                if (anchorVisitIndex >= 0) {
+                  const ad = ai >= 0 ? Math.abs(anchorVisitIndex - ai) : Number.MAX_SAFE_INTEGER;
+                  const bd = bi >= 0 ? Math.abs(anchorVisitIndex - bi) : Number.MAX_SAFE_INTEGER;
+                  if (ad !== bd) return ad - bd;
+                }
+
+                return ai - bi;
+              })[0] || null
+          : null;
+
         // ════════════════════════════════════════════════════════════════
         // PROOF: Log last visit row details
         // ════════════════════════════════════════════════════════════════
@@ -541,7 +563,7 @@ export class HotspotEngineService {
               .find((r: any) => Number(r?.hotspot_order || 0) < preferredOrder) || null
           : null;
         const lastVisitRow = sortedVisitRows[sortedVisitRows.length - 1];
-        const timingReferenceRow = previousVisitRow || (preferredOrder > 0 ? null : lastVisitRow);
+        const timingReferenceRow = anchorTravelRow || previousVisitRow || (preferredOrder > 0 ? null : lastVisitRow);
         console.log(`\n[ManualHotspot][PROOF][${hotspotId}] LAST VISIT ROW DETAILS:`, {
           routeId,
           hotspotId: hotspotId,
@@ -551,6 +573,12 @@ export class HotspotEngineService {
           preferredPlacement_hotspotOrder: preferredPlacement?.hotspotOrder,
           preferredPlacement_hotspotStartTime: preferredPlacement?.hotspotStartTime,
           preferredPlacement_hotspotEndTime: preferredPlacement?.hotspotEndTime,
+          anchorTravel_route_hotspot_ID: anchorTravelRow?.route_hotspot_ID,
+          anchorTravel_hotspot_ID: anchorTravelRow?.hotspot_ID,
+          anchorTravel_item_type: anchorTravelRow?.item_type,
+          anchorTravel_hotspot_order: anchorTravelRow?.hotspot_order,
+          anchorTravel_hotspot_start_time: anchorTravelRow?.hotspot_start_time,
+          anchorTravel_hotspot_end_time: anchorTravelRow?.hotspot_end_time,
           timingReference_route_hotspot_ID: timingReferenceRow?.route_hotspot_ID,
           timingReference_hotspot_ID: timingReferenceRow?.hotspot_ID,
           timingReference_item_type: timingReferenceRow?.item_type,
@@ -560,32 +588,64 @@ export class HotspotEngineService {
           timingReference_hotspot_plan_own_way: timingReferenceRow?.hotspot_plan_own_way,
         });
 
+        const anchorTravelEndTime = anchorTravelRow?.hotspot_end_time || anchorTravelRow?.hotspot_start_time;
         const lastVisitEndTime = timingReferenceRow?.hotspot_end_time || timingReferenceRow?.hotspot_start_time;
         console.log(`[ManualHotspot][PROOF] Extracted lastVisitEndTime:`, {
           value: lastVisitEndTime,
-          source: timingReferenceRow?.hotspot_end_time
-            ? 'hotspot_end_time'
-            : (timingReferenceRow?.hotspot_start_time ? 'hotspot_start_time' : 'route_start_time'),
+          source: anchorTravelEndTime
+            ? 'anchorTravel.hotspot_end_time'
+            : (timingReferenceRow?.hotspot_end_time
+              ? 'hotspot_end_time'
+              : (timingReferenceRow?.hotspot_start_time ? 'hotspot_start_time' : 'route_start_time')),
         });
 
         // ════════════════════════════════════════════════════════════════
         // PROOF: Log manualStartTime decision tree
         // ════════════════════════════════════════════════════════════════
+        const normalizedAnchorTravelEnd = anchorTravelEndTime ? new Date(anchorTravelEndTime) : null;
+        const hasValidAnchorTravelEnd =
+          !!normalizedAnchorTravelEnd && Number.isFinite(normalizedAnchorTravelEnd.getTime()) &&
+          normalizedAnchorTravelEnd.getTime() !== placeholderEpoch;
         const normalizedLastVisitEnd = lastVisitEndTime ? new Date(lastVisitEndTime) : null;
         const hasValidLastVisitEnd =
           !!normalizedLastVisitEnd && Number.isFinite(normalizedLastVisitEnd.getTime()) &&
           normalizedLastVisitEnd.getTime() !== placeholderEpoch;
+        const anchorVisitStartTime = anchorVisit?.hotspot_start_time ? new Date(anchorVisit.hotspot_start_time) : null;
+        const hasValidAnchorVisitStart =
+          !!anchorVisitStartTime && Number.isFinite(anchorVisitStartTime.getTime()) &&
+          anchorVisitStartTime.getTime() !== placeholderEpoch;
         const manualStartTime = preferredPlacementHasValidStart
           ? preferredPlacementStart!
-          : (hasValidLastVisitEnd
-              ? normalizedLastVisitEnd!
-              : (route?.route_start_time ? new Date(route.route_start_time) : new Date()));
+          : hasValidAnchorTravelEnd
+            ? normalizedAnchorTravelEnd!
+            : hasValidLastVisitEnd
+            ? normalizedLastVisitEnd!
+            : hasValidAnchorVisitStart
+              ? new Date(anchorVisitStartTime!.getTime() - durationMinutes * 60 * 1000)
+              : (route?.route_start_time ? new Date(route.route_start_time) : new Date());
+        const routeStartTime = route?.route_start_time ? new Date(route.route_start_time) : null;
+        if (
+          routeStartTime &&
+          Number.isFinite(routeStartTime.getTime()) &&
+          Number.isFinite(manualStartTime.getTime()) &&
+          manualStartTime < routeStartTime
+        ) {
+          manualStartTime.setTime(routeStartTime.getTime());
+        }
         console.log(`[ManualHotspot][PROOF] Calculated manualStartTime:`, {
           value: manualStartTime,
           source: preferredPlacementHasValidStart
             ? 'preferredPlacement.hotspotStartTime'
-            : (hasValidLastVisitEnd ? 'lastVisitEndTime' : (route?.route_start_time ? 'route_start_time' : 'new Date()')),
+            : (hasValidAnchorTravelEnd
+                ? 'anchorTravel.hotspot_end_time'
+                : (hasValidLastVisitEnd
+                ? 'lastVisitEndTime'
+                : (hasValidAnchorVisitStart
+                    ? 'anchorVisit.hotspot_start_time - hotspot_duration'
+                    : (route?.route_start_time ? 'route_start_time' : 'new Date()')))),
           lastVisitEndTime_exists: !!lastVisitEndTime,
+          anchorTravelEndTime_exists: !!anchorTravelEndTime,
+          anchorVisitStartTime_exists: !!anchorVisitStartTime,
           route_start_time: route?.route_start_time,
         });
         console.log(`[ManualHotspot][PROOF] Hotspot master data:`, {
@@ -598,13 +658,17 @@ export class HotspotEngineService {
         // ════════════════════════════════════════════════════════════════
         // CURRENT BEHAVIOR: manualEndTime = manualStartTime (NO DURATION)
         // ════════════════════════════════════════════════════════════════
-        const manualEndTime = computeEndTime(manualStartTime);
+        const manualEndTime = preferredPlacementHasValidEnd
+          ? preferredPlacementEnd!
+          : computeEndTime(manualStartTime);
         console.log(`[ManualHotspot][PROOF] Set manualEndTime to manualStartTime (NO DURATION APPLIED):`, {
           manualStartTime,
           manualEndTime,
           sameValue: manualStartTime.getTime() === manualEndTime.getTime(),
           durationMinutes,
-          note: 'END TIME NOW APPLIES HOTSPOT DURATION',
+          note: preferredPlacementHasValidEnd
+            ? 'END TIME FROM preferredManualPlacementByRoute.hotspotEndTime'
+            : 'END TIME NOW APPLIES HOTSPOT DURATION',
         });
 
         // Update manual hotspot with real order and timing
@@ -1282,8 +1346,23 @@ export class HotspotEngineService {
         options?.requestedAnchor,
       );
 
+      // Calculate distance delta for the inserted hotspot
+      const distanceDelta = this.calculateInsertionDistanceDelta(
+        enrichedTimeline,
+        routeId,
+        hotspotId,
+      );
+
+      // Calculate all possible insertion slots with their distance deltas
+      const allInsertionSlots = this.calculateAllInsertionSlotDeltas(
+        enrichedTimeline,
+        routeId,
+        newHotspotRow?.hotspot_name || 'Hotspot',
+      );
+
       return {
-        newHotspot: newHotspotRow || null,
+        newHotspot: newHotspotRow ? { ...newHotspotRow, distanceDelta } : null,
+        allInsertionSlots,
         otherConflicts: otherConflicts.map((c: any) => ({
           hotspotId: c.hotspot_ID,
           reason: c.conflictReason,
@@ -1374,8 +1453,22 @@ export class HotspotEngineService {
     });
 
     // 7) Return result with conflict marking
+    const distanceDelta = this.calculateInsertionDistanceDelta(
+      enrichedTimeline,
+      routeId,
+      hotspotId,
+    );
+
+    // Calculate all possible insertion slots with their distance deltas
+    const allInsertionSlots = this.calculateAllInsertionSlotDeltas(
+      enrichedTimeline,
+      routeId,
+      newHotspotRow?.hotspot_name || 'Hotspot',
+    );
+
     return {
-      newHotspot: newHotspotRow || null,
+      newHotspot: newHotspotRow ? { ...newHotspotRow, distanceDelta } : null,
+      allInsertionSlots,
       otherConflicts: otherConflicts.map(c => ({
         hotspotId: c.hotspot_ID,
         reason: (c as any).conflictReason
@@ -1388,6 +1481,135 @@ export class HotspotEngineService {
       resolution: options?.resolution,
       anchorPreference,
     };
+  }
+
+  private calculateInsertionDistanceDelta(
+    fullTimeline: any[],
+    routeId: number,
+    hotspotId: number,
+  ): number | null {
+    try {
+      const routeRows = (Array.isArray(fullTimeline) ? fullTimeline : []).filter(
+        (row: any) => Number(row?.itinerary_route_ID) === Number(routeId),
+      );
+
+      // Find the inserted hotspot
+      const insertedIdx = routeRows.findIndex(
+        (row: any) => Number(row?.item_type) === 4 && Number(row?.hotspot_ID) === Number(hotspotId),
+      );
+
+      if (insertedIdx < 0) return null;
+
+      // Find travel segment immediately before inserted hotspot
+      let travelBefore: any = null;
+      for (let i = insertedIdx - 1; i >= 0; i--) {
+        if (Number(routeRows[i]?.item_type) === 3) {
+          travelBefore = routeRows[i];
+          break;
+        }
+      }
+
+      // Find travel segment immediately after inserted hotspot
+      let travelAfter: any = null;
+      for (let i = insertedIdx + 1; i < routeRows.length; i++) {
+        if (Number(routeRows[i]?.item_type) === 3) {
+          travelAfter = routeRows[i];
+          break;
+        }
+      }
+
+      // Extract distances
+      const distBefore = travelBefore ? this.parseDistance(travelBefore.hotspot_travelling_distance) : 0;
+      const distAfter = travelAfter ? this.parseDistance(travelAfter.hotspot_travelling_distance) : 0;
+      const totalNewDist = distBefore + distAfter;
+
+      // If we don't have both travel segments, can't calculate
+      if (!travelBefore && !travelAfter) return null;
+
+      // The logic: if there's only travel before, it means this is inserted at the end
+      // If there's only travel after, it means this is inserted at the beginning
+      // Ideally we'd have both to compare against original
+
+      // For now, we return the total extra distance added (both before and after the insertion)
+      // A positive value means extra distance, negative or zero means no extra distance
+      return totalNewDist > 0 ? totalNewDist : 0;
+    } catch (error) {
+      console.warn('[calculateInsertionDistanceDelta] Error:', error);
+      return null;
+    }
+  }
+
+  private parseDistance(value: any): number {
+    if (!value) return 0;
+    
+    if (typeof value === 'number') {
+      return Number.isFinite(value) ? value : 0;
+    }
+
+    if (typeof value === 'string') {
+      const parsed = parseFloat(value);
+      return Number.isFinite(parsed) ? parsed : 0;
+    }
+
+    return 0;
+  }
+
+  private calculateAllInsertionSlotDeltas(
+    fullTimeline: any[],
+    routeId: number,
+    hotspotName: string,
+  ): Array<{ position: number; slot: string; distanceDelta: number; isBest: boolean }> {
+    try {
+      const routeRows = (Array.isArray(fullTimeline) ? fullTimeline : []).filter(
+        (row: any) => Number(row?.itinerary_route_ID) === Number(routeId),
+      );
+
+      if (routeRows.length === 0) return [];
+
+      // Find all travel segments (item_type === 3)
+      const travelSegments: Array<{ index: number; data: any }> = [];
+      routeRows.forEach((row: any, idx: number) => {
+        if (Number(row?.item_type) === 3) {
+          travelSegments.push({ index: idx, data: row });
+        }
+      });
+
+      if (travelSegments.length === 0) return [];
+
+      const slots: Array<{ position: number; slot: string; distanceDelta: number }> = [];
+
+      // For each travel segment, calculate the cost of inserting AFTER it
+      for (let i = 0; i < travelSegments.length; i++) {
+        const travelBefore = travelSegments[i].data;
+        const travelAfter = i < travelSegments.length - 1 ? travelSegments[i + 1].data : null;
+
+        const distBefore = this.parseDistance(travelBefore?.hotspot_travelling_distance) || 0;
+        const distAfter = travelAfter ? this.parseDistance(travelAfter?.hotspot_travelling_distance) : 0;
+        const totalDelta = distBefore + distAfter;
+
+        // Get segment names for display
+        const beforeName = travelBefore?.hotspot_name || `Segment ${i + 1}`;
+        const afterName = travelAfter?.hotspot_name || `Segment ${i + 2}`;
+
+        slots.push({
+          position: i,
+          slot: `${beforeName} → ${afterName}`,
+          distanceDelta: totalDelta,
+        });
+      }
+
+      // Find the best slot (lowest distance delta)
+      const bestDelta = Math.min(...slots.map(s => s.distanceDelta));
+
+      // Mark slots as best if they're within 0.5 km of the best option
+      return slots.map(s => ({
+        ...s,
+        isBest: Math.abs(s.distanceDelta - bestDelta) <= 0.5,
+      }));
+    } catch (error) {
+      console.warn('[calculateAllInsertionSlotDeltas] Error:', error);
+      return [];
+    }
   }
 
   private buildAnchorPreferenceOutcome(
