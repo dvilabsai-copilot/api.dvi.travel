@@ -39,6 +39,7 @@ import {
 import { LatestItineraryQueryDto } from './dto/latest-itinerary-query.dto';
 import { ConfirmQuotationDto } from './dto/confirm-quotation.dto';
 import { CancelItineraryDto } from './dto/cancel-itinerary.dto';
+import { CancelHotelVouchersDto } from './dto/cancel-hotel-vouchers.dto';
 import {
   GetHotelRoomCategoriesDto,
   UpdateRoomCategoryDto,
@@ -50,14 +51,20 @@ import {
   ItineraryHotelDetailsResponseDto,
   ItineraryHotelRoomDetailsResponseDto,
 } from './itinerary-hotel-details.service';
+import {
+  HotelArrivalPolicyRequestDto,
+  HotelArrivalPolicyResponseDto,
+} from './dto/hotel-arrival-policy.dto';
 import { ItineraryHotelDetailsService } from './itinerary-hotel-details.service';
 import { ItineraryHotelDetailsTboService } from './itinerary-hotel-details-tbo.service';
 import { ItineraryExportService } from './itinerary-export.service';
 import { HotelVoucherService, AddCancellationPolicyDto, CreateVoucherDto } from './hotel-voucher.service';
+import { ArrivalHotelPolicyService } from './services/arrival-hotel-policy.service';
 import { Public } from '../../auth/public.decorator';
 import { Response, Request } from 'express';
 import { RouteSuggestionsService } from './route-suggestions.service';
 import { RouteSuggestionsV2Service } from './route-suggestions-v2.service';
+import { ItineraryClipboardService } from './itinerary-clipboard.service';
 
 @ApiTags('Itineraries')
 @ApiBearerAuth()
@@ -81,7 +88,88 @@ export class ItinerariesController {
     private readonly routeSuggestionsService: RouteSuggestionsService,
     private readonly routeSuggestionsV2Service: RouteSuggestionsV2Service,
     private readonly hotelVoucherService: HotelVoucherService,
+    private readonly clipboardService: ItineraryClipboardService,
+    private readonly arrivalHotelPolicyService: ArrivalHotelPolicyService,
   ) {}
+
+  private parseClipboardGroupTypes(query: Record<string, any>): number[] {
+    const collect = (value: unknown): number[] => {
+      if (Array.isArray(value)) {
+        return value.map((v) => Number(v)).filter((v) => Number.isInteger(v));
+      }
+      if (value === undefined || value === null || value === '') {
+        return [];
+      }
+      return [Number(value)].filter((v) => Number.isInteger(v));
+    };
+
+    const groupTypeValues = collect(query.groupType);
+    const recommendedValues = [
+      ...collect(query.recommended1),
+      ...collect(query.recommended2),
+      ...collect(query.recommended3),
+      ...collect(query.recommended4),
+    ];
+
+    const combined = [...groupTypeValues, ...recommendedValues];
+    const unique = Array.from(new Set(combined));
+
+    return unique.filter((v) => v >= 1 && v <= 4);
+  }
+
+  @Get('clipboard/:quoteId')
+  @Public()
+  @ApiOperation({
+    summary: 'Generate clipboard HTML for recommended mode',
+    description: 'PHP-parity clipboard output for recommended itinerary content',
+  })
+  async getClipboardRecommended(
+    @Param('quoteId') quoteId: string,
+    @Query() query: Record<string, any>,
+  ) {
+    const groupTypes = this.parseClipboardGroupTypes(query);
+    return this.clipboardService.generateClipboardByQuoteId(
+      quoteId,
+      'recommended',
+      groupTypes,
+    );
+  }
+
+  @Get('clipboard-highlights/:quoteId')
+  @Public()
+  @ApiOperation({
+    summary: 'Generate clipboard HTML for highlights mode',
+    description: 'PHP-parity clipboard output for highlights itinerary content',
+  })
+  async getClipboardHighlights(
+    @Param('quoteId') quoteId: string,
+    @Query() query: Record<string, any>,
+  ) {
+    const groupTypes = this.parseClipboardGroupTypes(query);
+    return this.clipboardService.generateClipboardByQuoteId(
+      quoteId,
+      'highlights',
+      groupTypes,
+    );
+  }
+
+  @Get('clipboard-para/:quoteId')
+  @Public()
+  @ApiOperation({
+    summary: 'Generate clipboard HTML for paragraph mode',
+    description: 'PHP-parity clipboard output for paragraph itinerary content',
+  })
+  async getClipboardPara(
+    @Param('quoteId') quoteId: string,
+    @Query() query: Record<string, any>,
+  ) {
+    const groupTypes = this.parseClipboardGroupTypes(query);
+    return this.clipboardService.generateClipboardByQuoteId(
+      quoteId,
+      'para',
+      groupTypes,
+    );
+  }
 
   @Post()
   @ApiOperation({
@@ -263,7 +351,7 @@ export class ItinerariesController {
   ) {
     // Check if route optimization is requested
     const shouldOptimizeRoute = type === 'itineary_basic_info_with_optimized_route';
-    return this.svc.createPlan(dto, req, shouldOptimizeRoute);
+    return this.svc.createPlan(dto, req, shouldOptimizeRoute, type);
   }
 
   @Get('details/:quoteId')
@@ -312,6 +400,10 @@ export class ItinerariesController {
   @Public()
   async getItineraryHotelDetails(
     @Param('quoteId') quoteId: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @Query('groupType') groupType?: string,
+    @Query('itineraryRouteId') itineraryRouteId?: string,
   ): Promise<ItineraryHotelDetailsResponseDto> {
     const startTime = Date.now();
     this.logger.log('\n════════════════════════════════════════════════════════════════════════════════════════');
@@ -322,7 +414,19 @@ export class ItinerariesController {
 
     try {
       // Use TBO service to fetch dynamic packages
-      const result = await this.hotelDetailsTboService.getHotelDetailsByQuoteIdFromTbo(quoteId);
+      const pageNum = page ? Math.max(1, parseInt(page, 10) || 1) : undefined;
+      const pageSizeNum = pageSize ? Math.min(100, Math.max(1, parseInt(pageSize, 10) || 20)) : undefined;
+      const groupTypeNum = groupType ? parseInt(groupType, 10) : undefined;
+      const itineraryRouteIdNum = itineraryRouteId
+        ? Math.max(0, parseInt(itineraryRouteId, 10) || 0)
+        : undefined;
+      const result = await this.hotelDetailsTboService.getHotelDetailsByQuoteIdFromTbo(
+        quoteId,
+        pageNum,
+        pageSizeNum,
+        groupTypeNum,
+        itineraryRouteIdNum,
+      );
       const duration = Date.now() - startTime;
 
       this.logger.log('\n✅ HOTEL PACKAGES GENERATED FROM TBO');
@@ -341,6 +445,42 @@ export class ItinerariesController {
       this.logger.log('════════════════════════════════════════════════════════════════════════════════════════\n');
       throw error;
     }
+  }
+
+  @Post('hotel_details/:quoteId/rebuild')
+  @ApiOperation({
+    summary: 'Rebuild hotel cache for a quote and return fresh hotel details',
+    description:
+      'Clears cached hotel rows for the quote, then fetches fresh supplier results immediately (page=1, pageSize=20 unless overridden).',
+  })
+  @ApiParam({
+    name: 'quoteId',
+    required: true,
+    description: 'Quote ID generated for the itinerary',
+    example: 'DVI_EXAMPLE_QUOTE_ID',
+  })
+  @ApiQuery({ name: 'page', required: false, example: 1, type: Number })
+  @ApiQuery({ name: 'pageSize', required: false, example: 20, type: Number })
+  @ApiQuery({ name: 'groupType', required: false, example: 1, type: Number })
+  @Public()
+  async rebuildItineraryHotelDetails(
+    @Param('quoteId') quoteId: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @Query('groupType') groupType?: string,
+  ): Promise<ItineraryHotelDetailsResponseDto> {
+    const pageNum = page ? Math.max(1, parseInt(page, 10) || 1) : 1;
+    const pageSizeNum = pageSize ? Math.min(100, Math.max(1, parseInt(pageSize, 10) || 20)) : 20;
+    const groupTypeNum = groupType ? parseInt(groupType, 10) : undefined;
+
+    await this.hotelDetailsTboService.clearHotelCacheForQuote(quoteId);
+
+    return this.hotelDetailsTboService.getHotelDetailsByQuoteIdFromTbo(
+      quoteId,
+      pageNum,
+      pageSizeNum,
+      groupTypeNum,
+    );
   }
 
   @Get('hotel_room_details/:quoteId')
@@ -567,6 +707,20 @@ export class ItinerariesController {
     );
   }
 
+  @Post('hotel-arrival-policy')
+  @ApiOperation({
+    summary: 'Resolve arrival-time hotel decision policy',
+    description:
+      'Computes hotel search/check-in strategy from arrival time, route day, and normalized city context.',
+  })
+  @ApiBody({ type: HotelArrivalPolicyRequestDto })
+  @ApiOkResponse({ type: HotelArrivalPolicyResponseDto })
+  async resolveHotelArrivalPolicy(
+    @Body() body: HotelArrivalPolicyRequestDto,
+  ): Promise<HotelArrivalPolicyResponseDto> {
+    return this.arrivalHotelPolicyService.resolvePolicy(body);
+  }
+
   @Get('activities/available/:hotspotId')
   @ApiOperation({ summary: 'Get available activities for a hotspot location' })
   @ApiParam({
@@ -599,6 +753,24 @@ export class ItinerariesController {
     return this.svc.previewActivityAddition(body);
   }
 
+  @Post('activities/preview-all-hotspots')
+  @ApiOperation({ summary: 'Preview activity addition across all hotspots in a route (day view)' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        planId: { type: 'number', example: 17940 },
+        routeId: { type: 'number', example: 1 },
+        activityId: { type: 'number', example: 5 },
+      },
+      required: ['planId', 'routeId', 'activityId'],
+    },
+  })
+  @ApiOkResponse({ description: 'Activity preview for all hotspots with fit/conflict status' })
+  async previewActivityForAllHotspots(@Body() body: any) {
+    return this.svc.previewActivityForAllHotspots(body);
+  }
+
   @Post('activities/add')
   @ApiOperation({ summary: 'Add an activity to a hotspot in the itinerary' })
   @ApiBody({
@@ -622,6 +794,48 @@ export class ItinerariesController {
   @ApiOkResponse({ description: 'Activity added successfully' })
   async addActivity(@Body() body: any) {
     return this.svc.addActivity(body);
+  }
+
+  @Post(':planId/activity/smart-preview')
+  @ApiOperation({ summary: 'Preview smart activity fit for a selected route insertion gap' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        routeId: { type: 'number', example: 1 },
+        activityId: { type: 'number', example: 789 },
+        gapIndex: { type: 'number', example: 1, nullable: true },
+        hotspotId: { type: 'number', example: 456, nullable: true },
+        routeHotspotId: { type: 'number', example: 123, nullable: true },
+        mode: { type: 'string', example: 'preview', nullable: true },
+      },
+      required: ['routeId', 'activityId'],
+    },
+  })
+  @ApiOkResponse({ description: 'Smart fit preview generated successfully' })
+  async smartPreviewActivity(@Param('planId') planId: string, @Body() body: any) {
+    return this.svc.smartPreviewActivity(Number(planId), body);
+  }
+
+  @Post(':planId/activity/smart-insert')
+  @ApiOperation({ summary: 'Apply smart activity insertion to selected route gap' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        routeId: { type: 'number', example: 1 },
+        activityId: { type: 'number', example: 789 },
+        gapIndex: { type: 'number', example: 1 },
+        hotspotId: { type: 'number', example: 456, nullable: true },
+        routeHotspotId: { type: 'number', example: 123, nullable: true },
+        allowTopPriorityRemoval: { type: 'boolean', example: false, nullable: true },
+      },
+      required: ['routeId', 'activityId', 'gapIndex'],
+    },
+  })
+  @ApiOkResponse({ description: 'Smart activity insertion completed successfully' })
+  async smartInsertActivity(@Param('planId') planId: string, @Body() body: any) {
+    return this.svc.smartInsertActivity(Number(planId), body);
   }
 
   @Delete('activities/:planId/:routeId/:activityId')
@@ -652,6 +866,25 @@ export class ItinerariesController {
   @ApiOkResponse({ description: 'List of available hotspots' })
   async getAvailableHotspots(@Param('routeId') routeId: string) {
     return this.svc.getAvailableHotspots(Number(routeId));
+  }
+
+  @Post('hotspots/available-for-anchor')
+  @ApiOperation({ summary: 'Get available hotspots for a specific travel anchor on a route' })
+  async getAvailableHotspotsForAnchor(
+    @Body()
+    body: {
+      planId: number;
+      routeId: number;
+      anchorType: 'after_travel';
+      anchorIndex: number;
+    },
+  ) {
+    return this.svc.getAvailableHotspotsForAnchor({
+      planId: Number(body.planId),
+      routeId: Number(body.routeId),
+      anchorType: body.anchorType,
+      anchorIndex: Number(body.anchorIndex),
+    });
   }
 
   @Post('hotspots/add')
@@ -782,6 +1015,61 @@ export class ItinerariesController {
     return this.svc.selectVehicleVendor(body);
   }
 
+  @Post('vehicles/select-slab')
+  @ApiOperation({ summary: 'Select slab for a vendor vehicle and recalculate vehicle pricing' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        planId: { type: 'number', example: 17940 },
+        vehicleTypeId: { type: 'number', example: 1 },
+        vendorEligibleId: { type: 'number', example: 123 },
+        timeLimitId: { type: 'number', example: 230 },
+      },
+      required: ['planId', 'vehicleTypeId', 'vendorEligibleId', 'timeLimitId'],
+    },
+  })
+  @ApiOkResponse({ description: 'Vehicle slab selected and pricing recalculated successfully' })
+  async selectVehicleSlab(@Body() body: any) {
+    return this.svc.selectVehicleSlab(body);
+  }
+
+  @Post('vehicles/auto-select-slabs')
+  @ApiOperation({ summary: 'Auto select the best slab for vendor vehicles based on effective KM/time and recalculate pricing' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        planId: { type: 'number', example: 17940 },
+        vehicleTypeId: { type: 'number', example: 1 },
+      },
+      required: ['planId'],
+    },
+  })
+  @ApiOkResponse({ description: 'Vehicle slabs auto-selected and pricing recalculated successfully' })
+  async autoSelectVehicleSlabs(@Body() body: any) {
+    return this.svc.autoSelectVehicleSlabs(body);
+  }
+
+  @Get('vehicles/build-status/:planId')
+  @ApiOperation({ summary: 'Get async vehicle build status for loader polling' })
+  @ApiParam({ name: 'planId', example: 17940, description: 'Itinerary Plan ID' })
+  @ApiOkResponse({ description: 'Vehicle build status (PENDING/PROCESSING/READY/FAILED)' })
+  async getVehicleBuildStatus(@Param('planId', ParseIntPipe) planId: number) {
+    return this.svc.getVehicleBuildStatus(planId);
+  }
+
+  @Post('vehicles/rebuild-async/:planId')
+  @ApiOperation({ summary: 'Trigger async vehicle rebuild manually (retry path)' })
+  @ApiParam({ name: 'planId', example: 17940, description: 'Itinerary Plan ID' })
+  @ApiOkResponse({ description: 'Vehicle rebuild accepted and status returned' })
+  async triggerVehicleBuild(
+    @Param('planId', ParseIntPipe) planId: number,
+    @Req() req?: Request,
+  ) {
+    return this.svc.triggerVehicleBuild(planId, req);
+  }
+
   @Get('edit/:id')
   @ApiOperation({ summary: 'Get itinerary raw plan data for editing' })
   @ApiParam({ name: 'id', example: 17940, description: 'Itinerary Plan ID' })
@@ -831,6 +1119,20 @@ export class ItinerariesController {
   @ApiOkResponse({ description: 'Returns agent wallet balance and sufficiency status' })
   async checkWalletBalance(@Param('agentId', ParseIntPipe) agentId: number) {
     return this.svc.checkWalletBalance(agentId);
+  }
+
+  @Public()
+  @Post('hotels/prebook')
+  @ApiOperation({ summary: 'Prebook selected hotels before final quotation confirmation' })
+  async prebookHotels(
+    @Body()
+    body: {
+      itinerary_plan_ID: number;
+      hotel_bookings: any[];
+      endUserIp?: string;
+    },
+  ) {
+    return this.svc.prebookHotels(body);
   }
 
   @Public()
@@ -941,6 +1243,14 @@ export class ItinerariesController {
   }
 
   // Hotel Voucher Endpoints
+  @Get(':id/hotel-vouchers/cancellation-policies')
+  @ApiOperation({ summary: 'Get all cancellation policies for itinerary hotels' })
+  async getAllHotelCancellationPolicies(
+    @Param('id', ParseIntPipe) itineraryPlanId: number,
+  ) {
+    return this.hotelVoucherService.getAllCancellationPolicies(itineraryPlanId);
+  }
+
   @Get(':id/hotel-vouchers/:hotelId/cancellation-policies')
   @ApiOperation({ summary: 'Get cancellation policies for a specific hotel' })
   async getHotelCancellationPolicies(
@@ -995,6 +1305,21 @@ export class ItinerariesController {
     );
   }
 
+  @Post(':id/hotel-cancellations')
+  @ApiOperation({ summary: 'Cancel hotels for selected routes/hotel details or full itinerary' })
+  async cancelHotelVouchers(
+    @Param('id', ParseIntPipe) itineraryPlanId: number,
+    @Body() dto: CancelHotelVouchersDto,
+    @Req() req: any,
+  ) {
+    const userId = Number(req.user?.userId ?? 1);
+    return this.hotelVoucherService.cancelHotelsForItinerary(
+      itineraryPlanId,
+      dto,
+      userId,
+    );
+  }
+
   @Get(':id/hotel-vouchers/default-terms')
   @ApiOperation({ summary: 'Get default voucher terms from global settings' })
   async getDefaultVoucherTerms() {
@@ -1017,20 +1342,125 @@ export class ItinerariesController {
   @ApiOperation({ summary: 'Preview adding a manual hotspot to a route' })
   async previewManualHotspot(
     @Param('id', ParseIntPipe) planId: number,
-    @Body() body: { routeId: number; hotspotId: number },
+    @Body()
+    body: {
+      routeId: number;
+      hotspotId: number;
+      hotspotIds?: number[];
+      anchorType?: 'after_travel';
+      anchorIndex?: number;
+      allowTopPriorityRemoval?: boolean;
+      selectedHotspotIds?: number[];
+    },
   ) {
-    return this.svc.previewManualHotspot(planId, body.routeId, body.hotspotId);
+    const resolvedHotspotIds = Array.isArray(body.hotspotIds) && body.hotspotIds.length > 0
+      ? body.hotspotIds
+      : [body.hotspotId, ...(Array.isArray(body.selectedHotspotIds) ? body.selectedHotspotIds : [])];
+
+    return this.svc.previewManualHotspotsBatch(planId, body.routeId, resolvedHotspotIds, {
+      anchorType: body.anchorType,
+      anchorIndex: body.anchorIndex,
+      allowTopPriorityRemoval: body.allowTopPriorityRemoval === true,
+      focusHotspotId: Number(body.hotspotId || 0) > 0 ? Number(body.hotspotId) : undefined,
+    });
   }
 
   @Post(':id/manual-hotspot')
   @ApiOperation({ summary: 'Add a manual hotspot to a route and rebuild timeline' })
   async addManualHotspot(
     @Param('id', ParseIntPipe) planId: number,
-    @Body() body: { routeId: number; hotspotId: number },
+    @Body()
+    body: {
+      routeId: number;
+      hotspotId: number;
+      anchorType?: 'after_travel';
+      anchorIndex?: number;
+      allowTopPriorityRemoval?: boolean;
+    },
     @Req() req: any,
   ) {
     const userId = Number(req.user?.userId ?? 1);
-    return this.svc.addManualHotspot(planId, body.routeId, body.hotspotId, userId);
+    return this.svc.addManualHotspot(planId, body.routeId, body.hotspotId, userId, {
+      anchorType: body.anchorType,
+      anchorIndex: body.anchorIndex,
+      allowTopPriorityRemoval: body.allowTopPriorityRemoval === true,
+    });
+  }
+
+  @Post(':planId/routes/:routeId/manual-hotspots/:candidateHotspotId/build-matrix')
+  @ApiOperation({ summary: 'Build focused manual hotspot matrix for selected route slot pairs' })
+  async buildManualHotspotMatrix(
+    @Param('planId') planId: string,
+    @Param('routeId') routeId: string,
+    @Param('candidateHotspotId') candidateHotspotId: string,
+    @Req() req: any,
+  ) {
+    const normalizedPlanId = Number(planId || 0);
+    const normalizedRouteId = Number(routeId || 0);
+    const normalizedCandidateHotspotId = Number(candidateHotspotId || 0);
+
+    if (!Number.isInteger(normalizedPlanId) || normalizedPlanId <= 0) {
+      throw new BadRequestException('planId must be a positive integer');
+    }
+    if (!Number.isInteger(normalizedRouteId) || normalizedRouteId <= 0) {
+      throw new BadRequestException('routeId must be a positive integer');
+    }
+    if (!Number.isInteger(normalizedCandidateHotspotId) || normalizedCandidateHotspotId <= 0) {
+      throw new BadRequestException('candidateHotspotId must be a positive integer');
+    }
+
+    return this.svc.buildMissingManualHotspotMatrix({
+      planId: normalizedPlanId,
+      routeId: normalizedRouteId,
+      candidateHotspotId: normalizedCandidateHotspotId,
+      userId: Number(req?.user?.userId || 1),
+    });
+  }
+
+  @Post(':id/manual-hotspots/apply')
+  @ApiOperation({ summary: 'Apply manual hotspots to a route as one optimized batch' })
+  async applyManualHotspots(
+    @Param('id', ParseIntPipe) planId: number,
+    @Body()
+    body: {
+      routeId: number;
+      hotspotIds: number[];
+      anchorType?: 'after_travel';
+      anchorIndex?: number;
+      allowTopPriorityRemoval?: boolean;
+      forceConflictInsertion?: boolean;
+      matrixPreferredSlot?: {
+        fromHotspotId?: number;
+        toHotspotId?: number;
+        slotIndex?: number;
+        source?: 'BEST_FIT';
+      };
+    },
+    @Req() req: any,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const userId = Number(req.user?.userId ?? 1);
+    const result: any = await this.svc.applyManualHotspotsBatch(planId, body.routeId, body.hotspotIds, userId, {
+      anchorType: body.anchorType,
+      anchorIndex: body.anchorIndex,
+      allowTopPriorityRemoval: body.allowTopPriorityRemoval === true,
+      forceConflictInsertion: body.forceConflictInsertion === true,
+      matrixPreferredSlot: body.matrixPreferredSlot,
+    });
+
+    if (String(result?.code || '') === 'MANUAL_INSERT_EXCEEDS_DAY_END') {
+      res.status(409);
+    } else if (
+      result?.success === false
+      || (
+        result?.inserted === false
+        && String(result?.code || '') !== 'MANUAL_HOTSPOT_ALREADY_EXISTS_IN_ROUTE'
+      )
+    ) {
+      res.status(409);
+    }
+
+    return result;
   }
 
   @Delete(':id/manual-hotspot/:hotspotId')
@@ -1039,29 +1469,84 @@ export class ItinerariesController {
     @Param('id', ParseIntPipe) planId: number,
     @Param('hotspotId', ParseIntPipe) hotspotId: number,
   ) {
-    return this.svc.removeManualHotspot(planId, hotspotId);
+return this.svc.removeManualHotspot(planId, hotspotId);
   }
 
   @Post(':id/route/:routeId/rebuild')
   @ApiOperation({ summary: 'Rebuild hotspots for a route (clears exclusions and rebuilds fresh)' })
   @ApiParam({ name: 'id', example: 33977, description: 'Plan ID' })
   @ApiParam({ name: 'routeId', example: 207447, description: 'Route ID' })
- async rebuildRoute(
-  @Param('id', ParseIntPipe) planId: number,
-  @Param('routeId', ParseIntPipe) routeId: number,
-  @Body() body: { excludedHotspotIds?: number[] },
-) {
-  return this.svc.rebuildRoute(planId, routeId, body);
-}
+  async rebuildRoute(
+    @Param('id', ParseIntPipe) planId: number,
+    @Param('routeId', ParseIntPipe) routeId: number,
+    @Body() body: { excludedHotspotIds?: number[] },
+  ) {
+    return this.svc.rebuildRoute(planId, routeId, body);
+  }
+
+  @Post(':planId/routes/:routeId/rebuild-hotspots')
+  @ApiOperation({ summary: 'Reset and rebuild hotspots for a specific day/route' })
+  @ApiParam({ name: 'planId', example: 33977, description: 'Plan ID' })
+  @ApiParam({ name: 'routeId', example: 207447, description: 'Route ID' })
+  async rebuildRouteHotspotsForDay(
+    @Param('planId', ParseIntPipe) planId: number,
+    @Param('routeId', ParseIntPipe) routeId: number,
+    @Req() req: any,
+  ) {
+    const userId = Number(req.user?.userId ?? 1);
+    return this.svc.rebuildRouteHotspotsForDay(planId, routeId, userId);
+  }
 
   @Patch(':id/route/:routeId/times')
   @ApiOperation({ summary: 'Update route start and end times' })
   async updateRouteTimes(
     @Param('id', ParseIntPipe) planId: number,
     @Param('routeId', ParseIntPipe) routeId: number,
-    @Body() body: { startTime: string; endTime: string },
+    @Body()
+    body: {
+      startTime: string;
+      endTime: string;
+      previousDayBillingDecisionProvided?: boolean;
+      previousDayBillingConfirmed?: boolean;
+    },
   ) {
-    return this.svc.updateRouteTimes(planId, routeId, body.startTime, body.endTime);
+    return this.svc.updateRouteTimes(
+      planId,
+      routeId,
+      body.startTime,
+      body.endTime,
+      body.previousDayBillingDecisionProvided,
+      body.previousDayBillingConfirmed,
+    );
+  }
+
+  @Post('templates/save')
+  @ApiOperation({ summary: 'Save reusable itinerary template from an existing plan' })
+  async saveReusableTemplate(
+    @Body() body: { planId: number; templateName?: string },
+    @Req() req: any,
+  ) {
+    const userId = Number(req.user?.userId ?? 1);
+    return this.svc.saveReusableTemplate(body, userId);
+  }
+
+  @Get('templates/match')
+  @ApiOperation({ summary: 'Load latest reusable itinerary template by source, destination, and day count' })
+  async getReusableTemplateMatch(
+    @Query('sourceLocation') sourceLocation: string,
+    @Query('destinationLocation') destinationLocation: string,
+    @Query('dayCount') dayCount: string,
+  ) {
+    const parsedDayCount = Number(dayCount || 0);
+    if (!Number.isInteger(parsedDayCount) || parsedDayCount <= 0) {
+      throw new BadRequestException('dayCount must be a positive integer');
+    }
+
+    return this.svc.getReusableTemplateMatch(
+      sourceLocation,
+      destinationLocation,
+      parsedDayCount,
+    );
   }
 
   /**
