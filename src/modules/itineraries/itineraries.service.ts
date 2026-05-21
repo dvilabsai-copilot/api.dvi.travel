@@ -6632,6 +6632,7 @@ export class ItinerariesService {
       anchorIndex?: number;
       allowTopPriorityRemoval?: boolean;
       selectedHotspotIds?: number[];
+      debug?: boolean;
     },
   ) {
     const hotspotIds = this.normalizeManualHotspotIds([
@@ -6643,6 +6644,7 @@ export class ItinerariesService {
       anchorType: anchor?.anchorType,
       anchorIndex: anchor?.anchorIndex,
       allowTopPriorityRemoval: anchor?.allowTopPriorityRemoval === true,
+      debug: anchor?.debug === true,
       focusHotspotId: Number(hotspotId || 0) > 0 ? Number(hotspotId) : undefined,
     });
   }
@@ -6655,6 +6657,7 @@ export class ItinerariesService {
       anchorType?: 'after_travel';
       anchorIndex?: number;
       allowTopPriorityRemoval?: boolean;
+      debug?: boolean;
       focusHotspotId?: number;
     },
   ) {
@@ -8962,6 +8965,12 @@ export class ItinerariesService {
   ): any[] {
     if (!Array.isArray(previewTimeline) || !manualInsertionFit) return previewTimeline;
 
+    // If backend already produced explicit matrix split legs, treat that order as final.
+    // Moving only the attraction row here can break A->C->B adjacency and create visual duplicates.
+    if (previewTimeline.some((row: any) => row?.isMatrixSplitTravel === true)) {
+      return previewTimeline;
+    }
+
     const selectedIdNum = Number(selectedHotspotId || 0);
     if (selectedIdNum <= 0) return previewTimeline;
 
@@ -9233,19 +9242,38 @@ export class ItinerariesService {
     if (!bestSlot) return Array.isArray(enginePreviewTimeline) ? enginePreviewTimeline : baselineRows;
 
     const engineRows = Array.isArray(enginePreviewTimeline) ? enginePreviewTimeline : [];
-    const selectedFromEngine = engineRows.find((row: any) => Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || 0) === selectedIdNum) || null;
+    const selectedFromEngine = engineRows.find((row: any) => {
+      const rowHotspotId = Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || 0);
+      const rowType = String(row?.type || '').toLowerCase();
+      const isAttraction = rowType === 'attraction' || Number(row?.item_type || 0) === 4;
+      return rowHotspotId === selectedIdNum && isAttraction;
+    }) || null;
     const selectedFromMaster = hotspotMasters?.find((row: any) => Number(row?.hotspot_ID || 0) === selectedIdNum) || null;
 
-    const selectedRow = selectedFromEngine || {
+    const selectedRow = {
+      ...(selectedFromEngine || {}),
       type: 'attraction',
       item_type: 4,
       locationId: selectedIdNum,
       hotspot_ID: selectedIdNum,
       hotspotId: selectedIdNum,
-      text: String(selectedFromMaster?.hotspot_name || manualInsertionFit?.selectedHotspotName || `Hotspot #${selectedIdNum}`),
-      name: String(selectedFromMaster?.hotspot_name || manualInsertionFit?.selectedHotspotName || `Hotspot #${selectedIdNum}`),
-      duration: selectedFromMaster?.hotspot_duration || null,
-      timeRange: selectedFromMaster?.hotspot_duration ? String(selectedFromMaster.hotspot_duration) : 'Needs reschedule',
+      text: String(
+        selectedFromMaster?.hotspot_name
+        || selectedFromEngine?.text
+        || selectedFromEngine?.name
+        || manualInsertionFit?.selectedHotspotName
+        || `Hotspot #${selectedIdNum}`,
+      ),
+      name: String(
+        selectedFromMaster?.hotspot_name
+        || selectedFromEngine?.name
+        || selectedFromEngine?.text
+        || manualInsertionFit?.selectedHotspotName
+        || `Hotspot #${selectedIdNum}`,
+      ),
+      duration: selectedFromEngine?.duration || selectedFromMaster?.hotspot_duration || null,
+      timeRange: selectedFromEngine?.timeRange || (selectedFromMaster?.hotspot_duration ? String(selectedFromMaster.hotspot_duration) : 'Needs reschedule'),
+      isManual: true,
     };
 
     const normalizedBaseline = baselineRows.filter((row: any) => {
@@ -9304,6 +9332,12 @@ export class ItinerariesService {
 
     const selectedRowWithMatrix = {
       ...selectedRow,
+      type: 'attraction',
+      item_type: 4,
+      locationId: selectedIdNum,
+      hotspot_ID: selectedIdNum,
+      hotspotId: selectedIdNum,
+      isManual: true,
       isUserSelectedPreview: true,
       isMatrixPositioned: true,
       routeFitType: bestSlot.routeFitType,
@@ -9473,6 +9507,14 @@ export class ItinerariesService {
 
     const fromHotspotId = Number(bestSlot?.fromHotspotId || 0);
     const toHotspotId = Number(bestSlot?.toHotspotId || 0);
+    console.log('[ManualTimelineBuild] selected_slot', {
+      selectedHotspotId: selectedIdNum,
+      fromHotspotId,
+      toHotspotId,
+      routeFitType: bestSlot?.routeFitType || null,
+      source: bestSlot?.source || null,
+      label: bestSlot?.label || null,
+    });
     if (!fromHotspotId || !toHotspotId) {
       return baseMerged.map((row: any, index: number) => ({
         ...row,
@@ -9513,6 +9555,16 @@ export class ItinerariesService {
     );
 
     if (aToCRowIndex < 0 || cToBRowIndex < 0) return baseMerged;
+
+    console.log('[ManualTimelineBuild] replacing_travel_row', {
+      fromHotspotId,
+      toHotspotId,
+      fromRowIndex,
+      toRowIndex,
+      aToCRowIndex,
+      cToBRowIndex,
+      selectedRowIndex: insertedRowIndex,
+    });
 
     // Fetch or estimate durations
     const acDurationMin =
@@ -9572,12 +9624,31 @@ export class ItinerariesService {
       duration: `${Math.round(acDurationMin)} Min`,
       distance: acDistanceKm != null ? `${Number(acDistanceKm).toFixed(1)} km` : null,
       timeRange: this.minutesRangeToTimeString(acStartMin, acEndMin),
+      locationId: selectedIdNum,
+      hotspot_ID: selectedIdNum,
+      hotspotId: selectedIdNum,
       hotspot_start_time: null,
       hotspot_end_time: null,
     };
+    console.log('[ManualTimelineBuild] split_A_TO_C', {
+      fromName: aToCRow.fromName,
+      toName: aToCRow.toName,
+      text: aToCRow.text,
+      locationId: aToCRow.locationId,
+      hotspot_ID: aToCRow.hotspot_ID,
+      timeRange: aToCRow.timeRange,
+    });
 
     const insertedRow = {
       ...baseMerged[insertedRowIndex],
+      type: 'attraction',
+      item_type: 4,
+      locationId: selectedIdNum,
+      hotspot_ID: selectedIdNum,
+      hotspotId: selectedIdNum,
+      text: String(baseMerged[insertedRowIndex]?.text || baseMerged[insertedRowIndex]?.name || manualInsertionFit?.selectedHotspotName || `Hotspot #${selectedIdNum}`).trim(),
+      name: String(baseMerged[insertedRowIndex]?.name || baseMerged[insertedRowIndex]?.text || manualInsertionFit?.selectedHotspotName || `Hotspot #${selectedIdNum}`).trim(),
+      isManual: true,
       isMatrixPositioned: true,
       timeRange: this.minutesRangeToTimeString(cStartMin, cEndMin),
       isConflict: false,
@@ -9597,6 +9668,14 @@ export class ItinerariesService {
       hotspot_start_time: null,
       hotspot_end_time: null,
     };
+
+    console.log('[ManualTimelineBuild] inserted_C_attraction', {
+      selectedHotspotId: selectedIdNum,
+      fromHotspotId,
+      toHotspotId,
+      text: insertedRow.text,
+      insertedTimeRange: insertedRow?.timeRange || null,
+    });
 
     const cToBRow = {
       ...baseMerged[cToBRowIndex],
@@ -9619,9 +9698,20 @@ export class ItinerariesService {
       duration: `${Math.round(cbDurationMin)} Min`,
       distance: cbDistanceKm != null ? `${Number(cbDistanceKm).toFixed(1)} km` : null,
       timeRange: this.minutesRangeToTimeString(cbStartMin, cbEndMin),
+      locationId: toHotspotId,
+      hotspot_ID: toHotspotId,
+      hotspotId: toHotspotId,
       hotspot_start_time: null,
       hotspot_end_time: null,
     };
+    console.log('[ManualTimelineBuild] split_C_TO_B', {
+      fromName: cToBRow.fromName,
+      toName: cToBRow.toName,
+      text: cToBRow.text,
+      locationId: cToBRow.locationId,
+      hotspot_ID: cToBRow.hotspot_ID,
+      timeRange: cToBRow.timeRange,
+    });
 
     // 3) Continue with remaining rows in logical baseline order, skipping replaced originals.
     const tailSource = baseMerged.slice(toRowIndex);
@@ -9701,6 +9791,11 @@ export class ItinerariesService {
           hotspot_start_time: null,
           hotspot_end_time: null,
         });
+        console.log('[ManualTimelineBuild] recalculated_downstream_row', {
+          type: 'travel',
+          text: String(row?.text || row?.name || ''),
+          timeRange: this.minutesRangeToTimeString(start, end),
+        });
         continue;
       }
 
@@ -9715,6 +9810,11 @@ export class ItinerariesService {
           hotspot_start_time: null,
           hotspot_end_time: null,
         });
+        console.log('[ManualTimelineBuild] recalculated_downstream_row', {
+          type: 'attraction',
+          text: String(row?.text || row?.name || ''),
+          timeRange: this.minutesRangeToTimeString(start, end),
+        });
         continue;
       }
 
@@ -9728,6 +9828,11 @@ export class ItinerariesService {
         timeRange: fallbackDuration > 0 ? this.minutesRangeToTimeString(start, end) : row?.timeRange,
         hotspot_start_time: null,
         hotspot_end_time: null,
+      });
+      console.log('[ManualTimelineBuild] recalculated_downstream_row', {
+        type: String(row?.type || 'other').toLowerCase(),
+        text: String(row?.text || row?.name || ''),
+        timeRange: fallbackDuration > 0 ? this.minutesRangeToTimeString(start, end) : row?.timeRange,
       });
     }
 
@@ -9822,6 +9927,15 @@ export class ItinerariesService {
       previewOrder: index,
       matrixPreviewOrder: index,
     }));
+
+    console.log('[ManualTimelineBuild] final_order', withOrder.map((row: any, index: number) => ({
+      index,
+      type: String(row?.type || '').toLowerCase(),
+      text: String(row?.text || row?.name || ''),
+      hotspotId: Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || row?.hotspot_id || 0) || null,
+      matrixLeg: row?.matrixTravelLeg || null,
+      timeRange: String(row?.timeRange || ''),
+    })));
 
     this.assertTimelineOrderForMatrixPreview(withOrder, selectedIdNum);
 
@@ -10029,6 +10143,7 @@ export class ItinerariesService {
       allowTopPriorityRemoval?: boolean;
       focusHotspotId?: number;
       previewOnly?: boolean;
+      debug?: boolean;
       forceConflictInsertion?: boolean;
       matrixPreferredSlot?: {
         fromHotspotId?: number;
@@ -10218,6 +10333,7 @@ export class ItinerariesService {
       options?.anchorIndex,
       options?.anchorType,
       baselineTimelineForMatrix,
+      options?.debug === true,
     );
 
     const hasValidMatrixSlot = this.hasValidManualMatrixSlot(manualInsertionFit);
@@ -10230,6 +10346,7 @@ export class ItinerariesService {
 
     if (requiresMatrixBuild) {
       if (options?.previewOnly === true) {
+        const osrmRouteCheckFailed = String(manualInsertionFit?.reason || manualInsertionFit?.previewBlockReason || '') === 'OSRM_ROUTE_CHECK_FAILED';
         const blockedValidation = {
           passesScheduleRules: false,
           readyToApply: false,
@@ -10241,7 +10358,9 @@ export class ItinerariesService {
           scheduledSelectedManualCount: 0,
           unscheduledManualCount: requestedHotspotIds.length,
           requiresMatrixBuild: true,
-          reason: 'Route-fit matrix data missing for selected hotspot and current route.',
+          reason: osrmRouteCheckFailed
+            ? 'OSRM_ROUTE_CHECK_FAILED'
+            : 'Route-fit matrix data missing for selected hotspot and current route.',
         };
 
         return {
@@ -10249,7 +10368,9 @@ export class ItinerariesService {
           inserted: false,
           selectedIncluded: false,
           code: 'MATRIX_DATA_MISSING',
-          message: 'Route-fit matrix data is missing for this hotspot and current route. Build matrix before preview/apply.',
+          message: osrmRouteCheckFailed
+            ? 'OSRM route validation failed while checking source-city route anchor.'
+            : 'Route-fit matrix data is missing for this hotspot and current route. Build matrix before preview/apply.',
           planId: Number(planId),
           routeId: Number(routeId),
           hotspotId: Number(preFocusHotspotId),
@@ -10277,7 +10398,9 @@ export class ItinerariesService {
             removedCount: 0,
             stillUnschedulable: true,
             timingAdjusted: false,
-            reason: 'Route-fit matrix data missing for selected hotspot and current route.',
+            reason: osrmRouteCheckFailed
+              ? 'OSRM_ROUTE_CHECK_FAILED'
+              : 'Route-fit matrix data missing for selected hotspot and current route.',
             validation: blockedValidation,
             slotInsights: [],
             insertionMetrics: this.buildDistanceAndToFroLabels({
@@ -10419,6 +10542,14 @@ export class ItinerariesService {
             : undefined,
       },
     );
+
+    console.log('[ManualTimelineBuild] api_test_start', {
+      planId: Number(planId),
+      routeId: Number(routeId),
+      selectedHotspotId: Number(focusHotspotId || 0),
+      anchorType: resolvedAnchorType || null,
+      anchorIndex: Number.isInteger(Number(resolvedAnchorIndex)) ? Number(resolvedAnchorIndex) : null,
+    });
 
     const previewTimeline = Array.isArray(enginePreview?.fullTimeline) ? enginePreview.fullTimeline : [];
     const validation = this.buildManualHotspotValidation({
@@ -11453,14 +11584,28 @@ export class ItinerariesService {
 
   private hasValidManualMatrixSlot(manualInsertionFit: any): boolean {
     const slot = manualInsertionFit?.chosenSlot;
-    if (!slot) return false;
+    const bestSlot = manualInsertionFit?.bestSlot;
 
-    return (
-      manualInsertionFit?.routeFitAvailable !== false
+    const chosenSlotValid = (
+      !!slot
+      && manualInsertionFit?.routeFitAvailable !== false
       && this.isFeasibleFitType(String(slot?.routeFitType || '').toUpperCase())
       && Number(slot?.fromHotspotId || 0) > 0
       && Number(slot?.toHotspotId || 0) > 0
     );
+
+    const sourceExitAnchorBestSlotValid = (
+      !!bestSlot
+      && (
+        String(bestSlot?.source || '') === 'SOURCE_CITY_EXIT_ANCHOR'
+        || String(bestSlot?.source || '') === 'OSRM_SOURCE_CITY_ROUTE_ANCHOR'
+      )
+      && this.isFeasibleFitType(String(bestSlot?.routeFitType || '').toUpperCase())
+      && Number(bestSlot?.fromHotspotId || 0) > 0
+      && Number(bestSlot?.toHotspotId || 0) > 0
+    );
+
+    return chosenSlotValid || sourceExitAnchorBestSlotValid;
   }
 
   private buildMissingMatrixBuildSuggestion(planId: number, routeId: number, candidateHotspotId: number) {
@@ -11473,6 +11618,1124 @@ export class ItinerariesService {
       candidateHotspotId: normalizedCandidateId,
       command: `npx tsx scripts/build-missing-manual-hotspot-matrix.ts --planId ${normalizedPlanId} --routeId ${normalizedRouteId} --candidateHotspotId ${normalizedCandidateId}`,
     };
+  }
+
+  private normalizeLocationText(value: unknown): string {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    const firstSegment = raw.includes('|') ? String(raw.split('|')[0] || '') : raw;
+    return firstSegment.toLowerCase().trim().replace(/\s+/g, ' ');
+  }
+
+  private deriveLooseCityKey(value: string): string {
+    const normalized = this.normalizeLocationText(value || '');
+    if (!normalized) return '';
+
+    const primary = String(normalized.split(',')[0] || '').trim();
+    if (!primary) return '';
+
+    const stopwords = new Set([
+      'international',
+      'domestic',
+      'airport',
+      'station',
+      'railway',
+      'junction',
+      'bus',
+      'stand',
+      'terminal',
+      'city',
+      'district',
+      'state',
+      'india',
+    ]);
+
+    const tokens = primary
+      .split(' ')
+      .map((t) => t.trim())
+      .filter((t) => t.length > 0)
+      .filter((t) => !stopwords.has(t));
+
+    if (tokens.length > 0) {
+      return tokens[0];
+    }
+
+    return String(primary.split(' ')[0] || '').trim();
+  }
+
+  private parseRouteCoordinates(raw: unknown): [number, number][] {
+    if (!raw) return [];
+    try {
+      const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      if (!Array.isArray(parsed)) return [];
+      return parsed.filter(
+        (item): item is [number, number] =>
+          Array.isArray(item) && item.length === 2 && Number.isFinite(Number(item[0])) && Number.isFinite(Number(item[1])),
+      );
+    } catch {
+      return [];
+    }
+  }
+
+  private degToRadForRouteProjection(deg: number): number {
+    return (deg * Math.PI) / 180;
+  }
+
+  private haversineKmForRouteProjection(lat1: number, lng1: number, lat2: number, lng2: number): number {
+    const earthRadiusKm = 6371;
+    const dLat = this.degToRadForRouteProjection(lat2 - lat1);
+    const dLng = this.degToRadForRouteProjection(lng2 - lng1);
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2)
+      + Math.cos(this.degToRadForRouteProjection(lat1))
+      * Math.cos(this.degToRadForRouteProjection(lat2))
+      * Math.sin(dLng / 2)
+      * Math.sin(dLng / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return earthRadiusKm * c;
+  }
+
+  private projectToMetersForRouteProjection(lat: number, lng: number, refLat: number): { x: number; y: number } {
+    const earthRadiusMeters = 6371000;
+    const x = this.degToRadForRouteProjection(lng) * earthRadiusMeters * Math.cos(this.degToRadForRouteProjection(refLat));
+    const y = this.degToRadForRouteProjection(lat) * earthRadiusMeters;
+    return { x, y };
+  }
+
+  private findNearestProgressOnRoute(
+    point: { lat: number; lng: number },
+    coordinates: [number, number][],
+  ): { distanceMeters: number; progressRatio: number } {
+    if (!Array.isArray(coordinates) || coordinates.length < 2) {
+      return { distanceMeters: Number.POSITIVE_INFINITY, progressRatio: 0 };
+    }
+
+    let bestDistanceMeters = Number.POSITIVE_INFINITY;
+    let bestProgressMeters = 0;
+    let totalMeters = 0;
+    let cumulativeMeters = 0;
+
+    for (let i = 0; i < coordinates.length - 1; i += 1) {
+      const aLng = Number(coordinates[i][0]);
+      const aLat = Number(coordinates[i][1]);
+      const bLng = Number(coordinates[i + 1][0]);
+      const bLat = Number(coordinates[i + 1][1]);
+
+      const segmentMeters = this.haversineKmForRouteProjection(aLat, aLng, bLat, bLng) * 1000;
+      totalMeters += segmentMeters;
+
+      const refLat = (point.lat + aLat + bLat) / 3;
+      const p = this.projectToMetersForRouteProjection(point.lat, point.lng, refLat);
+      const a = this.projectToMetersForRouteProjection(aLat, aLng, refLat);
+      const b = this.projectToMetersForRouteProjection(bLat, bLng, refLat);
+
+      const vx = b.x - a.x;
+      const vy = b.y - a.y;
+      const wx = p.x - a.x;
+      const wy = p.y - a.y;
+      const vv = vx * vx + vy * vy;
+      const t = vv === 0 ? 0 : Math.max(0, Math.min(1, (wx * vx + wy * vy) / vv));
+
+      const projX = a.x + t * vx;
+      const projY = a.y + t * vy;
+      const dx = p.x - projX;
+      const dy = p.y - projY;
+      const distanceMeters = Math.sqrt(dx * dx + dy * dy);
+
+      if (distanceMeters < bestDistanceMeters) {
+        bestDistanceMeters = distanceMeters;
+        bestProgressMeters = cumulativeMeters + (segmentMeters * t);
+      }
+
+      cumulativeMeters += segmentMeters;
+    }
+
+    return {
+      distanceMeters: bestDistanceMeters,
+      progressRatio: totalMeters > 0 ? bestProgressMeters / totalMeters : 0,
+    };
+  }
+
+  private async getOsrmRouteGeometry(
+    fromLat: number,
+    fromLng: number,
+    toLat: number,
+    toLng: number,
+  ): Promise<{ coordinates: [number, number][]; distanceKm: number | null; durationMin: number | null } | null> {
+    if (!Number.isFinite(fromLat) || !Number.isFinite(fromLng) || !Number.isFinite(toLat) || !Number.isFinite(toLng)) {
+      return null;
+    }
+
+    const osrmBaseUrl = String(process.env.OSRM_BASE_URL || 'http://localhost:5000/route/v1/driving').trim();
+    const url = `${osrmBaseUrl}/${fromLng},${fromLat};${toLng},${toLat}?overview=full&geometries=geojson`;
+    try {
+      const response = await fetch(url);
+      if (!response.ok) return null;
+      const payload: any = await response.json();
+      const route = Array.isArray(payload?.routes) ? payload.routes[0] : null;
+      const coordinates = this.parseRouteCoordinates(route?.geometry?.coordinates || null);
+      if (coordinates.length < 2) return null;
+      return {
+        coordinates,
+        distanceKm: route?.distance != null ? Number(route.distance) / 1000 : null,
+        durationMin: route?.duration != null ? Number(route.duration) / 60 : null,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  private async getOsrmDistanceKm(
+    fromLat: number,
+    fromLng: number,
+    toLat: number,
+    toLng: number,
+  ): Promise<number | null> {
+    const route = await this.getOsrmRouteGeometry(fromLat, fromLng, toLat, toLng);
+    const distanceKm = Number(route?.distanceKm);
+    return Number.isFinite(distanceKm) && distanceKm >= 0 ? distanceKm : null;
+  }
+
+  private distancePointToRouteMeters(
+    point: { lat: number; lng: number },
+    routeGeometry: [number, number][],
+  ): number {
+    return Number(this.findNearestProgressOnRoute(point, routeGeometry).distanceMeters);
+  }
+
+  private projectPointProgressOnRoute(
+    point: { lat: number; lng: number },
+    routeGeometry: [number, number][],
+  ): number {
+    return Number(this.findNearestProgressOnRoute(point, routeGeometry).progressRatio);
+  }
+
+  private async ensureHotspotPlace(
+    tx: any,
+    data: {
+      hotspotId?: number;
+      hotspotName: string;
+      hotspotLocation: string;
+      lat?: number | null;
+      lng?: number | null;
+      createdBy?: number;
+    },
+  ): Promise<number | null> {
+    const requestedHotspotId = Number(data?.hotspotId || 0);
+    const normalizedName = this.normalizeLocationText(data?.hotspotName || '');
+    const normalizedLocation = this.normalizeLocationText(data?.hotspotLocation || '');
+    const lat = Number(data?.lat);
+    const lng = Number(data?.lng);
+
+    if (requestedHotspotId > 0) {
+      const existingById = await (tx as any).dvi_hotspot_place.findFirst({
+        where: { hotspot_ID: requestedHotspotId, deleted: 0 },
+        select: { hotspot_ID: true },
+      });
+      if (existingById) {
+        console.log('[HotspotPlaceEnsure] existing_found', { hotspotId: requestedHotspotId, mode: 'id' });
+        return Number(existingById.hotspot_ID);
+      }
+    }
+
+    const candidates: any[] = await (tx as any).$queryRawUnsafe(
+      `
+      SELECT hotspot_ID, hotspot_name, hotspot_location, hotspot_latitude, hotspot_longitude
+      FROM dvi_hotspot_place
+      WHERE deleted = 0
+        AND LOWER(COALESCE(hotspot_name, '')) = ?
+        AND LOWER(COALESCE(hotspot_location, '')) LIKE ?
+      LIMIT 20
+      `,
+      normalizedName,
+      `%${normalizedLocation || normalizedName}%`,
+    );
+
+    if (Array.isArray(candidates) && candidates.length > 0) {
+      const maxMatchMeters = 200;
+      const exact = candidates.find((row: any) => {
+        const rowId = Number(row?.hotspot_ID || 0);
+        if (!rowId) return false;
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return true;
+        const rowLat = Number(row?.hotspot_latitude);
+        const rowLng = Number(row?.hotspot_longitude);
+        if (!Number.isFinite(rowLat) || !Number.isFinite(rowLng)) return false;
+        const distMeters = this.haversineKmForRouteProjection(lat, lng, rowLat, rowLng) * 1000;
+        return distMeters <= maxMatchMeters;
+      });
+
+      const matched = exact || candidates[0];
+      const matchedId = Number(matched?.hotspot_ID || 0);
+      if (matchedId > 0) {
+        console.log('[HotspotPlaceEnsure] existing_found', { hotspotId: matchedId, mode: 'name_location' });
+        return matchedId;
+      }
+    }
+
+    const now = new Date();
+    const inserted = await (tx as any).dvi_hotspot_place.create({
+      data: {
+        hotspot_name: String(data?.hotspotName || '').trim() || null,
+        hotspot_location: String(data?.hotspotLocation || '').trim() || null,
+        hotspot_latitude: Number.isFinite(lat) ? String(lat) : null,
+        hotspot_longitude: Number.isFinite(lng) ? String(lng) : null,
+        status: 1,
+        deleted: 0,
+        createdby: Number(data?.createdBy || 0),
+        createdon: now,
+        updatedon: now,
+      },
+      select: { hotspot_ID: true },
+    });
+
+    const insertedId = Number(inserted?.hotspot_ID || 0);
+    if (insertedId > 0) {
+      console.log('[HotspotPlaceEnsure] inserted_new', { hotspotId: insertedId });
+      return insertedId;
+    }
+
+    return null;
+  }
+
+  private async ensureRouteBetweenMapRow(
+    tx: any,
+    fromHotspotId: number,
+    toHotspotId: number,
+    betweenHotspotId: number,
+  ): Promise<any | null> {
+    const fromId = Number(fromHotspotId || 0);
+    const toId = Number(toHotspotId || 0);
+    const betweenId = Number(betweenHotspotId || 0);
+    if (!fromId || !toId || !betweenId) {
+      console.log('[RouteBetweenMapEnsure] skipped_no_hotspot_id', {
+        fromHotspotId: fromId,
+        toHotspotId: toId,
+        betweenHotspotId: betweenId,
+      });
+      return null;
+    }
+
+    const existingRows: any[] = await (tx as any).$queryRawUnsafe(
+      `
+      SELECT
+        from_hotspot_id,
+        to_hotspot_id,
+        between_hotspot_id,
+        route_fit_type,
+        route_decision_reason,
+        road_detour_km,
+        road_detour_ratio,
+        ab_osrm_distance_km,
+        ac_osrm_distance_km,
+        cb_osrm_distance_km,
+        inserted_route_distance_km,
+        candidate_distance_from_ab_route_meters,
+        destination_distance_from_ac_route_meters
+      FROM hotspot_route_between_map
+      WHERE (
+        (from_hotspot_id = ? AND to_hotspot_id = ? AND between_hotspot_id = ?)
+        OR
+        (from_hotspot_id = ? AND to_hotspot_id = ? AND between_hotspot_id = ?)
+      )
+      LIMIT 1
+      `,
+      fromId,
+      toId,
+      betweenId,
+      toId,
+      fromId,
+      betweenId,
+    );
+
+    if (Array.isArray(existingRows) && existingRows.length > 0) {
+      console.log('[RouteBetweenMapEnsure] existing_found', {
+        fromHotspotId: fromId,
+        toHotspotId: toId,
+        betweenHotspotId: betweenId,
+      });
+      return existingRows[0];
+    }
+
+    const masters: any[] = await (tx as any).dvi_hotspot_place.findMany({
+      where: {
+        hotspot_ID: { in: [fromId, toId, betweenId] },
+        deleted: 0,
+      },
+      select: {
+        hotspot_ID: true,
+        hotspot_name: true,
+        hotspot_location: true,
+        hotspot_latitude: true,
+        hotspot_longitude: true,
+      },
+    });
+
+    const masterMap = new Map<number, any>((masters || []).map((row: any) => [Number(row?.hotspot_ID || 0), row]));
+    const from = masterMap.get(fromId);
+    const to = masterMap.get(toId);
+    const between = masterMap.get(betweenId);
+
+    const fromLat = Number(from?.hotspot_latitude);
+    const fromLng = Number(from?.hotspot_longitude);
+    const toLat = Number(to?.hotspot_latitude);
+    const toLng = Number(to?.hotspot_longitude);
+    const betweenLat = Number(between?.hotspot_latitude);
+    const betweenLng = Number(between?.hotspot_longitude);
+
+    if (
+      !from || !to || !between
+      || !Number.isFinite(fromLat) || !Number.isFinite(fromLng)
+      || !Number.isFinite(toLat) || !Number.isFinite(toLng)
+      || !Number.isFinite(betweenLat) || !Number.isFinite(betweenLng)
+    ) {
+      console.warn('[RouteBetweenMapEnsure] invalid_coordinates', {
+        fromHotspotId: fromId,
+        toHotspotId: toId,
+        betweenHotspotId: betweenId,
+      });
+      return null;
+    }
+
+    const directRoute = await this.getOsrmRouteGeometry(fromLat, fromLng, toLat, toLng);
+    if (!directRoute || directRoute.coordinates.length < 2) {
+      console.warn('[RouteBetweenMapEnsure] osrm_failed', {
+        fromHotspotId: fromId,
+        toHotspotId: toId,
+        betweenHotspotId: betweenId,
+      });
+      return null;
+    }
+
+    const directKm = Number(directRoute.distanceKm);
+    const acKm = await this.getOsrmDistanceKm(fromLat, fromLng, betweenLat, betweenLng);
+    const cbKm = await this.getOsrmDistanceKm(betweenLat, betweenLng, toLat, toLng);
+    if (!Number.isFinite(directKm) || !Number.isFinite(acKm) || !Number.isFinite(cbKm)) {
+      console.warn('[RouteBetweenMapEnsure] osrm_failed', {
+        fromHotspotId: fromId,
+        toHotspotId: toId,
+        betweenHotspotId: betweenId,
+      });
+      return null;
+    }
+
+    const insertedRouteDistanceKm = Number(acKm) + Number(cbKm);
+    const roadDetourKm = insertedRouteDistanceKm - Number(directKm);
+    const roadDetourRatio = Number(directKm) > 0 ? roadDetourKm / Number(directKm) : null;
+    const candidateDistanceFromRouteMeters = this.distancePointToRouteMeters(
+      { lat: betweenLat, lng: betweenLng },
+      directRoute.coordinates,
+    );
+    const candidateProgressOnAbRatio = this.projectPointProgressOnRoute(
+      { lat: betweenLat, lng: betweenLng },
+      directRoute.coordinates,
+    );
+
+    let routeFitType = 'MAJOR_DETOUR';
+    if (candidateDistanceFromRouteMeters <= 1000 || roadDetourKm <= 2) {
+      routeFitType = 'ON_ROUTE';
+    } else if (roadDetourKm <= 10) {
+      routeFitType = 'MINOR_DETOUR';
+    }
+
+    const routeDecisionReason =
+      routeFitType === 'ON_ROUTE'
+        ? 'Candidate is on/near OSRM route with low detour.'
+        : routeFitType === 'MINOR_DETOUR'
+          ? 'Candidate requires acceptable minor OSRM detour.'
+          : 'Candidate causes major OSRM detour.';
+
+    if (routeFitType === 'MAJOR_DETOUR') {
+      console.log('[RouteBetweenMapEnsure] rejected_major_detour', {
+        fromHotspotId: fromId,
+        toHotspotId: toId,
+        betweenHotspotId: betweenId,
+        roadDetourKm: Number(roadDetourKm.toFixed(3)),
+      });
+    }
+
+    await (tx as any).$executeRawUnsafe(
+      `
+      INSERT INTO hotspot_route_between_map (
+        from_hotspot_id,
+        from_hotspot_name,
+        from_hotspot_location,
+        to_hotspot_id,
+        to_hotspot_name,
+        to_hotspot_location,
+        between_hotspot_id,
+        between_hotspot_name,
+        distance_from_route_meters,
+        detour_km,
+        detour_ratio,
+        route_fit_type,
+        candidate_distance_from_ab_route_meters,
+        candidate_progress_on_ab_ratio,
+        destination_distance_from_ac_route_meters,
+        destination_progress_on_ac_ratio,
+        crosses_destination_before_candidate,
+        ab_osrm_distance_km,
+        ac_osrm_distance_km,
+        cb_osrm_distance_km,
+        inserted_route_distance_km,
+        road_detour_km,
+        road_detour_ratio,
+        route_decision_reason,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+      ON DUPLICATE KEY UPDATE
+        route_fit_type = VALUES(route_fit_type),
+        route_decision_reason = VALUES(route_decision_reason),
+        distance_from_route_meters = VALUES(distance_from_route_meters),
+        detour_km = VALUES(detour_km),
+        detour_ratio = VALUES(detour_ratio),
+        candidate_distance_from_ab_route_meters = VALUES(candidate_distance_from_ab_route_meters),
+        candidate_progress_on_ab_ratio = VALUES(candidate_progress_on_ab_ratio),
+        ab_osrm_distance_km = VALUES(ab_osrm_distance_km),
+        ac_osrm_distance_km = VALUES(ac_osrm_distance_km),
+        cb_osrm_distance_km = VALUES(cb_osrm_distance_km),
+        inserted_route_distance_km = VALUES(inserted_route_distance_km),
+        road_detour_km = VALUES(road_detour_km),
+        road_detour_ratio = VALUES(road_detour_ratio),
+        updated_at = NOW()
+      `,
+      fromId,
+      String(from?.hotspot_name || `Hotspot #${fromId}`),
+      String(from?.hotspot_location || ''),
+      toId,
+      String(to?.hotspot_name || `Hotspot #${toId}`),
+      String(to?.hotspot_location || ''),
+      betweenId,
+      String(between?.hotspot_name || `Hotspot #${betweenId}`),
+      candidateDistanceFromRouteMeters,
+      roadDetourKm,
+      roadDetourRatio,
+      routeFitType,
+      candidateDistanceFromRouteMeters,
+      candidateProgressOnAbRatio,
+      null,
+      null,
+      Number(directKm),
+      Number(acKm),
+      Number(cbKm),
+      insertedRouteDistanceKm,
+      roadDetourKm,
+      roadDetourRatio,
+      routeDecisionReason,
+    );
+
+    const insertedRows: any[] = await (tx as any).$queryRawUnsafe(
+      `
+      SELECT
+        from_hotspot_id,
+        to_hotspot_id,
+        between_hotspot_id,
+        route_fit_type,
+        route_decision_reason,
+        road_detour_km,
+        road_detour_ratio,
+        ab_osrm_distance_km,
+        ac_osrm_distance_km,
+        cb_osrm_distance_km,
+        inserted_route_distance_km,
+        candidate_distance_from_ab_route_meters,
+        destination_distance_from_ac_route_meters
+      FROM hotspot_route_between_map
+      WHERE (
+        (from_hotspot_id = ? AND to_hotspot_id = ? AND between_hotspot_id = ?)
+        OR
+        (from_hotspot_id = ? AND to_hotspot_id = ? AND between_hotspot_id = ?)
+      )
+      LIMIT 1
+      `,
+      fromId,
+      toId,
+      betweenId,
+      toId,
+      fromId,
+      betweenId,
+    );
+
+    const insertedRow = Array.isArray(insertedRows) && insertedRows.length > 0 ? insertedRows[0] : null;
+    console.log('[RouteBetweenMapEnsure] inserted_new', {
+      fromHotspotId: fromId,
+      toHotspotId: toId,
+      betweenHotspotId: betweenId,
+      routeFitType,
+    });
+    return insertedRow;
+  }
+
+  private async findLastSourceCityHotspotOnOsrmRoute(
+    tx: any,
+    params: {
+      routeId: number;
+      sourceCityKey: string;
+      destinationCityKey: string;
+      candidateHotspotId: number;
+      debug?: boolean;
+    },
+  ): Promise<{
+    sourceAnchorHotspotId: number;
+    sourceAnchorName: string;
+    sourceAnchorDistanceFromRouteMeters: number;
+    sourceAnchorProgressRatio: number;
+    nextRouteHotspotId: number;
+    osrmFailed: boolean;
+    candidateDistanceFromRouteMeters: number | null;
+    anchorSelectionWhy?: string;
+    anchorSelectionDebug?: any;
+  } | null> {
+    const routeId = Number(params?.routeId || 0);
+    const candidateHotspotId = Number(params?.candidateHotspotId || 0);
+    const sourceCityKey = this.deriveLooseCityKey(params?.sourceCityKey || '');
+    const destinationCityKey = this.deriveLooseCityKey(params?.destinationCityKey || '');
+    const debug = params?.debug === true;
+    if (!routeId || !candidateHotspotId) {
+      return null;
+    }
+
+    const routeRows: any[] = await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
+      where: {
+        itinerary_route_ID: routeId,
+        item_type: 4,
+        deleted: 0,
+        status: 1,
+      },
+      orderBy: { hotspot_order: 'asc' },
+      select: {
+        hotspot_ID: true,
+        hotspot_order: true,
+      },
+    });
+
+    const routeHotspotIds = (routeRows || []).map((row: any) => Number(row?.hotspot_ID || 0)).filter((id: number) => id > 0);
+    if (routeHotspotIds.length < 2) {
+      return null;
+    }
+
+    const hotspotRows: any[] = await (tx as any).dvi_hotspot_place.findMany({
+      where: { hotspot_ID: { in: routeHotspotIds.concat([candidateHotspotId]) }, deleted: 0 },
+      select: {
+        hotspot_ID: true,
+        hotspot_name: true,
+        hotspot_location: true,
+        hotspot_latitude: true,
+        hotspot_longitude: true,
+      },
+    });
+    const hotspotMap = new Map<number, any>((hotspotRows || []).map((row: any) => [Number(row?.hotspot_ID || 0), row]));
+
+    if (debug) {
+      const routeDebugRows = (routeRows || []).map((rr: any) => {
+        const hp = hotspotMap.get(Number(rr?.hotspot_ID || 0));
+        return {
+          hotspot_ID: Number(rr?.hotspot_ID || 0),
+          hotspot_name: String(hp?.hotspot_name || ''),
+          hotspot_location: String(hp?.hotspot_location || ''),
+          latitude: Number(hp?.hotspot_latitude),
+          longitude: Number(hp?.hotspot_longitude),
+          hotspot_order: Number(rr?.hotspot_order || 0),
+        };
+      });
+      console.log('[OSRMSourceRoute][AnchorSelectionDebug] active_route_hotspots_loaded', {
+        routeId,
+        hotspots: routeDebugRows,
+      });
+    }
+
+    const orderedExisting = routeHotspotIds
+      .map((id: number) => ({ id, row: hotspotMap.get(id) }))
+      .filter((item: any) => {
+        const lat = Number(item?.row?.hotspot_latitude);
+        const lng = Number(item?.row?.hotspot_longitude);
+        return Number.isFinite(lat) && Number.isFinite(lng);
+      });
+
+    if (orderedExisting.length < 2) {
+      console.warn('[ManualMatrixEnsure] invalid_coordinates', { routeId, reason: 'No valid route endpoint coordinates.' });
+      return null;
+    }
+
+    const start = orderedExisting[0];
+    const end = orderedExisting[orderedExisting.length - 1];
+    const startLat = Number(start.row?.hotspot_latitude);
+    const startLng = Number(start.row?.hotspot_longitude);
+    const endLat = Number(end.row?.hotspot_latitude);
+    const endLng = Number(end.row?.hotspot_longitude);
+
+    const routeGeometry = await this.getOsrmRouteGeometry(startLat, startLng, endLat, endLng);
+    if (!routeGeometry || routeGeometry.coordinates.length < 2) {
+      console.warn('[ManualMatrixEnsure] osrm_failed', { routeId, fromHotspotId: start.id, toHotspotId: end.id });
+      return {
+        sourceAnchorHotspotId: start.id,
+        sourceAnchorName: String(start.row?.hotspot_name || `Hotspot #${start.id}`),
+        sourceAnchorDistanceFromRouteMeters: 0,
+        sourceAnchorProgressRatio: 0,
+        nextRouteHotspotId: Number(orderedExisting[1]?.id || 0),
+        osrmFailed: true,
+        candidateDistanceFromRouteMeters: null,
+        anchorSelectionWhy: debug ? 'OSRM route geometry unavailable; fallback anchor could not be evaluated with debug scoring.' : undefined,
+        anchorSelectionDebug: debug ? { routeId, osrmFailed: true } : undefined,
+      };
+    }
+
+    if (debug) {
+      console.log('[OSRMSourceRoute][AnchorSelectionDebug] osrm_route_geometry_result', {
+        routeId,
+        sourceCoordinates: { lat: startLat, lng: startLng },
+        destinationCoordinates: { lat: endLat, lng: endLng },
+        totalRouteDistanceKm: Number(routeGeometry?.distanceKm ?? 0),
+      });
+    }
+
+    console.log('[OSRMSourceRoute] route_geometry_loaded', {
+      routeId,
+      sourceCityKey,
+      destinationCityKey,
+      points: routeGeometry.coordinates.length,
+    });
+
+    const candidate = hotspotMap.get(candidateHotspotId);
+    const candidateLat = Number(candidate?.hotspot_latitude);
+    const candidateLng = Number(candidate?.hotspot_longitude);
+    const candidateDistanceFromRouteMeters = Number.isFinite(candidateLat) && Number.isFinite(candidateLng)
+      ? this.distancePointToRouteMeters({ lat: candidateLat, lng: candidateLng }, routeGeometry.coordinates)
+      : null;
+
+    console.log('[OSRMSourceRoute] candidate_distance_checked', {
+      routeId,
+      candidateHotspotId,
+      candidateDistanceFromRouteMeters,
+    });
+
+    const maxRouteMeters = Number(process.env.SOURCE_CITY_EXIT_MAX_ROUTE_METERS || 1000);
+    const mapped = orderedExisting.map((item: any, index: number) => {
+      const row = item.row;
+      const lat = Number(row?.hotspot_latitude);
+      const lng = Number(row?.hotspot_longitude);
+      const locationKey = this.deriveLooseCityKey(String(row?.hotspot_location || ''));
+      const distance = this.distancePointToRouteMeters({ lat, lng }, routeGeometry.coordinates);
+      const progress = this.projectPointProgressOnRoute({ lat, lng }, routeGeometry.coordinates);
+      return {
+        index,
+        hotspotId: Number(item.id),
+        hotspotName: String(row?.hotspot_name || `Hotspot #${item.id}`),
+        hotspotLocation: String(row?.hotspot_location || ''),
+        locationKey,
+        distanceFromRouteMeters: Number(distance),
+        progressRatio: Number(progress),
+      };
+    });
+
+    const candidateEvaluation = mapped.map((row: any) => {
+      const isCandidateSelf = Number(row.hotspotId) === Number(candidateHotspotId);
+      const isWithinDistance = Number(row.distanceFromRouteMeters) <= maxRouteMeters;
+      const isSourceCity = !!sourceCityKey && String(row.locationKey || '') === String(sourceCityKey || '');
+      const isBeforeDestinationProgress = Number(row.progressRatio) < 0.95;
+      const accepted = !isCandidateSelf && isWithinDistance && (isSourceCity || isBeforeDestinationProgress);
+
+      let reason = 'accepted';
+      if (isCandidateSelf) {
+        reason = 'rejected: current manual candidate hotspot is not eligible as source anchor';
+      } else if (!isWithinDistance) {
+        reason = `rejected: distanceFromRouteMeters exceeds threshold (${maxRouteMeters})`;
+      } else if (!(isSourceCity || isBeforeDestinationProgress)) {
+        reason = 'rejected: neither source city nor before destination-progress cutoff';
+      }
+
+      return {
+        hotspot_ID: Number(row.hotspotId),
+        hotspot_name: String(row.hotspotName || ''),
+        distanceFromRouteMeters: Number(row.distanceFromRouteMeters),
+        progressRatio: Number(row.progressRatio),
+        isSourceCity,
+        accepted,
+        reason,
+      };
+    });
+
+    if (debug) {
+      for (const evalRow of candidateEvaluation) {
+        console.log('[OSRMSourceRoute][AnchorSelectionDebug] candidate_evaluation', {
+          routeId,
+          hotspot_ID: Number(evalRow.hotspot_ID),
+          hotspot_name: String(evalRow.hotspot_name),
+          distanceFromRouteMeters: Number(evalRow.distanceFromRouteMeters),
+          progressRatio: Number(evalRow.progressRatio),
+          isSourceCity: evalRow.isSourceCity,
+          decision: evalRow.accepted ? 'accepted' : 'rejected',
+          reason: String(evalRow.reason),
+        });
+      }
+    }
+
+    const candidates = mapped
+      .filter((row: any) => row.hotspotId !== candidateHotspotId)
+      .filter((row: any) => row.distanceFromRouteMeters <= maxRouteMeters)
+      .filter((row: any) => (
+        (!!sourceCityKey && row.locationKey === sourceCityKey)
+        || row.progressRatio < 0.95
+      ))
+      .sort((a: any, b: any) => b.progressRatio - a.progressRatio || a.distanceFromRouteMeters - b.distanceFromRouteMeters);
+
+    const selected = candidates[0] || mapped[0] || null;
+    if (!selected) {
+      return null;
+    }
+
+    const selectedIndex = mapped.findIndex((row: any) => Number(row.hotspotId) === Number(selected.hotspotId));
+    const nextRouteHotspotId = selectedIndex >= 0 && selectedIndex + 1 < mapped.length
+      ? Number(mapped[selectedIndex + 1].hotspotId)
+      : Number(mapped[1]?.hotspotId || 0);
+
+    const selectionWhy = [
+      `Selected hotspot ${Number(selected.hotspotId)} as source anchor because it is active on route ${routeId}.`,
+      `distanceFromRouteMeters=${Number(selected.distanceFromRouteMeters).toFixed(2)} (threshold ${maxRouteMeters}).`,
+      `sourceCityMatch=${String((!!sourceCityKey && String(selected.locationKey || '') === String(sourceCityKey || '')))}.`,
+      'Among accepted source-side/on-route hotspots it had highest progressRatio before route exits source side.',
+    ].join(' ');
+
+    if (debug) {
+      console.log('[OSRMSourceRoute][AnchorSelectionDebug] final_selected_anchor', {
+        routeId,
+        selectedHotspotId: Number(selected.hotspotId),
+        selectedHotspotName: String(selected.hotspotName),
+        whySelected: selectionWhy,
+        nextRouteHotspotId,
+      });
+    }
+
+    console.log('[OSRMSourceRoute] source_anchor_selected', {
+      routeId,
+      sourceAnchorHotspotId: Number(selected.hotspotId),
+      sourceAnchorName: String(selected.hotspotName),
+      sourceAnchorProgressRatio: Number(selected.progressRatio),
+      sourceAnchorDistanceFromRouteMeters: Number(selected.distanceFromRouteMeters),
+      nextRouteHotspotId,
+    });
+
+    return {
+      sourceAnchorHotspotId: Number(selected.hotspotId),
+      sourceAnchorName: String(selected.hotspotName),
+      sourceAnchorDistanceFromRouteMeters: Number(selected.distanceFromRouteMeters),
+      sourceAnchorProgressRatio: Number(selected.progressRatio),
+      nextRouteHotspotId,
+      osrmFailed: false,
+      candidateDistanceFromRouteMeters,
+      anchorSelectionWhy: debug ? selectionWhy : undefined,
+      anchorSelectionDebug: debug
+        ? {
+            routeId,
+            sourceCityKey,
+            destinationCityKey,
+            maxRouteMeters,
+            candidateDistanceFromRouteMeters,
+            candidateEvaluation,
+            selected: {
+              hotspot_ID: Number(selected.hotspotId),
+              hotspot_name: String(selected.hotspotName),
+              distanceFromRouteMeters: Number(selected.distanceFromRouteMeters),
+              progressRatio: Number(selected.progressRatio),
+            },
+            nextRouteHotspotId,
+          }
+        : undefined,
+    };
+  }
+
+  private async getDoneMatrixRouteCoordinatesEitherDirection(
+    tx: any,
+    fromHotspotId: number,
+    toHotspotId: number,
+  ): Promise<{
+    routeCoordinates: [number, number][];
+    distanceKm: number | null;
+    durationMin: number | null;
+    usedReverse: boolean;
+    osrmFallbackUsed?: boolean;
+    osrmFailed?: boolean;
+  } | null> {
+    const fromId = Number(fromHotspotId || 0);
+    const toId = Number(toHotspotId || 0);
+    if (!fromId || !toId || fromId === toId) return null;
+
+    const rows: any[] = await (tx as any).$queryRawUnsafe(
+      `
+      SELECT
+        from_hotspot_id,
+        to_hotspot_id,
+        osrm_distance_km,
+        osrm_duration_min,
+        route_coordinates
+      FROM hotspot_route_matrix
+      WHERE process_status = 'DONE'
+        AND (
+          (from_hotspot_id = ? AND to_hotspot_id = ?)
+          OR
+          (from_hotspot_id = ? AND to_hotspot_id = ?)
+        )
+      ORDER BY CASE
+        WHEN from_hotspot_id = ? AND to_hotspot_id = ? THEN 0
+        ELSE 1
+      END, updated_at DESC
+      LIMIT 2
+      `,
+      fromId,
+      toId,
+      toId,
+      fromId,
+      fromId,
+      toId,
+    );
+
+    if (Array.isArray(rows) && rows.length > 0) {
+      for (const row of rows) {
+        const usedReverse =
+          Number(row?.from_hotspot_id || 0) === toId
+          && Number(row?.to_hotspot_id || 0) === fromId;
+        const parsed = this.parseRouteCoordinates(row?.route_coordinates || null);
+        if (parsed.length >= 2) {
+          return {
+            routeCoordinates: usedReverse ? [...parsed].reverse() : parsed,
+            distanceKm: row?.osrm_distance_km != null ? Number(row.osrm_distance_km) : null,
+            durationMin: row?.osrm_duration_min != null ? Number(row.osrm_duration_min) : null,
+            usedReverse,
+            osrmFallbackUsed: false,
+            osrmFailed: false,
+          };
+        }
+      }
+    }
+
+    const endpoints = await (tx as any).dvi_hotspot_place.findMany({
+      where: {
+        hotspot_ID: { in: [fromId, toId] },
+        deleted: 0,
+      },
+      select: {
+        hotspot_ID: true,
+        hotspot_name: true,
+        hotspot_latitude: true,
+        hotspot_longitude: true,
+      },
+    });
+
+    const endpointMap = new Map<number, any>(
+      (endpoints || []).map((row: any) => [Number(row.hotspot_ID || 0), row]),
+    );
+    const from = endpointMap.get(fromId);
+    const to = endpointMap.get(toId);
+
+    const fromLat = Number(from?.hotspot_latitude);
+    const fromLng = Number(from?.hotspot_longitude);
+    const toLat = Number(to?.hotspot_latitude);
+    const toLng = Number(to?.hotspot_longitude);
+
+    if (!from || !to || !Number.isFinite(fromLat) || !Number.isFinite(fromLng) || !Number.isFinite(toLat) || !Number.isFinite(toLng)) {
+      return {
+        routeCoordinates: [],
+        distanceKm: null,
+        durationMin: null,
+        usedReverse: false,
+        osrmFallbackUsed: true,
+        osrmFailed: true,
+      };
+    }
+
+    const osrmBaseUrl = String(process.env.OSRM_BASE_URL || 'http://localhost:5000/route/v1/driving').trim();
+    const url = `${osrmBaseUrl}/${fromLng},${fromLat};${toLng},${toLat}?overview=full&geometries=geojson&steps=false`;
+
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        return {
+          routeCoordinates: [],
+          distanceKm: null,
+          durationMin: null,
+          usedReverse: false,
+          osrmFallbackUsed: true,
+          osrmFailed: true,
+        };
+      }
+
+      const payload: any = await response.json();
+      const route = Array.isArray(payload?.routes) ? payload.routes[0] : null;
+      const coordinates = this.parseRouteCoordinates(route?.geometry?.coordinates || null);
+      if (coordinates.length < 2) {
+        return {
+          routeCoordinates: [],
+          distanceKm: null,
+          durationMin: null,
+          usedReverse: false,
+          osrmFallbackUsed: true,
+          osrmFailed: true,
+        };
+      }
+
+      const distanceKm = route?.distance != null ? Number(route.distance) / 1000 : null;
+      const durationMin = route?.duration != null ? Number(route.duration) / 60 : null;
+
+      try {
+        await (tx as any).$executeRawUnsafe(
+          `
+          INSERT INTO hotspot_route_matrix (
+            from_hotspot_id,
+            to_hotspot_id,
+            from_name,
+            to_name,
+            from_lat,
+            from_lng,
+            to_lat,
+            to_lng,
+            haversine_km,
+            osrm_distance_km,
+            osrm_duration_min,
+            route_coordinates,
+            process_status,
+            error_message,
+            created_at,
+            updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DONE', NULL, NOW(), NOW())
+          ON DUPLICATE KEY UPDATE
+            from_name = VALUES(from_name),
+            to_name = VALUES(to_name),
+            from_lat = VALUES(from_lat),
+            from_lng = VALUES(from_lng),
+            to_lat = VALUES(to_lat),
+            to_lng = VALUES(to_lng),
+            haversine_km = VALUES(haversine_km),
+            osrm_distance_km = VALUES(osrm_distance_km),
+            osrm_duration_min = VALUES(osrm_duration_min),
+            route_coordinates = VALUES(route_coordinates),
+            process_status = 'DONE',
+            error_message = NULL,
+            updated_at = NOW()
+          `,
+          fromId,
+          toId,
+          String(from?.hotspot_name || `Hotspot #${fromId}`),
+          String(to?.hotspot_name || `Hotspot #${toId}`),
+          fromLat,
+          fromLng,
+          toLat,
+          toLng,
+          this.haversineKmForRouteProjection(fromLat, fromLng, toLat, toLng),
+          distanceKm,
+          durationMin,
+          JSON.stringify(coordinates),
+        );
+      } catch {
+        // Best-effort cache write; never block preview path.
+      }
+
+      return {
+        routeCoordinates: coordinates,
+        distanceKm,
+        durationMin,
+        usedReverse: false,
+        osrmFallbackUsed: true,
+        osrmFailed: false,
+      };
+    } catch {
+      return {
+        routeCoordinates: [],
+        distanceKm: null,
+        durationMin: null,
+        usedReverse: false,
+        osrmFallbackUsed: true,
+        osrmFailed: true,
+      };
+    }
+  }
+
+  private async findLastSameLocationHotspotOnRoute(
+    tx: any,
+    params: {
+      sourceLocation: string;
+      fromHotspotId: number;
+      toHotspotId: number;
+      excludeHotspotIds?: number[];
+    },
+  ): Promise<{
+    hotspotId: number;
+    hotspotName: string;
+    hotspotLocation: string;
+    distanceFromRouteMeters: number;
+    progressRatio: number;
+  } | null> {
+    const sourceLocation = this.normalizeLocationText(params?.sourceLocation || '');
+    const fromHotspotId = Number(params?.fromHotspotId || 0);
+    const toHotspotId = Number(params?.toHotspotId || 0);
+    if (!sourceLocation || !fromHotspotId || !toHotspotId || fromHotspotId === toHotspotId) {
+      return null;
+    }
+
+    const routeData = await this.getDoneMatrixRouteCoordinatesEitherDirection(tx, fromHotspotId, toHotspotId);
+    if (routeData?.osrmFallbackUsed) {
+      console.log('[SourceCityExitAnchor] osrm_fallback_used', {
+        fromHotspotId,
+        toHotspotId,
+      });
+    }
+    if (!routeData || routeData.osrmFailed || routeData.routeCoordinates.length < 2) {
+      if (routeData?.osrmFallbackUsed) {
+        console.warn('[SourceCityExitAnchor] osrm_failed', {
+          fromHotspotId,
+          toHotspotId,
+        });
+      }
+      return null;
+    }
+
+    const excludeIds = new Set<number>(
+      [fromHotspotId, toHotspotId, ...((params?.excludeHotspotIds || []).map((id) => Number(id || 0)))].filter((id) => id > 0),
+    );
+
+    const rows: any[] = await (tx as any).$queryRawUnsafe(
+      `
+      SELECT
+        hotspot_ID,
+        hotspot_name,
+        hotspot_location,
+        hotspot_latitude,
+        hotspot_longitude
+      FROM dvi_hotspot_place
+      WHERE deleted = 0
+        AND hotspot_location LIKE ?
+      `,
+      `%${sourceLocation}%`,
+    );
+
+    const maxRouteMeters = Number(process.env.SOURCE_CITY_EXIT_MAX_ROUTE_METERS || 3000);
+
+    const candidates = (rows || []).map((row: any) => {
+      const hotspotId = Number(row?.hotspot_ID || 0);
+      const lat = Number(row?.hotspot_latitude);
+      const lng = Number(row?.hotspot_longitude);
+      if (!hotspotId || excludeIds.has(hotspotId) || !Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+
+      const nearest = this.findNearestProgressOnRoute(
+        { lat, lng },
+        routeData.routeCoordinates,
+      );
+
+      return {
+        hotspotId,
+        hotspotName: String(row?.hotspot_name || `Hotspot #${hotspotId}`),
+        hotspotLocation: String(row?.hotspot_location || ''),
+        distanceFromRouteMeters: Number(nearest.distanceMeters),
+        progressRatio: Number(nearest.progressRatio),
+      };
+    }).filter((row: any) => row != null)
+      .filter((row: any) => row.distanceFromRouteMeters <= maxRouteMeters)
+      .filter((row: any) => row.progressRatio > 0.02 && row.progressRatio < 0.95)
+      .sort((a: any, b: any) => {
+        if (b.progressRatio !== a.progressRatio) return b.progressRatio - a.progressRatio;
+        return a.distanceFromRouteMeters - b.distanceFromRouteMeters;
+      });
+
+    return candidates.length > 0 ? candidates[0] : null;
   }
 
   private resolveSelectedManualPriority(params: {
@@ -11506,6 +12769,7 @@ export class ItinerariesService {
     requestedAnchorIndex: number | undefined,
     requestedAnchorType: string | undefined,
     baselineTimeline: any[] = [],
+    debugEnabled = false,
   ): Promise<any> {
     // 1. Fetch route's current active attraction hotspots ordered by hotspot_order
     const rawRouteAttractions: any[] = await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
@@ -11560,11 +12824,33 @@ export class ItinerariesService {
         hotspot_ID: true,
         hotspot_name: true,
         hotspot_duration: true,
+        hotspot_location: true,
+        hotspot_latitude: true,
+        hotspot_longitude: true,
       },
     });
     const candidateDurationMinutes = candidateMaster?.hotspot_duration
       ? Math.max(1, Number(this.timeToMinutes(candidateMaster.hotspot_duration as any)) || 0)
       : 60;
+
+    if (!candidateMaster) {
+      return {
+        selectedHotspotId: candidateHotspotId,
+        selectedHotspotName: candidateHotspotName,
+        requestedSlot: null,
+        bestSlot: null,
+        chosenSlot: null,
+        allSlotResults: [],
+        chosenSlotSource: 'NO_MATRIX_DATA',
+        routeFitAvailable: false,
+        requiresMatrixBuild: true,
+        canAutoMove: false,
+        canApply: false,
+        code: 'MANUAL_HOTSPOT_MATRIX_DATA_MISSING',
+        previewBlockReason: 'MATRIX_MISSING',
+        warning: 'Selected hotspot does not exist in hotspot master data.',
+      };
+    }
 
     // 3. Build hotspot-to-hotspot slot pairs
     const slotPairs: Array<{ slotIndex: number; fromId: number; toId: number; fromName: string; toName: string }> = [];
@@ -11618,6 +12904,7 @@ export class ItinerariesService {
     }
 
     // 4. Query hotspot_route_between_map per original A->B slot for candidate C.
+    // Check both directions: A->B->C and B->A->C (geographically interchangeable)
     const matrixRows: any[] = [];
     for (const slot of slotPairs) {
       try {
@@ -11637,11 +12924,14 @@ export class ItinerariesService {
             candidate_distance_from_ab_route_meters,
             destination_distance_from_ac_route_meters
           FROM hotspot_route_between_map
-          WHERE from_hotspot_id = ?
-            AND to_hotspot_id = ?
-            AND between_hotspot_id = ?
+          WHERE (
+            (from_hotspot_id = ? AND to_hotspot_id = ? AND between_hotspot_id = ?)
+            OR
+            (from_hotspot_id = ? AND to_hotspot_id = ? AND between_hotspot_id = ?)
+          )
           LIMIT 1
-        `, Number(slot.fromId), Number(slot.toId), Number(candidateHotspotId));
+        `, Number(slot.fromId), Number(slot.toId), Number(candidateHotspotId),
+           Number(slot.toId), Number(slot.fromId), Number(candidateHotspotId));
         if (Array.isArray(rows) && rows.length > 0) {
           matrixRows.push(rows[0]);
         }
@@ -11650,11 +12940,14 @@ export class ItinerariesService {
       }
     }
 
-    // Index matrix rows by from+to
+    // Index matrix rows by from+to, and also reverse key for directional tolerance.
     const matrixBySlot = new Map<string, any>();
     for (const row of matrixRows) {
-      const key = `${row.from_hotspot_id}_${row.to_hotspot_id}`;
-      matrixBySlot.set(key, row);
+      const fromId = Number(row?.from_hotspot_id || 0);
+      const toId = Number(row?.to_hotspot_id || 0);
+      if (!fromId || !toId) continue;
+      matrixBySlot.set(`${fromId}_${toId}`, row);
+      matrixBySlot.set(`${toId}_${fromId}`, row);
     }
 
     const baselineRows = Array.isArray(baselineTimeline) ? baselineTimeline : [];
@@ -11802,6 +13095,185 @@ export class ItinerariesService {
       };
     });
 
+    const hasFeasibleNormalMatrixSlot = allSlotResults.some((slot) =>
+      this.isFeasibleFitType(String(slot?.routeFitType || '').toUpperCase()),
+    );
+
+    let osrmRouteCheckFailed = false;
+
+    if (!hasFeasibleNormalMatrixSlot && candidateMaster) {
+      const routeRow = await (tx as any).dvi_itinerary_route_details.findFirst({
+        where: {
+          itinerary_route_ID: Number(routeId),
+          deleted: 0,
+        },
+        select: {
+          location_name: true,
+          next_visiting_location: true,
+        },
+      });
+
+      const sourceLocation = this.normalizeLocationText(routeRow?.location_name || '');
+      const destinationLocation = this.normalizeLocationText(routeRow?.next_visiting_location || '');
+      const sourceCityKey = this.deriveLooseCityKey(String(routeRow?.location_name || ''));
+      const destinationCityKey = this.deriveLooseCityKey(String(routeRow?.next_visiting_location || ''));
+      const sameCity = !!sourceCityKey && !!destinationCityKey && sourceCityKey === destinationCityKey;
+
+      console.log('[SourceCityExitAnchor] loose_city_keys', {
+        routeId: Number(routeId),
+        sourceLocation,
+        destinationLocation,
+        sourceCityKey,
+        destinationCityKey,
+      });
+
+      if (sameCity) {
+        console.log('[SourceCityExitAnchor] skipped_same_city', {
+          routeId: Number(routeId),
+          candidateHotspotId: Number(candidateHotspotId),
+          sourceLocation,
+          destinationLocation,
+          sourceCityKey,
+          destinationCityKey,
+        });
+      } else {
+        console.log('[SourceCityExitAnchor] attempt', {
+          routeId: Number(routeId),
+          candidateHotspotId: Number(candidateHotspotId),
+          sourceLocation,
+          destinationLocation,
+          sourceCityKey,
+          destinationCityKey,
+        });
+
+        const candidateLocation = this.normalizeLocationText(candidateMaster?.hotspot_location || '');
+        const candidateIsSourceSide = (
+          (!!sourceLocation && candidateLocation.includes(sourceLocation))
+          || (!!sourceCityKey && candidateLocation.includes(sourceCityKey))
+        );
+
+        const sourceSideHotspotId = Number(routeAttractions[0]?.hotspot_ID || 0);
+        const destinationSideHotspotId = Number(routeAttractions[routeAttractions.length - 1]?.hotspot_ID || 0);
+
+        if (candidateIsSourceSide && sourceSideHotspotId > 0 && destinationSideHotspotId > 0 && sourceSideHotspotId !== destinationSideHotspotId) {
+          const sourceAnchor = await this.findLastSourceCityHotspotOnOsrmRoute(tx, {
+            routeId: Number(routeId),
+            sourceCityKey: sourceCityKey || sourceLocation,
+            destinationCityKey: destinationCityKey || destinationLocation,
+            candidateHotspotId: Number(candidateHotspotId),
+            debug: debugEnabled,
+          });
+
+          if (sourceAnchor?.osrmFailed) {
+            osrmRouteCheckFailed = true;
+          }
+
+          const anchorHotspotId = Number(sourceAnchor?.sourceAnchorHotspotId || 0);
+          const nextConsecutiveRouteHotspotId = Number(sourceAnchor?.nextRouteHotspotId || 0);
+
+          if (anchorHotspotId > 0 && nextConsecutiveRouteHotspotId > 0) {
+            const ensuredBetweenHotspotId = await this.ensureHotspotPlace(tx, {
+              hotspotId: Number(candidateMaster?.hotspot_ID || candidateHotspotId),
+              hotspotName: String(candidateMaster?.hotspot_name || candidateHotspotName || `Hotspot #${candidateHotspotId}`),
+              hotspotLocation: String(candidateMaster?.hotspot_location || routeRow?.location_name || ''),
+              lat: Number(candidateMaster?.hotspot_latitude),
+              lng: Number(candidateMaster?.hotspot_longitude),
+            });
+
+            const fallbackMx = ensuredBetweenHotspotId
+              ? await this.ensureRouteBetweenMapRow(
+                  tx,
+                  Number(anchorHotspotId),
+                  Number(nextConsecutiveRouteHotspotId),
+                  Number(ensuredBetweenHotspotId),
+                )
+              : null;
+
+            if (fallbackMx) {
+              matrixRows.push(fallbackMx);
+              matrixBySlot.set(`${Number(anchorHotspotId)}_${Number(nextConsecutiveRouteHotspotId)}`, fallbackMx);
+              matrixBySlot.set(`${Number(nextConsecutiveRouteHotspotId)}_${Number(anchorHotspotId)}`, fallbackMx);
+
+              const fallbackType = String(fallbackMx?.route_fit_type || '').toUpperCase();
+              if (this.isFeasibleFitType(fallbackType)) {
+                const timingEval = evaluateTimingFit(Number(anchorHotspotId), Number(nextConsecutiveRouteHotspotId));
+                const roadDetourKm = fallbackMx.road_detour_km != null ? Number(fallbackMx.road_detour_km) : null;
+                const insertedRouteDistanceKm = fallbackMx.inserted_route_distance_km != null
+                  ? Number(fallbackMx.inserted_route_distance_km)
+                  : null;
+                const abOsrmDistanceKm = fallbackMx.ab_osrm_distance_km != null
+                  ? Number(fallbackMx.ab_osrm_distance_km)
+                  : null;
+                const displayMeta = this.buildRouteFitDisplayMeta({
+                  routeFitType: fallbackType,
+                  roadDetourKm,
+                  insertedRouteDistanceKm,
+                  abOsrmDistanceKm,
+                  finalDecisionReason: 'Selected: source-city OSRM anchor fallback slot.',
+                });
+
+                allSlotResults.push({
+                  slotIndex: allSlotResults.length,
+                  fromHotspotId: Number(anchorHotspotId),
+                  fromName: nameById.get(Number(anchorHotspotId)) || String(sourceAnchor?.sourceAnchorName || `Hotspot #${anchorHotspotId}`),
+                  toHotspotId: Number(nextConsecutiveRouteHotspotId),
+                  toName: nameById.get(Number(nextConsecutiveRouteHotspotId)) || `Hotspot #${nextConsecutiveRouteHotspotId}`,
+                  routeFitType: fallbackType,
+                  label: this.routeFitLabel(fallbackType),
+                  displayLabel: displayMeta.displayLabel,
+                  shortLabel: displayMeta.shortLabel,
+                  roadDetourKm,
+                  isZeroExtraDetour: displayMeta.isZeroExtraDetour,
+                  distanceComparisonNote: displayMeta.distanceComparisonNote,
+                  roadDetourRatio: fallbackMx.road_detour_ratio != null ? Number(fallbackMx.road_detour_ratio) : null,
+                  insertedRouteDistanceKm,
+                  abOsrmDistanceKm,
+                  acOsrmDistanceKm: fallbackMx.ac_osrm_distance_km != null ? Number(fallbackMx.ac_osrm_distance_km) : null,
+                  cbOsrmDistanceKm: fallbackMx.cb_osrm_distance_km != null ? Number(fallbackMx.cb_osrm_distance_km) : null,
+                  candidateDistanceFromAbRouteMeters:
+                    fallbackMx.candidate_distance_from_ab_route_meters != null
+                      ? Number(fallbackMx.candidate_distance_from_ab_route_meters)
+                      : Number(sourceAnchor?.candidateDistanceFromRouteMeters || 0),
+                  destinationDistanceFromAcRouteMeters:
+                    fallbackMx.destination_distance_from_ac_route_meters != null
+                      ? Number(fallbackMx.destination_distance_from_ac_route_meters)
+                      : null,
+                  routePossible: true,
+                  timingPossible: timingEval.timingPossible,
+                  prioritySafe: true,
+                  selectedAsBest: false,
+                  attempted: true,
+                  source: 'OSRM_SOURCE_CITY_ROUTE_ANCHOR',
+                  sourceCityExitAnchorHotspotId: Number(anchorHotspotId),
+                  sourceCityExitAnchorName: String(sourceAnchor?.sourceAnchorName || `Hotspot #${anchorHotspotId}`),
+                  sourceCityExitAnchorProgressRatio: Number(sourceAnchor?.sourceAnchorProgressRatio || 0),
+                  sourceCityExitAnchorDistanceFromRouteMeters: Number(sourceAnchor?.sourceAnchorDistanceFromRouteMeters || 0),
+                  sourceCityExitAnchorSelectionWhy: debugEnabled ? String(sourceAnchor?.anchorSelectionWhy || '') : undefined,
+                  sourceCityExitAnchorSelectionDebug: debugEnabled ? (sourceAnchor?.anchorSelectionDebug || null) : undefined,
+                  routeDecisionReason: `${String(fallbackMx.route_decision_reason || 'Route-fit validated using OSRM source route anchor')}. Applied into existing consecutive route slot.`,
+                  timingDecisionReason: timingEval.timingDecisionReason,
+                  priorityDecisionReason: null,
+                  finalDecisionReason: displayMeta.finalDecisionReason,
+                });
+              }
+            } else {
+              console.log('[ManualMatrixEnsure] missing_row', {
+                fromHotspotId: Number(anchorHotspotId),
+                toHotspotId: Number(nextConsecutiveRouteHotspotId),
+                candidateHotspotId: Number(candidateHotspotId),
+              });
+            }
+          } else {
+            console.log('[ManualMatrixEnsure] missing_row', {
+              fromHotspotId: Number(sourceSideHotspotId),
+              toHotspotId: Number(destinationSideHotspotId),
+              candidateHotspotId: Number(candidateHotspotId),
+            });
+          }
+        }
+      }
+    }
+
     // 6. Rank and find bestSlot
     const sortedByUsable = [...allSlotResults]
       .filter((slot) => this.isUsableMatrixRouteFitType(String(slot?.routeFitType || '').toUpperCase()))
@@ -11842,6 +13314,13 @@ export class ItinerariesService {
           cbOsrmDistanceKm: bestSlotData.cbOsrmDistanceKm,
           candidateDistanceFromAbRouteMeters: bestSlotData.candidateDistanceFromAbRouteMeters,
           destinationDistanceFromAcRouteMeters: bestSlotData.destinationDistanceFromAcRouteMeters,
+          sourceCityExitAnchorHotspotId: bestSlotData.sourceCityExitAnchorHotspotId,
+          sourceCityExitAnchorName: bestSlotData.sourceCityExitAnchorName,
+          sourceCityExitAnchorProgressRatio: bestSlotData.sourceCityExitAnchorProgressRatio,
+          sourceCityExitAnchorDistanceFromRouteMeters: bestSlotData.sourceCityExitAnchorDistanceFromRouteMeters,
+          sourceCityExitAnchorSelectionWhy: debugEnabled ? bestSlotData.sourceCityExitAnchorSelectionWhy : undefined,
+          sourceCityExitAnchorSelectionDebug: debugEnabled ? bestSlotData.sourceCityExitAnchorSelectionDebug : undefined,
+          source: bestSlotData.source,
           decisionReason: bestSlotData.routeDecisionReason,
           routePossible: bestSlotData.routePossible,
           timingPossible: bestSlotData.timingPossible,
@@ -11889,6 +13368,13 @@ export class ItinerariesService {
         acOsrmDistanceKm: rs.acOsrmDistanceKm,
         cbOsrmDistanceKm: rs.cbOsrmDistanceKm,
         candidateDistanceFromAbRouteMeters: rs.candidateDistanceFromAbRouteMeters,
+        sourceCityExitAnchorHotspotId: rs.sourceCityExitAnchorHotspotId,
+        sourceCityExitAnchorName: rs.sourceCityExitAnchorName,
+        sourceCityExitAnchorProgressRatio: rs.sourceCityExitAnchorProgressRatio,
+        sourceCityExitAnchorDistanceFromRouteMeters: rs.sourceCityExitAnchorDistanceFromRouteMeters,
+        sourceCityExitAnchorSelectionWhy: debugEnabled ? rs.sourceCityExitAnchorSelectionWhy : undefined,
+        sourceCityExitAnchorSelectionDebug: debugEnabled ? rs.sourceCityExitAnchorSelectionDebug : undefined,
+        source: rs.source,
         routePossible: rs.routePossible,
         timingPossible: rs.timingPossible,
         prioritySafe: rs.prioritySafe,
@@ -11980,7 +13466,10 @@ export class ItinerariesService {
         canApply: false,
         code: 'MANUAL_HOTSPOT_MATRIX_DATA_MISSING',
         previewBlockReason: 'MATRIX_MISSING',
-        warning: 'Route-fit matrix data is missing for this candidate and current route. Build matrix before preview/apply.',
+        warning: osrmRouteCheckFailed
+          ? 'OSRM route validation failed while trying to generate source-city matrix slot.'
+          : 'Route-fit matrix data is missing for this candidate and current route. Build matrix before preview/apply.',
+        reason: osrmRouteCheckFailed ? 'OSRM_ROUTE_CHECK_FAILED' : 'MATRIX_MISSING',
         allSlotResults: normalizedSlots,
       };
     }
@@ -12039,6 +13528,10 @@ export class ItinerariesService {
         timingDecisionReason: bestSlot.timingDecisionReason,
         priorityDecisionReason: bestSlot.priorityDecisionReason,
         finalDecisionReason: bestSlot.finalDecisionReason,
+        sourceCityExitAnchorHotspotId: bestSlot.sourceCityExitAnchorHotspotId,
+        sourceCityExitAnchorName: bestSlot.sourceCityExitAnchorName,
+        sourceCityExitAnchorProgressRatio: bestSlot.sourceCityExitAnchorProgressRatio,
+        sourceCityExitAnchorDistanceFromRouteMeters: bestSlot.sourceCityExitAnchorDistanceFromRouteMeters,
       };
       // Warn if user requested a different slot
       if (requestedSlot && isHotspotSlot && requestedSlotIndex !== bestSlot.slotIndex) {

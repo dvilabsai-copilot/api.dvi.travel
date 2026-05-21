@@ -1290,12 +1290,76 @@ async function ensurePopularPairSeedTable(targetDb: string): Promise<void> {
       to_hotspot_id INT NOT NULL,
       usage_count INT NOT NULL DEFAULT 0,
       source_label VARCHAR(100) NULL,
+      from_hotspot_name TEXT NULL,
+      to_hotspot_name TEXT NULL,
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       PRIMARY KEY (from_hotspot_id, to_hotspot_id),
       KEY idx_usage_count (usage_count)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
   `);
+
+  const obsoleteColumns = ['from_hotspot_location', 'to_hotspot_location'];
+  for (const columnName of obsoleteColumns) {
+    const existing = await prisma.$queryRawUnsafe<Array<{ column_name: string }>>(
+      `SELECT COLUMN_NAME AS column_name
+       FROM INFORMATION_SCHEMA.COLUMNS
+       WHERE TABLE_SCHEMA = ?
+         AND TABLE_NAME = 'hotspot_popular_pair_seed'
+         AND COLUMN_NAME = ?
+       LIMIT 1`,
+      targetDb,
+      columnName,
+    );
+
+    if (existing.length) {
+      await prisma.$executeRawUnsafe(
+        `ALTER TABLE \`${targetDb}\`.\`hotspot_popular_pair_seed\` DROP COLUMN \`${columnName}\``,
+      );
+    }
+  }
+
+  const columnsToEnsure: Array<[string, string]> = [
+    ['from_hotspot_name', 'TEXT NULL'],
+    ['to_hotspot_name', 'TEXT NULL'],
+  ];
+
+  for (const [columnName, columnDefinition] of columnsToEnsure) {
+    const existing = await prisma.$queryRawUnsafe<Array<{ column_name: string }>>(
+      `SELECT COLUMN_NAME AS column_name
+       FROM INFORMATION_SCHEMA.COLUMNS
+       WHERE TABLE_SCHEMA = ?
+         AND TABLE_NAME = 'hotspot_popular_pair_seed'
+         AND COLUMN_NAME = ?
+       LIMIT 1`,
+      targetDb,
+      columnName,
+    );
+
+    if (!existing.length) {
+      await prisma.$executeRawUnsafe(
+        `ALTER TABLE \`${targetDb}\`.\`hotspot_popular_pair_seed\` ADD COLUMN \`${columnName}\` ${columnDefinition}`,
+      );
+    }
+  }
+}
+
+async function backfillPopularPairSeedNames(targetDb: string): Promise<number> {
+  const updated = await prisma.$executeRawUnsafe(
+    `UPDATE \`${targetDb}\`.\`hotspot_popular_pair_seed\` seed
+     LEFT JOIN \`${targetDb}\`.\`dvi_hotspot_place\` hp_from
+       ON hp_from.hotspot_ID = seed.from_hotspot_id
+     LEFT JOIN \`${targetDb}\`.\`dvi_hotspot_place\` hp_to
+       ON hp_to.hotspot_ID = seed.to_hotspot_id
+     SET
+       seed.from_hotspot_name = hp_from.hotspot_name,
+       seed.to_hotspot_name = hp_to.hotspot_name
+     WHERE
+       seed.from_hotspot_name IS NULL
+       OR seed.to_hotspot_name IS NULL`,
+  );
+
+  return Number(updated);
 }
 
 async function fetchPopularPairs(
@@ -1353,16 +1417,42 @@ async function upsertPopularPairSeeds(
   let count = 0;
   for (const pair of pairs) {
     await prisma.$executeRawUnsafe(
-      `INSERT INTO \`${targetDb}\`.\`hotspot_popular_pair_seed\` (from_hotspot_id, to_hotspot_id, usage_count, source_label, created_at, updated_at)
-      VALUES (?, ?, ?, ?, NOW(), NOW())
+      `INSERT INTO \`${targetDb}\`.\`hotspot_popular_pair_seed\`
+      (
+        from_hotspot_id,
+        to_hotspot_id,
+        usage_count,
+        source_label,
+        from_hotspot_name,
+        to_hotspot_name,
+        created_at,
+        updated_at
+      )
+      SELECT
+        ?,
+        ?,
+        ?,
+        ?,
+        hp_from.hotspot_name,
+        hp_to.hotspot_name,
+        NOW(),
+        NOW()
+      FROM \`${targetDb}\`.\`dvi_hotspot_place\` hp_from
+      LEFT JOIN \`${targetDb}\`.\`dvi_hotspot_place\` hp_to
+        ON hp_to.hotspot_ID = ?
+      WHERE hp_from.hotspot_ID = ?
       ON DUPLICATE KEY UPDATE
         usage_count = VALUES(usage_count),
         source_label = VALUES(source_label),
+        from_hotspot_name = VALUES(from_hotspot_name),
+        to_hotspot_name = VALUES(to_hotspot_name),
         updated_at = NOW()`,
       pair.from_hotspot_id,
       pair.to_hotspot_id,
       pair.usage_count,
       sourceLabel,
+      pair.to_hotspot_id,
+      pair.from_hotspot_id,
     );
     count += 1;
   }
@@ -1677,6 +1767,13 @@ async function runPopularPairsMode(input: InputArgs, config: Config): Promise<vo
 
   const seededCount = await upsertPopularPairSeeds(popularPairs, input.sourceDb, input.apply, input.targetDb);
   popularPairSummary.seededPairs = seededCount;
+
+  if (input.apply) {
+    const backfilledCount = await backfillPopularPairSeedNames(input.targetDb);
+    if (backfilledCount > 0) {
+      console.log(`Backfilled hotspot_popular_pair_seed names for ${backfilledCount} rows.`);
+    }
+  }
 
   if (input.apply) {
     console.log(`Seeded/updated ${seededCount} pairs in hotspot_popular_pair_seed.`);

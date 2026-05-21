@@ -1351,6 +1351,7 @@ export class ItinerariesController {
       anchorIndex?: number;
       allowTopPriorityRemoval?: boolean;
       selectedHotspotIds?: number[];
+      debug?: boolean;
     },
   ) {
     const resolvedHotspotIds = Array.isArray(body.hotspotIds) && body.hotspotIds.length > 0
@@ -1361,6 +1362,7 @@ export class ItinerariesController {
       anchorType: body.anchorType,
       anchorIndex: body.anchorIndex,
       allowTopPriorityRemoval: body.allowTopPriorityRemoval === true,
+      debug: body.debug === true,
       focusHotspotId: Number(body.hotspotId || 0) > 0 ? Number(body.hotspotId) : undefined,
     });
   }
