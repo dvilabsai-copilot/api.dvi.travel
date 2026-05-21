@@ -14,6 +14,7 @@ import {
 } from './itinerary-hotel-details.service';
 import { haversineKm } from './utils/distance-utils';
 import {
+  HOTEL_RATE_PLAN_BY_CODE,
   inferCanonicalHotelRatePlanCode,
   inferCanonicalHotelRatePlanCodeFromMealFlags,
   inferCanonicalHotelRatePlanCodeFromMealText,
@@ -209,18 +210,33 @@ export class ItineraryHotelDetailsTboService {
       }
 
       const filteredHotels = hotels.filter((hotel) => {
+        let included = true;
+        let filterReason = '';
+        
         if (shouldFilterByCategory) {
           const categoryCandidates = this.getHotelCategoryCandidates(hotel);
           const categoryMatch = categoryCandidates.some((cat) => preferredCategorySet.has(cat));
-          if (!categoryMatch) return false;
+          if (!categoryMatch) {
+            included = false;
+            filterReason = `Category mismatch: ${categoryCandidates.join(',')} not in ${preferredCategories.join(',')}`;
+          }
         }
 
-        if (shouldFilterByMeal) {
+        if (included && shouldFilterByMeal) {
           const hotelMealCode = this.inferMealPlanCodeFromHotel(hotel);
-          if (!hotelMealCode || hotelMealCode !== preferredMealPlanCode) return false;
+          // Only reject if hotel HAS meal plan data but it doesn't match.
+          // Allow hotels that don't have meal plan data (e.g., ResAvenue).
+          if (hotelMealCode && hotelMealCode !== preferredMealPlanCode) {
+            included = false;
+            filterReason = `Meal plan mismatch: ${hotelMealCode} != ${preferredMealPlanCode}`;
+          }
+        }
+        
+        if (!included && hotel.provider === 'resavenue') {
+          this.logger.warn(`   ⚠️  Filtering out ResAvenue: ${hotel.hotelName} - Reason: ${filterReason}`);
         }
 
-        return true;
+        return included;
       });
 
       this.logger.log(
@@ -446,11 +462,18 @@ export class ItineraryHotelDetailsTboService {
     const guestNationality = await this.resolveGuestNationality(plan);
     const preferredCategories = this.normalizeNumberList((plan as any).preferred_hotel_category);
     const explicitMealPlanCode = inferCanonicalHotelRatePlanCode(String((plan as any).meal_plan_code || ''));
-    const fallbackMealPlanCode = inferCanonicalHotelRatePlanCodeFromMealFlags(
-      Number((plan as any).meal_plan_breakfast ?? 0),
-      Number((plan as any).meal_plan_lunch ?? 0),
-      Number((plan as any).meal_plan_dinner ?? 0),
-    );
+    const mealPlanBreakfast = Number((plan as any).meal_plan_breakfast ?? 0) ? 1 : 0;
+    const mealPlanLunch = Number((plan as any).meal_plan_lunch ?? 0) ? 1 : 0;
+    const mealPlanDinner = Number((plan as any).meal_plan_dinner ?? 0) ? 1 : 0;
+    const hasExplicitMealFlags =
+      mealPlanBreakfast === 1 || mealPlanLunch === 1 || mealPlanDinner === 1;
+    const fallbackMealPlanCode = hasExplicitMealFlags
+      ? inferCanonicalHotelRatePlanCodeFromMealFlags(
+          mealPlanBreakfast,
+          mealPlanLunch,
+          mealPlanDinner,
+        )
+      : null;
     const preferredMealPlanCode = explicitMealPlanCode || fallbackMealPlanCode;
 
     this.logger.log(`âœ… Found plan ID: ${planId}`);
@@ -535,6 +558,7 @@ export class ItineraryHotelDetailsTboService {
       }
 
       // Step 3.6: Fetch ResAvenue hotels explicitly (in case they weren't included in TBO search)
+      this.logger.log(`\n🏨 STEP 3.6: Starting ResAvenue hotel fetch for ${routes.length} routes...`);
       const resavenueHotelsByRoute = await this.fetchResavenueHotelsForRoutes(
         routes,
         noOfNights,
@@ -543,6 +567,16 @@ export class ItineraryHotelDetailsTboService {
         planAdultCount,
         planChildCount,
       );
+      
+      // Debug: Check what ResAvenue returned
+      let totalResavenueHotels = 0;
+      resavenueHotelsByRoute.forEach((hotels, routeId) => {
+        totalResavenueHotels += hotels.length;
+        if (hotels.length > 0) {
+          this.logger.log(`   ✅ Route ${routeId} has ${hotels.length} ResAvenue hotels: ${hotels.map(h => `${h.hotelName} (${h.hotelCode})`).join(', ')}`);
+        }
+      });
+      this.logger.log(`🏨 ResAvenue Total: ${totalResavenueHotels} hotels across all routes`);
 
       // Merge ResAvenue hotels into the hotel map
       resavenueHotelsByRoute.forEach((resavenueHotels, routeId) => {
@@ -551,9 +585,16 @@ export class ItineraryHotelDetailsTboService {
         const hotelStrs = existingHotels.map(h => `${h.hotelCode}|${h.provider}`);
         const newHotels = resavenueHotels.filter(h => !hotelStrs.includes(`${h.hotelCode}|${h.provider}`));
         if (newHotels.length > 0) {
-          this.logger.log(`   âœ… Added ${newHotels.length} new ResAvenue hotel(s) to route ${routeId}`);
+          this.logger.log(`   ✅ Added ${newHotels.length} new ResAvenue hotel(s) to route ${routeId}`);
+          newHotels.forEach(h => {
+            this.logger.log(`      - ${h.hotelName} (${h.hotelCode}, Category: ${h.category}, Meal: ${h.mealPlan}, Price: ₹${h.price})`);
+          });
+        } else if (resavenueHotels.length > 0) {
+          this.logger.log(`   ℹ️  No new ResAvenue hotels (duplicates: ${resavenueHotels.length})`);
         }
-        hotelsByRoute.set(routeId, [...existingHotels, ...newHotels]);
+        const merged = [...existingHotels, ...newHotels];
+        this.logger.log(`   Route ${routeId}: Total hotels now = ${merged.length}`);
+        hotelsByRoute.set(routeId, merged);
       });
 
       // Step 3.7: Load saved meal plans per route for AxisRooms filtering
@@ -564,6 +605,7 @@ export class ItineraryHotelDetailsTboService {
         routes,
         noOfNights,
         savedMealPlansByRoute,
+        preferredMealPlanCode,
       );
       axisroomsHotelsByRoute.forEach((axisroomsHotels, routeId) => {
         const existingHotels = hotelsByRoute.get(routeId) || [];
@@ -1244,6 +1286,7 @@ export class ItineraryHotelDetailsTboService {
     routes: any[],
     noOfNights: number,
     savedMealPlansByRoute?: Map<number, string>,
+    preferredMealPlanCode?: string | null,
   ): Promise<Map<number, HotelSearchResult[]>> {
     const hotelsByRoute = new Map<number, HotelSearchResult[]>();
     const totalRoutes = routes.length;
@@ -1253,6 +1296,7 @@ export class ItineraryHotelDetailsTboService {
     const axisroomsHotels = await this.prisma.dvi_hotel.findMany({
       where: {
         axisrooms_enabled: 1,
+        status: 1,
         OR: [{ deleted: false }, { deleted: null }],
       } as any,
       select: {
@@ -1497,11 +1541,46 @@ export class ItineraryHotelDetailsTboService {
           continue; // No valid rates found for any meal plan
         }
 
-        // Pick the first rate plan's rate instead of minimum across all plans
-        // This ensures we show the correct rate for the meal plan in use
-        const firstRate = ratesByPlan.values().next().value;
-        const rate = firstRate.rate;
-        const selectedRoomId = firstRate.roomId;
+        const preferredCode = String(preferredMealPlanCode || '').trim().toUpperCase();
+        const preferredDef = preferredCode
+          ? HOTEL_RATE_PLAN_BY_CODE.get(preferredCode as any)
+          : undefined;
+        const preferredRatePlanCandidates = [
+          String(preferredDef?.defaultRateplanId || '').trim(),
+          String(preferredDef?.externalRateplanId || '').trim(),
+        ].filter((x) => !!x);
+
+        let selectedRateplanId = '';
+        let selectedRate = Number.POSITIVE_INFINITY;
+        let selectedRoomId = 0;
+
+        for (const candidate of preferredRatePlanCandidates) {
+          const hit = ratesByPlan.get(candidate);
+          if (hit) {
+            selectedRateplanId = candidate;
+            selectedRate = Number(hit.rate);
+            selectedRoomId = Number(hit.roomId);
+            break;
+          }
+        }
+
+        // Fallback: if preferred meal plan isn't present for this hotel, pick the lowest available rate plan.
+        if (!selectedRateplanId) {
+          for (const [rpid, hit] of ratesByPlan.entries()) {
+            const rateVal = Number(hit.rate);
+            if (Number.isFinite(rateVal) && rateVal > 0 && rateVal < selectedRate) {
+              selectedRateplanId = rpid;
+              selectedRate = rateVal;
+              selectedRoomId = Number(hit.roomId);
+            }
+          }
+        }
+
+        if (!selectedRateplanId || !Number.isFinite(selectedRate) || selectedRate <= 0 || !selectedRoomId) {
+          continue;
+        }
+
+        const rate = selectedRate;
 
         const roomName = roomTitleMap.get(selectedRoomId) || 'Room';
         const hotelAmenities = Array.from(new Set(amenitiesByHotel.get(hid) || []));
@@ -1514,12 +1593,6 @@ export class ItineraryHotelDetailsTboService {
         const inclusions = Array.from(new Set(rateMeta.inclusions));
         const cancelPolicyText = String((hotel as any).hotel_cancel_policy || '').trim();
 
-        // Get the rateplan_id of the selected rate plan and its meal description
-        let selectedRateplanId = '';
-        for (const [rpid] of ratesByPlan.entries()) {
-          selectedRateplanId = rpid;
-          break;
-        }
         const selectedMealPlan = mealPlanByRatePlan.get(selectedRateplanId) || '-';
 
         axisroomsRouteHotels.push({
@@ -2005,7 +2078,7 @@ export class ItineraryHotelDetailsTboService {
           hotelName: displayHotelName,
           category: hotel.rating ? parseInt(String(hotel.rating)) : 0,
           roomType: hotel.roomType || '',
-          mealPlan: hotel.mealPlan || '-',
+          mealPlan: hotel.mealPlan || '',
           totalHotelCost: Math.round(hotel.price),
           totalHotelTaxAmount: 0,
           searchReference: hotel.searchReference,

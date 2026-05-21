@@ -453,6 +453,7 @@ export class HotspotsService {
       hotspot_foreign_infant_entry_cost: (hotspot as any).hotspot_foreign_infant_entry_cost ?? null,
 
       hotspot_location_list: splitPipeToArray(hotspot.hotspot_location),
+      hotspot_to_location_list: splitPipeToArray((hotspot as any).hotspot_to_location),
 
       parkingCharges: (parking as any[]).map((p) => ({
         id: p.vehicle_parking_charge_ID,
@@ -493,6 +494,7 @@ export class HotspotsService {
       hotspot_duration: hhmmToUTCDate((input as any).hotspot_duration) as any,
 
       hotspot_location: normalizeLocationArrayToPipe((input as any).hotspot_location_list),
+      hotspot_to_location: normalizeLocationArrayToPipe((input as any).hotspot_to_location_list),
 
       hotspot_adult_entry_cost: toNumber((input as any).hotspot_adult_entry_cost),
       hotspot_child_entry_cost: toNumber((input as any).hotspot_child_entry_cost),

@@ -119,8 +119,12 @@ export class HotspotCreateDto {
   hotspot_foreign_infant_entry_cost?: number | null;
 
   // Locations (multi-select) -> pipe-joined in service
-  @IsOptional() @IsArray() @IsString({ each: true })
-  hotspot_location_list?: string[];
+@IsOptional() @IsArray() @IsString({ each: true })
+hotspot_location_list?: string[];
+
+// Hotspot To Location (multi-select) -> pipe-joined in service
+@IsOptional() @IsArray() @IsString({ each: true })
+hotspot_to_location_list?: string[];
 
   // Children
   @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => ParkingChargeDto)

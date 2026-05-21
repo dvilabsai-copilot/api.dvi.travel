@@ -3627,6 +3627,7 @@ model dvi_hotspot_place {
   hotspot_address                   String?   @db.Text
   hotspot_landmark                  String?   @db.TinyText
   hotspot_location                  String?   @db.Text
+  hotspot_to_location               String?   @db.Text
   hotspot_priority                  Int       @default(0)
   hotspot_adult_entry_cost          Float     @default(0) @db.Float
   hotspot_child_entry_cost          Float     @default(0) @db.Float

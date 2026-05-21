@@ -1,0 +1,89 @@
+{
+  "timestamp": "2026-05-17T10:10:57.953Z",
+  "testCase": "Pothamedu (ID 219) insertion with geographic validation",
+  "totalSlots": 7,
+  "results": [
+    {
+      "slotNum": 1,
+      "fromTo": "Cheeyappara Waterfalls -> Eravikulam National Park ( closed in Feb &amp; Mar)",
+      "directKm": 24.59,
+      "viaKm": 35.68,
+      "extraKm": 11.09,
+      "fitsOverall": false,
+      "fitsTiming": true,
+      "reason": "Hotspot is geographically off the direct route between Cheeyappara Waterfalls and Eravikulam National Park ( closed in Feb &amp; Mar) (detour ~11.1 km).",
+      "isBest": false
+    },
+    {
+      "slotNum": 2,
+      "fromTo": "Eravikulam National Park ( closed in Feb &amp; Mar) -> Munnar Rose Garden",
+      "directKm": 7.92,
+      "viaKm": 13.1,
+      "extraKm": 5.18,
+      "fitsOverall": false,
+      "fitsTiming": true,
+      "reason": "Hotspot is geographically off the direct route between Eravikulam National Park ( closed in Feb &amp; Mar) and Munnar Rose Garden (detour ~5.2 km).",
+      "isBest": false
+    },
+    {
+      "slotNum": 3,
+      "fromTo": "Munnar Rose Garden -> Photo view point",
+      "directKm": 1.39,
+      "viaKm": 7.34,
+      "extraKm": 5.95,
+      "fitsOverall": false,
+      "fitsTiming": true,
+      "reason": "Hotspot is geographically off the direct route between Munnar Rose Garden and Photo view point (detour ~6.0 km).",
+      "isBest": false
+    },
+    {
+      "slotNum": 4,
+      "fromTo": "Photo view point -> Mattupetty Dam &amp; Lake",
+      "directKm": 4.24,
+      "viaKm": 12.38,
+      "extraKm": 8.14,
+      "fitsOverall": false,
+      "fitsTiming": true,
+      "reason": "Hotspot is geographically off the direct route between Photo view point and Mattupetty Dam &amp; Lake (detour ~8.1 km).",
+      "isBest": false
+    },
+    {
+      "slotNum": 5,
+      "fromTo": "Mattupetty Dam &amp; Lake -> Echo Point",
+      "directKm": 13.33,
+      "viaKm": 28.81,
+      "extraKm": 15.48,
+      "fitsOverall": false,
+      "fitsTiming": true,
+      "reason": "Hotspot is geographically off the direct route between Mattupetty Dam &amp; Lake and Echo Point (detour ~15.5 km).",
+      "isBest": false
+    },
+    {
+      "slotNum": 6,
+      "fromTo": "Echo Point -> Pothamedu View Point",
+      "directKm": 20.67,
+      "viaKm": 20.67,
+      "extraKm": 0,
+      "fitsOverall": true,
+      "fitsTiming": true,
+      "reason": null,
+      "isBest": true
+    },
+    {
+      "slotNum": 7,
+      "fromTo": "Pothamedu View Point -> Hotel / Destination",
+      "directKm": 0,
+      "viaKm": 0,
+      "extraKm": 0,
+      "fitsOverall": true,
+      "fitsTiming": true,
+      "reason": null,
+      "isBest": false
+    }
+  ],
+  "summary": {
+    "feasibleSlots": 2,
+    "infeasibleSlots": 5,
+    "bugFixed": "YES - Eravikulam→Munnar now correctly marked as infeasible"
+  }
+}

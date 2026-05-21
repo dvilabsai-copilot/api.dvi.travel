@@ -20,6 +20,8 @@ import {
 } from '@nestjs/swagger';
 import { LocationsService } from './locations.service';
 import {
+  BetweenHotspotFiltersQueryDto,
+  BetweenHotspotQueryDto,
   BulkTollPayloadDto,
   CreateLocationDto,
   CreateSuggestedRouteDto,
@@ -77,6 +79,53 @@ export class LocationsController {
   })
   dropdowns() {
     return this.svc.dropdowns();
+  }
+
+  @Get('between-hotspots/filters')
+  @ApiOperation({ summary: 'Read-only valid filter options for between-hotspots screen' })
+  @ApiQuery({ name: 'locationId', required: false, type: Number })
+  @ApiQuery({ name: 'sourceHotspotId', required: false, type: Number })
+  @ApiQuery({ name: 'onlyUsable', required: false, type: String, description: 'true/1 for ON_ROUTE + MINOR_DETOUR only' })
+  @ApiQuery({ name: 'search', required: false, type: String })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      type: 'object',
+      properties: {
+        locations: { type: 'array' },
+        sourceHotspots: { type: 'array' },
+        destinationHotspots: { type: 'array' },
+      },
+    },
+  })
+  getBetweenHotspotFilters(@Query() q: BetweenHotspotFiltersQueryDto) {
+    return this.svc.getBetweenHotspotFilterOptions(q);
+  }
+
+  @Get('between-hotspots')
+  @ApiOperation({ summary: 'Read-only between hotspots by source/destination hotspot IDs and optional location context' })
+  @ApiQuery({ name: 'sourceHotspotId', required: true, type: Number })
+  @ApiQuery({ name: 'destinationHotspotId', required: true, type: Number })
+  @ApiQuery({ name: 'locationId', required: false, type: Number })
+  @ApiQuery({ name: 'onlyUsable', required: false, type: String, description: 'true/1 for ON_ROUTE + MINOR_DETOUR only' })
+  @ApiQuery({ name: 'search', required: false, type: String })
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'pageSize', required: false, type: Number })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      type: 'object',
+      properties: {
+        rows: { type: 'array' },
+        total: { type: 'number' },
+        page: { type: 'number' },
+        pageSize: { type: 'number' },
+        locationContext: { type: 'object', nullable: true },
+      },
+    },
+  })
+  getBetweenHotspots(@Query() q: BetweenHotspotQueryDto) {
+    return this.svc.getBetweenHotspots(q);
   }
 
   @Get('autosuggest/cities')

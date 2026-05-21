@@ -2,6 +2,70 @@ import { ApiProperty, PartialType } from '@nestjs/swagger';
 import { IsString, IsNotEmpty, IsOptional, IsNumber, IsArray, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 
+export class BetweenHotspotFiltersQueryDto {
+  @ApiProperty({ required: false, description: 'Stored location ID from dvi_stored_locations' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  locationId?: number;
+
+  @ApiProperty({ required: false, description: 'Source hotspot ID used to narrow destination hotspot options' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  sourceHotspotId?: number;
+
+  @ApiProperty({ required: false, description: 'When true, return only ON_ROUTE and MINOR_DETOUR rows' })
+  @IsOptional()
+  @IsString()
+  onlyUsable?: string;
+
+  @ApiProperty({ required: false, description: 'Optional text filter for location or hotspot names' })
+  @IsOptional()
+  @IsString()
+  search?: string;
+}
+
+export class BetweenHotspotQueryDto {
+  @ApiProperty({ required: false, description: 'Stored location ID from dvi_stored_locations' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  locationId?: number;
+
+  @ApiProperty({ required: true, description: 'Source hotspot ID' })
+  @Type(() => Number)
+  @IsNumber()
+  sourceHotspotId!: number;
+
+  @ApiProperty({ required: true, description: 'Destination hotspot ID' })
+  @Type(() => Number)
+  @IsNumber()
+  destinationHotspotId!: number;
+
+  @ApiProperty({ required: false, description: 'When true, return only ON_ROUTE and MINOR_DETOUR rows' })
+  @IsOptional()
+  @IsString()
+  onlyUsable?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  @ApiProperty({ required: false, default: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  page?: number;
+
+  @ApiProperty({ required: false, default: 50 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  pageSize?: number;
+}
+
 // Response DTO: all fields returned by location endpoints
 export class LocationResponseDto {
   @ApiProperty() location_ID!: number;
