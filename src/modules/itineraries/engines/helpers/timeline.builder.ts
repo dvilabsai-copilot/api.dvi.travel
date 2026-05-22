@@ -1943,22 +1943,16 @@ export class TimelineBuilder {
         const isStayingInArrivalCity = (currentCity === arrivalCity) && (nextCity === arrivalCity);
         
         if (isStayingInArrivalCity) {
-          // If Day 1 starts from an arrival terminal (airport/station) and stays in same city,
-          // keep Day 1 sightseeing enabled. This preserves working city-arrival behavior
-          // (e.g. Hyderabad) and prevents Chennai from being forced into hotel-only Day 1.
-          if (isRouteSourceTerminal) {
-            selectedHotspots = await this.fetchSelectedHotspotsForRoute(
-              tx,
-              planId,
-              route.itinerary_route_ID,
-              filteredHotspots,
-              undefined,
-              false,
-            );
-          } else {
-            // Non-terminal same-city stays follow defer rule.
-            selectedHotspots = [];
-          }
+          // Same-city Day 1 should not depend on source label (city vs airport/station).
+          // Keep sightseeing enabled consistently for both cases.
+          selectedHotspots = await this.fetchSelectedHotspotsForRoute(
+            tx,
+            planId,
+            route.itinerary_route_ID,
+            filteredHotspots,
+            undefined,
+            false,
+          );
         } else {
           // Traveling away from arrival city on Day 1 - apply same direct/non-direct logic
           const directToNext = (route as any).direct_to_next_visiting_place || 0;
