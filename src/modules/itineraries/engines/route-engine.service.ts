@@ -537,6 +537,7 @@ const finalKm = pairChanged
     updatedon: null,
     status: 1,
     deleted: 0,
+    excluded_hotspot_ids: [],
   },
 });
 
