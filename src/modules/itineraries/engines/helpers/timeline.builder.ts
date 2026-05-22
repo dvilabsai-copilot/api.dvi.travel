@@ -5795,6 +5795,11 @@ export class TimelineBuilder {
           ? routeExcluded.map((id: any) => Number(id)).filter((id: number) => Number.isFinite(id) && id > 0)
           : [],
       );
+      
+      if (excludedHotspotIds.size > 0) {
+        console.log(`[Timeline] Route ${routeId} has excluded_hotspot_ids:`, Array.from(excludedHotspotIds));
+      }
+      
       this.logTimeline('[TIMELINE] fetchSelectedHotspotsForRoute - fetch timings:', Date.now() - opStart, 'ms');
 
       // 3) Use pre-fetched hotspots array (passed as parameter for performance)
@@ -5954,10 +5959,12 @@ export class TimelineBuilder {
         const hotspotWithDistance = { ...h, hotspot_distance: distance };
 
         if (excludedHotspotIds.has(Number(h.hotspot_ID ?? 0))) {
+          const hotspotId = Number(h.hotspot_ID ?? 0);
+          console.log(`[Timeline] Hotspot ${hotspotId} (${h.hotspot_name}) REJECTED for route ${routeId} - it's in excluded list`);
           this.logHotspotCandidateEvaluation({
             routeId,
-            hotspotId: Number(h.hotspot_ID ?? 0),
-            name: String(h.hotspot_name || h.hotspot_location || `hotspot_${Number(h.hotspot_ID ?? 0)}`),
+            hotspotId: hotspotId,
+            name: String(h.hotspot_name || h.hotspot_location || `hotspot_${hotspotId}`),
             matchedBucket: 'prefilter',
             priority: Number(h.hotspot_priority ?? 0),
             isMustVisit: Number(h.hotspot_priority ?? 0) > 0,
@@ -6068,10 +6075,12 @@ export class TimelineBuilder {
           }
 
           if (excludedHotspotIds.has(Number(h.hotspot_ID ?? 0))) {
+            const hotspotId = Number(h.hotspot_ID ?? 0);
+            console.log(`[Timeline] Hotspot ${hotspotId} (${h.hotspot_name}) REJECTED for route ${routeId} VIA - it's in excluded list`);
             this.logHotspotCandidateEvaluation({
               routeId,
-              hotspotId: Number(h.hotspot_ID ?? 0),
-              name: String(h.hotspot_name || h.hotspot_location || `hotspot_${Number(h.hotspot_ID ?? 0)}`),
+              hotspotId: hotspotId,
+              name: String(h.hotspot_name || h.hotspot_location || `hotspot_${hotspotId}`),
               matchedBucket: 'via',
               priority: Number(h.hotspot_priority ?? 0),
               isMustVisit: Number(h.hotspot_priority ?? 0) > 0,
