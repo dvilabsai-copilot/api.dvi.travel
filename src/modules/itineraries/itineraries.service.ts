@@ -1021,7 +1021,26 @@ export class ItinerariesService {
       }
 
       if (actualHotspotId > 0) {
-        await this.addRouteHotspotToExcludedList(tx, normalizedRouteId, actualHotspotId);
+         // ✅ CRITICAL FIX: Add to ALL routes' exclusions, not just this route
+         console.log(`[deleteHotspot] Excluding hotspotId ${actualHotspotId} plan-wide for plan ${normalizedPlanId}`);
+         const allRoutes = await (tx as any).dvi_itinerary_route_details.findMany({
+           where: { itinerary_plan_ID: normalizedPlanId, deleted: 0 },
+           select: { itinerary_route_ID: true, excluded_hotspot_ids: true },
+         });
+         for (const route of allRoutes) {
+           const routeId = Number(route.itinerary_route_ID);
+           const current = Array.isArray(route.excluded_hotspot_ids)
+             ? route.excluded_hotspot_ids.map((id: any) => Number(id)).filter((id: number) => Number.isFinite(id) && id > 0)
+             : [];
+           if (!current.includes(actualHotspotId)) {
+             const updated = [...current, actualHotspotId];
+             await (tx as any).dvi_itinerary_route_details.update({
+               where: { itinerary_route_ID: routeId },
+               data: { excluded_hotspot_ids: updated, updatedon: new Date() },
+             });
+             console.log(`  → Route ${routeId} added hotspot ${actualHotspotId} to exclusions`);
+           }
+         }
       }
 
       // Trigger a full rebuild of the hotspots for this plan
