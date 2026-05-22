@@ -1,0 +1,167 @@
+{
+  "info": {
+    "_postman_id": "6d4e9a22-0f97-4e8f-a728-0e4f9d5ac6a1",
+    "name": "ResAvenue Starlit ARI - 346 348 3641",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Property 346 - Starlit Suites Kochi",
+      "item": [
+        {
+          "name": "346 PropertyDetails",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"OTA_HotelDetailsRQ\": {\n    \"POS\": {\n      \"Username\": \"{{resavenueUsername}}\",\n      \"Password\": \"{{resavenuePassword}}\",\n      \"ID_Context\": \"{{resavenueIdContext}}\"\n    },\n    \"TimeStamp\": \"20261015T15:22:50\",\n    \"EchoToken\": \"details-{{$timestamp}}\",\n    \"HotelCode\": \"346\"\n  }\n}"
+            },
+            "url": "{{resavenuePropertyDetailsUrl}}"
+          }
+        },
+        {
+          "name": "346 Inventory (InvCode 1075)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"OTA_HotelInventoryRQ\": {\n    \"POS\": {\n      \"Username\": \"{{resavenueUsername}}\",\n      \"Password\": \"{{resavenuePassword}}\",\n      \"ID_Context\": \"{{resavenueIdContext}}\"\n    },\n    \"TimeStamp\": \"20261015T15:22:50\",\n    \"EchoToken\": \"inv-{{$timestamp}}\",\n    \"HotelCode\": \"346\",\n    \"Start\": \"{{startDate}}\",\n    \"End\": \"{{endDate}}\",\n    \"InvCodes\": [1075]\n  }\n}"
+            },
+            "url": "{{resavenuePropertyDetailsUrl}}"
+          }
+        },
+        {
+          "name": "346 Rates (RateCode 2388)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"OTA_HotelRateRQ\": {\n    \"POS\": {\n      \"Username\": \"{{resavenueUsername}}\",\n      \"Password\": \"{{resavenuePassword}}\",\n      \"ID_Context\": \"{{resavenueIdContext}}\"\n    },\n    \"HotelCode\": \"346\",\n    \"Start\": \"{{startDate}}\",\n    \"End\": \"{{endDate}}\",\n    \"RateCodes\": [2388]\n  }\n}"
+            },
+            "url": "{{resavenuePropertyDetailsUrl}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Property 348 - Starlit Suites Bangalore",
+      "item": [
+        {
+          "name": "348 PropertyDetails",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"OTA_HotelDetailsRQ\": {\n    \"POS\": {\n      \"Username\": \"{{resavenueUsername}}\",\n      \"Password\": \"{{resavenuePassword}}\",\n      \"ID_Context\": \"{{resavenueIdContext}}\"\n    },\n    \"TimeStamp\": \"20261015T15:22:50\",\n    \"EchoToken\": \"details-{{$timestamp}}\",\n    \"HotelCode\": \"348\"\n  }\n}"
+            },
+            "url": "{{resavenuePropertyDetailsUrl}}"
+          }
+        },
+        {
+          "name": "348 Inventory (InvCode 1077)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"OTA_HotelInventoryRQ\": {\n    \"POS\": {\n      \"Username\": \"{{resavenueUsername}}\",\n      \"Password\": \"{{resavenuePassword}}\",\n      \"ID_Context\": \"{{resavenueIdContext}}\"\n    },\n    \"TimeStamp\": \"20261015T15:22:50\",\n    \"EchoToken\": \"inv-{{$timestamp}}\",\n    \"HotelCode\": \"348\",\n    \"Start\": \"{{startDate}}\",\n    \"End\": \"{{endDate}}\",\n    \"InvCodes\": [1077]\n  }\n}"
+            },
+            "url": "{{resavenuePropertyDetailsUrl}}"
+          }
+        },
+        {
+          "name": "348 Rates (RateCode 20882)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"OTA_HotelRateRQ\": {\n    \"POS\": {\n      \"Username\": \"{{resavenueUsername}}\",\n      \"Password\": \"{{resavenuePassword}}\",\n      \"ID_Context\": \"{{resavenueIdContext}}\"\n    },\n    \"HotelCode\": \"348\",\n    \"Start\": \"{{startDate}}\",\n    \"End\": \"{{endDate}}\",\n    \"RateCodes\": [20882]\n  }\n}"
+            },
+            "url": "{{resavenuePropertyDetailsUrl}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Property 3641 - Starlit Suites Tirupati",
+      "item": [
+        {
+          "name": "3641 PropertyDetails",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"OTA_HotelDetailsRQ\": {\n    \"POS\": {\n      \"Username\": \"{{resavenueUsername}}\",\n      \"Password\": \"{{resavenuePassword}}\",\n      \"ID_Context\": \"{{resavenueIdContext}}\"\n    },\n    \"TimeStamp\": \"20261015T15:22:50\",\n    \"EchoToken\": \"details-{{$timestamp}}\",\n    \"HotelCode\": \"3641\"\n  }\n}"
+            },
+            "url": "{{resavenuePropertyDetailsUrl}}"
+          }
+        },
+        {
+          "name": "3641 Inventory (InvCode 9730)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"OTA_HotelInventoryRQ\": {\n    \"POS\": {\n      \"Username\": \"{{resavenueUsername}}\",\n      \"Password\": \"{{resavenuePassword}}\",\n      \"ID_Context\": \"{{resavenueIdContext}}\"\n    },\n    \"TimeStamp\": \"20261015T15:22:50\",\n    \"EchoToken\": \"inv-{{$timestamp}}\",\n    \"HotelCode\": \"3641\",\n    \"Start\": \"{{startDate}}\",\n    \"End\": \"{{endDate}}\",\n    \"InvCodes\": [9730]\n  }\n}"
+            },
+            "url": "{{resavenuePropertyDetailsUrl}}"
+          }
+        },
+        {
+          "name": "3641 Rates (RateCode 20862)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"OTA_HotelRateRQ\": {\n    \"POS\": {\n      \"Username\": \"{{resavenueUsername}}\",\n      \"Password\": \"{{resavenuePassword}}\",\n      \"ID_Context\": \"{{resavenueIdContext}}\"\n    },\n    \"HotelCode\": \"3641\",\n    \"Start\": \"{{startDate}}\",\n    \"End\": \"{{endDate}}\",\n    \"RateCodes\": [20862]\n  }\n}"
+            },
+            "url": "{{resavenuePropertyDetailsUrl}}"
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    { "key": "resavenuePropertyDetailsUrl", "value": "https://cm.resavenue.com/channelcontroller/PropertyDetails" },
+    { "key": "resavenueUsername", "value": "crm.dvi@dvi.co.in" },
+    { "key": "resavenuePassword", "value": "Dviholidays@882" },
+    { "key": "resavenueIdContext", "value": "REV" },
+    { "key": "startDate", "value": "2026-06-15" },
+    { "key": "endDate", "value": "2026-06-16" }
+  ]
+}

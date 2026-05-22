@@ -394,11 +394,28 @@ export class ResAvenueHotelProvider implements IHotelProvider {
         ),
       );
 
+      // Normalize location-like inputs such as "Tirupati, Andhra Pradesh, India"
+      // so we still match dvi_hotel.hotel_city="Tirupati".
+      const primaryCityName = String(cityName || '')
+        .split(',')[0]
+        .trim();
+
+      const cityCandidates = Array.from(
+        new Set([cityName, primaryCityName].map((c) => String(c || '').trim()).filter(Boolean)),
+      );
+
       // Step 2: Query database for ResAvenue hotels in this city
-      this.logger.log(`   🔍 Querying database for hotels in city: "${cityName}"`);
+      this.logger.log(
+        `   🔍 Querying database for hotels in city candidates: "${cityCandidates.join('" | "')}"`,
+      );
       const hotels = await this.prisma.dvi_hotel.findMany({
         where: {
-          hotel_city: cityName,
+          OR: [
+            { hotel_city: { in: cityCandidates } },
+            ...(primaryCityName
+              ? [{ hotel_city: { startsWith: `${primaryCityName},` } }]
+              : []),
+          ],
           resavenue_hotel_code: { not: null },
           deleted: false,
           status: 1,
@@ -423,7 +440,9 @@ export class ResAvenueHotelProvider implements IHotelProvider {
         return [];
       }
 
-      this.logger.log(`   ✅ Found ${hotels.length} ResAvenue hotel(s) in ${cityName}:`);
+      this.logger.log(
+        `   ✅ Found ${hotels.length} ResAvenue hotel(s) for city candidates "${cityCandidates.join('" | "')}":`,
+      );
       hotels.forEach(h => {
         this.logger.log(`      - ${h.hotel_name} (Code: ${h.resavenue_hotel_code}, Category: ${h.hotel_category}*)`);
       });

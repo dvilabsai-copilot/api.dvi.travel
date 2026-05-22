@@ -216,9 +216,17 @@ export class ItineraryHotelDetailsTboService {
         if (shouldFilterByCategory) {
           const categoryCandidates = this.getHotelCategoryCandidates(hotel);
           const categoryMatch = categoryCandidates.some((cat) => preferredCategorySet.has(cat));
-          if (!categoryMatch) {
+          const isResavenueUnknownCategory =
+            String((hotel as any).provider || '').toLowerCase() === 'resavenue' &&
+            categoryCandidates.length === 0;
+
+          if (!categoryMatch && !isResavenueUnknownCategory) {
             included = false;
-            filterReason = `Category mismatch: ${categoryCandidates.join(',')} not in ${preferredCategories.join(',')}`;
+            filterReason = `Category mismatch: ${categoryCandidates.join(',') || 'UNKNOWN'} not in ${preferredCategories.join(',')}`;
+          } else if (isResavenueUnknownCategory) {
+            this.logger.debug(
+              `   ℹ️  Keeping ResAvenue hotel with unknown category: ${hotel.hotelName}`,
+            );
           }
         }
 

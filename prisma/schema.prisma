@@ -6166,3 +6166,26 @@ model hotspot_route_between_map {
   @@unique([from_hotspot_id, to_hotspot_id, between_hotspot_id], map: "uniq_hotspot_route_between")
   @@index([route_fit_type], map: "idx_hotspot_route_between_fit")
 }
+
+model hotspot_route_between_rejections {
+  id                                      BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  from_hotspot_id                         Int
+  from_hotspot_name                       String?  @db.Text
+  from_hotspot_location                   String?  @db.Text
+  to_hotspot_id                           Int
+  to_hotspot_name                         String?  @db.Text
+  to_hotspot_location                     String?  @db.Text
+  between_hotspot_id                      Int
+  between_hotspot_name                    String?  @db.Text
+  route_fit_type                          String?  @db.VarChar(40)
+  rejection_code                          String   @db.VarChar(80)
+  rejection_reason                        String?  @db.Text
+  candidate_distance_from_ab_route_meters Float?   @db.Double
+  road_detour_km                          Float?   @db.Double
+  road_detour_ratio                       Float?   @db.Double
+  error_message                           String?  @db.Text
+  created_at                              DateTime @default(now()) @db.DateTime(0)
+  updated_at                              DateTime @default(now()) @updatedAt @db.DateTime(0)
+
+  @@unique([from_hotspot_id, to_hotspot_id, between_hotspot_id], map: "uniq_hotspot_route_between_rejection")
+}

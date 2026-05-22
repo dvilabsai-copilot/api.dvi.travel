@@ -74,31 +74,20 @@ type EndpointPair = {
   to: Hotspot;
 };
 
-type LocationRoutePair = {
-  sourceLocation: string;
-  destinationLocation: string;
-  repeatedCount: number;
-};
-
 type InputArgs = {
-  location?: string;
-  likePattern?: string;
-  excludeLocations: string[];
-  allLocations: boolean;
+  location: string;
+  likePattern: string;
   targetDb: string;
-  routeDb: string;
   apply: boolean;
   buildBetweenMap: boolean;
   includeOffRoute: boolean;
   forceBetween: boolean;
   limitPairs?: number;
   limitBetween?: number;
-  limitLocationPairs?: number;
   osrmDelayMs: number;
   osrmBaseUrl: string;
   maxHaversineKm: number;
   maxCandidateHaversineKm: number;
-  maxLocationRouteKm: number;
   maxNearRouteMeters: number;
   maxInsertDetourKm: number;
   maxInsertDetourRatio: number;
@@ -108,20 +97,8 @@ type InputArgs = {
 
 type RunSummary = {
   targetDb: string;
-  routeDb: string;
-  allLocationsMode: boolean;
-  location: string | null;
-  likePattern: string | null;
-  repeatedLocationPairsFound: number;
-  repeatedLocationPairsSelected: number;
-  repeatedLocationPairsDeduped: number;
-  locationPairsSkippedExcluded: number;
-  locationPairsProcessed: number;
-  locationPairsSkippedMissingHotspots: number;
-  locationPairsSkippedOverDistance: number;
-  locationPairsSkippedOsrmFailed: number;
-  locationPairDirectPairsPossible: number;
-  locationPairBetweenCandidatesPossible: number;
+  location: string;
+  likePattern: string;
   hotspotsMatched: number;
   validHotspots: number;
   directPairsPossible: number;
@@ -159,20 +136,15 @@ const prisma = new PrismaClient();
 const DB_NAME_REGEX = /^[a-zA-Z0-9_]+$/;
 
 function usage(): void {
-  console.log('Usage: npx tsx scripts/build-location-hotspot-matrix.ts (--location <text> | --all-locations) [options]');
+  console.log('Usage: npx tsx scripts/build-location-hotspot-matrix.ts --location <text> [options]');
   console.log('');
   console.log('Options:');
-  console.log('  --location <text>                   Single-location mode (mutually exclusive with --all-locations).');
-  console.log('  --all-locations                     Process all repeated location pairs from route DB.');
+  console.log('  --location <text>                   Required. Location keyword for LIKE query.');
   console.log('  --target-db <db>                    Default: env TARGET_DB_NAME or dvi_main');
-  console.log('  --route-db <db>                     Default: dvi_travels');
   console.log('  --apply                             Enable DB writes. Default is dry-run.');
   console.log('  --build-between-map                 Build hotspot_route_between_map rows.');
   console.log('  --include-off-route                 Insert OFF_ROUTE rows too (default false).');
   console.log('  --force-between                     Recompute all between rows even if already in map (default false).');
-  console.log('  --max-location-route-km <n>         Skip location pairs whose representative route exceeds this km (default 500).');
-  console.log('  --exclude-locations <list>          Exclude route pairs containing any comma-separated location text.');
-  console.log('  --limit-location-pairs <n>          Optional max location pairs to process in route-pair mode.');
   console.log('  --limit-pairs <n>                   Optional max direct A->B pairs to process.');
   console.log('  --limit-between <n>                 Optional max A->C->B candidate checks.');
   console.log('  --osrm-delay-ms <n>                 Default: env OSRM_DELAY_MS or 500');
@@ -247,17 +219,6 @@ function normalizeName(value: unknown): string {
   return String(value ?? '').trim().replace(/\s+/g, ' ');
 }
 
-function normalizeLocationKey(value: string): string {
-  return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
-}
-
-function locationMatchesInput(location: string, input: string): boolean {
-  const haystack = normalizeLocationKey(location);
-  const needle = normalizeLocationKey(input);
-  if (!haystack || !needle) return false;
-  return haystack.includes(needle);
-}
-
 function parseCoordinate(raw: unknown): number | null {
   const text = String(raw ?? '').trim();
   if (!text) return null;
@@ -281,33 +242,14 @@ function isValidLatLng(lat: number, lng: number): boolean {
 
 function normalizeArgs(raw: RawArgs): InputArgs {
   const locationRaw = typeof raw.location === 'string' ? raw.location.trim() : '';
-  const allLocations = Boolean(raw['all-locations']);
-  const excludeLocations =
-    typeof raw['exclude-locations'] === 'string'
-      ? raw['exclude-locations']
-          .split(',')
-          .map((item) => normalizeLocationKey(item))
-          .filter((item) => item.length > 0)
-      : [];
-
-  if (!locationRaw && !allLocations) {
-    throw new Error('Pass either --location <text> or --all-locations.');
-  }
-
-  if (locationRaw && allLocations) {
-    throw new Error('Use only one mode: --location <text> or --all-locations (not both).');
+  if (!locationRaw) {
+    throw new Error('Missing required --location argument.');
   }
 
   const targetDb = validateDbName(
     typeof raw['target-db'] === 'string' && raw['target-db'].trim()
       ? raw['target-db'].trim()
       : (process.env.TARGET_DB_NAME?.trim() || 'dvi_main'),
-  );
-
-  const routeDb = validateDbName(
-    typeof raw['route-db'] === 'string' && raw['route-db'].trim()
-      ? raw['route-db'].trim()
-      : 'dvi_travels',
   );
 
   const osrmDelayMsValue =
@@ -335,15 +277,6 @@ function normalizeArgs(raw: RawArgs): InputArgs {
 
   if (!Number.isFinite(maxCandidateHaversineKm) || maxCandidateHaversineKm <= 0) {
     throw new Error('--max-candidate-haversine-km must be a positive number.');
-  }
-
-  const maxLocationRouteKm =
-    typeof raw['max-location-route-km'] === 'string' && raw['max-location-route-km'].trim() !== ''
-      ? Number(raw['max-location-route-km'])
-      : 500;
-
-  if (!Number.isFinite(maxLocationRouteKm) || maxLocationRouteKm <= 0) {
-    throw new Error('--max-location-route-km must be a positive number.');
   }
 
   const maxNearRouteMeters = toNumberOrDefault(process.env.MAX_NEAR_ROUTE_METERS, 1500);
@@ -375,23 +308,16 @@ function normalizeArgs(raw: RawArgs): InputArgs {
     throw new Error('DESTINATION_CROSSING_MAX_PROGRESS_RATIO must be > 0 and < 1.');
   }
 
-  const likePattern = locationRaw ? `%${locationRaw}%` : undefined;
+  const likePattern = `%${locationRaw}%`;
 
   return {
-    location: locationRaw || undefined,
+    location: locationRaw,
     likePattern,
-    excludeLocations,
-    allLocations,
     targetDb,
-    routeDb,
     apply: Boolean(raw.apply),
     buildBetweenMap: Boolean(raw['build-between-map']),
     includeOffRoute: Boolean(raw['include-off-route']),
     forceBetween: Boolean(raw['force-between']),
-    limitLocationPairs: toOptionalPositiveInt(
-      typeof raw['limit-location-pairs'] === 'string' ? raw['limit-location-pairs'] : undefined,
-      '--limit-location-pairs',
-    ),
     limitPairs: toOptionalPositiveInt(typeof raw['limit-pairs'] === 'string' ? raw['limit-pairs'] : undefined, '--limit-pairs'),
     limitBetween: toOptionalPositiveInt(
       typeof raw['limit-between'] === 'string' ? raw['limit-between'] : undefined,
@@ -401,7 +327,6 @@ function normalizeArgs(raw: RawArgs): InputArgs {
     osrmBaseUrl: process.env.OSRM_BASE_URL?.trim() || 'http://localhost:5000/route/v1/driving',
     maxHaversineKm,
     maxCandidateHaversineKm,
-    maxLocationRouteKm,
     maxNearRouteMeters,
     maxInsertDetourKm,
     maxInsertDetourRatio,
@@ -726,10 +651,6 @@ async function fetchLocationHotspots(args: InputArgs): Promise<{
   validHotspots: Hotspot[];
   invalidCount: number;
 }> {
-  if (!args.likePattern) {
-    throw new Error('fetchLocationHotspots requires likePattern (single-location mode).');
-  }
-
   const rows = await prisma.$queryRawUnsafe<
     Array<{
       hotspot_ID: number;
@@ -793,214 +714,6 @@ async function fetchLocationHotspots(args: InputArgs): Promise<{
     validHotspots: valid,
     invalidCount: invalid,
   };
-}
-
-async function fetchHotspotsByLocationText(targetDb: string, locationText: string): Promise<Hotspot[]> {
-  const locationPattern = `%${String(locationText || '').trim()}%`;
-
-  const rows = await prisma.$queryRawUnsafe<
-    Array<{
-      hotspot_ID: number;
-      hotspot_name: string | null;
-      hotspot_location: string | null;
-      hotspot_latitude: string | number | null;
-      hotspot_longitude: string | number | null;
-    }>
-  >(
-    `
-      SELECT
-        hotspot_ID,
-        hotspot_name,
-        hotspot_location,
-        hotspot_latitude,
-        hotspot_longitude
-      FROM \`${targetDb}\`.\`dvi_hotspot_place\`
-      WHERE deleted = 0
-        AND hotspot_location LIKE ?
-      ORDER BY hotspot_ID ASC
-    `,
-    locationPattern,
-  );
-
-  const hotspots: Hotspot[] = [];
-  for (const row of rows) {
-    const id = Number(row.hotspot_ID);
-    const lat = parseCoordinate(row.hotspot_latitude);
-    const lng = parseCoordinate(row.hotspot_longitude);
-
-    if (!Number.isInteger(id) || id <= 0 || lat === null || lng === null || !isValidLatLng(lat, lng)) {
-      continue;
-    }
-
-    hotspots.push({
-      id,
-      name: normalizeName(row.hotspot_name) || `Hotspot-${id}`,
-      location: normalizeName(row.hotspot_location) || null,
-      lat,
-      lng,
-    });
-  }
-
-  return hotspots;
-}
-
-async function fetchRepeatedLocationPairs(args: InputArgs): Promise<LocationRoutePair[]> {
-  const rows = await prisma.$queryRawUnsafe<
-    Array<{
-      location_name: string | null;
-      next_visiting_location: string | null;
-      repeated_count: number;
-    }>
-  >(
-    `
-      SELECT
-        location_name,
-        next_visiting_location,
-        COUNT(*) AS repeated_count
-      FROM \`${args.routeDb}\`.\`dvi_itinerary_route_details\`
-      GROUP BY location_name, next_visiting_location
-      HAVING COUNT(*) > 1
-        AND TRIM(LOWER(location_name)) != TRIM(LOWER(next_visiting_location))
-      ORDER BY repeated_count DESC
-    `,
-  );
-
-  return rows
-    .map((row) => ({
-      sourceLocation: normalizeName(row.location_name || ''),
-      destinationLocation: normalizeName(row.next_visiting_location || ''),
-      repeatedCount: Number(row.repeated_count || 0),
-    }))
-    .filter((row) => row.sourceLocation && row.destinationLocation && row.repeatedCount > 1);
-}
-
-function dedupeLocationPairs(pairs: LocationRoutePair[]): LocationRoutePair[] {
-  const bestByPair = new Map<string, LocationRoutePair>();
-
-  for (const pair of pairs) {
-    const sourceKey = normalizeLocationKey(pair.sourceLocation);
-    const destinationKey = normalizeLocationKey(pair.destinationLocation);
-    if (!sourceKey || !destinationKey || sourceKey === destinationKey) {
-      continue;
-    }
-
-    const canonical = sourceKey <= destinationKey
-      ? `${sourceKey}||${destinationKey}`
-      : `${destinationKey}||${sourceKey}`;
-
-    const existing = bestByPair.get(canonical);
-    if (!existing || pair.repeatedCount > existing.repeatedCount) {
-      bestByPair.set(canonical, pair);
-    }
-  }
-
-  return Array.from(bestByPair.values()).sort((a, b) => b.repeatedCount - a.repeatedCount);
-}
-
-function pickRepresentativeHotspotPair(
-  sourceHotspots: Hotspot[],
-  destinationHotspots: Hotspot[],
-  sampleSize: number,
-): { from: Hotspot; to: Hotspot; minHaversineKm: number } | null {
-  const sourceSample = sourceHotspots.slice(0, Math.max(1, sampleSize));
-  const destinationSample = destinationHotspots.slice(0, Math.max(1, sampleSize));
-
-  let bestFrom: Hotspot | null = null;
-  let bestTo: Hotspot | null = null;
-  let bestDistance = Number.POSITIVE_INFINITY;
-
-  for (const source of sourceSample) {
-    for (const destination of destinationSample) {
-      const distanceKm = haversineKm(source.lat, source.lng, destination.lat, destination.lng);
-      if (distanceKm < bestDistance) {
-        bestDistance = distanceKm;
-        bestFrom = source;
-        bestTo = destination;
-      }
-    }
-  }
-
-  if (!bestFrom || !bestTo || !Number.isFinite(bestDistance)) {
-    return null;
-  }
-
-  const canonical = canonicalizeEndpoints(bestFrom, bestTo);
-  return {
-    from: canonical.from,
-    to: canonical.to,
-    minHaversineKm: bestDistance,
-  };
-}
-
-async function shouldProcessLocationPairByDistance(
-  pair: LocationRoutePair,
-  sourceHotspots: Hotspot[],
-  destinationHotspots: Hotspot[],
-  args: InputArgs,
-  summary: RunSummary,
-): Promise<boolean> {
-  const representative = pickRepresentativeHotspotPair(sourceHotspots, destinationHotspots, 5);
-  if (!representative) {
-    return false;
-  }
-
-  const { from: sourceRep, to: destinationRep, minHaversineKm: haversineDistanceKm } = representative;
-
-  if (haversineDistanceKm > args.maxLocationRouteKm) {
-    console.log(
-      `LOCATION PAIR DISTANCE SKIP ${pair.sourceLocation} -> ${pair.destinationLocation}: sampled_min_haversine=${haversineDistanceKm.toFixed(2)}km > ${args.maxLocationRouteKm}km (rep=${sourceRep.id}->${destinationRep.id})`,
-    );
-    return false;
-  }
-
-  try {
-    const existing = await getDoneMatrixRowForDb(args.targetDb, sourceRep.id, destinationRep.id);
-    if (existing && Number.isFinite(existing.osrmDistanceKm)) {
-      if (existing.osrmDistanceKm > args.maxLocationRouteKm) {
-        console.log(
-          `LOCATION PAIR DISTANCE SKIP ${pair.sourceLocation} -> ${pair.destinationLocation}: osrm(existing)=${existing.osrmDistanceKm.toFixed(2)}km > ${args.maxLocationRouteKm}km (rep=${sourceRep.id}->${destinationRep.id})`,
-        );
-        return false;
-      }
-
-      console.log(
-        `LOCATION PAIR DISTANCE PASS ${pair.sourceLocation} -> ${pair.destinationLocation}: osrm(existing)=${existing.osrmDistanceKm.toFixed(2)}km (rep=${sourceRep.id}->${destinationRep.id})`,
-      );
-      return true;
-    }
-
-    const route = args.apply
-      ? await ensureRouteLegForDb(
-          args.targetDb,
-          sourceRep,
-          destinationRep,
-          args,
-          summary,
-          false,
-          false,
-        )
-      : await fetchOsrmRouteWithRetry(sourceRep, destinationRep, args, summary);
-    const osrmDistanceKm = 'osrmDistanceKm' in route ? route.osrmDistanceKm : route.distanceKm;
-
-    if (osrmDistanceKm > args.maxLocationRouteKm) {
-      console.log(
-        `LOCATION PAIR DISTANCE SKIP ${pair.sourceLocation} -> ${pair.destinationLocation}: osrm=${osrmDistanceKm.toFixed(2)}km > ${args.maxLocationRouteKm}km (rep=${sourceRep.id}->${destinationRep.id})`,
-      );
-      return false;
-    }
-
-    console.log(
-      `LOCATION PAIR DISTANCE PASS ${pair.sourceLocation} -> ${pair.destinationLocation}: osrm=${osrmDistanceKm.toFixed(2)}km (rep=${sourceRep.id}->${destinationRep.id})`,
-    );
-    return true;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.warn(
-      `LOCATION PAIR DISTANCE WARN ${pair.sourceLocation} -> ${pair.destinationLocation}: OSRM failed (${message}). Falling back to sampled_min_haversine=${haversineDistanceKm.toFixed(2)}km (rep=${sourceRep.id}->${destinationRep.id})`,
-    );
-    summary.locationPairsSkippedOsrmFailed += 1;
-    return haversineDistanceKm <= args.maxLocationRouteKm;
-  }
 }
 
 async function fetchAllValidHotspots(targetDb: string): Promise<{
@@ -1114,16 +827,6 @@ function canonicalizeBetweenRejectionRow(row: BetweenRejectionRow): BetweenRejec
     toHotspotName: row.fromHotspotName,
     toHotspotLocation: row.fromHotspotLocation,
   };
-}
-
-function isLocationPairExcluded(pair: LocationRoutePair, excludeLocations: string[]): boolean {
-  if (!excludeLocations.length) return false;
-
-  return excludeLocations.some(
-    (excludeText) =>
-      locationMatchesInput(pair.sourceLocation, excludeText) ||
-      locationMatchesInput(pair.destinationLocation, excludeText),
-  );
 }
 
 async function getDoneMatrixRowForDb(targetDb: string, fromHotspotId: number, toHotspotId: number): Promise<MatrixRow | null> {
@@ -1542,20 +1245,8 @@ async function upsertBetweenRejectionForDb(targetDb: string, row: BetweenRejecti
 function initializeSummary(args: InputArgs): RunSummary {
   return {
     targetDb: args.targetDb,
-    routeDb: args.routeDb,
-    allLocationsMode: args.allLocations,
-    location: args.location ?? null,
-    likePattern: args.likePattern ?? null,
-    repeatedLocationPairsFound: 0,
-    repeatedLocationPairsSelected: 0,
-    repeatedLocationPairsDeduped: 0,
-    locationPairsSkippedExcluded: 0,
-    locationPairsProcessed: 0,
-    locationPairsSkippedMissingHotspots: 0,
-    locationPairsSkippedOverDistance: 0,
-    locationPairsSkippedOsrmFailed: 0,
-    locationPairDirectPairsPossible: 0,
-    locationPairBetweenCandidatesPossible: 0,
+    location: args.location,
+    likePattern: args.likePattern,
     hotspotsMatched: 0,
     validHotspots: 0,
     directPairsPossible: 0,
@@ -1581,115 +1272,6 @@ function initializeSummary(args: InputArgs): RunSummary {
     failed: 0,
     osrmCalls: 0,
   };
-}
-
-function estimateBetweenCandidates(sourceCount: number, destinationCount: number): number {
-  if (sourceCount <= 0 || destinationCount <= 0) return 0;
-  return sourceCount * destinationCount * Math.max(sourceCount + destinationCount - 2, 0);
-}
-
-async function runLocationPairMode(args: InputArgs, summary: RunSummary): Promise<void> {
-  const repeatedPairs = await fetchRepeatedLocationPairs(args);
-  summary.repeatedLocationPairsFound = repeatedPairs.length;
-
-  const filteredByMode = args.allLocations
-    ? repeatedPairs
-    : repeatedPairs.filter((pair) => {
-        const input = args.location || '';
-        return locationMatchesInput(pair.sourceLocation, input) || locationMatchesInput(pair.destinationLocation, input);
-      });
-
-  summary.repeatedLocationPairsSelected = filteredByMode.length;
-
-  const deduped = dedupeLocationPairs(filteredByMode);
-  summary.repeatedLocationPairsDeduped = deduped.length;
-
-  const nonExcludedPairs = deduped.filter((pair) => !isLocationPairExcluded(pair, args.excludeLocations));
-  summary.locationPairsSkippedExcluded = deduped.length - nonExcludedPairs.length;
-
-  console.log(`locationPairsSkippedExcluded: ${summary.locationPairsSkippedExcluded}`);
-
-  const selectedPairs = args.limitLocationPairs
-    ? nonExcludedPairs.slice(0, args.limitLocationPairs)
-    : nonExcludedPairs;
-
-  for (const pair of selectedPairs) {
-    console.log(
-      `LOCATION PAIR START ${pair.sourceLocation} -> ${pair.destinationLocation} repeated_count=${pair.repeatedCount}`,
-    );
-
-    const sourceHotspots = await fetchHotspotsByLocationText(args.targetDb, pair.sourceLocation);
-    const destinationHotspots = await fetchHotspotsByLocationText(args.targetDb, pair.destinationLocation);
-
-    console.log(`source hotspots count: ${sourceHotspots.length}`);
-    console.log(`destination hotspots count: ${destinationHotspots.length}`);
-
-    if (!sourceHotspots.length || !destinationHotspots.length) {
-      summary.locationPairsSkippedMissingHotspots += 1;
-      console.log(`LOCATION PAIR SKIP missing hotspots: ${pair.sourceLocation} -> ${pair.destinationLocation}`);
-      continue;
-    }
-
-    const directPairsEstimate = sourceHotspots.length * destinationHotspots.length;
-    const betweenCandidatesEstimate = estimateBetweenCandidates(sourceHotspots.length, destinationHotspots.length);
-
-    summary.locationPairDirectPairsPossible += directPairsEstimate;
-    summary.locationPairBetweenCandidatesPossible += betweenCandidatesEstimate;
-
-    console.log(`estimated direct pairs: ${directPairsEstimate}`);
-    console.log(`estimated between candidates: ${betweenCandidatesEstimate}`);
-
-    const shouldProcess = await shouldProcessLocationPairByDistance(
-      pair,
-      sourceHotspots,
-      destinationHotspots,
-      args,
-      summary,
-    );
-
-    if (!shouldProcess) {
-      summary.locationPairsSkippedOverDistance += 1;
-      continue;
-    }
-
-    if (!args.apply) {
-      summary.locationPairsProcessed += 1;
-      console.log(
-        `DRY-RUN LOCATION PAIR ${pair.sourceLocation} -> ${pair.destinationLocation}: direct=${directPairsEstimate}, between=${betweenCandidatesEstimate}`,
-      );
-      continue;
-    }
-
-    const pairStart = {
-      directDone: summary.directPairsDone,
-      directFailed: summary.directPairsFailed,
-      betweenInserted: summary.betweenRowsInserted,
-      betweenRejected: summary.betweenRowsRejected,
-    };
-
-    await runDirectMatrixBuild(args, sourceHotspots, destinationHotspots, summary);
-
-    const scopedCandidatesMap = new Map<number, Hotspot>();
-    for (const hotspot of [...sourceHotspots, ...destinationHotspots]) {
-      scopedCandidatesMap.set(hotspot.id, hotspot);
-    }
-
-    if (args.buildBetweenMap) {
-      await runBetweenMapBuild(
-        args,
-        sourceHotspots,
-        destinationHotspots,
-        Array.from(scopedCandidatesMap.values()),
-        summary,
-      );
-    }
-
-    summary.locationPairsProcessed += 1;
-
-    console.log(
-      `LOCATION PAIR END ${pair.sourceLocation} -> ${pair.destinationLocation} direct_done=${summary.directPairsDone - pairStart.directDone} direct_failed=${summary.directPairsFailed - pairStart.directFailed} between_inserted=${summary.betweenRowsInserted - pairStart.betweenInserted} between_rejected=${summary.betweenRowsRejected - pairStart.betweenRejected}`,
-    );
-  }
 }
 
 async function runDirectMatrixBuild(
@@ -1973,25 +1555,11 @@ async function main(): Promise<void> {
 
   console.log(`Mode: ${args.apply ? 'apply' : 'dry-run'}`);
   console.log(`targetDb: ${args.targetDb}`);
-  console.log(`routeDb: ${args.routeDb}`);
-  if (args.allLocations) {
-    console.log('location mode: all-locations');
-  } else {
-    console.log(`location input: ${args.location}`);
-    console.log(`LIKE pattern: ${args.likePattern}`);
-  }
-  console.log(`excludeLocations: [${args.excludeLocations.join(', ')}]`);
-  console.log(`maxLocationRouteKm: ${args.maxLocationRouteKm}`);
+  console.log(`location input: ${args.location}`);
+  console.log(`LIKE pattern: ${args.likePattern}`);
   console.log(`OSRM base: ${args.osrmBaseUrl}`);
 
   await ensureHelperTablesForDb(args.targetDb);
-
-  if (args.buildBetweenMap || args.allLocations) {
-    await runLocationPairMode(args, summary);
-    console.log('Final summary:');
-    console.log(JSON.stringify(summary, null, 2));
-    return;
-  }
 
   const hotspotResult = await fetchLocationHotspots(args);
   const allHotspotsResult = await fetchAllValidHotspots(args.targetDb);
@@ -2058,6 +1626,3 @@ main()
 //
 // Apply with explicit long-distance caps (optional)
 // npx tsx scripts/build-location-hotspot-matrix.ts --location chennai --target-db dvi_main --max-haversine-km 20000 --max-candidate-haversine-km 20000 --build-between-map --apply
-
-// All locations from repeated pairs
-// npx tsx scripts/build-location-hotspot-matrix.ts --all-locations --target-db dvi_main --route-db dvi_travels --build-between-map --max-location-route-km 500 --apply
