@@ -349,7 +349,12 @@ export class HotspotsService {
       name: v.vehicle_type_title ?? '',
     }));
 
-    return { hotspotTypes, locations, vehicleTypes };
+    return {
+  hotspotTypes,
+  locations,
+  toLocations: locations,
+  vehicleTypes,
+};
   }
 
   // --------------------------- Form: Get (edit) -----------------------------
