@@ -150,15 +150,14 @@ if (source && destination) {
         { location_ID: 'desc' },
       ];
 
-  const [rows, total] = await this.prisma.$transaction([
-    this.prisma.dvi_stored_locations.findMany({
-      where,
-      orderBy,
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    }),
-    this.prisma.dvi_stored_locations.count({ where }),
-  ]);
+  const rows = await this.prisma.dvi_stored_locations.findMany({
+  where,
+  orderBy,
+  skip: (page - 1) * pageSize,
+  take: pageSize,
+});
+
+const total = await this.prisma.dvi_stored_locations.count({ where });
 
   return {
     rows: rows.map((r) => this.mapRowToResponse(r)),
@@ -169,25 +168,51 @@ if (source && destination) {
 }
 
   async dropdowns() {
-    const [src, dst] = await this.prisma.$transaction([
-      this.prisma.dvi_stored_locations.findMany({
-        where: { deleted: 0 },
-        select: { source_location: true },
-        distinct: ['source_location'],
-        orderBy: { source_location: 'asc' },
-      }),
-      this.prisma.dvi_stored_locations.findMany({
-        where: { deleted: 0 },
-        select: { destination_location: true },
-        distinct: ['destination_location'],
-        orderBy: { destination_location: 'asc' },
-      }),
-    ]);
-    return {
-      sources: src.map((x) => x.source_location).filter(Boolean),
-      destinations: dst.map((x) => x.destination_location).filter(Boolean),
-    };
-  }
+  const [sourceRows, destinationRows] = await Promise.all([
+    this.prisma.dvi_stored_locations.findMany({
+      where: {
+        deleted: 0,
+        source_location: {
+          not: '',
+        },
+      },
+      select: {
+        source_location: true,
+      },
+      distinct: ['source_location'],
+      orderBy: {
+        source_location: 'asc',
+      },
+      take: 3000,
+    }),
+
+    this.prisma.dvi_stored_locations.findMany({
+      where: {
+        deleted: 0,
+        destination_location: {
+          not: '',
+        },
+      },
+      select: {
+        destination_location: true,
+      },
+      distinct: ['destination_location'],
+      orderBy: {
+        destination_location: 'asc',
+      },
+      take: 3000,
+    }),
+  ]);
+
+  return {
+    sources: this.uniqueStringsCaseInsensitive(
+      sourceRows.map((x) => x.source_location).filter(Boolean),
+    ),
+    destinations: this.uniqueStringsCaseInsensitive(
+      destinationRows.map((x) => x.destination_location).filter(Boolean),
+    ),
+  };
+}
 
   private parseBooleanQuery(value: unknown): boolean {
     return ['1', 'true', 'yes'].includes(String(value ?? '').trim().toLowerCase());
