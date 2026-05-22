@@ -14100,29 +14100,53 @@ export class ItinerariesService {
     }
 
     // 6. Rank and find bestSlot
-    const sortedByUsable = [...allSlotResults]
-      .filter((slot) => {
-        const fitType = String(slot?.routeFitType || '').toUpperCase();
-        return this.isUsableMatrixRouteFitType(fitType) || fitType === 'DESTINATION_SIDE_INSERTION';
-      })
-      .sort((a, b) => {
-        if (destinationInsertionMode) {
-          const destinationRankA = Number(a?.destinationSlotPriorityRank || 999);
-          const destinationRankB = Number(b?.destinationSlotPriorityRank || 999);
-          if (destinationRankA !== destinationRankB) return destinationRankA - destinationRankB;
-        }
-        const rankDiff = selectionRank(a.routeFitType) - selectionRank(b.routeFitType);
-        if (rankDiff !== 0) return rankDiff;
-        const detourA = a.roadDetourKm ?? 99999;
-        const detourB = b.roadDetourKm ?? 99999;
-        if (detourA !== detourB) return detourA - detourB;
-        const ratioA = a.roadDetourRatio ?? 99999;
-        const ratioB = b.roadDetourRatio ?? 99999;
-        if (ratioA !== ratioB) return ratioA - ratioB;
-        const distA = a.candidateDistanceFromAbRouteMeters ?? 99999;
-        const distB = b.candidateDistanceFromAbRouteMeters ?? 99999;
-        return distA - distB;
-      });
+    // Important: if normal ON_ROUTE/MINOR slots exist, prefer those over destination-side hotel insertion.
+    const isDestinationSideSlot = (slot: any): boolean =>
+      String(slot?.routeFitType || '').toUpperCase() === 'DESTINATION_SIDE_INSERTION';
+
+    const sortByRouteFit = (a: any, b: any): number => {
+      const aDestination = isDestinationSideSlot(a);
+      const bDestination = isDestinationSideSlot(b);
+
+      if (destinationInsertionMode && aDestination && bDestination) {
+        const destinationRankA = Number(a?.destinationSlotPriorityRank || 999);
+        const destinationRankB = Number(b?.destinationSlotPriorityRank || 999);
+        if (destinationRankA !== destinationRankB) return destinationRankA - destinationRankB;
+      }
+
+      const rankDiff = selectionRank(a.routeFitType) - selectionRank(b.routeFitType);
+      if (rankDiff !== 0) return rankDiff;
+      const detourA = a.roadDetourKm ?? 99999;
+      const detourB = b.roadDetourKm ?? 99999;
+      if (detourA !== detourB) return detourA - detourB;
+      const ratioA = a.roadDetourRatio ?? 99999;
+      const ratioB = b.roadDetourRatio ?? 99999;
+      if (ratioA !== ratioB) return ratioA - ratioB;
+      const distA = a.candidateDistanceFromAbRouteMeters ?? 99999;
+      const distB = b.candidateDistanceFromAbRouteMeters ?? 99999;
+      return distA - distB;
+    };
+
+    const normalUsableSlots = allSlotResults.filter((slot) => {
+      const fitType = String(slot?.routeFitType || '').toUpperCase();
+      return this.isUsableMatrixRouteFitType(fitType);
+    });
+
+    const destinationUsableSlots = allSlotResults.filter((slot) => isDestinationSideSlot(slot));
+
+    const normalFeasibleSlots = normalUsableSlots.filter((slot) =>
+      this.isFeasibleFitType(String(slot?.routeFitType || '').toUpperCase()),
+    );
+
+    const sortedByUsable = normalFeasibleSlots.length > 0
+      ? [...normalFeasibleSlots].sort(sortByRouteFit)
+      : [...normalUsableSlots, ...destinationUsableSlots]
+          .sort((a, b) => {
+            const aFeasible = this.isFeasibleFitType(String(a?.routeFitType || '').toUpperCase()) || isDestinationSideSlot(a);
+            const bFeasible = this.isFeasibleFitType(String(b?.routeFitType || '').toUpperCase()) || isDestinationSideSlot(b);
+            if (aFeasible !== bFeasible) return aFeasible ? -1 : 1;
+            return sortByRouteFit(a, b);
+          });
 
     const bestSlotData = sortedByUsable.length > 0 ? sortedByUsable[0] : null;
 
