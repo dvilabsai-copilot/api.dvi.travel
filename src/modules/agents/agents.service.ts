@@ -41,22 +41,10 @@ export class AgentsService {
         ORDER BY a.agent_name ASC
       `);
 
-       const uniqueAgents = new Map<string, AgentListItemDto>();
-
-    for (const row of rows) {
-      const name = String(row.agent_name ?? "").trim();
-      if (!name) continue;
-
-      const key = name.toLowerCase();
-      if (uniqueAgents.has(key)) continue;
-
-      uniqueAgents.set(key, {
-        id: row.agent_ID,
-        name,
-      });
-    }
-
-    return Array.from(uniqueAgents.values());
+    return rows.map((row) => ({
+      id: row.agent_ID,
+      name: row.agent_name ?? "",
+    }));
   }
 
   /**
