@@ -7499,7 +7499,7 @@ export class ItinerariesService {
     const isHotelLikeRow = (row: any): boolean => {
       const type = String(row?.type || '').toLowerCase();
       const text = String(row?.text || row?.name || '').toLowerCase();
-      return type === 'hotel' || Number(row?.item_type || 0) === 6 || text.includes('check-in at hotel');
+      return type === 'hotel' || type === 'checkin' || Number(row?.item_type || 0) === 6 || text.includes('check-in at hotel') || text.includes('check-in at ');
     };
     const isTravelToHotelRow = (row: any): boolean => {
       const type = String(row?.type || '').toLowerCase();
@@ -7851,7 +7851,7 @@ export class ItinerariesService {
     const isHotelRow = (row: any) => {
       const type = String(row?.type || '').toLowerCase();
       const text = String(row?.text || row?.name || '').toLowerCase();
-      return type === 'hotel' || Number(row?.item_type || 0) === 6 || text.includes('check-in at hotel');
+      return type === 'hotel' || type === 'checkin' || Number(row?.item_type || 0) === 6 || text.includes('check-in at hotel') || text.includes('check-in at ');
     };
 
     // Debug: Log what we're checking
