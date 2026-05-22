@@ -72,6 +72,8 @@ type ManualInsertionPosition = {
   positionLabel: string;
 };
 
+type ManualHotspotCityContext = 'SOURCE_CITY' | 'DESTINATION_CITY' | 'UNKNOWN';
+
 type VehicleBuildState = 'PENDING' | 'PROCESSING' | 'READY' | 'FAILED';
 
 type VehicleBuildStatus = {
@@ -88,6 +90,12 @@ type VehicleBuildStatus = {
 export class ItinerariesService {
   private readonly vehicleBuildStatusMap = new Map<number, Omit<VehicleBuildStatus, 'source'>>();
   private readonly manualHotspotMatrixBuildLocks = new Set<string>();
+  private readonly osrmLegRuntimeCache = new Map<string, {
+    distanceKm: number | null;
+    durationMin: number | null;
+    coordinates: [number, number][];
+    cachedAt: number;
+  }>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -3164,6 +3172,7 @@ export class ItinerariesService {
           hotspot_duration: true,
           hotspot_location: true,
           hotspot_priority: true,
+          hotspot_video_url: true,
         },
         orderBy: [{ hotspot_priority: "asc" }, { hotspot_ID: "asc" }],
       });
@@ -3227,8 +3236,25 @@ export class ItinerariesService {
 
     if (ordered.length === 0) return [];
 
-    // 7) Timings
     const hotspotIds = ordered.map((h: any) => Number(h.hotspot_ID));
+
+    const hotspotGalleryRows = await (this.prisma as any).dvi_hotspot_gallery_details.findMany({
+      where: { hotspot_ID: { in: hotspotIds }, deleted: 0 },
+      orderBy: { hotspot_gallery_details_id: 'asc' },
+      select: { hotspot_ID: true, hotspot_gallery_name: true },
+    });
+
+    const hotspotGalleryMap = new Map<number, string[]>();
+    for (const g of hotspotGalleryRows || []) {
+      const hotspotId = Number(g?.hotspot_ID || 0);
+      const fileName = String(g?.hotspot_gallery_name || '').trim();
+      if (!hotspotId || !fileName) continue;
+      const urls = hotspotGalleryMap.get(hotspotId) || [];
+      urls.push(`/uploads/hotspot_gallery/${fileName}`);
+      hotspotGalleryMap.set(hotspotId, urls);
+    }
+
+    // 7) Timings
     const timings = await (this.prisma as any).dvi_hotspot_timing.findMany({
       where: { hotspot_ID: { in: hotspotIds }, deleted: 0, status: 1 },
       orderBy: { hotspot_start_time: "asc" },
@@ -3304,6 +3330,13 @@ export class ItinerariesService {
         }
 
         const actionDisabled = availabilityStatus === 'ACTIVE_THIS_ROUTE' || availabilityStatus === 'EXCLUDED_BY_ROUTE';
+        const cityContext = this.classifyManualHotspotCityContext({
+          location_name: sourceName,
+          next_visiting_location: destName,
+        }, {
+          hotspot_location: h.hotspot_location,
+          hotspot_name: h.hotspot_name,
+        });
 
         return {
           id: hotspotId,
@@ -3314,6 +3347,9 @@ export class ItinerariesService {
           timeSpend: h.hotspot_duration ? new Date(h.hotspot_duration).getUTCHours() : 0,
           locationMap: h.hotspot_location || null,
           timings: timingMap.get(h.hotspot_ID) || "No timings available",
+          image: (hotspotGalleryMap.get(hotspotId) || [])[0] || null,
+          galleryImages: hotspotGalleryMap.get(hotspotId) || [],
+          videoUrl: h.hotspot_video_url || null,
           visitAgain: isActiveThisRoute || isActiveOtherRoute,
           alreadyAdded: isActiveThisRoute || isActiveOtherRoute,
           alreadyAddedOnOtherRoute: isActiveOtherRoute,
@@ -3321,6 +3357,7 @@ export class ItinerariesService {
           availabilityReason,
           actionDisabled,
           buttonLabel: actionDisabled ? 'Already added' : 'Preview',
+          cityContext,
         };
       });
 
@@ -3353,7 +3390,300 @@ export class ItinerariesService {
     anchorType: 'after_travel';
     anchorIndex: number;
   }) {
-    return this.getAvailableHotspots(Number(data.routeId));
+    const routeId = Number(data?.routeId || 0);
+    const anchorIndex = Number(data?.anchorIndex || 0);
+    const baseHotspots = await this.getAvailableHotspots(routeId);
+    const safeBaseHotspots = Array.isArray(baseHotspots) ? baseHotspots : [];
+
+    const fallbackMeta = {
+      directToggleOff: false,
+      sourceCityKey: '',
+      destinationCityKey: '',
+      destinationReachedTime: null as string | null,
+      destinationReachedAfter3Pm: false,
+      destinationCityHotspotsHidden: 0,
+      anchorType: data?.anchorType || null,
+      anchorIndex,
+      anchorFrom: null as string | null,
+      anchorTo: null as string | null,
+      filterFallbackUsed: false,
+    };
+
+    try {
+      const route = await (this.prisma as any).dvi_itinerary_route_details.findFirst({
+        where: {
+          itinerary_route_ID: routeId,
+          deleted: 0,
+        },
+        select: {
+          itinerary_plan_ID: true,
+          location_name: true,
+          next_visiting_location: true,
+          direct_to_next_visiting_place: true,
+        },
+      });
+
+      const sourceCityKey = this.deriveLooseCityKey(String(route?.location_name || ''));
+      const destinationCityKey = this.deriveLooseCityKey(String(route?.next_visiting_location || ''));
+      const directToggleOff = Number(route?.direct_to_next_visiting_place || 0) !== 1;
+
+      const routeRows = await (this.prisma as any).dvi_itinerary_route_hotspot_details.findMany({
+        where: {
+          itinerary_route_ID: routeId,
+          deleted: 0,
+          status: 1,
+          item_type: { in: [3, 4, 5, 6] },
+        },
+        select: {
+          route_hotspot_ID: true,
+          hotspot_ID: true,
+          hotspot_order: true,
+          item_type: true,
+          via_location_name: true,
+          hotspot_start_time: true,
+          hotspot_end_time: true,
+        },
+        orderBy: [
+          { hotspot_order: 'asc' },
+          { route_hotspot_ID: 'asc' },
+        ],
+      });
+
+      const hotspotIds = Array.from(
+        new Set(
+          (routeRows || [])
+            .map((row: any) => Number(row?.hotspot_ID || 0))
+            .filter((id: number) => Number.isFinite(id) && id > 0),
+        ),
+      );
+
+      const hotspotMasters = hotspotIds.length > 0
+        ? await (this.prisma as any).dvi_hotspot_place.findMany({
+            where: {
+              hotspot_ID: { in: hotspotIds },
+              deleted: 0,
+            },
+            select: {
+              hotspot_ID: true,
+              hotspot_name: true,
+              hotspot_location: true,
+            },
+          })
+        : [];
+      const masterById = new Map<number, any>(
+        (hotspotMasters || []).map((row: any) => [Number(row?.hotspot_ID || 0), row]),
+      );
+
+      const toMinutesFromDate = (value: unknown): number | null => {
+        if (!value) return null;
+        try {
+          const hms = TimeConverter.toTimeString(value as any);
+          if (!hms) return null;
+          return Math.floor(this.hmsToSeconds(hms) / 60);
+        } catch {
+          return null;
+        }
+      };
+
+      const toDisplayTime = (value: unknown): string | null => {
+        if (!value) return null;
+        try {
+          const hms = TimeConverter.toTimeString(value as any);
+          const [hh, mm] = String(hms || '').split(':');
+          if (!hh || !mm) return null;
+          return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+        } catch {
+          return null;
+        }
+      };
+
+      const parseTravelFromTo = (value: unknown): { from: string; to: string } => {
+        const raw = String(value || '').trim();
+        if (!raw) return { from: '', to: '' };
+
+        const fromToMatch = raw.match(/^travell?ing\s+from\s+(.+?)\s+to\s+(.+)$/i);
+        if (fromToMatch) {
+          return {
+            from: String(fromToMatch[1] || '').trim(),
+            to: String(fromToMatch[2] || '').trim(),
+          };
+        }
+
+        const toOnlyMatch = raw.match(/^travel\s+to\s+(.+)$/i);
+        if (toOnlyMatch) {
+          return {
+            from: '',
+            to: String(toOnlyMatch[1] || '').trim(),
+          };
+        }
+
+        return { from: '', to: '' };
+      };
+
+      const isDestinationMatch = (value: unknown): boolean => {
+        const normalized = this.normalizeLocationText(value || '');
+        const key = this.deriveLooseCityKey(String(value || ''));
+        if (!destinationCityKey) return false;
+        if (key && key === destinationCityKey) return true;
+        return normalized.includes(destinationCityKey);
+      };
+
+      let destinationReachedMinutes: number | null = null;
+      let destinationReachedTime: string | null = null;
+      let destinationReachedOrder: number | null = null;
+
+      for (const row of routeRows || []) {
+        if (!row) continue;
+        const itemType = Number(row?.item_type || 0);
+        const hotspotId = Number(row?.hotspot_ID || 0);
+        const master = masterById.get(hotspotId);
+        const rowName = String(master?.hotspot_name || '');
+        const rowLocation = String(master?.hotspot_location || '');
+
+        const startMinutes = toMinutesFromDate(row?.hotspot_start_time);
+        const endMinutes = toMinutesFromDate(row?.hotspot_end_time);
+        const candidateMinutes = startMinutes ?? endMinutes;
+
+        if (itemType === 6 && candidateMinutes !== null) {
+          destinationReachedMinutes = candidateMinutes;
+          destinationReachedTime = toDisplayTime(row?.hotspot_start_time || row?.hotspot_end_time);
+          destinationReachedOrder = Number(row?.hotspot_order || 0) || null;
+          break;
+        }
+
+        if (itemType === 4 && candidateMinutes !== null) {
+          const matchedDestination = isDestinationMatch(rowLocation) || isDestinationMatch(rowName);
+          if (matchedDestination) {
+            destinationReachedMinutes = candidateMinutes;
+            destinationReachedTime = toDisplayTime(row?.hotspot_start_time || row?.hotspot_end_time);
+            destinationReachedOrder = Number(row?.hotspot_order || 0) || null;
+            break;
+          }
+        }
+      }
+
+      const destinationReachedAfter3Pm = destinationReachedMinutes !== null && destinationReachedMinutes >= (15 * 60);
+
+      const travelRows = (routeRows || []).filter((row: any) => {
+        const itemType = Number(row?.item_type || 0);
+        return itemType === 3 || itemType === 5;
+      });
+      const selectedAnchorRow = travelRows[anchorIndex] || null;
+      const anchorOrder = Number(selectedAnchorRow?.hotspot_order || 0) || null;
+      const parsedAnchor = parseTravelFromTo(selectedAnchorRow?.via_location_name || '');
+      const anchorFromKey = this.deriveLooseCityKey(parsedAnchor.from || '');
+      const anchorToKey = this.deriveLooseCityKey(parsedAnchor.to || '');
+
+      const anchorInsideSourcePortion = !!sourceCityKey && (
+        anchorFromKey === sourceCityKey
+        || anchorToKey === sourceCityKey
+      );
+      const anchorBeforeDestination = destinationReachedOrder != null && anchorOrder != null
+        ? anchorOrder < destinationReachedOrder
+        : anchorInsideSourcePortion;
+
+      console.log('[AddHotspotFilter] route_context', {
+        planId: Number(route?.itinerary_plan_ID || data?.planId || 0),
+        routeId,
+        directToggleOff,
+        sourceCityKey,
+        destinationCityKey,
+        anchorType: data?.anchorType || null,
+        anchorIndex,
+        anchorFrom: parsedAnchor.from || null,
+        anchorTo: parsedAnchor.to || null,
+        anchorInsideSourcePortion,
+        anchorBeforeDestination,
+      });
+
+      console.log('[AddHotspotFilter] destination_after_3pm', {
+        destinationReachedTime,
+        destinationReachedAfter3Pm,
+        destinationReachedOrder,
+      });
+
+      const shouldHideDestinationHotspots = (
+        directToggleOff
+        && destinationReachedAfter3Pm
+        && (anchorInsideSourcePortion || anchorBeforeDestination)
+      );
+
+      let destinationCityHotspotsHidden = 0;
+      const hotspots = safeBaseHotspots.filter((row: any) => {
+        if (!shouldHideDestinationHotspots) return true;
+
+        const name = String(row?.name || '').trim();
+        const locationMap = String(row?.locationMap || row?.hotspot_location || '').trim();
+        const rowSourceKey = this.deriveLooseCityKey(locationMap || name);
+        const rowNormalizedLocation = this.normalizeLocationText(locationMap || name);
+
+        const sourceMatch = !!sourceCityKey && (
+          rowSourceKey === sourceCityKey || rowNormalizedLocation.includes(sourceCityKey)
+        );
+        if (sourceMatch) return true;
+
+        const destinationMatch = !!destinationCityKey && (
+          rowSourceKey === destinationCityKey
+          || rowNormalizedLocation.includes(destinationCityKey)
+          || this.normalizeLocationText(name).includes(destinationCityKey)
+        );
+
+        if (destinationMatch) {
+          destinationCityHotspotsHidden += 1;
+          console.log('[AddHotspotFilter] hiding_destination_hotspot', {
+            hotspotId: Number(row?.id || 0),
+            hotspotName: name,
+            hotspotLocation: locationMap,
+          });
+          return false;
+        }
+
+        return true;
+      });
+
+      const hotspotFilterMeta = {
+        directToggleOff,
+        sourceCityKey,
+        destinationCityKey,
+        destinationReachedTime,
+        destinationReachedAfter3Pm,
+        destinationCityHotspotsHidden,
+        anchorType: data?.anchorType || null,
+        anchorIndex,
+        anchorFrom: parsedAnchor.from || null,
+        anchorTo: parsedAnchor.to || null,
+        filterFallbackUsed: false,
+      };
+
+      console.log('[AddHotspotFilter] result_counts', {
+        beforeCount: safeBaseHotspots.length,
+        afterCount: hotspots.length,
+        destinationCityHotspotsHidden,
+        shouldHideDestinationHotspots,
+      });
+
+      return {
+        hotspots,
+        hotspotFilterMeta,
+      };
+    } catch (error: any) {
+      console.error('[AddHotspotFilter] fallback_due_to_error', {
+        routeId,
+        planId: Number(data?.planId || 0),
+        anchorType: data?.anchorType || null,
+        anchorIndex,
+        message: String(error?.message || error),
+        stack: String(error?.stack || ''),
+      });
+
+      return {
+        hotspots: safeBaseHotspots,
+        hotspotFilterMeta: {
+          ...fallbackMeta,
+          filterFallbackUsed: true,
+        },
+      };
+    }
   }
 
 
@@ -7043,6 +7373,20 @@ export class ItinerariesService {
     const fromHotspotId = Number(bestSlot?.fromHotspotId || 0);
     const toHotspotId = Number(bestSlot?.toHotspotId || 0);
     if (!fromHotspotId || !toHotspotId) {
+      if (
+        params?.manualInsertionFit?.destinationInsertionMode === true
+        && String(bestSlot?.source || '') === 'DESTINATION_HOTEL_SIDE'
+        && Number(params?.manualInsertionFit?.destinationAnchorOrder || 0) > 0
+      ) {
+        return {
+          shouldUseMatrixSlot: true,
+          fromHotspotId,
+          toHotspotId,
+          gapIndex: Number(params?.manualInsertionFit?.destinationAnchorOrder),
+          reason: 'DESTINATION_HOTEL_SIDE_SLOT_RESOLVED',
+        };
+      }
+
       return {
         shouldUseMatrixSlot: false,
         fromHotspotId,
@@ -9133,23 +9477,178 @@ export class ItinerariesService {
     fromHotspotId: number,
     toHotspotId: number,
   ): Promise<number | null> {
-    try {
-      const result: any = await (tx as any).$queryRawUnsafe(`
-        SELECT osrm_duration_min
-        FROM hotspot_route_matrix
-        WHERE from_hotspot_id = ?
-          AND to_hotspot_id = ?
-          AND process_status = 'DONE'
-        LIMIT 1
-      `, fromHotspotId, toHotspotId);
-      if (Array.isArray(result) && result.length > 0) {
-        const durationMin = Number(result[0]?.osrm_duration_min ?? null);
-        return Number.isFinite(durationMin) && durationMin > 0 ? durationMin : null;
-      }
-      return null;
-    } catch {
+    const leg = await this.getCachedRouteMatrixLeg(tx, fromHotspotId, toHotspotId);
+    if (leg.durationMin != null && Number.isFinite(Number(leg.durationMin)) && Number(leg.durationMin) > 0) {
+      return Number(leg.durationMin);
+    }
+    return null;
+  }
+
+  private getOsrmLegCacheTtlMs(): number {
+    const raw = Number(process.env.MANUAL_HOTSPOT_OSRM_CACHE_TTL_MS || 10 * 60 * 1000);
+    return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 10 * 60 * 1000;
+  }
+
+  private getOsrmLegCacheKey(fromHotspotId: number, toHotspotId: number): string {
+    return `${Number(fromHotspotId || 0)}_${Number(toHotspotId || 0)}`;
+  }
+
+  private getOsrmLegFromRuntimeCache(
+    fromHotspotId: number,
+    toHotspotId: number,
+    allowReverse: boolean,
+  ): {
+    distanceKm: number | null;
+    durationMin: number | null;
+    coordinates: [number, number][];
+    usedReverse: boolean;
+  } | null {
+    const ttlMs = this.getOsrmLegCacheTtlMs();
+    const now = Date.now();
+
+    const directKey = this.getOsrmLegCacheKey(fromHotspotId, toHotspotId);
+    const direct = this.osrmLegRuntimeCache.get(directKey);
+    if (direct && now - direct.cachedAt <= ttlMs) {
+      return {
+        distanceKm: direct.distanceKm,
+        durationMin: direct.durationMin,
+        coordinates: Array.isArray(direct.coordinates) ? [...direct.coordinates] : [],
+        usedReverse: false,
+      };
+    }
+
+    if (direct && now - direct.cachedAt > ttlMs) {
+      this.osrmLegRuntimeCache.delete(directKey);
+    }
+
+    if (!allowReverse) {
       return null;
     }
+
+    const reverseKey = this.getOsrmLegCacheKey(toHotspotId, fromHotspotId);
+    const reverse = this.osrmLegRuntimeCache.get(reverseKey);
+    if (!reverse) return null;
+    if (now - reverse.cachedAt > ttlMs) {
+      this.osrmLegRuntimeCache.delete(reverseKey);
+      return null;
+    }
+
+    return {
+      distanceKm: reverse.distanceKm,
+      durationMin: reverse.durationMin,
+      coordinates: Array.isArray(reverse.coordinates) ? [...reverse.coordinates].reverse() : [],
+      usedReverse: true,
+    };
+  }
+
+  private setOsrmLegRuntimeCache(
+    fromHotspotId: number,
+    toHotspotId: number,
+    payload: {
+      distanceKm: number | null;
+      durationMin: number | null;
+      coordinates: [number, number][];
+    },
+  ): void {
+    const key = this.getOsrmLegCacheKey(fromHotspotId, toHotspotId);
+    this.osrmLegRuntimeCache.set(key, {
+      distanceKm: payload.distanceKm,
+      durationMin: payload.durationMin,
+      coordinates: Array.isArray(payload.coordinates) ? [...payload.coordinates] : [],
+      cachedAt: Date.now(),
+    });
+  }
+
+  private async resolveOsrmLegBetweenHotspots(
+    tx: any,
+    fromHotspotId: number,
+    toHotspotId: number,
+    allowReverse: boolean,
+  ): Promise<{
+    distanceKm: number | null;
+    durationMin: number | null;
+    coordinates: [number, number][];
+    usedReverse: boolean;
+    osrmFailed: boolean;
+  }> {
+    const fromId = Number(fromHotspotId || 0);
+    const toId = Number(toHotspotId || 0);
+    if (!fromId || !toId || fromId === toId) {
+      return {
+        distanceKm: null,
+        durationMin: null,
+        coordinates: [],
+        usedReverse: false,
+        osrmFailed: true,
+      };
+    }
+
+    const cached = this.getOsrmLegFromRuntimeCache(fromId, toId, allowReverse);
+    if (cached) {
+      return {
+        distanceKm: cached.distanceKm,
+        durationMin: cached.durationMin,
+        coordinates: cached.coordinates,
+        usedReverse: cached.usedReverse,
+        osrmFailed: false,
+      };
+    }
+
+    const endpoints = await (tx as any).dvi_hotspot_place.findMany({
+      where: {
+        hotspot_ID: { in: [fromId, toId] },
+        deleted: 0,
+      },
+      select: {
+        hotspot_ID: true,
+        hotspot_latitude: true,
+        hotspot_longitude: true,
+      },
+    });
+
+    const endpointMap = new Map<number, any>((endpoints || []).map((row: any) => [Number(row?.hotspot_ID || 0), row]));
+    const from = endpointMap.get(fromId);
+    const to = endpointMap.get(toId);
+
+    const fromLat = Number(from?.hotspot_latitude);
+    const fromLng = Number(from?.hotspot_longitude);
+    const toLat = Number(to?.hotspot_latitude);
+    const toLng = Number(to?.hotspot_longitude);
+
+    if (!from || !to || !Number.isFinite(fromLat) || !Number.isFinite(fromLng) || !Number.isFinite(toLat) || !Number.isFinite(toLng)) {
+      return {
+        distanceKm: null,
+        durationMin: null,
+        coordinates: [],
+        usedReverse: false,
+        osrmFailed: true,
+      };
+    }
+
+    const route = await this.getOsrmRouteGeometry(fromLat, fromLng, toLat, toLng);
+    if (!route || !Array.isArray(route.coordinates) || route.coordinates.length < 2) {
+      return {
+        distanceKm: null,
+        durationMin: null,
+        coordinates: [],
+        usedReverse: false,
+        osrmFailed: true,
+      };
+    }
+
+    this.setOsrmLegRuntimeCache(fromId, toId, {
+      distanceKm: route.distanceKm != null ? Number(route.distanceKm) : null,
+      durationMin: route.durationMin != null ? Number(route.durationMin) : null,
+      coordinates: route.coordinates,
+    });
+
+    return {
+      distanceKm: route.distanceKm != null ? Number(route.distanceKm) : null,
+      durationMin: route.durationMin != null ? Number(route.durationMin) : null,
+      coordinates: route.coordinates,
+      usedReverse: false,
+      osrmFailed: false,
+    };
   }
 
   private async getCachedRouteDistanceKm(
@@ -9157,23 +9656,11 @@ export class ItinerariesService {
     fromHotspotId: number,
     toHotspotId: number,
   ): Promise<number | null> {
-    try {
-      const result: any = await (tx as any).$queryRawUnsafe(`
-        SELECT osrm_distance_km
-        FROM hotspot_route_matrix
-        WHERE from_hotspot_id = ?
-          AND to_hotspot_id = ?
-          AND process_status = 'DONE'
-        LIMIT 1
-      `, fromHotspotId, toHotspotId);
-      if (Array.isArray(result) && result.length > 0) {
-        const distanceKm = Number(result[0]?.osrm_distance_km ?? null);
-        return Number.isFinite(distanceKm) && distanceKm > 0 ? distanceKm : null;
-      }
-      return null;
-    } catch {
-      return null;
+    const leg = await this.getCachedRouteMatrixLeg(tx, fromHotspotId, toHotspotId);
+    if (leg.distanceKm != null && Number.isFinite(Number(leg.distanceKm)) && Number(leg.distanceKm) >= 0) {
+      return Number(leg.distanceKm);
     }
+    return null;
   }
 
   private async getCachedRouteMatrixLeg(
@@ -9181,27 +9668,21 @@ export class ItinerariesService {
     fromHotspotId: number,
     toHotspotId: number,
   ): Promise<{ distanceKm: number | null; durationMin: number | null }> {
-    if (!tx || !fromHotspotId || !toHotspotId) {
+    if (!tx || !fromHotspotId || !toHotspotId || Number(fromHotspotId) === Number(toHotspotId)) {
       return { distanceKm: null, durationMin: null };
     }
     try {
-      const result: any = await (tx as any).$queryRawUnsafe(`
-        SELECT osrm_distance_km, osrm_duration_min
-        FROM hotspot_route_matrix
-        WHERE from_hotspot_id = ?
-          AND to_hotspot_id = ?
-          AND process_status = 'DONE'
-        LIMIT 1
-      `, fromHotspotId, toHotspotId);
+      const leg = await this.resolveOsrmLegBetweenHotspots(
+        tx,
+        Number(fromHotspotId),
+        Number(toHotspotId),
+        true,
+      );
 
-      if (!Array.isArray(result) || result.length === 0) {
-        return { distanceKm: null, durationMin: null };
-      }
-
-      const distanceKm = Number(result[0]?.osrm_distance_km ?? null);
-      const durationMin = Number(result[0]?.osrm_duration_min ?? null);
+      const distanceKm = Number(leg?.distanceKm ?? null);
+      const durationMin = Number(leg?.durationMin ?? null);
       return {
-        distanceKm: Number.isFinite(distanceKm) && distanceKm > 0 ? distanceKm : null,
+        distanceKm: Number.isFinite(distanceKm) && distanceKm >= 0 ? distanceKm : null,
         durationMin: Number.isFinite(durationMin) && durationMin > 0 ? durationMin : null,
       };
     } catch {
@@ -10337,16 +10818,59 @@ export class ItinerariesService {
     );
 
     const hasValidMatrixSlot = this.hasValidManualMatrixSlot(manualInsertionFit);
-    const requiresMatrixBuild = manualInsertionFit?.requiresMatrixBuild === true || !hasValidMatrixSlot;
+    const destinationSlotNotFound = (
+      manualInsertionFit?.destinationInsertionMode === true
+      && String(manualInsertionFit?.previewBlockReason || '').toUpperCase() === 'DESTINATION_SLOT_NOT_FOUND'
+    );
+    const destinationHotelSideReady = (
+      manualInsertionFit?.destinationInsertionMode === true
+      && String(manualInsertionFit?.code || '').toUpperCase() === 'MANUAL_HOTSPOT_DESTINATION_INSERT_PREVIEW_READY'
+    );
+    const requiresMatrixBuild = (
+      manualInsertionFit?.requiresMatrixBuild === true
+      || (!hasValidMatrixSlot && !destinationHotelSideReady)
+    ) && !destinationSlotNotFound;
     const missingMatrixBuildSuggestion = this.buildMissingMatrixBuildSuggestion(
       Number(planId),
       Number(routeId),
       Number(preFocusHotspotId),
     );
 
+    if (destinationSlotNotFound && options?.previewOnly === true) {
+      return {
+        success: false,
+        inserted: false,
+        selectedIncluded: false,
+        code: 'DESTINATION_SLOT_NOT_FOUND',
+        message: 'No valid destination-side insertion slot was found after destination is reached.',
+        planId: Number(planId),
+        routeId: Number(routeId),
+        hotspotId: Number(preFocusHotspotId),
+        hotspotIds: requestedHotspotIds,
+        fullTimeline: baselineTimelineForMatrix,
+        routeTimeline: baselineTimelineForMatrix,
+        manualInsertionFit,
+        validation: {
+          passesScheduleRules: false,
+          readyToApply: false,
+          requiresPriorityConfirmation: false,
+          stillUnschedulable: true,
+          routeEndOverflowMinutes: 0,
+          openingHourConflictCount: 0,
+          selectedManualConflictCount: 0,
+          scheduledSelectedManualCount: 0,
+          unscheduledManualCount: requestedHotspotIds.length,
+          requiresMatrixBuild: false,
+          reason: 'DESTINATION_SLOT_NOT_FOUND',
+        },
+      };
+    }
+
     if (requiresMatrixBuild) {
       if (options?.previewOnly === true) {
         const osrmRouteCheckFailed = String(manualInsertionFit?.reason || manualInsertionFit?.previewBlockReason || '') === 'OSRM_ROUTE_CHECK_FAILED';
+        const noFeasibleRouteSlot = String(manualInsertionFit?.previewBlockReason || manualInsertionFit?.code || '').toUpperCase() === 'NO_FEASIBLE_ROUTE_SLOT'
+          || String(manualInsertionFit?.code || '').toUpperCase() === 'MANUAL_HOTSPOT_NO_FEASIBLE_ROUTE_SLOT';
         const blockedValidation = {
           passesScheduleRules: false,
           readyToApply: false,
@@ -10357,20 +10881,24 @@ export class ItinerariesService {
           selectedManualConflictCount: 0,
           scheduledSelectedManualCount: 0,
           unscheduledManualCount: requestedHotspotIds.length,
-          requiresMatrixBuild: true,
+          requiresMatrixBuild: !noFeasibleRouteSlot,
           reason: osrmRouteCheckFailed
             ? 'OSRM_ROUTE_CHECK_FAILED'
-            : 'Route-fit matrix data missing for selected hotspot and current route.',
+            : noFeasibleRouteSlot
+              ? 'NO_FEASIBLE_ROUTE_SLOT'
+              : 'MATRIX_DATA_MISSING',
         };
 
         return {
           success: false,
           inserted: false,
           selectedIncluded: false,
-          code: 'MATRIX_DATA_MISSING',
+          code: noFeasibleRouteSlot ? 'MANUAL_HOTSPOT_NO_FEASIBLE_ROUTE_SLOT' : 'MATRIX_DATA_MISSING',
           message: osrmRouteCheckFailed
             ? 'OSRM route validation failed while checking source-city route anchor.'
-            : 'Route-fit matrix data is missing for this hotspot and current route. Build matrix before preview/apply.',
+            : noFeasibleRouteSlot
+              ? 'Matrix data exists, but this hotspot is off-route or backtracking for all current route segments.'
+              : 'Route-fit matrix data is missing for this hotspot and current route. Build matrix before preview/apply.',
           planId: Number(planId),
           routeId: Number(routeId),
           hotspotId: Number(preFocusHotspotId),
@@ -10390,7 +10918,9 @@ export class ItinerariesService {
             unscheduledManualHotspots: requestedHotspotIds.map((id) => ({
               id: Number(id),
               name: String(hotspotMasters.find((m: any) => Number(m?.hotspot_ID || 0) === Number(id))?.hotspot_name || `Hotspot #${id}`),
-              reason: 'Matrix data missing. Build route matrix for this candidate before preview/apply.',
+              reason: noFeasibleRouteSlot
+                ? 'Matrix data exists, but this hotspot is off-route or backtracking for all current route segments.'
+                : 'Matrix data missing. Build route matrix for this candidate before preview/apply.',
             })),
             shiftedHotspots: [],
             deferredHotspots: [],
@@ -10400,7 +10930,9 @@ export class ItinerariesService {
             timingAdjusted: false,
             reason: osrmRouteCheckFailed
               ? 'OSRM_ROUTE_CHECK_FAILED'
-              : 'Route-fit matrix data missing for selected hotspot and current route.',
+              : noFeasibleRouteSlot
+                ? 'NO_FEASIBLE_ROUTE_SLOT'
+                : 'MATRIX_DATA_MISSING',
             validation: blockedValidation,
             slotInsights: [],
             insertionMetrics: this.buildDistanceAndToFroLabels({
@@ -10503,6 +11035,8 @@ export class ItinerariesService {
       {
         allowTopPriorityRemoval: options?.allowTopPriorityRemoval === true,
         previewOnly: options?.previewOnly === true,
+        destinationInsertionMode: manualInsertionFit?.destinationInsertionMode === true,
+        destinationMinCandidateIndex: Number(manualInsertionFit?.destinationMinCandidateIndex || 0) || undefined,
       },
     );
 
@@ -10581,6 +11115,18 @@ export class ItinerariesService {
       manualInsertionFit,
       Number(focusHotspotId),
     );
+
+    if (manualInsertionFit?.destinationInsertionMode === true) {
+      console.log('[ManualDestinationInsert] timeline_built',
+        (Array.isArray(adjustedPreviewTimeline) ? adjustedPreviewTimeline : []).map((row: any, index: number) => ({
+          index,
+          type: String(row?.type || row?.item_type || ''),
+          text: String(row?.text || row?.name || ''),
+          hotspotId: Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || 0) || null,
+          timeRange: String(row?.timeRange || ''),
+        })),
+      );
+    }
 
     // ── Fix confirmation logic: don't mark requiresConfirmation for feasible matrix slots ──
     // If the matrix bestSlot is feasible (ON_ROUTE/MINOR_DETOUR) and no hotspots are actually removed,
@@ -11605,7 +12151,15 @@ export class ItinerariesService {
       && Number(bestSlot?.toHotspotId || 0) > 0
     );
 
-    return chosenSlotValid || sourceExitAnchorBestSlotValid;
+    const destinationHotelSideBestSlotValid = (
+      !!bestSlot
+      && String(bestSlot?.source || '') === 'DESTINATION_HOTEL_SIDE'
+      && this.isFeasibleFitType(String(bestSlot?.routeFitType || '').toUpperCase())
+      && Number(bestSlot?.fromHotspotId || 0) > 0
+      && Number(manualInsertionFit?.destinationAnchorOrder || 0) > 0
+    );
+
+    return chosenSlotValid || sourceExitAnchorBestSlotValid || destinationHotelSideBestSlotValid;
   }
 
   private buildMissingMatrixBuildSuggestion(planId: number, routeId: number, candidateHotspotId: number) {
@@ -11661,6 +12215,41 @@ export class ItinerariesService {
     }
 
     return String(primary.split(' ')[0] || '').trim();
+  }
+
+  private classifyManualHotspotCityContext(route: any, hotspot: any): ManualHotspotCityContext {
+    const sourceRaw = String(route?.location_name || route?.source_location || '').trim();
+    const destinationRaw = String(route?.next_visiting_location || route?.destination_location || '').trim();
+
+    const sourceKey = this.deriveLooseCityKey(sourceRaw);
+    const destinationKey = this.deriveLooseCityKey(destinationRaw);
+
+    const hotspotLocation = String(hotspot?.hotspot_location || hotspot?.locationMap || '').trim();
+    const hotspotName = String(hotspot?.hotspot_name || hotspot?.name || '').trim();
+
+    const locationNorm = this.normalizeLocationText(hotspotLocation);
+    const nameNorm = this.normalizeLocationText(hotspotName);
+    const locationCityNorm = normalizeCityName(hotspotLocation);
+    const nameCityNorm = normalizeCityName(hotspotName);
+
+    const sourceNorm = normalizeCityName(sourceRaw);
+    const destinationNorm = normalizeCityName(destinationRaw);
+
+    const matchesSource = (
+      (!!sourceKey && (locationNorm.includes(sourceKey) || nameNorm.includes(sourceKey)))
+      || (!!sourceNorm && (locationCityNorm === sourceNorm || nameCityNorm === sourceNorm))
+    );
+
+    const matchesDestination = (
+      (!!destinationKey && (locationNorm.includes(destinationKey) || nameNorm.includes(destinationKey)))
+      || (!!destinationNorm && (locationCityNorm === destinationNorm || nameCityNorm === destinationNorm))
+    );
+
+    if (matchesDestination && !matchesSource) return 'DESTINATION_CITY';
+    if (matchesSource && !matchesDestination) return 'SOURCE_CITY';
+    if (matchesDestination) return 'DESTINATION_CITY';
+    if (matchesSource) return 'SOURCE_CITY';
+    return 'UNKNOWN';
   }
 
   private parseRouteCoordinates(raw: unknown): [number, number][] {
@@ -12166,6 +12755,55 @@ export class ItinerariesService {
     return insertedRow;
   }
 
+  private async getRouteBetweenRejectionRow(
+    tx: any,
+    fromHotspotId: number,
+    toHotspotId: number,
+    betweenHotspotId: number,
+  ): Promise<any | null> {
+    const fromId = Number(fromHotspotId || 0);
+    const toId = Number(toHotspotId || 0);
+    const betweenId = Number(betweenHotspotId || 0);
+    if (!fromId || !toId || !betweenId) {
+      return null;
+    }
+
+    const rows: any[] = await (tx as any).$queryRawUnsafe(
+      `
+      SELECT
+        from_hotspot_id,
+        to_hotspot_id,
+        between_hotspot_id,
+        rejection_code,
+        rejection_reason,
+        route_fit_type,
+        candidate_distance_from_ab_route_meters,
+        road_detour_km,
+        road_detour_ratio,
+        error_message
+      FROM hotspot_route_between_rejections
+      WHERE (
+        (from_hotspot_id = ? AND to_hotspot_id = ? AND between_hotspot_id = ?)
+        OR
+        (from_hotspot_id = ? AND to_hotspot_id = ? AND between_hotspot_id = ?)
+      )
+      LIMIT 1
+      `,
+      fromId,
+      toId,
+      betweenId,
+      toId,
+      fromId,
+      betweenId,
+    );
+
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return null;
+    }
+
+    return rows[0];
+  }
+
   private async findLastSourceCityHotspotOnOsrmRoute(
     tx: any,
     params: {
@@ -12460,79 +13098,8 @@ export class ItinerariesService {
     const toId = Number(toHotspotId || 0);
     if (!fromId || !toId || fromId === toId) return null;
 
-    const rows: any[] = await (tx as any).$queryRawUnsafe(
-      `
-      SELECT
-        from_hotspot_id,
-        to_hotspot_id,
-        osrm_distance_km,
-        osrm_duration_min,
-        route_coordinates
-      FROM hotspot_route_matrix
-      WHERE process_status = 'DONE'
-        AND (
-          (from_hotspot_id = ? AND to_hotspot_id = ?)
-          OR
-          (from_hotspot_id = ? AND to_hotspot_id = ?)
-        )
-      ORDER BY CASE
-        WHEN from_hotspot_id = ? AND to_hotspot_id = ? THEN 0
-        ELSE 1
-      END, updated_at DESC
-      LIMIT 2
-      `,
-      fromId,
-      toId,
-      toId,
-      fromId,
-      fromId,
-      toId,
-    );
-
-    if (Array.isArray(rows) && rows.length > 0) {
-      for (const row of rows) {
-        const usedReverse =
-          Number(row?.from_hotspot_id || 0) === toId
-          && Number(row?.to_hotspot_id || 0) === fromId;
-        const parsed = this.parseRouteCoordinates(row?.route_coordinates || null);
-        if (parsed.length >= 2) {
-          return {
-            routeCoordinates: usedReverse ? [...parsed].reverse() : parsed,
-            distanceKm: row?.osrm_distance_km != null ? Number(row.osrm_distance_km) : null,
-            durationMin: row?.osrm_duration_min != null ? Number(row.osrm_duration_min) : null,
-            usedReverse,
-            osrmFallbackUsed: false,
-            osrmFailed: false,
-          };
-        }
-      }
-    }
-
-    const endpoints = await (tx as any).dvi_hotspot_place.findMany({
-      where: {
-        hotspot_ID: { in: [fromId, toId] },
-        deleted: 0,
-      },
-      select: {
-        hotspot_ID: true,
-        hotspot_name: true,
-        hotspot_latitude: true,
-        hotspot_longitude: true,
-      },
-    });
-
-    const endpointMap = new Map<number, any>(
-      (endpoints || []).map((row: any) => [Number(row.hotspot_ID || 0), row]),
-    );
-    const from = endpointMap.get(fromId);
-    const to = endpointMap.get(toId);
-
-    const fromLat = Number(from?.hotspot_latitude);
-    const fromLng = Number(from?.hotspot_longitude);
-    const toLat = Number(to?.hotspot_latitude);
-    const toLng = Number(to?.hotspot_longitude);
-
-    if (!from || !to || !Number.isFinite(fromLat) || !Number.isFinite(fromLng) || !Number.isFinite(toLat) || !Number.isFinite(toLng)) {
+    const leg = await this.resolveOsrmLegBetweenHotspots(tx, fromId, toId, true);
+    if (!leg || leg.osrmFailed || !Array.isArray(leg.coordinates) || leg.coordinates.length < 2) {
       return {
         routeCoordinates: [],
         distanceKm: null,
@@ -12543,110 +13110,14 @@ export class ItinerariesService {
       };
     }
 
-    const osrmBaseUrl = String(process.env.OSRM_BASE_URL || 'http://localhost:5000/route/v1/driving').trim();
-    const url = `${osrmBaseUrl}/${fromLng},${fromLat};${toLng},${toLat}?overview=full&geometries=geojson&steps=false`;
-
-    try {
-      const response = await fetch(url);
-      if (!response.ok) {
-        return {
-          routeCoordinates: [],
-          distanceKm: null,
-          durationMin: null,
-          usedReverse: false,
-          osrmFallbackUsed: true,
-          osrmFailed: true,
-        };
-      }
-
-      const payload: any = await response.json();
-      const route = Array.isArray(payload?.routes) ? payload.routes[0] : null;
-      const coordinates = this.parseRouteCoordinates(route?.geometry?.coordinates || null);
-      if (coordinates.length < 2) {
-        return {
-          routeCoordinates: [],
-          distanceKm: null,
-          durationMin: null,
-          usedReverse: false,
-          osrmFallbackUsed: true,
-          osrmFailed: true,
-        };
-      }
-
-      const distanceKm = route?.distance != null ? Number(route.distance) / 1000 : null;
-      const durationMin = route?.duration != null ? Number(route.duration) / 60 : null;
-
-      try {
-        await (tx as any).$executeRawUnsafe(
-          `
-          INSERT INTO hotspot_route_matrix (
-            from_hotspot_id,
-            to_hotspot_id,
-            from_name,
-            to_name,
-            from_lat,
-            from_lng,
-            to_lat,
-            to_lng,
-            haversine_km,
-            osrm_distance_km,
-            osrm_duration_min,
-            route_coordinates,
-            process_status,
-            error_message,
-            created_at,
-            updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DONE', NULL, NOW(), NOW())
-          ON DUPLICATE KEY UPDATE
-            from_name = VALUES(from_name),
-            to_name = VALUES(to_name),
-            from_lat = VALUES(from_lat),
-            from_lng = VALUES(from_lng),
-            to_lat = VALUES(to_lat),
-            to_lng = VALUES(to_lng),
-            haversine_km = VALUES(haversine_km),
-            osrm_distance_km = VALUES(osrm_distance_km),
-            osrm_duration_min = VALUES(osrm_duration_min),
-            route_coordinates = VALUES(route_coordinates),
-            process_status = 'DONE',
-            error_message = NULL,
-            updated_at = NOW()
-          `,
-          fromId,
-          toId,
-          String(from?.hotspot_name || `Hotspot #${fromId}`),
-          String(to?.hotspot_name || `Hotspot #${toId}`),
-          fromLat,
-          fromLng,
-          toLat,
-          toLng,
-          this.haversineKmForRouteProjection(fromLat, fromLng, toLat, toLng),
-          distanceKm,
-          durationMin,
-          JSON.stringify(coordinates),
-        );
-      } catch {
-        // Best-effort cache write; never block preview path.
-      }
-
-      return {
-        routeCoordinates: coordinates,
-        distanceKm,
-        durationMin,
-        usedReverse: false,
-        osrmFallbackUsed: true,
-        osrmFailed: false,
-      };
-    } catch {
-      return {
-        routeCoordinates: [],
-        distanceKm: null,
-        durationMin: null,
-        usedReverse: false,
-        osrmFallbackUsed: true,
-        osrmFailed: true,
-      };
-    }
+    return {
+      routeCoordinates: leg.coordinates,
+      distanceKm: leg.distanceKm,
+      durationMin: leg.durationMin,
+      usedReverse: leg.usedReverse,
+      osrmFallbackUsed: true,
+      osrmFailed: false,
+    };
   }
 
   private async findLastSameLocationHotspotOnRoute(
@@ -12771,6 +13242,45 @@ export class ItinerariesService {
     baselineTimeline: any[] = [],
     debugEnabled = false,
   ): Promise<any> {
+    const routeRow = await (tx as any).dvi_itinerary_route_details.findFirst({
+      where: {
+        itinerary_route_ID: Number(routeId),
+        deleted: 0,
+      },
+      select: {
+        itinerary_route_ID: true,
+        location_id: true,
+        location_name: true,
+        next_visiting_location: true,
+      },
+    });
+
+    const routeLocationMaster = Number(routeRow?.location_id || 0) > 0
+      ? await (tx as any).dvi_stored_locations.findFirst({
+          where: {
+            location_ID: Number(routeRow?.location_id || 0),
+            deleted: 0,
+          },
+          select: {
+            source_location: true,
+            destination_location: true,
+          },
+        })
+      : null;
+
+    const routeCityContext = {
+      location_name: String(routeRow?.location_name || routeLocationMaster?.source_location || '').trim(),
+      next_visiting_location: String(routeRow?.next_visiting_location || routeLocationMaster?.destination_location || '').trim(),
+    };
+
+    let hotspotCityContext: ManualHotspotCityContext = 'UNKNOWN';
+    let destinationInsertionMode = false;
+    let destinationAnchorHotspotId: number | null = null;
+    let destinationAnchorName: string | null = null;
+    let destinationAnchorOrder: number | null = null;
+    let destinationSlotReason = 'DESTINATION_SLOT_NOT_FOUND';
+    let destinationMinCandidateIndex: number | null = null;
+
     // 1. Fetch route's current active attraction hotspots ordered by hotspot_order
     const rawRouteAttractions: any[] = await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
       where: {
@@ -12813,10 +13323,13 @@ export class ItinerariesService {
     const hotspotIds = routeAttractions.map((r: any) => Number(r.hotspot_ID));
     const hotspotMasters: any[] = await (tx as any).dvi_hotspot_place.findMany({
       where: { hotspot_ID: { in: hotspotIds }, deleted: 0 },
-      select: { hotspot_ID: true, hotspot_name: true, hotspot_duration: true },
+      select: { hotspot_ID: true, hotspot_name: true, hotspot_duration: true, hotspot_location: true },
     });
     const nameById = new Map<number, string>(
       hotspotMasters.map((m: any) => [Number(m.hotspot_ID), String(m.hotspot_name || '')]),
+    );
+    const masterById = new Map<number, any>(
+      hotspotMasters.map((m: any) => [Number(m.hotspot_ID), m]),
     );
     const candidateMaster = await (tx as any).dvi_hotspot_place.findFirst({
       where: { hotspot_ID: Number(candidateHotspotId), deleted: 0 },
@@ -12832,6 +13345,63 @@ export class ItinerariesService {
     const candidateDurationMinutes = candidateMaster?.hotspot_duration
       ? Math.max(1, Number(this.timeToMinutes(candidateMaster.hotspot_duration as any)) || 0)
       : 60;
+
+    hotspotCityContext = this.classifyManualHotspotCityContext(routeCityContext, candidateMaster || {
+      hotspot_name: candidateHotspotName,
+    });
+    destinationInsertionMode = hotspotCityContext === 'DESTINATION_CITY';
+
+    const attractionCityContexts = routeAttractions.map((row: any, index: number) => {
+      const rowId = Number(row?.hotspot_ID || 0);
+      const rowMaster = masterById.get(rowId);
+      const rowContext = this.classifyManualHotspotCityContext(routeCityContext, {
+        hotspot_location: rowMaster?.hotspot_location,
+        hotspot_name: rowMaster?.hotspot_name || nameById.get(rowId),
+      });
+      return {
+        index,
+        hotspotId: rowId,
+        hotspotOrder: Number(row?.hotspot_order || 0),
+        name: nameById.get(rowId) || `Hotspot #${rowId}`,
+        cityContext: rowContext,
+      };
+    });
+
+    const firstDestinationAttraction = attractionCityContexts.find((row: any) => row.cityContext === 'DESTINATION_CITY') || null;
+    const destinationRows = attractionCityContexts.filter((row: any) => row.cityContext === 'DESTINATION_CITY');
+    const lastDestinationAttraction = destinationRows.length > 0 ? destinationRows[destinationRows.length - 1] : null;
+    const destinationMinPairIndex = destinationInsertionMode
+      ? Math.max(0, Number(firstDestinationAttraction?.index ?? routeAttractions.length))
+      : 0;
+    destinationMinCandidateIndex = destinationInsertionMode
+      ? Math.max(1, Number(firstDestinationAttraction?.index ?? routeAttractions.length) + 1)
+      : null;
+
+    if (destinationInsertionMode) {
+      destinationAnchorHotspotId = Number(lastDestinationAttraction?.hotspotId || firstDestinationAttraction?.hotspotId || 0) || null;
+      destinationAnchorName = String(lastDestinationAttraction?.name || firstDestinationAttraction?.name || '') || null;
+      destinationAnchorOrder = Number(lastDestinationAttraction?.hotspotOrder || firstDestinationAttraction?.hotspotOrder || 0) || null;
+      console.log('[ManualDestinationInsert] city_context', {
+        routeId: Number(routeId),
+        selectedHotspotId: Number(candidateHotspotId),
+        hotspotCityContext,
+        source: String(routeCityContext?.location_name || ''),
+        destination: String(routeCityContext?.next_visiting_location || ''),
+      });
+      console.log('[ManualDestinationInsert] destination_hotspot_candidates', {
+        routeId: Number(routeId),
+        selectedHotspotId: Number(candidateHotspotId),
+        destinationHotspotIds: destinationRows.map((row: any) => Number(row?.hotspotId || 0)).filter((id: number) => id > 0),
+        destinationHotspotNames: destinationRows.map((row: any) => String(row?.name || '')).filter(Boolean),
+      });
+      console.log('[ManualDestinationInsert] selected_anchor', {
+        routeId: Number(routeId),
+        selectedHotspotId: Number(candidateHotspotId),
+        destinationAnchorHotspotId,
+        destinationAnchorName,
+        destinationAnchorOrder,
+      });
+    }
 
     if (!candidateMaster) {
       return {
@@ -12856,6 +13426,9 @@ export class ItinerariesService {
     const slotPairs: Array<{ slotIndex: number; fromId: number; toId: number; fromName: string; toName: string }> = [];
     let nextSlotIndex = 0;
     for (let i = 0; i < routeAttractions.length - 1; i++) {
+      if (destinationInsertionMode && i < destinationMinPairIndex) {
+        continue;
+      }
       const fromId = Number(routeAttractions[i].hotspot_ID);
       const toId = Number(routeAttractions[i + 1].hotspot_ID);
       if (fromId === Number(candidateHotspotId) || toId === Number(candidateHotspotId)) {
@@ -12872,6 +13445,131 @@ export class ItinerariesService {
     }
 
     if (slotPairs.length === 0) {
+      if (destinationInsertionMode && Number(destinationAnchorHotspotId || 0) > 0) {
+        const baselineRowsLocal = Array.isArray(baselineTimeline) ? baselineTimeline : [];
+        const baselineRowsByIdLocal = new Map<number, any>();
+        for (const row of baselineRowsLocal) {
+          const hotspotId = Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || row?.selectedHotspotId || 0);
+          if (hotspotId > 0 && !baselineRowsByIdLocal.has(hotspotId)) {
+            baselineRowsByIdLocal.set(hotspotId, row);
+          }
+        }
+
+        const baselineHotelRow = baselineRowsLocal.find((row: any) => {
+          const type = String(row?.type || '').toLowerCase();
+          const text = String(row?.text || row?.name || '').toLowerCase();
+          return type === 'hotel' || type === 'checkin' || Number(row?.item_type || 0) === 6 || text.includes('check-in at hotel');
+        }) || null;
+        const anchorId = Number(destinationAnchorHotspotId || 0);
+        const anchorName = String(destinationAnchorName || nameById.get(anchorId) || `Hotspot #${anchorId}`);
+        const selectedName = String(candidateHotspotName || candidateMaster?.hotspot_name || `Hotspot #${candidateHotspotId}`);
+        const hotelLabel = 'Hotel';
+
+        const anchorToCandidateLeg = await this.getCachedRouteMatrixLeg(tx, anchorId, Number(candidateHotspotId));
+        const reverseAnchorToCandidateLeg = (
+          (anchorToCandidateLeg?.distanceKm == null || anchorToCandidateLeg?.durationMin == null)
+            ? await this.getCachedRouteMatrixLeg(tx, Number(candidateHotspotId), anchorId)
+            : { distanceKm: null, durationMin: null }
+        );
+
+        const combinedMasterById = new Map<number, any>(masterById);
+        combinedMasterById.set(Number(candidateHotspotId), candidateMaster);
+
+        const acDistanceKm =
+          anchorToCandidateLeg?.distanceKm
+          ?? reverseAnchorToCandidateLeg?.distanceKm
+          ?? this.distanceBetweenHotspots(combinedMasterById, anchorId, Number(candidateHotspotId))
+          ?? null;
+        const acDurationMin =
+          anchorToCandidateLeg?.durationMin
+          ?? reverseAnchorToCandidateLeg?.durationMin
+          ?? this.estimateDurationFromDistance(acDistanceKm)
+          ?? 10;
+
+        const fromBaselineRow = baselineRowsByIdLocal.get(anchorId);
+        const hotelStartMinutes = this.parseSegmentStartMinutes(baselineHotelRow);
+        const anchorEndMinutes = this.parseSegmentEndMinutes(fromBaselineRow);
+        const totalRequiredMinutes = Number(candidateDurationMinutes || 0) + Number(acDurationMin || 0);
+        const availableGapMinutes = (
+          hotelStartMinutes != null && anchorEndMinutes != null
+            ? (hotelStartMinutes - anchorEndMinutes)
+            : null
+        );
+        const timingPossible = availableGapMinutes == null ? true : availableGapMinutes >= totalRequiredMinutes;
+
+        const chosenSlot = {
+          slotIndex: 0,
+          fromHotspotId: anchorId,
+          fromName: anchorName,
+          toHotspotId: 0,
+          toName: hotelLabel,
+          source: 'DESTINATION_CITY_AFTER_REACHED',
+          routeFitType: 'DESTINATION_SIDE_INSERTION',
+          label: `Insert after reaching ${String(routeCityContext?.next_visiting_location || 'destination')}`,
+          displayLabel: `Insert after reaching ${String(routeCityContext?.next_visiting_location || 'destination')}`,
+          shortLabel: 'Destination insertion',
+          routePossible: true,
+          timingPossible,
+          prioritySafe: true,
+          selectedAsBest: true,
+          attempted: true,
+          acOsrmDistanceKm: acDistanceKm,
+          acDurationMin,
+          routeDecisionReason: 'Destination-side insertion uses destination anchor and hotel endpoint; matrix is skipped for hotel endpoint.',
+          timingDecisionReason: timingPossible
+            ? 'Timing fits after destination anchor before hotel/check-in using anchor-to-candidate travel plus visit duration.'
+            : 'Timing requires reschedule because available gap before hotel is smaller than anchor-to-candidate travel plus visit duration.',
+          priorityDecisionReason: null,
+          finalDecisionReason: 'Selected: destination-side insertion after destination anchor with hotel endpoint.',
+          decisionReason: 'Destination-side insertion uses destination anchor and hotel endpoint; matrix is skipped for hotel endpoint.',
+          attemptedSlotLabel: `${anchorName} -> ${selectedName} -> ${hotelLabel}`,
+        };
+
+        console.log('[ManualDestinationInsert] hotel_side_insertion', {
+          routeId: Number(routeId),
+          selectedHotspotId: Number(candidateHotspotId),
+          anchorId,
+          anchorName,
+          selectedName,
+          acDistanceKm,
+          acDurationMin,
+          availableGapMinutes,
+          requiredMinutes: totalRequiredMinutes,
+          timingPossible,
+        });
+        console.log('[ManualDestinationInsert] skipped_matrix_for_hotel_endpoint', {
+          routeId: Number(routeId),
+          selectedHotspotId: Number(candidateHotspotId),
+          reason: 'Only destination anchor and hotel endpoint are available; hotspot-to-hotspot matrix slot pairs do not apply.',
+        });
+
+        return {
+          selectedHotspotId: candidateHotspotId,
+          selectedHotspotName: candidateHotspotName,
+          requestedSlot: chosenSlot,
+          bestSlot: chosenSlot,
+          chosenSlot,
+          allSlotResults: [chosenSlot],
+          chosenSlotSource: 'BEST_FIT',
+          routeFitAvailable: true,
+          hasAnyMatrixData: true,
+          hasFeasibleMatrixSlot: true,
+          requiresMatrixBuild: false,
+          canAutoMove: true,
+          canApply: true,
+          code: 'MANUAL_HOTSPOT_DESTINATION_INSERT_PREVIEW_READY',
+          previewBlockReason: null,
+          warning: null,
+          hotspotCityContext,
+          destinationInsertionMode: true,
+          destinationAnchorHotspotId,
+          destinationAnchorName,
+          destinationAnchorOrder,
+          destinationSlotReason: 'A_LAST_DESTINATION_TO_HOTEL',
+          destinationMinCandidateIndex,
+        };
+      }
+
       return {
         selectedHotspotId: candidateHotspotId,
         selectedHotspotName: candidateHotspotName,
@@ -12934,6 +13632,36 @@ export class ItinerariesService {
            Number(slot.toId), Number(slot.fromId), Number(candidateHotspotId));
         if (Array.isArray(rows) && rows.length > 0) {
           matrixRows.push(rows[0]);
+        } else {
+          const rejectionRow = await this.getRouteBetweenRejectionRow(
+            tx,
+            Number(slot.fromId),
+            Number(slot.toId),
+            Number(candidateHotspotId),
+          );
+
+          if (rejectionRow) {
+            const rejectionCode = String(rejectionRow?.rejection_code || '').toUpperCase();
+            const rejectionReason = rejectionRow?.rejection_reason
+              ? String(rejectionRow.rejection_reason)
+              : String(rejectionRow?.error_message || 'Rejected in hotspot_route_between_rejections.');
+
+            matrixRows.push({
+              from_hotspot_id: Number(rejectionRow?.from_hotspot_id || slot.fromId),
+              to_hotspot_id: Number(rejectionRow?.to_hotspot_id || slot.toId),
+              between_hotspot_id: Number(rejectionRow?.between_hotspot_id || candidateHotspotId),
+              route_fit_type: rejectionCode === 'OFF_ROUTE_SKIPPED' ? 'OFF_ROUTE' : 'UNKNOWN',
+              route_decision_reason: rejectionReason,
+              road_detour_km: rejectionRow?.road_detour_km ?? null,
+              road_detour_ratio: rejectionRow?.road_detour_ratio ?? null,
+              ab_osrm_distance_km: null,
+              ac_osrm_distance_km: null,
+              cb_osrm_distance_km: null,
+              inserted_route_distance_km: null,
+              candidate_distance_from_ab_route_meters: rejectionRow?.candidate_distance_from_ab_route_meters ?? null,
+              destination_distance_from_ac_route_meters: null,
+            });
+          }
         }
       } catch (err) {
         console.error('[buildManualInsertionFit] matrix query error:', err);
@@ -13101,7 +13829,7 @@ export class ItinerariesService {
 
     let osrmRouteCheckFailed = false;
 
-    if (!hasFeasibleNormalMatrixSlot && candidateMaster) {
+    if (!hasFeasibleNormalMatrixSlot && candidateMaster && !destinationInsertionMode) {
       const routeRow = await (tx as any).dvi_itinerary_route_details.findFirst({
         where: {
           itinerary_route_ID: Number(routeId),
@@ -13274,10 +14002,115 @@ export class ItinerariesService {
       }
     }
 
+    if (destinationInsertionMode) {
+      const baselineHotelRow = baselineRows.find((row: any) => {
+        const type = String(row?.type || '').toLowerCase();
+        const text = String(row?.text || row?.name || '').toLowerCase();
+        return type === 'hotel' || type === 'checkin' || Number(row?.item_type || 0) === 6 || text.includes('check-in at hotel');
+      }) || null;
+      const destinationReachedAt = firstDestinationAttraction || lastDestinationAttraction || null;
+
+      console.log('[ManualDestinationInsert] destination_reached_at', {
+        routeId: Number(routeId),
+        selectedHotspotId: Number(candidateHotspotId),
+        destinationReachedAtHotspotId: Number(destinationReachedAt?.hotspotId || 0) || null,
+        destinationReachedAtHotspotName: destinationReachedAt?.name || null,
+        destinationReachedAtOrder: Number(destinationReachedAt?.hotspotOrder || 0) || null,
+      });
+
+      const anchorForHotelSlot = lastDestinationAttraction || destinationReachedAt;
+      const hotelStartMinutes = this.parseSegmentStartMinutes(baselineHotelRow);
+      const fromBaselineRow = anchorForHotelSlot
+        ? baselineRowsById.get(Number(anchorForHotelSlot.hotspotId))
+        : null;
+      const anchorEndMinutes = this.parseSegmentEndMinutes(fromBaselineRow);
+      const timingPossible = (
+        hotelStartMinutes === null
+        || anchorEndMinutes === null
+        || (hotelStartMinutes - anchorEndMinutes) >= candidateDurationMinutes
+      );
+
+      let destinationSlotPriorityRank = 999;
+      if (anchorForHotelSlot && baselineHotelRow) {
+        destinationSlotReason = 'A_LAST_DESTINATION_TO_HOTEL';
+        destinationSlotPriorityRank = 1;
+      } else if (firstDestinationAttraction && destinationRows.length >= 2) {
+        destinationSlotReason = 'B_BETWEEN_DESTINATION_ATTRACTIONS';
+        destinationSlotPriorityRank = 2;
+      } else if (baselineHotelRow) {
+        destinationSlotReason = 'C_BEFORE_HOTEL';
+        destinationSlotPriorityRank = 3;
+      } else {
+        destinationSlotReason = 'DESTINATION_SLOT_NOT_FOUND';
+      }
+
+      if (destinationSlotReason !== 'DESTINATION_SLOT_NOT_FOUND' && anchorForHotelSlot) {
+        const selectedName = String(candidateHotspotName || candidateMaster?.hotspot_name || `Hotspot #${candidateHotspotId}`);
+        const hotelSideSlot = {
+          slotIndex: allSlotResults.length,
+          fromHotspotId: Number(anchorForHotelSlot.hotspotId),
+          fromName: String(anchorForHotelSlot.name || `Hotspot #${anchorForHotelSlot.hotspotId}`),
+          toHotspotId: 0,
+          toName: 'Hotel',
+          routeFitType: 'DESTINATION_SIDE_INSERTION',
+          label: `Insert after reaching ${String(routeCityContext?.next_visiting_location || 'destination')}`,
+          displayLabel: `Insert after reaching ${String(routeCityContext?.next_visiting_location || 'destination')}`,
+          shortLabel: 'Destination insertion',
+          roadDetourKm: destinationSlotPriorityRank === 1 ? 0 : (destinationSlotPriorityRank === 2 ? 0.1 : 0.2),
+          isZeroExtraDetour: destinationSlotPriorityRank === 1,
+          distanceComparisonNote: null,
+          roadDetourRatio: null,
+          insertedRouteDistanceKm: null,
+          abOsrmDistanceKm: null,
+          acOsrmDistanceKm: null,
+          cbOsrmDistanceKm: null,
+          candidateDistanceFromAbRouteMeters: null,
+          destinationDistanceFromAcRouteMeters: null,
+          routePossible: true,
+          timingPossible,
+          prioritySafe: true,
+          selectedAsBest: false,
+          attempted: true,
+          source: 'DESTINATION_CITY_AFTER_REACHED',
+          destinationSlotPriorityRank,
+          routeDecisionReason: 'Destination hotspot insertion evaluated on destination-side hotel leg without requiring hotspot-to-hotspot matrix.',
+          timingDecisionReason: timingPossible
+            ? 'Timing fits before hotel/check-in after destination is reached.'
+            : 'Timing requires reschedule because available gap before hotel is not enough.',
+          priorityDecisionReason: null,
+          finalDecisionReason: 'Selected destination-side insertion after destination is reached.',
+          attemptedSlotLabel: `${String(anchorForHotelSlot.name || `Hotspot #${anchorForHotelSlot.hotspotId}`)} -> ${selectedName} -> Hotel`,
+        };
+        allSlotResults.push(hotelSideSlot);
+        console.log('[ManualDestinationInsert] selected_destination_slot', {
+          routeId: Number(routeId),
+          selectedHotspotId: Number(candidateHotspotId),
+          slotReason: destinationSlotReason,
+          fromHotspotId: hotelSideSlot.fromHotspotId,
+          fromName: hotelSideSlot.fromName,
+          toName: hotelSideSlot.toName,
+        });
+        console.log('[ManualDestinationInsert] hotel_side_slot_used', {
+          routeId: Number(routeId),
+          selectedHotspotId: Number(candidateHotspotId),
+          used: true,
+          slotReason: destinationSlotReason,
+        });
+      }
+    }
+
     // 6. Rank and find bestSlot
     const sortedByUsable = [...allSlotResults]
-      .filter((slot) => this.isUsableMatrixRouteFitType(String(slot?.routeFitType || '').toUpperCase()))
+      .filter((slot) => {
+        const fitType = String(slot?.routeFitType || '').toUpperCase();
+        return this.isUsableMatrixRouteFitType(fitType) || fitType === 'DESTINATION_SIDE_INSERTION';
+      })
       .sort((a, b) => {
+        if (destinationInsertionMode) {
+          const destinationRankA = Number(a?.destinationSlotPriorityRank || 999);
+          const destinationRankB = Number(b?.destinationSlotPriorityRank || 999);
+          if (destinationRankA !== destinationRankB) return destinationRankA - destinationRankB;
+        }
         const rankDiff = selectionRank(a.routeFitType) - selectionRank(b.routeFitType);
         if (rankDiff !== 0) return rankDiff;
         const detourA = a.roadDetourKm ?? 99999;
@@ -13318,6 +14151,7 @@ export class ItinerariesService {
           sourceCityExitAnchorName: bestSlotData.sourceCityExitAnchorName,
           sourceCityExitAnchorProgressRatio: bestSlotData.sourceCityExitAnchorProgressRatio,
           sourceCityExitAnchorDistanceFromRouteMeters: bestSlotData.sourceCityExitAnchorDistanceFromRouteMeters,
+          attemptedSlotLabel: bestSlotData.attemptedSlotLabel,
           sourceCityExitAnchorSelectionWhy: debugEnabled ? bestSlotData.sourceCityExitAnchorSelectionWhy : undefined,
           sourceCityExitAnchorSelectionDebug: debugEnabled ? bestSlotData.sourceCityExitAnchorSelectionDebug : undefined,
           source: bestSlotData.source,
@@ -13433,10 +14267,12 @@ export class ItinerariesService {
 
     const hasAnyMatrixData = allSlotResults.some((slot) =>
       usableTypes.includes(String(slot?.routeFitType || '').toUpperCase())
+      || String(slot?.routeFitType || '').toUpperCase() === 'DESTINATION_SIDE_INSERTION'
     );
 
     const hasFeasibleMatrixSlot = allSlotResults.some((slot) =>
       feasibleTypes.includes(String(slot?.routeFitType || '').toUpperCase())
+      || String(slot?.routeFitType || '').toUpperCase() === 'DESTINATION_SIDE_INSERTION'
     );
 
     const hasOnlyOffRouteOrBacktrack =
@@ -13444,6 +14280,35 @@ export class ItinerariesService {
 
     // Case 1: MATRIX_MISSING — no real route-fit rows exist
     if (!hasAnyMatrixData) {
+      if (destinationInsertionMode) {
+        return {
+          selectedHotspotId: candidateHotspotId,
+          selectedHotspotName: candidateHotspotName,
+          requestedSlot,
+          bestSlot: null,
+          chosenSlot: null,
+          chosenSlotSource: 'NO_MATRIX_DATA',
+          routeFitAvailable: false,
+          hasAnyMatrixData: false,
+          hasFeasibleMatrixSlot: false,
+          requiresMatrixBuild: false,
+          canAutoMove: false,
+          canApply: false,
+          code: 'DESTINATION_SLOT_NOT_FOUND',
+          previewBlockReason: 'DESTINATION_SLOT_NOT_FOUND',
+          warning: 'No valid destination-side insertion slot was found after destination is reached.',
+          reason: 'DESTINATION_SLOT_NOT_FOUND',
+          allSlotResults: [],
+          hotspotCityContext,
+          destinationInsertionMode: true,
+          destinationAnchorHotspotId,
+          destinationAnchorName,
+          destinationAnchorOrder,
+          destinationSlotReason,
+          destinationMinCandidateIndex,
+        };
+      }
+
       const normalizedSlots = allSlotResults.map((slot) => ({
         ...slot,
         selectedAsBest: false,
@@ -13471,6 +14336,13 @@ export class ItinerariesService {
           : 'Route-fit matrix data is missing for this candidate and current route. Build matrix before preview/apply.',
         reason: osrmRouteCheckFailed ? 'OSRM_ROUTE_CHECK_FAILED' : 'MATRIX_MISSING',
         allSlotResults: normalizedSlots,
+        hotspotCityContext,
+        destinationInsertionMode,
+        destinationAnchorHotspotId,
+        destinationAnchorName,
+        destinationAnchorOrder,
+        destinationSlotReason,
+        destinationMinCandidateIndex,
       };
     }
 
@@ -13500,6 +14372,13 @@ export class ItinerariesService {
         previewBlockReason: 'NO_FEASIBLE_ROUTE_SLOT',
         warning: 'Matrix data exists, but this hotspot is off-route/backtracking for all current route slots.',
         allSlotResults: normalizedAllSlotResults,
+        hotspotCityContext,
+        destinationInsertionMode,
+        destinationAnchorHotspotId,
+        destinationAnchorName,
+        destinationAnchorOrder,
+        destinationSlotReason,
+        destinationMinCandidateIndex,
       };
     }
 
@@ -13532,6 +14411,7 @@ export class ItinerariesService {
         sourceCityExitAnchorName: bestSlot.sourceCityExitAnchorName,
         sourceCityExitAnchorProgressRatio: bestSlot.sourceCityExitAnchorProgressRatio,
         sourceCityExitAnchorDistanceFromRouteMeters: bestSlot.sourceCityExitAnchorDistanceFromRouteMeters,
+        attemptedSlotLabel: bestSlot.attemptedSlotLabel,
       };
       // Warn if user requested a different slot
       if (requestedSlot && isHotspotSlot && requestedSlotIndex !== bestSlot.slotIndex) {
@@ -13563,15 +14443,25 @@ export class ItinerariesService {
 
     const routeFitAvailable = hasAnyMatrixData;
     const canAutoMove = chosenSlotSource === 'BEST_FIT' && this.isFeasibleFitType(String(chosenSlot?.routeFitType || '').toUpperCase());
-    const canApply = canAutoMove
+    const destinationSideReady = (
+      destinationInsertionMode
+      && String(chosenSlot?.routeFitType || '').toUpperCase() === 'DESTINATION_SIDE_INSERTION'
       && Number(chosenSlot?.fromHotspotId || 0) > 0
-      && Number(chosenSlot?.toHotspotId || 0) > 0;
+    );
+    const canApply = destinationSideReady || (
+      canAutoMove
+      && Number(chosenSlot?.fromHotspotId || 0) > 0
+      && Number(chosenSlot?.toHotspotId || 0) > 0
+    );
 
     const normalizedAllSlotResults = allSlotResults.map((slot) => ({
       ...slot,
       selectedAsBest:
         !!bestSlotData
-        && this.isUsableMatrixRouteFitType(String(slot?.routeFitType || '').toUpperCase())
+        && (
+          this.isUsableMatrixRouteFitType(String(slot?.routeFitType || '').toUpperCase())
+          || String(slot?.routeFitType || '').toUpperCase() === 'DESTINATION_SIDE_INSERTION'
+        )
         && Number(slot?.slotIndex) === Number(bestSlotData?.slotIndex),
       routePossible:
         String(slot?.routeFitType || '').toUpperCase() === 'UNKNOWN'
@@ -13597,9 +14487,18 @@ export class ItinerariesService {
       requiresMatrixBuild: false,
       canAutoMove,
       canApply,
-      code: 'MANUAL_HOTSPOT_PREVIEW_READY',
+      code: destinationSideReady
+        ? 'MANUAL_HOTSPOT_DESTINATION_INSERT_PREVIEW_READY'
+        : 'MANUAL_HOTSPOT_PREVIEW_READY',
       previewBlockReason: null,
       warning,
+      hotspotCityContext,
+      destinationInsertionMode,
+      destinationAnchorHotspotId,
+      destinationAnchorName,
+      destinationAnchorOrder,
+      destinationSlotReason,
+      destinationMinCandidateIndex,
     };
   }
 
@@ -13971,6 +14870,8 @@ export class ItinerariesService {
       previewOnly?: boolean;
       anchorIndex?: number;
       anchorType?: 'after_travel';
+      destinationInsertionMode?: boolean;
+      destinationMinCandidateIndex?: number;
       removedOptionalHotspots?: any[];
       removedTopPriorityHotspots?: any[];
       baselineTopPriorityByHotspotId?: Map<number, { id: number; name: string; priority: number }>;
@@ -13991,7 +14892,13 @@ export class ItinerariesService {
       // Always compare every feasible in-route position so manual insertion can land
       // on the lowest-detour slot instead of being forced to the clicked segment.
       const nonStart = allPositions.filter((pos) => Number(pos.candidateIndex) > 0);
-      return nonStart.length > 0 ? nonStart : allPositions;
+      const base = nonStart.length > 0 ? nonStart : allPositions;
+      if (options?.destinationInsertionMode === true) {
+        const minIndex = Math.max(1, Number(options?.destinationMinCandidateIndex || 1));
+        const destinationSide = base.filter((pos) => Number(pos.candidateIndex) >= minIndex);
+        return destinationSide.length > 0 ? destinationSide : base;
+      }
+      return base;
     })();
     const baselineTopPriorityByHotspotId = options?.baselineTopPriorityByHotspotId || new Map<number, { id: number; name: string; priority: number }>();
     const masterMap = options?.masterMap || baseline.masterMap;
@@ -14728,6 +15635,8 @@ export class ItinerariesService {
     options?: {
       allowTopPriorityRemoval?: boolean;
       previewOnly?: boolean;
+      destinationInsertionMode?: boolean;
+      destinationMinCandidateIndex?: number;
     },
   ): Promise<{
     removedOptionalHotspots: Array<{ id: number; name: string; priority: number; reason?: string }>;
@@ -14801,6 +15710,8 @@ export class ItinerariesService {
         previewOnly: isPreviewOnly,
         anchorType: anchor?.anchorType,
         anchorIndex: anchor?.anchorIndex,
+        destinationInsertionMode: options?.destinationInsertionMode === true,
+        destinationMinCandidateIndex: Number(options?.destinationMinCandidateIndex || 0) || undefined,
         removedOptionalHotspots,
         removedTopPriorityHotspots,
         baselineTopPriorityByHotspotId,
