@@ -1,0 +1,166 @@
+npx tsx scripts/build-location-hotspot-matrix.ts --location "agra|agra (isbt) bus stand|agra cant railway station" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "ahobilam, andhra pradesh, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "aihole, karnataka, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "alampur, telangana, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "alleppey" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "anegundi, karnataka, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "annavaram, andhra pradesh, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "araku, andhra pradesh, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "athirappilly water falls, pariyaram, kerala" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "ayodhya" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "badami, karnataka, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "bandipur national park, karnataka, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "bangalore, international airport|bangalore, majestic|bangalore, ksr railway station|bangalore, k.r. puram|bangalore" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "bangalore|bangalore, majestic|bangalore, kadugodi|bangalore, k.r. puram|bangalore, ksr railway station|bangalore, international airport" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "belur, karnataka, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "bhimtal" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "bidar, karnataka, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "calicut, international airport|calicut, junction bus stop|calicut, railway station|calicut, kerala, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "calicut, kerala, india|calicut, railway station|calicut, junction bus stop|calicut, international airport" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "chennai international airport|chennai domestic airport|chennai central|chennai|chennai egmore station|chennai koyembedu|ecr beach, chennai, tamil nadu" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "chettinadu, tamil nadu, india|chettinad railway station, tamil nadu, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "chidambaram, bus stand|chidambaram, railway station|chidambaram, tamil nadu, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "chikkaballapur" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "chikmagaluru" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "chitradurga, karnataka, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "chitrakoot" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "chottanikkara" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "cochin" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "coimbatore, international airport|coimbatore|coimbatore, railway station" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "coimbatore|coimbatore, railway station|coimbatore, international airport" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "coonor" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "coorg" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "dakshina kannada, karnataka, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "dandeli, karnataka, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "darasuram" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "dehradun" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "delhi|delhi airport, india|delhi (isbt) bus stand|delhi ndls - railway station|delhi - dli old delhi railway station" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "devipattinam" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "dhanushkodi, tamilnadu,india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "dharmasthala, karnataka, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "ernakulam railway station kerala" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "erode, tamil nadu, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "gangaikonda cholapuram" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "gavi" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "gingee" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "gokarna, karnataka, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "gudimallam" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "gulbarga, karnataka, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "guruvayoor, kerala, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "halebeedu, karnataka, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "hampi, karnataka, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "haridwar" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "hogenakkal, tamil nadu, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "honnavar" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "hornadu, karnataka, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "humcha" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "hyderabad, telangana, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "idukki, kerala, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "jaipur|jaipur international airport|jaipur railway junction|jaipur, bus stand" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "jaipur|jaipur, bus stand|jaipur railway junction|jaipur international airport" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "jaipur|jaipur, bus stand|jaipur railway junction|mangalore, bus stop, bejai" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "jatayu earth&#039;s center|jatayu earth center|jatayu earth&amp;#039;s center, jatayu nature park road, jatayu junction, chadayamangalam, kerala, india|jatayu earth&amp;#039;s center" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "jodhpur|jodhpur airport|jodhpur bus stand|jodhpur railway junction" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "jodhpur|jodhpur bus stand|jodhpur railway junction|jodhpur airport|jatayu earth&amp;#039;s center, jatayu nature park road, jatayu junction, chadayamangalam, kerala, india|jatayu earth&amp;#039;s center" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "jog falls" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "kabini" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "kadapa" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "kalasa, karnataka, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "kallahalli" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "kanchipuram, railway station|kanchipuram, tamil nadu, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "kanipakam, andhra pradesh, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "kannur, kerala, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "kanyakumari, railway station|kanyakumari" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "katpadi, railway station, vellore" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "kattappana, kerala, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "kodaikanal" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "kollam, kerala, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "kollur, karnataka, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "kotagiri, tamil nadu, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "kovalam" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "kudremukh" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "kukke shri subrahmanya temple, karnataka, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "kumarakom, kerala, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "kumbakonam, tamil nadu, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "kumbhalgarh, rajasthan" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "kunthukal" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "kurnool airport, andhra pradesh|kurnool, andhra pradesh, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "kutrallam, tamil nadu, india|kutralam, tamil nadu, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "madurai|madurai, railway station|madurai, bus stand , arappalayam|madurai airport|madurai, mattuthavani" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "mahabalipuram" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "mangalore, central|mangalore, bus stop|mangalore, railway station|mangalore, bus stop, bejai|mangalore, karnataka, india|mangalore, international airport|mangalore, railway station, attavar" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "mangalore, international airport|mangalore, railway station|mangalore, bus stop, bejai|mangalore, central|mangalore, bus stop|mangalore, karnataka, india|mangalore, railway station, attavar" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "mararikulam, kerala, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "marayoor" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "mathoor, kanya kumari" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "melukote" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "mettupalayam, railway station|mettupalayam" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "mudumalai, tamil nadu, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "munnar" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "murudeshwar, karnataka, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "mussoorie" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "mysore" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "nagapattinam, railway station junction|nagapattinam, railway station|nagapattinam, tamil nadu, india|nagapattinam, nagore, tamil nadu , india|nagapattinam, nagore" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "naimisharanya" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "nainital" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "nandi hills, karnataka, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "nileshwar" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "nizamabad, telangana, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "ooty" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "palakkad, kerala, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "palani, tamil nadu, india|palani, railway station" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "pattadakal, karnataka, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "pithapuram, andhra pradesh, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "pondicherry airport" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "ponmudi" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "poovar, kerala, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "prayagraj" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "pykara waterfalls" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "rameswaram" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "ramnagar corbett" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "ranakpur, rajasthan" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "ranikhet" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "rishikesh" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "sabarimala, kerala, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "sakleshpur, karnataka, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "salem" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "samayapuram|trichy|trichy junction|trichy airport (trz)|trichy chatram bus stand" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "shimoga, karnataka, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "shivanasamudra" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "shravanabelagola, karnataka, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "simhachalam, visakhapatnam, andhra pradesh, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "somanathapura, karnataka" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "srikalahasti, andhra pradesh, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "sringeri, karnataka, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "srirangapatna, karnataka, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "srisailam, andhra pradesh, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "srivilliputhur, tamil nadu, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "thanjavur, railway station|thanjavur" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "thekkady" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "thiruchendur, tamil nadu, india|punnaiyadi" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "thiruchendur, tamil nadu, india|thiruchendur, railway station|tiruchendur, tamil nadu, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "thirukoilure" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "thirunallar, puducherry, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "thiruvarur, junction ktr nagar|thiruvarur, tamil nadu, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "tholpetty, kerala, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "tiruparappu" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "tirupati, andhra pradesh, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "tiruppullani" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "tiruttani, tamil nadu, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "tiruvannamalai" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "trichy airport (trz)|trichy junction" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "trivandrum" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "udaipur|udaipur airport|udaipur bus stand|udaipur city railway station (udz)" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "udupi, karnataka, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "utrakosamangai" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "vagamon, kerala, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "valparai, tamil nadu, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "varanasi" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "varkala" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "velankanni, tamil nadu, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "vizag, andhra pradesh, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "warangal, telangana, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "wayanad, kerala, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "yadagirigutta, telangana, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "yelagiri, tamil nadu, india" --build-between-map --apply --force-between
+npx tsx scripts/build-location-hotspot-matrix.ts --location "yercaud, tamil nadu, india" --build-between-map --apply --force-between

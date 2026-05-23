@@ -85,6 +85,8 @@ type InputArgs = {
   likePattern?: string;
   excludeLocations: string[];
   allLocations: boolean;
+  routePairMode: boolean;
+  crossLocationTargets: boolean;
   targetDb: string;
   routeDb: string;
   apply: boolean;
@@ -164,6 +166,8 @@ function usage(): void {
   console.log('Options:');
   console.log('  --location <text>                   Single-location mode (mutually exclusive with --all-locations).');
   console.log('  --all-locations                     Process all repeated location pairs from route DB.');
+  console.log('  --route-pair-mode                   Force repeated route-pair mode even in single-location runs.');
+  console.log('  --cross-location-targets            In single-location mode, allow destination/candidate hotspots from all locations.');
   console.log('  --target-db <db>                    Default: env TARGET_DB_NAME or dvi_main');
   console.log('  --route-db <db>                     Default: dvi_travels');
   console.log('  --apply                             Enable DB writes. Default is dry-run.');
@@ -282,6 +286,8 @@ function isValidLatLng(lat: number, lng: number): boolean {
 function normalizeArgs(raw: RawArgs): InputArgs {
   const locationRaw = typeof raw.location === 'string' ? raw.location.trim() : '';
   const allLocations = Boolean(raw['all-locations']);
+  const routePairMode = allLocations || Boolean(raw['route-pair-mode']);
+  const crossLocationTargets = Boolean(raw['cross-location-targets']);
   const excludeLocations =
     typeof raw['exclude-locations'] === 'string'
       ? raw['exclude-locations']
@@ -382,6 +388,8 @@ function normalizeArgs(raw: RawArgs): InputArgs {
     likePattern,
     excludeLocations,
     allLocations,
+    routePairMode,
+    crossLocationTargets,
     targetDb,
     routeDb,
     apply: Boolean(raw.apply),
@@ -1980,13 +1988,15 @@ async function main(): Promise<void> {
     console.log(`location input: ${args.location}`);
     console.log(`LIKE pattern: ${args.likePattern}`);
   }
+  console.log(`routePairMode: ${args.routePairMode}`);
+  console.log(`crossLocationTargets: ${args.crossLocationTargets}`);
   console.log(`excludeLocations: [${args.excludeLocations.join(', ')}]`);
   console.log(`maxLocationRouteKm: ${args.maxLocationRouteKm}`);
   console.log(`OSRM base: ${args.osrmBaseUrl}`);
 
   await ensureHelperTablesForDb(args.targetDb);
 
-  if (args.buildBetweenMap || args.allLocations) {
+  if (args.routePairMode) {
     await runLocationPairMode(args, summary);
     console.log('Final summary:');
     console.log(JSON.stringify(summary, null, 2));
@@ -2017,14 +2027,18 @@ async function main(): Promise<void> {
     return;
   }
 
-  await runDirectMatrixBuild(args, hotspotResult.validHotspots, allHotspotsResult.validHotspots, summary);
+  const scopedDestinationHotspots = args.crossLocationTargets
+    ? allHotspotsResult.validHotspots
+    : hotspotResult.validHotspots;
+
+  await runDirectMatrixBuild(args, hotspotResult.validHotspots, scopedDestinationHotspots, summary);
 
   if (args.buildBetweenMap) {
     await runBetweenMapBuild(
       args,
       hotspotResult.validHotspots,
-      allHotspotsResult.validHotspots,
-      allHotspotsResult.validHotspots,
+      scopedDestinationHotspots,
+      scopedDestinationHotspots,
       summary,
     );
   }
