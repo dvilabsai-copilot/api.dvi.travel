@@ -739,7 +739,7 @@ async function run() {
     const applyResponsePromise = page.waitForResponse((resp) => {
       const req = resp.request();
       return req.method() === 'POST'
-        && /\/manual-hotspot\//i.test(resp.url())
+        && /\/manual-hotspots?\/(apply)?/i.test(resp.url())
         && !/\/manual-hotspot\/preview$/i.test(resp.url());
     }, { timeout: 20000 }).catch(() => null);
 
@@ -752,23 +752,57 @@ async function run() {
     }).catch(() => {});
     await page.waitForTimeout(400);
 
-    const buttonTexts = await dialog.locator('button').allInnerTexts().catch(() => []);
+    let buttonTexts = await dialog.locator('button').allInnerTexts().catch(() => []);
     result.ui.confirmButtonCandidates = (Array.isArray(buttonTexts) ? buttonTexts : [])
       .map((v) => String(v || '').trim())
       .filter(Boolean);
+
+    // If priority replacement confirmation is required, complete it first.
+    const rescheduleButton = dialog.getByRole('button', { name: /confirm reschedule/i }).first();
+    if (await rescheduleButton.isVisible().catch(() => false)) {
+      const rescheduleDisabled = await rescheduleButton.isDisabled().catch(() => true);
+      if (!rescheduleDisabled) {
+        await rescheduleButton.click({ timeout: 10000 }).catch(() => {});
+        await page.waitForTimeout(1800);
+        buttonTexts = await dialog.locator('button').allInnerTexts().catch(() => []);
+        result.ui.confirmButtonCandidates = (Array.isArray(buttonTexts) ? buttonTexts : [])
+          .map((v) => String(v || '').trim())
+          .filter(Boolean);
+      }
+    }
 
     const confirmPatterns = [
       /confirm add hotspot/i,
       /add with reschedule/i,
       /confirm force add/i,
+      /^add hotspot$/i,
     ];
 
-    let confirmButton = null;
-    for (const pattern of confirmPatterns) {
-      const candidate = dialog.getByRole('button', { name: pattern }).first();
-      if (await candidate.isVisible().catch(() => false)) {
-        confirmButton = candidate;
-        break;
+    const findConfirmButton = async () => {
+      for (const pattern of confirmPatterns) {
+        const candidate = dialog.getByRole('button', { name: pattern }).first();
+        if (await candidate.isVisible().catch(() => false)) {
+          return candidate;
+        }
+      }
+      return null;
+    };
+
+    let confirmButton = await findConfirmButton();
+
+    if (!confirmButton) {
+      const refreshButton = dialog.getByRole('button', { name: /refresh/i }).first();
+      if (await refreshButton.isVisible().catch(() => false)) {
+        const refreshDisabled = await refreshButton.isDisabled().catch(() => true);
+        if (!refreshDisabled) {
+          await refreshButton.click({ timeout: 10000 }).catch(() => {});
+          await page.waitForTimeout(1800);
+          buttonTexts = await dialog.locator('button').allInnerTexts().catch(() => []);
+          result.ui.confirmButtonCandidates = (Array.isArray(buttonTexts) ? buttonTexts : [])
+            .map((v) => String(v || '').trim())
+            .filter(Boolean);
+          confirmButton = await findConfirmButton();
+        }
       }
     }
 
@@ -795,8 +829,18 @@ async function run() {
 
         const applyResponse = await applyResponsePromise;
         if (applyResponse) {
+          const applyRequest = applyResponse.request();
+          const applyPostData = applyRequest.postDataJSON ? applyRequest.postDataJSON() : null;
           const applyPayload = await applyResponse.json().catch(() => null);
           result.ui.confirmApiCode = applyPayload?.code || null;
+          result.ui.confirmApiUrl = applyResponse.url();
+          result.ui.confirmApiSuccess = applyPayload?.success === true;
+          result.ui.confirmApiForceConflictInsertion = Boolean(applyPostData?.forceConflictInsertion);
+          const applyTimeline = Array.isArray(applyPayload?.routeTimeline)
+            ? applyPayload.routeTimeline
+            : (Array.isArray(applyPayload?.fullTimeline) ? applyPayload.fullTimeline : []);
+          const applySelectedRow = extractTimelineRowByHotspot(applyTimeline, args.hotspot, result.db.hotspotIdByName);
+          result.ui.confirmApiSelectedRowTimeRange = applySelectedRow?.timeRange || applySelectedRow?.visitTime || null;
         }
 
         await page.waitForTimeout(2200);
