@@ -7338,6 +7338,9 @@ export class ItinerariesService {
       };
     },
   ) {
+    const normalizedApplyHotspotIds = this.normalizeManualHotspotIds(hotspotIds);
+    await this.cleanupStaleManualHotspotRows(Number(planId), Number(routeId), normalizedApplyHotspotIds);
+
     const manualHotspotTxTimeoutMs = 180000;
     const applyRollbackError = new Error('__APPLY_MANUAL_HOTSPOT_BATCH_ROLLBACK__');
     let applyResult: any;
@@ -7363,22 +7366,142 @@ export class ItinerariesService {
       }, { timeout: manualHotspotTxTimeoutMs });
     } catch (error: any) {
       if (error !== applyRollbackError) {
+        await this.cleanupStaleManualHotspotRows(Number(planId), Number(routeId), normalizedApplyHotspotIds);
         throw error;
       }
     }
 
-    if (applyResult?.success === true && applyResult?.inserted === true) {
+    if (applyResult) {
       const persistedTimeline = Array.isArray(applyResult?.routeTimeline)
         ? applyResult.routeTimeline
         : (Array.isArray(applyResult?.fullTimeline) ? applyResult.fullTimeline : []);
 
-      for (const hotspotId of this.normalizeManualHotspotIds(hotspotIds)) {
+      for (const hotspotId of normalizedApplyHotspotIds) {
         const timelineRow = persistedTimeline.find((row: any) => (
-          String(row?.type || '').toLowerCase() === 'attraction'
+          (
+            String(row?.type || '').toLowerCase() === 'attraction'
+            || Number(row?.item_type || 0) === 4
+          )
           && Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || 0) === Number(hotspotId)
         ));
-        const parsedRange = this.parsePreviewTimeRangeToUtcDates(timelineRow?.timeRange);
+        let parsedRange = this.parsePreviewTimeRangeToUtcDates(timelineRow?.timeRange);
+        const parsedDurationMinutes = (parsedRange.start && parsedRange.end)
+          ? Math.round((parsedRange.end.getTime() - parsedRange.start.getTime()) / 60000)
+          : 0;
+        const selectedMaster = await this.prisma.dvi_hotspot_place.findFirst({
+          where: {
+            hotspot_ID: Number(hotspotId),
+            deleted: 0,
+          },
+          select: {
+            hotspot_duration: true,
+          },
+        });
+        const selectedDurationMin = selectedMaster?.hotspot_duration
+          ? Math.max(1, Number(this.timeToMinutes(selectedMaster.hotspot_duration as any)) || 0)
+          : 60;
+
+        if (!parsedRange.start || !parsedRange.end || parsedDurationMinutes <= 0) {
+          const fit = applyResult?.manualInsertionFit?.bestSlot || applyResult?.manualInsertionFit?.chosenSlot || null;
+          const fromHotspotId = Number(fit?.fromHotspotId || 0);
+          if (fromHotspotId > 0) {
+            const fromAttraction = await this.prisma.dvi_itinerary_route_hotspot_details.findFirst({
+              where: {
+                itinerary_plan_ID: Number(planId),
+                itinerary_route_ID: Number(routeId),
+                hotspot_ID: fromHotspotId,
+                item_type: 4,
+                deleted: 0,
+                status: 1,
+              },
+              select: {
+                hotspot_end_time: true,
+              },
+            });
+
+            const fromEndDate = fromAttraction?.hotspot_end_time ? new Date(fromAttraction.hotspot_end_time as any) : null;
+            const acDurationMin = this.estimateDurationFromDistance(Number(fit?.acOsrmDistanceKm || null)) || 10;
+
+            if (fromEndDate && Number.isFinite(fromEndDate.getTime())) {
+              const start = new Date(fromEndDate.getTime() + (Math.max(0, acDurationMin) * 60000));
+              const end = new Date(start.getTime() + (Math.max(1, selectedDurationMin) * 60000));
+              parsedRange = { start, end };
+            }
+          }
+
+          const unresolvedDurationMinutes = (parsedRange.start && parsedRange.end)
+            ? Math.round((parsedRange.end.getTime() - parsedRange.start.getTime()) / 60000)
+            : 0;
+
+          if (!parsedRange.start || !parsedRange.end || unresolvedDurationMinutes <= 0) {
+            const selectedPersistedRow = await this.prisma.dvi_itinerary_route_hotspot_details.findFirst({
+              where: {
+                itinerary_plan_ID: Number(planId),
+                itinerary_route_ID: Number(routeId),
+                hotspot_ID: Number(hotspotId),
+                item_type: 4,
+                deleted: 0,
+                status: 1,
+              },
+              orderBy: { route_hotspot_ID: 'desc' },
+              select: {
+                hotspot_order: true,
+              },
+            });
+
+            const selectedOrder = Number(selectedPersistedRow?.hotspot_order || 0);
+            let fallbackStart: Date | null = null;
+
+            if (selectedOrder > 0) {
+              const previousAttraction = await this.prisma.dvi_itinerary_route_hotspot_details.findFirst({
+                where: {
+                  itinerary_plan_ID: Number(planId),
+                  itinerary_route_ID: Number(routeId),
+                  item_type: 4,
+                  deleted: 0,
+                  status: 1,
+                  hotspot_order: { lt: selectedOrder },
+                },
+                orderBy: [
+                  { hotspot_order: 'desc' },
+                  { route_hotspot_ID: 'desc' },
+                ],
+                select: {
+                  hotspot_end_time: true,
+                },
+              });
+
+              if (previousAttraction?.hotspot_end_time) {
+                const prevEnd = new Date(previousAttraction.hotspot_end_time as any);
+                if (Number.isFinite(prevEnd.getTime())) {
+                  fallbackStart = prevEnd;
+                }
+              }
+            }
+
+            if (!fallbackStart) {
+              const routeWindow = await this.prisma.dvi_itinerary_route_details.findUnique({
+                where: { itinerary_route_ID: Number(routeId) },
+                select: { route_start_time: true },
+              });
+              if (routeWindow?.route_start_time) {
+                const routeStart = new Date(routeWindow.route_start_time as any);
+                if (Number.isFinite(routeStart.getTime())) {
+                  fallbackStart = routeStart;
+                }
+              }
+            }
+
+            if (fallbackStart) {
+              const end = new Date(fallbackStart.getTime() + (Math.max(1, selectedDurationMin) * 60000));
+              parsedRange = { start: fallbackStart, end };
+            }
+          }
+        }
+
         if (!parsedRange.start || !parsedRange.end) continue;
+        const finalDurationMinutes = Math.round((parsedRange.end.getTime() - parsedRange.start.getTime()) / 60000);
+        if (finalDurationMinutes <= 0) continue;
 
         const persistedRow = await this.prisma.dvi_itinerary_route_hotspot_details.findFirst({
           where: {
@@ -7399,12 +7522,56 @@ export class ItinerariesService {
           data: {
             hotspot_start_time: parsedRange.start,
             hotspot_end_time: parsedRange.end,
-            hotspot_traveling_time: this.minutesToUtcTimeDate(Math.max(1, Math.round((parsedRange.end.getTime() - parsedRange.start.getTime()) / 60000))),
+            hotspot_traveling_time: this.minutesToUtcTimeDate(Math.max(1, finalDurationMinutes)),
             updatedon: new Date(),
             is_conflict: 0,
             conflict_reason: null,
           },
         });
+      }
+
+      if (applyResult?.success === true && applyResult?.inserted === true) {
+        for (const hotspotId of normalizedApplyHotspotIds) {
+          const persistedRow = await this.prisma.dvi_itinerary_route_hotspot_details.findFirst({
+            where: {
+              itinerary_plan_ID: Number(planId),
+              itinerary_route_ID: Number(routeId),
+              hotspot_ID: Number(hotspotId),
+              item_type: 4,
+              hotspot_plan_own_way: 1,
+              deleted: 0,
+              status: 1,
+            },
+            orderBy: { route_hotspot_ID: 'desc' },
+            select: {
+              route_hotspot_ID: true,
+              hotspot_start_time: true,
+              hotspot_end_time: true,
+            },
+          });
+
+          const durationMinutes = this.computeRowDurationMinutes({
+            hotspot_start_time: persistedRow?.hotspot_start_time,
+            hotspot_end_time: persistedRow?.hotspot_end_time,
+          });
+
+          if (!persistedRow?.route_hotspot_ID || durationMinutes <= 0) {
+            throw new InternalServerErrorException({
+              code: 'MANUAL_HOTSPOT_PERSISTENCE_DURATION_INVALID',
+              message: 'Manual hotspot apply persisted an invalid zero-duration row.',
+              diagnostics: {
+                planId: Number(planId),
+                routeId: Number(routeId),
+                hotspotId: Number(hotspotId),
+                routeHotspotId: Number(persistedRow?.route_hotspot_ID || 0) || null,
+                hotspotStartTime: persistedRow?.hotspot_start_time || null,
+                hotspotEndTime: persistedRow?.hotspot_end_time || null,
+                durationMinutes,
+                applyCode: String(applyResult?.code || ''),
+              },
+            });
+          }
+        }
       }
     }
 
@@ -8730,11 +8897,15 @@ export class ItinerariesService {
       select: {
         hotspot_ID: true,
         hotspot_plan_own_way: true,
+        hotspot_start_time: true,
+        hotspot_end_time: true,
+        is_conflict: true,
       },
     });
 
     const activeIds = new Set<number>(
       (activeRows || [])
+        .filter((row: any) => this.computeRowDurationMinutes(row) > 0 && Number(row?.is_conflict || 0) !== 1)
         .map((row: any) => Number(row?.hotspot_ID || 0))
         .filter((id: number) => id > 0),
     );
@@ -8878,10 +9049,15 @@ export class ItinerariesService {
       },
       select: {
         route_hotspot_ID: true,
+        hotspot_start_time: true,
+        hotspot_end_time: true,
+        is_conflict: true,
       },
     });
 
-    if (selectedAlreadyInRoute) {
+    if (selectedAlreadyInRoute
+      && this.computeRowDurationMinutes(selectedAlreadyInRoute) > 0
+      && Number(selectedAlreadyInRoute?.is_conflict || 0) !== 1) {
       return {
         success: true,
         inserted: false,
@@ -8897,45 +9073,6 @@ export class ItinerariesService {
     }
 
     await this.removeRouteHotspotFromExcludedList(tx, routeId, selectedHotspotId, route);
-    await this.ensureManualHotspotRow(tx, planId, routeId, selectedHotspotId, userId);
-
-    // If duplicate active selected rows exist in this route, keep latest and deactivate older duplicates.
-    const selectedRows = await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
-      where: {
-        itinerary_plan_ID: planId,
-        itinerary_route_ID: routeId,
-        hotspot_ID: selectedHotspotId,
-        item_type: 4,
-        deleted: 0,
-        status: 1,
-      },
-      orderBy: { route_hotspot_ID: 'desc' },
-      select: {
-        route_hotspot_ID: true,
-      },
-    });
-
-    if (selectedRows.length > 1) {
-      const keepId = Number(selectedRows[0]?.route_hotspot_ID || 0);
-      const removeIds = selectedRows.slice(1).map((r: any) => Number(r?.route_hotspot_ID || 0)).filter((id: number) => id > 0);
-      if (removeIds.length > 0) {
-        await (tx as any).dvi_itinerary_route_hotspot_details.updateMany({
-          where: { route_hotspot_ID: { in: removeIds } },
-          data: {
-            deleted: 1,
-            status: 0,
-            updatedon: new Date(),
-          },
-        });
-      }
-      await (tx as any).dvi_itinerary_route_hotspot_details.update({
-        where: { route_hotspot_ID: keepId },
-        data: {
-          hotspot_plan_own_way: 1,
-          updatedon: new Date(),
-        },
-      });
-    }
 
     const routeAttractions = await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
       where: {
@@ -9000,6 +9137,7 @@ export class ItinerariesService {
         hotspot_ID: true,
         hotspot_name: true,
         hotspot_priority: true,
+        hotspot_duration: true,
       },
     });
 
@@ -9108,11 +9246,44 @@ export class ItinerariesService {
     for (const row of adjustedTimeline || []) {
       const type = String(row?.type || '').toLowerCase();
       const hid = Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || 0);
-      if (type !== 'attraction' || !hid || attractionTimeByHotspot.has(hid)) continue;
+      const isAttraction = type === 'attraction' || Number(row?.item_type || 0) === 4;
+      if (!isAttraction || !hid || attractionTimeByHotspot.has(hid)) continue;
       const parsed = this.parsePreviewTimeRangeToUtcDates(row?.timeRange);
       if (!parsed.start || !parsed.end) continue;
       attractionTimeByHotspot.set(hid, { start: parsed.start, end: parsed.end });
     }
+
+    const selectedAttractionTimelineRow = (adjustedTimeline || []).find((row: any) => (
+      (
+        String(row?.type || '').toLowerCase() === 'attraction'
+        || Number(row?.item_type || 0) === 4
+      )
+      && Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || 0) === Number(selectedHotspotId)
+    ));
+    const selectedAttractionTimes = this.parsePreviewTimeRangeToUtcDates(selectedAttractionTimelineRow?.timeRange);
+    if (!selectedAttractionTimes.start || !selectedAttractionTimes.end) {
+      throw new ConflictException({
+        success: false,
+        inserted: false,
+        code: 'MANUAL_HOTSPOT_STRICT_TIMING_REQUIRED',
+        message: 'Selected hotspot timeline could not be resolved to a valid non-zero time range.',
+      });
+    }
+
+    const selectedFinalOrder = (adjustedTimeline || [])
+      .filter((row: any) => String(row?.type || '').toLowerCase() === 'attraction')
+      .map((row: any) => Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || 0))
+      .findIndex((id: number) => id === Number(selectedHotspotId));
+
+    await this.activateManualHotspotRowWithTimes(tx, {
+      planId,
+      routeId,
+      hotspotId: Number(selectedHotspotId),
+      userId,
+      start: selectedAttractionTimes.start,
+      end: selectedAttractionTimes.end,
+      hotspotOrder: selectedFinalOrder >= 0 ? selectedFinalOrder + 1 : undefined,
+    });
 
     const activeAttractionsAfterReorder = await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
       where: {
@@ -9174,14 +9345,8 @@ export class ItinerariesService {
       });
     }
 
-    const selectedAttractionTimelineRow = (adjustedTimeline || []).find((row: any) => (
-      String(row?.type || '').toLowerCase() === 'attraction'
-      && Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || 0) === Number(selectedHotspotId)
-    ));
-    const selectedAttractionTimes = this.parsePreviewTimeRangeToUtcDates(selectedAttractionTimelineRow?.timeRange);
     const selectedAttractionRow = activeAttractionsAfterReorder.find((row: any) => (
       Number(row?.hotspot_ID || 0) === Number(selectedHotspotId)
-      && Number(row?.item_type || 0) === 4
     ));
     if (selectedAttractionRow && selectedAttractionTimes.start && selectedAttractionTimes.end) {
       const selectedDurationMinutes = Math.max(1, Math.round((selectedAttractionTimes.end.getTime() - selectedAttractionTimes.start.getTime()) / 60000));
@@ -9441,7 +9606,10 @@ export class ItinerariesService {
         name: String(selectedMaster?.hotspot_name || manualInsertionFit?.selectedHotspotName || `Hotspot #${selectedHotspotId}`),
         visitTime: (
           (adjustedTimeline || []).find((row: any) =>
-            String(row?.type || '').toLowerCase() === 'attraction'
+            (
+              String(row?.type || '').toLowerCase() === 'attraction'
+              || Number(row?.item_type || 0) === 4
+            )
             && Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || 0) === selectedHotspotId,
           )?.timeRange || undefined
         ),
@@ -11018,6 +11186,7 @@ export class ItinerariesService {
         hotspot_ID: true,
         hotspot_name: true,
         hotspot_priority: true,
+        hotspot_duration: true,
         hotspot_location: true,
         hotspot_latitude: true,
         hotspot_longitude: true,
@@ -11291,6 +11460,7 @@ export class ItinerariesService {
     const bestToHotspotId = Number(manualInsertionFit?.bestSlot?.toHotspotId || 0);
     const hasMatrixSafeSlot =
       options?.previewOnly !== true
+      && options?.forceConflictInsertion !== true
       && requestedHotspotIds.length === 1
       && !!manualInsertionFit?.bestSlot
       && (bestRouteFitType === 'ON_ROUTE' || bestRouteFitType === 'MINOR_DETOUR')
@@ -11785,12 +11955,26 @@ export class ItinerariesService {
 
     if (canForceConflictInsertion) {
       for (const hotspotId of requestedHotspotIds) {
+        const previewRow = (Array.isArray(adjustedPreviewTimeline) ? adjustedPreviewTimeline : []).find((row: any) => {
+          const isAttraction = String(row?.type || '').toLowerCase() === 'attraction' || Number(row?.item_type || 0) === 4;
+          if (!isAttraction) return false;
+          const rowHotspotId = Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || row?.hotspot_id || 0);
+          return rowHotspotId === Number(hotspotId);
+        });
+        const previewRange = this.parsePreviewTimeRangeToUtcDates(previewRow?.timeRange);
+        const previewDurationMinutes = (previewRange.start && previewRange.end)
+          ? Math.round((previewRange.end.getTime() - previewRange.start.getTime()) / 60000)
+          : 0;
+
         await this.forceInsertManualHotspotConflictRow(
           tx,
           Number(planId),
           Number(routeId),
           Number(hotspotId),
           Number(userId || 1),
+          (previewRange.start && previewRange.end && previewDurationMinutes > 0)
+            ? { start: previewRange.start, end: previewRange.end }
+            : undefined,
         );
       }
     }
@@ -12034,14 +12218,14 @@ export class ItinerariesService {
         continue;
       }
 
-      const durationMin = Number(row?.matrixDurationMin);
-      if ((!Number.isFinite(durationMin) || durationMin <= 0) && row?.isEstimatedTravel !== true) {
-        issues.push({ index, issue: 'travel row missing matrixDurationMin' });
+      const parsedDurationMin = Math.round((parsed.end.getTime() - parsed.start.getTime()) / 60000);
+      if (!Number.isFinite(parsedDurationMin) || parsedDurationMin <= 0) {
+        issues.push({ index, issue: 'travel row has non-positive duration' });
         continue;
       }
 
-      // Estimated travel legs are acceptable when timeline ordering is valid.
-      // Blocking on this made feasible matrix slots appear unschedulable.
+      // matrixDurationMin is advisory metadata. A valid, positive parsed timeRange
+      // is sufficient for strict apply in confirm-phase persistence.
     }
 
     if (issues.length > 0) {
@@ -16386,7 +16570,7 @@ export class ItinerariesService {
     hotspotId: number,
     userId: number,
   ): Promise<{ alreadyExisted: boolean }> {
-    const existingActive = await (tx as any).dvi_itinerary_route_hotspot_details.findFirst({
+    const existingRows = await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
       where: {
         itinerary_plan_ID: Number(planId),
         itinerary_route_ID: Number(routeId),
@@ -16394,16 +16578,30 @@ export class ItinerariesService {
         item_type: 4,
         deleted: 0,
       },
+      orderBy: [
+        { route_hotspot_ID: 'desc' },
+      ],
       select: {
         route_hotspot_ID: true,
         hotspot_plan_own_way: true,
+        hotspot_start_time: true,
+        hotspot_end_time: true,
+        status: true,
+        is_conflict: true,
       },
     });
 
-    if (existingActive) {
-      if (Number(existingActive.hotspot_plan_own_way || 0) !== 1) {
+    const validExisting = (existingRows || []).find((row: any) => {
+      const isActive = Number(row?.status || 0) === 1;
+      const hasPositiveDuration = this.computeRowDurationMinutes(row) > 0;
+      const isConflict = Number(row?.is_conflict || 0) === 1;
+      return isActive && hasPositiveDuration && !isConflict;
+    });
+
+    if (validExisting) {
+      if (Number(validExisting.hotspot_plan_own_way || 0) !== 1) {
         await (tx as any).dvi_itinerary_route_hotspot_details.update({
-          where: { route_hotspot_ID: Number(existingActive.route_hotspot_ID) },
+          where: { route_hotspot_ID: Number(validExisting.route_hotspot_ID) },
           data: {
             hotspot_plan_own_way: 1,
             updatedon: new Date(),
@@ -16411,6 +16609,26 @@ export class ItinerariesService {
         });
       }
       return { alreadyExisted: true };
+    }
+
+    const staleActiveIds = (existingRows || [])
+      .filter((row: any) => {
+        const isActive = Number(row?.status || 0) === 1;
+        const isManual = Number(row?.hotspot_plan_own_way || 0) === 1;
+        return isActive && isManual && this.computeRowDurationMinutes(row) <= 0;
+      })
+      .map((row: any) => Number(row?.route_hotspot_ID || 0))
+      .filter((id: number) => id > 0);
+
+    if (staleActiveIds.length > 0) {
+      await (tx as any).dvi_itinerary_route_hotspot_details.updateMany({
+        where: { route_hotspot_ID: { in: staleActiveIds } },
+        data: {
+          status: 0,
+          deleted: 1,
+          updatedon: new Date(),
+        },
+      });
     }
 
     const placeholderTime = new Date('1970-01-01T00:00:00Z');
@@ -16426,8 +16644,8 @@ export class ItinerariesService {
         hotspot_end_time: placeholderTime,
         createdby: Number(userId || 1),
         createdon: new Date(),
-        status: 1,
-        deleted: 0,
+        status: 0,
+        deleted: 1,
       },
     });
 
@@ -16461,6 +16679,16 @@ export class ItinerariesService {
       return false;
     }
 
+    const scheduledCandidateRows = rows.filter((row: any) => {
+      const hasPositiveDuration = this.computeRowDurationMinutes(row) > 0;
+      const isConflict = Number(row?.is_conflict || 0) === 1;
+      return hasPositiveDuration && !isConflict;
+    });
+
+    if (scheduledCandidateRows.length === 0) {
+      return false;
+    }
+
     const route = await (tx as any).dvi_itinerary_route_details.findFirst({
       where: {
         itinerary_route_ID: Number(routeId),
@@ -16472,7 +16700,7 @@ export class ItinerariesService {
 
     // If route date is unavailable, keep legacy behavior to avoid false negatives.
     if (!route?.itinerary_route_date) {
-      return true;
+      return this.hasAnyNonOverlappingManualRow(tx, Number(planId), Number(routeId), scheduledCandidateRows);
     }
 
     const timingDay = (new Date(route.itinerary_route_date).getDay() + 6) % 7; // Mon=0..Sun=6
@@ -16492,18 +16720,15 @@ export class ItinerariesService {
 
     // No timing definition: preserve previous permissive behavior.
     if (!Array.isArray(timings) || timings.length === 0) {
-      return true;
+      return this.hasAnyNonOverlappingManualRow(tx, Number(planId), Number(routeId), scheduledCandidateRows);
     }
 
     if (timings.some((t: any) => Number(t?.hotspot_open_all_time || 0) === 1)) {
-      const nonConflictRows = rows.filter((row: any) => Number(row?.is_conflict || 0) !== 1);
-      return this.hasAnyNonOverlappingManualRow(tx, Number(planId), Number(routeId), nonConflictRows);
+      return this.hasAnyNonOverlappingManualRow(tx, Number(planId), Number(routeId), scheduledCandidateRows);
     }
 
     let hasValidRow = false;
-    for (const row of rows) {
-      // Conflict rows are never considered scheduled.
-      if (Number(row?.is_conflict || 0) === 1) continue;
+    for (const row of scheduledCandidateRows) {
 
       const startSec = this.hmsToSeconds(TimeConverter.toTimeString(row?.hotspot_start_time));
       const endSec = this.hmsToSeconds(TimeConverter.toTimeString(row?.hotspot_end_time));
@@ -16547,6 +16772,169 @@ export class ItinerariesService {
     const mm = Number.isFinite(m) ? m : 0;
     const ss = Number.isFinite(s) ? s : 0;
     return (hh * 3600) + (mm * 60) + ss;
+  }
+
+  private computeRowDurationMinutes(row: any): number {
+    const startRaw = row?.hotspot_start_time;
+    const endRaw = row?.hotspot_end_time;
+    if (!startRaw || !endRaw) return 0;
+
+    const start = new Date(startRaw as any);
+    const end = new Date(endRaw as any);
+    if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime())) {
+      return 0;
+    }
+
+    return Math.round((end.getTime() - start.getTime()) / 60000);
+  }
+
+  private async cleanupStaleManualHotspotRows(
+    planId: number,
+    routeId: number,
+    hotspotIds: number[],
+  ): Promise<void> {
+    const normalizedHotspotIds = this.normalizeManualHotspotIds(hotspotIds);
+    if (normalizedHotspotIds.length === 0) return;
+
+    const rows = await this.prisma.dvi_itinerary_route_hotspot_details.findMany({
+      where: {
+        itinerary_plan_ID: Number(planId),
+        itinerary_route_ID: Number(routeId),
+        hotspot_ID: { in: normalizedHotspotIds },
+        item_type: 4,
+        hotspot_plan_own_way: 1,
+        deleted: 0,
+        status: 1,
+      },
+      select: {
+        route_hotspot_ID: true,
+        hotspot_start_time: true,
+        hotspot_end_time: true,
+      },
+    });
+
+    const staleIds = (rows || [])
+      .filter((row: any) => this.computeRowDurationMinutes(row) <= 0)
+      .map((row: any) => Number(row?.route_hotspot_ID || 0))
+      .filter((id: number) => id > 0);
+
+    if (staleIds.length === 0) return;
+
+    await this.prisma.dvi_itinerary_route_hotspot_details.updateMany({
+      where: {
+        route_hotspot_ID: { in: staleIds },
+      },
+      data: {
+        status: 0,
+        deleted: 1,
+        updatedon: new Date(),
+      },
+    });
+  }
+
+  private async activateManualHotspotRowWithTimes(
+    tx: any,
+    params: {
+      planId: number;
+      routeId: number;
+      hotspotId: number;
+      userId: number;
+      start: Date;
+      end: Date;
+      hotspotOrder?: number;
+    },
+  ): Promise<number> {
+    const durationMinutes = Math.round((params.end.getTime() - params.start.getTime()) / 60000);
+    if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) {
+      throw new ConflictException({
+        success: false,
+        inserted: false,
+        code: 'MANUAL_HOTSPOT_INVALID_TIMING_WINDOW',
+        message: 'Cannot activate manual hotspot row with zero/negative duration.',
+      });
+    }
+
+    const existingRows = await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
+      where: {
+        itinerary_plan_ID: Number(params.planId),
+        itinerary_route_ID: Number(params.routeId),
+        hotspot_ID: Number(params.hotspotId),
+        item_type: 4,
+      },
+      orderBy: [
+        { route_hotspot_ID: 'desc' },
+      ],
+      select: {
+        route_hotspot_ID: true,
+      },
+    });
+
+    const keepRowId = Number(existingRows?.[0]?.route_hotspot_ID || 0);
+    if (keepRowId > 0) {
+      await (tx as any).dvi_itinerary_route_hotspot_details.update({
+        where: { route_hotspot_ID: keepRowId },
+        data: {
+          hotspot_plan_own_way: 1,
+          hotspot_start_time: params.start,
+          hotspot_end_time: params.end,
+          hotspot_traveling_time: this.minutesToUtcTimeDate(Math.max(1, durationMinutes)),
+          hotspot_order: Number.isFinite(Number(params.hotspotOrder || 0)) && Number(params.hotspotOrder || 0) > 0
+            ? Number(params.hotspotOrder)
+            : undefined,
+          status: 1,
+          deleted: 0,
+          is_conflict: 0,
+          conflict_reason: null,
+          updatedon: new Date(),
+        },
+      });
+
+      const staleIds = (existingRows || [])
+        .slice(1)
+        .map((row: any) => Number(row?.route_hotspot_ID || 0))
+        .filter((id: number) => id > 0);
+      if (staleIds.length > 0) {
+        await (tx as any).dvi_itinerary_route_hotspot_details.updateMany({
+          where: {
+            route_hotspot_ID: { in: staleIds },
+          },
+          data: {
+            status: 0,
+            deleted: 1,
+            updatedon: new Date(),
+          },
+        });
+      }
+
+      return keepRowId;
+    }
+
+    const created = await (tx as any).dvi_itinerary_route_hotspot_details.create({
+      data: {
+        itinerary_plan_ID: Number(params.planId),
+        itinerary_route_ID: Number(params.routeId),
+        hotspot_ID: Number(params.hotspotId),
+        hotspot_plan_own_way: 1,
+        item_type: 4,
+        hotspot_order: Number.isFinite(Number(params.hotspotOrder || 0)) && Number(params.hotspotOrder || 0) > 0
+          ? Number(params.hotspotOrder)
+          : 999,
+        hotspot_start_time: params.start,
+        hotspot_end_time: params.end,
+        hotspot_traveling_time: this.minutesToUtcTimeDate(Math.max(1, durationMinutes)),
+        createdby: Number(params.userId || 1),
+        createdon: new Date(),
+        status: 1,
+        deleted: 0,
+        is_conflict: 0,
+        conflict_reason: null,
+      },
+      select: {
+        route_hotspot_ID: true,
+      },
+    });
+
+    return Number(created?.route_hotspot_ID || 0);
   }
 
   private minutesToUtcTimeDate(minutes: number): Date {
@@ -16974,6 +17362,7 @@ export class ItinerariesService {
     routeId: number,
     hotspotId: number,
     userId: number,
+    preferredTimes?: { start: Date; end: Date },
   ): Promise<boolean> {
     const existing = await (tx as any).dvi_itinerary_route_hotspot_details.findFirst({
       where: {
@@ -16987,10 +17376,17 @@ export class ItinerariesService {
     });
 
     if (existing) {
+      const preferredDuration = preferredTimes?.start && preferredTimes?.end
+        ? Math.max(1, Math.round((preferredTimes.end.getTime() - preferredTimes.start.getTime()) / 60000))
+        : 0;
+
       await (tx as any).dvi_itinerary_route_hotspot_details.update({
         where: { route_hotspot_ID: Number(existing.route_hotspot_ID) },
         data: {
           hotspot_plan_own_way: 1,
+          hotspot_start_time: preferredTimes?.start || undefined,
+          hotspot_end_time: preferredTimes?.end || undefined,
+          hotspot_traveling_time: preferredDuration > 0 ? this.minutesToUtcTimeDate(preferredDuration) : undefined,
           is_conflict: 1,
           conflict_reason: 'Forced manual insertion after user confirmation.',
           updatedon: new Date(),
@@ -17007,7 +17403,9 @@ export class ItinerariesService {
       },
     });
 
-    const fallbackTime = route?.route_end_time || route?.route_start_time || new Date('1970-01-01T00:00:00Z');
+    const fallbackStartTime = preferredTimes?.start || route?.route_end_time || route?.route_start_time || new Date('1970-01-01T00:00:00Z');
+    const fallbackEndTime = preferredTimes?.end || fallbackStartTime;
+    const fallbackDurationMinutes = Math.max(1, Math.round((fallbackEndTime.getTime() - fallbackStartTime.getTime()) / 60000));
 
     const currentMaxOrderRow = await (tx as any).dvi_itinerary_route_hotspot_details.findFirst({
       where: {
@@ -17028,8 +17426,9 @@ export class ItinerariesService {
         hotspot_plan_own_way: 1,
         item_type: 4,
         hotspot_order: Number.isFinite(nextOrder) && nextOrder > 0 ? nextOrder : 999,
-        hotspot_start_time: fallbackTime,
-        hotspot_end_time: fallbackTime,
+        hotspot_start_time: fallbackStartTime,
+        hotspot_end_time: fallbackEndTime,
+        hotspot_traveling_time: this.minutesToUtcTimeDate(fallbackDurationMinutes),
         is_conflict: 1,
         conflict_reason: 'Forced manual insertion after user confirmation.',
         createdby: Number(userId || 1),
