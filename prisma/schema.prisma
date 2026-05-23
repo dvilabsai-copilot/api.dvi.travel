@@ -6167,6 +6167,32 @@ model hotspot_route_between_map {
   @@index([route_fit_type], map: "idx_hotspot_route_between_fit")
 }
 
+model hotspot_hotel_between_map {
+  id                       BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  itinerary_plan_id        BigInt?
+  itinerary_route_id       BigInt?
+  from_hotspot_id          BigInt    @db.UnsignedBigInt
+  hotel_id                 BigInt    @db.UnsignedBigInt
+  between_hotspot_id       BigInt    @db.UnsignedBigInt
+  route_fit_type           String?   @db.VarChar(64)
+  route_decision_reason    String?   @db.Text
+  ab_osrm_distance_km      Decimal?  @db.Decimal(12, 3)
+  ac_osrm_distance_km      Decimal?  @db.Decimal(12, 3)
+  cb_osrm_distance_km      Decimal?  @db.Decimal(12, 3)
+  inserted_route_distance_km Decimal? @db.Decimal(12, 3)
+  road_detour_km           Decimal?  @db.Decimal(12, 3)
+  osrm_used                Boolean   @default(false) @db.TinyInt
+  status                   Int       @default(1) @db.TinyInt
+  deleted                  Int       @default(0) @db.TinyInt
+  created_at               DateTime  @default(now()) @db.DateTime(0)
+  updated_at               DateTime  @default(now()) @updatedAt @db.DateTime(0)
+
+  @@unique([from_hotspot_id, hotel_id, between_hotspot_id], map: "uniq_hotel_between")
+  @@index([itinerary_plan_id, itinerary_route_id], map: "idx_plan_route")
+  @@index([hotel_id], map: "idx_hotel")
+  @@index([between_hotspot_id], map: "idx_between")
+}
+
 model hotspot_route_between_rejections {
   id                                      BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
   from_hotspot_id                         Int

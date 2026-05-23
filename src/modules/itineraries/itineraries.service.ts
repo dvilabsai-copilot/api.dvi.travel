@@ -7008,8 +7008,10 @@ export class ItinerariesService {
       allowTopPriorityRemoval?: boolean;
       debug?: boolean;
       focusHotspotId?: number;
+      previewOnly?: boolean;
     },
   ) {
+    const previewStateSnapshot = await this.captureManualPreviewRouteState(Number(planId), Number(routeId));
     const manualHotspotTxTimeoutMs = 180000;
     const previewRollbackError = new Error('__PREVIEW_MANUAL_HOTSPOT_BATCH_ROLLBACK__');
     let previewResult: any;
@@ -7024,7 +7026,7 @@ export class ItinerariesService {
           1,
           {
             ...options,
-            previewOnly: true,
+            previewOnly: options?.previewOnly !== false,
           },
         );
 
@@ -7036,7 +7038,123 @@ export class ItinerariesService {
       }
     }
 
+    const previewIsolationRecovered = await this.restoreManualPreviewRouteState(previewStateSnapshot);
+    previewResult = {
+      ...(previewResult || {}),
+      previewIsolationRecovered,
+    };
+
     return previewResult;
+  }
+
+  private async captureManualPreviewRouteState(planId: number, routeId: number): Promise<{
+    planId: number;
+    routeId: number;
+    hotspotRows: any[];
+    activityRows: any[];
+    routeExcludedHotspotIds: any[];
+  }> {
+    const hotspotRows = await (this.prisma as any).$queryRawUnsafe(`
+      SELECT *
+      FROM dvi_itinerary_route_hotspot_details
+      WHERE itinerary_plan_ID = ?
+        AND itinerary_route_ID = ?
+      ORDER BY route_hotspot_ID ASC
+    `, Number(planId), Number(routeId));
+
+    const activityRows = await (this.prisma as any).$queryRawUnsafe(`
+      SELECT *
+      FROM dvi_itinerary_route_activity_details
+      WHERE itinerary_plan_ID = ?
+        AND itinerary_route_ID = ?
+      ORDER BY route_activity_ID ASC
+    `, Number(planId), Number(routeId));
+
+    const routeRow = await (this.prisma as any).dvi_itinerary_route_details.findUnique({
+      where: { itinerary_route_ID: Number(routeId) },
+      select: { excluded_hotspot_ids: true },
+    });
+
+    return {
+      planId: Number(planId),
+      routeId: Number(routeId),
+      hotspotRows: Array.isArray(hotspotRows) ? hotspotRows : [],
+      activityRows: Array.isArray(activityRows) ? activityRows : [],
+      routeExcludedHotspotIds: Array.isArray(routeRow?.excluded_hotspot_ids)
+        ? routeRow.excluded_hotspot_ids
+        : [],
+    };
+  }
+
+  private async restoreManualPreviewRouteState(snapshot: {
+    planId: number;
+    routeId: number;
+    hotspotRows: any[];
+    activityRows: any[];
+    routeExcludedHotspotIds: any[];
+  }): Promise<boolean> {
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        await (tx as any).dvi_itinerary_route_activity_details.deleteMany({
+          where: {
+            itinerary_plan_ID: Number(snapshot.planId),
+            itinerary_route_ID: Number(snapshot.routeId),
+          },
+        });
+
+        await (tx as any).dvi_itinerary_route_hotspot_details.deleteMany({
+          where: {
+            itinerary_plan_ID: Number(snapshot.planId),
+            itinerary_route_ID: Number(snapshot.routeId),
+          },
+        });
+
+        await this.bulkInsertSnapshotRows(tx, 'dvi_itinerary_route_hotspot_details', snapshot.hotspotRows || []);
+        await this.bulkInsertSnapshotRows(tx, 'dvi_itinerary_route_activity_details', snapshot.activityRows || []);
+
+        await (tx as any).dvi_itinerary_route_details.update({
+          where: { itinerary_route_ID: Number(snapshot.routeId) },
+          data: {
+            excluded_hotspot_ids: Array.isArray(snapshot.routeExcludedHotspotIds)
+              ? snapshot.routeExcludedHotspotIds
+              : [],
+            updatedon: new Date(),
+          },
+        });
+      }, { timeout: 120000 });
+
+      return true;
+    } catch (error: any) {
+      console.error('[ManualHotspotPreview] failed to restore preview snapshot state', {
+        planId: Number(snapshot?.planId || 0),
+        routeId: Number(snapshot?.routeId || 0),
+        message: String(error?.message || error || 'unknown restore error'),
+      });
+      return false;
+    }
+  }
+
+  private async bulkInsertSnapshotRows(tx: any, tableName: string, rows: any[]): Promise<void> {
+    const safeRows = Array.isArray(rows) ? rows : [];
+    if (safeRows.length === 0) return;
+
+    const columns = Object.keys(safeRows[0] || {});
+    if (columns.length === 0) return;
+
+    const columnSql = columns.map((col) => `\`${String(col)}\``).join(', ');
+    const valuePlaceholder = `(${columns.map(() => '?').join(', ')})`;
+    const valuesSql = safeRows.map(() => valuePlaceholder).join(', ');
+    const sql = `INSERT INTO \`${tableName}\` (${columnSql}) VALUES ${valuesSql}`;
+
+    const params: any[] = [];
+    for (const row of safeRows) {
+      for (const col of columns) {
+        const value = row?.[col];
+        params.push(value === undefined ? null : value);
+      }
+    }
+
+    await (tx as any).$executeRawUnsafe(sql, ...params);
   }
 
   async buildMissingManualHotspotMatrix(params: {
@@ -8934,6 +9052,17 @@ export class ItinerariesService {
       }
     }
 
+    const strictTimingValidation = this.validateStrictMatrixTimeline(adjustedTimeline);
+    if (!strictTimingValidation.passes) {
+      throw new ConflictException({
+        success: false,
+        inserted: false,
+        code: 'MANUAL_HOTSPOT_STRICT_TIMING_REQUIRED',
+        message: strictTimingValidation.reason,
+        strictTimingValidation,
+      });
+    }
+
     const attractionTimeByHotspot = new Map<number, { start: Date; end: Date }>();
     for (const row of adjustedTimeline || []) {
       const type = String(row?.type || '').toLowerCase();
@@ -9957,12 +10086,76 @@ export class ItinerariesService {
     } else {
       merged.splice(insertAfterIndex + 1, 0, travelAToC, selectedRowWithMatrix, travelCToB);
     }
-    const normalizedMerged = this.normalizeTravelLabelsToNextStop(merged);
-    return normalizedMerged.map((row: any, index: number) => ({
+    return this.finalizeMatrixPreviewTimeline(merged);
+  }
+
+  private finalizeMatrixPreviewTimeline(timeline: any[]): any[] {
+    const normalized = this.normalizeTravelLabelsToNextStop(Array.isArray(timeline) ? timeline : []);
+    const repaired = this.repairMatrixPreviewTimelineTimeRanges(normalized);
+    return repaired.map((row: any, index: number) => ({
       ...row,
       previewOrder: index,
       matrixPreviewOrder: index,
     }));
+  }
+
+  private repairMatrixPreviewTimelineTimeRanges(timeline: any[]): any[] {
+    if (!Array.isArray(timeline) || timeline.length === 0) return [];
+
+    const output: any[] = [];
+    let cursor: number | null = null;
+
+    const isHotelLikeRow = (row: any): boolean => {
+      const type = String(row?.type || '').toLowerCase();
+      const itemType = Number(row?.item_type || 0);
+      const text = String(row?.text || row?.name || '').toLowerCase();
+      return type === 'hotel' || itemType === 6 || /check-?in\s+at\s+hotel/.test(text);
+    };
+
+    for (const row of timeline) {
+      const rawRange = String(row?.timeRange || '').trim();
+      const hasPlaceholderRange = /needs\s+recalculation|needs\s+reschedule/i.test(rawRange);
+      const parsedStart = this.parseSegmentStartMinutes(row);
+      const parsedEnd = this.parseSegmentEndMinutes(row);
+      const hasValidRange = !hasPlaceholderRange
+        && parsedStart !== null
+        && parsedEnd !== null
+        && parsedEnd >= parsedStart;
+
+      if (hasValidRange) {
+        output.push(row);
+        cursor = parsedEnd;
+        continue;
+      }
+
+      if (!hasPlaceholderRange) {
+        output.push(row);
+        if (parsedEnd !== null) cursor = parsedEnd;
+        continue;
+      }
+
+      const hotelLike = isHotelLikeRow(row);
+      const durationMin = hotelLike
+        ? 0
+        : Math.max(1, Math.round(Number(row?.matrixDurationMin || this.getPreviewRowDurationMinutes(row) || 10)));
+      const startMin = cursor ?? 0;
+      const endMin = hotelLike ? startMin : (startMin + durationMin);
+
+      const patchedRow: any = {
+        ...row,
+        timeRange: this.minutesRangeToTimeString(startMin, endMin),
+      };
+
+      if (!hotelLike && row?.isMatrixSplitTravel === true) {
+        patchedRow.matrixDurationMin = durationMin;
+        patchedRow.duration = row?.duration || `${durationMin} Min`;
+      }
+
+      output.push(patchedRow);
+      cursor = endMin;
+    }
+
+    return output;
   }
 
   private async buildMatrixRescheduledPreviewTimeline(params: {
@@ -9992,11 +10185,7 @@ export class ItinerariesService {
     });
 
     if (!manualInsertionFit || baseMerged.length === 0 || !tx) {
-      return baseMerged.map((row: any, index: number) => ({
-        ...row,
-        previewOrder: index,
-        matrixPreviewOrder: index,
-      }));
+      return this.finalizeMatrixPreviewTimeline(baseMerged);
     }
 
     const selectedIdNum = Number(selectedHotspotId || 0);
@@ -10016,11 +10205,7 @@ export class ItinerariesService {
       label: bestSlot?.label || null,
     });
     if (!fromHotspotId || !toHotspotId) {
-      return baseMerged.map((row: any, index: number) => ({
-        ...row,
-        previewOrder: index,
-        matrixPreviewOrder: index,
-      }));
+      return this.finalizeMatrixPreviewTimeline(baseMerged);
     }
 
     // Find key matrix indices
@@ -10034,11 +10219,7 @@ export class ItinerariesService {
     );
 
     if (fromRowIndex < 0 || toRowIndex < 0 || fromRowIndex >= toRowIndex) {
-      return baseMerged.map((row: any, index: number) => ({
-        ...row,
-        previewOrder: index,
-        matrixPreviewOrder: index,
-      }));
+      return this.finalizeMatrixPreviewTimeline(baseMerged);
     }
 
     const insertedRowIndex = baseMerged.findIndex(
@@ -10067,14 +10248,18 @@ export class ItinerariesService {
     });
 
     // Fetch or estimate durations
+    const cachedAcDurationMin = tx ? await this.getCachedRouteDurationMinutes(tx, fromHotspotId, selectedIdNum) : null;
+    const cachedCbDurationMin = tx ? await this.getCachedRouteDurationMinutes(tx, selectedIdNum, toHotspotId) : null;
     const acDurationMin =
-      (tx ? await this.getCachedRouteDurationMinutes(tx, fromHotspotId, selectedIdNum) : null)
+      cachedAcDurationMin
       || this.estimateDurationFromDistance(Number(bestSlot?.acOsrmDistanceKm || null))
       || 10;
     const cbDurationMin =
-      (tx ? await this.getCachedRouteDurationMinutes(tx, selectedIdNum, toHotspotId) : null)
+      cachedCbDurationMin
       || this.estimateDurationFromDistance(Number(bestSlot?.cbOsrmDistanceKm || null))
       || 10;
+    const acEstimated = !Number.isFinite(Number(cachedAcDurationMin || 0)) || Number(cachedAcDurationMin || 0) <= 0;
+    const cbEstimated = !Number.isFinite(Number(cachedCbDurationMin || 0)) || Number(cachedCbDurationMin || 0) <= 0;
 
     const selectedRow = baseMerged[insertedRowIndex];
     const selectedDurationMinutes = this.getPreviewRowDurationMinutes(selectedRow) || 60;
@@ -10121,6 +10306,7 @@ export class ItinerariesService {
       distanceKm: acDistanceKm,
       travelDistanceKm: acDistanceKm,
       matrixDurationMin: acDurationMin,
+      isEstimatedTravel: acEstimated,
       duration: `${Math.round(acDurationMin)} Min`,
       distance: acDistanceKm != null ? `${Number(acDistanceKm).toFixed(1)} km` : null,
       timeRange: this.minutesRangeToTimeString(acStartMin, acEndMin),
@@ -10195,6 +10381,7 @@ export class ItinerariesService {
       distanceKm: cbDistanceKm,
       travelDistanceKm: cbDistanceKm,
       matrixDurationMin: cbDurationMin,
+      isEstimatedTravel: cbEstimated,
       duration: `${Math.round(cbDurationMin)} Min`,
       distance: cbDistanceKm != null ? `${Number(cbDistanceKm).toFixed(1)} km` : null,
       timeRange: this.minutesRangeToTimeString(cbStartMin, cbEndMin),
@@ -10421,12 +10608,7 @@ export class ItinerariesService {
       manualInsertionFit.dayOverflowMinutes = dayOverflowMinutes;
     }
 
-    const normalizedRescheduled = this.normalizeTravelLabelsToNextStop(rescheduled);
-    const withOrder = normalizedRescheduled.map((row: any, index: number) => ({
-      ...row,
-      previewOrder: index,
-      matrixPreviewOrder: index,
-    }));
+    const withOrder = this.finalizeMatrixPreviewTimeline(rescheduled);
 
     console.log('[ManualTimelineBuild] final_order', withOrder.map((row: any, index: number) => ({
       index,
@@ -10827,6 +11009,7 @@ export class ItinerariesService {
     const preFocusCandidate = hotspotMasters.find((m: any) => Number(m.hotspot_ID) === Number(preFocusHotspotId));
     const manualInsertionFit = await this.buildManualInsertionFit(
       tx,
+      Number(planId),
       Number(routeId),
       Number(preFocusHotspotId),
       String(preFocusCandidate?.hotspot_name || `Hotspot #${preFocusHotspotId}`),
@@ -10977,10 +11160,15 @@ export class ItinerariesService {
     }
 
     const bestRouteFitType = String(manualInsertionFit?.bestSlot?.routeFitType || '').toUpperCase();
+    const bestFromHotspotId = Number(manualInsertionFit?.bestSlot?.fromHotspotId || 0);
+    const bestToHotspotId = Number(manualInsertionFit?.bestSlot?.toHotspotId || 0);
     const hasMatrixSafeSlot =
-      options?.matrixPreferredSlot?.source === 'BEST_FIT'
+      options?.previewOnly !== true
+      && requestedHotspotIds.length === 1
       && !!manualInsertionFit?.bestSlot
-      && (bestRouteFitType === 'ON_ROUTE' || bestRouteFitType === 'MINOR_DETOUR');
+      && (bestRouteFitType === 'ON_ROUTE' || bestRouteFitType === 'MINOR_DETOUR')
+      && bestFromHotspotId > 0
+      && bestToHotspotId > 0;
 
     if (hasMatrixSafeSlot && options?.previewOnly !== true) {
       return this.applyMatrixSafeManualHotspotInsertionInTx(tx, {
@@ -11407,6 +11595,61 @@ export class ItinerariesService {
       }
     }
 
+    const strictTimingValidation = this.validateStrictMatrixTimeline(adjustedPreviewTimeline);
+    if (!strictTimingValidation.passes) {
+      finalRequiresConfirmation = false;
+      finalTopPriorityAffected = [];
+      finalRemovedTopPriority = [];
+      manualInsertionFit.canApply = false;
+      manualInsertionFit.strictTimingValidation = strictTimingValidation;
+      finalValidation = {
+        ...finalValidation,
+        passesScheduleRules: false,
+        readyToApply: false,
+        requiresPriorityConfirmation: false,
+        stillUnschedulable: true,
+        reason: strictTimingValidation.reason,
+      };
+    }
+
+    const selectedManualRowsInPreview = (Array.isArray(adjustedPreviewTimeline) ? adjustedPreviewTimeline : [])
+      .filter((row: any) => {
+        if (String(row?.type || '').toLowerCase() !== 'attraction' && Number(row?.item_type || 0) !== 4) {
+          return false;
+        }
+        const id = Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || row?.hotspot_id || 0);
+        return requestedHotspotIds.includes(id);
+      });
+    const selectedManualPresentInPreview = selectedManualRowsInPreview.length > 0;
+    const selectedManualConflictInPreview = selectedManualRowsInPreview.some((row: any) => row?.isConflict === true);
+    const chosenRouteFitTypeUpper = String(manualInsertionFit?.chosenSlot?.routeFitType || '').toUpperCase();
+    const chosenSlotFeasible = chosenRouteFitTypeUpper === 'ON_ROUTE' || chosenRouteFitTypeUpper === 'MINOR_DETOUR';
+    const resolvedWithTimelineRecalc = Boolean(
+      allRemovedHotspots.length > 0
+      || manualInsertionFit?.lowPriorityRemovalPlanPreview?.resolved === true
+      || manualInsertionFit?.rescheduleApplied === true,
+    );
+
+    if (
+      chosenSlotFeasible
+      && selectedManualPresentInPreview
+      && !selectedManualConflictInPreview
+      && Number(finalValidation?.routeEndOverflowMinutes || 0) <= 0
+      && finalRequiresConfirmation !== true
+    ) {
+      manualInsertionFit.canApply = true;
+      finalValidation = {
+        ...finalValidation,
+        passesScheduleRules: true,
+        readyToApply: true,
+        requiresPriorityConfirmation: false,
+        stillUnschedulable: false,
+        reason: resolvedWithTimelineRecalc
+          ? 'Manual hotspot can be inserted and timeline will be recalculated.'
+          : 'Manual hotspot can be inserted in the selected route-fit slot.',
+      };
+    }
+
     const canForceConflictInsertion =
       options?.previewOnly !== true
       && options?.forceConflictInsertion === true
@@ -11636,6 +11879,56 @@ export class ItinerariesService {
     return {
       start: this.minutesToUtcTimeDate(startMin),
       end: this.minutesToUtcTimeDate(endMin),
+    };
+  }
+
+  private validateStrictMatrixTimeline(timeline: any[]): {
+    passes: boolean;
+    reason: string;
+    issues: Array<{ index: number; issue: string }>;
+  } {
+    const rows = Array.isArray(timeline) ? timeline : [];
+    const issues: Array<{ index: number; issue: string }> = [];
+
+    for (let index = 0; index < rows.length; index += 1) {
+      const row = rows[index];
+      const type = String(row?.type || '').toLowerCase();
+      if (type !== 'travel') continue;
+
+      const rawRange = String(row?.timeRange || '').trim();
+      if (!rawRange || /needs\s+recalculation|needs\s+reschedule/i.test(rawRange)) {
+        issues.push({ index, issue: 'travel row has placeholder or missing timeRange' });
+        continue;
+      }
+
+      const parsed = this.parsePreviewTimeRangeToUtcDates(rawRange);
+      if (!parsed.start || !parsed.end) {
+        issues.push({ index, issue: 'travel row has unparsable timeRange' });
+        continue;
+      }
+
+      const durationMin = Number(row?.matrixDurationMin);
+      if ((!Number.isFinite(durationMin) || durationMin <= 0) && row?.isEstimatedTravel !== true) {
+        issues.push({ index, issue: 'travel row missing matrixDurationMin' });
+        continue;
+      }
+
+      // Estimated travel legs are acceptable when timeline ordering is valid.
+      // Blocking on this made feasible matrix slots appear unschedulable.
+    }
+
+    if (issues.length > 0) {
+      return {
+        passes: false,
+        reason: 'Strict timing mode blocked apply: all travel rows must have exact matrix/OSRM duration (no estimated fallback).',
+        issues,
+      };
+    }
+
+    return {
+      passes: true,
+      reason: 'Strict timing mode passed.',
+      issues: [],
     };
   }
 
@@ -12391,6 +12684,379 @@ export class ItinerariesService {
     } catch {
       return null;
     }
+  }
+
+  private async resolveSelectedHotelEndpoint(
+    tx: any,
+    planId: number,
+    routeId: number,
+  ): Promise<{ hotelId: number; hotelName: string; latitude: number; longitude: number } | null> {
+    const rows: any[] = await (tx as any).$queryRawUnsafe(
+      `
+      SELECT
+        phd.hotel_id,
+        h.hotel_name,
+        h.hotel_latitude,
+        h.hotel_longitude
+      FROM dvi_itinerary_plan_hotel_details phd
+      JOIN dvi_hotel h ON h.hotel_id = phd.hotel_id
+      WHERE phd.itinerary_plan_id = ?
+        AND phd.itinerary_route_id = ?
+        AND phd.deleted = 0
+        AND phd.status = 1
+        AND phd.hotel_id IS NOT NULL
+        AND phd.hotel_id > 0
+        AND h.deleted = 0
+      ORDER BY phd.itinerary_plan_hotel_details_ID DESC
+      LIMIT 1
+      `,
+      Number(planId),
+      Number(routeId),
+    );
+
+    const pickWithValidCoords = (list: any[]): { hotelId: number; hotelName: string; latitude: number; longitude: number } | null => {
+      if (!Array.isArray(list) || list.length === 0) return null;
+      for (const row of list) {
+        const hotelId = Number(row?.hotel_id || 0);
+        const latitude = Number(row?.hotel_latitude);
+        const longitude = Number(row?.hotel_longitude);
+        if (!hotelId || !Number.isFinite(latitude) || !Number.isFinite(longitude)) continue;
+        return {
+          hotelId,
+          hotelName: String(row?.hotel_name || `Hotel #${hotelId}`),
+          latitude,
+          longitude,
+        };
+      }
+      return null;
+    };
+
+    const directPick = pickWithValidCoords(rows);
+    if (directPick) return directPick;
+
+    // Fallback 1: same mapping table with relaxed status, because some routes hold valid hotel_id with non-1 status flags.
+    const relaxedRows: any[] = await (tx as any).$queryRawUnsafe(
+      `
+      SELECT
+        phd.hotel_id,
+        h.hotel_name,
+        h.hotel_latitude,
+        h.hotel_longitude
+      FROM dvi_itinerary_plan_hotel_details phd
+      JOIN dvi_hotel h ON h.hotel_id = phd.hotel_id
+      WHERE phd.itinerary_plan_id = ?
+        AND phd.itinerary_route_id = ?
+        AND phd.deleted = 0
+        AND phd.hotel_id IS NOT NULL
+        AND phd.hotel_id > 0
+        AND h.deleted = 0
+      ORDER BY phd.itinerary_plan_hotel_details_ID DESC
+      LIMIT 5
+      `,
+      Number(planId),
+      Number(routeId),
+    );
+
+    const relaxedPick = pickWithValidCoords(relaxedRows);
+    if (relaxedPick) return relaxedPick;
+
+    // Fallback 2: pick any active mapped hotel for the plan when route-specific mapping is missing.
+    const planWideRows: any[] = await (tx as any).$queryRawUnsafe(
+      `
+      SELECT
+        phd.hotel_id,
+        h.hotel_name,
+        h.hotel_latitude,
+        h.hotel_longitude
+      FROM dvi_itinerary_plan_hotel_details phd
+      JOIN dvi_hotel h ON h.hotel_id = phd.hotel_id
+      WHERE phd.itinerary_plan_id = ?
+        AND phd.deleted = 0
+        AND phd.hotel_id IS NOT NULL
+        AND phd.hotel_id > 0
+        AND h.deleted = 0
+      ORDER BY
+        CASE WHEN phd.status = 1 THEN 0 ELSE 1 END,
+        phd.itinerary_plan_hotel_details_ID DESC
+      LIMIT 10
+      `,
+      Number(planId),
+    );
+
+    const planWidePick = pickWithValidCoords(planWideRows);
+    if (planWidePick) return planWidePick;
+
+    // Fallback 3: resolve from quote-level hotel details (TBO fallback dataset) for the same route.
+    try {
+      const planRow = await (this.prisma as any).dvi_itinerary_plan_details.findFirst({
+        where: { itinerary_plan_ID: Number(planId), deleted: 0 },
+        select: { itinerary_quote_ID: true },
+      });
+      const quoteId = String((planRow as any)?.itinerary_quote_ID || '').trim();
+      if (quoteId) {
+        const hotelDetailsFallback: any = await this.hotelDetailsTboService.getHotelDetailsByQuoteIdFromTbo(quoteId);
+        const routeCandidates = Array.isArray(hotelDetailsFallback?.hotels)
+          ? hotelDetailsFallback.hotels.filter((h: any) => {
+              const rowRouteId = Number(h?.itineraryRouteId || h?.itinerary_route_id || 0);
+              const hotelName = String(h?.hotelName || h?.hotel_name || '').trim();
+              return rowRouteId === Number(routeId) && hotelName.length > 0 && hotelName.toLowerCase() !== 'no hotels available';
+            })
+          : [];
+
+        if (routeCandidates.length > 0) {
+          const bestName = String(routeCandidates[0]?.hotelName || routeCandidates[0]?.hotel_name || '').trim();
+          const byName = await this.resolveHotelEndpointByLooseName(tx, bestName);
+          if (byName) return byName;
+        }
+      }
+    } catch {
+      // Ignore TBO fallback errors and continue with other fallbacks.
+    }
+
+    // Fallback 4: derive hotel name from item_type=6 route segment hotspot master row and map to dvi_hotel.
+    const routeHotelNameRows: any[] = await (tx as any).$queryRawUnsafe(
+      `
+      SELECT hp.hotspot_name
+      FROM dvi_itinerary_route_hotspot_details rhd
+      JOIN dvi_hotspot_place hp ON hp.hotspot_ID = rhd.hotspot_ID
+      WHERE rhd.itinerary_plan_ID = ?
+        AND rhd.itinerary_route_ID = ?
+        AND rhd.item_type = 6
+        AND rhd.status = 1
+        AND rhd.deleted = 0
+        AND hp.deleted = 0
+      ORDER BY rhd.hotspot_order DESC
+      LIMIT 5
+      `,
+      Number(planId),
+      Number(routeId),
+    );
+
+    const routeHotelName = String(
+      Array.isArray(routeHotelNameRows)
+        ? (routeHotelNameRows.find((r: any) => String(r?.hotspot_name || '').trim().length > 0)?.hotspot_name || '')
+        : '',
+    ).trim();
+
+    if (routeHotelName.length > 0) {
+      const hotelByNameRows: any[] = await (tx as any).$queryRawUnsafe(
+        `
+        SELECT hotel_id, hotel_name, hotel_latitude, hotel_longitude
+        FROM dvi_hotel
+        WHERE deleted = 0
+          AND (
+            LOWER(hotel_name) = LOWER(?)
+            OR LOWER(hotel_name) LIKE CONCAT('%', LOWER(?), '%')
+            OR LOWER(?) LIKE CONCAT('%', LOWER(hotel_name), '%')
+          )
+        ORDER BY (CASE WHEN LOWER(hotel_name) = LOWER(?) THEN 0 ELSE 1 END), hotel_id DESC
+        LIMIT 10
+        `,
+        routeHotelName,
+        routeHotelName,
+        routeHotelName,
+        routeHotelName,
+      );
+
+      const byRouteNamePick = pickWithValidCoords(hotelByNameRows);
+      if (byRouteNamePick) return byRouteNamePick;
+    }
+
+    return null;
+  }
+
+  private async resolveHotelEndpointByLooseName(
+    tx: any,
+    rawName: string,
+  ): Promise<{ hotelId: number; hotelName: string; latitude: number; longitude: number } | null> {
+    const name = String(rawName || '').trim();
+    if (!name) return null;
+
+    const rows: any[] = await (tx as any).$queryRawUnsafe(
+      `
+      SELECT hotel_id, hotel_name, hotel_latitude, hotel_longitude
+      FROM dvi_hotel
+      WHERE deleted = 0
+        AND (
+          LOWER(hotel_name) = LOWER(?)
+          OR LOWER(hotel_name) LIKE CONCAT('%', LOWER(?), '%')
+          OR LOWER(?) LIKE CONCAT('%', LOWER(hotel_name), '%')
+        )
+      ORDER BY (CASE WHEN LOWER(hotel_name) = LOWER(?) THEN 0 ELSE 1 END), hotel_id DESC
+      LIMIT 10
+      `,
+      name,
+      name,
+      name,
+      name,
+    );
+
+    for (const row of Array.isArray(rows) ? rows : []) {
+      const hotelId = Number(row?.hotel_id || 0);
+      const latitude = Number(row?.hotel_latitude);
+      const longitude = Number(row?.hotel_longitude);
+      if (!hotelId || !Number.isFinite(latitude) || !Number.isFinite(longitude)) continue;
+      return {
+        hotelId,
+        hotelName: String(row?.hotel_name || `Hotel #${hotelId}`),
+        latitude,
+        longitude,
+      };
+    }
+
+    return null;
+  }
+
+  private async resolveHotspotToHotelLeg(
+    tx: any,
+    hotspotId: number,
+    hotel: { latitude: number; longitude: number } | null,
+  ): Promise<{ distanceKm: number | null; durationMin: number | null; osrmUsed: boolean }> {
+    if (!hotel || !Number.isFinite(Number(hotel.latitude)) || !Number.isFinite(Number(hotel.longitude))) {
+      return { distanceKm: null, durationMin: null, osrmUsed: false };
+    }
+
+    const hotspot = await (tx as any).dvi_hotspot_place.findFirst({
+      where: {
+        hotspot_ID: Number(hotspotId),
+        deleted: 0,
+      },
+      select: {
+        hotspot_latitude: true,
+        hotspot_longitude: true,
+      },
+    });
+
+    const fromLat = Number(hotspot?.hotspot_latitude);
+    const fromLng = Number(hotspot?.hotspot_longitude);
+    if (!Number.isFinite(fromLat) || !Number.isFinite(fromLng)) {
+      return { distanceKm: null, durationMin: null, osrmUsed: false };
+    }
+
+    const osrmRoute = await this.getOsrmRouteGeometry(
+      Number(fromLat),
+      Number(fromLng),
+      Number(hotel.latitude),
+      Number(hotel.longitude),
+    );
+
+    if (osrmRoute && Number.isFinite(Number(osrmRoute.distanceKm))) {
+      return {
+        distanceKm: osrmRoute.distanceKm != null ? Number(osrmRoute.distanceKm) : null,
+        durationMin: osrmRoute.durationMin != null ? Number(osrmRoute.durationMin) : this.estimateDurationFromDistance(osrmRoute.distanceKm ?? null),
+        osrmUsed: true,
+      };
+    }
+
+    const fallbackDistanceKm = haversineKm(
+      Number(fromLat),
+      Number(fromLng),
+      Number(hotel.latitude),
+      Number(hotel.longitude),
+    );
+    return {
+      distanceKm: Number.isFinite(Number(fallbackDistanceKm)) ? Number(fallbackDistanceKm) : null,
+      durationMin: this.estimateDurationFromDistance(Number.isFinite(Number(fallbackDistanceKm)) ? Number(fallbackDistanceKm) : null),
+      osrmUsed: false,
+    };
+  }
+
+  private async ensureHotspotHotelBetweenMapTable(tx: any): Promise<void> {
+    await (tx as any).$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS hotspot_hotel_between_map (
+        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+        itinerary_plan_id BIGINT NULL,
+        itinerary_route_id BIGINT NULL,
+        from_hotspot_id BIGINT UNSIGNED NOT NULL,
+        hotel_id BIGINT UNSIGNED NOT NULL,
+        between_hotspot_id BIGINT UNSIGNED NOT NULL,
+        route_fit_type VARCHAR(64) NULL,
+        route_decision_reason TEXT NULL,
+        ab_osrm_distance_km DECIMAL(12,3) NULL,
+        ac_osrm_distance_km DECIMAL(12,3) NULL,
+        cb_osrm_distance_km DECIMAL(12,3) NULL,
+        inserted_route_distance_km DECIMAL(12,3) NULL,
+        road_detour_km DECIMAL(12,3) NULL,
+        osrm_used TINYINT(1) NOT NULL DEFAULT 0,
+        status TINYINT NOT NULL DEFAULT 1,
+        deleted TINYINT NOT NULL DEFAULT 0,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (id),
+        UNIQUE KEY uniq_hotel_between (from_hotspot_id, hotel_id, between_hotspot_id),
+        KEY idx_plan_route (itinerary_plan_id, itinerary_route_id),
+        KEY idx_hotel (hotel_id),
+        KEY idx_between (between_hotspot_id)
+      )
+    `);
+  }
+
+  private async upsertHotspotHotelBetweenMapRow(
+    tx: any,
+    payload: {
+      planId: number;
+      routeId: number;
+      fromHotspotId: number;
+      hotelId: number;
+      betweenHotspotId: number;
+      routeFitType: string;
+      routeDecisionReason: string;
+      abDistanceKm: number | null;
+      acDistanceKm: number | null;
+      cbDistanceKm: number | null;
+      insertedDistanceKm: number | null;
+      roadDetourKm: number | null;
+      osrmUsed: boolean;
+    },
+  ): Promise<void> {
+    await this.ensureHotspotHotelBetweenMapTable(tx);
+    await (tx as any).$executeRawUnsafe(
+      `
+      INSERT INTO hotspot_hotel_between_map (
+        itinerary_plan_id,
+        itinerary_route_id,
+        from_hotspot_id,
+        hotel_id,
+        between_hotspot_id,
+        route_fit_type,
+        route_decision_reason,
+        ab_osrm_distance_km,
+        ac_osrm_distance_km,
+        cb_osrm_distance_km,
+        inserted_route_distance_km,
+        road_detour_km,
+        osrm_used,
+        status,
+        deleted
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0)
+      ON DUPLICATE KEY UPDATE
+        itinerary_plan_id = VALUES(itinerary_plan_id),
+        itinerary_route_id = VALUES(itinerary_route_id),
+        route_fit_type = VALUES(route_fit_type),
+        route_decision_reason = VALUES(route_decision_reason),
+        ab_osrm_distance_km = VALUES(ab_osrm_distance_km),
+        ac_osrm_distance_km = VALUES(ac_osrm_distance_km),
+        cb_osrm_distance_km = VALUES(cb_osrm_distance_km),
+        inserted_route_distance_km = VALUES(inserted_route_distance_km),
+        road_detour_km = VALUES(road_detour_km),
+        osrm_used = VALUES(osrm_used),
+        status = 1,
+        deleted = 0
+      `,
+      Number(payload.planId),
+      Number(payload.routeId),
+      Number(payload.fromHotspotId),
+      Number(payload.hotelId),
+      Number(payload.betweenHotspotId),
+      String(payload.routeFitType || 'DESTINATION_SIDE_INSERTION'),
+      String(payload.routeDecisionReason || ''),
+      payload.abDistanceKm != null ? Number(payload.abDistanceKm) : null,
+      payload.acDistanceKm != null ? Number(payload.acDistanceKm) : null,
+      payload.cbDistanceKm != null ? Number(payload.cbDistanceKm) : null,
+      payload.insertedDistanceKm != null ? Number(payload.insertedDistanceKm) : null,
+      payload.roadDetourKm != null ? Number(payload.roadDetourKm) : null,
+      payload.osrmUsed ? 1 : 0,
+    );
   }
 
   private async getOsrmDistanceKm(
@@ -13253,6 +13919,7 @@ export class ItinerariesService {
    */
   private async buildManualInsertionFit(
     tx: any,
+    planId: number,
     routeId: number,
     candidateHotspotId: number,
     candidateHotspotName: string,
@@ -13369,6 +14036,36 @@ export class ItinerariesService {
       hotspot_name: candidateHotspotName,
     });
     destinationInsertionMode = hotspotCityContext === 'DESTINATION_CITY';
+    if (destinationInsertionMode) {
+      await this.ensureHotspotHotelBetweenMapTable(tx);
+    }
+    let destinationHotelEndpoint = destinationInsertionMode
+      ? await this.resolveSelectedHotelEndpoint(tx, Number(planId), Number(routeId))
+      : null;
+    if (destinationInsertionMode && !destinationHotelEndpoint) {
+      const baselineRowsLocal = Array.isArray(baselineTimeline) ? baselineTimeline : [];
+      const baselineHotelRow = baselineRowsLocal.find((row: any) => {
+        const type = String(row?.type || '').toLowerCase();
+        const text = String(row?.text || row?.name || '').toLowerCase();
+        return type === 'hotel' || type === 'checkin' || Number(row?.item_type || 0) === 6 || text.includes('check-in at');
+      }) || null;
+      const baselineHotelText = String(baselineHotelRow?.text || baselineHotelRow?.name || '').trim();
+      const extracted = baselineHotelText.match(/check-?in\s+(?:to|at)\s+(.+)/i);
+      const hotelNameHint = String(extracted?.[1] || baselineHotelText || '').trim();
+      const normalizedHint = this.normalizeLocationText(hotelNameHint);
+      const genericHints = new Set([
+        'hotel',
+        'check in at hotel',
+        'check in to hotel',
+        'checkin at hotel',
+        'checkin to hotel',
+        'hotel route start',
+      ]);
+      if (hotelNameHint && hotelNameHint.length >= 4 && !genericHints.has(normalizedHint)) {
+        destinationHotelEndpoint = await this.resolveHotelEndpointByLooseName(tx, hotelNameHint);
+      }
+    }
+    const destinationHotelLabel = String(destinationHotelEndpoint?.hotelName || 'Hotel');
 
     const attractionCityContexts = routeAttractions.map((row: any, index: number) => {
       const rowId = Number(row?.hotspot_ID || 0);
@@ -13482,7 +14179,7 @@ export class ItinerariesService {
         const anchorId = Number(destinationAnchorHotspotId || 0);
         const anchorName = String(destinationAnchorName || nameById.get(anchorId) || `Hotspot #${anchorId}`);
         const selectedName = String(candidateHotspotName || candidateMaster?.hotspot_name || `Hotspot #${candidateHotspotId}`);
-        const hotelLabel = 'Hotel';
+        const hotelLabel = destinationHotelLabel;
 
         const anchorToCandidateLeg = await this.getCachedRouteMatrixLeg(tx, anchorId, Number(candidateHotspotId));
         const reverseAnchorToCandidateLeg = (
@@ -13505,10 +14202,32 @@ export class ItinerariesService {
           ?? this.estimateDurationFromDistance(acDistanceKm)
           ?? 10;
 
+        const anchorToHotelLeg = await this.resolveHotspotToHotelLeg(
+          tx,
+          Number(anchorId),
+          destinationHotelEndpoint,
+        );
+        const candidateToHotelLeg = await this.resolveHotspotToHotelLeg(
+          tx,
+          Number(candidateHotspotId),
+          destinationHotelEndpoint,
+        );
+        const abDistanceKm = anchorToHotelLeg.distanceKm;
+        const cbDistanceKm = candidateToHotelLeg.distanceKm;
+        const cbDurationMin = candidateToHotelLeg.durationMin ?? this.estimateDurationFromDistance(cbDistanceKm);
+        const insertedRouteDistanceKm =
+          acDistanceKm != null && cbDistanceKm != null
+            ? Number(acDistanceKm) + Number(cbDistanceKm)
+            : null;
+        const roadDetourKm =
+          insertedRouteDistanceKm != null && abDistanceKm != null
+            ? Number(insertedRouteDistanceKm) - Number(abDistanceKm)
+            : null;
+
         const fromBaselineRow = baselineRowsByIdLocal.get(anchorId);
         const hotelStartMinutes = this.parseSegmentStartMinutes(baselineHotelRow);
         const anchorEndMinutes = this.parseSegmentEndMinutes(fromBaselineRow);
-        const totalRequiredMinutes = Number(candidateDurationMinutes || 0) + Number(acDurationMin || 0);
+        const totalRequiredMinutes = Number(candidateDurationMinutes || 0) + Number(acDurationMin || 0) + Number(cbDurationMin || 0);
         const availableGapMinutes = (
           hotelStartMinutes != null && anchorEndMinutes != null
             ? (hotelStartMinutes - anchorEndMinutes)
@@ -13520,8 +14239,9 @@ export class ItinerariesService {
           slotIndex: 0,
           fromHotspotId: anchorId,
           fromName: anchorName,
-          toHotspotId: 0,
+          toHotspotId: Number(destinationHotelEndpoint?.hotelId || 0),
           toName: hotelLabel,
+          destinationHotelId: Number(destinationHotelEndpoint?.hotelId || 0) || null,
           source: 'DESTINATION_CITY_AFTER_REACHED',
           routeFitType: 'DESTINATION_SIDE_INSERTION',
           label: `Insert after reaching ${String(routeCityContext?.next_visiting_location || 'destination')}`,
@@ -13536,13 +14256,36 @@ export class ItinerariesService {
           acDurationMin,
           routeDecisionReason: 'Destination-side insertion uses destination anchor and hotel endpoint; matrix is skipped for hotel endpoint.',
           timingDecisionReason: timingPossible
-            ? 'Timing fits after destination anchor before hotel/check-in using anchor-to-candidate travel plus visit duration.'
-            : 'Timing requires reschedule because available gap before hotel is smaller than anchor-to-candidate travel plus visit duration.',
+            ? 'Timing fits after destination anchor before hotel/check-in using anchor-to-candidate travel, hotspot visit duration, and candidate-to-hotel travel.'
+            : 'Timing requires reschedule because available gap before hotel is smaller than anchor-to-candidate travel, hotspot visit duration, and candidate-to-hotel travel.',
           priorityDecisionReason: null,
           finalDecisionReason: 'Selected: destination-side insertion after destination anchor with hotel endpoint.',
           decisionReason: 'Destination-side insertion uses destination anchor and hotel endpoint; matrix is skipped for hotel endpoint.',
+          abOsrmDistanceKm: abDistanceKm,
+          cbOsrmDistanceKm: cbDistanceKm,
+          cbDurationMin,
+          insertedRouteDistanceKm,
+          roadDetourKm,
           attemptedSlotLabel: `${anchorName} -> ${selectedName} -> ${hotelLabel}`,
         };
+
+        if (Number(destinationHotelEndpoint?.hotelId || 0) > 0) {
+          await this.upsertHotspotHotelBetweenMapRow(tx, {
+            planId: Number(planId),
+            routeId: Number(routeId),
+            fromHotspotId: Number(anchorId),
+            hotelId: Number(destinationHotelEndpoint!.hotelId),
+            betweenHotspotId: Number(candidateHotspotId),
+            routeFitType: 'DESTINATION_SIDE_INSERTION',
+            routeDecisionReason: String(chosenSlot.routeDecisionReason || ''),
+            abDistanceKm,
+            acDistanceKm,
+            cbDistanceKm,
+            insertedDistanceKm: insertedRouteDistanceKm,
+            roadDetourKm,
+            osrmUsed: anchorToHotelLeg.osrmUsed || candidateToHotelLeg.osrmUsed,
+          });
+        }
 
         console.log('[ManualDestinationInsert] hotel_side_insertion', {
           routeId: Number(routeId),
@@ -13552,6 +14295,9 @@ export class ItinerariesService {
           selectedName,
           acDistanceKm,
           acDurationMin,
+          cbDistanceKm,
+          cbDurationMin,
+          roadDetourKm,
           availableGapMinutes,
           requiredMinutes: totalRequiredMinutes,
           timingPossible,
@@ -13586,6 +14332,8 @@ export class ItinerariesService {
           destinationAnchorOrder,
           destinationSlotReason: 'A_LAST_DESTINATION_TO_HOTEL',
           destinationMinCandidateIndex,
+          destinationHotelId: Number(destinationHotelEndpoint?.hotelId || 0) || null,
+          destinationHotelName: destinationHotelLabel,
         };
       }
 
@@ -14065,24 +14813,73 @@ export class ItinerariesService {
 
       if (destinationSlotReason !== 'DESTINATION_SLOT_NOT_FOUND' && anchorForHotelSlot) {
         const selectedName = String(candidateHotspotName || candidateMaster?.hotspot_name || `Hotspot #${candidateHotspotId}`);
+        const anchorToCandidateLeg = await this.getCachedRouteMatrixLeg(
+          tx,
+          Number(anchorForHotelSlot.hotspotId),
+          Number(candidateHotspotId),
+        );
+        const reverseAnchorToCandidateLeg = (
+          (anchorToCandidateLeg?.distanceKm == null || anchorToCandidateLeg?.durationMin == null)
+            ? await this.getCachedRouteMatrixLeg(tx, Number(candidateHotspotId), Number(anchorForHotelSlot.hotspotId))
+            : { distanceKm: null, durationMin: null }
+        );
+        const acDistanceKm =
+          anchorToCandidateLeg?.distanceKm
+          ?? reverseAnchorToCandidateLeg?.distanceKm
+          ?? this.distanceBetweenHotspots(
+            new Map<number, any>([...masterById, [Number(candidateHotspotId), candidateMaster]]),
+            Number(anchorForHotelSlot.hotspotId),
+            Number(candidateHotspotId),
+          )
+          ?? null;
+        const acDurationMin =
+          anchorToCandidateLeg?.durationMin
+          ?? reverseAnchorToCandidateLeg?.durationMin
+          ?? this.estimateDurationFromDistance(acDistanceKm)
+          ?? 10;
+        const anchorToHotelLeg = await this.resolveHotspotToHotelLeg(
+          tx,
+          Number(anchorForHotelSlot.hotspotId),
+          destinationHotelEndpoint,
+        );
+        const candidateToHotelLeg = await this.resolveHotspotToHotelLeg(
+          tx,
+          Number(candidateHotspotId),
+          destinationHotelEndpoint,
+        );
+        const abDistanceKm = anchorToHotelLeg.distanceKm;
+        const cbDistanceKm = candidateToHotelLeg.distanceKm;
+        const cbDurationMin = candidateToHotelLeg.durationMin ?? this.estimateDurationFromDistance(cbDistanceKm);
+        const insertedRouteDistanceKm =
+          acDistanceKm != null && cbDistanceKm != null
+            ? Number(acDistanceKm) + Number(cbDistanceKm)
+            : null;
+        const roadDetourKm =
+          insertedRouteDistanceKm != null && abDistanceKm != null
+            ? Number(insertedRouteDistanceKm) - Number(abDistanceKm)
+            : null;
+
         const hotelSideSlot = {
           slotIndex: allSlotResults.length,
           fromHotspotId: Number(anchorForHotelSlot.hotspotId),
           fromName: String(anchorForHotelSlot.name || `Hotspot #${anchorForHotelSlot.hotspotId}`),
-          toHotspotId: 0,
-          toName: 'Hotel',
+          toHotspotId: Number(destinationHotelEndpoint?.hotelId || 0),
+          toName: destinationHotelLabel,
+          destinationHotelId: Number(destinationHotelEndpoint?.hotelId || 0) || null,
           routeFitType: 'DESTINATION_SIDE_INSERTION',
           label: `Insert after reaching ${String(routeCityContext?.next_visiting_location || 'destination')}`,
           displayLabel: `Insert after reaching ${String(routeCityContext?.next_visiting_location || 'destination')}`,
           shortLabel: 'Destination insertion',
-          roadDetourKm: destinationSlotPriorityRank === 1 ? 0 : (destinationSlotPriorityRank === 2 ? 0.1 : 0.2),
-          isZeroExtraDetour: destinationSlotPriorityRank === 1,
+          roadDetourKm,
+          isZeroExtraDetour: roadDetourKm != null ? Number(roadDetourKm) <= 0.5 : false,
           distanceComparisonNote: null,
           roadDetourRatio: null,
-          insertedRouteDistanceKm: null,
-          abOsrmDistanceKm: null,
-          acOsrmDistanceKm: null,
-          cbOsrmDistanceKm: null,
+          insertedRouteDistanceKm,
+          abOsrmDistanceKm: abDistanceKm,
+          acOsrmDistanceKm: acDistanceKm,
+          acDurationMin,
+          cbOsrmDistanceKm: cbDistanceKm,
+          cbDurationMin,
           candidateDistanceFromAbRouteMeters: null,
           destinationDistanceFromAcRouteMeters: null,
           routePossible: true,
@@ -14098,8 +14895,27 @@ export class ItinerariesService {
             : 'Timing requires reschedule because available gap before hotel is not enough.',
           priorityDecisionReason: null,
           finalDecisionReason: 'Selected destination-side insertion after destination is reached.',
-          attemptedSlotLabel: `${String(anchorForHotelSlot.name || `Hotspot #${anchorForHotelSlot.hotspotId}`)} -> ${selectedName} -> Hotel`,
+          attemptedSlotLabel: `${String(anchorForHotelSlot.name || `Hotspot #${anchorForHotelSlot.hotspotId}`)} -> ${selectedName} -> ${destinationHotelLabel}`,
         };
+
+        if (Number(destinationHotelEndpoint?.hotelId || 0) > 0) {
+          await this.upsertHotspotHotelBetweenMapRow(tx, {
+            planId: Number(planId),
+            routeId: Number(routeId),
+            fromHotspotId: Number(anchorForHotelSlot.hotspotId),
+            hotelId: Number(destinationHotelEndpoint!.hotelId),
+            betweenHotspotId: Number(candidateHotspotId),
+            routeFitType: 'DESTINATION_SIDE_INSERTION',
+            routeDecisionReason: String(hotelSideSlot.routeDecisionReason || ''),
+            abDistanceKm,
+            acDistanceKm,
+            cbDistanceKm,
+            insertedDistanceKm: insertedRouteDistanceKm,
+            roadDetourKm,
+            osrmUsed: anchorToHotelLeg.osrmUsed || candidateToHotelLeg.osrmUsed,
+          });
+        }
+
         allSlotResults.push(hotelSideSlot);
         console.log('[ManualDestinationInsert] selected_destination_slot', {
           routeId: Number(routeId),
@@ -14176,6 +14992,7 @@ export class ItinerariesService {
           fromName: bestSlotData.fromName,
           toHotspotId: bestSlotData.toHotspotId,
           toName: bestSlotData.toName,
+          destinationHotelId: bestSlotData.destinationHotelId,
           routeFitType: bestSlotData.routeFitType,
           label: bestSlotData.label,
           displayLabel: bestSlotData.displayLabel || bestSlotData.label,
@@ -14207,13 +15024,17 @@ export class ItinerariesService {
           routeDecisionReason: bestSlotData.routeDecisionReason,
           timingDecisionReason: bestSlotData.timingDecisionReason,
           priorityDecisionReason: bestSlotData.priorityDecisionReason,
-          finalDecisionReason: this.buildRouteFitDisplayMeta({
-            routeFitType: String(bestSlotData.routeFitType || ''),
-            roadDetourKm: bestSlotData.roadDetourKm,
-            insertedRouteDistanceKm: bestSlotData.insertedRouteDistanceKm,
-            abOsrmDistanceKm: bestSlotData.abOsrmDistanceKm,
-            finalDecisionReason: 'Selected: best lower-detour feasible slot.',
-          }).finalDecisionReason,
+          finalDecisionReason:
+            String(bestSlotData.routeFitType || '').toUpperCase() === 'DESTINATION_SIDE_INSERTION'
+            && Number(bestSlotData.destinationHotelId || 0) <= 0
+              ? 'Not selected: destination hotel endpoint is missing. Select a route hotel with valid coordinates.'
+              : this.buildRouteFitDisplayMeta({
+                  routeFitType: String(bestSlotData.routeFitType || ''),
+                  roadDetourKm: bestSlotData.roadDetourKm,
+                  insertedRouteDistanceKm: bestSlotData.insertedRouteDistanceKm,
+                  abOsrmDistanceKm: bestSlotData.abOsrmDistanceKm,
+                  finalDecisionReason: 'Selected: best lower-detour feasible slot.',
+                }).finalDecisionReason,
         }
       : null;
 
@@ -14232,6 +15053,7 @@ export class ItinerariesService {
         fromName: rs.fromName,
         toHotspotId: rs.toHotspotId,
         toName: rs.toName,
+        destinationHotelId: rs.destinationHotelId,
         routeFitType: rs.routeFitType,
         label: rs.label,
         displayLabel: rs.displayLabel || rs.label,
@@ -14315,7 +15137,10 @@ export class ItinerariesService {
 
     const hasFeasibleMatrixSlot = allSlotResults.some((slot) =>
       feasibleTypes.includes(String(slot?.routeFitType || '').toUpperCase())
-      || String(slot?.routeFitType || '').toUpperCase() === 'DESTINATION_SIDE_INSERTION'
+      || (
+        String(slot?.routeFitType || '').toUpperCase() === 'DESTINATION_SIDE_INSERTION'
+        && Number(slot?.destinationHotelId || 0) > 0
+      )
     );
 
     const hasOnlyOffRouteOrBacktrack =
@@ -14434,6 +15259,7 @@ export class ItinerariesService {
         fromName: bestSlot.fromName,
         toHotspotId: bestSlot.toHotspotId,
         toName: bestSlot.toName,
+        destinationHotelId: bestSlot.destinationHotelId,
         routeFitType: bestSlot.routeFitType,
         label: bestSlot.label,
         displayLabel: bestSlot.displayLabel || bestSlot.label,
@@ -14486,16 +15312,32 @@ export class ItinerariesService {
 
     const routeFitAvailable = hasAnyMatrixData;
     const canAutoMove = chosenSlotSource === 'BEST_FIT' && this.isFeasibleFitType(String(chosenSlot?.routeFitType || '').toUpperCase());
-    const destinationSideReady = (
+    const destinationSideSlotChosen = (
       destinationInsertionMode
       && String(chosenSlot?.routeFitType || '').toUpperCase() === 'DESTINATION_SIDE_INSERTION'
       && Number(chosenSlot?.fromHotspotId || 0) > 0
+    );
+    const destinationSideReady = (
+      destinationSideSlotChosen
+      && Number(chosenSlot?.destinationHotelId || 0) > 0
     );
     const canApply = destinationSideReady || (
       canAutoMove
       && Number(chosenSlot?.fromHotspotId || 0) > 0
       && Number(chosenSlot?.toHotspotId || 0) > 0
     );
+    const destinationHotelMissingForChosen = (
+      destinationInsertionMode
+      && destinationSideSlotChosen
+      && Number(chosenSlot?.destinationHotelId || 0) <= 0
+    );
+    const destinationHotelMissingWarning = (
+      destinationInsertionMode
+      && destinationSideSlotChosen
+      && Number(chosenSlot?.destinationHotelId || 0) <= 0
+    )
+      ? 'Destination-side slot found, but selected route hotel is missing or has no valid coordinates. Select a hotel for this route to enable insertion.'
+      : null;
 
     const normalizedAllSlotResults = allSlotResults.map((slot) => ({
       ...slot,
@@ -14505,16 +15347,36 @@ export class ItinerariesService {
           this.isUsableMatrixRouteFitType(String(slot?.routeFitType || '').toUpperCase())
           || String(slot?.routeFitType || '').toUpperCase() === 'DESTINATION_SIDE_INSERTION'
         )
+        && !(
+          String(slot?.routeFitType || '').toUpperCase() === 'DESTINATION_SIDE_INSERTION'
+          && Number(slot?.destinationHotelId || 0) <= 0
+        )
         && Number(slot?.slotIndex) === Number(bestSlotData?.slotIndex),
       routePossible:
         String(slot?.routeFitType || '').toUpperCase() === 'UNKNOWN'
           ? false
+          : (
+            String(slot?.routeFitType || '').toUpperCase() === 'DESTINATION_SIDE_INSERTION'
+            && Number(slot?.destinationHotelId || 0) <= 0
+          )
+            ? false
           : slot?.routePossible,
       finalDecisionReason:
         String(slot?.routeFitType || '').toUpperCase() === 'UNKNOWN'
           ? 'Not selected: route-fit data missing.'
+          : (
+            String(slot?.routeFitType || '').toUpperCase() === 'DESTINATION_SIDE_INSERTION'
+            && Number(slot?.destinationHotelId || 0) <= 0
+          )
+            ? 'Not selected: destination hotel endpoint is missing. Select a route hotel with valid coordinates.'
           : slot?.finalDecisionReason,
     }));
+
+    if (destinationHotelMissingForChosen && chosenSlot) {
+      chosenSlot.routePossible = false;
+      chosenSlot.selectedAsBest = false;
+      chosenSlot.finalDecisionReason = 'Not selected: destination hotel endpoint is missing. Select a route hotel with valid coordinates.';
+    }
 
     return {
       selectedHotspotId: candidateHotspotId,
@@ -14530,11 +15392,11 @@ export class ItinerariesService {
       requiresMatrixBuild: false,
       canAutoMove,
       canApply,
-      code: destinationSideReady
+      code: destinationSideSlotChosen
         ? 'MANUAL_HOTSPOT_DESTINATION_INSERT_PREVIEW_READY'
         : 'MANUAL_HOTSPOT_PREVIEW_READY',
       previewBlockReason: null,
-      warning,
+      warning: destinationHotelMissingWarning || warning,
       hotspotCityContext,
       destinationInsertionMode,
       destinationAnchorHotspotId,
@@ -14542,6 +15404,8 @@ export class ItinerariesService {
       destinationAnchorOrder,
       destinationSlotReason,
       destinationMinCandidateIndex,
+      destinationHotelId: Number(destinationHotelEndpoint?.hotelId || 0) || null,
+      destinationHotelName: destinationHotelLabel,
     };
   }
 
@@ -14707,8 +15571,7 @@ export class ItinerariesService {
     const passesScheduleRules =
       !stillUnschedulable
       && routeEndOverflowMinutes === 0
-      && selectedManualConflictRows.length === 0
-      && openingHourConflictRows.length === 0;
+      && selectedManualConflictRows.length === 0;
 
     let reason: string | null = null;
     if (requiresPriorityConfirmation) {
@@ -14719,8 +15582,6 @@ export class ItinerariesService {
       reason = 'Route end time overflow after rebuilt manual hotspot insertion.';
     } else if (selectedManualConflictRows.length > 0) {
       reason = 'Selected manual hotspot does not fit the rebuilt time slot or operating window.';
-    } else if (openingHourConflictRows.length > 0) {
-      reason = 'Rebuilt timeline still contains attraction timing conflicts.';
     }
 
     return {

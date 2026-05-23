@@ -1354,9 +1354,14 @@ export class ItinerariesController {
       debug?: boolean;
     },
   ) {
-    const resolvedHotspotIds = Array.isArray(body.hotspotIds) && body.hotspotIds.length > 0
+    const rawHotspotIds = Array.isArray(body.hotspotIds) && body.hotspotIds.length > 0
       ? body.hotspotIds
       : [body.hotspotId, ...(Array.isArray(body.selectedHotspotIds) ? body.selectedHotspotIds : [])];
+    const resolvedHotspotIds = Array.from(new Set(
+      (rawHotspotIds || [])
+        .map((id) => Number(id || 0))
+        .filter((id) => Number.isFinite(id) && id > 0),
+    ));
 
     return this.svc.previewManualHotspotsBatch(planId, body.routeId, resolvedHotspotIds, {
       anchorType: body.anchorType,
@@ -1364,6 +1369,7 @@ export class ItinerariesController {
       allowTopPriorityRemoval: body.allowTopPriorityRemoval === true,
       debug: body.debug === true,
       focusHotspotId: Number(body.hotspotId || 0) > 0 ? Number(body.hotspotId) : undefined,
+      previewOnly: true,
     });
   }
 
