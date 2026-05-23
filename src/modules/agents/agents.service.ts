@@ -20,31 +20,37 @@ export class AgentsService {
       ? this.prisma.$queryRaw<
           { agent_ID: number; agent_name: string | null }[]
         >`
-        SELECT a.agent_ID, a.agent_name
+SELECT MIN(a.agent_ID) AS agent_ID, TRIM(a.agent_name) AS agent_name
         FROM dvi_agent AS a
         INNER JOIN dvi_users AS u ON a.agent_ID = u.agent_id
         WHERE a.status = '1'
           AND a.deleted = '0'
           AND u.userapproved = '1'
           AND a.travel_expert_id = ${travelExpertId}
+          GROUP BY LOWER(TRIM(a.agent_name)), TRIM(a.agent_name)
+
         ORDER BY a.agent_name ASC
       `
       : this.prisma.$queryRaw<
           { agent_ID: number; agent_name: string | null }[]
         >`
-        SELECT a.agent_ID, a.agent_name
+        SELECT MIN(a.agent_ID) AS agent_ID, TRIM(a.agent_name) AS agent_name
         FROM dvi_agent AS a
         INNER JOIN dvi_users AS u ON a.agent_ID = u.agent_id
         WHERE a.status = '1'
           AND a.deleted = '0'
           AND u.userapproved = '1'
+          GROUP BY LOWER(TRIM(a.agent_name)), TRIM(a.agent_name)
+
         ORDER BY a.agent_name ASC
       `);
 
-    return rows.map((row) => ({
-      id: row.agent_ID,
-      name: row.agent_name ?? "",
-    }));
+    return rows
+  .map((row) => ({
+    id: Number(row.agent_ID),
+    name: String(row.agent_name ?? "").trim(),
+  }))
+  .filter((row) => row.id > 0 && row.name);
   }
 
   /**
