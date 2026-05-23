@@ -7367,6 +7367,47 @@ export class ItinerariesService {
       }
     }
 
+    if (applyResult?.success === true && applyResult?.inserted === true) {
+      const persistedTimeline = Array.isArray(applyResult?.routeTimeline)
+        ? applyResult.routeTimeline
+        : (Array.isArray(applyResult?.fullTimeline) ? applyResult.fullTimeline : []);
+
+      for (const hotspotId of this.normalizeManualHotspotIds(hotspotIds)) {
+        const timelineRow = persistedTimeline.find((row: any) => (
+          String(row?.type || '').toLowerCase() === 'attraction'
+          && Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || 0) === Number(hotspotId)
+        ));
+        const parsedRange = this.parsePreviewTimeRangeToUtcDates(timelineRow?.timeRange);
+        if (!parsedRange.start || !parsedRange.end) continue;
+
+        const persistedRow = await this.prisma.dvi_itinerary_route_hotspot_details.findFirst({
+          where: {
+            itinerary_plan_ID: Number(planId),
+            itinerary_route_ID: Number(routeId),
+            hotspot_ID: Number(hotspotId),
+            item_type: 4,
+            deleted: 0,
+            status: 1,
+          },
+          select: { route_hotspot_ID: true },
+        });
+
+        if (!persistedRow?.route_hotspot_ID) continue;
+
+        await this.prisma.dvi_itinerary_route_hotspot_details.update({
+          where: { route_hotspot_ID: Number(persistedRow.route_hotspot_ID) },
+          data: {
+            hotspot_start_time: parsedRange.start,
+            hotspot_end_time: parsedRange.end,
+            hotspot_traveling_time: this.minutesToUtcTimeDate(Math.max(1, Math.round((parsedRange.end.getTime() - parsedRange.start.getTime()) / 60000))),
+            updatedon: new Date(),
+            is_conflict: 0,
+            conflict_reason: null,
+          },
+        });
+      }
+    }
+
     return applyResult;
   }
 
@@ -9133,6 +9174,30 @@ export class ItinerariesService {
       });
     }
 
+    const selectedAttractionTimelineRow = (adjustedTimeline || []).find((row: any) => (
+      String(row?.type || '').toLowerCase() === 'attraction'
+      && Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || 0) === Number(selectedHotspotId)
+    ));
+    const selectedAttractionTimes = this.parsePreviewTimeRangeToUtcDates(selectedAttractionTimelineRow?.timeRange);
+    const selectedAttractionRow = activeAttractionsAfterReorder.find((row: any) => (
+      Number(row?.hotspot_ID || 0) === Number(selectedHotspotId)
+      && Number(row?.item_type || 0) === 4
+    ));
+    if (selectedAttractionRow && selectedAttractionTimes.start && selectedAttractionTimes.end) {
+      const selectedDurationMinutes = Math.max(1, Math.round((selectedAttractionTimes.end.getTime() - selectedAttractionTimes.start.getTime()) / 60000));
+      await (tx as any).dvi_itinerary_route_hotspot_details.update({
+        where: { route_hotspot_ID: Number(selectedAttractionRow?.route_hotspot_ID || 0) },
+        data: {
+          hotspot_start_time: selectedAttractionTimes.start,
+          hotspot_end_time: selectedAttractionTimes.end,
+          hotspot_traveling_time: this.minutesToUtcTimeDate(selectedDurationMinutes),
+          updatedon: new Date(),
+          is_conflict: 0,
+          conflict_reason: null,
+        },
+      });
+    }
+
     // Route-local travel persistence in timeline order (without global rebuild).
     const travelRows = await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
       where: {
@@ -9942,9 +10007,10 @@ export class ItinerariesService {
 
     const fromEndMinutes = this.parseSegmentEndMinutes(fromRow);
     const toStartMinutes = this.parseSegmentStartMinutes(toRow);
-    const selectedDurationMinutes = this.getPreviewRowDurationMinutes(selectedRow) || (
-      selectedFromMaster?.hotspot_duration ? Math.max(1, Number(this.timeToMinutes(selectedFromMaster.hotspot_duration as any)) || 0) : 60
-    );
+    const selectedDurationMinutes =
+      this.getHotspotDurationMinutesFromMasterFirst(selectedFromMaster, selectedRow)
+      || this.getPreviewRowDurationFromDurationFieldsOnly(selectedRow)
+      || 60;
 
     const timingPossible = fromEndMinutes !== null
       && toStartMinutes !== null
@@ -10262,7 +10328,11 @@ export class ItinerariesService {
     const cbEstimated = !Number.isFinite(Number(cachedCbDurationMin || 0)) || Number(cachedCbDurationMin || 0) <= 0;
 
     const selectedRow = baseMerged[insertedRowIndex];
-    const selectedDurationMinutes = this.getPreviewRowDurationMinutes(selectedRow) || 60;
+    const selectedHotspotMaster = hotspotMasters.find((hotspot: any) => Number(hotspot?.hotspot_ID || hotspot?.id || 0) === selectedIdNum) || null;
+    const selectedDurationMinutes =
+      this.getHotspotDurationMinutesFromMasterFirst(selectedHotspotMaster, selectedRow)
+      || this.getPreviewRowDurationFromDurationFieldsOnly(selectedRow)
+      || 60;
 
     const fromRow = baseMerged[fromRowIndex];
     const fromEndMinutes = this.parseSegmentEndMinutes(fromRow);
@@ -10739,6 +10809,63 @@ export class ItinerariesService {
     }
 
     return null;
+  }
+
+  private getPreviewRowDurationFromDurationFieldsOnly(row: any): number | null {
+    const parseDurationValue = (value: any): number | null => {
+      if (value == null) return null;
+
+      if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+        return Math.max(1, Math.round(value));
+      }
+
+      const text = String(value).trim().toLowerCase();
+      if (!text) return null;
+
+      const hourMatch = text.match(/(\d+(?:\.\d+)?)\s*h(?:our)?s?/i);
+      const minuteMatch = text.match(/(\d+(?:\.\d+)?)\s*m(?:in)?s?/i);
+      if (hourMatch || minuteMatch) {
+        const hours = hourMatch ? Number.parseFloat(hourMatch[1]) : 0;
+        const minutes = minuteMatch ? Number.parseFloat(minuteMatch[1]) : 0;
+        const total = (Number.isFinite(hours) ? hours * 60 : 0) + (Number.isFinite(minutes) ? minutes : 0);
+        if (total > 0) return Math.max(1, Math.round(total));
+      }
+
+      const numeric = Number.parseFloat(text.replace(/[^0-9.]/g, ''));
+      if (!Number.isFinite(numeric) || numeric <= 0) return null;
+      return Math.max(1, Math.round(numeric));
+    };
+
+    const parseTravelingTimeValue = (value: any): number | null => {
+      if (value == null) return null;
+
+      if (value instanceof Date && !Number.isNaN(value.getTime())) {
+        const mins = (value.getHours() * 60) + value.getMinutes();
+        return mins > 0 ? mins : null;
+      }
+
+      const parsed = new Date(value);
+      if (!Number.isNaN(parsed.getTime())) {
+        const mins = (parsed.getHours() * 60) + parsed.getMinutes();
+        return mins > 0 ? mins : null;
+      }
+
+      return null;
+    };
+
+    return (
+      parseDurationValue(row?.duration)
+      || parseDurationValue(row?.visitDuration)
+      || parseTravelingTimeValue(row?.hotspot_traveling_time)
+      || null
+    );
+  }
+
+  private getHotspotDurationMinutesFromMasterFirst(master: any, row: any): number | null {
+    const masterDuration = master?.hotspot_duration ? this.timeToMinutes(master.hotspot_duration) : 0;
+    if (masterDuration > 0) return masterDuration;
+
+    return this.getHotspotDurationMinutes(master, row);
   }
 
   private minutesRangeToTimeString(startMinutes: number, endMinutes: number): string {

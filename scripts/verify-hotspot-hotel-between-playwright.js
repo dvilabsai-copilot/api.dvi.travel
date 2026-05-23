@@ -68,6 +68,53 @@ function parseTime12ToMinutes(value) {
   return hh * 60 + mm;
 }
 
+function extractHotspotPreviewTimeRange(lines, hotspotName) {
+  const safeLines = Array.isArray(lines) ? lines.map((line) => String(line || '').trim()) : [];
+  const target = String(hotspotName || '').trim().toLowerCase();
+  const timeRangePattern = /\d{1,2}:\d{2}\s*(AM|PM)\s*-\s*\d{1,2}:\d{2}\s*(AM|PM)/i;
+
+  for (let i = 0; i < safeLines.length; i += 1) {
+    if (!safeLines[i].toLowerCase().includes(target)) continue;
+
+    for (let j = i + 1; j < Math.min(safeLines.length, i + 8); j += 1) {
+      if (timeRangePattern.test(safeLines[j])) {
+        return safeLines[j];
+      }
+    }
+  }
+
+  return null;
+}
+
+function parseTimeRangeMinutes(rangeValue) {
+  const rangeText = String(rangeValue || '').trim();
+  if (!rangeText.includes('-')) return null;
+
+  const [startText, endText] = rangeText.split('-').map((part) => String(part || '').trim());
+  const startMinutes = parseTime12ToMinutes(startText);
+  const endMinutes = parseTime12ToMinutes(endText);
+  if (startMinutes == null || endMinutes == null) return null;
+
+  return endMinutes >= startMinutes
+    ? (endMinutes - startMinutes)
+    : ((24 * 60) - startMinutes + endMinutes);
+}
+
+function extractTimelineRowByHotspot(timeline, hotspotName, hotspotId) {
+  const targetName = String(hotspotName || '').trim().toLowerCase();
+  const targetId = Number(hotspotId || 0);
+  const rows = Array.isArray(timeline) ? timeline : [];
+
+  for (const row of rows) {
+    const rowHotspotId = Number(row?.hotspot_ID || row?.hotspotId || row?.locationId || 0);
+    const rowText = String(row?.text || row?.name || row?.displayLabel || row?.toName || row?.fromName || '').trim().toLowerCase();
+    if (targetId > 0 && rowHotspotId === targetId) return row;
+    if (targetName && rowText.includes(targetName)) return row;
+  }
+
+  return null;
+}
+
 function collectConflictTimingConsistency(lines) {
   const safeLines = Array.isArray(lines) ? lines.map((line) => String(line || '').trim()) : [];
   const leaveLine = safeLines.find((line) => /leave around\s+\d{1,2}:\d{2}\s*(AM|PM)/i.test(line)) || null;
@@ -389,6 +436,10 @@ async function run() {
       staleTimeRangeDetected: false,
       staleTimeRangeMatches: [],
       staleTimeRangeContexts: [],
+      pothameduPreviewTimeRange: null,
+      pothameduPreviewDurationMinutes: null,
+      pothameduPreviewDurationValid: false,
+      pothameduPreviewHasStaleRange: false,
       modalOpened: false,
       hotspotPreviewClicked: false,
       previewIsolationRecovered: false,
@@ -405,6 +456,10 @@ async function run() {
       containsTravelToEravikulamAfterConfirm: false,
       finalHotelCheckinTime: null,
       finalHotelCheckinBefore8Pm: null,
+      pothameduConfirmTimeRange: null,
+      pothameduConfirmDurationMinutes: null,
+      pothameduConfirmDurationValid: false,
+      pothameduPersistedDurationMinutes: null,
       confirmClicked: false,
       confirmButtonLabel: null,
       confirmButtonCandidates: [],
@@ -604,18 +659,34 @@ async function run() {
       const previewPayload = await previewResponse.json().catch(() => null);
       result.ui.previewIsolationRecovered = previewPayload?.previewIsolationRecovered === true;
       result.ui.previewApiCode = previewPayload?.code || null;
+      const previewTimeline = Array.isArray(previewPayload?.routeTimeline)
+        ? previewPayload.routeTimeline
+        : (Array.isArray(previewPayload?.fullTimeline) ? previewPayload.fullTimeline : []);
+      const previewSelectedRow = extractTimelineRowByHotspot(previewTimeline, args.hotspot, result.db.hotspotIdByName);
+      const previewSelectedRange = previewSelectedRow?.timeRange || previewSelectedRow?.visitTime || null;
+      if (previewSelectedRange) {
+        result.ui.pothameduPreviewTimeRange = String(previewSelectedRange);
+        result.ui.pothameduPreviewDurationMinutes = parseTimeRangeMinutes(previewSelectedRange);
+        result.ui.pothameduPreviewDurationValid = result.ui.pothameduPreviewDurationMinutes === 60;
+      }
     }
 
     await page.waitForTimeout(1800);
     const text = await dialog.innerText();
     const lines = text.split('\n').map((s) => s.trim()).filter(Boolean);
     const staleTimeRangeMatcher = /8:38\s*PM\s*-\s*8:48\s*PM/i;
+    const pothameduPreviewTimeRange = result.ui.pothameduPreviewTimeRange || extractHotspotPreviewTimeRange(lines, args.hotspot);
+    const pothameduPreviewDurationMinutes = result.ui.pothameduPreviewDurationMinutes ?? parseTimeRangeMinutes(pothameduPreviewTimeRange);
     result.ui.decisionLines = pickDecisionLines(lines);
     result.ui.hotelTravelDiagnostics = collectHotelTravelDiagnostics(lines, 'MUNNAR QUEEN');
     result.ui.conflictTimingConsistency = collectConflictTimingConsistency(lines);
     result.ui.staleTimeRangeMatches = collectMatchingLines(lines, staleTimeRangeMatcher);
     result.ui.staleTimeRangeContexts = collectMatchContexts(lines, staleTimeRangeMatcher);
     result.ui.staleTimeRangeDetected = result.ui.staleTimeRangeMatches.length > 0;
+    result.ui.pothameduPreviewTimeRange = pothameduPreviewTimeRange;
+    result.ui.pothameduPreviewDurationMinutes = pothameduPreviewDurationMinutes;
+    result.ui.pothameduPreviewDurationValid = pothameduPreviewDurationMinutes === 60;
+    result.ui.pothameduPreviewHasStaleRange = /12:01\s*PM\s*-\s*12:11\s*PM/i.test(text) && /1\s*Hours?/i.test(text);
 
     await page.waitForTimeout(800);
     result.ui.afterPreviewDayTextExcerpt = (await dayRoot.innerText().catch(() => '') || '').slice(0, 3000);
@@ -839,6 +910,33 @@ async function run() {
           }))
         : [];
 
+            const selectedHotspotDurationRows = await prisma.$queryRawUnsafe(`
+        SELECT TIME_FORMAT(hotspot_start_time, '%h:%i %p') AS start_time,
+               TIME_FORMAT(hotspot_end_time, '%h:%i %p') AS end_time,
+               TIMESTAMPDIFF(MINUTE, hotspot_start_time, hotspot_end_time) AS duration_minutes
+        FROM dvi_itinerary_route_hotspot_details
+        WHERE itinerary_plan_ID = (
+          SELECT itinerary_plan_ID
+          FROM dvi_itinerary_plan_details
+          WHERE itinerary_quote_ID = ?
+          ORDER BY itinerary_plan_ID DESC
+          LIMIT 1
+        )
+          AND itinerary_route_ID = ?
+          AND item_type = 4
+          AND deleted = 0
+          AND LOWER((SELECT hotspot_name FROM dvi_hotspot_place WHERE hotspot_ID = dvi_itinerary_route_hotspot_details.hotspot_ID LIMIT 1)) LIKE ?
+        ORDER BY hotspot_order ASC
+        LIMIT 1
+      `, args.quote, Number(dayRoute.itinerary_route_ID), `%${String(args.hotspot || '').trim().toLowerCase()}%`);
+
+      result.ui.pothameduConfirmTimeRange = selectedHotspotDurationRows?.[0]?.start_time && selectedHotspotDurationRows?.[0]?.end_time
+        ? `${String(selectedHotspotDurationRows[0].start_time)} - ${String(selectedHotspotDurationRows[0].end_time)}`
+        : null;
+      result.ui.pothameduConfirmDurationMinutes = Number(selectedHotspotDurationRows?.[0]?.duration_minutes || 0) || null;
+      result.ui.pothameduConfirmDurationValid = result.ui.pothameduConfirmDurationMinutes === 60;
+      result.ui.pothameduPersistedDurationMinutes = result.ui.pothameduConfirmDurationMinutes;
+
       const findIndexByName = (namePart) => result.db.attractionOrderAfterConfirm
         .findIndex((row) => String(row?.hotspot_name || '').toLowerCase().includes(String(namePart || '').toLowerCase()));
 
@@ -946,14 +1044,18 @@ async function run() {
       && !result.db.hotspotCountChangedWithoutConfirm
       && result.ui.timelineUnchangedAfterPreviewOnly
       && result.ui.staleTimeRangeDetected !== true
-      && result.ui.conflictTimingConsistency?.travelStartsBeforeLeave !== true;
+      && result.ui.conflictTimingConsistency?.travelStartsBeforeLeave !== true
+      && result.ui.pothameduPreviewDurationValid === true
+      && result.ui.pothameduPreviewHasStaleRange !== true;
 
     const confirmPhaseOk = result.ui.confirmClicked === true
       ? (result.db.routeRowsChangedAfterConfirm
           && result.db.hotspotCountChangedAfterConfirm
           && (result.ui.timelineChangedAfterConfirm || result.ui.containsHotspotAfterConfirm)
           && result.db.selectedSlotOrderValidAfterConfirm === true
-          && result.db.hotelCheckinBefore8PmAfterConfirm !== false)
+          && result.db.hotelCheckinBefore8PmAfterConfirm !== false
+          && result.ui.pothameduConfirmDurationValid === true
+          && result.ui.pothameduPersistedDurationMinutes === 60)
       : false;
 
     const ok = args.allowNoConfirm
@@ -970,6 +1072,10 @@ async function run() {
         staleTimeRangeDetected: result.ui.staleTimeRangeDetected === true,
         staleTimeRangeMatches: result.ui.staleTimeRangeMatches,
         staleTimeRangeContexts: result.ui.staleTimeRangeContexts,
+        pothameduPreviewTimeRange: result.ui.pothameduPreviewTimeRange,
+        pothameduPreviewDurationMinutes: result.ui.pothameduPreviewDurationMinutes,
+        pothameduPreviewDurationValid: result.ui.pothameduPreviewDurationValid,
+        pothameduPreviewHasStaleRange: result.ui.pothameduPreviewHasStaleRange,
         conflictTimingConsistency: result.ui.conflictTimingConsistency,
         hotelTravelDiagnostics: result.ui.hotelTravelDiagnostics,
         decisionLines: result.ui.decisionLines,
@@ -999,6 +1105,10 @@ async function run() {
         routeHotspotCountBefore: result.db.routeHotspotCountBefore,
         routeHotspotCountAfterPreview: result.db.routeHotspotCountAfterPreview,
         routeHotspotCountAfterConfirm: result.db.routeHotspotCountAfterConfirm,
+        pothameduConfirmTimeRange: result.ui.pothameduConfirmTimeRange,
+        pothameduConfirmDurationMinutes: result.ui.pothameduConfirmDurationMinutes,
+        pothameduConfirmDurationValid: result.ui.pothameduConfirmDurationValid,
+        pothameduPersistedDurationMinutes: result.ui.pothameduPersistedDurationMinutes,
         beforeRouteRows: Array.isArray(result.db.beforeRouteRows) ? result.db.beforeRouteRows.length : 0,
         afterPreviewRouteRows: Array.isArray(result.db.afterPreviewRouteRows) ? result.db.afterPreviewRouteRows.length : 0,
         afterRouteRows: Array.isArray(result.db.afterRouteRows) ? result.db.afterRouteRows.length : 0,
