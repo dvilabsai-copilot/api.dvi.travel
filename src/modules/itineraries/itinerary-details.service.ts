@@ -822,6 +822,8 @@ export class ItineraryDetailsService {
       throw new NotFoundException('Itinerary not found');
     }
     const planId = plan.itinerary_plan_ID;
+    const itineraryPreference = Number((plan as any).itinerary_preference || 0);
+    const isVehicleOnly = itineraryPreference === 2;
     const proofQuoteEnabled = false;
 
     const confirmedPlan = await this.prisma.dvi_confirmed_itinerary_plan_details.findFirst({
@@ -990,38 +992,40 @@ for (const row of vehicleKmRows) {
       { hotel_name: string; hotel_address: string | null; hotel_code: string | null; price: number }
     >();
 
-    try {
-      const fallbackHotelDetails = await this.hotelDetailsTboService.getHotelDetailsByQuoteIdFromTbo(
-        quoteId,
-      );
+    if (!isVehicleOnly) {
+      try {
+        const fallbackHotelDetails = await this.hotelDetailsTboService.getHotelDetailsByQuoteIdFromTbo(
+          quoteId,
+        );
 
-      const effectiveGroupType = Number(groupType ?? 1);
-      for (const row of fallbackHotelDetails?.hotels || []) {
-        const routeIdNum = Number((row as any)?.itineraryRouteId ?? 0);
-        if (!routeIdNum) continue;
+        const effectiveGroupType = Number(groupType ?? 1);
+        for (const row of fallbackHotelDetails?.hotels || []) {
+          const routeIdNum = Number((row as any)?.itineraryRouteId ?? 0);
+          if (!routeIdNum) continue;
 
-        const rowGroupType = Number((row as any)?.groupType ?? 0);
-        if (rowGroupType !== effectiveGroupType) continue;
+          const rowGroupType = Number((row as any)?.groupType ?? 0);
+          if (rowGroupType !== effectiveGroupType) continue;
 
-        const hotelName = String((row as any)?.hotelName ?? '').trim();
-        if (!hotelName || hotelName.toLowerCase() === 'no hotels available') continue;
+          const hotelName = String((row as any)?.hotelName ?? '').trim();
+          if (!hotelName || hotelName.toLowerCase() === 'no hotels available') continue;
 
-        const price =
-          Number((row as any)?.totalHotelCost ?? 0) +
-          Number((row as any)?.totalHotelTaxAmount ?? 0);
+          const price =
+            Number((row as any)?.totalHotelCost ?? 0) +
+            Number((row as any)?.totalHotelTaxAmount ?? 0);
 
-        const existing = liveRouteHotelFallbackMap.get(routeIdNum);
-        if (!existing || (Number.isFinite(price) && price > 0 && price < existing.price)) {
-          liveRouteHotelFallbackMap.set(routeIdNum, {
-            hotel_name: hotelName,
-            hotel_address: null,
-            hotel_code: String((row as any)?.hotelCode ?? '').trim() || null,
-            price: Number.isFinite(price) ? price : Number.MAX_SAFE_INTEGER,
-          });
+          const existing = liveRouteHotelFallbackMap.get(routeIdNum);
+          if (!existing || (Number.isFinite(price) && price > 0 && price < existing.price)) {
+            liveRouteHotelFallbackMap.set(routeIdNum, {
+              hotel_name: hotelName,
+              hotel_address: null,
+              hotel_code: String((row as any)?.hotelCode ?? '').trim() || null,
+              price: Number.isFinite(price) ? price : Number.MAX_SAFE_INTEGER,
+            });
+          }
         }
+      } catch {
+        // Keep details endpoint resilient when live hotel-details fallback is unavailable.
       }
-    } catch {
-      // Keep details endpoint resilient when live hotel-details fallback is unavailable.
     }
     
     // Build final map with hotel info
@@ -1066,6 +1070,19 @@ for (const row of vehicleKmRows) {
         hotel_address: liveFallback.hotel_address,
         hotel_code: liveFallback.hotel_code ?? '',
       });
+    }
+
+    if (isVehicleOnly) {
+      for (const route of routes) {
+        const routeIdNum = Number((route as any)?.itinerary_route_ID ?? 0);
+        if (!routeIdNum) continue;
+        const existing = routeHotelMap.get(routeIdNum) || {};
+        routeHotelMap.set(routeIdNum, {
+          ...existing,
+          hotel_name: 'Hotel',
+          hotel_address: null,
+        });
+      }
     }
 
     const days: any[] = [];
@@ -2269,11 +2286,15 @@ for (const row of vehicleKmRows) {
           
           const hotelInfo = routeHotelMap.get(route.itinerary_route_ID);
           const toName =
-            hotelInfo?.hotel_name ??
-            hotelInfo?.hotel_city ??
-            location?.destination_location ??
-            route.next_visiting_location ??
-            "Hotel";
+            isVehicleOnly
+              ? 'Hotel'
+              : (
+                hotelInfo?.hotel_name ??
+                hotelInfo?.hotel_city ??
+                location?.destination_location ??
+                route.next_visiting_location ??
+                'Hotel'
+              );
 
           const normalizeLabel = (value?: string | null) =>
             String(value ?? '').trim().toLowerCase();
@@ -2431,11 +2452,15 @@ for (const row of vehicleKmRows) {
           // HOTEL CHECK-IN / RETURN segment
           const hotelInfo = routeHotelMap.get(route.itinerary_route_ID);
           const hotelName =
-            hotelInfo?.hotel_name ??
-            hotelInfo?.hotel_city ??
-            location?.destination_location ??
-            route.next_visiting_location ??
-            "Hotel";
+            isVehicleOnly
+              ? 'Hotel'
+              : (
+                hotelInfo?.hotel_name ??
+                hotelInfo?.hotel_city ??
+                location?.destination_location ??
+                route.next_visiting_location ??
+                'Hotel'
+              );
           const hotelAddress = hotelInfo?.hotel_address ?? "";
 
           // FIX #3: Use hotel arrival time (from travel-to-hotel) if available
@@ -2939,7 +2964,6 @@ sightseeingDistance,       // local sightseeing separately
 });
     }
 
-    const itineraryPreference = Number((plan as any).itinerary_preference || 0);
     const shouldIncludeVehicles = itineraryPreference === 2 || itineraryPreference === 3;
 
     // ------------------------------ VEHICLES ------------------------------
@@ -3910,7 +3934,7 @@ for (const vd of dayWiseDetails) {
     // For selected recommendation tabs, derive room total from live group-specific hotel details
     // and override stale duplicated DB costs when they differ.
     const getLiveSelectedGroupRoomCost = async (): Promise<number> => {
-      if (groupType === undefined) return 0;
+      if (groupType === undefined || isVehicleOnly) return 0;
 
       try {
         // Use the same default hotel_details dataset as frontend tabs
