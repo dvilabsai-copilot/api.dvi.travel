@@ -18059,9 +18059,15 @@ export class ItinerariesService {
     // 5) Post-commit parity with create flow: recompute parking charges from persisted rebuilt rows
     await this.hotspotEngine.rebuildParkingCharges(normalizedPlanId, 1);
 
+    // 6) Recompute vehicle pricing with the updated route times so that
+    //    time-sensitive charges (before_6_am, after_8_pm, rental) reflect
+    //    the new start/end times. Preserves currently assigned vendors.
+    await this.autoSelectVehicleSlabs({ planId: normalizedPlanId });
+
     return {
       ...transactionResult,
       parkingChargesRebuilt: true,
+      vehiclePricingRebuilt: true,
     };
   }
 
