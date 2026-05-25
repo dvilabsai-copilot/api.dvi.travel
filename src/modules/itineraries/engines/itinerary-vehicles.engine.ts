@@ -9,7 +9,8 @@ import {
   calculateRouteVehicleDetails,
   getVehicleLocationDetails,
   getLocationIdFromSourceDest,
-  getStoredLocationCity
+  getStoredLocationCity,
+  getEffectiveTimeLimitKm,
 } from "./vehicle-calculation.helpers";
 import { timeStringToPrismaTime } from "../utils/itinerary.utils";
 
@@ -40,6 +41,25 @@ function hhmmFromMs(ms: number) {
   const hh = Math.floor(total / 3600000);
   const mm = Math.floor((total % 3600000) / 60000);
   return `${hh}.${String(mm).padStart(2, "0")}`; // PHP-like "H.i"
+}
+
+function normalizeCityToken(value: string): string {
+  const base = String(value || '').toLowerCase().trim();
+  if (!base) return '';
+  const firstPart = base.split(',')[0] || base;
+  const normalized = firstPart
+    .replace(/\b(international|domestic|airport|railway|station|bus|stand|hotel|lodge|temple|mall|palace|park|garden|museum|planetarium|aquarium)\b/g, ' ')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const cityAliases: Record<string, string> = {
+    bengaluru: "bangalore",
+    bangaluru: "bangalore",
+    bengalore: "bangalore",
+  };
+
+  return cityAliases[normalized] || normalized;
 }
 
 // ---------------------------------------------------------------------------
@@ -252,7 +272,7 @@ export class ItineraryVehiclesEngine {
   async rebuildEligibleVendorList(args: {
     planId: number;
     createdBy: number;
-    selectedTimeLimitByEligible?: Record<number, number>;
+    selectedTimeLimitByEligible?: Record<string, number>;
   }) {
     const planId = Number(args.planId);
     const createdBy = Number(args.createdBy ?? 0);
@@ -330,6 +350,19 @@ export class ItineraryVehiclesEngine {
           .filter((v: string) => v.length > 0),
       ),
     );
+
+    const firstRoute = routes.length ? routes[0] : null;
+    const lastRoute = routes.length ? routes[routes.length - 1] : null;
+    const overallStartCityRaw = firstRoute
+      ? (await getStoredLocationCity(tx, String(firstRoute.location_name || ""))) ||
+        String(firstRoute.location_name || "")
+      : "";
+    const overallEndCityRaw = lastRoute
+      ? (await getStoredLocationCity(tx, String(lastRoute.next_visiting_location || ""))) ||
+        String(lastRoute.next_visiting_location || "")
+      : "";
+    const overallStartCityToken = normalizeCityToken(overallStartCityRaw);
+    const overallEndCityToken = normalizeCityToken(overallEndCityRaw);
 
     // ---------------------------------------------------------------------
     // 1.1) Build eligible cities from dvi_stored_locations (PHP UNION parity)
@@ -482,6 +515,21 @@ export class ItineraryVehiclesEngine {
     const kmsLimitCache = new Map<string, { kmsLimitId: number; allowedKmPerDayNum: number }>();
     const priceBookCache = new Map<string, number>();
     const existingQtyCache = new Map<string, number>();
+    const eligibleCityTokens = new Set<string>(
+      eligibleCities
+        .map((c) => normalizeCityToken(c))
+        .filter((c) => c.length > 0),
+    );
+    const strictOperationalCityTokens = new Set<string>();
+    if (
+      overallStartCityToken.length > 0 &&
+      overallStartCityToken === overallEndCityToken
+    ) {
+      strictOperationalCityTokens.add(overallStartCityToken);
+    }
+    const cityTokensForBranchFiltering = strictOperationalCityTokens.size
+      ? strictOperationalCityTokens
+      : eligibleCityTokens;
 
     const vendorIdsUsed = new Set<number>();
     let inserted = 0;
@@ -528,6 +576,86 @@ export class ItineraryVehiclesEngine {
 
       if (!mappings.length) continue;
 
+      type VendorBranchRow = {
+        vendor_branch_id: number;
+        vendor_branch_name: string | null;
+        vendor_branch_location: string | null;
+        vendor_branch_gst_type: number | null;
+        vendor_branch_gst: number | null;
+      };
+
+      const vendorBranchCache = new Map<
+        number,
+        {
+          branches: VendorBranchRow[];
+          strictBranchIds: number[];
+        }
+      >();
+      let hasAnyStrictBranchForType = false;
+
+      const uniqueVendorIds: number[] = Array.from(
+        new Set<number>(
+          mappings
+            .map((m) => Number(m.vendor_id ?? 0))
+            .filter((id) => id > 0),
+        ),
+      );
+
+      for (const vendorId of uniqueVendorIds) {
+        const branchWhere = {
+          vendor_id: vendorId,
+          status: 1,
+          deleted: 0,
+        };
+        this.logSql(
+          "VENDOR_BRANCHES_FIND_MANY_NO_FILTER",
+          this.buildSelectSql("dvi_vendor_branches", branchWhere),
+          { where: branchWhere },
+        );
+
+        const branches: VendorBranchRow[] = await tx.dvi_vendor_branches.findMany({
+          where: branchWhere,
+          select: {
+            vendor_branch_id: true,
+            vendor_branch_name: true,
+            vendor_branch_location: true,
+            vendor_branch_gst_type: true,
+            vendor_branch_gst: true,
+          },
+        });
+
+        let strictBranchIds = branches
+          .map((b) => Number(b.vendor_branch_id ?? 0))
+          .filter((id) => id > 0);
+
+        if (cityTokensForBranchFiltering.size > 0) {
+          strictBranchIds = branches
+            .filter((b) => {
+              const locationToken = normalizeCityToken(
+                String(b.vendor_branch_location ?? ""),
+              );
+              const nameToken = normalizeCityToken(
+                String(b.vendor_branch_name ?? ""),
+              );
+              return (
+                (locationToken.length > 0 && cityTokensForBranchFiltering.has(locationToken)) ||
+                (nameToken.length > 0 && cityTokensForBranchFiltering.has(nameToken))
+              );
+            })
+            .map((b) => Number(b.vendor_branch_id ?? 0))
+            .filter((id) => id > 0);
+        }
+
+        if (strictBranchIds.length > 0) {
+          hasAnyStrictBranchForType = true;
+        }
+
+        vendorBranchCache.set(Number(vendorId), {
+          branches,
+          strictBranchIds,
+        });
+      }
+
       for (const map of mappings) {
         const vendorVehicleTypeId = Number(map.vendor_vehicle_type_ID ?? 0);
         const vendorId = Number(map.vendor_id ?? 0);
@@ -559,37 +687,14 @@ export class ItineraryVehiclesEngine {
         const vendorMarginGstType = Number(vendorDetails?.vendor_margin_gst_type ?? 2);
         const vendorMarginGstPercentage = Number(vendorDetails?.vendor_margin_gst_percentage ?? 5);
 
-        const branchWhere = {
-          vendor_id: vendorId,
-          status: 1,
-          deleted: 0,
-        };
-        this.logSql(
-          "VENDOR_BRANCHES_FIND_MANY_NO_FILTER",
-          this.buildSelectSql("dvi_vendor_branches", branchWhere),
-          { where: branchWhere },
-        );
-
-        const allowedBranches: {
-          vendor_branch_id: number;
-          vendor_branch_name: string | null;
-          vendor_branch_location: string | null;
-          vendor_branch_gst_type: number | null;
-          vendor_branch_gst: number | null;
-        }[] = await tx.dvi_vendor_branches.findMany({
-          where: branchWhere,
-          select: {
-            vendor_branch_id: true,
-            vendor_branch_name: true,
-            vendor_branch_location: true,
-            vendor_branch_gst_type: true,
-            vendor_branch_gst: true,
-          },
-        });
-
-        const allowedBranchIds = allowedBranches
+        const cachedBranchData = vendorBranchCache.get(vendorId);
+        const allowedBranches = cachedBranchData?.branches ?? [];
+        const fallbackBranchIds = allowedBranches
           .map((b) => Number(b.vendor_branch_id ?? 0))
           .filter((id) => id > 0);
+        const allowedBranchIds = hasAnyStrictBranchForType
+          ? cachedBranchData?.strictBranchIds ?? []
+          : fallbackBranchIds;
 
         if (!allowedBranchIds.length) continue;
 
@@ -1151,6 +1256,19 @@ export class ItineraryVehiclesEngine {
       // keep helper call for logging / debugging (no hotspot override)
       const routeKmMap = await this.buildRouteKmMap(tx, planId, routes);
 
+      // Overall trip local rule: if itinerary starts and ends in same normalized city, force LOCAL usage.
+      const firstRoute = routes[0];
+      const lastRoute = routes[routes.length - 1];
+      const overallStartCityRaw = firstRoute
+        ? (await getStoredLocationCity(tx, String(firstRoute.location_name || ''))) || String(firstRoute.location_name || '')
+        : '';
+      const overallEndCityRaw = lastRoute
+        ? (await getStoredLocationCity(tx, String(lastRoute.next_visiting_location || ''))) || String(lastRoute.next_visiting_location || '')
+        : '';
+      const forceLocalTrip =
+        normalizeCityToken(overallStartCityRaw) !== '' &&
+        normalizeCityToken(overallStartCityRaw) === normalizeCityToken(overallEndCityRaw);
+
       for (const e of eligibles) {
         const eligibleId = Number(e.itinerary_plan_vendor_eligible_ID ?? 0);
         if (!eligibleId) continue;
@@ -1204,6 +1322,12 @@ export class ItineraryVehiclesEngine {
         );
 
         // Build calculation context
+        const eligibleCompositeKey = `${vendorId}:${vendorBranchId}:${vvtId}:${vehicleId}`;
+        const selectedTimeLimitId =
+          Number(selectedTimeLimitByEligible[String(eligibleId)] ?? 0) ||
+          Number(selectedTimeLimitByEligible[eligibleCompositeKey] ?? 0) ||
+          0;
+
         const calcCtx: VehicleCalculationContext = {
           prisma: tx,
           
@@ -1219,7 +1343,8 @@ export class ItineraryVehiclesEngine {
           vehicle_origin_longitude: vehicleLocationDetails.longitude,
           extra_km_charge: toNum(vehicle.extra_km_charge),  // From dvi_vehicle
           extra_hour_charge: toNum(vehicle.extra_hour_charge),
-          selected_time_limit_id: Number(selectedTimeLimitByEligible[eligibleId] ?? 0) || undefined,
+          selected_time_limit_id: selectedTimeLimitId || undefined,
+          force_local_trip: forceLocalTrip,
           get_kms_limit: 250,  // Default outstation KM limit
           driver_batta: toNum(vendorVehicleType.driver_batta),
           food_cost: toNum(vendorVehicleType.food_cost),
@@ -1241,6 +1366,15 @@ export class ItineraryVehiclesEngine {
           if (!routeId) continue;
 
           const routeDate = safeDate(r.itinerary_route_date) || routeDateBase;
+          const routeDateKey = routeDate.toISOString().slice(0, 10);
+          const prevRoute = route_count > 1 ? (routes[route_count - 2] as any) : null;
+          const prevRouteDate = prevRoute ? (safeDate(prevRoute.itinerary_route_date) || routeDateBase) : null;
+          const prevRouteDateKey = prevRouteDate ? prevRouteDate.toISOString().slice(0, 10) : null;
+          const isFirstRouteOfDay = !prevRouteDateKey || prevRouteDateKey !== routeDateKey;
+          const nextRoute = routes[route_count] as any;
+          const nextRouteDate = nextRoute ? (safeDate(nextRoute.itinerary_route_date) || routeDateBase) : null;
+          const nextRouteDateKey = nextRouteDate ? nextRouteDate.toISOString().slice(0, 10) : null;
+          const isLastRouteOfDay = !nextRouteDateKey || nextRouteDateKey !== routeDateKey;
 
           const fromLoc = (r.location_name ?? null) as any;
           const toLoc = (r.next_visiting_location ?? null) as any;
@@ -1262,7 +1396,9 @@ export class ItineraryVehiclesEngine {
             routeData,
             route_count,
             total_routes,
-            previous_destination_city
+            previous_destination_city,
+            isLastRouteOfDay,
+            isFirstRouteOfDay
           );
 
           // Debug: log calculation result for each route
@@ -1430,56 +1566,26 @@ export class ItineraryVehiclesEngine {
       const totalAllowedKms = allowedKmPerDay * outstationDaysCount;
       this.writeLog(`[vehiclesEngine] Allowed KM per day: ${allowedKmPerDay}, Total allowed KMs: ${totalAllowedKms}`);
       
-      // Aggregate toll charges for this vendor's vehicle type
-      const tollAgg = await tx.dvi_itinerary_plan_vendor_vehicle_details.aggregate({
-        where: {
-          itinerary_plan_id: planId,
-          vendor_vehicle_type_id: eligible.vendor_vehicle_type_id,
-          vehicle_type_id: eligible.vehicle_type_id,
-          status: 1,
-          deleted: 0,
-        },
-        _sum: {
-          vehicle_toll_charges: true,
-        },
-      });
-      const totalTollCharges = Number(tollAgg._sum?.vehicle_toll_charges || 0);
-      this.writeLog(`[vehiclesEngine] Total toll charges: ${totalTollCharges}`);
-
-      // Aggregate permit charges for this vendor's vehicle type
-      const permitAgg = await tx.dvi_itinerary_plan_vendor_vehicle_details.aggregate({
-        where: {
-          itinerary_plan_id: planId,
-          vendor_vehicle_type_id: eligible.vendor_vehicle_type_id,
-          vehicle_type_id: eligible.vehicle_type_id,
-          status: 1,
-          deleted: 0,
-        },
-        _sum: {
-          vehicle_permit_charges: true,
-        },
-      });
-      const totalPermitCharges = Number(permitAgg._sum?.vehicle_permit_charges || 0);
-      this.writeLog(`[vehiclesEngine] Total permit charges: ${totalPermitCharges}`);
-
-      // Aggregate total travelled km and time from vehicle_details (PHP parity)
-      // Note: total_travelled_km and total_travelled_time are string fields, so we can't use _sum aggregate
-      // We need to query all records and sum manually
+      // Aggregate total travelled km and all charge components from vehicle_details.
       const vehicleDetailsRecords = await tx.dvi_itinerary_plan_vendor_vehicle_details.findMany({
         where: {
           itinerary_plan_id: planId,
-          vendor_vehicle_type_id: eligible.vendor_vehicle_type_id,
-          vehicle_type_id: eligible.vehicle_type_id,
+          itinerary_plan_vendor_eligible_ID: eligible.itinerary_plan_vendor_eligible_ID,
           status: 1,
           deleted: 0,
         },
         select: {
+          time_limit_id: true,
           total_travelled_km: true,
           total_travelled_time: true,
           travel_type: true,
           total_extra_km: true,
           total_extra_km_charges: true,
+          vehicle_rental_charges: true,
+          vehicle_toll_charges: true,
+          vehicle_parking_charges: true,
           vehicle_driver_charges: true,
+          vehicle_permit_charges: true,
           before_6_am_extra_time: true,
           after_8_pm_extra_time: true,
           before_6_am_charges_for_driver: true,
@@ -1488,39 +1594,65 @@ export class ItineraryVehiclesEngine {
           after_8_pm_charges_for_vehicle: true,
         },
       });
-      
+
       const totalKms = vehicleDetailsRecords.reduce((sum: number, record: any) => {
         return sum + Number(record.total_travelled_km || 0);
       }, 0);
-      const totalOutstationKm = totalKms; // PHP sets this equal to total_kms
-      
-      // PHP parity: Aggregate LOCAL route (travel_type = 1) KMs and extra charges
-      const localRecords = vehicleDetailsRecords.filter((r: any) => r.travel_type === 1);
+      const localRecords = vehicleDetailsRecords.filter((r: any) => Number(r.travel_type || 0) === 1);
+      const outstationRecords = vehicleDetailsRecords.filter((r: any) => Number(r.travel_type || 0) === 2);
+      const totalOutstationKm = outstationRecords.reduce((sum: number, record: any) => {
+        return sum + Number(record.total_travelled_km || 0);
+      }, 0);
       const totalLocalKms = localRecords.reduce((sum: number, record: any) => {
         return sum + Number(record.total_travelled_km || 0);
       }, 0);
-      
-      // PHP parity: Local allowed KM is 100 if there are local routes, 0 otherwise
-      // PHP stores it as 0.1 (representing 100km in some odd format)
-      const totalAllowedLocalKms = localRecords.length > 0 ? 0.1 : 0;
-      
-      // PHP parity: Sum up total_extra_km from LOCAL routes only
+
+      const localTimeLimitIds = Array.from(
+        new Set(
+          localRecords
+            .map((r: any) => Number(r.time_limit_id || 0))
+            .filter((id: number) => id > 0),
+        ),
+      );
+      const localSlabRows = localTimeLimitIds.length
+        ? await tx.dvi_time_limit.findMany({
+            where: { time_limit_id: { in: localTimeLimitIds } },
+            select: { time_limit_id: true, km_limit: true, time_limit_title: true },
+          })
+        : [];
+      const localKmByTimeLimit = new Map<number, number>(
+        localSlabRows.map((r: any) => [Number(r.time_limit_id || 0), getEffectiveTimeLimitKm(r)]),
+      );
+      const totalAllowedLocalKms = localRecords.reduce((sum: number, r: any) => {
+        return sum + Number(localKmByTimeLimit.get(Number(r.time_limit_id || 0)) || 0);
+      }, 0);
       const totalExtraLocalKms = localRecords.reduce((sum: number, record: any) => {
         return sum + Number(record.total_extra_km || 0);
       }, 0);
-      
-      // PHP parity: Sum up total_extra_km_charges from LOCAL routes only
       const totalExtraLocalKmsCharge = localRecords.reduce((sum: number, record: any) => {
         return sum + Number(record.total_extra_km_charges || 0);
       }, 0);
-      
+      const totalExtraOutstationKms = outstationRecords.reduce((sum: number, record: any) => {
+        return sum + Number(record.total_extra_km || 0);
+      }, 0);
+      const totalExtraOutstationKmsCharge = outstationRecords.reduce((sum: number, record: any) => {
+        return sum + Number(record.total_extra_km_charges || 0);
+      }, 0);
+      const totalRentalCharges = vehicleDetailsRecords.reduce((sum: number, record: any) => {
+        return sum + Number(record.vehicle_rental_charges || 0);
+      }, 0);
+      const totalTollCharges = vehicleDetailsRecords.reduce((sum: number, record: any) => {
+        return sum + Number(record.vehicle_toll_charges || 0);
+      }, 0);
+      const totalParkingCharges = vehicleDetailsRecords.reduce((sum: number, record: any) => {
+        return sum + Number(record.vehicle_parking_charges || 0);
+      }, 0);
+      const totalPermitCharges = vehicleDetailsRecords.reduce((sum: number, record: any) => {
+        return sum + Number(record.vehicle_permit_charges || 0);
+      }, 0);
+
       this.writeLog(`[vehiclesEngine] Total kms: ${totalKms}, Local kms: ${totalLocalKms}, Local extra: ${totalExtraLocalKms}, Local extra charge: ${totalExtraLocalKmsCharge}, records count: ${vehicleDetailsRecords.length}`);
-      
-      // Recalculate extra kms based on corrected total_allowed_kms (PHP parity)
-      const extraKmRate = Number(eligible.extra_km_rate || 0);
-      const totalExtraKms = totalAllowedKms > 0 ? Math.max(0, totalOutstationKm - totalAllowedKms) : 0;
-      const totalExtraKmsCharge = totalExtraKms * extraKmRate;
-      this.writeLog(`[vehiclesEngine] Extra KMs: ${totalExtraKms}, Extra KM charge: ${totalExtraKmsCharge}`);
+      this.writeLog(`[vehiclesEngine] Outstation extra kms: ${totalExtraOutstationKms}, Outstation extra charge: ${totalExtraOutstationKmsCharge}`);
       
       // Convert HH:MM:SS format to decimal hours and sum
       const totalTime = vehicleDetailsRecords.reduce((sum: number, record: any) => {
@@ -1549,12 +1681,10 @@ export class ItineraryVehiclesEngine {
       const totalBefore6amExtraTime = vehicleDetailsRecords.reduce((sum: number, r: any) => sum + Number(r.before_6_am_extra_time || 0), 0);
       const totalAfter8pmExtraTime = vehicleDetailsRecords.reduce((sum: number, r: any) => sum + Number(r.after_8_pm_extra_time || 0), 0);
 
-      // Recalculate totals with the aggregated toll/permit/driver/6am/8pm charges
-      const totalRentalNum = Number(eligible.total_rental_charges || 0);
-      const totalParkingCharges = Number(eligible.total_parking_charges || 0);
-
-      const vehicleBaseTotal = totalRentalNum + totalExtraKmsCharge +
-                               totalTollCharges + totalParkingCharges +
+      const vehicleBaseTotal = totalRentalCharges +
+               totalExtraLocalKmsCharge +
+               totalExtraOutstationKmsCharge +
+               totalTollCharges + totalParkingCharges +
                                totalDriverCharges + totalPermitCharges +
                                totalBefore6amDriver + totalBefore6amVehicle +
                                totalAfter8pmDriver + totalAfter8pmVehicle;
@@ -1585,9 +1715,10 @@ export class ItineraryVehiclesEngine {
           total_kms: String(totalKms),
           total_outstation_km: String(totalOutstationKm),
           total_time: String(totalTime),
+          total_rental_charges: totalRentalCharges,
           total_allowed_kms: String(totalAllowedKms),
-          total_extra_kms: String(totalExtraKms),
-          total_extra_kms_charge: totalExtraKmsCharge,
+          total_extra_kms: String(totalExtraOutstationKms),
+          total_extra_kms_charge: totalExtraOutstationKmsCharge,
           total_allowed_local_kms: String(totalAllowedLocalKms),
           total_extra_local_kms: String(totalExtraLocalKms),
           total_extra_local_kms_charge: totalExtraLocalKmsCharge,
@@ -1599,16 +1730,17 @@ export class ItineraryVehiclesEngine {
           total_after_8_pm_charges_for_driver: totalAfter8pmDriver,
           total_after_8_pm_charges_for_vehicle: totalAfter8pmVehicle,
           total_toll_charges: totalTollCharges,
+          total_parking_charges: totalParkingCharges,
           total_permit_charges: totalPermitCharges,
-          vehicle_gst_amount: vehicleGstAmount,
           vehicle_total_amount: vehicleTotalAmount,
+          vehicle_gst_amount: vehicleGstAmount,
           vendor_margin_amount: vendorMarginAmount,
           vendor_margin_gst_amount: vendorMarginGstAmount,
           vehicle_grand_total: vehicleGrandTotalNum,
           updatedon: new Date(),
         },
       });
-      this.writeLog(`[vehiclesEngine] Updated eligible ${eligible.itinerary_plan_vendor_eligible_ID} with toll=${totalTollCharges}, permit=${totalPermitCharges}, kms=${totalKms}, allowed_kms=${totalAllowedKms}, extra_kms=${totalExtraKms}, local_allowed=${totalAllowedLocalKms}, local_extra=${totalExtraLocalKms}, local_extra_charge=${totalExtraLocalKmsCharge}`);
+      this.writeLog(`[vehiclesEngine] Updated eligible ${eligible.itinerary_plan_vendor_eligible_ID} with toll=${totalTollCharges}, permit=${totalPermitCharges}, rental=${totalRentalCharges}, kms=${totalKms}, allowed_kms=${totalAllowedKms}, extra_kms=${totalExtraOutstationKms}, local_allowed=${totalAllowedLocalKms}, local_extra=${totalExtraLocalKms}, local_extra_charge=${totalExtraLocalKmsCharge}`);
     }
 
     // Re-assign cheapest vendors AFTER final totals update.

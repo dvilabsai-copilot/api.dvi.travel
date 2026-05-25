@@ -4018,6 +4018,49 @@ export class ItinerariesService {
     };
   }
 
+  private async rebuildVehiclePricingWithSlabOverrides(data: {
+    planId: number;
+    selectedTimeLimitByEligible?: Record<string, number>;
+    preserveSelection?: {
+      vehicleTypeId: number;
+      vendorId: number;
+      vendorBranchId: number;
+      vendorVehicleTypeId: number;
+      vehicleId: number;
+    } | null;
+  }) {
+    const userId = 1;
+    await this.itineraryVehiclesEngine.rebuildEligibleVendorList({
+      planId: Number(data.planId),
+      createdBy: userId,
+      selectedTimeLimitByEligible: data.selectedTimeLimitByEligible || {},
+    });
+
+    if (data.preserveSelection) {
+      const matched = await (this.prisma as any).dvi_itinerary_plan_vendor_eligible_list.findFirst({
+        where: {
+          itinerary_plan_id: Number(data.planId),
+          vehicle_type_id: Number(data.preserveSelection.vehicleTypeId),
+          vendor_id: Number(data.preserveSelection.vendorId),
+          vendor_branch_id: Number(data.preserveSelection.vendorBranchId),
+          vendor_vehicle_type_id: Number(data.preserveSelection.vendorVehicleTypeId),
+          vehicle_id: Number(data.preserveSelection.vehicleId),
+          status: 1,
+          deleted: 0,
+        },
+        orderBy: { itinerary_plan_vendor_eligible_ID: 'asc' },
+      });
+
+      if (matched?.itinerary_plan_vendor_eligible_ID) {
+        await this.selectVehicleVendor({
+          planId: Number(data.planId),
+          vehicleTypeId: Number(data.preserveSelection.vehicleTypeId),
+          vendorEligibleId: Number(matched.itinerary_plan_vendor_eligible_ID),
+        });
+      }
+    }
+  }
+
   // Backward-compatible wrapper for legacy select-slab endpoint.
   async selectVehicleSlab(data: {
     planId: number;
@@ -4025,17 +4068,62 @@ export class ItinerariesService {
     vendorEligibleId?: number;
     timeLimitId?: number;
   }) {
-    if (!data?.vendorEligibleId) {
-      throw new BadRequestException(
-        'vendorEligibleId is required. Current service supports vendor selection flow only.',
-      );
+    const planId = Number(data?.planId || 0);
+    const vehicleTypeId = Number(data?.vehicleTypeId || 0);
+    const vendorEligibleId = Number(data?.vendorEligibleId || 0);
+    const timeLimitId = Number(data?.timeLimitId || 0);
+
+    if (!planId || !vehicleTypeId || !vendorEligibleId || !timeLimitId) {
+      throw new BadRequestException('planId, vehicleTypeId, vendorEligibleId and timeLimitId are required');
     }
 
-    return this.selectVehicleVendor({
-      planId: Number(data.planId),
-      vehicleTypeId: Number(data.vehicleTypeId),
-      vendorEligibleId: Number(data.vendorEligibleId),
+    const selectedEligible = await (this.prisma as any).dvi_itinerary_plan_vendor_eligible_list.findFirst({
+      where: {
+        itinerary_plan_vendor_eligible_ID: vendorEligibleId,
+        itinerary_plan_id: planId,
+        vehicle_type_id: vehicleTypeId,
+        status: 1,
+        deleted: 0,
+      },
+      select: {
+        itinerary_plan_vendor_eligible_ID: true,
+        vendor_id: true,
+        vendor_branch_id: true,
+        vendor_vehicle_type_id: true,
+        vehicle_id: true,
+        vehicle_type_id: true,
+      },
     });
+
+    if (!selectedEligible) {
+      throw new NotFoundException('Selected vendor eligible row not found for plan/vehicle type');
+    }
+
+    const selectedMap: Record<string, number> = {};
+    selectedMap[String(vendorEligibleId)] = timeLimitId;
+    const compositeKey = `${Number(selectedEligible.vendor_id || 0)}:${Number(selectedEligible.vendor_branch_id || 0)}:${Number(selectedEligible.vendor_vehicle_type_id || 0)}:${Number(selectedEligible.vehicle_id || 0)}`;
+    selectedMap[compositeKey] = timeLimitId;
+
+    await this.rebuildVehiclePricingWithSlabOverrides({
+      planId,
+      selectedTimeLimitByEligible: selectedMap,
+      preserveSelection: {
+        vehicleTypeId,
+        vendorId: Number(selectedEligible.vendor_id || 0),
+        vendorBranchId: Number(selectedEligible.vendor_branch_id || 0),
+        vendorVehicleTypeId: Number(selectedEligible.vendor_vehicle_type_id || 0),
+        vehicleId: Number(selectedEligible.vehicle_id || 0),
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Vehicle slab selected and pricing recalculated successfully',
+      planId,
+      vehicleTypeId,
+      vendorEligibleId,
+      timeLimitId,
+    };
   }
 
   // Backward-compatible wrapper for legacy auto-select endpoint.
@@ -4043,12 +4131,70 @@ export class ItinerariesService {
     planId: number;
     vehicleTypeId?: number;
   }) {
+    const planId = Number(data?.planId || 0);
+    const vehicleTypeId = Number(data?.vehicleTypeId || 0) || 0;
+    if (!planId) {
+      throw new BadRequestException('planId is required');
+    }
+
+    const where: any = {
+      itinerary_plan_id: planId,
+      status: 1,
+      deleted: 0,
+      itineary_plan_assigned_status: 1,
+    };
+    if (vehicleTypeId > 0) {
+      where.vehicle_type_id = vehicleTypeId;
+    }
+
+    const assignedBefore = await (this.prisma as any).dvi_itinerary_plan_vendor_eligible_list.findMany({
+      where,
+      select: {
+        vehicle_type_id: true,
+        vendor_id: true,
+        vendor_branch_id: true,
+        vendor_vehicle_type_id: true,
+        vehicle_id: true,
+      },
+      orderBy: { itinerary_plan_vendor_eligible_ID: 'asc' },
+    });
+
+    await this.rebuildVehiclePricingWithSlabOverrides({
+      planId,
+      selectedTimeLimitByEligible: {},
+      preserveSelection: null,
+    });
+
+    for (const s of assignedBefore) {
+      const matched = await (this.prisma as any).dvi_itinerary_plan_vendor_eligible_list.findFirst({
+        where: {
+          itinerary_plan_id: planId,
+          vehicle_type_id: Number(s.vehicle_type_id || 0),
+          vendor_id: Number(s.vendor_id || 0),
+          vendor_branch_id: Number(s.vendor_branch_id || 0),
+          vendor_vehicle_type_id: Number(s.vendor_vehicle_type_id || 0),
+          vehicle_id: Number(s.vehicle_id || 0),
+          status: 1,
+          deleted: 0,
+        },
+        select: { itinerary_plan_vendor_eligible_ID: true },
+        orderBy: { itinerary_plan_vendor_eligible_ID: 'asc' },
+      });
+
+      if (matched?.itinerary_plan_vendor_eligible_ID) {
+        await this.selectVehicleVendor({
+          planId,
+          vehicleTypeId: Number(s.vehicle_type_id || 0),
+          vendorEligibleId: Number(matched.itinerary_plan_vendor_eligible_ID),
+        });
+      }
+    }
+
     return {
-      success: false,
-      message:
-        'Auto slab selection is not implemented in current service. Use vehicles/select-vendor for manual selection.',
-      planId: Number(data?.planId || 0),
-      vehicleTypeId: Number(data?.vehicleTypeId || 0) || undefined,
+      success: true,
+      message: 'Vehicle slabs auto-selected and pricing recalculated successfully',
+      planId,
+      vehicleTypeId: vehicleTypeId || undefined,
     };
   }
 
