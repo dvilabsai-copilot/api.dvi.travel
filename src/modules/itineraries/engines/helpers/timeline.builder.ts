@@ -6011,7 +6011,11 @@ export class TimelineBuilder {
       
       // For each via location, find matching hotspots
       for (const viaRoute of viaRoutes) {
-        const viaLocationName = viaRoute.itinerary_via_location_name;
+        const viaLocationName = String(
+          (viaRoute as any)?.itinerary_via_location_name ??
+            (viaRoute as any)?.via_route_name ??
+            "",
+        ).trim();
         if (!viaLocationName) continue;
         
         for (const h of allHotspots) {
@@ -6040,9 +6044,8 @@ export class TimelineBuilder {
           const hotspotPrimaryLocation = String((h.hotspot_location as string) || '')
             .split('|')[0]
             .trim();
-          const matchesSourceEarly = containsLocation(h.hotspot_location as string, targetLocation);
-          const matchesDestEarly = containsLocation(h.hotspot_location as string, nextLocation);
-          if (!matchesSourceEarly && !matchesDestEarly) {
+          const matchesViaEarly = containsLocation(h.hotspot_location as string, viaLocationName);
+          if (!matchesViaEarly) {
             continue;
           }
 
@@ -6149,9 +6152,17 @@ export class TimelineBuilder {
       // Concatenate buckets in the order PHP processes them
       let matchingHotspots: any[] = [];
       
-      if (directToNextVisitingPlace === 1) {
-        // PHP parity: direct-to-next days prioritize destination hotspots only.
-        matchingHotspots = [...destinationHotspots];
+      const sameSourceAndDestination =
+        String(targetLocation || '').trim().toLowerCase() ===
+        String(nextLocation || '').trim().toLowerCase();
+      const hasViaHotspots = viaRouteHotspots.length > 0;
+
+      if (sameSourceAndDestination && hasViaHotspots) {
+        // Same-city route with via is treated as outstation movement for hotspot selection.
+        matchingHotspots = [...viaRouteHotspots];
+      } else if (directToNextVisitingPlace === 1) {
+        // Direct routes: prioritize via-city hotspots when present, otherwise destination hotspots.
+        matchingHotspots = hasViaHotspots ? [...viaRouteHotspots, ...destinationHotspots] : [...destinationHotspots];
       } else {
         // PHP ELSE BRANCH (direct == 0): Process source, via, then destination
         // Order: source_location_hotspots → via_route_hotspots → destination_hotspots

@@ -222,8 +222,18 @@ export class HotspotSelector {
 
     // C) Via routes bucket
     const viaRoutes = this.deps.viaRouteMap.get(Number(route.itinerary_route_ID)) || [];
+    const sameSourceAndDestination =
+      normalize(targetLocation) !== "" &&
+      normalize(targetLocation) === normalize(nextLocation);
+    const hasViaRoutes = viaRoutes.length > 0;
+    const isSameCityViaOutstation = sameSourceAndDestination && hasViaRoutes;
+
     for (const vr of viaRoutes) {
-      const vLoc = (vr as any)?.via_route_name ? String((vr as any).via_route_name).split("|")[0].trim() : "";
+      const viaName =
+        (vr as any)?.itinerary_via_location_name ??
+        (vr as any)?.via_route_name ??
+        "";
+      const vLoc = viaName ? String(viaName).split("|")[0].trim() : "";
       if (!vLoc) continue;
 
       for (const h of this.deps.allHotspots) {
@@ -261,7 +271,16 @@ export class HotspotSelector {
     // ---------------------------------------------------------------------
     let merged: any[] = [];
 
-    if (directToNext === 1) {
+    if (isSameCityViaOutstation) {
+      // Special case parity: source=destination with via means this is an outstation day.
+      // Prefer via city hotspots and avoid auto-selecting the same-city source/destination set.
+      const base = viaHotspots.length > 0 ? viaHotspots : boundaryHotspots;
+      merged = [...base, ...manualHotspots].sort((a, b) => {
+        const ap = Number(a.__priority ?? 9999);
+        const bp = Number(b.__priority ?? 9999);
+        return ap - bp;
+      });
+    } else if (directToNext === 1) {
       // ✅ Direct = YES: via/boundary + dest + manual, sorted by priority
       const hasVia = viaHotspots.length > 0;
       const base = [...(hasVia ? viaHotspots : boundaryHotspots), ...destHotspots];
@@ -313,7 +332,11 @@ export class HotspotSelector {
           // Check via
           let foundVia = false;
           for (const vr of viaRoutes) {
-            const vLoc = (vr as any)?.via_route_name ? String((vr as any).via_route_name).split("|")[0].trim() : "";
+            const viaName =
+              (vr as any)?.itinerary_via_location_name ??
+              (vr as any)?.via_route_name ??
+              "";
+            const vLoc = viaName ? String(viaName).split("|")[0].trim() : "";
             if (vLoc && containsLocation(String(h.hotspot_location || ""), vLoc)) {
               city_order = 2;
               foundVia = true;
