@@ -1123,15 +1123,36 @@ private async ensureExactLocationRouteExists(
   if (!source || !destination) return;
 
   const existing = await this.prisma.dvi_stored_locations.findFirst({
-    where: {
-      deleted: 0,
-      source_location: source,
-      destination_location: destination,
-    },
-    select: { location_ID: true },
-  });
+  where: {
+    deleted: 0,
+    source_location: source,
+    destination_location: destination,
+  },
+  select: {
+    location_ID: true,
+    distance: true,
+  },
+});
 
-  if (existing) return;
+const isSameLocation = source.toLowerCase() === destination.toLowerCase();
+const SELF_ROUTE_MIN_DISTANCE_KM = 10;
+
+if (existing) {
+  const existingDistance = Number(existing.distance || 0);
+
+  if (isSameLocation && existingDistance < SELF_ROUTE_MIN_DISTANCE_KM) {
+    await this.prisma.dvi_stored_locations.update({
+      where: { location_ID: existing.location_ID },
+      data: {
+        distance: SELF_ROUTE_MIN_DISTANCE_KM,
+        duration: this.estimateDurationText(SELF_ROUTE_MIN_DISTANCE_KM),
+        updatedon: new Date(),
+      },
+    });
+  }
+
+  return;
+}
 
   const sourceSeed = await this.findSeedByLocationOrCityName(source);
   const destinationSeed = await this.findSeedByLocationOrCityName(destination);
@@ -1152,7 +1173,7 @@ private async ensureExactLocationRouteExists(
     return;
   }
 
-  const isSameLocation = source.toLowerCase() === destination.toLowerCase();
+  //const isSameLocation = source.toLowerCase() === destination.toLowerCase();
 
   const distanceKm = isSameLocation
     ? 10
