@@ -650,6 +650,8 @@ export class VendorsService {
     }));
   }
 
+
+
   async updateVendorVehicleType(vendorId: number, data: any): Promise<any> {
     const vehicleTypeId = this.toNumberOrNull(data.vehicle_type_id);
     if (!vehicleTypeId) {
@@ -690,6 +692,79 @@ export class VendorsService {
         },
       });
     }
+  }
+
+  async patchVendorVehicleTypeCost(
+    vendorId: number,
+    rowId: number,
+    data: any,
+  ): Promise<any> {
+    const existing = await this.prisma.dvi_vendor_vehicle_types.findFirst({
+      where: {
+        vendor_vehicle_type_ID: rowId,
+        vendor_id: vendorId,
+        deleted: 0,
+      },
+    });
+
+    if (!existing) {
+      throw new NotFoundException(`Vehicle type cost ${rowId} not found`);
+    }
+
+    return this.prisma.dvi_vendor_vehicle_types.update({
+      where: {
+        vendor_vehicle_type_ID: rowId,
+      },
+      data: {
+        vehicle_type_id:
+          this.toNumberOrNull(data.vehicle_type_id) ?? existing.vehicle_type_id,
+        driver_batta:
+          this.toNumberOrNull(data.driver_bhatta ?? data.driver_batta) ?? 0,
+        food_cost: this.toNumberOrNull(data.food_cost) ?? 0,
+        accomodation_cost:
+          this.toNumberOrNull(
+            data.accommodation_cost ??
+              data.accomdation_cost ??
+              data.accomodation_cost,
+          ) ?? 0,
+        extra_cost: this.toNumberOrNull(data.extra_cost) ?? 0,
+        driver_early_morning_charges:
+          this.toNumberOrNull(
+            data.morning_charges ?? data.driver_early_morning_charges,
+          ) ?? 0,
+        driver_evening_charges:
+          this.toNumberOrNull(
+            data.evening_charges ?? data.driver_evening_charges,
+          ) ?? 0,
+        updatedon: new Date(),
+      },
+    });
+  }
+
+  async deleteVendorVehicleTypeCost(
+    vendorId: number,
+    rowId: number,
+  ): Promise<void> {
+    const existing = await this.prisma.dvi_vendor_vehicle_types.findFirst({
+      where: {
+        vendor_vehicle_type_ID: rowId,
+        vendor_id: vendorId,
+        deleted: 0,
+      },
+    });
+
+    if (!existing) return;
+
+    await this.prisma.dvi_vendor_vehicle_types.update({
+      where: {
+        vendor_vehicle_type_ID: rowId,
+      },
+      data: {
+        deleted: 1,
+        status: 0,
+        updatedon: new Date(),
+      },
+    });
   }
 
   // --- Step 4: Vehicle Info (dvi_vehicle) ---

@@ -180,6 +180,28 @@ export class VendorsController {
     return this.vendorsService.updateVendorVehicleType(id, body);
   }
 
+  @Public()
+@Patch(':id/vehicle-type-costs/:rowId')
+@ApiOperation({ summary: 'Update one vendor vehicle type cost row' })
+async patchVehicleTypeCost(
+  @Param('id', ParseIntPipe) id: number,
+  @Param('rowId', ParseIntPipe) rowId: number,
+  @Body() body: any,
+): Promise<any> {
+  return this.vendorsService.patchVendorVehicleTypeCost(id, rowId, body);
+}
+
+@Public()
+@Delete(':id/vehicle-type-costs/:rowId')
+@ApiOperation({ summary: 'Delete one vendor vehicle type cost row' })
+async deleteVehicleTypeCost(
+  @Param('id', ParseIntPipe) id: number,
+  @Param('rowId', ParseIntPipe) rowId: number,
+): Promise<{ success: boolean }> {
+  await this.vendorsService.deleteVendorVehicleTypeCost(id, rowId);
+  return { success: true };
+}
+
   // --- Step 4: Vehicle Info ---
 
   @Public()
