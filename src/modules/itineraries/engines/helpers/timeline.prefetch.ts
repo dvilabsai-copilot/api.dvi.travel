@@ -41,6 +41,7 @@ export type HotspotLite = {
   id: number;
   name: string;
   location: string;
+  toLocation?: string;
   lat: number;
   lon: number;
   duration: string;
@@ -156,6 +157,7 @@ export class TimelinePrefetcher {
         hotspot_ID: true,
         hotspot_name: true,
         hotspot_location: true,
+        hotspot_to_location: true,
         hotspot_latitude: true,
         hotspot_longitude: true,
         hotspot_duration: true,
@@ -170,6 +172,9 @@ export class TimelinePrefetcher {
         id: Number(h.hotspot_ID),
         name: String(h.hotspot_name || ""),
         location: String(h.hotspot_location || ""),
+        toLocation: String(
+          h.hotspot_to_location || h.hotspot_location || ""
+        ),
         lat: Number(h.hotspot_latitude || 0),
         lon: Number(h.hotspot_longitude || 0),
         duration: toTimeString(h.hotspot_duration, "01:00:00"),

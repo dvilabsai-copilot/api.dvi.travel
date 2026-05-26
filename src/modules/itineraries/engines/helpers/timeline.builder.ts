@@ -2133,6 +2133,19 @@ export class TimelineBuilder {
         this.appendProofTrace(`[TRACE_SELECTED_ROUTE] ${routeTrace}`);
       }
 
+      if (String((plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? '') === 'DVI20260589') {
+        console.log('[DVI20260589 HOTSPOT ORDER TRACE]', {
+          routeId: route.itinerary_route_ID,
+          sourceCity,
+          destinationCity,
+          selected: selectedHotspots.map((h: any) => ({
+            matched_bucket: String((h as any).matched_bucket || 'unknown'),
+            hotspot_priority: Number((h as any).hotspot_priority ?? 0),
+            hotspot_name: String((h as any).hotspot_name || ''),
+          })),
+        });
+      }
+
       }
 
       // NO LUNCH BREAKS OR TIME CUTOFFS - User can schedule all hotspots and delete unwanted ones from UI
@@ -3102,19 +3115,46 @@ export class TimelineBuilder {
           });
 
           if (destinationStrict.length > 0 && nonDestinationStrict.length > 0) {
-            strictPassHotspots = [...destinationStrict, ...nonDestinationStrict];
-            this.logBookingRule({
-              rule: 'INTERCITY_EARLY_SHIFT_APPLIED',
-              quoteId:
-                (plan as any).quote_id ??
-                (plan as any).quoteId ??
-                (plan as any).quote_ID ??
-                null,
-              planId,
+            const viaStrict = strictPassHotspots.filter((hs) => {
+              const bucket = String((hs as any).matched_bucket || '').toLowerCase();
+              return bucket === 'via';
+            });
+
+            const sourceStrict = strictPassHotspots.filter((hs) => {
+              const bucket = String((hs as any).matched_bucket || '').toLowerCase();
+              return bucket === 'source' || bucket === 'source_fallback';
+            });
+
+            const destinationOnlyStrict = strictPassHotspots.filter((hs) => {
+              const bucket = String((hs as any).matched_bucket || '').toLowerCase();
+              return bucket === 'destination';
+            });
+
+            strictPassHotspots = [
+              ...viaStrict,
+              ...sourceStrict,
+              ...destinationOnlyStrict,
+            ];
+
+            console.log('[HOTSPOT ORDER FIX]', {
               routeId: route.itinerary_route_ID,
-              reason: 'Large intercity idle window: prioritized destination strict hotspots.',
-              destinationStrictCount: destinationStrict.length,
-              sourceOrViaStrictCount: nonDestinationStrict.length,
+              via: viaStrict.map((x: any) => ({
+                id: x.hotspot_ID,
+                name: x.hotspot_name,
+                priority: x.hotspot_priority,
+              })),
+              source: sourceStrict.map((x: any) => ({
+                id: x.hotspot_ID,
+                name: x.hotspot_name,
+                priority: x.hotspot_priority,
+              })),
+              destination: destinationOnlyStrict.map((x: any) => ({
+                id: x.hotspot_ID,
+                name: x.hotspot_name,
+                priority: x.hotspot_priority,
+              })),
+              reason:
+                'Route-specific via hotspots must be processed before destination-city hotspots to avoid route backtracking.',
             });
           }
         }
@@ -5919,13 +5959,40 @@ export class TimelineBuilder {
 
         // ⚡ PERF FIX 2: city-match BEFORE the expensive distance call.
         // With 774 hotspots in DB, ~750 are in different cities and can be skipped immediately.
-        const hotspotPrimaryLocation = String((h.hotspot_location as string) || '')
+        const hotspotFromLocation = String(h.hotspot_location || '').trim();
+        const hotspotToLocation = String(h.hotspot_to_location || h.hotspot_location || '').trim();
+
+        const hotspotPrimaryLocation = hotspotFromLocation
           .split('|')[0]
           .trim();
-        const matchesSource = containsLocation(h.hotspot_location as string, targetLocation);
-        const matchesDestination = containsLocation(h.hotspot_location as string, nextLocation);
-        if (!matchesSource && !matchesDestination) {
-          continue;
+
+        const isRouteSpecificHotspot =
+          hotspotFromLocation.toLowerCase() !== hotspotToLocation.toLowerCase();
+
+        const matchesSource = containsLocation(hotspotFromLocation, targetLocation);
+        const matchesDestination = containsLocation(hotspotFromLocation, nextLocation);
+
+        const matchesRouteFrom = containsLocation(hotspotFromLocation, targetLocation);
+        const matchesRouteTo = containsLocation(hotspotToLocation, nextLocation);
+
+        if (isRouteSpecificHotspot) {
+          if (!matchesRouteFrom || !matchesRouteTo) {
+            console.log('[HOTSPOT ROUTE SKIP]', {
+              routeId,
+              hotspot_ID: h.hotspot_ID,
+              hotspot_name: h.hotspot_name,
+              hotspot_location: hotspotFromLocation,
+              hotspot_to_location: hotspotToLocation,
+              route_from: targetLocation,
+              route_to: nextLocation,
+              reason: 'route-specific hotspot does not match current route',
+            });
+            continue;
+          }
+        } else {
+          if (!matchesSource && !matchesDestination) {
+            continue;
+          }
         }
 
         // PHP parity: use travel-distance engine for ordering, not haversine approximation.
@@ -5990,12 +6057,27 @@ export class TimelineBuilder {
         
         // CRITICAL: Hotspot can be in BOTH buckets (e.g., hotspot_location = "Chennai|Pondicherry")
         // Deduplication happens AFTER bucket selection based on direct flag
-        if (matchesSource) {
-          sourceLocationHotspots.push({ ...hotspotWithDistance, __bucket: 'source' });
-        }
-        
-        if (matchesDestination) {
-          destinationHotspots.push({ ...hotspotWithDistance, __bucket: 'destination' });
+        if (isRouteSpecificHotspot) {
+          console.log('[HOTSPOT ROUTE INCLUDE]', {
+            routeId,
+            hotspot_ID: h.hotspot_ID,
+            hotspot_name: h.hotspot_name,
+            hotspot_location: hotspotFromLocation,
+            hotspot_to_location: hotspotToLocation,
+            route_from: targetLocation,
+            route_to: nextLocation,
+            bucket: 'via',
+          });
+
+          viaRouteHotspots.push({ ...hotspotWithDistance, __bucket: 'via' });
+        } else {
+          if (matchesSource) {
+            sourceLocationHotspots.push({ ...hotspotWithDistance, __bucket: 'source' });
+          }
+
+          if (matchesDestination) {
+            destinationHotspots.push({ ...hotspotWithDistance, __bucket: 'destination' });
+          }
         }
       }
       
@@ -6041,12 +6123,28 @@ export class TimelineBuilder {
 
           // ⚡ PERF: Check city match FIRST before any expensive distance calculation.
           // ~750 of 774 hotspots are in completely different cities and can be skipped immediately.
-          const hotspotPrimaryLocation = String((h.hotspot_location as string) || '')
+          const hotspotFromLocation = String(h.hotspot_location || '').trim();
+          const hotspotToLocation = String(h.hotspot_to_location || h.hotspot_location || '').trim();
+
+          const hotspotPrimaryLocation = hotspotFromLocation
             .split('|')[0]
             .trim();
-          const matchesViaEarly = containsLocation(h.hotspot_location as string, viaLocationName);
-          if (!matchesViaEarly) {
-            continue;
+
+          const isRouteSpecificHotspot =
+            hotspotFromLocation.toLowerCase() !== hotspotToLocation.toLowerCase();
+
+          if (isRouteSpecificHotspot) {
+            const matchesRouteFrom = containsLocation(hotspotFromLocation, targetLocation);
+            const matchesRouteTo = containsLocation(hotspotToLocation, nextLocation);
+
+            if (!matchesRouteFrom || !matchesRouteTo) {
+              continue;
+            }
+          } else {
+            const matchesViaEarly = containsLocation(hotspotFromLocation, viaLocationName);
+            if (!matchesViaEarly) {
+              continue;
+            }
           }
 
           // PHP parity: use travel-distance engine for ordering, not haversine approximation.
@@ -6101,7 +6199,9 @@ export class TimelineBuilder {
           const hotspotWithDistance = { ...h, hotspot_distance: distance };
           
           // Check if hotspot matches via location
-          const matchesVia = containsLocation(h.hotspot_location as string, viaLocationName);
+          const matchesVia = isRouteSpecificHotspot
+            ? true
+            : containsLocation(hotspotFromLocation, viaLocationName);
           
           if (matchesVia) {
             viaRouteHotspots.push({ ...hotspotWithDistance, __bucket: 'via' });
