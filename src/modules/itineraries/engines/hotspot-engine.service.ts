@@ -461,6 +461,7 @@ export class HotspotEngineService {
             hotspot_name: true,
             hotspot_duration: true,
             hotspot_priority: true,
+            hotspot_type: true,
           },
         });
 
@@ -711,12 +712,30 @@ export class HotspotEngineService {
             }
             timingMap.set(Number(hotspotId), byDay);
 
+            const isTempleHotspot =
+              String((hotspotMaster as any)?.hotspot_type || '')
+                .trim()
+                .toLowerCase() === 'temple';
+
             const isClosedAllDay = hotspotTimingRows.some((t: any) => Number(t.hotspot_closed || 0) === 1)
               && hotspotTimingRows.every((t: any) => Number(t.hotspot_closed || 0) === 1);
 
             if (isClosedAllDay) {
-              manualHotspot.is_conflict = 1;
-              manualHotspot.conflict_reason = 'Closed on this day';
+              if (!isTempleHotspot) {
+                manualHotspot.is_conflict = 1;
+                manualHotspot.conflict_reason = 'Closed on this day';
+              } else {
+                manualHotspot.is_conflict = 0;
+                manualHotspot.conflict_reason = null;
+                console.log('[MANUAL TEMPLE HOTSPOT TIMING OVERRIDE]', {
+                  routeId,
+                  hotspotId,
+                  hotspotName: hotspotMaster?.hotspot_name,
+                  hotspotType: hotspotMaster?.hotspot_type,
+                  isTempleHotspot,
+                  reason: 'Manual temple hotspot allowed even if closed/outside operating hours',
+                });
+              }
             } else {
               const operatingHours = this.operatingHoursChecker.check(
                 timingMap,
@@ -732,10 +751,23 @@ export class HotspotEngineService {
                 manualHotspot.hotspot_start_time = shiftedStart;
                 manualHotspot.hotspot_end_time = shiftedEnd;
               } else if (!operatingHours.canVisitNow) {
-                manualHotspot.is_conflict = 1;
-                manualHotspot.conflict_reason = operatingHours.operatingHours
-                  ? `Outside operating hours: ${operatingHours.operatingHours}`
-                  : (operatingHours.reason || 'Outside operating hours');
+                if (!isTempleHotspot) {
+                  manualHotspot.is_conflict = 1;
+                  manualHotspot.conflict_reason = operatingHours.operatingHours
+                    ? `Outside operating hours: ${operatingHours.operatingHours}`
+                    : (operatingHours.reason || 'Outside operating hours');
+                } else {
+                  manualHotspot.is_conflict = 0;
+                  manualHotspot.conflict_reason = null;
+                  console.log('[MANUAL TEMPLE HOTSPOT TIMING OVERRIDE]', {
+                    routeId,
+                    hotspotId,
+                    hotspotName: hotspotMaster?.hotspot_name,
+                    hotspotType: hotspotMaster?.hotspot_type,
+                    isTempleHotspot,
+                    reason: 'Manual temple hotspot allowed even if closed/outside operating hours',
+                  });
+                }
                 console.warn('[ManualHotspot][rebuildRouteHotspots] operating hours conflict', {
                   planId,
                   routeId,
