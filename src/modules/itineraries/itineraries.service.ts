@@ -2526,6 +2526,8 @@ export class ItinerariesService {
       orderBy: { hotspot_order: 'asc' },
     });
 
+    console.log('Hotspot rows for preview rebuild:', rows);
+
     const hotspotIds = Array.from(
       new Set(
         rows
@@ -2647,12 +2649,13 @@ export class ItinerariesService {
       const rawStart = rh.hotspot_start_time ? new Date(rh.hotspot_start_time) : null;
       const rawEnd = rh.hotspot_end_time ? new Date(rh.hotspot_end_time) : null;
       const master: any = Number(rh.hotspot_ID || 0) > 0 ? (hotspotMap.get(Number(rh.hotspot_ID || 0)) as any) : null;
-
+console.log('Processing hotspot:', master?.hotspot_name || 'Unknown', 'Raw Start:', rawStart, 'Raw End:', rawEnd);
       if (itemType === 4 && master) {
         const attractionStart =
           rawStart && cursorTime && rawStart.getTime() < cursorTime.getTime()
             ? new Date(cursorTime)
             : rawStart;
+            console.log('Attraction:', master.hotspot_name, 'Raw Start:', rawStart, 'Cursor:', cursorTime, 'Used Start:', attractionStart);
         const attractionEnd =
           rawEnd && attractionStart && rawEnd.getTime() < attractionStart.getTime()
             ? new Date(attractionStart)
@@ -14826,11 +14829,16 @@ export class ItinerariesService {
     }
 
     // 4. Query hotspot_route_between_map per original A->B slot for candidate C.
-    // Check both directions: A->B->C and B->A->C (geographically interchangeable)
+    // Use direction-aware lookup: exact direction first, then reverse/canonical direction.
     const matrixRows: any[] = [];
     for (const slot of slotPairs) {
       try {
-        const rows = await (tx as any).$queryRawUnsafe(`
+        const actualFromHotspotId = Number(slot.fromId);
+        const actualToHotspotId = Number(slot.toId);
+        const candidateId = Number(candidateHotspotId);
+
+        // Step 1: Query exact direction (A → B → C)
+        const exactRows = await (tx as any).$queryRawUnsafe(`
           SELECT
             from_hotspot_id,
             to_hotspot_id,
@@ -14846,46 +14854,106 @@ export class ItinerariesService {
             candidate_distance_from_ab_route_meters,
             destination_distance_from_ac_route_meters
           FROM hotspot_route_between_map
-          WHERE (
-            (from_hotspot_id = ? AND to_hotspot_id = ? AND between_hotspot_id = ?)
-            OR
-            (from_hotspot_id = ? AND to_hotspot_id = ? AND between_hotspot_id = ?)
-          )
+          WHERE from_hotspot_id = ? AND to_hotspot_id = ? AND between_hotspot_id = ?
           LIMIT 1
-        `, Number(slot.fromId), Number(slot.toId), Number(candidateHotspotId),
-           Number(slot.toId), Number(slot.fromId), Number(candidateHotspotId));
-        if (Array.isArray(rows) && rows.length > 0) {
-          matrixRows.push(rows[0]);
+        `, actualFromHotspotId, actualToHotspotId, candidateId);
+
+        let matrixMatchDirection: 'EXACT_DIRECTION' | 'REVERSE_CANONICAL_MATCH' | 'NOT_FOUND' = 'NOT_FOUND';
+        let storedFromHotspotId: number | null = null;
+        let storedToHotspotId: number | null = null;
+        let directionSensitiveValidationRequired = false;
+        let directionSensitiveValidationPassed: boolean | null = null;
+        let directionSensitiveValidationReason: string | null = null;
+
+        let matrixRow: any = null;
+
+        if (Array.isArray(exactRows) && exactRows.length > 0) {
+          matrixRow = exactRows[0];
+          matrixMatchDirection = 'EXACT_DIRECTION';
+          storedFromHotspotId = Number(exactRows[0].from_hotspot_id);
+          storedToHotspotId = Number(exactRows[0].to_hotspot_id);
+          directionSensitiveValidationRequired = false;
+          directionSensitiveValidationPassed = true;
+          directionSensitiveValidationReason = 'Exact direction match - no validation required';
         } else {
-          const rejectionRow = await this.getRouteBetweenRejectionRow(
-            tx,
-            Number(slot.fromId),
-            Number(slot.toId),
-            Number(candidateHotspotId),
-          );
+          // Step 2: Query reverse/canonical direction (B → A → C)
+          const reverseRows = await (tx as any).$queryRawUnsafe(`
+            SELECT
+              from_hotspot_id,
+              to_hotspot_id,
+              between_hotspot_id,
+              route_fit_type,
+              route_decision_reason,
+              road_detour_km,
+              road_detour_ratio,
+              ab_osrm_distance_km,
+              ac_osrm_distance_km,
+              cb_osrm_distance_km,
+              inserted_route_distance_km,
+              candidate_distance_from_ab_route_meters,
+              destination_distance_from_ac_route_meters
+            FROM hotspot_route_between_map
+            WHERE from_hotspot_id = ? AND to_hotspot_id = ? AND between_hotspot_id = ?
+            LIMIT 1
+          `, actualToHotspotId, actualFromHotspotId, candidateId);
 
-          if (rejectionRow) {
-            const rejectionCode = String(rejectionRow?.rejection_code || '').toUpperCase();
-            const rejectionReason = rejectionRow?.rejection_reason
-              ? String(rejectionRow.rejection_reason)
-              : String(rejectionRow?.error_message || 'Rejected in hotspot_route_between_rejections.');
+          if (Array.isArray(reverseRows) && reverseRows.length > 0) {
+            matrixRow = reverseRows[0];
+            matrixMatchDirection = 'REVERSE_CANONICAL_MATCH';
+            storedFromHotspotId = Number(reverseRows[0].from_hotspot_id);
+            storedToHotspotId = Number(reverseRows[0].to_hotspot_id);
+            directionSensitiveValidationRequired = true;
+            directionSensitiveValidationPassed = null;
+            directionSensitiveValidationReason = 'Reverse/canonical match - actual-direction validation required before auto approval';
+          } else {
+            // Step 3: Check rejection table
+            const rejectionRow = await this.getRouteBetweenRejectionRow(
+              tx,
+              actualFromHotspotId,
+              actualToHotspotId,
+              candidateId,
+            );
 
-            matrixRows.push({
-              from_hotspot_id: Number(rejectionRow?.from_hotspot_id || slot.fromId),
-              to_hotspot_id: Number(rejectionRow?.to_hotspot_id || slot.toId),
-              between_hotspot_id: Number(rejectionRow?.between_hotspot_id || candidateHotspotId),
-              route_fit_type: rejectionCode === 'OFF_ROUTE_SKIPPED' ? 'OFF_ROUTE' : 'UNKNOWN',
-              route_decision_reason: rejectionReason,
-              road_detour_km: rejectionRow?.road_detour_km ?? null,
-              road_detour_ratio: rejectionRow?.road_detour_ratio ?? null,
-              ab_osrm_distance_km: null,
-              ac_osrm_distance_km: null,
-              cb_osrm_distance_km: null,
-              inserted_route_distance_km: null,
-              candidate_distance_from_ab_route_meters: rejectionRow?.candidate_distance_from_ab_route_meters ?? null,
-              destination_distance_from_ac_route_meters: null,
-            });
+            if (rejectionRow) {
+              const rejectionCode = String(rejectionRow?.rejection_code || '').toUpperCase();
+              const rejectionReason = rejectionRow?.rejection_reason
+                ? String(rejectionRow.rejection_reason)
+                : String(rejectionRow?.error_message || 'Rejected in hotspot_route_between_rejections.');
+
+              matrixRow = {
+                from_hotspot_id: Number(rejectionRow?.from_hotspot_id || actualFromHotspotId),
+                to_hotspot_id: Number(rejectionRow?.to_hotspot_id || actualToHotspotId),
+                between_hotspot_id: Number(rejectionRow?.between_hotspot_id || candidateId),
+                route_fit_type: rejectionCode === 'OFF_ROUTE_SKIPPED' ? 'OFF_ROUTE' : 'UNKNOWN',
+                route_decision_reason: rejectionReason,
+                road_detour_km: rejectionRow?.road_detour_km ?? null,
+                road_detour_ratio: rejectionRow?.road_detour_ratio ?? null,
+                ab_osrm_distance_km: null,
+                ac_osrm_distance_km: null,
+                cb_osrm_distance_km: null,
+                inserted_route_distance_km: null,
+                candidate_distance_from_ab_route_meters: rejectionRow?.candidate_distance_from_ab_route_meters ?? null,
+                destination_distance_from_ac_route_meters: null,
+              };
+              matrixMatchDirection = 'NOT_FOUND';
+              directionSensitiveValidationRequired = false;
+              directionSensitiveValidationPassed = false;
+              directionSensitiveValidationReason = 'Rejection row found';
+            }
           }
+        }
+
+        if (matrixRow) {
+          // Enrich matrix row with direction match info
+          matrixRow.matrixMatchDirection = matrixMatchDirection;
+          matrixRow.actualFromHotspotId = actualFromHotspotId;
+          matrixRow.actualToHotspotId = actualToHotspotId;
+          matrixRow.storedFromHotspotId = storedFromHotspotId;
+          matrixRow.storedToHotspotId = storedToHotspotId;
+          matrixRow.directionSensitiveValidationRequired = directionSensitiveValidationRequired;
+          matrixRow.directionSensitiveValidationPassed = directionSensitiveValidationPassed;
+          matrixRow.directionSensitiveValidationReason = directionSensitiveValidationReason;
+          matrixRows.push(matrixRow);
         }
       } catch (err) {
         console.error('[buildManualInsertionFit] matrix query error:', err);

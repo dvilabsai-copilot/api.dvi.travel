@@ -607,45 +607,112 @@ export class ItineraryDetailsService {
     return { field, suffix, start, end };
   }
 
-  private normalizeSegmentChronology(segments: any[]): void {
-    let previousEnd: number | null = null;
+private normalizeSegmentChronology(segments: any[]): void {
+  let previousEnd: number | null = null;
 
-    for (const seg of segments) {
-      if (seg?.type === 'checkin' && typeof seg.time === 'string') {
-        const checkinTime = this.parseDisplayTimeMinutesStrict(String(seg.time).trim());
-        if (checkinTime !== null) {
-          const normalizedCheckinTime =
-            previousEnd !== null && checkinTime < previousEnd
-              ? previousEnd
-              : checkinTime;
+  for (const seg of segments) {
+    /**
+     * Check-in rows have only `time`, not `timeRange` / `visitTime`.
+     * Keep the old behavior for check-in, but do not let it affect attraction DB times.
+     */
+    if (seg?.type === 'checkin' && typeof seg.time === 'string') {
+      const checkinTime = this.parseDisplayTimeMinutesStrict(String(seg.time).trim());
 
-          seg.time = this.minutesToDisplayTime(normalizedCheckinTime);
-          previousEnd = normalizedCheckinTime;
-        }
-        continue;
+      if (checkinTime !== null) {
+        const normalizedCheckinTime =
+          previousEnd !== null && checkinTime < previousEnd
+            ? previousEnd
+            : checkinTime;
+
+        seg.time = this.minutesToDisplayTime(normalizedCheckinTime);
+        previousEnd = normalizedCheckinTime;
       }
 
-      const parsed = this.extractRangeFromSegment(seg);
-      if (!parsed) continue;
+      continue;
+    }
 
-      let start = parsed.start;
-      let end = parsed.end;
-      if (end < start) {
-        const temp = start;
-        start = end;
-        end = temp;
-      }
+    const parsed = this.extractRangeFromSegment(seg);
+    if (!parsed) continue;
 
+    let start = parsed.start;
+    let end = parsed.end;
+
+    /**
+     * Do NOT swap start/end blindly.
+     * If end < start, treat it as an overnight segment.
+     * Example:
+     * 11:30 PM - 12:35 AM
+     */
+    if (end < start) {
+      end += 24 * 60;
+    }
+
+    /**
+     * VERY IMPORTANT FIX:
+     *
+     * Attraction visitTime comes from:
+     * dvi_itinerary_route_hotspot_details.hotspot_start_time
+     * dvi_itinerary_route_hotspot_details.hotspot_end_time
+     *
+     * This is already the source of truth.
+     *
+     * Do NOT mutate attraction visitTime here.
+     *
+     * Earlier bug:
+     * Mullakkal was correctly stored as 05:00 PM - 06:00 PM,
+     * but normalizeSegmentChronology shifted it to 10:30 PM - 11:30 PM
+     * because a previous travel/break segment ended later.
+     */
+    if (seg?.type === 'attraction') {
+      previousEnd = end;
+      continue;
+    }
+
+    /**
+     * For break rows:
+     * If a break overlaps a previous segment, adjust only the break start.
+     * Do NOT preserve the original break duration and push the break forward,
+     * because that can push later priority hotspots outside valid timing.
+     *
+     * Example:
+     * Revi Museum ends at 02:13 PM.
+     * Break row starts at 12:51 PM and ends at 05:00 PM.
+     *
+     * Correct normalized break:
+     * 02:13 PM - 05:00 PM
+     *
+     * Wrong old behavior:
+     * 02:13 PM - 06:22 PM
+     */
+    if (seg?.type === 'break') {
       if (previousEnd !== null && start < previousEnd) {
-        const duration = Math.max(0, end - start);
         start = previousEnd;
-        end = start + duration;
+      }
+
+      if (end < start) {
+        end = start;
       }
 
       seg[parsed.field] = `${this.minutesToDisplayTime(start)} - ${this.minutesToDisplayTime(end)}${parsed.suffix}`;
       previousEnd = end;
+      continue;
     }
+
+    /**
+     * For travel/start/return rows:
+     * Keep chronology normalization, because these rows are display helper rows.
+     * If they overlap a previous segment, preserve their duration and move forward.
+     */
+    if (previousEnd !== null && start < previousEnd) {
+      const duration = Math.max(0, end - start);
+      start = previousEnd;
+      end = start + duration;
+    }
+
+    seg[parsed.field] = `${this.minutesToDisplayTime(start)} - ${this.minutesToDisplayTime(end)}${parsed.suffix}`;
+    previousEnd = end;
   }
+}
 
   private normalizeConfirmedTravelLabelsFromSequence(
     segments: any[],
@@ -822,8 +889,6 @@ export class ItineraryDetailsService {
       throw new NotFoundException('Itinerary not found');
     }
     const planId = plan.itinerary_plan_ID;
-    const itineraryPreference = Number((plan as any).itinerary_preference || 0);
-    const isVehicleOnly = itineraryPreference === 2;
     const proofQuoteEnabled = false;
 
     const confirmedPlan = await this.prisma.dvi_confirmed_itinerary_plan_details.findFirst({
@@ -992,40 +1057,38 @@ for (const row of vehicleKmRows) {
       { hotel_name: string; hotel_address: string | null; hotel_code: string | null; price: number }
     >();
 
-    if (!isVehicleOnly) {
-      try {
-        const fallbackHotelDetails = await this.hotelDetailsTboService.getHotelDetailsByQuoteIdFromTbo(
-          quoteId,
-        );
+    try {
+      const fallbackHotelDetails = await this.hotelDetailsTboService.getHotelDetailsByQuoteIdFromTbo(
+        quoteId,
+      );
 
-        const effectiveGroupType = Number(groupType ?? 1);
-        for (const row of fallbackHotelDetails?.hotels || []) {
-          const routeIdNum = Number((row as any)?.itineraryRouteId ?? 0);
-          if (!routeIdNum) continue;
+      const effectiveGroupType = Number(groupType ?? 1);
+      for (const row of fallbackHotelDetails?.hotels || []) {
+        const routeIdNum = Number((row as any)?.itineraryRouteId ?? 0);
+        if (!routeIdNum) continue;
 
-          const rowGroupType = Number((row as any)?.groupType ?? 0);
-          if (rowGroupType !== effectiveGroupType) continue;
+        const rowGroupType = Number((row as any)?.groupType ?? 0);
+        if (rowGroupType !== effectiveGroupType) continue;
 
-          const hotelName = String((row as any)?.hotelName ?? '').trim();
-          if (!hotelName || hotelName.toLowerCase() === 'no hotels available') continue;
+        const hotelName = String((row as any)?.hotelName ?? '').trim();
+        if (!hotelName || hotelName.toLowerCase() === 'no hotels available') continue;
 
-          const price =
-            Number((row as any)?.totalHotelCost ?? 0) +
-            Number((row as any)?.totalHotelTaxAmount ?? 0);
+        const price =
+          Number((row as any)?.totalHotelCost ?? 0) +
+          Number((row as any)?.totalHotelTaxAmount ?? 0);
 
-          const existing = liveRouteHotelFallbackMap.get(routeIdNum);
-          if (!existing || (Number.isFinite(price) && price > 0 && price < existing.price)) {
-            liveRouteHotelFallbackMap.set(routeIdNum, {
-              hotel_name: hotelName,
-              hotel_address: null,
-              hotel_code: String((row as any)?.hotelCode ?? '').trim() || null,
-              price: Number.isFinite(price) ? price : Number.MAX_SAFE_INTEGER,
-            });
-          }
+        const existing = liveRouteHotelFallbackMap.get(routeIdNum);
+        if (!existing || (Number.isFinite(price) && price > 0 && price < existing.price)) {
+          liveRouteHotelFallbackMap.set(routeIdNum, {
+            hotel_name: hotelName,
+            hotel_address: null,
+            hotel_code: String((row as any)?.hotelCode ?? '').trim() || null,
+            price: Number.isFinite(price) ? price : Number.MAX_SAFE_INTEGER,
+          });
         }
-      } catch {
-        // Keep details endpoint resilient when live hotel-details fallback is unavailable.
       }
+    } catch {
+      // Keep details endpoint resilient when live hotel-details fallback is unavailable.
     }
     
     // Build final map with hotel info
@@ -1070,19 +1133,6 @@ for (const row of vehicleKmRows) {
         hotel_address: liveFallback.hotel_address,
         hotel_code: liveFallback.hotel_code ?? '',
       });
-    }
-
-    if (isVehicleOnly) {
-      for (const route of routes) {
-        const routeIdNum = Number((route as any)?.itinerary_route_ID ?? 0);
-        if (!routeIdNum) continue;
-        const existing = routeHotelMap.get(routeIdNum) || {};
-        routeHotelMap.set(routeIdNum, {
-          ...existing,
-          hotel_name: 'Hotel',
-          hotel_address: null,
-        });
-      }
     }
 
     const days: any[] = [];
@@ -1572,7 +1622,7 @@ for (const row of vehicleKmRows) {
             ? parseFloat(distanceStr)
             : 0;
         const travelDistance = `${(distanceNum || 0).toFixed(2)} KM`;
-
+console.log(rh,'RHHHHH');
         const travelDuration = (rh as any).hotspot_traveling_time ?? null;
         const startTimeText = this.formatTime(
           (rh as any).hotspot_start_time ?? null,
@@ -2136,7 +2186,9 @@ for (const row of vehicleKmRows) {
           });
 
           // Check if there's wait time due to opening hours
+          console.log('Timing validation for hotspot', startTimeText, endTimeText);
           const orderedVisitRange = this.orderedTimeRange(startTimeText, endTimeText);
+          console.log('Ordered visit range:', orderedVisitRange);
           let visitTimeDisplay = orderedVisitRange;
 
           let timingValidationExecuted = false;
@@ -2155,6 +2207,7 @@ for (const row of vehicleKmRows) {
               visitTimeDisplay = orderedVisitRange
                 ? `${orderedVisitRange} (closed on this day)`
                 : null;
+                console.log('Attraction is closed on this day based on timings configuration.');
             }
 
             if (todayTimings.length > 0) {
@@ -2230,11 +2283,12 @@ for (const row of vehicleKmRows) {
                 .join(', ');
             }
           }
-
+console.log('visitTimeDisplay:', visitTimeDisplay, 'Operating hours:', operatingHours, 'Timing validation executed:', timingValidationExecuted, 'Passed:', timingValidationPassed, 'Skipped reason:', timingValidationSkippedReason); 
           segments.push({
             type: 'attraction' as const,
             name: master.hotspot_name,
             description: master.hotspot_description ?? '',
+                visitTimeKiran: visitTimeDisplay,
             visitTime: visitTimeDisplay,
             duration: this.formatDuration(stayDuration),
             amount: hotspotAmount > 0 ? Number(hotspotAmount) : null,
@@ -2286,15 +2340,11 @@ for (const row of vehicleKmRows) {
           
           const hotelInfo = routeHotelMap.get(route.itinerary_route_ID);
           const toName =
-            isVehicleOnly
-              ? 'Hotel'
-              : (
-                hotelInfo?.hotel_name ??
-                hotelInfo?.hotel_city ??
-                location?.destination_location ??
-                route.next_visiting_location ??
-                'Hotel'
-              );
+            hotelInfo?.hotel_name ??
+            hotelInfo?.hotel_city ??
+            location?.destination_location ??
+            route.next_visiting_location ??
+            "Hotel";
 
           const normalizeLabel = (value?: string | null) =>
             String(value ?? '').trim().toLowerCase();
@@ -2452,15 +2502,11 @@ for (const row of vehicleKmRows) {
           // HOTEL CHECK-IN / RETURN segment
           const hotelInfo = routeHotelMap.get(route.itinerary_route_ID);
           const hotelName =
-            isVehicleOnly
-              ? 'Hotel'
-              : (
-                hotelInfo?.hotel_name ??
-                hotelInfo?.hotel_city ??
-                location?.destination_location ??
-                route.next_visiting_location ??
-                'Hotel'
-              );
+            hotelInfo?.hotel_name ??
+            hotelInfo?.hotel_city ??
+            location?.destination_location ??
+            route.next_visiting_location ??
+            "Hotel";
           const hotelAddress = hotelInfo?.hotel_address ?? "";
 
           // FIX #3: Use hotel arrival time (from travel-to-hotel) if available
@@ -2964,6 +3010,7 @@ sightseeingDistance,       // local sightseeing separately
 });
     }
 
+    const itineraryPreference = Number((plan as any).itinerary_preference || 0);
     const shouldIncludeVehicles = itineraryPreference === 2 || itineraryPreference === 3;
 
     // ------------------------------ VEHICLES ------------------------------
@@ -3934,7 +3981,7 @@ for (const vd of dayWiseDetails) {
     // For selected recommendation tabs, derive room total from live group-specific hotel details
     // and override stale duplicated DB costs when they differ.
     const getLiveSelectedGroupRoomCost = async (): Promise<number> => {
-      if (groupType === undefined || isVehicleOnly) return 0;
+      if (groupType === undefined) return 0;
 
       try {
         // Use the same default hotel_details dataset as frontend tabs

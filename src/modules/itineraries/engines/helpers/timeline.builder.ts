@@ -39,6 +39,20 @@ import {
 import * as fs from 'fs';
 import * as path from 'path';
 
+export function getPriorityRank(priority: number | null | undefined): number {
+  const p = priority === null || priority === undefined ? 9999 : Number(priority);
+  if (p === 0 || p === 9999) return 10000; // Lowest rank
+  if (p === 1) return 1;
+  if (p === 2) return 2;
+  if (p === 3) return 3;
+  return 3 + p; // 4 maps to 7, 5 to 8, etc. preserving lower priority number = more important
+}
+
+export function getPriorityScore(priority: number | null | undefined): number {
+  const rank = getPriorityRank(priority);
+  return Math.max(0, 100000 - rank * 10);
+}
+
 type Tx = Prisma.TransactionClient;
 
 interface PlanHeader {
@@ -449,7 +463,13 @@ export class TimelineBuilder {
     endTime: string;
     userId: number;
   }): HotspotDetailRow {
-    const durationSeconds = Math.max(0, timeToSeconds(params.endTime) - timeToSeconds(params.startTime));
+    let startSeconds = timeToSeconds(params.startTime);
+    let endSeconds = timeToSeconds(params.endTime);
+    // Handle overnight/wrapped times: if end < start, add one day
+    if (endSeconds < startSeconds) {
+      endSeconds += 86400;
+    }
+    const durationSeconds = Math.max(0, endSeconds - startSeconds);
     const duration = secondsToTime(durationSeconds);
     const now = new Date();
 
@@ -488,6 +508,128 @@ export class TimelineBuilder {
     };
   }
 
+  /**
+   * TIMELINE CORRUPTION GUARD: Validates a route's hotspot rows for sequence integrity.
+   * 
+   * Detects and prevents:
+   * - Self-travel rows (source = destination)
+   * - Overlapping attraction times
+   * - Attractions starting before their travel row completes
+   * - Break overlapping attractions
+   * 
+   * If validation fails, logs the corruption and returns false.
+   * Caller should rebuild the route without waiting-gap fillers if this fails.
+   */
+  private validateRouteTimelineRows(
+    routeId: number,
+    planId: number,
+    rows: HotspotDetailRow[],
+  ): boolean {
+    if (!rows || rows.length === 0) return true;
+
+    // Sort rows by start time for sequence checking
+    const sorted = [...rows].sort((a, b) => {
+      const aStart = timeToSeconds(String(a.hotspot_start_time?.toString() ?? '00:00:00'));
+      const bStart = timeToSeconds(String(b.hotspot_start_time?.toString() ?? '00:00:00'));
+      if (aStart !== bStart) return aStart - bStart;
+      return Number(a.hotspot_order ?? 0) - Number(b.hotspot_order ?? 0);
+    });
+
+    // Track items by destination to detect duplicate travel rows
+    const travelDestinations = new Map<number, number[]>(); // hotspotId -> [order, order, ...]
+
+    for (let i = 0; i < sorted.length; i++) {
+      const row = sorted[i];
+      const itemType = Number(row.item_type ?? 0);
+      const hotspotId = Number(row.hotspot_ID ?? 0);
+
+      // Track travel rows (item_type = 3) by destination hotspot
+      if (itemType === 3 && hotspotId > 0) {
+        if (!travelDestinations.has(hotspotId)) {
+          travelDestinations.set(hotspotId, []);
+        }
+        travelDestinations.get(hotspotId)!.push(Number(row.hotspot_order ?? 0));
+      }
+
+      // Check for overlapping attractions (item_type = 4)
+      if (itemType === 4) {
+        const rowStart = timeToSeconds(String(row.hotspot_start_time?.toString() ?? '00:00:00'));
+        const rowEnd = timeToSeconds(String(row.hotspot_end_time?.toString() ?? '23:59:59'));
+
+        for (let j = i + 1; j < sorted.length; j++) {
+          const otherRow = sorted[j];
+          const otherItemType = Number(otherRow.item_type ?? 0);
+
+          if (otherItemType !== 4) continue; // Only check attractions
+
+          const otherStart = timeToSeconds(String(otherRow.hotspot_start_time?.toString() ?? '00:00:00'));
+          const otherEnd = timeToSeconds(String(otherRow.hotspot_end_time?.toString() ?? '23:59:59'));
+
+          // Check for overlap: NOT (rowEnd <= otherStart OR otherEnd <= rowStart)
+          if (!(rowEnd <= otherStart || otherEnd <= rowStart)) {
+            this.logBookingRule({
+              rule: 'ROUTE_TIMELINE_VALIDATION_FAILED_OVERLAP',
+              planId,
+              routeId,
+              hotspotId: Number(row.hotspot_ID ?? 0),
+              hotspotName: String((row as any).hotspot_name ?? ''),
+              otherHotspotId: Number(otherRow.hotspot_ID ?? 0),
+              otherHotspotName: String((otherRow as any).hotspot_name ?? ''),
+              rowStart: String(row.hotspot_start_time),
+              rowEnd: String(row.hotspot_end_time),
+              otherStart: String(otherRow.hotspot_start_time),
+              otherEnd: String(otherRow.hotspot_end_time),
+              reason: `Overlapping attractions: "${String((row as any).hotspot_name)}" (${String(row.hotspot_start_time)} - ${String(row.hotspot_end_time)}) and "${String((otherRow as any).hotspot_name)}" (${String(otherRow.hotspot_start_time)} - ${String(otherRow.hotspot_end_time)})`,
+            });
+            return false;
+          }
+        }
+      }
+
+      // Check that rows have valid time ranges
+      const startTime = String(row.hotspot_start_time?.toString() ?? '00:00:00');
+      const endTime = String(row.hotspot_end_time?.toString() ?? '23:59:59');
+      const startSecs = timeToSeconds(startTime);
+      let endSecs = timeToSeconds(endTime);
+
+      // Handle overnight: if end < start, assume next day (but not for breaks)
+      if (endSecs < startSecs && itemType !== 1) {
+        endSecs += 86400;
+      }
+
+      if (endSecs < startSecs && itemType !== 1) {
+        this.logBookingRule({
+          rule: 'ROUTE_TIMELINE_VALIDATION_FAILED_INVALID_RANGE',
+          planId,
+          routeId,
+          itemType,
+          hotspotId: Number(row.hotspot_ID ?? 0),
+          hotspotName: String((row as any).hotspot_name ?? ''),
+          startTime,
+          endTime,
+          reason: 'Row has end time before start time',
+        });
+        return false;
+      }
+    }
+
+    // Check for duplicate travel rows to the same hotspot (diagnostic only, not fatal)
+    for (const [hotspotId, orders] of travelDestinations.entries()) {
+      if (orders.length > 1) {
+        this.logBookingRule({
+          rule: 'ROUTE_TIMELINE_VALIDATION_WARNING_DUPLICATE_TRAVEL',
+          planId,
+          routeId,
+          hotspotId,
+          duplicateCount: orders.length,
+          reason: `Warning: Detected ${orders.length} travel rows to same hotspot`,
+        });
+      }
+    }
+
+    return true;
+  }
+
   private getCarryPriorityBucket(priority: number): number {
     if (priority >= 1 && priority <= 3) return 0;
     if (priority > 3) return 1;
@@ -496,15 +638,13 @@ export class TimelineBuilder {
 
   private sortCarryForwardHotspots(list: CarryForwardHotspot[]): CarryForwardHotspot[] {
     return [...list].sort((a, b) => {
-      const ap = Number(a.hotspot_priority ?? 0);
-      const bp = Number(b.hotspot_priority ?? 0);
-      const ab = this.getCarryPriorityBucket(ap);
-      const bb = this.getCarryPriorityBucket(bp);
+      const apRank = getPriorityRank(a.hotspot_priority);
+      const bpRank = getPriorityRank(b.hotspot_priority);
+      const ab = this.getCarryPriorityBucket(Number(a.hotspot_priority ?? 0));
+      const bb = this.getCarryPriorityBucket(Number(b.hotspot_priority ?? 0));
       if (ab !== bb) return ab - bb;
 
-      const apr = ap > 0 ? ap : 9999;
-      const bpr = bp > 0 ? bp : 9999;
-      if (apr !== bpr) return apr - bpr;
+      if (apRank !== bpRank) return apRank - bpRank;
 
       if (a.carryOrder !== b.carryOrder) return a.carryOrder - b.carryOrder;
       return Number(a.hotspot_ID ?? 0) - Number(b.hotspot_ID ?? 0);
@@ -1070,13 +1210,18 @@ export class TimelineBuilder {
     const hotspotMap = new Map();
     for (const h of allHotspots) {
       hotspotMap.set(h.hotspot_ID, {
+        hotspot_ID: h.hotspot_ID,
+        hotspot_name: h.hotspot_name,
+        hotspot_type: h.hotspot_type,
         hotspot_location: h.hotspot_location,
+        hotspot_to_location: h.hotspot_to_location,
+        hotspot_priority: h.hotspot_priority,
         hotspot_latitude: h.hotspot_latitude,
         hotspot_longitude: h.hotspot_longitude,
         hotspot_duration: h.hotspot_duration,
       });
     }
-    this.logTimeline('[TIMELINE] Created hotspot lookup map');
+    this.logTimeline('[TIMELINE] Created hotspot lookup map with complete fields');
 
     // ⚡ Batch-fetch ALL timing data for ALL days at once (avoid 42+ individual queries)
     opStart = Date.now();
@@ -1799,10 +1944,6 @@ export class TimelineBuilder {
       // DAY-1 DIFFERENT CITIES: If Day 1 and source city != destination city, enforce max 3 priority hotspots
       let selectedHotspots: SelectedHotspot[] = [];
 
-      if (forceNoSightseeingOnThisRoute) {
-        selectedHotspots = [];
-      }
-      
       const day1SourceCompare = this.canonicalCityKey(String(sourceCity || ''));
       const day1DestinationCompare = this.canonicalCityKey(String(destinationCity || ''));
       const nextRoute = routeIndex < routes.length ? routes[routeIndex] : null;
@@ -1821,6 +1962,33 @@ export class TimelineBuilder {
         !!nextRoute &&
         !!currentRouteCityForCarry &&
         (currentRouteCityForCarry === nextRouteSourceCompare || currentRouteCityForCarry === nextRouteDestinationCompare);
+
+      if (forceNoSightseeingOnThisRoute) {
+        const skipStrictHotspots = selectedHotspots.filter((hs) => {
+          const priority = Number((hs as any).hotspot_priority ?? 0);
+          return priority >= 1 && priority <= 3;
+        });
+
+        if (skipStrictHotspots.length > 0 && nextRouteSameCityContinuation) {
+          for (const strictHotspot of skipStrictHotspots) {
+            carryForwardHotspots.push({
+              ...(strictHotspot as any),
+              carryOrder: carryForwardOrder++,
+              carriedFromRouteId: Number(route.itinerary_route_ID || 0),
+              carriedFromDate: String((route as any).itinerary_route_date || ''),
+            });
+          }
+          this.logBookingRule({
+            rule: 'LATE_ARRIVAL_PRIORITY_CARRIED_TO_NEXT_DAY',
+            quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+            planId,
+            routeId: route.itinerary_route_ID,
+            carriedHotspotIds: skipStrictHotspots.map((h) => Number(h.hotspot_ID)),
+            reason: 'Late arrival/skipped route sightseeing - carried priority 1/2/3 forward to next same-city day.',
+          });
+        }
+        selectedHotspots = [];
+      }
 
       if (carryForwardHotspots.length > 0 && !sameCityContinuationContextForRoute.isSameCityChainContinuation) {
         this.logBookingRule({
@@ -1914,13 +2082,11 @@ export class TimelineBuilder {
           // PHP parity tuning for Day-1 non-direct airport/city routes:
           // keep tie-order deterministic for zero-priority carry spots.
           selectedHotspots.sort((a, b) => {
-            const ap = Number((a as any).hotspot_priority ?? 0);
-            const bp = Number((b as any).hotspot_priority ?? 0);
-            const ar = ap > 0 ? ap : 9999;
-            const br = bp > 0 ? bp : 9999;
-            if (ar !== br) return ar - br;
+            const apRank = getPriorityRank((a as any).hotspot_priority);
+            const bpRank = getPriorityRank((b as any).hotspot_priority);
+            if (apRank !== bpRank) return apRank - bpRank;
 
-            if (ar === 9999 && br === 9999) {
+            if (apRank === 10000 && bpRank === 10000) {
               return Number(a.hotspot_ID || 0) - Number(b.hotspot_ID || 0);
             }
 
@@ -3098,6 +3264,42 @@ export class TimelineBuilder {
         });
 
         let strictPassHotspots = [...strictHotspots];
+
+        // Priority 1/2/3 route-order optimization: try permutations for up to 3 mandatory hotspots
+        const mandatoryHotspots = strictPassHotspots.filter((hs) => {
+          const priority = Number((hs as any).hotspot_priority ?? 0);
+          return priority >= 1 && priority <= 3;
+        });
+
+        if (mandatoryHotspots.length > 1 && mandatoryHotspots.length <= 3) {
+          const optimizedOrder = await this.optimizeMandatoryHotspotOrder(
+            tx,
+            mandatoryHotspots,
+            route,
+            routeStartSeconds,
+            routeEndSeconds,
+            hotspotMap,
+            timingMap,
+            plan,
+            destinationCity,
+            lastRouteArrivalDeadlineSeconds,
+          );
+
+          if (optimizedOrder && optimizedOrder.length === mandatoryHotspots.length) {
+            // Replace mandatory hotspots with optimized order
+            const mandatoryIds = new Set(mandatoryHotspots.map(h => Number(h.hotspot_ID)));
+            const nonMandatoryHotspots = strictPassHotspots.filter(h => !mandatoryIds.has(Number(h.hotspot_ID)));
+            strictPassHotspots = [...optimizedOrder, ...nonMandatoryHotspots];
+
+            console.log('[MANDATORY_PRIORITY_OPTIMIZATION]', {
+              routeId: route.itinerary_route_ID,
+              originalOrder: mandatoryHotspots.map(h => ({ id: h.hotspot_ID, priority: h.hotspot_priority })),
+              optimizedOrder: optimizedOrder.map(h => ({ id: h.hotspot_ID, priority: h.hotspot_priority })),
+              reason: 'Tried permutations of priority 1/2/3 hotspots and selected best timing/distance order',
+            });
+          }
+        }
+
         const isIntercityDay =
           day1SourceCompare &&
           day1DestinationCompare &&
@@ -3131,10 +3333,17 @@ export class TimelineBuilder {
             });
 
             strictPassHotspots = [
-              ...viaStrict,
               ...sourceStrict,
+              ...viaStrict,
               ...destinationOnlyStrict,
             ];
+
+            console.log('[VIA_ROUTE_ORDER_SOURCE_VIA_DESTINATION]', {
+              routeId: route.itinerary_route_ID,
+              source: sourceStrict.map(x => x.hotspot_ID),
+              via: viaStrict.map(x => x.hotspot_ID),
+              destination: destinationOnlyStrict.map(x => x.hotspot_ID),
+            });
 
             console.log('[HOTSPOT ORDER FIX]', {
               routeId: route.itinerary_route_ID,
@@ -3256,7 +3465,7 @@ export class TimelineBuilder {
           const waitScore = Math.max(0, 80 - waitPenaltyMinutes);
           const windowFitScore = Math.min(50, Math.floor(remainingGapSeconds / 900));
 
-          return (priority * 10) + bucketBias + distanceScore + waitScore + windowFitScore;
+          return getPriorityScore(priority) + bucketBias + distanceScore + waitScore + windowFitScore;
         };
 
         const queueRejectedHotspotForRetry = (hotspot: SelectedHotspot, reason: string): boolean => {
@@ -3436,9 +3645,9 @@ export class TimelineBuilder {
                 ? sortedFillerHotspots
                 : (pass === PASS_DEFERRED_PRIMARY || pass === PASS_DEFERRED_SECONDARY)
                   ? [...(deferredPriorityHotspots as Array<SelectedHotspot>)].sort((a, b) => {
-                      const pa = Number((a as any).hotspot_priority ?? 0);
-                      const pb = Number((b as any).hotspot_priority ?? 0);
-                      if (pa !== pb) return pa - pb;
+                      const paRank = getPriorityRank((a as any).hotspot_priority);
+                      const pbRank = getPriorityRank((b as any).hotspot_priority);
+                      if (paRank !== pbRank) return paRank - pbRank;
                       return Number((a as any).hotspot_distance ?? 9999) - Number((b as any).hotspot_distance ?? 9999);
                     })
                   : (rejectedRetryHotspots as Array<SelectedHotspot>);
@@ -3612,6 +3821,131 @@ export class TimelineBuilder {
           sh.hotspot_ID,
           sharedDayOfWeek,
         );
+
+        const priority = Number((sh as any).hotspot_priority ?? 0);
+        const isMandatoryPriority = priority >= 1 && priority <= 3;
+        const isOptionalHotspot = !isMandatoryPriority;
+
+        // Optional hotspot protection: reject if it would disturb priority 1/2/3
+        if (isOptionalHotspot && (pass === PASS_FILLER_PRIMARY || pass === PASS_FILLER_SECONDARY)) {
+          const remainingStrictHotspots = Array.from(strictHotspotIdSet).filter(id => !addedHotspotIds.has(id)).length;
+          if (remainingStrictHotspots > 0) {
+            this.logBookingRule({
+              rule: 'OPTIONAL_REJECTED_PROTECTED_PRIORITY',
+              quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+              planId,
+              routeId: route.itinerary_route_ID,
+              hotspotId,
+              priority,
+              remainingStrictHotspots,
+              reason: 'Optional hotspot rejected to protect priority 1/2/3 hotspots that are not yet scheduled',
+            });
+            continue;
+          }
+
+          // Route-fit validation for optional hotspots: reject BACKTRACK and OFF_ROUTE
+          // Validate candidate C between actual timeline gap anchors A (previous hotspot) and B (next scheduled hotspot)
+          const lastAddedHotspotId = addedHotspotIds.size > 0 ? Array.from(addedHotspotIds).pop() : null;
+          if (lastAddedHotspotId && lastAddedHotspotId !== hotspotId) {
+            // Determine next anchor B from actual timeline (next scheduled hotspot in hotspotRows)
+            // Build list of scheduled hotspot IDs from hotspotRows for this route
+            const scheduledHotspotIds = hotspotRows
+              .filter(row => Number(row?.itinerary_route_ID || 0) === Number(route.itinerary_route_ID || 0) && Number(row?.item_type || 0) === 4)
+              .map(row => Number(row?.hotspot_ID || 0))
+              .filter(id => id > 0);
+            
+            // Find the next scheduled hotspot after the last added hotspot
+            const lastAddedIndex = scheduledHotspotIds.indexOf(lastAddedHotspotId);
+            const nextAnchorId = lastAddedIndex >= 0 && lastAddedIndex < scheduledHotspotIds.length - 1
+              ? scheduledHotspotIds[lastAddedIndex + 1]
+              : null;
+            
+            // If we have a next scheduled hotspot anchor, validate candidate between lastAdded and nextAnchor
+            if (nextAnchorId && nextAnchorId !== hotspotId) {
+              const matrixResult = await this.resolveBetweenMapForSlot(
+                tx,
+                lastAddedHotspotId,
+                nextAnchorId,
+                hotspotId,
+              );
+
+              if (matrixResult.row) {
+                const routeFitType = String(matrixResult.row.route_fit_type || 'UNKNOWN');
+                this.logBookingRule({
+                  rule: matrixResult.matrixMatchDirection === 'EXACT_DIRECTION' ? 'MATRIX_MATCH_EXACT_DIRECTION' : 'MATRIX_MATCH_REVERSE_CANONICAL',
+                  quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+                  planId,
+                  routeId: route.itinerary_route_ID,
+                  hotspotId,
+                  fromHotspotId: lastAddedHotspotId,
+                  toHotspotId: nextAnchorId,
+                  matrixMatchDirection: matrixResult.matrixMatchDirection,
+                  routeFitType,
+                  directionSensitiveValidationRequired: matrixResult.directionSensitiveValidationRequired,
+                });
+
+                if (routeFitType === 'BACKTRACK' || routeFitType === 'OFF_ROUTE' || routeFitType === 'UNKNOWN' || routeFitType === 'MATRIX_UNAVAILABLE') {
+                  this.logBookingRule({
+                    rule: routeFitType === 'BACKTRACK' ? 'OPTIONAL_REJECTED_BACKTRACK' : routeFitType === 'OFF_ROUTE' ? 'OPTIONAL_REJECTED_OFF_ROUTE' : 'OPTIONAL_REJECTED_MATRIX_MISSING',
+                    quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+                    planId,
+                    routeId: route.itinerary_route_ID,
+                    hotspotId,
+                    routeFitType,
+                    matrixMatchDirection: matrixResult.matrixMatchDirection,
+                    reason: `Optional hotspot rejected due to route fit type: ${routeFitType}`,
+                  });
+                  continue;
+                }
+
+                if (matrixResult.matrixMatchDirection === 'REVERSE_CANONICAL_MATCH' && matrixResult.directionSensitiveValidationRequired) {
+                  // Perform actual-direction validation for reverse/canonical match
+                  const actualDirectionValidation = await this.validateActualDirectionForReverseCanonical(
+                    tx,
+                    lastAddedHotspotId,
+                    nextAnchorId,
+                    hotspotId,
+                    matrixResult.row,
+                  );
+
+                  this.logBookingRule({
+                    rule: 'ACTUAL_DIRECTION_VALIDATION_PERFORMED',
+                    quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+                    planId,
+                    routeId: route.itinerary_route_ID,
+                    hotspotId,
+                    fromHotspotId: lastAddedHotspotId,
+                    toHotspotId: nextAnchorId,
+                    actualDirectionRouteFitType: actualDirectionValidation.actualDirectionRouteFitType,
+                    actualDirectionValidationPassed: actualDirectionValidation.actualDirectionValidationPassed,
+                    abDistanceKm: actualDirectionValidation.abDistanceKm,
+                    acDistanceKm: actualDirectionValidation.acDistanceKm,
+                    cbDistanceKm: actualDirectionValidation.cbDistanceKm,
+                    detourKm: actualDirectionValidation.detourKm,
+                    detourRatio: actualDirectionValidation.detourRatio,
+                    reason: actualDirectionValidation.actualDirectionValidationReason,
+                  });
+
+                  if (!actualDirectionValidation.actualDirectionValidationPassed) {
+                    this.logBookingRule({
+                      rule: 'OPTIONAL_REJECTED_ACTUAL_DIRECTION_FAILED',
+                      quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+                      planId,
+                      routeId: route.itinerary_route_ID,
+                      hotspotId,
+                      actualDirectionRouteFitType: actualDirectionValidation.actualDirectionRouteFitType,
+                      reason: `Optional hotspot rejected: actual-direction validation failed (${actualDirectionValidation.actualDirectionRouteFitType})`,
+                    });
+                    continue;
+                  }
+
+                  // Actual-direction validation passed, use the validated route fit type
+                  // Continue with insertion
+                }
+              }
+            }
+          }
+        }
 
         const sharedFeasibility = await this.evaluateCandidateInsertion({
           tx,
@@ -3856,7 +4190,55 @@ export class TimelineBuilder {
 
         // 2.c) Build TRAVEL SEGMENT (item_type = 3)
         // PHP BEHAVIOR: Travel and Visit segments share the SAME hotspot_order
-        const currentOrder = order;
+        let currentOrder = order;
+
+        // If priority 1/2/3 is reserved for a later open window, use the waiting gap first.
+        // This does NOT weaken priority protection. The priority hotspot remains locked,
+        // optional hotspots only fill the gap if they can still reach it on time.
+        if (
+          isMandatoryPriority &&
+          sharedFeasibility.usedWaitUntilOpen &&
+          sharedFeasibility.startSeconds !== undefined &&
+          sharedFeasibility.endSeconds !== undefined &&
+          Number(sharedFeasibility.waitGapSeconds || 0) >= FREE_TIME_THRESHOLD_SECONDS
+        ) {
+          const gapFillResult = await this.fillWaitingGapBeforeReservedMandatoryHotspot({
+            tx,
+            plan,
+            planId,
+            route,
+            currentOrder: order,
+            currentTime,
+            currentLocationName,
+            currentCoords,
+            currentLastAddedHotspotId: lastAddedHotspotId,
+            reservedMandatoryHotspot: sh,
+            reservedHotspotLocationName: hotspotLocationName,
+            reservedHotspotCoords: destCoords,
+            reservedStartTime: timeAfterTravel,
+            reservedEndTime: timeAfterSightseeing,
+            reservedStartSeconds: sharedFeasibility.startSeconds,
+            reservedEndSeconds: sharedFeasibility.endSeconds,
+            fillerHotspots,
+            timingMap,
+            hotspotMap,
+            hotspotRows,
+            parkingRows,
+            addedHotspotIds,
+            routeStartSeconds,
+            dayOfWeek: sharedDayOfWeek,
+            createdByUserId,
+          });
+
+          if (gapFillResult.insertedCount > 0) {
+            order = gapFillResult.currentOrder;
+            currentOrder = order;
+            currentTime = gapFillResult.currentTime;
+            currentLocationName = gapFillResult.currentLocationName;
+            currentCoords = gapFillResult.currentCoords;
+            lastAddedHotspotId = gapFillResult.lastAddedHotspotId;
+          }
+        }
 
         if (
           suppressHotelInsertionUntilEndOfDay &&
@@ -3924,7 +4306,7 @@ export class TimelineBuilder {
             planId,
             routeId: route.itinerary_route_ID,
             hotspotId: sh.hotspot_ID,
-            reason: 'No feasible hotspot during waiting window after travel; inserted explicit free-time segment.',
+            reason: 'No feasible optional hotspot could fully fill the waiting window before mandatory priority hotspot.',
             gapStart: currentTime,
             gapEnd: timeAfterTravel,
             gapMinutes: Math.floor(gapBeforeVisitSeconds / 60),
@@ -3940,7 +4322,7 @@ export class TimelineBuilder {
         currentCoords = destCoords; // Update to hotspot coordinates
 
         // 2.d) Build HOTSPOT STAY SEGMENT (item_type = 4)
-        const { row: hotspotRow, nextTime: tAfterHotspot } =
+        const { row: hotspotRow } =
           await this.hotspotBuilder.build(tx, {
             planId,
             routeId: route.itinerary_route_ID,
@@ -3976,8 +4358,9 @@ export class TimelineBuilder {
         
         // NOW increment order after both travel and visit are added
         order++;
-        
-        currentTime = tAfterHotspot;
+
+        // Use scheduler-calculated visit end time to advance currentTime
+        currentTime = timeAfterSightseeing;
         // currentLocationName remains at the hotspot.
 
         // PHP parity: adjusted route hotspot end time is computed once per route.
@@ -4246,9 +4629,9 @@ export class TimelineBuilder {
             return true;
           })
           .sort((a, b) => {
-            const ap = Number((a as any).hotspot_priority ?? 0);
-            const bp = Number((b as any).hotspot_priority ?? 0);
-            if (ap !== bp) return bp - ap;
+            const apRank = getPriorityRank((a as any).hotspot_priority);
+            const bpRank = getPriorityRank((b as any).hotspot_priority);
+            if (apRank !== bpRank) return apRank - bpRank;
             const ad = Number((a as any).hotspot_distance ?? Number.POSITIVE_INFINITY);
             const bd = Number((b as any).hotspot_distance ?? Number.POSITIVE_INFINITY);
             if (ad !== bd) return ad - bd;
@@ -4473,7 +4856,7 @@ export class TimelineBuilder {
           currentLocationName = hotspotLocationName;
           currentCoords = destCoords;
 
-          const { row: hotspotRow, nextTime: tAfterHotspot } =
+          const { row: hotspotRow } =
             await this.hotspotBuilder.build(tx, {
               planId,
               routeId: route.itinerary_route_ID,
@@ -4508,7 +4891,9 @@ export class TimelineBuilder {
           }
           lastAddedHotspotId = (sh as any).hotspot_ID;
           order++;
-          currentTime = tAfterHotspot;
+
+          // Use scheduler-calculated visit end time to advance currentTime
+          currentTime = timeAfterSightseeing;
           addedInCurrentCycle = true;
 
           const parkingRowsForHotspot = await this.parkingBuilder.buildForHotspot(tx, {
@@ -4847,11 +5232,30 @@ export class TimelineBuilder {
               }
             }
 
-            // Sort by priority (lowest first) so we remove the least important ones
-            autoHotspotsOnRoute.sort((a, b) => a.priority - b.priority);
+            // Sort by priority rank (lowest rank = highest priority) so we remove the least important ones
+            autoHotspotsOnRoute.sort((a, b) => {
+              const aRank = getPriorityRank(a.priority);
+              const bRank = getPriorityRank(b.priority);
+              return bRank - aRank; // Remove higher rank (lower priority) first
+            });
 
             // Try removing hotspots until we have space
             for (const autoHotspot of autoHotspotsOnRoute) {
+              const priority = Number(autoHotspot.priority ?? 0);
+              const isMandatoryPriority = priority >= 1 && priority <= 3;
+
+              if (isMandatoryPriority) {
+                this.logBookingRule({
+                  rule: 'CYCLE5_EVICTION_SKIPPED_PRIORITY_PROTECTED',
+                  quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+                  planId,
+                  routeId: route.itinerary_route_ID,
+                  evictedHotspotId: autoHotspot.hotspotId,
+                  evictedPriority: priority,
+                  reason: 'Eviction skipped because hotspot is priority 1/2/3 (mandatory protected)',
+                });
+                continue;
+              }
               // Remove the travel segment before this hotspot (item_type = 3)
               let travelRowIndex = -1;
               for (let i = autoHotspot.rowIndex - 1; i >= 0; i--) {
@@ -4973,7 +5377,7 @@ export class TimelineBuilder {
             currentLocationName = hotspotLocationName;
             currentCoords = destCoords;
 
-            const { row: hotspotRow, nextTime: tAfterHotspot } =
+            const { row: hotspotRow } =
               await this.hotspotBuilder.build(tx, {
                 planId,
                 routeId: route.itinerary_route_ID,
@@ -4994,7 +5398,9 @@ export class TimelineBuilder {
             addedHotspotIds.add(manualHotspotId);
             lastAddedHotspotId = manualHotspotId;
             order++;
-            currentTime = tAfterHotspot;
+
+            // Use scheduler-calculated visit end time to advance currentTime
+            currentTime = timeAfterSightseeing;
 
             const parkingRowsForManual = await this.parkingBuilder.buildForHotspot(tx, {
               planId,
@@ -5504,6 +5910,33 @@ export class TimelineBuilder {
 
     const routeRejectionSummaryByRoute = Object.fromEntries(this.routeRejectionSummaryByRoute.entries());
 
+    // TIMELINE CORRUPTION GUARD: Validate each route's rows before returning
+    const routeIdToRows = new Map<number, HotspotDetailRow[]>();
+    for (const row of hotspotRows) {
+      const rId = Number(row.itinerary_route_ID ?? 0);
+      if (!routeIdToRows.has(rId)) {
+        routeIdToRows.set(rId, []);
+      }
+      routeIdToRows.get(rId)!.push(row);
+    }
+
+    for (const [routeId, routeRows] of routeIdToRows.entries()) {
+      const isValid = this.validateRouteTimelineRows(routeId, planId, routeRows);
+        if (!isValid) {
+          this.logBookingRule({
+            rule: 'ROUTE_TIMELINE_VALIDATION_FAILED_ABORT_RETURN',
+            planId,
+            routeId,
+            rowCount: routeRows.length,
+            reason: 'Route timeline validation detected corruption; aborting timeline build.',
+          });
+
+          throw new Error(
+            `Timeline corruption detected for route ${routeId}. Aborting insert to prevent overlapping hotspot rows.`,
+          );
+        }
+    }
+
     return { hotspotRows, parkingRows, routeRejectionSummaryByRoute };
   }
 
@@ -5631,11 +6064,11 @@ export class TimelineBuilder {
 
       // Sort by priority asc, then distance asc
       sourceHotspots.sort((a: any, b: any) => {
-        const aPriority = Number(a.hotspot_priority ?? 0);
-        const bPriority = Number(b.hotspot_priority ?? 0);
+        const apRank = getPriorityRank(a.hotspot_priority);
+        const bpRank = getPriorityRank(b.hotspot_priority);
         
-        if (aPriority !== bPriority) {
-          return aPriority - bPriority; // Lower priority first
+        if (apRank !== bpRank) {
+          return apRank - bpRank; // Lower priority rank first
         }
         return a.hotspot_distance - b.hotspot_distance; // Closer first
       });
@@ -6212,13 +6645,11 @@ export class TimelineBuilder {
       // PHP parity: keep bucket ordering simple (priority then distance), no greedy re-scoring.
       const sortHotspots = (hotspots: any[]) => {
         hotspots.sort((a: any, b: any) => {
-          const ap = Number(a.hotspot_priority ?? 0);
-          const bp = Number(b.hotspot_priority ?? 0);
-          const ar = ap > 0 ? ap : 9999;
-          const br = bp > 0 ? bp : 9999;
-          if (ar !== br) return ar - br;
+          const apRank = getPriorityRank(a.hotspot_priority);
+          const bpRank = getPriorityRank(b.hotspot_priority);
+          if (apRank !== bpRank) return apRank - bpRank;
 
-          if (ar === 9999 && br === 9999) {
+          if (apRank === 10000 && bpRank === 10000) {
             const bucket = String(a.__bucket || b.__bucket || '');
             if (bucket === 'source') {
               return Number(a.hotspot_ID ?? 0) - Number(b.hotspot_ID ?? 0);
@@ -6659,6 +7090,512 @@ export class TimelineBuilder {
     };
   }
 
+  private async fillWaitingGapBeforeReservedMandatoryHotspot(params: {
+    tx: Tx;
+    plan: PlanHeader;
+    planId: number;
+    route: RouteRow;
+    currentOrder: number;
+    currentTime: string;
+    currentLocationName: string;
+    currentCoords?: { lat: number; lon: number };
+    currentLastAddedHotspotId: number | null;
+    reservedMandatoryHotspot: SelectedHotspot;
+    reservedHotspotLocationName: string;
+    reservedHotspotCoords: { lat: number; lon: number };
+    reservedStartTime: string;
+    reservedEndTime: string;
+    reservedStartSeconds: number;
+    reservedEndSeconds: number;
+    fillerHotspots: SelectedHotspot[];
+    timingMap: Map<number, Map<number, any[]>>;
+    hotspotMap: Map<number, any>;
+    hotspotRows: HotspotDetailRow[];
+    parkingRows: ParkingChargeRow[];
+    addedHotspotIds: Set<number>;
+    routeStartSeconds: number;
+    dayOfWeek: number;
+    createdByUserId: number;
+  }): Promise<{
+    insertedCount: number;
+    currentOrder: number;
+    currentTime: string;
+    currentLocationName: string;
+    currentCoords?: { lat: number; lon: number };
+    lastAddedHotspotId: number | null;
+  }> {
+    // DRY-RUN / COMMIT MODEL
+    // All rows planned here are kept in local arrays.
+    // They are only committed to params.hotspotRows if the entire plan is valid.
+    
+    const plannedRows: HotspotDetailRow[] = [];
+    const plannedParkingRows: ParkingChargeRow[] = [];
+    const plannedAddedHotspotIds = new Set<number>(params.addedHotspotIds);
+
+    // Maintain strict cursor state
+    let cursorOrder = params.currentOrder;
+    let cursorTimeSeconds = this.toAbsoluteSecondsForRoute(params.currentTime, params.routeStartSeconds);
+    let cursorTime = params.currentTime;
+    let cursorLocationName = params.currentLocationName;
+    let cursorCoords = params.currentCoords;
+    let cursorLastHotspotId = params.currentLastAddedHotspotId;
+
+    const routeId = Number(params.route.itinerary_route_ID || 0);
+    const mandatoryHotspotId = Number(params.reservedMandatoryHotspot.hotspot_ID || 0);
+
+    this.logBookingRule({
+      rule: 'RESERVED_MANDATORY_WAIT_GAP_CREATED',
+      quoteId: (params.plan as any).quote_id ?? (params.plan as any).quoteId ?? (params.plan as any).quote_ID ?? null,
+      planId: params.planId,
+      routeId,
+      mandatoryHotspotId,
+      currentTime: params.currentTime,
+      reservedStartTime: params.reservedStartTime,
+      reservedEndTime: params.reservedEndTime,
+      gapMinutes: Math.floor(
+        Math.max(
+          0,
+          params.reservedStartSeconds - cursorTimeSeconds,
+        ) / 60,
+      ),
+    });
+
+    const getCandidateScore = (candidate: SelectedHotspot, candidateData: any): number => {
+      const priorityRank = getPriorityRank(Number((candidate as any).hotspot_priority ?? 0));
+      const distanceScore = Number((candidate as any).hotspot_distance ?? 9999);
+      const lat = Number(candidateData?.hotspot_latitude ?? 0);
+      const lon = Number(candidateData?.hotspot_longitude ?? 0);
+
+      let currentDistance = 0;
+      if (cursorCoords && lat && lon) {
+        currentDistance = this.distanceHelper.calculateHaversine(
+          Number(cursorCoords.lat || 0),
+          Number(cursorCoords.lon || 0),
+          lat,
+          lon,
+        );
+      }
+
+      return priorityRank * 100000 + currentDistance * 100 + distanceScore;
+    };
+
+    // OPTIONAL FILLER PLANNING LOOP
+    // Plan as many optional hotspots as can fit before mandatory.
+    // Do NOT commit rows until the entire plan is valid.
+    while (true) {
+      const remainingGapSeconds = params.reservedStartSeconds - cursorTimeSeconds;
+
+      if (remainingGapSeconds < FREE_TIME_THRESHOLD_SECONDS) {
+        break;
+      }
+
+      const optionalCandidates = params.fillerHotspots
+        .filter((candidate) => {
+          const candidateId = Number(candidate.hotspot_ID || 0);
+          const priority = Number((candidate as any).hotspot_priority ?? 0);
+
+          if (!candidateId) return false;
+          if (priority >= 1 && priority <= 3) return false; // Protect mandatory hotspots
+          if (plannedAddedHotspotIds.has(candidateId)) return false; // Already planned
+          if (candidateId === mandatoryHotspotId) return false;
+
+          return true;
+        })
+        .map((candidate) => ({
+          candidate,
+          data: params.hotspotMap.get(Number(candidate.hotspot_ID || 0)),
+        }))
+        .filter((item) => !!item.data)
+        .sort((a, b) => getCandidateScore(a.candidate, a.data) - getCandidateScore(b.candidate, b.data));
+
+      let planedThisLoop = false;
+
+      for (const item of optionalCandidates) {
+        const candidate = item.candidate;
+        const candidateData = item.data;
+        const candidateId = Number(candidate.hotspot_ID || 0);
+        const candidatePriority = Number((candidate as any).hotspot_priority ?? 0);
+
+        // Use hotspot_name for travel labels, hotspot_location for city context
+        const candidateName = String(candidateData.hotspot_name || '').trim();
+        const candidateCity = String(candidateData.hotspot_location || '').trim();
+        const candidateLocationName = candidateName || candidateCity || cursorLocationName;
+        const candidateDuration = String(candidateData.hotspot_duration || '01:00:00');
+        const candidateCoords = {
+          lat: Number(candidateData.hotspot_latitude ?? 0),
+          lon: Number(candidateData.hotspot_longitude ?? 0),
+        };
+
+        this.logBookingRule({
+          rule: 'WAIT_GAP_OPTIONAL_FILL_ATTEMPT',
+          quoteId: (params.plan as any).quote_id ?? (params.plan as any).quoteId ?? (params.plan as any).quote_ID ?? null,
+          planId: params.planId,
+          routeId,
+          mandatoryHotspotId,
+          candidateHotspotId: candidateId,
+          candidatePriority,
+          gapStart: cursorTime,
+          gapEnd: params.reservedStartTime,
+        });
+
+        // VALIDATION STEP 1: Same-city check
+        // Use candidateCity for geography comparison
+        if (!this.isSameCity(candidateCity || candidateLocationName, params.reservedHotspotLocationName)) {
+          this.logBookingRule({
+            rule: 'WAIT_GAP_OPTIONAL_REJECTED_ROUTE_FIT',
+            planId: params.planId,
+            routeId,
+            mandatoryHotspotId,
+            candidateHotspotId: candidateId,
+            reason: 'Candidate is not in the same destination/waiting-gap city context',
+          });
+          continue;
+        }
+
+        // VALIDATION STEP 2: Calculate travel time to candidate
+        const travelToCandidateTime = await this.calculateTravelTimeWithCoords(
+          params.tx,
+          cursorLocationName,
+          candidateLocationName,
+          cursorCoords,
+          candidateCoords,
+        );
+
+        const travelToCandidateSeconds = timeToSeconds(travelToCandidateTime);
+        let candidateStartSeconds = cursorTimeSeconds + travelToCandidateSeconds;
+        let candidateEndSeconds = candidateStartSeconds + timeToSeconds(candidateDuration);
+
+        // VALIDATION STEP 3: Check operating hours
+        let operatingCheck = this.checkHotspotOperatingHoursFromMap(
+          params.timingMap,
+          candidateId,
+          params.dayOfWeek,
+          candidateStartSeconds,
+          candidateEndSeconds,
+        );
+
+        if (!operatingCheck.canVisitNow && operatingCheck.nextWindowStart) {
+          let nextOpenSeconds = timeToSeconds(operatingCheck.nextWindowStart);
+          while (nextOpenSeconds < candidateStartSeconds) {
+            nextOpenSeconds += 86400;
+          }
+
+          const waitedEndSeconds = nextOpenSeconds + timeToSeconds(candidateDuration);
+          const waitedCheck = this.checkHotspotOperatingHoursFromMap(
+            params.timingMap,
+            candidateId,
+            params.dayOfWeek,
+            nextOpenSeconds,
+            waitedEndSeconds,
+          );
+
+          if (waitedCheck.canVisitNow) {
+            candidateStartSeconds = nextOpenSeconds;
+            candidateEndSeconds = waitedEndSeconds;
+            operatingCheck = waitedCheck;
+          }
+        }
+
+        if (!operatingCheck.canVisitNow || operatingCheck.isClosedForDay) {
+          this.logBookingRule({
+            rule: 'WAIT_GAP_OPTIONAL_REJECTED_TIMING',
+            planId: params.planId,
+            routeId,
+            mandatoryHotspotId,
+            candidateHotspotId: candidateId,
+            reason: operatingCheck.isClosedForDay
+              ? 'Candidate closed for day'
+              : 'Candidate operating hours do not fit waiting gap',
+          });
+          continue;
+        }
+
+        // VALIDATION STEP 4: Calculate return to mandatory hotspot
+        const travelToMandatoryTime = await this.calculateTravelTimeWithCoords(
+          params.tx,
+          candidateLocationName,
+          params.reservedHotspotLocationName,
+          candidateCoords,
+          params.reservedHotspotCoords,
+        );
+
+        const travelToMandatorySeconds = timeToSeconds(travelToMandatoryTime);
+        const arrivalAtMandatorySeconds = candidateEndSeconds + travelToMandatorySeconds;
+
+        if (arrivalAtMandatorySeconds > params.reservedStartSeconds) {
+          this.logBookingRule({
+            rule: 'WAIT_GAP_OPTIONAL_REJECTED_CANNOT_RETURN_TO_MANDATORY',
+            planId: params.planId,
+            routeId,
+            mandatoryHotspotId,
+            candidateHotspotId: candidateId,
+            candidateEndTime: secondsToTime(wrapToDay(candidateEndSeconds)),
+            arrivalAtMandatory: secondsToTime(wrapToDay(arrivalAtMandatorySeconds)),
+            reservedMandatoryStart: params.reservedStartTime,
+            reason: 'Candidate cannot finish and reach reserved priority hotspot before locked start time',
+          });
+          continue;
+        }
+
+        // VALIDATION STEP 5: Route matrix check
+        if (cursorLastHotspotId && cursorLastHotspotId !== candidateId && cursorLastHotspotId !== mandatoryHotspotId) {
+          const matrixResult = await this.resolveBetweenMapForSlot(
+            params.tx,
+            cursorLastHotspotId,
+            mandatoryHotspotId,
+            candidateId,
+          );
+
+          if (!matrixResult.row) {
+            this.logBookingRule({
+              rule: 'WAIT_GAP_OPTIONAL_REJECTED_ROUTE_FIT',
+              planId: params.planId,
+              routeId,
+              mandatoryHotspotId,
+              candidateHotspotId: candidateId,
+              reason: 'No hotspot_route_between_map row found for waiting-gap optional insertion',
+            });
+            continue;
+          }
+
+          const routeFitType = String(matrixResult.row.route_fit_type || 'UNKNOWN');
+
+          if (
+            routeFitType === 'BACKTRACK' ||
+            routeFitType === 'OFF_ROUTE' ||
+            routeFitType === 'UNKNOWN' ||
+            routeFitType === 'MATRIX_UNAVAILABLE'
+          ) {
+            this.logBookingRule({
+              rule:
+                routeFitType === 'BACKTRACK'
+                  ? 'WAIT_GAP_OPTIONAL_REJECTED_BACKTRACK'
+                  : routeFitType === 'OFF_ROUTE'
+                    ? 'WAIT_GAP_OPTIONAL_REJECTED_OFF_ROUTE'
+                    : 'WAIT_GAP_OPTIONAL_REJECTED_ROUTE_FIT',
+              planId: params.planId,
+              routeId,
+              mandatoryHotspotId,
+              candidateHotspotId: candidateId,
+              routeFitType,
+              matrixMatchDirection: matrixResult.matrixMatchDirection,
+              reason: `Waiting-gap optional rejected due to route fit: ${routeFitType}`,
+            });
+            continue;
+          }
+
+          if (
+            matrixResult.matrixMatchDirection === 'REVERSE_CANONICAL_MATCH' &&
+            matrixResult.directionSensitiveValidationRequired
+          ) {
+            const actualDirectionValidation = await this.validateActualDirectionForReverseCanonical(
+              params.tx,
+              cursorLastHotspotId,
+              mandatoryHotspotId,
+              candidateId,
+              matrixResult.row,
+            );
+
+            if (
+              !actualDirectionValidation.actualDirectionValidationPassed ||
+              actualDirectionValidation.actualDirectionRouteFitType === 'BACKTRACK' ||
+              actualDirectionValidation.actualDirectionRouteFitType === 'OFF_ROUTE'
+            ) {
+              this.logBookingRule({
+                rule: 'WAIT_GAP_OPTIONAL_REJECTED_ROUTE_FIT',
+                planId: params.planId,
+                routeId,
+                mandatoryHotspotId,
+                candidateHotspotId: candidateId,
+                reason: actualDirectionValidation.actualDirectionValidationReason,
+                actualRouteFitType: actualDirectionValidation.actualDirectionRouteFitType,
+              });
+              continue;
+            }
+          }
+        }
+
+        // ALL VALIDATION PASSED - Plan the rows (but do not commit yet)
+        const candidateStartTime = secondsToTime(wrapToDay(candidateStartSeconds));
+        const candidateEndTime = secondsToTime(wrapToDay(candidateEndSeconds));
+
+        const travelLocationType = this.getTravelLocationType(cursorLocationName, candidateLocationName);
+        const { row: travelRow } = await this.travelBuilder.buildTravelSegment(params.tx, {
+          planId: params.planId,
+          routeId,
+          order: cursorOrder,
+          item_type: 3,
+          travelLocationType,
+          startTime: cursorTime,
+          userId: params.createdByUserId,
+          sourceLocationName: cursorLocationName,
+          destinationLocationName: candidateLocationName,
+          hotspotId: candidateId,
+          fromHotspotId: cursorLastHotspotId ?? undefined,
+          sourceCoords: cursorCoords,
+          destCoords: candidateCoords,
+        });
+
+        plannedRows.push(travelRow);
+
+        const travelArrivalTime = secondsToTime(
+          wrapToDay(cursorTimeSeconds + travelToCandidateSeconds),
+        );
+
+        const waitBeforeCandidateSeconds = candidateStartSeconds - (cursorTimeSeconds + travelToCandidateSeconds);
+        if (waitBeforeCandidateSeconds >= FREE_TIME_THRESHOLD_SECONDS) {
+          plannedRows.push(
+            this.buildFreeTimeBreakRow({
+              planId: params.planId,
+              routeId,
+              order: cursorOrder,
+              startTime: travelArrivalTime,
+              endTime: candidateStartTime,
+              userId: params.createdByUserId,
+            }),
+          );
+        }
+
+        const { row: candidateHotspotRow } = await this.hotspotBuilder.build(params.tx, {
+          planId: params.planId,
+          routeId,
+          order: cursorOrder,
+          hotspotId: candidateId,
+          startTime: candidateStartTime,
+          userId: params.createdByUserId,
+          totalAdult: params.plan.total_adult,
+          totalChildren: params.plan.total_children,
+          totalInfants: params.plan.total_infants,
+          nationality: params.plan.nationality,
+          itineraryPreference: params.plan.itinerary_preference,
+          isConflict: false,
+          conflictReason: '',
+        });
+
+        plannedRows.push(candidateHotspotRow);
+        plannedAddedHotspotIds.add(candidateId);
+
+        const parkingRowsForHotspot = await this.parkingBuilder.buildForHotspot(params.tx, {
+          planId: params.planId,
+          routeId,
+          hotspotId: candidateId,
+          userId: params.createdByUserId,
+        });
+
+        if (parkingRowsForHotspot && parkingRowsForHotspot.length > 0) {
+          plannedParkingRows.push(...parkingRowsForHotspot);
+        }
+
+        // Advance cursor to candidate end
+        cursorOrder++;
+        cursorTimeSeconds = candidateEndSeconds;
+        cursorTime = candidateEndTime;
+        cursorLocationName = candidateLocationName;
+        cursorCoords = candidateCoords;
+        cursorLastHotspotId = candidateId;
+
+        this.logBookingRule({
+          rule: 'WAIT_GAP_OPTIONAL_PLANNED',
+          quoteId: (params.plan as any).quote_id ?? (params.plan as any).quoteId ?? (params.plan as any).quote_ID ?? null,
+          planId: params.planId,
+          routeId,
+          mandatoryHotspotId,
+          candidateHotspotId: candidateId,
+          startTime: candidateStartTime,
+          endTime: candidateEndTime,
+          stillReachesMandatoryAt: secondsToTime(wrapToDay(arrivalAtMandatorySeconds)),
+          reservedMandatoryStart: params.reservedStartTime,
+        });
+
+        planedThisLoop = true;
+        break; // Only insert one candidate per loop iteration
+      }
+
+      if (!planedThisLoop) {
+        this.logBookingRule({
+          rule: 'WAIT_GAP_LEFT_AS_BREAK_NO_VALID_OPTIONAL',
+          quoteId: (params.plan as any).quote_id ?? (params.plan as any).quoteId ?? (params.plan as any).quote_ID ?? null,
+          planId: params.planId,
+          routeId,
+          mandatoryHotspotId,
+          currentTime: cursorTime,
+          reservedStartTime: params.reservedStartTime,
+          reason: 'No optional hotspot could safely fill the waiting gap before reserved mandatory hotspot',
+        });
+        break;
+      }
+    }
+
+    // FINAL VALIDATION: Can we return to mandatory from current cursor position?
+    const finalTravelTime = await this.calculateTravelTimeWithCoords(
+      params.tx,
+      cursorLocationName,
+      params.reservedHotspotLocationName,
+      cursorCoords,
+      params.reservedHotspotCoords,
+    );
+
+    const finalTravelSeconds = timeToSeconds(finalTravelTime);
+    const finalArrivalAtMandatorySeconds = cursorTimeSeconds + finalTravelSeconds;
+
+    if (finalArrivalAtMandatorySeconds > params.reservedStartSeconds) {
+      // REJECT ENTIRE PLAN: Cannot reach mandatory hotspot on time
+      this.logBookingRule({
+        rule: 'WAIT_GAP_PLAN_REJECTED_CANNOT_REACH_MANDATORY',
+        planId: params.planId,
+        routeId,
+        mandatoryHotspotId,
+        planedCount: plannedRows.length,
+        cursorTime,
+        finalArrivalTime: secondsToTime(wrapToDay(finalArrivalAtMandatorySeconds)),
+        reservedMandatoryStart: params.reservedStartTime,
+        reason: 'Entire optional gap-fill plan rejected: cannot reach reserved mandatory hotspot on time',
+      });
+
+      // Return no insertions - let main loop insert normal break + mandatory
+      return {
+        insertedCount: 0,
+        currentOrder: params.currentOrder,
+        currentTime: params.currentTime,
+        currentLocationName: params.currentLocationName,
+        currentCoords: params.currentCoords,
+        lastAddedHotspotId: params.currentLastAddedHotspotId,
+      };
+    }
+
+    // COMMIT PLAN: All validations passed, commit planned rows to params
+    params.hotspotRows.push(...plannedRows);
+    params.parkingRows.push(...plannedParkingRows);
+    for (const id of plannedAddedHotspotIds) {
+      if (!params.addedHotspotIds.has(id)) {
+        params.addedHotspotIds.add(id);
+      }
+    }
+
+    const insertedCount = plannedRows.filter((r) => Number(r.item_type ?? 0) === 4).length;
+
+    this.logBookingRule({
+      rule: 'WAIT_GAP_PLAN_COMMITTED',
+      quoteId: (params.plan as any).quote_id ?? (params.plan as any).quoteId ?? (params.plan as any).quote_ID ?? null,
+      planId: params.planId,
+      routeId,
+      mandatoryHotspotId,
+      planedCount: insertedCount,
+      cursorTime,
+      finalArrivalAtMandatory: secondsToTime(wrapToDay(finalArrivalAtMandatorySeconds)),
+      reservedMandatoryStart: params.reservedStartTime,
+    });
+
+    return {
+      insertedCount,
+      currentOrder: cursorOrder,
+      currentTime: cursorTime,
+      currentLocationName: cursorLocationName,
+      currentCoords: cursorCoords,
+      lastAddedHotspotId: cursorLastHotspotId,
+    };
+  }
+
   private async evaluateCandidateInsertion(
     input: CandidateFeasibilityInput,
   ): Promise<CandidateFeasibilityResult> {
@@ -6922,6 +7859,511 @@ export class TimelineBuilder {
       return `${String(value.getUTCHours()).padStart(2, '0')}:${String(value.getUTCMinutes()).padStart(2, '0')}:${String(value.getUTCSeconds()).padStart(2, '0')}`;
     }
     return null;
+  }
+
+  /**
+   * Optimize the order of mandatory priority 1/2/3 hotspots by trying permutations.
+   * For up to 3 hotspots, tries all permutations and selects the best timing/distance order.
+   * Backtracking is allowed but we prefer the order with least backtracking that fits timing.
+   */
+  private async optimizeMandatoryHotspotOrder(
+    tx: Tx,
+    mandatoryHotspots: SelectedHotspot[],
+    route: any,
+    routeStartSeconds: number,
+    routeEndSeconds: number,
+    hotspotMap: Map<number, any>,
+    timingMap: Map<number, any>,
+    plan: any,
+    destinationCity: string,
+    lastRouteArrivalDeadlineSeconds: number,
+  ): Promise<SelectedHotspot[] | null> {
+    if (mandatoryHotspots.length < 2 || mandatoryHotspots.length > 3) {
+      return null;
+    }
+
+    const permutations = this.generatePermutations(mandatoryHotspots);
+    const evaluatedOrders: {
+      order: SelectedHotspot[];
+      totalDetourKm: number;
+      allFeasible: boolean;
+      totalTravelTimeSeconds: number;
+    }[] = [];
+
+    for (const perm of permutations) {
+      let totalDetourKm = 0;
+      let allFeasible = true;
+      let totalTravelTimeSeconds = 0;
+      let currentTimeSeconds = routeStartSeconds;
+      let currentCoords: { lat: number; lon: number } | null = null;
+
+      for (let i = 0; i < perm.length; i++) {
+        const hs = perm[i];
+        const hotspotId = Number((hs as any).hotspot_ID || 0);
+        const hotspotData = hotspotMap.get(hotspotId);
+
+        if (!hotspotData) {
+          allFeasible = false;
+          break;
+        }
+
+        const destCoords = {
+          lat: Number(hotspotData.hotspot_latitude ?? 0),
+          lon: Number(hotspotData.hotspot_longitude ?? 0),
+        };
+
+        if (!currentCoords) {
+          currentCoords = destCoords;
+        }
+
+        // Estimate travel time (simplified - using distance-based estimation)
+        const travelTimeSeconds = this.estimateTravelTime(currentCoords, destCoords);
+        totalTravelTimeSeconds += travelTimeSeconds;
+        currentTimeSeconds += travelTimeSeconds;
+
+        // Check timing feasibility
+        const hotspotDuration = hotspotData.hotspot_duration || '01:00:00';
+        const durationSeconds = this.timeToSeconds(hotspotDuration);
+        currentTimeSeconds += durationSeconds;
+
+        if (currentTimeSeconds > routeEndSeconds) {
+          allFeasible = false;
+          break;
+        }
+
+        // For route-fit evaluation, check matrix between consecutive hotspots
+        if (i > 0) {
+          const prevHotspotId = Number(perm[i - 1].hotspot_ID);
+          const matrixResult = await this.resolveBetweenMapForSlot(
+            tx,
+            prevHotspotId,
+            hotspotId,
+            hotspotId,
+          );
+
+          if (matrixResult.row) {
+            const roadDetourKm = Number(matrixResult.row.road_detour_km ?? 0);
+            totalDetourKm += roadDetourKm;
+          }
+        }
+
+        currentCoords = destCoords;
+      }
+
+      evaluatedOrders.push({
+        order: perm,
+        totalDetourKm,
+        allFeasible,
+        totalTravelTimeSeconds,
+      });
+    }
+
+    // Select best order: prefer all feasible, then least detour, then least travel time
+    const feasibleOrders = evaluatedOrders.filter(e => e.allFeasible);
+    if (feasibleOrders.length === 0) {
+      // If none feasible, return original order
+      return mandatoryHotspots;
+    }
+
+    feasibleOrders.sort((a, b) => {
+      if (a.totalDetourKm !== b.totalDetourKm) {
+        return a.totalDetourKm - b.totalDetourKm;
+      }
+      return a.totalTravelTimeSeconds - b.totalTravelTimeSeconds;
+    });
+
+    return feasibleOrders[0].order;
+  }
+
+  /**
+   * Generate all permutations of an array (for up to 3 elements).
+   */
+  private generatePermutations<T>(arr: T[]): T[][] {
+    if (arr.length === 0) return [[]];
+    if (arr.length === 1) return [arr];
+    if (arr.length === 2) return [arr, [arr[1], arr[0]]];
+    if (arr.length === 3) {
+      const [a, b, c] = arr;
+      return [
+        [a, b, c],
+        [a, c, b],
+        [b, a, c],
+        [b, c, a],
+        [c, a, b],
+        [c, b, a],
+      ];
+    }
+    return [arr];
+  }
+
+  /**
+   * Estimate travel time between two coordinates (simplified).
+   */
+  private estimateTravelTime(from: { lat: number; lon: number }, to: { lat: number; lon: number }): number {
+    const R = 6371; // Earth's radius in km
+    const dLat = (to.lat - from.lat) * Math.PI / 180;
+    const dLon = (to.lon - from.lon) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+              Math.cos(from.lat * Math.PI / 180) * Math.cos(to.lat * Math.PI / 180) *
+              Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const distanceKm = R * c;
+    // Assume average speed of 30 km/h in urban areas
+    return Math.round((distanceKm / 30) * 3600);
+  }
+
+  /**
+   * Convert time string to seconds.
+   * Handles string format "HH:MM:SS" or "HH:MM", or number (seconds).
+   */
+  private timeToSeconds(timeStr: string | number | null | undefined): number {
+    if (typeof timeStr === 'number') {
+      return timeStr;
+    }
+    if (!timeStr) {
+      return 0;
+    }
+    const str = String(timeStr);
+    const parts = str.split(':').map(Number);
+    if (parts.length >= 3) {
+      return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    }
+    if (parts.length === 2) {
+      return parts[0] * 3600 + parts[1] * 60;
+    }
+    if (parts.length === 1 && !isNaN(parts[0])) {
+      return parts[0];
+    }
+    return 0;
+  }
+
+  /**
+   * Perform actual-direction validation for reverse/canonical matrix matches.
+   * For slot A → B with candidate C (where matrix row is B → A → C):
+   * - Compute A → C distance
+   * - Compute C → B distance
+   * - Calculate detour = (A→C + C→B) - A→B
+   * - Determine if actual direction is ON_ROUTE, MINOR_DETOUR, BACKTRACK, or OFF_ROUTE
+   */
+  private async validateActualDirectionForReverseCanonical(
+    tx: Tx,
+    actualFromHotspotId: number,
+    actualToHotspotId: number,
+    candidateHotspotId: number,
+    matrixRow: any,
+  ): Promise<{
+    actualDirectionRouteFitType: 'ON_ROUTE' | 'MINOR_DETOUR' | 'BACKTRACK' | 'OFF_ROUTE' | 'UNKNOWN';
+    actualDirectionValidationPassed: boolean;
+    actualDirectionValidationReason: string;
+    abDistanceKm: number;
+    acDistanceKm: number;
+    cbDistanceKm: number;
+    detourKm: number;
+    detourRatio: number;
+  }> {
+    const result: {
+      actualDirectionRouteFitType: 'ON_ROUTE' | 'MINOR_DETOUR' | 'BACKTRACK' | 'OFF_ROUTE' | 'UNKNOWN';
+      actualDirectionValidationPassed: boolean;
+      actualDirectionValidationReason: string;
+      abDistanceKm: number;
+      acDistanceKm: number;
+      cbDistanceKm: number;
+      detourKm: number;
+      detourRatio: number;
+    } = {
+      actualDirectionRouteFitType: 'UNKNOWN',
+      actualDirectionValidationPassed: false,
+      actualDirectionValidationReason: 'Validation not performed',
+      abDistanceKm: 0,
+      acDistanceKm: 0,
+      cbDistanceKm: 0,
+      detourKm: 0,
+      detourRatio: 0,
+    };
+
+    try {
+      // Query real distances from hotspot_route_between_map for actual direction A→B, A→C, C→B
+      
+      // Query A→B distance (baseline)
+      const abRows = await (tx as any).$queryRawUnsafe(`
+        SELECT ab_osrm_distance_km
+        FROM hotspot_route_between_map
+        WHERE from_hotspot_id = ? AND to_hotspot_id = ? AND between_hotspot_id = ?
+        LIMIT 1
+      `, actualFromHotspotId, actualToHotspotId, candidateHotspotId);
+
+      const abDistanceKm = (Array.isArray(abRows) && abRows.length > 0)
+        ? Number(abRows[0].ab_osrm_distance_km ?? 0)
+        : 0;
+
+      // Query A→C distance (from A to candidate C)
+      const acRows = await (tx as any).$queryRawUnsafe(`
+        SELECT ab_osrm_distance_km
+        FROM hotspot_route_between_map
+        WHERE from_hotspot_id = ? AND to_hotspot_id = ? AND between_hotspot_id = ?
+        LIMIT 1
+      `, actualFromHotspotId, candidateHotspotId, actualToHotspotId);
+
+      const acDistanceKm = (Array.isArray(acRows) && acRows.length > 0)
+        ? Number(acRows[0].ab_osrm_distance_km ?? 0)
+        : 0;
+
+      // Query C→B distance (from candidate C to B)
+      const cbRows = await (tx as any).$queryRawUnsafe(`
+        SELECT ab_osrm_distance_km
+        FROM hotspot_route_between_map
+        WHERE from_hotspot_id = ? AND to_hotspot_id = ? AND between_hotspot_id = ?
+        LIMIT 1
+      `, candidateHotspotId, actualToHotspotId, actualFromHotspotId);
+
+      const cbDistanceKm = (Array.isArray(cbRows) && cbRows.length > 0)
+        ? Number(cbRows[0].ab_osrm_distance_km ?? 0)
+        : 0;
+
+      result.abDistanceKm = abDistanceKm;
+      result.acDistanceKm = acDistanceKm;
+      result.cbDistanceKm = cbDistanceKm;
+
+      if (abDistanceKm > 0 && acDistanceKm > 0 && cbDistanceKm > 0) {
+        const insertedDistanceKm = acDistanceKm + cbDistanceKm;
+        result.detourKm = insertedDistanceKm - abDistanceKm;
+        result.detourRatio = abDistanceKm > 0 ? result.detourKm / abDistanceKm : 0;
+
+        // Determine route fit type based on detour ratio
+        // These thresholds match the matrix population logic
+        if (result.detourRatio <= 0.1) {
+          result.actualDirectionRouteFitType = 'ON_ROUTE';
+          result.actualDirectionValidationPassed = true;
+          result.actualDirectionValidationReason = `Actual direction validation passed: detour ratio ${result.detourRatio.toFixed(3)} <= 0.1 (ON_ROUTE)`;
+        } else if (result.detourRatio <= 0.3) {
+          result.actualDirectionRouteFitType = 'MINOR_DETOUR';
+          result.actualDirectionValidationPassed = true;
+          result.actualDirectionValidationReason = `Actual direction validation passed: detour ratio ${result.detourRatio.toFixed(3)} <= 0.3 (MINOR_DETOUR)`;
+        } else if (result.detourRatio <= 0.5) {
+          result.actualDirectionRouteFitType = 'BACKTRACK';
+          result.actualDirectionValidationPassed = false;
+          result.actualDirectionValidationReason = `Actual direction validation failed: detour ratio ${result.detourRatio.toFixed(3)} > 0.3 (BACKTRACK)`;
+        } else {
+          result.actualDirectionRouteFitType = 'OFF_ROUTE';
+          result.actualDirectionValidationPassed = false;
+          result.actualDirectionValidationReason = `Actual direction validation failed: detour ratio ${result.detourRatio.toFixed(3)} > 0.5 (OFF_ROUTE)`;
+        }
+      } else {
+        result.actualDirectionValidationReason = 'Insufficient OSRM distance data for actual-direction validation';
+      }
+    } catch (err) {
+      console.error('[validateActualDirectionForReverseCanonical] validation error:', err);
+      result.actualDirectionValidationReason = 'Actual-direction validation error';
+    }
+
+    return result;
+  }
+
+  /**
+   * Query hotspot_route_between_rejections table for a rejected entry.
+   * Checks both directions (exact and reverse) similar to matrix lookup.
+   */
+  private async getRouteBetweenRejectionRow(
+    tx: Tx,
+    fromHotspotId: number,
+    toHotspotId: number,
+    betweenHotspotId: number,
+  ): Promise<any | null> {
+    const fromId = Number(fromHotspotId || 0);
+    const toId = Number(toHotspotId || 0);
+    const betweenId = Number(betweenHotspotId || 0);
+    if (!fromId || !toId || !betweenId) {
+      return null;
+    }
+
+    const rows: any[] = await (tx as any).$queryRawUnsafe(
+      `
+      SELECT
+        from_hotspot_id,
+        to_hotspot_id,
+        between_hotspot_id,
+        rejection_code,
+        rejection_reason,
+        route_fit_type,
+        candidate_distance_from_ab_route_meters,
+        road_detour_km,
+        road_detour_ratio,
+        error_message
+      FROM hotspot_route_between_rejections
+      WHERE (
+        (from_hotspot_id = ? AND to_hotspot_id = ? AND between_hotspot_id = ?)
+        OR
+        (from_hotspot_id = ? AND to_hotspot_id = ? AND between_hotspot_id = ?)
+      )
+      LIMIT 1
+      `,
+      fromId,
+      toId,
+      betweenId,
+      toId,
+      fromId,
+      betweenId,
+    );
+
+    if (Array.isArray(rows) && rows.length > 0) {
+      return rows[0];
+    }
+    return null;
+  }
+
+  /**
+   * Resolve hotspot_route_between_map entry for a slot with direction-aware lookup.
+   * Queries exact direction first, then reverse/canonical direction if exact not found.
+   * Returns detailed match information including direction validation status.
+   */
+  private async resolveBetweenMapForSlot(
+    tx: Tx,
+    actualFromHotspotId: number,
+    actualToHotspotId: number,
+    candidateHotspotId: number,
+  ): Promise<{
+    row: any;
+    matrixMatchDirection: 'EXACT_DIRECTION' | 'REVERSE_CANONICAL_MATCH' | 'NOT_FOUND';
+    actualFromHotspotId: number;
+    actualToHotspotId: number;
+    storedFromHotspotId: number | null;
+    storedToHotspotId: number | null;
+    candidateHotspotId: number;
+    directionSensitiveValidationRequired: boolean;
+    directionSensitiveValidationPassed: boolean | null;
+    directionSensitiveValidationReason: string | null;
+  }> {
+    const result: {
+      row: any;
+      matrixMatchDirection: 'EXACT_DIRECTION' | 'REVERSE_CANONICAL_MATCH' | 'NOT_FOUND';
+      actualFromHotspotId: number;
+      actualToHotspotId: number;
+      storedFromHotspotId: number | null;
+      storedToHotspotId: number | null;
+      candidateHotspotId: number;
+      directionSensitiveValidationRequired: boolean;
+      directionSensitiveValidationPassed: boolean | null;
+      directionSensitiveValidationReason: string | null;
+    } = {
+      row: null,
+      matrixMatchDirection: 'NOT_FOUND',
+      actualFromHotspotId,
+      actualToHotspotId,
+      storedFromHotspotId: null,
+      storedToHotspotId: null,
+      candidateHotspotId,
+      directionSensitiveValidationRequired: false,
+      directionSensitiveValidationPassed: null,
+      directionSensitiveValidationReason: null,
+    };
+
+    try {
+      // Step 1: Query exact direction
+      const exactRows = await (tx as any).$queryRawUnsafe(`
+        SELECT
+          from_hotspot_id,
+          to_hotspot_id,
+          between_hotspot_id,
+          route_fit_type,
+          route_decision_reason,
+          road_detour_km,
+          road_detour_ratio,
+          ab_osrm_distance_km,
+          ac_osrm_distance_km,
+          cb_osrm_distance_km,
+          inserted_route_distance_km,
+          candidate_distance_from_ab_route_meters,
+          destination_distance_from_ac_route_meters
+        FROM hotspot_route_between_map
+        WHERE from_hotspot_id = ? AND to_hotspot_id = ? AND between_hotspot_id = ?
+        LIMIT 1
+      `, actualFromHotspotId, actualToHotspotId, candidateHotspotId);
+
+      if (Array.isArray(exactRows) && exactRows.length > 0) {
+        result.row = exactRows[0];
+        result.matrixMatchDirection = 'EXACT_DIRECTION';
+        result.storedFromHotspotId = Number(exactRows[0].from_hotspot_id);
+        result.storedToHotspotId = Number(exactRows[0].to_hotspot_id);
+        result.directionSensitiveValidationRequired = false;
+        result.directionSensitiveValidationPassed = true;
+        result.directionSensitiveValidationReason = 'Exact direction match - no validation required';
+        return result;
+      }
+
+      // Step 2: Query reverse/canonical direction
+      const reverseRows = await (tx as any).$queryRawUnsafe(`
+        SELECT
+          from_hotspot_id,
+          to_hotspot_id,
+          between_hotspot_id,
+          route_fit_type,
+          route_decision_reason,
+          road_detour_km,
+          road_detour_ratio,
+          ab_osrm_distance_km,
+          ac_osrm_distance_km,
+          cb_osrm_distance_km,
+          inserted_route_distance_km,
+          candidate_distance_from_ab_route_meters,
+          destination_distance_from_ac_route_meters
+        FROM hotspot_route_between_map
+        WHERE from_hotspot_id = ? AND to_hotspot_id = ? AND between_hotspot_id = ?
+        LIMIT 1
+      `, actualToHotspotId, actualFromHotspotId, candidateHotspotId);
+
+      if (Array.isArray(reverseRows) && reverseRows.length > 0) {
+        result.row = reverseRows[0];
+        result.matrixMatchDirection = 'REVERSE_CANONICAL_MATCH';
+        result.storedFromHotspotId = Number(reverseRows[0].from_hotspot_id);
+        result.storedToHotspotId = Number(reverseRows[0].to_hotspot_id);
+        result.directionSensitiveValidationRequired = true;
+        result.directionSensitiveValidationPassed = null;
+        result.directionSensitiveValidationReason = 'Reverse/canonical match - actual-direction validation required before auto approval';
+        return result;
+      }
+
+      // Step 3: Check rejection table
+      const rejectionRow = await this.getRouteBetweenRejectionRow(
+        tx,
+        actualFromHotspotId,
+        actualToHotspotId,
+        candidateHotspotId,
+      );
+
+      if (rejectionRow) {
+        const rejectionCode = String(rejectionRow?.rejection_code || '').toUpperCase();
+        const rejectionReason = rejectionRow?.rejection_reason
+          ? String(rejectionRow.rejection_reason)
+          : String(rejectionRow?.error_message || 'Rejected in hotspot_route_between_rejections.');
+
+        result.row = {
+          from_hotspot_id: Number(rejectionRow?.from_hotspot_id || actualFromHotspotId),
+          to_hotspot_id: Number(rejectionRow?.to_hotspot_id || actualToHotspotId),
+          between_hotspot_id: Number(rejectionRow?.between_hotspot_id || candidateHotspotId),
+          route_fit_type: rejectionCode === 'OFF_ROUTE_SKIPPED' ? 'OFF_ROUTE' : 'UNKNOWN',
+          route_decision_reason: rejectionReason,
+          road_detour_km: rejectionRow?.road_detour_km ?? null,
+          road_detour_ratio: rejectionRow?.road_detour_ratio ?? null,
+          ab_osrm_distance_km: null,
+          ac_osrm_distance_km: null,
+          cb_osrm_distance_km: null,
+          inserted_route_distance_km: null,
+          candidate_distance_from_ab_route_meters: rejectionRow?.candidate_distance_from_ab_route_meters ?? null,
+          destination_distance_from_ac_route_meters: null,
+        };
+        result.matrixMatchDirection = 'NOT_FOUND';
+        result.directionSensitiveValidationRequired = false;
+        result.directionSensitiveValidationPassed = false;
+        result.directionSensitiveValidationReason = 'Rejection row found';
+        return result;
+      }
+
+      return result;
+    } catch (err) {
+      console.error('[resolveBetweenMapForSlot] matrix query error:', err);
+      result.directionSensitiveValidationReason = 'Matrix query error';
+      return result;
+    }
   }
 
   /**

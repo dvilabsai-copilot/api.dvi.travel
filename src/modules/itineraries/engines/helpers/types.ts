@@ -5,6 +5,7 @@ export interface HotspotDetailRow {
   itinerary_route_ID: number;
   item_type: number;
   hotspot_order: number;
+  hotspot_name?: string;
   hotspot_ID?: number; // Optional: PHP doesn't set this for item_type=1 (refreshment)
 
   hotspot_adult_entry_cost?: number; // Optional: only for item_type=4 (stay)

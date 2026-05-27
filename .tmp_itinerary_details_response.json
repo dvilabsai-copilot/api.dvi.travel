@@ -1,0 +1,545 @@
+{
+  "quoteId": "DVI20260593",
+  "planId": 385,
+  "itineraryPreference": 2,
+  "isConfirmed": false,
+  "dateRange": "2026-05-27 to 2026-05-30",
+  "dayCount": 4,
+  "nightCount": 3,
+  "roomCount": 0,
+  "extraBed": 0,
+  "childWithBed": 0,
+  "childWithoutBed": 0,
+  "adults": 1,
+  "children": 0,
+  "infants": 0,
+  "overallCost": "20040.00",
+  "meal_plan_code": null,
+  "days": [
+    {
+      "id": 4610,
+      "dayNumber": 1,
+      "date": "2026-05-27T00:00:00.000Z",
+      "locationId": 121532,
+      "departure": "Bangalore, International Airport",
+      "arrival": "Bangalore",
+      "distance": "34.80 KM",
+      "intercityDistance": "34.80 KM",
+      "sightseeingDistance": "0.00 KM",
+      "startTime": "12:00 AM",
+      "endTime": "12:00 AM",
+      "viaRoutes": [],
+      "segments": [
+        {
+          "type": "start",
+          "title": "Start your Journey",
+          "timeRange": "12:00 AM - 12:00 AM"
+        },
+        {
+          "type": "travel",
+          "from": "Bangalore, International Airport",
+          "to": "Hotel",
+          "timeRange": "12:00 AM - 12:49 AM",
+          "distance": "34.80 KM",
+          "duration": "49 Min",
+          "note": "This may vary due to traffic conditions",
+          "isConflict": false,
+          "conflictReason": null,
+          "fromName": "Bangalore, International Airport",
+          "toName": "Hotel",
+          "displayFromName": "Bangalore, International Airport",
+          "displayToName": "Hotel",
+          "text": "Travelling from Bangalore, International Airport to Hotel"
+        },
+        {
+          "type": "checkin",
+          "hotelName": "Hotel",
+          "hotelAddress": "",
+          "time": "12:49 AM"
+        }
+      ]
+    },
+    {
+      "id": 4611,
+      "dayNumber": 2,
+      "date": "2026-05-28T00:00:00.000Z",
+      "locationId": 121549,
+      "departure": "Bangalore",
+      "arrival": "Bangalore",
+      "distance": "667.09 KM",
+      "intercityDistance": "283.00 KM",
+      "sightseeingDistance": "384.09 KM",
+      "startTime": "08:00 AM",
+      "endTime": "08:00 PM",
+      "viaRoutes": [
+        {
+          "id": 812,
+          "name": "Mysore"
+        }
+      ],
+      "segments": [
+        {
+          "type": "start",
+          "title": "Start Your Day",
+          "timeRange": "08:00 AM - 09:00 AM"
+        },
+        {
+          "type": "hotspot",
+          "text": "Click to Add Hotspot",
+          "locationId": 121549,
+          "anchorType": "after_travel",
+          "anchorIndex": 0,
+          "anchorFrom": "Hotel",
+          "anchorTo": "Chamundeshwari Temple",
+          "anchorTimeRange": "09:00 AM - 12:09 PM"
+        },
+        {
+          "type": "travel",
+          "from": "Hotel",
+          "to": "Chamundeshwari Temple",
+          "timeRange": "09:00 AM - 12:09 PM",
+          "distance": "188.65 KM",
+          "duration": "3 Hours 9 Min",
+          "note": "This may vary due to traffic conditions",
+          "isConflict": false,
+          "conflictReason": null,
+          "fromName": "Hotel",
+          "toName": "Chamundeshwari Temple",
+          "displayFromName": "Hotel",
+          "displayToName": "Chamundeshwari Temple",
+          "text": "Travelling from Hotel to Chamundeshwari Temple"
+        },
+        {
+          "type": "attraction",
+          "name": "Chamundeshwari Temple",
+          "description": "The main hill itself features an ancient stone stairway of 1,008 steps leading to its summit.",
+          "visitTime": "12:09 PM - 01:09 PM",
+          "duration": "1 Hours",
+          "amount": null,
+          "timings": "07:30 AM - 02:00 PM, 03:30 PM - 06:00 PM, 07:30 PM - 09:00 PM",
+          "image": "/uploads/hotspot_gallery/Chamundeshwari_Temple.jpg",
+          "galleryImages": [
+            "/uploads/hotspot_gallery/Chamundeshwari_Temple.jpg"
+          ],
+          "videoUrl": "https://youtu.be/6Z6oZZHvYIk",
+          "planOwnWay": false,
+          "activities": [],
+          "hasAvailableActivities": false,
+          "hotspotId": 122,
+          "routeHotspotId": 152894,
+          "locationId": 121549,
+          "priority": 1,
+          "isConflict": false,
+          "conflictReason": null,
+          "isManual": false,
+          "isDeleted": false
+        },
+        {
+          "type": "hotspot",
+          "text": "Click to Add Hotspot",
+          "locationId": 121549,
+          "anchorType": "after_travel",
+          "anchorIndex": 1,
+          "anchorFrom": "Chamundeshwari Temple",
+          "anchorTo": "St. Philomena&#039;s Cathedral Church",
+          "anchorTimeRange": "01:09 PM - 01:43 PM"
+        },
+        {
+          "type": "travel",
+          "from": "Chamundeshwari Temple",
+          "to": "St. Philomena&#039;s Cathedral Church",
+          "timeRange": "01:09 PM - 01:43 PM",
+          "distance": "8.51 KM",
+          "duration": "34 Min",
+          "note": "This may vary due to traffic conditions",
+          "isConflict": false,
+          "conflictReason": null,
+          "fromName": "Chamundeshwari Temple",
+          "toName": "St. Philomena&#039;s Cathedral Church",
+          "displayFromName": "Chamundeshwari Temple",
+          "displayToName": "St. Philomena&#039;s Cathedral Church",
+          "text": "Travelling from Chamundeshwari Temple to St. Philomena&#039;s Cathedral Church"
+        },
+        {
+          "type": "attraction",
+          "name": "St. Philomena&#039;s Cathedral Church",
+          "description": "It is one of the grandest churches of the Country. The structure has twin spires 175 ft.",
+          "visitTime": "01:43 PM - 02:43 PM",
+          "duration": "1 Hours",
+          "amount": null,
+          "timings": "05:00 AM - 08:00 PM",
+          "image": "/uploads/hotspot_gallery/St._Philomena&#039;s_Cathedral_Church.jpg",
+          "galleryImages": [
+            "/uploads/hotspot_gallery/St._Philomena&#039;s_Cathedral_Church.jpg"
+          ],
+          "videoUrl": "https://youtu.be/6Z6oZZHvYIk",
+          "planOwnWay": false,
+          "activities": [],
+          "hasAvailableActivities": false,
+          "hotspotId": 125,
+          "routeHotspotId": 152896,
+          "locationId": 121549,
+          "priority": 3,
+          "isConflict": false,
+          "conflictReason": null,
+          "isManual": false,
+          "isDeleted": false
+        },
+        {
+          "type": "travel",
+          "from": "St. Philomena&#039;s Cathedral Church",
+          "to": "Hotel",
+          "timeRange": "02:43 PM - 06:50 PM",
+          "distance": "186.93 KM",
+          "duration": "4 Hours 7 Min",
+          "note": "This may vary due to traffic conditions",
+          "isConflict": false,
+          "conflictReason": null,
+          "fromName": "St. Philomena&#039;s Cathedral Church",
+          "toName": "Hotel",
+          "displayFromName": "St. Philomena&#039;s Cathedral Church",
+          "displayToName": "Hotel",
+          "text": "Travelling from St. Philomena&#039;s Cathedral Church to Hotel"
+        },
+        {
+          "type": "checkin",
+          "hotelName": "Hotel",
+          "hotelAddress": "",
+          "time": "06:50 PM"
+        }
+      ]
+    },
+    {
+      "id": 4612,
+      "dayNumber": 3,
+      "date": "2026-05-29T00:00:00.000Z",
+      "locationId": 121549,
+      "departure": "Bangalore",
+      "arrival": "Bangalore",
+      "distance": "10.00 KM",
+      "intercityDistance": "10.00 KM",
+      "sightseeingDistance": "0.00 KM",
+      "startTime": "12:00 AM",
+      "endTime": "12:00 AM",
+      "viaRoutes": [],
+      "segments": [
+        {
+          "type": "start",
+          "title": "Start Your Day",
+          "timeRange": "12:00 AM - 12:00 AM"
+        },
+        {
+          "type": "travel",
+          "from": "Hotel",
+          "to": "Hotel",
+          "timeRange": "12:00 AM - 12:05 AM",
+          "distance": "0.00 KM",
+          "duration": "5 Min",
+          "note": "This may vary due to traffic conditions",
+          "isConflict": false,
+          "conflictReason": null,
+          "fromName": "Hotel",
+          "toName": "Hotel",
+          "displayFromName": "Hotel",
+          "displayToName": "Hotel",
+          "text": "Travelling from Hotel to Hotel"
+        },
+        {
+          "type": "checkin",
+          "hotelName": "Hotel",
+          "hotelAddress": "",
+          "time": "12:05 AM"
+        }
+      ]
+    },
+    {
+      "id": 4613,
+      "dayNumber": 4,
+      "date": "2026-05-30T00:00:00.000Z",
+      "locationId": 121531,
+      "departure": "Bangalore",
+      "arrival": "Bangalore, International Airport",
+      "distance": "34.80 KM",
+      "intercityDistance": "34.80 KM",
+      "sightseeingDistance": "0.00 KM",
+      "startTime": "12:00 AM",
+      "endTime": "12:00 AM",
+      "viaRoutes": [],
+      "segments": [
+        {
+          "type": "start",
+          "title": "Start Your Day",
+          "timeRange": "12:00 AM - 01:00 AM"
+        },
+        {
+          "type": "return",
+          "time": "12:00 AM",
+          "note": null
+        }
+      ]
+    }
+  ],
+  "vehicles": [
+    {
+      "vendorName": "DVI- BANGALORE",
+      "branchName": "DVI- BANGALORE",
+      "vehicleOrigin": "Bangalore",
+      "totalQty": "1",
+      "totalAmount": "20030.01",
+      "vendorEligibleId": 2535,
+      "vehicleTypeId": 1,
+      "vehicleTypeName": "Sedan",
+      "isAssigned": true,
+      "selectedTimeLimitId": 66,
+      "availableSlabs": [
+        {
+          "timeLimitId": 66,
+          "title": "08 HRS   80 KMS",
+          "hoursLimit": 8,
+          "kmLimit": 80
+        },
+        {
+          "timeLimitId": 293,
+          "title": "10 hrs 100 kms",
+          "hoursLimit": 10,
+          "kmLimit": 100
+        },
+        {
+          "timeLimitId": 294,
+          "title": "12 hrs 120 kms",
+          "hoursLimit": 12,
+          "kmLimit": 120
+        },
+        {
+          "timeLimitId": 295,
+          "title": "15 hrs 150 kms",
+          "hoursLimit": 15,
+          "kmLimit": 150
+        }
+      ],
+      "localTrip": true,
+      "rentalCharges": 11600,
+      "tollCharges": 1170,
+      "parkingCharges": 0,
+      "driverCharges": 0,
+      "permitCharges": 0,
+      "dayWisePricing": [
+        {
+          "date": "2026-05-27",
+          "dayLabel": "Day 1 | Wed, May 27, 2026",
+          "route": "Bangalore, International Airport → Bangalore",
+          "travelType": "Local",
+          "timeLimitId": 66,
+          "slabTitle": "08 HRS   80 KMS",
+          "slabHoursLimit": 8,
+          "slabKmLimit": 80,
+          "pickupKms": 42.16,
+          "pickupDurationMinutes": 168,
+          "travelKms": 34.8,
+          "travelDurationMinutes": 139,
+          "sightseeingKms": 0,
+          "dropDurationMinutes": 40,
+          "totalDurationMinutes": 347,
+          "totalKms": 86.96,
+          "rentalCharges": 2800,
+          "tollCharges": 50,
+          "tollBreakupText": [
+            "Bangalore, International Airport → Bangalore - ₹ 50.00"
+          ],
+          "parkingCharges": 0,
+          "driverCharges": 0,
+          "permitCharges": 0,
+          "extraHourCount": 0,
+          "extraHourRate": 150,
+          "extraHourCharges": 0,
+          "extraKms": 7,
+          "extraKmCharges": 91,
+          "dropKms": 10,
+          "totalCharges": 2941
+        },
+        {
+          "date": "2026-05-28",
+          "dayLabel": "Day 2 | Thu, May 28, 2026",
+          "route": "Bangalore → Mysore → Bangalore",
+          "travelType": "Local",
+          "timeLimitId": 293,
+          "slabTitle": "10 hrs 100 kms",
+          "slabHoursLimit": 10,
+          "slabKmLimit": 100,
+          "pickupKms": 10,
+          "pickupDurationMinutes": 40,
+          "travelKms": 0,
+          "travelDurationMinutes": 590,
+          "sightseeingKms": 384.09,
+          "sightseeingDurationMinutes": 590,
+          "dropDurationMinutes": 40,
+          "totalDurationMinutes": 670,
+          "totalKms": 404.09,
+          "rentalCharges": 3200,
+          "tollCharges": 840,
+          "tollBreakupText": [
+            "Bangalore → Mysore - ₹ 420.00",
+            "Mysore → Bangalore - ₹ 420.00"
+          ],
+          "parkingCharges": 0,
+          "driverCharges": 200,
+          "permitCharges": 0,
+          "extraHourCount": 1.5,
+          "extraHourRate": 150,
+          "extraHourCharges": 225,
+          "extraKms": 305,
+          "extraKmCharges": 3965,
+          "dropKms": 10,
+          "totalCharges": 8430
+        },
+        {
+          "date": "2026-05-29",
+          "dayLabel": "Day 3 | Fri, May 29, 2026",
+          "route": "Bangalore → Bangalore",
+          "travelType": "Local",
+          "timeLimitId": 66,
+          "slabTitle": "08 HRS   80 KMS",
+          "slabHoursLimit": 8,
+          "slabKmLimit": 80,
+          "pickupKms": 10,
+          "pickupDurationMinutes": 40,
+          "travelKms": 0,
+          "travelDurationMinutes": 5,
+          "sightseeingKms": 0,
+          "sightseeingDurationMinutes": 5,
+          "dropDurationMinutes": 40,
+          "totalDurationMinutes": 85,
+          "totalKms": 20,
+          "rentalCharges": 2800,
+          "tollCharges": 230,
+          "tollBreakupText": [
+            "Bangalore → Bangalore - ₹ 230.00"
+          ],
+          "parkingCharges": 0,
+          "driverCharges": 0,
+          "permitCharges": 0,
+          "extraHourCount": 0,
+          "extraHourRate": 150,
+          "extraHourCharges": 0,
+          "extraKms": 0,
+          "extraKmCharges": 0,
+          "dropKms": 10,
+          "totalCharges": 3030
+        },
+        {
+          "date": "2026-05-30",
+          "dayLabel": "Day 4 | Sat, May 30, 2026",
+          "route": "Bangalore → Bangalore, International Airport",
+          "travelType": "Local",
+          "timeLimitId": 66,
+          "slabTitle": "08 HRS   80 KMS",
+          "slabHoursLimit": 8,
+          "slabKmLimit": 80,
+          "pickupKms": 10,
+          "pickupDurationMinutes": 40,
+          "travelKms": 34.8,
+          "travelDurationMinutes": 139,
+          "sightseeingKms": 0,
+          "dropDurationMinutes": 168,
+          "totalDurationMinutes": 347,
+          "totalKms": 86.96,
+          "rentalCharges": 2800,
+          "tollCharges": 50,
+          "tollBreakupText": [
+            "Bangalore → Bangalore, International Airport - ₹ 50.00"
+          ],
+          "parkingCharges": 0,
+          "driverCharges": 0,
+          "permitCharges": 0,
+          "extraHourCount": 0,
+          "extraHourRate": 150,
+          "extraHourCharges": 0,
+          "extraKms": 7,
+          "extraKmCharges": 91,
+          "dropKms": 42.16,
+          "totalCharges": 2941
+        }
+      ],
+      "before6amDriver": 0,
+      "before6amVendor": 0,
+      "after8pmDriver": 50,
+      "after8pmVendor": 150,
+      "breakdown": [
+        {
+          "label": "Rental Charges",
+          "amount": 11600
+        },
+        {
+          "label": "Extra Hour Charges",
+          "amount": 225
+        },
+        {
+          "label": "Extra KM Charges",
+          "amount": 4147
+        },
+        {
+          "label": "Toll Charges",
+          "amount": 1170
+        },
+        {
+          "label": "After 8 PM (Driver)",
+          "amount": 50
+        },
+        {
+          "label": "After 8 PM (Vehicle)",
+          "amount": 150
+        }
+      ],
+      "packageLabel": "Local",
+      "totalDays": 4,
+      "totalCostOfVehicle": 13195,
+      "totalPickupKm": 72.16,
+      "totalPickupDuration": "2 Hours 48 Min",
+      "totalDropKm": 72.16,
+      "totalDropDuration": "2 Hours 48 Min",
+      "totalUsedKm": 598.01,
+      "totalAllowedKm": 340,
+      "extraKms": 319,
+      "extraKmRate": 13,
+      "extraKmCharge": 4147,
+      "extraHourCount": 1.5,
+      "extraHourRate": 150,
+      "extraHourCharge": 225,
+      "subtotal": 17342,
+      "vehicleGstPercentage": 5,
+      "vehicleGstAmount": 867.1,
+      "vendorMarginPercentage": 10,
+      "vendorMarginAmount": 1734.2,
+      "vendorMarginGstPercentage": 5,
+      "vendorMarginGstAmount": 86.71,
+      "grandTotal": 20030.01,
+      "col1Distance": "69.60 KM",
+      "col2Distance": "384.09 KM",
+      "col3Distance": "598.01 KM",
+      "col1Duration": "0 Min",
+      "col2Duration": "0 Min",
+      "col3Duration": "0 Min"
+    }
+  ],
+  "packageIncludes": {
+    "description": "",
+    "houseBoatNote": "",
+    "rateNote": ""
+  },
+  "costBreakdown": {
+    "totalVehicleCost": 20030.01,
+    "totalVehicleAmount": 20030.01,
+    "totalVehicleQty": 1,
+    "kmLimitWarning": "Planner warning: assigned vehicles exceed allowed KM by 319.00 km (extra KM charges may apply).",
+    "totalAllowedKm": 340,
+    "totalTravelledKm": 598.01,
+    "totalExtraKm": 319,
+    "additionalMargin": 0,
+    "totalAmount": 20030.01,
+    "couponDiscount": 0,
+    "agentMargin": 10,
+    "totalRoundOff": -0.00999999999839929,
+    "netPayable": 20040,
+    "companyName": "Doview Holidays India Pvt ltd"
+  }
+}
