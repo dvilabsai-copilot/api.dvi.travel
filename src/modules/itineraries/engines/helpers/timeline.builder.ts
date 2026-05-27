@@ -205,6 +205,78 @@ export class TimelineBuilder {
     return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()));
   }
 
+  // Batch-query precomputed between-map rows for many slot pairs.
+  // Returns Map keyed by `${fromId}_${toId}` -> Array<row>
+  private async getBetweenCandidatesForRouteSlots(tx: Tx, slotPairs: Array<{ fromId: number; toId: number }>) {
+    const result = new Map<string, any[]>();
+    if (!Array.isArray(slotPairs) || slotPairs.length === 0) return result;
+
+    const whereClauses: string[] = [];
+    const params: any[] = [];
+    for (const p of slotPairs) {
+      const a = Number(p.fromId || 0);
+      const b = Number(p.toId || 0);
+      if (!a || !b || a === b) continue;
+      // accept either direction on read
+      whereClauses.push(`((from_hotspot_id = ? AND to_hotspot_id = ?) OR (from_hotspot_id = ? AND to_hotspot_id = ?))`);
+      params.push(a, b, b, a);
+    }
+
+    if (whereClauses.length === 0) return result;
+
+    const sql = `
+      SELECT
+        from_hotspot_id,
+        to_hotspot_id,
+        between_hotspot_id,
+        route_fit_type,
+        route_decision_reason,
+        road_detour_km,
+        road_detour_ratio,
+        ab_osrm_distance_km,
+        ac_osrm_distance_km,
+        cb_osrm_distance_km,
+        inserted_route_distance_km,
+        candidate_distance_from_ab_route_meters,
+        destination_distance_from_ac_route_meters
+      FROM hotspot_route_between_map
+      WHERE (${whereClauses.join(' OR ')})
+        AND route_fit_type IN ('ON_ROUTE','MINOR_DETOUR')
+    `;
+
+    try {
+      const rows: any[] = await (tx as any).$queryRawUnsafe(sql, ...params);
+      if (!Array.isArray(rows) || rows.length === 0) return result;
+
+      // Index rows by both canonical and reverse slot keys, but make them available
+      for (const r of rows) {
+        const f = Number(r.from_hotspot_id || 0);
+        const t = Number(r.to_hotspot_id || 0);
+        const between = Number(r.between_hotspot_id || 0);
+        if (!f || !t || !between) continue;
+
+        const exactKey = `${f}_${t}`;
+        const reverseKey = `${t}_${f}`;
+        const rowCopy = { ...r };
+
+        if (!result.has(exactKey)) result.set(exactKey, []);
+        result.get(exactKey)!.push(rowCopy);
+
+        if (!result.has(reverseKey)) result.set(reverseKey, []);
+        result.get(reverseKey)!.push(rowCopy);
+      }
+    } catch (err) {
+      console.error('[getBetweenCandidatesForRouteSlots] query error:', err);
+    }
+
+    return result;
+  }
+
+  private async getBetweenCandidatesForSlot(tx: Tx, fromId: number, toId: number) {
+    const map = await this.getBetweenCandidatesForRouteSlots(tx, [{ fromId, toId }]);
+    return map.get(`${fromId}_${toId}`) || [];
+  }
+
   private async getArrivalPolicyDecisionStateForRoute(
     tx: Tx,
     planId: number,
@@ -2356,6 +2428,167 @@ export class TimelineBuilder {
       }
 
       this.logTimeline('[TIMELINE] Selected hotspots for route:', selectedHotspots.length);
+      // Matrix-assisted auto-build merge (optional, behind feature flag)
+      try {
+        const matrixEnabled = String(process.env.HOTSPOT_MATRIX_AUTOBUILD || 'false').toLowerCase() === 'true';
+        if (matrixEnabled) {
+          this.logTimeline('[MATRIX_AUTOBUILD_ENABLED] routeId', route.itinerary_route_ID);
+
+          // Load route's active attraction hotspots to derive slot pairs
+          const routeAttractions: any[] = await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
+            where: { itinerary_route_ID: Number(route.itinerary_route_ID), item_type: 4, deleted: 0, status: 1 },
+            orderBy: { hotspot_order: 'asc' },
+            select: { hotspot_ID: true },
+          });
+
+          const routeHotspotIds = (routeAttractions || []).map((r: any) => Number(r.hotspot_ID || 0)).filter((id: number) => id > 0);
+          const slotPairs: Array<{ fromId: number; toId: number }> = [];
+          for (let i = 0; i < routeHotspotIds.length - 1; i++) {
+            const a = routeHotspotIds[i];
+            const b = routeHotspotIds[i + 1];
+            if (a && b && a !== b) slotPairs.push({ fromId: a, toId: b });
+          }
+
+          if (slotPairs.length > 0) {
+            const matrixMap = await this.getBetweenCandidatesForRouteSlots(tx, slotPairs);
+
+            for (const slot of slotPairs) {
+              const key = `${slot.fromId}_${slot.toId}`;
+              const rows = matrixMap.get(key) || [];
+              if (!rows.length) continue;
+
+              for (const r of rows) {
+                this.logTimeline('[MATRIX] MATRIX_CANDIDATE_FOUND', { routeId: route.itinerary_route_ID, slotFrom: slot.fromId, slotTo: slot.toId, between: r.between_hotspot_id });
+
+                const fitType = String(r.route_fit_type || '').toUpperCase();
+                if (!['ON_ROUTE', 'MINOR_DETOUR'].includes(fitType)) {
+                  this.logTimeline('[MATRIX] MATRIX_CANDIDATE_REJECTED_ROUTE_FIT', { routeId: route.itinerary_route_ID, between: r.between_hotspot_id, fitType });
+                  continue;
+                }
+
+                const candidateId = Number(r.between_hotspot_id || 0);
+                if (!candidateId) continue;
+
+                // Respect route-level excluded_hotspot_ids if present on route
+                const localExcluded = new Set<number>(Array.isArray((route as any)?.excluded_hotspot_ids) ? ((route as any).excluded_hotspot_ids || []).map((id: any) => Number(id)).filter((id: number) => Number.isFinite(id) && id > 0) : []);
+                if (localExcluded.has(candidateId)) {
+                  this.logTimeline('[MATRIX] MATRIX_CANDIDATE_SKIPPED_DUPLICATE', { reason: 'excluded', candidateId });
+                  continue;
+                }
+
+                if (addedHotspotIds.has(candidateId)) {
+                  this.logTimeline('[MATRIX] MATRIX_CANDIDATE_SKIPPED_DUPLICATE', { reason: 'already_added', candidateId });
+                  continue;
+                }
+
+                const exists = selectedHotspots.some((s: any) => Number(s.hotspot_ID || 0) === candidateId);
+                if (exists) {
+                  this.logTimeline('[MATRIX] MATRIX_CANDIDATE_SKIPPED_DUPLICATE', { reason: 'present_in_candidates', candidateId });
+                  continue;
+                }
+
+                // Build candidate object (do not override priority/explicit buckets)
+                const matrixMatchDirection = (Number(r.from_hotspot_id || 0) === slot.fromId && Number(r.to_hotspot_id || 0) === slot.toId)
+                  ? 'EXACT_DIRECTION'
+                  : 'REVERSE_CANONICAL_MATCH';
+
+                const candidate: any = {
+                  hotspot_ID: candidateId,
+                  display_order: 0,
+                  hotspot_priority: 0,
+                  matched_bucket: 'matrix',
+                  matrix_score: 0,
+                  matrix_meta: {
+                    route_fit_type: fitType,
+                    road_detour_km: r.road_detour_km != null ? Number(r.road_detour_km) : null,
+                    road_detour_ratio: r.road_detour_ratio != null ? Number(r.road_detour_ratio) : null,
+                    candidate_distance_from_ab_route_meters: r.candidate_distance_from_ab_route_meters != null ? Number(r.candidate_distance_from_ab_route_meters) : null,
+                    matrixMatchDirection,
+                  },
+                };
+
+                // Compute a simple matrix score: prefer ON_ROUTE strongly, MINOR_DETOUR moderately,
+                // penalize by detour ratio and distance-from-route.
+                try {
+                  let score = 0;
+                  if (fitType === 'ON_ROUTE') score += 100;
+                  else if (fitType === 'MINOR_DETOUR') score += 25;
+                  const detourRatio = candidate.matrix_meta.road_detour_ratio;
+                  if (typeof detourRatio === 'number' && !Number.isNaN(detourRatio)) score -= Math.round(detourRatio * 10);
+                  const distMeters = candidate.matrix_meta.candidate_distance_from_ab_route_meters;
+                  if (typeof distMeters === 'number' && !Number.isNaN(distMeters)) score -= Math.round(distMeters / 1000);
+                  candidate.matrix_score = score;
+                } catch (e) {
+                  candidate.matrix_score = 0;
+                }
+
+                // Timing & route feasibility checks before merging candidate
+                try {
+                  const hotspotData = (hotspotMap.get(candidateId) || {}) as any;
+                  const hotspotDuration = String(hotspotData?.hotspot_duration || '01:00:00');
+                  const durationSecs = timeToSeconds(hotspotDuration);
+                  const nowSecs = Math.max(routeStartSeconds, timeToSeconds(currentTime));
+                  const visitStartSecs = nowSecs;
+                  const visitEndSecs = visitStartSecs + Math.max(60, durationSecs);
+
+                  // Reject if visit would exceed route end deadline
+                  if (visitEndSecs > routeEndSeconds) {
+                    this.logTimeline('[MATRIX] MATRIX_CANDIDATE_REJECTED_ROUTE_END', { routeId: route.itinerary_route_ID, candidateId, visitEndSecs, routeEndSeconds });
+                    continue;
+                  }
+
+                  // If route date is available, compute php-style day-of-week and consult timingMap
+                  const routeDateForMatrix = route.itinerary_route_date ? new Date(route.itinerary_route_date) : null;
+                  const localPhpDow = routeDateForMatrix ? ((routeDateForMatrix.getDay() + 6) % 7) : undefined;
+                  if (typeof localPhpDow === 'number') {
+                    const opCheck = this.checkHotspotOperatingHoursFromMap(timingMap, candidateId, localPhpDow, visitStartSecs, visitEndSecs);
+                    if (!opCheck.canVisitNow) {
+                      this.logTimeline('[MATRIX] MATRIX_CANDIDATE_REJECTED_TIMING', { routeId: route.itinerary_route_ID, candidateId, nextWindowStart: opCheck.nextWindowStart });
+                      continue;
+                    }
+                  }
+
+                  // Passed checks — merge (append) as optional candidate
+                  selectedHotspots.push(candidate);
+                  this.logTimeline('[MATRIX] MATRIX_CANDIDATE_MERGED', { routeId: route.itinerary_route_ID, candidateId, matrixMatchDirection, matrix_score: candidate.matrix_score });
+                } catch (e) {
+                  this.logTimeline('[MATRIX] MATRIX_CANDIDATE_MERGE_ERROR', { err: String(e), candidateId });
+                  continue;
+                }
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.error('[MATRIX] autobuild merge error:', err);
+      }
+      // Re-order candidates: preserve manual selections and priority>0 first (protected),
+      // then sort remaining candidates by matrix_score desc, then distance asc.
+      try {
+        const priorityCandidates: any[] = [];
+        const nonPriorityCandidates: any[] = [];
+        for (const s of selectedHotspots) {
+          const priority = Number((s as any).hotspot_priority ?? 0);
+          const isManualSelection = Boolean((s as any).isManualSelection);
+          if (isManualSelection || priority > 0) priorityCandidates.push(s);
+          else nonPriorityCandidates.push(s);
+        }
+
+        nonPriorityCandidates.sort((a: any, b: any) => {
+          const sa = Number(a.matrix_score ?? 0);
+          const sb = Number(b.matrix_score ?? 0);
+          if (sa !== sb) return sb - sa; // higher score first
+          const da = Number(a.hotspot_distance ?? Number.POSITIVE_INFINITY);
+          const db = Number(b.hotspot_distance ?? Number.POSITIVE_INFINITY);
+          return da - db; // closer first
+        });
+
+        selectedHotspots = [...priorityCandidates, ...nonPriorityCandidates];
+        this.logTimeline('[TIMELINE] Candidates reordered (priority preserved, matrix_score applied)');
+      } catch (e) {
+        this.logTimeline('[TIMELINE] Candidate reorder error', String(e));
+      }
+
       const routeLoopStart = Date.now();
       let hotspotQueryCount = 0;
       let distanceCalcCount = 0;
@@ -5841,6 +6074,8 @@ export class TimelineBuilder {
       }
       
       this.logTimeline('[TIMELINE] fetchSelectedHotspotsForRoute - fetch timings:', Date.now() - opStart, 'ms');
+
+      
 
       // 3) Use pre-fetched hotspots array (passed as parameter for performance)
       // Note: allHotspots is now passed from buildTimelineForPlan to avoid redundant queries

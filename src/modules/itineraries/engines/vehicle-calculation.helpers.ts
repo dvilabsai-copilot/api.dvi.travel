@@ -1726,8 +1726,36 @@ export async function calculateRouteVehicleDetails(
 
     effectiveRunningKm = plannedRouteKm;
     effectiveRunningTimeSeconds = plannedSeconds > 0 ? plannedSeconds : effectiveRunningTimeSeconds;
-    effectiveSightseeingKm = 0;
-    effectiveSightseeingTimeSeconds = 0;
+    // Only zero sightseeing when this is a pure transfer (no real hotspot sightseeing for the day).
+    // Preserve sightseeing if there are actual hotspot movements on the route.
+    const hasSightseeingHotspots = baseSightseeingKm > 0 || baseRunningKm > plannedRouteKm;
+    if (!hasSightseeingHotspots) {
+      effectiveSightseeingKm = 0;
+      effectiveSightseeingTimeSeconds = 0;
+    } else {
+      const sightseeingFromRunningKm = Math.max(0, baseRunningKm - plannedRouteKm);
+      effectiveSightseeingKm = baseSightseeingKm + sightseeingFromRunningKm;
+      const runningRatio =
+        baseRunningKm > 0 ? sightseeingFromRunningKm / baseRunningKm : 0;
+      effectiveSightseeingTimeSeconds =
+        sightseeingTimeSeconds + Math.round(baseRunningTimeSeconds * runningRatio);
+    }
+
+    // Debug logging (enable by setting DEBUG_VEHICLE_CALC=true)
+    if ((process.env.DEBUG_VEHICLE_CALC || '').toLowerCase() === 'true') {
+      console.log('[calculateRouteVehicleDetails][DEBUG]', {
+        planId: itinerary_plan_ID,
+        routeId: route.itinerary_route_ID,
+        routeCount: route_count,
+        plannedRouteKm,
+        baseRunningKm,
+        baseSightseeingKm,
+        effectiveSightseeingKm,
+        isItineraryEdgeTransferRoute,
+        shouldUsePlannedKmForAirportLocalRoute,
+        hasSightseeingHotspots,
+      });
+    }
   } else {
     TOTAL_RUNNING_KM = String(effectiveRunningKm.toFixed(2));
   }

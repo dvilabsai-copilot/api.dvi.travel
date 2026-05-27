@@ -607,45 +607,112 @@ export class ItineraryDetailsService {
     return { field, suffix, start, end };
   }
 
-  private normalizeSegmentChronology(segments: any[]): void {
-    let previousEnd: number | null = null;
+ private normalizeSegmentChronology(segments: any[]): void {
+  let previousEnd: number | null = null;
 
-    for (const seg of segments) {
-      if (seg?.type === 'checkin' && typeof seg.time === 'string') {
-        const checkinTime = this.parseDisplayTimeMinutesStrict(String(seg.time).trim());
-        if (checkinTime !== null) {
-          const normalizedCheckinTime =
-            previousEnd !== null && checkinTime < previousEnd
-              ? previousEnd
-              : checkinTime;
+  for (const seg of segments) {
+    /**
+     * Check-in rows have only `time`, not `timeRange` / `visitTime`.
+     * Keep the old behavior for check-in, but do not let it affect attraction DB times.
+     */
+    if (seg?.type === 'checkin' && typeof seg.time === 'string') {
+      const checkinTime = this.parseDisplayTimeMinutesStrict(String(seg.time).trim());
 
-          seg.time = this.minutesToDisplayTime(normalizedCheckinTime);
-          previousEnd = normalizedCheckinTime;
-        }
-        continue;
+      if (checkinTime !== null) {
+        const normalizedCheckinTime =
+          previousEnd !== null && checkinTime < previousEnd
+            ? previousEnd
+            : checkinTime;
+
+        seg.time = this.minutesToDisplayTime(normalizedCheckinTime);
+        previousEnd = normalizedCheckinTime;
       }
 
-      const parsed = this.extractRangeFromSegment(seg);
-      if (!parsed) continue;
+      continue;
+    }
 
-      let start = parsed.start;
-      let end = parsed.end;
-      if (end < start) {
-        const temp = start;
-        start = end;
-        end = temp;
-      }
+    const parsed = this.extractRangeFromSegment(seg);
+    if (!parsed) continue;
 
+    let start = parsed.start;
+    let end = parsed.end;
+
+    /**
+     * Do NOT swap start/end blindly.
+     * If end < start, treat it as an overnight segment.
+     * Example:
+     * 11:30 PM - 12:35 AM
+     */
+    if (end < start) {
+      end += 24 * 60;
+    }
+
+    /**
+     * VERY IMPORTANT FIX:
+     *
+     * Attraction visitTime comes from:
+     * dvi_itinerary_route_hotspot_details.hotspot_start_time
+     * dvi_itinerary_route_hotspot_details.hotspot_end_time
+     *
+     * This is already the source of truth.
+     *
+     * Do NOT mutate attraction visitTime here.
+     *
+     * Earlier bug:
+     * Mullakkal was correctly stored as 05:00 PM - 06:00 PM,
+     * but normalizeSegmentChronology shifted it to 10:30 PM - 11:30 PM
+     * because a previous travel/break segment ended later.
+     */
+    if (seg?.type === 'attraction') {
+      previousEnd = end;
+      continue;
+    }
+
+    /**
+     * For break rows:
+     * If a break overlaps a previous segment, adjust only the break start.
+     * Do NOT preserve the original break duration and push the break forward,
+     * because that can push later priority hotspots outside valid timing.
+     *
+     * Example:
+     * Revi Museum ends at 02:13 PM.
+     * Break row starts at 12:51 PM and ends at 05:00 PM.
+     *
+     * Correct normalized break:
+     * 02:13 PM - 05:00 PM
+     *
+     * Wrong old behavior:
+     * 02:13 PM - 06:22 PM
+     */
+    if (seg?.type === 'break') {
       if (previousEnd !== null && start < previousEnd) {
-        const duration = Math.max(0, end - start);
         start = previousEnd;
-        end = start + duration;
+      }
+
+      if (end < start) {
+        end = start;
       }
 
       seg[parsed.field] = `${this.minutesToDisplayTime(start)} - ${this.minutesToDisplayTime(end)}${parsed.suffix}`;
       previousEnd = end;
+      continue;
     }
+
+    /**
+     * For travel/start/return rows:
+     * Keep chronology normalization, because these rows are display helper rows.
+     * If they overlap a previous segment, preserve their duration and move forward.
+     */
+    if (previousEnd !== null && start < previousEnd) {
+      const duration = Math.max(0, end - start);
+      start = previousEnd;
+      end = start + duration;
+    }
+
+    seg[parsed.field] = `${this.minutesToDisplayTime(start)} - ${this.minutesToDisplayTime(end)}${parsed.suffix}`;
+    previousEnd = end;
   }
+}
 
   private normalizeConfirmedTravelLabelsFromSequence(
     segments: any[],
