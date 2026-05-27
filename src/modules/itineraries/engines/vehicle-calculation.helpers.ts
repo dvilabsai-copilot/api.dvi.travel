@@ -1073,11 +1073,6 @@ export async function getTimeLimitId(
   try {
     const selectedTimeLimitId = Number(selected_time_limit_id || 0);
     if (selectedTimeLimitId > 0) {
-      return selectedTimeLimitId;
-    }
-
-    let selectedHoursFloor = 0;
-    if (selectedTimeLimitId > 0) {
       const selected = await prisma.dvi_time_limit.findFirst({
         where: {
           time_limit_id: selectedTimeLimitId,
@@ -1086,11 +1081,11 @@ export async function getTimeLimitId(
           status: 1,
           deleted: 0,
         },
-        select: { time_limit_id: true, hours_limit: true },
+        select: { time_limit_id: true },
       });
 
       if (selected?.time_limit_id) {
-        selectedHoursFloor = Number(selected.hours_limit || 0);
+        return selectedTimeLimitId;
       }
     }
 
@@ -1116,7 +1111,7 @@ export async function getTimeLimitId(
 
     if (allSlabs.length) {
       const dutyHours = Number(total_hours || 0);
-      const effectiveDutyHours = Math.max(0, dutyHours, selectedHoursFloor);
+      const effectiveDutyHours = Math.max(0, dutyHours);
       const dutyKm = Number(total_km || 0);
 
       const normalized = allSlabs.map((s: any) => ({
@@ -1214,6 +1209,93 @@ export async function getLocalVehiclePricingByDate(
   } catch (error) {
     console.error('[getLocalVehiclePricingByDate] Error:', error);
     return 0;
+  }
+}
+
+export async function getPricedLocalTimeLimitId(
+  prisma: any,
+  vendor_id: number,
+  vendor_branch_id: number,
+  vendor_vehicle_type_ID: number,
+  day: number,
+  year: string,
+  month: string,
+  total_hours?: number,
+  total_km?: number,
+  selected_time_limit_id?: number
+): Promise<{ timeLimitId: number; price: number }> {
+  try {
+    const slabs = await prisma.dvi_time_limit.findMany({
+      where: {
+        vendor_id,
+        vendor_vehicle_type_id: vendor_vehicle_type_ID,
+        status: 1,
+        deleted: 0,
+      },
+      select: {
+        time_limit_id: true,
+        hours_limit: true,
+        km_limit: true,
+        time_limit_title: true,
+      },
+      orderBy: [
+        { hours_limit: 'asc' },
+        { km_limit: 'asc' },
+        { time_limit_id: 'asc' },
+      ],
+    });
+
+    if (!slabs.length) return { timeLimitId: 0, price: 0 };
+
+    const dayColumn = `day_${day}`;
+    const priced: Array<{ time_limit_id: number; hours_limit: number; km_limit: number; price: number }> = [];
+
+    for (const slab of slabs) {
+      const priceRow = await prisma.dvi_vehicle_local_pricebook.findFirst({
+        where: {
+          vendor_id,
+          vendor_branch_id,
+          vehicle_type_id: vendor_vehicle_type_ID,
+          time_limit_id: Number(slab.time_limit_id || 0),
+          year,
+          month,
+          status: 1,
+          deleted: 0,
+        },
+      });
+      if (!priceRow) continue;
+      const price = toNum((priceRow as any)[dayColumn]);
+      if (price <= 0) continue;
+      priced.push({
+        time_limit_id: Number(slab.time_limit_id || 0),
+        hours_limit: Number(slab.hours_limit || 0),
+        km_limit: getEffectiveTimeLimitKm(slab),
+        price,
+      });
+    }
+
+    if (!priced.length) return { timeLimitId: 0, price: 0 };
+
+    const selectedId = Number(selected_time_limit_id || 0);
+    if (selectedId > 0) {
+      const selectedPriced = priced.find((s) => s.time_limit_id === selectedId);
+      if (selectedPriced) {
+        return { timeLimitId: selectedPriced.time_limit_id, price: selectedPriced.price };
+      }
+    }
+
+    const dutyHours = Math.max(0, Number(total_hours || 0));
+    const byHoursAsc = [...priced].sort((a, b) => {
+      if (a.hours_limit !== b.hours_limit) return a.hours_limit - b.hours_limit;
+      if (a.km_limit !== b.km_limit) return a.km_limit - b.km_limit;
+      return a.time_limit_id - b.time_limit_id;
+    });
+    const floorByHours = byHoursAsc.filter((s) => s.hours_limit <= dutyHours);
+    const chosen = floorByHours.length ? floorByHours[floorByHours.length - 1] : byHoursAsc[0];
+    return { timeLimitId: Number(chosen.time_limit_id || 0), price: Number(chosen.price || 0) };
+  } catch (error) {
+    console.error('[getPricedLocalTimeLimitId] Error:', error);
+    return { timeLimitId: 0, price: 0 };
   }
 }
 
@@ -1763,6 +1845,10 @@ export async function calculateRouteVehicleDetails(
   TOTAL_RUNNING_KM = String(effectiveRunningKm.toFixed(2));
   SIGHT_SEEING_TRAVELLING_KM = String(effectiveSightseeingKm.toFixed(2));
   SIGHT_SEEING_TRAVELLING_TIME = secondsToHms(effectiveSightseeingTimeSeconds);
+  const hasActualSightseeingOnEdgeRoute =
+    travel_type === 1 &&
+    isItineraryEdgeTransferRoute &&
+    toNum(SIGHT_SEEING_TRAVELLING_KM) > 0;
 
   // Total KM includes pickup + running + sightseeing + drop.
   const totalKmNum =
@@ -1865,10 +1951,59 @@ export async function calculateRouteVehicleDetails(
     kms_limit_id = 0;
     let slabSelectionHours = routeServiceHours;
     let slabSelectionKm = totalKmNum;
+    const shouldUsePureArrivalTransferSlabShortcut =
+      isFirstLocalArrivalLeg && !hasActualSightseeingOnEdgeRoute;
+    let selectedLocalTimeLimitId = Number(ctx.selected_time_limit_id || 0);
 
-    if (isFirstLocalArrivalLeg) {
+    if (shouldUsePureArrivalTransferSlabShortcut) {
       slabSelectionHours = 0;
       slabSelectionKm = Math.max(plannedRouteKm, toNum(TOTAL_RUNNING_KM));
+    }
+
+    if (hasActualSightseeingOnEdgeRoute) {
+      const selectedSlab = selectedLocalTimeLimitId > 0
+        ? await prisma.dvi_time_limit.findFirst({
+            where: {
+              time_limit_id: selectedLocalTimeLimitId,
+              vendor_id,
+              vendor_vehicle_type_id: vendor_vehicle_type_ID,
+              status: 1,
+              deleted: 0,
+            },
+            select: {
+              time_limit_id: true,
+              hours_limit: true,
+              km_limit: true,
+              time_limit_title: true,
+            },
+          })
+        : null;
+      const selectedSlabHours = Number(selectedSlab?.hours_limit || 0);
+      const selectedSlabKm = getEffectiveTimeLimitKm(selectedSlab || null);
+      const looksLikeTransferSlab = selectedSlabHours > 0 && selectedSlabHours <= 4 && selectedSlabKm > 0 && selectedSlabKm <= 40;
+
+      // For edge routes with real sightseeing, do hour-based slab auto-selection.
+      // We still compute transfer-style detection for diagnostics, but we always clear
+      // selectedLocalTimeLimitId here so getTimeLimitId can choose by routeServiceHours.
+      selectedLocalTimeLimitId = 0;
+
+      if ((process.env.DEBUG_VEHICLE_CALC || '').toLowerCase() === 'true') {
+        console.log('[SLAB_DEBUG_PRE_GET_TIME_LIMIT]', {
+          itinerary_plan_ID,
+          itinerary_route_ID: route.itinerary_route_ID,
+          route_count,
+          travel_type,
+          isItineraryEdgeTransferRoute,
+          SIGHT_SEEING_TRAVELLING_KM,
+          hasActualSightseeingOnEdgeRoute,
+          ctx_selected_time_limit_id: ctx.selected_time_limit_id,
+          selectedLocalTimeLimitId_before_guard: Number(ctx.selected_time_limit_id || 0),
+          selectedSlabHours,
+          selectedSlabKm,
+          looksLikeTransferSlab,
+          selectedLocalTimeLimitId_after_guard: selectedLocalTimeLimitId,
+        });
+      }
     }
 
     // LOCAL - get time limit ID
@@ -1878,11 +2013,35 @@ export async function calculateRouteVehicleDetails(
       vendor_vehicle_type_ID,
       slabSelectionHours,
       slabSelectionKm,
-      ctx.selected_time_limit_id,
+      selectedLocalTimeLimitId || undefined,
     );
 
+    const pricedLocalSlab = await getPricedLocalTimeLimitId(
+      prisma,
+      vendor_id,
+      vendor_branch_id,
+      vendor_vehicle_type_ID,
+      day,
+      year,
+      month,
+      slabSelectionHours,
+      slabSelectionKm,
+      selectedLocalTimeLimitId || undefined,
+    );
+    if (pricedLocalSlab.timeLimitId > 0) {
+      time_limit_id = pricedLocalSlab.timeLimitId;
+    }
+    if ((process.env.DEBUG_VEHICLE_CALC || '').toLowerCase() === 'true') {
+      console.log('[SLAB_DEBUG_POST_GET_TIME_LIMIT]', {
+        itinerary_plan_ID,
+        itinerary_route_ID: route.itinerary_route_ID,
+        route_count,
+        final_time_limit_id: time_limit_id,
+      });
+    }
+
     let hourBaselineLimit = 0;
-    if (!isFirstLocalArrivalLeg) {
+    if (!shouldUsePureArrivalTransferSlabShortcut) {
       const hourBaselineTimeLimitId = await getTimeLimitId(
         prisma,
         vendor_id,
@@ -1901,39 +2060,23 @@ export async function calculateRouteVehicleDetails(
       }
     }
 
-    const localSlabs = await prisma.dvi_time_limit.findMany({
-      where: {
+    vehicle_cost_for_the_day = Number(pricedLocalSlab.price || 0);
+    if (vehicle_cost_for_the_day <= 0 && time_limit_id > 0) {
+      vehicle_cost_for_the_day = await getLocalVehiclePricingByDate(
+        prisma,
+        day,
+        year,
+        month,
         vendor_id,
-        vendor_vehicle_type_id: vendor_vehicle_type_ID,
-        status: 1,
-        deleted: 0,
-      },
-      select: {
-        time_limit_id: true,
-        hours_limit: true,
-      },
-      orderBy: [
-        { hours_limit: 'asc' },
-        { time_limit_id: 'asc' },
-      ],
-    });
-    
-    // Get LOCAL pricing from day-based pricebook
-    vehicle_cost_for_the_day = await getLocalVehiclePricingByDate(
-      prisma,
-      day,
-      year,
-      month,
-      vendor_id,
-      vendor_branch_id,
-      vendor_vehicle_type_ID,
-      time_limit_id
-    );
-    
-    // If no pricing found, fall back to 2400
-    if (vehicle_cost_for_the_day === 0) {
-      console.log(`[calculateRouteVehicleDetails] Using fallback LOCAL pricing 2400 for route ${route.itinerary_route_ID}`);
-      vehicle_cost_for_the_day = 2400;
+        vendor_branch_id,
+        vendor_vehicle_type_ID,
+        time_limit_id
+      );
+    }
+    if (vehicle_cost_for_the_day <= 0) {
+      console.warn(
+        `[calculateRouteVehicleDetails] No active local priced slab found for vendor=${vendor_id}, branch=${vendor_branch_id}, vehicle_type=${vendor_vehicle_type_ID}, date=${year}-${month}-${day}, route=${route.itinerary_route_ID}`
+      );
     }
     
     if (time_limit_id > 0) {
@@ -1942,13 +2085,22 @@ export async function calculateRouteVehicleDetails(
         select: { km_limit: true, hours_limit: true, time_limit_title: true },
       });
       TOTAL_ALLOWED_LOCAL_KM = getEffectiveTimeLimitKm(timeLimit);
+      if ((process.env.DEBUG_VEHICLE_CALC || '').toLowerCase() === 'true') {
+        console.log('[SLAB_DEBUG_ALLOWANCE_COST]', {
+          itinerary_plan_ID,
+          itinerary_route_ID: route.itinerary_route_ID,
+          route_count,
+          TOTAL_ALLOWED_LOCAL_KM,
+          vehicle_cost_for_the_day,
+        });
+      }
 
       const allowedHours = Number(timeLimit?.hours_limit ?? 0);
-      const effectiveAllowedHours = !isFirstLocalArrivalLeg && hourBaselineLimit > 0
+      const effectiveAllowedHours = !shouldUsePureArrivalTransferSlabShortcut && hourBaselineLimit > 0
         ? hourBaselineLimit
         : allowedHours;
 
-      if (!isFirstLocalArrivalLeg && effectiveAllowedHours > 0 && routeServiceHours > effectiveAllowedHours) {
+      if (!shouldUsePureArrivalTransferSlabShortcut && effectiveAllowedHours > 0 && routeServiceHours > effectiveAllowedHours) {
         const rawExtraHours = routeServiceHours - effectiveAllowedHours;
         TOTAL_LOCAL_EXTRA_HOURS = Math.max(0, Math.ceil(rawExtraHours * 2) / 2);
         TOTAL_LOCAL_EXTRA_HOUR_CHARGES = TOTAL_LOCAL_EXTRA_HOURS * Number(ctx.extra_hour_charge || 0);
