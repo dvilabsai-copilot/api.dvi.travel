@@ -1212,6 +1212,99 @@ export async function getLocalVehiclePricingByDate(
   }
 }
 
+function toFiniteCoord(v: any): number | null {
+  const n = Number(String(v ?? '').trim());
+  return Number.isFinite(n) && Math.abs(n) > 0 ? n : null;
+}
+
+function calculateHaversineKm(fromLat: number, fromLng: number, toLat: number, toLng: number): number {
+  const R = 6371;
+  const dLat = ((toLat - fromLat) * Math.PI) / 180;
+  const dLon = ((toLng - fromLng) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((fromLat * Math.PI) / 180) *
+      Math.cos((toLat * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+function formatMinutesToDbDuration(minutes: number): string {
+  const totalSeconds = Math.max(0, Math.ceil(minutes) * 60);
+  return secondsToHms(totalSeconds);
+}
+
+async function resolveLocalHotelOrCityPoint(
+  prisma: any,
+  itinerary_plan_ID: number,
+  route: RouteData,
+): Promise<{ name: string; lat: number | null; lng: number | null; source: string }> {
+  const planHotel = await prisma.dvi_itinerary_plan_hotel_details.findFirst({
+    where: {
+      itinerary_plan_id: itinerary_plan_ID,
+      itinerary_route_id: route.itinerary_route_ID,
+      deleted: 0,
+      status: 1,
+    },
+    orderBy: { itinerary_plan_hotel_details_ID: 'desc' },
+    select: { hotel_id: true, hotel_code: true, itinerary_route_location: true },
+  });
+
+  if (planHotel?.hotel_id && Number(planHotel.hotel_id) > 0) {
+    const dviHotel = await prisma.dvi_hotel.findFirst({
+      where: { hotel_id: Number(planHotel.hotel_id), deleted: false as any },
+      select: { hotel_name: true, hotel_latitude: true, hotel_longitude: true },
+    });
+    const lat = toFiniteCoord(dviHotel?.hotel_latitude);
+    const lng = toFiniteCoord(dviHotel?.hotel_longitude);
+    if (lat !== null && lng !== null) {
+      return { name: String(dviHotel?.hotel_name || route.location_name), lat, lng, source: 'dvi_hotel' };
+    }
+  }
+
+  const tboCode = String(planHotel?.hotel_code || '').trim();
+  if (tboCode) {
+    const tboHotel = await prisma.tbo_hotel_master.findFirst({
+      where: { tbo_hotel_code: tboCode, status: 1 },
+      select: { hotel_name: true, hotel_latitude: true, hotel_longitude: true },
+    });
+    const lat = toFiniteCoord(tboHotel?.hotel_latitude);
+    const lng = toFiniteCoord(tboHotel?.hotel_longitude);
+    if (lat !== null && lng !== null) {
+      return { name: String(tboHotel?.hotel_name || route.location_name), lat, lng, source: 'tbo_hotel_master' };
+    }
+  }
+
+  const cityFallback = await prisma.dvi_stored_locations.findFirst({
+    where: {
+      source_location: route.location_name,
+      destination_location: route.location_name,
+      deleted: 0,
+      status: 1,
+    },
+    orderBy: { location_ID: 'desc' },
+    select: {
+      source_location: true,
+      source_location_lattitude: true,
+      source_location_longitude: true,
+    },
+  });
+  const cityLat = toFiniteCoord(cityFallback?.source_location_lattitude);
+  const cityLng = toFiniteCoord(cityFallback?.source_location_longitude);
+  if (cityLat !== null && cityLng !== null) {
+    return {
+      name: String(cityFallback?.source_location || route.location_name),
+      lat: cityLat,
+      lng: cityLng,
+      source: 'city_fallback',
+    };
+  }
+
+  return { name: route.location_name, lat: null, lng: null, source: 'old_fallback' };
+}
+
 export async function getPricedLocalTimeLimitId(
   prisma: any,
   vendor_id: number,
@@ -1512,6 +1605,12 @@ export async function calculateRouteVehicleDetails(
   isFirstRouteOfDay: boolean = false
 ): Promise<RouteCalculationResult> {
   const { prisma, itinerary_plan_ID, vehicle_type_id, vendor_id, vendor_vehicle_type_ID, vendor_branch_id } = ctx;
+  const debugInsert = process.env.DEBUG_DVI20260594_INSERT === 'true';
+  const debugLocalFix =
+    process.env.DEBUG_LOCAL_PICKUP_DROP_FIX === 'true' ||
+    process.env.DEBUG_LOCAL_KM_FIX === 'true';
+  const LOCAL_TRAFFIC_DISTANCE_FACTOR = Number(process.env.LOCAL_TRAFFIC_DISTANCE_FACTOR || 1.25);
+  const LOCAL_TRAFFIC_AVG_SPEED_KMPH = Number(process.env.LOCAL_TRAFFIC_AVG_SPEED_KMPH || 22);
 
   // Get route location details
   const sourceLocationId = await getLocationIdFromSourceDest(
@@ -1598,6 +1697,8 @@ export async function calculateRouteVehicleDetails(
   let effectiveRunningTimeSeconds = baseRunningTimeSeconds;
   let effectiveSightseeingKm = baseSightseeingKm;
   let effectiveSightseeingTimeSeconds = sightseeingTimeSeconds;
+  let excludedArrivalTransferKm = 0;
+  let excludedDepartureTransferKm = 0;
 
   if (travel_type === 1 && !isItineraryEdgeTransferRoute) {
     // For local mid-itinerary segments, treat hotspot movement as sightseeing/local usage.
@@ -1662,6 +1763,39 @@ export async function calculateRouteVehicleDetails(
   // Operational rule: pickup applies per route rules; local routes can include a daily shed return drop.
   if (applyPickupForThisRoute) {
     if (travel_type === 1 && route_count > 1) {
+      const localPoint = await resolveLocalHotelOrCityPoint(prisma, itinerary_plan_ID, route);
+      if (
+        localPoint.lat !== null &&
+        localPoint.lng !== null &&
+        Number(ctx.vehicle_origin_latitude || 0) &&
+        Number(ctx.vehicle_origin_longitude || 0)
+      ) {
+        const haversineKm = calculateHaversineKm(
+          Number(ctx.vehicle_origin_latitude),
+          Number(ctx.vehicle_origin_longitude),
+          localPoint.lat,
+          localPoint.lng,
+        );
+        const billableKm = haversineKm * LOCAL_TRAFFIC_DISTANCE_FACTOR;
+        const durationMinutes = Math.ceil((billableKm / LOCAL_TRAFFIC_AVG_SPEED_KMPH) * 60);
+        TOTAL_PICKUP_KM = String(billableKm.toFixed(2));
+        TOTAL_PICKUP_DURATION = formatMinutesToDbDuration(durationMinutes);
+        if (debugLocalFix) {
+          console.log('[LOCAL_PICKUP_DROP_FIX_INPUT]', {
+            planId: itinerary_plan_ID, routeId: route.itinerary_route_ID, route_count, total_routes, travel_type,
+            routeLocation: route.location_name, nextVisiting: route.next_visiting_location,
+            vehicleOriginName: ctx.vehicle_origin, vehicleOriginLatLng: [ctx.vehicle_origin_latitude, ctx.vehicle_origin_longitude],
+            hotelPointName: localPoint.name, hotelPointLatLng: [localPoint.lat, localPoint.lng], hotelPointSource: localPoint.source,
+          });
+          console.log('[LOCAL_PICKUP_DROP_FIX_DISTANCE]', {
+            legType: 'pickup',
+            fromName: ctx.vehicle_origin, toName: localPoint.name,
+            fromLatLng: [ctx.vehicle_origin_latitude, ctx.vehicle_origin_longitude], toLatLng: [localPoint.lat, localPoint.lng],
+            haversineKm, trafficFactor: LOCAL_TRAFFIC_DISTANCE_FACTOR, billableKm, avgSpeed: LOCAL_TRAFFIC_AVG_SPEED_KMPH,
+            durationMinutes, fallbackUsed: false,
+          });
+        }
+      }
       const localSelfPickup = await prisma.dvi_stored_locations.findFirst({
         where: {
           source_location: route.location_name,
@@ -1673,7 +1807,7 @@ export async function calculateRouteVehicleDetails(
         select: { distance: true, duration: true },
       });
 
-      if (localSelfPickup && Number(localSelfPickup.distance || 0) > 0) {
+      if (toNum(TOTAL_PICKUP_KM) <= 0 && localSelfPickup && Number(localSelfPickup.distance || 0) > 0) {
         const pickupKm = Number(localSelfPickup.distance || 0);
         const storedHms = parseStoredDurationToHms(localSelfPickup.duration);
         const storedSeconds = parseHmsToSeconds(storedHms);
@@ -1683,6 +1817,17 @@ export async function calculateRouteVehicleDetails(
 
         TOTAL_PICKUP_KM = String(pickupKm.toFixed(2));
         TOTAL_PICKUP_DURATION = secondsToHms(Math.max(storedSeconds, minSecondsBySpeed));
+        if (debugInsert) {
+          console.log('[PICKUP_DECISION]', {
+            branch_name: 'local_self_pickup',
+            source_query_used: 'dvi_stored_locations source=route.location_name destination=route.location_name',
+            source_location: route.location_name,
+            destination_location: route.location_name,
+            distance: localSelfPickup.distance,
+            duration: localSelfPickup.duration,
+            TOTAL_PICKUP_KM,
+          });
+        }
       }
     }
 
@@ -1743,6 +1888,33 @@ export async function calculateRouteVehicleDetails(
     }
 
     if (toNum(TOTAL_DROP_KM) <= 0 && travel_type === 1 && route_count < total_routes) {
+      const localPoint = await resolveLocalHotelOrCityPoint(prisma, itinerary_plan_ID, route);
+      if (
+        localPoint.lat !== null &&
+        localPoint.lng !== null &&
+        Number(ctx.vehicle_origin_latitude || 0) &&
+        Number(ctx.vehicle_origin_longitude || 0)
+      ) {
+        const haversineKm = calculateHaversineKm(
+          localPoint.lat,
+          localPoint.lng,
+          Number(ctx.vehicle_origin_latitude),
+          Number(ctx.vehicle_origin_longitude),
+        );
+        const billableKm = haversineKm * LOCAL_TRAFFIC_DISTANCE_FACTOR;
+        const durationMinutes = Math.ceil((billableKm / LOCAL_TRAFFIC_AVG_SPEED_KMPH) * 60);
+        TOTAL_DROP_KM = String(billableKm.toFixed(2));
+        TOTAL_DROP_DURATION = formatMinutesToDbDuration(durationMinutes);
+        if (debugLocalFix) {
+          console.log('[LOCAL_PICKUP_DROP_FIX_DISTANCE]', {
+            legType: 'drop',
+            fromName: localPoint.name, toName: ctx.vehicle_origin,
+            fromLatLng: [localPoint.lat, localPoint.lng], toLatLng: [ctx.vehicle_origin_latitude, ctx.vehicle_origin_longitude],
+            haversineKm, trafficFactor: LOCAL_TRAFFIC_DISTANCE_FACTOR, billableKm, avgSpeed: LOCAL_TRAFFIC_AVG_SPEED_KMPH,
+            durationMinutes, fallbackUsed: false,
+          });
+        }
+      }
       const localSelfDrop = await prisma.dvi_stored_locations.findFirst({
         where: {
           source_location: route.next_visiting_location,
@@ -1754,7 +1926,7 @@ export async function calculateRouteVehicleDetails(
         select: { distance: true, duration: true },
       });
 
-      if (localSelfDrop && Number(localSelfDrop.distance || 0) > 0) {
+      if (toNum(TOTAL_DROP_KM) <= 0 && localSelfDrop && Number(localSelfDrop.distance || 0) > 0) {
         const dropKm = Number(localSelfDrop.distance || 0);
         const storedHms = parseStoredDurationToHms(localSelfDrop.duration);
         const storedSeconds = parseHmsToSeconds(storedHms);
@@ -1764,6 +1936,17 @@ export async function calculateRouteVehicleDetails(
 
         TOTAL_DROP_KM = String(dropKm.toFixed(2));
         TOTAL_DROP_DURATION = secondsToHms(Math.max(storedSeconds, minSecondsBySpeed));
+        if (debugInsert) {
+          console.log('[DROP_DECISION]', {
+            branch_name: 'local_self_drop',
+            source_query_used: 'dvi_stored_locations source=route.next_visiting_location destination=route.next_visiting_location',
+            source_location: route.next_visiting_location,
+            destination_location: route.next_visiting_location,
+            distance: localSelfDrop.distance,
+            duration: localSelfDrop.duration,
+            TOTAL_DROP_KM,
+          });
+        }
       }
     }
 
@@ -1798,7 +1981,8 @@ export async function calculateRouteVehicleDetails(
   const shouldUsePlannedKmForAirportLocalRoute =
     travel_type === 1 &&
     plannedRouteKm > 0 &&
-    isItineraryEdgeTransferRoute;
+    isItineraryEdgeTransferRoute &&
+    effectiveRunningKm <= 0;
 
   // Arrival/departure transfer legs should bill against planned route KM, not stitched hotspot-tour distance.
   if (shouldUsePlannedKmForAirportLocalRoute) {
@@ -1842,6 +2026,20 @@ export async function calculateRouteVehicleDetails(
     TOTAL_RUNNING_KM = String(effectiveRunningKm.toFixed(2));
   }
 
+  if (travel_type === 1 && !isItineraryEdgeTransferRoute) {
+    effectiveRunningKm = 0;
+    effectiveRunningTimeSeconds = 0;
+  }
+
+  if (travel_type === 1 && isItineraryEdgeTransferRoute) {
+    if (route_count === 1 && excludedArrivalTransferKm > 0) {
+      effectiveSightseeingKm = Math.max(0, effectiveSightseeingKm - excludedArrivalTransferKm);
+    }
+    if (route_count === total_routes && excludedDepartureTransferKm > 0) {
+      effectiveSightseeingKm = Math.max(0, effectiveSightseeingKm - excludedDepartureTransferKm);
+    }
+  }
+
   TOTAL_RUNNING_KM = String(effectiveRunningKm.toFixed(2));
   SIGHT_SEEING_TRAVELLING_KM = String(effectiveSightseeingKm.toFixed(2));
   SIGHT_SEEING_TRAVELLING_TIME = secondsToHms(effectiveSightseeingTimeSeconds);
@@ -1857,6 +2055,100 @@ export async function calculateRouteVehicleDetails(
     toNum(SIGHT_SEEING_TRAVELLING_KM) +
     toNum(TOTAL_DROP_KM);
   const TOTAL_KM = totalKmNum.toFixed(2);
+  if (debugInsert) {
+    console.log('[CALC_RESULT]', {
+      TOTAL_PICKUP_KM,
+      TOTAL_RUNNING_KM,
+      SIGHT_SEEING_TRAVELLING_KM,
+      TOTAL_DROP_KM,
+      TOTAL_KM,
+    });
+  }
+
+  if (travel_type === 1 && isItineraryEdgeTransferRoute) {
+    const hotspotRows = await prisma.dvi_itinerary_route_hotspot_details.findMany({
+      where: {
+        itinerary_plan_ID,
+        itinerary_route_ID: route.itinerary_route_ID,
+        deleted: 0,
+      },
+      orderBy: { route_hotspot_ID: 'asc' },
+      select: {
+        hotspot_travelling_distance: true,
+        hotspot_traveling_time: true,
+      },
+    });
+    const segmentRows = hotspotRows.filter((r: any) => Number(r.hotspot_travelling_distance || 0) > 0);
+    const firstSegment = segmentRows[0];
+    const lastSegment = segmentRows[segmentRows.length - 1];
+
+    if (route_count === 1) {
+      const arrivalTransferKm = Number(firstSegment?.hotspot_travelling_distance || 0);
+      if (arrivalTransferKm > 0) {
+        effectiveRunningKm = arrivalTransferKm;
+        excludedArrivalTransferKm = arrivalTransferKm;
+      }
+    }
+
+    if (route_count === total_routes) {
+      const departureTransferKm = Number(lastSegment?.hotspot_travelling_distance || 0);
+      if (departureTransferKm > 0) {
+        effectiveRunningKm = departureTransferKm;
+        excludedDepartureTransferKm = departureTransferKm;
+      }
+    }
+  }
+  if (debugLocalFix) {
+    console.log('[LOCAL_KM_FIX_INPUT]', {
+      planId: itinerary_plan_ID,
+      routeId: route.itinerary_route_ID,
+      route_count,
+      total_routes,
+      travel_type,
+      route_location_name: route.location_name,
+      route_next_visiting_location: route.next_visiting_location,
+      vehicleOrigin: ctx.vehicle_origin,
+      baseRunningKm,
+      baseSightseeingKm,
+      plannedRouteKm,
+    });
+    console.log('[LOCAL_TRAVEL_RESULT]', {
+      routeId: route.itinerary_route_ID,
+      TOTAL_RUNNING_KM,
+      excludedArrivalTransferKm,
+      excludedDepartureTransferKm,
+      reason:
+        travel_type !== 1
+          ? 'non_local'
+          : route_count === 1
+            ? 'arrival_day_transfer'
+            : route_count === total_routes
+              ? 'departure_day_transfer'
+              : 'middle_day_zero',
+    });
+    console.log('[LOCAL_SIGHTSEEING_RESULT]', {
+      routeId: route.itinerary_route_ID,
+      baseSightseeingKm,
+      excludedArrivalTransferKm,
+      excludedDepartureTransferKm,
+      finalSightseeingKm: SIGHT_SEEING_TRAVELLING_KM,
+    });
+    console.log('[LOCAL_PICKUP_DROP_FIX_RESULT]', {
+      routeId: route.itinerary_route_ID,
+      TOTAL_PICKUP_KM,
+      TOTAL_PICKUP_DURATION,
+      TOTAL_DROP_KM,
+      TOTAL_DROP_DURATION,
+    });
+    console.log('[LOCAL_CALC_FINAL]', {
+      routeId: route.itinerary_route_ID,
+      TOTAL_PICKUP_KM,
+      TOTAL_RUNNING_KM,
+      SIGHT_SEEING_TRAVELLING_KM,
+      TOTAL_DROP_KM,
+      TOTAL_KM,
+    });
+  }
 
   const totalMovementSeconds =
     effectiveRunningTimeSeconds +
