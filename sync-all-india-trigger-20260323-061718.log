@@ -1,4 +1,0 @@
-START=2026-03-23T00:47:18.202Z
-BASE_URL=http://localhost:4006/api/v1
-STATUS=FAILED
-ERROR=Cannot reach localhost:4006 - connection refused or server not running
