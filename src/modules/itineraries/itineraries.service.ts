@@ -213,6 +213,14 @@ export class ItinerariesService {
     quoteId?: string,
   ): void {
     this.setVehicleBuildStatus(planId, 'PROCESSING', null);
+    if (process.env.DEBUG_LOCAL_KM_FIX === 'true') {
+      console.log('[VEHICLE_BUILD_START]', {
+        planId,
+        vehiclePayload: vehicles,
+        routeCount: null,
+        quoteId: quoteId ?? null,
+      });
+    }
 
     void (async () => {
       try {
@@ -386,6 +394,18 @@ export class ItinerariesService {
     shouldOptimizeRoute: boolean = false,
     requestType?: string,
   ) {
+    if (process.env.DEBUG_DVI20260594_INSERT === 'true') {
+      console.log('[CREATE_API_ENTRY]', {
+        type: requestType,
+        itinerary_plan_id: Number((dto as any)?.plan?.itinerary_plan_id || 0),
+        routes: (dto?.routes || []).map((r: any) => ({
+          location_name: r?.location_name,
+          next_visiting_location: r?.next_visiting_location,
+          no_of_km: r?.no_of_km,
+        })),
+        vehicles: dto?.vehicles || [],
+      });
+    }
     const u: any = (req as any).user ?? {};
     const userId = Number(u.userId ?? 1);
     const agentId = Number(u.agentId ?? 0);

@@ -1250,6 +1250,20 @@ export class ItineraryVehiclesEngine {
         await tx.dvi_itinerary_plan_vendor_eligible_list.findMany({
           where: eligiblesWhere },
       );
+      if (process.env.DEBUG_LOCAL_KM_FIX === 'true') {
+        this.log('VEHICLE_ELIGIBLE_ROWS', {
+          planId,
+          count: eligibles.length,
+          rows: eligibles.map((x: any) => ({
+            itinerary_plan_vendor_eligible_ID: x.itinerary_plan_vendor_eligible_ID,
+            vehicle_id: x.vehicle_id,
+            vehicle_type_id: x.vehicle_type_id,
+            assigned_status: x.itineary_plan_assigned_status,
+            deleted: x.deleted,
+            status: x.status,
+          })),
+        });
+      }
 
       const travelType = Number(plan.itinerary_type ?? 0) || 2; // 1=local, 2=outstation
 
@@ -1389,6 +1403,42 @@ export class ItineraryVehiclesEngine {
             route_start_time: r.route_start_time,
             route_end_time: r.route_end_time
           };
+          if (process.env.DEBUG_LOCAL_KM_FIX === 'true') {
+            this.log('VEHICLE_ROUTE_LOOP_START', {
+              planId,
+              routeId,
+              routeDay: r.no_of_days,
+              location_name: routeData.location_name,
+              next_visiting_location: routeData.next_visiting_location,
+              vehicle_id: vehicleId,
+              vendor_id: vendorId,
+            });
+            this.log('VEHICLE_CALC_CALL', {
+              planId,
+              routeId,
+              route_count,
+              total_routes,
+              vehicle_id: vehicleId,
+              vendor_id: vendorId,
+            });
+          }
+          if (process.env.DEBUG_DVI20260594_INSERT === 'true') {
+            this.log('VEHICLE_CALC_INPUT', {
+              route_count,
+              total_routes,
+              route_id: routeData.itinerary_route_ID,
+              location_name: routeData.location_name,
+              next_visiting_location: routeData.next_visiting_location,
+              no_of_km: routeData.no_of_km,
+              vehicle_id: vehicleId,
+              vendor_id: vendorId,
+              vendor_branch_id: vendorBranchId,
+              vehicle_origin: calcCtx.vehicle_origin,
+              vehicle_origin_city: calcCtx.vehicle_origin_city,
+              vehicle_origin_latitude: calcCtx.vehicle_origin_latitude,
+              vehicle_origin_longitude: calcCtx.vehicle_origin_longitude,
+            });
+          }
 
           // Calculate all route details using PHP-parity logic
           const result = await calculateRouteVehicleDetails(
@@ -1400,6 +1450,17 @@ export class ItineraryVehiclesEngine {
             isLastRouteOfDay,
             isFirstRouteOfDay
           );
+          if (process.env.DEBUG_LOCAL_KM_FIX === 'true') {
+            this.log('VEHICLE_CALC_RETURN', {
+              planId,
+              routeId,
+              TOTAL_PICKUP_KM: result.TOTAL_PICKUP_KM,
+              TOTAL_RUNNING_KM: result.TOTAL_RUNNING_KM,
+              SIGHT_SEEING_TRAVELLING_KM: result.SIGHT_SEEING_TRAVELLING_KM,
+              TOTAL_DROP_KM: result.TOTAL_DROP_KM,
+              TOTAL_KM: result.TOTAL_KM,
+            });
+          }
 
           // Debug: log calculation result for each route
           this.log('VEHICLE_DETAIL_CALC', {
@@ -1504,11 +1565,50 @@ export class ItineraryVehiclesEngine {
             ),
             { data: detailsData },
           );
-
-          const createdDetails =
-            await tAny.dvi_itinerary_plan_vendor_vehicle_details.create({
+          if (process.env.DEBUG_LOCAL_KM_FIX === 'true') {
+            this.log('VEHICLE_DETAIL_INSERT_ATTEMPT', {
+              planId,
+              routeId,
               data: detailsData,
             });
+          }
+
+          let createdDetails: any = null;
+          try {
+            createdDetails =
+              await tAny.dvi_itinerary_plan_vendor_vehicle_details.create({
+                data: detailsData,
+              });
+          } catch (error: any) {
+            this.log('VEHICLE_DETAIL_INSERT_ERROR', {
+              planId,
+              routeId,
+              error: String(error?.message || error),
+              fullError: error,
+            });
+            throw error;
+          }
+          if (process.env.DEBUG_LOCAL_KM_FIX === 'true') {
+            this.log('VEHICLE_DETAIL_INSERT_SUCCESS', {
+              planId,
+              routeId,
+              insertedId: createdDetails?.itinerary_plan_vendor_vehicle_details_ID ?? null,
+            });
+          }
+          if (process.env.DEBUG_DVI20260594_INSERT === 'true') {
+            this.log('VEHICLE_DETAILS_INSERT_DATA', {
+              itinerary_plan_id: detailsData.itinerary_plan_id,
+              itinerary_route_id: detailsData.itinerary_route_id,
+              itinerary_route_location_from: detailsData.itinerary_route_location_from,
+              itinerary_route_location_to: detailsData.itinerary_route_location_to,
+              total_pickup_km: detailsData.total_pickup_km,
+              total_running_km: detailsData.total_running_km,
+              total_siteseeing_km: detailsData.total_siteseeing_km,
+              total_drop_km: detailsData.total_drop_km,
+              total_travelled_km: detailsData.total_travelled_km,
+            });
+            this.log('VEHICLE_DETAILS_INSERT_RESULT', createdDetails);
+          }
 
           // Update previous destination city for next iteration
           previous_destination_city = await getStoredLocationCity(tx, toLoc);

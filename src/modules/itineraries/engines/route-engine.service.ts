@@ -475,6 +475,18 @@ const fallbackKm =
 const finalKm = pairChanged
   ? distanceKm || fallbackKm || requestKm || ""
   : requestKm || distanceKm || fallbackKm || "";
+      if (process.env.DEBUG_DVI20260594_INSERT === 'true') {
+        console.log('[ROUTE_SAVE_INPUT]', {
+          day: dayOffset + 1,
+          location_name: sourceName,
+          next_visiting_location: destName,
+          request_no_of_km: requestKm,
+          pairChanged,
+          distanceKm,
+          fallbackKm,
+          finalKm,
+        });
+      }
 
       const dayNumber = dayOffset + 1;
 
@@ -520,8 +532,7 @@ const finalKm = pairChanged
       // Prisma requires a Date object for @db.Time fields. This helper builds a Date-like
       // value that Prisma can write into MySQL TIME. The IMPORTANT part is: startHms/endHms
       // must be IST wall-clock (fixed above), not UTC-shifted.
-     const row = await (tx as any).dvi_itinerary_route_details.create({
-  data: {
+      const prismaData = {
     itinerary_plan_ID: planId,
     location_id: locationId,
     location_name: sourceName,
@@ -538,8 +549,20 @@ const finalKm = pairChanged
     status: 1,
     deleted: 0,
     excluded_hotspot_ids: [],
-  },
-});
+      };
+      if (process.env.DEBUG_DVI20260594_INSERT === 'true') {
+        console.log('[ROUTE_PRISMA_DATA]', prismaData);
+      }
+      const row = await (tx as any).dvi_itinerary_route_details.create({ data: prismaData });
+      if (process.env.DEBUG_DVI20260594_INSERT === 'true') {
+        console.log('[ROUTE_SAVE_RESULT]', {
+          itinerary_route_ID: row?.itinerary_route_ID,
+          no_of_days: row?.no_of_days,
+          location_name: row?.location_name,
+          next_visiting_location: row?.next_visiting_location,
+          no_of_km: row?.no_of_km,
+        });
+      }
 
       created.push(row);
 
