@@ -3631,13 +3631,33 @@ for (const vd of dayWiseDetails) {
 
       let breakdown: VehicleCostBreakdownItemDto[] | undefined;
 
-      const outstationPackageKm = parseFloat(String((eligible as any).total_allowed_kms || 0)) || 0;
+      const outstationPackageKm =
+        parseFloat(String((eligible as any).total_allowed_kms || 0)) || 0;
+
+      const outstationDayDates = new Set(
+        dayWiseDetails
+          .filter((vd: any) => Number((vd as any).travel_type || 0) === 2)
+          .map((vd: any) => vd.itinerary_route_date?.toISOString?.()?.split('T')[0] || '')
+          .filter(Boolean),
+      );
+
+      const outstationDayCount = outstationDayDates.size;
+
+      const configuredOutstationKmPerDay =
+        parseFloat(String((eligible as any).outstation_allowed_km_per_day || 0)) || 0;
+
+      const outstationKmPerDay =
+        configuredOutstationKmPerDay > 0
+          ? configuredOutstationKmPerDay
+          : outstationPackageKm > 0 && outstationDayCount > 0
+            ? outstationPackageKm / outstationDayCount
+            : 250;
+
       const packageLabel = mixedTrip
         ? 'Mixed'
         : localTrip
           ? 'Local'
           : (outstationPackageKm > 0 ? `Outstation - ${outstationPackageKm} KM Package` : 'Outstation');
-
       // Build day-wise pricing breakdown from vehicle details
       // Build day-wise pricing breakdown from vehicle details
       // KMS per day: pickup, running, siteseeing, drop, and computed total.
@@ -3775,10 +3795,7 @@ for (const vd of dayWiseDetails) {
          * SLAB: 250 KM (Outstation)
          */
         if (rowTravelType === 'Outstation') {
-          const outstationKmLimit =
-            outstationPackageKm > 0
-              ? outstationPackageKm
-              : 250;
+          const outstationKmLimit = outstationKmPerDay;
 
           const outstationSlabTitle = `${Number(outstationKmLimit.toFixed(2)).toString()} KM (Outstation)`;
 
