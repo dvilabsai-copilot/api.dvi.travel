@@ -1,4 +1,0 @@
-START=2026-03-23T00:47:07.711Z
-BASE_URL=http://localhost:4006/api/v1
-STATUS=FAILED
-ERROR=Cannot reach localhost:4006 - 
