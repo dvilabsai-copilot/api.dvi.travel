@@ -13,6 +13,7 @@ import { TboHotelBookingService } from './services/tbo-hotel-booking.service';
 import { ResAvenueHotelBookingService } from './services/resavenue-hotel-booking.service';
 import { HobseHotelBookingService } from './services/hobse-hotel-booking.service';
 import { AxisRoomsBookingPushService } from './services/axisrooms-booking-push.service';
+import { StaahBookingPushService } from './services/staah-booking-push.service';
 import { HotelVoucherService } from './hotel-voucher.service';
 import { HotelEngineService } from './engines/hotel-engine.service';
 import { HotelPricingService } from './hotels/hotel-pricing.service';
@@ -48,6 +49,7 @@ import { ItineraryClipboardService } from './itinerary-clipboard.service';
     ResAvenueHotelBookingService,
     HobseHotelBookingService,
     AxisRoomsBookingPushService,
+    StaahBookingPushService,
     HotelVoucherService,
 
     // existing engines you already had

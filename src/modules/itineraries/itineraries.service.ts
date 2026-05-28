@@ -24,6 +24,7 @@ import { TboHotelBookingService } from "./services/tbo-hotel-booking.service";
 import { ResAvenueHotelBookingService } from "./services/resavenue-hotel-booking.service";
 import { HobseHotelBookingService } from "./services/hobse-hotel-booking.service";
 import { AxisRoomsBookingPushService } from "./services/axisrooms-booking-push.service";
+import { StaahBookingPushService } from "./services/staah-booking-push.service";
 import { ItineraryHotelDetailsTboService } from "./itinerary-hotel-details-tbo.service";
 import { TimelineEnricher } from "./engines/helpers/timeline.enricher";
 import { normalizePassengerTitle } from "../../common/utils/passenger-title.util";
@@ -113,6 +114,7 @@ export class ItinerariesService {
     private readonly resavenueHotelBooking: ResAvenueHotelBookingService,
     private readonly hobseHotelBooking: HobseHotelBookingService,
     private readonly axisroomsBookingPushService: AxisRoomsBookingPushService,
+    private readonly staahBookingPushService: StaahBookingPushService,
     private readonly hotelDetailsTboService: ItineraryHotelDetailsTboService,
     private readonly supplementNormalizer: SupplementNormalizerService,
   ) {}
@@ -4517,33 +4519,37 @@ export class ItinerariesService {
       }
     }
 
+    const hasHotelBookings = Boolean(dto.hotel_bookings && dto.hotel_bookings.length > 0);
+
     // 3. Start Transaction
     return await this.prisma.$transaction(async (tx) => {
-      // A. Deduct from wallet
-      await tx.dvi_cash_wallet.create({
-        data: {
-          agent_id: dto.agent,
-          transaction_date: new Date(),
-          transaction_amount: cost.netPayable,
-          transaction_type: 2, // Debit
-          remarks: `Confirmed Itinerary: ${quoteId}`,
-          transaction_id: quoteId,
-          createdby: userId,
-          createdon: new Date(),
-          status: 1,
-          deleted: 0,
-        },
-      });
-
-      // Update agent balance
-      await tx.dvi_agent.update({
-        where: { agent_ID: dto.agent },
-        data: {
-          total_cash_wallet: {
-            decrement: cost.netPayable,
+      // A. Deduct wallet only when there are no provider bookings to run.
+      // For hotel-booking flow this is deferred until all providers succeed.
+      if (!hasHotelBookings) {
+        await tx.dvi_cash_wallet.create({
+          data: {
+            agent_id: dto.agent,
+            transaction_date: new Date(),
+            transaction_amount: cost.netPayable,
+            transaction_type: 2, // Debit
+            remarks: `Confirmed Itinerary: ${quoteId}`,
+            transaction_id: quoteId,
+            createdby: userId,
+            createdon: new Date(),
+            status: 1,
+            deleted: 0,
           },
-        },
-      });
+        });
+
+        await tx.dvi_agent.update({
+          where: { agent_ID: dto.agent },
+          data: {
+            total_cash_wallet: {
+              decrement: cost.netPayable,
+            },
+          },
+        });
+      }
 
       // B. Insert into dvi_confirmed_itinerary_plan_details
       const confirmedPlan = await tx.dvi_confirmed_itinerary_plan_details.create({
@@ -4716,27 +4722,29 @@ export class ItinerariesService {
       // G. Copy related tables (Travellers, Vehicles, Routes, Via Routes, Hotels, Hotspots, Activities)
       await this.copyDraftToConfirmed(tx, dto.itinerary_plan_ID, confirmedPlanId, userId);
 
-      // H. Insert into dvi_accounts_itinerary_details
-      await tx.dvi_accounts_itinerary_details.create({
-        data: {
-          itinerary_plan_ID: dto.itinerary_plan_ID,
-          agent_id: dto.agent,
-          staff_id: plan.staff_id || 0,
-          confirmed_itinerary_plan_ID: confirmedPlanId,
-          itinerary_quote_ID: plan.itinerary_quote_ID,
-          trip_start_date_and_time: plan.trip_start_date_and_time,
-          trip_end_date_and_time: plan.trip_end_date_and_time,
-          total_billed_amount: cost.netPayable,
-          total_received_amount: cost.netPayable,
-          total_receivable_amount: 0,
-          total_payable_amount: cost.totalAmount, // Total cost before agent margin
-          total_payout_amount: 0,
-          createdby: userId,
-          createdon: new Date(),
-          status: 1,
-          deleted: 0,
-        },
-      });
+      // H. Insert accounts row only when no provider bookings are pending.
+      if (!hasHotelBookings) {
+        await tx.dvi_accounts_itinerary_details.create({
+          data: {
+            itinerary_plan_ID: dto.itinerary_plan_ID,
+            agent_id: dto.agent,
+            staff_id: plan.staff_id || 0,
+            confirmed_itinerary_plan_ID: confirmedPlanId,
+            itinerary_quote_ID: plan.itinerary_quote_ID,
+            trip_start_date_and_time: plan.trip_start_date_and_time,
+            trip_end_date_and_time: plan.trip_end_date_and_time,
+            total_billed_amount: cost.netPayable,
+            total_received_amount: cost.netPayable,
+            total_receivable_amount: 0,
+            total_payable_amount: cost.totalAmount,
+            total_payout_amount: 0,
+            createdby: userId,
+            createdon: new Date(),
+            status: 1,
+            deleted: 0,
+          },
+        });
+      }
 
       // I. Keep quotation unconfirmed when hotel bookings are present.
       // Final confirmation happens only after all provider bookings succeed.
@@ -4777,6 +4785,84 @@ export class ItinerariesService {
 
   private bookingKey(provider: string, routeId: number): string {
     return `${String(provider || '').trim().toLowerCase()}::${Number(routeId || 0)}`;
+  }
+
+  private async finalizeConfirmationFinancials(baseResult: any, dto: ConfirmQuotationDto, userId: number): Promise<void> {
+    const plan = await this.prisma.dvi_itinerary_plan_details.findUnique({
+      where: { itinerary_plan_ID: baseResult.itinerary_plan_ID },
+    });
+    if (!plan?.itinerary_quote_ID) {
+      throw new BadRequestException('Quote ID not found while finalizing confirmation financials');
+    }
+
+    const details = await this.itineraryDetails.getItineraryDetails(plan.itinerary_quote_ID);
+    const cost = details.costBreakdown;
+    const debitAmount = Number(cost?.netPayable || 0);
+
+    await this.prisma.$transaction(async (tx) => {
+      const existingDebit = await tx.dvi_cash_wallet.findFirst({
+        where: {
+          transaction_id: plan.itinerary_quote_ID,
+          transaction_type: 2,
+          deleted: 0,
+        },
+      });
+
+      if (!existingDebit) {
+        await tx.dvi_cash_wallet.create({
+          data: {
+            agent_id: dto.agent,
+            transaction_date: new Date(),
+            transaction_amount: debitAmount,
+            transaction_type: 2,
+            remarks: `Confirmed Itinerary: ${plan.itinerary_quote_ID}`,
+            transaction_id: plan.itinerary_quote_ID,
+            createdby: userId,
+            createdon: new Date(),
+            status: 1,
+            deleted: 0,
+          },
+        });
+
+        await tx.dvi_agent.update({
+          where: { agent_ID: dto.agent },
+          data: {
+            total_cash_wallet: { decrement: debitAmount },
+          },
+        });
+      }
+
+      const existingAccount = await tx.dvi_accounts_itinerary_details.findFirst({
+        where: {
+          itinerary_plan_ID: baseResult.itinerary_plan_ID,
+          confirmed_itinerary_plan_ID: baseResult.confirmed_itinerary_plan_ID,
+          deleted: 0,
+        },
+      });
+
+      if (!existingAccount) {
+        await tx.dvi_accounts_itinerary_details.create({
+          data: {
+            itinerary_plan_ID: baseResult.itinerary_plan_ID,
+            agent_id: dto.agent,
+            staff_id: Number(plan.staff_id || 0),
+            confirmed_itinerary_plan_ID: baseResult.confirmed_itinerary_plan_ID,
+            itinerary_quote_ID: plan.itinerary_quote_ID,
+            trip_start_date_and_time: plan.trip_start_date_and_time,
+            trip_end_date_and_time: plan.trip_end_date_and_time,
+            total_billed_amount: debitAmount,
+            total_received_amount: debitAmount,
+            total_receivable_amount: 0,
+            total_payable_amount: Number(cost?.totalAmount || 0),
+            total_payout_amount: 0,
+            createdby: userId,
+            createdon: new Date(),
+            status: 1,
+            deleted: 0,
+          },
+        });
+      }
+    });
   }
 
   private async filterAlreadySuccessfulBookings(itineraryPlanId: number, bookings: any[]) {
@@ -5312,8 +5398,8 @@ export class ItinerariesService {
       return baseResult;
     }
 
-    console.log('[Hotel Booking] Processing', dto.hotel_bookings.length, 'hotel(s)');
-    console.log('[Hotel Booking] Hotels:', JSON.stringify(dto.hotel_bookings, null, 2));
+    console.log('[CONFIRM_QUOTATION_DEBUG] [Hotel Booking] Processing', dto.hotel_bookings.length, 'hotel(s)');
+    console.log('[CONFIRM_QUOTATION_DEBUG] [Hotel Booking] Incoming hotel_bookings:', JSON.stringify(dto.hotel_bookings, null, 2));
 
     // Group hotels by provider and skip bookings that are already successful in DB.
     const normalizedHotelBookings = dto.hotel_bookings.map((hotel) => ({
@@ -5328,16 +5414,17 @@ export class ItinerariesService {
     const resavenueHotels = pendingBookings.filter((h) => h.__provider === 'resavenue');
     const hobseHotels = pendingBookings.filter((h) => h.__provider === 'hobse');
     const axisroomsHotels = pendingBookings.filter((h) => h.__provider === 'axisrooms');
+    const staahHotels = pendingBookings.filter((h) => h.__provider === 'staah');
 
     console.log(
-      '[Hotel Booking] Total:',
+      '[CONFIRM_QUOTATION_DEBUG] [Hotel Booking] Total:',
       normalizedHotelBookings.length,
       'Already success:',
       alreadyConfirmedResults.length,
       'Pending:',
       pendingBookings.length,
     );
-    console.log('[Hotel Booking] Pending -> TBO:', tboHotels.length, 'ResAvenue:', resavenueHotels.length, 'HOBSE:', hobseHotels.length, 'AxisRooms:', axisroomsHotels.length);
+    console.log('[CONFIRM_QUOTATION_DEBUG] Provider counts -> TBO:', tboHotels.length, 'ResAvenue:', resavenueHotels.length, 'HOBSE:', hobseHotels.length, 'AxisRooms:', axisroomsHotels.length, 'STAAH:', staahHotels.length);
 
     const allBookingResults: any[] = [...alreadyConfirmedResults];
 
@@ -5507,6 +5594,20 @@ export class ItinerariesService {
         allBookingResults.push(...axisroomsPushResults);
       }
 
+      if (staahHotels.length > 0) {
+        console.log('[STAAH Booking Push] Processing', staahHotels.length, 'hotel(s)');
+        const staahBookingResults =
+          await this.staahBookingPushService.confirmItineraryHotels({
+            confirmedItineraryPlanId: baseResult.confirmed_itinerary_plan_ID,
+            itineraryPlanId: baseResult.itinerary_plan_ID,
+            hotels: staahHotels,
+            fallbackBookedBy: (dto as any)?.primary_guest_name || 'DVI User',
+            fallbackEmail: (dto as any)?.primary_guest_email_id || '',
+            fallbackPhone: (dto as any)?.primary_guest_contact_no || '',
+          });
+        allBookingResults.push(...staahBookingResults);
+      }
+
       const successKeySet = new Set(
         allBookingResults
           .filter((r) => this.isBookingResultSuccess(r))
@@ -5522,6 +5623,8 @@ export class ItinerariesService {
           hotelName: String(b.hotelName || ''),
         }));
 
+      console.log('[CONFIRM_QUOTATION_DEBUG] Final bookingResults before response:', JSON.stringify(allBookingResults, null, 2));
+
       if (pendingAfterAttempt.length > 0) {
         throw new BadRequestException({
           message: 'Partial booking success. Quotation remains unconfirmed. Retry will target only unsuccessful bookings.',
@@ -5531,6 +5634,8 @@ export class ItinerariesService {
           pendingBookings: pendingAfterAttempt,
         });
       }
+
+      await this.finalizeConfirmationFinancials(baseResult, dto, userId);
 
       await this.prisma.dvi_itinerary_plan_details.update({
         where: { itinerary_plan_ID: baseResult.itinerary_plan_ID },
@@ -5557,7 +5662,12 @@ export class ItinerariesService {
         bookingResults: allBookingResults,
       };
     } catch (error) {
-      console.error('Error processing hotel bookings:', error);
+      console.error('[CONFIRM_QUOTATION_DEBUG] Error processing hotel bookings:', error);
+      console.error('[STAAH_BOOKING_DEBUG] Error details:', {
+        message: error?.message,
+        status: error?.response?.status,
+        body: error?.response?.data,
+      });
       if (error instanceof BadRequestException) {
         throw error;
       }
