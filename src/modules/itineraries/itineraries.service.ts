@@ -90,6 +90,7 @@ type VehicleBuildStatus = {
 @Injectable()
 export class ItinerariesService {
   private readonly vehicleBuildStatusMap = new Map<number, Omit<VehicleBuildStatus, 'source'>>();
+  private readonly vehicleBuildScheduleCount = new Map<number, number>();
   private readonly manualHotspotMatrixBuildLocks = new Set<string>();
   private readonly osrmLegRuntimeCache = new Map<string, {
     distanceKm: number | null;
@@ -212,6 +213,16 @@ export class ItinerariesService {
     userId: number,
     quoteId?: string,
   ): void {
+    const debugVehicleTrace =
+      process.env.DEBUG_DVI20260594_INSERT === 'true' ||
+      process.env.DEBUG_VEHICLE_DUPLICATE_TRACE === 'true';
+    const scheduleCount = (this.vehicleBuildScheduleCount.get(planId) || 0) + 1;
+    this.vehicleBuildScheduleCount.set(planId, scheduleCount);
+    if (debugVehicleTrace) {
+      const shortStack = (new Error().stack || '').split('\n').slice(1, 5).join(' | ');
+      console.log('[SCHEDULE_VEHICLE_BUILD_CALL]', { planId, timestamp: new Date().toISOString(), shortStack });
+      console.log('[SCHEDULE_VEHICLE_BUILD_COUNT]', { planId, count: scheduleCount });
+    }
     this.setVehicleBuildStatus(planId, 'PROCESSING', null);
     if (process.env.DEBUG_LOCAL_KM_FIX === 'true') {
       console.log('[VEHICLE_BUILD_START]', {
@@ -225,6 +236,9 @@ export class ItinerariesService {
     void (async () => {
       try {
         const jobStart = Date.now();
+        if (debugVehicleTrace) {
+          console.log('[ASYNC_VEHICLE_BUILD_START]', { planId, timestamp: new Date().toISOString() });
+        }
 
         // Permit rows must exist before vehicle calculations read them.
         await this.prisma.$transaction(async (tx) => {
@@ -242,10 +256,16 @@ export class ItinerariesService {
         }
 
         this.setVehicleBuildStatus(planId, 'READY', null);
+        if (debugVehicleTrace) {
+          console.log('[ASYNC_VEHICLE_BUILD_DONE]', { planId, durationMs: Date.now() - jobStart });
+        }
         console.log('[PERF] asyncVehicleBuild total:', Date.now() - jobStart, 'ms', 'planId=', planId);
       } catch (error: any) {
         const message = String(error?.message || error || 'Vehicle build failed');
         this.setVehicleBuildStatus(planId, 'FAILED', message);
+        if (debugVehicleTrace) {
+          console.log('[ASYNC_VEHICLE_BUILD_FAILED]', { planId, error: message });
+        }
         console.error('[ItinerariesService] Async vehicle build failed:', {
           planId,
           message,
@@ -394,6 +414,9 @@ export class ItinerariesService {
     shouldOptimizeRoute: boolean = false,
     requestType?: string,
   ) {
+    const debugVehicleTrace =
+      process.env.DEBUG_DVI20260594_INSERT === 'true' ||
+      process.env.DEBUG_VEHICLE_DUPLICATE_TRACE === 'true';
     if (process.env.DEBUG_DVI20260594_INSERT === 'true') {
       console.log('[CREATE_API_ENTRY]', {
         type: requestType,
@@ -404,6 +427,13 @@ export class ItinerariesService {
           no_of_km: r?.no_of_km,
         })),
         vehicles: dto?.vehicles || [],
+      });
+    }
+    if (debugVehicleTrace) {
+      console.log('[CREATE_PLAN_ENTRY]', {
+        planId: Number((dto as any)?.plan?.itinerary_plan_id || 0),
+        vehicles: dto?.vehicles || [],
+        routesCount: Array.isArray(dto?.routes) ? dto.routes.length : 0,
       });
     }
     const u: any = (req as any).user ?? {};

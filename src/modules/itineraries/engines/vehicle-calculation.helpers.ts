@@ -909,7 +909,7 @@ export function determineTravelType(
   check_local_via_route_city: boolean,
   force_local_trip: boolean = false,
 ): number {
-  if (force_local_trip) {
+  if (force_local_trip && check_local_via_route_city) {
     return 1;
   }
 
@@ -1180,8 +1180,12 @@ export async function getLocalVehiclePricingByDate(
   vendor_id: number,
   vendor_branch_id: number,
   vendor_vehicle_type_ID: number,
-  time_limit_id: number
+  time_limit_id: number,
+  master_vehicle_type_id?: number
 ): Promise<number> {
+  const debugVehicleTrace =
+    process.env.DEBUG_DVI20260594_INSERT === 'true' ||
+    process.env.DEBUG_VEHICLE_DUPLICATE_TRACE === 'true';
   try {
     const pricing = await prisma.dvi_vehicle_local_pricebook.findFirst({
       where: {
@@ -1197,13 +1201,62 @@ export async function getLocalVehiclePricingByDate(
     });
 
     if (!pricing) {
-      console.log(`[getLocalVehiclePricingByDate] No pricing found for vendor=${vendor_id}, branch=${vendor_branch_id}, vehicle_type=${vendor_vehicle_type_ID}, time_limit=${time_limit_id}, ${month} ${year}`);
-      return 0;
+      const fallbackVehicleTypeId = Number(master_vehicle_type_id || 0);
+      const fallbackPricing = fallbackVehicleTypeId > 0
+        ? await prisma.dvi_vehicle_local_pricebook.findFirst({
+            where: {
+              vendor_id,
+              vendor_branch_id,
+              vehicle_type_id: fallbackVehicleTypeId,
+              time_limit_id,
+              year,
+              month,
+              status: 1,
+              deleted: 0
+            }
+          })
+        : null;
+      if (debugVehicleTrace) {
+        console.log('[MUV_PRICEBOOK_LOOKUP]', {
+          vendor_id,
+          vendor_branch_id,
+          vehicle_type_id_used_in_query: vendor_vehicle_type_ID,
+          vendor_vehicle_type_id: vendor_vehicle_type_ID,
+          fallback_vehicle_type_id: fallbackVehicleTypeId || 0,
+          time_limit_id,
+          year,
+          month,
+          dayColumn: `day_${day}`,
+          priceRowFound: Boolean(fallbackPricing),
+          priceFound: Number(fallbackPricing?.[`day_${day}` as keyof typeof fallbackPricing] || 0) > 0,
+        });
+      }
+      if (!fallbackPricing) {
+        console.log(`[getLocalVehiclePricingByDate] No pricing found for vendor=${vendor_id}, branch=${vendor_branch_id}, vehicle_type=${vendor_vehicle_type_ID}, time_limit=${time_limit_id}, ${month} ${year}`);
+        return 0;
+      }
+      const dayColumn = `day_${day}`;
+      return toNum(fallbackPricing[dayColumn as keyof typeof fallbackPricing]);
     }
 
     // Get price from day column (day_1 through day_31)
     const dayColumn = `day_${day}`;
     const price = pricing[dayColumn as keyof typeof pricing];
+    if (debugVehicleTrace && Number(master_vehicle_type_id || 0) === 23) {
+      console.log('[MUV_PRICEBOOK_LOOKUP]', {
+        vendor_id,
+        vendor_branch_id,
+        vehicle_type_id_used_in_query: vendor_vehicle_type_ID,
+        vendor_vehicle_type_id: vendor_vehicle_type_ID,
+        fallback_vehicle_type_id: Number(master_vehicle_type_id || 0),
+        time_limit_id,
+        year,
+        month,
+        dayColumn,
+        priceRowFound: true,
+        priceFound: toNum(price) > 0,
+      });
+    }
     
     return toNum(price);
   } catch (error) {
@@ -1605,6 +1658,10 @@ export async function calculateRouteVehicleDetails(
   isFirstRouteOfDay: boolean = false
 ): Promise<RouteCalculationResult> {
   const { prisma, itinerary_plan_ID, vehicle_type_id, vendor_id, vendor_vehicle_type_ID, vendor_branch_id } = ctx;
+  const debugVehicleTrace =
+    process.env.DEBUG_DVI20260594_INSERT === 'true' ||
+    process.env.DEBUG_VEHICLE_DUPLICATE_TRACE === 'true';
+  const isMuvTrace = Number(ctx.vehicle_type_id || 0) === 23;
   const debugInsert = process.env.DEBUG_DVI20260594_INSERT === 'true';
   const debugLocalFix =
     process.env.DEBUG_LOCAL_PICKUP_DROP_FIX === 'true' ||
@@ -1647,6 +1704,20 @@ export async function calculateRouteVehicleDetails(
     check_local_via_route_city,
     Boolean((ctx as any).force_local_trip)
   );
+  if (debugVehicleTrace && isMuvTrace) {
+    console.log('[MUV_TRAVEL_TYPE_DECISION]', {
+      routeId: route.itinerary_route_ID,
+      route_count,
+      total_routes,
+      sourceCity,
+      destCity,
+      vehicle_origin_city: ctx.vehicle_origin_city,
+      previous_destination_city,
+      check_local_via_route_city,
+      force_local_trip: Boolean((ctx as any).force_local_trip),
+      travel_type,
+    });
+  }
 
   // Initialize variables
   let TOTAL_RUNNING_KM = '0';
@@ -2307,6 +2378,18 @@ export async function calculateRouteVehicleDetails(
       slabSelectionKm,
       selectedLocalTimeLimitId || undefined,
     );
+    if (debugVehicleTrace && isMuvTrace) {
+      console.log('[MUV_TIME_LIMIT_SELECTION]', {
+        vendor_id,
+        vendor_branch_id,
+        vehicle_type_id,
+        vendor_vehicle_type_id: vendor_vehicle_type_ID,
+        total_hours: slabSelectionHours,
+        total_km: slabSelectionKm,
+        selected_time_limit_id: Number(ctx.selected_time_limit_id || 0),
+        resolved_time_limit_id: time_limit_id,
+      });
+    }
 
     const pricedLocalSlab = await getPricedLocalTimeLimitId(
       prisma,
@@ -2354,6 +2437,41 @@ export async function calculateRouteVehicleDetails(
 
     vehicle_cost_for_the_day = Number(pricedLocalSlab.price || 0);
     if (vehicle_cost_for_the_day <= 0 && time_limit_id > 0) {
+      if (debugVehicleTrace && isMuvTrace) {
+        const dayColumn = `day_${day}`;
+        const pbRows: any[] = await prisma.$queryRawUnsafe(
+          `SELECT ${dayColumn} AS day_price
+           FROM dvi_vehicle_local_pricebook
+           WHERE vendor_id = ?
+             AND vendor_branch_id = ?
+             AND vehicle_type_id = ?
+             AND time_limit_id = ?
+             AND year = ?
+             AND month = ?
+             AND status = 1
+             AND deleted = 0
+           LIMIT 1`,
+          vendor_id,
+          vendor_branch_id,
+          vendor_vehicle_type_ID,
+          time_limit_id,
+          year,
+          month,
+        );
+        const dayPrice = Number(pbRows?.[0]?.day_price ?? 0);
+        console.log('[MUV_PRICEBOOK_LOOKUP]', {
+          vendor_id,
+          vendor_branch_id,
+          vehicle_type_id_used_in_query: vendor_vehicle_type_ID,
+          vendor_vehicle_type_id: vendor_vehicle_type_ID,
+          time_limit_id,
+          year,
+          month,
+          dayColumn,
+          priceRowFound: pbRows.length > 0,
+          priceFound: dayPrice > 0,
+        });
+      }
       vehicle_cost_for_the_day = await getLocalVehiclePricingByDate(
         prisma,
         day,
@@ -2362,7 +2480,8 @@ export async function calculateRouteVehicleDetails(
         vendor_id,
         vendor_branch_id,
         vendor_vehicle_type_ID,
-        time_limit_id
+        time_limit_id,
+        vehicle_type_id
       );
     }
     if (vehicle_cost_for_the_day <= 0) {
@@ -2538,6 +2657,16 @@ export async function calculateRouteVehicleDetails(
     DRIVER_EVEINING_CHARGES +
     VENDOR_VEHICLE_EVENING_CHARGES +
     TOTAL_LOCAL_EXTRA_KM_CHARGES;
+  if (debugVehicleTrace && isMuvTrace) {
+    console.log('[MUV_CALC_FINAL]', {
+      routeId: route.itinerary_route_ID,
+      travel_type,
+      time_limit_id,
+      TOTAL_KM,
+      vehicle_cost_for_the_day,
+      TOTAL_VEHICLE_AMOUNT,
+    });
+  }
 
   return {
     travel_type,

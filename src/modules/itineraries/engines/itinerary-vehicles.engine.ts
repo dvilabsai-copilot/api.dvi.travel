@@ -275,6 +275,18 @@ export class ItineraryVehiclesEngine {
     selectedTimeLimitByEligible?: Record<string, number>;
   }) {
     const planId = Number(args.planId);
+    const debugVehicleTrace =
+      process.env.DEBUG_DVI20260594_INSERT === 'true' ||
+      process.env.DEBUG_VEHICLE_DUPLICATE_TRACE === 'true';
+    const rebuildStartedAt = Date.now();
+    let insertAttemptCount = 0;
+    let insertSuccessCount = 0;
+    if (debugVehicleTrace) {
+      console.log('[VEHICLE_REBUILD_START]', {
+        planId,
+        timestamp: new Date().toISOString(),
+      });
+    }
     const createdBy = Number(args.createdBy ?? 0);
     const selectedTimeLimitByEligible = args.selectedTimeLimitByEligible ?? {};
 
@@ -468,6 +480,17 @@ export class ItineraryVehiclesEngine {
       where: reqWhere,
       select: { vehicle_type_id: true, vehicle_count: true },
     });
+    if (debugVehicleTrace) {
+      console.log('[REQUESTED_VEHICLE_ROWS]', {
+        planId,
+        rows: reqRows.map((r: any) => ({
+          vehicle_type_id: Number(r.vehicle_type_id ?? 0),
+          no_of_vehicles: Number(r.vehicle_count ?? 0),
+          deleted: 0,
+          status: 1,
+        })),
+      });
+    }
 
     if (!reqRows.length) {
       return { planId, inserted: 0, reason: "No vehicle requirements in plan" };
@@ -1220,6 +1243,12 @@ export class ItineraryVehiclesEngine {
     // ---------------------------------------------------------------------
     if (tAny?.dvi_itinerary_plan_vendor_vehicle_details && totalNoOfPlanRouteDetails > 0) {
       const delDetailsWhere2: any = { itinerary_plan_id: planId };
+      if (debugVehicleTrace) {
+        const existingCount = await tAny.dvi_itinerary_plan_vendor_vehicle_details.count({
+          where: { itinerary_plan_id: planId },
+        });
+        console.log('[VEHICLE_DETAILS_DELETE_BEFORE]', { planId, existingCount });
+      }
       this.logSql(
         "VENDOR_VEHICLE_DETAILS_DELETE_MANY_2",
         this.buildDeleteSql("dvi_itinerary_plan_vendor_vehicle_details", delDetailsWhere2),
@@ -1229,6 +1258,12 @@ export class ItineraryVehiclesEngine {
         await tAny.dvi_itinerary_plan_vendor_vehicle_details.deleteMany({
           where: delDetailsWhere2 },
       );
+      if (debugVehicleTrace) {
+        const remainingCount = await tAny.dvi_itinerary_plan_vendor_vehicle_details.count({
+          where: { itinerary_plan_id: planId },
+        });
+        console.log('[VEHICLE_DETAILS_DELETE_AFTER]', { planId, remainingCount, deleteResult: delDetRes2 });
+      }
 
       const eligiblesWhere = {
         itinerary_plan_id: planId,
@@ -1250,6 +1285,23 @@ export class ItineraryVehiclesEngine {
         await tx.dvi_itinerary_plan_vendor_eligible_list.findMany({
           where: eligiblesWhere },
       );
+      if (debugVehicleTrace) {
+        console.log('[VEHICLE_ELIGIBLE_ROWS_FOR_BUILD]', {
+          planId,
+          count: eligibles.length,
+          rows: eligibles.map((x: any) => ({
+            eligibleId: Number(x.itinerary_plan_vendor_eligible_ID ?? 0),
+            vehicleTypeId: Number(x.vehicle_type_id ?? 0),
+            vendorVehicleTypeId: Number(x.vendor_vehicle_type_id ?? 0),
+            vehicleId: Number(x.vehicle_id ?? 0),
+            vendorId: Number(x.vendor_id ?? 0),
+            vendorBranchId: Number(x.vendor_branch_id ?? 0),
+            assignedStatus: Number(x.itineary_plan_assigned_status ?? 0),
+            deleted: Number(x.deleted ?? 0),
+            status: Number(x.status ?? 0),
+          })),
+        });
+      }
       if (process.env.DEBUG_LOCAL_KM_FIX === 'true') {
         this.log('VEHICLE_ELIGIBLE_ROWS', {
           planId,
@@ -1293,6 +1345,17 @@ export class ItineraryVehiclesEngine {
         const vehicleId = Number(e.vehicle_id ?? 0);
         const vendorBranchId = Number(e.vendor_branch_id ?? 0);
         const qty = Number(e.total_vehicle_qty ?? 1) || 1;
+        if (debugVehicleTrace) {
+          console.log('[VEHICLE_ELIGIBLE_BUILD_START]', {
+            planId,
+            eligibleId,
+            vehicleTypeId,
+            vendorVehicleTypeId: vvtId,
+            vehicleId,
+            assignedStatus: Number(e.itineary_plan_assigned_status ?? 0),
+            routeCount: routes.length,
+          });
+        }
 
         // Get vehicle details from dvi_vehicle table (PHP joins dvi_vehicle + dvi_vendor_vehicle_types)
         // In dvi_vehicle, vehicle_type_id actually stores vendor_vehicle_type_ID
@@ -1380,6 +1443,17 @@ export class ItineraryVehiclesEngine {
           if (!routeId) continue;
 
           const routeDate = safeDate(r.itinerary_route_date) || routeDateBase;
+          if (debugVehicleTrace) {
+            console.log('[VEHICLE_ROUTE_LOOP_START]', {
+              planId,
+              eligibleId,
+              routeId,
+              routeDate: routeDate.toISOString(),
+              vehicleTypeId,
+              vendorVehicleTypeId: vvtId,
+              vehicleId,
+            });
+          }
           const routeDateKey = routeDate.toISOString().slice(0, 10);
           const prevRoute = route_count > 1 ? (routes[route_count - 2] as any) : null;
           const prevRouteDate = prevRoute ? (safeDate(prevRoute.itinerary_route_date) || routeDateBase) : null;
@@ -1422,6 +1496,18 @@ export class ItineraryVehiclesEngine {
               vendor_id: vendorId,
             });
           }
+          if (debugVehicleTrace) {
+            console.log('[VEHICLE_CALC_CALL]', {
+              planId,
+              eligibleId,
+              routeId,
+              route_count,
+              total_routes,
+              vehicleTypeId,
+              vendorVehicleTypeId: vvtId,
+              vehicleId,
+            });
+          }
           if (process.env.DEBUG_DVI20260594_INSERT === 'true') {
             this.log('VEHICLE_CALC_INPUT', {
               route_count,
@@ -1450,6 +1536,23 @@ export class ItineraryVehiclesEngine {
             isLastRouteOfDay,
             isFirstRouteOfDay
           );
+          if (debugVehicleTrace) {
+            console.log('[VEHICLE_CALC_RETURN]', {
+              planId,
+              eligibleId,
+              routeId,
+              travel_type: result.travel_type,
+              time_limit_id: result.time_limit_id,
+              kms_limit_id: result.kms_limit_id,
+              TOTAL_PICKUP_KM: result.TOTAL_PICKUP_KM,
+              TOTAL_RUNNING_KM: result.TOTAL_RUNNING_KM,
+              SIGHT_SEEING_TRAVELLING_KM: result.SIGHT_SEEING_TRAVELLING_KM,
+              TOTAL_DROP_KM: result.TOTAL_DROP_KM,
+              TOTAL_KM: result.TOTAL_KM,
+              vehicle_cost_for_the_day: result.vehicle_cost_for_the_day,
+              TOTAL_VEHICLE_AMOUNT: result.TOTAL_VEHICLE_AMOUNT,
+            });
+          }
           if (process.env.DEBUG_LOCAL_KM_FIX === 'true') {
             this.log('VEHICLE_CALC_RETURN', {
               planId,
@@ -1482,6 +1585,19 @@ export class ItineraryVehiclesEngine {
           // Skip if vehicle cost is 0 (PHP line 1771)
           if (result.vehicle_cost_for_the_day === 0) {
             this.log('SKIP_ZERO_COST', { routeId, vendorId, vvtId, vehicleId });
+            if (debugVehicleTrace) {
+              console.log('[SKIP_ZERO_COST]', {
+                planId,
+                eligibleId,
+                routeId,
+                vehicleTypeId,
+                vendorVehicleTypeId: vvtId,
+                timeLimitId: result.time_limit_id,
+                travelType: result.travel_type,
+                vehicleCost: result.vehicle_cost_for_the_day,
+                reason: 'vehicle_cost_for_the_day_zero',
+              });
+            }
             continue;
           }
 
@@ -1574,11 +1690,53 @@ export class ItineraryVehiclesEngine {
           }
 
           let createdDetails: any = null;
+          insertAttemptCount++;
+          const existingRows: any[] = await tx.$queryRawUnsafe(
+            `SELECT COUNT(*) AS row_count
+             FROM dvi_itinerary_plan_vendor_vehicle_details
+             WHERE itinerary_plan_id = ?
+               AND itinerary_plan_vendor_eligible_ID = ?
+               AND itinerary_route_id = ?`,
+            planId,
+            eligibleId,
+            routeId,
+          );
+          const existingCount = Number(existingRows?.[0]?.row_count ?? 0);
+          if (debugVehicleTrace) {
+            console.log('[VEHICLE_DETAIL_EXISTING_KEY_COUNT]', { planId, eligibleId, routeId, existingCount });
+            if (existingCount > 0) {
+              console.log('[VEHICLE_DETAIL_DUPLICATE_DETECTED]', { planId, eligibleId, routeId, existingCount });
+            }
+            console.log('[VEHICLE_DETAIL_INSERT_ATTEMPT]', {
+              planId,
+              eligibleId,
+              routeId,
+              routeDate: routeDate.toISOString(),
+              vehicleTypeId,
+              vendorVehicleTypeId: vvtId,
+              vehicleId,
+              pickupKm: result.TOTAL_PICKUP_KM,
+              runningKm: result.TOTAL_RUNNING_KM,
+              sightseeingKm: result.SIGHT_SEEING_TRAVELLING_KM,
+              dropKm: result.TOTAL_DROP_KM,
+              totalKm: result.TOTAL_KM,
+              rental: result.vehicle_cost_for_the_day,
+              totalAmount: result.TOTAL_VEHICLE_AMOUNT,
+            });
+          }
+          await tAny.dvi_itinerary_plan_vendor_vehicle_details.deleteMany({
+            where: {
+              itinerary_plan_id: planId,
+              itinerary_plan_vendor_eligible_ID: eligibleId,
+              itinerary_route_id: routeId,
+            },
+          });
           try {
             createdDetails =
               await tAny.dvi_itinerary_plan_vendor_vehicle_details.create({
                 data: detailsData,
               });
+            insertSuccessCount++;
           } catch (error: any) {
             this.log('VEHICLE_DETAIL_INSERT_ERROR', {
               planId,
@@ -1587,6 +1745,14 @@ export class ItineraryVehiclesEngine {
               fullError: error,
             });
             throw error;
+          }
+          if (debugVehicleTrace) {
+            console.log('[VEHICLE_DETAIL_INSERT_SUCCESS]', {
+              planId,
+              eligibleId,
+              routeId,
+              insertedId: createdDetails?.itinerary_plan_vendor_vehicle_details_ID ?? null,
+            });
           }
           if (process.env.DEBUG_LOCAL_KM_FIX === 'true') {
             this.log('VEHICLE_DETAIL_INSERT_SUCCESS', {
@@ -1888,6 +2054,14 @@ export class ItineraryVehiclesEngine {
       }
     }
 
+    if (debugVehicleTrace) {
+      console.log('[VEHICLE_REBUILD_DONE]', {
+        planId,
+        insertAttemptCount,
+        insertSuccessCount,
+        durationMs: Date.now() - rebuildStartedAt,
+      });
+    }
     return { planId, inserted };
   }
 }

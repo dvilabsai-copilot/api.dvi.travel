@@ -3046,6 +3046,44 @@ sightseeingDistance,       // local sightseeing separately
     const assignedEligibleRows = eligibleRows.filter(
       (e) => (e as any).itineary_plan_assigned_status === 1,
     );
+    const debugVehicleTrace =
+      process.env.DEBUG_DVI20260594_INSERT === 'true' ||
+      process.env.DEBUG_VEHICLE_DUPLICATE_TRACE === 'true';
+    if (debugVehicleTrace) {
+      console.log('[DETAILS_VEHICLE_ELIGIBLE_ROWS]', {
+        planId,
+        count: eligibleRows.length,
+        rows: eligibleRows.map((x: any) => ({
+          eligibleId: Number(x.itinerary_plan_vendor_eligible_ID || 0),
+          vehicleTypeId: Number(x.vehicle_type_id || 0),
+          vendorVehicleTypeId: Number(x.vendor_vehicle_type_id || 0),
+          vehicleId: Number(x.vehicle_id || 0),
+          assignedStatus: Number(x.itineary_plan_assigned_status || 0),
+          deleted: Number(x.deleted || 0),
+          status: Number(x.status || 0),
+        })),
+      });
+    }
+    const selectedVehicleRowsByType = new Map<number, any>();
+    const vehicleTypeBuckets = new Map<number, any[]>();
+    for (const row of eligibleRows) {
+      const vehicleTypeId = Number((row as any).vehicle_type_id || 0);
+      if (!vehicleTypeId) continue;
+      const bucket = vehicleTypeBuckets.get(vehicleTypeId) || [];
+      bucket.push(row);
+      vehicleTypeBuckets.set(vehicleTypeId, bucket);
+    }
+    for (const [vehicleTypeId, rows] of vehicleTypeBuckets.entries()) {
+      const assignedRows = rows.filter((r) => Number((r as any).itineary_plan_assigned_status || 0) === 1);
+      const candidates = assignedRows.length > 0 ? assignedRows : rows;
+      candidates.sort((a, b) => {
+        const aTotal = Number((a as any).vehicle_grand_total ?? Number.MAX_SAFE_INTEGER) || Number.MAX_SAFE_INTEGER;
+        const bTotal = Number((b as any).vehicle_grand_total ?? Number.MAX_SAFE_INTEGER) || Number.MAX_SAFE_INTEGER;
+        if (aTotal !== bTotal) return aTotal - bTotal;
+        return Number((a as any).itinerary_plan_vendor_eligible_ID || 0) - Number((b as any).itinerary_plan_vendor_eligible_ID || 0);
+      });
+      selectedVehicleRowsByType.set(vehicleTypeId, candidates[0]);
+    }
     let kmLimitWarning: string | undefined;
 
     // Fetch all vehicle type names to map vehicleTypeId -> vehicleTypeName
@@ -3136,6 +3174,24 @@ sightseeingDistance,       // local sightseeing separately
         vehicleDetailsByEligible.set(eligibleId, []);
       }
       vehicleDetailsByEligible.get(eligibleId)!.push(vd);
+    }
+    if (debugVehicleTrace) {
+      for (const [eligibleId, rows] of vehicleDetailsByEligible.entries()) {
+        const dupMap = new Map<string, number>();
+        for (const row of rows) {
+          const key = `${Number((row as any).itinerary_plan_vendor_eligible_ID || 0)}_${Number((row as any).itinerary_route_id || 0)}`;
+          dupMap.set(key, (dupMap.get(key) || 0) + 1);
+        }
+        const duplicateKeys = Array.from(dupMap.entries())
+          .filter(([, c]) => c > 1)
+          .map(([k, c]) => ({ key: k, rowCount: c }));
+        console.log('[DETAILS_VEHICLE_DETAIL_ROWS]', {
+          planId,
+          eligibleId,
+          rowCount: rows.length,
+          duplicateKeys,
+        });
+      }
     }
 
     const totalAllowedKmFromAssigned = assignedEligibleRows.reduce((sum, e) => {
@@ -3520,7 +3576,7 @@ sightseeingDistance,       // local sightseeing separately
     }
 
     // Build vehicles array directly from eligible list (like PHP does)
-    const vehicles: ItineraryVehicleRowDto[] = eligibleRows.map((eligible) => {
+    const vehicles: ItineraryVehicleRowDto[] = Array.from(selectedVehicleRowsByType.values()).map((eligible) => {
       const branchId = (eligible as any).vendor_branch_id ?? 0;
       const branch = branchMap.get(branchId) || null;
       const vehicleTypeId = (eligible as any).vehicle_type_id ?? 0;
@@ -3698,31 +3754,70 @@ for (const vd of dayWiseDetails) {
         dayData.dropKms += parseFloat(String((vd as any).total_drop_km || 0)) || 0;
         const dropDurationMinutes = parseDurationToMinutes((vd as any).total_drop_duration);
         dayData.dropDurationMinutes += dropDurationMinutes;
-        const rowTravelType = Number((vd as any).travel_type || 0) === 2 ? 'Outstation' : 'Local';
+        const rowTravelTypeId = Number((vd as any).travel_type || 0);
+        const rowTravelType = rowTravelTypeId === 2 ? 'Outstation' : 'Local';
+
         if (!dayData.travelType) {
           dayData.travelType = rowTravelType;
         } else if (dayData.travelType !== rowTravelType) {
           dayData.travelType = 'Mixed';
         }
+
         const rowTimeLimitId = Number((vd as any).time_limit_id || 0);
         const rowKmsLimitId = Number((vd as any).kms_limit_id || 0);
-        const slabInfo = slabInfoByTimeLimit.get(rowTimeLimitId);
-        if (!dayData.timeLimitId && rowTimeLimitId > 0) {
-          dayData.timeLimitId = rowTimeLimitId;
-          dayData.slabTitle = slabInfo?.title || '';
-          dayData.slabHoursLimit = Number(slabInfo?.hoursLimit || 0);
-          dayData.slabKmLimit = Number(slabInfo?.kmLimit || 0);
-        } else if (dayData.timeLimitId > 0 && rowTimeLimitId > 0 && dayData.timeLimitId !== rowTimeLimitId) {
-          dayData.slabTitle = 'Mixed Slabs';
-        }
-        const kmsLimitInfo = kmsLimitInfoById.get(rowKmsLimitId);
-        if (!dayData.kmsLimitId && rowKmsLimitId > 0) {
-          dayData.kmsLimitId = rowKmsLimitId;
-          dayData.packageTitle = kmsLimitInfo?.title || '';
-          dayData.packageKmLimit = Number(kmsLimitInfo?.kmLimit || 0);
-          if (!dayData.slabTitle) {
-            dayData.slabTitle = kmsLimitInfo?.title || '';
-            dayData.slabKmLimit = Number(kmsLimitInfo?.kmLimit || 0);
+
+        /**
+         * Backend display rule:
+         * Outstation day should show outstation KM package/limit in SLAB column,
+         * not local hour-based slab.
+         *
+         * Example:
+         * SLAB: 250 KM (Outstation)
+         */
+        if (rowTravelType === 'Outstation') {
+          const outstationKmLimit =
+            outstationPackageKm > 0
+              ? outstationPackageKm
+              : 250;
+
+          const outstationSlabTitle = `${Number(outstationKmLimit.toFixed(2)).toString()} KM (Outstation)`;
+
+          dayData.slabTitle = outstationSlabTitle;
+          dayData.slabKmLimit = outstationKmLimit;
+
+          dayData.packageTitle = outstationSlabTitle;
+          dayData.packageKmLimit = outstationKmLimit;
+
+          if (!dayData.kmsLimitId && rowKmsLimitId > 0) {
+            dayData.kmsLimitId = rowKmsLimitId;
+          }
+        } else {
+          const slabInfo = slabInfoByTimeLimit.get(rowTimeLimitId);
+
+          if (!dayData.timeLimitId && rowTimeLimitId > 0) {
+            dayData.timeLimitId = rowTimeLimitId;
+            dayData.slabTitle = slabInfo?.title || '';
+            dayData.slabHoursLimit = Number(slabInfo?.hoursLimit || 0);
+            dayData.slabKmLimit = Number(slabInfo?.kmLimit || 0);
+          } else if (
+            dayData.timeLimitId > 0 &&
+            rowTimeLimitId > 0 &&
+            dayData.timeLimitId !== rowTimeLimitId
+          ) {
+            dayData.slabTitle = 'Mixed Slabs';
+          }
+
+          const kmsLimitInfo = kmsLimitInfoById.get(rowKmsLimitId);
+
+          if (!dayData.kmsLimitId && rowKmsLimitId > 0) {
+            dayData.kmsLimitId = rowKmsLimitId;
+            dayData.packageTitle = kmsLimitInfo?.title || '';
+            dayData.packageKmLimit = Number(kmsLimitInfo?.kmLimit || 0);
+
+            if (!dayData.slabTitle) {
+              dayData.slabTitle = kmsLimitInfo?.title || '';
+              dayData.slabKmLimit = Number(kmsLimitInfo?.kmLimit || 0);
+            }
           }
         }
         // Total KM in UI is defined as pickup + travel + sightseeing + drop.
@@ -3876,7 +3971,7 @@ for (const vd of dayWiseDetails) {
       const vendorMarginGstAmount = parseFloat(String(eligAny.vendor_margin_gst_amount || 0)) || 0;
       const grandTotal = parseFloat(String(eligAny.vehicle_grand_total || 0)) || 0;
 
-      return {
+      const vehicleResponseRow = {
         vendorName: branch?.vendor_branch_name ?? null,
         branchName: branch?.vendor_branch_name ?? null,
         vehicleOrigin: origin || branch?.vendor_branch_location || null,
@@ -3937,6 +4032,19 @@ for (const vd of dayWiseDetails) {
         col2Duration: '0 Min',
         col3Duration: '0 Min',
       };
+      if (debugVehicleTrace) {
+        console.log('[DETAILS_VEHICLE_RESPONSE_ROW]', {
+          vehicleTypeId: Number((vehicleResponseRow as any).vehicleTypeId || 0),
+          vehicleTypeName: String((vehicleResponseRow as any).vehicleTypeName || ''),
+          eligibleId: Number((vehicleResponseRow as any).vendorEligibleId || 0),
+          isAssigned: Boolean((vehicleResponseRow as any).isAssigned),
+          dayWisePricingCount: Array.isArray((vehicleResponseRow as any).dayWisePricing)
+            ? (vehicleResponseRow as any).dayWisePricing.length
+            : 0,
+          totalAmount: Number((vehicleResponseRow as any).totalAmount || 0),
+        });
+      }
+      return vehicleResponseRow;
     });
 
     // 5) Total vehicle amount for footer: sum only ASSIGNED vehicles (itineary_plan_assigned_status = 1)
