@@ -909,38 +909,50 @@ export function determineTravelType(
   check_local_via_route_city: boolean,
   force_local_trip: boolean = false,
 ): number {
-  if (force_local_trip && check_local_via_route_city) {
-    return 1;
-  }
+    const sourceNorm = normalizeCityToken(source_city);
+    const destNorm = normalizeCityToken(destination_city);
+    const originNorm = normalizeCityToken(vehicle_origin_city);
+    const prevNorm = normalizeCityToken(previous_destination_city);
 
-  const sourceNorm = normalizeCityToken(source_city);
-  const destNorm = normalizeCityToken(destination_city);
-  const originNorm = normalizeCityToken(vehicle_origin_city);
-  const prevNorm = normalizeCityToken(previous_destination_city);
+    const isSameCityRoute =
+      sourceNorm !== '' &&
+      sourceNorm === destNorm &&
+      check_local_via_route_city;
 
-  // PHP logic from line ~460:
-  // if ($source_location_city == $destination_location_city && 
-  //     $source_location_city == $vehicle_origin_city && 
-  //     ($route_count == 1 || $route_count == $total_no_of_itineary_plan_route_details || 
-  //      ($previous_destination_location_city == $source_location_city)) && 
-  //     $check_local_via_route_city == true)
-  
-    // NestJS note: The PHP vehicle_origin_city check is relaxed for middle-route same-city
-    // continuation days.  When the vehicle has already arrived in the current city on the
-    // previous day (previous_destination_city === source_city), the origin-city requirement
-    // is waived so that local sightseeing days within outstation trips are correctly priced
-    // using a LOCAL slab (e.g. BLR vehicle doing COORG→COORG on day 2 of a BLR→COORG trip).
-    if (sourceNorm && sourceNorm === destNorm && check_local_via_route_city) {
+    const isVehicleOriginCityRoute =
+      isSameCityRoute &&
+      sourceNorm === originNorm;
+
+    /**
+     * Correct rule:
+     * A same-city day is LOCAL only when that city is the vehicle origin city.
+     *
+     * Example:
+     * Vehicle origin = Chennai
+     * Mahabalipuram → Mahabalipuram = OUTSTATION
+     *
+     * Vehicle origin = Chennai
+     * Chennai → Chennai = LOCAL
+     */
+    if (force_local_trip && isVehicleOriginCityRoute) {
+      return 1; // LOCAL
+    }
+
+    if (isVehicleOriginCityRoute) {
       const isOriginCityFirstOrLast =
-        sourceNorm === originNorm &&
-        (route_count === 1 || route_count === total_routes);
-      const isContinuationDay = prevNorm && prevNorm === sourceNorm;
-      if (isOriginCityFirstOrLast || isContinuationDay) {
+        route_count === 1 || route_count === total_routes;
+
+      const isOriginCityContinuationDay =
+        prevNorm !== '' && prevNorm === sourceNorm;
+
+      if (isOriginCityFirstOrLast || isOriginCityContinuationDay) {
         return 1; // LOCAL
       }
     }
+
     return 2; // OUTSTATION
   }
+  
 
   function sameCityViaRoutesRemainLocal(
     sourceCity: string,
