@@ -3,6 +3,8 @@ import { PrismaService } from '../../prisma.service';
 import { TboHotelBookingService } from './services/tbo-hotel-booking.service';
 import { ResAvenueHotelBookingService } from './services/resavenue-hotel-booking.service';
 import { HobseHotelBookingService } from './services/hobse-hotel-booking.service';
+import { AxisRoomsBookingPushService } from './services/axisrooms-booking-push.service';
+import { StaahBookingPushService } from './services/staah-booking-push.service';
 import { CancelHotelVouchersDto } from './dto/cancel-hotel-vouchers.dto';
 
 export interface AddCancellationPolicyDto {
@@ -38,6 +40,8 @@ export class HotelVoucherService {
     private tboHotelBooking: TboHotelBookingService,
     private resavenueHotelBooking: ResAvenueHotelBookingService,
     private hobseHotelBooking: HobseHotelBookingService,
+    private axisroomsBookingPushService: AxisRoomsBookingPushService,
+    private staahBookingPushService: StaahBookingPushService,
   ) {}
 
   /**
@@ -355,6 +359,28 @@ export class HotelVoucherService {
         this.logger.error(`HOBSE Error Details: ${JSON.stringify(error.response?.data || error)}`);
       }
 
+      // Cancel AxisRooms bookings for selected routes
+      try {
+        const axisCancellation = await this.axisroomsBookingPushService.cancelItineraryHotelsByRoutes(
+          dto.itineraryPlanId,
+          routeIdsArray,
+        );
+        this.logger.log(`✅ AxisRooms route cancellation completed: ${JSON.stringify(axisCancellation)}`);
+      } catch (error) {
+        this.logger.error(`❌ AxisRooms route cancellation failed: ${error.message}`);
+      }
+
+      // Cancel STAAH bookings for selected routes
+      try {
+        const staahCancellation = await this.staahBookingPushService.cancelItineraryHotelsByRoutes(
+          dto.itineraryPlanId,
+          routeIdsArray,
+        );
+        this.logger.log(`✅ STAAH route cancellation completed: ${JSON.stringify(staahCancellation)}`);
+      } catch (error) {
+        this.logger.error(`❌ STAAH route cancellation failed: ${error.message}`);
+      }
+
       // Update voucher cancellation status in database only for cancelled routes
       const cancelledVoucherRecords = createdVouchers.filter((v) => routeIdsArray.includes(Number(v.routeId)));
       for (const voucherRecord of cancelledVoucherRecords) {
@@ -448,6 +474,8 @@ export class HotelVoucherService {
       tbo: null,
       resavenue: null,
       hobse: null,
+      axisrooms: null,
+      staah: null,
     };
 
     // Provider cancellations should not block DB status updates for operational consistency.
@@ -482,6 +510,26 @@ export class HotelVoucherService {
       this.logger.error(`HOBSE scoped cancellation failed: ${error?.message || error}`);
       providerResults.hobse = { error: error?.message || 'Cancellation failed' };
     }
+
+      try {
+        providerResults.axisrooms = await this.axisroomsBookingPushService.cancelItineraryHotelsByRoutes(
+          itineraryPlanId,
+          targetRouteIds,
+        );
+      } catch (error: any) {
+        this.logger.error(`AxisRooms scoped cancellation failed: ${error?.message || error}`);
+        providerResults.axisrooms = { error: error?.message || 'Cancellation failed' };
+      }
+
+      try {
+        providerResults.staah = await this.staahBookingPushService.cancelItineraryHotelsByRoutes(
+          itineraryPlanId,
+          targetRouteIds,
+        );
+      } catch (error: any) {
+        this.logger.error(`STAAH scoped cancellation failed: ${error?.message || error}`);
+        providerResults.staah = { error: error?.message || 'Cancellation failed' };
+      }
 
     await this.prisma.dvi_itinerary_plan_hotel_details.updateMany({
       where: {

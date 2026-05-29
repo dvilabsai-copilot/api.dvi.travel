@@ -4996,9 +4996,73 @@ export class ItinerariesService {
       });
     }
 
+    // Build a set that includes both provider::route and provider::route::bookingCode keys
+    const successKeySet = new Set<string>(Array.from(alreadySuccessKeys));
+
+    // AxisRooms
+    const axisRows = await (this.prisma as any).axisrooms_hotel_booking_confirmation.findMany({
+      where: {
+        itinerary_plan_ID: itineraryPlanId,
+        status: 1,
+        deleted: 0,
+      },
+      select: {
+        itinerary_route_ID: true,
+        booking_code: true,
+        axisrooms_booking_reference: true,
+      },
+    });
+    for (const row of axisRows) {
+      const routeId = Number(row.itinerary_route_ID || 0);
+      successKeySet.add(this.bookingKey('axisrooms', routeId));
+      const code = String(row.booking_code || row.axisrooms_booking_reference || '').trim();
+      if (code) successKeySet.add(`${String('axisrooms')}::${routeId}::${code}`);
+      alreadyConfirmedResults.push({
+        provider: 'axisrooms',
+        routeId,
+        hotelCode: String(row.axisrooms_booking_reference || ''),
+        status: 'already_confirmed',
+        success: true,
+        bookingRef: String(row.booking_code || row.axisrooms_booking_reference || null),
+      });
+    }
+
+    // STAAH
+    const staahRows = await (this.prisma as any).staah_hotel_booking_confirmation.findMany({
+      where: {
+        itinerary_plan_ID: itineraryPlanId,
+        status: 1,
+        deleted: 0,
+      },
+      select: {
+        itinerary_route_ID: true,
+        booking_code: true,
+        staah_booking_reference: true,
+      },
+    });
+    for (const row of staahRows) {
+      const routeId = Number(row.itinerary_route_ID || 0);
+      successKeySet.add(this.bookingKey('staah', routeId));
+      const code = String(row.booking_code || row.staah_booking_reference || '').trim();
+      if (code) successKeySet.add(`${String('staah')}::${routeId}::${code}`);
+      alreadyConfirmedResults.push({
+        provider: 'staah',
+        routeId,
+        hotelCode: String(row.staah_booking_reference || ''),
+        status: 'already_confirmed',
+        success: true,
+        bookingRef: String(row.booking_code || row.staah_booking_reference || null),
+      });
+    }
+
     const pendingBookings = bookings.filter((hotel) => {
-      const key = this.bookingKey(hotel.__provider, Number(hotel.routeId || 0));
-      return !alreadySuccessKeys.has(key);
+      const provider = String(hotel.__provider || '').trim().toLowerCase();
+      const routeId = Number(hotel.routeId || 0);
+      const bookingCode = String(hotel.bookingCode || hotel.booking_code || '').trim();
+      const key = this.bookingKey(provider, routeId);
+      const keyWithCode = bookingCode ? `${provider}::${routeId}::${bookingCode}` : null;
+      if (keyWithCode && successKeySet.has(keyWithCode)) return false;
+      return !successKeySet.has(key);
     });
 
     return { pendingBookings, alreadyConfirmedResults };
