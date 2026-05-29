@@ -181,6 +181,46 @@ export class AxisRoomsBookingPushService {
     }
 
     const result = await this.pushBookingNotification(payload);
+    // Persist confirmation for successful confirms
+    try {
+      if (input.bookingStatus === 'confirmed' && result.success) {
+        const booking = input.hotel || {};
+        const hotelCode = String(booking.hotelCode || '').trim();
+        const passengers = Array.isArray(booking.passengers) ? booking.passengers : [];
+
+        await this.prisma.axisrooms_hotel_booking_confirmation.create({
+          data: {
+            confirmed_itinerary_plan_ID: input.confirmedItineraryPlanId,
+            itinerary_plan_ID: input.itineraryPlanId,
+            itinerary_route_ID: Number(booking.routeId || 0),
+            axisrooms_hotel_code: hotelCode,
+            axisrooms_booking_reference: String(payload.confirmationNo || ''),
+            booking_code: String(booking.bookingCode || ''),
+            check_in_date: booking.checkInDate ? new Date(booking.checkInDate) : null,
+            check_out_date: booking.checkOutDate ? new Date(booking.checkOutDate) : null,
+            number_of_rooms: Number(booking.numberOfRooms || 1),
+            net_amount: Number(booking.netAmount || 0),
+            guest_nationality: String(booking.guestNationality || ''),
+            total_guests: Array.isArray(passengers) ? passengers.length : 0,
+            api_response: {
+              confirm: {
+                request: payload,
+                response: result.response || result,
+                error: result.error || null,
+                createdAt: new Date().toISOString(),
+              },
+            },
+            createdby: 1,
+            createdon: new Date(),
+            status: 1,
+            deleted: 0,
+          },
+        });
+      }
+    } catch (e) {
+      this.logger.error('Failed to persist AxisRooms confirmation: ' + String(e?.message || e));
+    }
+
     return {
       success: result.success,
       message: result.message,
@@ -188,5 +228,93 @@ export class AxisRoomsBookingPushService {
       response: result.response,
       error: result.error,
     };
+  }
+
+  async cancelItineraryHotels(itineraryPlanId: number) {
+    const rows = await this.prisma.axisrooms_hotel_booking_confirmation.findMany({
+      where: {
+        itinerary_plan_ID: itineraryPlanId,
+        status: 1,
+        deleted: 0,
+      },
+    });
+
+    for (const row of rows) {
+      // eslint-disable-next-line no-await-in-loop
+      await this.cancelAxisroomsBookingRow(row as any);
+    }
+  }
+
+  async cancelItineraryHotelsByRoutes(itineraryPlanId: number, routeIds: number[]) {
+    if (!routeIds?.length) return;
+
+    const rows = await this.prisma.axisrooms_hotel_booking_confirmation.findMany({
+      where: {
+        itinerary_plan_ID: itineraryPlanId,
+        itinerary_route_ID: { in: routeIds },
+        status: 1,
+        deleted: 0,
+      },
+    });
+
+    for (const row of rows) {
+      // eslint-disable-next-line no-await-in-loop
+      await this.cancelAxisroomsBookingRow(row as any);
+    }
+  }
+
+  private async cancelAxisroomsBookingRow(row: any) {
+    const cancelPayload = {
+      confirmationNo: row.axisrooms_booking_reference,
+      bookingCode: row.booking_code,
+      hotelCode: row.axisrooms_hotel_code,
+    };
+
+    try {
+      const cancelResult = await this.pushBookingNotification({
+        ...cancelPayload,
+        bookingStatus: 'cancelled',
+      } as any);
+
+      const oldResponse = row.api_response && typeof row.api_response === 'object' ? row.api_response : {};
+
+      await this.prisma.axisrooms_hotel_booking_confirmation.update({
+        where: {
+          axisrooms_hotel_booking_confirmation_ID: row.axisrooms_hotel_booking_confirmation_ID,
+        },
+        data: {
+          status: cancelResult?.success ? 0 : row.status,
+          updatedon: new Date(),
+          api_response: {
+            ...oldResponse,
+            cancellation: {
+              request: cancelPayload,
+              response: cancelResult?.response || cancelResult,
+              error: cancelResult?.error || null,
+              cancelledAt: new Date().toISOString(),
+            },
+          },
+        },
+      });
+    } catch (error: any) {
+      const oldResponse = row.api_response && typeof row.api_response === 'object' ? row.api_response : {};
+
+      await this.prisma.axisrooms_hotel_booking_confirmation.update({
+        where: {
+          axisrooms_hotel_booking_confirmation_ID: row.axisrooms_hotel_booking_confirmation_ID,
+        },
+        data: {
+          updatedon: new Date(),
+          api_response: {
+            ...oldResponse,
+            cancellation_error: {
+              request: cancelPayload,
+              error: error?.message || String(error),
+              failedAt: new Date().toISOString(),
+            },
+          },
+        },
+      });
+    }
   }
 }

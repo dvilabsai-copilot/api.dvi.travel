@@ -72,6 +72,7 @@ export class StaahBookingPushService {
   }): Promise<any[]> {
     console.log('[STAAH_BOOKING_PUSH] Starting', { count: params.hotels?.length || 0 });
     const results: any[] = [];
+    const bookingTimeoutMs = Number(process.env.STAAH_BOOKING_TIMEOUT_MS || 60000);
 
     for (const hotel of params.hotels || []) {
       const bookingId = `DVI-${params.itineraryPlanId}-${params.confirmedItineraryPlanId}-${hotel.routeId}`;
@@ -116,13 +117,56 @@ export class StaahBookingPushService {
         console.log('[STAAH_BOOKING_PUSH] Request URL', this.apiUrl);
         console.log('[STAAH_BOOKING_PUSH] Request payload', JSON.stringify(this.maskPayload(payload)));
 
-        const resp = await axios.post(this.apiUrl, payload, {
-          timeout: 20000,
-          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-          validateStatus: () => true,
-        });
-        responseStatus = resp.status;
-        responseBody = resp.data;
+        try {
+          const resp = await axios.post(this.apiUrl, payload, {
+            timeout: bookingTimeoutMs,
+            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+            validateStatus: () => true,
+          });
+          responseStatus = resp.status;
+          responseBody = resp.data;
+        } catch (error: any) {
+          responseStatus = error?.response?.status || null;
+          responseBody = error?.response?.data || null;
+
+          const errorMessage =
+            error?.code === 'ECONNABORTED'
+              ? `STAAH booking timeout after ${bookingTimeoutMs}ms`
+              : error?.message || 'STAAH booking request failed';
+
+          await this.prisma.staah_reservation.create({
+            data: {
+              type: 'outbound_confirm_failed',
+              staah_property_id: propertyid,
+              reservation_id: bookingId,
+              payload: {
+                request: this.maskPayload(payload),
+                responseStatus,
+                responseBody,
+                error: errorMessage,
+                errorCode: error?.code || null,
+                routeId: hotel.routeId,
+                hotelCode: hotel.hotelCode,
+                confirmedItineraryPlanId: params.confirmedItineraryPlanId,
+                itineraryPlanId: params.itineraryPlanId,
+                failedAt: new Date().toISOString(),
+              } as Prisma.InputJsonValue,
+            },
+          });
+
+          results.push({
+            provider: 'staah',
+            routeId: hotel.routeId,
+            hotelCode: hotel.hotelCode,
+            bookingId,
+            success: false,
+            status: 'failed',
+            error: errorMessage,
+            responseStatus,
+            responseBody,
+          });
+          continue;
+        }
 
         console.log('[STAAH_BOOKING_PUSH] Response status', responseStatus);
         console.log('[STAAH_BOOKING_PUSH] Response body', responseBody);
@@ -166,6 +210,41 @@ export class StaahBookingPushService {
           continue;
         }
 
+        // Persist confirmation row in staah_hotel_booking_confirmation
+        try {
+          await this.prisma.staah_hotel_booking_confirmation.create({
+            data: {
+              confirmed_itinerary_plan_ID: params.confirmedItineraryPlanId,
+              itinerary_plan_ID: params.itineraryPlanId,
+              itinerary_route_ID: Number(hotel.routeId || 0),
+              staah_hotel_code: String(hotel.hotelCode || ''),
+              staah_booking_reference: String(bookingId || ''),
+              booking_code: String(hotel.bookingCode || ''),
+              check_in_date: hotel.checkInDate ? new Date(hotel.checkInDate) : null,
+              check_out_date: hotel.checkOutDate ? new Date(hotel.checkOutDate) : null,
+              number_of_rooms: Number(hotel.numberOfRooms || 1),
+              net_amount: Number(hotel.netAmount || 0),
+              guest_nationality: String(hotel.guestNationality || ''),
+              total_guests: Number((adults || 0) + (children || 0)),
+              api_response: {
+                confirm: {
+                  request: typeof this.maskPayload === 'function' ? this.maskPayload(payload) : payload,
+                  responseStatus,
+                  response: responseBody,
+                  error: null,
+                  createdAt: new Date().toISOString(),
+                },
+              },
+              createdby: 1,
+              createdon: new Date(),
+              status: 1,
+              deleted: 0,
+            },
+          });
+        } catch (e) {
+          console.error('Failed to persist STAAH confirmation:', e?.message || e);
+        }
+
         results.push({
           provider: 'staah',
           routeId: hotel.routeId,
@@ -201,5 +280,117 @@ export class StaahBookingPushService {
     }
 
     return results;
+  }
+
+  async cancelItineraryHotels(itineraryPlanId: number) {
+    const rows = await this.prisma.staah_hotel_booking_confirmation.findMany({
+      where: {
+        itinerary_plan_ID: itineraryPlanId,
+        status: 1,
+        deleted: 0,
+      },
+    });
+
+    for (const row of rows) {
+      // eslint-disable-next-line no-await-in-loop
+      await this.cancelStaahBookingRow(row as any);
+    }
+  }
+
+  async cancelItineraryHotelsByRoutes(itineraryPlanId: number, routeIds: number[]) {
+    if (!routeIds?.length) return;
+
+    const rows = await this.prisma.staah_hotel_booking_confirmation.findMany({
+      where: {
+        itinerary_plan_ID: itineraryPlanId,
+        itinerary_route_ID: { in: routeIds },
+        status: 1,
+        deleted: 0,
+      },
+    });
+
+    for (const row of rows) {
+      // eslint-disable-next-line no-await-in-loop
+      await this.cancelStaahBookingRow(row as any);
+    }
+  }
+
+  private async cancelStaahBookingRow(row: any) {
+    const cancelPayload = {
+      bookingId: row.staah_booking_reference,
+      bookingCode: row.booking_code,
+      hotelCode: row.staah_hotel_code,
+    };
+
+    try {
+      const cancelResult = await this.cancelBooking(cancelPayload as any);
+
+      const oldResponse = row.api_response && typeof row.api_response === 'object' ? row.api_response : {};
+
+      await this.prisma.staah_hotel_booking_confirmation.update({
+        where: { staah_hotel_booking_confirmation_ID: row.staah_hotel_booking_confirmation_ID },
+        data: {
+          status: cancelResult?.success ? 0 : row.status,
+          updatedon: new Date(),
+          api_response: {
+            ...oldResponse,
+            cancellation: {
+              request: cancelPayload,
+              response: cancelResult?.response || cancelResult,
+              error: cancelResult?.error || null,
+              cancelledAt: new Date().toISOString(),
+            },
+          },
+        },
+      });
+    } catch (error: any) {
+      const oldResponse = row.api_response && typeof row.api_response === 'object' ? row.api_response : {};
+
+      await this.prisma.staah_hotel_booking_confirmation.update({
+        where: { staah_hotel_booking_confirmation_ID: row.staah_hotel_booking_confirmation_ID },
+        data: {
+          updatedon: new Date(),
+          api_response: {
+            ...oldResponse,
+            cancellation_error: {
+              request: cancelPayload,
+              error: error?.message || String(error),
+              failedAt: new Date().toISOString(),
+            },
+          },
+        },
+      });
+    }
+  }
+
+  // Generic STAAH cancel helper - posts a cancellation request using same API pattern
+  private async cancelBooking(payload: any): Promise<any> {
+    try {
+      const req = {
+        propertyid: payload.propertyid || '',
+        apikey: this.apiKey,
+        action: 'reservation_cancel',
+        version: '2',
+        reservations: {
+          reservation: [
+            {
+              bookingId: payload.bookingId,
+              booking_code: payload.bookingCode,
+              room_id: payload.roomId,
+            },
+          ],
+        },
+      };
+
+      const resp = await axios.post(this.apiUrl, req, {
+        timeout: 20000,
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        validateStatus: () => true,
+      });
+
+      return { success: resp.status >= 200 && resp.status < 300, response: resp.data, status: resp.status };
+    } catch (error: any) {
+      return { success: false, error: error?.message || String(error) };
+    }
   }
 }

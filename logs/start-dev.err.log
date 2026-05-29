@@ -1,0 +1,294 @@
+(node:38304) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+(node:19688) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+(node:28996) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 28996  - [39m28/05/2026, 3:33:18 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +5ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:32364) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 32364  - [39m28/05/2026, 4:01:33 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +5ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:18060) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 18060  - [39m28/05/2026, 4:01:49 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +6ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:37100) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 37100  - [39m28/05/2026, 4:47:05 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +4ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:27360) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 27360  - [39m28/05/2026, 4:47:24 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +7ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:33856) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 33856  - [39m28/05/2026, 6:18:38 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +11ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:36404) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 36404  - [39m28/05/2026, 8:51:34 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +5ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:36588) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 36588  - [39m28/05/2026, 8:51:41 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +8ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:31028) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 31028  - [39m28/05/2026, 8:52:23 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +6ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+ReferenceError: debugInsert is not defined
+    at Object.<anonymous> (C:\wamp64\www\dvi_fullstack\api.dvi.travel\src\modules\itineraries\engines\vehicle-calculation.helpers.ts:2286:3)
+    at Module.<anonymous> (node:internal/modules/cjs/loader:1812:14)
+    at Module._compile (C:\wamp64\www\dvi_fullstack\api.dvi.travel\node_modules\source-map-support\source-map-support.js:568:25)
+    at Module.m._compile (C:\Users\PRECIS~1\AppData\Local\Temp\ts-node-dev-hook-7329932506243065.js:69:33)
+    at node:internal/modules/cjs/loader:1943:10
+    at require.extensions..jsx.require.extensions..js (C:\Users\PRECIS~1\AppData\Local\Temp\ts-node-dev-hook-7329932506243065.js:114:20)
+    at require.extensions.<computed> (C:\Users\PRECIS~1\AppData\Local\Temp\ts-node-dev-hook-7329932506243065.js:71:20)
+    at Object.nodeDevHook [as .ts] (C:\wamp64\www\dvi_fullstack\api.dvi.travel\node_modules\ts-node-dev\lib\hook.js:63:13)
+    at Module.load (node:internal/modules/cjs/loader:1533:32)
+    at Module._load (node:internal/modules/cjs/loader:1335:12)
+(node:39892) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+ReferenceError: debugInsert is not defined
+    at Object.<anonymous> (C:\wamp64\www\dvi_fullstack\api.dvi.travel\src\modules\itineraries\engines\vehicle-calculation.helpers.ts:2297:3)
+    at Module.<anonymous> (node:internal/modules/cjs/loader:1812:14)
+    at Module._compile (C:\wamp64\www\dvi_fullstack\api.dvi.travel\node_modules\source-map-support\source-map-support.js:568:25)
+    at Module.m._compile (C:\Users\PRECIS~1\AppData\Local\Temp\ts-node-dev-hook-7329932506243065.js:69:33)
+    at node:internal/modules/cjs/loader:1943:10
+    at require.extensions..jsx.require.extensions..js (C:\Users\PRECIS~1\AppData\Local\Temp\ts-node-dev-hook-7329932506243065.js:114:20)
+    at require.extensions.<computed> (C:\Users\PRECIS~1\AppData\Local\Temp\ts-node-dev-hook-7329932506243065.js:71:20)
+    at Object.nodeDevHook [as .ts] (C:\wamp64\www\dvi_fullstack\api.dvi.travel\node_modules\ts-node-dev\lib\hook.js:63:13)
+    at Module.load (node:internal/modules/cjs/loader:1533:32)
+    at Module._load (node:internal/modules/cjs/loader:1335:12)
+(node:34408) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+ReferenceError: debugInsert is not defined
+    at Object.<anonymous> (C:\wamp64\www\dvi_fullstack\api.dvi.travel\src\modules\itineraries\engines\vehicle-calculation.helpers.ts:2308:3)
+    at Module.<anonymous> (node:internal/modules/cjs/loader:1812:14)
+    at Module._compile (C:\wamp64\www\dvi_fullstack\api.dvi.travel\node_modules\source-map-support\source-map-support.js:568:25)
+    at Module.m._compile (C:\Users\PRECIS~1\AppData\Local\Temp\ts-node-dev-hook-7329932506243065.js:69:33)
+    at node:internal/modules/cjs/loader:1943:10
+    at require.extensions..jsx.require.extensions..js (C:\Users\PRECIS~1\AppData\Local\Temp\ts-node-dev-hook-7329932506243065.js:114:20)
+    at require.extensions.<computed> (C:\Users\PRECIS~1\AppData\Local\Temp\ts-node-dev-hook-7329932506243065.js:71:20)
+    at Object.nodeDevHook [as .ts] (C:\wamp64\www\dvi_fullstack\api.dvi.travel\node_modules\ts-node-dev\lib\hook.js:63:13)
+    at Module.load (node:internal/modules/cjs/loader:1533:32)
+    at Module._load (node:internal/modules/cjs/loader:1335:12)
+(node:37328) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+ReferenceError: debugInsert is not defined
+    at Object.<anonymous> (C:\wamp64\www\dvi_fullstack\api.dvi.travel\src\modules\itineraries\engines\vehicle-calculation.helpers.ts:2317:3)
+    at Module.<anonymous> (node:internal/modules/cjs/loader:1812:14)
+    at Module._compile (C:\wamp64\www\dvi_fullstack\api.dvi.travel\node_modules\source-map-support\source-map-support.js:568:25)
+    at Module.m._compile (C:\Users\PRECIS~1\AppData\Local\Temp\ts-node-dev-hook-7329932506243065.js:69:33)
+    at node:internal/modules/cjs/loader:1943:10
+    at require.extensions..jsx.require.extensions..js (C:\Users\PRECIS~1\AppData\Local\Temp\ts-node-dev-hook-7329932506243065.js:114:20)
+    at require.extensions.<computed> (C:\Users\PRECIS~1\AppData\Local\Temp\ts-node-dev-hook-7329932506243065.js:71:20)
+    at Object.nodeDevHook [as .ts] (C:\wamp64\www\dvi_fullstack\api.dvi.travel\node_modules\ts-node-dev\lib\hook.js:63:13)
+    at Module.load (node:internal/modules/cjs/loader:1533:32)
+    at Module._load (node:internal/modules/cjs/loader:1335:12)
+(node:37696) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+(node:27888) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 27888  - [39m28/05/2026, 8:55:57 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +7ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:41828) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 41828  - [39m28/05/2026, 9:49:48 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +5ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:37600) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 37600  - [39m28/05/2026, 9:50:12 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +7ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:20904) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 20904  - [39m28/05/2026, 10:05:27 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +6ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:35288) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+(node:41032) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 41032  - [39m28/05/2026, 10:05:40 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +5ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:31788) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 31788  - [39m28/05/2026, 10:05:54 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +6ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:26788) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 26788  - [39m28/05/2026, 10:19:12 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +5ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:29688) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 29688  - [39m28/05/2026, 10:19:27 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +6ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:21960) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 21960  - [39m28/05/2026, 10:22:15 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +6ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:41480) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 41480  - [39m28/05/2026, 10:28:53 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +6ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:33420) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 33420  - [39m28/05/2026, 11:53:51 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +9ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:40252) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 40252  - [39m29/05/2026, 12:02:40 am [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +10ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:36680) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 36680  - [39m29/05/2026, 12:02:55 am [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +11ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:39044) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 39044  - [39m29/05/2026, 12:03:18 am [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +14ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:37292) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 37292  - [39m29/05/2026, 12:03:26 am [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +18ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:34864) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+(node:33120) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 33120  - [39m29/05/2026, 12:04:00 am [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +16ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:28572) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+(node:35072) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 35072  - [39m29/05/2026, 12:04:53 am [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +10ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:41872) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 41872  - [39m29/05/2026, 12:05:27 am [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +7ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:41636) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 41636  - [39m29/05/2026, 12:15:16 am [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +12ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:5464) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 5464  - [39m29/05/2026, 12:15:26 am [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +7ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
