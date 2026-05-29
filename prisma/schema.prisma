@@ -5811,6 +5811,62 @@ model resavenue_hotel_booking_confirmation {
   @@index([deleted], map: "idx_resavenue_booking_deleted")
 }
 
+/// AxisRooms Hotel Booking Confirmations
+/// Stores confirmation data from AxisRooms API when hotels are booked
+model axisrooms_hotel_booking_confirmation {
+  axisrooms_hotel_booking_confirmation_ID Int       @id @default(autoincrement())
+  confirmed_itinerary_plan_ID             Int       @default(0)
+  itinerary_plan_ID                       Int       @default(0)
+  itinerary_route_ID                      Int       @default(0)
+  axisrooms_hotel_code                    String    @db.VarChar(50)
+  axisrooms_booking_reference             String?   @db.VarChar(100)
+  booking_code                            String    @db.Text
+  check_in_date                           DateTime? @db.Date
+  check_out_date                          DateTime? @db.Date
+  number_of_rooms                         Int       @default(0)
+  net_amount                              Float     @default(0) @db.Float
+  guest_nationality                       String?   @db.VarChar(10)
+  total_guests                            Int       @default(0)
+  api_response                            Json?
+  createdby                               Int       @default(0)
+  createdon                               DateTime? @default(now()) @db.DateTime(0)
+  updatedon                               DateTime? @db.DateTime(0)
+  status                                  Int       @default(1) @db.TinyInt
+  deleted                                 Int       @default(0) @db.TinyInt
+
+  @@index([itinerary_plan_ID])
+  @@index([itinerary_route_ID])
+  @@index([axisrooms_booking_reference])
+}
+
+/// Staah Hotel Booking Confirmations
+/// Stores confirmation data from Staah API when hotels are booked
+model staah_hotel_booking_confirmation {
+  staah_hotel_booking_confirmation_ID Int       @id @default(autoincrement())
+  confirmed_itinerary_plan_ID         Int       @default(0)
+  itinerary_plan_ID                   Int       @default(0)
+  itinerary_route_ID                  Int       @default(0)
+  staah_hotel_code                    String    @db.VarChar(50)
+  staah_booking_reference             String?   @db.VarChar(100)
+  booking_code                        String    @db.Text
+  check_in_date                       DateTime? @db.Date
+  check_out_date                      DateTime? @db.Date
+  number_of_rooms                     Int       @default(0)
+  net_amount                          Float     @default(0) @db.Float
+  guest_nationality                   String?   @db.VarChar(10)
+  total_guests                        Int       @default(0)
+  api_response                        Json?
+  createdby                           Int       @default(0)
+  createdon                           DateTime? @default(now()) @db.DateTime(0)
+  updatedon                           DateTime? @db.DateTime(0)
+  status                              Int       @default(1) @db.TinyInt
+  deleted                             Int       @default(0) @db.TinyInt
+
+  @@index([itinerary_plan_ID])
+  @@index([itinerary_route_ID])
+  @@index([staah_booking_reference])
+}
+
 /// HOBSE Hotel Booking Confirmations
 /// Stores confirmation data from HOBSE API when hotels are booked
 model hobse_hotel_booking_confirmation {
