@@ -615,7 +615,7 @@ export class StaahBookingPushService {
         reservationId: String(row.staah_booking_reference || ''),
         payload: {
           source: 'website_voucher_cancel',
-          request: cancelPayload,
+          request: this.maskPayload(cancelPayload),
           responseStatus: cancelResult?.status ?? null,
           responseBody: cancelResult?.response ?? null,
           success: !!cancelResult?.success,
@@ -627,7 +627,7 @@ export class StaahBookingPushService {
           confirmationId: row.staah_hotel_booking_confirmation_ID,
           triggeredAt: new Date().toISOString(),
         },
-        requestJson: cancelPayload,
+        requestJson: this.maskPayload(cancelPayload),
         responseJson: cancelResult?.response ?? null,
         errorMessage: cancelResult?.success ? null : cancelResult?.error || 'STAAH cancellation failed',
         httpStatus: cancelResult?.status ?? null,
@@ -639,7 +639,7 @@ export class StaahBookingPushService {
       await this.prisma.staah_hotel_booking_confirmation.update({
         where: { staah_hotel_booking_confirmation_ID: row.staah_hotel_booking_confirmation_ID },
         data: {
-          status: cancelResult?.success ? 0 : row.status,
+          status: row.status,
           updatedon: new Date(),
           api_response: {
             ...oldResponse,
@@ -661,7 +661,7 @@ export class StaahBookingPushService {
         reservationId: String(row?.staah_booking_reference || ''),
         payload: {
           source: 'website_voucher_cancel',
-          request: cancelPayload || null,
+          request: cancelPayload ? this.maskPayload(cancelPayload) : null,
           success: false,
           error: error instanceof Error ? error.message : String(error),
           itineraryPlanId: row?.itinerary_plan_ID,
@@ -671,7 +671,7 @@ export class StaahBookingPushService {
           confirmationId: row?.staah_hotel_booking_confirmation_ID,
           failedAt: new Date().toISOString(),
         },
-        requestJson: cancelPayload || null,
+        requestJson: cancelPayload ? this.maskPayload(cancelPayload) : null,
         responseJson: null,
         errorMessage: error instanceof Error ? error.message : String(error),
         httpStatus: null,
