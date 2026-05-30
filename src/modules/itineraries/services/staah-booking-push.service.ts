@@ -7,9 +7,8 @@ import { PrismaService } from '../../../prisma.service';
 export class StaahBookingPushService {
   private readonly apiUrl =
     process.env.STAAH_BOOKING_API_URL ||
-    'https://channels-stage.staah.net/booking/getapi/reservation/v2';
-  private readonly apiKey =
-    process.env.STAAH_BOOKING_API_KEY || 'GeT-aPi-DemoY-U1V8-bdt-03gEp-u1D8a4Y';
+    'https://reservation.otaswitch.com/getapi/reservation/v2';
+  private readonly apiKey =  process.env.STAAH_API_KEY || '';
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -27,15 +26,63 @@ export class StaahBookingPushService {
     return this.prisma.dvi_hotel.findFirst({ where: { hotel_code: raw } });
   }
 
-  private async resolveRoomRate(hotel: any): Promise<{ roomId: string; rateId: string; notes: string[] }> {
+  private nowIstIsoSeconds(): string {
+    const now = new Date();
+    const ist = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+    const y = ist.getFullYear();
+    const m = String(ist.getMonth() + 1).padStart(2, '0');
+    const d = String(ist.getDate()).padStart(2, '0');
+    const hh = String(ist.getHours()).padStart(2, '0');
+    const mm = String(ist.getMinutes()).padStart(2, '0');
+    const ss = String(ist.getSeconds()).padStart(2, '0');
+    return `${y}-${m}-${d}T${hh}:${mm}:${ss}`;
+  }
+
+  private toMoneyString(value: any): string {
+    return Number(value || 0).toFixed(2);
+  }
+
+  private async resolveRoomRate(
+    hotel: any,
+    hotelMaster: dvi_hotel | null,
+  ): Promise<{ roomId: string; rateId: string; rateName: string; notes: string[] }> {
     const notes: string[] = [];
     const searchReference = String((hotel as any)?.searchReference || '').trim();
     if (searchReference.startsWith('STAAH-')) {
       const parts = searchReference.split('-');
-      if (parts.length >= 5) {
+      if (parts.length >= 5 && parts[2] && parts[3]) {
         notes.push('resolved_from_searchReference');
-        return { roomId: parts[2], rateId: parts[3], notes };
+        return { roomId: parts[2], rateId: parts[3], rateName: '', notes };
       }
+    }
+
+    const payloadRoomId = String((hotel as any)?.roomId || '').trim();
+    const payloadRateId = String((hotel as any)?.rateId || '').trim();
+    if (payloadRoomId && payloadRateId) {
+      notes.push('resolved_from_payload_room_rate');
+      return { roomId: payloadRoomId, rateId: payloadRateId, rateName: '', notes };
+    }
+
+    const propertyid = String(hotelMaster?.staah_property_id || '').trim();
+    if (propertyid) {
+      const staahRatePlan = await this.prisma.staah_rateplan.findFirst({
+        where: { staah_property_id: propertyid },
+      });
+      if (staahRatePlan?.room_id && staahRatePlan?.rateplan_id) {
+        notes.push('resolved_from_staah_rateplan');
+        return {
+          roomId: String(staahRatePlan.room_id),
+          rateId: String(staahRatePlan.rateplan_id),
+          rateName: String(staahRatePlan.rateplan_name || ''),
+          notes,
+        };
+      }
+    }
+
+    const hotelCode = String(hotel.hotelCode || '').trim();
+    if (propertyid === 'STAAHTESTHOTEL1' || hotelCode === 'STAAHTESTHOTEL1') {
+      notes.push('resolved_from_test_fallback');
+      return { roomId: 'DELUXEROOM', rateId: 'CPPLAN', rateName: '', notes };
     }
 
     const hotelId = Number(hotel.hotelCode || 0);
@@ -46,17 +93,17 @@ export class StaahBookingPushService {
       });
       const rate = await this.prisma.dvi_hotel_room_rate_plan.findFirst({
         where: { hotel_id: hotelId },
-        select: { rateplan_id: true },
+        select: { rateplan_id: true, rateplan_name: true },
       });
       if (room?.room_ref_code && rate?.rateplan_id) {
-        notes.push('resolved_from_db_lookup');
-        return { roomId: String(room.room_ref_code), rateId: String(rate.rateplan_id), notes };
+        notes.push('resolved_from_legacy_hotel_rateplan_fallback');
+        return {
+          roomId: String(room.room_ref_code),
+          rateId: String(rate.rateplan_id),
+          rateName: String(rate.rateplan_name || ''),
+          notes,
+        };
       }
-    }
-
-    if (String(hotel.hotelCode || '') === '44674') {
-      notes.push('resolved_from_test_fallback');
-      return { roomId: 'DELUXE_ROOM', rateId: 'CP_PLAN', notes };
     }
 
     throw new Error('Unable to resolve STAAH room_id/rate_id');
@@ -85,10 +132,16 @@ export class StaahBookingPushService {
           throw new Error(`Missing staah_property_id for hotelCode=${hotel.hotelCode}`);
         }
 
-        const { roomId, rateId, notes } = await this.resolveRoomRate(hotel);
+        const { roomId, rateId, rateName, notes } = await this.resolveRoomRate(hotel, hotelMaster);
         const firstOcc = hotel.occupancies?.[0] || {};
         const adults = Number(firstOcc.adults || 1);
         const children = Number(firstOcc.children || 0);
+
+        const passenger = hotel.passenger || hotel.primaryPassenger || hotel.passengers?.[0] || {};
+        const netAmount = Number(hotel.netAmount || hotel.totalAmount || 0);
+        const taxAmount = Number(hotel.taxAmount || hotel.totalTax || 0);
+        const totalAmountAfterTax = netAmount + taxAmount;
+        const baseAmountAfterTax = Math.max(netAmount, 0);
 
         const payload = {
           propertyid,
@@ -98,14 +151,80 @@ export class StaahBookingPushService {
           reservations: {
             reservation: [
               {
-                bookingId,
-                room_id: roomId,
-                rate_id: rateId,
-                checkIn: hotel.checkInDate,
-                checkOut: hotel.checkOutDate,
-                adults,
-                children,
-                status: 'confirmed',
+                reservation_datetime: this.nowIstIsoSeconds(),
+                propertyname: hotel.hotelName || hotelMaster?.hotel_name || '',
+                reservation_id: bookingId,
+                payment_required: '15',
+                payment_type: 'Hotel Collect',
+                commissionamount: '0.00',
+                discountamount: '0.00',
+                deposit: '0.00',
+                totalamountaftertax: this.toMoneyString(totalAmountAfterTax),
+                totaltax: this.toMoneyString(taxAmount),
+                currencycode: 'INR',
+                status: 'Confirm',
+                customer: {
+                  address: '',
+                  city: '',
+                  country: hotel.guestNationality || 'India',
+                  email: params.fallbackEmail || '',
+                  salutation: passenger.title || 'Mr.',
+                  first_name: passenger.firstName || params.fallbackBookedBy || 'Guest',
+                  last_name: passenger.lastName || '',
+                  remarks: '',
+                  telephone: passenger.phoneNo || params.fallbackPhone || '',
+                  zip: '',
+                },
+                room: [
+                  {
+                    arrival_date: hotel.checkInDate,
+                    departure_date: hotel.checkOutDate,
+                    room_id: roomId,
+                    room_name: hotel.roomType || '',
+                    price: [
+                      {
+                        date: hotel.checkInDate,
+                        rate_id: rateId,
+                        rate_name: rateName || '',
+                        amountaftertax: this.toMoneyString(baseAmountAfterTax),
+                        extraGuests: {
+                          extraAdult: '0',
+                          extraChild: '0',
+                          extraAdultRate: '0',
+                          extraChildRate: '0',
+                        },
+                      },
+                    ],
+                    salutation: passenger.title || 'Mr.',
+                    first_name: passenger.firstName || params.fallbackBookedBy || 'Guest',
+                    last_name: passenger.lastName || '',
+                    taxes: [
+                      {
+                        name: 'service charge',
+                        value: this.toMoneyString(taxAmount),
+                      },
+                    ],
+                    amountaftertax: this.toMoneyString(totalAmountAfterTax),
+                    remarks: '',
+                    GuestCount: [
+                      {
+                        AgeQualifyingCode: '10',
+                        Count: String(adults),
+                      },
+                    ],
+                  },
+                ],
+                POS: 'DVI',
+                extraData: [
+                  {
+                    name: 'itineraryPlanId',
+                    value: String(params.itineraryPlanId),
+                  },
+                  {
+                    name: 'routeId',
+                    value: String(hotel.routeId || ''),
+                  },
+                ],
               },
             ],
           },
@@ -116,6 +235,10 @@ export class StaahBookingPushService {
         });
         console.log('[STAAH_BOOKING_PUSH] Request URL', this.apiUrl);
         console.log('[STAAH_BOOKING_PUSH] Request payload', JSON.stringify(this.maskPayload(payload)));
+
+        if (!this.apiKey) {
+          throw new Error('Missing  STAAH_API_KEY');
+        }
 
         try {
           const resp = await axios.post(this.apiUrl, payload, {
@@ -258,10 +381,33 @@ export class StaahBookingPushService {
       } catch (error: any) {
         responseStatus = error?.response?.status ?? responseStatus;
         responseBody = error?.response?.data ?? responseBody;
+        const propertyid = String((await this.resolveHotel(String(hotel?.hotelCode || '')))?.staah_property_id || '').trim();
+        const errorMessage = error?.message || 'STAAH booking push failed';
+
+        if (propertyid) {
+          await this.prisma.staah_reservation.create({
+            data: {
+              type: 'outbound_confirm_failed',
+              staah_property_id: propertyid,
+              reservation_id: bookingId,
+              payload: {
+                responseStatus,
+                responseBody,
+                error: errorMessage,
+                routeId: hotel?.routeId,
+                hotelCode: hotel?.hotelCode,
+                confirmedItineraryPlanId: params.confirmedItineraryPlanId,
+                itineraryPlanId: params.itineraryPlanId,
+                failedAt: new Date().toISOString(),
+              } as Prisma.InputJsonValue,
+            },
+          });
+        }
+
         console.error('[STAAH_BOOKING_PUSH] Failed', {
           routeId: hotel?.routeId,
           hotelCode: hotel?.hotelCode,
-          message: error?.message,
+          message: errorMessage,
           responseStatus,
           responseBody,
         });
@@ -272,7 +418,7 @@ export class StaahBookingPushService {
           bookingId,
           success: false,
           status: 'failed',
-          error: error?.message || 'STAAH booking push failed',
+          error: errorMessage,
           responseStatus,
           responseBody,
         });
