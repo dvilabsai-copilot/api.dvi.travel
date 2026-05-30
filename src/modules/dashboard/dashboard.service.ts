@@ -377,7 +377,7 @@ export class DashboardService {
     };
   }
 
-  async getVendorDashboardStats(vendorId: number) {
+    async getVendorDashboardStats(vendorId: number) {
     const [totalAssignments, completedAssignments, pendingAssignments] =
       await Promise.all([
         this.prisma.dvi_confirmed_itinerary_plan_vendor_eligible_list.count({
@@ -396,5 +396,58 @@ export class DashboardService {
       completedAssignments,
       pendingAssignments,
     };
+  }
+
+  async getMostVisitedHotels(params: { year: number; limit: number }) {
+    const year = Number(params.year) || new Date().getFullYear();
+    const limit = Math.min(Math.max(Number(params.limit) || 5, 1), 20);
+
+    const totalRows: any[] = await this.prisma.$queryRaw`
+      SELECT COUNT(*) AS total
+      FROM dvi_confirmed_itinerary_plan_hotel_details cih
+      LEFT JOIN dvi_hotel h ON h.hotel_id = cih.hotel_id
+      WHERE cih.deleted = 0
+        AND cih.hotel_id IS NOT NULL
+        AND cih.hotel_id > 0
+        AND h.hotel_name IS NOT NULL
+        AND TRIM(h.hotel_name) <> ''
+        AND YEAR(cih.itinerary_route_date) = ${year}
+    `;
+
+    const totalVisits = Number(totalRows?.[0]?.total || 0);
+
+    const rows: any[] = await this.prisma.$queryRaw`
+      SELECT
+        h.hotel_name AS hotel_name,
+        COALESCE(
+          NULLIF(TRIM(cih.itinerary_route_location), ''),
+          NULLIF(TRIM(h.hotel_city), ''),
+          '-'
+        ) AS hotel_location,
+        COUNT(*) AS visit_count
+      FROM dvi_confirmed_itinerary_plan_hotel_details cih
+      LEFT JOIN dvi_hotel h ON h.hotel_id = cih.hotel_id
+      WHERE cih.deleted = 0
+        AND cih.hotel_id IS NOT NULL
+        AND cih.hotel_id > 0
+        AND h.hotel_name IS NOT NULL
+        AND TRIM(h.hotel_name) <> ''
+        AND YEAR(cih.itinerary_route_date) = ${year}
+      GROUP BY h.hotel_id, h.hotel_name, cih.itinerary_route_location, h.hotel_city
+      ORDER BY visit_count DESC, h.hotel_name ASC
+      LIMIT ${limit}
+    `;
+
+    return rows.map((row) => {
+      const visitCount = Number(row.visit_count || 0);
+
+      return {
+        hotel_name: row.hotel_name || '-',
+        hotel_location: row.hotel_location || '-',
+        visit_count: visitCount,
+        visit_percentage:
+          totalVisits > 0 ? Math.round((visitCount / totalVisits) * 100) : 0,
+      };
+    });
   }
 }

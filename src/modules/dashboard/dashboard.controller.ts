@@ -1,4 +1,4 @@
-import { Controller, Get, UseGuards, Req } from '@nestjs/common';
+import { Controller, Get, UseGuards, Req, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { DashboardService } from './dashboard.service';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
@@ -34,6 +34,19 @@ export class DashboardController {
     if (user.role === 5 || (user.guideId && user.guideId > 0)) {
       return this.dashboardService.getGuideDashboardStats(Number(user.guideId));
     }
-    return this.dashboardService.getDashboardStats();
+        return this.dashboardService.getDashboardStats();
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('most-visited-hotels')
+  @ApiOperation({ summary: 'Get most visited hotels for dashboard' })
+  async getMostVisitedHotels(
+    @Query('year') year?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.dashboardService.getMostVisitedHotels({
+      year: Number(year) || new Date().getFullYear(),
+      limit: Number(limit) || 5,
+    });
   }
 }
