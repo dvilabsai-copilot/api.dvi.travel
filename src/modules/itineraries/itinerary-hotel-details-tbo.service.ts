@@ -2312,6 +2312,19 @@ export class ItineraryHotelDetailsTboService {
         confirmedStaahByRouteId.set(routeId, row);
       }
     }
+    console.log('[STAAH_OVERRIDE_DEBUG]', {
+      planId,
+      confirmedStaahCount: confirmedStaahRows.length,
+      rows: (confirmedStaahRows as any[]).map((r) => ({
+        id: r.staah_hotel_booking_confirmation_ID,
+        routeId: r.itinerary_route_ID,
+        hotelCode: r.staah_hotel_code,
+        bookingReference: r.staah_booking_reference,
+        status: r.status,
+        deleted: r.deleted,
+        hasCancellation: !!(r.api_response as any)?.cancellation,
+      })),
+    });
 
     // Build hotel rows (detail rows for each package)
     const hotelRows: ItineraryHotelRowDto[] = [];
@@ -2417,9 +2430,16 @@ export class ItineraryHotelDetailsTboService {
         const row: any = hotelRows[i];
         const routeId = Number(row?.itineraryRouteId || 0);
         const confirmedRow: any = confirmedStaahByRouteId.get(routeId);
-        if (!confirmedRow) continue;
+        if (!confirmedRow) {
+          console.log('[STAAH_OVERRIDE_MISSED]', {
+            routeId,
+            hotelId: row.hotelId,
+          });
+          continue;
+        }
 
         const apiResponse: any = (confirmedRow as any).api_response || {};
+        const isStaahVoucherCancelled = !!apiResponse?.cancellation;
         const reservation: any =
           apiResponse?.confirm?.request?.reservations?.reservation?.[0] || {};
         const reservationRoom: any = reservation?.room?.[0] || {};
@@ -2442,7 +2462,8 @@ export class ItineraryHotelDetailsTboService {
           totalHotelTaxAmount: Number(reservation?.totaltax || 0),
           bookingCode: String((confirmedRow as any).booking_code || ''),
           searchReference: String((confirmedRow as any).staah_booking_reference || ''),
-          voucherCancelled: false,
+          voucherCancelled: isStaahVoucherCancelled,
+          voucherStatus: isStaahVoucherCancelled ? 'cancelled' : 'active',
           itineraryPlanHotelDetailsId: 0,
           date: safeCheckIn,
           checkInDate: (confirmedRow as any).check_in_date || undefined,
@@ -2457,6 +2478,12 @@ export class ItineraryHotelDetailsTboService {
         this.logger.log(
           `[HOTEL_DETAILS_CONFIRMED_STAAH_OVERRIDE] quoteId=${quoteId} planId=${planId} routeId=${routeId} staahHotelCode=${String((confirmedRow as any).staah_hotel_code || '')} bookingReference=${String((confirmedRow as any).staah_booking_reference || '')}`,
         );
+        console.log('[STAAH_OVERRIDE_APPLIED]', {
+          routeId,
+          staahHotelCode: confirmedRow.staah_hotel_code,
+          bookingReference: confirmedRow.staah_booking_reference,
+          voucherCancelled: isStaahVoucherCancelled,
+        });
       }
     }
 
