@@ -775,52 +775,99 @@ export class VendorsService {
     });
   }
 
-  private mapVendorVehiclePayload(data: any): Record<string, any> {
-    const toDateOrNull = (value: any): Date | null => {
-      if (value === null || value === undefined || value === '') return null;
-      const d = new Date(value);
-      return Number.isNaN(d.getTime()) ? null : d;
-    };
+ private mapVendorVehiclePayload(data: any): Record<string, any> {
+  const toDateOrNull = (value: any): Date | null => {
+    if (value === null || value === undefined || value === '') return null;
 
-    return {
-      ...data,
-      vendor_branch_id: this.toNumberOrNull(data.vendor_branch_id) ?? 0,
-      vehicle_type_id: this.toNumberOrNull(data.vehicle_type_id),
-      registration_date: toDateOrNull(data.registration_date),
-      owner_country: this.toNumberOrNull(data.owner_country) ?? 0,
-      fuel_type: this.toNumberOrNull(data.fuel_type) ?? 0,
-      owner_pincode: data.owner_pincode ?? '',
-      extra_km_charge: this.toNumberOrNull(data.extra_km_charge) ?? 0,
-      early_morning_charges: this.toNumberOrNull(data.early_morning_charges) ?? 0,
-      evening_charges: this.toNumberOrNull(data.evening_charges) ?? 0,
-      vehicle_fc_expiry_date: toDateOrNull(data.vehicle_fc_expiry_date),
-      insurance_start_date: toDateOrNull(data.insurance_start_date),
-      insurance_end_date: toDateOrNull(data.insurance_end_date),
-    };
-  }
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? null : d;
+  };
 
-  async createVendorVehicle(vendorId: number, data: any): Promise<any> {
-    const mapped = this.mapVendorVehiclePayload(data);
-    return this.prisma.dvi_vehicle.create({
-      data: {
-        ...mapped,
-        owner_pincode: String(mapped.owner_pincode ?? ''),
-        vendor_id: vendorId,
-        createdon: new Date(),
-        status: 1,
-        deleted: 0,
-      },
+  return {
+    vendor_branch_id: this.toNumberOrNull(data.vendor_branch_id) ?? 0,
+    vehicle_type_id: this.toNumberOrNull(data.vehicle_type_id) ?? 0,
+
+    registration_number: String(data.registration_number ?? ''),
+    registration_date: toDateOrNull(data.registration_date),
+    engine_number: String(data.engine_number ?? ''),
+
+    owner_name: String(data.owner_name ?? ''),
+    owner_contact_no: String(data.owner_contact_no ?? ''),
+    owner_email_id: String(data.owner_email_id ?? ''),
+    owner_address: String(data.owner_address ?? ''),
+    owner_pincode: String(data.owner_pincode ?? ''),
+
+    owner_country: this.toNumberOrNull(data.owner_country) ?? 0,
+    owner_state:
+      data.owner_state === null ||
+      data.owner_state === undefined ||
+      data.owner_state === ''
+        ? null
+        : String(data.owner_state),
+    owner_city:
+      data.owner_city === null ||
+      data.owner_city === undefined ||
+      data.owner_city === ''
+        ? null
+        : String(data.owner_city),
+
+    chassis_number: String(data.chassis_number ?? ''),
+    vehicle_fc_expiry_date: toDateOrNull(data.vehicle_fc_expiry_date),
+
+    fuel_type: this.toNumberOrNull(data.fuel_type) ?? 0,
+    extra_km_charge: this.toNumberOrNull(data.extra_km_charge) ?? 0,
+    early_morning_charges:
+      this.toNumberOrNull(data.early_morning_charges) ?? 0,
+    evening_charges: this.toNumberOrNull(data.evening_charges) ?? 0,
+
+    vehicle_video_url: String(data.vehicle_video_url ?? ''),
+    insurance_policy_number: String(data.insurance_policy_number ?? ''),
+    insurance_start_date: toDateOrNull(data.insurance_start_date),
+    insurance_end_date: toDateOrNull(data.insurance_end_date),
+    insurance_contact_no: String(data.insurance_contact_no ?? ''),
+    RTO_code: String(data.RTO_code ?? ''),
+
+    status: this.toNumberOrNull(data.status) ?? 1,
+  };
+}
+
+async createVendorVehicle(vendorId: number, data: any): Promise<any> {
+  const mapped = this.mapVendorVehiclePayload(data);
+
+  const createData: any = {
+    ...mapped,
+    vendor_id: vendorId,
+    createdon: new Date(),
+    status: 1,
+    deleted: 0,
+  };
+
+  try {
+    return await this.prisma.dvi_vehicle.create({
+      data: createData,
     });
+  } catch (error: any) {
+    throw new BadRequestException(error?.message || 'Vehicle create failed');
   }
+}
 
-  async updateVendorVehicle(vehicleId: number, data: any): Promise<any> {
-    const mapped = this.mapVendorVehiclePayload(data);
-    return this.prisma.dvi_vehicle.update({
+async updateVendorVehicle(vehicleId: number, data: any): Promise<any> {
+  const mapped = this.mapVendorVehiclePayload(data);
+
+  const updateData: any = {
+    ...mapped,
+    updatedon: new Date(),
+  };
+
+  try {
+    return await this.prisma.dvi_vehicle.update({
       where: { vehicle_id: vehicleId },
-      data: { ...mapped, updatedon: new Date() },
+      data: updateData,
     });
+  } catch (error: any) {
+    throw new BadRequestException(error?.message || 'Vehicle update failed');
   }
-
+}
   async toggleVendorVehicleStatus(vehicleId: number, oldStatus: number): Promise<number> {
     const nextStatus = Number(oldStatus) === 1 ? 0 : 1;
     await this.prisma.dvi_vehicle.update({
