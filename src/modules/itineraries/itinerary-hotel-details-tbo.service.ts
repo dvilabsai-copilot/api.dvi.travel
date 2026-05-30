@@ -2296,6 +2296,23 @@ export class ItineraryHotelDetailsTboService {
       }
     }
 
+    // STAAH confirmed booking override map (latest row per route)
+    const confirmedStaahRows = await (this.prisma as any).staah_hotel_booking_confirmation.findMany({
+      where: {
+        itinerary_plan_ID: planId,
+        status: 1,
+        deleted: 0,
+      },
+      orderBy: { staah_hotel_booking_confirmation_ID: 'desc' },
+    });
+    const confirmedStaahByRouteId = new Map<number, any>();
+    for (const row of confirmedStaahRows as any[]) {
+      const routeId = Number((row as any).itinerary_route_ID || 0);
+      if (routeId > 0 && !confirmedStaahByRouteId.has(routeId)) {
+        confirmedStaahByRouteId.set(routeId, row);
+      }
+    }
+
     // Build hotel rows (detail rows for each package)
     const hotelRows: ItineraryHotelRowDto[] = [];
 
@@ -2391,6 +2408,55 @@ export class ItineraryHotelDetailsTboService {
         if (hotel.provider === 'HOBSE') {
           this.logger.debug(`âœ… HOBSE Hotel Response: hotelCode="${hotel.hotelCode}", provider="${hotel.provider}"`);
         }
+      }
+    }
+
+    // Override only matching routes with confirmed STAAH booking rows
+    if (confirmedStaahByRouteId.size > 0) {
+      for (let i = 0; i < hotelRows.length; i++) {
+        const row: any = hotelRows[i];
+        const routeId = Number(row?.itineraryRouteId || 0);
+        const confirmedRow: any = confirmedStaahByRouteId.get(routeId);
+        if (!confirmedRow) continue;
+
+        const apiResponse: any = (confirmedRow as any).api_response || {};
+        const reservation: any =
+          apiResponse?.confirm?.request?.reservations?.reservation?.[0] || {};
+        const reservationRoom: any = reservation?.room?.[0] || {};
+        const reservationPrice: any = reservationRoom?.price?.[0] || {};
+
+        const hotelCodeNum = Number((confirmedRow as any).staah_hotel_code || 0);
+        const safeCheckIn = (confirmedRow as any).check_in_date
+          ? new Date((confirmedRow as any).check_in_date).toISOString().split('T')[0]
+          : row.date;
+
+        hotelRows[i] = {
+          ...row,
+          provider: 'staah',
+          itineraryRouteId: routeId,
+          hotelId: Number.isFinite(hotelCodeNum) ? hotelCodeNum : 0,
+          hotelName: String(reservation?.propertyname || 'STAAH Hotel'),
+          roomType: String(reservationRoom?.room_name || ''),
+          mealPlan: String(reservationPrice?.rate_name || ''),
+          totalHotelCost: Number((confirmedRow as any).net_amount || 0),
+          totalHotelTaxAmount: Number(reservation?.totaltax || 0),
+          bookingCode: String((confirmedRow as any).booking_code || ''),
+          searchReference: String((confirmedRow as any).staah_booking_reference || ''),
+          voucherCancelled: false,
+          itineraryPlanHotelDetailsId: 0,
+          date: safeCheckIn,
+          checkInDate: (confirmedRow as any).check_in_date || undefined,
+          checkOutDate: (confirmedRow as any).check_out_date || undefined,
+          numberOfRooms: Number((confirmedRow as any).number_of_rooms || 0),
+          guestNationality: String((confirmedRow as any).guest_nationality || ''),
+          totalGuests: Number((confirmedRow as any).total_guests || 0),
+          isConfirmedBooking: true,
+          voucherAvailable: true,
+        } as any;
+
+        this.logger.log(
+          `[HOTEL_DETAILS_CONFIRMED_STAAH_OVERRIDE] quoteId=${quoteId} planId=${planId} routeId=${routeId} staahHotelCode=${String((confirmedRow as any).staah_hotel_code || '')} bookingReference=${String((confirmedRow as any).staah_booking_reference || '')}`,
+        );
       }
     }
 

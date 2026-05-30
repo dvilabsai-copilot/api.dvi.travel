@@ -6104,6 +6104,11 @@ model staah_reservation {
   staah_property_id String   @db.VarChar(64)
   reservation_id    String?  @db.VarChar(100)
   payload           Json
+  request_json      Json?
+  response_json     Json?
+  error_message     String?
+  http_status       Int?
+  source            String?  @db.VarChar(100)
   received_at       DateTime @default(now()) @db.DateTime(0)
 
   @@index([type], map: "idx_staah_reservation_type")
