@@ -1282,15 +1282,6 @@ export class ItinerariesController {
     return this.hotelVoucherService.deleteCancellationPolicy(policyId);
   }
 
-  @Get(':id/hotel-vouchers/:hotelId')
-  @ApiOperation({ summary: 'Get existing voucher for a hotel' })
-  async getHotelVoucher(
-    @Param('id', ParseIntPipe) itineraryPlanId: number,
-    @Param('hotelId', ParseIntPipe) hotelId: number,
-  ) {
-    return this.hotelVoucherService.getHotelVoucher(itineraryPlanId, hotelId);
-  }
-
   @Post(':id/hotel-vouchers')
   @ApiOperation({ summary: 'Create hotel vouchers' })
   async createHotelVouchers(
@@ -1324,6 +1315,15 @@ export class ItinerariesController {
   @ApiOperation({ summary: 'Get default voucher terms from global settings' })
   async getDefaultVoucherTerms() {
     return { terms: await this.hotelVoucherService.getDefaultVoucherTerms() };
+  }
+
+  @Get(':id/hotel-vouchers/:hotelId')
+  @ApiOperation({ summary: 'Get existing voucher for a hotel' })
+  async getHotelVoucher(
+    @Param('id', ParseIntPipe) itineraryPlanId: number,
+    @Param('hotelId', ParseIntPipe) hotelId: number,
+  ) {
+    return this.hotelVoucherService.getHotelVoucher(itineraryPlanId, hotelId);
   }
 
   @Get('confirmed/:confirmedId/pluck-card-data')

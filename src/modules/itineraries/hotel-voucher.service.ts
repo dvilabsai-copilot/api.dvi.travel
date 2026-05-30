@@ -240,6 +240,7 @@ export class HotelVoucherService {
       status: string;
     }> = [];
     const routeIdsToCancel = new Set<number>();
+    const staahTargetsToCancel = new Map<string, { routeId: number; hotelId: number }>();
 
     for (const voucher of dto.vouchers) {
       // Validation: if status is 'cancelled' but routeId is missing/invalid, throw error
@@ -306,6 +307,11 @@ export class HotelVoucherService {
       // Collect route IDs that need cancellation
       if (voucher.status === 'cancelled') {
         routeIdsToCancel.add(voucher.routeId);
+        const routeId = Number(voucher.routeId || 0);
+        const hotelId = Number(voucher.hotelId || 0);
+        if (routeId > 0 && hotelId > 0) {
+          staahTargetsToCancel.set(`${routeId}:${hotelId}`, { routeId, hotelId });
+        }
       }
     }
 
@@ -370,15 +376,26 @@ export class HotelVoucherService {
         this.logger.error(`❌ AxisRooms route cancellation failed: ${error.message}`);
       }
 
-      // Cancel STAAH bookings for selected routes
-      try {
-        const staahCancellation = await this.staahBookingPushService.cancelItineraryHotelsByRoutes(
-          dto.itineraryPlanId,
-          routeIdsArray,
-        );
-        this.logger.log(`✅ STAAH route cancellation completed: ${JSON.stringify(staahCancellation)}`);
-      } catch (error) {
-        this.logger.error(`❌ STAAH route cancellation failed: ${error.message}`);
+      // Cancel STAAH bookings only for selected (routeId, hotelId) voucher targets
+      if (staahTargetsToCancel.size > 0) {
+        for (const target of staahTargetsToCancel.values()) {
+          try {
+            const staahCancellation = await this.staahBookingPushService.cancelVoucherHotel({
+              itineraryPlanId: dto.itineraryPlanId,
+              routeId: target.routeId,
+              hotelId: target.hotelId,
+            });
+            this.logger.log(
+              `✅ STAAH voucher cancellation completed for route=${target.routeId}, hotel=${target.hotelId}: ${JSON.stringify(staahCancellation)}`,
+            );
+          } catch (error: any) {
+            this.logger.error(
+              `❌ STAAH voucher cancellation failed for route=${target.routeId}, hotel=${target.hotelId}: ${error?.message || error}`,
+            );
+          }
+        }
+      } else {
+        this.logger.log('[STAAH_CANCEL_PUSH] No active STAAH confirmation found');
       }
 
       // Update voucher cancellation status in database only for cancelled routes
