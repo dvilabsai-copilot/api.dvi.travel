@@ -579,7 +579,7 @@ export class StaahBookingPushService {
 
     const cancelPayload = this.deepClone(confirmRequest);
     cancelPayload.action = 'reservation_info';
-    if (!cancelPayload.apikey) cancelPayload.apikey = this.apiKey;
+    cancelPayload.apikey = this.apiKey;
     if (!cancelPayload.propertyid) {
       const propertyid = String((await this.resolveHotel(String(row.staah_hotel_code || '')))?.staah_property_id || '').trim();
       if (propertyid) cancelPayload.propertyid = propertyid;
@@ -597,6 +597,11 @@ export class StaahBookingPushService {
       hotelCode: row.staah_hotel_code,
       bookingReference: row.staah_booking_reference,
     });
+    console.log('[STAAH_CANCEL_PUSH] API key debug', {
+      hasEnvApiKey: !!this.apiKey,
+      apiKeyLength: this.apiKey ? this.apiKey.length : 0,
+      cancelPayloadApiKeyLength: cancelPayload?.apikey ? String(cancelPayload.apikey).length : 0,
+    });
     console.log('[STAAH_CANCEL_PUSH] Request payload', JSON.stringify(this.maskPayload(cancelPayload)));
 
     try {
@@ -610,7 +615,7 @@ export class StaahBookingPushService {
         reservationId: String(row.staah_booking_reference || ''),
         payload: {
           source: 'website_voucher_cancel',
-          request: this.maskPayload(cancelPayload),
+          request: cancelPayload,
           responseStatus: cancelResult?.status ?? null,
           responseBody: cancelResult?.response ?? null,
           success: !!cancelResult?.success,
@@ -622,7 +627,7 @@ export class StaahBookingPushService {
           confirmationId: row.staah_hotel_booking_confirmation_ID,
           triggeredAt: new Date().toISOString(),
         },
-        requestJson: this.maskPayload(cancelPayload),
+        requestJson: cancelPayload,
         responseJson: cancelResult?.response ?? null,
         errorMessage: cancelResult?.success ? null : cancelResult?.error || 'STAAH cancellation failed',
         httpStatus: cancelResult?.status ?? null,
@@ -656,7 +661,7 @@ export class StaahBookingPushService {
         reservationId: String(row?.staah_booking_reference || ''),
         payload: {
           source: 'website_voucher_cancel',
-          request: cancelPayload ? this.maskPayload(cancelPayload) : null,
+          request: cancelPayload || null,
           success: false,
           error: error instanceof Error ? error.message : String(error),
           itineraryPlanId: row?.itinerary_plan_ID,
@@ -666,7 +671,7 @@ export class StaahBookingPushService {
           confirmationId: row?.staah_hotel_booking_confirmation_ID,
           failedAt: new Date().toISOString(),
         },
-        requestJson: cancelPayload ? this.maskPayload(cancelPayload) : null,
+        requestJson: cancelPayload || null,
         responseJson: null,
         errorMessage: error instanceof Error ? error.message : String(error),
         httpStatus: null,
@@ -704,7 +709,7 @@ export class StaahBookingPushService {
     try {
       const req = this.deepClone(payload);
       req.action = 'reservation_info';
-      req.apikey = req.apikey || this.apiKey;
+      req.apikey = this.apiKey;
       const resp = await axios.post(this.apiUrl, req, {
         timeout: 20000,
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
