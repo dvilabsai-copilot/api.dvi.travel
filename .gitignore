@@ -8,3 +8,5 @@ src/stable-dvi_backend.zip
 tmp/
 tbo-hotel-provider.log
 public/
+start-dev.log
+*.txt
