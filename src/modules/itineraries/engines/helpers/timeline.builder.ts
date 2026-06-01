@@ -3564,11 +3564,24 @@ export class TimelineBuilder {
             if (distanceDiff !== 0) return distanceDiff;
             return Number(a?.hotspot_ID ?? 0) - Number(b?.hotspot_ID ?? 0);
           });
+        const positiveCorridorHotspots = corridorHotspots.filter((hs: any) => {
+          const priority = Number(hs?.hotspot_priority ?? 0);
+          return priority >= 1 && priority < 9999;
+        });
+        const optionalCorridorHotspots = corridorHotspots.filter((hs: any) => {
+          const priority = Number(hs?.hotspot_priority ?? 0);
+          return priority <= 0 || priority >= 9999;
+        });
         const getPendingPositiveCorridorHotspots = (): Array<SelectedHotspot> => {
-          return corridorHotspots.filter((hs: any) => {
+          return positiveCorridorHotspots.filter((hs: any) => {
             const id = Number(hs?.hotspot_ID || 0);
-            const priority = Number(hs?.hotspot_priority ?? 0);
-            return id > 0 && !addedHotspotIds.has(id) && priority >= 1 && priority < 9999;
+            return id > 0 && !addedHotspotIds.has(id);
+          });
+        };
+        const getPendingOptionalCorridorHotspots = (): Array<SelectedHotspot> => {
+          return optionalCorridorHotspots.filter((hs: any) => {
+            const id = Number(hs?.hotspot_ID || 0);
+            return id > 0 && !addedHotspotIds.has(id);
           });
         };
         this.logBookingRule({
@@ -3722,6 +3735,7 @@ export class TimelineBuilder {
         const deferredPriorityHotspotIds = new Set<number>();
         const rejectedRetryHotspots: SelectedHotspot[] = [];
         const rejectedRetryHotspotIds = new Set<number>();
+        const resolvedPositiveCorridorIds = new Set<number>();
         const sourceCutoffRejectedHotspotIds = new Set<number>();
         const strictHotspotIdSet = new Set<number>(
           strictHotspots
@@ -4104,7 +4118,28 @@ export class TimelineBuilder {
               blockedFillerIds,
               reason: 'positive_priority_corridor_pending',
             });
-            hotspotsToTry = pendingPositiveCorridorHotspots;
+            hotspotsToTry =
+              pass === PASS_FILLER_PRIMARY || pass === PASS_FILLER_SECONDARY
+                ? [...pendingPositiveCorridorHotspots, ...getPendingOptionalCorridorHotspots()]
+                : pendingPositiveCorridorHotspots;
+          }
+          const pendingOptionalCorridorHotspots = getPendingOptionalCorridorHotspots();
+          if (
+            isIntercityNonDirectRoute &&
+            pendingPositiveCorridorIds.length === 0 &&
+            pendingOptionalCorridorHotspots.length > 0 &&
+            (pass === PASS_FILLER_PRIMARY || pass === PASS_FILLER_SECONDARY)
+          ) {
+            hotspotsToTry = pendingOptionalCorridorHotspots;
+            this.logBookingRule({
+              rule: 'OPTIONAL_CORRIDOR_FILLER_STARTED',
+              quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+              planId,
+              routeId: route.itinerary_route_ID,
+              cycle: optimizationCycle,
+              pass,
+              optionalCorridorIds: pendingOptionalCorridorHotspots.map((hs: any) => Number(hs?.hotspot_ID || 0)),
+            });
           }
           if (isIntercityNonDirectRoute && pass === PASS_STRICT) {
             const currentSecs = timeToSeconds(currentTime);
@@ -4307,6 +4342,28 @@ export class TimelineBuilder {
         const bucket = (sh as any).matched_bucket as string | undefined;
         const hotspotId = Number((sh as any).hotspot_ID || 0);
         const normalizedBucket = String(bucket || '').toLowerCase();
+        const isOptionalCorridorCandidate =
+          isCorridorBucket(sh) && (hotspotPriority <= 0 || hotspotPriority >= 9999);
+        const unresolvedPositiveCorridorIds = positiveCorridorHotspots
+          .map((h: any) => Number(h?.hotspot_ID || 0))
+          .filter((id: number) => id > 0 && !addedHotspotIds.has(id) && !resolvedPositiveCorridorIds.has(id));
+        if (
+          isIntercityNonDirectRoute &&
+          isOptionalCorridorCandidate &&
+          unresolvedPositiveCorridorIds.length > 0
+        ) {
+          this.logBookingRule({
+            rule: 'OPTIONAL_CORRIDOR_WAITING_FOR_POSITIVE',
+            quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+            planId,
+            routeId: route.itinerary_route_ID,
+            cycle: optimizationCycle,
+            pass,
+            hotspotId,
+            unresolvedPositiveCorridorIds,
+          });
+          continue;
+        }
         const isSourcePhaseBucketNow = normalizedBucket === 'source' || normalizedBucket === 'source_fallback';
         const allowSourceCutoffRetryBypass =
           pass === PASS_REJECTED_RETRY && sourceCutoffRejectedHotspotIds.has(hotspotId);
@@ -4907,6 +4964,17 @@ export class TimelineBuilder {
           );
 
           if (!anchorGapFeasibility.feasible) {
+            if (positiveCorridorHotspots.some((h: any) => Number(h?.hotspot_ID || 0) === hotspotId)) {
+              resolvedPositiveCorridorIds.add(hotspotId);
+              this.logBookingRule({
+                rule: 'POSITIVE_CORRIDOR_RESOLVED_BY_REJECTION',
+                quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+                planId,
+                routeId: route.itinerary_route_ID,
+                hotspotId,
+                reason: anchorGapFeasibility.reason || 'anchor_append_gate_rejected',
+              });
+            }
             if (anchorGapFeasibility.reason === 'next_anchor_timing_broken') {
               this.logBookingRule({
                 rule: 'ANCHOR_APPEND_GATE_NEXT_POINT_BROKEN',
@@ -5071,6 +5139,25 @@ export class TimelineBuilder {
           });
 
         hotspotRows.push(hotspotRow);
+        if (positiveCorridorHotspots.some((h: any) => Number(h?.hotspot_ID || 0) === hotspotId)) {
+          resolvedPositiveCorridorIds.add(hotspotId);
+        }
+        if (
+          isIntercityNonDirectRoute &&
+          isOptionalCorridorCandidate &&
+          unresolvedPositiveCorridorIds.length === 0
+        ) {
+          this.logBookingRule({
+            rule: 'OPTIONAL_CORRIDOR_ALLOWED_AFTER_POSITIVE',
+            quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+            planId,
+            routeId: route.itinerary_route_ID,
+            cycle: optimizationCycle,
+            pass,
+            positiveResolvedIds: Array.from(resolvedPositiveCorridorIds.values()),
+            optionalHotspotId: hotspotId,
+          });
+        }
         if (hotspotId === 228 || hotspotId === 357) {
           this.logBookingRule({
             rule: 'VALARA_CHEEYAPPARA_ACCEPTED',

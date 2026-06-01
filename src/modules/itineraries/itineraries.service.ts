@@ -618,6 +618,24 @@ export class ItinerariesService {
         userId,
       );
       console.log('[PERF] rebuildRoutes:', Date.now() - opStart2, 'ms');
+      console.log('[ITINERARY_BASIC_INFO_BUILD_PATH]', {
+        planId,
+        type: normalizedRequestType || null,
+        routeCount: Array.isArray(routes) ? routes.length : 0,
+        callsTimelineBuilder: true,
+      });
+      for (const r of (routes || [])) {
+        console.log('[ROUTE_PERSISTED_DEBUG]', {
+          itinerary_route_ID: Number((r as any)?.itinerary_route_ID || 0),
+          location_id: Number((r as any)?.location_id || 0),
+          location_name: String((r as any)?.location_name || ''),
+          next_visiting_location: String((r as any)?.next_visiting_location || ''),
+          no_of_km: Number((r as any)?.no_of_km || 0),
+          direct_to_next_visiting_place: Number((r as any)?.direct_to_next_visiting_place || 0),
+          via_route: String((r as any)?.via_route || ''),
+          via_routes: (r as any)?.via_routes ?? [],
+        });
+      }
 
       // Rebuild permit charges after routes are created
       opStart2 = Date.now();
