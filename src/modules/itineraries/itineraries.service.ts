@@ -1073,26 +1073,39 @@ export class ItinerariesService {
       }
 
       if (actualHotspotId > 0) {
-         // ✅ CRITICAL FIX: Add to ALL routes' exclusions, not just this route
-         console.log(`[deleteHotspot] Excluding hotspotId ${actualHotspotId} plan-wide for plan ${normalizedPlanId}`);
-         const allRoutes = await (tx as any).dvi_itinerary_route_details.findMany({
-           where: { itinerary_plan_ID: normalizedPlanId, deleted: 0 },
-           select: { itinerary_route_ID: true, excluded_hotspot_ids: true },
-         });
-         for (const route of allRoutes) {
-           const routeId = Number(route.itinerary_route_ID);
-           const current = Array.isArray(route.excluded_hotspot_ids)
-             ? route.excluded_hotspot_ids.map((id: any) => Number(id)).filter((id: number) => Number.isFinite(id) && id > 0)
-             : [];
-           if (!current.includes(actualHotspotId)) {
-             const updated = [...current, actualHotspotId];
-             await (tx as any).dvi_itinerary_route_details.update({
-               where: { itinerary_route_ID: routeId },
-               data: { excluded_hotspot_ids: updated, updatedon: new Date() },
-             });
-             console.log(`  → Route ${routeId} added hotspot ${actualHotspotId} to exclusions`);
-           }
-         }
+        console.log(`[deleteHotspot] Excluding hotspotId ${actualHotspotId} only for route ${normalizedRouteId}`);
+
+        const targetRoute = await (tx as any).dvi_itinerary_route_details.findFirst({
+          where: {
+            itinerary_plan_ID: normalizedPlanId,
+            itinerary_route_ID: normalizedRouteId,
+            deleted: 0,
+          },
+          select: {
+            itinerary_route_ID: true,
+            excluded_hotspot_ids: true,
+          },
+        });
+
+        if (targetRoute) {
+          const current = Array.isArray(targetRoute.excluded_hotspot_ids)
+            ? targetRoute.excluded_hotspot_ids
+                .map((id: any) => Number(id))
+                .filter((id: number) => Number.isFinite(id) && id > 0)
+            : [];
+
+          if (!current.includes(actualHotspotId)) {
+            await (tx as any).dvi_itinerary_route_details.update({
+              where: {
+                itinerary_route_ID: Number(targetRoute.itinerary_route_ID),
+              },
+              data: {
+                excluded_hotspot_ids: [...current, actualHotspotId],
+                updatedon: new Date(),
+              },
+            });
+          }
+        }
       }
 
       // Trigger a full rebuild of the hotspots for this plan
@@ -1100,12 +1113,17 @@ export class ItinerariesService {
       return await this.hotspotEngine.rebuildRouteHotspots(tx, normalizedPlanId);
     }, { timeout: 60000 });
 
-    // Rebuild parking charges after deletion
-    await this.hotspotEngine.rebuildParkingCharges(planId, userId);
+        // Rebuild parking charges after deletion
+    await this.hotspotEngine.rebuildParkingCharges(normalizedPlanId, userId);
+
+    // Force full vehicle pricing rebuild from current rebuilt hotspot timeline.
+    await this.forceRebuildVehiclePricingAfterHotspotChange(normalizedPlanId, normalizedRouteId);
 
     return {
       success: true,
-      message: 'Hotspot deleted and timeline recalculated successfully',
+      message: 'Hotspot deleted and vehicle pricing rebuilt from updated route timeline',
+      parkingChargesRebuilt: true,
+      vehiclePricingRebuilt: true,
       rebuildSummary: rebuildResult.rebuildSummary,
       warnings: rebuildResult.warnings,
     };
@@ -4248,6 +4266,97 @@ export class ItinerariesService {
       planId,
       vehicleTypeId: vehicleTypeId || undefined,
     };
+  }
+
+  private async forceRebuildVehiclePricingAfterHotspotChange(planId: number, routeId?: number) {
+    const normalizedPlanId = Number(planId || 0);
+    if (!normalizedPlanId) return;
+
+    const assignedBefore = await (this.prisma as any).dvi_itinerary_plan_vendor_eligible_list.findMany({
+      where: {
+        itinerary_plan_id: normalizedPlanId,
+        status: 1,
+        deleted: 0,
+        itineary_plan_assigned_status: 1,
+      },
+      select: {
+        vehicle_type_id: true,
+        vendor_id: true,
+        vendor_branch_id: true,
+        vendor_vehicle_type_id: true,
+        vehicle_id: true,
+      },
+    });
+
+    const vehicleRowsBefore = await (this.prisma as any).dvi_itinerary_plan_vendor_vehicle_details.findMany({
+      where: {
+        itinerary_plan_id: normalizedPlanId,
+        deleted: 0,
+        ...(routeId ? { itinerary_route_id: Number(routeId) } : {}),
+      },
+      select: {
+        itinerary_route_id: true,
+        total_travelled_km: true,
+        total_vehicle_amount: true,
+      },
+    });
+    const beforeKm = vehicleRowsBefore.reduce((sum: number, r: any) => sum + Number(r?.total_travelled_km || 0), 0);
+    const beforeAmount = vehicleRowsBefore.reduce((sum: number, r: any) => sum + Number(r?.total_vehicle_amount || 0), 0);
+    console.log('[HOTSPOT_DELETE_VEHICLE_REBUILD_BEFORE]', {
+      planId: normalizedPlanId,
+      routeId: routeId || null,
+      totalKms: Number(beforeKm.toFixed(2)),
+      totalAmount: Number(beforeAmount.toFixed(2)),
+    });
+
+    await this.itineraryVehiclesEngine.rebuildEligibleVendorList({
+      planId: normalizedPlanId,
+      createdBy: 1,
+    });
+
+    for (const s of assignedBefore) {
+      const matched = await (this.prisma as any).dvi_itinerary_plan_vendor_eligible_list.findFirst({
+        where: {
+          itinerary_plan_id: normalizedPlanId,
+          vehicle_type_id: Number(s.vehicle_type_id || 0),
+          vendor_id: Number(s.vendor_id || 0),
+          vendor_branch_id: Number(s.vendor_branch_id || 0),
+          vendor_vehicle_type_id: Number(s.vendor_vehicle_type_id || 0),
+          vehicle_id: Number(s.vehicle_id || 0),
+          status: 1,
+          deleted: 0,
+        },
+        select: { itinerary_plan_vendor_eligible_ID: true },
+      });
+      if (matched?.itinerary_plan_vendor_eligible_ID) {
+        await this.selectVehicleVendor({
+          planId: normalizedPlanId,
+          vehicleTypeId: Number(s.vehicle_type_id || 0),
+          vendorEligibleId: Number(matched.itinerary_plan_vendor_eligible_ID),
+        });
+      }
+    }
+
+    const vehicleRowsAfter = await (this.prisma as any).dvi_itinerary_plan_vendor_vehicle_details.findMany({
+      where: {
+        itinerary_plan_id: normalizedPlanId,
+        deleted: 0,
+        ...(routeId ? { itinerary_route_id: Number(routeId) } : {}),
+      },
+      select: {
+        itinerary_route_id: true,
+        total_travelled_km: true,
+        total_vehicle_amount: true,
+      },
+    });
+    const afterKm = vehicleRowsAfter.reduce((sum: number, r: any) => sum + Number(r?.total_travelled_km || 0), 0);
+    const afterAmount = vehicleRowsAfter.reduce((sum: number, r: any) => sum + Number(r?.total_vehicle_amount || 0), 0);
+    console.log('[HOTSPOT_DELETE_VEHICLE_REBUILD_AFTER]', {
+      planId: normalizedPlanId,
+      routeId: routeId || null,
+      totalKms: Number(afterKm.toFixed(2)),
+      totalAmount: Number(afterAmount.toFixed(2)),
+    });
   }
 
   async getPlanForEdit(planId: number) {
@@ -17850,12 +17959,13 @@ export class ItinerariesService {
     const normalizedPlanId = Number(planId);
     const normalizedRouteId = Number(routeId);
 
-    return this.prisma.$transaction(async (tx) => {
+    const rebuildResult = await this.prisma.$transaction(async (tx) => {
       const route = await (tx as any).dvi_itinerary_route_details.findFirst({
         where: {
           itinerary_route_ID: normalizedRouteId,
           itinerary_plan_ID: normalizedPlanId,
           deleted: 0,
+          status: 1,
         },
         select: {
           itinerary_route_ID: true,
@@ -17863,7 +17973,9 @@ export class ItinerariesService {
       });
 
       if (!route) {
-        throw new NotFoundException('Route not found for this itinerary plan');
+        throw new BadRequestException(
+          `Route ${normalizedRouteId} does not belong to plan ${normalizedPlanId} or is no longer active`,
+        );
       }
 
       const manualHotspotRows = await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
@@ -17954,6 +18066,15 @@ export class ItinerariesService {
         routeRejectionSummaryByRoute: rebuildResult.routeRejectionSummaryByRoute,
       };
     }, { timeout: 60000 });
+
+    await this.hotspotEngine.rebuildParkingCharges(normalizedPlanId, Number(userId || 1));
+    await this.forceRebuildVehiclePricingAfterHotspotChange(normalizedPlanId, normalizedRouteId);
+
+    return {
+      ...rebuildResult,
+      parkingChargesRebuilt: true,
+      vehiclePricingRebuilt: true,
+    };
   }
 
   /**
