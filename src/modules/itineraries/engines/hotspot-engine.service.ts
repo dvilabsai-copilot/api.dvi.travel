@@ -877,7 +877,7 @@ export class HotspotEngineService {
       }
     }
     
-    const dedupenedRows = Array.from(dedupeMap.values());
+    let dedupenedRows = Array.from(dedupeMap.values());
     const afterDedupeCount = dedupenedRows.length;
     
     console.log('[ManualHotspot][rebuildRouteHotspots] deduped final rows', {
@@ -885,6 +885,105 @@ export class HotspotEngineService {
       beforeDedupeCount,
       afterDedupeCount,
       duplicatesRemoved: beforeDedupeCount - afterDedupeCount,
+    });
+
+    // 5.6) FINAL SAFETY FILTER:
+    // Never persist item_type=4 hotspots that are explicitly excluded on that route.
+    const normalizePlaceLabel = (value: any): string =>
+      String(value ?? '')
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    const isGenericHotelLabel = (value: any): boolean => {
+      const normalized = normalizePlaceLabel(value);
+      return normalized === 'hotel' || normalized === 'check in hotel' || normalized === 'checkin hotel';
+    };
+    const isSamePlaceLike = (a: any, b: any): boolean => {
+      const na = normalizePlaceLabel(a);
+      const nb = normalizePlaceLabel(b);
+      return !!na && !!nb && na === nb;
+    };
+
+    const routeRows = await (tx as any).dvi_itinerary_route_details.findMany({
+      where: { itinerary_plan_ID: planId, deleted: 0 },
+      select: { itinerary_route_ID: true, excluded_hotspot_ids: true },
+    });
+    const excludedByRoute = new Map<number, Set<number>>();
+    for (const routeRow of routeRows as any[]) {
+      const routeId = Number(routeRow?.itinerary_route_ID || 0);
+      const excluded = Array.isArray(routeRow?.excluded_hotspot_ids)
+        ? routeRow.excluded_hotspot_ids
+            .map((id: any) => Number(id))
+            .filter((id: number) => Number.isFinite(id) && id > 0)
+        : [];
+      excludedByRoute.set(routeId, new Set<number>(excluded));
+    }
+
+    const allExcludedHotspotIds = Array.from(new Set(
+      Array.from(excludedByRoute.values())
+        .flatMap((set) => Array.from(set.values()))
+        .filter((id) => Number.isFinite(id) && id > 0),
+    ));
+    const excludedHotspotMasters = allExcludedHotspotIds.length
+      ? await (tx as any).dvi_hotspot_place.findMany({
+          where: { hotspot_ID: { in: allExcludedHotspotIds } },
+          select: { hotspot_ID: true, hotspot_name: true },
+        })
+      : [];
+    const excludedNameById = new Map<number, string>(
+      (excludedHotspotMasters || []).map((h: any) => [Number(h.hotspot_ID), normalizePlaceLabel(h.hotspot_name)]),
+    );
+    const referencesExcludedByName = (routeId: number, row: any): boolean => {
+      const excludedSet = excludedByRoute.get(routeId);
+      if (!excludedSet || excludedSet.size === 0) return false;
+      const fields = [
+        row?.text, row?.name, row?.from, row?.to, row?.fromName, row?.toName,
+        row?.displayFromName, row?.displayToName, row?.hotspot_name, row?.via_location_name,
+      ];
+      const hay = normalizePlaceLabel(fields.filter(Boolean).join(' '));
+      if (!hay) return false;
+      for (const hid of excludedSet.values()) {
+        const n = excludedNameById.get(Number(hid));
+        if (n && n.length > 1 && hay.includes(n)) return true;
+      }
+      return false;
+    };
+    const rowReferencesExcludedHotspot = (routeId: number, row: any): boolean => {
+      const excludedSet = excludedByRoute.get(routeId);
+      if (!excludedSet || excludedSet.size === 0) return false;
+      const directIds = [
+        row?.hotspot_ID, row?.hotspotId, row?.locationId, row?.toHotspotId, row?.fromHotspotId,
+      ]
+        .map((v) => Number(v || 0))
+        .filter((v) => Number.isFinite(v) && v > 0);
+      if (directIds.some((id) => excludedSet.has(id))) return true;
+      return referencesExcludedByName(routeId, row);
+    };
+    const isInvalidNoOpTravel = (row: any): boolean => {
+      const itemType = Number(row?.item_type || 0);
+      if (itemType !== 3 && itemType !== 5) return false;
+      const fromLabel = row?.from ?? row?.fromName ?? row?.displayFromName ?? row?.hotspot_name ?? row?.via_location_name ?? '';
+      const toLabel = row?.to ?? row?.toName ?? row?.displayToName ?? row?.hotspot_name ?? row?.via_location_name ?? '';
+      if (!fromLabel || !toLabel) return false;
+      if (isGenericHotelLabel(fromLabel) && isGenericHotelLabel(toLabel)) return true;
+      return isSamePlaceLike(fromLabel, toLabel);
+    };
+
+    const beforeExcludedSafetyCount = dedupenedRows.length;
+    dedupenedRows = dedupenedRows.filter((row: any) => {
+      const routeId = Number(row?.itinerary_route_ID || 0);
+      if (!routeId) return true;
+      if (isInvalidNoOpTravel(row)) return false;
+      if (rowReferencesExcludedHotspot(routeId, row)) return false;
+      return true;
+    });
+
+    console.log('[HotspotRebuild][excluded_safety_filter]', {
+      planId,
+      beforeExcludedSafetyCount,
+      afterExcludedSafetyCount: dedupenedRows.length,
+      removedCount: beforeExcludedSafetyCount - dedupenedRows.length,
     });
 
     // 5.7) SORT final timeline rows by hotspot_start_time ASC (chronological)
