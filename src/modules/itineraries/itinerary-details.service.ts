@@ -264,6 +264,25 @@ export class ItineraryDetailsService {
     console.log('[BOOKING_RULE]', payload);
   }
 
+  private normalizePlaceLabel(value: any): string {
+    return String(value ?? '')
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  private isGenericHotelLabel(value: any): boolean {
+    const normalized = this.normalizePlaceLabel(value);
+    return normalized === 'hotel' || normalized === 'check in hotel' || normalized === 'checkin hotel';
+  }
+
+  private isSamePlaceLike(a: any, b: any): boolean {
+    const na = this.normalizePlaceLabel(a);
+    const nb = this.normalizePlaceLabel(b);
+    return !!na && !!nb && na === nb;
+  }
+
   // ---------------------------------------------------------------------------
   // Low-level helpers
   // ---------------------------------------------------------------------------
@@ -2944,10 +2963,58 @@ console.log('[FINAL_DISTANCE_DEBUG]', {
         return null;
       };
 
-      const startIndex = segments.findIndex((seg: any) => seg?.type === 'start');
-      const checkinIndex = segments.findIndex((seg: any) => seg?.type === 'checkin');
       const routeHotelNameForDay = getRouteHotelName();
       const routeHotelNameNormalized = normalizeName(routeHotelNameForDay);
+
+      // Final response-level sanitizer: prevent excluded hotspots and no-op travels from leaking.
+      const excludedIds = new Set<number>(
+        Array.isArray((route as any)?.excluded_hotspot_ids)
+          ? (route as any).excluded_hotspot_ids
+              .map((id: any) => Number(id))
+              .filter((id: number) => Number.isFinite(id) && id > 0)
+          : [],
+      );
+      const excludedNames = new Set<string>();
+      for (const hid of excludedIds.values()) {
+        const m = hotspotMap.get(hid as any);
+        const n = this.normalizePlaceLabel((m as any)?.hotspot_name || '');
+        if (n) excludedNames.add(n);
+      }
+      const textMentionsExcluded = (...values: any[]): boolean => {
+        const hay = this.normalizePlaceLabel(values.filter(Boolean).join(' '));
+        if (!hay) return false;
+        for (const n of excludedNames.values()) {
+          if (n && hay.includes(n)) return true;
+        }
+        return false;
+      };
+      const sanitizeSegments = (rows: any[]): any[] => {
+        const filtered = (Array.isArray(rows) ? rows : []).filter((seg: any) => {
+          const type = String(seg?.type || '').toLowerCase();
+          if (type === 'attraction') {
+            const sid = Number(seg?.hotspotId ?? seg?.locationId ?? 0);
+            if (sid > 0 && excludedIds.has(sid)) return false;
+            if (textMentionsExcluded(seg?.name, seg?.text, seg?.description)) return false;
+            return true;
+          }
+          if (type === 'hotspot') {
+            if (textMentionsExcluded(seg?.anchorFrom, seg?.anchorTo, seg?.text, seg?.name)) return false;
+            return true;
+          }
+          if (type === 'travel') {
+            if (textMentionsExcluded(seg?.from, seg?.to, seg?.fromName, seg?.toName, seg?.displayFromName, seg?.displayToName, seg?.text, seg?.name)) return false;
+            if (this.isGenericHotelLabel(seg?.from) && this.isGenericHotelLabel(seg?.to)) return false;
+            if (this.isSamePlaceLike(seg?.from, seg?.to)) return false;
+            return true;
+          }
+          return true;
+        });
+        return filtered;
+      };
+      segments.splice(0, segments.length, ...sanitizeSegments(segments));
+
+      const refreshedStartIndex = segments.findIndex((seg: any) => seg?.type === 'start');
+      const refreshedCheckinIndex = segments.findIndex((seg: any) => seg?.type === 'checkin');
 
       const firstHotelDepartureTravel = segments.find((seg: any) => {
         if (seg?.type !== 'travel') return false;
@@ -2962,18 +3029,18 @@ console.log('[FINAL_DISTANCE_DEBUG]', {
       });
 
       const checkinStartMins =
-        checkinIndex >= 0 ? getSegmentStartMinutes(segments[checkinIndex]) : null;
+        refreshedCheckinIndex >= 0 ? getSegmentStartMinutes(segments[refreshedCheckinIndex]) : null;
       const firstHotelDepartureStartMins = getSegmentStartMinutes(firstHotelDepartureTravel);
 
       const isHotelFirstFlow =
-        checkinIndex >= 0 &&
+        refreshedCheckinIndex >= 0 &&
         !!firstHotelDepartureTravel &&
         checkinStartMins !== null &&
         firstHotelDepartureStartMins !== null &&
         checkinStartMins <= firstHotelDepartureStartMins;
 
-      if (isHotelFirstFlow && startIndex >= 0 && startIndex < checkinIndex) {
-        const [startSegment] = segments.splice(startIndex, 1);
+      if (isHotelFirstFlow && refreshedStartIndex >= 0 && refreshedStartIndex < refreshedCheckinIndex) {
+        const [startSegment] = segments.splice(refreshedStartIndex, 1);
         const refreshedCheckinIndex = segments.findIndex((seg: any) => seg?.type === 'checkin');
 
         if (refreshedCheckinIndex >= 0) {
@@ -2988,6 +3055,7 @@ console.log('[FINAL_DISTANCE_DEBUG]', {
         segments,
         routeHotelNameForDay,
       );
+      segments.splice(0, segments.length, ...sanitizeSegments(segments));
 
       // Ensure timeline never moves backward when source rows contain overlaps/reversed ranges.
       this.normalizeSegmentChronology(segments);
@@ -3027,6 +3095,8 @@ sightseeingDistance,       // local sightseeing separately
   startTime: dayStartTimeText,
   endTime: dayEndTimeText,
   viaRoutes: viaRoutesList,
+  needsRebuild: excludedIds.size > 0,
+  excludedHotspotIds: Array.from(excludedIds.values()),
   segments,
 });
     }
