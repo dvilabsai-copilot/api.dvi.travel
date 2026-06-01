@@ -1142,7 +1142,11 @@ export class TimelineBuilder {
     const hotspotMap = new Map();
     for (const h of allHotspots) {
       hotspotMap.set(h.hotspot_ID, {
+        hotspot_ID: h.hotspot_ID,
+        hotspot_name: h.hotspot_name,
         hotspot_location: h.hotspot_location,
+        hotspot_to_location: h.hotspot_to_location,
+        hotspot_priority: h.hotspot_priority,
         hotspot_latitude: h.hotspot_latitude,
         hotspot_longitude: h.hotspot_longitude,
         hotspot_duration: h.hotspot_duration,
@@ -2468,6 +2472,63 @@ export class TimelineBuilder {
 
                 const candidateId = Number(r.between_hotspot_id || 0);
                 if (!candidateId) continue;
+                const candidateMaster = (hotspotMap.get(candidateId) || {}) as any;
+                const masterLocation = String(candidateMaster?.hotspot_location || '');
+                const masterToLocation = String(candidateMaster?.hotspot_to_location || '');
+                const masterLocationKey = this.canonicalCityKey(masterLocation);
+                const masterToLocationKey = this.canonicalCityKey(masterToLocation);
+                const isCorridorMasterHotspot = !!masterLocationKey && !!masterToLocationKey && masterLocationKey !== masterToLocationKey;
+                const corridorBelongsToCurrentRoute =
+                  this.hotspotLocationMatchesCity(masterLocation, sourceCity) &&
+                  this.hotspotLocationMatchesCity(masterToLocation, destinationCity);
+                if (isCorridorMasterHotspot && !corridorBelongsToCurrentRoute) {
+                  if (candidateId === 228 || candidateId === 357) {
+                    this.logBookingRule({
+                      rule: 'BETWEEN_MAP_228_357_PROOF',
+                      quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+                      planId,
+                      routeId: route.itinerary_route_ID,
+                      fromHotspotId: slot.fromId,
+                      toHotspotId: slot.toId,
+                      betweenHotspotId: candidateId,
+                      routeFitType: fitType,
+                      currentTime,
+                      accepted: false,
+                      rejectedReason: 'corridor_between_hotspot_not_owned_by_current_route',
+                      insertedBy: 'hotspot_route_between_map',
+                    });
+                  }
+                  this.logBookingRule({
+                    rule: 'CORRIDOR_BETWEEN_HOTSPOT_WRONG_ROUTE_BLOCKED',
+                    quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+                    planId,
+                    routeId: route.itinerary_route_ID,
+                    hotspotId: candidateId,
+                    hotspotName: String(candidateMaster?.hotspot_name || ''),
+                    sourceCity,
+                    destinationCity,
+                    masterLocation,
+                    masterToLocation,
+                    reason: 'corridor_between_hotspot_not_owned_by_current_route',
+                  });
+                  continue;
+                }
+                if (candidateId === 228 || candidateId === 357) {
+                  this.logBookingRule({
+                    rule: 'BETWEEN_MAP_228_357_PROOF',
+                    quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+                    planId,
+                    routeId: route.itinerary_route_ID,
+                    fromHotspotId: slot.fromId,
+                    toHotspotId: slot.toId,
+                    betweenHotspotId: candidateId,
+                    routeFitType: fitType,
+                    currentTime,
+                    accepted: true,
+                    rejectedReason: null,
+                    insertedBy: 'hotspot_route_between_map',
+                  });
+                }
 
                 // Respect route-level excluded_hotspot_ids if present on route
                 const localExcluded = new Set<number>(Array.isArray((route as any)?.excluded_hotspot_ids) ? ((route as any).excluded_hotspot_ids || []).map((id: any) => Number(id)).filter((id: number) => Number.isFinite(id) && id > 0) : []);
@@ -3321,23 +3382,246 @@ export class TimelineBuilder {
         // OTHER DAYS: Multi-pass scheduling with deferred hotspots
         this.logTimeline('[TIMELINE] Day 1 loop stats - Queries:', hotspotQueryCount, '| Distance calcs:', distanceCalcCount, '| Operating hours:', operatingHoursCount, '| Time:', Date.now() - routeLoopStart, 'ms');
 
-        const strictHotspots = (selectedHotspots as Array<SelectedHotspot>).filter((hs) => {
-          const priority = Number((hs as any).hotspot_priority ?? 0);
-          return priority >= 1 && priority <= 3;
+        const getCandidateBucket = (hs: any): string =>
+          String(hs?.matched_bucket || hs?.__bucket || '').toLowerCase();
+
+        const getCandidatePriority = (hs: any): number =>
+          Number(hs?.hotspot_priority ?? 0);
+
+        const isSourcePhaseBucket = (hs: any): boolean => {
+          const bucket = getCandidateBucket(hs);
+          return bucket === 'source' || bucket === 'source_fallback';
+        };
+
+        const isConfiguredPriority = (priority: number): boolean => {
+          return priority >= 1 && priority < 9999;
+        };
+
+        const routeSourceKeyForPhase = this.canonicalCityKey(
+          String(sourceCity || currentLocationName || route.location_name || ''),
+        );
+
+        const routeDestinationKeyForPhase = this.canonicalCityKey(
+          String(destinationCity || route.next_visiting_location || ''),
+        );
+
+        const directToNextForPhase = Number((route as any).direct_to_next_visiting_place || 0);
+
+        const isIntercityNonDirectRoute =
+          routeSourceKeyForPhase !== '' &&
+          routeDestinationKeyForPhase !== '' &&
+          routeSourceKeyForPhase !== routeDestinationKeyForPhase &&
+          directToNextForPhase !== 1;
+
+        const candidateKey = (hs: any): string =>
+          `${Number(hs?.hotspot_ID || 0)}:${getCandidateBucket(hs)}`;
+
+        const normalizeSchedulerBucketsForRoute = (
+          input: Array<SelectedHotspot>,
+        ): Array<SelectedHotspot> => {
+          const proofRows: Array<any> = [];
+          const normalized = (input || []).map((hs: any) => {
+            const hotspotId = Number(hs?.hotspot_ID || 0);
+            const beforeBucket = String(hs?.matched_bucket || hs?.__bucket || 'unknown').toLowerCase();
+            const master = (hotspotMap.get(hotspotId) as any) || hs || {};
+            const masterLocation = String(master?.hotspot_location || '');
+            const masterToLocation = String(master?.hotspot_to_location || masterLocation || '');
+
+            let afterBucket = beforeBucket;
+            let reason = 'preserved';
+
+            if (
+              isIntercityNonDirectRoute &&
+              this.hotspotLocationMatchesCity(masterLocation, sourceCity) &&
+              this.hotspotLocationMatchesCity(masterToLocation, destinationCity)
+            ) {
+              afterBucket = 'en_route';
+              reason = 'scheduler_final_master_source_to_destination_override';
+            }
+
+            const next = {
+              ...hs,
+              matched_bucket: afterBucket,
+              __bucket: afterBucket,
+              __bucket_reason: reason,
+            };
+
+            proofRows.push({
+              hotspotId,
+              beforeBucket,
+              afterBucket,
+              masterLocation,
+              masterToLocation,
+              reason,
+            });
+
+            return next as SelectedHotspot;
+          });
+
+          this.logBookingRule({
+            rule: 'SCHEDULER_BUCKET_NORMALIZATION_PROOF',
+            quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+            planId,
+            routeId: route.itinerary_route_ID,
+            candidates: proofRows,
+          });
+
+          return normalized;
+        };
+
+        selectedHotspots = normalizeSchedulerBucketsForRoute(selectedHotspots as Array<SelectedHotspot>);
+        const getMasterHotspot = (hotspotId: number): any => {
+          return (hotspotMap.get(hotspotId) as any) || {};
+        };
+        const isCorridorMasterHotspot = (hotspotId: number): boolean => {
+          const master = getMasterHotspot(hotspotId);
+          const masterLocationKey = this.canonicalCityKey(String(master?.hotspot_location || ''));
+          const masterToLocationKey = this.canonicalCityKey(String(master?.hotspot_to_location || ''));
+
+          return (
+            !!masterLocationKey &&
+            !!masterToLocationKey &&
+            masterLocationKey !== masterToLocationKey
+          );
+        };
+        const corridorBelongsToCurrentRoute = (hotspotId: number): boolean => {
+          const master = getMasterHotspot(hotspotId);
+          return (
+            this.hotspotLocationMatchesCity(master?.hotspot_location, sourceCity) &&
+            this.hotspotLocationMatchesCity(master?.hotspot_to_location, destinationCity)
+          );
+        };
+        selectedHotspots = (selectedHotspots as Array<SelectedHotspot>).filter((hs: any) => {
+          const hotspotId = Number(hs?.hotspot_ID || 0);
+          if (isCorridorMasterHotspot(hotspotId) && !corridorBelongsToCurrentRoute(hotspotId)) {
+            this.logBookingRule({
+              rule: 'CORRIDOR_HOTSPOT_WRONG_ROUTE_BLOCKED',
+              quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+              planId,
+              routeId: route.itinerary_route_ID,
+              hotspotId,
+              hotspotName: String(getMasterHotspot(hotspotId)?.hotspot_name || ''),
+              sourceCity,
+              destinationCity,
+              masterLocation: String(getMasterHotspot(hotspotId)?.hotspot_location || ''),
+              masterToLocation: String(getMasterHotspot(hotspotId)?.hotspot_to_location || ''),
+              reason: 'corridor_hotspot_not_owned_by_current_route',
+            });
+            return false;
+          }
+          return true;
         });
-        let fillerHotspots = (selectedHotspots as Array<SelectedHotspot>).filter((hs) => {
-          const priority = Number((hs as any).hotspot_priority ?? 0);
-          return !(priority >= 1 && priority <= 3);
+
+        const strictHotspots = (selectedHotspots as Array<SelectedHotspot>).filter((hs: any) => {
+          const priority = getCandidatePriority(hs);
+          const bucket = String((hs as any).matched_bucket || (hs as any).__bucket || '').toLowerCase();
+
+          if (priority >= 1 && priority <= 3) {
+            return true;
+          }
+          if (
+            isIntercityNonDirectRoute &&
+            (bucket === 'en_route' || bucket === 'source_to_destination') &&
+            priority >= 1 &&
+            priority < 9999
+          ) {
+            return true;
+          }
+
+          if (
+            isIntercityNonDirectRoute &&
+            isSourcePhaseBucket(hs) &&
+            isConfiguredPriority(priority)
+          ) {
+            return true;
+          }
+
+          return false;
+        });
+
+        const strictCandidateKeys = new Set(
+          strictHotspots.map((hs: any) => candidateKey(hs)),
+        );
+
+        let fillerHotspots = (selectedHotspots as Array<SelectedHotspot>).filter((hs: any) => {
+          return !strictCandidateKeys.has(candidateKey(hs));
+        });
+        const isCorridorBucket = (hs: any): boolean => {
+          const bucket = String(hs?.matched_bucket || hs?.__bucket || '').toLowerCase();
+          return bucket === 'en_route' || bucket === 'source_to_destination';
+        };
+        const getCorridorPriorityRank = (hs: any): number => {
+          const priority = Number(hs?.hotspot_priority ?? 0);
+          if (priority >= 1 && priority < 9999) return priority;
+          return 9999;
+        };
+        const corridorHotspots = (selectedHotspots as Array<SelectedHotspot>)
+          .filter((hs: any) => isCorridorBucket(hs))
+          .sort((a: any, b: any) => {
+            const priorityDiff = getCorridorPriorityRank(a) - getCorridorPriorityRank(b);
+            if (priorityDiff !== 0) return priorityDiff;
+            const distanceDiff = Number(a?.hotspot_distance ?? 999999) - Number(b?.hotspot_distance ?? 999999);
+            if (distanceDiff !== 0) return distanceDiff;
+            return Number(a?.hotspot_ID ?? 0) - Number(b?.hotspot_ID ?? 0);
+          });
+        const getPendingPositiveCorridorHotspots = (): Array<SelectedHotspot> => {
+          return corridorHotspots.filter((hs: any) => {
+            const id = Number(hs?.hotspot_ID || 0);
+            const priority = Number(hs?.hotspot_priority ?? 0);
+            return id > 0 && !addedHotspotIds.has(id) && priority >= 1 && priority < 9999;
+          });
+        };
+        this.logBookingRule({
+          rule: 'CORRIDOR_PRIORITY_QUEUE_PROOF',
+          quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+          planId,
+          routeId: route.itinerary_route_ID,
+          sourceCity: String(sourceCity || ''),
+          destinationCity: String(destinationCity || ''),
+          corridorCandidates: corridorHotspots.map((hs: any) => {
+            const id = Number(hs?.hotspot_ID || 0);
+            const master = hotspotMap.get(id) as any;
+            return {
+              hotspotId: id,
+              name: String(master?.hotspot_name || hs?.hotspot_name || ''),
+              bucket: String(hs?.matched_bucket || hs?.__bucket || '').toLowerCase(),
+              priority: Number(hs?.hotspot_priority ?? 0),
+              corridorPriorityRank: getCorridorPriorityRank(hs),
+              distance: Number(hs?.hotspot_distance ?? 999999),
+            };
+          }),
+        });
+        this.logBookingRule({
+          rule: 'VALARA_CHEEYAPPARA_POOL_PROOF',
+          quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+          planId,
+          routeId: route.itinerary_route_ID,
+          sourceCity: String(sourceCity || ''),
+          destinationCity: String(destinationCity || ''),
+          selected: (selectedHotspots as Array<SelectedHotspot>)
+            .filter((hs: any) => [228, 357].includes(Number(hs?.hotspot_ID || 0)))
+            .map((hs: any) => {
+              const hotspotId = Number(hs?.hotspot_ID || 0);
+              const master = hotspotMap.get(hotspotId) as any;
+              return {
+                hotspotId,
+                name: String(master?.hotspot_name || hs?.hotspot_name || ''),
+                bucket: String(hs?.matched_bucket || hs?.__bucket || '').toLowerCase(),
+                priority: Number(hs?.hotspot_priority ?? 0),
+                inStrictHotspots: strictHotspots.some((s: any) => Number(s?.hotspot_ID || 0) === hotspotId),
+                inFillerHotspots: fillerHotspots.some((s: any) => Number(s?.hotspot_ID || 0) === hotspotId),
+                inCorridorHotspots: corridorHotspots.some((s: any) => Number(s?.hotspot_ID || 0) === hotspotId),
+                corridorRank: getCorridorPriorityRank(hs),
+                masterLocation: String(master?.hotspot_location || ''),
+                masterToLocation: String(master?.hotspot_to_location || ''),
+                alreadyAdded: addedHotspotIds.has(hotspotId),
+              };
+            }),
         });
 
         let strictPassHotspots = [...strictHotspots];
-        const isIntercityDay =
-          day1SourceCompare &&
-          day1DestinationCompare &&
-          day1SourceCompare !== day1DestinationCompare;
-        const hasLargeSourceIdleWindow = (routeEndSeconds - routeStartSeconds) >= (4 * 60 * 60);
-
-        if (isIntercityDay && hasLargeSourceIdleWindow) {
+        const sourcePhaseEndSeconds = timeToSeconds('12:00:00');
+        if (isIntercityNonDirectRoute) {
           const destinationStrict = strictPassHotspots.filter((hs) => {
             const bucket = String((hs as any).matched_bucket || '').toLowerCase();
             return bucket === 'destination' || bucket === 'dest';
@@ -3357,17 +3641,28 @@ export class TimelineBuilder {
               const bucket = String((hs as any).matched_bucket || '').toLowerCase();
               return bucket === 'source' || bucket === 'source_fallback';
             });
+            const enRouteStrict = strictPassHotspots.filter((hs) => {
+              const bucket = String((hs as any).matched_bucket || '').toLowerCase();
+              return bucket === 'en_route' || bucket === 'source_to_destination';
+            });
 
             const destinationOnlyStrict = strictPassHotspots.filter((hs) => {
               const bucket = String((hs as any).matched_bucket || '').toLowerCase();
-              return bucket === 'destination';
+              return bucket === 'destination' || bucket === 'dest';
             });
 
-            strictPassHotspots = [
-              ...viaStrict,
-              ...sourceStrict,
-              ...destinationOnlyStrict,
-            ];
+            strictPassHotspots = isIntercityNonDirectRoute
+              ? [
+                  ...sourceStrict,
+                  ...enRouteStrict,
+                  ...viaStrict,
+                  ...destinationOnlyStrict,
+                ]
+              : [
+                  ...viaStrict,
+                  ...sourceStrict,
+                  ...destinationOnlyStrict,
+                ];
 
             console.log('[HOTSPOT ORDER FIX]', {
               routeId: route.itinerary_route_ID,
@@ -3386,8 +3681,30 @@ export class TimelineBuilder {
                 name: x.hotspot_name,
                 priority: x.hotspot_priority,
               })),
-              reason:
-                'Route-specific via hotspots must be processed before destination-city hotspots to avoid route backtracking.',
+                reason:
+                'Intercity non-direct route: source hotspots are processed before via/destination to avoid source-city backtracking.',
+            });
+            this.logBookingRule({
+              rule: 'STRICT_PHASE_ORDER_DEBUG',
+              quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+              planId,
+              routeId: route.itinerary_route_ID,
+              sourceIds: sourceStrict.map((x: any) => Number(x.hotspot_ID || 0)),
+              enRouteIds: enRouteStrict.map((x: any) => Number(x.hotspot_ID || 0)),
+              viaIds: viaStrict.map((x: any) => Number(x.hotspot_ID || 0)),
+              destinationIds: destinationOnlyStrict.map((x: any) => Number(x.hotspot_ID || 0)),
+              finalOrder: strictPassHotspots.map((x: any) => ({
+                id: Number(x.hotspot_ID || 0),
+                bucket: String((x as any).matched_bucket || '').toLowerCase(),
+              })),
+            });
+            this.logBookingRule({
+              rule: 'CORRIDOR_PHASE_STARTED',
+              quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+              planId,
+              routeId: route.itinerary_route_ID,
+              sourceIds: sourceStrict.map((x: any) => Number(x.hotspot_ID || 0)),
+              corridorIds: enRouteStrict.map((x: any) => Number(x.hotspot_ID || 0)),
             });
           }
         }
@@ -3416,6 +3733,7 @@ export class TimelineBuilder {
         let optimizationCycle = 1;
         let mustVisitRepairAttempts = 0;
         let previousCycleStateHash = '';
+        let enRoutePhaseStarted = false;
         // Cycle 4 relaxed-fill currently remains intentionally scoped to same-city routes.
         const isCycle4GapFillRoute =
           this.isSameCity(String(sourceCity || currentLocationName), String(destinationCity || route.next_visiting_location || currentLocationName));
@@ -3460,6 +3778,58 @@ export class TimelineBuilder {
           const retried = Array.from(rejectedRetryHotspotIds.values()).sort((a, b) => a - b).join(',');
           return `${scheduled}|${deferred}|${retried}|${currentTime}`;
         };
+        const traceHotspot241 = (reason: string, extra: Record<string, unknown> = {}) => {
+          if (!this.verboseTimelineProofLogs) return;
+          this.logBookingRule({
+            rule: 'HOTSPOT_241_TRACE',
+            quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+            planId,
+            routeId: route.itinerary_route_ID,
+            hotspotId: 241,
+            reason,
+            ...extra,
+          });
+        };
+        const isSourcePhaseEligibleCandidate = (hs: any): boolean => {
+          const bucket = String(hs?.matched_bucket || hs?.__bucket || '').toLowerCase();
+          const hotspotLocation = String((hotspotMap.get(Number(hs?.hotspot_ID || 0)) as any)?.hotspot_location || '');
+
+          if (bucket === 'source') return true;
+
+          if (bucket === 'source_fallback') {
+            return this.hotspotLocationMatchesCity(hotspotLocation, sourceCity);
+          }
+
+          if (
+            bucket === 'matrix' ||
+            bucket === 'manual' ||
+            bucket === '' ||
+            bucket === 'unknown' ||
+            bucket === 'carry_forward'
+          ) {
+            return this.hotspotLocationMatchesCity(hotspotLocation, sourceCity);
+          }
+
+          return false;
+        };
+        const logHotspotBucketTrace = (payload: {
+          hotspotId: number;
+          hotspotName: string | null;
+          bucket: string;
+          priority: number;
+          currentTime: string;
+          sourcePhaseActive: boolean;
+          accepted: boolean;
+          rejectionReason: string | null;
+        }) => {
+          this.logBookingRule({
+            rule: 'HOTSPOT_BUCKET_TRACE',
+            quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+            planId,
+            routeId: route.itinerary_route_ID,
+            ...payload,
+          });
+        };
 
         const scoreFillerHotspot = (hs: SelectedHotspot): number => {
           const hotspotId = Number((hs as any).hotspot_ID || 0);
@@ -3490,6 +3860,14 @@ export class TimelineBuilder {
           const windowFitScore = Math.min(50, Math.floor(remainingGapSeconds / 900));
 
           return (priority * 10) + bucketBias + distanceScore + waitScore + windowFitScore;
+        };
+        const getPhaseRank = (bucketRaw: string): number => {
+          const bucket = String(bucketRaw || '').toLowerCase();
+          if (bucket === 'source' || bucket === 'source_fallback') return 1;
+          if (bucket === 'en_route' || bucket === 'source_to_destination') return 2;
+          if (bucket === 'via') return 3;
+          if (bucket === 'destination' || bucket === 'dest') return 4;
+          return 5;
         };
 
         const queueRejectedHotspotForRetry = (hotspot: SelectedHotspot, reason: string): boolean => {
@@ -3627,8 +4005,31 @@ export class TimelineBuilder {
           });
 
           if (optimizationCycle === 2) {
-            const reordered = await runPreFillerDistanceOptimization();
-            addedInCurrentCycle = reordered;
+            const pendingPositiveCorridorIds = getPendingPositiveCorridorHotspots().map((hs: any) => Number((hs as any).hotspot_ID || 0));
+            this.logBookingRule({
+              rule: 'PREFILLER_ENTRY_PROOF',
+              quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+              planId,
+              routeId: route.itinerary_route_ID,
+              cycle: optimizationCycle,
+              pendingPositiveCorridorIds,
+              addedHotspotIds: Array.from(addedHotspotIds.values()),
+              willRunPreFiller: fillerHotspots.length >= 3,
+            });
+            if (pendingPositiveCorridorIds.length > 0) {
+              this.logBookingRule({
+                rule: 'PREFILLER_BLOCKED_CORRIDOR_PENDING',
+                quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+                planId,
+                routeId: route.itinerary_route_ID,
+                cycle: optimizationCycle,
+                pendingPositiveCorridorIds,
+                reason: 'positive_priority_corridor_pending',
+              });
+            } else {
+              const reordered = await runPreFillerDistanceOptimization();
+              addedInCurrentCycle = reordered;
+            }
           }
 
           while (pass <= maxPasses) {
@@ -3662,23 +4063,239 @@ export class TimelineBuilder {
             sortedFillerHotspots = scored.map((x) => x.hs);
           }
 
-          const hotspotsToTry =
+          let hotspotsToTry =
             pass === PASS_STRICT
               ? (strictPassHotspots as Array<SelectedHotspot>)
               : (pass === PASS_FILLER_PRIMARY || pass === PASS_FILLER_SECONDARY)
                 ? sortedFillerHotspots
-                : (pass === PASS_DEFERRED_PRIMARY || pass === PASS_DEFERRED_SECONDARY)
-                  ? [...(deferredPriorityHotspots as Array<SelectedHotspot>)].sort((a, b) => {
-                      const pa = Number((a as any).hotspot_priority ?? 0);
-                      const pb = Number((b as any).hotspot_priority ?? 0);
-                      if (pa !== pb) return pa - pb;
-                      return Number((a as any).hotspot_distance ?? 9999) - Number((b as any).hotspot_distance ?? 9999);
-                    })
+                  : (pass === PASS_DEFERRED_PRIMARY || pass === PASS_DEFERRED_SECONDARY)
+                    ? [...(deferredPriorityHotspots as Array<SelectedHotspot>)].sort((a, b) => {
+                        const pa = Number((a as any).hotspot_priority ?? 0);
+                        const pb = Number((b as any).hotspot_priority ?? 0);
+                        if (pa !== pb) return pa - pb;
+                        return Number((a as any).hotspot_distance ?? 9999) - Number((b as any).hotspot_distance ?? 9999);
+                      })
                   : (rejectedRetryHotspots as Array<SelectedHotspot>);
+          const pendingPositiveCorridorHotspots = getPendingPositiveCorridorHotspots();
+          const pendingPositiveCorridorIds = pendingPositiveCorridorHotspots.map((hs: any) => Number(hs?.hotspot_ID || 0));
+          if (
+            isIntercityNonDirectRoute &&
+            pendingPositiveCorridorIds.length > 0 &&
+            (pass === PASS_FILLER_PRIMARY || pass === PASS_FILLER_SECONDARY || pass === PASS_DEFERRED_PRIMARY || pass === PASS_DEFERRED_SECONDARY || pass === PASS_REJECTED_RETRY)
+          ) {
+            const blockedFillerIds = hotspotsToTry
+              .filter((hs: any) => !pendingPositiveCorridorIds.includes(Number(hs?.hotspot_ID || 0)))
+              .map((hs: any) => Number(hs?.hotspot_ID || 0))
+              .filter((id) => id > 0);
+            this.logBookingRule({
+              rule: 'FILLER_BLOCKED_CORRIDOR_PENDING',
+              quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+              planId,
+              routeId: route.itinerary_route_ID,
+              cycle: optimizationCycle,
+              pass,
+              passType:
+                pass === PASS_FILLER_PRIMARY || pass === PASS_FILLER_SECONDARY
+                  ? 'filler'
+                  : (pass === PASS_DEFERRED_PRIMARY || pass === PASS_DEFERRED_SECONDARY)
+                    ? 'deferred'
+                    : 'retry',
+              pendingPositiveCorridorIds,
+              blockedFillerIds,
+              reason: 'positive_priority_corridor_pending',
+            });
+            hotspotsToTry = pendingPositiveCorridorHotspots;
+          }
+          if (isIntercityNonDirectRoute && pass === PASS_STRICT) {
+            const currentSecs = timeToSeconds(currentTime);
+            if (currentSecs < sourcePhaseEndSeconds) {
+              const remainingSourceCandidates = strictPassHotspots.filter((hs: any) => {
+                const id = Number(hs?.hotspot_ID || 0);
+                const bucket = String(hs?.matched_bucket || hs?.__bucket || '').toLowerCase();
+                return !addedHotspotIds.has(id) && (bucket === 'source' || bucket === 'source_fallback');
+              });
+              if (remainingSourceCandidates.length > 0) {
+                hotspotsToTry = remainingSourceCandidates;
+              } else {
+                currentTime = secondsToTime(sourcePhaseEndSeconds);
+                hotspotsToTry = corridorHotspots.filter((hs: any) => !addedHotspotIds.has(Number(hs?.hotspot_ID || 0)));
+              }
+            } else {
+              hotspotsToTry = pendingPositiveCorridorHotspots.length > 0
+                ? pendingPositiveCorridorHotspots
+                : corridorHotspots.filter((hs: any) => !addedHotspotIds.has(Number(hs?.hotspot_ID || 0)));
+            }
+          }
+          const passCandidateIds = new Set<number>(hotspotsToTry.map((hs: any) => Number(hs?.hotspot_ID || 0)));
+          if (passCandidateIds.has(228) || passCandidateIds.has(357)) {
+            this.logBookingRule({
+              rule: 'VALARA_CHEEYAPPARA_PASS_CANDIDATES',
+              quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+              planId,
+              routeId: route.itinerary_route_ID,
+              cycle: optimizationCycle,
+              pass,
+              passType:
+                pass === PASS_STRICT
+                  ? 'strict'
+                  : (pass === PASS_FILLER_PRIMARY || pass === PASS_FILLER_SECONDARY)
+                    ? 'filler'
+                    : (pass === PASS_DEFERRED_PRIMARY || pass === PASS_DEFERRED_SECONDARY)
+                      ? 'deferred'
+                      : 'retry',
+              currentTime,
+              sourcePhaseActive: isIntercityNonDirectRoute && timeToSeconds(currentTime) < sourcePhaseEndSeconds,
+              candidates: hotspotsToTry
+                .filter((hs: any) => [228, 357].includes(Number(hs?.hotspot_ID || 0)))
+                .map((hs: any) => {
+                  const hotspotId = Number(hs?.hotspot_ID || 0);
+                  const master = hotspotMap.get(hotspotId) as any;
+                  return {
+                    hotspotId,
+                    name: String(master?.hotspot_name || hs?.hotspot_name || ''),
+                    bucket: String(hs?.matched_bucket || hs?.__bucket || '').toLowerCase(),
+                    priority: Number(hs?.hotspot_priority ?? 0),
+                    corridorRank: getCorridorPriorityRank(hs),
+                    inStrictHotspots: strictHotspots.some((s: any) => Number(s?.hotspot_ID || 0) === hotspotId),
+                    inFillerHotspots: fillerHotspots.some((s: any) => Number(s?.hotspot_ID || 0) === hotspotId),
+                    inCorridorHotspots: corridorHotspots.some((s: any) => Number(s?.hotspot_ID || 0) === hotspotId),
+                    alreadyAdded: addedHotspotIds.has(hotspotId),
+                  };
+                }),
+            });
+          }
+          const sourcePhaseActiveNow = isIntercityNonDirectRoute && timeToSeconds(currentTime) < sourcePhaseEndSeconds;
+          if (sourcePhaseActiveNow) {
+            const sourceOnlyCandidates = hotspotsToTry.filter((hs: any) => isSourcePhaseEligibleCandidate(hs));
+
+            if (sourceOnlyCandidates.length > 0) {
+              hotspotsToTry = sourceOnlyCandidates;
+            } else if (timeToSeconds(currentTime) < sourcePhaseEndSeconds) {
+              this.logBookingRule({
+                rule: 'SOURCE_PHASE_ADVANCE_TO_NOON',
+                quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+                planId,
+                routeId: route.itinerary_route_ID,
+                cycle: optimizationCycle,
+                pass,
+                fromTime: currentTime,
+                toTime: '12:00:00',
+                reason: 'No source-phase candidates remain before noon; advance scheduler clock before intercity movement.',
+              });
+              currentTime = '12:00:00';
+            }
+          }
+          this.logBookingRule({
+            rule: 'SOURCE_PHASE_CANDIDATES',
+            quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+            planId,
+            routeId: route.itinerary_route_ID,
+            cycle: optimizationCycle,
+            pass,
+            currentTime,
+            sourcePhaseActive: sourcePhaseActiveNow,
+            candidates: hotspotsToTry.map((hs: any) => ({
+              hotspotLocation: String((hotspotMap.get(Number(hs?.hotspot_ID || 0)) as any)?.hotspot_location || ''),
+              sourceCity: String(sourceCity || ''),
+              sourceCityKey: this.canonicalCityKey(String(sourceCity || '')),
+              hotspotLocationMatchesSourceCity: this.hotspotLocationMatchesCity(
+                String((hotspotMap.get(Number(hs?.hotspot_ID || 0)) as any)?.hotspot_location || ''),
+                sourceCity,
+              ),
+              hotspotId: Number(hs?.hotspot_ID || 0),
+              hotspotName: String(hs?.hotspot_name || ''),
+              bucket: String(hs?.matched_bucket || '').toLowerCase(),
+              priority: Number(hs?.hotspot_priority ?? 0),
+              sourcePhaseActive: sourcePhaseActiveNow,
+              allowedBySourcePhase: !sourcePhaseActiveNow ? true : isSourcePhaseEligibleCandidate(hs),
+              reason: !sourcePhaseActiveNow
+                ? 'source_phase_inactive'
+                : 'pre_filtered_source_phase',
+            })),
+          });
+          for (const hs of hotspotsToTry as any[]) {
+            if (Number(hs?.hotspot_ID || 0) !== 228) continue;
+            const bucket = String(hs?.matched_bucket || hs?.__bucket || '').toLowerCase();
+            const hotspotLocation = String((hotspotMap.get(Number(hs?.hotspot_ID || 0)) as any)?.hotspot_location || '');
+            this.logBookingRule({
+              rule: 'CHEEYAPPARA_SOURCE_PHASE_PROOF',
+              quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+              planId,
+              routeId: route.itinerary_route_ID,
+              hotspotId: 228,
+              bucket,
+              hotspotLocation,
+              sourceCity: String(sourceCity || ''),
+              sourceCityKey: this.canonicalCityKey(String(sourceCity || '')),
+              allowedBySourcePhase: isSourcePhaseEligibleCandidate(hs),
+            });
+          }
 
           if (hotspotsToTry.length === 0) {
             pass++;
             continue;
+          }
+          const passType =
+            pass === PASS_STRICT
+              ? 'strict'
+              : (pass === PASS_FILLER_PRIMARY || pass === PASS_FILLER_SECONDARY)
+                ? 'filler'
+                : (pass === PASS_DEFERRED_PRIMARY || pass === PASS_DEFERRED_SECONDARY)
+                  ? 'deferred'
+                  : 'retry';
+          this.logBookingRule({
+            rule: 'CYCLE_PASS_CANDIDATE_ORDER',
+            quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+            planId,
+            routeId: route.itinerary_route_ID,
+            cycle: optimizationCycle,
+            pass,
+            passType,
+            currentTime,
+            candidates: hotspotsToTry.map((hs: any) => {
+              const hotspotId = Number(hs?.hotspot_ID || 0);
+              const bucket = String(hs?.matched_bucket || hs?.__bucket || '').toLowerCase();
+              const meta = hotspotMap.get(hotspotId) as any;
+              return {
+                hotspotId,
+                name: String(hs?.hotspot_name || ''),
+                bucket,
+                priority: Number(hs?.hotspot_priority ?? 0),
+                phaseRank: getPhaseRank(bucket),
+                sourceCity: String(sourceCity || ''),
+                destinationCity: String(destinationCity || ''),
+                hotspotLocation: String(meta?.hotspot_location || ''),
+                hotspotToLocation: String(meta?.hotspot_to_location || meta?.hotspot_location || ''),
+                alreadyAdded: addedHotspotIds.has(hotspotId),
+                enRouteAlreadyScheduled: enRoutePhaseStarted,
+              };
+            }),
+          });
+          if (isIntercityNonDirectRoute) {
+            const cheeyappara = corridorHotspots.find((hs: any) => Number(hs?.hotspot_ID || 0) === 228);
+            const valara = corridorHotspots.find((hs: any) => Number(hs?.hotspot_ID || 0) === 357);
+            this.logBookingRule({
+              rule: 'CHEEYAPPARA_VALARA_ORDER_PROOF',
+              quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+              planId,
+              routeId: route.itinerary_route_ID,
+              cheeyappara: {
+                present: !!cheeyappara,
+                bucket: String((cheeyappara as any)?.matched_bucket || (cheeyappara as any)?.__bucket || '').toLowerCase(),
+                priority: Number((cheeyappara as any)?.hotspot_priority ?? 0),
+                corridorRank: cheeyappara ? getCorridorPriorityRank(cheeyappara) : null,
+                added: addedHotspotIds.has(228),
+                rejectedReason: null,
+              },
+              valara: {
+                present: !!valara,
+                bucket: String((valara as any)?.matched_bucket || (valara as any)?.__bucket || '').toLowerCase(),
+                priority: Number((valara as any)?.hotspot_priority ?? 0),
+                corridorRank: valara ? getCorridorPriorityRank(valara) : null,
+                added: addedHotspotIds.has(357),
+                rejectedReason: null,
+              },
+            });
           }
 
         // Build travel + hotspot segments in order (NO LUNCH BREAKS OR CUTOFF CHECKS)
@@ -3689,6 +4306,8 @@ export class TimelineBuilder {
         const isStageAPriority = hotspotPriority >= 1 && hotspotPriority <= 3;
         const bucket = (sh as any).matched_bucket as string | undefined;
         const hotspotId = Number((sh as any).hotspot_ID || 0);
+        const normalizedBucket = String(bucket || '').toLowerCase();
+        const isSourcePhaseBucketNow = normalizedBucket === 'source' || normalizedBucket === 'source_fallback';
         const allowSourceCutoffRetryBypass =
           pass === PASS_REJECTED_RETRY && sourceCutoffRejectedHotspotIds.has(hotspotId);
 
@@ -3736,6 +4355,24 @@ export class TimelineBuilder {
         // PHP CHECK: Skip if hotspot already added to THIS PLAN (any previous route in this rebuild)
         // Line 15159 in sql_functions.php: check_hotspot_already_added_the_itineary_plan
         if (addedHotspotIds.has(sh.hotspot_ID)) {
+          logHotspotBucketTrace({
+            hotspotId,
+            hotspotName: String((sh as any).hotspot_name || ''),
+            bucket: normalizedBucket,
+            priority: hotspotPriority,
+            currentTime,
+            sourcePhaseActive: isIntercityNonDirectRoute && timeToSeconds(currentTime) < sourcePhaseEndSeconds,
+            accepted: false,
+            rejectionReason: 'duplicate_plan_scope',
+          });
+          if (hotspotId === 241) {
+            traceHotspot241('rejected_duplicate_plan_scope', {
+              pass,
+              currentTime,
+              bucket: normalizedBucket || null,
+              priority: hotspotPriority,
+            });
+          }
           this.logHotspotCandidateEvaluation({
             routeId: route.itinerary_route_ID,
             hotspotId: Number(sh.hotspot_ID || 0),
@@ -3756,6 +4393,86 @@ export class TimelineBuilder {
           continue;
         }
 
+        if (isIntercityNonDirectRoute) {
+          const currentSecs = timeToSeconds(currentTime);
+          const sourcePhaseActive = currentSecs < sourcePhaseEndSeconds;
+          if (
+            enRoutePhaseStarted &&
+            (normalizedBucket === 'source' || normalizedBucket === 'source_fallback')
+          ) {
+            this.logBookingRule({
+              rule: 'PHASE_GUARD_REJECTED',
+              quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+              planId,
+              routeId: route.itinerary_route_ID,
+              cycle: optimizationCycle,
+              pass,
+              hotspotId,
+              name: String((sh as any).hotspot_name || ''),
+              bucket: normalizedBucket,
+              phaseRank: getPhaseRank(normalizedBucket),
+              reason: 'source_blocked_after_en_route_started',
+            });
+            logHotspotBucketTrace({
+              hotspotId,
+              hotspotName: String((sh as any).hotspot_name || ''),
+              bucket: normalizedBucket,
+              priority: hotspotPriority,
+              currentTime,
+              sourcePhaseActive,
+              accepted: false,
+              rejectionReason: 'source_blocked_after_en_route_started',
+            });
+            continue;
+          }
+          if (sourcePhaseActive && !isSourcePhaseEligibleCandidate(sh)) {
+            if (hotspotId === 228 || hotspotId === 357) {
+              this.logBookingRule({
+                rule: 'CHEEYAPPARA_REJECTED_BEFORE_VALARA',
+                quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+                planId,
+                routeId: route.itinerary_route_ID,
+                cycle: optimizationCycle,
+                pass,
+                passType:
+                  pass === PASS_STRICT
+                    ? 'strict'
+                    : (pass === PASS_FILLER_PRIMARY || pass === PASS_FILLER_SECONDARY)
+                      ? 'filler'
+                      : (pass === PASS_DEFERRED_PRIMARY || pass === PASS_DEFERRED_SECONDARY)
+                        ? 'deferred'
+                        : 'retry',
+                currentTime,
+                bucket: normalizedBucket,
+                priority: hotspotPriority,
+                reason: 'source_phase_gate_non_source_bucket',
+                rejectionSource: 'source_phase_gate',
+                valaraAlreadyAdded: addedHotspotIds.has(357),
+              });
+            }
+            logHotspotBucketTrace({
+              hotspotId,
+              hotspotName: String((sh as any).hotspot_name || ''),
+              bucket: normalizedBucket,
+              priority: hotspotPriority,
+              currentTime,
+              sourcePhaseActive,
+              accepted: false,
+              rejectionReason: 'source_phase_gate_non_source_bucket',
+            });
+            if (hotspotId === 241) {
+              traceHotspot241('rejected_source_phase_gate', {
+                pass,
+                currentTime,
+                sourcePhaseEnd: '12:00:00',
+                bucket: normalizedBucket || null,
+                priority: hotspotPriority,
+              });
+            }
+            continue;
+          }
+        }
+
         // PHP CUTOFF TIME PARITY (config.php):
         // $source_cutoff_time = '12:00:00'  → stop source hotspots after 12:00
         // $via_cutoff_time    = '19:00:00'  → stop via hotspots after 19:00
@@ -3768,16 +4485,74 @@ export class TimelineBuilder {
           const viaCutoffSecs    = timeToSeconds('19:00:00'); // 68400
           const destCutoffSecs   = timeToSeconds('21:00:00'); // 75600
           let cutoffHit = false;
-          if (bucket === 'source' && shouldApplySourceHotspotCutoff && currentSecs >= sourceCutoffSecs && !allowSourceCutoffRetryBypass) cutoffHit = true;
+          const isSourceLikeBucket = normalizedBucket === 'source' || normalizedBucket === 'source_fallback';
+          if (isSourceLikeBucket && shouldApplySourceHotspotCutoff && currentSecs >= sourceCutoffSecs && !allowSourceCutoffRetryBypass) cutoffHit = true;
           if (bucket === 'via'    && currentSecs >= viaCutoffSecs)    cutoffHit = true;
           if (bucket === 'destination' && currentSecs >= destCutoffSecs) cutoffHit = true;
           if (cutoffHit) {
-            if (pass === PASS_STRICT && bucket === 'source') {
+            if (hotspotId === 228 || hotspotId === 357) {
+              this.logBookingRule({
+                rule: 'CHEEYAPPARA_REJECTED_BEFORE_VALARA',
+                quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+                planId,
+                routeId: route.itinerary_route_ID,
+                cycle: optimizationCycle,
+                pass,
+                passType:
+                  pass === PASS_STRICT
+                    ? 'strict'
+                    : (pass === PASS_FILLER_PRIMARY || pass === PASS_FILLER_SECONDARY)
+                      ? 'filler'
+                      : (pass === PASS_DEFERRED_PRIMARY || pass === PASS_DEFERRED_SECONDARY)
+                        ? 'deferred'
+                        : 'retry',
+                currentTime,
+                bucket: normalizedBucket,
+                priority: hotspotPriority,
+                reason: `php_${normalizedBucket || 'unknown'}_cutoff`,
+                rejectionSource: 'source_cutoff_branch',
+                valaraAlreadyAdded: addedHotspotIds.has(357),
+              });
+            }
+            logHotspotBucketTrace({
+              hotspotId,
+              hotspotName: String((sh as any).hotspot_name || ''),
+              bucket: normalizedBucket,
+              priority: hotspotPriority,
+              currentTime,
+              sourcePhaseActive: isIntercityNonDirectRoute && currentSecs < sourcePhaseEndSeconds,
+              accepted: false,
+              rejectionReason: `php_${normalizedBucket || 'unknown'}_cutoff`,
+            });
+            if (pass === PASS_STRICT && normalizedBucket === 'source' && !(isIntercityNonDirectRoute && currentSecs >= sourceCutoffSecs)) {
               sourceCutoffRejectedHotspotIds.add(hotspotId);
               queueRejectedHotspotForRetry(
                 sh,
                 `source_cutoff_breached_at:${currentTime}`,
               );
+            }
+            this.logBookingRule({
+              rule: 'SOURCE_CUTOFF_PROOF',
+              quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+              planId,
+              routeId: route.itinerary_route_ID,
+              cycle: optimizationCycle,
+              pass,
+              hotspotId,
+              bucket: normalizedBucket,
+              currentTime,
+              cutoff: '12:00:00',
+              intercityNonDirect: isIntercityNonDirectRoute,
+              rejected: true,
+            });
+            if (hotspotId === 241) {
+              traceHotspot241('rejected_cutoff', {
+                pass,
+                currentTime,
+                bucket: normalizedBucket || null,
+                priority: hotspotPriority,
+                allowSourceCutoffRetryBypass,
+              });
             }
             this.logHotspotCandidateEvaluation({
               routeId: route.itinerary_route_ID,
@@ -3801,6 +4576,24 @@ export class TimelineBuilder {
         // 2.a) Get hotspot details from pre-fetched map (NO DB QUERY)
         const hotspotData = hotspotMap.get(sh.hotspot_ID);
         if (!hotspotData) {
+          logHotspotBucketTrace({
+            hotspotId,
+            hotspotName: String((sh as any).hotspot_name || ''),
+            bucket: normalizedBucket,
+            priority: hotspotPriority,
+            currentTime,
+            sourcePhaseActive: isIntercityNonDirectRoute && timeToSeconds(currentTime) < sourcePhaseEndSeconds,
+            accepted: false,
+            rejectionReason: 'hotspot_master_missing',
+          });
+          if (hotspotId === 241) {
+            traceHotspot241('rejected_hotspot_master_missing', {
+              pass,
+              currentTime,
+              bucket: normalizedBucket || null,
+              priority: hotspotPriority,
+            });
+          }
           this.logHotspotCandidateEvaluation({
             routeId: route.itinerary_route_ID,
             hotspotId: Number(sh.hotspot_ID || 0),
@@ -3820,6 +4613,40 @@ export class TimelineBuilder {
           });
           continue;
         }
+        logHotspotBucketTrace({
+          hotspotId,
+          hotspotName: String((hotspotData as any)?.hotspot_name || (sh as any).hotspot_name || ''),
+          bucket: normalizedBucket,
+          priority: hotspotPriority,
+          currentTime,
+          sourcePhaseActive: isIntercityNonDirectRoute && timeToSeconds(currentTime) < sourcePhaseEndSeconds,
+          accepted: true,
+          rejectionReason: null,
+        });
+        if (isIntercityNonDirectRoute && normalizedBucket === 'en_route') {
+          enRoutePhaseStarted = true;
+        }
+        this.logBookingRule({
+          rule: 'HOTSPOT_ACCEPTED_ORDER_PROOF',
+          quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+          planId,
+          routeId: route.itinerary_route_ID,
+          cycle: optimizationCycle,
+          pass,
+          acceptedIndex: hotspotRows.filter((r: any) => Number((r as any).itinerary_route_ID || 0) === Number(route.itinerary_route_ID || 0) && Number((r as any).item_type || 0) === 4).length + 1,
+          hotspotId,
+          name: String((hotspotData as any)?.hotspot_name || (sh as any).hotspot_name || ''),
+          bucket: normalizedBucket,
+          priority: hotspotPriority,
+          phaseRank: getPhaseRank(normalizedBucket),
+          currentTimeBefore: currentTime,
+          currentTimeAfter: null,
+          enRouteAlreadyScheduledBefore: (isIntercityNonDirectRoute && normalizedBucket !== 'en_route') ? enRoutePhaseStarted : (isIntercityNonDirectRoute ? false : false),
+          enRouteAlreadyScheduledAfter: enRoutePhaseStarted,
+          previousAcceptedHotspots: hotspotRows
+            .filter((r: any) => Number((r as any).itinerary_route_ID || 0) === Number(route.itinerary_route_ID || 0) && Number((r as any).item_type || 0) === 4)
+            .map((r: any) => Number((r as any).hotspot_ID || 0)),
+        });
 
         // PHP parity: preserve full hotspot_location string for travel-type semantics.
         const hotspotLocationName = hotspotData.hotspot_location as string || currentLocationName;
@@ -3870,6 +4697,30 @@ export class TimelineBuilder {
         });
 
         if (!sharedFeasibility.feasible) {
+          if (hotspotId === 228 || hotspotId === 357) {
+            this.logBookingRule({
+              rule: 'CHEEYAPPARA_REJECTED_BEFORE_VALARA',
+              quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+              planId,
+              routeId: route.itinerary_route_ID,
+              cycle: optimizationCycle,
+              pass,
+              passType:
+                pass === PASS_STRICT
+                  ? 'strict'
+                  : (pass === PASS_FILLER_PRIMARY || pass === PASS_FILLER_SECONDARY)
+                    ? 'filler'
+                    : (pass === PASS_DEFERRED_PRIMARY || pass === PASS_DEFERRED_SECONDARY)
+                      ? 'deferred'
+                      : 'retry',
+              currentTime,
+              bucket: normalizedBucket,
+              priority: hotspotPriority,
+              reason: sharedFeasibility.reason || 'shared_feasibility_rejected',
+              rejectionSource: 'shared_feasibility',
+              valaraAlreadyAdded: addedHotspotIds.has(357),
+            });
+          }
           if (sharedFeasibility.rejectedByDayEndReturnCheck) {
             this.logBookingRule({
               rule: 'DAY_END_RETURN_CHECK_FAILED',
@@ -4010,6 +4861,35 @@ export class TimelineBuilder {
 
         const timeAfterTravel = sharedFeasibility.timeAfterTravel || currentTime;
         const timeAfterSightseeing = sharedFeasibility.timeAfterSightseeing || timeAfterTravel;
+
+        if (hotspotId === 228 || hotspotId === 357) {
+          this.logBookingRule({
+            rule: 'VALARA_CHEEYAPPARA_ACCEPT_ATTEMPT',
+            quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+            planId,
+            routeId: route.itinerary_route_ID,
+            cycle: optimizationCycle,
+            pass,
+            passType:
+              pass === PASS_STRICT
+                ? 'strict'
+                : (pass === PASS_FILLER_PRIMARY || pass === PASS_FILLER_SECONDARY)
+                  ? 'filler'
+                  : (pass === PASS_DEFERRED_PRIMARY || pass === PASS_DEFERRED_SECONDARY)
+                    ? 'deferred'
+                    : 'retry',
+            hotspotId,
+            name: String((hotspotData as any)?.hotspot_name || (sh as any).hotspot_name || ''),
+            bucket: normalizedBucket,
+            priority: hotspotPriority,
+            currentTimeBefore: currentTime,
+            currentLocationName,
+            sourceCity: String(sourceCity || ''),
+            destinationCity: String(destinationCity || ''),
+            reason: 'about_to_push_hotspot_row',
+            previousAcceptedHotspots: Array.from(addedHotspotIds.values()),
+          });
+        }
 
         if (pass === PASS_FILLER_PRIMARY || pass === PASS_FILLER_SECONDARY) {
           const anchorGapFeasibility = await this.evaluateAnchorGapInsertion(
@@ -4191,6 +5071,32 @@ export class TimelineBuilder {
           });
 
         hotspotRows.push(hotspotRow);
+        if (hotspotId === 228 || hotspotId === 357) {
+          this.logBookingRule({
+            rule: 'VALARA_CHEEYAPPARA_ACCEPTED',
+            quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+            planId,
+            routeId: route.itinerary_route_ID,
+            cycle: optimizationCycle,
+            pass,
+            passType:
+              pass === PASS_STRICT
+                ? 'strict'
+                : (pass === PASS_FILLER_PRIMARY || pass === PASS_FILLER_SECONDARY)
+                  ? 'filler'
+                  : (pass === PASS_DEFERRED_PRIMARY || pass === PASS_DEFERRED_SECONDARY)
+                    ? 'deferred'
+                    : 'retry',
+            hotspotId,
+            name: String((hotspotData as any)?.hotspot_name || (sh as any).hotspot_name || ''),
+            bucket: normalizedBucket,
+            priority: hotspotPriority,
+            currentTimeBefore: timeAfterTravel,
+            currentTimeAfter: tAfterHotspot,
+            insertedBy: 'main_candidate_loop',
+            addedHotspotIds: Array.from(addedHotspotIds.values()).concat([hotspotId]),
+          });
+        }
         
         // Mark this hotspot as added to prevent duplicates in subsequent routes
         addedHotspotIds.add(sh.hotspot_ID);
@@ -4806,6 +5712,24 @@ export class TimelineBuilder {
       });
 
       if (unscheduledStrictIds.length === 0) {
+        const pendingPositiveCorridorIds = (corridorHotspots as Array<SelectedHotspot>)
+          .filter((hs: any) => {
+            const id = Number((hs as any).hotspot_ID || 0);
+            const p = Number((hs as any).hotspot_priority ?? 0);
+            return id > 0 && p >= 1 && p < 9999 && !addedHotspotIds.has(id);
+          })
+          .map((hs: any) => Number((hs as any).hotspot_ID || 0));
+        if (isIntercityNonDirectRoute && pendingPositiveCorridorIds.length > 0) {
+          this.logBookingRule({
+            rule: 'FILLER_BLOCKED_CORRIDOR_PENDING',
+            quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+            planId,
+            routeId: route.itinerary_route_ID,
+            cycle: optimizationCycle,
+            pendingPositiveCorridorIds,
+            reason: 'positive_priority_corridor_pending_before_filler',
+          });
+        }
         const hasPendingNonStrictCandidates =
           remainingFillerHotspotIds.length > 0 ||
           deferredPriorityHotspotIds.size > 0 ||
@@ -5497,6 +6421,21 @@ export class TimelineBuilder {
         hotspotRows.push(closeHotelRow);
         order++;
         currentTime = tClose;
+
+        this.logBookingRule({
+          rule: 'DAY2_VALARA_RCA_SUMMARY',
+          quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+          planId,
+          routeId: route.itinerary_route_ID,
+          acceptedOrder: hotspotRows
+            .filter((r: any) => Number((r as any).itinerary_route_ID || 0) === Number(route.itinerary_route_ID || 0) && Number((r as any).item_type || 0) === 4)
+            .map((r: any) => Number((r as any).hotspot_ID || 0)),
+          cheeyapparaAdded: addedHotspotIds.has(228),
+          valaraAdded: addedHotspotIds.has(357),
+          valaraInsertedBy: null,
+          cheeyapparaRejectedReasons: [],
+          conclusion: 'diagnostics_only_rca_trace',
+        });
       }
 
       // 5) LAST ROUTE ONLY → RETURN TO DEPARTURE LOCATION (item_type = 7)
@@ -6108,6 +7047,7 @@ export class TimelineBuilder {
       const targetLower = targetLocation.toLowerCase();
       const nextLower = nextLocation.toLowerCase();
       const directToNextVisitingPlace = (route as any).direct_to_next_visiting_place || 0;
+      const debugBucketIds = new Set<number>([245, 243, 241, 228]);
 
       // Get starting location coordinates from stored_locations (already fetched above)
       // PHP line 1108-1109: Uses source coordinates for starting point
@@ -6163,6 +7103,7 @@ export class TimelineBuilder {
       let sourceLocationHotspots: any[] = [];
       const destinationHotspots: any[] = [];
       const viaRouteHotspots: any[] = [];
+      const enRouteHotspots: any[] = [];
 
       // Helper function to match location with normalization
       // PHP parity: containsLocation() uses strict lowercase+trim exact matching
@@ -6172,6 +7113,7 @@ export class TimelineBuilder {
       };
 
       for (const h of allHotspots) {
+        const debugHotspotId = Number(h.hotspot_ID ?? 0);
         // Check if timing allows this hotspot on this day
         if (allowedHotspotIds && !allowedHotspotIds.has(Number(h.hotspot_ID ?? 0))) {
           this.logHotspotCandidateEvaluation({
@@ -6209,6 +7151,11 @@ export class TimelineBuilder {
 
         const matchesRouteFrom = containsLocation(hotspotFromLocation, targetLocation);
         const matchesRouteTo = containsLocation(hotspotToLocation, nextLocation);
+        const isIntercityNonDirectForBucket =
+          this.canonicalCityKey(String(targetLocation || '')) !== '' &&
+          this.canonicalCityKey(String(nextLocation || '')) !== '' &&
+          this.canonicalCityKey(String(targetLocation || '')) !== this.canonicalCityKey(String(nextLocation || '')) &&
+          Number(directToNextVisitingPlace || 0) !== 1;
 
         if (isRouteSpecificHotspot) {
           if (!matchesRouteFrom || !matchesRouteTo) {
@@ -6293,6 +7240,27 @@ export class TimelineBuilder {
         // CRITICAL: Hotspot can be in BOTH buckets (e.g., hotspot_location = "Chennai|Pondicherry")
         // Deduplication happens AFTER bucket selection based on direct flag
         if (isRouteSpecificHotspot) {
+          if (isIntercityNonDirectForBucket && matchesRouteFrom && matchesRouteTo) {
+            enRouteHotspots.push({ ...hotspotWithDistance, __bucket: 'en_route' });
+            if (debugBucketIds.has(debugHotspotId)) {
+              console.log('[FETCH_SELECTED_BUCKETS_DEBUG]', {
+                routeId,
+                sourceCity: targetLocation,
+                destinationCity: nextLocation,
+                locationId: Number((route as any)?.location_id || 0),
+                candidate: {
+                  hotspot_ID: debugHotspotId,
+                  hotspot_name: String(h.hotspot_name || ''),
+                  __bucket: 'en_route',
+                  matched_bucket: null,
+                  hotspot_location: String(h.hotspot_location || ''),
+                  hotspot_to_location: String(h.hotspot_to_location || h.hotspot_location || ''),
+                  hotspot_priority: Number(h.hotspot_priority ?? 0),
+                },
+              });
+            }
+            continue;
+          }
           console.log('[HOTSPOT ROUTE INCLUDE]', {
             routeId,
             hotspot_ID: h.hotspot_ID,
@@ -6305,13 +7273,64 @@ export class TimelineBuilder {
           });
 
           viaRouteHotspots.push({ ...hotspotWithDistance, __bucket: 'via' });
+          if (debugBucketIds.has(debugHotspotId)) {
+            console.log('[FETCH_SELECTED_BUCKETS_DEBUG]', {
+              routeId,
+              sourceCity: targetLocation,
+              destinationCity: nextLocation,
+              locationId: Number((route as any)?.location_id || 0),
+              candidate: {
+                hotspot_ID: debugHotspotId,
+                hotspot_name: String(h.hotspot_name || ''),
+                __bucket: 'via',
+                matched_bucket: null,
+                hotspot_location: String(h.hotspot_location || ''),
+                hotspot_to_location: String(h.hotspot_to_location || h.hotspot_location || ''),
+                hotspot_priority: Number(h.hotspot_priority ?? 0),
+              },
+            });
+          }
         } else {
           if (matchesSource) {
             sourceLocationHotspots.push({ ...hotspotWithDistance, __bucket: 'source' });
+            if (debugBucketIds.has(debugHotspotId)) {
+              console.log('[FETCH_SELECTED_BUCKETS_DEBUG]', {
+                routeId,
+                sourceCity: targetLocation,
+                destinationCity: nextLocation,
+                locationId: Number((route as any)?.location_id || 0),
+                candidate: {
+                  hotspot_ID: debugHotspotId,
+                  hotspot_name: String(h.hotspot_name || ''),
+                  __bucket: 'source',
+                  matched_bucket: null,
+                  hotspot_location: String(h.hotspot_location || ''),
+                  hotspot_to_location: String(h.hotspot_to_location || h.hotspot_location || ''),
+                  hotspot_priority: Number(h.hotspot_priority ?? 0),
+                },
+              });
+            }
           }
 
           if (matchesDestination) {
             destinationHotspots.push({ ...hotspotWithDistance, __bucket: 'destination' });
+            if (debugBucketIds.has(debugHotspotId)) {
+              console.log('[FETCH_SELECTED_BUCKETS_DEBUG]', {
+                routeId,
+                sourceCity: targetLocation,
+                destinationCity: nextLocation,
+                locationId: Number((route as any)?.location_id || 0),
+                candidate: {
+                  hotspot_ID: debugHotspotId,
+                  hotspot_name: String(h.hotspot_name || ''),
+                  __bucket: 'destination',
+                  matched_bucket: null,
+                  hotspot_location: String(h.hotspot_location || ''),
+                  hotspot_to_location: String(h.hotspot_to_location || h.hotspot_location || ''),
+                  hotspot_priority: Number(h.hotspot_priority ?? 0),
+                },
+              });
+            }
           }
         }
       }
@@ -6470,6 +7489,7 @@ export class TimelineBuilder {
 
       // PHP BEHAVIOR: Sort individual location buckets, NOT the final combined list
       sortHotspots(sourceLocationHotspots);
+      sortHotspots(enRouteHotspots);
       sortHotspots(destinationHotspots);
       sortHotspots(viaRouteHotspots);
       
@@ -6505,9 +7525,9 @@ export class TimelineBuilder {
         // DAY 1 NON-DIRECT: Skip destination hotspots entirely
         // User requirement: "Day 1 should have max 3 Madurai hotspots, Day 2 will have Alleppey hotspots"
         if (skipDestinationHotspots) {
-          matchingHotspots = [...sourceLocationHotspots, ...viaRouteHotspots];
+          matchingHotspots = [...sourceLocationHotspots, ...enRouteHotspots, ...viaRouteHotspots];
         } else {
-          matchingHotspots = [...sourceLocationHotspots, ...viaRouteHotspots, ...destinationHotspots];
+          matchingHotspots = [...sourceLocationHotspots, ...enRouteHotspots, ...viaRouteHotspots, ...destinationHotspots];
         }
       }
 
@@ -6525,7 +7545,48 @@ export class TimelineBuilder {
         uniqueHotspots.push(h);
       }
 
-      return uniqueHotspots.map((h: any, index: number) => ({
+      const isIntercityNonDirectForFinalOverride =
+        this.canonicalCityKey(String(targetLocation || '')) !== '' &&
+        this.canonicalCityKey(String(nextLocation || '')) !== '' &&
+        this.canonicalCityKey(String(targetLocation || '')) !== this.canonicalCityKey(String(nextLocation || '')) &&
+        Number(directToNextVisitingPlace || 0) !== 1;
+
+      const finalCandidates = uniqueHotspots.map((h: any) => {
+        const hotspotId = Number(h.hotspot_ID || 0);
+        const master = allHotspots.find((x: any) => Number(x.hotspot_ID || 0) === hotspotId) || h;
+        const masterLocation = String(master.hotspot_location || '');
+        const masterToLocation = String(master.hotspot_to_location || master.hotspot_location || '');
+        const sourceMatch = containsLocation(masterLocation, targetLocation);
+        const destMatch = containsLocation(masterToLocation, nextLocation);
+        const forceEnRoute = isIntercityNonDirectForFinalOverride && sourceMatch && destMatch;
+        const finalBucket = forceEnRoute ? 'en_route' : String(h.__bucket || 'unknown').toLowerCase();
+        return {
+          ...h,
+          __bucket: finalBucket,
+          __master_location: masterLocation,
+          __master_to_location: masterToLocation,
+          __bucket_reason: forceEnRoute ? 'master_source_to_destination_override' : 'original',
+        };
+      });
+
+      this.logBookingRule({
+        rule: 'FINAL_BUCKET_CLASSIFICATION_PROOF',
+        quoteId: null,
+        planId,
+        routeId,
+        sourceCity: String(targetLocation || ''),
+        destinationCity: String(nextLocation || ''),
+        candidates: finalCandidates.map((h: any) => ({
+          hotspotId: Number(h.hotspot_ID || 0),
+          name: String(h.hotspot_name || ''),
+          masterLocation: String(h.__master_location || ''),
+          masterToLocation: String(h.__master_to_location || ''),
+          finalBucket: String(h.__bucket || ''),
+          reason: String(h.__bucket_reason || ''),
+        })),
+      });
+
+      return finalCandidates.map((h: any, index: number) => ({
         hotspot_ID: Number(h.hotspot_ID ?? 0) || 0,
         display_order: Number(h.hotspot_priority ?? index + 1) || index + 1,
         hotspot_priority: Number(h.hotspot_priority ?? 0) || 0,
