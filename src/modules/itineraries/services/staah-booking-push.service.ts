@@ -20,6 +20,10 @@ export class StaahBookingPushService {
     return JSON.parse(JSON.stringify(value));
   }
 
+  private normalizeStaahExternalId(value: unknown): string {
+    return String(value ?? '').trim().replace(/_/g, '');
+  }
+
   private async logStaahReservation(params: {
     type: string;
     staahPropertyId: string;
@@ -74,6 +78,25 @@ export class StaahBookingPushService {
     return this.prisma.dvi_hotel.findFirst({ where: { hotel_code: raw } });
   }
 
+  private extractStaahSearchReference(searchReference: string): {
+    propertyId: string;
+    roomId: string;
+    rateId: string;
+  } | null {
+    const raw = String(searchReference || '').trim();
+    if (!raw.startsWith('STAAH-')) return null;
+
+    const parts = raw.split('-');
+    if (parts.length < 5) return null;
+
+    const propertyId = String(parts[1] || '').trim();
+    const roomId = String(parts[2] || '').trim();
+    const rateId = String(parts[3] || '').trim();
+    if (!propertyId || !roomId || !rateId) return null;
+
+    return { propertyId, roomId, rateId };
+  }
+
   private nowIstIsoSeconds(): string {
     const now = new Date();
     const ist = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
@@ -95,66 +118,73 @@ export class StaahBookingPushService {
     hotelMaster: dvi_hotel | null,
   ): Promise<{ roomId: string; rateId: string; rateName: string; notes: string[] }> {
     const notes: string[] = [];
-    const searchReference = String((hotel as any)?.searchReference || '').trim();
-    if (searchReference.startsWith('STAAH-')) {
-      const parts = searchReference.split('-');
-      if (parts.length >= 5 && parts[2] && parts[3]) {
-        notes.push('resolved_from_searchReference');
-        return { roomId: parts[2], rateId: parts[3], rateName: '', notes };
-      }
-    }
-
-    const payloadRoomId = String((hotel as any)?.roomId || '').trim();
-    const payloadRateId = String((hotel as any)?.rateId || '').trim();
-    if (payloadRoomId && payloadRateId) {
-      notes.push('resolved_from_payload_room_rate');
-      return { roomId: payloadRoomId, rateId: payloadRateId, rateName: '', notes };
-    }
-
     const propertyid = String(hotelMaster?.staah_property_id || '').trim();
-    if (propertyid) {
-      const staahRatePlan = await this.prisma.staah_rateplan.findFirst({
-        where: { staah_property_id: propertyid },
-      });
-      if (staahRatePlan?.room_id && staahRatePlan?.rateplan_id) {
-        notes.push('resolved_from_staah_rateplan');
-        return {
-          roomId: String(staahRatePlan.room_id),
-          rateId: String(staahRatePlan.rateplan_id),
-          rateName: String(staahRatePlan.rateplan_name || ''),
-          notes,
-        };
+    if (!propertyid) {
+      throw new Error(`Missing staah_property_id for hotelCode=${hotel?.hotelCode}`);
+    }
+
+    const directRoomId = String((hotel as any)?.roomId || '').trim();
+    const directRateId = String((hotel as any)?.rateId || '').trim();
+    const searchReference = String((hotel as any)?.searchReference || '').trim();
+    const parsedReference = this.extractStaahSearchReference(searchReference);
+
+    let requestedRoomId = directRoomId;
+    let requestedRateId = directRateId;
+    if ((!requestedRoomId || !requestedRateId) && parsedReference) {
+      if (parsedReference.propertyId && parsedReference.propertyId !== propertyid) {
+        throw new Error(
+          `STAAH booking property mismatch: propertyId=${propertyid} searchReferencePropertyId=${parsedReference.propertyId}`,
+        );
       }
+      requestedRoomId = requestedRoomId || parsedReference.roomId;
+      requestedRateId = requestedRateId || parsedReference.rateId;
+      notes.push('resolved_from_searchReference');
+    } else if (directRoomId && directRateId) {
+      notes.push('resolved_from_selected_room_rate');
     }
 
-    const hotelCode = String(hotel.hotelCode || '').trim();
-    if (propertyid === 'STAAHTESTHOTEL1' || hotelCode === 'STAAHTESTHOTEL1') {
-      notes.push('resolved_from_test_fallback');
-      return { roomId: 'DELUXEROOM', rateId: 'CPPLAN', rateName: '', notes };
+    if (!requestedRoomId || !requestedRateId) {
+      throw new Error(`STAAH room/rate mapping not found for propertyId=${propertyid}`);
     }
 
-    const hotelId = Number(hotel.hotelCode || 0);
-    if (hotelId) {
-      const room = await this.prisma.dvi_hotel_rooms.findFirst({
-        where: { hotel_id: hotelId },
-        select: { room_ref_code: true },
-      });
-      const rate = await this.prisma.dvi_hotel_room_rate_plan.findFirst({
-        where: { hotel_id: hotelId },
-        select: { rateplan_id: true, rateplan_name: true },
-      });
-      if (room?.room_ref_code && rate?.rateplan_id) {
-        notes.push('resolved_from_legacy_hotel_rateplan_fallback');
-        return {
-          roomId: String(room.room_ref_code),
-          rateId: String(rate.rateplan_id),
-          rateName: String(rate.rateplan_name || ''),
-          notes,
-        };
-      }
+    const ratePlans = await this.prisma.staah_rateplan.findMany({
+      where: { staah_property_id: propertyid },
+      select: { room_id: true, rateplan_id: true, rateplan_name: true },
+    });
+
+    const exactMatch = ratePlans.find(
+      (row) => String(row.room_id) === requestedRoomId && String(row.rateplan_id) === requestedRateId,
+    );
+    const normalizedMatch = exactMatch
+      ? exactMatch
+      : ratePlans.find(
+          (row) =>
+            this.normalizeStaahExternalId(row.room_id) === this.normalizeStaahExternalId(requestedRoomId)
+            && this.normalizeStaahExternalId(row.rateplan_id) === this.normalizeStaahExternalId(requestedRateId),
+        );
+
+    if (!normalizedMatch) {
+      throw new Error(`STAAH room/rate mapping not found for propertyId=${propertyid}`);
     }
 
-    throw new Error('Unable to resolve STAAH room_id/rate_id');
+    return {
+      roomId: String(normalizedMatch.room_id),
+      rateId: String(normalizedMatch.rateplan_id),
+      rateName: String(normalizedMatch.rateplan_name || ''),
+      notes,
+    };
+  }
+
+  private async resolveCancellationPropertyId(row: any): Promise<string> {
+    const confirmRequest = row?.api_response?.confirm?.request;
+    const requestPropertyId = String(confirmRequest?.propertyid || '').trim();
+    if (requestPropertyId) return requestPropertyId;
+
+    const hotelMaster = await this.resolveHotel(String(row?.staah_hotel_code || ''));
+    const propertyId = String(hotelMaster?.staah_property_id || '').trim();
+    if (propertyId) return propertyId;
+
+    throw new Error(`Missing staah_property_id for hotelCode=${String(row?.staah_hotel_code || '')}`);
   }
 
   async confirmItineraryHotels(params: {
@@ -580,10 +610,7 @@ export class StaahBookingPushService {
     const cancelPayload = this.deepClone(confirmRequest);
     cancelPayload.action = 'reservation_info';
     cancelPayload.apikey = this.apiKey;
-    if (!cancelPayload.propertyid) {
-      const propertyid = String((await this.resolveHotel(String(row.staah_hotel_code || '')))?.staah_property_id || '').trim();
-      if (propertyid) cancelPayload.propertyid = propertyid;
-    }
+    cancelPayload.propertyid = await this.resolveCancellationPropertyId(row);
     const reservation = cancelPayload?.reservations?.reservation?.[0];
     if (!reservation) {
       throw new Error('Invalid confirm request structure: reservations.reservation[0] missing');
