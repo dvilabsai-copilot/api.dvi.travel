@@ -21,6 +21,9 @@ export interface ItineraryHotelRowDto {
   category: number;
   roomType: string;
   mealPlan: string;
+  baseHotelCost?: number;
+  basePricePerNight?: number;
+  hotelMarginPercentage?: number;
   totalHotelCost: number;
   totalHotelTaxAmount: number;
   noOfRooms?: number;
@@ -69,6 +72,7 @@ export interface ItineraryHotelDetailsResponseDto {
   quoteId: string;
   planId: number;
   hotelRatesVisible: boolean;
+  showHotelMargins?: boolean;
   hotelTabs: ItineraryHotelTabDto[];
   hotels: ItineraryHotelRowDto[];
   totalRoomCount: number;
@@ -157,6 +161,10 @@ export class ItineraryHotelDetailsService {
   private readonly logger = new Logger(ItineraryHotelDetailsService.name);
 
   constructor(private readonly prisma: PrismaService) {}
+
+  private shouldShowHotelMargins(): boolean {
+    return String(process.env.SHOW_HOTEL_MARGINS ?? '').trim().toLowerCase() === 'true';
+  }
 
   /**
    * Public endpoint-style method: used by /itineraries/hotel_details/:quoteId
@@ -672,6 +680,7 @@ async getHotelRoomDetailsByQuoteId(
       quoteId: plan.itinerary_quote_ID ?? '',
       planId,
       hotelRatesVisible,
+      showHotelMargins: this.shouldShowHotelMargins(),
       hotelTabs,
       hotels,
       totalRoomCount,

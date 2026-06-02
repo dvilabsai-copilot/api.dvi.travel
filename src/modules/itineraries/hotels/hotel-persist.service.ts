@@ -70,7 +70,7 @@ export class HotelPersistService {
     );
 
     const hotel_id = Number(hotel?.hotel_id ?? 0);
-    const marginPct = Number(hotel?.hotel_margin ?? 0);
+    const marginPct = this.pricing.getHotelMarginPercentage(hotel);
     const marginGstType = Number(hotel?.hotel_margin_gst_type ?? 0);
     const marginGstPct = Number(hotel?.hotel_margin_gst_percentage ?? 0);
 
