@@ -48,6 +48,12 @@ jobs:
             echo "Stopping PM2 process before reinstall..."
             pm2 stop "$APP_NAME" || true
 
+            echo "Ensuring native build tools are installed..."
+            if ! command -v make >/dev/null 2>&1; then
+              sudo apt-get update
+              sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y build-essential
+            fi
+
             echo "Installing dependencies..."
             rm -rf node_modules
             rm -rf ~/.npm/_cacache ~/.npm/_logs
