@@ -823,14 +823,44 @@ if (citySeed) {
   private mapDtoToSchema(dto: any) {
   const mapped: any = {};
 
-  if (dto.source_location !== undefined) mapped.source_location = dto.source_location;
-  if (dto.source_city !== undefined) mapped.source_location_city = dto.source_city;
-  if (dto.source_state !== undefined) mapped.source_location_state = dto.source_state;
+  const sourceLocation = dto.source_location;
+  const sourceCity = dto.source_city ?? dto.source_location_city;
+  const sourceState = dto.source_state ?? dto.source_location_state;
+  const sourceLatitude =
+    dto.source_latitude ??
+    dto.source_location_latitude ??
+    dto.source_location_lattitude;
+  const sourceLongitude =
+    dto.source_longitude ??
+    dto.source_location_longitude;
 
-  if (dto.source_latitude !== undefined || dto.source_longitude !== undefined) {
+  const destinationLocation = dto.destination_location;
+  const destinationCity = dto.destination_city ?? dto.destination_location_city;
+  const destinationState = dto.destination_state ?? dto.destination_location_state;
+  const destinationLatitude =
+    dto.destination_latitude ??
+    dto.destination_location_latitude ??
+    dto.destination_location_lattitude;
+  const destinationLongitude =
+    dto.destination_longitude ??
+    dto.destination_location_longitude;
+
+  if (sourceLocation !== undefined) {
+    mapped.source_location = this.normalizeLocationName(sourceLocation);
+  }
+
+  if (sourceCity !== undefined) {
+    mapped.source_location_city = this.normalizeLocationName(sourceCity);
+  }
+
+  if (sourceState !== undefined) {
+    mapped.source_location_state = this.normalizeLocationName(sourceState);
+  }
+
+  if (sourceLatitude !== undefined || sourceLongitude !== undefined) {
     const { latitude, longitude } = this.resolveCoordinateInput(
-      dto.source_latitude,
-      dto.source_longitude,
+      sourceLatitude,
+      sourceLongitude,
     );
 
     if (latitude !== null) {
@@ -842,14 +872,22 @@ if (citySeed) {
     }
   }
 
-  if (dto.destination_location !== undefined) mapped.destination_location = dto.destination_location;
-  if (dto.destination_city !== undefined) mapped.destination_location_city = dto.destination_city;
-  if (dto.destination_state !== undefined) mapped.destination_location_state = dto.destination_state;
+  if (destinationLocation !== undefined) {
+    mapped.destination_location = this.normalizeLocationName(destinationLocation);
+  }
 
-  if (dto.destination_latitude !== undefined || dto.destination_longitude !== undefined) {
+  if (destinationCity !== undefined) {
+    mapped.destination_location_city = this.normalizeLocationName(destinationCity);
+  }
+
+  if (destinationState !== undefined) {
+    mapped.destination_location_state = this.normalizeLocationName(destinationState);
+  }
+
+  if (destinationLatitude !== undefined || destinationLongitude !== undefined) {
     const { latitude, longitude } = this.resolveCoordinateInput(
-      dto.destination_latitude,
-      dto.destination_longitude,
+      destinationLatitude,
+      destinationLongitude,
     );
 
     if (latitude !== null) {
@@ -861,9 +899,17 @@ if (citySeed) {
     }
   }
 
-  if (dto.distance_km !== undefined) mapped.distance = Number(dto.distance_km);
-  if (dto.duration_text !== undefined) mapped.duration = dto.duration_text;
-  if (dto.location_description !== undefined) mapped.location_description = dto.location_description;
+  if (dto.distance_km !== undefined || dto.distance !== undefined) {
+    mapped.distance = Number(dto.distance_km ?? dto.distance);
+  }
+
+  if (dto.duration_text !== undefined || dto.duration !== undefined) {
+    mapped.duration = String(dto.duration_text ?? dto.duration ?? '').trim();
+  }
+
+  if (dto.location_description !== undefined) {
+    mapped.location_description = dto.location_description;
+  }
 
   return mapped;
 }
@@ -1476,6 +1522,95 @@ async deleteLocationName(location: string) {
     ok: true,
     deletedLocation: name,
     deletedCount: result.count,
+  };
+}
+
+async updateLocationName(
+  oldNameInput: string,
+  newNameInput: string,
+  scope: 'source' | 'destination' | 'both' = 'both',
+) {
+  const oldName = this.normalizeLocationName(oldNameInput);
+  const newName = this.normalizeLocationName(newNameInput);
+
+  if (!oldName) {
+    throw new BadRequestException('Old location name is required');
+  }
+
+  if (!newName) {
+    throw new BadRequestException('New location name is required');
+  }
+
+  if (oldName.toLowerCase() === newName.toLowerCase()) {
+    throw new BadRequestException('Old and new location names cannot be the same');
+  }
+
+  const where =
+    scope === 'source'
+      ? { deleted: 0, source_location: oldName }
+      : scope === 'destination'
+        ? { deleted: 0, destination_location: oldName }
+        : {
+            deleted: 0,
+            OR: [
+              { source_location: oldName },
+              { destination_location: oldName },
+            ],
+          };
+
+  const data =
+    scope === 'source'
+      ? { source_location: newName, updatedon: new Date() }
+      : scope === 'destination'
+        ? { destination_location: newName, updatedon: new Date() }
+        : undefined;
+
+  let result: { count: number };
+
+  if (scope === 'both') {
+    const [sourceResult, destinationResult] = await this.prisma.$transaction([
+      this.prisma.dvi_stored_locations.updateMany({
+        where: {
+          deleted: 0,
+          source_location: oldName,
+        },
+        data: {
+          source_location: newName,
+          updatedon: new Date(),
+        },
+      }),
+      this.prisma.dvi_stored_locations.updateMany({
+        where: {
+          deleted: 0,
+          destination_location: oldName,
+        },
+        data: {
+          destination_location: newName,
+          updatedon: new Date(),
+        },
+      }),
+    ]);
+
+    result = {
+      count: sourceResult.count + destinationResult.count,
+    };
+  } else {
+    result = await this.prisma.dvi_stored_locations.updateMany({
+      where,
+      data,
+    });
+  }
+
+  if (!result.count) {
+    throw new NotFoundException('Location name not found');
+  }
+
+  return {
+    ok: true,
+    oldName,
+    newName,
+    scope,
+    updatedCount: result.count,
   };
 }
 
