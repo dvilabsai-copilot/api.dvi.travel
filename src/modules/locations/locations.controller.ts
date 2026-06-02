@@ -28,6 +28,7 @@ import {
   LocationPreviewCreateViaRouteDto,
   LocationResponseDto,
   ModifyLocationNameDto,
+  RenameLocationNameDto,
   SuggestedRouteResponseDto,
   TollResponseDto,
   UpdateLocationDto,
@@ -185,6 +186,24 @@ export class LocationsController {
 create(@Body() dto: CreateLocationDto) {
   return this.svc.create(dto);
 }
+
+   @Patch('location-name')
+  @ApiOperation({ summary: 'Rename a location name everywhere it appears' })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      type: 'object',
+      properties: {
+        ok: { type: 'boolean' },
+        oldName: { type: 'string' },
+        newName: { type: 'string' },
+        updatedCount: { type: 'number' },
+      },
+    },
+  })
+  updateLocationName(@Body() dto: RenameLocationNameDto) {
+    return this.svc.updateLocationName(dto.old_name, dto.new_name, dto.scope || 'both');
+  }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get a single Location by ID' })

@@ -227,6 +227,22 @@ export class ModifyLocationNameDto {
   new_name!: string;
 }
 
+export class RenameLocationNameDto {
+  @ApiProperty()
+  @IsNotEmpty()
+  @IsString()
+  old_name!: string;
+
+  @ApiProperty()
+  @IsNotEmpty()
+  @IsString()
+  new_name!: string;
+
+  @ApiProperty({ required: false, enum: ['source', 'destination', 'both'], default: 'both' })
+  @IsOptional()
+  @IsString()
+  scope?: 'source' | 'destination' | 'both';
+}
 // Toll Response DTO: single toll charge object
 export class TollResponseDto {
   @ApiProperty() vehicle_type_id!: number;
