@@ -915,7 +915,7 @@ export class ItineraryVehiclesEngine {
 
           const extraKmRateNum = toNum(vehicle.extra_km_charge) || 0;
           const totalExtraKmsNum =
-            totalAllowedKmsNum > 0 ? Math.max(0, totalOutstationKmNum - totalAllowedKmsNum) : 0;
+            totalAllowedKmsNum > 0 ? Math.max(0, Math.ceil(totalOutstationKmNum - totalAllowedKmsNum)) : 0;
           const totalExtraKmsChargeNum = totalExtraKmsNum * extraKmRateNum;
 
           const pbKey = `${vendorId}:${vendorBranchId}:${vendorVehicleTypeId}:${yearStr}:${monthStr}:${kms.kmsLimitId}`;
@@ -1898,12 +1898,12 @@ export class ItineraryVehiclesEngine {
       const totalExtraLocalKmsCharge = localRecords.reduce((sum: number, record: any) => {
         return sum + Number(record.total_extra_km_charges || 0);
       }, 0);
-      const totalExtraOutstationKms = outstationRecords.reduce((sum: number, record: any) => {
-        return sum + Number(record.total_extra_km || 0);
-      }, 0);
-      const totalExtraOutstationKmsCharge = outstationRecords.reduce((sum: number, record: any) => {
-        return sum + Number(record.total_extra_km_charges || 0);
-      }, 0);
+      const totalExtraOutstationKms = Math.max(
+        0,
+        Math.ceil(totalOutstationKm - totalAllowedKms),
+      );
+      const outstationExtraKmRate = Number(eligible.extra_km_rate || 0);
+      const totalExtraOutstationKmsCharge = totalExtraOutstationKms * outstationExtraKmRate;
       const totalRentalCharges = vehicleDetailsRecords.reduce((sum: number, record: any) => {
         return sum + Number(record.vehicle_rental_charges || 0);
       }, 0);
