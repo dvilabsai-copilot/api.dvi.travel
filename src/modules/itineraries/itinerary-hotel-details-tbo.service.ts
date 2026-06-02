@@ -245,13 +245,6 @@ export class ItineraryHotelDetailsTboService {
         }
         if (!included && hotel.provider === 'staah') {
           this.logger.warn(`[STAAH FILTERED] ${hotel.hotelName} (${hotel.hotelCode}) - ${filterReason}`);
-          if (String(hotel.hotelCode) === '44674') {
-            const categoryCandidates = this.getHotelCategoryCandidates(hotel);
-            this.logger.warn(
-              `[STAAH FILTERED] STAAH TEST HOTEL removed because category ${categoryCandidates.join(',') || 'UNKNOWN'} ` +
-              `not in preferred categories: ${preferredCategories.join(',') || 'ANY'}`,
-            );
-          }
         }
 
         return included;
@@ -1741,7 +1734,11 @@ export class ItineraryHotelDetailsTboService {
         where: {
           staah_enabled: 1,
           status: 1,
-          deleted: { not: true },
+          deleted: false,
+          AND: [
+            { staah_property_id: { not: null } },
+            { staah_property_id: { not: '' } },
+          ],
         },
         select: { hotel_id: true, hotel_name: true, hotel_city: true, hotel_address: true, hotel_category: true, hotel_cancel_policy: true, staah_property_id: true },
       });
@@ -1749,6 +1746,7 @@ export class ItineraryHotelDetailsTboService {
       this.logger.error(`[STAAH] Failed loading STAAH-enabled hotels: ${error instanceof Error ? error.message : String(error)}`);
       return hotelsByRoute;
     }
+    staahHotels = staahHotels.filter((hotel: any) => String(hotel?.staah_property_id || '').trim().length > 0);
     if (!staahHotels.length) return hotelsByRoute;
     const cityIds = Array.from(new Set(staahHotels.map((h: any) => Number((h as any).hotel_city)).filter((x) => Number.isFinite(x) && x > 0)));
     const cityRows = cityIds.length ? await this.prisma.dvi_cities.findMany({ where: { id: { in: cityIds } }, select: { id: true, name: true } }) : [];
@@ -1770,12 +1768,6 @@ export class ItineraryHotelDetailsTboService {
           const resolved = Number.isFinite(nid) && nid > 0 && cityMap.has(nid) ? cityMap.get(nid)! : raw;
           const hotelCityToken = this.normalizeCityToken(resolved);
           const cityMatch = !!hotelCityToken && hotelCityToken === routeCityToken;
-          if (Number((h as any).hotel_id) === 44674) {
-            this.logger.log(
-              `[STAAH DEBUG] hotel=44674 routeId=${routeId} next_visiting_location="${destinationRaw}" ` +
-              `routeCityToken="${routeCityToken}" resolvedHotelCity="${resolved}" hotelCityToken="${hotelCityToken}" cityMatch=${cityMatch}`,
-            );
-          }
           return cityMatch;
         });
         if (!cityHotels.length) {
@@ -1784,23 +1776,24 @@ export class ItineraryHotelDetailsTboService {
           continue;
         }
         const propertyIds = cityHotels.map((h: any) => String((h as any).staah_property_id || '').trim()).filter(Boolean);
+        if (!propertyIds.length) {
+          this.logger.debug(`[STAAH] routeId=${routeId} no valid propertyId found on STAAH-enabled hotels`);
+          hotelsByRoute.set(routeId, []);
+          continue;
+        }
         const [inventoryRows, ratePlanRows] = await Promise.all([
           (this.prisma as any).staah_inventory.findMany({ where: { staah_property_id: { in: propertyIds }, start_date: { lte: dateOnly }, end_date: { gte: dateOnly }, free: { gt: 0 } } }),
           (this.prisma as any).staah_rateplan.findMany({ where: { staah_property_id: { in: propertyIds } } }),
         ]);
-        if (!inventoryRows.length || !ratePlanRows.length) {
-          const targetHotel = cityHotels.find((h: any) => Number((h as any).hotel_id) === 44674);
-          if (targetHotel) {
-            this.logger.warn(
-              `[STAAH DEBUG] hotel=44674 routeId=${routeId} propertyId=${String((targetHotel as any).staah_property_id || '')} ` +
-              `inventoryCount=${inventoryRows.length} rateplanCount=${ratePlanRows.length} reason=${!inventoryRows.length ? 'no inventory' : 'no rateplan'}`,
-            );
-          }
+        const roomIds = Array.from(new Set(inventoryRows.map((r: any) => String(r.room_id || '').trim()).filter(Boolean)));
+        const ratePlanIds = Array.from(new Set(ratePlanRows.map((r: any) => String(r.rateplan_id || '').trim()).filter(Boolean)));
+        if (!roomIds.length || !ratePlanIds.length) {
+          this.logger.debug(
+            `[STAAH] routeId=${routeId} propertyIds=${propertyIds.join(',')} inventory=${inventoryRows.length} rateplans=${ratePlanRows.length} rates=0`,
+          );
           hotelsByRoute.set(routeId, []);
           continue;
         }
-        const roomIds = Array.from(new Set(inventoryRows.map((r: any) => String(r.room_id || '').trim()).filter(Boolean)));
-        const ratePlanIds = Array.from(new Set(ratePlanRows.map((r: any) => String(r.rateplan_id || '').trim()).filter(Boolean)));
         const [rateRows, restrictionRows, roomRows] = await Promise.all([
           (this.prisma as any).staah_rate.findMany({ where: { staah_property_id: { in: propertyIds }, room_id: { in: roomIds }, rateplan_id: { in: ratePlanIds }, start_date: { lte: dateOnly }, end_date: { gte: dateOnly } } }),
           (this.prisma as any).staah_restriction.findMany({ where: { staah_property_id: { in: propertyIds }, room_id: { in: roomIds }, rateplan_id: { in: ratePlanIds }, start_date: { lte: dateOnly }, end_date: { gte: dateOnly } } }),
@@ -1821,18 +1814,25 @@ export class ItineraryHotelDetailsTboService {
         const results: HotelSearchResult[] = [];
         for (const hotel of cityHotels as any[]) {
           const propertyId = String((hotel as any).staah_property_id || '').trim();
+          if (!propertyId) {
+            this.logger.debug(`[STAAH] routeId=${routeId} hotelId=${String((hotel as any).hotel_id || '')} skipped: missing staah_property_id`);
+            continue;
+          }
           const propertyInventoryRows = (inventoryRows as any[]).filter((r) => String((r as any).staah_property_id || '') === propertyId);
           const propertyRatePlanRows = (ratePlanRows as any[]).filter((r) => String((r as any).staah_property_id || '') === propertyId);
           const rows = (rateRows as any[]).filter((r) => String((r as any).staah_property_id || '') === propertyId);
-          const propertyRestrictionRows = (restrictionRows as any[]).filter((r) => String((r as any).staah_property_id || '') === propertyId);
+          this.logger.debug(
+            `[STAAH] routeId=${routeId} propertyId=${propertyId} hotelId=${String((hotel as any).hotel_id || '')} inventory=${propertyInventoryRows.length} rateplans=${propertyRatePlanRows.length} rates=${rows.length}`,
+          );
+          if (!propertyInventoryRows.length || !propertyRatePlanRows.length || !rows.length) {
+            continue;
+          }
           let selected: any = null;
           let selectedReason = 'no valid rate';
           let best = Number.POSITIVE_INFINITY;
-          let blockedByStopSell = false;
           for (const rate of rows) {
             const rateKey = `${rate.staah_property_id}|${rate.room_id}|${rate.rateplan_id}`;
             if (stopsellSet.has(rateKey)) {
-              blockedByStopSell = true;
               selectedReason = `stopsell blocked rateplan ${String((rate as any).rateplan_id || '')}`;
               continue;
             }
@@ -1855,19 +1855,10 @@ export class ItineraryHotelDetailsTboService {
               }
             }
           }
-          if (Number((hotel as any).hotel_id) === 44674) {
-            this.logger.log(
-              `[STAAH DEBUG] hotel=44674 routeId=${routeId} propertyId=${propertyId} inventoryCount=${propertyInventoryRows.length} ` +
-              `rateplanCount=${propertyRatePlanRows.length} rateCount=${rows.length} restrictionCount=${propertyRestrictionRows.length} ` +
-              `stopsellBlocked=${blockedByStopSell}`,
-            );
-          }
           if (!selected) {
-            if (Number((hotel as any).hotel_id) === 44674) {
-              this.logger.warn(
-                `[STAAH DEBUG] hotel=44674 routeId=${routeId} propertyId=${propertyId} reasonNotSelected=${selectedReason}`,
-              );
-            }
+            this.logger.debug(
+              `[STAAH] routeId=${routeId} propertyId=${propertyId} hotelId=${String((hotel as any).hotel_id || '')} skipped: ${selectedReason}`,
+            );
             continue;
           }
           const roomId = String((selected.rate as any).room_id || '');
@@ -1875,12 +1866,6 @@ export class ItineraryHotelDetailsTboService {
           const cancellation = String((hotel as any).hotel_cancel_policy || '').trim();
           const mealPlan = String((selected.rp as any)?.meal_plan_description || (selected.rp as any)?.rateplan_name || '-').trim() || '-';
           const currency = String((selected.rp as any)?.currency || 'INR').trim() || 'INR';
-          if (Number((hotel as any).hotel_id) === 44674) {
-            this.logger.log(
-              `[STAAH DEBUG] hotel=44674 routeId=${routeId} propertyId=${propertyId} selectedRate=${Number((selected as any).price)} ` +
-              `selectedRoom=${roomId} selectedRateplan=${String((selected.rate as any).rateplan_id || '')} selectedMealPlan="${mealPlan}"`,
-            );
-          }
           results.push({
           provider: 'staah',
           hotelCode: String((hotel as any).hotel_id),
