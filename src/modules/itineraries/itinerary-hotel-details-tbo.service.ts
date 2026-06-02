@@ -267,6 +267,56 @@ export class ItineraryHotelDetailsTboService {
     private readonly hobseProvider: HobseHotelProvider,
   ) {}
 
+  private getHotelMarginPercentage(hotel: any): number {
+    const hotelMargin = Number(
+      hotel?.hotel_margin ??
+        hotel?.hotelMargin ??
+        hotel?.marginPercentage ??
+        hotel?.hotel_margin_percentage ??
+        hotel?.hotelMarginPercentage ??
+        0,
+    );
+
+    if (Number.isFinite(hotelMargin) && hotelMargin > 0) {
+      return hotelMargin;
+    }
+
+    const fallbackMargin = Number(process.env.HOTEL_MARGIN ?? 0);
+    return Number.isFinite(fallbackMargin) && fallbackMargin > 0 ? fallbackMargin : 0;
+  }
+
+  private applyInvisibleHotelMargin(amount: number, hotel: any): number {
+    const baseAmount = Number(amount || 0);
+    if (!Number.isFinite(baseAmount) || baseAmount <= 0) {
+      return 0;
+    }
+
+    const marginPercentage = this.getHotelMarginPercentage(hotel);
+    return Math.round(baseAmount + (baseAmount * marginPercentage) / 100);
+  }
+
+  private enrichHotelWithMasterMargin(hotel: any, hotelMasterByProviderCode: Map<string, any>): any {
+    const provider = String(hotel?.provider || 'tbo').trim().toLowerCase();
+    const hotelCode = String(hotel?.hotelCode || '').trim();
+    const master = hotelMasterByProviderCode.get(`${provider}|${hotelCode}`);
+
+    if (!master) {
+      return hotel;
+    }
+
+    return {
+      ...hotel,
+      hotel_margin: Number(hotel?.hotel_margin || master.hotel_margin || 0),
+      hotel_margin_gst_type: Number(hotel?.hotel_margin_gst_type || master.hotel_margin_gst_type || 0),
+      hotel_margin_gst_percentage: Number(hotel?.hotel_margin_gst_percentage || master.hotel_margin_gst_percentage || 0),
+    };
+  }
+
+  private shouldShowHotelMargins(): boolean {
+    const raw = String(process.env.SHOW_HOTEL_MARGINS || '').trim().toLowerCase();
+    return raw === 'true' || raw === '1' || raw === 'yes';
+  }
+
   private extractIso2FromCountryRow(row: any): string | null {
     if (!row || typeof row !== 'object') return null;
 
@@ -1740,7 +1790,18 @@ export class ItineraryHotelDetailsTboService {
             { staah_property_id: { not: '' } },
           ],
         },
-        select: { hotel_id: true, hotel_name: true, hotel_city: true, hotel_address: true, hotel_category: true, hotel_cancel_policy: true, staah_property_id: true },
+        select: {
+          hotel_id: true,
+          hotel_name: true,
+          hotel_city: true,
+          hotel_address: true,
+          hotel_category: true,
+          hotel_cancel_policy: true,
+          staah_property_id: true,
+          hotel_margin: true,
+          hotel_margin_gst_type: true,
+          hotel_margin_gst_percentage: true,
+        },
       });
     } catch (error) {
       this.logger.error(`[STAAH] Failed loading STAAH-enabled hotels: ${error instanceof Error ? error.message : String(error)}`);
@@ -1867,26 +1928,29 @@ export class ItineraryHotelDetailsTboService {
           const mealPlan = String((selected.rp as any)?.meal_plan_description || (selected.rp as any)?.rateplan_name || '-').trim() || '-';
           const currency = String((selected.rp as any)?.currency || 'INR').trim() || 'INR';
           results.push({
-          provider: 'staah',
-          hotelCode: String((hotel as any).hotel_id),
-          hotelName: String((hotel as any).hotel_name || ''),
-          cityCode: String((hotel as any).hotel_city || destinationRaw),
-          address: String((hotel as any).hotel_address || ''),
-          rating: Number((hotel as any).hotel_category || 0),
-          facilities: [],
-          amenities: [],
-          inclusions: [],
-          rateConditions: [],
-          cancellationPolicy: cancellation ? [cancellation] : [],
-          images: [],
-          price: Number((selected as any).price),
-          currency,
-          roomTypes: [{ roomCode: roomId, roomName, bedType: '', capacity: 0, price: Number((selected as any).price), cancellationPolicy: cancellation }],
-          roomType: roomName,
-          mealPlan,
-          searchReference: `STAAH-${propertyId}-${roomId}-${String((selected.rate as any).rateplan_id)}-${dateStamp}`,
-          expiresAt: new Date(Date.now() + 15 * 60 * 1000),
-          });
+            provider: 'staah',
+            hotelCode: String((hotel as any).hotel_id),
+            hotelName: String((hotel as any).hotel_name || ''),
+            cityCode: String((hotel as any).hotel_city || destinationRaw),
+            address: String((hotel as any).hotel_address || ''),
+            rating: Number((hotel as any).hotel_category || 0),
+            facilities: [],
+            amenities: [],
+            inclusions: [],
+            rateConditions: [],
+            cancellationPolicy: cancellation ? [cancellation] : [],
+            images: [],
+            price: Number((selected as any).price),
+            currency,
+            roomTypes: [{ roomCode: roomId, roomName, bedType: '', capacity: 0, price: Number((selected as any).price), cancellationPolicy: cancellation }],
+            roomType: roomName,
+            mealPlan,
+            hotel_margin: Number((hotel as any).hotel_margin || 0),
+            hotel_margin_gst_type: Number((hotel as any).hotel_margin_gst_type || 0),
+            hotel_margin_gst_percentage: Number((hotel as any).hotel_margin_gst_percentage || 0),
+            searchReference: `STAAH-${propertyId}-${roomId}-${String((selected.rate as any).rateplan_id)}-${dateStamp}`,
+            expiresAt: new Date(Date.now() + 15 * 60 * 1000),
+          } as any);
         }
         hotelsByRoute.set(routeId, results);
       } catch (error) {
@@ -2056,7 +2120,10 @@ export class ItineraryHotelDetailsTboService {
 
       // Add package with ALL matching hotels for this tier
       if (tieredHotels.length > 0) {
-        const totalPrice = tieredHotels.reduce((sum, h) => sum + h.price, 0);
+        const totalPrice = tieredHotels.reduce(
+          (sum, h) => sum + this.applyInvisibleHotelMargin(Number(h.price || 0), h),
+          0,
+        );
         packages.push({
           groupType: groupType,
           label: labels[tier],
@@ -2093,8 +2160,77 @@ export class ItineraryHotelDetailsTboService {
       (plan as any)?.hotel_rates_visibility === true;
 
     // Build hotel tabs (one per package with total cost)
+    const marginProviderCodeSet = new Set<string>();
+    for (const pkg of packages) {
+      for (const hotel of pkg.hotels || []) {
+        const provider = String((hotel as any)?.provider || 'tbo').trim().toLowerCase();
+        const hotelCode = String((hotel as any)?.hotelCode || '').trim();
+        if (provider && hotelCode) {
+          marginProviderCodeSet.add(`${provider}|${hotelCode}`);
+        }
+      }
+    }
+
+    const marginTboCodes = Array.from(marginProviderCodeSet)
+      .filter((k) => k.startsWith('tbo|'))
+      .map((k) => k.slice('tbo|'.length));
+    const marginResavenueCodes = Array.from(marginProviderCodeSet)
+      .filter((k) => k.startsWith('resavenue|'))
+      .map((k) => k.slice('resavenue|'.length));
+    const marginHobseCodes = Array.from(marginProviderCodeSet)
+      .filter((k) => k.startsWith('hobse|'))
+      .map((k) => k.slice('hobse|'.length));
+    const marginAxisroomsHotelIds = Array.from(marginProviderCodeSet)
+      .filter((k) => k.startsWith('axisrooms|'))
+      .map((k) => Number(k.slice('axisrooms|'.length)))
+      .filter((id) => Number.isFinite(id) && id > 0);
+    const marginStaahHotelIds = Array.from(marginProviderCodeSet)
+      .filter((k) => k.startsWith('staah|'))
+      .map((k) => Number(k.slice('staah|'.length)))
+      .filter((id) => Number.isFinite(id) && id > 0);
+
+    const marginHotelMasters = marginProviderCodeSet.size
+      ? await this.prisma.dvi_hotel.findMany({
+          where: {
+            OR: [
+              ...(marginTboCodes.length ? [{ tbo_hotel_code: { in: marginTboCodes } }] : []),
+              ...(marginResavenueCodes.length ? [{ resavenue_hotel_code: { in: marginResavenueCodes } }] : []),
+              ...(marginHobseCodes.length ? [{ hotel_code: { in: marginHobseCodes } }] : []),
+              ...(marginAxisroomsHotelIds.length ? [{ hotel_id: { in: marginAxisroomsHotelIds } }] : []),
+              ...(marginStaahHotelIds.length ? [{ hotel_id: { in: marginStaahHotelIds } }] : []),
+            ],
+          },
+          select: {
+            hotel_id: true,
+            tbo_hotel_code: true,
+            resavenue_hotel_code: true,
+            hotel_code: true,
+            hotel_margin: true,
+            hotel_margin_gst_type: true,
+            hotel_margin_gst_percentage: true,
+          },
+        })
+      : [];
+
+    const marginHotelMasterByProviderCode = new Map<string, any>();
+    for (const hm of marginHotelMasters as any[]) {
+      const tboCode = String((hm as any).tbo_hotel_code || '').trim();
+      const resavenueCode = String((hm as any).resavenue_hotel_code || '').trim();
+      const hobseCode = String((hm as any).hotel_code || '').trim();
+      const hotelId = Number((hm as any).hotel_id || 0);
+
+      if (tboCode) marginHotelMasterByProviderCode.set(`tbo|${tboCode}`, hm);
+      if (resavenueCode) marginHotelMasterByProviderCode.set(`resavenue|${resavenueCode}`, hm);
+      if (hobseCode) marginHotelMasterByProviderCode.set(`hobse|${hobseCode}`, hm);
+      if (hotelId > 0) marginHotelMasterByProviderCode.set(`axisrooms|${hotelId}`, hm);
+      if (hotelId > 0) marginHotelMasterByProviderCode.set(`staah|${hotelId}`, hm);
+    }
+
     const hotelTabs: ItineraryHotelTabDto[] = packages.map((pkg) => {
-      const totalAmount = pkg.hotels.reduce((sum, h) => sum + h.price, 0);
+      const totalAmount = pkg.hotels.reduce((sum, h) => {
+        const pricedHotel = this.enrichHotelWithMasterMargin(h, marginHotelMasterByProviderCode);
+        return sum + this.applyInvisibleHotelMargin(Number(pricedHotel.price || 0), pricedHotel);
+      }, 0);
       return {
         groupType: pkg.groupType,
         label: pkg.label,
@@ -2231,11 +2367,15 @@ export class ItineraryHotelDetailsTboService {
             hotel_code: true,
             hotel_latitude: true,
             hotel_longitude: true,
+            hotel_margin: true,
+            hotel_margin_gst_type: true,
+            hotel_margin_gst_percentage: true,
           },
         })
       : [];
 
     const hotelCoordsByProviderCode = new Map<string, { lat: number; lon: number }>();
+    const hotelMasterByProviderCode = new Map<string, any>();
     for (const hm of hotelMasters as any[]) {
       const lat = Number((hm as any).hotel_latitude ?? 0);
       const lon = Number((hm as any).hotel_longitude ?? 0);
@@ -2253,6 +2393,12 @@ export class ItineraryHotelDetailsTboService {
       if (hobseCode) hotelCoordsByProviderCode.set(`hobse|${hobseCode}`, { lat, lon });
       if (hotelId > 0) hotelCoordsByProviderCode.set(`axisrooms|${hotelId}`, { lat, lon });
       if (hotelId > 0) hotelCoordsByProviderCode.set(`staah|${hotelId}`, { lat, lon });
+
+      if (tboCode) hotelMasterByProviderCode.set(`tbo|${tboCode}`, hm);
+      if (resavenueCode) hotelMasterByProviderCode.set(`resavenue|${resavenueCode}`, hm);
+      if (hobseCode) hotelMasterByProviderCode.set(`hobse|${hobseCode}`, hm);
+      if (hotelId > 0) hotelMasterByProviderCode.set(`axisrooms|${hotelId}`, hm);
+      if (hotelId > 0) hotelMasterByProviderCode.set(`staah|${hotelId}`, hm);
     }
 
     // Fallback: TBO static master has wider code coverage than dvi_hotel in many environments.
@@ -2368,6 +2514,10 @@ export class ItineraryHotelDetailsTboService {
           }
         }
 
+        const pricedHotel = this.enrichHotelWithMasterMargin(hotel, new Map());
+        const baseHotelCost = Number(pricedHotel.price || 0);
+        const totalHotelCost = this.applyInvisibleHotelMargin(baseHotelCost, pricedHotel);
+
         hotelRows.push({
           groupType: pkg.groupType,
           itineraryRouteId: routeId,
@@ -2378,7 +2528,9 @@ export class ItineraryHotelDetailsTboService {
           category: hotel.rating ? parseInt(String(hotel.rating)) : 0,
           roomType: hotel.roomType || '',
           mealPlan: hotel.mealPlan || '',
-          totalHotelCost: Math.round(hotel.price),
+          baseHotelCost,
+          hotelMarginPercentage: this.getHotelMarginPercentage(pricedHotel),
+          totalHotelCost,
           totalHotelTaxAmount: 0,
           searchReference: hotel.searchReference,
           bookingCode:
@@ -2503,6 +2655,7 @@ export class ItineraryHotelDetailsTboService {
     return {
       quoteId,
       planId,
+      showHotelMargins: this.shouldShowHotelMargins(),
       hotelRatesVisible,
       hotelTabs,
       hotels: hotelRows,
@@ -2710,6 +2863,9 @@ export class ItineraryHotelDetailsTboService {
         const actualRoomTypeName = String(hotel.provider || 'tbo').toLowerCase() !== 'tbo'
           ? (hotel.roomType || firstRoomType?.roomName || 'Standard Room')
           : (firstRoomType?.roomName || hotel.roomType || 'Standard Room');
+        const pricedHotel = this.enrichHotelWithMasterMargin(hotel, new Map());
+        const baseHotelCost = Number(pricedHotel.price || 0);
+        const totalHotelCost = this.applyInvisibleHotelMargin(baseHotelCost, pricedHotel);
 
         roomDetailsList.push({
           itineraryPlanId: planId,
@@ -2731,9 +2887,11 @@ export class ItineraryHotelDetailsTboService {
           bookingCode: String(hotel.provider || 'tbo').toLowerCase() === 'tbo'
             ? (firstRoomType?.roomCode || hotel.searchReference || undefined)
             : (hotel.hotelCode || hotel.searchReference || undefined),
-          pricePerNight: Number(hotel.price || 0),
+          basePricePerNight: baseHotelCost,
+          hotelMarginPercentage: this.getHotelMarginPercentage(pricedHotel),
+          pricePerNight: totalHotelCost,
           numberOfNights: noOfNights,
-          totalPrice: Number(hotel.price || 0) * noOfNights,
+          totalPrice: totalHotelCost * noOfNights,
           currency: hotel.currency || 'INR',
           mealPlan: hotel.mealPlan || 'Not Specified',
           facilities: hotel.facilities || [],

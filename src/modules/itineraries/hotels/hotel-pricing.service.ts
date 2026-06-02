@@ -63,6 +63,34 @@ export class HotelPricingService {
     return Math.round((n + Number.EPSILON) * 100) / 100;
   }
 
+  getHotelMarginPercentage(hotel: any): number {
+    const hotelMargin = Number(
+      hotel?.hotel_margin ??
+      hotel?.hotelMargin ??
+      hotel?.marginPercentage ??
+      hotel?.hotel_margin_percentage ??
+      hotel?.hotelMarginPercentage ??
+      0,
+    );
+
+    if (Number.isFinite(hotelMargin) && hotelMargin > 0) {
+      return hotelMargin;
+    }
+
+    const fallbackMargin = Number(process.env.HOTEL_MARGIN ?? 0);
+    return Number.isFinite(fallbackMargin) && fallbackMargin > 0 ? fallbackMargin : 0;
+  }
+
+  applyInvisibleHotelMargin(amount: number, hotel: any): number {
+    const baseAmount = Number(amount || 0);
+    if (!Number.isFinite(baseAmount) || baseAmount <= 0) {
+      return 0;
+    }
+
+    const marginPercentage = this.getHotelMarginPercentage(hotel);
+    return Math.round(baseAmount + (baseAmount * marginPercentage) / 100);
+  }
+
   /**
    * PHP GST split logic:
    * gstType: 1 = inclusive, 2 = exclusive
