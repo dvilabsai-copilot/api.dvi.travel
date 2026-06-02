@@ -2576,10 +2576,10 @@ export async function calculateRouteVehicleDetails(
       vehicle_cost_for_the_day = 3200;
     }
 
-    if (TOTAL_ALLOWED_OUTSTATION_KM > 0 && totalKmNum > TOTAL_ALLOWED_OUTSTATION_KM) {
-      TOTAL_LOCAL_EXTRA_KM = Math.max(0, Math.ceil(totalKmNum - TOTAL_ALLOWED_OUTSTATION_KM));
-      TOTAL_LOCAL_EXTRA_KM_CHARGES = TOTAL_LOCAL_EXTRA_KM * ctx.extra_km_charge;
-    }
+    // Outstation extra KM is charged once at the eligible/trip summary level.
+    // Keep the per-route detail row at zero so it does not get summed day-wise.
+    TOTAL_LOCAL_EXTRA_KM = 0;
+    TOTAL_LOCAL_EXTRA_KM_CHARGES = 0;
   }
 
   // Calculate driver charges (simplified - PHP has complex batta logic)

@@ -3814,12 +3814,16 @@ for (const vd of dayWiseDetails) {
         const extraHourBreakup = getExtraHourBreakupForRow(vd);
         const dayExtraHourCharge = extraHourBreakup.charge;
         const baseRental = Math.max(0, rawRental - dayExtraHourCharge);
+        const rowTravelTypeId = Number((vd as any).travel_type || 0);
+        const isOutstationRow = rowTravelTypeId === 2;
         dayData.rental += baseRental;
         dayData.extraHourCount += extraHourBreakup.count;
         dayData.extraHourRate = extraHourBreakup.rate || dayData.extraHourRate;
         dayData.extraHour += dayExtraHourCharge;
-        dayData.extraKms += parseFloat(String((vd as any).total_extra_km || 0)) || 0;
-        dayData.extraKm += parseFloat(String((vd as any).total_extra_km_charges || 0)) || 0;
+        const rowExtraKms = isOutstationRow ? 0 : (parseFloat(String((vd as any).total_extra_km || 0)) || 0);
+        const rowExtraKmCharges = isOutstationRow ? 0 : (parseFloat(String((vd as any).total_extra_km_charges || 0)) || 0);
+        dayData.extraKms += rowExtraKms;
+        dayData.extraKm += rowExtraKmCharges;
         const dayBefore6Driver = parseFloat(String((vd as any).before_6_am_charges_for_driver || 0)) || 0;
         const dayBefore6Vehicle = parseFloat(String((vd as any).before_6_am_charges_for_vehicle || 0)) || 0;
         const dayAfter8Driver = parseFloat(String((vd as any).after_8_pm_charges_for_driver || 0)) || 0;
@@ -3844,7 +3848,6 @@ for (const vd of dayWiseDetails) {
         dayData.dropKms += parseFloat(String((vd as any).total_drop_km || 0)) || 0;
         const dropDurationMinutes = parseDurationToMinutes((vd as any).total_drop_duration);
         dayData.dropDurationMinutes += dropDurationMinutes;
-        const rowTravelTypeId = Number((vd as any).travel_type || 0);
         const rowTravelType = rowTravelTypeId === 2 ? 'Outstation' : 'Local';
 
         if (!dayData.travelType) {
@@ -3994,6 +3997,7 @@ for (const vd of dayWiseDetails) {
       if (dayWiseRentalTotal > 0) {
         rentalCharges = dayWiseRentalTotal;
       }
+      const eligAny = eligible as any;
 
       // Build a breakdown list only for >0 amounts (for UI card)
       const tmp: VehicleCostBreakdownItemDto[] = [];
@@ -4005,7 +4009,7 @@ for (const vd of dayWiseDetails) {
 
       pushItem('Rental Charges', rentalCharges);
       pushItem('Extra Hour Charges', extraHourCharge);
-      pushItem('Extra KM Charges', dayWiseExtraKmChargeTotal);
+      pushItem('Extra KM Charges', dayWiseExtraKmChargeTotal + (parseFloat(String(eligAny.total_extra_kms_charge || 0)) || 0));
       pushItem('Toll Charges', tollCharges);
       pushItem('Parking Charges', parkingCharges);
       pushItem('Driver Charges', driverCharges);
@@ -4031,7 +4035,6 @@ for (const vd of dayWiseDetails) {
 
       // Summary fields from eligible_list
       const noOfDays = dayWiseDetails.length || 1;
-      const eligAny = eligible as any;
       const totalUsedKm = parseFloat(String(eligAny.total_kms || 0)) || 0;
       const totalAllowedLocalKm = parseFloat(String(eligAny.total_allowed_local_kms || 0)) || 0;
       const totalAllowedOutstationKm = parseFloat(String(eligAny.total_allowed_kms || 0)) || 0;
@@ -4040,9 +4043,8 @@ for (const vd of dayWiseDetails) {
       const extraOutstationKms = parseFloat(String(eligAny.total_extra_kms || 0)) || 0;
       const extraKms = extraLocalKms + extraOutstationKms;
       const extraKmRate = parseFloat(String(eligAny.extra_km_rate || 0)) || 0;
-      const extraKmCharge = dayWiseExtraKmChargeTotal ||
-        ((parseFloat(String(eligAny.total_extra_local_kms_charge || 0)) || 0) +
-        (parseFloat(String(eligAny.total_extra_kms_charge || 0)) || 0));
+      const extraKmCharge = dayWiseExtraKmChargeTotal +
+        (parseFloat(String(eligAny.total_extra_kms_charge || 0)) || 0);
       const totalCostOfVehicle = rentalCharges + tollCharges + parkingCharges + driverCharges + permitCharges
         + Number(eligAny.total_before_6_am_charges_for_driver ?? 0)
         + Number(eligAny.total_before_6_am_charges_for_vehicle ?? 0)
