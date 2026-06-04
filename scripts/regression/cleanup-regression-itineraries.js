@@ -10,6 +10,7 @@ const RESULTS_DIR = path.join(ROOT, 'tmp', 'regression-results');
 const REGRESSION_QUOTE_PATTERNS = [
   /^regression-case-\d+$/i,
   /^reg_case_\d+$/i,
+  /^top10-case-\d+$/i,
 ];
 
 const BLOCKED_QUOTE_PREFIXES = ['DVI', 'DVI20', 'LIVE', 'PROD'];
