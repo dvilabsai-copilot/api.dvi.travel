@@ -133,23 +133,38 @@ export class DriversController {
     return this.driversService.uploadDocument(Number(id), body?.documentType || '', file.filename);
   }
 
-  @Get(':id/reviews')
-  async listReviews(@Param('id') id: string) {
-    return this.driversService.listReviews(Number(id));
-  }
+@Get(':id/reviews')
+async listReviews(@Param('id') id: string) {
+  return this.driversService.listReviews(Number(id));
+}
 
-  @Post(':id/reviews')
-  async createReview(
-    @Param('id') id: string,
-    @Body() body: { rating?: number | string; description?: string },
-  ) {
-    return this.driversService.createReview(Number(id), body);
-  }
+@Post(':id/reviews')
+async createReview(
+  @Param('id') id: string,
+  @Body() body: { rating?: number | string; description?: string },
+) {
+  return this.driversService.createReview(Number(id), body);
+}
 
-  @Get(':id')
-  async findOne(@Param('id') id: string) {
-    return this.driversService.findOneForWizard(Number(id));
-  }
+@Put('reviews/:reviewId')
+async updateReview(
+  @Param('reviewId') reviewId: string,
+  @Body() body: { rating?: number | string; description?: string },
+) {
+  return this.driversService.updateReview(Number(reviewId), body);
+}
+
+@Delete('reviews/:reviewId')
+async deleteReview(@Param('reviewId') reviewId: string) {
+  await this.driversService.deleteReview(Number(reviewId));
+  return { success: true };
+}
+
+@Get(':id')
+async findOne(@Param('id') id: string) {
+  return this.driversService.findOneForWizard(Number(id));
+}
+
 
   @Put(':id')
   async update(@Param('id') id: string, @Body() body: UpdateDriverDto) {

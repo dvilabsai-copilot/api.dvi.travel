@@ -364,22 +364,87 @@ export class DriversService {
     }));
   }
 
-  async createReview(id: number, data: { rating?: number | string; description?: string }) {
-    await this.findOne(id);
-    await this.prisma.dvi_driver_review_details.create({
-      data: {
-        driver_id: id,
-        driver_rating: String(data?.rating ?? ''),
-        driver_description: String(data?.description ?? ''),
-        createdon: new Date(),
-        status: 1,
-        deleted: 0,
-      },
-    });
-    return { success: true };
+ async createReview(id: number, data: { rating?: number | string; description?: string }) {
+  await this.findOne(id);
+  await this.prisma.dvi_driver_review_details.create({
+    data: {
+      driver_id: id,
+      driver_rating: String(data?.rating ?? ''),
+      driver_description: String(data?.description ?? ''),
+      createdon: new Date(),
+      status: 1,
+      deleted: 0,
+    },
+  });
+  return { success: true };
+}
+
+async updateReview(
+  reviewId: number,
+  data: { rating?: number | string; description?: string },
+) {
+  if (!reviewId || Number.isNaN(reviewId)) {
+    throw new BadRequestException('Invalid review id');
   }
 
-  async update(id: number, dto: UpdateDriverDto) {
+  const existing = await this.prisma.dvi_driver_review_details.findFirst({
+    where: {
+      driver_review_id: reviewId,
+      deleted: 0,
+    },
+  });
+
+  if (!existing) {
+    throw new NotFoundException('Review not found');
+  }
+
+  await this.prisma.dvi_driver_review_details.update({
+    where: {
+      driver_review_id: reviewId,
+    },
+    data: {
+      driver_rating: String(data?.rating ?? existing.driver_rating ?? ''),
+      driver_description: String(
+        data?.description ?? existing.driver_description ?? '',
+      ),
+      updatedon: new Date(),
+      status: 1,
+    },
+  });
+
+  return { success: true };
+}
+
+async deleteReview(reviewId: number) {
+  if (!reviewId || Number.isNaN(reviewId)) {
+    throw new BadRequestException('Invalid review id');
+  }
+
+  const existing = await this.prisma.dvi_driver_review_details.findFirst({
+    where: {
+      driver_review_id: reviewId,
+      deleted: 0,
+    },
+  });
+
+  if (!existing) {
+    throw new NotFoundException('Review not found');
+  }
+
+  await this.prisma.dvi_driver_review_details.update({
+    where: {
+      driver_review_id: reviewId,
+    },
+    data: {
+      deleted: 1,
+      updatedon: new Date(),
+    },
+  });
+
+  return { success: true };
+}
+
+async update(id: number, dto: UpdateDriverDto) { 
     const existing = await this.findOne(id);
     const b = dto.basic;
     return this.prisma.dvi_driver_details.update({
