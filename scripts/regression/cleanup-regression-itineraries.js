@@ -136,6 +136,21 @@ async function fetchPlanRowById(prisma, planId) {
   });
 }
 
+async function fetchPlanRowByQuoteId(prisma, quoteId) {
+  const normalizedQuoteId = String(quoteId ?? '').trim();
+  if (!normalizedQuoteId) return null;
+  return prisma.dvi_itinerary_plan_details.findFirst({
+    where: { itinerary_quote_ID: normalizedQuoteId },
+    select: {
+      itinerary_plan_ID: true,
+      itinerary_quote_ID: true,
+      createdon: true,
+      status: true,
+      deleted: true,
+    },
+  });
+}
+
 async function discoverRegressionPlans(prisma) {
   const primaryRows = await fetchPlanSummaries(prisma);
   const plansById = new Map();
@@ -169,6 +184,23 @@ async function discoverRegressionPlans(prisma) {
   }
 
   return [...plansById.values()].sort((a, b) => a.planId - b.planId);
+}
+
+async function discoverRegressionPlansForQuoteId(prisma, quoteId) {
+  const row = await fetchPlanRowByQuoteId(prisma, quoteId);
+  if (!row) return [];
+  const normalizedQuoteId = String(row.itinerary_quote_ID || '').trim();
+  if (!isRegressionQuoteId(normalizedQuoteId) || isBlockedQuoteId(normalizedQuoteId)) {
+    return [];
+  }
+  return [{
+    planId: Number(row.itinerary_plan_ID),
+    quoteId: normalizedQuoteId,
+    createdon: row.createdon,
+    status: row.status,
+    deleted: row.deleted,
+    source: 'db-quote',
+  }];
 }
 
 function getModelDelegate(client, modelName) {
@@ -265,9 +297,13 @@ function printTableCounts(header, counts) {
 }
 
 async function cleanupRegressionItineraries({ apply = false } = {}) {
+  const quoteIdIndex = process.argv.indexOf('--quote-id');
+  const explicitQuoteId = quoteIdIndex >= 0 ? String(process.argv[quoteIdIndex + 1] || '').trim() : '';
   const prisma = new PrismaClient();
   try {
-    const plans = await discoverRegressionPlans(prisma);
+    const plans = explicitQuoteId
+      ? await discoverRegressionPlansForQuoteId(prisma, explicitQuoteId)
+      : await discoverRegressionPlans(prisma);
     const planIds = plans.map((plan) => Number(plan.planId)).filter((id) => Number.isFinite(id) && id > 0);
 
     const { routeCounts, hotspotCounts } = await gatherRouteAndHotspotCounts(prisma, planIds);
@@ -322,6 +358,7 @@ if (require.main === module) {
 module.exports = {
   cleanupRegressionItineraries,
   discoverRegressionPlans,
+  discoverRegressionPlansForQuoteId,
   isRegressionQuoteId,
   isBlockedQuoteId,
 };
