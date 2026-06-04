@@ -351,6 +351,7 @@ export class ItinerariesController {
   ) {
     // Check if route optimization is requested
     const shouldOptimizeRoute = type === 'itineary_basic_info_with_optimized_route';
+    const routeCount = Array.isArray((dto as any)?.routes) ? (dto as any).routes.length : 0;
     return this.svc.createPlan(dto, req, shouldOptimizeRoute, type);
   }
 

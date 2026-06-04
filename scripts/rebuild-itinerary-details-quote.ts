@@ -19,7 +19,12 @@ async function main() {
 
     const hotspotEngine = new HotspotEngineService(prisma);
     const result = await prisma.$transaction(
-      async (tx) => hotspotEngine.rebuildRouteHotspots(tx, Number(plan.itinerary_plan_ID)),
+      async (tx) =>
+        hotspotEngine.rebuildRouteHotspots(
+          tx,
+          Number(plan.itinerary_plan_ID),
+          undefined,
+        ),
       { timeout: 180000 },
     );
 

@@ -1,0 +1,130 @@
+{
+  "caseId": "regression-case-06",
+  "description": "Via Route Chennai -> Mahabalipuram -> Pondicherry",
+  "tags": [],
+  "manualHotspot": null,
+  "payload": {
+    "plan": {
+      "itinerary_plan_id": 9306,
+      "agent_id": 126,
+      "staff_id": 0,
+      "location_id": 0,
+      "arrival_point": "Chennai",
+      "departure_point": "Chennai",
+      "itinerary_preference": 2,
+      "itinerary_type": 2,
+      "preferred_hotel_category": [],
+      "hotel_facilities": [],
+      "trip_start_date": "2026-08-19T08:00:00+05:30",
+      "trip_end_date": "2026-08-25T20:00:00+05:30",
+      "pick_up_date_and_time": "2026-08-19T08:00:00+05:30",
+      "arrival_type": 1,
+      "departure_type": 1,
+      "no_of_nights": 6,
+      "no_of_days": 7,
+      "budget": 15000,
+      "entry_ticket_required": 0,
+      "guide_for_itinerary": 0,
+      "nationality": 101,
+      "food_type": 0,
+      "meal_plan_code": "CP",
+      "meal_plan_breakfast": 1,
+      "meal_plan_lunch": 0,
+      "meal_plan_dinner": 0,
+      "adult_count": 2,
+      "child_count": 0,
+      "infant_count": 0,
+      "special_instructions": "Via Route Chennai -> Mahabalipuram -> Pondicherry"
+    },
+    "routes": [
+      {
+        "location_name": "Chennai",
+        "next_visiting_location": "Mahabalipuram",
+        "itinerary_route_date": "2026-08-19T00:00:00+05:30",
+        "no_of_days": 1,
+        "no_of_km": 58,
+        "direct_to_next_visiting_place": 0,
+        "via_route": "Mahabalipuram",
+        "via_routes": []
+      },
+      {
+        "location_name": "Mahabalipuram",
+        "next_visiting_location": "Pondicherry",
+        "itinerary_route_date": "2026-08-20T00:00:00+05:30",
+        "no_of_days": 2,
+        "no_of_km": 100,
+        "direct_to_next_visiting_place": 0,
+        "via_route": "Pondicherry",
+        "via_routes": []
+      },
+      {
+        "location_name": "Pondicherry",
+        "next_visiting_location": "Pondicherry",
+        "itinerary_route_date": "2026-08-21T00:00:00+05:30",
+        "no_of_days": 3,
+        "no_of_km": 1,
+        "direct_to_next_visiting_place": 0,
+        "via_route": "",
+        "via_routes": []
+      },
+      {
+        "location_name": "Pondicherry",
+        "next_visiting_location": "Chennai",
+        "itinerary_route_date": "2026-08-22T00:00:00+05:30",
+        "no_of_days": 4,
+        "no_of_km": 160,
+        "direct_to_next_visiting_place": 0,
+        "via_route": "",
+        "via_routes": []
+      },
+      {
+        "location_name": "Chennai",
+        "next_visiting_location": "Chennai",
+        "itinerary_route_date": "2026-08-23T00:00:00+05:30",
+        "no_of_days": 5,
+        "no_of_km": 1,
+        "direct_to_next_visiting_place": 0,
+        "via_route": "",
+        "via_routes": []
+      },
+      {
+        "location_name": "Chennai",
+        "next_visiting_location": "Mahabalipuram",
+        "itinerary_route_date": "2026-08-24T00:00:00+05:30",
+        "no_of_days": 6,
+        "no_of_km": 58,
+        "direct_to_next_visiting_place": 0,
+        "via_route": "",
+        "via_routes": []
+      },
+      {
+        "location_name": "Mahabalipuram",
+        "next_visiting_location": "Chennai",
+        "itinerary_route_date": "2026-08-25T00:00:00+05:30",
+        "no_of_days": 7,
+        "no_of_km": 58,
+        "direct_to_next_visiting_place": 0,
+        "via_route": "",
+        "via_routes": []
+      }
+    ],
+    "vehicles": [
+      {
+        "vehicle_type_id": 1,
+        "vehicle_count": 1
+      }
+    ],
+    "travellers": [
+      {
+        "room_id": 1,
+        "traveller_type": 1
+      },
+      {
+        "room_id": 1,
+        "traveller_type": 1
+      }
+    ],
+    "previousDayBillingDecisionProvided": false,
+    "previousDayBillingConfirmed": false
+  }
+}
