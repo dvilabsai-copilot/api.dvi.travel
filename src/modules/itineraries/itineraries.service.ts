@@ -756,13 +756,6 @@ export class ItinerariesService {
     };
     } catch (error: any) {
       const message = String(error?.message || error || 'Unknown createPlan failure');
-      console.error('[ItinerariesService] createPlan failed', {
-        stage: createPlanStage,
-        requestType: String(requestType || ''),
-        planId: Number((dto?.plan as any)?.itinerary_plan_id || 0),
-        message,
-      });
-
       if (error instanceof BadRequestException || error instanceof NotFoundException || error instanceof ConflictException) {
         throw error;
       }
@@ -9935,12 +9928,41 @@ export class ItinerariesService {
       const parsed = this.parsePreviewTimeRangeToUtcDates(seg?.timeRange);
       const duration = Number(seg?.matrixDurationMin || this.getPreviewRowDurationMinutes(seg) || 0);
       const distance = Number(seg?.matrixDistanceKm || seg?.distanceKm || 0);
+      const normalizeTravelLabel = (value: any): string =>
+        String(value ?? '')
+          .split('|')[0]
+          .replace(/\s+/g, ' ')
+          .trim()
+          .toLowerCase();
+      const fromLabel = String(
+        seg?.fromName ||
+          seg?.displayFromName ||
+          seg?.from ||
+          seg?.text ||
+          seg?.name ||
+          '',
+      ).trim();
+      const toLabel = String(
+        seg?.toName ||
+          seg?.displayToName ||
+          seg?.to ||
+          seg?.text ||
+          seg?.name ||
+          '',
+      ).trim();
+      const labelsDiffer = normalizeTravelLabel(fromLabel) !== normalizeTravelLabel(toLabel);
+      const normalizedDistance =
+        labelsDiffer && Number.isFinite(distance) && distance <= 0.01
+          ? 0.1
+          : distance;
 
       const payload = {
         hotspot_order: idx + 1,
         hotspot_ID: 0,
         hotspot_traveling_time: this.minutesToUtcTimeDate(Math.max(0, duration)),
-        hotspot_travelling_distance: Number.isFinite(distance) && distance > 0 ? String(distance.toFixed(2)) : null,
+        hotspot_travelling_distance: Number.isFinite(normalizedDistance) && normalizedDistance > 0
+          ? String(normalizedDistance.toFixed(2))
+          : null,
         hotspot_start_time: parsed.start || this.minutesToUtcTimeDate(0),
         hotspot_end_time: parsed.end || this.minutesToUtcTimeDate(0),
         updatedon: new Date(),
@@ -11813,6 +11835,7 @@ export class ItinerariesService {
     );
 
     const hasValidMatrixSlot = this.hasValidManualMatrixSlot(manualInsertionFit);
+    const emptyRouteSchedulerEligible = this.isEmptyRouteSchedulerEligible(manualInsertionFit);
     const destinationSlotNotFound = (
       manualInsertionFit?.destinationInsertionMode === true
       && String(manualInsertionFit?.previewBlockReason || '').toUpperCase() === 'DESTINATION_SLOT_NOT_FOUND'
@@ -11823,7 +11846,7 @@ export class ItinerariesService {
     );
     const requiresMatrixBuild = (
       manualInsertionFit?.requiresMatrixBuild === true
-      || (!hasValidMatrixSlot && !destinationHotelSideReady)
+      || (!hasValidMatrixSlot && !destinationHotelSideReady && !emptyRouteSchedulerEligible)
     ) && !destinationSlotNotFound;
     const missingMatrixBuildSuggestion = this.buildMissingMatrixBuildSuggestion(
       Number(planId),
@@ -11896,7 +11919,7 @@ export class ItinerariesService {
               : 'Route-fit matrix data is missing for this hotspot and current route. Build matrix before preview/apply.',
           planId: Number(planId),
           routeId: Number(routeId),
-          hotspotId: Number(preFocusHotspotId),
+          hotspotId: Number(requestedHotspotIds[0] || 0),
           hotspotIds: requestedHotspotIds,
           fullTimeline: baselineTimelineForMatrix,
           routeTimeline: baselineTimelineForMatrix,
@@ -13280,6 +13303,14 @@ export class ItinerariesService {
     );
 
     return chosenSlotValid || sourceExitAnchorBestSlotValid || destinationHotelSideBestSlotValid;
+  }
+
+  private isEmptyRouteSchedulerEligible(manualInsertionFit: any): boolean {
+    return (
+      String(manualInsertionFit?.chosenSlotSource || '') === 'EMPTY_ROUTE_SCHEDULER'
+      && manualInsertionFit?.routeFitAvailable === true
+      && manualInsertionFit?.canApply === true
+    );
   }
 
   private buildMissingMatrixBuildSuggestion(planId: number, routeId: number, candidateHotspotId: number) {
@@ -14746,6 +14777,7 @@ export class ItinerariesService {
         location_id: true,
         location_name: true,
         next_visiting_location: true,
+        direct_to_next_visiting_place: true,
       },
     });
 
@@ -14796,35 +14828,6 @@ export class ItinerariesService {
       (r: any) => Number(r.hotspot_ID) !== Number(candidateHotspotId),
     );
 
-    if (routeAttractions.length === 0) {
-      return {
-        selectedHotspotId: candidateHotspotId,
-        selectedHotspotName: candidateHotspotName,
-        requestedSlot: null,
-        bestSlot: null,
-        chosenSlot: null,
-        allSlotResults: [],
-        chosenSlotSource: 'NO_MATRIX_DATA',
-        routeFitAvailable: false,
-        requiresMatrixBuild: true,
-        canAutoMove: false,
-        canApply: false,
-        warning: 'Route has no active attraction hotspots; cannot evaluate insertion slots.',
-      };
-    }
-
-    // 2. Fetch all hotspot names in one query
-    const hotspotIds = routeAttractions.map((r: any) => Number(r.hotspot_ID));
-    const hotspotMasters: any[] = await (tx as any).dvi_hotspot_place.findMany({
-      where: { hotspot_ID: { in: hotspotIds }, deleted: 0 },
-      select: { hotspot_ID: true, hotspot_name: true, hotspot_duration: true, hotspot_location: true },
-    });
-    const nameById = new Map<number, string>(
-      hotspotMasters.map((m: any) => [Number(m.hotspot_ID), String(m.hotspot_name || '')]),
-    );
-    const masterById = new Map<number, any>(
-      hotspotMasters.map((m: any) => [Number(m.hotspot_ID), m]),
-    );
     const candidateMaster = await (tx as any).dvi_hotspot_place.findFirst({
       where: { hotspot_ID: Number(candidateHotspotId), deleted: 0 },
       select: {
@@ -14843,6 +14846,44 @@ export class ItinerariesService {
     hotspotCityContext = this.classifyManualHotspotCityContext(routeCityContext, candidateMaster || {
       hotspot_name: candidateHotspotName,
     });
+    const emptyRouteSourceCityEligible =
+      routeAttractions.length === 0
+      && hotspotCityContext === 'SOURCE_CITY'
+      && Number(routeRow?.direct_to_next_visiting_place || 0) !== 1;
+    if (routeAttractions.length === 0) {
+      return {
+        selectedHotspotId: candidateHotspotId,
+        selectedHotspotName: candidateHotspotName,
+        requestedSlot: null,
+        bestSlot: null,
+        chosenSlot: null,
+        allSlotResults: [],
+        chosenSlotSource: emptyRouteSourceCityEligible ? 'EMPTY_ROUTE_SCHEDULER' : 'NO_MATRIX_DATA',
+        routeFitAvailable: emptyRouteSourceCityEligible,
+        requiresMatrixBuild: emptyRouteSourceCityEligible ? false : true,
+        canAutoMove: false,
+        canApply: emptyRouteSourceCityEligible,
+        selectedIncluded: emptyRouteSourceCityEligible,
+        warning: emptyRouteSourceCityEligible
+          ? 'Empty route will be validated by the main timeline builder without matrix slot scoring.'
+          : 'Route has no active attraction hotspots; cannot evaluate insertion slots.',
+        previewBlockReason: emptyRouteSourceCityEligible ? null : 'MATRIX_MISSING',
+      };
+    }
+
+    // 2. Fetch all hotspot names in one query
+    const hotspotIds = routeAttractions.map((r: any) => Number(r.hotspot_ID));
+    const hotspotMasters: any[] = await (tx as any).dvi_hotspot_place.findMany({
+      where: { hotspot_ID: { in: hotspotIds }, deleted: 0 },
+      select: { hotspot_ID: true, hotspot_name: true, hotspot_duration: true, hotspot_location: true },
+    });
+    const nameById = new Map<number, string>(
+      hotspotMasters.map((m: any) => [Number(m.hotspot_ID), String(m.hotspot_name || '')]),
+    );
+    const masterById = new Map<number, any>(
+      hotspotMasters.map((m: any) => [Number(m.hotspot_ID), m]),
+    );
+
     destinationInsertionMode = hotspotCityContext === 'DESTINATION_CITY';
     if (destinationInsertionMode) {
       await this.ensureHotspotHotelBetweenMapTable(tx);
@@ -18056,7 +18097,7 @@ export class ItinerariesService {
       });
 
       const rebuildResult = await this.hotspotEngine.rebuildRouteHotspots(tx, normalizedPlanId, undefined, {
-        debugFocusRouteId: normalizedRouteId,
+        scopeToRouteId: normalizedRouteId,
       });
 
       const postRouteVisitCount = await (tx as any).dvi_itinerary_route_hotspot_details.count({

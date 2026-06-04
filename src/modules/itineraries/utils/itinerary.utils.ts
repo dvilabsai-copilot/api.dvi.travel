@@ -213,6 +213,23 @@ export function computeTravelParity(args: {
   const hours = speed > 0 ? distanceKm / speed : 0;
   const travelSeconds = Math.max(0, Math.floor(hours * 3600));
 
+  const normalizeTravelPlace = (value: string) =>
+    String(value || '')
+      .split('|')[0]
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase();
+
+  const namesDiffer =
+    normalizeTravelPlace(args.prevLocation) !== normalizeTravelPlace(args.nextLocation);
+
+  if (namesDiffer && distanceKm <= 0.01) {
+    return {
+      distanceKm: 0.1,
+      travelSeconds: Math.max(travelSeconds, 300),
+    };
+  }
+
   return { distanceKm, travelSeconds };
 }
 

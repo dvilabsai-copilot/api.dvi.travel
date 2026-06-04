@@ -1,0 +1,133 @@
+{
+  "caseId": "top10-case-04",
+  "description": "Cochin, Kerala, India -> Cochin, Kerala, India (209x production pattern)",
+  "tags": [
+    "top10",
+    "production-derived",
+    "frequency-209",
+    "routes-5",
+    "single-direct-mode"
+  ],
+  "sourceEvidence": {
+    "sourcePlanId": 1129,
+    "sourceQuoteId": "DVI202409-029",
+    "frequency": 209,
+    "uniqueLocationCount": 4,
+    "routeCount": 5,
+    "routeChain": [
+      "Cochin, Kerala, India",
+      "Munnar, Kerala, India",
+      "Munnar, Kerala, India",
+      "Thekkady, Kumily, Kerala, India",
+      "Alleppey, Kerala, India",
+      "Cochin, Kerala, India"
+    ],
+    "sourcePlanCreatedOn": "2024-09-02T16:35:46.000Z",
+    "sourcePlanUpdatedOn": null
+  },
+  "manualHotspot": null,
+  "payload": {
+    "plan": {
+      "itinerary_plan_id": 9504,
+      "agent_id": 16,
+      "staff_id": 7,
+      "location_id": 113585,
+      "arrival_point": "Cochin, Kerala, India",
+      "departure_point": "Cochin, Kerala, India",
+      "itinerary_preference": 2,
+      "itinerary_type": 2,
+      "preferred_hotel_category": [],
+      "hotel_facilities": [],
+      "trip_start_date": "2026-12-04T08:00:00+05:30",
+      "trip_end_date": "2026-12-08T20:00:00+05:30",
+      "pick_up_date_and_time": "2026-12-04T08:00:00+05:30",
+      "arrival_type": 1,
+      "departure_type": 1,
+      "no_of_nights": 4,
+      "no_of_days": 5,
+      "budget": 15000,
+      "entry_ticket_required": 0,
+      "guide_for_itinerary": 0,
+      "nationality": 101,
+      "food_type": 0,
+      "meal_plan_code": "CP",
+      "meal_plan_breakfast": 1,
+      "meal_plan_lunch": 0,
+      "meal_plan_dinner": 0,
+      "adult_count": 2,
+      "child_count": 0,
+      "infant_count": 0,
+      "special_instructions": "TOP10 production-derived case from source plan 1129 / quote DVI202409-029, frequency=209"
+    },
+    "routes": [
+      {
+        "location_name": "Cochin, Kerala, India",
+        "next_visiting_location": "Munnar, Kerala, India",
+        "itinerary_route_date": "2026-12-04T00:00:00+05:30",
+        "no_of_days": 1,
+        "no_of_km": 124,
+        "direct_to_next_visiting_place": 0,
+        "via_route": "",
+        "via_routes": []
+      },
+      {
+        "location_name": "Munnar, Kerala, India",
+        "next_visiting_location": "Munnar, Kerala, India",
+        "itinerary_route_date": "2026-12-05T00:00:00+05:30",
+        "no_of_days": 2,
+        "no_of_km": 1,
+        "direct_to_next_visiting_place": 0,
+        "via_route": "",
+        "via_routes": []
+      },
+      {
+        "location_name": "Munnar, Kerala, India",
+        "next_visiting_location": "Thekkady, Kumily, Kerala, India",
+        "itinerary_route_date": "2026-12-06T00:00:00+05:30",
+        "no_of_days": 3,
+        "no_of_km": 97.1,
+        "direct_to_next_visiting_place": 0,
+        "via_route": "",
+        "via_routes": []
+      },
+      {
+        "location_name": "Thekkady, Kumily, Kerala, India",
+        "next_visiting_location": "Alleppey, Kerala, India",
+        "itinerary_route_date": "2026-12-07T00:00:00+05:30",
+        "no_of_days": 4,
+        "no_of_km": 138,
+        "direct_to_next_visiting_place": 0,
+        "via_route": "",
+        "via_routes": []
+      },
+      {
+        "location_name": "Alleppey, Kerala, India",
+        "next_visiting_location": "Cochin, Kerala, India",
+        "itinerary_route_date": "2026-12-08T00:00:00+05:30",
+        "no_of_days": 5,
+        "no_of_km": 53,
+        "direct_to_next_visiting_place": 0,
+        "via_route": "",
+        "via_routes": []
+      }
+    ],
+    "vehicles": [
+      {
+        "vehicle_type_id": 1,
+        "vehicle_count": 1
+      }
+    ],
+    "travellers": [
+      {
+        "room_id": 1,
+        "traveller_type": 1
+      },
+      {
+        "room_id": 1,
+        "traveller_type": 1
+      }
+    ],
+    "previousDayBillingDecisionProvided": false,
+    "previousDayBillingConfirmed": false
+  }
+}

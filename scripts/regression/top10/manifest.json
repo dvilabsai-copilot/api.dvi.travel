@@ -1,0 +1,249 @@
+{
+  "generatedAt": "2026-06-04T01:47:58.316Z",
+  "databaseName": "dvi_travels",
+  "totalSourcePlansScanned": 41018,
+  "totalPatternsFound": 20930,
+  "selectedCases": [
+    {
+      "caseId": "top10-case-01",
+      "file": "top10-case-01.json",
+      "sourcePlanId": 21917,
+      "sourceQuoteId": "DVI2025082371",
+      "frequency": 348,
+      "routeCount": 5,
+      "uniqueLocationCount": 4,
+      "routeChain": [
+        "Cochin International Airport",
+        "Munnar",
+        "Munnar",
+        "Thekkady",
+        "Alleppey",
+        "Cochin International Airport"
+      ],
+      "zeroOrBlankKmRoutes": 0,
+      "sourcePlanCreatedOn": "2025-08-29T17:46:14.000Z",
+      "sourcePlanUpdatedOn": "2025-12-23T20:03:44.000Z"
+    },
+    {
+      "caseId": "top10-case-02",
+      "file": "top10-case-02.json",
+      "sourcePlanId": 15009,
+      "sourceQuoteId": "DVI2025051661",
+      "frequency": 316,
+      "routeCount": 5,
+      "uniqueLocationCount": 4,
+      "routeChain": [
+        "Cochin Airport",
+        "Munnar",
+        "Munnar",
+        "Thekkady",
+        "Alleppey",
+        "Cochin Airport"
+      ],
+      "zeroOrBlankKmRoutes": 0,
+      "sourcePlanCreatedOn": "2025-05-26T14:53:02.000Z",
+      "sourcePlanUpdatedOn": "2025-05-26T14:53:45.000Z"
+    },
+    {
+      "caseId": "top10-case-03",
+      "file": "top10-case-03.json",
+      "sourcePlanId": 15021,
+      "sourceQuoteId": "DVI2025051673",
+      "frequency": 297,
+      "routeCount": 5,
+      "uniqueLocationCount": 4,
+      "routeChain": [
+        "Cochin",
+        "Munnar",
+        "Munnar",
+        "Thekkady",
+        "Alleppey",
+        "Cochin"
+      ],
+      "zeroOrBlankKmRoutes": 0,
+      "sourcePlanCreatedOn": "2025-05-26T16:41:57.000Z",
+      "sourcePlanUpdatedOn": null
+    },
+    {
+      "caseId": "top10-case-04",
+      "file": "top10-case-04.json",
+      "sourcePlanId": 1129,
+      "sourceQuoteId": "DVI202409-029",
+      "frequency": 209,
+      "routeCount": 5,
+      "uniqueLocationCount": 4,
+      "routeChain": [
+        "Cochin, Kerala, India",
+        "Munnar, Kerala, India",
+        "Munnar, Kerala, India",
+        "Thekkady, Kumily, Kerala, India",
+        "Alleppey, Kerala, India",
+        "Cochin, Kerala, India"
+      ],
+      "zeroOrBlankKmRoutes": 0,
+      "sourcePlanCreatedOn": "2024-09-02T16:35:46.000Z",
+      "sourcePlanUpdatedOn": null
+    },
+    {
+      "caseId": "top10-case-05",
+      "file": "top10-case-05.json",
+      "sourcePlanId": 15032,
+      "sourceQuoteId": "DVI2025051684",
+      "frequency": 171,
+      "routeCount": 6,
+      "uniqueLocationCount": 5,
+      "routeChain": [
+        "Cochin Airport",
+        "Cochin",
+        "Munnar",
+        "Munnar",
+        "Thekkady",
+        "Alleppey",
+        "Cochin Airport"
+      ],
+      "zeroOrBlankKmRoutes": 0,
+      "sourcePlanCreatedOn": "2025-05-26T17:34:51.000Z",
+      "sourcePlanUpdatedOn": null
+    },
+    {
+      "caseId": "top10-case-06",
+      "file": "top10-case-06.json",
+      "sourcePlanId": 2586,
+      "sourceQuoteId": "DVI202409-1480",
+      "frequency": 162,
+      "routeCount": 4,
+      "uniqueLocationCount": 2,
+      "routeChain": [
+        "Hyderabad, Rajiv Gandhi International Airport",
+        "Hyderabad, Telangana, India",
+        "Hyderabad, Telangana, India",
+        "Hyderabad, Telangana, India",
+        "Hyderabad, Rajiv Gandhi International Airport"
+      ],
+      "zeroOrBlankKmRoutes": 0,
+      "sourcePlanCreatedOn": "2024-09-30T18:59:38.000Z",
+      "sourcePlanUpdatedOn": null
+    },
+    {
+      "caseId": "top10-case-07",
+      "file": "top10-case-07.json",
+      "sourcePlanId": 26086,
+      "sourceQuoteId": "DVI202510704",
+      "frequency": 160,
+      "routeCount": 6,
+      "uniqueLocationCount": 5,
+      "routeChain": [
+        "Cochin International Airport",
+        "Cochin",
+        "Munnar",
+        "Munnar",
+        "Thekkady",
+        "Alleppey",
+        "Cochin International Airport"
+      ],
+      "zeroOrBlankKmRoutes": 0,
+      "sourcePlanCreatedOn": "2025-10-08T11:05:26.000Z",
+      "sourcePlanUpdatedOn": "2025-12-03T13:23:57.000Z"
+    },
+    {
+      "caseId": "top10-case-08",
+      "file": "top10-case-08.json",
+      "sourcePlanId": 764,
+      "sourceQuoteId": "DVI202408-152",
+      "frequency": 157,
+      "routeCount": 3,
+      "uniqueLocationCount": 2,
+      "routeChain": [
+        "Hyderabad, Rajiv Gandhi International Airport",
+        "Hyderabad, Telangana, India",
+        "Hyderabad, Telangana, India",
+        "Hyderabad, Rajiv Gandhi International Airport"
+      ],
+      "zeroOrBlankKmRoutes": 0,
+      "sourcePlanCreatedOn": "2024-08-17T12:37:55.000Z",
+      "sourcePlanUpdatedOn": null
+    },
+    {
+      "caseId": "top10-case-09",
+      "file": "top10-case-09.json",
+      "sourcePlanId": 2635,
+      "sourceQuoteId": "DVI202410-37",
+      "frequency": 151,
+      "routeCount": 4,
+      "uniqueLocationCount": 3,
+      "routeChain": [
+        "Madurai Airport",
+        "Madurai",
+        "Rameswaram",
+        "Rameswaram",
+        "Madurai Airport"
+      ],
+      "zeroOrBlankKmRoutes": 0,
+      "sourcePlanCreatedOn": "2024-10-01T14:03:43.000Z",
+      "sourcePlanUpdatedOn": null
+    },
+    {
+      "caseId": "top10-case-10",
+      "file": "top10-case-10.json",
+      "sourcePlanId": 15087,
+      "sourceQuoteId": "DVI2025051739",
+      "frequency": 145,
+      "routeCount": 5,
+      "uniqueLocationCount": 3,
+      "routeChain": [
+        "Bangalore",
+        "Coorg",
+        "Coorg",
+        "Ooty",
+        "Ooty",
+        "Bangalore"
+      ],
+      "zeroOrBlankKmRoutes": 0,
+      "sourcePlanCreatedOn": "2025-05-27T13:33:17.000Z",
+      "sourcePlanUpdatedOn": null
+    }
+  ],
+  "coveredLocations": [
+    "Alleppey",
+    "Alleppey, Kerala, India",
+    "Bangalore",
+    "Cochin",
+    "Cochin Airport",
+    "Cochin International Airport",
+    "Cochin, Kerala, India",
+    "Coorg",
+    "Hyderabad, Rajiv Gandhi International Airport",
+    "Hyderabad, Telangana, India",
+    "Madurai",
+    "Madurai Airport",
+    "Munnar",
+    "Munnar, Kerala, India",
+    "Ooty",
+    "Rameswaram",
+    "Thekkady",
+    "Thekkady, Kumily, Kerala, India"
+  ],
+  "warnings": [
+    "Generator connected explicitly to dvi_travels",
+    "Skipped plan 2560 because 2 route rows had empty location names.",
+    "Skipped plan 4186 because 1 route rows had empty location names.",
+    "Skipped plan 5286 because 1 route rows had empty location names.",
+    "Skipped plan 7154 because 1 route rows had empty location names.",
+    "Skipped plan 8044 because 1 route rows had empty location names.",
+    "Skipped plan 8352 because 1 route rows had empty location names.",
+    "Skipped plan 10506 because 1 route rows had empty location names.",
+    "Skipped plan 11469 because 1 route rows had empty location names.",
+    "Skipped plan 13856 because 1 route rows had empty location names.",
+    "Skipped plan 14578 because 1 route rows had empty location names.",
+    "Skipped plan 16237 because 2 route rows had empty location names.",
+    "Skipped plan 16370 because 4 route rows had empty location names.",
+    "Skipped plan 17755 because 1 route rows had empty location names.",
+    "Skipped plan 24164 because 1 route rows had empty location names.",
+    "Skipped plan 25720 because 1 route rows had empty location names.",
+    "Skipped plan 26308 because 1 route rows had empty location names.",
+    "Skipped plan 39506 because 1 route rows had empty location names.",
+    "Skipped plan 39533 because 7 route rows had empty location names.",
+    "Active route rows with location_id = 0: 7",
+    "Active route rows with zero/blank no_of_km: 686"
+  ]
+}

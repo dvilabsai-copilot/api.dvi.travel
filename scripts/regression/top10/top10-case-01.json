@@ -1,0 +1,133 @@
+{
+  "caseId": "top10-case-01",
+  "description": "Cochin International Airport -> Cochin International Airport (348x production pattern)",
+  "tags": [
+    "top10",
+    "production-derived",
+    "frequency-348",
+    "routes-5",
+    "direct-mix"
+  ],
+  "sourceEvidence": {
+    "sourcePlanId": 21917,
+    "sourceQuoteId": "DVI2025082371",
+    "frequency": 348,
+    "uniqueLocationCount": 4,
+    "routeCount": 5,
+    "routeChain": [
+      "Cochin International Airport",
+      "Munnar",
+      "Munnar",
+      "Thekkady",
+      "Alleppey",
+      "Cochin International Airport"
+    ],
+    "sourcePlanCreatedOn": "2025-08-29T17:46:14.000Z",
+    "sourcePlanUpdatedOn": "2025-12-23T20:03:44.000Z"
+  },
+  "manualHotspot": null,
+  "payload": {
+    "plan": {
+      "itinerary_plan_id": 9501,
+      "agent_id": 125,
+      "staff_id": 0,
+      "location_id": 192226,
+      "arrival_point": "Cochin International Airport",
+      "departure_point": "Cochin International Airport",
+      "itinerary_preference": 3,
+      "itinerary_type": 1,
+      "preferred_hotel_category": [],
+      "hotel_facilities": [],
+      "trip_start_date": "2026-12-01T08:00:00+05:30",
+      "trip_end_date": "2026-12-05T20:00:00+05:30",
+      "pick_up_date_and_time": "2026-12-01T08:00:00+05:30",
+      "arrival_type": 1,
+      "departure_type": 1,
+      "no_of_nights": 4,
+      "no_of_days": 5,
+      "budget": 15000,
+      "entry_ticket_required": 0,
+      "guide_for_itinerary": 0,
+      "nationality": 101,
+      "food_type": 3,
+      "meal_plan_code": "CP",
+      "meal_plan_breakfast": 1,
+      "meal_plan_lunch": 0,
+      "meal_plan_dinner": 1,
+      "adult_count": 9,
+      "child_count": 0,
+      "infant_count": 0,
+      "special_instructions": "TOP10 production-derived case from source plan 21917 / quote DVI2025082371, frequency=348"
+    },
+    "routes": [
+      {
+        "location_name": "Cochin International Airport",
+        "next_visiting_location": "Munnar",
+        "itinerary_route_date": "2026-12-01T00:00:00+05:30",
+        "no_of_days": 1,
+        "no_of_km": 73.481508481163,
+        "direct_to_next_visiting_place": 1,
+        "via_route": "",
+        "via_routes": []
+      },
+      {
+        "location_name": "Munnar",
+        "next_visiting_location": "Munnar",
+        "itinerary_route_date": "2026-12-02T00:00:00+05:30",
+        "no_of_days": 2,
+        "no_of_km": 1,
+        "direct_to_next_visiting_place": 0,
+        "via_route": "",
+        "via_routes": []
+      },
+      {
+        "location_name": "Munnar",
+        "next_visiting_location": "Thekkady",
+        "itinerary_route_date": "2026-12-03T00:00:00+05:30",
+        "no_of_days": 3,
+        "no_of_km": 97.1,
+        "direct_to_next_visiting_place": 0,
+        "via_route": "",
+        "via_routes": []
+      },
+      {
+        "location_name": "Thekkady",
+        "next_visiting_location": "Alleppey",
+        "itinerary_route_date": "2026-12-04T00:00:00+05:30",
+        "no_of_days": 4,
+        "no_of_km": 138,
+        "direct_to_next_visiting_place": 0,
+        "via_route": "",
+        "via_routes": []
+      },
+      {
+        "location_name": "Alleppey",
+        "next_visiting_location": "Cochin International Airport",
+        "itinerary_route_date": "2026-12-05T00:00:00+05:30",
+        "no_of_days": 5,
+        "no_of_km": 74.855109812106,
+        "direct_to_next_visiting_place": 0,
+        "via_route": "",
+        "via_routes": []
+      }
+    ],
+    "vehicles": [
+      {
+        "vehicle_type_id": 1,
+        "vehicle_count": 1
+      }
+    ],
+    "travellers": [
+      {
+        "room_id": 1,
+        "traveller_type": 1
+      },
+      {
+        "room_id": 1,
+        "traveller_type": 1
+      }
+    ],
+    "previousDayBillingDecisionProvided": false,
+    "previousDayBillingConfirmed": false
+  }
+}

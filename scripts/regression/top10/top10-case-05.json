@@ -1,0 +1,144 @@
+{
+  "caseId": "top10-case-05",
+  "description": "Cochin Airport -> Cochin Airport (171x production pattern)",
+  "tags": [
+    "top10",
+    "production-derived",
+    "frequency-171",
+    "routes-6",
+    "single-direct-mode"
+  ],
+  "sourceEvidence": {
+    "sourcePlanId": 15032,
+    "sourceQuoteId": "DVI2025051684",
+    "frequency": 171,
+    "uniqueLocationCount": 5,
+    "routeCount": 6,
+    "routeChain": [
+      "Cochin Airport",
+      "Cochin",
+      "Munnar",
+      "Munnar",
+      "Thekkady",
+      "Alleppey",
+      "Cochin Airport"
+    ],
+    "sourcePlanCreatedOn": "2025-05-26T17:34:51.000Z",
+    "sourcePlanUpdatedOn": null
+  },
+  "manualHotspot": null,
+  "payload": {
+    "plan": {
+      "itinerary_plan_id": 9505,
+      "agent_id": 126,
+      "staff_id": 6,
+      "location_id": 192226,
+      "arrival_point": "Cochin Airport",
+      "departure_point": "Cochin Airport",
+      "itinerary_preference": 2,
+      "itinerary_type": 2,
+      "preferred_hotel_category": [],
+      "hotel_facilities": [],
+      "trip_start_date": "2026-12-05T08:00:00+05:30",
+      "trip_end_date": "2026-12-10T20:00:00+05:30",
+      "pick_up_date_and_time": "2026-12-05T08:00:00+05:30",
+      "arrival_type": 1,
+      "departure_type": 1,
+      "no_of_nights": 5,
+      "no_of_days": 6,
+      "budget": 15000,
+      "entry_ticket_required": 0,
+      "guide_for_itinerary": 0,
+      "nationality": 101,
+      "food_type": 0,
+      "meal_plan_code": "CP",
+      "meal_plan_breakfast": 1,
+      "meal_plan_lunch": 0,
+      "meal_plan_dinner": 0,
+      "adult_count": 4,
+      "child_count": 0,
+      "infant_count": 0,
+      "special_instructions": "TOP10 production-derived case from source plan 15032 / quote DVI2025051684, frequency=171"
+    },
+    "routes": [
+      {
+        "location_name": "Cochin Airport",
+        "next_visiting_location": "Cochin",
+        "itinerary_route_date": "2026-12-05T00:00:00+05:30",
+        "no_of_days": 1,
+        "no_of_km": 29.827500950218,
+        "direct_to_next_visiting_place": 0,
+        "via_route": "",
+        "via_routes": []
+      },
+      {
+        "location_name": "Cochin",
+        "next_visiting_location": "Munnar",
+        "itinerary_route_date": "2026-12-06T00:00:00+05:30",
+        "no_of_days": 2,
+        "no_of_km": 124,
+        "direct_to_next_visiting_place": 0,
+        "via_route": "",
+        "via_routes": []
+      },
+      {
+        "location_name": "Munnar",
+        "next_visiting_location": "Munnar",
+        "itinerary_route_date": "2026-12-07T00:00:00+05:30",
+        "no_of_days": 3,
+        "no_of_km": 1,
+        "direct_to_next_visiting_place": 0,
+        "via_route": "",
+        "via_routes": []
+      },
+      {
+        "location_name": "Munnar",
+        "next_visiting_location": "Thekkady",
+        "itinerary_route_date": "2026-12-08T00:00:00+05:30",
+        "no_of_days": 4,
+        "no_of_km": 97.1,
+        "direct_to_next_visiting_place": 0,
+        "via_route": "",
+        "via_routes": []
+      },
+      {
+        "location_name": "Thekkady",
+        "next_visiting_location": "Alleppey",
+        "itinerary_route_date": "2026-12-09T00:00:00+05:30",
+        "no_of_days": 5,
+        "no_of_km": 138,
+        "direct_to_next_visiting_place": 0,
+        "via_route": "",
+        "via_routes": []
+      },
+      {
+        "location_name": "Alleppey",
+        "next_visiting_location": "Cochin Airport",
+        "itinerary_route_date": "2026-12-10T00:00:00+05:30",
+        "no_of_days": 6,
+        "no_of_km": 74.855109812106,
+        "direct_to_next_visiting_place": 0,
+        "via_route": "",
+        "via_routes": []
+      }
+    ],
+    "vehicles": [
+      {
+        "vehicle_type_id": 1,
+        "vehicle_count": 1
+      }
+    ],
+    "travellers": [
+      {
+        "room_id": 1,
+        "traveller_type": 1
+      },
+      {
+        "room_id": 1,
+        "traveller_type": 1
+      }
+    ],
+    "previousDayBillingDecisionProvided": false,
+    "previousDayBillingConfirmed": false
+  }
+}

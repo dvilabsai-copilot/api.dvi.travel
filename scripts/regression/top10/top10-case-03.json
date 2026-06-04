@@ -1,0 +1,133 @@
+{
+  "caseId": "top10-case-03",
+  "description": "Cochin -> Cochin (297x production pattern)",
+  "tags": [
+    "top10",
+    "production-derived",
+    "frequency-297",
+    "routes-5",
+    "single-direct-mode"
+  ],
+  "sourceEvidence": {
+    "sourcePlanId": 15021,
+    "sourceQuoteId": "DVI2025051673",
+    "frequency": 297,
+    "uniqueLocationCount": 4,
+    "routeCount": 5,
+    "routeChain": [
+      "Cochin",
+      "Munnar",
+      "Munnar",
+      "Thekkady",
+      "Alleppey",
+      "Cochin"
+    ],
+    "sourcePlanCreatedOn": "2025-05-26T16:41:57.000Z",
+    "sourcePlanUpdatedOn": null
+  },
+  "manualHotspot": null,
+  "payload": {
+    "plan": {
+      "itinerary_plan_id": 9503,
+      "agent_id": 68,
+      "staff_id": 0,
+      "location_id": 113585,
+      "arrival_point": "Cochin",
+      "departure_point": "Cochin",
+      "itinerary_preference": 3,
+      "itinerary_type": 2,
+      "preferred_hotel_category": [],
+      "hotel_facilities": [],
+      "trip_start_date": "2026-12-03T08:00:00+05:30",
+      "trip_end_date": "2026-12-07T20:00:00+05:30",
+      "pick_up_date_and_time": "2026-12-03T08:00:00+05:30",
+      "arrival_type": 1,
+      "departure_type": 1,
+      "no_of_nights": 4,
+      "no_of_days": 5,
+      "budget": 15000,
+      "entry_ticket_required": 0,
+      "guide_for_itinerary": 1,
+      "nationality": 101,
+      "food_type": 3,
+      "meal_plan_code": "CP",
+      "meal_plan_breakfast": 1,
+      "meal_plan_lunch": 0,
+      "meal_plan_dinner": 0,
+      "adult_count": 2,
+      "child_count": 0,
+      "infant_count": 0,
+      "special_instructions": "TOP10 production-derived case from source plan 15021 / quote DVI2025051673, frequency=297"
+    },
+    "routes": [
+      {
+        "location_name": "Cochin",
+        "next_visiting_location": "Munnar",
+        "itinerary_route_date": "2026-12-03T00:00:00+05:30",
+        "no_of_days": 1,
+        "no_of_km": 124,
+        "direct_to_next_visiting_place": 0,
+        "via_route": "",
+        "via_routes": []
+      },
+      {
+        "location_name": "Munnar",
+        "next_visiting_location": "Munnar",
+        "itinerary_route_date": "2026-12-04T00:00:00+05:30",
+        "no_of_days": 2,
+        "no_of_km": 1,
+        "direct_to_next_visiting_place": 0,
+        "via_route": "",
+        "via_routes": []
+      },
+      {
+        "location_name": "Munnar",
+        "next_visiting_location": "Thekkady",
+        "itinerary_route_date": "2026-12-05T00:00:00+05:30",
+        "no_of_days": 3,
+        "no_of_km": 97.1,
+        "direct_to_next_visiting_place": 0,
+        "via_route": "",
+        "via_routes": []
+      },
+      {
+        "location_name": "Thekkady",
+        "next_visiting_location": "Alleppey",
+        "itinerary_route_date": "2026-12-06T00:00:00+05:30",
+        "no_of_days": 4,
+        "no_of_km": 138,
+        "direct_to_next_visiting_place": 0,
+        "via_route": "",
+        "via_routes": []
+      },
+      {
+        "location_name": "Alleppey",
+        "next_visiting_location": "Cochin",
+        "itinerary_route_date": "2026-12-07T00:00:00+05:30",
+        "no_of_days": 5,
+        "no_of_km": 53,
+        "direct_to_next_visiting_place": 0,
+        "via_route": "",
+        "via_routes": []
+      }
+    ],
+    "vehicles": [
+      {
+        "vehicle_type_id": 1,
+        "vehicle_count": 1
+      }
+    ],
+    "travellers": [
+      {
+        "room_id": 1,
+        "traveller_type": 1
+      },
+      {
+        "room_id": 1,
+        "traveller_type": 1
+      }
+    ],
+    "previousDayBillingDecisionProvided": false,
+    "previousDayBillingConfirmed": false
+  }
+}
