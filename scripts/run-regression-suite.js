@@ -13,6 +13,7 @@ DVI_PASSWORD=your-password
 */
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { PrismaClient } = require('@prisma/client');
@@ -639,117 +640,171 @@ async function seedPlanAndRoutes(prisma, caseDef) {
   const payload = caseDef.payload;
   const plan = payload.plan || {};
   const routes = Array.isArray(payload.routes) ? payload.routes : [];
-  const planId = Number(plan.itinerary_plan_id || 0);
-  if (!planId) throw new Error(`Missing plan id for ${caseDef.caseId}`);
+  const requestedPlanId = Number(plan.itinerary_plan_id || 0);
+  const quoteId = String(plan.itinerary_quote_ID || caseDef.caseId || '').trim().toUpperCase();
+  if (!quoteId) throw new Error(`Missing quote id for ${caseDef.caseId}`);
+
+  let resolvedPlanId = requestedPlanId;
 
   await prisma.$transaction(async (tx) => {
-    await tx.dvi_itinerary_route_hotspot_details.deleteMany({
-      where: { itinerary_plan_ID: planId },
-    });
-    await tx.dvi_itinerary_route_activity_details.deleteMany({
-      where: { itinerary_plan_ID: planId },
-    });
-    await tx.dvi_itinerary_route_guide_details.deleteMany({
-      where: { itinerary_plan_ID: planId },
-    });
-    await tx.dvi_itinerary_plan_hotel_details.deleteMany({
-      where: { itinerary_plan_id: planId },
-    });
-    await tx.dvi_itinerary_route_details.deleteMany({
-      where: { itinerary_plan_ID: planId },
-    });
+    if (resolvedPlanId) {
+      await tx.dvi_itinerary_route_hotspot_details.deleteMany({
+        where: { itinerary_plan_ID: resolvedPlanId },
+      });
+      await tx.dvi_itinerary_route_activity_details.deleteMany({
+        where: { itinerary_plan_ID: resolvedPlanId },
+      });
+      await tx.dvi_itinerary_route_guide_details.deleteMany({
+        where: { itinerary_plan_ID: resolvedPlanId },
+      });
+      await tx.dvi_itinerary_plan_hotel_details.deleteMany({
+        where: { itinerary_plan_id: resolvedPlanId },
+      });
+      await tx.dvi_itinerary_route_details.deleteMany({
+        where: { itinerary_plan_ID: resolvedPlanId },
+      });
 
-    await tx.dvi_itinerary_plan_details.upsert({
-      where: { itinerary_plan_ID: planId },
-      update: {
-        agent_id: Number(plan.agent_id || 0),
-        staff_id: Number(plan.staff_id || 0),
-        location_id: BigInt(Number(plan.location_id || 0)),
-        arrival_location: String(plan.arrival_point || ''),
-        departure_location: String(plan.departure_point || ''),
-        itinerary_quote_ID: String(caseDef.caseId || `REG_${planId}`).toUpperCase(),
-        trip_start_date_and_time: new Date(String(plan.trip_start_date)),
-        trip_end_date_and_time: new Date(String(plan.trip_end_date)),
-        arrival_type: Number(plan.arrival_type || 0),
-        departure_type: Number(plan.departure_type || 0),
-        expecting_budget: Number(plan.budget || 0),
-        itinerary_type: Number(plan.itinerary_type || 0),
-        entry_ticket_required: Number(plan.entry_ticket_required || 0),
-        no_of_routes: routes.length,
-        no_of_days: Number(plan.no_of_days || routes.length),
-        no_of_nights: Number(plan.no_of_nights || Math.max(0, routes.length - 1)),
-        total_adult: Number(plan.adult_count || 0),
-        total_children: Number(plan.child_count || 0),
-        total_infants: Number(plan.infant_count || 0),
-        nationality: Number(plan.nationality || 0),
-        itinerary_preference: Number(plan.itinerary_preference || 0),
-        meal_plan_breakfast: Number(plan.meal_plan_breakfast || 0),
-        meal_plan_lunch: Number(plan.meal_plan_lunch || 0),
-        meal_plan_dinner: Number(plan.meal_plan_dinner || 0),
-        hotel_facilities: JSON.stringify(plan.hotel_facilities || []),
-        preferred_hotel_category: JSON.stringify(plan.preferred_hotel_category || []),
-        guide_for_itinerary: Number(plan.guide_for_itinerary || 0),
-        food_type: Number(plan.food_type || 0),
-        special_instructions: String(plan.special_instructions || ''),
-        pick_up_date_and_time: new Date(String(plan.pick_up_date_and_time)),
-        quotation_status: 1,
-        status: 1,
-        deleted: 0,
-        meal_plan_code: String(plan.meal_plan_code || 'CP'),
-        updatedon: new Date(),
-      },
-      create: {
-        itinerary_plan_ID: planId,
-        agent_id: Number(plan.agent_id || 0),
-        staff_id: Number(plan.staff_id || 0),
-        location_id: BigInt(Number(plan.location_id || 0)),
-        arrival_location: String(plan.arrival_point || ''),
-        departure_location: String(plan.departure_point || ''),
-        itinerary_quote_ID: String(caseDef.caseId || `REG_${planId}`).toUpperCase(),
-        trip_start_date_and_time: new Date(String(plan.trip_start_date)),
-        trip_end_date_and_time: new Date(String(plan.trip_end_date)),
-        arrival_type: Number(plan.arrival_type || 0),
-        departure_type: Number(plan.departure_type || 0),
-        expecting_budget: Number(plan.budget || 0),
-        itinerary_type: Number(plan.itinerary_type || 0),
-        entry_ticket_required: Number(plan.entry_ticket_required || 0),
-        no_of_routes: routes.length,
-        no_of_days: Number(plan.no_of_days || routes.length),
-        no_of_nights: Number(plan.no_of_nights || Math.max(0, routes.length - 1)),
-        total_adult: Number(plan.adult_count || 0),
-        total_children: Number(plan.child_count || 0),
-        total_infants: Number(plan.infant_count || 0),
-        nationality: Number(plan.nationality || 0),
-        itinerary_preference: Number(plan.itinerary_preference || 0),
-        meal_plan_breakfast: Number(plan.meal_plan_breakfast || 0),
-        meal_plan_lunch: Number(plan.meal_plan_lunch || 0),
-        meal_plan_dinner: Number(plan.meal_plan_dinner || 0),
-        preferred_room_count: 1,
-        hotel_facilities: JSON.stringify(plan.hotel_facilities || []),
-        preferred_hotel_category: JSON.stringify(plan.preferred_hotel_category || []),
-        total_extra_bed: 0,
-        total_child_with_bed: 0,
-        total_child_without_bed: 0,
-        guide_for_itinerary: Number(plan.guide_for_itinerary || 0),
-        food_type: Number(plan.food_type || 0),
-        special_instructions: String(plan.special_instructions || ''),
-        pick_up_date_and_time: new Date(String(plan.pick_up_date_and_time)),
-        hotel_rates_visibility: 0,
-        quotation_status: 1,
-        agent_margin: 0,
-        createdby: 1,
-        createdon: new Date(),
-        updatedon: new Date(),
-        status: 1,
-        deleted: 0,
-        meal_plan_code: String(plan.meal_plan_code || 'CP'),
-      },
-    });
+      await tx.dvi_itinerary_plan_details.upsert({
+        where: { itinerary_plan_ID: resolvedPlanId },
+        update: {
+          agent_id: Number(plan.agent_id || 0),
+          staff_id: Number(plan.staff_id || 0),
+          location_id: BigInt(Number(plan.location_id || 0)),
+          arrival_location: String(plan.arrival_point || ''),
+          departure_location: String(plan.departure_point || ''),
+          itinerary_quote_ID: quoteId,
+          trip_start_date_and_time: new Date(String(plan.trip_start_date)),
+          trip_end_date_and_time: new Date(String(plan.trip_end_date)),
+          arrival_type: Number(plan.arrival_type || 0),
+          departure_type: Number(plan.departure_type || 0),
+          expecting_budget: Number(plan.budget || 0),
+          itinerary_type: Number(plan.itinerary_type || 0),
+          entry_ticket_required: Number(plan.entry_ticket_required || 0),
+          no_of_routes: routes.length,
+          no_of_days: Number(plan.no_of_days || routes.length),
+          no_of_nights: Number(plan.no_of_nights || Math.max(0, routes.length - 1)),
+          total_adult: Number(plan.adult_count || 0),
+          total_children: Number(plan.child_count || 0),
+          total_infants: Number(plan.infant_count || 0),
+          nationality: Number(plan.nationality || 0),
+          itinerary_preference: Number(plan.itinerary_preference || 0),
+          meal_plan_breakfast: Number(plan.meal_plan_breakfast || 0),
+          meal_plan_lunch: Number(plan.meal_plan_lunch || 0),
+          meal_plan_dinner: Number(plan.meal_plan_dinner || 0),
+          hotel_facilities: JSON.stringify(plan.hotel_facilities || []),
+          preferred_hotel_category: JSON.stringify(plan.preferred_hotel_category || []),
+          guide_for_itinerary: Number(plan.guide_for_itinerary || 0),
+          food_type: Number(plan.food_type || 0),
+          special_instructions: String(plan.special_instructions || ''),
+          pick_up_date_and_time: new Date(String(plan.pick_up_date_and_time)),
+          quotation_status: 1,
+          status: 1,
+          deleted: 0,
+          meal_plan_code: String(plan.meal_plan_code || 'CP'),
+          updatedon: new Date(),
+        },
+        create: {
+          itinerary_plan_ID: resolvedPlanId,
+          agent_id: Number(plan.agent_id || 0),
+          staff_id: Number(plan.staff_id || 0),
+          location_id: BigInt(Number(plan.location_id || 0)),
+          arrival_location: String(plan.arrival_point || ''),
+          departure_location: String(plan.departure_point || ''),
+          itinerary_quote_ID: quoteId,
+          trip_start_date_and_time: new Date(String(plan.trip_start_date)),
+          trip_end_date_and_time: new Date(String(plan.trip_end_date)),
+          arrival_type: Number(plan.arrival_type || 0),
+          departure_type: Number(plan.departure_type || 0),
+          expecting_budget: Number(plan.budget || 0),
+          itinerary_type: Number(plan.itinerary_type || 0),
+          entry_ticket_required: Number(plan.entry_ticket_required || 0),
+          no_of_routes: routes.length,
+          no_of_days: Number(plan.no_of_days || routes.length),
+          no_of_nights: Number(plan.no_of_nights || Math.max(0, routes.length - 1)),
+          total_adult: Number(plan.adult_count || 0),
+          total_children: Number(plan.child_count || 0),
+          total_infants: Number(plan.infant_count || 0),
+          nationality: Number(plan.nationality || 0),
+          itinerary_preference: Number(plan.itinerary_preference || 0),
+          meal_plan_breakfast: Number(plan.meal_plan_breakfast || 0),
+          meal_plan_lunch: Number(plan.meal_plan_lunch || 0),
+          meal_plan_dinner: Number(plan.meal_plan_dinner || 0),
+          preferred_room_count: 1,
+          hotel_facilities: JSON.stringify(plan.hotel_facilities || []),
+          preferred_hotel_category: JSON.stringify(plan.preferred_hotel_category || []),
+          total_extra_bed: 0,
+          total_child_with_bed: 0,
+          total_child_without_bed: 0,
+          guide_for_itinerary: Number(plan.guide_for_itinerary || 0),
+          food_type: Number(plan.food_type || 0),
+          special_instructions: String(plan.special_instructions || ''),
+          pick_up_date_and_time: new Date(String(plan.pick_up_date_and_time)),
+          hotel_rates_visibility: 0,
+          quotation_status: 1,
+          agent_margin: 0,
+          createdby: 1,
+          createdon: new Date(),
+          updatedon: new Date(),
+          status: 1,
+          deleted: 0,
+          meal_plan_code: String(plan.meal_plan_code || 'CP'),
+        },
+      });
+    } else {
+      const createdPlan = await tx.dvi_itinerary_plan_details.create({
+        data: {
+          agent_id: Number(plan.agent_id || 0),
+          staff_id: Number(plan.staff_id || 0),
+          location_id: BigInt(Number(plan.location_id || 0)),
+          arrival_location: String(plan.arrival_point || ''),
+          departure_location: String(plan.departure_point || ''),
+          itinerary_quote_ID: quoteId,
+          trip_start_date_and_time: new Date(String(plan.trip_start_date)),
+          trip_end_date_and_time: new Date(String(plan.trip_end_date)),
+          arrival_type: Number(plan.arrival_type || 0),
+          departure_type: Number(plan.departure_type || 0),
+          expecting_budget: Number(plan.budget || 0),
+          itinerary_type: Number(plan.itinerary_type || 0),
+          entry_ticket_required: Number(plan.entry_ticket_required || 0),
+          no_of_routes: routes.length,
+          no_of_days: Number(plan.no_of_days || routes.length),
+          no_of_nights: Number(plan.no_of_nights || Math.max(0, routes.length - 1)),
+          total_adult: Number(plan.adult_count || 0),
+          total_children: Number(plan.child_count || 0),
+          total_infants: Number(plan.infant_count || 0),
+          nationality: Number(plan.nationality || 0),
+          itinerary_preference: Number(plan.itinerary_preference || 0),
+          meal_plan_breakfast: Number(plan.meal_plan_breakfast || 0),
+          meal_plan_lunch: Number(plan.meal_plan_lunch || 0),
+          meal_plan_dinner: Number(plan.meal_plan_dinner || 0),
+          preferred_room_count: 1,
+          hotel_facilities: JSON.stringify(plan.hotel_facilities || []),
+          preferred_hotel_category: JSON.stringify(plan.preferred_hotel_category || []),
+          total_extra_bed: 0,
+          total_child_with_bed: 0,
+          total_child_without_bed: 0,
+          guide_for_itinerary: Number(plan.guide_for_itinerary || 0),
+          food_type: Number(plan.food_type || 0),
+          special_instructions: String(plan.special_instructions || ''),
+          pick_up_date_and_time: new Date(String(plan.pick_up_date_and_time)),
+          hotel_rates_visibility: 0,
+          quotation_status: 1,
+          agent_margin: 0,
+          createdby: 1,
+          createdon: new Date(),
+          updatedon: new Date(),
+          status: 1,
+          deleted: 0,
+          meal_plan_code: String(plan.meal_plan_code || 'CP'),
+        },
+      });
+      resolvedPlanId = Number(createdPlan.itinerary_plan_ID);
+    }
 
     for (const route of routes) {
       await tx.dvi_itinerary_route_details.create({
         data: {
-          itinerary_plan_ID: planId,
+          itinerary_plan_ID: resolvedPlanId,
           location_id: BigInt(Number(plan.location_id || 0)),
           location_name: String(route.location_name || ''),
           itinerary_route_date: dateOnlyToLocalDate(String(route.itinerary_route_date || '').slice(0, 10)),
@@ -769,6 +824,32 @@ async function seedPlanAndRoutes(prisma, caseDef) {
       });
     }
   });
+
+  return { planId: resolvedPlanId, quoteId };
+}
+
+async function fetchPlanIdByQuoteId(prisma, quoteId) {
+  if (!quoteId) return null;
+  const row = await prisma.dvi_itinerary_plan_details.findFirst({
+    where: { itinerary_quote_ID: String(quoteId).trim() },
+    select: { itinerary_plan_ID: true },
+  });
+  return row ? Number(row.itinerary_plan_ID) : null;
+}
+
+function buildPayloadFileForCase(caseDef, planId) {
+  const tempPath = path.join(
+    os.tmpdir(),
+    `regression-payload-${String(caseDef.caseId || 'case').replace(/[^a-z0-9_-]+/gi, '_')}-${Date.now()}.json`,
+  );
+  const payload = JSON.parse(JSON.stringify(caseDef));
+  payload.payload = payload.payload || {};
+  payload.payload.plan = payload.payload.plan || {};
+  if (planId) {
+    payload.payload.plan.itinerary_plan_id = planId;
+  }
+  fs.writeFileSync(tempPath, JSON.stringify(payload, null, 2) + '\n', 'utf8');
+  return tempPath;
 }
 
 async function fetchPlanQuoteId(prisma, planId) {
@@ -1547,14 +1628,44 @@ async function main() {
       const casePath = path.join(REGRESSION_DIR, fileName);
       const caseDef = JSON.parse(fs.readFileSync(casePath, 'utf8'));
       const caseId = String(caseDef.caseId || fileName.replace(/\.json$/, ''));
-      const payload = caseDef.payload;
-      const planId = Number(payload?.plan?.itinerary_plan_id || 0);
       const resultFile = path.join(RESULTS_DIR, `${caseId}.post.json`);
       const resultJsonFile = path.join(RESULTS_DIR, `${caseId}.json`);
+      const seededPlan = await seedPlanAndRoutes(prisma, caseDef);
+      const payloadFile = buildPayloadFileForCase(caseDef, seededPlan.planId);
 
-      await seedPlanAndRoutes(prisma, caseDef);
-      const buildResult = await rebuildFromPayloadFile(casePath, resultFile, token);
-      const quoteId = await fetchPlanQuoteId(prisma, planId);
+      let buildResult;
+      try {
+        buildResult = await rebuildFromPayloadFile(payloadFile, resultFile, token);
+      } finally {
+        try {
+          if (fs.existsSync(payloadFile)) {
+            fs.unlinkSync(payloadFile);
+          }
+        } catch {
+          // best-effort cleanup for temp payloads
+        }
+      }
+
+      const buildResponseJson = buildResult.rawResultJson || safeJsonParse(buildResult.rawResultText);
+      const buildResponseSummary = {
+        quoteId: buildResponseJson?.quoteId || buildResponseJson?.data?.quoteId || buildResponseJson?.response?.quoteId || null,
+        planId: buildResponseJson?.planId || buildResponseJson?.data?.planId || buildResponseJson?.response?.planId || null,
+        successMarker:
+          buildResponseJson?.success ??
+          buildResponseJson?.ok ??
+          buildResponseJson?.data?.success ??
+          buildResponseJson?.data?.ok ??
+          buildResponseJson?.response?.success ??
+          buildResponseJson?.response?.ok ??
+          null,
+      };
+      const quoteId = buildResponseSummary.quoteId || seededPlan.quoteId || null;
+      const planId = Number(
+        buildResponseSummary.planId ||
+        (quoteId ? await fetchPlanIdByQuoteId(prisma, quoteId) : null) ||
+        seededPlan.planId ||
+        0,
+      );
 
       const caseResult = {
         caseId,
@@ -1591,6 +1702,13 @@ async function main() {
         detailsRaw: null,
       };
 
+      if (!planId) {
+        caseResult.failures.push({
+          label: 'BUILD_FAILED',
+          detail: `Could not resolve a plan id for ${caseId}.`,
+        });
+      }
+
       if (!quoteId) {
         caseResult.failures.push({
           label: 'BUILD_FAILED',
@@ -1598,19 +1716,6 @@ async function main() {
         });
       }
 
-      const buildResponseJson = buildResult.rawResultJson || safeJsonParse(buildResult.rawResultText);
-      const buildResponseSummary = {
-        quoteId: buildResponseJson?.quoteId || buildResponseJson?.data?.quoteId || buildResponseJson?.response?.quoteId || null,
-        planId: buildResponseJson?.planId || buildResponseJson?.data?.planId || buildResponseJson?.response?.planId || null,
-        successMarker:
-          buildResponseJson?.success ??
-          buildResponseJson?.ok ??
-          buildResponseJson?.data?.success ??
-          buildResponseJson?.data?.ok ??
-          buildResponseJson?.response?.success ??
-          buildResponseJson?.response?.ok ??
-          null,
-      };
       const buildResponseLooksValid = Boolean(buildResponseJson) && Boolean(buildResponseSummary.quoteId) && Boolean(buildResponseSummary.planId);
       caseResult.buildStatus = {
         exitCode: buildResult.status,
