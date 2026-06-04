@@ -212,92 +212,193 @@ private normalizeKmValue(value: unknown): string {
    * `$distanceKM = 0;` branch.
    */
   private async resolveSourceLocationAndKm(
-  tx: Tx,
-  sourceName: string,
-  destName: string,
-): Promise<{ locationId: bigint; distanceKm: string; travelSeconds: number | null }> {
-  const trimmedSource = String(sourceName ?? "").trim();
-  const trimmedDest = String(destName ?? "").trim();
+    tx: Tx,
+    sourceName: string,
+    destName: string,
+    requestedKm?: unknown,
+  ): Promise<{ locationId: bigint; distanceKm: string; travelSeconds: number | null }> {
+    const trimmedSource = String(sourceName ?? "").trim();
+    const trimmedDest = String(destName ?? "").trim();
 
-  if (!trimmedSource || !trimmedDest) {
-    return { locationId: BigInt(0), distanceKm: "", travelSeconds: null };
-  }
-
-  const normalizeText = (value: string) =>
-    value.replace(/\s+/g, " ").trim().toLowerCase();
-
-  const normalizedSource = normalizeText(trimmedSource);
-  const normalizedDest = normalizeText(trimmedDest);
-
-  let row =
-    await (tx as any).dvi_stored_locations.findFirst({
-      where: {
-        source_location: trimmedSource,
-        destination_location: trimmedDest,
-        deleted: 0,
-      },
-      orderBy: {
-        location_ID: "desc",
-      },
-      select: {
-        location_ID: true,
-        distance: true,
-        duration: true,
-      },
-    });
-
-  if (!row) {
-    const rows = await (tx as any).dvi_stored_locations.findMany({
-      where: { deleted: 0 },
-      orderBy: { location_ID: "desc" },
-      select: {
-        location_ID: true,
-        source_location: true,
-        destination_location: true,
-        distance: true,
-        duration: true,
-      },
-    });
-
-    row =
-      rows.find((r: any) => {
-        const src = normalizeText(String(r.source_location ?? ""));
-        const dest = normalizeText(String(r.destination_location ?? ""));
-        return src === normalizedSource && dest === normalizedDest;
-      }) ||
-      rows.find((r: any) => {
-        const src = normalizeText(String(r.source_location ?? ""));
-        const dest = normalizeText(String(r.destination_location ?? ""));
-        return src === normalizedDest && dest === normalizedSource;
-      }) ||
-      null;
-  }
-
-  if (!row) {
-    return { locationId: BigInt(0), distanceKm: "", travelSeconds: null };
-  }
-
-  const rawId = (row as any).location_ID ?? 0;
-
-  let locationId: bigint;
-  try {
-    if (typeof rawId === "bigint") {
-      locationId = rawId;
-    } else if (typeof rawId === "number") {
-      locationId = BigInt(Math.trunc(rawId));
-    } else {
-      locationId = BigInt(String(rawId));
+    if (!trimmedSource || !trimmedDest) {
+      return { locationId: BigInt(0), distanceKm: "", travelSeconds: null };
     }
-  } catch {
-    locationId = BigInt(0);
+
+    const normalizeText = (value: string) =>
+      value.replace(/\s+/g, " ").trim().toLowerCase();
+
+    const normalizedSource = normalizeText(trimmedSource);
+    const normalizedDest = normalizeText(trimmedDest);
+    const normalizeCityAlias = (value: string) =>
+      normalizeText(value)
+        .replace(/\binternational\b/g, " ")
+        .replace(/\bdomestic\b/g, " ")
+        .replace(/\bair\s*port\b/g, " ")
+        .replace(/\bairport\b/g, " ")
+        .replace(/\brailway\b/g, " ")
+        .replace(/\bstation\b/g, " ")
+        .replace(/\bterminal\b/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+
+    const sourceCityKey = normalizeCityAlias(trimmedSource);
+    const destCityKey = normalizeCityAlias(trimmedDest);
+    const requestedKmNumber = Number(this.normalizeKmValue(requestedKm as any) || 0);
+    const hasRequestedKm = Number.isFinite(requestedKmNumber) && requestedKmNumber > 0;
+
+    const sourceLike = `%${normalizedSource}%`;
+    const destLike = `%${normalizedDest}%`;
+    const sourceCityLike = `%${sourceCityKey}%`;
+    const destCityLike = `%${destCityKey}%`;
+
+    const rows = (await (tx as any).$queryRaw(Prisma.sql`
+      SELECT
+        sl.location_ID,
+        sl.source_location,
+        sl.source_location_city,
+        sl.destination_location,
+        sl.destination_location_city,
+        sl.distance,
+        sl.duration,
+        CASE
+          WHEN LOWER(TRIM(sl.source_location)) = ${normalizedSource}
+           AND LOWER(TRIM(sl.destination_location)) = ${normalizedDest}
+            THEN 0
+          WHEN LOWER(TRIM(sl.source_location)) = ${normalizedSource}
+           AND LOWER(TRIM(sl.destination_location_city)) = ${normalizedDest}
+            THEN 1
+          WHEN LOWER(TRIM(sl.source_location_city)) = ${normalizedSource}
+           AND LOWER(TRIM(sl.destination_location)) = ${normalizedDest}
+            THEN 2
+          WHEN LOWER(TRIM(sl.source_location_city)) = ${normalizedSource}
+           AND LOWER(TRIM(sl.destination_location_city)) = ${normalizedDest}
+            THEN 3
+          WHEN LOWER(sl.source_location) LIKE ${sourceLike}
+           AND (
+              LOWER(sl.destination_location) LIKE ${destLike}
+              OR LOWER(sl.destination_location_city) LIKE ${destLike}
+           )
+            THEN 4
+          WHEN LOWER(sl.source_location) LIKE ${sourceCityLike}
+           AND (
+              LOWER(sl.destination_location) LIKE ${destCityLike}
+              OR LOWER(sl.destination_location_city) LIKE ${destCityLike}
+           )
+            THEN 5
+          WHEN LOWER(sl.source_location_city) LIKE ${sourceCityLike}
+           AND LOWER(sl.destination_location_city) LIKE ${destCityLike}
+            THEN 6
+          ELSE 99
+        END AS match_rank,
+        CASE
+          WHEN LOWER(${normalizedSource}) LIKE '%airport%'
+           AND LOWER(sl.source_location) LIKE '%airport%'
+            THEN 0
+          WHEN LOWER(${normalizedSource}) LIKE '%airport%'
+           AND LOWER(sl.source_location) NOT LIKE '%airport%'
+            THEN 10
+          ELSE 0
+        END AS airport_penalty,
+        CASE
+          WHEN ${hasRequestedKm ? 1 : 0} = 1
+            THEN ABS(CAST(NULLIF(sl.distance, '') AS DECIMAL(10,2)) - ${requestedKmNumber})
+          ELSE 999999
+        END AS km_diff
+      FROM dvi_stored_locations sl
+      WHERE sl.deleted = 0
+        AND sl.status = 1
+        AND (
+          (
+            LOWER(TRIM(sl.source_location)) = ${normalizedSource}
+            AND LOWER(TRIM(sl.destination_location)) = ${normalizedDest}
+          )
+          OR
+          (
+            LOWER(TRIM(sl.source_location)) = ${normalizedSource}
+            AND LOWER(TRIM(sl.destination_location_city)) = ${normalizedDest}
+          )
+          OR
+          (
+            LOWER(TRIM(sl.source_location_city)) = ${normalizedSource}
+            AND LOWER(TRIM(sl.destination_location)) = ${normalizedDest}
+          )
+          OR
+          (
+            LOWER(TRIM(sl.source_location_city)) = ${normalizedSource}
+            AND LOWER(TRIM(sl.destination_location_city)) = ${normalizedDest}
+          )
+          OR
+          (
+            LOWER(sl.source_location) LIKE ${sourceLike}
+            AND (
+              LOWER(sl.destination_location) LIKE ${destLike}
+              OR LOWER(sl.destination_location_city) LIKE ${destLike}
+            )
+          )
+          OR
+          (
+            LOWER(sl.source_location) LIKE ${sourceCityLike}
+            AND (
+              LOWER(sl.destination_location) LIKE ${destCityLike}
+              OR LOWER(sl.destination_location_city) LIKE ${destCityLike}
+            )
+          )
+          OR
+          (
+            LOWER(sl.source_location_city) LIKE ${sourceCityLike}
+            AND LOWER(sl.destination_location_city) LIKE ${destCityLike}
+          )
+        )
+      ORDER BY
+        match_rank ASC,
+        airport_penalty ASC,
+        km_diff ASC,
+        sl.location_ID DESC
+      LIMIT 1
+    `)) as any[];
+
+    const row = rows?.[0] || null;
+
+    if (!row) {
+      console.warn("[ROUTE_MASTER_LOOKUP_FAILED]", {
+        sourceName: trimmedSource,
+        destName: trimmedDest,
+        requestedKm: requestedKmNumber || null,
+        sourceCityKey,
+        destCityKey,
+      });
+
+      if (process.env.STRICT_ROUTE_MASTER_LOOKUP === "1") {
+        throw new Error(
+          `[ROUTE_MASTER_LOOKUP_FAILED] ${trimmedSource} -> ${trimmedDest}. ` +
+            `Cannot create itinerary route with location_id=0.`,
+        );
+      }
+
+      return { locationId: BigInt(0), distanceKm: "", travelSeconds: null };
+    }
+
+    const rawId = (row as any).location_ID ?? 0;
+
+    let locationId: bigint;
+    try {
+      if (typeof rawId === "bigint") {
+        locationId = rawId;
+      } else if (typeof rawId === "number") {
+        locationId = BigInt(Math.trunc(rawId));
+      } else {
+        locationId = BigInt(String(rawId));
+      }
+    } catch {
+      locationId = BigInt(0);
+    }
+
+    const distanceRaw = (row as any).distance;
+    const distanceKm = this.normalizeKmValue(distanceRaw);
+    const travelSeconds = this.parseDurationToSeconds((row as any).duration ?? null);
+
+    return { locationId, distanceKm, travelSeconds };
   }
-
-  const distanceRaw = (row as any).distance;
-  const distanceKm = this.normalizeKmValue(distanceRaw);
-  const travelSeconds = this.parseDurationToSeconds((row as any).duration ?? null);
-
-  return { locationId, distanceKm, travelSeconds };
-}
 
   /**
    * Normalize the base trip start date (date-only) from the plan.
@@ -462,6 +563,7 @@ private normalizeKmValue(value: unknown): string {
   tx,
   sourceName,
   destName,
+  r.no_of_km,
 );
 
 const requestKm = this.normalizeKmValue(r.no_of_km);

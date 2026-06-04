@@ -47,8 +47,6 @@ export class HotspotEngineService {
       }>;
       /** Scope delete + rebuild to a single route. Used by preview simulations to avoid rebuilding every day. */
       scopeToRouteId?: number;
-      /** Emits route-focused persistence counters without forcing a scoped rebuild. */
-      debugFocusRouteId?: number;
       /** Skip parking charge rebuild (safe for preview since it rolls back). */
       skipParking?: boolean;
     },
@@ -75,7 +73,7 @@ export class HotspotEngineService {
 
     // 1.5) EXTRACT MANUAL HOTSPOTS BEFORE DELETION
     // Manual hotspots (hotspot_plan_own_way=1) must be preserved and reinserted with proper timings
-    const manualHotspots = existingHotspots.filter((h: any) => 
+    const manualHotspots = existingHotspots.filter((h: any) =>
       Number(h.hotspot_plan_own_way || 0) === 1 && Number(h.deleted || 0) === 0
     );
     manualHotspots.sort((a: any, b: any) => {
@@ -100,8 +98,8 @@ export class HotspotEngineService {
     const scopeRouteId = Number(options?.scopeToRouteId || 0) > 0
       ? Number(options?.scopeToRouteId)
       : null;
-    const focusRouteId = Number(options?.debugFocusRouteId || options?.scopeToRouteId || 0) > 0
-      ? Number(options?.debugFocusRouteId || options?.scopeToRouteId)
+    const focusRouteId = Number(options?.scopeToRouteId || 0) > 0
+      ? Number(options?.scopeToRouteId)
       : null;
 
     const logPersistence = (stage: string, details: Record<string, unknown> = {}) => {
@@ -969,6 +967,19 @@ export class HotspotEngineService {
       if (isGenericHotelLabel(fromLabel) && isGenericHotelLabel(toLabel)) return true;
       return isSamePlaceLike(fromLabel, toLabel);
     };
+    const normalizePersistedTravelDistance = (row: any): any => {
+      const itemType = Number(row?.item_type || 0);
+      if (itemType !== 3) return row;
+
+      const distanceText = String(row?.hotspot_travelling_distance ?? '').trim();
+      const distanceKm = Number(distanceText);
+      if (!Number.isFinite(distanceKm) || distanceKm > 0.01) return row;
+
+      return {
+        ...row,
+        hotspot_travelling_distance: '0.10',
+      };
+    };
 
     const beforeExcludedSafetyCount = dedupenedRows.length;
     dedupenedRows = dedupenedRows.filter((row: any) => {
@@ -1041,6 +1052,7 @@ export class HotspotEngineService {
 
     // 6) Insert hotspot details (using the final sorted, deduped, normalized rows)
     const dbHotspotRows = sortedRows.map(row => {
+      const normalizedRow = normalizePersistedTravelDistance(row);
       // Strip out UI-only fields before saving to DB
       const { 
         isConflict, 
@@ -1052,7 +1064,7 @@ export class HotspotEngineService {
         locationId,
         route_date,
         ...dbRow 
-      } = row as any;
+      } = normalizedRow as any;
       
       return {
         ...dbRow,

@@ -1,0 +1,133 @@
+{
+  "caseId": "top10-case-10",
+  "description": "Bangalore -> Bangalore (145x production pattern)",
+  "tags": [
+    "top10",
+    "production-derived",
+    "frequency-145",
+    "routes-5",
+    "single-direct-mode"
+  ],
+  "sourceEvidence": {
+    "sourcePlanId": 15087,
+    "sourceQuoteId": "DVI2025051739",
+    "frequency": 145,
+    "uniqueLocationCount": 3,
+    "routeCount": 5,
+    "routeChain": [
+      "Bangalore",
+      "Coorg",
+      "Coorg",
+      "Ooty",
+      "Ooty",
+      "Bangalore"
+    ],
+    "sourcePlanCreatedOn": "2025-05-27T13:33:17.000Z",
+    "sourcePlanUpdatedOn": null
+  },
+  "manualHotspot": null,
+  "payload": {
+    "plan": {
+      "itinerary_plan_id": 9510,
+      "agent_id": 68,
+      "staff_id": 0,
+      "location_id": 121549,
+      "arrival_point": "Bangalore",
+      "departure_point": "Bangalore",
+      "itinerary_preference": 3,
+      "itinerary_type": 2,
+      "preferred_hotel_category": [],
+      "hotel_facilities": [],
+      "trip_start_date": "2026-12-10T08:00:00+05:30",
+      "trip_end_date": "2026-12-14T20:00:00+05:30",
+      "pick_up_date_and_time": "2026-12-10T08:00:00+05:30",
+      "arrival_type": 1,
+      "departure_type": 1,
+      "no_of_nights": 4,
+      "no_of_days": 5,
+      "budget": 15000,
+      "entry_ticket_required": 0,
+      "guide_for_itinerary": 1,
+      "nationality": 101,
+      "food_type": 3,
+      "meal_plan_code": "CP",
+      "meal_plan_breakfast": 1,
+      "meal_plan_lunch": 0,
+      "meal_plan_dinner": 1,
+      "adult_count": 7,
+      "child_count": 0,
+      "infant_count": 0,
+      "special_instructions": "TOP10 production-derived case from source plan 15087 / quote DVI2025051739, frequency=145"
+    },
+    "routes": [
+      {
+        "location_name": "Bangalore",
+        "next_visiting_location": "Coorg",
+        "itinerary_route_date": "2026-12-10T00:00:00+05:30",
+        "no_of_days": 1,
+        "no_of_km": 254,
+        "direct_to_next_visiting_place": 0,
+        "via_route": "",
+        "via_routes": []
+      },
+      {
+        "location_name": "Coorg",
+        "next_visiting_location": "Coorg",
+        "itinerary_route_date": "2026-12-11T00:00:00+05:30",
+        "no_of_days": 2,
+        "no_of_km": 1,
+        "direct_to_next_visiting_place": 0,
+        "via_route": "",
+        "via_routes": []
+      },
+      {
+        "location_name": "Coorg",
+        "next_visiting_location": "Ooty",
+        "itinerary_route_date": "2026-12-12T00:00:00+05:30",
+        "no_of_days": 3,
+        "no_of_km": 246,
+        "direct_to_next_visiting_place": 0,
+        "via_route": "",
+        "via_routes": []
+      },
+      {
+        "location_name": "Ooty",
+        "next_visiting_location": "Ooty",
+        "itinerary_route_date": "2026-12-13T00:00:00+05:30",
+        "no_of_days": 4,
+        "no_of_km": 1,
+        "direct_to_next_visiting_place": 0,
+        "via_route": "",
+        "via_routes": []
+      },
+      {
+        "location_name": "Ooty",
+        "next_visiting_location": "Bangalore",
+        "itinerary_route_date": "2026-12-14T00:00:00+05:30",
+        "no_of_days": 5,
+        "no_of_km": 271,
+        "direct_to_next_visiting_place": 0,
+        "via_route": "",
+        "via_routes": []
+      }
+    ],
+    "vehicles": [
+      {
+        "vehicle_type_id": 1,
+        "vehicle_count": 1
+      }
+    ],
+    "travellers": [
+      {
+        "room_id": 1,
+        "traveller_type": 1
+      },
+      {
+        "room_id": 1,
+        "traveller_type": 1
+      }
+    ],
+    "previousDayBillingDecisionProvided": false,
+    "previousDayBillingConfirmed": false
+  }
+}

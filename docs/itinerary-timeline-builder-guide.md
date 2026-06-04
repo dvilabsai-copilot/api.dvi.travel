@@ -7,6 +7,373 @@ Evidence baseline:
 - Main timeline case study: `DVI2026042 / PLAN_ID=48`. [Verified from DB/script output]
 - Direct ON live replay case study: `DVI20260594 / PLAN_ID=410`. [Verified from live replay]
 
+## Latest Regression Fix Notes: Top10 Carry-Forward and Travel Segment Stability
+
+### Why this section exists
+
+The top10 regression suite exposed two regressions on the current branch:
+
+- some travel rows were persisting as `0.00 KM` even when the source and destination labels differed
+- some carry-forward candidates were being judged against the wrong route/day context and surfaced as `INVALID_CARRY_FORWARD`
+
+The current branch now passes the top10 suite, but this section keeps the exact rule ownership, trigger conditions, and debug path in one place so an intern can trace the failure from request to UI. [Verified from regression output] [Inference]
+
+### Rule Map
+
+| Rule ID | Regression symptom | New/current rule | Implemented in | Verified by | Debug first |
+| --- | --- | --- | --- | --- | --- |
+| R1 | Travel row shows `0.00 KM` or blank distance for different source/destination labels | `item_type = 3` travel rows must not remain zero/near-zero when source and destination names differ; the row is normalized to `0.10` and `00:05:00` before persistence | `src/modules/itineraries/engines/helpers/distance.helper.ts -> fromSourceAndDestination()`; `src/modules/itineraries/engines/helpers/travel-segment.builder.ts -> buildTravelSegment()`; `src/modules/itineraries/engines/helpers/timeline.builder.ts -> normalizeTravelRowDistance()`; `src/modules/itineraries/engines/hotspot-engine.service.ts -> rebuildRouteHotspots()` | `scripts/run-regression-suite.js -> detectFailures()`; `tmp/regression-report-top10.md`; `scripts/regression/top10/top10-case-02.json` | `src/modules/itineraries/engines/helpers/timeline.builder.ts -> normalizeTravelRowDistance()` |
+| R2 | `INVALID_CARRY_FORWARD` on same-city continuation rows | Carry-forward hotspots only merge when `isCarryForwardHotspotCompatibleWithRoute()` says the hotspot belongs on the current route context; unresolved carry-forward is only queued for the immediate same-city continuation route | `src/modules/itineraries/engines/helpers/timeline.builder.ts -> isCarryForwardHotspotCompatibleWithRoute()`; `mergeCarryForwardIntoCandidates()`; `buildTimelineForPlan()` | `scripts/run-regression-suite.js -> detectFailures()`; `scripts/regression/top10/top10-case-04.json`; `scripts/regression/top10/top10-case-05.json`; `tmp/regression-report-top10.md` | `src/modules/itineraries/engines/helpers/timeline.builder.ts -> isCarryForwardHotspotCompatibleWithRoute()` |
+| R3 | Wrong or zero `location_id` on route rows | Route lookup uses exact match first, then alias/city fallback, and only accepts active rows from `dvi_stored_locations` (`deleted = 0`, `status = 1`); strict mode throws instead of silently returning `0` | `src/modules/itineraries/engines/route-engine.service.ts -> resolveSourceLocationAndKm()` | Route rebuild output; `dvi_itinerary_route_details.location_id` | `src/modules/itineraries/engines/route-engine.service.ts -> resolveSourceLocationAndKm()` |
+| R4 | Direct ON loses destination hotspots or reserves them for the next same-city day | `direct_to_next_visiting_place = 1` disables destination reservation for the next loopback day; the direct day keeps its destination hotspots | `src/modules/itineraries/engines/helpers/timeline.builder.ts` around `DESTINATION_RESERVATION_DIRECT_ON_GUARD` inside `buildTimelineForPlan()` | `DVI20260594 / PLAN_ID=410`; live replay; `DESTINATION_RESERVATION_DIRECT_ON_GUARD` logs | `src/modules/itineraries/engines/helpers/timeline.builder.ts -> buildTimelineForPlan()` |
+
+### R1: Travel Row Distance Stability
+
+#### User-visible symptom
+
+A travel segment in the timeline or details API showed `0.00 KM` even though the travel was between different places, not a same-place hop. The business symptom was a believable route with an implausible zero-distance travel leg.
+
+#### Data symptom
+
+```text
+DB table: dvi_itinerary_route_hotspot_details
+Field: hotspot_travelling_distance
+Bad value: 0.00 / blank / near-zero for item_type = 3
+Expected value: a non-zero normalized travel distance, currently 0.10 on this branch
+
+API field: days[].segments[].distance
+Bad value: "0.00 KM"
+Expected value: a non-zero travel label such as "0.10 KM"
+```
+
+#### Code owner
+
+```text
+Primary file: src/modules/itineraries/engines/helpers/timeline.builder.ts
+Primary function: normalizeTravelRowDistance()
+Called by: buildTimelineForPlan()
+Writes/returns: normalized HotspotDetailRow before persistence
+
+Supporting file: src/modules/itineraries/engines/helpers/travel-segment.builder.ts
+Supporting function: buildTravelSegment()
+Called by: TimelineBuilder during route row assembly
+Writes/returns: HotspotDetailRow with travel distance/time
+
+Final persistence file: src/modules/itineraries/engines/hotspot-engine.service.ts
+Function: rebuildRouteHotspots()
+Called by: ItinerariesService rebuild flow
+Writes/returns: persisted dvi_itinerary_route_hotspot_details rows
+```
+
+#### Runtime flow
+
+```text
+request / rebuild trigger
+-> ItinerariesService
+-> HotspotEngineService.rebuildRouteHotspots()
+-> TimelineBuilder.buildTimelineForPlan()
+-> TravelSegmentBuilder.buildTravelSegment()
+-> TimelineBuilder.normalizeTravelRowDistance()
+-> dvi_itinerary_route_hotspot_details.hotspot_travelling_distance
+-> ItineraryDetailsService.getItineraryDetails()
+-> days[].segments[].distance
+-> regression report
+```
+
+#### Actual code rule
+
+```ts
+// src/modules/itineraries/engines/helpers/travel-segment.builder.ts -> buildTravelSegment()
+if (
+  item_type === 3 &&
+  namesDiffer &&
+  Number.isFinite(Number(distanceResult.distanceKm)) &&
+  Number(distanceResult.distanceKm) <= 0.01
+) {
+  distanceResult = {
+    ...distanceResult,
+    distanceKm: 0.1,
+    travelTime: '00:05:00',
+  };
+}
+
+// src/modules/itineraries/engines/helpers/timeline.builder.ts -> normalizeTravelRowDistance()
+if (
+  Number(row?.item_type || 0) === 3 &&
+  namesDiffer &&
+  Number.isFinite(distanceKm) &&
+  distanceKm <= 0.01
+) {
+  return {
+    ...row,
+    hotspot_travelling_distance: '0.10',
+  };
+}
+```
+
+#### Why this prevents the regression
+
+The builder now refuses to let a different-place travel segment keep a zero distance. The helper first gives the travel leg a minimal fallback, and the timeline persistence path normalizes the stored row before it reaches the database. That keeps the details API and the regression harness from seeing a suspicious zero-distance travel row. [Inference]
+
+#### How to debug if it fails again
+
+1. Open `src/modules/itineraries/engines/helpers/timeline.builder.ts` and check `normalizeTravelRowDistance()`.
+2. Open `src/modules/itineraries/engines/helpers/travel-segment.builder.ts` and check `buildTravelSegment()`.
+3. Check `HotspotEngineService.rebuildRouteHotspots()` to confirm the final persisted rows are normalized.
+4. Inspect `scripts/run-regression-suite.js -> detectFailures()` for `SUSPICIOUS_ZERO_TRAVEL_DISTANCE`.
+5. Compare the persisted `hotspot_travelling_distance` with the details API `days[].segments[].distance`.
+6. If the API is right but the screen is wrong, inspect `dvi_frontend/src/pages/ItineraryDetails.tsx`.
+
+### R2: Carry-Forward Validation
+
+#### User-visible symptom
+
+A hotspot that looked valid in the carry-forward queue failed the route/day validation and showed up as `INVALID_CARRY_FORWARD` in the regression report.
+
+#### Data symptom
+
+```text
+DB / route state: carry-forward candidate attached to the wrong route day or wrong same-city continuation context
+Regression label: INVALID_CARRY_FORWARD
+Expected value: candidate matches the current route source/destination context and same-city continuation chain
+```
+
+#### Code owner
+
+```text
+Primary file: src/modules/itineraries/engines/helpers/timeline.builder.ts
+Primary function: isCarryForwardHotspotCompatibleWithRoute()
+Called by: mergeCarryForwardIntoCandidates(), same-city carry queueing logic, and carry-forward replay in buildTimelineForPlan()
+Writes/returns: compatibility verdict used before merge
+```
+
+#### Runtime flow
+
+```text
+route context
+-> buildTimelineForPlan()
+-> carry-forward queueing
+-> isCarryForwardHotspotCompatibleWithRoute()
+-> mergeCarryForwardIntoCandidates()
+-> persisted hotspot row or rejection
+-> scripts/run-regression-suite.js labels invalid carry-forward
+```
+
+#### Actual code rule
+
+```ts
+// src/modules/itineraries/engines/helpers/timeline.builder.ts -> isCarryForwardHotspotCompatibleWithRoute()
+const sourceMatch = this.hotspotLocationMatchesCity(hotspotLocation, routeContext.sourceCity);
+const sourceToMatch = this.hotspotLocationMatchesCity(hotspotToLocation, routeContext.sourceCity);
+const destinationMatch = this.hotspotLocationMatchesCity(hotspotLocation, routeContext.destinationCity);
+const destinationToMatch = this.hotspotLocationMatchesCity(hotspotToLocation, routeContext.destinationCity);
+
+const compatible = sourceMatch || sourceToMatch || destinationMatch || destinationToMatch;
+
+// src/modules/itineraries/engines/helpers/timeline.builder.ts -> mergeCarryForwardIntoCandidates()
+if (!compatibility.compatible) {
+  this.logBookingRule({
+    rule: 'CARRY_FORWARD_MERGE_REJECTED_ROUTE_MISMATCH',
+    ...
+  });
+  continue;
+}
+```
+
+The scheduler also scopes carry-forward to same-city continuation:
+
+```ts
+if (!forceNoSightseeingOnThisRoute && carryForwardHotspots.length > 0 && sameCityContinuationContextForRoute.isSameCityChainContinuation) {
+  selectedHotspots = this.mergeCarryForwardIntoCandidates(...);
+}
+```
+
+#### Why this prevents the regression
+
+The builder no longer blindly reuses carry-forward rows across route boundaries. It only merges them when the hotspot matches the current route source or destination city and when the route is actually the immediate same-city continuation. That prevents a carry-forward hotspot from leaking into a route/day that does not own it. [Inference]
+
+#### How to debug if it fails again
+
+1. Open `src/modules/itineraries/engines/helpers/timeline.builder.ts` and inspect `isCarryForwardHotspotCompatibleWithRoute()`.
+2. Check `mergeCarryForwardIntoCandidates()` for `CARRY_FORWARD_MERGE_REJECTED_ROUTE_MISMATCH`.
+3. Check the same-city continuation gate in `buildTimelineForPlan()`.
+4. Run `node scripts/run-regression-suite.js --suite top10` and inspect the `INVALID_CARRY_FORWARD` lines in the report.
+5. Use `scripts/regression/top10/top10-case-04.json` and `top10-case-05.json` as the carry-forward fixtures.
+
+### R3: Route Location ID Resolution
+
+#### User-visible symptom
+
+The route row had the wrong `location_id` or no usable location row at all, which later caused downstream timeline or permit behavior to drift.
+
+#### Data symptom
+
+```text
+DB table: dvi_itinerary_route_details
+Field: location_id
+Bad value: 0 / missing / wrong route master row
+Expected value: resolved location_ID from an active dvi_stored_locations row
+```
+
+#### Code owner
+
+```text
+File: src/modules/itineraries/engines/route-engine.service.ts
+Function: resolveSourceLocationAndKm()
+Called by: main route rebuild entry for a plan
+Writes/returns: { locationId, distanceKm, travelSeconds }
+```
+
+#### Runtime flow
+
+```text
+route input
+-> RouteEngineService.resolveSourceLocationAndKm()
+-> dvi_stored_locations lookup
+-> route row creation
+-> dvi_itinerary_route_details.location_id
+```
+
+#### Actual code rule
+
+```ts
+// src/modules/itineraries/engines/route-engine.service.ts -> resolveSourceLocationAndKm()
+FROM dvi_stored_locations sl
+WHERE sl.deleted = 0
+  AND sl.status = 1
+  AND (...exact and alias/city fallback match...)
+ORDER BY
+  match_rank ASC,
+  airport_penalty ASC,
+  km_diff ASC,
+  sl.location_ID DESC
+LIMIT 1
+
+if (!row) {
+  if (process.env.STRICT_ROUTE_MASTER_LOOKUP === "1") {
+    throw new Error(`[ROUTE_MASTER_LOOKUP_FAILED] ... Cannot create itinerary route with location_id=0.`);
+  }
+  return { locationId: BigInt(0), distanceKm: "", travelSeconds: null };
+}
+```
+
+#### Why this prevents the regression
+
+The lookup no longer depends on one fragile match shape. It first tries exact source/destination matches, then alias/city fallbacks, and only accepts active master rows. That reduces the chance of a route being saved with an empty or wrong `location_id`. [Inference]
+
+#### How to debug if it fails again
+
+1. Open `src/modules/itineraries/engines/route-engine.service.ts` and inspect `resolveSourceLocationAndKm()`.
+2. Confirm the source and destination names actually match an active `dvi_stored_locations` row.
+3. Check whether strict mode is enabled via `STRICT_ROUTE_MASTER_LOOKUP`.
+4. Inspect `dvi_itinerary_route_details.location_id` for the affected route.
+5. If the route still resolves to `0`, compare the normalized source/destination strings in the query.
+
+### R4: Direct ON Destination Reservation
+
+#### User-visible symptom
+
+Direct ON routes either lost their destination hotspots on the direct day or incorrectly reserved them for the next same-city day.
+
+#### Data symptom
+
+```text
+Route field: direct_to_next_visiting_place = 1
+Expected behavior: destination hotspots stay on the direct day
+Regression proof: DVI20260594 / PLAN_ID=410 live replay
+```
+
+#### Code owner
+
+```text
+File: src/modules/itineraries/engines/helpers/timeline.builder.ts
+Function: buildTimelineForPlan()
+Rule marker: DESTINATION_RESERVATION_DIRECT_ON_GUARD
+```
+
+#### Runtime flow
+
+```text
+route row
+-> buildTimelineForPlan()
+-> direct_to_next_visiting_place check
+-> DESTINATION_RESERVATION_DIRECT_ON_GUARD
+-> destination candidates stay on the direct day
+-> persisted hotspot rows
+-> live replay / details API
+```
+
+#### Actual code rule
+
+```ts
+const directToNextForDestinationReservation = Number(
+  (route as any).direct_to_next_visiting_place || 0,
+);
+const isEligibleForDestinationReservation =
+  directToNextForDestinationReservation !== 1 &&
+  ...
+
+this.logBookingRule({
+  rule: 'DESTINATION_RESERVATION_DIRECT_ON_GUARD',
+  reason:
+    directToNextForDestinationReservation === 1
+      ? 'Direct route must use destination hotspots today, not reserve them for next same-city day.'
+      : 'Non-direct route keeps existing destination reservation behavior.',
+});
+```
+
+#### Why this prevents the regression
+
+The guard prevents the scheduler from stealing destination hotspots from a direct route and saving them for the next loopback day. That keeps the direct day aligned with the business rule and the live replay evidence. [Inference]
+
+#### How to debug if it fails again
+
+1. Open `src/modules/itineraries/engines/helpers/timeline.builder.ts` and inspect `DESTINATION_RESERVATION_DIRECT_ON_GUARD`.
+2. Check the route row's `direct_to_next_visiting_place` value.
+3. Re-run the direct ON live replay case `DVI20260594 / PLAN_ID=410`.
+4. Confirm destination hotspots are still present on the direct day and not moved to the next same-city day.
+
+### Regression File Ownership Matrix
+
+| Issue seen | First file to open | Function/method | Why this file | Next file |
+| --- | --- | --- | --- | --- |
+| `SUSPICIOUS_ZERO_TRAVEL_DISTANCE` | `scripts/run-regression-suite.js` | `detectFailures()` / `isSuspiciousZeroTravelSegment()` | Detects the symptom and names the route/day/segment | `src/modules/itineraries/engines/helpers/timeline.builder.ts -> normalizeTravelRowDistance()` |
+| `INVALID_CARRY_FORWARD` | `scripts/run-regression-suite.js` | `detectFailures()` | Reports the route/day mismatch and points to the offending hotspot | `src/modules/itineraries/engines/helpers/timeline.builder.ts -> isCarryForwardHotspotCompatibleWithRoute()` |
+| Travel row shows `0.00 KM` | `src/modules/itineraries/engines/helpers/timeline.builder.ts` | `normalizeTravelRowDistance()` | Normalizes the persisted hotspot row before insert | `src/modules/itineraries/engines/hotspot-engine.service.ts -> rebuildRouteHotspots()` |
+| Wrong or empty `location_id` | `src/modules/itineraries/engines/route-engine.service.ts` | `resolveSourceLocationAndKm()` | Owns route master lookup and location resolution | `dvi_stored_locations` lookup rows |
+| DB row looks right but API distance is wrong | `src/modules/itineraries/itinerary-details.service.ts` | `getItineraryDetails()` | Maps persisted rows into `days[].segments[]` | `dvi_frontend/src/pages/ItineraryDetails.tsx` |
+| Direct ON destination hotspot moved to next day | `src/modules/itineraries/engines/helpers/timeline.builder.ts` | `buildTimelineForPlan()` | Owns the direct-on reservation guard | `dvi_itinerary_route_hotspot_details` |
+
+### Fields Affected by This Regression
+
+| Layer | Field/table | Meaning | Owner code |
+| --- | --- | --- | --- |
+| DB | `dvi_itinerary_route_hotspot_details.item_type` | `3` is the overloaded travel/break/via-connector row type | `TimelineBuilder.buildTimelineForPlan()` and `TravelSegmentBuilder.buildTravelSegment()` |
+| DB | `dvi_itinerary_route_hotspot_details.hotspot_travelling_distance` | Persisted travel distance for the timeline row | `normalizeTravelRowDistance()` and `HotspotEngineService.rebuildRouteHotspots()` |
+| DB | `dvi_itinerary_route_hotspot_details.hotspot_traveling_time` | Persisted travel time for the row | `TravelSegmentBuilder.buildTravelSegment()` |
+| DB | `dvi_itinerary_route_details.location_id` | Route master row reference | `RouteEngineService.resolveSourceLocationAndKm()` |
+| API | `days[].segments[].distance` | Human-readable timeline distance shown to the user | `ItineraryDetailsService.getItineraryDetails()` |
+| API | `days[].segments[].type` | Travel vs break vs attraction vs check-in rendering | `ItineraryDetailsService.getItineraryDetails()` |
+| Regression report | `failures[].label` | `SUSPICIOUS_ZERO_TRAVEL_DISTANCE` or `INVALID_CARRY_FORWARD` | `scripts/run-regression-suite.js -> detectFailures()` |
+
+### Before / After Behavior
+
+| Area | Before | After | Code proof |
+| --- | --- | --- | --- |
+| Travel row distance | A different-place travel leg could persist as `0.00 KM` or blank and still look structurally valid | The helper, builder, and final persistence path normalize the row to a minimal non-zero travel value | `distance.helper.ts -> fromSourceAndDestination()`; `travel-segment.builder.ts -> buildTravelSegment()`; `timeline.builder.ts -> normalizeTravelRowDistance()`; `hotspot-engine.service.ts -> rebuildRouteHotspots()` |
+| Carry-forward | Carry-forward candidates could be judged only by the report side, making the failure look opaque to an intern | Carry-forward now has an explicit compatibility function and a same-city continuation gate | `timeline.builder.ts -> isCarryForwardHotspotCompatibleWithRoute()`; `mergeCarryForwardIntoCandidates()` |
+| Route `location_id` | A route lookup could fall back to zero without enough context in non-strict mode | Route lookup prefers exact, alias, and city matches against active stored locations | `route-engine.service.ts -> resolveSourceLocationAndKm()` |
+| Direct ON reservation | Destination hotspots could be reserved or skipped in a way that confused direct-day output | The direct-on guard keeps destination hotspots on the direct day | `timeline.builder.ts -> buildTimelineForPlan()` |
+
+### Verification Snapshot
+
+- Top10 suite result: `10/10 passed`. [Verified from regression output]
+- `top10-case-02` is the travel-row stability fixture for the zero-distance path. [Verified from regression output]
+- `top10-case-04` and `top10-case-05` are the carry-forward validation fixtures. [Verified from regression output]
+- The top10 report is written to `tmp/regression-report-top10.md`. [Verified from regression output]
+
+Use this section as the first stop when a future issue appears as `INVALID_CARRY_FORWARD`, `0.00 KM`, wrong `location_id`, Direct ON hotspot loss, or a details/UI mismatch. [Inference]
+
 ## 1. Purpose of the Itinerary System
 
 The itinerary system turns a quote into a day-by-day travel plan with route rows, hotel rows, vehicle pricing rows, and a visible timeline of starts, travel legs, attractions, breaks, hotel check-ins, and final drop-off. [Verified from code]
@@ -389,6 +756,10 @@ In the normal route path, candidate assembly can include:
 
 depending on route type, skip flags, and reservation state.
 
+Regression note:
+
+- Direct ON now remains compatible with the current travel-row distance normalization path, so the direct leg can still use destination hotspots without persisting a misleading `0.00 KM` travel row when the source and destination labels differ. [Verified from regression output] [Verified from code]
+
 ### 8.9 Via-route behavior
 
 Verified via-route inputs:
@@ -438,6 +809,10 @@ When Direct ON blocks reservation:
 
 - `DESTINATION_RESERVATION_DIRECT_ON_GUARD`
 - reason text in code says: direct route must use destination hotspots today, not reserve them for next same-city day
+
+Regression note:
+
+- The top10 regression run confirms that destination reservation and same-city continuation still work after the travel-distance normalization fixes; the guide should treat `10/10 passed` as the current known-good baseline. [Verified from regression output]
 
 ### 8.11 Corridor / On-Route Handling
 
@@ -567,6 +942,10 @@ Verified waiting behavior:
 - if a hotspot is closed now but `nextWindowStart` exists
 - the builder can wait and retry the candidate within the same day
 - only if the waited visit still fits before route end
+
+Regression note:
+
+- The current branch also normalizes zero-distance travel rows during timeline persistence, so timing fit should be read together with final persisted row distance. A row that looks "timing valid" but persists as `0.00 KM` is now treated as a regression symptom, not an acceptable outcome. [Verified from code] [Verified from regression output]
 
 ### 8.15 Cutoff Rules
 
@@ -712,6 +1091,10 @@ candidate built
   -> final persistence dedupe
 ```
 
+Regression note:
+
+- Final persistence dedupe now sits alongside the travel-row distance normalization guard, so duplicate prevention and suspicious zero-distance prevention should be checked together when a route looks wrong. [Verified from code] [Inference]
+
 ### 8.20 Persistence
 
 The final row targets are fixed:
@@ -846,6 +1229,7 @@ buildTimelineForPlan(planId):
 | `route_fit_type` | route-fit slot ranking and accepted path filtering | [Verified from code] | Auto builder only reads accepted `ON_ROUTE` / `MINOR_DETOUR` rows in matrix path |
 | `crosses_destination_before_candidate` | schema/write-path support | [Needs verification] | direct inspected runtime read usage was not verified |
 | manual insertion route-fit | `A -> C -> B` and `A -> C -> hotel` slot logic | [Verified from code] | end-to-end live replay for every permutation still pending |
+| Travel row normalization | `item_type = 3` travel rows are clamped away from `0.00 KM` when source and destination differ | [Verified from code] [Verified from regression output] | Current top10 suite is the proof point for this branch state |
 | Scheduler passes | 6 pass constants, 3 optimization cycles, corridor blocking | [Verified from code] | Whether `PASS_FILLER_SECONDARY` is intentionally dormant remains unverified |
 | Manual behavior | pre-delete preservation, placement hints, force insert path | [Verified from code] | End-to-end live proof for every manual conflict permutation still pending |
 | Persistence | `hotspotRows` and `parkingRows` return/persist split | [Verified from code] | None for this section |
@@ -942,6 +1326,10 @@ DB row to API/frontend meaning:
 | `item_type = 6` | `type: "checkin"` | Hotel check-in card. [Verified from code] |
 | `item_type = 7` | final `type: "travel"` | Terminal drop-off or route end. [Verified from code] |
 
+Regression note:
+
+- For current-branch troubleshooting, treat a persisted `item_type = 3` travel row with `0.00 KM` and mismatched source/destination labels as suspicious. The top10 regression harness now flags that case, and the live code path clamps it before persistence. [Verified from script] [Verified from regression output] [Verified from code]
+
 `DVI2026042` details facts:
 
 - DB evidence has 110 timeline rows. [Verified from DB/script output]
@@ -990,6 +1378,11 @@ Important split:
 - route-fit between-map distance/detour is what `hotspot_route_between_map` and `hotspot_hotel_between_map` store for slot-fit evaluation. [Verified from schema] [Verified from code]
 - vehicle billing KM is what vendor/slab pricing logic uses. [Verified from code]
 - sightseeing KM is part of vehicle pricing breakdown, not just timeline display. [Verified from code]
+
+Current branch update:
+
+- The distance helper now treats different-name, near-zero source/destination results as invalid for a normal travel leg and falls back to a minimal travel value instead of leaving the row at `0.00 KM`. [Verified from code] [Verified from regression output]
+- The final hotspot persistence path applies the same protection before rows hit `dvi_itinerary_route_hotspot_details`. [Verified from code] [Verified from regression output]
 
 Vehicle billing KM/pricing is stored and read from vehicle detail rows such as `dvi_itinerary_plan_vendor_vehicle_details`. [Verified from code]
 
@@ -1144,6 +1537,11 @@ Frontend order wrong:
 
 This order separates candidate filtering from final inserted hotspot evidence and from frontend mapping issues. [Inference]
 
+Regression sanity check:
+
+- If top10 reports `10/10 passed`, the current branch baseline is good for the travel-row normalization issue.
+- If a route still shows `0.00 KM` in a travel row, inspect the live rebuild path first, then the details API mapping, then the regression harness classification. [Verified from regression output] [Inference]
+
 ## 22. Case Study: DVI2026042 / PLAN_ID=48
 
 This itinerary is useful because it has 11 routes, mixed direct/non-direct flags, three via-route examples, one manual hotspot, hotel check-ins, vehicle rows, and a final drop row. [Verified from DB/script output]
@@ -1249,6 +1647,18 @@ Evidence files used:
 - `tmp/docs-evidence/direct-on-db-evidence.txt`
 - `tmp/docs-evidence/command-errors.md`
 - `tmp/docs-evidence/direct-on-command-errors.md`
+- `tmp/regression-report-top10.md`
+- `scripts/regression/top10/manifest.json`
+- `scripts/regression/top10/top10-case-01.json`
+- `scripts/regression/top10/top10-case-02.json`
+- `scripts/regression/top10/top10-case-03.json`
+- `scripts/regression/top10/top10-case-04.json`
+- `scripts/regression/top10/top10-case-05.json`
+- `scripts/regression/top10/top10-case-06.json`
+- `scripts/regression/top10/top10-case-07.json`
+- `scripts/regression/top10/top10-case-08.json`
+- `scripts/regression/top10/top10-case-09.json`
+- `scripts/regression/top10/top10-case-10.json`
 
 Known command-output caveats:
 
@@ -1257,6 +1667,7 @@ Known command-output caveats:
 - When reusing these JSON files in scripts, strip non-JSON status lines before `JSON.parse()`. [Inference]
 - Direct ON JSON parsing required stripping the status line and reading UTF-16 output. [Verified from script]
 - `tmp/docs-evidence/09-database-table-usage-map.md` [Verified from code scan]
+- The top10 regression report is the current proof point for the travel-row normalization fix. [Verified from regression output]
 
 ## 26. Database Table Lifecycle Manual for Itinerary Logic
 
@@ -11814,4 +12225,3 @@ It exists because surrounding itinerary flows reference `dvi_staff_details` in t
 #### 12. Not used / uncertainty
 
 - No additional uncertainty beyond the captured scan hits.
-

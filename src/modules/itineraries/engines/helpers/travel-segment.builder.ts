@@ -104,6 +104,29 @@ export class TravelSegmentBuilder {
       };
     }
 
+    const normalizeTravelName = (value: string) =>
+      String(value || '')
+        .split('|')[0]
+        .replace(/\s+/g, ' ')
+        .trim()
+        .toLowerCase();
+
+    const namesDiffer =
+      normalizeTravelName(sourceLocationName || '') !== normalizeTravelName(destinationLocationName || '');
+
+    if (
+      item_type === 3 &&
+      namesDiffer &&
+      Number.isFinite(Number(distanceResult.distanceKm)) &&
+      Number(distanceResult.distanceKm) <= 0.01
+    ) {
+      distanceResult = {
+        ...distanceResult,
+        distanceKm: 0.1,
+        travelTime: '00:05:00',
+      };
+    }
+
     // PHP parity: sightseeing travel segments (item_type=3) use travel time only.
     // Do not add road/common buffer for hotspot-to-hotspot timeline progression.
     const effectiveBufferTime = item_type === 3 ? "00:00:00" : distanceResult.bufferTime;

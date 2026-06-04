@@ -202,17 +202,62 @@ export class DistanceHelper {
     // ✅ PHP PARITY: For hotspots (which provide coordinates), PHP ALWAYS uses
     // Haversine formula instead of looking up in dvi_stored_locations.
     // This prevents using city-to-city distances for specific hotspots.
-    if (sourceCoords && destCoords &&
-        (sourceCoords.lat !== 0 || sourceCoords.lon !== 0) &&
-        (destCoords.lat !== 0 || destCoords.lon !== 0)) {
-      return this.fromCoordinates(
+    const hasSourceCoords =
+      sourceCoords &&
+      Number.isFinite(Number(sourceCoords.lat)) &&
+      Number.isFinite(Number(sourceCoords.lon)) &&
+      (Number(sourceCoords.lat) !== 0 || Number(sourceCoords.lon) !== 0);
+
+    const hasDestCoords =
+      destCoords &&
+      Number.isFinite(Number(destCoords.lat)) &&
+      Number.isFinite(Number(destCoords.lon)) &&
+      (Number(destCoords.lat) !== 0 || Number(destCoords.lon) !== 0);
+
+    const normalizeDistanceName = (value: string) =>
+      String(value || '')
+        .split('|')[0]
+        .replace(/\s+/g, ' ')
+        .trim()
+        .toLowerCase();
+
+    const sourceDestNamesSame =
+      normalizeDistanceName(trimmedSource) === normalizeDistanceName(trimmedDest);
+
+    const coordsAreSame =
+      hasSourceCoords &&
+      hasDestCoords &&
+      Math.abs(Number(sourceCoords.lat) - Number(destCoords.lat)) < 0.000001 &&
+      Math.abs(Number(sourceCoords.lon) - Number(destCoords.lon)) < 0.000001;
+
+    // Use coordinates only when they are trustworthy.
+    // If names are different but coordinates are identical, it usually means caller
+    // accidentally copied destination hotspot coords into source coords.
+    if (hasSourceCoords && hasDestCoords && (!coordsAreSame || sourceDestNamesSame)) {
+      const coordinateResult = await this.fromCoordinates(
         tx,
-        sourceCoords.lat,
-        sourceCoords.lon,
-        destCoords.lat,
-        destCoords.lon,
+        Number(sourceCoords.lat),
+        Number(sourceCoords.lon),
+        Number(destCoords.lat),
+        Number(destCoords.lon),
         travelLocationType,
       );
+
+      if (!sourceDestNamesSame && coordinateResult.distanceKm <= 0.01) {
+        console.warn("[DISTANCE_LOOKUP_FALLBACK_MIN_DISTANCE]", {
+          source: trimmedSource,
+          destination: trimmedDest,
+          reason: "Coordinate distance was near-zero for different source/destination names",
+        });
+
+        return {
+          distanceKm: 0.1,
+          travelTime: "00:05:00",
+          bufferTime: coordinateResult.bufferTime,
+        };
+      }
+
+      return coordinateResult;
     }
 
     const logMsg = `[DistanceHelper] Looking up: "${trimmedSource}" → "${trimmedDest}"\n`;
@@ -253,6 +298,20 @@ export class DistanceHelper {
 
     if (loc) {
       const distance = Number(loc.distance ?? 0);
+      if (!sourceDestNamesSame && (!Number.isFinite(distance) || distance <= 0)) {
+        console.warn("[DISTANCE_LOOKUP_FALLBACK_MIN_DISTANCE]", {
+          source: trimmedSource,
+          destination: trimmedDest,
+          reason: "Stored distance was zero/blank for different source/destination names",
+        });
+
+        return {
+          distanceKm: 0.1,
+          travelTime: "00:05:00",
+          bufferTime: "00:00:00",
+        };
+      }
+
       const totalMinutes = parseDurationToMinutes(loc.duration);
       const travelTime = minutesToDurationTime(Math.max(totalMinutes ?? 0, MIN_TRAVEL_MINUTES));
       const bufferTime = await this.getBufferTime(tx, travelLocationType);
@@ -276,6 +335,20 @@ export class DistanceHelper {
           travelLocationType,
         );
       }
+    }
+
+    if (!sourceDestNamesSame) {
+      console.warn("[DISTANCE_LOOKUP_FALLBACK_MIN_DISTANCE]", {
+        source: trimmedSource,
+        destination: trimmedDest,
+        reason: "Different source/destination names but no reliable distance was found",
+      });
+
+      return {
+        distanceKm: 0.1,
+        travelTime: "00:05:00",
+        bufferTime: "00:00:00",
+      };
     }
 
     return { distanceKm: 0, travelTime: "00:00:00", bufferTime: "00:00:00" };
