@@ -1,0 +1,130 @@
+{
+  "caseId": "regression-case-12",
+  "description": "Last day departure after 6 PM",
+  "tags": [],
+  "manualHotspot": null,
+  "payload": {
+    "plan": {
+      "itinerary_plan_id": 9312,
+      "agent_id": 126,
+      "staff_id": 0,
+      "location_id": 0,
+      "arrival_point": "Cochin International Airport",
+      "departure_point": "Cochin International Airport",
+      "itinerary_preference": 2,
+      "itinerary_type": 2,
+      "preferred_hotel_category": [],
+      "hotel_facilities": [],
+      "trip_start_date": "2026-10-18T08:00:00+05:30",
+      "trip_end_date": "2026-10-24T21:30:00+05:30",
+      "pick_up_date_and_time": "2026-10-18T08:00:00+05:30",
+      "arrival_type": 1,
+      "departure_type": 1,
+      "no_of_nights": 6,
+      "no_of_days": 7,
+      "budget": 15000,
+      "entry_ticket_required": 0,
+      "guide_for_itinerary": 0,
+      "nationality": 101,
+      "food_type": 0,
+      "meal_plan_code": "CP",
+      "meal_plan_breakfast": 1,
+      "meal_plan_lunch": 0,
+      "meal_plan_dinner": 0,
+      "adult_count": 2,
+      "child_count": 0,
+      "infant_count": 0,
+      "special_instructions": "Last day departure after 6 PM"
+    },
+    "routes": [
+      {
+        "location_name": "Cochin International Airport",
+        "next_visiting_location": "Cochin",
+        "itinerary_route_date": "2026-10-18T00:00:00+05:30",
+        "no_of_days": 1,
+        "no_of_km": 29.83,
+        "direct_to_next_visiting_place": 1,
+        "via_route": "",
+        "via_routes": []
+      },
+      {
+        "location_name": "Cochin",
+        "next_visiting_location": "Munnar",
+        "itinerary_route_date": "2026-10-19T00:00:00+05:30",
+        "no_of_days": 2,
+        "no_of_km": 126,
+        "direct_to_next_visiting_place": 0,
+        "via_route": "",
+        "via_routes": []
+      },
+      {
+        "location_name": "Munnar",
+        "next_visiting_location": "Thekkady",
+        "itinerary_route_date": "2026-10-20T00:00:00+05:30",
+        "no_of_days": 3,
+        "no_of_km": 97.1,
+        "direct_to_next_visiting_place": 0,
+        "via_route": "",
+        "via_routes": []
+      },
+      {
+        "location_name": "Thekkady",
+        "next_visiting_location": "Alleppey",
+        "itinerary_route_date": "2026-10-21T00:00:00+05:30",
+        "no_of_days": 4,
+        "no_of_km": 138,
+        "direct_to_next_visiting_place": 0,
+        "via_route": "",
+        "via_routes": []
+      },
+      {
+        "location_name": "Alleppey",
+        "next_visiting_location": "Kumarakom, Kerala, India",
+        "itinerary_route_date": "2026-10-22T00:00:00+05:30",
+        "no_of_days": 5,
+        "no_of_km": 32.7,
+        "direct_to_next_visiting_place": 0,
+        "via_route": "",
+        "via_routes": []
+      },
+      {
+        "location_name": "Kumarakom, Kerala, India",
+        "next_visiting_location": "Kumarakom, Kerala, India",
+        "itinerary_route_date": "2026-10-23T00:00:00+05:30",
+        "no_of_days": 6,
+        "no_of_km": 1,
+        "direct_to_next_visiting_place": 0,
+        "via_route": "",
+        "via_routes": []
+      },
+      {
+        "location_name": "Kumarakom, Kerala, India",
+        "next_visiting_location": "Cochin International Airport",
+        "itinerary_route_date": "2026-10-24T00:00:00+05:30",
+        "no_of_days": 7,
+        "no_of_km": 61.47,
+        "direct_to_next_visiting_place": 0,
+        "via_route": "",
+        "via_routes": []
+      }
+    ],
+    "vehicles": [
+      {
+        "vehicle_type_id": 1,
+        "vehicle_count": 1
+      }
+    ],
+    "travellers": [
+      {
+        "room_id": 1,
+        "traveller_type": 1
+      },
+      {
+        "room_id": 1,
+        "traveller_type": 1
+      }
+    ],
+    "previousDayBillingDecisionProvided": false,
+    "previousDayBillingConfirmed": false
+  }
+}

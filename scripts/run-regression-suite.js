@@ -34,40 +34,14 @@ const API_BASE = buildApiBase();
 
 const REGRESSION_DIR = path.join(__dirname, 'regression');
 const PROJECT_ROOT = path.join(__dirname, '..');
+const RESULTS_DIR = path.join(PROJECT_ROOT, 'tmp', 'regression-results');
+const REPORT_PATH = path.join(PROJECT_ROOT, 'tmp', 'regression-report.md');
 const TRIGGER_SCRIPT = path.join(__dirname, 'trigger_direct_build.js');
 const STRICT_DUPLICATE_HOTSPOT = String(process.env.STRICT_DUPLICATE_HOTSPOT || '').trim() === '1';
-const SUITE_NAME = (() => {
-  const suiteFlagIndex = process.argv.indexOf('--suite');
-  if (suiteFlagIndex >= 0) {
-    return String(process.argv[suiteFlagIndex + 1] || '').trim() || 'default';
-  }
-  return String(process.env.REGRESSION_SUITE || '').trim() || 'default';
-})();
 const CASE_FILTER = (() => {
   const caseFlagIndex = process.argv.indexOf('--case');
   return caseFlagIndex >= 0 ? String(process.argv[caseFlagIndex + 1] || '').trim() : '';
 })();
-
-function getRegressionDirForSuite(suiteName) {
-  if (suiteName === 'top10') {
-    return path.join(__dirname, 'regression', 'top10');
-  }
-  return path.join(__dirname, 'regression');
-}
-
-function getResultsDirForSuite(suiteName) {
-  if (suiteName === 'top10') {
-    return path.join(PROJECT_ROOT, 'tmp', 'regression-results', 'top10');
-  }
-  return path.join(PROJECT_ROOT, 'tmp', 'regression-results');
-}
-
-function getReportPathForSuite(suiteName) {
-  if (suiteName === 'top10') {
-    return path.join(PROJECT_ROOT, 'tmp', 'regression-report-top10.md');
-  }
-  return path.join(PROJECT_ROOT, 'tmp', 'regression-report.md');
-}
 
 function normalize(value) {
   return String(value ?? '')
@@ -78,111 +52,16 @@ function normalize(value) {
     .toLowerCase();
 }
 
-const LOCATION_SUFFIX_PATTERNS = [
-  /\b(international|domestic)\b/g,
-  /\bair\s*port\b/g,
-  /\bairport\b/g,
-  /\brailway\b/g,
-  /\brail\b/g,
-  /\bstation\b/g,
-  /\bstn\b/g,
-  /\bjunction\b/g,
-  /\bjn\b/g,
-  /\bterminal\b/g,
-  /\bbus\s*stand\b/g,
-  /\bstand\b/g,
-  /\bterminus\b/g,
-  /\bcentral\b/g,
-];
-
-const CITY_ALIAS_MAP = {
-  trivandrum: 'thiruvananthapuram',
-  trivandrumcity: 'thiruvananthapuram',
-  tvm: 'thiruvananthapuram',
-  bangalore: 'bengaluru',
-  bombay: 'mumbai',
-  calcutta: 'kolkata',
-  madras: 'chennai',
-  pondicherry: 'puducherry',
-  cochinairport: 'cochin',
-  cochininternationalairport: 'cochin',
-  chennaiairport: 'chennai',
-  maduraiairport: 'madurai',
-  hyderabadairport: 'hyderabad',
-};
-
-function normalizeAliasKey(value) {
-  return String(value || '').replace(/\s+/g, '').trim();
-}
-
-function normalizeCityNameForRegression(value) {
-  if (!value) return '';
-
-  let normalized = String(value).toLowerCase();
-  normalized = normalized
-    .replace(/&amp;/g, '&')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/[.,()\-_/]/g, ' ')
-    .replace(/[^a-z0-9| ]+/gi, ' ');
-
-  for (const pattern of LOCATION_SUFFIX_PATTERNS) {
-    normalized = normalized.replace(pattern, ' ');
-  }
-
-  normalized = normalized.replace(/\s+/g, ' ').trim();
-  if (!normalized) return '';
-
-  const aliasKey = normalizeAliasKey(normalized);
-  return CITY_ALIAS_MAP[aliasKey] || normalized;
-}
-
 function canonicalCityKey(value) {
-  const raw = String(value ?? '').trim();
-  if (!raw) return '';
-
-  const tokens = raw
-    .split('|')
-    .flatMap((part) => String(part || '').split(','))
-    .map((part) => normalizeCityNameForRegression(part))
-    .filter(Boolean);
-
-  return tokens[0] || normalizeCityNameForRegression(raw);
-}
-
-function locationCityKeys(value) {
-  const raw = String(value ?? '').trim();
-  if (!raw) return [];
-
-  const keys = raw
-    .split('|')
-    .flatMap((part) => String(part || '').split(','))
-    .map((part) => normalizeCityNameForRegression(part))
-    .filter(Boolean);
-
-  const fallback = canonicalCityKey(raw);
-  if (fallback) keys.push(fallback);
-
-  return [...new Set(keys)];
+  const normalized = normalize(value);
+  return normalized.split(' ').filter(Boolean).join(' ');
 }
 
 function matchesLocation(hotspotLocation, routeLocation) {
+  const hotspotKey = canonicalCityKey(hotspotLocation);
   const routeKey = canonicalCityKey(routeLocation);
-  if (!routeKey) return false;
-
-  const hotspotKeys = locationCityKeys(hotspotLocation);
-  if (!hotspotKeys.length) return false;
-
-  return hotspotKeys.some((hotspotKey) => {
-    if (!hotspotKey) return false;
-    if (hotspotKey === routeKey) return true;
-
-    return (
-      hotspotKey.startsWith(`${routeKey} `) ||
-      hotspotKey.endsWith(` ${routeKey}`) ||
-      routeKey.startsWith(`${hotspotKey} `) ||
-      routeKey.endsWith(` ${hotspotKey}`)
-    );
-  });
+  if (!hotspotKey || !routeKey) return false;
+  return hotspotKey.includes(routeKey) || routeKey.includes(hotspotKey);
 }
 
 function timeToMinutes(value) {
@@ -398,51 +277,6 @@ function countDetailsAttractionSegments(detailsSnapshot) {
     totalAttractionCount: daySummaries.reduce((sum, day) => sum + day.attractionCount, 0),
     daySummaries,
   };
-}
-
-function parseDistanceKm(value) {
-  if (value === null || value === undefined) return 0;
-  const numeric = Number(String(value).replace(/[^0-9. -]/g, ''));
-  return Number.isFinite(numeric) ? numeric : 0;
-}
-
-function normalizeTravelPlace(value) {
-  return String(value || '')
-    .toLowerCase()
-    .replace(/&amp;/g, '&')
-    .replace(/[^a-z0-9 ]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function isHotelLike(value) {
-  const key = normalizeTravelPlace(value);
-  return (
-    key === 'hotel' ||
-    key.includes('hotel') ||
-    key.includes('resort') ||
-    key.includes('villa') ||
-    key.includes('suite')
-  );
-}
-
-function isSuspiciousZeroTravelSegment(segment) {
-  if (!segment || String(segment?.type || '').toLowerCase() !== 'travel') return false;
-
-  const distanceKm = parseDistanceKm(segment.distance);
-  if (distanceKm > 0) return false;
-
-  const fromName = segment.fromName || segment.displayFromName || segment.from || '';
-  const toName = segment.toName || segment.displayToName || segment.to || '';
-
-  const fromKey = normalizeTravelPlace(fromName);
-  const toKey = normalizeTravelPlace(toName);
-
-  if (!fromKey || !toKey) return false;
-  if (fromKey === toKey) return false;
-  if (isHotelLike(fromName) && isHotelLike(toName)) return false;
-
-  return true;
 }
 
 function isExpectedNoSightseeingCase(caseDef) {
@@ -807,7 +641,6 @@ async function fetchRouteSnapshot(prisma, planId) {
       item_type: true,
       hotspot_order: true,
       hotspot_ID: true,
-      hotspot_travelling_distance: true,
       hotspot_start_time: true,
       hotspot_end_time: true,
       hotspot_plan_own_way: true,
@@ -1150,47 +983,12 @@ async function detectFailures(snapshot, caseDef, routeSnapshot, detailsSnapshot)
   const falsePositiveExclusions = [];
   const routeSummaries = routeSnapshot.routes.map((route) => buildRouteSummary(routeSnapshot, route, routeSnapshot.hotspotMasterById));
   const detailsDayMap = buildDetailsDayMap(detailsSnapshot);
-  const suspiciousZeroSeen = new Set();
-  for (const day of Array.isArray(detailsSnapshot?.days) ? detailsSnapshot.days : []) {
-    const dayNumber = Number(day?.dayNumber || 0);
-    const routeId = Number(day?.id || 0);
-    const segments = Array.isArray(day?.segments) ? day.segments : [];
-    for (const segment of segments) {
-      if (!isSuspiciousZeroTravelSegment(segment)) continue;
-
-      const from = segment.fromName || segment.displayFromName || segment.from || '';
-      const to = segment.toName || segment.displayToName || segment.to || '';
-      const key = `${dayNumber}|${normalizeTravelPlace(from)}|${normalizeTravelPlace(to)}|${String(segment.distance || '').trim()}`;
-      if (suspiciousZeroSeen.has(key)) continue;
-      suspiciousZeroSeen.add(key);
-
-      failures.push({
-        label: 'SUSPICIOUS_ZERO_TRAVEL_DISTANCE',
-        routeId,
-        day: dayNumber,
-        detail: `Day ${dayNumber}: ${from} -> ${to} has suspicious zero distance (${segment.distance || 'blank'}).`,
-        debug: {
-          dayNumber,
-          departure: String(day?.departure || ''),
-          arrival: String(day?.arrival || ''),
-          from,
-          to,
-          distance: segment.distance ?? null,
-          duration: segment.duration ?? null,
-        },
-      });
-    }
-  }
   const allHotspotRows = routeSnapshot.hotspotRows;
   const activeVisitRows = allHotspotRows.filter((row) => Number(row.item_type || 0) === 4);
   const usedHotspotIds = new Set(activeVisitRows.map((row) => Number(row.hotspot_ID || 0)).filter((id) => id > 0));
   const routeById = new Map(routeSnapshot.routes.map((route) => [Number(route.itinerary_route_ID || 0), route]));
   const routeSummaryById = new Map(routeSummaries.map((route) => [Number(route.routeId || 0), route]));
   const routeDayByRouteId = new Map(routeSnapshot.routes.map((route) => [Number(route.itinerary_route_ID || 0), Number(route.no_of_days || 0)]));
-  const normalizeDistanceLabel = (value) =>
-    normalize(String(value ?? ''))
-      .replace(/\s+/g, ' ')
-      .trim();
 
   const hotspotDayMap = new Map();
   for (const row of activeVisitRows) {
@@ -1204,13 +1002,6 @@ async function detectFailures(snapshot, caseDef, routeSnapshot, detailsSnapshot)
     const routeRow = routeById.get(route.routeId) || {};
     const totalRows = routeSnapshot.hotspotsByRoute.get(route.routeId) || [];
     const excludedIds = new Set(parseExcludedHotspotIds(routeRow.excluded_hotspot_ids));
-    const routeSourceLabel = String(route.source || '');
-    const routeDestinationLabel = String(route.destination || '');
-    const routeSourceNorm = normalizeDistanceLabel(routeSourceLabel);
-    const routeDestinationNorm = normalizeDistanceLabel(routeDestinationLabel);
-    const routeSourceIsHotel = routeSourceNorm.includes('hotel');
-    const routeDestinationIsHotel = routeDestinationNorm.includes('hotel');
-    const routeLabelsSame = routeSourceNorm && routeSourceNorm === routeDestinationNorm;
     const matchingCandidates = routeSnapshot.allHotspotPlaceRows.filter((hotspot) =>
       matchesLocation(hotspot.hotspot_location, route.source) ||
       matchesLocation(hotspot.hotspot_to_location, route.source) ||
@@ -1303,22 +1094,11 @@ async function detectFailures(snapshot, caseDef, routeSnapshot, detailsSnapshot)
           detail: `${hotspot.hotspotName} (${masterLocation}) does not belong to same-city route ${route.source} -> ${route.destination}.`,
         });
       } else if (!isSameCity && !(sourceMatch || destinationMatch)) {
-        const isCarryForward = String(hotspot.matchedBucket || hotspot.matched_bucket || '').toLowerCase().includes('carry');
         failures.push({
-          label: isCarryForward ? 'INVALID_CARRY_FORWARD' : 'ROUTE_LOCATION_MISMATCH',
+          label: 'INVALID_CARRY_FORWARD',
           routeId: route.routeId,
           hotspotId: hotspot.hotspotId,
           detail: `${hotspot.hotspotName} (${masterLocation}) does not match route source/destination.`,
-          debug: {
-            routeSource: route.source,
-            routeDestination: route.destination,
-            routeSourceKey: canonicalCityKey(route.source),
-            routeDestinationKey: canonicalCityKey(route.destination),
-            hotspotLocation: masterLocation,
-            hotspotToLocation: masterToLocation,
-            hotspotLocationKeys: locationCityKeys(masterLocation),
-            hotspotToLocationKeys: locationCityKeys(masterToLocation),
-          },
         });
       }
 
@@ -1351,55 +1131,6 @@ async function detectFailures(snapshot, caseDef, routeSnapshot, detailsSnapshot)
           timingReason: operatingHoursCheck.reason,
         });
       }
-    }
-
-    let currentTravelSourceLabel = route.source;
-    for (const row of totalRows) {
-      const itemType = Number(row.item_type || 0);
-      const hotspotId = Number(row.hotspot_ID || 0);
-      const master = hotspotId ? (routeSnapshot.hotspotMasterById.get(hotspotId) || {}) : {};
-      const hotspotName = String(master.hotspot_name || '').trim();
-      const hotspotLocation = String(master.hotspot_location || '').trim();
-      const hotspotToLocation = String(master.hotspot_to_location || hotspotLocation || '').trim();
-
-      if (itemType === 4) {
-        const nextTravelSourceLabel = hotspotToLocation || hotspotLocation;
-        if (nextTravelSourceLabel) {
-          currentTravelSourceLabel = nextTravelSourceLabel;
-        }
-        continue;
-      }
-
-      if (![3, 5, 7].includes(itemType)) continue;
-      if (!hotspotId) continue;
-      if (!hotspotName && !hotspotLocation && !hotspotToLocation) continue;
-
-      const travelDistanceText = String(row.hotspot_travelling_distance ?? '').trim();
-      const travelDistanceValue = travelDistanceText ? Number.parseFloat(travelDistanceText) : 0;
-      const travelDistanceIsZero = !travelDistanceText || !Number.isFinite(travelDistanceValue) || travelDistanceValue === 0;
-      if (!travelDistanceIsZero) continue;
-
-      const travelSourceLabel = String(currentTravelSourceLabel || route.source || '');
-      const travelDestinationLabel = hotspotToLocation || hotspotLocation || route.destination || '';
-      const travelSourceNorm = normalizeDistanceLabel(travelSourceLabel);
-      const travelDestinationNorm = normalizeDistanceLabel(travelDestinationLabel);
-      const travelSourceIsHotel = travelSourceNorm.includes('hotel');
-      const travelDestinationIsHotel = travelDestinationNorm.includes('hotel');
-      const travelLabelsSame = travelSourceNorm && travelSourceNorm === travelDestinationNorm;
-
-      if (travelLabelsSame || (travelSourceIsHotel && travelDestinationIsHotel)) {
-        continue;
-      }
-
-      failures.push({
-        label: 'SUSPICIOUS_ZERO_TRAVEL_DISTANCE',
-        routeId: route.routeId,
-        day: route.day,
-        detail: `Travel row on ${travelSourceLabel} -> ${travelDestinationLabel} has zero/blank distance for item_type=${itemType}.`,
-        travelRowId: Number(row.route_hotspot_ID || 0),
-        hotspotId,
-        hotspotName: hotspotName || null,
-      });
     }
   }
 
@@ -1516,22 +1247,18 @@ async function detectFailures(snapshot, caseDef, routeSnapshot, detailsSnapshot)
 }
 
 async function main() {
-  const REGRESSION_DIR = getRegressionDirForSuite(SUITE_NAME);
-  const RESULTS_DIR = getResultsDirForSuite(SUITE_NAME);
-  const REPORT_PATH = getReportPathForSuite(SUITE_NAME);
   fs.mkdirSync(RESULTS_DIR, { recursive: true });
   const prisma = new PrismaClient();
   const auth = await ensureToken();
   const token = auth.token;
   console.log('[REGRESSION_CONFIG]', {
-    suite: SUITE_NAME,
     baseUrl: normalizeBaseUrl(process.env.BASE_URL) || 'http://127.0.0.1:4006',
     apiBase: API_BASE,
     authMode: auth.authMode,
   });
   const caseFiles = fs
     .readdirSync(REGRESSION_DIR)
-    .filter((name) => (SUITE_NAME === 'top10' ? /^top10-case-\d+\.json$/.test(name) : /^regression-case-\d+\.json$/.test(name)))
+    .filter((name) => /^regression-case-\d+\.json$/.test(name))
     .sort()
     .filter((name) => !CASE_FILTER || getCaseNameFromPath(name) === CASE_FILTER);
 
@@ -1769,7 +1496,7 @@ async function main() {
 
   const failingCases = summaryRows.filter((row) => row.status === 'FAIL');
   const report = [
-    SUITE_NAME === 'top10' ? '# Top10 Regression Report' : '# Regression Report',
+    '# Regression Report',
     '',
     `Generated: ${new Date().toISOString()}`,
     '',

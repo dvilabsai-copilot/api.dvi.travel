@@ -967,19 +967,6 @@ export class HotspotEngineService {
       if (isGenericHotelLabel(fromLabel) && isGenericHotelLabel(toLabel)) return true;
       return isSamePlaceLike(fromLabel, toLabel);
     };
-    const normalizePersistedTravelDistance = (row: any): any => {
-      const itemType = Number(row?.item_type || 0);
-      if (itemType !== 3) return row;
-
-      const distanceText = String(row?.hotspot_travelling_distance ?? '').trim();
-      const distanceKm = Number(distanceText);
-      if (!Number.isFinite(distanceKm) || distanceKm > 0.01) return row;
-
-      return {
-        ...row,
-        hotspot_travelling_distance: '0.10',
-      };
-    };
 
     const beforeExcludedSafetyCount = dedupenedRows.length;
     dedupenedRows = dedupenedRows.filter((row: any) => {
@@ -1052,7 +1039,6 @@ export class HotspotEngineService {
 
     // 6) Insert hotspot details (using the final sorted, deduped, normalized rows)
     const dbHotspotRows = sortedRows.map(row => {
-      const normalizedRow = normalizePersistedTravelDistance(row);
       // Strip out UI-only fields before saving to DB
       const { 
         isConflict, 
@@ -1064,7 +1050,7 @@ export class HotspotEngineService {
         locationId,
         route_date,
         ...dbRow 
-      } = normalizedRow as any;
+      } = row as any;
       
       return {
         ...dbRow,

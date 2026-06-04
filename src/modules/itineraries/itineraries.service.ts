@@ -9928,41 +9928,12 @@ export class ItinerariesService {
       const parsed = this.parsePreviewTimeRangeToUtcDates(seg?.timeRange);
       const duration = Number(seg?.matrixDurationMin || this.getPreviewRowDurationMinutes(seg) || 0);
       const distance = Number(seg?.matrixDistanceKm || seg?.distanceKm || 0);
-      const normalizeTravelLabel = (value: any): string =>
-        String(value ?? '')
-          .split('|')[0]
-          .replace(/\s+/g, ' ')
-          .trim()
-          .toLowerCase();
-      const fromLabel = String(
-        seg?.fromName ||
-          seg?.displayFromName ||
-          seg?.from ||
-          seg?.text ||
-          seg?.name ||
-          '',
-      ).trim();
-      const toLabel = String(
-        seg?.toName ||
-          seg?.displayToName ||
-          seg?.to ||
-          seg?.text ||
-          seg?.name ||
-          '',
-      ).trim();
-      const labelsDiffer = normalizeTravelLabel(fromLabel) !== normalizeTravelLabel(toLabel);
-      const normalizedDistance =
-        labelsDiffer && Number.isFinite(distance) && distance <= 0.01
-          ? 0.1
-          : distance;
 
       const payload = {
         hotspot_order: idx + 1,
         hotspot_ID: 0,
         hotspot_traveling_time: this.minutesToUtcTimeDate(Math.max(0, duration)),
-        hotspot_travelling_distance: Number.isFinite(normalizedDistance) && normalizedDistance > 0
-          ? String(normalizedDistance.toFixed(2))
-          : null,
+        hotspot_travelling_distance: Number.isFinite(distance) && distance > 0 ? String(distance.toFixed(2)) : null,
         hotspot_start_time: parsed.start || this.minutesToUtcTimeDate(0),
         hotspot_end_time: parsed.end || this.minutesToUtcTimeDate(0),
         updatedon: new Date(),
