@@ -2078,7 +2078,13 @@ export class ItineraryHotelDetailsTboService {
             mealPlan: '-',
             price: 0,
             rating: 0,
-            routeId: routeId
+            routeId: routeId,
+            provider: 'external',
+            isBookable: false,
+            externalStay: true,
+            availabilityStatus: 'NO_SUPPLIER_AVAILABILITY',
+            availabilityMessage:
+              'No supplier hotel rooms are available for this city/date. Customer must arrange stay manually.',
           };
           tieredHotels.push(placeholderHotel);
           continue;
@@ -2517,6 +2523,24 @@ export class ItineraryHotelDetailsTboService {
         const pricedHotel = this.enrichHotelWithMasterMargin(hotel, new Map());
         const baseHotelCost = Number(pricedHotel.price || 0);
         const totalHotelCost = this.applyInvisibleHotelMargin(baseHotelCost, pricedHotel);
+        const normalizedProvider = String(hotel.provider || 'tbo').trim().toLowerCase();
+        const rawBookingCode =
+          normalizedProvider === 'tbo'
+            ? String(hotel.searchReference || hotel.roomTypes?.[0]?.roomCode || (hotel as any).bookingCode || '').trim()
+            : String((hotel as any).bookingCode || hotel.hotelCode || '').trim();
+        const rawHotelCode = String(hotel.hotelCode || '').trim();
+        const isNoHotelsAvailable =
+          String(hotel.hotelName || '').trim().toLowerCase() === 'no hotels available' ||
+          rawHotelCode === '0';
+        const hasSupplierHotel =
+          !isNoHotelsAvailable &&
+          Boolean(rawHotelCode) &&
+          rawHotelCode !== '0' &&
+          Number.isFinite(baseHotelCost) &&
+          baseHotelCost > 0;
+        const hasLiveBookingCode =
+          normalizedProvider !== 'tbo' || rawBookingCode.includes('!TB!');
+        const isPrebookReady = hasSupplierHotel && hasLiveBookingCode;
 
         hotelRows.push({
           groupType: pkg.groupType,
@@ -2533,11 +2557,14 @@ export class ItineraryHotelDetailsTboService {
           totalHotelCost,
           totalHotelTaxAmount: 0,
           searchReference: hotel.searchReference,
-          bookingCode:
-            (hotel.provider || 'tbo').toLowerCase() === 'tbo'
-              ? hotel.searchReference || hotel.roomTypes?.[0]?.roomCode || undefined
-              : hotel.hotelCode,
-          provider: hotel.provider || 'tbo',
+          bookingCode: isPrebookReady ? rawBookingCode : undefined,
+          provider: hasSupplierHotel ? normalizedProvider : 'external',
+          isBookable: hasSupplierHotel,
+          externalStay: !hasSupplierHotel,
+          availabilityStatus: hasSupplierHotel ? 'AVAILABLE' : 'NO_SUPPLIER_AVAILABILITY',
+          availabilityMessage: hasSupplierHotel
+            ? null
+            : 'No supplier hotel rooms are available for this city/date. Customer must arrange stay manually.',
           voucherCancelled: voucherCancelled,
           itineraryPlanHotelDetailsId: hotelDetailsId || 0,
           date: dateLabel,
@@ -2625,10 +2652,10 @@ export class ItineraryHotelDetailsTboService {
     }
 
     const supplierHotelRows = hotelRows.filter(
-      (row) => row.hotelId > 0 && row.hotelName !== 'No Hotels Available',
+      (row) => row.isBookable !== false && row.hotelName !== 'No Hotels Available',
     );
     const placeholderRows = hotelRows.filter(
-      (row) => row.hotelName === 'No Hotels Available',
+      (row) => row.externalStay === true || row.hotelName === 'No Hotels Available' || row.isBookable === false,
     );
 
     const searchableRouteIds = routes
