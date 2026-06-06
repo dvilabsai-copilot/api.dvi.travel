@@ -32,6 +32,10 @@ export interface ItineraryHotelRowDto {
   bookingCode?: string;
   // Provider source (tbo, resavenue, hobse)
   provider?: string;
+  isBookable?: boolean;
+  externalStay?: boolean;
+  availabilityStatus?: 'AVAILABLE' | 'NO_SUPPLIER_AVAILABILITY' | 'NOT_BOOKABLE';
+  availabilityMessage?: string | null;
   // Voucher cancellation status
   voucherCancelled?: boolean;
   itineraryPlanHotelDetailsId?: number;
