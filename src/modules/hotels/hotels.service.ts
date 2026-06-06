@@ -194,6 +194,90 @@ export class HotelsService {
     return false;
   }
 
+  private isPositiveIntegerString(v: any): boolean {
+    const s = String(v ?? '').trim();
+    return /^[1-9]\d*$/.test(s);
+  }
+
+  private async hydrateHotelGeoNames<
+    T extends {
+      hotel_state?: string | number | null;
+      hotel_city?: string | number | null;
+    },
+  >(
+    items: T[],
+  ): Promise<
+    Array<T & { hotel_state_name: string | null; hotel_city_name: string | null }>
+  > {
+    const stateIds = Array.from(
+      new Set(
+        items
+          .map((h) => String(h.hotel_state ?? '').trim())
+          .filter((v) => this.isPositiveIntegerString(v)),
+      ),
+    ).map(Number);
+
+    const cityIds = Array.from(
+      new Set(
+        items
+          .map((h) => String(h.hotel_city ?? '').trim())
+          .filter((v) => this.isPositiveIntegerString(v)),
+      ),
+    ).map(Number);
+
+    const [states, cities] = await Promise.all([
+      stateIds.length
+        ? this.prisma.dvi_states.findMany({
+            where: {
+              id: { in: stateIds },
+              deleted: 0,
+            } as any,
+            select: { id: true, name: true },
+          })
+        : Promise.resolve([]),
+
+      cityIds.length
+        ? this.prisma.dvi_cities.findMany({
+            where: {
+              id: { in: cityIds },
+              deleted: 0,
+            } as any,
+            select: { id: true, name: true },
+          })
+        : Promise.resolve([]),
+    ]);
+
+    const stateMap = new Map(
+      (states as Array<{ id: number; name: string }>).map((s) => [String(s.id), String(s.name ?? '').trim()]),
+    );
+    const cityMap = new Map(
+      (cities as Array<{ id: number; name: string }>).map((c) => [String(c.id), String(c.name ?? '').trim()]),
+    );
+
+    return items.map((h) => {
+      const rawState = String(h.hotel_state ?? '').trim();
+      const rawCity = String(h.hotel_city ?? '').trim();
+
+      const hotel_state_name = rawState
+        ? this.isPositiveIntegerString(rawState)
+          ? stateMap.get(rawState) || rawState
+          : rawState
+        : null;
+
+      const hotel_city_name = rawCity
+        ? this.isPositiveIntegerString(rawCity)
+          ? cityMap.get(rawCity) || rawCity
+          : rawCity
+        : null;
+
+      return {
+        ...h,
+        hotel_state_name,
+        hotel_city_name,
+      };
+    });
+  }
+
   private validateBasicInfoRequired(mapped: Record<string, any>) {
     const errors: Record<string, boolean> = {};
 
@@ -302,12 +386,18 @@ export class HotelsService {
       this.prisma.dvi_hotel.count({ where }),
     ]);
 
-    const rows = items.map((h) => ({
+    const hydratedItems = await this.hydrateHotelGeoNames(items as any[]);
+
+    const rows = hydratedItems.map((h) => ({
       hotel_id: h.hotel_id,
       hotel_name: h.hotel_name,
       hotel_code: h.hotel_code,
       hotel_state: h.hotel_state,
       hotel_city: h.hotel_city,
+      hotel_state_name: h.hotel_state_name,
+      hotel_city_name: h.hotel_city_name,
+      state_name: h.hotel_state_name,
+      city_name: h.hotel_city_name,
       hotel_mobile: h.hotel_mobile,
       status: h.status,
       axisrooms_property_id: (h as any).axisrooms_property_id ?? null,
