@@ -905,17 +905,75 @@ export class HotspotEngineService {
 
     const routeRows = await (tx as any).dvi_itinerary_route_details.findMany({
       where: { itinerary_plan_ID: planId, deleted: 0 },
-      select: { itinerary_route_ID: true, excluded_hotspot_ids: true },
+      select: {
+        itinerary_route_ID: true,
+        location_name: true,
+        next_visiting_location: true,
+        excluded_hotspot_ids: true,
+      },
     });
+    const routeContextById = new Map<number, {
+      routeId: number;
+      sourceLocation: string;
+      destinationLocation: string;
+      viaLocations: string[];
+    }>();
     const excludedByRoute = new Map<number, Set<number>>();
     for (const routeRow of routeRows as any[]) {
       const routeId = Number(routeRow?.itinerary_route_ID || 0);
+      if (!routeId) continue;
+
+      routeContextById.set(routeId, {
+        routeId,
+        sourceLocation: String(routeRow?.location_name || ''),
+        destinationLocation: String(routeRow?.next_visiting_location || ''),
+        viaLocations: [],
+      });
+
       const excluded = Array.isArray(routeRow?.excluded_hotspot_ids)
         ? routeRow.excluded_hotspot_ids
             .map((id: any) => Number(id))
             .filter((id: number) => Number.isFinite(id) && id > 0)
         : [];
       excludedByRoute.set(routeId, new Set<number>(excluded));
+    }
+
+    try {
+      const viaRouteRows =
+        (await (tx as any).dvi_itinerary_via_route_details?.findMany?.({
+          where: { itinerary_plan_ID: planId, deleted: 0 },
+        })) || [];
+
+      for (const viaRow of viaRouteRows as any[]) {
+        const routeId = Number(viaRow?.itinerary_route_ID || 0);
+        const routeContext = routeContextById.get(routeId);
+        if (!routeContext) continue;
+
+        const viaLocations = [
+          viaRow?.itinerary_via_location_name,
+          viaRow?.via_location_name,
+          viaRow?.via_route_name,
+          viaRow?.source_location,
+          viaRow?.destination_location,
+          viaRow?.location_name,
+        ]
+          .flatMap((value: any) => String(value || '').split('|'))
+          .map((value: string) => String(value || '').trim())
+          .filter(Boolean);
+
+        const mergedViaLocations = new Set<string>(routeContext.viaLocations);
+        for (const viaLocation of viaLocations) {
+          if (!viaLocation) continue;
+          mergedViaLocations.add(viaLocation);
+        }
+
+        routeContext.viaLocations = Array.from(mergedViaLocations);
+      }
+    } catch (error: any) {
+      console.warn('[HotspotRebuild][via_route_context_unavailable]', {
+        planId,
+        reason: error?.message || String(error),
+      });
     }
 
     const allExcludedHotspotIds = Array.from(new Set(
@@ -995,6 +1053,99 @@ export class HotspotEngineService {
       beforeExcludedSafetyCount,
       afterExcludedSafetyCount: dedupenedRows.length,
       removedCount: beforeExcludedSafetyCount - dedupenedRows.length,
+    });
+
+    const beforeCorridorSafetyCount = dedupenedRows.length;
+    const corridorCandidateRows = dedupenedRows.filter((row: any) => {
+      const itemType = Number(row?.item_type || 0);
+      const hotspotId = Number(row?.hotspot_ID || 0);
+      return (itemType === 3 || itemType === 4) && hotspotId > 0;
+    });
+    const corridorHotspotIds = Array.from(
+      new Set(
+        corridorCandidateRows
+          .map((row: any) => Number(row?.hotspot_ID || 0))
+          .filter((hotspotId: number) => hotspotId > 0),
+      ),
+    );
+    const hotspotMasters = corridorHotspotIds.length
+      ? await (tx as any).dvi_hotspot_place.findMany({
+          where: { hotspot_ID: { in: corridorHotspotIds } },
+        })
+      : [];
+    const hotspotMasterById = new Map<number, any>(
+      (hotspotMasters || []).map((hotspot: any) => [Number(hotspot?.hotspot_ID || 0), hotspot]),
+    );
+
+    const invalidRouteHotspotKeys = new Set<string>();
+
+    for (const row of corridorCandidateRows) {
+      const routeId = Number(row?.itinerary_route_ID || 0);
+      const hotspotId = Number(row?.hotspot_ID || 0);
+      if (!routeId || !hotspotId) continue;
+
+      const routeContext = routeContextById.get(routeId);
+      const hotspotMaster = hotspotMasterById.get(hotspotId) || row;
+      const routeHotspotId = Number((row as any).route_hotspot_ID || 0);
+      const isManual =
+        Number((row as any).hotspot_plan_own_way || 0) === 1 ||
+        (row as any).isManual === true;
+      const isProtected =
+        isManual ||
+        protectedHotspotIds.has(hotspotId) ||
+        (routeHotspotId > 0 && protectedRouteHotspotIds.has(routeHotspotId));
+
+      const compatible = this.isHotspotCompatibleWithRouteContext(
+        routeContext,
+        hotspotMaster,
+        row,
+      );
+
+      if (compatible || isProtected) {
+        continue;
+      }
+
+      const routeHotspotKey = `${routeId}|${hotspotId}`;
+      if (!invalidRouteHotspotKeys.has(routeHotspotKey)) {
+        console.warn('[OUT_OF_CORRIDOR_HOTSPOT_REJECTED]', {
+          planId,
+          routeId,
+          routeSource: String(routeContext?.sourceLocation || ''),
+          routeDestination: String(routeContext?.destinationLocation || ''),
+          viaLocations: Array.isArray(routeContext?.viaLocations) ? routeContext!.viaLocations : [],
+          hotspotId,
+          hotspotName: String(hotspotMaster?.hotspot_name || row?.hotspot_name || ''),
+          hotspotLocation: String(hotspotMaster?.hotspot_location || ''),
+          hotspotToLocation: String(
+            hotspotMaster?.hotspot_to_location ||
+              hotspotMaster?.hotspot_location ||
+              '',
+          ),
+          itemType: Number(row?.item_type || 0),
+          hotspotOrder: Number(row?.hotspot_order || 0),
+          reason:
+            'Hotspot location does not match route source, destination, via route, or valid corridor.',
+        });
+      }
+      invalidRouteHotspotKeys.add(routeHotspotKey);
+    }
+
+    dedupenedRows = dedupenedRows.filter((row: any) => {
+      const itemType = Number(row?.item_type || 0);
+      const hotspotId = Number(row?.hotspot_ID || 0);
+      const routeId = Number(row?.itinerary_route_ID || 0);
+      if ((itemType !== 3 && itemType !== 4) || hotspotId <= 0 || routeId <= 0) {
+        return true;
+      }
+      return !invalidRouteHotspotKeys.has(`${routeId}|${hotspotId}`);
+    });
+
+    console.log('[HotspotRebuild][corridor_safety_filter]', {
+      planId,
+      beforeCorridorSafetyCount,
+      afterCorridorSafetyCount: dedupenedRows.length,
+      removedCount: beforeCorridorSafetyCount - dedupenedRows.length,
+      rejectedRouteHotspotKeys: Array.from(invalidRouteHotspotKeys.values()),
     });
 
     // 5.7) SORT final timeline rows by hotspot_start_time ASC (chronological)
@@ -1695,6 +1846,159 @@ export class HotspotEngineService {
     }
 
     return 0;
+  }
+
+  private normalizeRoutePlaceKey(value: any): string {
+    return String(value ?? '')
+      .replace(/&amp;/gi, '&')
+      .replace(/\([^)]*\)/g, ' ')
+      .replace(/\[[^\]]*]/g, ' ')
+      .toLowerCase()
+      .replace(/[^a-z0-9\s|,/-]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  private splitRoutePlaceTokens(value: any): string[] {
+    const raw = String(value ?? '');
+    if (!raw.trim()) return [];
+
+    const tokenSet = new Set<string>();
+    const addToken = (tokenValue: any) => {
+      const normalized = this.normalizeRoutePlaceKey(tokenValue);
+      if (normalized) tokenSet.add(normalized);
+    };
+
+    for (const segment of raw.split('|')) {
+      const trimmedSegment = String(segment || '').trim();
+      if (!trimmedSegment) continue;
+
+      addToken(trimmedSegment);
+      addToken(trimmedSegment.split(',')[0]);
+      addToken(
+        trimmedSegment.replace(
+          /\b(international airport|airport|railway station|railway|station|bus stand|bus station)\b.*$/i,
+          '',
+        ),
+      );
+    }
+
+    return Array.from(tokenSet.values());
+  }
+
+  private placeKeyMatches(left: string, right: string): boolean {
+    const normalizedLeft = this.normalizeRoutePlaceKey(left);
+    const normalizedRight = this.normalizeRoutePlaceKey(right);
+    if (!normalizedLeft || !normalizedRight) return false;
+    if (normalizedLeft === normalizedRight) return true;
+
+    const containsWholeToken = (haystack: string, needle: string) =>
+      new RegExp(`(^|\\s)${needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\s|$)`).test(
+        haystack,
+      );
+
+    if (containsWholeToken(normalizedLeft, normalizedRight)) return true;
+    if (containsWholeToken(normalizedRight, normalizedLeft)) return true;
+    return false;
+  }
+
+  private anyPlaceKeyMatches(leftKeys: string[], rightKeys: string[]): boolean {
+    if (!Array.isArray(leftKeys) || !Array.isArray(rightKeys)) return false;
+    for (const leftKey of leftKeys) {
+      for (const rightKey of rightKeys) {
+        if (this.placeKeyMatches(leftKey, rightKey)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  private areSameLocationTokenSets(leftKeys: string[], rightKeys: string[]): boolean {
+    if (!Array.isArray(leftKeys) || !Array.isArray(rightKeys) || !leftKeys.length || !rightKeys.length) {
+      return false;
+    }
+
+    return (
+      leftKeys.every((leftKey) => rightKeys.some((rightKey) => this.placeKeyMatches(leftKey, rightKey))) &&
+      rightKeys.every((rightKey) => leftKeys.some((leftKey) => this.placeKeyMatches(leftKey, rightKey)))
+    );
+  }
+
+  private isHotspotCompatibleWithRouteContext(
+    routeContext:
+      | {
+          routeId: number;
+          sourceLocation: string;
+          destinationLocation: string;
+          viaLocations: string[];
+        }
+      | undefined,
+    hotspot: any,
+    row?: any,
+  ): boolean {
+    if (!routeContext) return true;
+
+    const sourceKeys = this.splitRoutePlaceTokens(routeContext.sourceLocation);
+    const destinationKeys = this.splitRoutePlaceTokens(routeContext.destinationLocation);
+    const viaKeys = (Array.isArray(routeContext.viaLocations) ? routeContext.viaLocations : []).flatMap((value) =>
+      this.splitRoutePlaceTokens(value),
+    );
+    const routeKeys = [...sourceKeys, ...destinationKeys, ...viaKeys];
+    if (!routeKeys.length) return true;
+
+    const hotspotLocationKeys = this.splitRoutePlaceTokens(
+      hotspot?.hotspot_location ?? hotspot?.hotspotLocation ?? row?.hotspot_location ?? '',
+    );
+    const hotspotToLocationKeys = this.splitRoutePlaceTokens(
+      hotspot?.hotspot_to_location ??
+        hotspot?.hotspotToLocation ??
+        hotspot?.hotspot_location ??
+        row?.hotspot_to_location ??
+        row?.hotspot_location ??
+        '',
+    );
+
+    if (!hotspotLocationKeys.length && !hotspotToLocationKeys.length) {
+      return true;
+    }
+
+    if (
+      this.anyPlaceKeyMatches(hotspotLocationKeys, routeKeys) ||
+      this.anyPlaceKeyMatches(hotspotToLocationKeys, routeKeys)
+    ) {
+      return true;
+    }
+
+    const isSingleLocationHotspot =
+      this.areSameLocationTokenSets(hotspotLocationKeys, hotspotToLocationKeys) ||
+      !hotspotToLocationKeys.length;
+    if (isSingleLocationHotspot) {
+      return false;
+    }
+
+    const corridorPairs: Array<{ from: string[]; to: string[] }> = [
+      { from: sourceKeys, to: destinationKeys },
+      { from: destinationKeys, to: sourceKeys },
+    ];
+
+    for (const viaLocation of routeContext.viaLocations || []) {
+      const currentViaKeys = this.splitRoutePlaceTokens(viaLocation);
+      if (!currentViaKeys.length) continue;
+
+      corridorPairs.push({ from: sourceKeys, to: currentViaKeys });
+      corridorPairs.push({ from: currentViaKeys, to: sourceKeys });
+      corridorPairs.push({ from: currentViaKeys, to: destinationKeys });
+      corridorPairs.push({ from: destinationKeys, to: currentViaKeys });
+    }
+
+    return corridorPairs.some(
+      (pair) =>
+        pair.from.length > 0 &&
+        pair.to.length > 0 &&
+        this.anyPlaceKeyMatches(hotspotLocationKeys, pair.from) &&
+        this.anyPlaceKeyMatches(hotspotToLocationKeys, pair.to),
+    );
   }
 
   private calculateAllInsertionSlotDeltas(
