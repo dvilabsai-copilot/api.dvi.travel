@@ -8118,10 +8118,8 @@ export class TimelineBuilder {
         .split('|')[0]
         .trim();
 
-      let storedLoc: any = null;
-
-      if (route.location_id) {
-        storedLoc = await (tx as any).dvi_stored_locations?.findFirst({
+      if ((!targetLocation || !nextLocation) && route.location_id) {
+        const storedLoc = await (tx as any).dvi_stored_locations?.findFirst({
           where: {
             location_ID: BigInt(route.location_id),
             deleted: 0,
@@ -8130,31 +8128,6 @@ export class TimelineBuilder {
         });
 
         if (storedLoc) {
-          const routeSourceKey = this.canonicalCityKey(String(targetLocation || ''));
-          const routeDestinationKey = this.canonicalCityKey(String(nextLocation || ''));
-          const storedSourceKey = this.canonicalCityKey(String(storedLoc.source_location || ''));
-          const storedDestinationKey = this.canonicalCityKey(String(storedLoc.destination_location || ''));
-
-          if (
-            routeSourceKey &&
-            routeDestinationKey &&
-            storedSourceKey &&
-            storedDestinationKey &&
-            (routeSourceKey !== storedSourceKey || routeDestinationKey !== storedDestinationKey)
-          ) {
-            console.warn('[ROUTE_LOCATION_ID_MISMATCH]', {
-              planId,
-              routeId,
-              locationId: Number((route as any).location_id || 0),
-              routeSource: targetLocation,
-              routeDestination: nextLocation,
-              storedSource: storedLoc.source_location,
-              storedDestination: storedLoc.destination_location,
-              reason:
-                'Using route.location_name and route.next_visiting_location as source of truth for hotspot selection.',
-            });
-          }
-
           if (!targetLocation) {
             targetLocation = String(storedLoc.source_location || '')
               .split('|')[0]
@@ -8169,14 +8142,39 @@ export class TimelineBuilder {
         }
       }
 
-      if (!targetLocation || !nextLocation) {
-        console.warn('[HOTSPOT_SELECTION_ROUTE_CONTEXT_MISSING]', {
-          planId,
-          routeId,
-          locationId: Number((route as any).location_id || 0),
-          routeSource: (route as any).location_name,
-          routeDestination: (route as any).next_visiting_location,
-        });
+      // Last-resort fuzzy lookup only when both route fields are missing.
+      if (!targetLocation && !nextLocation) {
+        const lookupLocation = String(
+          (route as any).location_name ||
+            (route as any).next_visiting_location ||
+            '',
+        ).trim();
+
+        if (lookupLocation) {
+          const foundFuzzy = await (tx as any).dvi_stored_locations?.findFirst({
+            where: {
+              OR: [
+                { source_location: { contains: lookupLocation } },
+                { destination_location: { contains: lookupLocation } },
+              ],
+              deleted: 0,
+              status: 1,
+            },
+          });
+
+          if (foundFuzzy) {
+            targetLocation = String(foundFuzzy.source_location || '')
+              .split('|')[0]
+              .trim();
+
+            nextLocation = String(foundFuzzy.destination_location || '')
+              .split('|')[0]
+              .trim();
+          }
+        }
+      }
+
+      if (!targetLocation && !nextLocation) {
         return [];
       }
       this.logTimeline(
@@ -8273,10 +8271,20 @@ export class TimelineBuilder {
       let startLat = 0;
       let startLon = 0;
       
-      if (storedLoc) {
-        // Use source coordinates (PHP uses source for starting point)
-        startLat = Number(storedLoc.source_location_lattitude ?? 0);
-        startLon = Number(storedLoc.source_location_longitude ?? 0);
+      if (route.location_id) {
+        const storedLoc = await (tx as any).dvi_stored_locations?.findFirst({
+          where: {
+            location_ID: BigInt(route.location_id),
+            deleted: 0,
+            status: 1,
+          },
+        });
+        
+        if (storedLoc) {
+          // Use source coordinates (PHP uses source for starting point)
+          startLat = Number(storedLoc.source_location_lattitude ?? 0);
+          startLon = Number(storedLoc.source_location_longitude ?? 0);
+        }
       }
       
       // Fallback: If location_id is missing/0 and no coordinates, try by location_name

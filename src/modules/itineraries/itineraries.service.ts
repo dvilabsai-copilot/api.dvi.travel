@@ -5188,6 +5188,17 @@ export class ItinerariesService {
     return { pendingBookings, alreadyConfirmedResults };
   }
 
+  private roundHotelAmount(value: any): number {
+  const amount = Number(value || 0);
+
+  if (!Number.isFinite(amount)) return 0;
+
+  const floorAmount = Math.floor(amount);
+  const decimal = amount - floorAmount;
+
+  return decimal > 0.5 ? floorAmount + 1 : floorAmount;
+}
+
   async prebookHotels(payload: {
     itinerary_plan_ID: number;
     hotel_bookings: Array<{
@@ -5431,7 +5442,10 @@ export class ItinerariesService {
       const finalPriceCandidate = candidatePrices.find(
         (price) => typeof price === 'number' || (typeof price === 'string' && price !== ''),
       );
-      const finalPrice = finalPriceCandidate !== undefined ? Number(finalPriceCandidate) : 0;
+  const finalPrice =
+  finalPriceCandidate !== undefined
+    ? this.roundHotelAmount(finalPriceCandidate)
+    : 0;
 
       const prebookNetAmountCandidates = [
         prebookResponse?.NetAmount,

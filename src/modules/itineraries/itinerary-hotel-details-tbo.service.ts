@@ -2427,15 +2427,20 @@ export class ItineraryHotelDetailsTboService {
       }
     }
 
-    // STAAH confirmed booking override map (latest row per route)
-    const confirmedStaahRows = await (this.prisma as any).staah_hotel_booking_confirmation.findMany({
+   // STAAH confirmed booking override map (latest row per route)
+const staahConfirmationModel =
+  (this.prisma as any).staah_hotel_booking_confirmation;
+
+const confirmedStaahRows = staahConfirmationModel?.findMany
+  ? await staahConfirmationModel.findMany({
       where: {
         itinerary_plan_ID: planId,
         status: 1,
         deleted: 0,
       },
       orderBy: { staah_hotel_booking_confirmation_ID: 'desc' },
-    });
+    })
+  : [];
     const confirmedStaahByRouteId = new Map<number, any>();
     for (const row of confirmedStaahRows as any[]) {
       const routeId = Number((row as any).itinerary_route_ID || 0);
