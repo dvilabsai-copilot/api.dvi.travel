@@ -240,6 +240,7 @@ export class HotelVoucherService {
       status: string;
     }> = [];
     const routeIdsToCancel = new Set<number>();
+    const hotelDetailsIdsToCancel = new Set<number>();
     const staahTargetsToCancel = new Map<string, { routeId: number; hotelId: number }>();
 
     for (const voucher of dto.vouchers) {
@@ -307,6 +308,10 @@ export class HotelVoucherService {
       // Collect route IDs that need cancellation
       if (voucher.status === 'cancelled') {
         routeIdsToCancel.add(voucher.routeId);
+        (voucher.hotelDetailsIds || [])
+          .map((id) => Number(id))
+          .filter((id) => Number.isFinite(id) && id > 0)
+          .forEach((id) => hotelDetailsIdsToCancel.add(id));
         const routeId = Number(voucher.routeId || 0);
         const hotelId = Number(voucher.hotelId || 0);
         if (routeId > 0 && hotelId > 0) {
@@ -412,17 +417,57 @@ export class HotelVoucherService {
         });
       }
 
-      await this.prisma.dvi_itinerary_plan_hotel_details.updateMany({
-        where: {
-          itinerary_plan_id: dto.itineraryPlanId,
-          itinerary_route_id: { in: routeIdsArray } as any,
-          deleted: 0,
-        } as any,
-        data: {
-          hotel_cancellation_status: 1,
-          updatedon: new Date(),
-        } as any,
-      });
+      const cancelledHotelDetailIds = Array.from(hotelDetailsIdsToCancel);
+
+      if (cancelledHotelDetailIds.length > 0) {
+        await this.prisma.dvi_itinerary_plan_hotel_details.updateMany({
+          where: {
+            itinerary_plan_id: dto.itineraryPlanId,
+            itinerary_plan_hotel_details_ID: { in: cancelledHotelDetailIds } as any,
+            deleted: 0,
+          } as any,
+          data: {
+            hotel_cancellation_status: 1,
+            updatedon: new Date(),
+          } as any,
+        });
+
+        await this.prisma.dvi_confirmed_itinerary_plan_hotel_details.updateMany({
+          where: {
+            itinerary_plan_id: dto.itineraryPlanId,
+            itinerary_plan_hotel_details_ID: { in: cancelledHotelDetailIds } as any,
+            deleted: 0,
+          } as any,
+          data: {
+            hotel_cancellation_status: 1,
+            updatedon: new Date(),
+          } as any,
+        });
+      } else {
+        await this.prisma.dvi_itinerary_plan_hotel_details.updateMany({
+          where: {
+            itinerary_plan_id: dto.itineraryPlanId,
+            itinerary_route_id: { in: routeIdsArray } as any,
+            deleted: 0,
+          } as any,
+          data: {
+            hotel_cancellation_status: 1,
+            updatedon: new Date(),
+          } as any,
+        });
+
+        await this.prisma.dvi_confirmed_itinerary_plan_hotel_details.updateMany({
+          where: {
+            itinerary_plan_id: dto.itineraryPlanId,
+            itinerary_route_id: { in: routeIdsArray } as any,
+            deleted: 0,
+          } as any,
+          data: {
+            hotel_cancellation_status: 1,
+            updatedon: new Date(),
+          } as any,
+        });
+      }
     }
 
     return {
@@ -549,6 +594,18 @@ export class HotelVoucherService {
       }
 
     await this.prisma.dvi_itinerary_plan_hotel_details.updateMany({
+      where: {
+        itinerary_plan_id: itineraryPlanId,
+        itinerary_plan_hotel_details_ID: { in: targetHotelDetailIds } as any,
+        deleted: 0,
+      } as any,
+      data: {
+        hotel_cancellation_status: 1,
+        updatedon: new Date(),
+      } as any,
+    });
+
+    await this.prisma.dvi_confirmed_itinerary_plan_hotel_details.updateMany({
       where: {
         itinerary_plan_id: itineraryPlanId,
         itinerary_plan_hotel_details_ID: { in: targetHotelDetailIds } as any,
