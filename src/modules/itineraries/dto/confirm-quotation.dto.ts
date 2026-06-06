@@ -218,6 +218,26 @@ export class HotelSelectionDto {
   @IsOptional()
   @IsObject()
   prebookContext?: Record<string, any>;
+
+  @ApiProperty({ example: true, required: false })
+  @IsOptional()
+  @IsBoolean()
+  isBookable?: boolean;
+
+  @ApiProperty({ example: false, required: false })
+  @IsOptional()
+  @IsBoolean()
+  externalStay?: boolean;
+
+  @ApiProperty({ example: 'AVAILABLE', required: false })
+  @IsOptional()
+  @IsString()
+  availabilityStatus?: string;
+
+  @ApiProperty({ example: null, required: false })
+  @IsOptional()
+  @IsString()
+  availabilityMessage?: string | null;
 }
 
 export class ConfirmQuotationDto {
@@ -332,6 +352,28 @@ export class ConfirmQuotationDto {
   @ValidateNested({ each: true })
   @Type(() => HotelSelectionDto)
   hotel_bookings?: HotelSelectionDto[];
+
+  @ApiProperty({
+    type: [Number],
+    required: false,
+    description: 'Route IDs that have supplier-bookable hotels selected in the confirm modal',
+  })
+  @IsOptional()
+  @IsArray()
+  @Type(() => Number)
+  @IsInt({ each: true })
+  selected_hotel_route_ids?: number[];
+
+  @ApiProperty({
+    type: [Number],
+    required: false,
+    description: 'Route IDs that are external/self-arranged and must not be copied as booked hotels',
+  })
+  @IsOptional()
+  @IsArray()
+  @Type(() => Number)
+  @IsInt({ each: true })
+  external_stay_route_ids?: number[];
 
   @ApiProperty({ example: '192.168.1.1', required: false })
   @IsOptional()
