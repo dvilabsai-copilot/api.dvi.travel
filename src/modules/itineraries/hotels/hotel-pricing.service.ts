@@ -88,7 +88,8 @@ export class HotelPricingService {
     }
 
     const marginPercentage = this.getHotelMarginPercentage(hotel);
-    return Math.round(baseAmount + (baseAmount * marginPercentage) / 100);
+    const amountWithMargin = baseAmount + (baseAmount * marginPercentage) / 100;
+    return this.money(amountWithMargin);
   }
 
   /**

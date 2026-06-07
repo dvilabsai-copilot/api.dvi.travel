@@ -303,6 +303,8 @@ export class TBOHotelProvider implements IHotelProvider {
           }
           const netAmount = room.NetAmount || room.TotalFare || room.DayRates?.[0]?.[0]?.BasePrice || 0;
           const totalFare = room.TotalFare || room.NetAmount || room.DayRates?.[0]?.[0]?.BasePrice || 0;
+          const formattedNetAmount = parseFloat(netAmount.toString());
+          const formattedTotalFare = parseFloat(totalFare.toString());
           const roomName = room.Name?.[0] || 'Standard Room';
           const inclusionText = String(room.Inclusion || '').trim();
           const inclusions = inclusionText
@@ -336,11 +338,15 @@ export class TBOHotelProvider implements IHotelProvider {
             roomName: roomName,
             bedType: roomName.includes('King') ? 'King' : 'Twin',
             capacity: 2,
-            price: parseFloat(netAmount.toString()),
+            price: formattedNetAmount,
             cancellationPolicy: room.CancelPolicies?.[0]?.ChargeType || 'Non-refundable',
             // ✅ Add supplements to room type
             supplements: rawSupplements.length > 0 ? rawSupplements : undefined,
           };
+
+          this.logger.log(
+            `   TBO search price formatting: hotel=${hotel.HotelCode} room="${roomName}" bookingCode=${realBookingCode} rawNetAmount=${room.NetAmount ?? 'null'} rawTotalFare=${room.TotalFare ?? 'null'} rawBasePrice=${room.DayRates?.[0]?.[0]?.BasePrice ?? 'null'} formattedPrice=${formattedNetAmount} formattedNetAmount=${formattedNetAmount} formattedTotalFare=${formattedTotalFare}`,
+          );
 
           results.push({
             provider: 'tbo',
@@ -361,9 +367,9 @@ export class TBOHotelProvider implements IHotelProvider {
             inclusions,
             rateConditions,
             images: [],
-            price: parseFloat(netAmount.toString()),
-            netAmount: parseFloat(netAmount.toString()),
-            totalFare: parseFloat(totalFare.toString()),
+            price: formattedNetAmount,
+            netAmount: formattedNetAmount,
+            totalFare: formattedTotalFare,
             currency: hotel.Currency || 'INR',
             roomType: roomName, // Room type name for display
             mealPlan: getNormalizedMealPlanLabelFromMealText(room.Inclusion),
