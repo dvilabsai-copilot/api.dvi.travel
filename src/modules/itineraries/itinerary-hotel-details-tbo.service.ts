@@ -285,6 +285,15 @@ export class ItineraryHotelDetailsTboService {
     return Number.isFinite(fallbackMargin) && fallbackMargin > 0 ? fallbackMargin : 0;
   }
 
+  private money(value: number): number {
+    const amount = Number(value || 0);
+    if (!Number.isFinite(amount)) {
+      return 0;
+    }
+
+    return Number(amount.toFixed(2));
+  }
+
   private applyInvisibleHotelMargin(amount: number, hotel: any): number {
     const baseAmount = Number(amount || 0);
     if (!Number.isFinite(baseAmount) || baseAmount <= 0) {
@@ -292,7 +301,8 @@ export class ItineraryHotelDetailsTboService {
     }
 
     const marginPercentage = this.getHotelMarginPercentage(hotel);
-    return Math.round(baseAmount + (baseAmount * marginPercentage) / 100);
+    const amountWithMargin = baseAmount + (baseAmount * marginPercentage) / 100;
+    return this.money(amountWithMargin);
   }
 
   private enrichHotelWithMasterMargin(hotel: any, hotelMasterByProviderCode: Map<string, any>): any {
@@ -2126,9 +2136,11 @@ export class ItineraryHotelDetailsTboService {
 
       // Add package with ALL matching hotels for this tier
       if (tieredHotels.length > 0) {
-        const totalPrice = tieredHotels.reduce(
-          (sum, h) => sum + this.applyInvisibleHotelMargin(Number(h.price || 0), h),
-          0,
+        const totalPrice = this.money(
+          tieredHotels.reduce(
+            (sum, h) => sum + this.applyInvisibleHotelMargin(Number(h.price || 0), h),
+            0,
+          ),
         );
         packages.push({
           groupType: groupType,
@@ -2233,10 +2245,12 @@ export class ItineraryHotelDetailsTboService {
     }
 
     const hotelTabs: ItineraryHotelTabDto[] = packages.map((pkg) => {
-      const totalAmount = pkg.hotels.reduce((sum, h) => {
-        const pricedHotel = this.enrichHotelWithMasterMargin(h, marginHotelMasterByProviderCode);
-        return sum + this.applyInvisibleHotelMargin(Number(pricedHotel.price || 0), pricedHotel);
-      }, 0);
+      const totalAmount = this.money(
+        pkg.hotels.reduce((sum, h) => {
+          const pricedHotel = this.enrichHotelWithMasterMargin(h, marginHotelMasterByProviderCode);
+          return sum + this.applyInvisibleHotelMargin(Number(pricedHotel.price || 0), pricedHotel);
+        }, 0),
+      );
       return {
         groupType: pkg.groupType,
         label: pkg.label,
@@ -2918,7 +2932,7 @@ export class ItineraryHotelDetailsTboService {
           hotelMarginPercentage: this.getHotelMarginPercentage(pricedHotel),
           pricePerNight: totalHotelCost,
           numberOfNights: noOfNights,
-          totalPrice: totalHotelCost * noOfNights,
+          totalPrice: this.money(totalHotelCost * noOfNights),
           currency: hotel.currency || 'INR',
           mealPlan: hotel.mealPlan || 'Not Specified',
           facilities: hotel.facilities || [],
