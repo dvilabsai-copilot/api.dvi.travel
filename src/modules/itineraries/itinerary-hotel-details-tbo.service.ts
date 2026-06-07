@@ -1117,6 +1117,7 @@ export class ItineraryHotelDetailsTboService {
       childAges: childAges.length > 0 ? childAges : undefined,
       guestNationality,
       providers: searchProviders,
+      allowPastDates: true,
     };
 
     this.logger.log(
@@ -1260,6 +1261,7 @@ export class ItineraryHotelDetailsTboService {
             childCount: safeChildCount,
             guestNationality,
             providers: ['resavenue'], // Only ResAvenue
+            allowPastDates: true,
           });
 
           if (resavenueHotels && resavenueHotels.length > 0) {
@@ -2428,14 +2430,34 @@ export class ItineraryHotelDetailsTboService {
     }
 
     // STAAH confirmed booking override map (latest row per route)
-    const confirmedStaahRows = await (this.prisma as any).staah_hotel_booking_confirmation.findMany({
-      where: {
-        itinerary_plan_ID: planId,
-        status: 1,
-        deleted: 0,
-      },
-      orderBy: { staah_hotel_booking_confirmation_ID: 'desc' },
-    });
+    let confirmedStaahRows: any[] = [];
+    if (typeof (this.prisma as any).staah_hotel_booking_confirmation?.findMany === 'function') {
+      try {
+        confirmedStaahRows = await (this.prisma as any).staah_hotel_booking_confirmation.findMany({
+          where: {
+            itinerary_plan_ID: planId,
+            status: 1,
+            deleted: 0,
+          },
+          orderBy: { staah_hotel_booking_confirmation_ID: 'desc' },
+        });
+      } catch (error: any) {
+        const isMissingTable =
+          error?.code === 'P2021' ||
+          error?.code === 'P2025' ||
+          /does not exist/i.test(String(error?.message || ''));
+        if (isMissingTable) {
+          this.logger.warn(
+            `âš ï¸ STAAH booking confirmation table missing for plan ${planId}. Skipping override lookup.`,
+          );
+          confirmedStaahRows = [];
+        } else {
+          throw error;
+        }
+      }
+    } else {
+      this.logger.warn('âš ï¸ STAAH confirmation model unavailable on Prisma client; skipping override lookup.');
+    }
     const confirmedStaahByRouteId = new Map<number, any>();
     for (const row of confirmedStaahRows as any[]) {
       const routeId = Number((row as any).itinerary_route_ID || 0);

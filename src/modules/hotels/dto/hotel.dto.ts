@@ -13,6 +13,7 @@ import {
   IsInt,
   Max,
   Matches,
+  IsBoolean,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -100,6 +101,10 @@ export class HotelSearchDTO {
   @IsArray()
   @IsOptional()
   providers?: string[];
+
+  @IsOptional()
+  @IsBoolean()
+  allowPastDates?: boolean;
 
   @IsObject()
   @IsOptional()

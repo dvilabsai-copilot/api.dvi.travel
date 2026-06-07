@@ -67,7 +67,10 @@ export class HotelSearchService {
         guestNationality,
         occupancies,
         providers = ['tbo', 'resavenue', 'hobse'], // Search all providers by default
+        allowPastDates = false,
       } = searchCriteria;
+
+      const enablePastDates = Boolean(allowPastDates);
 
       this.logger.log('\n🔍 HOTEL SEARCH SERVICE PROCESSING');
       this.logger.log(`📥 Input Criteria:`);
@@ -84,6 +87,9 @@ export class HotelSearchService {
         this.logger.log(`   - Nationality: ${guestNationality}`);
       }
       this.logger.log(`   - Providers: ${providers.join(', ')}`);
+      if (enablePastDates) {
+        this.logger.log('   - allowPastDates: true');
+      }
 
       // Validation
       if (!cityCode) {
@@ -108,7 +114,7 @@ export class HotelSearchService {
       // Compare at day granularity so same-day bookings remain valid after midnight.
       const today = new Date();
       today.setHours(0, 0, 0, 0);
-      if (checkIn < today) {
+      if (!enablePastDates && checkIn < today) {
         throw new BadRequestException('Check-in date cannot be in the past');
       }
 
