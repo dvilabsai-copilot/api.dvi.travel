@@ -9,4 +9,5 @@ tmp/
 tbo-hotel-provider.log
 public/
 start-dev.log
-*.txt
+*.txtstart-dev.log
+resavenue-hotel-provider.log
