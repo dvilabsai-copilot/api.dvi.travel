@@ -1143,8 +1143,7 @@ export class ItinerariesController {
   @ApiOkResponse({ description: 'Quotation confirmed successfully' })
   async confirmQuotation(@Body() dto: ConfirmQuotationDto, @Req() req: Request) {
     const baseResult = await this.svc.confirmQuotation(dto);
-    
-    // If hotel bookings are selected, process bookings outside the transaction
+
     if (dto.hotel_bookings && dto.hotel_bookings.length > 0) {
       const clientIp = (req.ip || req.headers['x-forwarded-for'] || '192.168.1.1') as string;
       return await this.svc.processConfirmationWithTboBookings(
@@ -1153,8 +1152,17 @@ export class ItinerariesController {
         clientIp,
       );
     }
-    
-    return baseResult;
+
+    const confirmedPlanId = Number(baseResult?.confirmed_itinerary_plan_ID || 0);
+
+    const confirmedHotelDetails = confirmedPlanId > 0
+      ? await this.svc.getConfirmedItineraryDetails(confirmedPlanId)
+      : null;
+
+    return {
+      ...baseResult,
+      confirmedHotelDetails,
+    };
   }
 
   @Post('cancel')

@@ -135,3 +135,92 @@ Safety notes:
   - `dvi_hotel_4222_backup_before_city_geocode_fix`
   - `dvi_cities_4222_backup_before_city_geocode_fix`
 - Logging goes to `dvi_hotel_city_geocode_fix_log`.
+
+## Sri Lanka Hotel and City State Fix
+
+This pass is specific to Sri Lanka where provinces still map into `dvi_states`.
+It geocodes at the city level and defaults to throttled Nominatim/OpenStreetMap requests with a custom `User-Agent`.
+Google is disabled unless `GEOCODE_PROVIDER=google` is explicitly set and a non-empty `GOOGLE_MAPS_API_KEY` is available.
+
+Recommended env:
+
+- `SRI_LANKA_COUNTRY_ID=206`
+- `BAD_SRI_LANKA_STATE_ID=4327`
+- `GEOCODE_PROVIDER=nominatim`
+- `DRY_RUN=true`
+- `LIMIT=100`
+- `GEOCODE_DELAY_MS=1200`
+- `ONLY_CITY_ID=` optional
+- `ONLY_CITY_NAME=` optional
+- `ONLY_HOTEL_ID=` optional
+- `GOOGLE_MAPS_API_KEY=`
+- `NOMINATIM_USER_AGENT=DVI-SriLanka-State-Cleanup/1.0 (contact: kiran.phpfish@gmail.com)`
+
+Verify before fix:
+
+```bash
+node scripts/verify-srilanka-hotel-city-states.js
+```
+
+Dry run small batch:
+
+```bash
+DRY_RUN=true LIMIT=20 node scripts/fix-srilanka-hotel-city-states.js
+```
+
+Dry run with explicit Nominatim provider:
+
+```bash
+GEOCODE_PROVIDER=nominatim DRY_RUN=true LIMIT=20 node scripts/fix-srilanka-hotel-city-states.js
+```
+
+Dry run one city:
+
+```bash
+DRY_RUN=true ONLY_CITY_NAME=Colombo LIMIT=10 node scripts/fix-srilanka-hotel-city-states.js
+```
+
+Apply small batch:
+
+```bash
+DRY_RUN=false LIMIT=20 node scripts/fix-srilanka-hotel-city-states.js
+```
+
+Verify after fix:
+
+```bash
+node scripts/verify-srilanka-hotel-city-states.js
+```
+
+PowerShell:
+
+```powershell
+$env:DRY_RUN="true"; $env:LIMIT="20"; node scripts/fix-srilanka-hotel-city-states.js
+$env:GEOCODE_PROVIDER="nominatim"; $env:DRY_RUN="true"; $env:LIMIT="20"; node scripts/fix-srilanka-hotel-city-states.js
+$env:DRY_RUN="true"; $env:ONLY_CITY_NAME="Colombo"; $env:LIMIT="10"; node scripts/fix-srilanka-hotel-city-states.js
+```
+
+Validation:
+
+```bash
+node --check scripts/fix-srilanka-hotel-city-states.js
+node --check scripts/verify-srilanka-hotel-city-states.js
+```
+
+Dry-run sequence:
+
+```bash
+node scripts/verify-srilanka-hotel-city-states.js
+DRY_RUN=true LIMIT=20 node scripts/fix-srilanka-hotel-city-states.js
+```
+
+Real-mode safety notes:
+
+- The Sri Lanka script defaults to dry-run and will not make real DB updates unless `DRY_RUN=false`.
+- The Sri Lanka script defaults to `GEOCODE_PROVIDER=nominatim`.
+- Google is only used when `GEOCODE_PROVIDER=google` and `GOOGLE_MAPS_API_KEY` is non-empty.
+- Real mode creates backup tables before updates:
+  - `dvi_hotel_srilanka_state_4327_backup`
+  - `dvi_cities_srilanka_state_4327_backup`
+- Logging goes to `dvi_srilanka_geo_state_fix_log`.
+- The script does not delete or merge duplicate states automatically.

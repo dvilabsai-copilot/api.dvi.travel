@@ -285,6 +285,15 @@ export class ItineraryHotelDetailsTboService {
     return Number.isFinite(fallbackMargin) && fallbackMargin > 0 ? fallbackMargin : 0;
   }
 
+  private money(value: number): number {
+    const amount = Number(value || 0);
+    if (!Number.isFinite(amount)) {
+      return 0;
+    }
+
+    return Number(amount.toFixed(2));
+  }
+
   private applyInvisibleHotelMargin(amount: number, hotel: any): number {
     const baseAmount = Number(amount || 0);
     if (!Number.isFinite(baseAmount) || baseAmount <= 0) {
@@ -292,7 +301,8 @@ export class ItineraryHotelDetailsTboService {
     }
 
     const marginPercentage = this.getHotelMarginPercentage(hotel);
-    return Math.round(baseAmount + (baseAmount * marginPercentage) / 100);
+    const amountWithMargin = baseAmount + (baseAmount * marginPercentage) / 100;
+    return this.money(amountWithMargin);
   }
 
   private enrichHotelWithMasterMargin(hotel: any, hotelMasterByProviderCode: Map<string, any>): any {
@@ -2080,7 +2090,13 @@ export class ItineraryHotelDetailsTboService {
             mealPlan: '-',
             price: 0,
             rating: 0,
-            routeId: routeId
+            routeId: routeId,
+            provider: 'external',
+            isBookable: false,
+            externalStay: true,
+            availabilityStatus: 'NO_SUPPLIER_AVAILABILITY',
+            availabilityMessage:
+              'No supplier hotel rooms are available for this city/date. Customer must arrange stay manually.',
           };
           tieredHotels.push(placeholderHotel);
           continue;
@@ -2122,9 +2138,11 @@ export class ItineraryHotelDetailsTboService {
 
       // Add package with ALL matching hotels for this tier
       if (tieredHotels.length > 0) {
-        const totalPrice = tieredHotels.reduce(
-          (sum, h) => sum + this.applyInvisibleHotelMargin(Number(h.price || 0), h),
-          0,
+        const totalPrice = this.money(
+          tieredHotels.reduce(
+            (sum, h) => sum + this.applyInvisibleHotelMargin(Number(h.price || 0), h),
+            0,
+          ),
         );
         packages.push({
           groupType: groupType,
@@ -2229,10 +2247,12 @@ export class ItineraryHotelDetailsTboService {
     }
 
     const hotelTabs: ItineraryHotelTabDto[] = packages.map((pkg) => {
-      const totalAmount = pkg.hotels.reduce((sum, h) => {
-        const pricedHotel = this.enrichHotelWithMasterMargin(h, marginHotelMasterByProviderCode);
-        return sum + this.applyInvisibleHotelMargin(Number(pricedHotel.price || 0), pricedHotel);
-      }, 0);
+      const totalAmount = this.money(
+        pkg.hotels.reduce((sum, h) => {
+          const pricedHotel = this.enrichHotelWithMasterMargin(h, marginHotelMasterByProviderCode);
+          return sum + this.applyInvisibleHotelMargin(Number(pricedHotel.price || 0), pricedHotel);
+        }, 0),
+      );
       return {
         groupType: pkg.groupType,
         label: pkg.label,
@@ -2539,6 +2559,24 @@ export class ItineraryHotelDetailsTboService {
         const pricedHotel = this.enrichHotelWithMasterMargin(hotel, new Map());
         const baseHotelCost = Number(pricedHotel.price || 0);
         const totalHotelCost = this.applyInvisibleHotelMargin(baseHotelCost, pricedHotel);
+        const normalizedProvider = String(hotel.provider || 'tbo').trim().toLowerCase();
+        const rawBookingCode =
+          normalizedProvider === 'tbo'
+            ? String(hotel.searchReference || hotel.roomTypes?.[0]?.roomCode || (hotel as any).bookingCode || '').trim()
+            : String((hotel as any).bookingCode || hotel.hotelCode || '').trim();
+        const rawHotelCode = String(hotel.hotelCode || '').trim();
+        const isNoHotelsAvailable =
+          String(hotel.hotelName || '').trim().toLowerCase() === 'no hotels available' ||
+          rawHotelCode === '0';
+        const hasSupplierHotel =
+          !isNoHotelsAvailable &&
+          Boolean(rawHotelCode) &&
+          rawHotelCode !== '0' &&
+          Number.isFinite(baseHotelCost) &&
+          baseHotelCost > 0;
+        const hasLiveBookingCode =
+          normalizedProvider !== 'tbo' || rawBookingCode.includes('!TB!');
+        const isPrebookReady = hasSupplierHotel && hasLiveBookingCode;
 
         hotelRows.push({
           groupType: pkg.groupType,
@@ -2555,11 +2593,14 @@ export class ItineraryHotelDetailsTboService {
           totalHotelCost,
           totalHotelTaxAmount: 0,
           searchReference: hotel.searchReference,
-          bookingCode:
-            (hotel.provider || 'tbo').toLowerCase() === 'tbo'
-              ? hotel.searchReference || hotel.roomTypes?.[0]?.roomCode || undefined
-              : hotel.hotelCode,
-          provider: hotel.provider || 'tbo',
+          bookingCode: isPrebookReady ? rawBookingCode : undefined,
+          provider: hasSupplierHotel ? normalizedProvider : 'external',
+          isBookable: hasSupplierHotel,
+          externalStay: !hasSupplierHotel,
+          availabilityStatus: hasSupplierHotel ? 'AVAILABLE' : 'NO_SUPPLIER_AVAILABILITY',
+          availabilityMessage: hasSupplierHotel
+            ? null
+            : 'No supplier hotel rooms are available for this city/date. Customer must arrange stay manually.',
           voucherCancelled: voucherCancelled,
           itineraryPlanHotelDetailsId: hotelDetailsId || 0,
           date: dateLabel,
@@ -2647,10 +2688,10 @@ export class ItineraryHotelDetailsTboService {
     }
 
     const supplierHotelRows = hotelRows.filter(
-      (row) => row.hotelId > 0 && row.hotelName !== 'No Hotels Available',
+      (row) => row.isBookable !== false && row.hotelName !== 'No Hotels Available',
     );
     const placeholderRows = hotelRows.filter(
-      (row) => row.hotelName === 'No Hotels Available',
+      (row) => row.externalStay === true || row.hotelName === 'No Hotels Available' || row.isBookable === false,
     );
 
     const searchableRouteIds = routes
@@ -2913,7 +2954,7 @@ export class ItineraryHotelDetailsTboService {
           hotelMarginPercentage: this.getHotelMarginPercentage(pricedHotel),
           pricePerNight: totalHotelCost,
           numberOfNights: noOfNights,
-          totalPrice: totalHotelCost * noOfNights,
+          totalPrice: this.money(totalHotelCost * noOfNights),
           currency: hotel.currency || 'INR',
           mealPlan: hotel.mealPlan || 'Not Specified',
           facilities: hotel.facilities || [],

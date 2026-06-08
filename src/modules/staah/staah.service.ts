@@ -388,6 +388,380 @@ export class StaahService {
     }
   }
 
+  private async findStaahHotel(
+    tx: Prisma.TransactionClient,
+    propertyId: string,
+  ): Promise<{ hotel_id: number }> {
+    const hotel = await tx.dvi_hotel.findFirst({
+      where: {
+        staah_property_id: propertyId,
+        staah_enabled: 1,
+        deleted: { not: true },
+      },
+      select: { hotel_id: true },
+    });
+
+    if (!hotel) {
+      throw new BadRequestException(STAAH_MESSAGES.INVALID_PROPERTY_ID);
+    }
+
+    return hotel;
+  }
+
+  private toStaahTime(value: string): Date {
+    return new Date(`1970-01-01T${value}Z`);
+  }
+
+  private toFiniteNumber(value: unknown): number | null {
+    const num = Number(value);
+    return Number.isFinite(num) ? num : null;
+  }
+
+  private getLatestStaahInventory(
+    rows: Array<Record<string, any>>,
+  ): number | null {
+    let best: { from: number; to: number; value: number } | null = null;
+
+    for (const row of rows) {
+      if (!this.hasDefinedValue(row?.inventory)) {
+        continue;
+      }
+
+      const inventory = this.toFiniteNumber(row.inventory);
+      if (inventory === null) {
+        continue;
+      }
+
+      const fromDate = this.parseIsoDateOnly(row.from_date, 'from_date').getTime();
+      const toDate = this.parseIsoDateOnly(row.to_date, 'to_date').getTime();
+
+      if (
+        !best
+        || fromDate > best.from
+        || (fromDate === best.from && toDate > best.to)
+      ) {
+        best = { from: fromDate, to: toDate, value: inventory };
+      }
+    }
+
+    return best?.value ?? null;
+  }
+
+  private getStaahMealFlags(rateId: string): {
+    breakfast_included: number;
+    lunch_included: number;
+    dinner_included: number;
+  } {
+    switch (String(rateId || '').trim().toUpperCase()) {
+      case 'CPPLAN':
+        return { breakfast_included: 1, lunch_included: 0, dinner_included: 0 };
+      case 'MAPPLAN':
+        return { breakfast_included: 1, lunch_included: 0, dinner_included: 1 };
+      case 'APPLAN':
+        return { breakfast_included: 1, lunch_included: 1, dinner_included: 1 };
+      case 'EPPLAN':
+      default:
+        return { breakfast_included: 0, lunch_included: 0, dinner_included: 0 };
+    }
+  }
+
+  private toDviLegacyRatePlanId(staahRateId: string): string {
+    switch (String(staahRateId || '').trim().toUpperCase()) {
+      case 'CPPLAN':
+        return 'CP_PLAN';
+      case 'MAPPLAN':
+        return 'MAP_PLAN';
+      case 'APPLAN':
+        return 'AP_PLAN';
+      case 'EPPLAN':
+        return 'EP_PLAN';
+      default:
+        return String(staahRateId || '').trim();
+    }
+  }
+
+  private fromDviLegacyRatePlanCode(dviRatePlanId: string): {
+    rate_plan_code: string;
+    rateplan_name: string;
+    meal_plan_description: string;
+  } {
+    switch (String(dviRatePlanId || '').trim().toUpperCase()) {
+      case 'CP_PLAN':
+        return {
+          rate_plan_code: 'CP',
+          rateplan_name: 'CP',
+          meal_plan_description: 'Breakfast only',
+        };
+      case 'MAP_PLAN':
+        return {
+          rate_plan_code: 'MAP',
+          rateplan_name: 'Modified American Plan',
+          meal_plan_description: 'Breakfast + one major meal',
+        };
+      case 'AP_PLAN':
+        return {
+          rate_plan_code: 'AP',
+          rateplan_name: 'AP',
+          meal_plan_description: 'Breakfast + Lunch + Dinner',
+        };
+      case 'EP_PLAN':
+        return {
+          rate_plan_code: 'EP',
+          rateplan_name: 'EP',
+          meal_plan_description: 'Room only',
+        };
+      default: {
+        const fallback = String(dviRatePlanId || '').trim();
+        return {
+          rate_plan_code: fallback,
+          rateplan_name: fallback,
+          meal_plan_description: fallback,
+        };
+      }
+    }
+  }
+
+  private extractStaahOccupancyRates(
+    row: Record<string, any>,
+  ): Record<string, number> | null {
+    const source = (row.amountAfterTax && typeof row.amountAfterTax === 'object')
+      ? row.amountAfterTax
+      : (row.amountBeforeTax && typeof row.amountBeforeTax === 'object')
+        ? row.amountBeforeTax
+        : null;
+
+    if (!source) {
+      return null;
+    }
+
+    const occupancyRates: Record<string, number> = {};
+    const obp = source.obp && typeof source.obp === 'object' ? source.obp : {};
+    const personKeys = [
+      ['person1', 'SINGLE'],
+      ['person2', 'DOUBLE'],
+      ['person3', 'TRIPLE'],
+      ['person4', 'QUAD'],
+      ['person5', 'PENTA'],
+      ['person6', 'HEXA'],
+      ['person7', 'HEPTA'],
+      ['person8', 'OCTA'],
+      ['person9', 'NONA'],
+      ['person10', 'DECA'],
+    ] as const;
+
+    for (const [sourceKey, targetKey] of personKeys) {
+      const value = this.toFiniteNumber(obp[sourceKey]);
+      if (value !== null) {
+        occupancyRates[targetKey] = value;
+      }
+    }
+
+    if (occupancyRates.SINGLE === undefined) {
+      const baseRate = this.toFiniteNumber(source.Rate);
+      if (baseRate !== null) {
+        occupancyRates.SINGLE = baseRate;
+      }
+    }
+
+    const extraAdult = this.toFiniteNumber(source.extraadult);
+    if (extraAdult !== null) {
+      occupancyRates.EXTRAADULT = extraAdult;
+    }
+
+    const extraChild = this.toFiniteNumber(source.extrachild);
+    if (extraChild !== null) {
+      occupancyRates.EXTRACHILD = extraChild;
+    }
+
+    return Object.keys(occupancyRates).length > 0 ? occupancyRates : null;
+  }
+
+  private async upsertStaahNativeRoom(
+    tx: Prisma.TransactionClient,
+    hotelId: number,
+    dto: AriRequestDto,
+    latestInventory: number | null,
+  ): Promise<{ room_ID: bigint | number }> {
+    const mealFlags = this.getStaahMealFlags(dto.rate_id);
+    const existing = await tx.dvi_hotel_rooms.findFirst({
+      where: {
+        hotel_id: hotelId,
+        room_ref_code: dto.room_id,
+      } as any,
+      orderBy: { room_ID: 'asc' } as any,
+      select: { room_ID: true } as any,
+    });
+
+    const now = new Date();
+    const roomData = {
+      hotel_id: hotelId,
+      room_type_id: 0,
+      preferred_for: '1,2,3,4',
+      room_title: dto.room_id,
+      no_of_rooms_available: latestInventory ?? 0,
+      room_ref_code: dto.room_id,
+      air_conditioner_availability: 1,
+      total_max_adults: 2,
+      total_max_childrens: 0,
+      check_in_time: this.toStaahTime('12:00:00'),
+      check_out_time: this.toStaahTime('11:00:00'),
+      gst_type: 1,
+      gst_percentage: '5',
+      ...mealFlags,
+      inbuilt_amenities: null,
+      createdby: 1,
+      status: 1,
+      deleted: 0,
+      updatedon: now,
+    } as any;
+
+    if (existing) {
+      return tx.dvi_hotel_rooms.update({
+        where: { room_ID: existing.room_ID } as any,
+        data: roomData,
+        select: { room_ID: true } as any,
+      } as any);
+    }
+
+    return tx.dvi_hotel_rooms.create({
+      data: {
+        ...roomData,
+        createdon: now,
+      } as any,
+      select: { room_ID: true } as any,
+    } as any);
+  }
+
+  private async upsertStaahNativeRatePlan(
+    tx: Prisma.TransactionClient,
+    hotelId: number,
+    roomId: number,
+    dto: AriRequestDto,
+    dviRatePlanId: string,
+  ): Promise<void> {
+    const ratePlanDef = this.fromDviLegacyRatePlanCode(dviRatePlanId);
+    const now = new Date();
+    const existing = await tx.dvi_hotel_room_rate_plan.findUnique({
+      where: {
+        hotel_id_room_id_rateplan_id: {
+          hotel_id: hotelId,
+          room_id: roomId,
+          rateplan_id: dviRatePlanId,
+        },
+      },
+      select: { hotel_room_rate_plan_id: true },
+    });
+
+    const ratePlanData = {
+      hotel_id: hotelId,
+      room_id: roomId,
+      room_type_id: 0,
+      rate_plan_code: ratePlanDef.rate_plan_code,
+      rateplan_id: dviRatePlanId,
+      rateplan_name: ratePlanDef.rateplan_name,
+      meal_plan_description: ratePlanDef.meal_plan_description,
+      currency: dto.currency || null,
+      createdby: 1,
+      updatedon: now,
+      status: 1,
+      deleted: 0,
+    } as any;
+
+    if (existing) {
+      await tx.dvi_hotel_room_rate_plan.update({
+        where: { hotel_room_rate_plan_id: existing.hotel_room_rate_plan_id },
+        data: ratePlanData,
+      });
+      return;
+    }
+
+    await tx.dvi_hotel_room_rate_plan.create({
+      data: {
+        ...ratePlanData,
+        createdon: now,
+      } as any,
+    });
+  }
+
+  private async upsertStaahNativeAvailabilityRow(
+    tx: Prisma.TransactionClient,
+    hotelId: number,
+    roomId: number,
+    startDate: Date,
+    endDate: Date,
+    inventoryValue: unknown,
+  ): Promise<void> {
+    const free = this.toFiniteNumber(inventoryValue);
+    if (free === null) {
+      throw new BadRequestException('inventory must be a number when provided.');
+    }
+
+    await (tx as any).dvi_hotel_room_availability.upsert({
+      where: {
+        hotel_id_room_id_start_date_end_date: {
+          hotel_id: hotelId,
+          room_id: roomId,
+          start_date: startDate,
+          end_date: endDate,
+        },
+      },
+      update: {
+        free,
+        received_at: new Date(),
+        source: 'staah',
+      },
+      create: {
+        hotel_id: hotelId,
+        room_id: roomId,
+        start_date: startDate,
+        end_date: endDate,
+        free,
+        source: 'staah',
+      },
+    });
+  }
+
+  private async upsertStaahNativeOccupancyRateRow(
+    tx: Prisma.TransactionClient,
+    hotelId: number,
+    roomId: number,
+    dviRatePlanId: string,
+    startDate: Date,
+    endDate: Date,
+    row: Record<string, any>,
+  ): Promise<void> {
+    const occupancyRates = this.extractStaahOccupancyRates(row);
+    if (!occupancyRates) {
+      return;
+    }
+
+    await (tx as any).dvi_hotel_occupancy_rate.upsert({
+      where: {
+        hotel_id_room_id_rateplan_id_start_date_end_date: {
+          hotel_id: hotelId,
+          room_id: roomId,
+          rateplan_id: dviRatePlanId,
+          start_date: startDate,
+          end_date: endDate,
+        },
+      },
+      update: {
+        occupancy_rates: occupancyRates,
+        received_at: new Date(),
+        source: 'staah',
+      },
+      create: {
+        hotel_id: hotelId,
+        room_id: roomId,
+        rateplan_id: dviRatePlanId,
+        start_date: startDate,
+        end_date: endDate,
+        occupancy_rates: occupancyRates,
+        source: 'staah',
+      },
+    });
+  }
+
   private buildArrDataRows(
     inventoryRecords: Array<{ start_date: Date; end_date: Date; free: number }>,
     rateRecords: Array<{ start_date: Date; end_date: Date; occupancy_rates: Prisma.JsonValue }>,
@@ -879,6 +1253,25 @@ export class StaahService {
 
     try {
       await this.prisma.$transaction(async (tx) => {
+        const matchedHotel = await this.findStaahHotel(tx, dto.propertyid);
+        const dviRatePlanId = this.toDviLegacyRatePlanId(dto.rate_id);
+        const latestInventory = this.getLatestStaahInventory(dto.data || []);
+        const syncedRoom = await this.upsertStaahNativeRoom(
+          tx,
+          matchedHotel.hotel_id,
+          dto,
+          latestInventory,
+        );
+        const nativeRoomId = Number(syncedRoom.room_ID);
+
+        await this.upsertStaahNativeRatePlan(
+          tx,
+          matchedHotel.hotel_id,
+          nativeRoomId,
+          dto,
+          dviRatePlanId,
+        );
+
         for (const rawRow of dto.data || []) {
           if (!rawRow || typeof rawRow !== 'object' || Array.isArray(rawRow)) {
             throw new BadRequestException('Each ARI data row must be a JSON object.');
@@ -906,6 +1299,15 @@ export class StaahService {
               endDate,
               row.inventory,
             );
+
+            await this.upsertStaahNativeAvailabilityRow(
+              tx,
+              matchedHotel.hotel_id,
+              nativeRoomId,
+              startDate,
+              endDate,
+              row.inventory,
+            );
           }
 
           if (hasRate) {
@@ -914,6 +1316,16 @@ export class StaahService {
               dto.propertyid,
               internalRoomId,
               internalRateId,
+              startDate,
+              endDate,
+              row,
+            );
+
+            await this.upsertStaahNativeOccupancyRateRow(
+              tx,
+              matchedHotel.hotel_id,
+              nativeRoomId,
+              dviRatePlanId,
               startDate,
               endDate,
               row,
