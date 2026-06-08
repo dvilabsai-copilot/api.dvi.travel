@@ -7557,6 +7557,80 @@ export class ItinerariesService {
       }
     }
 
+    // Fetch primary customer details for confirmed itineraries
+    const itineraryPlanIds = data
+      .map((p) => Number(p.itinerary_plan_ID || 0))
+      .filter((id) => id > 0);
+
+    const confirmedPlanIds = Array.from(confirmedPlanIdByPlanId.values()).filter(
+      (id) => id > 0,
+    );
+
+    const customerRows = itineraryPlanIds.length
+      ? await this.prisma.dvi_confirmed_itinerary_customer_details.findMany({
+          where: {
+            deleted: 0,
+            OR: [
+              { itinerary_plan_ID: { in: itineraryPlanIds } },
+              ...(confirmedPlanIds.length
+                ? [{ confirmed_itinerary_plan_ID: { in: confirmedPlanIds } }]
+                : []),
+            ],
+          },
+          select: {
+            confirmed_itinerary_customer_ID: true,
+            confirmed_itinerary_plan_ID: true,
+            itinerary_plan_ID: true,
+            primary_customer: true,
+            customer_salutation: true,
+            customer_name: true,
+            primary_contact_no: true,
+          },
+          orderBy: {
+            confirmed_itinerary_customer_ID: 'asc',
+          },
+        })
+      : [];
+
+    const customerByPlanId = new Map<number, any>();
+    const customerByConfirmedPlanId = new Map<number, any>();
+
+    const shouldUseCustomerRow = (existing: any, incoming: any) => {
+      if (!existing) return true;
+
+      const existingIsPrimary = Number(existing?.primary_customer || 0) === 1;
+      const incomingIsPrimary = Number(incoming?.primary_customer || 0) === 1;
+
+      return !existingIsPrimary && incomingIsPrimary;
+    };
+
+    for (const customer of customerRows as any[]) {
+      const planId = Number(customer?.itinerary_plan_ID || 0);
+      const confirmedPlanId = Number(customer?.confirmed_itinerary_plan_ID || 0);
+
+      if (
+        planId > 0 &&
+        shouldUseCustomerRow(customerByPlanId.get(planId), customer)
+      ) {
+        customerByPlanId.set(planId, customer);
+      }
+
+      if (
+        confirmedPlanId > 0 &&
+        shouldUseCustomerRow(customerByConfirmedPlanId.get(confirmedPlanId), customer)
+      ) {
+        customerByConfirmedPlanId.set(confirmedPlanId, customer);
+      }
+    }
+
+    const formatCustomerName = (customer: any) => {
+      const name = `${customer?.customer_salutation || ''} ${
+        customer?.customer_name || ''
+      }`.trim();
+
+      return name || 'N/A';
+    };
+
     // Fetch agents manually since no relations in Prisma schema
     const agentIds = [...new Set(data.map((p) => p.agent_id))];
     const agents = await this.prisma.dvi_agent.findMany({
@@ -7569,22 +7643,35 @@ export class ItinerariesService {
       draw: query.draw || 1,
       recordsTotal: total,
       recordsFiltered: filtered,
-      data: data.map((p) => ({
-        itinerary_plan_ID: p.itinerary_plan_ID,
-        confirmed_itinerary_plan_ID: confirmedPlanIdByPlanId.get(Number(p.itinerary_plan_ID)) ?? null,
-        booking_quote_id: p.itinerary_quote_ID,
-        agent_name: agentMap.get(p.agent_id) || 'N/A',
-        primary_customer_name: 'N/A', // Customer info not in this table
-        primary_contact_no: 'N/A',
-        arrival_location: p.arrival_location,
-        departure_location: p.departure_location,
-        arrival_date: p.trip_start_date_and_time,
-        departure_date: p.trip_end_date_and_time,
-        nights: p.no_of_nights,
-        days: p.no_of_days,
-        created_on: p.createdon,
-        created_by: p.createdby,
-      })),
+      data: data.map((p) => {
+        const itineraryPlanId = Number(p.itinerary_plan_ID || 0);
+
+        const confirmedPlanId =
+          confirmedPlanIdByPlanId.get(itineraryPlanId) ?? null;
+
+        const customer =
+          customerByPlanId.get(itineraryPlanId) ||
+          (confirmedPlanId
+            ? customerByConfirmedPlanId.get(Number(confirmedPlanId))
+            : null);
+
+        return {
+          itinerary_plan_ID: p.itinerary_plan_ID,
+          confirmed_itinerary_plan_ID: confirmedPlanId,
+          booking_quote_id: p.itinerary_quote_ID,
+          agent_name: agentMap.get(p.agent_id) || 'N/A',
+          primary_customer_name: formatCustomerName(customer),
+          primary_contact_no: customer?.primary_contact_no || 'N/A',
+          arrival_location: p.arrival_location,
+          departure_location: p.departure_location,
+          arrival_date: p.trip_start_date_and_time,
+          departure_date: p.trip_end_date_and_time,
+          nights: p.no_of_nights,
+          days: p.no_of_days,
+          created_on: p.createdon,
+          created_by: p.createdby,
+        };
+      }),
     };
   }
 
