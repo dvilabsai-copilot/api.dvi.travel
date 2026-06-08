@@ -117,6 +117,21 @@ export class HotelsService {
     return s.length ? s : undefined;
   }
 
+  private parseRangeViewDate(value: string, fieldName: string): Date {
+    if (!value || typeof value !== 'string') {
+      throw new BadRequestException(`${fieldName} is required`);
+    }
+
+    const parsed = new Date(`${value}T00:00:00.000Z`);
+    if (isNaN(parsed.getTime())) {
+      throw new BadRequestException(
+        `${fieldName} must be a valid date in YYYY-MM-DD format`,
+      );
+    }
+
+    return parsed;
+  }
+
   /** "hh:mm" or "hh:mm AM/PM" → Date (UTC Jan 1, 1970 hh:mm) */
   private timeToDate(v: any): Date | undefined {
     if (!v) return undefined;
@@ -2126,6 +2141,66 @@ export class HotelsService {
     });
 
     return { dates, rooms: [], occupancies };
+  }
+
+  async getRoomAvailabilityRangeView(
+    hotel_id: number,
+    query: { startDate: string; endDate: string; roomId: number },
+  ) {
+    const hid = Number(hotel_id);
+    const rid = Number(query.roomId);
+
+    if (!Number.isFinite(hid) || hid <= 0) {
+      throw new BadRequestException('hotelId must be a valid number');
+    }
+    if (!Number.isFinite(rid) || rid <= 0) {
+      throw new BadRequestException('roomId must be a valid number');
+    }
+
+    const start = this.parseRangeViewDate(query.startDate, 'startDate');
+    const end = this.parseRangeViewDate(query.endDate, 'endDate');
+
+    if (start.getTime() > end.getTime()) {
+      throw new BadRequestException('startDate must be less than or equal to endDate');
+    }
+
+    const rows = await (this.prisma as any).dvi_hotel_room_availability.findMany({
+      where: {
+        hotel_id: hid,
+        room_id: rid,
+        start_date: { lte: end },
+        end_date: { gte: start },
+      },
+      orderBy: { received_at: 'desc' },
+    });
+
+    const dates: string[] = [];
+    const cur = new Date(start);
+    while (cur <= end) {
+      dates.push(cur.toISOString().slice(0, 10));
+      cur.setUTCDate(cur.getUTCDate() + 1);
+    }
+
+    const items = dates
+      .map((date) => {
+        const dt = new Date(`${date}T00:00:00.000Z`);
+        const best = (rows as any[]).find(
+          (row: any) => new Date(row.start_date) <= dt && new Date(row.end_date) >= dt,
+        );
+
+        if (!best) {
+          return null;
+        }
+
+        return {
+          date,
+          free: Number(best.free),
+          source: String(best.source || 'manual'),
+        };
+      })
+      .filter(Boolean);
+
+    return { dates, items };
   }
 
   /** ROOMS: Bulk upsert price rows for date ranges. */

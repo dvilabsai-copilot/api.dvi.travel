@@ -10,3 +10,5 @@ tbo-hotel-provider.log
 public/
 start-dev.log
 *.txt
+scripts/staah-sync.env
+backups/staah/
