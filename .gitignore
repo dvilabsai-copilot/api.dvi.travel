@@ -12,3 +12,4 @@ start-dev.log
 *.txt
 scripts/staah-sync.env
 backups/staah/
+resavenue-hotel-provider.log
