@@ -337,6 +337,20 @@ export class HotelsController {
     return this.hotels.getRoomRatePlans(id, roomId);
   }
 
+  @Get(':id/rooms/:roomId/availability/range-view')
+  getRoomAvailabilityRangeView(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('roomId', ParseIntPipe) roomId: number,
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+  ) {
+    return this.hotels.getRoomAvailabilityRangeView(id, {
+      startDate,
+      endDate,
+      roomId,
+    });
+  }
+
   // NEW: bulk rooms endpoint used by React RoomsStep
   // POST /api/v1/hotels/:id/rooms/bulk  with body: { items: [ { ...roomPayload } ] }
   @Post(':id/rooms/bulk')
