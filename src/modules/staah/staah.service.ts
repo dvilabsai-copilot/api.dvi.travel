@@ -519,7 +519,7 @@ export class StaahService {
 
     const existingRoomTypes = await tx.dvi_hotel_roomtype.findMany({
       where: {
-        OR: [{ deleted: 0 as any }, { deleted: null as any }, { deleted: false as any }],
+        OR: [{ deleted: 0 as any }, { deleted: null as any }],
       } as any,
       select: {
         room_type_id: true,
