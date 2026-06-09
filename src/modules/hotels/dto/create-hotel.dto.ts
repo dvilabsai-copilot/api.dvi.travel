@@ -4,6 +4,7 @@ import { Type } from 'class-transformer';
 export class CreateHotelDto {
   @IsOptional() @IsString() hotel_name?: string;
   @IsOptional() @IsString() hotel_code?: string;
+  @IsOptional() @IsString() resavenue_hotel_code?: string;
   @IsOptional() @IsString() hotel_mobile?: string;
   @IsOptional() @IsString() hotel_email?: string;
   @IsOptional() @IsString() hotel_country?: string;
