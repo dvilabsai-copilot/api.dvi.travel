@@ -465,6 +465,96 @@ export class StaahService {
     }
   }
 
+  private normalizeStaahRoomTypeTitle(rawValue: string): string {
+    const raw = String(rawValue || '').trim();
+    if (!raw) {
+      return 'Standard Room';
+    }
+
+    const spaced = raw
+      .replace(/[_-]+/g, ' ')
+      .replace(/([a-z])([A-Z])/g, '$1 $2')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (!spaced) {
+      return 'Standard Room';
+    }
+
+    const upper = spaced.toUpperCase();
+    const compact = upper.replace(/\s+/g, '');
+    const keywordMap: Array<[string, string]> = [
+      ['SUITEROOM', 'Suite Room'],
+      ['DELUXEROOM', 'Deluxe Room'],
+      ['SUPERDELUXEROOM', 'Super Deluxe Room'],
+      ['PREMIUMROOM', 'Premium Room'],
+      ['STANDARDROOM', 'Standard Room'],
+      ['EXECUTIVEROOM', 'Executive Room'],
+      ['FAMILYROOM', 'Family Room'],
+      ['CLUBROOM', 'Club Room'],
+      ['STUDIOROOM', 'Studio Room'],
+      ['VILLAROOM', 'Villa Room'],
+      ['APARTMENTROOM', 'Apartment Room'],
+    ];
+
+    const mappedKeyword = keywordMap.find(([needle]) => compact.includes(needle))?.[1];
+    if (mappedKeyword) {
+      return mappedKeyword;
+    }
+
+    return spaced
+      .toLowerCase()
+      .split(' ')
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ');
+  }
+
+  private async ensureStaahNativeRoomType(
+    tx: Prisma.TransactionClient,
+    roomTypeTitle: string,
+  ): Promise<number> {
+    const normalizedTitle = this.normalizeStaahRoomTypeTitle(roomTypeTitle);
+    const titleNoSpace = normalizedTitle.replace(/\s+/g, '').toLowerCase();
+
+    const existingRoomTypes = await tx.dvi_hotel_roomtype.findMany({
+      where: {
+        OR: [{ deleted: 0 as any }, { deleted: null as any }, { deleted: false as any }],
+      } as any,
+      select: {
+        room_type_id: true,
+        room_type_title: true,
+      } as any,
+    } as any);
+
+    const exact = (existingRoomTypes as any[]).find((row: any) => {
+      const current = String(row.room_type_title || '').trim();
+      if (!current) return false;
+      const currentNoSpace = current.replace(/\s+/g, '').toLowerCase();
+      return currentNoSpace === titleNoSpace;
+    });
+
+    if (exact) {
+      return Number(exact.room_type_id);
+    }
+
+    const created = await tx.dvi_hotel_roomtype.create({
+      data: {
+        room_type_title: normalizedTitle,
+        createdby: 1,
+        createdon: new Date(),
+        updatedon: new Date(),
+        status: 1,
+        deleted: 0,
+      } as any,
+      select: {
+        room_type_id: true,
+      } as any,
+    } as any);
+
+    return Number((created as any).room_type_id);
+  }
+
   private toDviLegacyRatePlanId(staahRateId: string): string {
     switch (String(staahRateId || '').trim().toUpperCase()) {
       case 'CPPLAN':
@@ -580,9 +670,11 @@ export class StaahService {
     tx: Prisma.TransactionClient,
     hotelId: number,
     dto: AriRequestDto,
+    roomTypeId: number,
     latestInventory: number | null,
   ): Promise<{ room_ID: bigint | number }> {
     const mealFlags = this.getStaahMealFlags(dto.rate_id);
+    const normalizedRoomTypeTitle = this.normalizeStaahRoomTypeTitle(dto.room_id);
     const existing = await tx.dvi_hotel_rooms.findFirst({
       where: {
         hotel_id: hotelId,
@@ -595,9 +687,9 @@ export class StaahService {
     const now = new Date();
     const roomData = {
       hotel_id: hotelId,
-      room_type_id: 0,
+      room_type_id: roomTypeId,
       preferred_for: '1,2,3,4',
-      room_title: dto.room_id,
+      room_title: normalizedRoomTypeTitle,
       no_of_rooms_available: latestInventory ?? 0,
       room_ref_code: dto.room_id,
       air_conditioner_availability: 1,
@@ -636,6 +728,7 @@ export class StaahService {
     tx: Prisma.TransactionClient,
     hotelId: number,
     roomId: number,
+    roomTypeId: number,
     dto: AriRequestDto,
     dviRatePlanId: string,
   ): Promise<void> {
@@ -655,7 +748,7 @@ export class StaahService {
     const ratePlanData = {
       hotel_id: hotelId,
       room_id: roomId,
-      room_type_id: 0,
+      room_type_id: roomTypeId,
       rate_plan_code: ratePlanDef.rate_plan_code,
       rateplan_id: dviRatePlanId,
       rateplan_name: ratePlanDef.rateplan_name,
@@ -1256,10 +1349,12 @@ export class StaahService {
         const matchedHotel = await this.findStaahHotel(tx, dto.propertyid);
         const dviRatePlanId = this.toDviLegacyRatePlanId(dto.rate_id);
         const latestInventory = this.getLatestStaahInventory(dto.data || []);
+        const roomTypeId = await this.ensureStaahNativeRoomType(tx, dto.room_id);
         const syncedRoom = await this.upsertStaahNativeRoom(
           tx,
           matchedHotel.hotel_id,
           dto,
+          roomTypeId,
           latestInventory,
         );
         const nativeRoomId = Number(syncedRoom.room_ID);
@@ -1268,6 +1363,7 @@ export class StaahService {
           tx,
           matchedHotel.hotel_id,
           nativeRoomId,
+          roomTypeId,
           dto,
           dviRatePlanId,
         );
