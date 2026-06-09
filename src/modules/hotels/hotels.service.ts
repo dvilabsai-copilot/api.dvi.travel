@@ -173,6 +173,7 @@ export class HotelsService {
       hotel_city: this.toStr(dto.hotel_city),
       hotel_pincode: this.toStr(dto.hotel_pincode ?? dto.hotel_postal_code),
       hotel_code: this.toStr(dto.hotel_code),
+      resavenue_hotel_code: this.toStr(dto.resavenue_hotel_code),
       hotel_address: this.toStr(dto.hotel_address ?? dto.hotel_address_1),
 
       // persist selected category id
@@ -378,6 +379,7 @@ export class HotelsService {
           hotel_id: true,
           hotel_name: true,
           hotel_code: true,
+          resavenue_hotel_code: true,
           hotel_state: true,
           hotel_city: true,
           hotel_mobile: true,
@@ -407,6 +409,7 @@ export class HotelsService {
       hotel_id: h.hotel_id,
       hotel_name: h.hotel_name,
       hotel_code: h.hotel_code,
+      resavenue_hotel_code: (h as any).resavenue_hotel_code ?? null,
       hotel_state: h.hotel_state,
       hotel_city: h.hotel_city,
       hotel_state_name: h.hotel_state_name,
@@ -948,6 +951,7 @@ export class HotelsService {
         hotel_id: true,
         hotel_name: true,
         hotel_code: true,
+        resavenue_hotel_code: true,
         hotel_state: true,
         hotel_city: true,
         hotel_mobile: true,
@@ -1002,6 +1006,7 @@ export class HotelsService {
         select: {
           hotel_name: true,
           hotel_code: true,
+          resavenue_hotel_code: true,
           hotel_place: true,
           hotel_mobile: true,
           hotel_email: true,

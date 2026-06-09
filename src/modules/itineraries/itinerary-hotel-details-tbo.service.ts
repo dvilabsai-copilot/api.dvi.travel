@@ -188,6 +188,64 @@ export class ItineraryHotelDetailsTboService {
     return inferCanonicalHotelRatePlanCodeFromMealText(String((hotel as any).mealPlan ?? ''));
   }
 
+  private collectMealPlanCodesFromText(
+    rawValue: unknown,
+    collector: Set<string>,
+  ): void {
+    const raw = String(rawValue ?? '').trim();
+    if (!raw) return;
+
+    const direct = inferCanonicalHotelRatePlanCode(raw);
+    if (direct) collector.add(direct);
+
+    const inferred = inferCanonicalHotelRatePlanCodeFromMealText(raw);
+    if (inferred) collector.add(inferred);
+  }
+
+  private getMealPlanCandidatesFromHotel(hotel: HotelSearchResult): string[] {
+    const candidates = new Set<string>();
+
+    this.collectMealPlanCodesFromText((hotel as any).mealPlan, candidates);
+    this.collectMealPlanCodesFromText((hotel as any).roomType, candidates);
+
+    for (const roomType of hotel.roomTypes || []) {
+      this.collectMealPlanCodesFromText((roomType as any).roomName, candidates);
+    }
+
+    return Array.from(candidates);
+  }
+
+  private alignHotelToPreferredMealPlan(
+    hotel: HotelSearchResult,
+    preferredMealPlanCode: string,
+  ): HotelSearchResult {
+    const roomTypes = Array.isArray(hotel.roomTypes) ? hotel.roomTypes : [];
+    const matchedRoomType = roomTypes.find((roomType) => {
+      const roomCandidates = new Set<string>();
+      this.collectMealPlanCodesFromText((roomType as any).roomName, roomCandidates);
+      return roomCandidates.has(preferredMealPlanCode);
+    });
+
+    if (!matchedRoomType) {
+      return hotel;
+    }
+
+    const normalizedRoomTypeName = String((matchedRoomType as any).roomName || '')
+      .replace(/\s*-\s*(EP|CP|MAP|AP)\b.*$/i, '')
+      .trim();
+
+    return {
+      ...hotel,
+      price: Number((matchedRoomType as any).price || hotel.price || 0),
+      roomType: normalizedRoomTypeName || hotel.roomType || String((matchedRoomType as any).roomName || ''),
+      mealPlan: preferredMealPlanCode,
+      roomTypes: [
+        matchedRoomType,
+        ...roomTypes.filter((roomType) => roomType !== matchedRoomType),
+      ],
+    };
+  }
+
   private applyPlanPreferenceFilters(
     hotelsByRoute: Map<number, HotelSearchResult[] | null>,
     preferredCategories: number[],
@@ -209,9 +267,12 @@ export class ItineraryHotelDetailsTboService {
         return;
       }
 
-      const filteredHotels = hotels.filter((hotel) => {
+      const filteredHotels: HotelSearchResult[] = [];
+
+      for (const hotel of hotels) {
         let included = true;
         let filterReason = '';
+        let nextHotel = hotel;
         
         if (shouldFilterByCategory) {
           const categoryCandidates = this.getHotelCategoryCandidates(hotel);
@@ -231,12 +292,15 @@ export class ItineraryHotelDetailsTboService {
         }
 
         if (included && shouldFilterByMeal) {
-          const hotelMealCode = this.inferMealPlanCodeFromHotel(hotel);
-          // Only reject if hotel HAS meal plan data but it doesn't match.
-          // Allow hotels that don't have meal plan data (e.g., ResAvenue).
-          if (hotelMealCode && hotelMealCode !== preferredMealPlanCode) {
+          const mealPlanCandidates = this.getMealPlanCandidatesFromHotel(hotel);
+          const hasMatchingMeal = mealPlanCandidates.includes(preferredMealPlanCode!);
+
+          // Only reject when we can positively infer available meal plan(s) and none match.
+          if (mealPlanCandidates.length > 0 && !hasMatchingMeal) {
             included = false;
-            filterReason = `Meal plan mismatch: ${hotelMealCode} != ${preferredMealPlanCode}`;
+            filterReason = `Meal plan mismatch: ${mealPlanCandidates.join(',')} != ${preferredMealPlanCode}`;
+          } else if (hasMatchingMeal) {
+            nextHotel = this.alignHotelToPreferredMealPlan(hotel, preferredMealPlanCode!);
           }
         }
         
@@ -247,8 +311,10 @@ export class ItineraryHotelDetailsTboService {
           this.logger.warn(`[STAAH FILTERED] ${hotel.hotelName} (${hotel.hotelCode}) - ${filterReason}`);
         }
 
-        return included;
-      });
+        if (included) {
+          filteredHotels.push(nextHotel);
+        }
+      }
 
       this.logger.log(
         `   Preference filter route ${routeId}: before=${hotels.length}, after=${filteredHotels.length}, ` +
@@ -966,6 +1032,15 @@ export class ItineraryHotelDetailsTboService {
    */
   private async batchMapDestinationsToCityCodes(routes: any[]): Promise<Record<string, string>> {
     const cityCodeMap: Record<string, string> = {};
+    const cityAliases: Record<string, string[]> = {
+      cochin: ['kochi'],
+      alleppey: ['alappuzha'],
+      alleppe: ['alappuzha'],
+      calicut: ['kozhikode'],
+      trivandrum: ['thiruvananthapuram'],
+      pondicherry: ['puducherry'],
+      bangalore: ['bengaluru'],
+    };
     
     // Extract unique destinations from all routes
     const uniqueDestinations = [...new Set(routes.map(r => (r as any).next_visiting_location))];
@@ -975,7 +1050,8 @@ export class ItineraryHotelDetailsTboService {
 
     // âš¡ Load ALL cities from database in ONE query instead of per-route queries
     const allCities = await this.prisma.dvi_cities.findMany({
-      select: { name: true, tbo_city_code: true },
+      select: { id: true, name: true, tbo_city_code: true, status: true },
+      orderBy: [{ status: 'desc' }, { id: 'asc' }],
     });
     this.logger.log(`âœ… Loaded ${allCities.length} cities from database in single query`);
 
@@ -985,9 +1061,14 @@ export class ItineraryHotelDetailsTboService {
     
     allCities.forEach(city => {
       if (city.tbo_city_code) {
-        cityNameMap[city.name.toLowerCase()] = city.tbo_city_code;
+        const lowerName = city.name.toLowerCase();
+        if (!cityNameMap[lowerName]) {
+          cityNameMap[lowerName] = city.tbo_city_code;
+        }
         const prefix = city.name.split(',')[0].trim().toUpperCase();
-        cityPrefixMap[prefix] = city.tbo_city_code;
+        if (!cityPrefixMap[prefix]) {
+          cityPrefixMap[prefix] = city.tbo_city_code;
+        }
       }
     });
 
@@ -995,23 +1076,45 @@ export class ItineraryHotelDetailsTboService {
     uniqueDestinations.forEach(destination => {
       if (!destination) return;
 
-      // Try exact match (case-insensitive)
-      let cityCode = cityNameMap[destination.toLowerCase()];
-      
-      if (!cityCode) {
-        // Try partial match with first part
-        const firstPart = destination.split(',')[0].trim();
-        cityCode = cityNameMap[firstPart.toLowerCase()];
+      const rawDestination = String(destination).trim();
+      const firstPart = rawDestination.split(/[,\(\-]/)[0].trim();
+      const normalizedToken = this.normalizeCityToken(rawDestination);
+      const aliasTokens = cityAliases[normalizedToken] || [];
+      const lookupTerms = Array.from(
+        new Set(
+          [
+            normalizedToken,
+            ...aliasTokens,
+            rawDestination.toLowerCase(),
+            firstPart.toLowerCase(),
+          ].filter(Boolean),
+        ),
+      );
+
+      let cityCode = '';
+      for (const term of lookupTerms) {
+        cityCode = cityNameMap[term];
+        if (cityCode) break;
       }
 
       if (!cityCode) {
-        // Try prefix match
-        const prefix = destination.split(',')[0].trim().toUpperCase();
-        cityCode = cityPrefixMap[prefix];
+        const prefixTerms = Array.from(
+          new Set([firstPart, normalizedToken, ...aliasTokens].map((value) => value.toUpperCase())),
+        );
+        for (const prefix of prefixTerms) {
+          cityCode = cityPrefixMap[prefix];
+          if (cityCode) break;
+        }
       }
 
       if (cityCode) {
-        this.logger.log(`âœ… "${destination}" â†’ TBO Code: ${cityCode}`);
+        if (normalizedToken !== firstPart.toLowerCase() || aliasTokens.length > 0) {
+          this.logger.log(
+            `âœ… "${destination}" â†’ TBO Code: ${cityCode} (preferred lookup: ${[normalizedToken, ...aliasTokens].join(' -> ')})`,
+          );
+        } else {
+          this.logger.log(`âœ… "${destination}" â†’ TBO Code: ${cityCode}`);
+        }
         cityCodeMap[destination] = cityCode;
       } else {
         this.logger.warn(`âŒ No city code found for: "${destination}"`);
@@ -1294,11 +1397,21 @@ export class ItineraryHotelDetailsTboService {
   }
 
   private normalizeCityToken(value: string): string {
-    return String(value || '')
+    const token = String(value || '')
       .trim()
       .toLowerCase()
       .split(/[,(\-]/)[0]
       .trim();
+    const aliases: Record<string, string> = {
+      cochin: 'kochi',
+      alleppey: 'alappuzha',
+      alleppe: 'alappuzha',
+      calicut: 'kozhikode',
+      trivandrum: 'thiruvananthapuram',
+      pondicherry: 'puducherry',
+      bangalore: 'bengaluru',
+    };
+    return aliases[token] || token;
   }
 
   private toIstDateOnly(value: unknown): Date {
@@ -2665,10 +2778,33 @@ export class ItineraryHotelDetailsTboService {
       }
     }
 
-    const supplierHotelRows = hotelRows.filter(
+    const supplierRouteGroupKeys = new Set(
+      hotelRows
+        .filter(
+          (row) =>
+            row.isBookable !== false &&
+            row.hotelName !== 'No Hotels Available',
+        )
+        .map((row) => `${row.itineraryRouteId}:${row.groupType}`),
+    );
+
+    const cleanedHotelRows = hotelRows.filter((row) => {
+      const routeGroupKey = `${row.itineraryRouteId}:${row.groupType}`;
+      const hasSupplierSibling = supplierRouteGroupKeys.has(routeGroupKey);
+      const isStaleZeroCostExternal =
+        row.externalStay === true &&
+        row.provider === 'external' &&
+        Number(row.totalHotelCost || 0) <= 0 &&
+        Number(row.itineraryPlanHotelDetailsId || 0) <= 0 &&
+        row.hotelName !== 'No Hotels Available';
+
+      return !(hasSupplierSibling && isStaleZeroCostExternal);
+    });
+
+    const supplierHotelRows = cleanedHotelRows.filter(
       (row) => row.isBookable !== false && row.hotelName !== 'No Hotels Available',
     );
-    const placeholderRows = hotelRows.filter(
+    const placeholderRows = cleanedHotelRows.filter(
       (row) => row.externalStay === true || row.hotelName === 'No Hotels Available' || row.isBookable === false,
     );
 
@@ -2699,8 +2835,8 @@ export class ItineraryHotelDetailsTboService {
       showHotelMargins: this.shouldShowHotelMargins(),
       hotelRatesVisible,
       hotelTabs,
-      hotels: hotelRows,
-      totalRoomCount: hotelRows.length,
+      hotels: cleanedHotelRows,
+      totalRoomCount: cleanedHotelRows.length,
       hotelAvailability: {
         hasSupplierHotels,
         supplierHotelCount: supplierHotelRows.length,

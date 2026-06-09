@@ -413,6 +413,33 @@ export class TBOHotelProvider implements IHotelProvider {
       return { tboCityCode: null, source: null };
     }
 
+    const aliasMap: Record<string, string> = {
+      cochin: 'Kochi',
+      alleppey: 'Alappuzha',
+      alleppe: 'Alappuzha',
+      calicut: 'Kozhikode',
+      trivandrum: 'Thiruvananthapuram',
+      pondicherry: 'Puducherry',
+      bangalore: 'Bengaluru',
+    };
+    const canonicalAlias = aliasMap[normalized.toLowerCase()];
+
+    if (canonicalAlias) {
+      const aliasedCity = await this.prisma.dvi_cities.findFirst({
+        where: { name: canonicalAlias, tbo_city_code: { not: null }, status: 1 },
+        orderBy: { id: 'asc' },
+        select: { tbo_city_code: true },
+      });
+      if (aliasedCity?.tbo_city_code) {
+        return { tboCityCode: aliasedCity.tbo_city_code, source: `alias:${normalized}->${canonicalAlias}` };
+      }
+
+      const aliasedStatic = await this.fetchTboCityCodeFromStaticCityList(canonicalAlias);
+      if (aliasedStatic) {
+        return { tboCityCode: aliasedStatic, source: `static-citylist-alias:${normalized}->${canonicalAlias}` };
+      }
+    }
+
     // 1) Input is already a TBO city code present in dvi_cities.
     const directCity = await this.prisma.dvi_cities.findFirst({
       where: { tbo_city_code: normalized },

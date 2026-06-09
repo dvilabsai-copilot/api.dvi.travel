@@ -400,9 +400,14 @@ export class ResAvenueHotelProvider implements IHotelProvider {
         .split(',')[0]
         .trim();
 
-      const cityCandidates = Array.from(
-        new Set([cityName, primaryCityName].map((c) => String(c || '').trim()).filter(Boolean)),
-      );
+      const cityCandidates = this.expandCityCandidates(cityName, primaryCityName);
+      const cityRows = cityCandidates.length
+        ? await this.prisma.dvi_cities.findMany({
+            where: { name: { in: cityCandidates } },
+            select: { id: true, name: true },
+          })
+        : [];
+      const cityIdCandidates = cityRows.map((row) => String(row.id));
 
       // Step 2: Query database for ResAvenue hotels in this city
       this.logger.log(
@@ -412,6 +417,7 @@ export class ResAvenueHotelProvider implements IHotelProvider {
         where: {
           OR: [
             { hotel_city: { in: cityCandidates } },
+            ...(cityIdCandidates.length ? [{ hotel_city: { in: cityIdCandidates } }] : []),
             ...(primaryCityName
               ? [{ hotel_city: { startsWith: `${primaryCityName},` } }]
               : []),
@@ -1301,5 +1307,33 @@ export class ResAvenueHotelProvider implements IHotelProvider {
         `Failed to get confirmation details: ${error.message}`
       );
     }
+  }
+
+  private expandCityCandidates(...rawValues: Array<string | null | undefined>): string[] {
+    const aliasMap: Record<string, string[]> = {
+      cochin: ['Kochi'],
+      kochi: ['Cochin'],
+      alleppey: ['Alappuzha'],
+      alleppe: ['Alappuzha'],
+      calicut: ['Kozhikode'],
+      trivandrum: ['Thiruvananthapuram'],
+      pondicherry: ['Puducherry'],
+      bangalore: ['Bengaluru'],
+    };
+
+    const expanded = new Set<string>();
+    for (const rawValue of rawValues) {
+      const value = String(rawValue || '').trim();
+      if (!value) continue;
+      expanded.add(value);
+      const firstPart = value.split(/[,\(\-]/)[0].trim();
+      if (firstPart) {
+        expanded.add(firstPart);
+        const aliases = aliasMap[firstPart.toLowerCase()] || [];
+        aliases.forEach((alias) => expanded.add(alias));
+      }
+    }
+
+    return Array.from(expanded);
   }
 }
