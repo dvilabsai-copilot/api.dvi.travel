@@ -777,10 +777,12 @@ export class ItinerariesService {
     sourceLocation: string,
     destinationLocation: string,
     dayCount: number,
+    scope?: string,
   ) {
     const source = String(sourceLocation || '').trim();
     const destination = String(destinationLocation || '').trim();
     const days = Number(dayCount || 0);
+    const templateScope = String(scope || 'full').trim().toLowerCase();
 
     if (!source || !destination || !days) {
       throw new BadRequestException('sourceLocation, destinationLocation, and dayCount are required');
@@ -824,6 +826,10 @@ export class ItinerariesService {
     }
 
     const row = rows[0];
+    const fullTemplate: any = this.parseJsonSafely(row.template_payload);
+    const routeOnlyTemplate = {
+      routes: Array.isArray(fullTemplate?.routes) ? fullTemplate.routes : [],
+    };
 
     return {
       found: true,
@@ -835,7 +841,7 @@ export class ItinerariesService {
       createdFromPlanId: row.created_from_plan_id ? Number(row.created_from_plan_id) : null,
       createdOn: row.createdon,
       metadata: this.parseJsonSafely(row.metadata_payload),
-      template: this.parseJsonSafely(row.template_payload),
+      template: templateScope === 'routes' ? routeOnlyTemplate : fullTemplate,
     };
   }
 

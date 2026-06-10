@@ -37,6 +37,23 @@ export type MealPlanOption = {
 
 type LocationType = 'source' | 'destination';
 
+type StoredLocationMappingRow = {
+  source_location: string | null;
+  source_location_city: string | null;
+  destination_location: string | null;
+  destination_location_city: string | null;
+};
+
+type StoredLocationMaps = {
+  exact: Map<string, string>;
+  normalized: Map<string, string>;
+};
+
+type ResolvedCityRow = {
+  id: number;
+  name: string | null;
+};
+
 function isNonEmptyString(v: unknown): v is string {
   return typeof v === 'string' && v.trim().length > 0;
 }
@@ -99,12 +116,56 @@ export class ItineraryDropdownsService {
     return 0; // default if cannot parse
   }
 
+  private normalizeLocationKey(value: string): string {
+    return String(value ?? '')
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, ' ');
+  }
+
+  private extractFirstCityToken(value: string): string {
+    return String(value ?? '')
+      .split(',')[0]
+      ?.trim() ?? '';
+  }
+
+  private buildLocationCandidateValues(value: string): string[] {
+    const trimmed = String(value ?? '').trim();
+    const firstToken = this.extractFirstCityToken(trimmed);
+    const candidates = [trimmed];
+
+    if (firstToken && firstToken.toLowerCase() !== trimmed.toLowerCase()) {
+      candidates.push(firstToken);
+    }
+
+    return Array.from(new Set(candidates.filter(Boolean)));
+  }
+
+  private buildUniqueNormalizedStrings(values: string[]): string[] {
+    const seen = new Set<string>();
+    const result: string[] = [];
+
+    for (const value of values) {
+      const trimmed = String(value ?? '').trim();
+      if (!trimmed) continue;
+
+      const key = this.normalizeLocationKey(trimmed);
+      if (seen.has(key)) continue;
+
+      seen.add(key);
+      result.push(trimmed);
+    }
+
+    return result;
+  }
+
   /**
    * Get locations to eligible cities mapping from dvi_stored_locations
    * Searches both source_location and destination_location fields
    */
-  private async getLocationsToCitiesMapping(): Promise<Map<string, string>> {
-    const map = new Map<string, string>();
+  private async getLocationsToCitiesMapping(): Promise<StoredLocationMaps> {
+    const exact = new Map<string, string>();
+    const normalized = new Map<string, string>();
 
     const rows = await this.prisma.dvi_stored_locations.findMany({
       where: {
@@ -119,19 +180,27 @@ export class ItineraryDropdownsService {
       },
     } as any);
 
-    for (const row of rows) {
-      if (row.source_location && row.source_location_city) {
-        map.set(row.source_location.trim(), row.source_location_city.trim());
+    for (const row of rows as StoredLocationMappingRow[]) {
+      const sourceLocation = String(row.source_location ?? '').trim();
+      const sourceCity = String(row.source_location_city ?? '').trim();
+      const destinationLocation = String(row.destination_location ?? '').trim();
+      const destinationCity = String(row.destination_location_city ?? '').trim();
+
+      if (sourceLocation && sourceCity) {
+        exact.set(sourceLocation, sourceCity);
+        normalized.set(this.normalizeLocationKey(sourceLocation), sourceCity);
       }
-      if (row.destination_location && row.destination_location_city) {
-        map.set(
-          row.destination_location.trim(),
-          row.destination_location_city.trim(),
+
+      if (destinationLocation && destinationCity) {
+        exact.set(destinationLocation, destinationCity);
+        normalized.set(
+          this.normalizeLocationKey(destinationLocation),
+          destinationCity,
         );
       }
     }
 
-    return map;
+    return { exact, normalized };
   }
 
   /**
@@ -148,18 +217,269 @@ export class ItineraryDropdownsService {
       const trimmedLoc = loc.trim();
       if (trimmedLoc.length === 0) continue;
 
-      // Look up the city for this location
-      const city = mapping.get(trimmedLoc);
-      if (city) {
-        uniqueCities.add(city);
-      } else {
-        // Fallback: try to use the location name itself as city
-        // (in case it's already a city name)
-        uniqueCities.add(trimmedLoc);
+      const candidates = this.buildLocationCandidateValues(trimmedLoc);
+      let resolvedCity = '';
+
+      for (const candidate of candidates) {
+        const exactMatch = mapping.exact.get(candidate);
+        if (exactMatch) {
+          resolvedCity = exactMatch.trim();
+          break;
+        }
+
+        const normalizedMatch = mapping.normalized.get(
+          this.normalizeLocationKey(candidate),
+        );
+        if (normalizedMatch) {
+          resolvedCity = normalizedMatch.trim();
+          break;
+        }
       }
+
+      if (resolvedCity) {
+        uniqueCities.add(resolvedCity);
+        continue;
+      }
+
+      const firstToken = this.extractFirstCityToken(trimmedLoc);
+      if (firstToken) {
+        uniqueCities.add(firstToken);
+      }
+
+      uniqueCities.add(trimmedLoc);
     }
 
     return Array.from(uniqueCities);
+  }
+
+  private async getVehicleCountsByCity(cities: string[]) {
+    const uniqueCities = Array.from(
+      new Set(cities.map((city) => city.trim()).filter(Boolean)),
+    );
+
+    const summaries: Array<{
+      city: string;
+      exactCount: number;
+      normalizedCount: number;
+      likeCount: number;
+      activeExactCount: number;
+    }> = [];
+
+    for (const city of uniqueCities) {
+      const [exactRows, normalizedRows, likeRows, activeExactRows] =
+        await Promise.all([
+          (this.prisma as any).$queryRawUnsafe(
+            'SELECT COUNT(*) AS total FROM dvi_vehicle WHERE owner_city = ?',
+            city,
+          ),
+          (this.prisma as any).$queryRawUnsafe(
+            'SELECT COUNT(*) AS total FROM dvi_vehicle WHERE LOWER(TRIM(owner_city)) = LOWER(TRIM(?))',
+            city,
+          ),
+          (this.prisma as any).$queryRawUnsafe(
+            'SELECT COUNT(*) AS total FROM dvi_vehicle WHERE owner_city LIKE ?',
+            `%${city}%`,
+          ),
+          (this.prisma as any).$queryRawUnsafe(
+            'SELECT COUNT(*) AS total FROM dvi_vehicle WHERE owner_city = ? AND status = 1 AND deleted = 0',
+            city,
+          ),
+        ]);
+
+      const readTotal = (rows: any[]) => Number(rows?.[0]?.total ?? 0);
+
+      summaries.push({
+        city,
+        exactCount: readTotal(exactRows),
+        normalizedCount: readTotal(normalizedRows),
+        likeCount: readTotal(likeRows),
+        activeExactCount: readTotal(activeExactRows),
+      });
+    }
+
+    return summaries;
+  }
+
+  private async resolveEligibleCityIds(
+    cityNames: string[],
+    originalLocations: string[],
+  ): Promise<Array<{ id: number; name: string }>> {
+    const candidates = this.buildUniqueNormalizedStrings([
+      ...cityNames,
+      ...originalLocations.flatMap((location) =>
+        this.buildLocationCandidateValues(location),
+      ),
+    ]);
+
+    if (candidates.length === 0) {
+      return [];
+    }
+
+    const rows = (await (this.prisma as any).$queryRawUnsafe(
+      `
+      SELECT id, name
+      FROM dvi_cities
+      WHERE deleted = 0
+        AND LOWER(TRIM(name)) IN (${candidates.map(() => 'LOWER(TRIM(?))').join(', ')})
+      ORDER BY name ASC, id ASC
+      `,
+      ...candidates,
+    )) as ResolvedCityRow[];
+
+    return rows
+      .map((row) => ({
+        id: Number(row.id),
+        name: String(row.name ?? '').trim(),
+      }))
+      .filter((row) => Number.isFinite(row.id) && row.id > 0 && !!row.name);
+  }
+
+  private async getEligibleVehicleTypeDebugCounts(args: {
+    cityNames: string[];
+    cityIds: number[];
+  }) {
+    const cityNames = this.buildUniqueNormalizedStrings(args.cityNames);
+    const cityIds = Array.from(
+      new Set(
+        args.cityIds
+          .map((value) => Number(value))
+          .filter((value) => Number.isFinite(value) && value > 0),
+      ),
+    );
+
+    const cityNameClause = cityNames.length
+      ? `VEHICLE.owner_city IN (${cityNames.map(() => '?').join(', ')})`
+      : '1 = 0';
+    const cityIdClause = cityIds.length
+      ? `CAST(VEHICLE.owner_city AS UNSIGNED) IN (${cityIds.map(() => '?').join(', ')})`
+      : '1 = 0';
+    const branchCityClause = cityIds.length
+      ? `VENDOR_BRANCH_DETAILS.vendor_branch_city IN (${cityIds.map(() => '?').join(', ')})`
+      : '1 = 0';
+
+    const cityNameParams = cityNames;
+    const cityIdParams = cityIds;
+    const branchCityParams = cityIds;
+
+    const buildCountSql = (extraJoinSql: string, extraWhereSql: string) => `
+      SELECT COUNT(DISTINCT VEHICLE.vehicle_id) AS total
+      FROM dvi_vehicle VEHICLE
+      LEFT JOIN dvi_vendor_details VENDOR_DETAILS
+        ON VENDOR_DETAILS.vendor_id = VEHICLE.vendor_id
+      LEFT JOIN dvi_vendor_branches VENDOR_BRANCH_DETAILS
+        ON VENDOR_BRANCH_DETAILS.vendor_branch_id = VEHICLE.vendor_branch_id
+      ${extraJoinSql}
+      WHERE VEHICLE.status = 1
+        AND VEHICLE.deleted = 0
+        AND VENDOR_DETAILS.status = 1
+        AND VENDOR_DETAILS.deleted = 0
+        AND VENDOR_BRANCH_DETAILS.status = 1
+        AND VENDOR_BRANCH_DETAILS.deleted = 0
+        AND (${cityNameClause} OR ${cityIdClause} OR ${branchCityClause})
+        ${extraWhereSql}
+    `;
+
+    const readTotal = (rows: Array<{ total: number | bigint }>) =>
+      Number(rows?.[0]?.total ?? 0);
+
+    const commonParams = [...cityNameParams, ...cityIdParams, ...branchCityParams];
+
+    const [
+      cityNameMatches,
+      cityIdMatches,
+      branchCityMatches,
+      legacyJoinMatches,
+      modernJoinMatches,
+    ] = await Promise.all([
+      (this.prisma as any).$queryRawUnsafe(
+        `
+        SELECT COUNT(DISTINCT VEHICLE.vehicle_id) AS total
+        FROM dvi_vehicle VEHICLE
+        LEFT JOIN dvi_vendor_details VENDOR_DETAILS
+          ON VENDOR_DETAILS.vendor_id = VEHICLE.vendor_id
+        LEFT JOIN dvi_vendor_branches VENDOR_BRANCH_DETAILS
+          ON VENDOR_BRANCH_DETAILS.vendor_branch_id = VEHICLE.vendor_branch_id
+        WHERE VEHICLE.status = 1
+          AND VEHICLE.deleted = 0
+          AND VENDOR_DETAILS.status = 1
+          AND VENDOR_DETAILS.deleted = 0
+          AND VENDOR_BRANCH_DETAILS.status = 1
+          AND VENDOR_BRANCH_DETAILS.deleted = 0
+          AND ${cityNameClause}
+        `,
+        ...cityNameParams,
+      ),
+      (this.prisma as any).$queryRawUnsafe(
+        `
+        SELECT COUNT(DISTINCT VEHICLE.vehicle_id) AS total
+        FROM dvi_vehicle VEHICLE
+        LEFT JOIN dvi_vendor_details VENDOR_DETAILS
+          ON VENDOR_DETAILS.vendor_id = VEHICLE.vendor_id
+        LEFT JOIN dvi_vendor_branches VENDOR_BRANCH_DETAILS
+          ON VENDOR_BRANCH_DETAILS.vendor_branch_id = VEHICLE.vendor_branch_id
+        WHERE VEHICLE.status = 1
+          AND VEHICLE.deleted = 0
+          AND VENDOR_DETAILS.status = 1
+          AND VENDOR_DETAILS.deleted = 0
+          AND VENDOR_BRANCH_DETAILS.status = 1
+          AND VENDOR_BRANCH_DETAILS.deleted = 0
+          AND ${cityIdClause}
+        `,
+        ...cityIdParams,
+      ),
+      (this.prisma as any).$queryRawUnsafe(
+        `
+        SELECT COUNT(DISTINCT VEHICLE.vehicle_id) AS total
+        FROM dvi_vehicle VEHICLE
+        LEFT JOIN dvi_vendor_details VENDOR_DETAILS
+          ON VENDOR_DETAILS.vendor_id = VEHICLE.vendor_id
+        LEFT JOIN dvi_vendor_branches VENDOR_BRANCH_DETAILS
+          ON VENDOR_BRANCH_DETAILS.vendor_branch_id = VEHICLE.vendor_branch_id
+        WHERE VEHICLE.status = 1
+          AND VEHICLE.deleted = 0
+          AND VENDOR_DETAILS.status = 1
+          AND VENDOR_DETAILS.deleted = 0
+          AND VENDOR_BRANCH_DETAILS.status = 1
+          AND VENDOR_BRANCH_DETAILS.deleted = 0
+          AND ${branchCityClause}
+        `,
+        ...branchCityParams,
+      ),
+      (this.prisma as any).$queryRawUnsafe(
+        buildCountSql(
+          `
+          LEFT JOIN dvi_vendor_vehicle_types LEGACY_VENDOR_VEHICLE_TYPES
+            ON LEGACY_VENDOR_VEHICLE_TYPES.vendor_id = VEHICLE.vendor_id
+            AND LEGACY_VENDOR_VEHICLE_TYPES.vendor_vehicle_type_ID = VEHICLE.vehicle_type_id
+            AND LEGACY_VENDOR_VEHICLE_TYPES.status = 1
+            AND LEGACY_VENDOR_VEHICLE_TYPES.deleted = 0
+          `,
+          'AND LEGACY_VENDOR_VEHICLE_TYPES.vehicle_type_id IS NOT NULL',
+        ),
+        ...commonParams,
+      ),
+      (this.prisma as any).$queryRawUnsafe(
+        buildCountSql(
+          `
+          LEFT JOIN dvi_vendor_vehicle_types MODERN_VENDOR_VEHICLE_TYPES
+            ON MODERN_VENDOR_VEHICLE_TYPES.vendor_id = VEHICLE.vendor_id
+            AND MODERN_VENDOR_VEHICLE_TYPES.vehicle_type_id = VEHICLE.vehicle_type_id
+            AND MODERN_VENDOR_VEHICLE_TYPES.status = 1
+            AND MODERN_VENDOR_VEHICLE_TYPES.deleted = 0
+          `,
+          'AND MODERN_VENDOR_VEHICLE_TYPES.vehicle_type_id IS NOT NULL',
+        ),
+        ...commonParams,
+      ),
+    ]);
+
+    return {
+      cityNameMatches: readTotal(cityNameMatches),
+      cityIdMatches: readTotal(cityIdMatches),
+      branchCityMatches: readTotal(branchCityMatches),
+      legacyJoinMatches: readTotal(legacyJoinMatches),
+      modernJoinMatches: readTotal(modernJoinMatches),
+    };
   }
 
   /**
@@ -196,11 +516,29 @@ export class ItineraryDropdownsService {
       const eligibleCities = await this.convertLocationsToEligibleCities(
         uniqueLocations,
       );
+      const resolvedCityRows = await this.resolveEligibleCityIds(
+        eligibleCities,
+        uniqueLocations,
+      );
+      const resolvedCityIds = Array.from(
+        new Set(
+          resolvedCityRows
+            .map((row) => Number(row.id))
+            .filter((value) => Number.isFinite(value) && value > 0),
+        ),
+      );
 
       console.log('[getEligibleVehicleTypes] Eligible cities:', eligibleCities);
+      console.log('[getEligibleVehicleTypes] Resolved city IDs:', resolvedCityIds);
 
       if (eligibleCities.length === 0) {
-        console.log('[getEligibleVehicleTypes] No eligible cities found, returning empty');
+        console.warn(
+          '[getEligibleVehicleTypes] No eligible cities found',
+          JSON.stringify({
+            sourceLocation: dto.sourceLocation || [],
+            nextVisitingLocation: dto.nextVisitingLocation || [],
+          }),
+        );
         return {
           vehicleTypes: [],
           selectedVehicleIds: [],
@@ -220,35 +558,71 @@ export class ItineraryDropdownsService {
       //   AND VENDOR_DETAILS.status = 1 AND VENDOR_DETAILS.deleted = 0
       //   AND VENDOR_BRANCH_DETAILS.status = 1 AND VENDOR_BRANCH_DETAILS.deleted = 0
       //   AND VEHICLE.owner_city IN (eligibleCities)
-      const placeholders = eligibleCities.map(() => `?`).join(',');
-      console.log('[getEligibleVehicleTypes] Executing SQL query with cities:', eligibleCities);
+      const cityNameClause = eligibleCities.length
+        ? `VEHICLE.owner_city IN (${eligibleCities.map(() => `?`).join(',')})`
+        : '1 = 0';
+      const cityIdClause = resolvedCityIds.length
+        ? `CAST(VEHICLE.owner_city AS UNSIGNED) IN (${resolvedCityIds.map(() => `?`).join(',')})`
+        : '1 = 0';
+      const branchCityClause = resolvedCityIds.length
+        ? `VENDOR_BRANCH_DETAILS.vendor_branch_city IN (${resolvedCityIds.map(() => `?`).join(',')})`
+        : '1 = 0';
+      const queryParams = [
+        ...eligibleCities,
+        ...resolvedCityIds,
+        ...resolvedCityIds,
+      ];
+
+      console.log(
+        '[getEligibleVehicleTypes] Executing SQL query with cities:',
+        JSON.stringify({
+          eligibleCities,
+          resolvedCityIds,
+        }),
+      );
 
       const distinctVehicleTypes = await (this.prisma as any).$queryRawUnsafe(
         `
         SELECT DISTINCT 
-          VENDOR_VEHICLE_TYPES.vehicle_type_id, 
+          VEHICLE_TYPES.vehicle_type_id,
           VEHICLE_TYPES.vehicle_type_title,
           VEHICLE_TYPES.occupancy
         FROM dvi_vehicle VEHICLE
-        LEFT JOIN dvi_vendor_vehicle_types VENDOR_VEHICLE_TYPES 
-          ON VEHICLE.vehicle_type_id = VENDOR_VEHICLE_TYPES.vendor_vehicle_type_ID 
-          AND VEHICLE.vendor_id = VENDOR_VEHICLE_TYPES.vendor_id
+        LEFT JOIN dvi_vendor_vehicle_types LEGACY_VENDOR_VEHICLE_TYPES
+          ON LEGACY_VENDOR_VEHICLE_TYPES.vendor_id = VEHICLE.vendor_id
+          AND LEGACY_VENDOR_VEHICLE_TYPES.vendor_vehicle_type_ID = VEHICLE.vehicle_type_id
+          AND LEGACY_VENDOR_VEHICLE_TYPES.status = 1
+          AND LEGACY_VENDOR_VEHICLE_TYPES.deleted = 0
+        LEFT JOIN dvi_vendor_vehicle_types MODERN_VENDOR_VEHICLE_TYPES
+          ON MODERN_VENDOR_VEHICLE_TYPES.vendor_id = VEHICLE.vendor_id
+          AND MODERN_VENDOR_VEHICLE_TYPES.vehicle_type_id = VEHICLE.vehicle_type_id
+          AND MODERN_VENDOR_VEHICLE_TYPES.status = 1
+          AND MODERN_VENDOR_VEHICLE_TYPES.deleted = 0
         LEFT JOIN dvi_vendor_details VENDOR_DETAILS 
           ON VENDOR_DETAILS.vendor_id = VEHICLE.vendor_id
         LEFT JOIN dvi_vendor_branches VENDOR_BRANCH_DETAILS 
           ON VENDOR_BRANCH_DETAILS.vendor_branch_id = VEHICLE.vendor_branch_id
         LEFT JOIN dvi_vehicle_type VEHICLE_TYPES 
-          ON VEHICLE_TYPES.vehicle_type_id = VENDOR_VEHICLE_TYPES.vehicle_type_id
+          ON VEHICLE_TYPES.vehicle_type_id = COALESCE(
+            MODERN_VENDOR_VEHICLE_TYPES.vehicle_type_id,
+            LEGACY_VENDOR_VEHICLE_TYPES.vehicle_type_id
+          )
+          AND VEHICLE_TYPES.status = 1
+          AND VEHICLE_TYPES.deleted = 0
         WHERE VEHICLE.status = 1 
           AND VEHICLE.deleted = 0 
           AND VENDOR_DETAILS.status = 1 
           AND VENDOR_DETAILS.deleted = 0 
           AND VENDOR_BRANCH_DETAILS.status = 1 
           AND VENDOR_BRANCH_DETAILS.deleted = 0
-          AND VEHICLE.owner_city IN (${placeholders})
+          AND (${cityNameClause} OR ${cityIdClause} OR ${branchCityClause})
+          AND COALESCE(
+            MODERN_VENDOR_VEHICLE_TYPES.vehicle_type_id,
+            LEGACY_VENDOR_VEHICLE_TYPES.vehicle_type_id
+          ) IS NOT NULL
         ORDER BY VEHICLE_TYPES.occupancy ASC, VEHICLE_TYPES.vehicle_type_title ASC
         `,
-        ...eligibleCities,
+        ...queryParams,
       );
 
       console.log('[getEligibleVehicleTypes] Query returned:', distinctVehicleTypes.length, 'vehicle types');
@@ -279,6 +653,45 @@ export class ItineraryDropdownsService {
         .map(({ id, label }) => ({ id, label })); // remove capacity from response
 
       console.log('[getEligibleVehicleTypes] Returning vehicleTypes:', vehicleTypes.length, 'items');
+
+      if (vehicleTypes.length === 0) {
+        const vehicleCounts = await this.getVehicleCountsByCity(eligibleCities);
+        const debugCounts = await this.getEligibleVehicleTypeDebugCounts({
+          cityNames: eligibleCities,
+          cityIds: resolvedCityIds,
+        });
+        const mappingWarnings = uniqueLocations
+          .map((location) => ({
+            location,
+            normalized: this.normalizeLocationKey(location),
+            firstToken: this.extractFirstCityToken(location),
+          }))
+          .filter(
+            (item) =>
+              !eligibleCities.some(
+                (city) => this.normalizeLocationKey(city) === item.normalized,
+              ),
+          );
+
+        console.warn(
+          '[getEligibleVehicleTypes] Empty vehicle type result',
+          JSON.stringify({
+            sourceLocation: dto.sourceLocation || [],
+            nextVisitingLocation: dto.nextVisitingLocation || [],
+            eligibleCities,
+            resolvedCityIds,
+            vehicleCounts,
+            debugCounts,
+            reason:
+              vehicleCounts.every((item) => item.activeExactCount === 0) &&
+              debugCounts.cityIdMatches === 0 &&
+              debugCounts.branchCityMatches === 0
+                ? 'No active vehicles found for derived city names, city IDs, or branch city IDs.'
+                : 'Vehicles exist, but rows may be dropped by vendor/branch/vendor_vehicle_type/vehicle_type joins.',
+            mappingWarnings,
+          }),
+        );
+      }
 
       // 5. Load selectedVehicleIds if itineraryPlanId provided
       let selectedVehicleIds: string[] = [];

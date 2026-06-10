@@ -1554,6 +1554,7 @@ export class ItinerariesController {
     @Query('sourceLocation') sourceLocation: string,
     @Query('destinationLocation') destinationLocation: string,
     @Query('dayCount') dayCount: string,
+    @Query('scope') scope?: string,
   ) {
     const parsedDayCount = Number(dayCount || 0);
     if (!Number.isInteger(parsedDayCount) || parsedDayCount <= 0) {
@@ -1564,6 +1565,7 @@ export class ItinerariesController {
       sourceLocation,
       destinationLocation,
       parsedDayCount,
+      scope,
     );
   }
 
