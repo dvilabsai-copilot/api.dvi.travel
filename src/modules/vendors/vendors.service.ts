@@ -1,6 +1,8 @@
 // FILE: src/modules/vendors/vendors.service.ts
 
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { createHash } from 'crypto';
+import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../prisma.service';
 import { VendorListItemDto } from './dto/vendor-list-item.dto';
 
@@ -25,6 +27,129 @@ export class VendorsService {
     const parsed = Number(value);
     if (Number.isFinite(parsed) && parsed > 0) return parsed;
     return 1;
+  }
+
+  private generatePhpStyleVendorCode(data: any): string {
+    const cityValue = String(
+      data.vendor_city ?? data.vendor_city_id ?? data.cityId ?? '',
+    ).trim();
+
+    const firstThreeLetters = cityValue.substring(0, 3);
+    const randomNumber = Math.floor(Math.random() * 1_000_000) + 1;
+
+    return `DVIV-${firstThreeLetters}${randomNumber}`;
+  }
+
+  private md5(value: string): string {
+    return createHash('md5').update(value).digest('hex');
+  }
+
+  private getVendorUserPayload(data: any): {
+    username: string;
+    email: string;
+    roleId: number;
+    plainPassword: string;
+  } {
+    const username = String(
+      data.vendor_username ?? data.username ?? data.userName ?? '',
+    ).trim();
+
+    const email = String(
+      data.vendor_email ?? data.email ?? data.useremail ?? '',
+    ).trim();
+
+    const roleId =
+      this.toNumberOrNull(data.role_id ?? data.roleID ?? data.vendor_select_role) ?? 0;
+
+    const plainPassword = String(
+      data.vendor_password ?? data.password ?? data.vendorPassword ?? '',
+    ).trim();
+
+    return {
+      username,
+      email,
+      roleId,
+      plainPassword,
+    };
+  }
+
+  private async syncVendorUserAccount(
+    vendorId: number,
+    data: any,
+    client: any = this.prisma,
+    options: { isCreate?: boolean } = {},
+  ): Promise<void> {
+    const { username, email, roleId, plainPassword } = this.getVendorUserPayload(data);
+
+    if (options.isCreate) {
+      if (!username) {
+        throw new BadRequestException('vendor_username is required');
+      }
+
+      if (!email) {
+        throw new BadRequestException('vendor_email is required');
+      }
+
+      if (!roleId) {
+        throw new BadRequestException('role_id is required');
+      }
+
+      if (!plainPassword) {
+        throw new BadRequestException('vendor_password is required');
+      }
+    }
+
+    const hasUserData =
+      username !== '' || email !== '' || roleId > 0 || plainPassword !== '';
+
+    if (!hasUserData) return;
+
+    const existingUser = await client.dvi_users.findFirst({
+      where: {
+        vendor_id: BigInt(vendorId),
+        deleted: 0,
+      },
+      select: {
+        userID: true,
+      },
+    });
+
+    const userData: any = {
+      username: username || email || null,
+      useremail: email || null,
+      roleID: roleId,
+      userapproved: 1,
+      status: 1,
+      userbanned: 0,
+    };
+
+    if (plainPassword !== '') {
+      userData.password = await bcrypt.hash(plainPassword, 10);
+      userData.usertoken = this.md5(plainPassword);
+    }
+
+    if (existingUser) {
+      await client.dvi_users.update({
+        where: {
+          userID: existingUser.userID,
+        },
+        data: userData,
+      });
+      return;
+    }
+
+    await client.dvi_users.create({
+      data: {
+        vendor_id: BigInt(vendorId),
+        guide_id: 0,
+        staff_id: 0,
+        agent_id: 0,
+        createdby: BigInt(0),
+        createdon: new Date(),
+        deleted: 0,
+        ...userData,
+      },
+    });
   }
 
   private mapVendorBasicPayload(data: any): Record<string, any> {
@@ -184,15 +309,34 @@ export class VendorsService {
       throw new NotFoundException(`Vendor ${vendorId} not found`);
     }
 
-    const branches = await this.prisma.dvi_vendor_branches.findMany({
-      where: {
-        vendor_id: vendorId,
-        deleted: 0,
-      },
-    });
+    const [branches, user] = await Promise.all([
+      this.prisma.dvi_vendor_branches.findMany({
+        where: {
+          vendor_id: vendorId,
+          deleted: 0,
+        },
+      }),
+      this.prisma.dvi_users.findFirst({
+        where: {
+          vendor_id: BigInt(vendorId),
+          deleted: 0,
+        },
+        select: {
+          username: true,
+          useremail: true,
+          roleID: true,
+        },
+      }),
+    ]);
 
     return {
-      vendor,
+      vendor: {
+        ...vendor,
+        vendor_username: user?.username ?? '',
+        vendor_useremail: user?.useremail ?? '',
+        role_id: user?.roleID ?? 0,
+        roleID: user?.roleID ?? 0,
+      },
       branches,
     };
   }
@@ -208,16 +352,30 @@ export class VendorsService {
   async createVendorBasicInfo(data: any): Promise<any> {
     const mapped = this.mapVendorBasicPayload(data);
 
-    const created = await this.prisma.dvi_vendor_details.create({
-      data: {
-        deleted: 0,
-        status: data.status ?? 1,
-        ...mapped,
-      },
+    if (!mapped.vendor_code || String(mapped.vendor_code).trim() === '') {
+      mapped.vendor_code = this.generatePhpStyleVendorCode(data);
+    }
+
+    const vendorId = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.dvi_vendor_details.create({
+        data: {
+          deleted: 0,
+          status: data.status ?? 1,
+          createdon: new Date(),
+          ...mapped,
+        },
+      });
+
+      const newVendorId = created.vendor_id as unknown as number;
+
+      await this.syncVendorUserAccount(newVendorId, data, tx, {
+        isCreate: true,
+      });
+
+      return newVendorId;
     });
 
-    // Return the same shape as the edit pre-fill endpoint
-    return this.getVendorDetail(created.vendor_id as unknown as number);
+    return this.getVendorDetail(vendorId);
   }
 
   /**
@@ -229,11 +387,28 @@ export class VendorsService {
 
     const mapped = this.mapVendorBasicPayload(data);
 
-    await this.prisma.dvi_vendor_details.update({
-      where: {
-        vendor_id: vendorId,
-      },
-      data: mapped,
+    const hasVendorCodeInPayload =
+      data.vendor_code !== undefined ||
+      data.vendorCode !== undefined;
+
+    if (!hasVendorCodeInPayload) {
+      delete mapped.vendor_code;
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.dvi_vendor_details.update({
+        where: {
+          vendor_id: vendorId,
+        },
+        data: {
+          ...mapped,
+          updatedon: new Date(),
+        },
+      });
+
+      await this.syncVendorUserAccount(vendorId, data, tx, {
+        isCreate: false,
+      });
     });
 
     return this.getVendorDetail(vendorId);

@@ -1224,7 +1224,7 @@ export class HotelsService {
     const roomRows = await this.prisma.dvi_hotel_rooms.findMany({
       where: {
         hotel_id: hid,
-        OR: [{ deleted: 0 as any }, { deleted: null as any }, { deleted: false as any }],
+        OR: [{ deleted: 0 as any }, { deleted: null as any }],
       } as any,
       select: { room_type_id: true },
       distinct: ['room_type_id'] as any,
