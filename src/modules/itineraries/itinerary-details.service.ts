@@ -3387,6 +3387,29 @@ sightseeingDistance,       // local sightseeing separately
     const branchMap = new Map(
       branches.map((b) => [b.vendor_branch_id, b]),
     );
+    const branchCityIds = Array.from(
+      new Set(
+        branches
+          .map((branch: any) => Number(branch.vendor_branch_city || 0))
+          .filter((id: number) => id > 0),
+      ),
+    );
+    const branchCityNameMap = new Map<number, string>(
+      (
+        branchCityIds.length
+          ? await this.prisma.dvi_cities.findMany({
+              where: {
+                id: { in: branchCityIds },
+                deleted: 0,
+              } as any,
+              select: {
+                id: true,
+                name: true,
+              },
+            } as any)
+          : []
+      ).map((row: any) => [Number(row.id || 0), String(row.name || '').trim()]),
+    );
 
     const slabKeySet = new Set(
       eligibleRows
@@ -3649,6 +3672,9 @@ sightseeingDistance,       // local sightseeing separately
     const vehicles: ItineraryVehicleRowDto[] = Array.from(selectedVehicleRowsByType.values()).map((eligible) => {
       const branchId = (eligible as any).vendor_branch_id ?? 0;
       const branch = branchMap.get(branchId) || null;
+      const branchCityName = branch
+        ? branchCityNameMap.get(Number((branch as any).vendor_branch_city || 0)) || ''
+        : '';
       const vehicleTypeId = (eligible as any).vehicle_type_id ?? 0;
       const origin = ((eligible as any).vehicle_orign ?? '').toString().trim();
       
@@ -4063,7 +4089,12 @@ for (const vd of dayWiseDetails) {
       const vehicleResponseRow = {
         vendorName: branch?.vendor_branch_name ?? null,
         branchName: branch?.vendor_branch_name ?? null,
-        vehicleOrigin: origin || branch?.vendor_branch_location || null,
+        vehicleOrigin:
+          origin ||
+          branchCityName ||
+          branch?.vendor_branch_location ||
+          branch?.vendor_branch_name ||
+          null,
         totalQty: String(qty),
         totalAmount: totalAmount.toFixed(2),
 
