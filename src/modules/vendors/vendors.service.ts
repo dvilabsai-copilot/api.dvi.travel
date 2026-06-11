@@ -1568,6 +1568,7 @@ export class VendorsService {
 
 async createVendorVehicle(vendorId: number, data: any): Promise<any> {
   const mapped = this.mapVendorVehiclePayload(data);
+  const { vehicle_origin: _vehicleOrigin, ...persistedMapped } = mapped as any;
   const resolution = await this.resolveVehicleLocationIdFromBranch({
     vendorId,
     vendorBranchId: Number(mapped.vendor_branch_id ?? 0),
@@ -1576,7 +1577,7 @@ async createVendorVehicle(vendorId: number, data: any): Promise<any> {
   });
 
   const createData: any = {
-    ...mapped,
+    ...persistedMapped,
     vehicle_location_id: resolution.vehicleLocationId,
     vendor_id: vendorId,
     createdon: new Date(),
@@ -1615,6 +1616,7 @@ async updateVendorVehicle(vehicleId: number, data: any): Promise<any> {
   }
 
   const mapped = this.mapVendorVehiclePayload(data);
+  const { vehicle_origin: _vehicleOrigin, ...persistedMapped } = mapped as any;
   const resolution = await this.resolveVehicleLocationIdFromBranch({
     vendorId: Number(existingVehicle.vendor_id ?? 0),
     vendorBranchId:
@@ -1627,7 +1629,7 @@ async updateVendorVehicle(vehicleId: number, data: any): Promise<any> {
   });
 
   const updateData: any = {
-    ...mapped,
+    ...persistedMapped,
     vehicle_location_id: resolution.vehicleLocationId,
     updatedon: new Date(),
   };
