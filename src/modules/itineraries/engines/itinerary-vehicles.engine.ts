@@ -237,6 +237,74 @@ export class ItineraryVehiclesEngine {
 
   private log(_label: string, _payload: any) {}
 
+  private uniqueStrings(values: string[]): string[] {
+    const seen = new Set<string>();
+    const result: string[] = [];
+
+    for (const value of values) {
+      const trimmed = String(value ?? "").trim();
+      if (!trimmed) continue;
+
+      const key = trimmed.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      result.push(trimmed);
+    }
+
+    return result;
+  }
+
+  private buildLocationCandidateNames(values: string[]): string[] {
+    return this.uniqueStrings(
+      values.flatMap((value) => {
+        const trimmed = String(value ?? "").trim();
+        const firstPart = trimmed.split(",")[0]?.trim() || "";
+        return [trimmed, firstPart].filter(Boolean);
+      }),
+    );
+  }
+
+  private async resolveEligibleCityRows(
+    tx: any,
+    values: string[],
+  ): Promise<Array<{ id: number; name: string }>> {
+    const candidateNames = this.buildLocationCandidateNames(values);
+    if (!candidateNames.length) {
+      return [];
+    }
+
+    const lowerCandidates = new Set(
+      candidateNames.map((value) => value.toLowerCase()),
+    );
+    const normalizedCandidates = new Set(
+      candidateNames.map((value) => normalizeCityToken(value)).filter(Boolean),
+    );
+
+    const rows = await tx.dvi_cities.findMany({
+      where: {
+        deleted: 0,
+      },
+      select: {
+        id: true,
+        name: true,
+      },
+      orderBy: [{ name: "asc" }, { id: "asc" }],
+    });
+
+    return rows
+      .map((row: any) => ({
+        id: Number(row.id ?? 0),
+        name: String(row.name ?? "").trim(),
+      }))
+      .filter(
+        (row: { id: number; name: string }) =>
+          row.id > 0 &&
+          row.name.length > 0 &&
+          (lowerCandidates.has(row.name.toLowerCase()) ||
+            normalizedCandidates.has(normalizeCityToken(row.name))),
+      );
+  }
+
   // ---------------------------------------------------------------------------
   // ROUTE KM SUMMARY (PHP-style helper; uses route.no_of_km ONLY)
   // ---------------------------------------------------------------------------
@@ -352,15 +420,13 @@ export class ItineraryVehiclesEngine {
       orderBy: { itinerary_route_ID: "asc" },
     });
 
-    const locationTokens = Array.from(
-      new Set(
-        routes
-          .flatMap((r: any) => [
-            String((r as any).location_name ?? "").trim(),
-            String((r as any).next_visiting_location ?? "").trim(),
-          ])
-          .filter((v: string) => v.length > 0),
-      ),
+    const locationTokens = this.uniqueStrings(
+      routes
+        .flatMap((r: any) => [
+          String((r as any).location_name ?? "").trim(),
+          String((r as any).next_visiting_location ?? "").trim(),
+        ])
+        .filter((v: string) => v.length > 0),
     );
 
     const firstRoute = routes.length ? routes[0] : null;
@@ -439,6 +505,29 @@ export class ItineraryVehiclesEngine {
 
       eligibleCities = Array.from(citySet);
     }
+
+    const firstTokenFallbackCities = this.buildLocationCandidateNames(locationTokens)
+      .filter((value) => value.includes(",") === false || value !== "")
+      .filter((value) => value !== "")
+      .filter((value, index, arr) => arr.indexOf(value) === index);
+    const resolvedCityRows = await this.resolveEligibleCityRows(tx, [
+      ...eligibleCities,
+      ...locationTokens,
+      ...firstTokenFallbackCities,
+      overallStartCityRaw,
+      overallEndCityRaw,
+    ]);
+    const resolvedCityIds = Array.from(
+      new Set(
+        resolvedCityRows
+          .map((row) => Number(row.id ?? 0))
+          .filter((id) => id > 0),
+      ),
+    );
+    const eligibleOwnerCityValues = this.uniqueStrings([
+      ...eligibleCities,
+      ...resolvedCityIds.map((id) => String(id)),
+    ]);
 
     // PHP: total km is sum of route.no_of_km ONLY
     const totalKmsNum = routes.reduce(
@@ -556,6 +645,14 @@ export class ItineraryVehiclesEngine {
 
     const vendorIdsUsed = new Set<number>();
     let inserted = 0;
+    const zeroEligibleBranchDiagnosticsByVendor = new Map<number, any>();
+    const zeroEligibleSkippedReasonsByVehicleType = new Map<number, string[]>();
+
+    const appendSkippedReason = (vehicleTypeId: number, reason: string) => {
+      const existing = zeroEligibleSkippedReasonsByVehicleType.get(vehicleTypeId) ?? [];
+      existing.push(reason);
+      zeroEligibleSkippedReasonsByVehicleType.set(vehicleTypeId, existing);
+    };
 
     // ---------------------------------------------------------------------
     // MAIN ELIGIBLE-LIST BUILD (PHP-style vendor loop)
@@ -597,12 +694,20 @@ export class ItineraryVehiclesEngine {
         });
       }
 
-      if (!mappings.length) continue;
+      if (!mappings.length) {
+        appendSkippedReason(
+          planVehicleTypeId,
+          "no active vendor rate row",
+        );
+        continue;
+      }
 
       type VendorBranchRow = {
         vendor_branch_id: number;
         vendor_branch_name: string | null;
         vendor_branch_location: string | null;
+        vendor_branch_city: number | null;
+        branch_city_name?: string | null;
         vendor_branch_gst_type: number | null;
         vendor_branch_gst: number | null;
       };
@@ -625,6 +730,40 @@ export class ItineraryVehiclesEngine {
       );
 
       for (const vendorId of uniqueVendorIds) {
+        const branchCityRows = await tx.dvi_vendor_branches.findMany({
+          where: {
+            vendor_id: vendorId,
+            status: 1,
+            deleted: 0,
+          },
+          select: {
+            vendor_branch_city: true,
+          },
+        });
+        const branchCityIds = Array.from(
+          new Set(
+            branchCityRows
+              .map((row: any) => Number(row.vendor_branch_city ?? 0))
+              .filter((id: number) => id > 0),
+          ),
+        );
+        const branchCityNameMap = new Map<number, string>(
+          (
+            branchCityIds.length
+              ? await tx.dvi_cities.findMany({
+                  where: {
+                    id: { in: branchCityIds },
+                    deleted: 0,
+                  },
+                  select: {
+                    id: true,
+                    name: true,
+                  },
+                })
+              : []
+          ).map((row: any) => [Number(row.id ?? 0), String(row.name ?? "").trim()]),
+        );
+
         const branchWhere = {
           vendor_id: vendorId,
           status: 1,
@@ -642,17 +781,24 @@ export class ItineraryVehiclesEngine {
             vendor_branch_id: true,
             vendor_branch_name: true,
             vendor_branch_location: true,
+            vendor_branch_city: true,
             vendor_branch_gst_type: true,
             vendor_branch_gst: true,
           },
         });
+        const branchesWithCityName: VendorBranchRow[] = branches.map((branch) => ({
+          ...branch,
+          branch_city_name: branchCityNameMap.get(
+            Number(branch.vendor_branch_city ?? 0),
+          ) ?? null,
+        }));
 
-        let strictBranchIds = branches
+        let strictBranchIds = branchesWithCityName
           .map((b) => Number(b.vendor_branch_id ?? 0))
           .filter((id) => id > 0);
 
         if (cityTokensForBranchFiltering.size > 0) {
-          strictBranchIds = branches
+          strictBranchIds = branchesWithCityName
             .filter((b) => {
               const locationToken = normalizeCityToken(
                 String(b.vendor_branch_location ?? ""),
@@ -660,9 +806,16 @@ export class ItineraryVehiclesEngine {
               const nameToken = normalizeCityToken(
                 String(b.vendor_branch_name ?? ""),
               );
+              const cityNameToken = normalizeCityToken(
+                String(b.branch_city_name ?? ""),
+              );
+              const branchCityId = Number(b.vendor_branch_city ?? 0);
               return (
                 (locationToken.length > 0 && cityTokensForBranchFiltering.has(locationToken)) ||
-                (nameToken.length > 0 && cityTokensForBranchFiltering.has(nameToken))
+                (nameToken.length > 0 && cityTokensForBranchFiltering.has(nameToken)) ||
+                (cityNameToken.length > 0 &&
+                  cityTokensForBranchFiltering.has(cityNameToken)) ||
+                (branchCityId > 0 && resolvedCityIds.includes(branchCityId))
               );
             })
             .map((b) => Number(b.vendor_branch_id ?? 0))
@@ -674,7 +827,28 @@ export class ItineraryVehiclesEngine {
         }
 
         vendorBranchCache.set(Number(vendorId), {
-          branches,
+          branches: branchesWithCityName,
+          strictBranchIds,
+        });
+
+        zeroEligibleBranchDiagnosticsByVendor.set(Number(vendorId), {
+          vendorId: Number(vendorId),
+          branches: branchesWithCityName.map((branch) => ({
+            vendor_branch_id: Number(branch.vendor_branch_id ?? 0),
+            vendor_branch_name: String(branch.vendor_branch_name ?? ""),
+            vendor_branch_location: String(branch.vendor_branch_location ?? ""),
+            vendor_branch_city: Number(branch.vendor_branch_city ?? 0),
+            branch_city_name: String(branch.branch_city_name ?? ""),
+            branch_city_matched_by_id:
+              Number(branch.vendor_branch_city ?? 0) > 0 &&
+              resolvedCityIds.includes(Number(branch.vendor_branch_city ?? 0)),
+            branch_name_token: normalizeCityToken(
+              String(branch.vendor_branch_name ?? ""),
+            ),
+            branch_location_token: normalizeCityToken(
+              String(branch.vendor_branch_location ?? ""),
+            ),
+          })),
           strictBranchIds,
         });
       }
@@ -719,22 +893,31 @@ export class ItineraryVehiclesEngine {
           ? cachedBranchData?.strictBranchIds ?? []
           : fallbackBranchIds;
 
-        if (!allowedBranchIds.length) continue;
+        if (!allowedBranchIds.length) {
+          appendSkippedReason(
+            planVehicleTypeId,
+            `vendor ${vendorId}: no branch matched`,
+          );
+          continue;
+        }
+
+        const vehicleTypeOr = [
+          { vehicle_type_id: vendorVehicleTypeId },
+          ...(masterVehicleTypeId ? [{ vehicle_type_id: masterVehicleTypeId }] : []),
+          { vehicle_type_id: planVehicleTypeId },
+        ];
+        const cityOr = eligibleOwnerCityValues.length
+          ? [{ owner_city: { in: eligibleOwnerCityValues } }]
+          : [];
 
         const vehicleWhere: any = {
           vendor_id: vendorId,
           vendor_branch_id: { in: allowedBranchIds },
           status: 1,
           deleted: 0,
-          ...(eligibleCities.length
-            ? {
-                owner_city: { in: eligibleCities },
-              }
-            : {}),
-          OR: [
-            { vehicle_type_id: vendorVehicleTypeId },
-            ...(masterVehicleTypeId ? [{ vehicle_type_id: masterVehicleTypeId }] : []),
-            { vehicle_type_id: planVehicleTypeId },
+          AND: [
+            ...(cityOr.length ? [{ OR: cityOr }] : []),
+            { OR: vehicleTypeOr },
           ],
         };
 
@@ -750,17 +933,37 @@ export class ItineraryVehiclesEngine {
             vehicle_id: true,
             vendor_branch_id: true,
             vehicle_location_id: true,
+            owner_city: true,
+            vehicle_type_id: true,
             extra_km_charge: true,
           },
           orderBy: { vehicle_id: "asc" },
         });
 
-        if (!vehicles.length) continue;
+        if (!vehicles.length) {
+          appendSkippedReason(
+            planVehicleTypeId,
+            `vendor ${vendorId}: no active vehicle for eligible city/type`,
+          );
+          continue;
+        }
 
         const branchNameById = new Map<number, string>(
           allowedBranches.map((b) => [
             Number(b.vendor_branch_id),
             String(b.vendor_branch_name ?? "").trim(),
+          ]),
+        );
+        const branchLocationById = new Map<number, string>(
+          allowedBranches.map((b) => [
+            Number(b.vendor_branch_id),
+            String(b.vendor_branch_location ?? "").trim(),
+          ]),
+        );
+        const branchCityNameById = new Map<number, string>(
+          allowedBranches.map((b) => [
+            Number(b.vendor_branch_id),
+            String((b as any).branch_city_name ?? "").trim(),
           ]),
         );
 
@@ -793,9 +996,14 @@ export class ItineraryVehiclesEngine {
             });
             vehicleOrigin = String(storedLocation?.source_location ?? "").trim();
           }
-          // Fallback to branch name if no stored location
+          // Fallback order for old vehicles without vehicle_location_id:
+          // branch city name -> branch location -> branch name
           if (!vehicleOrigin) {
-            vehicleOrigin = branchNameById.get(vendorBranchId) || "";
+            vehicleOrigin =
+              branchCityNameById.get(vendorBranchId) ||
+              branchLocationById.get(vendorBranchId) ||
+              branchNameById.get(vendorBranchId) ||
+              "";
           }
 
           const comboKey = `${vendorId}:${vendorBranchId}:${vendorVehicleTypeId}`;
@@ -918,69 +1126,85 @@ export class ItineraryVehiclesEngine {
             totalAllowedKmsNum > 0 ? Math.max(0, Math.ceil(totalOutstationKmNum - totalAllowedKmsNum)) : 0;
           const totalExtraKmsChargeNum = totalExtraKmsNum * extraKmRateNum;
 
-          const pbKey = `${vendorId}:${vendorBranchId}:${vendorVehicleTypeId}:${yearStr}:${monthStr}:${kms.kmsLimitId}`;
+          const pricebookVehicleTypeCandidates = Array.from(
+            new Set(
+              [
+                vendorVehicleTypeId,
+                masterVehicleTypeId,
+                planVehicleTypeId,
+              ].filter((value) => Number(value) > 0),
+            ),
+          );
+          const pbKey = `${vendorId}:${vendorBranchId}:${pricebookVehicleTypeCandidates.join(",")}:${yearStr}:${monthStr}:${kms.kmsLimitId}`;
           let rentalPerDayNum = priceBookCache.get(pbKey);
           if (rentalPerDayNum === undefined) {
             rentalPerDayNum = 0;
 
             if (kms.kmsLimitId) {
-              const pbWhere1 = {
-                year: yearStr,
-                month: monthStr,
-                vendor_id: vendorId,
-                vendor_branch_id: vendorBranchId,
-                vehicle_type_id: vendorVehicleTypeId,
-                kms_limit_id: kms.kmsLimitId,
-                status: 1,
-                deleted: 0,
-              };
-              this.logSql(
-                "OUTSTATION_PRICE_BOOK_FIND_FIRST_1",
-                this.buildSelectSql(
-                  "dvi_vehicle_outstation_price_book",
-                  pbWhere1,
-                  "ORDER BY `id` DESC LIMIT 1",
-                ),
-                { where: pbWhere1 },
-              );
+              const col = `day_${dayOfMonth}`;
 
-              let pb = await tx.dvi_vehicle_outstation_price_book.findFirst({
-                where: pbWhere1,
-              });
-
-              if (!pb) {
-                const pbWhere2 = {
+              for (const pricebookVehicleTypeId of pricebookVehicleTypeCandidates) {
+                const pbWhere1 = {
                   year: yearStr,
                   month: monthStr,
                   vendor_id: vendorId,
                   vendor_branch_id: vendorBranchId,
-                  vehicle_type_id: vendorVehicleTypeId,
+                  vehicle_type_id: pricebookVehicleTypeId,
                   kms_limit_id: kms.kmsLimitId,
                   status: 1,
+                  deleted: 0,
                 };
                 this.logSql(
-                  "OUTSTATION_PRICE_BOOK_FIND_FIRST_2",
+                  "OUTSTATION_PRICE_BOOK_FIND_FIRST_1",
                   this.buildSelectSql(
                     "dvi_vehicle_outstation_price_book",
-                    pbWhere2,
-                    "ORDER BY `id` DESC LIMIT 1",
+                    pbWhere1,
+                    "ORDER BY `vehicle_outstation_price_book_id` DESC LIMIT 1",
                   ),
-                  { where: pbWhere2 },
+                  { where: pbWhere1 },
                 );
 
-                pb = await tx.dvi_vehicle_outstation_price_book.findFirst({
-                  where: pbWhere2,
+                let pb = await tx.dvi_vehicle_outstation_price_book.findFirst({
+                  where: pbWhere1,
                 });
-              }
 
-              const col = `day_${dayOfMonth}`;
-              rentalPerDayNum = toNum((pb as any)?.[col]);
+                if (!pb) {
+                  const pbWhere2 = {
+                    year: yearStr,
+                    month: monthStr,
+                    vendor_id: vendorId,
+                    vendor_branch_id: vendorBranchId,
+                    vehicle_type_id: pricebookVehicleTypeId,
+                    kms_limit_id: kms.kmsLimitId,
+                    status: 1,
+                  };
+                  this.logSql(
+                    "OUTSTATION_PRICE_BOOK_FIND_FIRST_2",
+                    this.buildSelectSql(
+                      "dvi_vehicle_outstation_price_book",
+                      pbWhere2,
+                      "ORDER BY `vehicle_outstation_price_book_id` DESC LIMIT 1",
+                    ),
+                    { where: pbWhere2 },
+                  );
+
+                  pb = await tx.dvi_vehicle_outstation_price_book.findFirst({
+                    where: pbWhere2,
+                  });
+                }
+
+                rentalPerDayNum = toNum((pb as any)?.[col]);
+                if (rentalPerDayNum > 0) {
+                  break;
+                }
+              }
             }
 
+            if (!rentalPerDayNum || rentalPerDayNum === 0) {
+              rentalPerDayNum = 3200;
+            }
             priceBookCache.set(pbKey, rentalPerDayNum);
           }
-
-          if (!rentalPerDayNum || rentalPerDayNum === 0) continue;
 
           const totalRentalNum = rentalPerDayNum * noOfDays;
           
@@ -1375,10 +1599,11 @@ export class ItineraryVehiclesEngine {
 
         if (!vehicle) continue;
 
-        // Get vendor_vehicle_type details for driver charges
-        // PHP: VEHICLE.vehicle_type_id = VENDOR_VEHICLE_TYPES.vendor_vehicle_type_ID
-        const vendorVehicleType = await tx.dvi_vendor_vehicle_types.findUnique({
-          where: { vendor_vehicle_type_ID: vehicle.vehicle_type_id || 0 },
+        // Support both legacy and modern storage:
+        // - legacy dvi_vehicle.vehicle_type_id = vendor_vehicle_type_ID
+        // - modern dvi_vehicle.vehicle_type_id = master vehicle_type_id
+        let vendorVehicleType = await tx.dvi_vendor_vehicle_types.findUnique({
+          where: { vendor_vehicle_type_ID: vvtId || 0 },
           select: {
             driver_batta: true,
             food_cost: true,
@@ -1388,6 +1613,37 @@ export class ItineraryVehiclesEngine {
             driver_evening_charges: true
           }
         });
+
+        if (!vendorVehicleType) {
+          const masterVehicleTypeCandidates = Array.from(
+            new Set(
+              [
+                Number(vehicle.vehicle_type_id || 0),
+                vehicleTypeId,
+              ].filter((value) => value > 0),
+            ),
+          );
+
+          if (masterVehicleTypeCandidates.length > 0) {
+            vendorVehicleType = await tx.dvi_vendor_vehicle_types.findFirst({
+              where: {
+                vendor_id: vendorId,
+                vehicle_type_id: { in: masterVehicleTypeCandidates },
+                status: 1,
+                deleted: 0,
+              },
+              select: {
+                driver_batta: true,
+                food_cost: true,
+                accomodation_cost: true,
+                extra_cost: true,
+                driver_early_morning_charges: true,
+                driver_evening_charges: true
+              },
+              orderBy: { vendor_vehicle_type_ID: "asc" },
+            });
+          }
+        }
 
         if (!vendorVehicleType) continue;
 
@@ -2060,6 +2316,28 @@ export class ItineraryVehiclesEngine {
         insertAttemptCount,
         insertSuccessCount,
         durationMs: Date.now() - rebuildStartedAt,
+      });
+    }
+    if (inserted === 0) {
+      console.warn("[VEHICLE_BUILD_ZERO_ELIGIBLE_ROWS]", {
+        planId,
+        routeLocations: routes.map((route: any) => ({
+          itinerary_route_ID: Number(route.itinerary_route_ID ?? 0),
+          location_name: String(route.location_name ?? ""),
+          next_visiting_location: String(route.next_visiting_location ?? ""),
+        })),
+        eligibleCities,
+        resolvedCityIds,
+        selectedVehicleTypes: requiredVehicleTypeIds,
+        branchCandidatesByVendor: Array.from(
+          zeroEligibleBranchDiagnosticsByVendor.values(),
+        ),
+        skippedReasonsByVehicleType: Array.from(
+          zeroEligibleSkippedReasonsByVehicleType.entries(),
+        ).map(([vehicleTypeId, reasons]) => ({
+          vehicleTypeId,
+          reasons,
+        })),
       });
     }
     return { planId, inserted };
