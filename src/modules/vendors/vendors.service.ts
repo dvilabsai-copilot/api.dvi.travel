@@ -125,6 +125,7 @@ export class VendorsService {
     vendorId: number;
     vendorBranchId: number;
     requestedVehicleLocationId?: any;
+    requestedVehicleOrigin?: any;
   }): Promise<{
     vehicleLocationId: number;
     diagnostics: Record<string, any>;
@@ -155,6 +156,69 @@ export class VendorsService {
         diagnostics.resolvedBy = 'frontend_vehicle_location_id';
         return {
           vehicleLocationId: validRequestedId,
+          diagnostics,
+        };
+      }
+    }
+
+    const requestedVehicleOrigin = String(args.requestedVehicleOrigin ?? '').trim();
+    if (requestedVehicleOrigin) {
+      diagnostics.attemptedMatchingRules.push('frontend_vehicle_origin');
+
+      const directOriginMatches = await this.prisma.dvi_stored_locations.findMany({
+        where: {
+          source_location: requestedVehicleOrigin,
+          deleted: 0,
+          status: 1,
+        },
+        orderBy: { location_ID: 'desc' },
+        select: {
+          location_ID: true,
+          source_location: true,
+          source_location_city: true,
+          source_location_lattitude: true,
+          source_location_longitude: true,
+        },
+        take: 25,
+      });
+
+      const deterministicDirectOriginId = this.pickDeterministicSourceRow(
+        directOriginMatches as any,
+      );
+      if (deterministicDirectOriginId > 0) {
+        diagnostics.resolvedBy = 'frontend_vehicle_origin';
+        diagnostics.matchedSourceLocation = requestedVehicleOrigin;
+        return {
+          vehicleLocationId: deterministicDirectOriginId,
+          diagnostics,
+        };
+      }
+
+      const directOriginCityMatches = await this.prisma.dvi_stored_locations.findMany({
+        where: {
+          source_location_city: requestedVehicleOrigin,
+          deleted: 0,
+          status: 1,
+        } as any,
+        orderBy: { location_ID: 'desc' },
+        select: {
+          location_ID: true,
+          source_location: true,
+          source_location_city: true,
+          source_location_lattitude: true,
+          source_location_longitude: true,
+        },
+        take: 25,
+      } as any);
+
+      const deterministicDirectOriginCityId = this.pickDeterministicSourceRow(
+        directOriginCityMatches as any,
+      );
+      if (deterministicDirectOriginCityId > 0) {
+        diagnostics.resolvedBy = 'frontend_vehicle_origin_city';
+        diagnostics.matchedSourceCity = requestedVehicleOrigin;
+        return {
+          vehicleLocationId: deterministicDirectOriginCityId,
           diagnostics,
         };
       }
@@ -1403,9 +1467,43 @@ export class VendorsService {
   // --- Step 4: Vehicle Info (dvi_vehicle) ---
 
   async getVendorVehicles(vendorId: number): Promise<any[]> {
-    return this.prisma.dvi_vehicle.findMany({
+    const vehicles = await this.prisma.dvi_vehicle.findMany({
       where: { vendor_id: vendorId, deleted: 0 },
     });
+
+    const locationIds = Array.from(
+      new Set(
+        vehicles
+          .map((vehicle: any) => Number(vehicle.vehicle_location_id ?? 0))
+          .filter((id: number) => id > 0),
+      ),
+    );
+
+    const locations = locationIds.length
+      ? await this.prisma.dvi_stored_locations.findMany({
+          where: {
+            location_ID: { in: locationIds.map((id) => BigInt(id)) },
+            deleted: 0,
+            status: 1,
+          },
+          select: {
+            location_ID: true,
+            source_location: true,
+          },
+        })
+      : [];
+
+    const locationLabelById = new Map<number, string>(
+      locations.map((row) => [
+        Number(row.location_ID ?? 0),
+        String(row.source_location ?? '').trim(),
+      ]),
+    );
+
+    return vehicles.map((vehicle: any) => ({
+      ...vehicle,
+      vehicle_origin: locationLabelById.get(Number(vehicle.vehicle_location_id ?? 0)) ?? '',
+    }));
   }
 
  private mapVendorVehiclePayload(data: any): Record<string, any> {
@@ -1418,7 +1516,10 @@ export class VendorsService {
 
   return {
     vendor_branch_id: this.toNumberOrNull(data.vendor_branch_id) ?? 0,
-    vehicle_location_id: this.toNumberOrNull(data.vehicle_location_id) ?? 0,
+    vehicle_location_id: this.toNumberOrNull(data.vehicle_location_id) ?? null,
+    vehicle_origin: String(
+      data.vehicle_origin ?? data.vehicle_orign ?? data.origin ?? '',
+    ).trim(),
     vehicle_type_id: this.toNumberOrNull(data.vehicle_type_id) ?? 0,
 
     registration_number: String(data.registration_number ?? ''),
@@ -1471,6 +1572,7 @@ async createVendorVehicle(vendorId: number, data: any): Promise<any> {
     vendorId,
     vendorBranchId: Number(mapped.vendor_branch_id ?? 0),
     requestedVehicleLocationId: mapped.vehicle_location_id,
+    requestedVehicleOrigin: mapped.vehicle_origin,
   });
 
   const createData: any = {
@@ -1504,6 +1606,7 @@ async updateVendorVehicle(vehicleId: number, data: any): Promise<any> {
     select: {
       vendor_id: true,
       vendor_branch_id: true,
+      vehicle_location_id: true,
     },
   });
 
@@ -1517,7 +1620,10 @@ async updateVendorVehicle(vehicleId: number, data: any): Promise<any> {
     vendorBranchId:
       Number(mapped.vendor_branch_id ?? 0) ||
       Number(existingVehicle.vendor_branch_id ?? 0),
-    requestedVehicleLocationId: mapped.vehicle_location_id,
+    requestedVehicleLocationId:
+      mapped.vehicle_location_id ||
+      Number(existingVehicle.vehicle_location_id ?? 0),
+    requestedVehicleOrigin: mapped.vehicle_origin,
   });
 
   const updateData: any = {
