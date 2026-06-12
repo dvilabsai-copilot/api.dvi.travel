@@ -157,6 +157,21 @@ export class HotelSelectionDto {
   @IsString()
   bookingCode!: string;
 
+  @ApiProperty({ example: 'STAAH-STAAHTESTHOTEL1-DELUXE_ROOM-CP_PLAN-20260714123000', required: false })
+  @IsOptional()
+  @IsString()
+  searchReference?: string;
+
+  @ApiProperty({ example: 'DELUXE_ROOM', required: false })
+  @IsOptional()
+  @IsString()
+  roomId?: string;
+
+  @ApiProperty({ example: 'CP_PLAN', required: false })
+  @IsOptional()
+  @IsString()
+  rateId?: string;
+
   @ApiProperty({ example: 'Double Bed' })
   @IsString()
   roomType!: string;

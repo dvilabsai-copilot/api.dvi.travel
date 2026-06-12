@@ -24,6 +24,42 @@ export class StaahBookingPushService {
     return String(value ?? '').trim().replace(/_/g, '');
   }
 
+  private toStaahOutboundId(value: unknown): string {
+    return String(value ?? '').trim().replace(/_/g, '');
+  }
+
+  private normalizeLooseIdentifier(value: unknown): string {
+    return String(value ?? '')
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, '');
+  }
+
+  private extractOccupancyAmount(occupancyRates: any, adults: number): number | null {
+    const data = occupancyRates && typeof occupancyRates === 'object' ? occupancyRates : {};
+    const afterTax = data.amountAfterTax && typeof data.amountAfterTax === 'object' ? data.amountAfterTax : {};
+    const beforeTax = data.amountBeforeTax && typeof data.amountBeforeTax === 'object' ? data.amountBeforeTax : {};
+    const afterObp = afterTax.obp && typeof afterTax.obp === 'object' ? afterTax.obp : {};
+    const beforeObp = beforeTax.obp && typeof beforeTax.obp === 'object' ? beforeTax.obp : {};
+    const personKey = `person${Math.max(1, Math.min(6, Number(adults || 1)))}`;
+
+    const candidates = [
+      afterObp[personKey],
+      beforeObp[personKey],
+      afterTax.Rate,
+      beforeTax.Rate,
+    ];
+
+    for (const candidate of candidates) {
+      const amount = Number(candidate);
+      if (Number.isFinite(amount) && amount >= 0) {
+        return amount;
+      }
+    }
+
+    return null;
+  }
+
   private async logStaahReservation(params: {
     type: string;
     staahPropertyId: string;
@@ -97,6 +133,126 @@ export class StaahBookingPushService {
     return { propertyId, roomId, rateId };
   }
 
+  private extractStaahReferenceFromHotelSelection(hotel: any): {
+    propertyId: string;
+    roomId: string;
+    rateId: string;
+  } | null {
+    const searchReference = this.extractStaahSearchReference(String((hotel as any)?.searchReference || '').trim());
+    if (searchReference) {
+      return searchReference;
+    }
+
+    return this.extractStaahSearchReference(String((hotel as any)?.bookingCode || '').trim());
+  }
+
+  private async resolveRoomRateFromHotelPayload(
+    hotel: any,
+    hotelMaster: dvi_hotel | null,
+  ): Promise<{ roomId: string; rateId: string; rateName: string; notes: string[] } | null> {
+    const hotelId = Number(hotelMaster?.hotel_id || 0);
+    const propertyid = String(hotelMaster?.staah_property_id || '').trim();
+    const roomType = String((hotel as any)?.roomType || '').trim();
+    const checkInDate = String((hotel as any)?.checkInDate || '').trim();
+    const checkOutDate = String((hotel as any)?.checkOutDate || '').trim();
+    const adults = Number((hotel as any)?.occupancies?.[0]?.adults || 1);
+    const netAmount = Number((hotel as any)?.netAmount || 0);
+
+    if (!hotelId || !propertyid || !roomType || !checkInDate || !checkOutDate) {
+      return null;
+    }
+
+    const normalizedRoomType = this.normalizeLooseIdentifier(roomType);
+    const roomRows = await this.prisma.dvi_hotel_rooms.findMany({
+      where: { hotel_id: hotelId, deleted: 0 } as any,
+      select: { room_ref_code: true, room_title: true },
+    });
+
+    const matchedRoom = roomRows.find((row: any) => {
+      const refCode = this.normalizeLooseIdentifier(row?.room_ref_code);
+      const title = this.normalizeLooseIdentifier(row?.room_title);
+      return (
+        (!!refCode && (normalizedRoomType.includes(refCode) || refCode.includes(normalizedRoomType))) ||
+        (!!title && (normalizedRoomType.includes(title) || title.includes(normalizedRoomType)))
+      );
+    });
+
+    if (!matchedRoom) {
+      return null;
+    }
+
+    const requestedRoomId = String((matchedRoom as any).room_ref_code || '').trim();
+    if (!requestedRoomId) {
+      return null;
+    }
+
+    const [ratePlans, rateRows] = await Promise.all([
+      this.prisma.staah_rateplan.findMany({
+        where: { staah_property_id: propertyid },
+        select: { room_id: true, rateplan_id: true, rateplan_name: true },
+      }),
+      this.prisma.staah_rate.findMany({
+        where: {
+          staah_property_id: propertyid,
+          start_date: { lte: new Date(checkOutDate) } as any,
+          end_date: { gte: new Date(checkInDate) } as any,
+        },
+        select: {
+          room_id: true,
+          rateplan_id: true,
+          occupancy_rates: true,
+          start_date: true,
+          end_date: true,
+          received_at: true,
+        },
+      }),
+    ]);
+
+    const matchingRatePlans = ratePlans.filter(
+      (row) => this.normalizeStaahExternalId(row.room_id) === this.normalizeStaahExternalId(requestedRoomId),
+    );
+    if (!matchingRatePlans.length) {
+      return null;
+    }
+
+    const matchingRateRows = rateRows
+      .filter(
+        (row) =>
+          this.normalizeStaahExternalId(row.room_id) === this.normalizeStaahExternalId(requestedRoomId) &&
+          matchingRatePlans.some(
+            (plan) =>
+              this.normalizeStaahExternalId(plan.rateplan_id) === this.normalizeStaahExternalId(row.rateplan_id),
+          ),
+      )
+      .map((row) => ({
+        row,
+        extractedAmount: this.extractOccupancyAmount((row as any).occupancy_rates, adults),
+      }))
+      .sort((a, b) => {
+        const aDiff = Number.isFinite(a.extractedAmount) ? Math.abs(Number(a.extractedAmount) - netAmount) : Number.POSITIVE_INFINITY;
+        const bDiff = Number.isFinite(b.extractedAmount) ? Math.abs(Number(b.extractedAmount) - netAmount) : Number.POSITIVE_INFINITY;
+        if (aDiff !== bDiff) return aDiff - bDiff;
+        return new Date((b.row as any).received_at).getTime() - new Date((a.row as any).received_at).getTime();
+      });
+
+    const bestRate = matchingRateRows[0]?.row;
+    if (!bestRate) {
+      return null;
+    }
+
+    const bestPlan = matchingRatePlans.find(
+      (plan) =>
+        this.normalizeStaahExternalId(plan.rateplan_id) === this.normalizeStaahExternalId((bestRate as any).rateplan_id),
+    );
+
+    return {
+      roomId: String((bestRate as any).room_id || requestedRoomId),
+      rateId: String((bestRate as any).rateplan_id || ''),
+      rateName: String(bestPlan?.rateplan_name || ''),
+      notes: ['resolved_from_room_type_and_rate_lookup'],
+    };
+  }
+
   private nowIstIsoSeconds(): string {
     const now = new Date();
     const ist = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
@@ -125,8 +281,7 @@ export class StaahBookingPushService {
 
     const directRoomId = String((hotel as any)?.roomId || '').trim();
     const directRateId = String((hotel as any)?.rateId || '').trim();
-    const searchReference = String((hotel as any)?.searchReference || '').trim();
-    const parsedReference = this.extractStaahSearchReference(searchReference);
+    const parsedReference = this.extractStaahReferenceFromHotelSelection(hotel);
 
     let requestedRoomId = directRoomId;
     let requestedRateId = directRateId;
@@ -138,9 +293,16 @@ export class StaahBookingPushService {
       }
       requestedRoomId = requestedRoomId || parsedReference.roomId;
       requestedRateId = requestedRateId || parsedReference.rateId;
-      notes.push('resolved_from_searchReference');
+      notes.push('resolved_from_search_reference_or_booking_code');
     } else if (directRoomId && directRateId) {
       notes.push('resolved_from_selected_room_rate');
+    }
+
+    if ((!requestedRoomId || !requestedRateId) && hotelMaster) {
+      const fallback = await this.resolveRoomRateFromHotelPayload(hotel, hotelMaster);
+      if (fallback) {
+        return fallback;
+      }
     }
 
     if (!requestedRoomId || !requestedRateId) {
@@ -211,6 +373,8 @@ export class StaahBookingPushService {
         }
 
         const { roomId, rateId, rateName, notes } = await this.resolveRoomRate(hotel, hotelMaster);
+        const outboundRoomId = this.toStaahOutboundId(roomId);
+        const outboundRateId = this.toStaahOutboundId(rateId);
         const firstOcc = hotel.occupancies?.[0] || {};
         const adults = Number(firstOcc.adults || 1);
         const children = Number(firstOcc.children || 0);
@@ -257,12 +421,12 @@ export class StaahBookingPushService {
                   {
                     arrival_date: hotel.checkInDate,
                     departure_date: hotel.checkOutDate,
-                    room_id: roomId,
+                    room_id: outboundRoomId,
                     room_name: hotel.roomType || '',
                     price: [
                       {
                         date: hotel.checkInDate,
-                        rate_id: rateId,
+                        rate_id: outboundRateId,
                         rate_name: rateName || '',
                         amountaftertax: this.toMoneyString(baseAmountAfterTax),
                         extraGuests: {
@@ -309,7 +473,7 @@ export class StaahBookingPushService {
         };
 
         console.log('[STAAH_BOOKING_PUSH] Resolved identifiers', {
-          routeId: hotel.routeId, hotelCode: hotel.hotelCode, propertyid, roomId, rateId, notes,
+          routeId: hotel.routeId, hotelCode: hotel.hotelCode, propertyid, roomId, rateId, outboundRoomId, outboundRateId, notes,
         });
         console.log('[STAAH_BOOKING_PUSH] Request URL', this.apiUrl);
         console.log('[STAAH_BOOKING_PUSH] Request payload', JSON.stringify(this.maskPayload(payload)));
