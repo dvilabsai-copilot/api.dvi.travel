@@ -35,6 +35,48 @@ import { timeStringToPrismaTime } from "../utils/itinerary.utils";
 
 type Tx = Prisma.TransactionClient;
 
+type PermitLocationChainArgs = {
+  routeCount: number;
+  totalRoutes: number;
+  vehicleOrigin: string | null;
+  sourceLocation: string | null;
+  viaLocations: string[];
+  destinationLocation: string | null;
+};
+
+export function buildPermitLocationChain(args: PermitLocationChainArgs): string[] {
+  const vehicleOrigin = String(args.vehicleOrigin ?? '').trim();
+  const sourceLocation = String(args.sourceLocation ?? '').trim();
+  const destinationLocation = String(args.destinationLocation ?? '').trim();
+  const viaLocations = (args.viaLocations ?? [])
+    .map((value) => String(value ?? '').trim())
+    .filter((value) => value.length > 0);
+
+  const chain: string[] = [];
+
+  if (args.routeCount === 1 && vehicleOrigin) {
+    chain.push(vehicleOrigin);
+  }
+
+  if (sourceLocation) {
+    chain.push(sourceLocation);
+  }
+
+  if (viaLocations.length) {
+    chain.push(...viaLocations);
+  }
+
+  if (destinationLocation) {
+    chain.push(destinationLocation);
+  }
+
+  if (args.routeCount === args.totalRoutes && args.routeCount > 1 && vehicleOrigin) {
+    chain.push(vehicleOrigin);
+  }
+
+  return chain.filter((value) => value.length > 0);
+}
+
 @Injectable()
 export class RouteEngineService {
   /* ----------------------------------------------------------
@@ -679,12 +721,10 @@ const finalKm = pairChanged
   // PERMIT CHARGES POPULATION (PHP PARITY)
   // ---------------------------------------------------------------------------
   async rebuildPermitCharges(tx: Tx, planId: number, userId: number): Promise<void> {
-    // Delete existing permit charges for this plan
     await (tx as any).dvi_itinerary_plan_route_permit_charge.deleteMany({
       where: { itinerary_plan_ID: planId },
     });
 
-    // Get all routes for this plan
     const routes = await (tx as any).dvi_itinerary_route_details.findMany({
       where: {
         itinerary_plan_ID: planId,
@@ -694,12 +734,13 @@ const finalKm = pairChanged
       select: {
         itinerary_route_ID: true,
         itinerary_route_date: true,
+        location_id: true,
         location_name: true,
         next_visiting_location: true,
       },
+      orderBy: [{ itinerary_route_date: 'asc' }, { itinerary_route_ID: 'asc' }],
     });
 
-    // Get all eligible vendors/vehicles for this plan
     const eligibleVehicles = await (tx as any).dvi_itinerary_plan_vendor_eligible_list.findMany({
       where: {
         itinerary_plan_id: planId,
@@ -707,123 +748,191 @@ const finalKm = pairChanged
         deleted: 0,
       },
       select: {
+        itinerary_plan_vendor_eligible_ID: true,
         vendor_id: true,
+        vendor_branch_id: true,
         vendor_vehicle_type_id: true,
         vehicle_id: true,
+        vehicle_orign: true,
       },
     });
 
-    const permitRows = [];
-    // Track vendor/state pairs to avoid duplicates (PHP parity: one permit per vendor per state pair)
-    const addedPermits = new Set<string>();
+    const viaRouteRows = await (tx as any).dvi_itinerary_via_route_details.findMany({
+      where: {
+        itinerary_plan_ID: planId,
+        status: 1,
+        deleted: 0,
+      },
+      select: {
+        itinerary_route_ID: true,
+        itinerary_via_location_name: true,
+      },
+      orderBy: [{ itinerary_route_date: 'asc' }, { itinerary_via_route_ID: 'asc' }],
+    });
 
-    for (const route of routes) {
-      // Get destination state for this route
-      const destState = await this.getLocationState(tx, route.next_visiting_location);
+    const viaRoutesByRouteId = new Map<number, string[]>();
+    for (const row of viaRouteRows) {
+      const routeId = Number(row.itinerary_route_ID ?? 0);
+      if (!routeId) continue;
+      const name = String(row.itinerary_via_location_name ?? '').trim();
+      if (!name) continue;
+      const existing = viaRoutesByRouteId.get(routeId) ?? [];
+      existing.push(name);
+      viaRoutesByRouteId.set(routeId, existing);
+    }
 
-      if (!destState) {
-        continue;
-      }
+    console.log('[PERMIT_REBUILD_START]', {
+      planId,
+      routeCount: routes.length,
+      eligibleVehicleCount: eligibleVehicles.length,
+    });
 
-      // PHP parity: For each eligible vehicle, check if vehicle's registration state != destination state
+    let insertedRows = 0;
+    const totalRoutes = routes.length;
+
+    for (let routeIndex = 0; routeIndex < routes.length; routeIndex++) {
+      const route = routes[routeIndex];
+      const routeId = Number(route.itinerary_route_ID ?? 0);
+      const routeCount = routeIndex + 1;
+      const routeDate = route.itinerary_route_date ? new Date(route.itinerary_route_date) : null;
+      const viaLocations = viaRoutesByRouteId.get(routeId) ?? [];
+
       for (const eligibleVehicle of eligibleVehicles) {
-        // Get vehicle details including registration number
-        const vehicle = await (tx as any).dvi_vehicle.findUnique({
-          where: { vehicle_id: eligibleVehicle.vehicle_id },
-          select: {
-            registration_number: true,
-          },
+        const vehicleStateId = await this.resolveVehiclePermitStateId(tx, {
+          planId,
+          eligibleId: Number(eligibleVehicle.itinerary_plan_vendor_eligible_ID ?? 0),
+          vendorId: Number(eligibleVehicle.vendor_id ?? 0),
+          vehicleId: Number(eligibleVehicle.vehicle_id ?? 0),
         });
 
-        if (!vehicle?.registration_number) {
+        if (!vehicleStateId || !routeDate) {
           continue;
         }
 
-        // Extract state code from registration (first 2 characters)
-        // PHP: $state_code = substr($registration_number, 0, 2);
-        const stateCode = vehicle.registration_number.substring(0, 2);
-
-        // Get vehicle's registration state from permit_state table
-        const vehicleState = await (tx as any).dvi_permit_state.findFirst({
-          where: {
-            state_code: stateCode,
-            deleted: 0,
-            status: 1,
-          },
-          select: { permit_state_id: true },
+        const locationChain = buildPermitLocationChain({
+          routeCount,
+          totalRoutes,
+          vehicleOrigin: String(eligibleVehicle.vehicle_orign ?? ''),
+          sourceLocation: String(route.location_name ?? ''),
+          viaLocations,
+          destinationLocation: String(route.next_visiting_location ?? ''),
         });
 
-        if (!vehicleState) {
-          continue;
+        for (const locationName of locationChain) {
+          const destinationStateId = await this.getLocationState(tx, locationName);
+
+          console.log('[PERMIT_ROUTE_STATE_RESOLVE]', {
+            planId,
+            routeId,
+            destinationName: locationName,
+            destinationPermitStateId: destinationStateId,
+          });
+
+          if (!destinationStateId) {
+            continue;
+          }
+
+          if (vehicleStateId === destinationStateId) {
+            console.log('[PERMIT_COST_LOOKUP]', {
+              planId,
+              routeId,
+              vendorId: Number(eligibleVehicle.vendor_id ?? 0),
+              vendorVehicleTypeId: Number(eligibleVehicle.vendor_vehicle_type_id ?? 0),
+              sourceStateId: vehicleStateId,
+              destinationStateId,
+              foundPermitCost: 0,
+              reason: 'same_state',
+            });
+            continue;
+          }
+
+          const hasDuplicate = await this.hasRecentPermitCharge(tx, {
+            itineraryPlanId: planId,
+            itineraryRouteDate: routeDate,
+            vendorId: Number(eligibleVehicle.vendor_id ?? 0),
+            vendorBranchId: Number(eligibleVehicle.vendor_branch_id ?? 0),
+            vendorVehicleTypeId: Number(eligibleVehicle.vendor_vehicle_type_id ?? 0),
+            sourceStateId: vehicleStateId,
+            destinationStateId,
+          });
+
+          if (hasDuplicate) {
+            console.log('[PERMIT_COST_LOOKUP]', {
+              planId,
+              routeId,
+              vendorId: Number(eligibleVehicle.vendor_id ?? 0),
+              vendorVehicleTypeId: Number(eligibleVehicle.vendor_vehicle_type_id ?? 0),
+              sourceStateId: vehicleStateId,
+              destinationStateId,
+              foundPermitCost: 0,
+              reason: 'duplicate_within_7_days',
+            });
+            continue;
+          }
+
+          const permitCost = await this.getPermitCost(tx, {
+            vendorId: Number(eligibleVehicle.vendor_id ?? 0),
+            vendorVehicleTypeId: Number(eligibleVehicle.vendor_vehicle_type_id ?? 0),
+            sourceStateId: vehicleStateId,
+            destinationStateId,
+          });
+
+          console.log('[PERMIT_COST_LOOKUP]', {
+            planId,
+            routeId,
+            vendorId: Number(eligibleVehicle.vendor_id ?? 0),
+            vendorVehicleTypeId: Number(eligibleVehicle.vendor_vehicle_type_id ?? 0),
+            sourceStateId: vehicleStateId,
+            destinationStateId,
+            foundPermitCost: Number(permitCost ?? 0),
+          });
+
+          if (!permitCost) {
+            continue;
+          }
+
+          await (tx as any).dvi_itinerary_plan_route_permit_charge.create({
+            data: {
+              itinerary_plan_ID: planId,
+              itinerary_route_ID: routeId,
+              itinerary_route_date: routeDate,
+              vendor_id: Number(eligibleVehicle.vendor_id ?? 0),
+              vendor_branch_id: Number(eligibleVehicle.vendor_branch_id ?? 0),
+              vendor_vehicle_type_id: Number(eligibleVehicle.vendor_vehicle_type_id ?? 0),
+              source_state_id: vehicleStateId,
+              destination_state_id: destinationStateId,
+              permit_cost: permitCost,
+              createdby: userId,
+              createdon: new Date(),
+              updatedon: null,
+              status: 1,
+              deleted: 0,
+            },
+          });
+          insertedRows += 1;
         }
-
-        const vehicleStateId = Number(vehicleState.permit_state_id);
-
-        // PHP parity: If vehicle state == destination state, permit cost = 0 (no permit needed)
-        if (vehicleStateId === destState) {
-          continue;
-        }
-
-        // PHP parity: source_state_id = vehicle registration state, destination_state_id = route destination
-        const permitCost = await (tx as any).dvi_permit_cost.findFirst({
-          where: {
-            vendor_id: eligibleVehicle.vendor_id,
-            vehicle_type_id: eligibleVehicle.vendor_vehicle_type_id,
-            source_state_id: vehicleStateId,
-            destination_state_id: destState,
-            status: 1,
-            deleted: 0,
-          },
-          select: {
-            permit_cost: true,
-          },
-        });
-
-        if (!permitCost) {
-          continue;
-        }
-
-        // PHP parity: Only create one permit per vendor per state pair
-        const permitKey = `${eligibleVehicle.vendor_id}-${vehicleStateId}-${destState}`;
-        if (addedPermits.has(permitKey)) {
-          continue;
-        }
-        addedPermits.add(permitKey);
-
-        permitRows.push({
-          itinerary_plan_ID: planId,
-          itinerary_route_ID: route.itinerary_route_ID,
-          itinerary_route_date: route.itinerary_route_date,
-          vendor_id: eligibleVehicle.vendor_id,
-          vendor_branch_id: 0,
-          vendor_vehicle_type_id: eligibleVehicle.vendor_vehicle_type_id,
-          source_state_id: vehicleStateId,
-          destination_state_id: destState,
-          permit_cost: permitCost.permit_cost,
-          createdby: userId,
-          createdon: new Date(),
-          updatedon: null,
-          status: 1,
-          deleted: 0,
-        });
       }
     }
 
-    // Insert permit charges
-    if (permitRows.length) {
-      await (tx as any).dvi_itinerary_plan_route_permit_charge.createMany({
-        data: permitRows,
-      });
-    }
+    console.log('[PERMIT_REBUILD_DONE]', {
+      planId,
+      insertedRows,
+    });
   }
 
-  // Helper to get permit state ID from location name (PHP parity)
   private async getLocationState(tx: Tx, locationName: string): Promise<number | null> {
     try {
-      // Step 1: Get state NAME from stored_locations (PHP parity)
+      const normalizedLocationName = String(locationName ?? '').trim();
+      if (!normalizedLocationName) {
+        return null;
+      }
+
       const stored = await (tx as any).dvi_stored_locations.findFirst({
         where: {
-          OR: [{ source_location: locationName }, { destination_location: locationName }],
+          OR: [
+            { source_location: normalizedLocationName },
+            { destination_location: normalizedLocationName },
+          ],
           status: 1,
           deleted: 0,
         },
@@ -833,22 +942,41 @@ const finalKm = pairChanged
           destination_location: true,
           destination_location_state: true,
         },
+        orderBy: { location_ID: 'desc' },
       });
 
-      let stateName = null;
+      let stateName: string | null = null;
       if (stored) {
-        if (stored.source_location === locationName && stored.source_location_state) {
+        if (stored.source_location === normalizedLocationName && stored.source_location_state) {
           stateName = stored.source_location_state;
-        } else if (stored.destination_location === locationName && stored.destination_location_state) {
+        } else if (
+          stored.destination_location === normalizedLocationName &&
+          stored.destination_location_state
+        ) {
           stateName = stored.destination_location_state;
         }
+      }
+
+      if (!stateName) {
+        const viaRoute = await (tx as any).dvi_stored_location_via_routes.findFirst({
+          where: {
+            via_route_location: normalizedLocationName,
+            status: 1,
+            deleted: 0,
+          },
+          select: {
+            via_route_location_state: true,
+          },
+          orderBy: { via_route_location_ID: 'desc' },
+        });
+
+        stateName = String(viaRoute?.via_route_location_state ?? '').trim() || null;
       }
 
       if (!stateName) {
         return null;
       }
 
-      // Step 2: Get permit_state_id from dvi_permit_state table (PHP parity)
       let permitState = await (tx as any).dvi_permit_state.findFirst({
         where: {
           state_name: stateName,
@@ -895,5 +1023,115 @@ const finalKm = pairChanged
       );
       return null;
     }
+  }
+
+  private async resolveVehiclePermitStateId(
+    tx: Tx,
+    args: {
+      planId: number;
+      eligibleId: number;
+      vendorId: number;
+      vehicleId: number;
+    },
+  ): Promise<number | null> {
+    const vehicle = await (tx as any).dvi_vehicle.findUnique({
+      where: { vehicle_id: args.vehicleId },
+      select: {
+        registration_number: true,
+      },
+    });
+
+    const registrationNumber = String(vehicle?.registration_number ?? '').trim();
+    if (!registrationNumber) {
+      return null;
+    }
+
+    const stateCode = registrationNumber.substring(0, 2).toUpperCase();
+    const vehicleState = await (tx as any).dvi_permit_state.findFirst({
+      where: {
+        state_code: stateCode,
+        deleted: 0,
+        status: 1,
+      },
+      select: { permit_state_id: true },
+    });
+
+    const vehiclePermitStateId = Number(vehicleState?.permit_state_id ?? 0) || null;
+    console.log('[PERMIT_VEHICLE_STATE_RESOLVE]', {
+      planId: args.planId,
+      eligibleId: args.eligibleId,
+      vendorId: args.vendorId,
+      vehicleId: args.vehicleId,
+      registrationNumber,
+      stateCode,
+      vehiclePermitStateId,
+    });
+
+    return vehiclePermitStateId;
+  }
+
+  private async hasRecentPermitCharge(
+    tx: Tx,
+    args: {
+      itineraryPlanId: number;
+      itineraryRouteDate: Date;
+      vendorId: number;
+      vendorBranchId: number;
+      vendorVehicleTypeId: number;
+      sourceStateId: number;
+      destinationStateId: number;
+    },
+  ): Promise<boolean> {
+    const windowStart = new Date(args.itineraryRouteDate);
+    windowStart.setDate(windowStart.getDate() - 6);
+
+    const existing = await (tx as any).dvi_itinerary_plan_route_permit_charge.findFirst({
+      where: {
+        itinerary_plan_ID: args.itineraryPlanId,
+        vendor_id: args.vendorId,
+        vendor_branch_id: args.vendorBranchId,
+        vendor_vehicle_type_id: args.vendorVehicleTypeId,
+        source_state_id: args.sourceStateId,
+        destination_state_id: args.destinationStateId,
+        itinerary_route_date: {
+          gte: windowStart,
+        },
+        status: 1,
+        deleted: 0,
+      },
+      select: {
+        route_permit_charge_ID: true,
+      },
+      orderBy: { route_permit_charge_ID: 'asc' },
+    });
+
+    return Boolean(existing?.route_permit_charge_ID);
+  }
+
+  private async getPermitCost(
+    tx: Tx,
+    args: {
+      vendorId: number;
+      vendorVehicleTypeId: number;
+      sourceStateId: number;
+      destinationStateId: number;
+    },
+  ): Promise<number> {
+    const permitCost = await (tx as any).dvi_permit_cost.findFirst({
+      where: {
+        vendor_id: args.vendorId,
+        vehicle_type_id: args.vendorVehicleTypeId,
+        source_state_id: args.sourceStateId,
+        destination_state_id: args.destinationStateId,
+        status: 1,
+        deleted: 0,
+      },
+      select: {
+        permit_cost: true,
+      },
+      orderBy: { permit_cost_id: 'asc' },
+    });
+
+    return Number(permitCost?.permit_cost ?? 0);
   }
 }

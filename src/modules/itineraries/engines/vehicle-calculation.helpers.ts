@@ -875,7 +875,8 @@ export async function calculatePermitCharges(
   itinerary_plan_ID: number,
   itinerary_route_ID: number,
   vendor_id: number,
-  vendor_vehicle_type_ID: number
+  vendor_vehicle_type_ID: number,
+  vendor_branch_id: number,
 ): Promise<number> {
   try {
     const result = await prisma.$queryRaw<any[]>`
@@ -884,11 +885,22 @@ export async function calculatePermitCharges(
       WHERE itinerary_plan_ID = ${itinerary_plan_ID}
       AND itinerary_route_ID = ${itinerary_route_ID}
       AND vendor_id = ${vendor_id}
+      AND vendor_branch_id = ${vendor_branch_id}
       AND vendor_vehicle_type_id = ${vendor_vehicle_type_ID}
       AND status = 1
       AND deleted = 0
     `;
-    return Number(result[0]?.total_permit ?? 0);
+    const permitCharge = Number(result[0]?.total_permit ?? 0);
+    console.log('[PERMIT_CHARGE_CALCULATED]', {
+      planId: itinerary_plan_ID,
+      routeId: itinerary_route_ID,
+      vendorId: vendor_id,
+      vendorBranchId: vendor_branch_id,
+      vendorVehicleTypeId: vendor_vehicle_type_ID,
+      vehicleId: null,
+      permitCharge,
+    });
+    return permitCharge;
   } catch (error) {
     console.error('[calculatePermitCharges] Error:', error);
     return 0;
@@ -2303,7 +2315,8 @@ export async function calculateRouteVehicleDetails(
     itinerary_plan_ID,
     route.itinerary_route_ID,
     vendor_id,
-    vendor_vehicle_type_ID
+    vendor_vehicle_type_ID,
+    vendor_branch_id,
   );
   const permit_charges = permitCharges;
 

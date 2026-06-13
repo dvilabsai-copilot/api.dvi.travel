@@ -143,6 +143,40 @@ export class ItinerariesService {
     });
   }
 
+  private async runVehicleBuildStageWithTimeout<T>(
+    planId: number,
+    stage: string,
+    work: () => Promise<T>,
+    timeoutMs: number,
+  ): Promise<T> {
+    const startedAt = Date.now();
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    try {
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          reject(
+            new Error(
+              `Vehicle build stage "${stage}" timed out after ${timeoutMs}ms for plan ${planId}`,
+            ),
+          );
+        }, timeoutMs);
+      });
+
+      const result = await Promise.race([work(), timeoutPromise]);
+      console.log('[VEHICLE_BUILD_STAGE_DONE]', {
+        planId,
+        stage,
+        durationMs: Date.now() - startedAt,
+      });
+      return result as T;
+    } finally {
+      if (timer) {
+        clearTimeout(timer);
+      }
+    }
+  }
+
   async getVehicleBuildStatus(planId: number): Promise<VehicleBuildStatus> {
     const normalizedPlanId = Number(planId || 0);
     if (!normalizedPlanId) {
@@ -241,18 +275,52 @@ export class ItinerariesService {
         }
 
         // Permit rows must exist before vehicle calculations read them.
-        await this.prisma.$transaction(async (tx) => {
-          await this.routeEngine.rebuildPermitCharges(tx, planId, userId);
-          await this.vehiclesEngine.rebuildPlanVehicles(planId, vehicles, tx, userId);
-        }, { timeout: 120000, maxWait: 20000 });
-
-        await this.itineraryVehiclesEngine.rebuildEligibleVendorList({
+        console.log('[VEHICLE_BUILD_STAGE_START]', {
           planId,
-          createdBy: userId,
+          stage: 'prepare_plan_vehicle_rows',
         });
+        await this.runVehicleBuildStageWithTimeout(
+          planId,
+          'prepare_plan_vehicle_rows',
+          () =>
+            this.prisma.$transaction(
+              async (tx) => {
+                await this.vehiclesEngine.rebuildPlanVehicles(planId, vehicles, tx, userId);
+              },
+              { timeout: 120000, maxWait: 20000 },
+            ),
+          130000,
+        );
+
+        console.log('[VEHICLE_BUILD_STAGE_START]', {
+          planId,
+          stage: 'rebuild_eligible_vendor_list',
+        });
+        await this.runVehicleBuildStageWithTimeout(
+          planId,
+          'rebuild_eligible_vendor_list',
+          () =>
+            this.itineraryVehiclesEngine.rebuildEligibleVendorList({
+              planId,
+              createdBy: userId,
+              beforeVehicleDetailsBuild: async ({ tx }) => {
+                await this.routeEngine.rebuildPermitCharges(tx, planId, userId);
+              },
+            }),
+          90000,
+        );
 
         if (quoteId) {
-          await this.autoSelectLowestVehicleVendors(planId, quoteId);
+          console.log('[VEHICLE_BUILD_STAGE_START]', {
+            planId,
+            stage: 'auto_select_lowest_vehicle_vendors',
+          });
+          await this.runVehicleBuildStageWithTimeout(
+            planId,
+            'auto_select_lowest_vehicle_vendors',
+            () => this.autoSelectLowestVehicleVendors(planId, quoteId),
+            30000,
+          );
         }
 
         this.setVehicleBuildStatus(planId, 'READY', null);
@@ -4121,6 +4189,9 @@ export class ItinerariesService {
       planId: Number(data.planId),
       createdBy: userId,
       selectedTimeLimitByEligible: data.selectedTimeLimitByEligible || {},
+      beforeVehicleDetailsBuild: async ({ tx, planId }) => {
+        await this.routeEngine.rebuildPermitCharges(tx, Number(planId), userId);
+      },
     });
 
     if (data.preserveSelection) {
@@ -4329,6 +4400,9 @@ export class ItinerariesService {
     await this.itineraryVehiclesEngine.rebuildEligibleVendorList({
       planId: normalizedPlanId,
       createdBy: 1,
+      beforeVehicleDetailsBuild: async ({ tx, planId }) => {
+        await this.routeEngine.rebuildPermitCharges(tx, Number(planId), 1);
+      },
     });
 
     for (const s of assignedBefore) {
@@ -19549,6 +19623,15 @@ export class ItinerariesService {
       provider: 'staah',
       hotelCode: String(row.staah_hotel_code || '').trim(),
       bookingCode: String(row.booking_code || '').trim(),
+      searchReference: String(row.booking_code || '').trim() || undefined,
+      roomId:
+        String(row.booking_code || '').trim().startsWith('STAAH-')
+          ? String(row.booking_code || '').trim().split('-')[2] || undefined
+          : undefined,
+      rateId:
+        String(row.booking_code || '').trim().startsWith('STAAH-')
+          ? String(row.booking_code || '').trim().split('-')[3] || undefined
+          : undefined,
       hotelName: String(
         row?.api_response?.confirm?.request?.reservations?.reservation?.[0]?.propertyname || '',
       ).trim() || null,
@@ -19715,7 +19798,10 @@ export class ItinerariesService {
         bookingCode: String(providerBooking?.bookingCode || '').trim() || undefined,
         checkInDate: formatDateLabel(providerBooking?.checkInDate || route.itinerary_route_date),
         checkOutDate: formatDateLabel(providerBooking?.checkOutDate),
-        searchReference: String(providerBooking?.bookingCode || '').trim() || undefined,
+        searchReference:
+          String(providerBooking?.searchReference || providerBooking?.bookingCode || '').trim() || undefined,
+        roomId: String(providerBooking?.roomId || '').trim() || undefined,
+        rateId: String(providerBooking?.rateId || '').trim() || undefined,
 
         itineraryPlanHotelDetailsId: originalHotelDetailsId,
         confirmedItineraryPlanHotelDetailsId: confirmedHotelDetailsId,

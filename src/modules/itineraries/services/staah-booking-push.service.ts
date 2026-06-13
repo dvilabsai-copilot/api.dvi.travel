@@ -146,6 +146,23 @@ export class StaahBookingPushService {
     return this.extractStaahSearchReference(String((hotel as any)?.bookingCode || '').trim());
   }
 
+  private buildMissingStaahMappingResult(hotel: any) {
+    return {
+      provider: 'staah',
+      routeId: hotel?.routeId,
+      hotelCode: hotel?.hotelCode,
+      success: false,
+      status: 'failed',
+      error: 'Missing STAAH room/rate mapping',
+      received: {
+        bookingCode: String(hotel?.bookingCode || '').trim() || null,
+        searchReference: String(hotel?.searchReference || '').trim() || null,
+        roomId: String(hotel?.roomId || '').trim() || null,
+        rateId: String(hotel?.rateId || '').trim() || null,
+      },
+    };
+  }
+
   private async resolveRoomRateFromHotelPayload(
     hotel: any,
     hotelMaster: dvi_hotel | null,
@@ -370,6 +387,24 @@ export class StaahBookingPushService {
         const propertyid = String(hotelMaster?.staah_property_id || '').trim();
         if (!propertyid) {
           throw new Error(`Missing staah_property_id for hotelCode=${hotel.hotelCode}`);
+        }
+
+        const directRoomId = String((hotel as any)?.roomId || '').trim();
+        const directRateId = String((hotel as any)?.rateId || '').trim();
+        const parsedSearchReference = this.extractStaahSearchReference(
+          String((hotel as any)?.searchReference || '').trim(),
+        );
+        const parsedBookingCode = this.extractStaahSearchReference(
+          String((hotel as any)?.bookingCode || '').trim(),
+        );
+        const hasStaahMapping =
+          (!!directRoomId && !!directRateId) ||
+          !!parsedSearchReference ||
+          !!parsedBookingCode;
+
+        if (!hasStaahMapping) {
+          results.push(this.buildMissingStaahMappingResult(hotel));
+          continue;
         }
 
         const { roomId, rateId, rateName, notes } = await this.resolveRoomRate(hotel, hotelMaster);
@@ -721,26 +756,54 @@ export class StaahBookingPushService {
   async cancelVoucherHotel(params: {
     itineraryPlanId: number;
     routeId: number;
-    hotelId: number | string;
+    hotelId?: number | string | null;
   }) {
-    const row = await this.prisma.staah_hotel_booking_confirmation.findFirst({
-      where: {
-        itinerary_plan_ID: params.itineraryPlanId,
-        itinerary_route_ID: params.routeId,
-        staah_hotel_code: String(params.hotelId),
-        status: 1,
-        deleted: 0,
-      } as any,
+    const normalizedHotelId = String(params.hotelId ?? '').trim();
+    const primaryWhere: any = {
+      itinerary_plan_ID: params.itineraryPlanId,
+      itinerary_route_ID: params.routeId,
+      status: 1,
+      deleted: 0,
+    };
+
+    if (normalizedHotelId && normalizedHotelId !== '0') {
+      primaryWhere.staah_hotel_code = normalizedHotelId;
+    }
+
+    let row = await this.prisma.staah_hotel_booking_confirmation.findFirst({
+      where: primaryWhere,
       orderBy: { staah_hotel_booking_confirmation_ID: 'desc' as any },
     });
+
+    if (!row && primaryWhere.staah_hotel_code) {
+      row = await this.prisma.staah_hotel_booking_confirmation.findFirst({
+        where: {
+          itinerary_plan_ID: params.itineraryPlanId,
+          itinerary_route_ID: params.routeId,
+          status: 1,
+          deleted: 0,
+        } as any,
+        orderBy: { staah_hotel_booking_confirmation_ID: 'desc' as any },
+      });
+    }
 
     if (!row) {
       console.log('[STAAH_CANCEL_PUSH] No active STAAH confirmation found', {
         itineraryPlanId: params.itineraryPlanId,
         routeId: params.routeId,
-        hotelId: String(params.hotelId),
+        hotelId: normalizedHotelId || null,
+        skipReason: 'no_active_confirmation',
       });
-      return { skipped: true, success: false, reason: 'no_active_confirmation' };
+      return {
+        provider: 'staah',
+        attempted: false,
+        skipped: true,
+        success: false,
+        reason: 'no_active_confirmation',
+        itineraryPlanId: params.itineraryPlanId,
+        routeId: params.routeId,
+        hotelCode: normalizedHotelId || null,
+      };
     }
 
     return this.cancelStaahBookingRow(row as any);
@@ -784,9 +847,13 @@ export class StaahBookingPushService {
 
     console.log('[STAAH_CANCEL_PUSH] Starting', {
       itineraryPlanId: row.itinerary_plan_ID,
+      confirmedItineraryPlanId: row.confirmed_itinerary_plan_ID,
       routeId: row.itinerary_route_ID,
       hotelCode: row.staah_hotel_code,
+      staahPropertyId: cancelPayload.propertyid,
       bookingReference: row.staah_booking_reference,
+      confirmationId: row.staah_hotel_booking_confirmation_ID,
+      cancelUrl: this.apiUrl,
     });
     console.log('[STAAH_CANCEL_PUSH] API key debug', {
       hasEnvApiKey: !!this.apiKey,
@@ -887,8 +954,12 @@ export class StaahBookingPushService {
       });
       console.error('[STAAH_CANCEL_PUSH] Failed', {
         itineraryPlanId: row.itinerary_plan_ID,
+        confirmedItineraryPlanId: row.confirmed_itinerary_plan_ID,
         routeId: row.itinerary_route_ID,
         hotelCode: row.staah_hotel_code,
+        staahPropertyId: cancelPayload?.propertyid || null,
+        bookingReference: row?.staah_booking_reference || null,
+        cancelUrl: this.apiUrl,
         message: error?.message || String(error),
       });
       return { success: false, error: error?.message || String(error) };

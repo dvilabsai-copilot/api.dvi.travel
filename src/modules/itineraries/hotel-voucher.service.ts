@@ -31,6 +31,21 @@ export interface CreateVoucherDto {
   }>;
 }
 
+interface ProviderCancellationResult {
+  provider: string;
+  attempted: boolean;
+  success: boolean;
+  skipped?: boolean;
+  routeId?: number;
+  hotelId?: number;
+  hotelCode?: string | null;
+  bookingId?: string | null;
+  httpStatus?: number | null;
+  responseBody?: any;
+  error?: string | null;
+  reason?: string | null;
+}
+
 @Injectable()
 export class HotelVoucherService {
   private readonly logger = new Logger(HotelVoucherService.name);
@@ -241,7 +256,8 @@ export class HotelVoucherService {
     }> = [];
     const routeIdsToCancel = new Set<number>();
     const hotelDetailsIdsToCancel = new Set<number>();
-    const staahTargetsToCancel = new Map<string, { routeId: number; hotelId: number }>();
+    const staahTargetsToCancel = new Map<string, { routeId: number; hotelId: number | null }>();
+    const providerCancellation: ProviderCancellationResult[] = [];
 
     for (const voucher of dto.vouchers) {
       // Validation: if status is 'cancelled' but routeId is missing/invalid, throw error
@@ -314,8 +330,11 @@ export class HotelVoucherService {
           .forEach((id) => hotelDetailsIdsToCancel.add(id));
         const routeId = Number(voucher.routeId || 0);
         const hotelId = Number(voucher.hotelId || 0);
-        if (routeId > 0 && hotelId > 0) {
-          staahTargetsToCancel.set(`${routeId}:${hotelId}`, { routeId, hotelId });
+        if (routeId > 0) {
+          staahTargetsToCancel.set(`${routeId}:${hotelId > 0 ? hotelId : 0}`, {
+            routeId,
+            hotelId: hotelId > 0 ? hotelId : null,
+          });
         }
       }
     }

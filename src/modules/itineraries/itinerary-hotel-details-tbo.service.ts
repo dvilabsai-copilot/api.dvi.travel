@@ -26,6 +26,24 @@ import {
  */
 @Injectable()
 export class ItineraryHotelDetailsTboService {
+  private parseStaahSearchReference(reference: any): {
+    propertyId: string;
+    roomId: string;
+    rateId: string;
+  } | null {
+    const raw = String(reference || '').trim();
+    if (!raw.startsWith('STAAH-')) return null;
+    const parts = raw.split('-');
+    if (parts.length < 5) return null;
+
+    const propertyId = String(parts[1] || '').trim();
+    const roomId = String(parts[2] || '').trim();
+    const rateId = String(parts[3] || '').trim();
+    if (!propertyId || !roomId || !rateId) return null;
+
+    return { propertyId, roomId, rateId };
+  }
+
   private static readonly HOTEL_DETAILS_CACHE_TTL_MS = 5 * 60 * 1000;
   private static readonly HOTEL_ROOM_DETAILS_CACHE_TTL_MS = 5 * 60 * 1000;
   private static readonly MAX_CACHE_ENTRIES = 200;
@@ -2651,10 +2669,16 @@ export class ItineraryHotelDetailsTboService {
         const baseHotelCost = Number(pricedHotel.price || 0);
         const totalHotelCost = this.applyInvisibleHotelMargin(baseHotelCost, pricedHotel);
         const normalizedProvider = String(hotel.provider || 'tbo').trim().toLowerCase();
+        const rawSearchReference = String(hotel.searchReference || '').trim();
+        const parsedStaahReference = this.parseStaahSearchReference(
+          rawSearchReference || (hotel as any).bookingCode || '',
+        );
         const rawBookingCode =
           normalizedProvider === 'tbo'
             ? String(hotel.searchReference || hotel.roomTypes?.[0]?.roomCode || (hotel as any).bookingCode || '').trim()
-            : String((hotel as any).bookingCode || hotel.hotelCode || '').trim();
+            : normalizedProvider === 'staah'
+              ? String(rawSearchReference || (hotel as any).bookingCode || '').trim()
+              : String((hotel as any).bookingCode || hotel.searchReference || hotel.hotelCode || '').trim();
         const rawHotelCode = String(hotel.hotelCode || '').trim();
         const isNoHotelsAvailable =
           String(hotel.hotelName || '').trim().toLowerCase() === 'no hotels available' ||
@@ -2683,8 +2707,16 @@ export class ItineraryHotelDetailsTboService {
           hotelMarginPercentage: this.getHotelMarginPercentage(pricedHotel),
           totalHotelCost,
           totalHotelTaxAmount: 0,
-          searchReference: hotel.searchReference,
+          searchReference: rawSearchReference || undefined,
           bookingCode: isPrebookReady ? rawBookingCode : undefined,
+          roomId:
+            normalizedProvider === 'staah'
+              ? parsedStaahReference?.roomId || undefined
+              : undefined,
+          rateId:
+            normalizedProvider === 'staah'
+              ? parsedStaahReference?.rateId || undefined
+              : undefined,
           provider: hasSupplierHotel ? normalizedProvider : 'external',
           isBookable: hasSupplierHotel,
           externalStay: !hasSupplierHotel,
@@ -2741,6 +2773,13 @@ export class ItineraryHotelDetailsTboService {
           ? new Date((confirmedRow as any).check_in_date).toISOString().split('T')[0]
           : row.date;
 
+        const confirmedBookingCode = String((confirmedRow as any).booking_code || '').trim();
+        const confirmedSearchReference =
+          confirmedBookingCode.startsWith('STAAH-')
+            ? confirmedBookingCode
+            : '';
+        const confirmedReferenceParts = this.parseStaahSearchReference(confirmedSearchReference);
+
         hotelRows[i] = {
           ...row,
           provider: 'staah',
@@ -2751,8 +2790,10 @@ export class ItineraryHotelDetailsTboService {
           mealPlan: String(reservationPrice?.rate_name || ''),
           totalHotelCost: Number((confirmedRow as any).net_amount || 0),
           totalHotelTaxAmount: Number(reservation?.totaltax || 0),
-          bookingCode: String((confirmedRow as any).booking_code || ''),
-          searchReference: String((confirmedRow as any).staah_booking_reference || ''),
+          bookingCode: confirmedBookingCode || undefined,
+          searchReference: confirmedSearchReference || undefined,
+          roomId: confirmedReferenceParts?.roomId || undefined,
+          rateId: confirmedReferenceParts?.rateId || undefined,
           voucherCancelled: isStaahVoucherCancelled,
           voucherStatus: isStaahVoucherCancelled ? 'cancelled' : 'active',
           itineraryPlanHotelDetailsId: 0,
@@ -3054,16 +3095,30 @@ export class ItineraryHotelDetailsTboService {
           groupType: hotel.groupType || 1, // âœ… ADD: Include groupType (tier: 1-4)
           roomTypeId: actualRoomTypeId, // âœ… FIXED: Use actual TBO room type ID
           roomTypeName: actualRoomTypeName, // âœ… FIXED: Use actual TBO room type name
-          roomId: parseInt(hotel.hotelCode) || 0,
+          roomId:
+            String(hotel.provider || 'tbo').toLowerCase() === 'staah'
+              ? 0
+              : parseInt(hotel.hotelCode) || 0,
           provider: String(hotel.provider || 'tbo').toLowerCase(),
           availableRoomTypes: (hotel.roomTypes || []).map((rt, idx) => ({
             roomTypeId: rt.roomTypeId || idx + 1,
             roomTypeTitle: rt.roomName,
             bookingCode: rt.roomCode,
           })),
-          bookingCode: String(hotel.provider || 'tbo').toLowerCase() === 'tbo'
-            ? (firstRoomType?.roomCode || hotel.searchReference || undefined)
-            : (hotel.hotelCode || hotel.searchReference || undefined),
+          bookingCode:
+            String(hotel.provider || 'tbo').toLowerCase() === 'tbo'
+              ? (firstRoomType?.roomCode || hotel.searchReference || undefined)
+              : String(hotel.provider || 'tbo').toLowerCase() === 'staah'
+                ? (hotel.searchReference || (hotel as any).bookingCode || undefined)
+                : ((hotel as any).bookingCode || hotel.searchReference || hotel.hotelCode || undefined),
+          searchReference:
+            String(hotel.provider || 'tbo').toLowerCase() === 'staah'
+              ? String(hotel.searchReference || (hotel as any).bookingCode || '').trim() || undefined
+              : hotel.searchReference,
+          rateId:
+            String(hotel.provider || 'tbo').toLowerCase() === 'staah'
+              ? this.parseStaahSearchReference(hotel.searchReference || (hotel as any).bookingCode)?.rateId || undefined
+              : undefined,
           basePricePerNight: baseHotelCost,
           hotelMarginPercentage: this.getHotelMarginPercentage(pricedHotel),
           pricePerNight: totalHotelCost,
