@@ -1052,23 +1052,64 @@ export class ItinerariesController {
     return this.svc.autoSelectVehicleSlabs(body);
   }
 
-  @Get('vehicles/build-status/:planId')
+  @Get(':planId/vehicle-build-status')
   @ApiOperation({ summary: 'Get async vehicle build status for loader polling' })
   @ApiParam({ name: 'planId', example: 17940, description: 'Itinerary Plan ID' })
   @ApiOkResponse({ description: 'Vehicle build status (PENDING/PROCESSING/READY/FAILED)' })
-  async getVehicleBuildStatus(@Param('planId', ParseIntPipe) planId: number) {
+  async getVehicleBuildStatusByPlanId(@Param('planId', ParseIntPipe) planId: number) {
     return this.svc.getVehicleBuildStatus(planId);
   }
 
-  @Post('vehicles/rebuild-async/:planId')
+  @Get('vehicles/build-status/:planId')
+  @ApiOperation({ summary: 'Get async vehicle build status for loader polling (alternate route)' })
+  @ApiParam({ name: 'planId', example: 17940, description: 'Itinerary Plan ID' })
+  @ApiOkResponse({ description: 'Vehicle build status (PENDING/PROCESSING/READY/FAILED)' })
+  async getVehicleBuildStatusByVehicleRoute(@Param('planId', ParseIntPipe) planId: number) {
+    return this.svc.getVehicleBuildStatus(planId);
+  }
+
+  @Post(':planId/vehicle-build')
   @ApiOperation({ summary: 'Trigger async vehicle rebuild manually (retry path)' })
   @ApiParam({ name: 'planId', example: 17940, description: 'Itinerary Plan ID' })
   @ApiOkResponse({ description: 'Vehicle rebuild accepted and status returned' })
-  async triggerVehicleBuild(
+  async triggerVehicleBuildByPlanId(
     @Param('planId', ParseIntPipe) planId: number,
     @Req() req?: Request,
   ) {
     return this.svc.triggerVehicleBuild(planId, req);
+  }
+
+  @Post('vehicles/rebuild-async/:planId')
+  @ApiOperation({ summary: 'Trigger async vehicle rebuild manually (retry path, alternate route)' })
+  @ApiParam({ name: 'planId', example: 17940, description: 'Itinerary Plan ID' })
+  @ApiOkResponse({ description: 'Vehicle rebuild accepted and status returned' })
+  async triggerVehicleBuildByVehicleRoute(
+    @Param('planId', ParseIntPipe) planId: number,
+    @Req() req?: Request,
+  ) {
+    return this.svc.triggerVehicleBuild(planId, req);
+  }
+
+  @Post(':planId/permit-build-sync')
+  @ApiOperation({ summary: 'Run permit charge rebuild synchronously for staged itinerary loading' })
+  @ApiParam({ name: 'planId', example: 17940, description: 'Itinerary Plan ID' })
+  @ApiOkResponse({ description: 'Permit build completed successfully' })
+  async buildPermitsSync(
+    @Param('planId', ParseIntPipe) planId: number,
+    @Req() req?: Request,
+  ) {
+    return this.svc.buildPermitsSync(planId, req);
+  }
+
+  @Post(':planId/vehicle-build-sync')
+  @ApiOperation({ summary: 'Run vehicle rebuild synchronously for staged itinerary loading' })
+  @ApiParam({ name: 'planId', example: 17940, description: 'Itinerary Plan ID' })
+  @ApiOkResponse({ description: 'Vehicle build completed successfully' })
+  async buildVehiclesSync(
+    @Param('planId', ParseIntPipe) planId: number,
+    @Req() req?: Request,
+  ) {
+    return this.svc.buildVehiclesSync(planId, req);
   }
 
   @Get('edit/:id')

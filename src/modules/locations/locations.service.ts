@@ -5,6 +5,7 @@ import {
   normalizeCityName,
   resolveCityRecordByName,
 } from '../itineraries/utils/city-normalization.util';
+import { clearStoredLocationCache as clearStoredLocationLookupCache } from './stored-location-cache.helper';
 import {
   BetweenHotspotFiltersQueryDto,
   BetweenHotspotQueryDto,
@@ -72,6 +73,10 @@ type LocationScope = {
 export class LocationsService {
 
   constructor(private readonly prisma: PrismaService) {}
+
+  clearStoredLocationCache(reason: string) {
+    clearStoredLocationLookupCache(reason);
+  }
 
   private static readonly CITY_KEY_SYNONYMS: Record<string, string[]> = {
     bengaluru: ['bengaluru', 'bangalore'],
@@ -850,6 +855,7 @@ if (citySeed) {
       where: { location_ID: BigInt(id) },
       data: { ...data, updatedon: new Date() },
     });
+    this.clearStoredLocationCache(`locations.update:${id}`);
     return this.mapRowToResponse(updated);
   }
 
@@ -1244,7 +1250,7 @@ private async ensureExactLocationRouteExists(
 const isSameLocation = source.toLowerCase() === destination.toLowerCase();
 const SELF_ROUTE_MIN_DISTANCE_KM = 10;
 
-if (existing) {
+  if (existing) {
   const existingDistance = Number(existing.distance || 0);
 
   if (isSameLocation && existingDistance < SELF_ROUTE_MIN_DISTANCE_KM) {
@@ -1256,6 +1262,7 @@ if (existing) {
         updatedon: new Date(),
       },
     });
+    this.clearStoredLocationCache(`locations.ensureExactLocationRouteExists:update:${source}->${destination}`);
   }
 
   return;
@@ -1294,6 +1301,7 @@ if (existing) {
   await this.prisma.dvi_stored_locations.create({
     data: this.buildLocationRowData(sourceSeed, destinationSeed, distanceKm),
   });
+  this.clearStoredLocationCache(`locations.ensureExactLocationRouteExists:create:${source}->${destination}`);
 }
 
 private async forwardRouteExists(
@@ -1529,6 +1537,13 @@ private async createReplicatedLocationRows(
   }, {
     maxWait: 5000,
     timeout: 60000,
+  }).then((result) => {
+    if (result.createdRows.length > 0) {
+      this.clearStoredLocationCache(
+        `locations.createReplicatedLocationRows:${newSource.source_location}:${result.createdRows.length}`,
+      );
+    }
+    return result;
   });
 }
 
@@ -1580,6 +1595,8 @@ async deleteLocationName(location: string) {
   if (!result.count) {
     throw new NotFoundException('Location not found');
   }
+
+  this.clearStoredLocationCache(`locations.deleteLocationName:${name}`);
 
   return {
     ok: true,
@@ -1668,6 +1685,8 @@ async updateLocationName(
     throw new NotFoundException('Location name not found');
   }
 
+  this.clearStoredLocationCache(`locations.updateLocationName:${oldName}->${newName}:${scope}`);
+
   return {
     ok: true,
     oldName,
@@ -1684,6 +1703,7 @@ async updateLocationName(
       where: { location_ID: BigInt(id) },
       data: { deleted: 1, updatedon: new Date() },
     });
+    this.clearStoredLocationCache(`locations.softDelete:${id}`);
 
     return {
       ok: true,
@@ -1704,6 +1724,7 @@ async updateLocationName(
       where: { location_ID: BigInt(id) },
       data: { deleted: 0, updatedon: new Date() },
     });
+    this.clearStoredLocationCache(`locations.restore:${id}`);
 
     return {
       ok: true,
@@ -2421,6 +2442,7 @@ const rows = await this.prisma.$queryRawUnsafe<any[]>(
       where: { location_ID: BigInt(id) },
       data: { ...data, updatedon: new Date() },
     });
+    this.clearStoredLocationCache(`locations.modifyName:${id}:${scope}`);
     return this.mapRowToResponse(updated);
   }
 

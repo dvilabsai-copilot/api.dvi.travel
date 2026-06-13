@@ -3,7 +3,7 @@ const { chromium } = require('playwright');
 (async () => {
   const LOGIN_EMAIL = 'admin@dvi.co.in';
   const LOGIN_PASSWORD = 'Keerthi@2404ias';
-  const TARGET_URL = 'http://localhost:8080/itinerary-details/DVI20260321';
+  const TARGET_URL = 'http://localhost:8080/itinerary-details/DVI20260660';
   const API_URL = 'http://localhost:4006/api/v1/itineraries/hotel_details/DVI20260321';
 
   const browser = await chromium.launch({ headless: false });

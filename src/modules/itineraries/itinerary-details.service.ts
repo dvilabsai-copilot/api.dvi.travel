@@ -3,7 +3,6 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { Request } from 'express';
 import { PrismaService } from '../../prisma.service';
 import { LatestItineraryQueryDto } from './dto/latest-itinerary-query.dto';
-import { ItineraryHotelDetailsTboService } from './itinerary-hotel-details-tbo.service';
 import { calculateRouteTollCharges, getEffectiveTimeLimitKm } from './engines/vehicle-calculation.helpers';
 
 // ---------------------------------------------------------------------------
@@ -261,8 +260,27 @@ export interface ItineraryDetailsResponseDto {
 export class ItineraryDetailsService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly hotelDetailsTboService: ItineraryHotelDetailsTboService,
   ) {}
+
+  private logItineraryApiTiming(params: {
+    api: 'itinerary_details' | 'itinerary_details_by_id';
+    step: string;
+    startedAt: number;
+    stepStartedAt: number;
+    planId?: number | null;
+    quoteId?: string | null;
+  }): number {
+    const now = Date.now();
+    console.log('[ITINERARY_API_TIMING]', {
+      api: params.api,
+      planId: params.planId ?? null,
+      quoteId: params.quoteId ?? null,
+      step: params.step,
+      durationMs: now - params.stepStartedAt,
+      totalElapsedMs: now - params.startedAt,
+    });
+    return now;
+  }
 
   // TODO: remove after validation
   private logBookingRule(payload: Record<string, unknown>): void {
@@ -904,6 +922,9 @@ export class ItineraryDetailsService {
     quoteId: string,
     groupType?: number,
   ): Promise<ItineraryDetailsResponseDto> {
+    const apiStartedAt = Date.now();
+    let stepStartedAt = apiStartedAt;
+
     // ------------------------------ PLAN ------------------------------
     const plan = await this.prisma.dvi_itinerary_plan_details.findFirst({
       where: { itinerary_quote_ID: quoteId, deleted: 0 },
@@ -919,6 +940,14 @@ export class ItineraryDetailsService {
 
     const confirmedPlan = await this.prisma.dvi_confirmed_itinerary_plan_details.findFirst({
       where: { itinerary_plan_ID: planId, deleted: 0, status: 1 },
+    });
+    stepStartedAt = this.logItineraryApiTiming({
+      api: 'itinerary_details',
+      planId,
+      quoteId,
+      step: 'plan_lookup',
+      startedAt: apiStartedAt,
+      stepStartedAt,
     });
 
     // ------------------------- ROUTES + HOTSPOTS ----------------------
@@ -972,6 +1001,14 @@ for (const row of vehicleKmRows) {
     totalKm: Math.max(existing.totalKm, totalKm),
   });
 }
+    stepStartedAt = this.logItineraryApiTiming({
+      api: 'itinerary_details',
+      planId,
+      quoteId,
+      step: 'routes_lookup',
+      startedAt: apiStartedAt,
+      stepStartedAt,
+    });
 
     // ------------------------- HOTELS FOR TIMELINE ----------------------
     let timelineHotelRows: any[] = [];
@@ -1082,42 +1119,6 @@ for (const row of vehicleKmRows) {
       number,
       { hotel_name: string; hotel_address: string | null; hotel_code: string | null; price: number }
     >();
-
-    if (!isVehicleOnly) {
-      try {
-        const fallbackHotelDetails = await this.hotelDetailsTboService.getHotelDetailsByQuoteIdFromTbo(
-          quoteId,
-        );
-
-        const effectiveGroupType = Number(groupType ?? 1);
-        for (const row of fallbackHotelDetails?.hotels || []) {
-          const routeIdNum = Number((row as any)?.itineraryRouteId ?? 0);
-          if (!routeIdNum) continue;
-
-          const rowGroupType = Number((row as any)?.groupType ?? 0);
-          if (rowGroupType !== effectiveGroupType) continue;
-
-          const hotelName = String((row as any)?.hotelName ?? '').trim();
-          if (!hotelName || hotelName.toLowerCase() === 'no hotels available') continue;
-
-          const price =
-            Number((row as any)?.totalHotelCost ?? 0) +
-            Number((row as any)?.totalHotelTaxAmount ?? 0);
-
-          const existing = liveRouteHotelFallbackMap.get(routeIdNum);
-          if (!existing || (Number.isFinite(price) && price > 0 && price < existing.price)) {
-            liveRouteHotelFallbackMap.set(routeIdNum, {
-              hotel_name: hotelName,
-              hotel_address: null,
-              hotel_code: String((row as any)?.hotelCode ?? '').trim() || null,
-              price: Number.isFinite(price) ? price : Number.MAX_SAFE_INTEGER,
-            });
-          }
-        }
-      } catch {
-        // Keep details endpoint resilient when live hotel-details fallback is unavailable.
-      }
-    }
     
     // Build final map with hotel info
     // If hotel not in master, we'll fetch from TBO/ResAvenue search results
@@ -1175,6 +1176,14 @@ for (const row of vehicleKmRows) {
         });
       }
     }
+    stepStartedAt = this.logItineraryApiTiming({
+      api: 'itinerary_details',
+      planId,
+      quoteId,
+      step: 'hotel_details_lookup',
+      startedAt: apiStartedAt,
+      stepStartedAt,
+    });
 
     const days: any[] = [];
 
@@ -3105,6 +3114,14 @@ sightseeingDistance,       // local sightseeing separately
   segments,
 });
     }
+    stepStartedAt = this.logItineraryApiTiming({
+      api: 'itinerary_details',
+      planId,
+      quoteId,
+      step: 'hotspot_details_lookup_and_timeline_build',
+      startedAt: apiStartedAt,
+      stepStartedAt,
+    });
 
     const shouldIncludeVehicles = itineraryPreference === 2 || itineraryPreference === 3;
 
@@ -3248,6 +3265,14 @@ sightseeingDistance,       // local sightseeing separately
         });
       }
     }
+    stepStartedAt = this.logItineraryApiTiming({
+      api: 'itinerary_details',
+      planId,
+      quoteId,
+      step: 'vehicle_details_lookup',
+      startedAt: apiStartedAt,
+      stepStartedAt,
+    });
 
     const totalAllowedKmFromAssigned = assignedEligibleRows.reduce((sum, e) => {
       const allowedLocalKm = parseFloat(String((e as any).total_allowed_local_kms || 0)) || 0;
@@ -4233,6 +4258,14 @@ for (const vd of dayWiseDetails) {
         };
       }),
     });
+    stepStartedAt = this.logItineraryApiTiming({
+      api: 'itinerary_details',
+      planId,
+      quoteId,
+      step: 'vehicle_mapping_and_pricing',
+      startedAt: apiStartedAt,
+      stepStartedAt,
+    });
 
     // 5) Total vehicle amount for footer: sum only ASSIGNED vehicles (itineary_plan_assigned_status = 1)
     // This matches PHP behavior which filters by assigned status
@@ -4295,55 +4328,23 @@ for (const vd of dayWiseDetails) {
 
     // For selected recommendation tabs, derive room total from live group-specific hotel details
     // and override stale duplicated DB costs when they differ.
+    // Disabled for details API latency: this endpoint should read saved values only.
     const getLiveSelectedGroupRoomCost = async (): Promise<number> => {
-      if (groupType === undefined || isVehicleOnly) return 0;
-
-      try {
-        // Use the same default hotel_details dataset as frontend tabs
-        // (page=1, pageSize=20, all groups), then filter by selected group.
-        const hotelDetailsFallback = await this.hotelDetailsTboService.getHotelDetailsByQuoteIdFromTbo(
-          quoteId,
-        );
-
-        const fallbackRows = (hotelDetailsFallback.hotels || []).filter((h: any) => {
-          const rowGroupType = Number(h.groupType ?? 0);
-          return (
-            rowGroupType === Number(groupType) &&
-            String(h.hotelName || '') !== 'No Hotels Available'
-          );
-        });
-
-        const cheapestByStay = new Map<string, number>();
-        fallbackRows.forEach((h: any) => {
-          const routeId = Number(h.itineraryRouteId || 0);
-          const stayDate = String(h.date || '').trim();
-          if (!routeId || !stayDate) return;
-
-          const key = `${routeId}::${stayDate}`;
-          const amount = Number(h.totalHotelCost || 0) + Number(h.totalHotelTaxAmount || 0);
-          if (!Number.isFinite(amount) || amount <= 0) return;
-
-          const existing = cheapestByStay.get(key);
-          if (existing === undefined || amount < existing) {
-            cheapestByStay.set(key, amount);
-          }
-        });
-
-        const baseFallbackRoomCost = Array.from(cheapestByStay.values()).reduce(
-          (sum, v) => sum + Number(v || 0),
-          0,
-        );
-        const roomCountMultiplier = Math.max(Number(plan.preferred_room_count ?? 1), 1);
-        return baseFallbackRoomCost * roomCountMultiplier;
-      } catch {
-        return 0;
-      }
+      return 0;
     };
 
     const liveSelectedGroupRoomCost = await getLiveSelectedGroupRoomCost();
     const shouldUseLiveSelectedGroupCost =
       liveSelectedGroupRoomCost > 0 &&
       (totalRoomCost <= 0 || Math.abs(liveSelectedGroupRoomCost - totalRoomCost) > 0.01);
+    stepStartedAt = this.logItineraryApiTiming({
+      api: 'itinerary_details',
+      planId,
+      quoteId,
+      step: 'hotel_cost_lookup',
+      startedAt: apiStartedAt,
+      stepStartedAt,
+    });
 
     if (shouldUseLiveSelectedGroupCost) {
       totalRoomCost = liveSelectedGroupRoomCost;
@@ -4527,6 +4528,14 @@ for (const vd of dayWiseDetails) {
       },
       costBreakdown,
     };
+    stepStartedAt = this.logItineraryApiTiming({
+      api: 'itinerary_details',
+      planId,
+      quoteId,
+      step: 'final_response_mapping',
+      startedAt: apiStartedAt,
+      stepStartedAt,
+    });
 
     return response;
   }
@@ -4889,10 +4898,20 @@ for (const vd of dayWiseDetails) {
 
 
   async findOne(id: number, groupType?: number) {
+    const apiStartedAt = Date.now();
+    let stepStartedAt = apiStartedAt;
     const plan = await this.prisma.dvi_itinerary_plan_details.findUnique({
       where: { itinerary_plan_ID: id },
     });
     if (!plan) throw new NotFoundException('Itinerary not found');
+    stepStartedAt = this.logItineraryApiTiming({
+      api: 'itinerary_details_by_id',
+      planId: id,
+      quoteId: String(plan?.itinerary_quote_ID || ''),
+      step: 'plan_lookup_by_id',
+      startedAt: apiStartedAt,
+      stepStartedAt,
+    });
     
     const quoteId = plan.itinerary_quote_ID;
     if (!quoteId) throw new NotFoundException('Quote ID not found for this plan');

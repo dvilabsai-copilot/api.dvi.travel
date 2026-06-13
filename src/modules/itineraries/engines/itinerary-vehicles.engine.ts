@@ -5,6 +5,7 @@ import { Injectable } from "@nestjs/common";
 import { PrismaService } from "../../../prisma.service";
 import {
   VehicleCalculationContext,
+  VehicleCalcRunCache,
   RouteData,
   calculateRouteVehicleDetails,
   getVehicleLocationDetails,
@@ -356,6 +357,8 @@ export class ItineraryVehiclesEngine {
     const rebuildStartedAt = Date.now();
     let insertAttemptCount = 0;
     let insertSuccessCount = 0;
+    const pendingEligibleCreates: any[] = [];
+    const pendingVehicleDetailCreates: any[] = [];
     if (debugVehicleTrace) {
       console.log('[VEHICLE_REBUILD_START]', {
         planId,
@@ -364,6 +367,123 @@ export class ItineraryVehiclesEngine {
     }
     const createdBy = Number(args.createdBy ?? 0);
     const selectedTimeLimitByEligible = args.selectedTimeLimitByEligible ?? {};
+    const storedLocationCityCache = new Map<string, string>();
+    const vehicleLocationDetailsCache = new Map<number, {
+      origin: string;
+      city: string;
+      latitude: number;
+      longitude: number;
+    }>();
+    const routeHotspotMetricsCache = new Map<number, {
+      runningKm: number;
+      runningSeconds: number;
+      sightseeingKm: number;
+      sightseeingSeconds: number;
+    }>();
+    const routeLocationIdCache = new Map<string, number>();
+    const viaRouteNamesCache = new Map<number, string[]>();
+    const localPointCache = new Map<number, { name: string; lat: number | null; lng: number | null; source: string }>();
+    const permitChargesCache = new Map<string, number>();
+    const buildCache: VehicleCalcRunCache = {
+      storedLocationCity: storedLocationCityCache,
+      locationCoordinates: new Map<string, { latitude: number; longitude: number } | null>(),
+      vehicleLocationDetails: vehicleLocationDetailsCache,
+      viaRouteNames: viaRouteNamesCache,
+      routeHotspotMetrics: routeHotspotMetricsCache,
+      routeLocationId: routeLocationIdCache,
+      localPoint: localPointCache,
+      permitCharges: permitChargesCache,
+    };
+    let routeTransitionResolveCount = 0;
+    let routeTransitionCacheHits = 0;
+    let vehicleStateResolveCount = 0;
+    let vehicleStateCacheHits = 0;
+    let calculateRouteVehicleDetailsCallCount = 0;
+    let permitLookupCount = 0;
+    const getStoredLocationCityCached = async (locationName: string): Promise<string> => {
+      const key = String(locationName || '').trim().toLowerCase();
+      if (!key) return '';
+      if (storedLocationCityCache.has(key)) {
+        routeTransitionCacheHits += 1;
+        return storedLocationCityCache.get(key) || '';
+      }
+      const lookupStartedAt = Date.now();
+      const value = await getStoredLocationCity(tx, locationName, buildCache);
+      storedLocationCityCache.set(key, value);
+      routeTransitionResolveCount += 1;
+      console.log('[VEHICLE_REBUILD_TIMING]', {
+        planId,
+        stage: 'route_transition_resolution',
+        durationMs: Date.now() - lookupStartedAt,
+        totalElapsedMs: Date.now() - rebuildStartedAt,
+        counts: {
+          cacheMisses: routeTransitionResolveCount,
+          locationName: String(locationName || ''),
+        },
+      });
+      return value;
+    };
+    const getVehicleLocationDetailsCached = async (
+      vehicleLocationId: number,
+      fallbackOrigin?: string,
+      fallbackCity?: string,
+    ): Promise<{
+      origin: string;
+      city: string;
+      latitude: number;
+      longitude: number;
+    }> => {
+      const key = Number(vehicleLocationId || 0);
+      if (vehicleLocationDetailsCache.has(key)) {
+        vehicleStateCacheHits += 1;
+        return vehicleLocationDetailsCache.get(key)!;
+      }
+      const lookupStartedAt = Date.now();
+      const value = await getVehicleLocationDetails(
+        tx,
+        key,
+        fallbackOrigin,
+        fallbackCity,
+        buildCache,
+      );
+      vehicleLocationDetailsCache.set(key, value);
+      vehicleStateResolveCount += 1;
+      console.log('[VEHICLE_REBUILD_TIMING]', {
+        planId,
+        stage: 'vehicle_state_resolution',
+        durationMs: Date.now() - lookupStartedAt,
+        totalElapsedMs: Date.now() - rebuildStartedAt,
+        counts: {
+          cacheMisses: vehicleStateResolveCount,
+          vehicleLocationId: key,
+        },
+      });
+      return value;
+    };
+    const logStageTiming = (
+      stage: string,
+      startedAt: number,
+      counts: Record<string, number> = {},
+    ): number => {
+      const now = Date.now();
+      console.log('[VEHICLE_REBUILD_TIMING]', {
+        planId,
+        stage,
+        durationMs: now - startedAt,
+        totalElapsedMs: now - rebuildStartedAt,
+        counts: {
+          ...counts,
+          calculateRouteVehicleDetailsCallCount,
+          permitLookupCount,
+          vehicleStateLookupCacheHits: vehicleStateCacheHits,
+          vehicleStateLookupCacheMisses: vehicleStateResolveCount,
+          routeTransitionCacheHits,
+          routeTransitionCacheMisses: routeTransitionResolveCount,
+        },
+      });
+      return now;
+    };
+    let stageStartedAt = rebuildStartedAt;
 
     if (!Number.isFinite(planId) || planId <= 0) {
       return { planId, inserted: 0, reason: "Invalid planId" };
@@ -439,11 +559,11 @@ export class ItineraryVehiclesEngine {
     const firstRoute = routes.length ? routes[0] : null;
     const lastRoute = routes.length ? routes[routes.length - 1] : null;
     const overallStartCityRaw = firstRoute
-      ? (await getStoredLocationCity(tx, String(firstRoute.location_name || ""))) ||
+      ? (await getStoredLocationCityCached(String(firstRoute.location_name || ""))) ||
         String(firstRoute.location_name || "")
       : "";
     const overallEndCityRaw = lastRoute
-      ? (await getStoredLocationCity(tx, String(lastRoute.next_visiting_location || ""))) ||
+      ? (await getStoredLocationCityCached(String(lastRoute.next_visiting_location || ""))) ||
         String(lastRoute.next_visiting_location || "")
       : "";
     const overallStartCityToken = normalizeCityToken(overallStartCityRaw);
@@ -535,6 +655,11 @@ export class ItineraryVehiclesEngine {
       ...eligibleCities,
       ...resolvedCityIds.map((id) => String(id)),
     ]);
+    stageStartedAt = logStageTiming('eligible_city_resolution', stageStartedAt, {
+      eligibleCities: eligibleCities.length,
+      resolvedCityIds: resolvedCityIds.length,
+      locationTokens: locationTokens.length,
+    });
 
     // PHP: total km is sum of route.no_of_km ONLY
     const totalKmsNum = routes.reduce(
@@ -561,6 +686,7 @@ export class ItineraryVehiclesEngine {
     const noOfDays = Math.max(1, Number(plan.no_of_days ?? 1) || 1);
 
     const totalNoOfPlanRouteDetails = Math.max(0, routes.length);
+    stageStartedAt = logStageTiming('plan_and_route_context', stageStartedAt);
 
     // ---------------------------------------------------------------------
     // 2) Required vehicle entries from plan
@@ -603,9 +729,13 @@ export class ItineraryVehiclesEngine {
     if (!requiredVehicleTypeIds.length) {
       return { planId, inserted: 0, reason: "No positive vehicle counts" };
     }
+    stageStartedAt = logStageTiming('requested_vehicle_rows', stageStartedAt, {
+      requestedTypes: requiredVehicleTypeIds.length,
+      requestedRows: reqRows.length,
+    });
 
     // ---------------------------------------------------------------------
-    // 3) Clear existing vendor data for this plan
+    // 3) Clear existing eligible rows for this plan
     // ---------------------------------------------------------------------
     const delEligibleWhere = { itinerary_plan_id: planId };
     this.logSql(
@@ -617,19 +747,9 @@ export class ItineraryVehiclesEngine {
       await tx.dvi_itinerary_plan_vendor_eligible_list.deleteMany({
         where: delEligibleWhere,
       });
-
-    if (tAny?.dvi_itinerary_plan_vendor_vehicle_details) {
-      const delDetailsWhere: any = { itinerary_plan_id: planId };
-      this.logSql(
-        "VENDOR_VEHICLE_DETAILS_DELETE_MANY",
-        this.buildDeleteSql("dvi_itinerary_plan_vendor_vehicle_details", delDetailsWhere),
-        { where: delDetailsWhere },
-      );
-      const delDetailsRes =
-        await tAny.dvi_itinerary_plan_vendor_vehicle_details.deleteMany({
-          where: delDetailsWhere,
-        });
-    }
+    stageStartedAt = logStageTiming('eligible_delete_old_rows', stageStartedAt, {
+      deletedRows: Number((delEligibleRes as any)?.count ?? 0),
+    });
 
     const kmsLimitCache = new Map<string, { kmsLimitId: number; allowedKmPerDayNum: number }>();
     const priceBookCache = new Map<string, number>();
@@ -660,6 +780,7 @@ export class ItineraryVehiclesEngine {
       existing.push(reason);
       zeroEligibleSkippedReasonsByVehicleType.set(vehicleTypeId, existing);
     };
+    const vendorLookupStartedAt = Date.now();
 
     // ---------------------------------------------------------------------
     // MAIN ELIGIBLE-LIST BUILD (PHP-style vendor loop)
@@ -1309,13 +1430,7 @@ export class ItineraryVehiclesEngine {
               { data: baseData },
             );
 
-            const createdEligible =
-              await tx.dvi_itinerary_plan_vendor_eligible_list.create({
-                data: baseData,
-                select: { itinerary_plan_vendor_eligible_ID: true },
-              });
-
-            inserted++;
+            pendingEligibleCreates.push(baseData);
             vendorIdsUsed.add(vendorId);
 
             currentQty += 1;
@@ -1348,6 +1463,34 @@ export class ItineraryVehiclesEngine {
         }
       }
     }
+    stageStartedAt = logStageTiming('vendor_vehicle_master_lookup', vendorLookupStartedAt, {
+      vehicleTypes: requiredVehicleTypeIds.length,
+      vendorCount: vendorIdsUsed.size,
+    });
+    stageStartedAt = logStageTiming('branch_lookup', vendorLookupStartedAt, {
+      vendorCount: vendorIdsUsed.size,
+    });
+    stageStartedAt = logStageTiming('rate_lookup', vendorLookupStartedAt, {
+      vehicleTypes: requiredVehicleTypeIds.length,
+      vendorCount: vendorIdsUsed.size,
+    });
+
+    if (pendingEligibleCreates.length > 0) {
+      const createManyResult = await tx.dvi_itinerary_plan_vendor_eligible_list.createMany({
+        data: pendingEligibleCreates,
+      });
+      inserted += pendingEligibleCreates.length;
+      if (debugVehicleTrace) {
+        console.log('[ELIGIBLE_CREATE_MANY_DONE]', {
+          planId,
+          createdRows: pendingEligibleCreates.length,
+          resultCount: Number((createManyResult as any)?.count ?? pendingEligibleCreates.length),
+        });
+      }
+    }
+    stageStartedAt = logStageTiming('eligible_insert_rows', stageStartedAt, {
+      insertedRows: pendingEligibleCreates.length,
+    });
 
     const vendorIdList = Array.from(vendorIdsUsed);
 
@@ -1467,6 +1610,10 @@ export class ItineraryVehiclesEngine {
       await tx.dvi_itinerary_plan_vendor_eligible_list.deleteMany({
         where: cleanWhere },
     );
+    stageStartedAt = logStageTiming('eligible_row_building', stageStartedAt, {
+      eligibleInsertRows: pendingEligibleCreates.length,
+      eligibleTypes: requiredVehicleTypeIds.length,
+    });
 
     if (typeof args.beforeVehicleDetailsBuild === 'function') {
       const eligibleVehicleCount = await tx.dvi_itinerary_plan_vendor_eligible_list.count({
@@ -1476,6 +1623,7 @@ export class ItineraryVehiclesEngine {
           deleted: 0,
         },
       });
+      const permitCostStageStartedAt = Date.now();
       await args.beforeVehicleDetailsBuild({
         tx,
         planId,
@@ -1483,7 +1631,12 @@ export class ItineraryVehiclesEngine {
         routeCount: totalNoOfPlanRouteDetails,
         eligibleVehicleCount,
       });
+      stageStartedAt = logStageTiming('permit_cost_lookup', permitCostStageStartedAt, {
+        routeCount: totalNoOfPlanRouteDetails,
+        eligibleVehicleCount,
+      });
     }
+    stageStartedAt = logStageTiming('before_vehicle_details_callback', stageStartedAt);
 
     // ---------------------------------------------------------------------
     // BUILD dvi_itinerary_plan_vendor_vehicle_details
@@ -1512,7 +1665,9 @@ export class ItineraryVehiclesEngine {
         });
         console.log('[VEHICLE_DETAILS_DELETE_AFTER]', { planId, remainingCount, deleteResult: delDetRes2 });
       }
-
+      stageStartedAt = logStageTiming('vehicle_detail_delete_old_rows', stageStartedAt, {
+        deletedRows: Number((delDetRes2 as any)?.count ?? 0),
+      });
       const eligiblesWhere = {
         itinerary_plan_id: planId,
         // REMOVED: itineary_plan_assigned_status: 1,
@@ -1564,6 +1719,10 @@ export class ItineraryVehiclesEngine {
           })),
         });
       }
+      stageStartedAt = logStageTiming('vehicle_detail_row_assembly_start', stageStartedAt, {
+        routeCount: totalNoOfPlanRouteDetails,
+        eligibleCount: eligibles.length,
+      });
 
       const travelType = Number(plan.itinerary_type ?? 0) || 2; // 1=local, 2=outstation
 
@@ -1574,10 +1733,10 @@ export class ItineraryVehiclesEngine {
       const firstRoute = routes[0];
       const lastRoute = routes[routes.length - 1];
       const overallStartCityRaw = firstRoute
-        ? (await getStoredLocationCity(tx, String(firstRoute.location_name || ''))) || String(firstRoute.location_name || '')
+        ? (await getStoredLocationCity(tx, String(firstRoute.location_name || ''), buildCache)) || String(firstRoute.location_name || '')
         : '';
       const overallEndCityRaw = lastRoute
-        ? (await getStoredLocationCity(tx, String(lastRoute.next_visiting_location || ''))) || String(lastRoute.next_visiting_location || '')
+        ? (await getStoredLocationCity(tx, String(lastRoute.next_visiting_location || ''), buildCache)) || String(lastRoute.next_visiting_location || '')
         : '';
       const forceLocalTrip =
         normalizeCityToken(overallStartCityRaw) !== '' &&
@@ -1673,8 +1832,7 @@ export class ItineraryVehiclesEngine {
 
         // Get vehicle origin details from dvi_stored_locations
         const vehicleLocationId = vehicle.vehicle_location_id || 0;
-        const vehicleLocationDetails = await getVehicleLocationDetails(
-          tx,
+        const vehicleLocationDetails = await getVehicleLocationDetailsCached(
           vehicleLocationId,
           String((e as any).vehicle_orign || '').trim(),
           String((e as any).vehicle_orign || '').trim(),
@@ -1704,6 +1862,7 @@ export class ItineraryVehiclesEngine {
           extra_hour_charge: toNum(vehicle.extra_hour_charge),
           selected_time_limit_id: selectedTimeLimitId || undefined,
           force_local_trip: forceLocalTrip,
+          buildCache,
           get_kms_limit: 250,  // Default outstation KM limit
           driver_batta: toNum(vendorVehicleType.driver_batta),
           food_cost: toNum(vendorVehicleType.food_cost),
@@ -1809,6 +1968,7 @@ export class ItineraryVehiclesEngine {
           }
 
           // Calculate all route details using PHP-parity logic
+          calculateRouteVehicleDetailsCallCount += 1;
           const result = await calculateRouteVehicleDetails(
             calcCtx,
             routeData,
@@ -1818,6 +1978,7 @@ export class ItineraryVehiclesEngine {
             isLastRouteOfDay,
             isFirstRouteOfDay
           );
+          permitLookupCount += 1;
           if (debugVehicleTrace) {
             console.log('[VEHICLE_CALC_RETURN]', {
               planId,
@@ -2017,24 +2178,8 @@ export class ItineraryVehiclesEngine {
             });
           }
 
-          let createdDetails: any = null;
           insertAttemptCount++;
-          const existingRows: any[] = await tx.$queryRawUnsafe(
-            `SELECT COUNT(*) AS row_count
-             FROM dvi_itinerary_plan_vendor_vehicle_details
-             WHERE itinerary_plan_id = ?
-               AND itinerary_plan_vendor_eligible_ID = ?
-               AND itinerary_route_id = ?`,
-            planId,
-            eligibleId,
-            routeId,
-          );
-          const existingCount = Number(existingRows?.[0]?.row_count ?? 0);
           if (debugVehicleTrace) {
-            console.log('[VEHICLE_DETAIL_EXISTING_KEY_COUNT]', { planId, eligibleId, routeId, existingCount });
-            if (existingCount > 0) {
-              console.log('[VEHICLE_DETAIL_DUPLICATE_DETECTED]', { planId, eligibleId, routeId, existingCount });
-            }
             console.log('[VEHICLE_DETAIL_INSERT_ATTEMPT]', {
               planId,
               eligibleId,
@@ -2052,43 +2197,6 @@ export class ItineraryVehiclesEngine {
               totalAmount: result.TOTAL_VEHICLE_AMOUNT,
             });
           }
-          await tAny.dvi_itinerary_plan_vendor_vehicle_details.deleteMany({
-            where: {
-              itinerary_plan_id: planId,
-              itinerary_plan_vendor_eligible_ID: eligibleId,
-              itinerary_route_id: routeId,
-            },
-          });
-          try {
-            createdDetails =
-              await tAny.dvi_itinerary_plan_vendor_vehicle_details.create({
-                data: detailsData,
-              });
-            insertSuccessCount++;
-          } catch (error: any) {
-            this.log('VEHICLE_DETAIL_INSERT_ERROR', {
-              planId,
-              routeId,
-              error: String(error?.message || error),
-              fullError: error,
-            });
-            throw error;
-          }
-          if (debugVehicleTrace) {
-            console.log('[VEHICLE_DETAIL_INSERT_SUCCESS]', {
-              planId,
-              eligibleId,
-              routeId,
-              insertedId: createdDetails?.itinerary_plan_vendor_vehicle_details_ID ?? null,
-            });
-          }
-          if (process.env.DEBUG_LOCAL_KM_FIX === 'true') {
-            this.log('VEHICLE_DETAIL_INSERT_SUCCESS', {
-              planId,
-              routeId,
-              insertedId: createdDetails?.itinerary_plan_vendor_vehicle_details_ID ?? null,
-            });
-          }
           if (process.env.DEBUG_DVI20260594_INSERT === 'true') {
             this.log('VEHICLE_DETAILS_INSERT_DATA', {
               itinerary_plan_id: detailsData.itinerary_plan_id,
@@ -2101,14 +2209,58 @@ export class ItineraryVehiclesEngine {
               total_drop_km: detailsData.total_drop_km,
               total_travelled_km: detailsData.total_travelled_km,
             });
-            this.log('VEHICLE_DETAILS_INSERT_RESULT', createdDetails);
           }
+          pendingVehicleDetailCreates.push(detailsData);
 
           // Update previous destination city for next iteration
-          previous_destination_city = await getStoredLocationCity(tx, toLoc);
+          previous_destination_city = await getStoredLocationCityCached(String(toLoc || ''));
         }
       }
     }
+    stageStartedAt = logStageTiming('vehicle_detail_calculation_loop', stageStartedAt, {
+      vehicleDetailRowsPrepared: pendingVehicleDetailCreates.length,
+    });
+    stageStartedAt = logStageTiming('vehicle_detail_buffer_rows', stageStartedAt, {
+      vehicleDetailRowsPrepared: pendingVehicleDetailCreates.length,
+    });
+    if (pendingVehicleDetailCreates.length > 0 && tAny?.dvi_itinerary_plan_vendor_vehicle_details) {
+      const chunkSize = Math.max(1, Number(process.env.VEHICLE_DETAIL_INSERT_CHUNK_SIZE || 500) || 500);
+      console.log('[VEHICLE_DETAIL_INSERT_BATCH_SIZE]', {
+        planId,
+        pendingRows: pendingVehicleDetailCreates.length,
+        chunkSize,
+      });
+
+      for (let index = 0; index < pendingVehicleDetailCreates.length; index += chunkSize) {
+        const chunk = pendingVehicleDetailCreates.slice(index, index + chunkSize);
+        const chunkStartedAt = Date.now();
+        const detailCreateResult = await tAny.dvi_itinerary_plan_vendor_vehicle_details.createMany({
+          data: chunk,
+        });
+        insertSuccessCount += chunk.length;
+        console.log('[VEHICLE_DETAIL_INSERT_CHUNK_TIMING]', {
+          planId,
+          chunkIndex: Math.floor(index / chunkSize) + 1,
+          chunkSize: chunk.length,
+          durationMs: Date.now() - chunkStartedAt,
+          totalElapsedMs: Date.now() - rebuildStartedAt,
+          counts: {
+            insertedRows: Number((detailCreateResult as any)?.count ?? chunk.length),
+            pendingRows: pendingVehicleDetailCreates.length,
+          },
+        });
+        if (debugVehicleTrace) {
+          console.log('[VEHICLE_DETAIL_CREATE_MANY_DONE]', {
+            planId,
+            createdRows: chunk.length,
+            resultCount: Number((detailCreateResult as any)?.count ?? chunk.length),
+          });
+        }
+      }
+    }
+    stageStartedAt = logStageTiming('vehicle_detail_create_many', stageStartedAt, {
+      insertedRows: pendingVehicleDetailCreates.length,
+    });
 
     // NOW update eligible_list with toll/permit charges from vehicle_details
     // (this runs AFTER all vehicle_details records have been created above)
@@ -2138,56 +2290,72 @@ export class ItineraryVehiclesEngine {
     });
     this.writeLog(`[vehiclesEngine] Found ${eligibleRecords.length} eligible records to update`);
 
+    const allVehicleDetailsRows = await tx.dvi_itinerary_plan_vendor_vehicle_details.findMany({
+      where: {
+        itinerary_plan_id: planId,
+        status: 1,
+        deleted: 0,
+      },
+      select: {
+        itinerary_plan_vendor_eligible_ID: true,
+        time_limit_id: true,
+        total_travelled_km: true,
+        total_travelled_time: true,
+        travel_type: true,
+        total_extra_km: true,
+        total_extra_km_charges: true,
+        vehicle_rental_charges: true,
+        vehicle_toll_charges: true,
+        vehicle_parking_charges: true,
+        vehicle_driver_charges: true,
+        vehicle_permit_charges: true,
+        before_6_am_extra_time: true,
+        after_8_pm_extra_time: true,
+        before_6_am_charges_for_driver: true,
+        before_6_am_charges_for_vehicle: true,
+        after_8_pm_charges_for_driver: true,
+        after_8_pm_charges_for_vehicle: true,
+      },
+    });
+    const vehicleDetailsByEligibleId = new Map<number, any[]>();
+    for (const row of allVehicleDetailsRows) {
+      const eligibleId = Number((row as any).itinerary_plan_vendor_eligible_ID ?? 0);
+      if (!eligibleId) continue;
+      const list = vehicleDetailsByEligibleId.get(eligibleId) || [];
+      list.push(row);
+      vehicleDetailsByEligibleId.set(eligibleId, list);
+    }
+
+    const allLocalTimeLimitIds = Array.from(
+      new Set(
+        allVehicleDetailsRows
+          .filter((row: any) => Number(row.travel_type || 0) === 1)
+          .map((row: any) => Number(row.time_limit_id || 0))
+          .filter((id: number) => id > 0),
+      ),
+    );
+    const allTimeLimitRows = allLocalTimeLimitIds.length
+      ? await tx.dvi_time_limit.findMany({
+          where: { time_limit_id: { in: allLocalTimeLimitIds } },
+          select: { time_limit_id: true, km_limit: true, time_limit_title: true },
+        })
+      : [];
+    const localKmByTimeLimit = new Map<number, number>(
+      allTimeLimitRows.map((row: any) => [Number(row.time_limit_id || 0), getEffectiveTimeLimitKm(row)]),
+    );
+
     for (const eligible of eligibleRecords) {
       this.writeLog(`[vehiclesEngine] Updating eligible ${eligible.itinerary_plan_vendor_eligible_ID} (vendor_veh_type=${eligible.vendor_vehicle_type_id}, veh_type=${eligible.vehicle_type_id})`);
-      
-      // Count outstation days (travel_type = 2) for this vendor/vehicle type (PHP parity)
-      const outstationDaysCount = await tx.dvi_itinerary_plan_vendor_vehicle_details.count({
-        where: {
-          itinerary_plan_id: planId,
-          vendor_vehicle_type_id: eligible.vendor_vehicle_type_id,
-          vehicle_type_id: eligible.vehicle_type_id,
-          travel_type: 2, // outstation only
-          status: 1,
-          deleted: 0,
-        },
-      });
+
+      const vehicleDetailsRecords = vehicleDetailsByEligibleId.get(
+        Number(eligible.itinerary_plan_vendor_eligible_ID ?? 0),
+      ) ?? [];
+      const outstationDaysCount = vehicleDetailsRecords.filter((record: any) => Number(record.travel_type || 0) === 2).length;
       this.writeLog(`[vehiclesEngine] Outstation days count: ${outstationDaysCount}`);
-      
-      // Recalculate total_allowed_kms based on outstation days (PHP parity)
-      // PHP: $TOTAL_ITINEARY_ALLOWED_KM = ($PER_DAY_KM_LIMIT * $total_outstation_day_available_count);
+
       const allowedKmPerDay = Number(eligible.outstation_allowed_km_per_day || 250);
       const totalAllowedKms = allowedKmPerDay * outstationDaysCount;
       this.writeLog(`[vehiclesEngine] Allowed KM per day: ${allowedKmPerDay}, Total allowed KMs: ${totalAllowedKms}`);
-      
-      // Aggregate total travelled km and all charge components from vehicle_details.
-      const vehicleDetailsRecords = await tx.dvi_itinerary_plan_vendor_vehicle_details.findMany({
-        where: {
-          itinerary_plan_id: planId,
-          itinerary_plan_vendor_eligible_ID: eligible.itinerary_plan_vendor_eligible_ID,
-          status: 1,
-          deleted: 0,
-        },
-        select: {
-          time_limit_id: true,
-          total_travelled_km: true,
-          total_travelled_time: true,
-          travel_type: true,
-          total_extra_km: true,
-          total_extra_km_charges: true,
-          vehicle_rental_charges: true,
-          vehicle_toll_charges: true,
-          vehicle_parking_charges: true,
-          vehicle_driver_charges: true,
-          vehicle_permit_charges: true,
-          before_6_am_extra_time: true,
-          after_8_pm_extra_time: true,
-          before_6_am_charges_for_driver: true,
-          before_6_am_charges_for_vehicle: true,
-          after_8_pm_charges_for_driver: true,
-          after_8_pm_charges_for_vehicle: true,
-        },
-      });
 
       const totalKms = vehicleDetailsRecords.reduce((sum: number, record: any) => {
         return sum + Number(record.total_travelled_km || 0);
@@ -2201,22 +2369,6 @@ export class ItineraryVehiclesEngine {
         return sum + Number(record.total_travelled_km || 0);
       }, 0);
 
-      const localTimeLimitIds = Array.from(
-        new Set(
-          localRecords
-            .map((r: any) => Number(r.time_limit_id || 0))
-            .filter((id: number) => id > 0),
-        ),
-      );
-      const localSlabRows = localTimeLimitIds.length
-        ? await tx.dvi_time_limit.findMany({
-            where: { time_limit_id: { in: localTimeLimitIds } },
-            select: { time_limit_id: true, km_limit: true, time_limit_title: true },
-          })
-        : [];
-      const localKmByTimeLimit = new Map<number, number>(
-        localSlabRows.map((r: any) => [Number(r.time_limit_id || 0), getEffectiveTimeLimitKm(r)]),
-      );
       const totalAllowedLocalKms = localRecords.reduce((sum: number, r: any) => {
         return sum + Number(localKmByTimeLimit.get(Number(r.time_limit_id || 0)) || 0);
       }, 0);
@@ -2336,6 +2488,7 @@ export class ItineraryVehiclesEngine {
       });
       this.writeLog(`[vehiclesEngine] Updated eligible ${eligible.itinerary_plan_vendor_eligible_ID} with toll=${totalTollCharges}, permit=${totalPermitCharges}, rental=${totalRentalCharges}, kms=${totalKms}, allowed_kms=${totalAllowedKms}, extra_kms=${totalExtraOutstationKms}, local_allowed=${totalAllowedLocalKms}, local_extra=${totalExtraLocalKms}, local_extra_charge=${totalExtraLocalKmsCharge}`);
     }
+    stageStartedAt = logStageTiming('vehicle_detail_recalculate_eligible_totals', stageStartedAt);
 
     // Re-assign cheapest vendors AFTER final totals update.
     // Earlier assignment can be based on provisional totals before toll/permit recalculation.
@@ -2381,6 +2534,7 @@ export class ItineraryVehiclesEngine {
         );
       }
     }
+    stageStartedAt = logStageTiming('final_assignment', stageStartedAt);
 
     if (debugVehicleTrace) {
       console.log('[VEHICLE_REBUILD_DONE]', {
@@ -2412,6 +2566,12 @@ export class ItineraryVehiclesEngine {
         })),
       });
     }
+    stageStartedAt = logStageTiming('total', stageStartedAt, {
+      insertedEligibleRows: inserted,
+      insertedVehicleDetailRows: insertSuccessCount,
+      routeTransitionCacheMisses: routeTransitionResolveCount,
+      vehicleStateCacheMisses: vehicleStateResolveCount,
+    });
     return { planId, inserted };
   }
 }
