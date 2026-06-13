@@ -881,7 +881,6 @@ const finalKm = pairChanged
             vehicleStateId,
             reason: 'state_boundary_crossed',
           });
-
           const hasDuplicate = await this.hasRecentPermitCharge(tx, {
             itineraryPlanId: planId,
             itineraryRouteDate: routeDate,
