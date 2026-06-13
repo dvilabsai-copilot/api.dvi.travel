@@ -818,33 +818,69 @@ const finalKm = pairChanged
           destinationLocation: String(route.next_visiting_location ?? ''),
         });
 
-        for (const locationName of locationChain) {
-          const destinationStateId = await this.getLocationState(tx, locationName);
+        const routeStateChain = await Promise.all(
+          locationChain.map(async (locationName) => ({
+            locationName,
+            stateId: await this.getLocationState(tx, locationName),
+          })),
+        );
 
-          console.log('[PERMIT_ROUTE_STATE_RESOLVE]', {
-            planId,
-            routeId,
-            destinationName: locationName,
-            destinationPermitStateId: destinationStateId,
-          });
+        for (let locationIndex = 1; locationIndex < routeStateChain.length; locationIndex++) {
+          const previousLocation = routeStateChain[locationIndex - 1];
+          const currentLocation = routeStateChain[locationIndex];
 
-          if (!destinationStateId) {
+          if (!previousLocation?.stateId || !currentLocation?.stateId) {
             continue;
           }
 
-          if (vehicleStateId === destinationStateId) {
+          if (previousLocation.stateId === currentLocation.stateId) {
+            console.log('[PERMIT_ROUTE_TRANSITION_RESOLVE]', {
+              planId,
+              routeId,
+              previousLocationName: previousLocation.locationName,
+              currentLocationName: currentLocation.locationName,
+              previousStateId: previousLocation.stateId,
+              currentStateId: currentLocation.stateId,
+              vehicleStateId,
+              reason: 'same_route_state',
+            });
+            continue;
+          }
+
+          if (vehicleStateId === currentLocation.stateId) {
+            console.log('[PERMIT_ROUTE_TRANSITION_RESOLVE]', {
+              planId,
+              routeId,
+              previousLocationName: previousLocation.locationName,
+              currentLocationName: currentLocation.locationName,
+              previousStateId: previousLocation.stateId,
+              currentStateId: currentLocation.stateId,
+              vehicleStateId,
+              reason: 'returning_to_vehicle_state',
+            });
             console.log('[PERMIT_COST_LOOKUP]', {
               planId,
               routeId,
               vendorId: Number(eligibleVehicle.vendor_id ?? 0),
               vendorVehicleTypeId: Number(eligibleVehicle.vendor_vehicle_type_id ?? 0),
               sourceStateId: vehicleStateId,
-              destinationStateId,
+              destinationStateId: currentLocation.stateId,
               foundPermitCost: 0,
               reason: 'same_state',
             });
             continue;
           }
+
+          console.log('[PERMIT_ROUTE_TRANSITION_RESOLVE]', {
+            planId,
+            routeId,
+            previousLocationName: previousLocation.locationName,
+            currentLocationName: currentLocation.locationName,
+            previousStateId: previousLocation.stateId,
+            currentStateId: currentLocation.stateId,
+            vehicleStateId,
+            reason: 'state_boundary_crossed',
+          });
 
           const hasDuplicate = await this.hasRecentPermitCharge(tx, {
             itineraryPlanId: planId,
@@ -853,7 +889,7 @@ const finalKm = pairChanged
             vendorBranchId: Number(eligibleVehicle.vendor_branch_id ?? 0),
             vendorVehicleTypeId: Number(eligibleVehicle.vendor_vehicle_type_id ?? 0),
             sourceStateId: vehicleStateId,
-            destinationStateId,
+            destinationStateId: currentLocation.stateId,
           });
 
           if (hasDuplicate) {
@@ -863,7 +899,7 @@ const finalKm = pairChanged
               vendorId: Number(eligibleVehicle.vendor_id ?? 0),
               vendorVehicleTypeId: Number(eligibleVehicle.vendor_vehicle_type_id ?? 0),
               sourceStateId: vehicleStateId,
-              destinationStateId,
+              destinationStateId: currentLocation.stateId,
               foundPermitCost: 0,
               reason: 'duplicate_within_7_days',
             });
@@ -874,7 +910,7 @@ const finalKm = pairChanged
             vendorId: Number(eligibleVehicle.vendor_id ?? 0),
             vendorVehicleTypeId: Number(eligibleVehicle.vendor_vehicle_type_id ?? 0),
             sourceStateId: vehicleStateId,
-            destinationStateId,
+            destinationStateId: currentLocation.stateId,
           });
 
           console.log('[PERMIT_COST_LOOKUP]', {
@@ -883,11 +919,21 @@ const finalKm = pairChanged
             vendorId: Number(eligibleVehicle.vendor_id ?? 0),
             vendorVehicleTypeId: Number(eligibleVehicle.vendor_vehicle_type_id ?? 0),
             sourceStateId: vehicleStateId,
-            destinationStateId,
+            destinationStateId: currentLocation.stateId,
             foundPermitCost: Number(permitCost ?? 0),
           });
 
           if (!permitCost) {
+            console.log('[PERMIT_COST_LOOKUP]', {
+              planId,
+              routeId,
+              vendorId: Number(eligibleVehicle.vendor_id ?? 0),
+              vendorVehicleTypeId: Number(eligibleVehicle.vendor_vehicle_type_id ?? 0),
+              sourceStateId: vehicleStateId,
+              destinationStateId: currentLocation.stateId,
+              foundPermitCost: 0,
+              reason: 'permit_cost_missing',
+            });
             continue;
           }
 
@@ -900,7 +946,7 @@ const finalKm = pairChanged
               vendor_branch_id: Number(eligibleVehicle.vendor_branch_id ?? 0),
               vendor_vehicle_type_id: Number(eligibleVehicle.vendor_vehicle_type_id ?? 0),
               source_state_id: vehicleStateId,
-              destination_state_id: destinationStateId,
+              destination_state_id: currentLocation.stateId,
               permit_cost: permitCost,
               createdby: userId,
               createdon: new Date(),

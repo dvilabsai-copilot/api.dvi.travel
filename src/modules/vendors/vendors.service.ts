@@ -4,6 +4,10 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { createHash } from 'crypto';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../prisma.service';
+import {
+  normalizeCityName,
+  resolveCityRecordByName,
+} from '../itineraries/utils/city-normalization.util';
 import { VendorListItemDto } from './dto/vendor-list-item.dto';
 
 type DropdownItem = {
@@ -16,27 +20,37 @@ export class VendorsService {
   constructor(private readonly prisma: PrismaService) {}
 
   private normalizeCityToken(value: string): string {
-    const base = String(value || '').toLowerCase().trim();
+    const base = String(value || '').trim();
     if (!base) return '';
-
     const firstPart = base.split(',')[0] || base;
-    const normalized = firstPart
-      .replace(
-        /\b(international|domestic|airport|railway|station|bus|stand|hotel|lodge|temple|mall|palace|park|garden|museum|planetarium|aquarium)\b/g,
-        ' ',
-      )
-      .replace(/[^a-z0-9\s]/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
+    return normalizeCityName(firstPart);
+  }
 
-    const cityAliases: Record<string, string> = {
-      bengaluru: 'bangalore',
-      bangaluru: 'bangalore',
-      bengalore: 'bangalore',
-      cochin: 'kochi',
-    };
+  private buildVehicleCityCandidates(
+    values: Array<string | null | undefined>,
+  ): Array<{ raw: string; normalized: string }> {
+    const seen = new Set<string>();
+    const result: Array<{ raw: string; normalized: string }> = [];
 
-    return cityAliases[normalized] || normalized;
+    for (const value of values) {
+      const raw = String(value ?? '').trim();
+      if (!raw) continue;
+
+      const variants = this.uniqueStrings([
+        raw,
+        raw.split(',')[0] ?? '',
+        raw.split('-')[0] ?? '',
+      ]);
+
+      for (const variant of variants) {
+        const normalized = this.normalizeCityToken(variant);
+        if (!normalized || seen.has(normalized)) continue;
+        seen.add(normalized);
+        result.push({ raw: variant, normalized });
+      }
+    }
+
+    return result;
   }
 
   private uniqueStrings(values: Array<string | null | undefined>): string[] {
@@ -119,6 +133,172 @@ export class VendorsService {
     }
 
     return 0;
+  }
+
+  private async resolveCanonicalVehicleCity(args: {
+    requestedVehicleOrigin?: string;
+    branchLocation?: string;
+    branchCityId?: number;
+    branchCityName?: string;
+  }): Promise<{
+    canonicalCity: string;
+    diagnostics: Record<string, any>;
+  }> {
+    const branchCityId = Number(args.branchCityId || 0);
+    const branchCityName = String(args.branchCityName ?? '').trim();
+    const candidates = this.buildVehicleCityCandidates([
+      args.requestedVehicleOrigin,
+      branchCityName,
+      args.branchLocation,
+    ]);
+
+    const diagnostics: Record<string, any> = {
+      branchCityId,
+      branchCityName,
+      candidateCities: candidates,
+    };
+
+    if (branchCityId > 0 && branchCityName) {
+      const normalizedBranchCity = this.normalizeCityToken(branchCityName);
+      if (normalizedBranchCity) {
+        diagnostics.resolvedBy = 'branch_city_id';
+        diagnostics.canonicalCity = normalizedBranchCity;
+        return { canonicalCity: normalizedBranchCity, diagnostics };
+      }
+    }
+
+    if (candidates.length > 0) {
+      diagnostics.resolvedBy = 'normalized_input_candidates';
+      diagnostics.canonicalCity = candidates[0].normalized;
+      return { canonicalCity: candidates[0].normalized, diagnostics };
+    }
+
+    diagnostics.reason = 'no_city_candidates';
+    return { canonicalCity: '', diagnostics };
+  }
+
+  private async findStoredLocationIdForCanonicalCity(args: {
+    canonicalCity: string;
+    rawCityCandidates: string[];
+  }): Promise<{
+    vehicleLocationId: number;
+    diagnostics: Record<string, any>;
+  }> {
+    const canonicalCity = this.normalizeCityToken(args.canonicalCity);
+    const rawCityCandidates = this.uniqueStrings(args.rawCityCandidates);
+
+    const diagnostics: Record<string, any> = {
+      canonicalCity,
+      rawCityCandidates,
+    };
+
+    if (!canonicalCity) {
+      diagnostics.reason = 'missing_canonical_city';
+      return { vehicleLocationId: 0, diagnostics };
+    }
+
+    const canonicalCityRecord = await resolveCityRecordByName(
+      this.prisma,
+      canonicalCity,
+    );
+    diagnostics.canonicalCityId = canonicalCityRecord?.id ?? null;
+
+    const sourceCityRows = await this.prisma.dvi_stored_locations.findMany({
+      where: {
+        deleted: 0,
+        status: 1,
+        OR: [
+          canonicalCityRecord?.id
+            ? ({ source_city_id: canonicalCityRecord.id } as any)
+            : null,
+          {
+            source_location_city: {
+              contains: canonicalCity,
+            },
+          },
+        ].filter(Boolean) as any,
+      } as any,
+      orderBy: [{ source_location: 'asc' }, { location_ID: 'desc' }],
+      select: {
+        location_ID: true,
+        source_location: true,
+        source_location_city: true,
+        source_location_lattitude: true,
+        source_location_longitude: true,
+      },
+      take: 25,
+    } as any);
+
+    const exactCityRows = sourceCityRows.filter((row) => {
+      const sourceLocationNorm = this.normalizeCityToken(
+        String(row.source_location ?? ''),
+      );
+      const sourceCityNorm = this.normalizeCityToken(
+        String(row.source_location_city ?? ''),
+      );
+
+      return (
+        sourceLocationNorm === canonicalCity || sourceCityNorm === canonicalCity
+      );
+    });
+
+    const deterministicSourceCityId = this.pickDeterministicSourceRow(
+      exactCityRows as any,
+    );
+    if (deterministicSourceCityId > 0) {
+      diagnostics.resolvedBy = 'canonical_source_city';
+      diagnostics.matchedRows = exactCityRows.length;
+      return {
+        vehicleLocationId: deterministicSourceCityId,
+        diagnostics,
+      };
+    }
+
+    const exactRawRows = rawCityCandidates.length
+      ? await this.prisma.dvi_stored_locations.findMany({
+          where: {
+            deleted: 0,
+            status: 1,
+            OR: rawCityCandidates.flatMap((candidate) => [
+              { source_location: candidate },
+              { source_location_city: candidate } as any,
+            ]),
+          } as any,
+          orderBy: [{ source_location: 'asc' }, { location_ID: 'desc' }],
+          select: {
+            location_ID: true,
+            source_location: true,
+            source_location_city: true,
+            source_location_lattitude: true,
+            source_location_longitude: true,
+          },
+          take: 25,
+        } as any)
+      : [];
+
+    const deterministicRawId = this.pickDeterministicSourceRow(exactRawRows as any);
+    if (deterministicRawId > 0) {
+      diagnostics.resolvedBy = 'raw_source_city_fallback';
+      diagnostics.matchedRows = exactRawRows.length;
+      return {
+        vehicleLocationId: deterministicRawId,
+        diagnostics,
+      };
+    }
+
+    diagnostics.reason = 'no_deterministic_city_match';
+    diagnostics.exactCityRows = exactCityRows.map((row) => ({
+      location_ID: Number(row.location_ID),
+      source_location: row.source_location,
+      source_location_city: row.source_location_city,
+    }));
+    diagnostics.exactRawRows = exactRawRows.map((row) => ({
+      location_ID: Number(row.location_ID),
+      source_location: row.source_location,
+      source_location_city: row.source_location_city,
+    }));
+
+    return { vehicleLocationId: 0, diagnostics };
   }
 
   private async resolveVehicleLocationIdFromBranch(args: {
@@ -259,277 +439,33 @@ export class VendorsService {
       normalized_branch_city: normalizedBranchCity,
     };
 
-    if (branchLocation) {
-      diagnostics.attemptedMatchingRules.push('branch_location_exact_source_location');
-      const directLocationMatches = await this.prisma.dvi_stored_locations.findMany({
-        where: {
-          source_location: branchLocation,
-          deleted: 0,
-          status: 1,
-        },
-        orderBy: { location_ID: 'desc' },
-        select: {
-          location_ID: true,
-          source_location: true,
-          source_location_city: true,
-          source_location_lattitude: true,
-          source_location_longitude: true,
-        },
-        take: 25,
-      });
-      const deterministicDirectLocationId = this.pickDeterministicSourceRow(
-        directLocationMatches as any,
-      );
-
-      if (deterministicDirectLocationId > 0) {
-        diagnostics.resolvedBy = 'branch_location_exact_source_location';
-        diagnostics.matchedSourceLocation = branchLocation;
-        return {
-          vehicleLocationId: deterministicDirectLocationId,
-          diagnostics,
-        };
-      }
-
-      if (directLocationMatches.length > 1) {
-        diagnostics.ambiguousMatches = {
-          rule: 'branch_location_exact_source_location',
-          branchLocation,
-          rows: directLocationMatches.map((row) => ({
-            location_ID: Number(row.location_ID),
-            source_location: row.source_location,
-            source_location_city: row.source_location_city,
-          })),
-        };
-        return { vehicleLocationId: 0, diagnostics };
-      }
-    }
-
-    const exactCityCandidates = this.uniqueStrings([
-      branchCityName,
+    diagnostics.attemptedMatchingRules.push('canonical_city_resolution');
+    const canonicalCityResolution = await this.resolveCanonicalVehicleCity({
+      requestedVehicleOrigin,
       branchLocation,
-      normalizedBranchLocation === 'bangalore' ? 'Bengaluru' : '',
-      normalizedBranchCity === 'bangalore' ? 'Bangalore' : '',
-    ]);
+      branchCityId,
+      branchCityName,
+    });
+    diagnostics.canonicalCityResolution = canonicalCityResolution.diagnostics;
 
-    for (const cityName of exactCityCandidates) {
-      if (!cityName) continue;
-
-      diagnostics.attemptedMatchingRules.push(`city_exact_source_location:${cityName}`);
-      const exactSourceLocationRows = await this.prisma.dvi_stored_locations.findMany({
-        where: {
-          source_location: cityName,
-          deleted: 0,
-          status: 1,
-        },
-        orderBy: { location_ID: 'desc' },
-        select: {
-          location_ID: true,
-          source_location: true,
-          source_location_city: true,
-          source_location_lattitude: true,
-          source_location_longitude: true,
-        },
-        take: 5,
+    if (canonicalCityResolution.canonicalCity) {
+      diagnostics.attemptedMatchingRules.push('canonical_city_stored_location_lookup');
+      const storedLocationLookup = await this.findStoredLocationIdForCanonicalCity({
+        canonicalCity: canonicalCityResolution.canonicalCity,
+        rawCityCandidates: this.uniqueStrings([
+          requestedVehicleOrigin,
+          branchCityName,
+          branchLocation,
+        ]),
       });
+      diagnostics.storedLocationLookup = storedLocationLookup.diagnostics;
 
-      const deterministicExactSourceLocationId = this.pickDeterministicSourceRow(
-        exactSourceLocationRows as any,
-      );
-      if (deterministicExactSourceLocationId > 0) {
-        diagnostics.resolvedBy = 'city_exact_source_location';
-        diagnostics.matchedCityName = cityName;
+      if (storedLocationLookup.vehicleLocationId > 0) {
+        diagnostics.resolvedBy = 'canonical_city_stored_location_lookup';
         return {
-          vehicleLocationId: deterministicExactSourceLocationId,
+          vehicleLocationId: storedLocationLookup.vehicleLocationId,
           diagnostics,
         };
-      }
-
-      if (exactSourceLocationRows.length > 1) {
-        diagnostics.ambiguousMatches = {
-          rule: 'city_exact_source_location',
-          cityName,
-          rows: exactSourceLocationRows.map((row) => ({
-            location_ID: Number(row.location_ID),
-            source_location: row.source_location,
-            source_location_city: row.source_location_city,
-          })),
-        };
-        return { vehicleLocationId: 0, diagnostics };
-      }
-
-      diagnostics.attemptedMatchingRules.push(`city_exact_source_location_city:${cityName}`);
-      const exactSourceCityRows = await this.prisma.dvi_stored_locations.findMany({
-        where: {
-          source_location_city: cityName,
-          deleted: 0,
-          status: 1,
-        },
-        orderBy: { location_ID: 'desc' },
-        select: {
-          location_ID: true,
-          source_location: true,
-          source_location_city: true,
-          source_location_lattitude: true,
-          source_location_longitude: true,
-        },
-        take: 25,
-      });
-
-      const exactNormalizedSourceRows = exactSourceCityRows.filter((row) => {
-        const sourceLocationNorm = this.normalizeCityToken(
-          String(row.source_location ?? ''),
-        );
-        const sourceCityNorm = this.normalizeCityToken(
-          String(row.source_location_city ?? ''),
-        );
-
-        return (
-          sourceLocationNorm === normalizedBranchLocation ||
-          sourceLocationNorm === normalizedBranchCity ||
-          sourceCityNorm === normalizedBranchLocation ||
-          sourceCityNorm === normalizedBranchCity
-        );
-      });
-
-      const deterministicExactSourceCityId = this.pickDeterministicSourceRow(
-        exactNormalizedSourceRows as any,
-      );
-      if (deterministicExactSourceCityId > 0) {
-        diagnostics.resolvedBy = 'city_exact_source_location_city';
-        diagnostics.matchedCityName = cityName;
-        return {
-          vehicleLocationId: deterministicExactSourceCityId,
-          diagnostics,
-        };
-      }
-
-      if (exactNormalizedSourceRows.length > 1) {
-        diagnostics.ambiguousMatches = {
-          rule: 'city_exact_source_location_city',
-          cityName,
-          rows: exactNormalizedSourceRows.map((row) => ({
-            location_ID: Number(row.location_ID),
-            source_location: row.source_location,
-            source_location_city: row.source_location_city,
-          })),
-        };
-        return { vehicleLocationId: 0, diagnostics };
-      }
-    }
-
-    const normalizedCityCandidates = Array.from(
-      new Set(
-        [branchCityName, branchLocation]
-          .map((value) => this.normalizeCityToken(String(value ?? '')))
-          .filter(Boolean),
-      ),
-    );
-
-    for (const normalizedCandidate of normalizedCityCandidates) {
-      diagnostics.attemptedMatchingRules.push(
-        `city_exact_source_location_city:${normalizedCandidate}`,
-      );
-      const sourceCityMatches = await this.prisma.dvi_stored_locations.findMany({
-        where: {
-          deleted: 0,
-          status: 1,
-          source_location_city: {
-            contains: normalizedCandidate,
-          },
-        } as any,
-        select: {
-          location_ID: true,
-          source_location: true,
-          source_location_city: true,
-        },
-        orderBy: [{ source_location: 'asc' }, { location_ID: 'desc' }],
-        take: 25,
-      } as any);
-
-      const exactNormalizedSourceRows = sourceCityMatches.filter((row) => {
-        const sourceLocationNorm = this.normalizeCityToken(
-          String(row.source_location ?? ''),
-        );
-        const sourceCityNorm = this.normalizeCityToken(
-          String(row.source_location_city ?? ''),
-        );
-
-        return (
-          sourceLocationNorm === normalizedCandidate ||
-          sourceCityNorm === normalizedCandidate
-        );
-      });
-
-      if (exactNormalizedSourceRows.length === 1) {
-        diagnostics.resolvedBy = 'city_exact_source_location_city';
-        diagnostics.matchedNormalizedCity = normalizedCandidate;
-        return {
-          vehicleLocationId: Number(exactNormalizedSourceRows[0].location_ID),
-          diagnostics,
-        };
-      }
-
-      if (exactNormalizedSourceRows.length > 1) {
-        diagnostics.ambiguousMatches = {
-          rule: 'city_exact_source_location_city',
-          normalizedCandidate,
-          rows: exactNormalizedSourceRows.map((row) => ({
-            location_ID: Number(row.location_ID),
-            source_location: row.source_location,
-            source_location_city: row.source_location_city,
-          })),
-        };
-        return { vehicleLocationId: 0, diagnostics };
-      }
-
-      diagnostics.attemptedMatchingRules.push(
-        `city_exact_destination_location_city:${normalizedCandidate}`,
-      );
-      const destinationCityMatches = await this.prisma.dvi_stored_locations.findMany({
-        where: {
-          deleted: 0,
-          status: 1,
-          destination_location_city: {
-            contains: normalizedCandidate,
-          },
-        } as any,
-        select: {
-          location_ID: true,
-          source_location: true,
-          destination_location_city: true,
-        },
-        orderBy: [{ source_location: 'asc' }, { location_ID: 'desc' }],
-        take: 25,
-      } as any);
-
-      const exactNormalizedDestinationRows = destinationCityMatches.filter((row) => {
-        const destinationCityNorm = this.normalizeCityToken(
-          String(row.destination_location_city ?? ''),
-        );
-
-        return destinationCityNorm === normalizedCandidate;
-      });
-
-      if (exactNormalizedDestinationRows.length === 1) {
-        diagnostics.resolvedBy = 'city_exact_destination_location_city';
-        diagnostics.matchedNormalizedCity = normalizedCandidate;
-        return {
-          vehicleLocationId: Number(exactNormalizedDestinationRows[0].location_ID),
-          diagnostics,
-        };
-      }
-
-      if (exactNormalizedDestinationRows.length > 1) {
-        diagnostics.ambiguousMatches = {
-          rule: 'city_exact_destination_location_city',
-          normalizedCandidate,
-          rows: exactNormalizedDestinationRows.map((row) => ({
-            location_ID: Number(row.location_ID),
-            source_location: row.source_location,
-            destination_location_city: row.destination_location_city,
-          })),
-        };
-        return { vehicleLocationId: 0, diagnostics };
       }
     }
 

@@ -12,6 +12,7 @@ import {
   EligibleVehicleTypesDto,
   EligibleVehicleTypesResponseDto,
 } from './dto/eligible-vehicle-types.dto';
+import { normalizeCityName } from '../itineraries/utils/city-normalization.util';
 
 export type SimpleOption = {
   id: string;
@@ -36,18 +37,6 @@ export type MealPlanOption = {
 };
 
 type LocationType = 'source' | 'destination';
-
-type StoredLocationMappingRow = {
-  source_location: string | null;
-  source_location_city: string | null;
-  destination_location: string | null;
-  destination_location_city: string | null;
-};
-
-type StoredLocationMaps = {
-  exact: Map<string, string>;
-  normalized: Map<string, string>;
-};
 
 type ResolvedCityRow = {
   id: number;
@@ -159,94 +148,36 @@ export class ItineraryDropdownsService {
     return result;
   }
 
-  /**
-   * Get locations to eligible cities mapping from dvi_stored_locations
-   * Searches both source_location and destination_location fields
-   */
-  private async getLocationsToCitiesMapping(): Promise<StoredLocationMaps> {
-    const exact = new Map<string, string>();
-    const normalized = new Map<string, string>();
+  private resolveDirectCityCandidates(value: string): string[] {
+    const trimmed = String(value ?? '').trim();
+    if (!trimmed) return [];
 
-    const rows = await this.prisma.dvi_stored_locations.findMany({
-      where: {
-        deleted: 0,
-        status: 1,
-      } as any,
-      select: {
-        source_location: true,
-        source_location_city: true,
-        destination_location: true,
-        destination_location_city: true,
-      },
-    } as any);
+    const firstToken = this.extractFirstCityToken(trimmed);
+    const normalizedFull = normalizeCityName(trimmed);
+    const normalizedToken = normalizeCityName(firstToken);
 
-    for (const row of rows as StoredLocationMappingRow[]) {
-      const sourceLocation = String(row.source_location ?? '').trim();
-      const sourceCity = String(row.source_location_city ?? '').trim();
-      const destinationLocation = String(row.destination_location ?? '').trim();
-      const destinationCity = String(row.destination_location_city ?? '').trim();
-
-      if (sourceLocation && sourceCity) {
-        exact.set(sourceLocation, sourceCity);
-        normalized.set(this.normalizeLocationKey(sourceLocation), sourceCity);
-      }
-
-      if (destinationLocation && destinationCity) {
-        exact.set(destinationLocation, destinationCity);
-        normalized.set(
-          this.normalizeLocationKey(destinationLocation),
-          destinationCity,
-        );
-      }
-    }
-
-    return { exact, normalized };
+    return this.buildUniqueNormalizedStrings([
+      normalizedFull,
+      normalizedToken,
+      firstToken,
+    ]);
   }
 
-  /**
-   * Convert location names to eligible city names
-   * Uses dvi_stored_locations mapping
-   */
   private async convertLocationsToEligibleCities(
     locations: string[],
   ): Promise<string[]> {
-    const mapping = await this.getLocationsToCitiesMapping();
     const uniqueCities = new Set<string>();
 
     for (const loc of locations) {
       const trimmedLoc = loc.trim();
       if (trimmedLoc.length === 0) continue;
 
-      const candidates = this.buildLocationCandidateValues(trimmedLoc);
-      let resolvedCity = '';
-
+      const candidates = this.resolveDirectCityCandidates(trimmedLoc);
       for (const candidate of candidates) {
-        const exactMatch = mapping.exact.get(candidate);
-        if (exactMatch) {
-          resolvedCity = exactMatch.trim();
-          break;
-        }
-
-        const normalizedMatch = mapping.normalized.get(
-          this.normalizeLocationKey(candidate),
-        );
-        if (normalizedMatch) {
-          resolvedCity = normalizedMatch.trim();
-          break;
+        if (candidate) {
+          uniqueCities.add(candidate);
         }
       }
-
-      if (resolvedCity) {
-        uniqueCities.add(resolvedCity);
-        continue;
-      }
-
-      const firstToken = this.extractFirstCityToken(trimmedLoc);
-      if (firstToken) {
-        uniqueCities.add(firstToken);
-      }
-
-      uniqueCities.add(trimmedLoc);
     }
 
     return Array.from(uniqueCities);
@@ -307,7 +238,7 @@ export class ItineraryDropdownsService {
     const candidates = this.buildUniqueNormalizedStrings([
       ...cityNames,
       ...originalLocations.flatMap((location) =>
-        this.buildLocationCandidateValues(location),
+        this.resolveDirectCityCandidates(location),
       ),
     ]);
 

@@ -2,6 +2,11 @@
 // Helper functions to match PHP vehicle calculation logic
 
 import { PrismaClient } from '@prisma/client';
+import {
+  buildCityLookupCandidates,
+  normalizeCityName,
+  resolveCityRecordByName,
+} from '../utils/city-normalization.util';
 
 function toNum(v: any): number {
   const n = typeof v === 'number' ? v : Number(String(v ?? '').trim());
@@ -9,17 +14,10 @@ function toNum(v: any): number {
 }
 
 function normalizeCityToken(value: string): string {
-  const base = String(value || '').toLowerCase().trim();
+  const base = String(value || '').trim();
   if (!base) return '';
-
   const firstPart = base.split(',')[0] || base;
-  const cleaned = firstPart
-    .replace(/\b(international|domestic|airport|railway|station|bus|stand|hotel|lodge|temple|mall|palace|park|garden|museum|planetarium|aquarium)\b/g, ' ')
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  return cleaned;
+  return normalizeCityName(firstPart);
 }
 
 export interface VehicleCalculationContext {
@@ -96,6 +94,16 @@ export interface RouteCalculationResult {
   TOTAL_LOCAL_EXTRA_HOURS: number;
   TOTAL_LOCAL_EXTRA_HOUR_CHARGES: number;
   TOLL_BREAKUP?: Array<{ label: string; charge: number }>;
+  PICKUP_DEBUG?: {
+    vehicleOrigin: string;
+    pickupFrom: string;
+    pickupTo: string;
+    matchedStoredLocationId: number | null;
+    matchedStoredLocationSource: string | null;
+    matchedStoredLocationDestination: string | null;
+    matchedStoredLocationDistance: number | null;
+    calculationSource: 'stored_location' | 'haversine' | 'fallback' | 'existing_db' | 'unknown';
+  };
 }
 
 export interface VendorEligibleTotals {
@@ -215,7 +223,38 @@ function locationCandidates(value: string): string[] {
     raw,
     raw.split('|')[0]?.trim() || '',
     raw.split(',')[0]?.trim() || '',
+    raw.split('-')[0]?.trim() || '',
   ].filter(Boolean)));
+}
+
+async function resolveCityIdByLabel(prisma: any, value: string): Promise<number> {
+  try {
+    const city = await resolveCityRecordByName(prisma, value);
+    return Number(city?.id || 0);
+  } catch (error) {
+    console.error('[resolveCityIdByLabel] Error:', error);
+    return 0;
+  }
+}
+
+async function resolveCityNameById(prisma: any, cityId: number): Promise<string> {
+  const id = Number(cityId || 0);
+  if (!id) return '';
+
+  try {
+    const row = await prisma.dvi_cities.findFirst({
+      where: {
+        id,
+        status: 1,
+        deleted: { in: [0, 1] },
+      },
+      select: { name: true },
+    });
+    return String(row?.name ?? '').trim();
+  } catch (error) {
+    console.error('[resolveCityNameById] Error:', error);
+    return '';
+  }
 }
 
 function buildLocationMatchConditions(sourceLocation: string, destinationLocation: string) {
@@ -431,6 +470,9 @@ export async function getLocationIdFromSourceDest(
   destination_location: string
 ): Promise<number> {
   try {
+    const sourceCityId = await resolveCityIdByLabel(prisma, source_location);
+    const destinationCityId = await resolveCityIdByLabel(prisma, destination_location);
+
     const exact = await prisma.dvi_stored_locations.findFirst({
       where: {
         source_location,
@@ -444,6 +486,23 @@ export async function getLocationIdFromSourceDest(
 
     if (exact?.location_ID) {
       return exact.location_ID;
+    }
+
+    if (sourceCityId > 0 && destinationCityId > 0) {
+      const cityPairRow = await prisma.dvi_stored_locations.findFirst({
+        where: {
+          deleted: 0,
+          status: 1,
+          source_city_id: sourceCityId,
+          destination_city_id: destinationCityId,
+        },
+        orderBy: { location_ID: 'desc' },
+        select: { location_ID: true },
+      });
+
+      if (cityPairRow?.location_ID) {
+        return cityPairRow.location_ID;
+      }
     }
 
     const sourceCityToken = normalizeCityToken(source_location);
@@ -685,14 +744,26 @@ export async function getStoredLocationCity(
   location_name: string
 ): Promise<string> {
   try {
+    const resolvedCity = await resolveCityRecordByName(prisma, location_name);
+    if (resolvedCity?.name) {
+      return resolvedCity.name;
+    }
+
     const exactSource = await prisma.dvi_stored_locations.findFirst({
       where: { 
         source_location: location_name,
         deleted: 0,
         status: 1
       },
-      select: { source_location_city: true }
+      select: { source_location_city: true, source_city_id: true }
     });
+    if (Number(exactSource?.source_city_id || 0) > 0) {
+      const sourceCityName = await resolveCityNameById(
+        prisma,
+        Number(exactSource?.source_city_id || 0),
+      );
+      if (sourceCityName) return sourceCityName;
+    }
     if (exactSource?.source_location_city) {
       return String(exactSource.source_location_city);
     }
@@ -703,8 +774,15 @@ export async function getStoredLocationCity(
         deleted: 0,
         status: 1,
       },
-      select: { destination_location_city: true },
+      select: { destination_location_city: true, destination_city_id: true },
     });
+    if (Number(exactDestination?.destination_city_id || 0) > 0) {
+      const destinationCityName = await resolveCityNameById(
+        prisma,
+        Number(exactDestination?.destination_city_id || 0),
+      );
+      if (destinationCityName) return destinationCityName;
+    }
     if (exactDestination?.destination_location_city) {
       return String(exactDestination.destination_location_city);
     }
@@ -756,6 +834,8 @@ export async function getLocationCoordinates(
   location_name: string
 ): Promise<{ latitude: number; longitude: number } | null> {
   try {
+    const resolvedCity = await resolveCityRecordByName(prisma, location_name);
+
     const exactSource = await prisma.dvi_stored_locations.findFirst({
       where: {
         source_location: location_name,
@@ -796,6 +876,37 @@ export async function getLocationCoordinates(
       };
     }
 
+    if (resolvedCity?.id) {
+      const cityRoute = await prisma.dvi_stored_locations.findFirst({
+        where: {
+          deleted: 0,
+          status: 1,
+          OR: [
+            {
+              source_city_id: resolvedCity.id,
+              destination_city_id: resolvedCity.id,
+            },
+            {
+              source_location_city: resolvedCity.name,
+              destination_location_city: resolvedCity.name,
+            },
+          ],
+        } as any,
+        orderBy: { location_ID: 'desc' },
+        select: {
+          source_location_lattitude: true,
+          source_location_longitude: true,
+        },
+      });
+
+      if (cityRoute) {
+        return {
+          latitude: parseFloat(cityRoute.source_location_lattitude || '0'),
+          longitude: parseFloat(cityRoute.source_location_longitude || '0'),
+        };
+      }
+    }
+
     const locationToken = String(location_name || '').split(',')[0]?.trim() || String(location_name || '').trim();
     if (locationToken) {
       const fuzzySource = await prisma.dvi_stored_locations.findFirst({
@@ -832,37 +943,82 @@ export async function getLocationCoordinates(
  */
 export async function getVehicleLocationDetails(
   prisma: any,
-  vehicle_location_id: number
+  vehicle_location_id: number,
+  fallbackOrigin?: string,
+  fallbackCity?: string,
 ): Promise<{
   origin: string;
   city: string;
   latitude: number;
   longitude: number;
 }> {
-  if (!vehicle_location_id || vehicle_location_id === 0) {
-    return { origin: '', city: '', latitude: 0, longitude: 0 };
-  }
+  const normalizedFallbackOrigin = String(fallbackOrigin || '').trim();
+  const normalizedFallbackCity = String(fallbackCity || '').trim();
 
   try {
-    const result = await prisma.dvi_stored_locations.findUnique({
-      where: { location_ID: BigInt(vehicle_location_id) },
-      select: {
-        source_location: true,
-        source_location_city: true,
-        source_location_lattitude: true,
-        source_location_longitude: true
-      }
-    });
+    const result =
+      vehicle_location_id && vehicle_location_id !== 0
+        ? await prisma.dvi_stored_locations.findUnique({
+            where: { location_ID: BigInt(vehicle_location_id) },
+            select: {
+              source_location: true,
+              source_location_city: true,
+              source_city_id: true,
+              source_location_lattitude: true,
+              source_location_longitude: true
+            }
+          })
+        : null;
+
+    const canonicalCityName =
+      Number(result?.source_city_id || 0) > 0
+        ? await resolveCityNameById(prisma, Number(result?.source_city_id || 0))
+        : '';
+
+    const storedOrigin = String(result?.source_location || '').trim();
+    const storedCity = canonicalCityName || String(result?.source_location_city || '').trim();
+    const storedLatitude = parseFloat(result?.source_location_lattitude || '0');
+    const storedLongitude = parseFloat(result?.source_location_longitude || '0');
+
+    if (storedOrigin && hasUsableCoordinates(storedLatitude, storedLongitude)) {
+      return {
+        origin: storedOrigin,
+        city: storedCity,
+        latitude: storedLatitude,
+        longitude: storedLongitude,
+      };
+    }
+
+    const fallbackLookupName = normalizedFallbackOrigin || normalizedFallbackCity;
+    const fallbackCoordinates = fallbackLookupName
+      ? await getLocationCoordinates(prisma, fallbackLookupName)
+      : null;
+    const fallbackLatitude = Number(fallbackCoordinates?.latitude || 0);
+    const fallbackLongitude = Number(fallbackCoordinates?.longitude || 0);
+
+    if (fallbackLookupName && hasUsableCoordinates(fallbackLatitude, fallbackLongitude)) {
+      return {
+        origin: normalizedFallbackOrigin || fallbackLookupName,
+        city: normalizedFallbackCity || fallbackLookupName,
+        latitude: fallbackLatitude,
+        longitude: fallbackLongitude,
+      };
+    }
 
     return {
-      origin: result?.source_location ?? '',
-      city: result?.source_location_city ?? '',
-      latitude: parseFloat(result?.source_location_lattitude || '0'),
-      longitude: parseFloat(result?.source_location_longitude || '0')
+      origin: storedOrigin || normalizedFallbackOrigin,
+      city: storedCity || normalizedFallbackCity,
+      latitude: 0,
+      longitude: 0,
     };
   } catch (error) {
     console.error('[getVehicleLocationDetails] Error:', error);
-    return { origin: '', city: '', latitude: 0, longitude: 0 };
+    return {
+      origin: normalizedFallbackOrigin,
+      city: normalizedFallbackCity,
+      latitude: 0,
+      longitude: 0,
+    };
   }
 }
 
@@ -1306,6 +1462,12 @@ function calculateHaversineKm(fromLat: number, fromLng: number, toLat: number, t
       Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
+}
+
+function hasUsableCoordinates(lat: number | null | undefined, lng: number | null | undefined): boolean {
+  const latNum = Number(lat ?? 0);
+  const lngNum = Number(lng ?? 0);
+  return Number.isFinite(latNum) && Number.isFinite(lngNum) && Math.abs(latNum) > 0.000001 && Math.abs(lngNum) > 0.000001;
 }
 
 function formatMinutesToDbDuration(minutes: number): string {
@@ -1843,16 +2005,37 @@ export async function calculateRouteVehicleDetails(
   const pickupFromCoords =
     travel_type === 1 && route_count > 1
       ? (await getLocationCoordinates(prisma, pickupFromName))
-      : {
-          latitude: ctx.vehicle_origin_latitude,
-          longitude: ctx.vehicle_origin_longitude,
-        };
+      : (
+          hasUsableCoordinates(ctx.vehicle_origin_latitude, ctx.vehicle_origin_longitude)
+            ? {
+                latitude: Number(ctx.vehicle_origin_latitude || 0),
+                longitude: Number(ctx.vehicle_origin_longitude || 0),
+              }
+            : (pickupFromName ? await getLocationCoordinates(prisma, pickupFromName) : null)
+        );
 
   const dropFromNameFinal = dropSourceName;
   const dropToNameFinal = ctx.vehicle_origin;
+  const fallbackVehicleOriginCoords =
+    hasUsableCoordinates(ctx.vehicle_origin_latitude, ctx.vehicle_origin_longitude)
+      ? {
+          latitude: Number(ctx.vehicle_origin_latitude || 0),
+          longitude: Number(ctx.vehicle_origin_longitude || 0),
+        }
+      : (ctx.vehicle_origin ? await getLocationCoordinates(prisma, ctx.vehicle_origin) : null);
   const dropToCoordsFinal = {
-    latitude: ctx.vehicle_origin_latitude,
-    longitude: ctx.vehicle_origin_longitude,
+    latitude: Number(fallbackVehicleOriginCoords?.latitude || 0),
+    longitude: Number(fallbackVehicleOriginCoords?.longitude || 0),
+  };
+  let pickupDebug: RouteCalculationResult['PICKUP_DEBUG'] = {
+    vehicleOrigin: String(ctx.vehicle_origin || ''),
+    pickupFrom: String(pickupFromName || ''),
+    pickupTo: String(pickupToName || ''),
+    matchedStoredLocationId: null,
+    matchedStoredLocationSource: null,
+    matchedStoredLocationDestination: null,
+    matchedStoredLocationDistance: null,
+    calculationSource: 'unknown',
   };
 
   // Operational rule: pickup applies per route rules; local routes can include a daily shed return drop.
@@ -1875,6 +2058,10 @@ export async function calculateRouteVehicleDetails(
         const durationMinutes = Math.ceil((billableKm / LOCAL_TRAFFIC_AVG_SPEED_KMPH) * 60);
         TOTAL_PICKUP_KM = String(billableKm.toFixed(2));
         TOTAL_PICKUP_DURATION = formatMinutesToDbDuration(durationMinutes);
+        pickupDebug = {
+          ...pickupDebug,
+          calculationSource: 'haversine',
+        };
         if (debugLocalFix) {
           console.log('[LOCAL_PICKUP_DROP_FIX_INPUT]', {
             planId: itinerary_plan_ID, routeId: route.itinerary_route_ID, route_count, total_routes, travel_type,
@@ -1912,6 +2099,13 @@ export async function calculateRouteVehicleDetails(
 
         TOTAL_PICKUP_KM = String(pickupKm.toFixed(2));
         TOTAL_PICKUP_DURATION = secondsToHms(Math.max(storedSeconds, minSecondsBySpeed));
+        pickupDebug = {
+          ...pickupDebug,
+          matchedStoredLocationSource: route.location_name,
+          matchedStoredLocationDestination: route.location_name,
+          matchedStoredLocationDistance: pickupKm,
+          calculationSource: 'stored_location',
+        };
         if (debugInsert) {
           console.log('[PICKUP_DECISION]', {
             branch_name: 'local_self_pickup',
@@ -1929,7 +2123,14 @@ export async function calculateRouteVehicleDetails(
     const isFirstLocalArrivalLeg =
       travel_type === 1 && route_count === 1;
 
-    if (toNum(TOTAL_PICKUP_KM) <= 0 && isFirstLocalArrivalLeg && pickupTargetCoords && pickupFromCoords) {
+    if (
+      toNum(TOTAL_PICKUP_KM) <= 0 &&
+      isFirstLocalArrivalLeg &&
+      pickupTargetCoords &&
+      pickupFromCoords &&
+      hasUsableCoordinates(Number(pickupFromCoords.latitude || 0), Number(pickupFromCoords.longitude || 0)) &&
+      hasUsableCoordinates(Number(pickupTargetCoords.latitude || 0), Number(pickupTargetCoords.longitude || 0))
+    ) {
       const directLeg = calculateDistanceAndDuration(
         Number(pickupFromCoords.latitude || 0),
         Number(pickupFromCoords.longitude || 0),
@@ -1940,8 +2141,17 @@ export async function calculateRouteVehicleDetails(
       );
       TOTAL_PICKUP_KM = String(toNum(directLeg.distance).toFixed(2));
       TOTAL_PICKUP_DURATION = parsePhpDurationToHms(directLeg.duration);
+      pickupDebug = {
+        ...pickupDebug,
+        calculationSource: 'haversine',
+      };
     } else if (toNum(TOTAL_PICKUP_KM) <= 0) {
-      if (pickupTargetCoords && pickupFromCoords) {
+      if (
+        pickupTargetCoords &&
+        pickupFromCoords &&
+        hasUsableCoordinates(Number(pickupFromCoords.latitude || 0), Number(pickupFromCoords.longitude || 0)) &&
+        hasUsableCoordinates(Number(pickupTargetCoords.latitude || 0), Number(pickupTargetCoords.longitude || 0))
+      ) {
         const pickupDistance = await getLegDistanceAndDuration(
           prisma,
           pickupFromName,
@@ -1960,8 +2170,16 @@ export async function calculateRouteVehicleDetails(
         }
         TOTAL_PICKUP_KM = String(pickupKm.toFixed(2));
         TOTAL_PICKUP_DURATION = pickupDistance.duration;
+        pickupDebug = {
+          ...pickupDebug,
+          calculationSource: 'existing_db',
+        };
       } else if (travel_type === 1 && route_count > 1) {
         TOTAL_PICKUP_KM = String(toNum(route.no_of_km).toFixed(2));
+        pickupDebug = {
+          ...pickupDebug,
+          calculationSource: 'fallback',
+        };
       }
     }
   }
@@ -2726,5 +2944,6 @@ export async function calculateRouteVehicleDetails(
     TOTAL_LOCAL_EXTRA_HOURS,
     TOTAL_LOCAL_EXTRA_HOUR_CHARGES,
     TOLL_BREAKUP: tollBreakup,
+    PICKUP_DEBUG: pickupDebug,
   };
 }

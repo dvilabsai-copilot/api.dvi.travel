@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
+import { resolveCityRecordByName } from '../itineraries/utils/city-normalization.util';
 import { VehicleAvailabilityQueryDto } from './dto/vehicle-availability-query.dto';
 import {
   VehicleAvailabilityResponseDto,
@@ -13,6 +14,14 @@ type Nullable<T> = T | null;
 @Injectable()
 export class VehicleAvailabilityService {
   constructor(private readonly prisma: PrismaService) {}
+
+  private async resolveCityByLabel(labelRaw: string): Promise<{
+    id: number;
+    state_id: number | null;
+    name: string;
+  } | null> {
+    return resolveCityRecordByName(this.prisma, labelRaw);
+  }
 
   // ===========================================================================
   // DATE HELPERS
@@ -608,15 +617,7 @@ export class VehicleAvailabilityService {
 
     if (!label) return empty;
 
-    const city = await this.prisma.dvi_cities.findFirst({
-      where: {
-        status: 1,
-        deleted: { in: [0, 1] },
-        name: { contains: label }, // rely on DB collation for case-insensitive
-      },
-      select: { id: true, state_id: true, name: true },
-      orderBy: { name: 'asc' },
-    });
+    const city = await this.resolveCityByLabel(label);
 
     if (!city) return empty;
 
@@ -679,10 +680,7 @@ async createVehicle(dto: any) {
   // optional resolve origin → id (city)
   let vehicle_location_id: number | null = null;
   try {
-    const city = await this.prisma.dvi_cities.findFirst({
-      where: { name: vehicle_origin, status: 1, deleted: { in: [0, 1] } },
-      select: { id: true },
-    });
+    const city = await this.resolveCityByLabel(vehicle_origin);
     vehicle_location_id = city?.id ?? null;
   } catch {
     vehicle_location_id = null;

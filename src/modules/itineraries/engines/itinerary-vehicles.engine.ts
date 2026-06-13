@@ -1675,7 +1675,9 @@ export class ItineraryVehiclesEngine {
         const vehicleLocationId = vehicle.vehicle_location_id || 0;
         const vehicleLocationDetails = await getVehicleLocationDetails(
           tx,
-          vehicleLocationId
+          vehicleLocationId,
+          String((e as any).vehicle_orign || '').trim(),
+          String((e as any).vehicle_orign || '').trim(),
         );
 
         // Build calculation context
@@ -1952,6 +1954,52 @@ export class ItineraryVehiclesEngine {
             status: 1,
             deleted: 0,
           };
+          const pickupDebug = (result as any).PICKUP_DEBUG || {};
+          const insertDebugPayload = {
+            planId,
+            itineraryPlanVendorEligibleId: eligibleId,
+            vendorId,
+            vendorBranchId,
+            vendorVehicleTypeId: vvtId,
+            vehicleId,
+            vehicleOrigin: String(calcCtx.vehicle_origin || ''),
+            routeId,
+            routeDate: routeDate.toISOString(),
+            routeFrom: String(fromLoc || ''),
+            routeTo: String(toLoc || ''),
+            pickupFrom: String(pickupDebug?.pickupFrom || ''),
+            pickupTo: String(pickupDebug?.pickupTo || ''),
+            total_pickup_km: detailsData.total_pickup_km,
+            total_pickup_duration: toTimeString(detailsData.total_pickup_duration),
+            total_running_km: detailsData.total_running_km,
+            total_siteseeing_km: detailsData.total_siteseeing_km,
+            total_drop_km: detailsData.total_drop_km,
+            total_travelled_km: detailsData.total_travelled_km,
+            matchedStoredLocationId: pickupDebug?.matchedStoredLocationId ?? null,
+            matchedStoredLocationSource: pickupDebug?.matchedStoredLocationSource ?? null,
+            matchedStoredLocationDestination: pickupDebug?.matchedStoredLocationDestination ?? null,
+            matchedStoredLocationDistance: pickupDebug?.matchedStoredLocationDistance ?? null,
+            calculationSource: pickupDebug?.calculationSource ?? 'unknown',
+          };
+          console.log('[VEHICLE_DETAIL_INSERT_DEBUG]', insertDebugPayload);
+          const pickupKmNumeric = Number(result.TOTAL_PICKUP_KM || 0);
+          if (pickupKmNumeric > 1000) {
+            console.error('[VEHICLE_PICKUP_KM_SUSPICIOUS]', insertDebugPayload);
+            const strictVehicleKmValidation =
+              String(process.env.STRICT_VEHICLE_KM_VALIDATION || '').trim() === '1';
+            const reliableFallbackExists = ['stored_location', 'haversine', 'existing_db'].includes(
+              String(pickupDebug?.calculationSource || 'unknown'),
+            );
+            if (strictVehicleKmValidation) {
+              throw new Error(
+                `Suspicious pickup KM ${pickupKmNumeric} for plan ${planId}, route ${routeId}, eligible ${eligibleId}`,
+              );
+            }
+            if (!reliableFallbackExists) {
+              detailsData.total_pickup_km = '0.00';
+              detailsData.total_pickup_duration = null;
+            }
+          }
 
           this.logSql(
             "VENDOR_VEHICLE_DETAILS_INSERT",

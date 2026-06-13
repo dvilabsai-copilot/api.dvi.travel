@@ -4895,11 +4895,13 @@ model dvi_stored_locations {
   source_location_lattitude      String    @db.LongText
   source_location_longitude      String    @db.LongText
   source_location_city           String    @db.LongText
+  source_city_id                 Int?
   source_location_state          String?   @db.LongText
   destination_location           String    @db.LongText
   destination_location_lattitude String    @db.LongText
   destination_location_longitude String    @db.LongText
   destination_location_city      String    @db.LongText
+  destination_city_id            Int?
   destination_location_state     String?   @db.LongText
   distance                       Float     @default(0)
   duration                       String?   @db.VarChar(100)
@@ -4923,6 +4925,7 @@ model dvi_stored_locations {
   @@index([location_description(length: 191)], map: "idx_dvi_stored_locations_location_description")
   @@index([source_location(length: 191)], map: "idx_dvi_stored_locations_source_location")
   @@index([source_location_city(length: 191)], map: "idx_dvi_stored_locations_source_location_city")
+  @@index([source_city_id], map: "idx_dvi_stored_locations_source_city_id")
   @@index([source_location_state(length: 191)], map: "idx_dvi_stored_locations_source_location_state")
   @@index([status], map: "idx_dvi_stored_locations_status")
   @@index([updatedon], map: "idx_dvi_stored_locations_updatedon")
@@ -4933,6 +4936,8 @@ model dvi_stored_locations {
   @@index([status], map: "idx_stored_locations_status")
   @@index([source_location(length: 191)], map: "source_location_2")
   @@index([deleted, status, source_location(length: 100), destination_location(length: 100)], map: "idx_location_lookup_composite")
+  @@index([source_city_id, destination_city_id], map: "idx_location_lookup_city_pair")
+  @@index([destination_city_id], map: "idx_dvi_stored_locations_destination_city_id")
   @@index([destination_location_lattitude(length: 191)], map: "idx_dvi_stored_locations_destination_location_lattitude")
   @@index([destination_location_longitude(length: 191)], map: "idx_dvi_stored_locations_destination_location_longitude")
   @@index([source_location_lattitude(length: 191)], map: "idx_dvi_stored_locations_source_location_lattitude")
