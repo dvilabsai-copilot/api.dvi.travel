@@ -1,0 +1,334 @@
+{
+  "_instructions": "Fill verified dvi_cities.id values for these normalized keys in stored-location-city-id-map.json. Counts come from the latest dry run of scripts/backfill-stored-location-city-ids.ts.",
+  "_generated_at": "2026-06-13",
+  "topUnresolvedCities": [
+    {
+      "key": "tirupati",
+      "displayName": "Tirupati",
+      "sourceRowCount": 3666,
+      "destinationRowCount": 3629,
+      "suggestedAlias": "Tirupathi",
+      "cityId": null
+    },
+    {
+      "key": "mangaluru",
+      "displayName": "Mangaluru",
+      "sourceRowCount": 2695,
+      "destinationRowCount": 2770,
+      "suggestedAlias": "Mangalore",
+      "cityId": null
+    },
+    {
+      "key": "kannankode",
+      "displayName": "kannankode",
+      "sourceRowCount": 2387,
+      "destinationRowCount": 2543,
+      "suggestedAlias": "Kannankode",
+      "cityId": null
+    },
+    {
+      "key": "madurai",
+      "displayName": "Madurai",
+      "sourceRowCount": 2304,
+      "destinationRowCount": 2313,
+      "suggestedAlias": "Madurai",
+      "cityId": null
+    },
+    {
+      "key": "coimbatore",
+      "displayName": "Coimbatore",
+      "sourceRowCount": 2194,
+      "destinationRowCount": 2161,
+      "suggestedAlias": "Coimbatore",
+      "cityId": null
+    },
+    {
+      "key": "bidar",
+      "displayName": "Bidar",
+      "sourceRowCount": 2055,
+      "destinationRowCount": 2055,
+      "suggestedAlias": "Bidar",
+      "cityId": null
+    },
+    {
+      "key": "visakhapatnam",
+      "displayName": "Visakhapatnam",
+      "sourceRowCount": 2049,
+      "destinationRowCount": 2047,
+      "suggestedAlias": "Vizag",
+      "cityId": null
+    },
+    {
+      "key": "ramanathapuram",
+      "displayName": "Ramanathapuram",
+      "sourceRowCount": 1922,
+      "destinationRowCount": 1883,
+      "suggestedAlias": "Ramanathapuram",
+      "cityId": null
+    },
+    {
+      "key": "mysuru",
+      "displayName": "Mysuru",
+      "sourceRowCount": 1879,
+      "destinationRowCount": 1885,
+      "suggestedAlias": "Mysore",
+      "cityId": null
+    },
+    {
+      "key": "ballari",
+      "displayName": "Ballari",
+      "sourceRowCount": 1819,
+      "destinationRowCount": 1827,
+      "suggestedAlias": "Bellary",
+      "cityId": null
+    },
+    {
+      "key": "hubballi",
+      "displayName": "Hubballi",
+      "sourceRowCount": 1720,
+      "destinationRowCount": 1724,
+      "suggestedAlias": "Hubli",
+      "cityId": null
+    },
+    {
+      "key": "kannur",
+      "displayName": "Kannur",
+      "sourceRowCount": 1401,
+      "destinationRowCount": 1406,
+      "suggestedAlias": null,
+      "cityId": null
+    },
+    {
+      "key": "chidambaram",
+      "displayName": "Chidambaram",
+      "sourceRowCount": 1395,
+      "destinationRowCount": 1399,
+      "suggestedAlias": "Chidambaram",
+      "cityId": null
+    },
+    {
+      "key": "kumbakonam",
+      "displayName": "Kumbakonam",
+      "sourceRowCount": 1390,
+      "destinationRowCount": 1390,
+      "suggestedAlias": "Kumbakonam",
+      "cityId": null
+    },
+    {
+      "key": "shivamogga",
+      "displayName": "Shivamogga",
+      "sourceRowCount": 1379,
+      "destinationRowCount": 1371,
+      "suggestedAlias": "Shimoga",
+      "cityId": null
+    },
+    {
+      "key": "kanchipuram",
+      "displayName": "Kanchipuram",
+      "sourceRowCount": 1301,
+      "destinationRowCount": 1309,
+      "suggestedAlias": "Kanchipuram",
+      "cityId": null
+    },
+    {
+      "key": "thiruchendur",
+      "displayName": "Thiruchendur",
+      "sourceRowCount": 1292,
+      "destinationRowCount": 1301,
+      "suggestedAlias": "Tiruchendur",
+      "cityId": null
+    },
+    {
+      "key": "kadapa",
+      "displayName": "Kadapa",
+      "sourceRowCount": 1268,
+      "destinationRowCount": 1278,
+      "suggestedAlias": "Cuddapah",
+      "cityId": null
+    },
+    {
+      "key": "thoothukudi",
+      "displayName": "Thoothukudi",
+      "sourceRowCount": 1220,
+      "destinationRowCount": 1223,
+      "suggestedAlias": "Tuticorin",
+      "cityId": null
+    },
+    {
+      "key": "vellore",
+      "displayName": "Vellore",
+      "sourceRowCount": 949,
+      "destinationRowCount": 955,
+      "suggestedAlias": "Vellore",
+      "cityId": null
+    },
+    {
+      "key": "dharmapuri",
+      "displayName": "Dharmapuri",
+      "sourceRowCount": 946,
+      "destinationRowCount": 954,
+      "suggestedAlias": null,
+      "cityId": null
+    },
+    {
+      "key": "palani",
+      "displayName": "Palani",
+      "sourceRowCount": 937,
+      "destinationRowCount": 945,
+      "suggestedAlias": null,
+      "cityId": null
+    },
+    {
+      "key": "thanjavur",
+      "displayName": "Thanjavur",
+      "sourceRowCount": 932,
+      "destinationRowCount": 932,
+      "suggestedAlias": "Tanjore",
+      "cityId": null
+    },
+    {
+      "key": "viluppuram",
+      "displayName": "Viluppuram",
+      "sourceRowCount": 928,
+      "destinationRowCount": 936,
+      "suggestedAlias": null,
+      "cityId": null
+    },
+    {
+      "key": "kovalam",
+      "displayName": "Kovalam",
+      "sourceRowCount": 927,
+      "destinationRowCount": 935,
+      "suggestedAlias": null,
+      "cityId": null
+    },
+    {
+      "key": "thiruvarur",
+      "displayName": "Thiruvarur",
+      "sourceRowCount": 924,
+      "destinationRowCount": 932,
+      "suggestedAlias": null,
+      "cityId": null
+    },
+    {
+      "key": "tirunelveli",
+      "displayName": "Tirunelveli",
+      "sourceRowCount": 916,
+      "destinationRowCount": 924,
+      "suggestedAlias": "Tirunelveli",
+      "cityId": null
+    },
+    {
+      "key": "kottar",
+      "displayName": "Kottar",
+      "sourceRowCount": 899,
+      "destinationRowCount": 907,
+      "suggestedAlias": null,
+      "cityId": null
+    },
+    {
+      "key": "orvakal",
+      "displayName": "Orvakal",
+      "sourceRowCount": 892,
+      "destinationRowCount": 900,
+      "suggestedAlias": null,
+      "cityId": null
+    },
+    {
+      "key": "ooty",
+      "displayName": "Ooty",
+      "sourceRowCount": 877,
+      "destinationRowCount": 885,
+      "suggestedAlias": "Udhagamandalam",
+      "cityId": null
+    },
+    {
+      "key": "arsikere",
+      "displayName": "Arsikere",
+      "sourceRowCount": 876,
+      "destinationRowCount": 884,
+      "suggestedAlias": null,
+      "cityId": null
+    },
+    {
+      "key": "mettupalayam",
+      "displayName": "Mettupalayam",
+      "sourceRowCount": 872,
+      "destinationRowCount": 880,
+      "suggestedAlias": null,
+      "cityId": null
+    },
+    {
+      "key": "pollachi",
+      "displayName": "Pollachi",
+      "sourceRowCount": 857,
+      "destinationRowCount": 865,
+      "suggestedAlias": null,
+      "cityId": null
+    },
+    {
+      "key": "mandya",
+      "displayName": "Mandya",
+      "sourceRowCount": 856,
+      "destinationRowCount": 864,
+      "suggestedAlias": null,
+      "cityId": null
+    },
+    {
+      "key": "tumakuru",
+      "displayName": "Tumakuru",
+      "sourceRowCount": 855,
+      "destinationRowCount": 863,
+      "suggestedAlias": "Tumkur",
+      "cityId": null
+    },
+    {
+      "key": "chamarajanagar",
+      "displayName": "Chamarajanagar",
+      "sourceRowCount": 847,
+      "destinationRowCount": 855,
+      "suggestedAlias": null,
+      "cityId": null
+    },
+    {
+      "key": "courtallam",
+      "displayName": "Courtallam",
+      "sourceRowCount": 840,
+      "destinationRowCount": 848,
+      "suggestedAlias": null,
+      "cityId": null
+    },
+    {
+      "key": "udupi",
+      "displayName": "Udupi",
+      "sourceRowCount": 838,
+      "destinationRowCount": 846,
+      "suggestedAlias": null,
+      "cityId": null
+    },
+    {
+      "key": "davanagere",
+      "displayName": "Davanagere",
+      "sourceRowCount": 835,
+      "destinationRowCount": 843,
+      "suggestedAlias": null,
+      "cityId": null
+    },
+    {
+      "key": "murdeshwar",
+      "displayName": "Murdeshwar",
+      "sourceRowCount": 834,
+      "destinationRowCount": 842,
+      "suggestedAlias": null,
+      "cityId": null
+    },
+    {
+      "key": "mahabalipuram",
+      "displayName": "Mahabalipuram",
+      "sourceRowCount": 833,
+      "destinationRowCount": 841,
+      "suggestedAlias": null,
+      "cityId": null
+    }
+  ]
+}

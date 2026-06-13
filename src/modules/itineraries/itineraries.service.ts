@@ -241,12 +241,12 @@ export class ItinerariesService {
     };
   }
 
-  private scheduleVehicleBuild(
+  private async buildVehiclesSynchronously(
     planId: number,
     vehicles: Array<{ vehicle_type_id: number; vehicle_count: number }>,
     userId: number,
     quoteId?: string,
-  ): void {
+  ): Promise<VehicleBuildStatus> {
     const debugVehicleTrace =
       process.env.DEBUG_DVI20260594_INSERT === 'true' ||
       process.env.DEBUG_VEHICLE_DUPLICATE_TRACE === 'true';
@@ -254,7 +254,7 @@ export class ItinerariesService {
     this.vehicleBuildScheduleCount.set(planId, scheduleCount);
     if (debugVehicleTrace) {
       const shortStack = (new Error().stack || '').split('\n').slice(1, 5).join(' | ');
-      console.log('[SCHEDULE_VEHICLE_BUILD_CALL]', { planId, timestamp: new Date().toISOString(), shortStack });
+      console.log('[SYNC_VEHICLE_BUILD_CALL]', { planId, timestamp: new Date().toISOString(), shortStack });
       console.log('[SCHEDULE_VEHICLE_BUILD_COUNT]', { planId, count: scheduleCount });
     }
     this.setVehicleBuildStatus(planId, 'PROCESSING', null);
@@ -267,79 +267,79 @@ export class ItinerariesService {
       });
     }
 
-    void (async () => {
-      try {
-        const jobStart = Date.now();
-        if (debugVehicleTrace) {
-          console.log('[ASYNC_VEHICLE_BUILD_START]', { planId, timestamp: new Date().toISOString() });
-        }
-
-        // Permit rows must exist before vehicle calculations read them.
-        console.log('[VEHICLE_BUILD_STAGE_START]', {
-          planId,
-          stage: 'prepare_plan_vehicle_rows',
-        });
-        await this.runVehicleBuildStageWithTimeout(
-          planId,
-          'prepare_plan_vehicle_rows',
-          () =>
-            this.prisma.$transaction(
-              async (tx) => {
-                await this.vehiclesEngine.rebuildPlanVehicles(planId, vehicles, tx, userId);
-              },
-              { timeout: 120000, maxWait: 20000 },
-            ),
-          130000,
-        );
-
-        console.log('[VEHICLE_BUILD_STAGE_START]', {
-          planId,
-          stage: 'rebuild_eligible_vendor_list',
-        });
-        await this.runVehicleBuildStageWithTimeout(
-          planId,
-          'rebuild_eligible_vendor_list',
-          () =>
-            this.itineraryVehiclesEngine.rebuildEligibleVendorList({
-              planId,
-              createdBy: userId,
-              beforeVehicleDetailsBuild: async ({ tx }) => {
-                await this.routeEngine.rebuildPermitCharges(tx, planId, userId);
-              },
-            }),
-          90000,
-        );
-
-        if (quoteId) {
-          console.log('[VEHICLE_BUILD_STAGE_START]', {
-            planId,
-            stage: 'auto_select_lowest_vehicle_vendors',
-          });
-          await this.runVehicleBuildStageWithTimeout(
-            planId,
-            'auto_select_lowest_vehicle_vendors',
-            () => this.autoSelectLowestVehicleVendors(planId, quoteId),
-            30000,
-          );
-        }
-
-        this.setVehicleBuildStatus(planId, 'READY', null);
-        if (debugVehicleTrace) {
-          console.log('[ASYNC_VEHICLE_BUILD_DONE]', { planId, durationMs: Date.now() - jobStart });
-        }
-        console.log('[PERF] asyncVehicleBuild total:', Date.now() - jobStart, 'ms', 'planId=', planId);
-      } catch (error: any) {
-        const message = String(error?.message || error || 'Vehicle build failed');
-        this.setVehicleBuildStatus(planId, 'FAILED', message);
-        if (debugVehicleTrace) {
-          console.log('[ASYNC_VEHICLE_BUILD_FAILED]', { planId, error: message });
-        }
-        console.error('[ItinerariesService] Async vehicle build failed:', {
-          planId,
-          message,
-        });
+    try {
+      const jobStart = Date.now();
+      if (debugVehicleTrace) {
+        console.log('[SYNC_VEHICLE_BUILD_START]', { planId, timestamp: new Date().toISOString() });
       }
-    })();
+
+      // Permit rows must exist before vehicle calculations read them.
+      console.log('[VEHICLE_BUILD_STAGE_START]', {
+        planId,
+        stage: 'prepare_plan_vehicle_rows',
+      });
+      await this.runVehicleBuildStageWithTimeout(
+        planId,
+        'prepare_plan_vehicle_rows',
+        () =>
+          this.prisma.$transaction(
+            async (tx) => {
+              await this.vehiclesEngine.rebuildPlanVehicles(planId, vehicles, tx, userId);
+            },
+            { timeout: 120000, maxWait: 20000 },
+          ),
+        130000,
+      );
+
+      console.log('[VEHICLE_BUILD_STAGE_START]', {
+        planId,
+        stage: 'rebuild_eligible_vendor_list',
+      });
+      await this.runVehicleBuildStageWithTimeout(
+        planId,
+        'rebuild_eligible_vendor_list',
+        () =>
+          this.itineraryVehiclesEngine.rebuildEligibleVendorList({
+            planId,
+            createdBy: userId,
+            beforeVehicleDetailsBuild: async ({ tx }) => {
+              await this.routeEngine.rebuildPermitCharges(tx, planId, userId);
+            },
+          }),
+        90000,
+      );
+
+      if (quoteId) {
+        console.log('[VEHICLE_BUILD_STAGE_START]', {
+          planId,
+          stage: 'auto_select_lowest_vehicle_vendors',
+        });
+        await this.runVehicleBuildStageWithTimeout(
+          planId,
+          'auto_select_lowest_vehicle_vendors',
+          () => this.autoSelectLowestVehicleVendors(planId, quoteId),
+          30000,
+        );
+      }
+
+      this.setVehicleBuildStatus(planId, 'READY', null);
+      if (debugVehicleTrace) {
+        console.log('[SYNC_VEHICLE_BUILD_DONE]', { planId, durationMs: Date.now() - jobStart });
+      }
+      console.log('[PERF] syncVehicleBuild total:', Date.now() - jobStart, 'ms', 'planId=', planId);
+      return this.getVehicleBuildStatus(planId);
+    } catch (error: any) {
+      const message = String(error?.message || error || 'Vehicle build failed');
+      this.setVehicleBuildStatus(planId, 'FAILED', message);
+      if (debugVehicleTrace) {
+        console.log('[SYNC_VEHICLE_BUILD_FAILED]', { planId, error: message });
+      }
+      console.error('[ItinerariesService] Sync vehicle build failed:', {
+        planId,
+        message,
+      });
+      throw error;
+    }
   }
 
   private async autoSelectLowestVehicleVendors(planId: number, quoteId: string): Promise<void> {
@@ -412,14 +412,12 @@ export class ItinerariesService {
       vehicle_count: Number(v.vehicle_count || 0),
     })).filter((v) => v.vehicle_type_id > 0 && v.vehicle_count > 0);
 
-    this.scheduleVehicleBuild(
+    return this.buildVehiclesSynchronously(
       normalizedPlanId,
       vehicles,
       userId,
       String(planRow.itinerary_quote_ID || ''),
     );
-
-    return this.getVehicleBuildStatus(normalizedPlanId);
   }
 
   /**
@@ -782,7 +780,7 @@ export class ItinerariesService {
         quoteId: planRow?.itinerary_quote_ID,
         routeIds: routes.map((r: any) => r.itinerary_route_ID),
         message:
-          "Plan created/updated with routes, travellers, hotspots, and hotels. Vehicle build runs post-commit.",
+          "Plan created/updated with routes, travellers, hotspots, and hotels.",
       };
     }, { timeout: 120000, maxWait: 20000 }); // Increased to 120s while we optimize further
 
@@ -799,14 +797,19 @@ export class ItinerariesService {
       });
     }
 
-    // Build vehicle pricing asynchronously after commit so createPlan returns quickly.
-    createPlanStage = 'post_transaction_vehicle_build_schedule';
-    this.scheduleVehicleBuild(
-      result.planId,
-      Array.isArray(dto.vehicles) ? dto.vehicles : [],
-      userId,
-      result?.quoteId ? String(result.quoteId) : undefined,
-    );
+    const shouldBuildVehicles =
+      Number(dto?.plan?.itinerary_preference || 0) === 2 ||
+      Number(dto?.plan?.itinerary_preference || 0) === 3;
+
+    if (shouldBuildVehicles) {
+      createPlanStage = 'post_transaction_vehicle_build_sync';
+      await this.buildVehiclesSynchronously(
+        result.planId,
+        Array.isArray(dto.vehicles) ? dto.vehicles : [],
+        userId,
+        result?.quoteId ? String(result.quoteId) : undefined,
+      );
+    }
 
     // Step 10: Persist a reusable template snapshot for this itinerary shape.
     createPlanStage = 'post_transaction_template_snapshot';
@@ -820,7 +823,7 @@ export class ItinerariesService {
 
     return {
       ...result,
-      vehicleBuildStatus: 'PROCESSING',
+      vehicleBuildStatus: shouldBuildVehicles ? 'READY' : undefined,
     };
     } catch (error: any) {
       const message = String(error?.message || error || 'Unknown createPlan failure');

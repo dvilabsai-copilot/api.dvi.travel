@@ -1,7 +1,10 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
-import { normalizeCityName } from '../itineraries/utils/city-normalization.util';
+import {
+  normalizeCityName,
+  resolveCityRecordByName,
+} from '../itineraries/utils/city-normalization.util';
 import {
   BetweenHotspotFiltersQueryDto,
   BetweenHotspotQueryDto,
@@ -19,6 +22,7 @@ type ListQuery = {
 type SourceLocationSeed = {
   source_location: string;
   source_location_city: string;
+  source_city_id?: number | null;
   source_location_state: string;
   source_location_lattitude: string;
   source_location_longitude: string;
@@ -87,11 +91,19 @@ export class LocationsService {
       location_ID: Number(row.location_ID),
       source_location: row.source_location || '',
       source_city: row.source_location_city || '',
+      source_city_id:
+        row.source_city_id !== undefined && row.source_city_id !== null
+          ? Number(row.source_city_id)
+          : null,
       source_state: row.source_location_state || '',
       source_latitude: String(row.source_location_lattitude || ''),
       source_longitude: String(row.source_location_longitude || ''),
       destination_location: row.destination_location || '',
       destination_city: row.destination_location_city || '',
+      destination_city_id:
+        row.destination_city_id !== undefined && row.destination_city_id !== null
+          ? Number(row.destination_city_id)
+          : null,
       destination_state: row.destination_location_state || '',
       destination_latitude: String(row.destination_location_lattitude || ''),
       destination_longitude: String(row.destination_location_longitude || ''),
@@ -216,6 +228,14 @@ const total = await this.prisma.dvi_stored_locations.count({ where });
 
   private parseBooleanQuery(value: unknown): boolean {
     return ['1', 'true', 'yes'].includes(String(value ?? '').trim().toLowerCase());
+  }
+
+  private async resolveCityIdByName(value: unknown): Promise<number | null> {
+    const city = await resolveCityRecordByName(
+      this.prisma,
+      this.normalizeLocationName(value),
+    );
+    return city?.id ?? null;
   }
 
   private canonicalCityKey(name: string): string {
@@ -731,6 +751,7 @@ const total = await this.prisma.dvi_stored_locations.count({ where });
     const newSourceSeed: SourceLocationSeed = {
       source_location: this.normalizeLocationName(payload?.source_location),
       source_location_city: this.normalizeLocationName(payload?.source_city),
+      source_city_id: await this.resolveCityIdByName(payload?.source_city),
       source_location_state: this.normalizeLocationName(payload?.source_state),
       source_location_lattitude: sourceLat.toFixed(6),
       source_location_longitude: sourceLng.toFixed(6),
@@ -742,12 +763,13 @@ const total = await this.prisma.dvi_stored_locations.count({ where });
   newSourceSeed.source_location_city &&
   newSourceSeed.source_location_city.toLowerCase() !==
     newSourceSeed.source_location.toLowerCase()
-    ? {
-        source_location: newSourceSeed.source_location_city,
-        source_location_city: newSourceSeed.source_location_city,
-        source_location_state: newSourceSeed.source_location_state,
-        source_location_lattitude: newSourceSeed.source_location_lattitude,
-        source_location_longitude: newSourceSeed.source_location_longitude,
+      ? {
+          source_location: newSourceSeed.source_location_city,
+          source_location_city: newSourceSeed.source_location_city,
+          source_city_id: newSourceSeed.source_city_id ?? null,
+          source_location_state: newSourceSeed.source_location_state,
+          source_location_lattitude: newSourceSeed.source_location_lattitude,
+          source_location_longitude: newSourceSeed.source_location_longitude,
       }
     : null;
 
@@ -811,6 +833,19 @@ if (citySeed) {
     }
 
     const data = this.mapDtoToSchema(payload);
+    if (payload?.source_city !== undefined || payload?.source_location_city !== undefined) {
+      data.source_city_id = await this.resolveCityIdByName(
+        payload?.source_city ?? payload?.source_location_city,
+      );
+    }
+    if (
+      payload?.destination_city !== undefined ||
+      payload?.destination_location_city !== undefined
+    ) {
+      data.destination_city_id = await this.resolveCityIdByName(
+        payload?.destination_city ?? payload?.destination_location_city,
+      );
+    }
     const updated = await this.prisma.dvi_stored_locations.update({
       where: { location_ID: BigInt(id) },
       data: { ...data, updatedon: new Date() },
@@ -851,6 +886,7 @@ if (citySeed) {
 
   if (sourceCity !== undefined) {
     mapped.source_location_city = this.normalizeLocationName(sourceCity);
+    mapped.source_city_id = undefined;
   }
 
   if (sourceState !== undefined) {
@@ -878,6 +914,7 @@ if (citySeed) {
 
   if (destinationCity !== undefined) {
     mapped.destination_location_city = this.normalizeLocationName(destinationCity);
+    mapped.destination_city_id = undefined;
   }
 
   if (destinationState !== undefined) {
@@ -1028,6 +1065,7 @@ private async getDistinctExistingSourceLocations(): Promise<SourceLocationSeed[]
     select: {
       source_location: true,
       source_location_city: true,
+      source_city_id: true,
       source_location_state: true,
       source_location_lattitude: true,
       source_location_longitude: true,
@@ -1041,6 +1079,10 @@ private async getDistinctExistingSourceLocations(): Promise<SourceLocationSeed[]
     const seed: SourceLocationSeed = {
       source_location: this.normalizeLocationName(row.source_location),
       source_location_city: this.normalizeLocationName(row.source_location_city),
+      source_city_id:
+        row.source_city_id !== null && row.source_city_id !== undefined
+          ? Number(row.source_city_id)
+          : null,
       source_location_state: this.normalizeLocationName(row.source_location_state),
       source_location_lattitude: this.normalizeLocationName(row.source_location_lattitude),
       source_location_longitude: this.normalizeLocationName(row.source_location_longitude),
@@ -1088,11 +1130,13 @@ private async findSeedByLocationOrCityName(
     select: {
       source_location: true,
       source_location_city: true,
+      source_city_id: true,
       source_location_state: true,
       source_location_lattitude: true,
       source_location_longitude: true,
       destination_location: true,
       destination_location_city: true,
+      destination_city_id: true,
       destination_location_state: true,
       destination_location_lattitude: true,
       destination_location_longitude: true,
@@ -1108,6 +1152,10 @@ private async findSeedByLocationOrCityName(
       return {
         source_location: normalizedName,
         source_location_city: this.normalizeLocationName(row.source_location_city),
+        source_city_id:
+          row.source_city_id !== null && row.source_city_id !== undefined
+            ? Number(row.source_city_id)
+            : null,
         source_location_state: this.normalizeLocationName(row.source_location_state),
         source_location_lattitude: this.normalizeLocationName(row.source_location_lattitude),
         source_location_longitude: this.normalizeLocationName(row.source_location_longitude),
@@ -1121,6 +1169,10 @@ private async findSeedByLocationOrCityName(
       return {
         source_location: normalizedName,
         source_location_city: this.normalizeLocationName(row.destination_location_city),
+        source_city_id:
+          row.destination_city_id !== null && row.destination_city_id !== undefined
+            ? Number(row.destination_city_id)
+            : null,
         source_location_state: this.normalizeLocationName(row.destination_location_state),
         source_location_lattitude: this.normalizeLocationName(row.destination_location_lattitude),
         source_location_longitude: this.normalizeLocationName(row.destination_location_longitude),
@@ -1136,6 +1188,10 @@ private async findSeedByLocationOrCityName(
       return {
         source_location: normalizedName,
         source_location_city: normalizedName,
+        source_city_id:
+          row.source_city_id !== null && row.source_city_id !== undefined
+            ? Number(row.source_city_id)
+            : null,
         source_location_state: this.normalizeLocationName(row.source_location_state),
         source_location_lattitude: this.normalizeLocationName(row.source_location_lattitude),
         source_location_longitude: this.normalizeLocationName(row.source_location_longitude),
@@ -1149,6 +1205,11 @@ private async findSeedByLocationOrCityName(
       return {
         source_location: normalizedName,
         source_location_city: normalizedName,
+        source_city_id:
+          row.destination_city_id !== null &&
+          row.destination_city_id !== undefined
+            ? Number(row.destination_city_id)
+            : null,
         source_location_state: this.normalizeLocationName(row.destination_location_state),
         source_location_lattitude: this.normalizeLocationName(row.destination_location_lattitude),
         source_location_longitude: this.normalizeLocationName(row.destination_location_longitude),
@@ -1290,11 +1351,13 @@ private buildLocationRowData(
     source_location_lattitude: source.source_location_lattitude,
     source_location_longitude: source.source_location_longitude,
     source_location_city: source.source_location_city,
+    source_city_id: source.source_city_id ?? null,
     source_location_state: source.source_location_state,
     destination_location: destination.source_location,
     destination_location_lattitude: destination.source_location_lattitude,
     destination_location_longitude: destination.source_location_longitude,
     destination_location_city: destination.source_location_city,
+    destination_city_id: destination.source_city_id ?? null,
     destination_location_state: destination.source_location_state,
     distance: Number(distanceKm.toFixed(6)),
     duration: this.estimateDurationText(distanceKm),

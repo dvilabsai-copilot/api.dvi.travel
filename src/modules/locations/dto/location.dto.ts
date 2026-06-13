@@ -71,11 +71,13 @@ export class LocationResponseDto {
   @ApiProperty() location_ID!: number;
   @ApiProperty() source_location!: string;
   @ApiProperty() source_city!: string;
+  @ApiProperty({ nullable: true }) source_city_id!: number | null;
   @ApiProperty() source_state!: string;
   @ApiProperty() source_latitude!: string;
   @ApiProperty() source_longitude!: string;
   @ApiProperty() destination_location!: string;
   @ApiProperty() destination_city!: string;
+  @ApiProperty({ nullable: true }) destination_city_id!: number | null;
   @ApiProperty() destination_state!: string;
   @ApiProperty() destination_latitude!: string;
   @ApiProperty() destination_longitude!: string;

@@ -102,6 +102,11 @@ export interface ItineraryVehicleRowDto {
   totalAmount: string;
 
   // IDs needed for vendor selection
+  vehicleId?: number | null;
+  vehicleNumber?: string | null;
+  vehicleRegistrationNumber?: string | null;
+  vehicleRegistrationStateCode?: string | null;
+  vehicleRegistrationStateName?: string | null;
   vendorEligibleId?: number;
   vehicleTypeId?: number;
   vehicleTypeName?: string;
@@ -3108,7 +3113,7 @@ sightseeingDistance,       // local sightseeing separately
     // Each row in eligible list is already aggregated per vendor/branch/type/origin
     const eligibleRows = shouldIncludeVehicles
       ? await this.prisma.dvi_itinerary_plan_vendor_eligible_list.findMany({
-          where: { itinerary_plan_id: planId, deleted: 0 },
+          where: { itinerary_plan_id: planId, status: 1, deleted: 0 },
           orderBy: { itinerary_plan_vendor_eligible_ID: 'asc' },
         })
       : [];
@@ -3133,26 +3138,6 @@ sightseeingDistance,       // local sightseeing separately
           status: Number(x.status || 0),
         })),
       });
-    }
-    const selectedVehicleRowsByType = new Map<number, any>();
-    const vehicleTypeBuckets = new Map<number, any[]>();
-    for (const row of eligibleRows) {
-      const vehicleTypeId = Number((row as any).vehicle_type_id || 0);
-      if (!vehicleTypeId) continue;
-      const bucket = vehicleTypeBuckets.get(vehicleTypeId) || [];
-      bucket.push(row);
-      vehicleTypeBuckets.set(vehicleTypeId, bucket);
-    }
-    for (const [vehicleTypeId, rows] of vehicleTypeBuckets.entries()) {
-      const assignedRows = rows.filter((r) => Number((r as any).itineary_plan_assigned_status || 0) === 1);
-      const candidates = assignedRows.length > 0 ? assignedRows : rows;
-      candidates.sort((a, b) => {
-        const aTotal = Number((a as any).vehicle_grand_total ?? Number.MAX_SAFE_INTEGER) || Number.MAX_SAFE_INTEGER;
-        const bTotal = Number((b as any).vehicle_grand_total ?? Number.MAX_SAFE_INTEGER) || Number.MAX_SAFE_INTEGER;
-        if (aTotal !== bTotal) return aTotal - bTotal;
-        return Number((a as any).itinerary_plan_vendor_eligible_ID || 0) - Number((b as any).itinerary_plan_vendor_eligible_ID || 0);
-      });
-      selectedVehicleRowsByType.set(vehicleTypeId, candidates[0]);
     }
     let kmLimitWarning: string | undefined;
 
@@ -3353,20 +3338,61 @@ sightseeingDistance,       // local sightseeing separately
 
     const vehicleIds = Array.from(
       new Set(
-        vehicleDetailsRows
-          .map((vd: any) => Number(vd.vehicle_id || 0))
-          .filter((id: number) => id > 0),
+        [
+          ...eligibleRows.map((eligible: any) => Number(eligible.vehicle_id || 0)),
+          ...vehicleDetailsRows.map((vd: any) => Number(vd.vehicle_id || 0)),
+        ]
+          .filter((id: number) => id > 0)
       ),
     );
 
-    const vehicleExtraRows = vehicleIds.length
+    const vehicleMasterRows = vehicleIds.length
       ? await this.prisma.dvi_vehicle.findMany({
           where: { vehicle_id: { in: vehicleIds }, deleted: 0, status: 1 },
-          select: { vehicle_id: true, extra_hour_charge: true },
+          select: { vehicle_id: true, registration_number: true, extra_hour_charge: true },
         })
       : [];
+    const vehicleInfoMap = new Map<number, { vehicleId: number; registrationNumber: string | null; extraHourCharge: number }>(
+      vehicleMasterRows.map((v: any) => [
+        Number(v.vehicle_id || 0),
+        {
+          vehicleId: Number(v.vehicle_id || 0),
+          registrationNumber: String(v.registration_number || '').trim() || null,
+          extraHourCharge: Number(v.extra_hour_charge || 0),
+        },
+      ]),
+    );
     const vehicleExtraHourRateMap = new Map<number, number>(
-      vehicleExtraRows.map((v: any) => [Number(v.vehicle_id || 0), Number(v.extra_hour_charge || 0)]),
+      vehicleMasterRows.map((v: any) => [Number(v.vehicle_id || 0), Number(v.extra_hour_charge || 0)]),
+    );
+
+    const vehicleRegistrationStateCodes = Array.from(
+      new Set(
+        vehicleMasterRows
+          .map((vehicle: any) => String(vehicle.registration_number || '').trim())
+          .filter(Boolean)
+          .map((registrationNumber: string) => registrationNumber.substring(0, 2).toUpperCase())
+          .filter((code: string) => code.length > 0),
+      ),
+    );
+    const permitStates = vehicleRegistrationStateCodes.length
+      ? await (this.prisma as any).dvi_permit_state.findMany({
+          where: {
+            state_code: { in: vehicleRegistrationStateCodes },
+            deleted: 0,
+            status: 1,
+          },
+          select: {
+            state_code: true,
+            state_name: true,
+          },
+        })
+      : [];
+    const permitStateByCode = new Map<string, { state_name: string | null }>(
+      permitStates.map((state: any) => [
+        String(state.state_code || '').trim().toUpperCase(),
+        { state_name: String(state.state_name || '').trim() || null },
+      ]),
     );
 
     // 3) Load vendor branches (for names & origin location)
@@ -3669,13 +3695,19 @@ sightseeingDistance,       // local sightseeing separately
     }
 
     // Build vehicles array directly from eligible list (like PHP does)
-    const vehicles: ItineraryVehicleRowDto[] = Array.from(selectedVehicleRowsByType.values()).map((eligible) => {
+    const vehicles: ItineraryVehicleRowDto[] = eligibleRows.map((eligible) => {
       const branchId = (eligible as any).vendor_branch_id ?? 0;
       const branch = branchMap.get(branchId) || null;
       const branchCityName = branch
         ? branchCityNameMap.get(Number((branch as any).vendor_branch_city || 0)) || ''
         : '';
       const vehicleTypeId = (eligible as any).vehicle_type_id ?? 0;
+      const eligibleVehicleId = Number((eligible as any).vehicle_id || 0) || null;
+      const vehicleInfo = eligibleVehicleId ? vehicleInfoMap.get(eligibleVehicleId) : undefined;
+      const registrationNumber = String(vehicleInfo?.registrationNumber || '').trim();
+      const vehicleRegistrationStateCode = registrationNumber
+        ? registrationNumber.substring(0, 2).toUpperCase()
+        : null;
       const origin = ((eligible as any).vehicle_orign ?? '').toString().trim();
       
       const qty = (eligible as any).total_vehicle_qty ?? 0;
@@ -4099,6 +4131,14 @@ for (const vd of dayWiseDetails) {
         totalAmount: totalAmount.toFixed(2),
 
         // IDs needed for vendor selection
+        vehicleId: eligibleVehicleId,
+        vehicleNumber: registrationNumber || null,
+        vehicleRegistrationNumber: registrationNumber || null,
+        vehicleRegistrationStateCode,
+        vehicleRegistrationStateName:
+          vehicleRegistrationStateCode
+            ? permitStateByCode.get(vehicleRegistrationStateCode)?.state_name || null
+            : null,
         vendorEligibleId: eligible.itinerary_plan_vendor_eligible_ID,
         vehicleTypeId: vehicleTypeId,
         vehicleTypeName: vehicleTypeNameMap.get(vehicleTypeId) || 'Unknown Vehicle Type',
@@ -4154,6 +4194,10 @@ for (const vd of dayWiseDetails) {
       };
       if (debugVehicleTrace) {
         console.log('[DETAILS_VEHICLE_RESPONSE_ROW]', {
+          vehicleId: Number((vehicleResponseRow as any).vehicleId || 0) || null,
+          vehicleNumber: String((vehicleResponseRow as any).vehicleNumber || ''),
+          vehicleRegistrationStateCode: String((vehicleResponseRow as any).vehicleRegistrationStateCode || ''),
+          vehicleRegistrationStateName: String((vehicleResponseRow as any).vehicleRegistrationStateName || ''),
           vehicleTypeId: Number((vehicleResponseRow as any).vehicleTypeId || 0),
           vehicleTypeName: String((vehicleResponseRow as any).vehicleTypeName || ''),
           eligibleId: Number((vehicleResponseRow as any).vendorEligibleId || 0),
@@ -4165,6 +4209,29 @@ for (const vd of dayWiseDetails) {
         });
       }
       return vehicleResponseRow;
+    });
+
+    console.log('[DETAILS_VEHICLE_ROWS]', {
+      quoteId,
+      planId,
+      rawEligibleCount: eligibleRows.length,
+      returnedVehicleCount: vehicles.length,
+      vehicles: eligibleRows.map((eligible: any, index: number) => {
+        const responseRow = vehicles[index] as any;
+        return {
+          vendorEligibleId: Number(eligible?.itinerary_plan_vendor_eligible_ID || 0),
+          vehicleId: Number(responseRow?.vehicleId || 0) || null,
+          vehicleNumber: String(responseRow?.vehicleNumber || ''),
+          vehicleRegistrationStateCode: String(responseRow?.vehicleRegistrationStateCode || ''),
+          vehicleRegistrationStateName: String(responseRow?.vehicleRegistrationStateName || ''),
+          vendorId: Number(eligible?.vendor_id || 0),
+          vendorBranchId: Number(eligible?.vendor_branch_id || 0),
+          vendorVehicleTypeId: Number(eligible?.vendor_vehicle_type_id || 0),
+          vehicleTypeId: Number(eligible?.vehicle_type_id || 0),
+          isAssigned: Number(eligible?.itineary_plan_assigned_status || 0) === 1,
+          totalAmount: Number(responseRow?.totalAmount || 0),
+        };
+      }),
     });
 
     // 5) Total vehicle amount for footer: sum only ASSIGNED vehicles (itineary_plan_assigned_status = 1)
@@ -4181,7 +4248,7 @@ for (const vd of dayWiseDetails) {
       totalVehicleAmountFromEligible > 0
         ? totalVehicleAmountFromEligible
         : vehicles.reduce(
-            (sum: number, v: any) => sum + (v.total_vehicle_amount ?? 0),
+            (sum: number, v: any) => sum + (Number(v.grandTotal || v.totalAmount || 0) || 0),
             0,
           );
 
