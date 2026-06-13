@@ -376,6 +376,17 @@ async deleteVehicleTypeCost(
   }
 
   @Public()
+  @Delete(':id/permit-costs')
+  @ApiOperation({ summary: 'Delete vendor permit cost group by vendor vehicle type and source state' })
+  async deletePermitCostGroup(
+    @Param('id', ParseIntPipe) id: number,
+    @Query('vendor_vehicle_type_id', ParseIntPipe) vendorVehicleTypeId: number,
+    @Query('source_state_id', ParseIntPipe) sourceStateId: number,
+  ): Promise<{ success: boolean; deletedCount: number }> {
+    return this.vendorsService.deleteVendorPermitCostGroup(id, vendorVehicleTypeId, sourceStateId);
+  }
+
+  @Public()
   @Get(':id/outstation-km-limits')
   @ApiOperation({ summary: 'Get vendor outstation KM limits' })
   async getOutstationKmLimits(@Param('id', ParseIntPipe) id: number): Promise<any[]> {

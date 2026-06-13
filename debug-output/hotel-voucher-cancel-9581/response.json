@@ -1,0 +1,8 @@
+{
+  "status": 201,
+  "ok": true,
+  "body": {
+    "success": true,
+    "message": "Successfully created 1 hotel voucher(s)"
+  }
+}

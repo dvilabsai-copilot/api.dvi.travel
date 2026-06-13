@@ -2561,6 +2561,32 @@ async updateVendorVehicle(vehicleId: number, data: any): Promise<any> {
     }
   }
 
+  async deleteVendorPermitCostGroup(
+    vendorId: number,
+    vendorVehicleTypeId: number,
+    sourceStateId: number,
+  ): Promise<{ success: boolean; deletedCount: number }> {
+    const normalizedVendorVehicleTypeId = this.toNumberOrNull(vendorVehicleTypeId);
+    const normalizedSourceStateId = this.toNumberOrNull(sourceStateId);
+
+    if (!normalizedVendorVehicleTypeId || !normalizedSourceStateId) {
+      throw new BadRequestException('vendor_vehicle_type_id and source_state_id are required');
+    }
+
+    const result = await this.prisma.dvi_permit_cost.deleteMany({
+      where: {
+        vendor_id: vendorId,
+        vehicle_type_id: normalizedVendorVehicleTypeId,
+        source_state_id: normalizedSourceStateId,
+      },
+    });
+
+    return {
+      success: true,
+      deletedCount: Number(result.count ?? 0),
+    };
+  }
+
   async getVendorOutstationKmLimits(vendorId: number): Promise<any[]> {
     const rows = await this.prisma.dvi_kms_limit.findMany({
       where: { vendor_id: vendorId, deleted: 0 },

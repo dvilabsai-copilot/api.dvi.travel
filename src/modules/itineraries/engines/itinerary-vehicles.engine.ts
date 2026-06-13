@@ -341,6 +341,13 @@ export class ItineraryVehiclesEngine {
     planId: number;
     createdBy: number;
     selectedTimeLimitByEligible?: Record<string, number>;
+    beforeVehicleDetailsBuild?: (data: {
+      tx: any;
+      planId: number;
+      createdBy: number;
+      routeCount: number;
+      eligibleVehicleCount: number;
+    }) => Promise<void>;
   }) {
     const planId = Number(args.planId);
     const debugVehicleTrace =
@@ -1460,6 +1467,23 @@ export class ItineraryVehiclesEngine {
       await tx.dvi_itinerary_plan_vendor_eligible_list.deleteMany({
         where: cleanWhere },
     );
+
+    if (typeof args.beforeVehicleDetailsBuild === 'function') {
+      const eligibleVehicleCount = await tx.dvi_itinerary_plan_vendor_eligible_list.count({
+        where: {
+          itinerary_plan_id: planId,
+          status: 1,
+          deleted: 0,
+        },
+      });
+      await args.beforeVehicleDetailsBuild({
+        tx,
+        planId,
+        createdBy,
+        routeCount: totalNoOfPlanRouteDetails,
+        eligibleVehicleCount,
+      });
+    }
 
     // ---------------------------------------------------------------------
     // BUILD dvi_itinerary_plan_vendor_vehicle_details

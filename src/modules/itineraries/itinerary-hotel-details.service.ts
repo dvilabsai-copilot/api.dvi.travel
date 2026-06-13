@@ -30,6 +30,8 @@ export interface ItineraryHotelRowDto {
   // TBO Booking Code - for API interactions
   searchReference?: string;
   bookingCode?: string;
+  roomId?: string;
+  rateId?: string;
   // Provider source (tbo, resavenue, hobse)
   provider?: string;
   isBookable?: boolean;

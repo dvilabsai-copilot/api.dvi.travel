@@ -1,0 +1,30 @@
+{
+  "url": "http://127.0.0.1:4006/api/v1/itineraries/9581/hotel-vouchers",
+  "method": "POST",
+  "headers": {
+    "Authorization": "Bearer eyJhbGciOiJIUzI1N...masked",
+    "Content-Type": "application/json"
+  },
+  "body": {
+    "itineraryPlanId": 9581,
+    "vouchers": [
+      {
+        "routeId": 4650,
+        "hotelId": 0,
+        "hotelDetailsIds": [
+          5693
+        ],
+        "routeDates": [
+          "2026-06-18"
+        ],
+        "confirmedBy": "kkk",
+        "emailId": "vendor@dotrip.net",
+        "mobileNumber": "4234234",
+        "status": "cancelled",
+        "invoiceTo": "gst_bill_against_dvi",
+        "voucherTermsCondition": "&lt;p&gt;&lt;span style=&quot;color:rgb(0,32,96);&quot;&gt;&lt;strong&gt;Package&nbsp; Includes: (Inclusion)&lt;/strong&gt;&lt;/span&gt;&lt;br&gt;&lt;span style=&quot;color:rgb(0,32,96);&quot;&gt;All Hotel Taxes &amp; Service Taxes&lt;/span&gt;&lt;/p&gt;"
+      }
+    ]
+  },
+  "note": "Empty-body test skipped because createHotelVouchers reads dto.vouchers.length directly and does not accept an empty body shape."
+}
