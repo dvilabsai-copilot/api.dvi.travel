@@ -4345,6 +4345,24 @@ model dvi_itinerary_route_activity_entry_cost_details {
   deleted                 Int       @default(0) @db.TinyInt
 }
 
+model dvi_itinerary_vehicle_build_status {
+  id                BigInt    @id @default(autoincrement())
+  itinerary_plan_id Int
+  build_run_id      String    @db.VarChar(100)
+  status            String    @db.VarChar(20)
+  started_at        DateTime? @db.DateTime(0)
+  finished_at       DateTime? @db.DateTime(0)
+  error             String?   @db.Text
+  created_by        Int       @default(0)
+  created_on        DateTime  @db.DateTime(0)
+  updated_on        DateTime  @db.DateTime(0)
+
+  @@unique([itinerary_plan_id, build_run_id], map: "uq_itinerary_plan_build_run")
+  @@index([itinerary_plan_id, id], map: "idx_itinerary_plan_latest")
+  @@index([status], map: "idx_vehicle_build_status")
+  @@map("dvi_itinerary_vehicle_build_status")
+}
+
 model dvi_itinerary_route_details {
   itinerary_route_ID            Int       @id @default(autoincrement())
   itinerary_plan_ID             Int       @default(0)
