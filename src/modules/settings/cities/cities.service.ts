@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../../../prisma.service";
+import { clearCityLookupCache } from "../../itineraries/utils/city-normalization.util";
 import { CreateCityDto } from "./dto/create-city.dto";
 import { UpdateCityDto } from "./dto/update-city.dto";
 import { SuggestCitiesDto } from "./dto/suggest-cities.dto";
@@ -114,6 +115,8 @@ export class CitiesService {
       select: { id: true },
     });
 
+    clearCityLookupCache();
+
     return this.getOne(created.id);
   }
 
@@ -131,6 +134,8 @@ export class CitiesService {
 
     await this.prisma.dvi_cities.update({ where: { id }, data });
 
+    clearCityLookupCache();
+
     return this.getOne(id);
   }
 
@@ -145,6 +150,8 @@ export class CitiesService {
       where: { id },
       data: { deleted: 1, updatedon: new Date() },
     });
+
+    clearCityLookupCache();
 
     return { result: true };
   }

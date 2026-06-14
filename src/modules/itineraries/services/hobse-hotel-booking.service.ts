@@ -3,6 +3,7 @@ import { PrismaService } from '../../../prisma.service';
 import { HobseHotelProvider } from '../../hotels/providers/hobse-hotel.provider';
 import { HotelSelectionDto } from '../dto/confirm-quotation.dto';
 import { resolveProviderPassengerTitle } from '../../../common/utils/passenger-title.util';
+import { resolveCityRecordByName } from '../utils/city-normalization.util';
 
 @Injectable()
 export class HobseHotelBookingService {
@@ -39,11 +40,7 @@ export class HobseHotelBookingService {
         if (!cityName) throw new Error(`Route city not found for routeId=${sel.routeId}`);
 
         // 2) Map to hobse_city_code
-        const city = await this.prisma.dvi_cities.findFirst({
-          where: { name: cityName },
-          select: { hobse_city_code: true },
-        });
-
+        const city = await resolveCityRecordByName(this.prisma, cityName);
         const hobseCityId = city?.hobse_city_code;
         if (!hobseCityId) throw new Error(`City '${cityName}' not mapped to hobse_city_code`);
 

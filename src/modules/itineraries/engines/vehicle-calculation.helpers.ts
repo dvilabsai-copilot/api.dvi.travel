@@ -5,6 +5,7 @@ import { PrismaClient } from '@prisma/client';
 import {
   buildCityLookupCandidates,
   normalizeCityName,
+  resolveCityNameById as resolveCityNameByIdCached,
   resolveCityRecordByName,
 } from '../utils/city-normalization.util';
 import { getCachedStoredLocationPair } from '../../locations/stored-location-cache.helper';
@@ -273,19 +274,8 @@ async function resolveCityIdByLabel(prisma: any, value: string): Promise<number>
 }
 
 async function resolveCityNameById(prisma: any, cityId: number): Promise<string> {
-  const id = Number(cityId || 0);
-  if (!id) return '';
-
   try {
-    const row = await prisma.dvi_cities.findFirst({
-      where: {
-        id,
-        status: 1,
-        deleted: { in: [0, 1] },
-      },
-      select: { name: true },
-    });
-    return String(row?.name ?? '').trim();
+    return await resolveCityNameByIdCached(prisma, cityId);
   } catch (error) {
     console.error('[resolveCityNameById] Error:', error);
     return '';
