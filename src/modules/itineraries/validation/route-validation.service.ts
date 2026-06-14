@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma.service';
+import { resolveCityRecordByName } from '../utils/city-normalization.util';
 
 interface RouteValidation {
   routeIndex: number;
@@ -82,13 +83,7 @@ export class RouteValidationService {
       // Try to find city in dvi_cities
       let cityId: number | null = null;
       for (const searchTerm of citySearchTerms) {
-        const foundCity = await (this.prisma as any).dvi_cities.findFirst({
-          where: {
-            name: searchTerm,
-            deleted: 0,
-          },
-          select: { id: true },
-        });
+        const foundCity = await resolveCityRecordByName(this.prisma, searchTerm);
         if (foundCity) {
           cityId = foundCity.id;
           break;
@@ -178,13 +173,7 @@ export class RouteValidationService {
     }
     let cityId: number | null = null;
     for (const searchTerm of citySearchTerms) {
-      const foundCity = await (this.prisma as any).dvi_cities.findFirst({
-        where: {
-          name: searchTerm,
-          deleted: 0,
-        },
-        select: { id: true },
-      });
+      const foundCity = await resolveCityRecordByName(this.prisma, searchTerm);
       if (foundCity) {
         cityId = foundCity.id;
         break;
