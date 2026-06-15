@@ -2175,10 +2175,22 @@ export async function calculateRouteVehicleDetails(
     travel_type === 1
       ? isFirstRouteOfDay
       : !!sourceCoords && route_count === 1;
+  const isFinalItineraryRoute = route_count === total_routes;
   const applyDropForThisRoute =
     travel_type === 1
-      ? isLastRouteOfDay
-      : !!destCoords && route_count === total_routes;
+      ? isFinalItineraryRoute
+      : !!destCoords && isFinalItineraryRoute;
+
+  if (travel_type === 1 && isLastRouteOfDay && !isFinalItineraryRoute) {
+    console.warn('[VEHICLE_DROP_SUPPRESSED_NON_FINAL_LOCAL_ROUTE]', {
+      planId: itinerary_plan_ID,
+      routeId: route.itinerary_route_ID,
+      routeCount: route_count,
+      totalRoutes: total_routes,
+      locationName: route.location_name,
+      nextVisitingLocation: route.next_visiting_location,
+    });
+  }
 
   const pickupFromName =
     travel_type === 1 && route_count > 1
@@ -2398,7 +2410,7 @@ export async function calculateRouteVehicleDetails(
       TOTAL_DROP_DURATION = parsePhpDurationToHms(directLeg.duration);
     }
 
-    if (toNum(TOTAL_DROP_KM) <= 0 && travel_type === 1 && route_count < total_routes) {
+    if (toNum(TOTAL_DROP_KM) <= 0 && travel_type === 1 && isFinalItineraryRoute) {
       const localPoint = await resolveLocalHotelOrCityPoint(prisma, itinerary_plan_ID, route, cache);
       if (
         localPoint.lat !== null &&
@@ -2490,12 +2502,12 @@ export async function calculateRouteVehicleDetails(
         { planId: itinerary_plan_ID, routeId: route.itinerary_route_ID },
       );
       let dropKm = toNum(dropDistance.distance);
-      if (travel_type === 1 && isLastRouteOfDay && dropKm <= 0) {
+      if (travel_type === 1 && isFinalItineraryRoute && dropKm <= 0) {
         dropKm = toNum(route.no_of_km);
       }
       TOTAL_DROP_KM = String(dropKm.toFixed(2));
       TOTAL_DROP_DURATION = dropDistance.duration;
-    } else if (toNum(TOTAL_DROP_KM) <= 0 && travel_type === 1 && isLastRouteOfDay) {
+    } else if (toNum(TOTAL_DROP_KM) <= 0 && travel_type === 1 && isFinalItineraryRoute) {
       const fallbackKm = toNum(route.no_of_km);
       TOTAL_DROP_KM = String(fallbackKm.toFixed(2));
       const speed = travel_type === 1 ? localSpeed : outstationSpeed;
