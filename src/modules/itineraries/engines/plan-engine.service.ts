@@ -183,7 +183,11 @@ export class PlanEngineService {
   /**
    * PHP-parity quote ID generator.
    */
-  private async buildQuoteId(tx: Tx, now: Date): Promise<string> {
+  private async buildQuoteId(
+    tx: Tx,
+    now: Date,
+    excludePlanId?: number,
+  ): Promise<string> {
     const year = now.getFullYear();
     const monthIndex = now.getMonth(); // 0–11
     const mm = String(monthIndex + 1).padStart(2, "0"); // PHP date('m')
@@ -227,6 +231,109 @@ export class PlanEngineService {
     }
 
     return `${prefix}${nextSequence}`;
+  }
+
+  private async buildSafeQuoteId(
+    tx: Tx,
+    now: Date,
+    excludePlanId?: number,
+  ): Promise<string> {
+    const year = now.getFullYear();
+    const monthIndex = now.getMonth();
+    const mm = String(monthIndex + 1).padStart(2, '0');
+    const prefix = `DVI${year}${mm}`;
+    const lockName = `dvi_itinerary_quote_${prefix}`;
+
+    const lockRows = await (tx as any).$queryRawUnsafe(
+      'SELECT GET_LOCK(?, 10) AS acquired',
+      lockName,
+    );
+    const acquired = Number((lockRows as any)?.[0]?.acquired ?? 0);
+    if (acquired !== 1) {
+      throw new Error(`Unable to acquire itinerary quote lock for prefix ${prefix}`);
+    }
+
+    try {
+      const activeRows = await (tx as any).dvi_itinerary_plan_details.findMany({
+        where: {
+          deleted: 0,
+          itinerary_quote_ID: {
+            startsWith: prefix,
+          },
+        },
+        select: {
+          itinerary_quote_ID: true,
+        },
+      });
+
+      let maxSequence = 0;
+      for (const row of activeRows as any[]) {
+        const quoteId = String(row?.itinerary_quote_ID || '').trim();
+        const numericPart = quoteId.startsWith(prefix)
+          ? quoteId.slice(prefix.length)
+          : '';
+        if (!/^\d+$/.test(numericPart)) continue;
+        const sequence = Number.parseInt(numericPart, 10);
+        if (Number.isFinite(sequence) && sequence > maxSequence) {
+          maxSequence = sequence;
+        }
+      }
+
+      let nextSequence = maxSequence + 1;
+      while (true) {
+        const candidate = `${prefix}${nextSequence}`;
+        const existing = await (tx as any).dvi_itinerary_plan_details.findFirst({
+          where: {
+            itinerary_quote_ID: candidate,
+            deleted: 0,
+            ...(excludePlanId && excludePlanId > 0
+              ? { itinerary_plan_ID: { not: excludePlanId } }
+              : {}),
+          },
+          select: {
+            itinerary_plan_ID: true,
+          },
+        });
+
+        if (!existing) {
+          return candidate;
+        }
+        nextSequence += 1;
+      }
+    } finally {
+      await (tx as any).$queryRawUnsafe(
+        'SELECT RELEASE_LOCK(?) AS released',
+        lockName,
+      );
+    }
+  }
+
+  private async getActiveQuoteOwners(
+    tx: Tx,
+    quoteId: string,
+  ): Promise<Array<{ itinerary_plan_ID: number; createdon: Date | null }>> {
+    const normalizedQuoteId = String(quoteId || '').trim();
+    if (!normalizedQuoteId) return [];
+
+    const rows = await (tx as any).dvi_itinerary_plan_details.findMany({
+      where: {
+        itinerary_quote_ID: normalizedQuoteId,
+        deleted: 0,
+      },
+      select: {
+        itinerary_plan_ID: true,
+        createdon: true,
+      },
+      orderBy: [
+        { createdon: 'asc' },
+        { itinerary_plan_ID: 'asc' },
+      ],
+    });
+
+    return (rows as any[]).map((row) => ({
+      itinerary_plan_ID: Number(row?.itinerary_plan_ID || 0),
+      createdon: row?.createdon ?? null,
+    }));
   }
 
   /* ------------------------------------------------------------------
@@ -356,10 +463,43 @@ export class PlanEngineService {
     const existingId = Number(plan.itinerary_plan_id ?? 0);
 
     if (existingId > 0) {
+      const existingPlan = await (tx as any).dvi_itinerary_plan_details.findUnique({
+        where: { itinerary_plan_ID: existingId },
+        select: {
+          itinerary_quote_ID: true,
+        },
+      });
+      if (!existingPlan) {
+        throw new Error(`Itinerary plan ${existingId} not found for update`);
+      }
+
+      const currentQuoteId = String(existingPlan?.itinerary_quote_ID || '').trim();
+      let safeQuoteId = currentQuoteId;
+      if (!safeQuoteId) {
+        safeQuoteId = await this.buildSafeQuoteId(tx, now, existingId);
+      } else {
+        const owners = await this.getActiveQuoteOwners(tx, safeQuoteId);
+        if (owners.length > 1) {
+          const canonicalOwnerId = Number(owners[0]?.itinerary_plan_ID || 0);
+          const shouldKeepCurrentQuote = canonicalOwnerId === existingId;
+          if (!shouldKeepCurrentQuote) {
+            safeQuoteId = await this.buildSafeQuoteId(tx, now, existingId);
+          }
+          console.warn('[ITINERARY_QUOTE_DUPLICATE_GUARD]', {
+            existingId,
+            currentQuoteId,
+            keptCurrentQuote: shouldKeepCurrentQuote,
+            reassignedQuoteId: shouldKeepCurrentQuote ? null : safeQuoteId,
+            ownerPlanIds: owners.map((owner) => Number(owner.itinerary_plan_ID || 0)),
+          });
+        }
+      }
+
       await (tx as any).dvi_itinerary_plan_details.update({
         where: { itinerary_plan_ID: existingId },
         data: {
           ...baseData,
+          itinerary_quote_ID: safeQuoteId,
           updatedon: now,
         },
       });
@@ -367,7 +507,7 @@ export class PlanEngineService {
       return existingId;
     }
 
-    const itinerary_quote_ID = await this.buildQuoteId(tx, now);
+    const itinerary_quote_ID = await this.buildSafeQuoteId(tx, now);
 
     const createdRow = await (tx as any).dvi_itinerary_plan_details.create({
       data: {

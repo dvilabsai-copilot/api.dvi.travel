@@ -28,6 +28,39 @@ function formatHmsDuration(raw: string | null | undefined): string {
   return '0 Hours 0 Min';
 }
 
+function normalizeVehicleOfferText(value: unknown): string {
+  return String(value ?? '').trim().toLowerCase();
+}
+
+function normalizeVehicleOfferAmount(value: unknown): string {
+  const amount = Number.parseFloat(String(value ?? 0));
+  return Number.isFinite(amount) ? amount.toFixed(2) : '0.00';
+}
+
+function buildVehicleOfferKey(row: any): string {
+  return [
+    Number(row?.vendor_id || 0),
+    Number(row?.vendor_branch_id || 0),
+    Number(row?.vehicle_type_id || 0),
+    normalizeVehicleOfferText(row?.vehicle_orign),
+    normalizeVehicleOfferAmount(row?.vehicle_grand_total),
+  ].join('|');
+}
+
+function buildVehicleDetailKey(row: any): string {
+  const routeDateRaw = row?.itinerary_route_date;
+  const routeDate =
+    routeDateRaw instanceof Date
+      ? routeDateRaw.toISOString().slice(0, 10)
+      : String(routeDateRaw ?? '').slice(0, 10);
+  return [
+    Number(row?.itinerary_plan_vendor_eligible_ID || 0),
+    Number(row?.itinerary_route_id || 0),
+    Number(row?.vehicle_id || 0),
+    routeDate,
+  ].join('|');
+}
+
 export interface VehicleDayWisePricingDto {
   date: string; // "2025-12-26"
   dayLabel: string; // "Day 1 | 26 Dec 2025"
@@ -102,7 +135,10 @@ export interface ItineraryVehicleRowDto {
 
   // IDs needed for vendor selection
   vehicleId?: number | null;
+  vehicleIds?: number[];
   vehicleNumber?: string | null;
+  vehicleNumbers?: string[];
+  availableVehicleCount?: number;
   vehicleRegistrationNumber?: string | null;
   vehicleRegistrationStateCode?: string | null;
   vehicleRegistrationStateName?: string | null;
@@ -212,6 +248,7 @@ export interface ItineraryDetailsResponseDto {
   quoteId: string;
   planId: number;
   itineraryPreference?: number;
+  itineraryType?: number;
   isConfirmed?: boolean;
   confirmed_itinerary_plan_ID?: number; // ID needed for /confirmed/:id endpoint
   dateRange: string;
@@ -913,6 +950,7 @@ export class ItineraryDetailsService {
   async getPlanIdFromQuoteId(quoteId: string): Promise<number | null> {
     const plan = await this.prisma.dvi_itinerary_plan_details.findFirst({
       where: { itinerary_quote_ID: quoteId, deleted: 0 },
+      orderBy: { itinerary_plan_ID: 'desc' },
       select: { itinerary_plan_ID: true },
     });
     return plan ? plan.itinerary_plan_ID : null;
@@ -928,6 +966,7 @@ export class ItineraryDetailsService {
     // ------------------------------ PLAN ------------------------------
     const plan = await this.prisma.dvi_itinerary_plan_details.findFirst({
       where: { itinerary_quote_ID: quoteId, deleted: 0 },
+      orderBy: { itinerary_plan_ID: 'desc' },
     });
 
     if (!plan) {
@@ -3128,12 +3167,57 @@ sightseeingDistance,       // local sightseeing separately
     // ------------------------------ VEHICLES ------------------------------
     // PHP displays vehicles directly from dvi_itinerary_plan_vendor_eligible_list
     // Each row in eligible list is already aggregated per vendor/branch/type/origin
-    const eligibleRows = shouldIncludeVehicles
+    const rawEligibleRows = shouldIncludeVehicles
       ? await this.prisma.dvi_itinerary_plan_vendor_eligible_list.findMany({
           where: { itinerary_plan_id: planId, status: 1, deleted: 0 },
           orderBy: { itinerary_plan_vendor_eligible_ID: 'asc' },
         })
       : [];
+
+    const eligibleGroups = new Map<string, any[]>();
+    for (const eligibleRow of rawEligibleRows) {
+      const offerKey = buildVehicleOfferKey(eligibleRow);
+      const existingRows = eligibleGroups.get(offerKey) || [];
+      existingRows.push(eligibleRow);
+      eligibleGroups.set(offerKey, existingRows);
+    }
+
+    const eligibleGroupMetaByRepresentativeId = new Map<
+      number,
+      {
+        eligibleIds: number[];
+        vehicleIds: number[];
+        rawRowCount: number;
+      }
+    >();
+    const eligibleRows = Array.from(eligibleGroups.values()).map((groupRows) => {
+      const representative = [...groupRows].sort(
+        (a, b) =>
+          Number((b as any).itineary_plan_assigned_status || 0) -
+            Number((a as any).itineary_plan_assigned_status || 0) ||
+          Number((a as any).itinerary_plan_vendor_eligible_ID || 0) -
+            Number((b as any).itinerary_plan_vendor_eligible_ID || 0),
+      )[0];
+      const representativeId = Number(
+        (representative as any).itinerary_plan_vendor_eligible_ID || 0,
+      );
+      if (representativeId > 0) {
+        eligibleGroupMetaByRepresentativeId.set(representativeId, {
+          eligibleIds: groupRows
+            .map((row: any) => Number(row?.itinerary_plan_vendor_eligible_ID || 0))
+            .filter((id: number) => id > 0),
+          vehicleIds: Array.from(
+            new Set(
+              groupRows
+                .map((row: any) => Number(row?.vehicle_id || 0))
+                .filter((id: number) => id > 0),
+            ),
+          ),
+          rawRowCount: groupRows.length,
+        });
+      }
+      return representative;
+    });
 
     const assignedEligibleRows = eligibleRows.filter(
       (e) => (e as any).itineary_plan_assigned_status === 1,
@@ -3144,7 +3228,8 @@ sightseeingDistance,       // local sightseeing separately
     if (debugVehicleTrace) {
       console.log('[DETAILS_VEHICLE_ELIGIBLE_ROWS]', {
         planId,
-        count: eligibleRows.length,
+        rawCount: rawEligibleRows.length,
+        dedupedCount: eligibleRows.length,
         rows: eligibleRows.map((x: any) => ({
           eligibleId: Number(x.itinerary_plan_vendor_eligible_ID || 0),
           vehicleTypeId: Number(x.vehicle_type_id || 0),
@@ -3181,7 +3266,7 @@ sightseeingDistance,       // local sightseeing separately
   .map((e) => Number((e as any).itinerary_plan_vendor_eligible_ID))
   .filter((id) => id > 0);
 
-   const vehicleDetailsRows = allEligibleIds.length
+    const rawVehicleDetailsRows = allEligibleIds.length
   ? await this.prisma.$queryRawUnsafe(`
       SELECT 
         itinerary_plan_vendor_vehicle_details_ID,
@@ -3238,6 +3323,28 @@ sightseeingDistance,       // local sightseeing separately
     `) as any[]
   : [];
 
+    const vehicleDetailRowsByKey = new Map<string, any>();
+    for (const vehicleDetailRow of rawVehicleDetailsRows) {
+      const detailKey = buildVehicleDetailKey(vehicleDetailRow);
+      const existingRow = vehicleDetailRowsByKey.get(detailKey);
+      if (
+        !existingRow ||
+        Number((vehicleDetailRow as any).itinerary_plan_vendor_vehicle_details_ID || 0) <
+          Number((existingRow as any).itinerary_plan_vendor_vehicle_details_ID || 0)
+      ) {
+        vehicleDetailRowsByKey.set(detailKey, vehicleDetailRow);
+      }
+    }
+    const vehicleDetailsRows = Array.from(vehicleDetailRowsByKey.values()).sort((a, b) => {
+      const dateA = String((a as any).itinerary_route_date || '');
+      const dateB = String((b as any).itinerary_route_date || '');
+      if (dateA !== dateB) return dateA.localeCompare(dateB);
+      return (
+        Number((a as any).itinerary_route_id || 0) -
+        Number((b as any).itinerary_route_id || 0)
+      );
+    });
+
     // Group vehicle details by eligible ID to sum KMs
     const vehicleDetailsByEligible = new Map<number, any[]>();
     for (const vd of vehicleDetailsRows) {
@@ -3260,7 +3367,11 @@ sightseeingDistance,       // local sightseeing separately
         console.log('[DETAILS_VEHICLE_DETAIL_ROWS]', {
           planId,
           eligibleId,
-          rowCount: rows.length,
+          rawRowCount: rawVehicleDetailsRows.filter(
+            (row: any) =>
+              Number((row as any).itinerary_plan_vendor_eligible_ID || 0) === Number(eligibleId || 0),
+          ).length,
+          dedupedRowCount: rows.length,
           duplicateKeys,
         });
       }
@@ -3752,6 +3863,17 @@ sightseeingDistance,       // local sightseeing separately
 
       // Calculate aggregated KMs from day-wise vehicle details
       const eligibleId = eligible.itinerary_plan_vendor_eligible_ID;
+      const groupedVehicleMeta = eligibleGroupMetaByRepresentativeId.get(
+        Number(eligibleId || 0),
+      );
+      const groupedVehicleIds = groupedVehicleMeta?.vehicleIds || [];
+      const groupedVehicleNumbers = Array.from(
+        new Set(
+          groupedVehicleIds
+            .map((vehicleId) => String(vehicleInfoMap.get(vehicleId)?.registrationNumber || '').trim())
+            .filter(Boolean),
+        ),
+      );
       const dayWiseDetails = vehicleDetailsByEligible.get(eligibleId) || [];
       const hasLocalDays = dayWiseDetails.some((vd: any) => Number((vd as any).travel_type || 0) === 1);
       const hasOutstationDays = dayWiseDetails.some((vd: any) => Number((vd as any).travel_type || 0) === 2);
@@ -4157,7 +4279,13 @@ for (const vd of dayWiseDetails) {
 
         // IDs needed for vendor selection
         vehicleId: eligibleVehicleId,
+        vehicleIds: groupedVehicleIds,
         vehicleNumber: registrationNumber || null,
+        vehicleNumbers: groupedVehicleNumbers,
+        availableVehicleCount:
+          groupedVehicleIds.length > 0
+            ? groupedVehicleIds.length
+            : Math.max(1, Number(groupedVehicleMeta?.rawRowCount || 1)),
         vehicleRegistrationNumber: registrationNumber || null,
         vehicleRegistrationStateCode,
         vehicleRegistrationStateName:
@@ -4239,7 +4367,10 @@ for (const vd of dayWiseDetails) {
     console.log('[DETAILS_VEHICLE_ROWS]', {
       quoteId,
       planId,
-      rawEligibleCount: eligibleRows.length,
+      rawEligibleCount: rawEligibleRows.length,
+      dedupedEligibleCount: eligibleRows.length,
+      rawVehicleDetailCount: rawVehicleDetailsRows.length,
+      dedupedVehicleDetailCount: vehicleDetailsRows.length,
       returnedVehicleCount: vehicles.length,
       vehicles: eligibleRows.map((eligible: any, index: number) => {
         const responseRow = vehicles[index] as any;
@@ -4496,13 +4627,14 @@ for (const vd of dayWiseDetails) {
           )}`
         : '';
 
-    // Room count should be hidden for vehicle-only itineraries.
-    const roomCount = shouldIncludeHotels ? Number(plan.preferred_room_count ?? 0) : 0;
+    // Room count belongs to the plan header and should remain available even for vehicle-only itineraries.
+    const roomCount = Number(plan.preferred_room_count ?? 0);
 
     const response: ItineraryDetailsResponseDto = {
       quoteId: plan.itinerary_quote_ID ?? '',
       planId: plan.itinerary_plan_ID,
       itineraryPreference: Number((plan as any).itinerary_preference || 0),
+      itineraryType: Number((plan as any).itinerary_type || 0),
       isConfirmed: !!confirmedPlan,
       confirmed_itinerary_plan_ID: confirmedPlan?.confirmed_itinerary_plan_ID,
       dateRange,

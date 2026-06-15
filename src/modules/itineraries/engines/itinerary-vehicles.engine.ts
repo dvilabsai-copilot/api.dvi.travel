@@ -492,6 +492,110 @@ export class ItineraryVehiclesEngine {
     // use plain client (no $transaction) for now
     const tx: any = this.prisma;
     const tAny: any = this.prisma as any;
+    const normalizeVehicleDedupText = (value: unknown): string =>
+      String(value ?? '').trim().toLowerCase();
+    const normalizeVehicleDedupAmount = (value: unknown): string => {
+      const amount = Number.parseFloat(String(value ?? 0));
+      return Number.isFinite(amount) ? amount.toFixed(2) : '0.00';
+    };
+    const buildEligiblePersistenceKey = (row: any): string =>
+      [
+        Number(row?.vendor_id || 0),
+        Number(row?.vendor_branch_id || 0),
+        Number(row?.vehicle_type_id || 0),
+        Number(row?.vendor_vehicle_type_id || 0),
+        Number(row?.vehicle_id || 0),
+        normalizeVehicleDedupText(row?.vehicle_orign),
+        normalizeVehicleDedupAmount(row?.vehicle_grand_total),
+      ].join('|');
+    const buildVehicleDetailPersistenceKey = (row: any): string => {
+      const routeDateRaw = row?.itinerary_route_date;
+      const routeDate =
+        routeDateRaw instanceof Date
+          ? routeDateRaw.toISOString().slice(0, 10)
+          : String(routeDateRaw ?? '').slice(0, 10);
+      return [
+        Number(row?.itinerary_plan_vendor_eligible_ID || 0),
+        Number(row?.itinerary_route_id || 0),
+        Number(row?.vehicle_id || 0),
+        routeDate,
+      ].join('|');
+    };
+    const dedupeBufferedRows = <T extends Record<string, any>>(
+      rows: T[],
+      buildKey: (row: T) => string,
+      pickPreferred?: (current: T, incoming: T) => T,
+    ): T[] => {
+      const rowsByKey = new Map<string, T>();
+      for (const row of rows) {
+        const key = buildKey(row);
+        const existingRow = rowsByKey.get(key);
+        rowsByKey.set(
+          key,
+          existingRow && pickPreferred ? pickPreferred(existingRow, row) : existingRow || row,
+        );
+      }
+      return Array.from(rowsByKey.values());
+    };
+    const cleanupDuplicateEligibleRows = async (): Promise<number> => {
+      const rows = await tx.dvi_itinerary_plan_vendor_eligible_list.findMany({
+        where: { itinerary_plan_id: planId, status: 1, deleted: 0 },
+        select: { itinerary_plan_vendor_eligible_ID: true, vendor_id: true, vendor_branch_id: true, vehicle_type_id: true, vendor_vehicle_type_id: true, vehicle_id: true, vehicle_orign: true, vehicle_grand_total: true },
+        orderBy: { itinerary_plan_vendor_eligible_ID: 'asc' },
+      });
+      const keepIdByKey = new Map<string, number>();
+      const duplicateIds: number[] = [];
+      for (const row of rows) {
+        const key = buildEligiblePersistenceKey(row);
+        const rowId = Number((row as any).itinerary_plan_vendor_eligible_ID || 0);
+        if (!rowId) continue;
+        if (keepIdByKey.has(key)) {
+          duplicateIds.push(rowId);
+          continue;
+        }
+        keepIdByKey.set(key, rowId);
+      }
+      if (!duplicateIds.length) return 0;
+      await tx.dvi_itinerary_plan_vendor_eligible_list.deleteMany({
+        where: {
+          itinerary_plan_vendor_eligible_ID: { in: duplicateIds },
+        },
+      });
+      return duplicateIds.length;
+    };
+    const cleanupDuplicateVehicleDetailRows = async (): Promise<number> => {
+      if (!tAny?.dvi_itinerary_plan_vendor_vehicle_details) return 0;
+      const rows = await tAny.dvi_itinerary_plan_vendor_vehicle_details.findMany({
+        where: { itinerary_plan_id: planId, status: 1, deleted: 0 },
+        select: {
+          itinerary_plan_vendor_vehicle_details_ID: true,
+          itinerary_plan_vendor_eligible_ID: true,
+          itinerary_route_id: true,
+          vehicle_id: true,
+          itinerary_route_date: true,
+        },
+        orderBy: { itinerary_plan_vendor_vehicle_details_ID: 'asc' },
+      });
+      const keepIdByKey = new Map<string, number>();
+      const duplicateIds: number[] = [];
+      for (const row of rows) {
+        const key = buildVehicleDetailPersistenceKey(row);
+        const rowId = Number((row as any).itinerary_plan_vendor_vehicle_details_ID || 0);
+        if (!rowId) continue;
+        if (keepIdByKey.has(key)) {
+          duplicateIds.push(rowId);
+          continue;
+        }
+        keepIdByKey.set(key, rowId);
+      }
+      if (!duplicateIds.length) return 0;
+      await tAny.dvi_itinerary_plan_vendor_vehicle_details.deleteMany({
+        where: {
+          itinerary_plan_vendor_vehicle_details_ID: { in: duplicateIds },
+        },
+      });
+      return duplicateIds.length;
+    };
 
     const today = startOfDay(new Date());
 
@@ -1475,22 +1579,41 @@ export class ItineraryVehiclesEngine {
       vendorCount: vendorIdsUsed.size,
     });
 
-    if (pendingEligibleCreates.length > 0) {
-      const createManyResult = await tx.dvi_itinerary_plan_vendor_eligible_list.createMany({
-        data: pendingEligibleCreates,
+    const dedupedEligibleCreates = dedupeBufferedRows(
+      pendingEligibleCreates,
+      buildEligiblePersistenceKey,
+    );
+    if (pendingEligibleCreates.length !== dedupedEligibleCreates.length) {
+      console.log('[VEHICLE_ELIGIBLE_BUFFER_DEDUPE]', {
+        planId,
+        bufferedRows: pendingEligibleCreates.length,
+        dedupedRows: dedupedEligibleCreates.length,
       });
-      inserted += pendingEligibleCreates.length;
+    }
+
+    if (dedupedEligibleCreates.length > 0) {
+      const createManyResult = await tx.dvi_itinerary_plan_vendor_eligible_list.createMany({
+        data: dedupedEligibleCreates,
+      });
+      inserted += dedupedEligibleCreates.length;
       if (debugVehicleTrace) {
         console.log('[ELIGIBLE_CREATE_MANY_DONE]', {
           planId,
-          createdRows: pendingEligibleCreates.length,
-          resultCount: Number((createManyResult as any)?.count ?? pendingEligibleCreates.length),
+          createdRows: dedupedEligibleCreates.length,
+          resultCount: Number((createManyResult as any)?.count ?? dedupedEligibleCreates.length),
         });
       }
     }
     stageStartedAt = logStageTiming('eligible_insert_rows', stageStartedAt, {
-      insertedRows: pendingEligibleCreates.length,
+      insertedRows: dedupedEligibleCreates.length,
     });
+    const duplicateEligibleRowsDeleted = await cleanupDuplicateEligibleRows();
+    if (duplicateEligibleRowsDeleted > 0) {
+      console.log('[VEHICLE_ELIGIBLE_PERSISTED_DEDUPE]', {
+        planId,
+        deletedRows: duplicateEligibleRowsDeleted,
+      });
+    }
 
     const vendorIdList = Array.from(vendorIdsUsed);
 
@@ -1611,7 +1734,7 @@ export class ItineraryVehiclesEngine {
         where: cleanWhere },
     );
     stageStartedAt = logStageTiming('eligible_row_building', stageStartedAt, {
-      eligibleInsertRows: pendingEligibleCreates.length,
+      eligibleInsertRows: dedupedEligibleCreates.length,
       eligibleTypes: requiredVehicleTypeIds.length,
     });
 
@@ -2236,19 +2359,30 @@ export class ItineraryVehiclesEngine {
     stageStartedAt = logStageTiming('vehicle_detail_calculation_loop', stageStartedAt, {
       vehicleDetailRowsPrepared: pendingVehicleDetailCreates.length,
     });
+    const dedupedVehicleDetailCreates = dedupeBufferedRows(
+      pendingVehicleDetailCreates,
+      buildVehicleDetailPersistenceKey,
+    );
+    if (pendingVehicleDetailCreates.length !== dedupedVehicleDetailCreates.length) {
+      console.log('[VEHICLE_DETAIL_BUFFER_DEDUPE]', {
+        planId,
+        bufferedRows: pendingVehicleDetailCreates.length,
+        dedupedRows: dedupedVehicleDetailCreates.length,
+      });
+    }
     stageStartedAt = logStageTiming('vehicle_detail_buffer_rows', stageStartedAt, {
-      vehicleDetailRowsPrepared: pendingVehicleDetailCreates.length,
+      vehicleDetailRowsPrepared: dedupedVehicleDetailCreates.length,
     });
-    if (pendingVehicleDetailCreates.length > 0 && tAny?.dvi_itinerary_plan_vendor_vehicle_details) {
+    if (dedupedVehicleDetailCreates.length > 0 && tAny?.dvi_itinerary_plan_vendor_vehicle_details) {
       const chunkSize = Math.max(1, Number(process.env.VEHICLE_DETAIL_INSERT_CHUNK_SIZE || 500) || 500);
       console.log('[VEHICLE_DETAIL_INSERT_BATCH_SIZE]', {
         planId,
-        pendingRows: pendingVehicleDetailCreates.length,
+        pendingRows: dedupedVehicleDetailCreates.length,
         chunkSize,
       });
 
-      for (let index = 0; index < pendingVehicleDetailCreates.length; index += chunkSize) {
-        const chunk = pendingVehicleDetailCreates.slice(index, index + chunkSize);
+      for (let index = 0; index < dedupedVehicleDetailCreates.length; index += chunkSize) {
+        const chunk = dedupedVehicleDetailCreates.slice(index, index + chunkSize);
         const chunkStartedAt = Date.now();
         const detailCreateResult = await tAny.dvi_itinerary_plan_vendor_vehicle_details.createMany({
           data: chunk,
@@ -2262,7 +2396,7 @@ export class ItineraryVehiclesEngine {
           totalElapsedMs: Date.now() - rebuildStartedAt,
           counts: {
             insertedRows: Number((detailCreateResult as any)?.count ?? chunk.length),
-            pendingRows: pendingVehicleDetailCreates.length,
+            pendingRows: dedupedVehicleDetailCreates.length,
           },
         });
         if (debugVehicleTrace) {
@@ -2275,8 +2409,15 @@ export class ItineraryVehiclesEngine {
       }
     }
     stageStartedAt = logStageTiming('vehicle_detail_create_many', stageStartedAt, {
-      insertedRows: pendingVehicleDetailCreates.length,
+      insertedRows: dedupedVehicleDetailCreates.length,
     });
+    const duplicateVehicleDetailRowsDeleted = await cleanupDuplicateVehicleDetailRows();
+    if (duplicateVehicleDetailRowsDeleted > 0) {
+      console.log('[VEHICLE_DETAIL_PERSISTED_DEDUPE]', {
+        planId,
+        deletedRows: duplicateVehicleDetailRowsDeleted,
+      });
+    }
 
     // NOW update eligible_list with toll/permit charges from vehicle_details
     // (this runs AFTER all vehicle_details records have been created above)

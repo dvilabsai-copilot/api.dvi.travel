@@ -59,12 +59,19 @@ import { ItineraryHotelDetailsService } from './itinerary-hotel-details.service'
 import { ItineraryHotelDetailsTboService } from './itinerary-hotel-details-tbo.service';
 import { ItineraryExportService } from './itinerary-export.service';
 import { HotelVoucherService, AddCancellationPolicyDto, CreateVoucherDto } from './hotel-voucher.service';
+import {
+  VehicleVoucherService,
+  AddVehicleCancellationPolicyDto,
+  CreateVehicleVoucherDto,
+  UpdateVehicleVoucherConfirmationDto,
+} from './vehicle-voucher.service';
 import { ArrivalHotelPolicyService } from './services/arrival-hotel-policy.service';
 import { Public } from '../../auth/public.decorator';
 import { Response, Request } from 'express';
 import { RouteSuggestionsService } from './route-suggestions.service';
 import { RouteSuggestionsV2Service } from './route-suggestions-v2.service';
 import { ItineraryClipboardService } from './itinerary-clipboard.service';
+import { ItineraryPdfService } from './itinerary-pdf.service';
 
 @ApiTags('Itineraries')
 @ApiBearerAuth()
@@ -88,8 +95,10 @@ export class ItinerariesController {
     private readonly routeSuggestionsService: RouteSuggestionsService,
     private readonly routeSuggestionsV2Service: RouteSuggestionsV2Service,
     private readonly hotelVoucherService: HotelVoucherService,
+    private readonly vehicleVoucherService: VehicleVoucherService,
     private readonly clipboardService: ItineraryClipboardService,
     private readonly arrivalHotelPolicyService: ArrivalHotelPolicyService,
+    private readonly itineraryPdfService: ItineraryPdfService,
   ) {}
 
   private parseClipboardGroupTypes(query: Record<string, any>): number[] {
@@ -1286,10 +1295,46 @@ export class ItinerariesController {
     return this.svc.getVoucherDetails(id);
   }
 
+  @Get(':id/voucher-pdf')
+  @ApiOperation({ summary: 'Download voucher details PDF for a confirmed itinerary' })
+  async downloadVoucherPdf(
+    @Param('id', ParseIntPipe) id: number,
+    @Res() res: Response,
+  ) {
+    await this.itineraryPdfService.downloadVoucherPdf(id, res);
+  }
+
+  @Get(':id/hotel-voucher-pdf')
+  @ApiOperation({ summary: 'Download hotel voucher PDF for a confirmed itinerary' })
+  async downloadHotelVoucherPdf(
+    @Param('id', ParseIntPipe) id: number,
+    @Res() res: Response,
+  ) {
+    await this.itineraryPdfService.downloadHotelVoucherPdf(id, res);
+  }
+
+  @Get(':id/vehicle-voucher-pdf')
+  @ApiOperation({ summary: 'Download vehicle voucher PDF for a confirmed itinerary' })
+  async downloadVehicleVoucherPdf(
+    @Param('id', ParseIntPipe) id: number,
+    @Res() res: Response,
+  ) {
+    await this.itineraryPdfService.downloadVehicleVoucherPdf(id, res);
+  }
+
   @Get(':id/pluck-card-data')
   @ApiOperation({ summary: 'Get pluck card data for a confirmed itinerary' })
   async getPluckCardData(@Param('id', ParseIntPipe) id: number) {
     return this.svc.getPluckCardData(id);
+  }
+
+  @Get(':id/pluck-card-pdf')
+  @ApiOperation({ summary: 'Download pluck card PDF for a confirmed itinerary' })
+  async downloadPluckCardPdf(
+    @Param('id', ParseIntPipe) id: number,
+    @Res() res: Response,
+  ) {
+    await this.itineraryPdfService.downloadPluckCardPdf(id, res);
   }
 
   // Hotel Voucher Endpoints
@@ -1376,6 +1421,93 @@ export class ItinerariesController {
     return this.hotelVoucherService.getHotelVoucher(itineraryPlanId, hotelId);
   }
 
+  @Get(':id/vehicle-vouchers/cancellation-policies')
+  @ApiOperation({ summary: 'Get all cancellation policies for itinerary vehicles' })
+  async getAllVehicleCancellationPolicies(
+    @Param('id', ParseIntPipe) itineraryPlanId: number,
+  ) {
+    return this.vehicleVoucherService.getAllCancellationPolicies(itineraryPlanId);
+  }
+
+  @Get(':id/vehicle-vouchers/:vendorId/:vendorVehicleTypeId/cancellation-policies')
+  @ApiOperation({ summary: 'Get cancellation policies for a specific vendor vehicle type' })
+  async getVehicleCancellationPolicies(
+    @Param('id', ParseIntPipe) itineraryPlanId: number,
+    @Param('vendorId', ParseIntPipe) vendorId: number,
+    @Param('vendorVehicleTypeId', ParseIntPipe) vendorVehicleTypeId: number,
+  ) {
+    return this.vehicleVoucherService.getVehicleCancellationPolicies(
+      itineraryPlanId,
+      vendorId,
+      vendorVehicleTypeId,
+    );
+  }
+
+  @Post(':id/vehicle-vouchers/cancellation-policies')
+  @ApiOperation({ summary: 'Add a cancellation policy for a vehicle voucher group' })
+  async addVehicleCancellationPolicy(
+    @Param('id', ParseIntPipe) itineraryPlanId: number,
+    @Body() dto: AddVehicleCancellationPolicyDto,
+    @Req() req: any,
+  ) {
+    const userId = Number(req.user?.userId ?? 1);
+    return this.vehicleVoucherService.addCancellationPolicy(
+      { ...dto, itineraryPlanId },
+      userId,
+    );
+  }
+
+  @Delete(':id/vehicle-vouchers/cancellation-policies/:policyId')
+  @ApiOperation({ summary: 'Delete a vehicle cancellation policy' })
+  async deleteVehicleCancellationPolicy(
+    @Param('policyId', ParseIntPipe) policyId: number,
+  ) {
+    return this.vehicleVoucherService.deleteCancellationPolicy(policyId);
+  }
+
+  @Post(':id/vehicle-vouchers')
+  @ApiOperation({ summary: 'Create or update vehicle vouchers' })
+  async createVehicleVouchers(
+    @Param('id', ParseIntPipe) itineraryPlanId: number,
+    @Body() dto: CreateVehicleVoucherDto,
+    @Req() req: any,
+  ) {
+    const userId = Number(req.user?.userId ?? 1);
+    return this.vehicleVoucherService.createVehicleVouchers(
+      { ...dto, itineraryPlanId },
+      userId,
+    );
+  }
+
+  @Get(':id/vehicle-vouchers/default-terms')
+  @ApiOperation({ summary: 'Get default vehicle voucher terms from global settings' })
+  async getDefaultVehicleVoucherTerms() {
+    return { terms: await this.vehicleVoucherService.getDefaultVoucherTerms() };
+  }
+
+  @Get(':id/vehicle-vouchers/:vendorEligibleId')
+  @ApiOperation({ summary: 'Get existing voucher for a vehicle vendor-eligible row' })
+  async getVehicleVoucher(
+    @Param('id', ParseIntPipe) itineraryPlanId: number,
+    @Param('vendorEligibleId', ParseIntPipe) vendorEligibleId: number,
+  ) {
+    return this.vehicleVoucherService.getVehicleVoucher(itineraryPlanId, vendorEligibleId);
+  }
+
+  @Patch(':id/vehicle-vouchers/:vendorEligibleId/confirmation')
+  @ApiOperation({ summary: 'Update supplier confirmation details for a vehicle voucher' })
+  async updateVehicleVoucherConfirmation(
+    @Param('id', ParseIntPipe) itineraryPlanId: number,
+    @Param('vendorEligibleId', ParseIntPipe) vendorEligibleId: number,
+    @Body() dto: UpdateVehicleVoucherConfirmationDto,
+  ) {
+    return this.vehicleVoucherService.updateVehicleVoucherConfirmation(
+      itineraryPlanId,
+      vendorEligibleId,
+      dto,
+    );
+  }
+
   @Get('confirmed/:confirmedId/pluck-card-data')
   @ApiOperation({ summary: 'Get pluck card data by confirmed plan id' })
   async getPluckCardDataByConfirmedId(@Param('confirmedId', ParseIntPipe) confirmedId: number) {
@@ -1386,6 +1518,18 @@ export class ItinerariesController {
   @ApiOperation({ summary: 'Get invoice data for a confirmed itinerary' })
   async getInvoiceData(@Param('id', ParseIntPipe) id: number) {
     return this.svc.getInvoiceData(id);
+  }
+
+  @Get(':id/invoice-pdf')
+  @ApiOperation({ summary: 'Download tax or proforma invoice PDF for a confirmed itinerary' })
+  @ApiQuery({ name: 'type', required: false, enum: ['tax', 'proforma'] })
+  async downloadInvoicePdf(
+    @Param('id', ParseIntPipe) id: number,
+    @Query('type') type: 'tax' | 'proforma' = 'tax',
+    @Res() res: Response,
+  ) {
+    const normalizedType = String(type || 'tax').trim().toLowerCase() === 'proforma' ? 'proforma' : 'tax';
+    await this.itineraryPdfService.downloadInvoicePdf(id, normalizedType, res);
   }
 
   @Post(':id/manual-hotspot/preview')
