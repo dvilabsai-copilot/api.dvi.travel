@@ -61,6 +61,19 @@ function buildVehicleDetailKey(row: any): string {
   ].join('|');
 }
 
+function toSortableDateTime(value: unknown): number {
+  if (!value) return 0;
+
+  if (value instanceof Date) {
+    const time = value.getTime();
+    return Number.isFinite(time) ? time : 0;
+  }
+
+  const parsed = new Date(value as string | number);
+  const time = parsed.getTime();
+  return Number.isFinite(time) ? time : 0;
+}
+
 export interface VehicleDayWisePricingDto {
   date: string; // "2025-12-26"
   dayLabel: string; // "Day 1 | 26 Dec 2025"
@@ -3336,9 +3349,9 @@ sightseeingDistance,       // local sightseeing separately
       }
     }
     const vehicleDetailsRows = Array.from(vehicleDetailRowsByKey.values()).sort((a, b) => {
-      const dateA = String((a as any).itinerary_route_date || '');
-      const dateB = String((b as any).itinerary_route_date || '');
-      if (dateA !== dateB) return dateA.localeCompare(dateB);
+      const dateA = toSortableDateTime((a as any).itinerary_route_date);
+      const dateB = toSortableDateTime((b as any).itinerary_route_date);
+      if (dateA !== dateB) return dateA - dateB;
       return (
         Number((a as any).itinerary_route_id || 0) -
         Number((b as any).itinerary_route_id || 0)
@@ -4136,8 +4149,11 @@ for (const vd of dayWiseDetails) {
       }
 
       // Convert map to array and format with day labels
+      const sortedDayWiseEntries = Array.from(dayWiseMap.entries()).sort(([dateA], [dateB]) => {
+        return toSortableDateTime(dateA) - toSortableDateTime(dateB);
+      });
       let dayCounter = 1;
-      for (const [dateStr, dayData] of dayWiseMap.entries()) {
+      for (const [dateStr, dayData] of sortedDayWiseEntries) {
         const date = new Date(dateStr);
         const dayName = date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
         const locations: string[] = dayData.locations.map((l: any) => l.from || '').concat(dayData.locations.map((l: any) => l.to || '')).filter((l: string) => l);
