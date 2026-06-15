@@ -5133,15 +5133,26 @@ export class ItinerariesService {
       throw new BadRequestException('Quote ID not found for this plan');
     }
 
+    const shouldConfirmHotels = [1, 3].includes(Number(plan.itinerary_preference || 0));
+    const hotelSelectionState = shouldConfirmHotels
+      ? await this.syncSelectedHotelDraftRowsForConfirmation(dto, userId)
+      : {
+          providerHotelBookings: [],
+          selectedRouteIds: [],
+          externalRouteIds: [],
+          groupType: 0,
+          skippedExternalStayCount: 0,
+        };
     const {
       providerHotelBookings,
       selectedRouteIds,
       externalRouteIds,
       groupType,
       skippedExternalStayCount,
-    } = await this.syncSelectedHotelDraftRowsForConfirmation(dto, userId);
+    } = hotelSelectionState;
     console.log('[CONFIRM_QUOTATION_HOTEL_SELECTION_SYNCED]', {
       planId: dto.itinerary_plan_ID,
+      shouldConfirmHotels,
       groupType,
       supplierBookableHotels: providerHotelBookings.length,
       selectedRouteIds,
@@ -5209,7 +5220,7 @@ export class ItinerariesService {
     const arrivalDateTime = parseDateTime(dto.arrival_date_time);
     const departureDateTime = parseDateTime(dto.departure_date_time);
 
-    const hasHotelBookings = providerHotelBookings.length > 0;
+    const hasHotelBookings = shouldConfirmHotels && providerHotelBookings.length > 0;
 
     // 3. Start Transaction
     return await this.prisma.$transaction(async (tx) => {
@@ -5411,8 +5422,9 @@ export class ItinerariesService {
 
       // G. Copy related tables (Travellers, Vehicles, Routes, Via Routes, Hotels, Hotspots, Activities)
       await this.copyDraftToConfirmed(tx, dto.itinerary_plan_ID, confirmedPlanId, userId, {
-        hotelGroupType: groupType,
-        selectedHotelRouteIds: selectedRouteIds,
+        copyHotels: shouldConfirmHotels,
+        hotelGroupType: shouldConfirmHotels ? groupType : undefined,
+        selectedHotelRouteIds: shouldConfirmHotels ? selectedRouteIds : [],
       });
 
       // H. Insert accounts row only when no provider bookings are pending.
@@ -6900,6 +6912,7 @@ export class ItinerariesService {
     confirmedPlanId: number,
     userId: number,
     options: {
+      copyHotels?: boolean;
       hotelGroupType?: number;
       selectedHotelRouteIds?: number[];
     } = {},
@@ -6973,176 +6986,178 @@ export class ItinerariesService {
       });
     }
 
-    // 5. Hotels
-    const hotelWhere: any = {
-      itinerary_plan_id: draftPlanId,
-      deleted: 0,
-      status: 1,
-    };
-
-    if (Number(options.hotelGroupType || 0) > 0) {
-      hotelWhere.group_type = Number(options.hotelGroupType);
-    }
-
-    if ((options.selectedHotelRouteIds || []).length > 0) {
-      hotelWhere.itinerary_route_id = {
-        in: options.selectedHotelRouteIds,
+    if (options.copyHotels !== false) {
+      // 5. Hotels
+      const hotelWhere: any = {
+        itinerary_plan_id: draftPlanId,
+        deleted: 0,
+        status: 1,
       };
-    }
 
-    const hotels = await tx.dvi_itinerary_plan_hotel_details.findMany({
-      where: hotelWhere,
-    });
-    const confirmedHotelIdByDraftHotelId = new Map<number, number>();
-    for (const h of hotels) {
-      const confirmedHotel = await tx.dvi_confirmed_itinerary_plan_hotel_details.create({
-        data: {
-          itinerary_plan_hotel_details_ID: h.itinerary_plan_hotel_details_ID,
-          group_type: h.group_type,
-          itinerary_plan_id: draftPlanId,
-          itinerary_route_id: h.itinerary_route_id,
-          itinerary_route_date: h.itinerary_route_date,
-          itinerary_route_location: h.itinerary_route_location,
-          hotel_required: h.hotel_required,
-          hotel_category_id: h.hotel_category_id,
-          hotel_id: h.hotel_id,
-          hotel_margin_percentage: h.hotel_margin_percentage,
-          hotel_margin_gst_type: h.hotel_margin_gst_type,
-          hotel_margin_gst_percentage: h.hotel_margin_gst_percentage,
-          hotel_margin_rate: h.hotel_margin_rate,
-          hotel_margin_rate_tax_amt: h.hotel_margin_rate_tax_amt,
-          hotel_breakfast_cost: h.hotel_breakfast_cost,
-          hotel_breakfast_cost_gst_amount: h.hotel_breakfast_cost_gst_amount,
-          hotel_lunch_cost: h.hotel_lunch_cost,
-          hotel_lunch_cost_gst_amount: h.hotel_lunch_cost_gst_amount,
-          hotel_dinner_cost: h.hotel_dinner_cost,
-          hotel_dinner_cost_gst_amount: h.hotel_dinner_cost_gst_amount,
-          total_no_of_persons: h.total_no_of_persons,
-          total_hotel_meal_plan_cost: h.total_hotel_meal_plan_cost,
-          total_hotel_meal_plan_cost_gst_amount: h.total_hotel_meal_plan_cost_gst_amount,
-          total_extra_bed_cost: h.total_extra_bed_cost,
-          total_extra_bed_cost_gst_amount: h.total_extra_bed_cost_gst_amount,
-          total_childwith_bed_cost: h.total_childwith_bed_cost,
-          total_childwith_bed_cost_gst_amount: h.total_childwith_bed_cost_gst_amount,
-          total_childwithout_bed_cost: h.total_childwithout_bed_cost,
-          total_childwithout_bed_cost_gst_amount: h.total_childwithout_bed_cost_gst_amount,
-          total_no_of_rooms: h.total_no_of_rooms,
-          total_room_cost: h.total_room_cost,
-          total_room_gst_amount: h.total_room_gst_amount,
-          total_hotel_cost: h.total_hotel_cost,
-          total_amenities_cost: h.total_amenities_cost,
-          total_amenities_gst_amount: h.total_amenities_gst_amount,
-          total_hotel_tax_amount: h.total_hotel_tax_amount,
-          hotel_code: h.hotel_code,
-        },
+      if (Number(options.hotelGroupType || 0) > 0) {
+        hotelWhere.group_type = Number(options.hotelGroupType);
+      }
+
+      if ((options.selectedHotelRouteIds || []).length > 0) {
+        hotelWhere.itinerary_route_id = {
+          in: options.selectedHotelRouteIds,
+        };
+      }
+
+      const hotels = await tx.dvi_itinerary_plan_hotel_details.findMany({
+        where: hotelWhere,
       });
+      const confirmedHotelIdByDraftHotelId = new Map<number, number>();
+      for (const h of hotels) {
+        const confirmedHotel = await tx.dvi_confirmed_itinerary_plan_hotel_details.create({
+          data: {
+            itinerary_plan_hotel_details_ID: h.itinerary_plan_hotel_details_ID,
+            group_type: h.group_type,
+            itinerary_plan_id: draftPlanId,
+            itinerary_route_id: h.itinerary_route_id,
+            itinerary_route_date: h.itinerary_route_date,
+            itinerary_route_location: h.itinerary_route_location,
+            hotel_required: h.hotel_required,
+            hotel_category_id: h.hotel_category_id,
+            hotel_id: h.hotel_id,
+            hotel_margin_percentage: h.hotel_margin_percentage,
+            hotel_margin_gst_type: h.hotel_margin_gst_type,
+            hotel_margin_gst_percentage: h.hotel_margin_gst_percentage,
+            hotel_margin_rate: h.hotel_margin_rate,
+            hotel_margin_rate_tax_amt: h.hotel_margin_rate_tax_amt,
+            hotel_breakfast_cost: h.hotel_breakfast_cost,
+            hotel_breakfast_cost_gst_amount: h.hotel_breakfast_cost_gst_amount,
+            hotel_lunch_cost: h.hotel_lunch_cost,
+            hotel_lunch_cost_gst_amount: h.hotel_lunch_cost_gst_amount,
+            hotel_dinner_cost: h.hotel_dinner_cost,
+            hotel_dinner_cost_gst_amount: h.hotel_dinner_cost_gst_amount,
+            total_no_of_persons: h.total_no_of_persons,
+            total_hotel_meal_plan_cost: h.total_hotel_meal_plan_cost,
+            total_hotel_meal_plan_cost_gst_amount: h.total_hotel_meal_plan_cost_gst_amount,
+            total_extra_bed_cost: h.total_extra_bed_cost,
+            total_extra_bed_cost_gst_amount: h.total_extra_bed_cost_gst_amount,
+            total_childwith_bed_cost: h.total_childwith_bed_cost,
+            total_childwith_bed_cost_gst_amount: h.total_childwith_bed_cost_gst_amount,
+            total_childwithout_bed_cost: h.total_childwithout_bed_cost,
+            total_childwithout_bed_cost_gst_amount: h.total_childwithout_bed_cost_gst_amount,
+            total_no_of_rooms: h.total_no_of_rooms,
+            total_room_cost: h.total_room_cost,
+            total_room_gst_amount: h.total_room_gst_amount,
+            total_hotel_cost: h.total_hotel_cost,
+            total_amenities_cost: h.total_amenities_cost,
+            total_amenities_gst_amount: h.total_amenities_gst_amount,
+            total_hotel_tax_amount: h.total_hotel_tax_amount,
+            hotel_code: h.hotel_code,
+          },
+        });
 
-      confirmedHotelIdByDraftHotelId.set(
-        Number(h.itinerary_plan_hotel_details_ID || 0),
-        Number(confirmedHotel.confirmed_itinerary_plan_hotel_details_ID || 0),
+        confirmedHotelIdByDraftHotelId.set(
+          Number(h.itinerary_plan_hotel_details_ID || 0),
+          Number(confirmedHotel.confirmed_itinerary_plan_hotel_details_ID || 0),
+        );
+      }
+
+      // 5a. Hotel Room Details
+      const selectedConfirmedHotelRouteIds = Array.from(
+        new Set(hotels.map((h) => Number(h.itinerary_route_id || 0)).filter((id) => id > 0)),
       );
-    }
 
-    // 5a. Hotel Room Details
-    const selectedConfirmedHotelRouteIds = Array.from(
-      new Set(hotels.map((h) => Number(h.itinerary_route_id || 0)).filter((id) => id > 0)),
-    );
-
-    const hotelRooms = selectedConfirmedHotelRouteIds.length > 0
-      ? await tx.dvi_itinerary_plan_hotel_room_details.findMany({
-          where: {
+      const hotelRooms = selectedConfirmedHotelRouteIds.length > 0
+        ? await tx.dvi_itinerary_plan_hotel_room_details.findMany({
+            where: {
+              itinerary_plan_id: draftPlanId,
+              deleted: 0,
+              ...(Number(options.hotelGroupType || 0) > 0
+                ? { group_type: Number(options.hotelGroupType) }
+                : {}),
+              itinerary_route_id: {
+                in: selectedConfirmedHotelRouteIds,
+              },
+            } as any,
+          })
+        : [];
+      for (const hr of hotelRooms) {
+        await tx.dvi_confirmed_itinerary_plan_hotel_room_details.create({
+          data: {
+            itinerary_plan_hotel_room_details_ID: hr.itinerary_plan_hotel_room_details_ID,
+            itinerary_plan_hotel_details_id: hr.itinerary_plan_hotel_details_id,
+            confirmed_itinerary_plan_hotel_details_id:
+              confirmedHotelIdByDraftHotelId.get(Number(hr.itinerary_plan_hotel_details_id || 0)) || 0,
+            group_type: hr.group_type,
             itinerary_plan_id: draftPlanId,
+            itinerary_route_id: hr.itinerary_route_id,
+            itinerary_route_date: hr.itinerary_route_date,
+            hotel_id: hr.hotel_id,
+            room_type_id: hr.room_type_id,
+            room_id: hr.room_id,
+            room_qty: hr.room_qty,
+            room_rate: hr.room_rate,
+            gst_type: hr.gst_type,
+            gst_percentage: hr.gst_percentage,
+            extra_bed_count: hr.extra_bed_count,
+            extra_bed_rate: hr.extra_bed_rate,
+            child_without_bed_count: hr.child_without_bed_count,
+            child_without_bed_charges: hr.child_without_bed_charges,
+            child_with_bed_count: hr.child_with_bed_count,
+            child_with_bed_charges: hr.child_with_bed_charges,
+            breakfast_required: hr.breakfast_required,
+            lunch_required: hr.lunch_required,
+            dinner_required: hr.dinner_required,
+            breakfast_cost_per_person: hr.breakfast_cost_per_person,
+            lunch_cost_per_person: hr.lunch_cost_per_person,
+            dinner_cost_per_person: hr.dinner_cost_per_person,
+            total_breafast_cost: hr.total_breafast_cost,
+            total_lunch_cost: hr.total_lunch_cost,
+            total_dinner_cost: hr.total_dinner_cost,
+            total_room_cost: hr.total_room_cost,
+            total_room_gst_amount: hr.total_room_gst_amount,
+            createdby: userId,
+            createdon: new Date(),
+            status: 1,
             deleted: 0,
-            ...(Number(options.hotelGroupType || 0) > 0
-              ? { group_type: Number(options.hotelGroupType) }
-              : {}),
-            itinerary_route_id: {
-              in: selectedConfirmedHotelRouteIds,
-            },
-          } as any,
-        })
-      : [];
-    for (const hr of hotelRooms) {
-      await tx.dvi_confirmed_itinerary_plan_hotel_room_details.create({
-        data: {
-          itinerary_plan_hotel_room_details_ID: hr.itinerary_plan_hotel_room_details_ID,
-          itinerary_plan_hotel_details_id: hr.itinerary_plan_hotel_details_id,
-          confirmed_itinerary_plan_hotel_details_id:
-            confirmedHotelIdByDraftHotelId.get(Number(hr.itinerary_plan_hotel_details_id || 0)) || 0,
-          group_type: hr.group_type,
-          itinerary_plan_id: draftPlanId,
-          itinerary_route_id: hr.itinerary_route_id,
-          itinerary_route_date: hr.itinerary_route_date,
-          hotel_id: hr.hotel_id,
-          room_type_id: hr.room_type_id,
-          room_id: hr.room_id,
-          room_qty: hr.room_qty,
-          room_rate: hr.room_rate,
-          gst_type: hr.gst_type,
-          gst_percentage: hr.gst_percentage,
-          extra_bed_count: hr.extra_bed_count,
-          extra_bed_rate: hr.extra_bed_rate,
-          child_without_bed_count: hr.child_without_bed_count,
-          child_without_bed_charges: hr.child_without_bed_charges,
-          child_with_bed_count: hr.child_with_bed_count,
-          child_with_bed_charges: hr.child_with_bed_charges,
-          breakfast_required: hr.breakfast_required,
-          lunch_required: hr.lunch_required,
-          dinner_required: hr.dinner_required,
-          breakfast_cost_per_person: hr.breakfast_cost_per_person,
-          lunch_cost_per_person: hr.lunch_cost_per_person,
-          dinner_cost_per_person: hr.dinner_cost_per_person,
-          total_breafast_cost: hr.total_breafast_cost,
-          total_lunch_cost: hr.total_lunch_cost,
-          total_dinner_cost: hr.total_dinner_cost,
-          total_room_cost: hr.total_room_cost,
-          total_room_gst_amount: hr.total_room_gst_amount,
-          createdby: userId,
-          createdon: new Date(),
-          status: 1,
-          deleted: 0,
-        },
-      });
-    }
+          },
+        });
+      }
 
-    // 5b. Hotel Room Amenities
-    const hotelAmenities = selectedConfirmedHotelRouteIds.length > 0
-      ? await tx.dvi_itinerary_plan_hotel_room_amenities.findMany({
-          where: {
+      // 5b. Hotel Room Amenities
+      const hotelAmenities = selectedConfirmedHotelRouteIds.length > 0
+        ? await tx.dvi_itinerary_plan_hotel_room_amenities.findMany({
+            where: {
+              itinerary_plan_id: draftPlanId,
+              deleted: 0,
+              ...(Number(options.hotelGroupType || 0) > 0
+                ? { group_type: Number(options.hotelGroupType) }
+                : {}),
+              itinerary_route_id: {
+                in: selectedConfirmedHotelRouteIds,
+              },
+            } as any,
+          })
+        : [];
+      for (const ha of hotelAmenities) {
+        await tx.dvi_confirmed_itinerary_plan_hotel_room_amenities.create({
+          data: {
+            itinerary_plan_hotel_room_amenities_details_ID: ha.itinerary_plan_hotel_room_amenities_details_ID,
+            itinerary_plan_hotel_details_id: ha.itinerary_plan_hotel_details_id,
+            confirmed_itinerary_plan_hotel_details_id:
+              confirmedHotelIdByDraftHotelId.get(Number(ha.itinerary_plan_hotel_details_id || 0)) || 0,
+            group_type: ha.group_type,
             itinerary_plan_id: draftPlanId,
+            itinerary_route_id: ha.itinerary_route_id,
+            itinerary_route_date: ha.itinerary_route_date,
+            hotel_id: ha.hotel_id,
+            hotel_amenities_id: ha.hotel_amenities_id,
+            total_qty: ha.total_qty,
+            amenitie_rate: ha.amenitie_rate,
+            total_amenitie_cost: ha.total_amenitie_cost,
+            total_amenitie_gst_amount: ha.total_amenitie_gst_amount,
+            createdby: userId,
+            createdon: new Date(),
+            status: 1,
             deleted: 0,
-            ...(Number(options.hotelGroupType || 0) > 0
-              ? { group_type: Number(options.hotelGroupType) }
-              : {}),
-            itinerary_route_id: {
-              in: selectedConfirmedHotelRouteIds,
-            },
-          } as any,
-        })
-      : [];
-    for (const ha of hotelAmenities) {
-      await tx.dvi_confirmed_itinerary_plan_hotel_room_amenities.create({
-        data: {
-          itinerary_plan_hotel_room_amenities_details_ID: ha.itinerary_plan_hotel_room_amenities_details_ID,
-          itinerary_plan_hotel_details_id: ha.itinerary_plan_hotel_details_id,
-          confirmed_itinerary_plan_hotel_details_id:
-            confirmedHotelIdByDraftHotelId.get(Number(ha.itinerary_plan_hotel_details_id || 0)) || 0,
-          group_type: ha.group_type,
-          itinerary_plan_id: draftPlanId,
-          itinerary_route_id: ha.itinerary_route_id,
-          itinerary_route_date: ha.itinerary_route_date,
-          hotel_id: ha.hotel_id,
-          hotel_amenities_id: ha.hotel_amenities_id,
-          total_qty: ha.total_qty,
-          amenitie_rate: ha.amenitie_rate,
-          total_amenitie_cost: ha.total_amenitie_cost,
-          total_amenitie_gst_amount: ha.total_amenitie_gst_amount,
-          createdby: userId,
-          createdon: new Date(),
-          status: 1,
-          deleted: 0,
-        },
-      });
+          },
+        });
+      }
     }
 
     // 6. Hotspots
@@ -8438,156 +8453,773 @@ export class ItinerariesService {
       where: { itinerary_plan_ID: itineraryPlanId, primary_customer: 1, deleted: 0 },
     });
 
-    const vehicles = await this.prisma.dvi_confirmed_itinerary_plan_vendor_eligible_list.findMany({
-      where: { itinerary_plan_id: itineraryPlanId, deleted: 0, status: 1, itineary_plan_assigned_status: 1 },
+    const itineraryPreference = Number(plan.itinerary_preference || 0);
+    const shouldShowHotels = itineraryPreference === 1 || itineraryPreference === 3;
+    const shouldShowVehicles = itineraryPreference === 2 || itineraryPreference === 3;
+
+    const [
+      hotels,
+      hotelRooms,
+      hotelVouchers,
+      hotelCancellationPolicies,
+      vehicles,
+      vehicleVouchers,
+      vehicleCancellationPolicies,
+    ] = await Promise.all([
+      shouldShowHotels
+        ? this.prisma.dvi_confirmed_itinerary_plan_hotel_details.findMany({
+            where: { itinerary_plan_id: itineraryPlanId, deleted: 0, status: 1 },
+            orderBy: [{ itinerary_route_date: 'asc' }, { confirmed_itinerary_plan_hotel_details_ID: 'asc' }],
+          })
+        : Promise.resolve([] as any[]),
+      shouldShowHotels
+        ? this.prisma.dvi_confirmed_itinerary_plan_hotel_room_details.findMany({
+            where: { itinerary_plan_id: itineraryPlanId, deleted: 0, status: 1 },
+            orderBy: [{ itinerary_route_date: 'asc' }, { confirmed_itinerary_plan_hotel_room_details_ID: 'asc' }],
+          })
+        : Promise.resolve([] as any[]),
+      shouldShowHotels
+        ? this.prisma.dvi_confirmed_itinerary_plan_hotel_voucher_details.findMany({
+            where: { itinerary_plan_id: itineraryPlanId, deleted: 0 },
+            orderBy: [{ updatedon: 'desc' }, { cnf_itinerary_plan_hotel_voucher_details_ID: 'desc' }],
+          })
+        : Promise.resolve([] as any[]),
+      shouldShowHotels
+        ? this.prisma.dvi_confirmed_itinerary_plan_hotel_cancellation_policy.findMany({
+            where: { itinerary_plan_id: itineraryPlanId, deleted: 0, status: 1 },
+          })
+        : Promise.resolve([] as any[]),
+      shouldShowVehicles
+        ? this.prisma.dvi_confirmed_itinerary_plan_vendor_eligible_list.findMany({
+            where: {
+              itinerary_plan_id: itineraryPlanId,
+              deleted: 0,
+              status: 1,
+              itineary_plan_assigned_status: 1,
+            },
+            orderBy: [{ vehicle_type_id: 'asc' }, { confirmed_itinerary_plan_vendor_eligible_ID: 'asc' }],
+          })
+        : Promise.resolve([] as any[]),
+      shouldShowVehicles
+        ? this.prisma.dvi_confirmed_itinerary_plan_vehicle_voucher_details.findMany({
+            where: { itinerary_plan_id: itineraryPlanId, deleted: 0 },
+            orderBy: [{ updatedon: 'desc' }, { cnf_itinerary_plan_vehicle_voucher_details_ID: 'desc' }],
+          })
+        : Promise.resolve([] as any[]),
+      shouldShowVehicles
+        ? this.prisma.dvi_confirmed_itinerary_plan_vehicle_cancellation_policy.findMany({
+            where: { itinerary_plan_id: itineraryPlanId, deleted: 0, status: 1 },
+          })
+        : Promise.resolve([] as any[]),
+    ]);
+
+    const hotelIds = Array.from(new Set(hotels.map((h: any) => Number(h.hotel_id || 0)).filter((id) => id > 0)));
+    const hotelRoomTypeIds = Array.from(new Set(hotelRooms.map((r: any) => Number(r.room_type_id || 0)).filter((id) => id > 0)));
+    const vendorIds = Array.from(new Set(vehicles.map((v: any) => Number(v.vendor_id || 0)).filter((id) => id > 0)));
+    const vendorBranchIds = Array.from(new Set(vehicles.map((v: any) => Number(v.vendor_branch_id || 0)).filter((id) => id > 0)));
+    const vehicleTypeIds = Array.from(new Set(vehicles.map((v: any) => Number(v.vehicle_type_id || 0)).filter((id) => id > 0)));
+
+    const [hotelMasters, roomTypes, vendorMasters, vendorBranches, vehicleTypes] = await Promise.all([
+      hotelIds.length > 0
+        ? this.prisma.dvi_hotel.findMany({
+            where: { hotel_id: { in: hotelIds } as any },
+            select: {
+              hotel_id: true,
+              hotel_name: true,
+              hotel_email: true,
+              hotel_city: true,
+              hotel_state: true,
+            },
+          })
+        : Promise.resolve([] as any[]),
+      hotelRoomTypeIds.length > 0
+        ? this.prisma.dvi_hotel_roomtype.findMany({
+            where: { room_type_id: { in: hotelRoomTypeIds } as any },
+            select: { room_type_id: true, room_type_title: true },
+          })
+        : Promise.resolve([] as any[]),
+      vendorIds.length > 0
+        ? this.prisma.dvi_vendor_details.findMany({
+            where: { vendor_id: { in: vendorIds } as any },
+            select: { vendor_id: true, vendor_name: true, vendor_email: true },
+          })
+        : Promise.resolve([] as any[]),
+      vendorBranchIds.length > 0
+        ? this.prisma.dvi_vendor_branches.findMany({
+            where: { vendor_branch_id: { in: vendorBranchIds } as any },
+            select: { vendor_branch_id: true, vendor_branch_name: true, vendor_branch_emailid: true },
+          })
+        : Promise.resolve([] as any[]),
+      vehicleTypeIds.length > 0
+        ? this.prisma.dvi_vehicle_type.findMany({
+            where: { vehicle_type_id: { in: vehicleTypeIds } as any },
+            select: { vehicle_type_id: true, vehicle_type_title: true },
+          })
+        : Promise.resolve([] as any[]),
+    ]);
+
+    const hotelById = new Map<number, any>();
+    for (const hotel of hotelMasters as any[]) {
+      hotelById.set(Number(hotel.hotel_id), hotel);
+    }
+
+    const roomTypeById = new Map<number, string>();
+    for (const roomType of roomTypes as any[]) {
+      roomTypeById.set(Number(roomType.room_type_id), String(roomType.room_type_title || ''));
+    }
+
+    const vendorById = new Map<number, any>();
+    for (const vendor of vendorMasters as any[]) {
+      vendorById.set(Number(vendor.vendor_id), vendor);
+    }
+
+    const vendorBranchById = new Map<number, any>();
+    for (const branch of vendorBranches as any[]) {
+      vendorBranchById.set(Number(branch.vendor_branch_id), branch);
+    }
+
+    const vehicleTypeById = new Map<number, string>();
+    for (const vehicleType of vehicleTypes as any[]) {
+      vehicleTypeById.set(Number(vehicleType.vehicle_type_id), String(vehicleType.vehicle_type_title || ''));
+    }
+
+    const itineraryDates = Array.from(
+      new Set(
+        hotels
+          .map((hotel: any) => this.toDateOnly(hotel.itinerary_route_date))
+          .filter(Boolean),
+      ),
+    ).sort();
+    const dayNumberByDate = new Map<string, number>();
+    itineraryDates.forEach((date, index) => {
+      dayNumberByDate.set(date, index + 1);
     });
 
-    const hotels = await this.prisma.dvi_confirmed_itinerary_plan_hotel_details.findMany({
-      where: { itinerary_plan_id: itineraryPlanId, deleted: 0, status: 1 },
-      orderBy: { itinerary_route_date: 'asc' },
-    });
+    const roomsByConfirmedHotelId = new Map<number, any[]>();
+    for (const room of hotelRooms as any[]) {
+      const confirmedHotelId = Number(room.confirmed_itinerary_plan_hotel_details_id || 0);
+      if (!confirmedHotelId) continue;
+      if (!roomsByConfirmedHotelId.has(confirmedHotelId)) {
+        roomsByConfirmedHotelId.set(confirmedHotelId, []);
+      }
+      roomsByConfirmedHotelId.get(confirmedHotelId)!.push(room);
+    }
 
-    // Fetch additional details for vehicles
-    const vehicleDetails = await Promise.all(vehicles.map(async (v) => {
-      const vendor = await this.prisma.dvi_vendor_details.findUnique({
-        where: { vendor_id: v.vendor_id },
-        select: { vendor_name: true },
-      });
-      const vehicleType = await this.prisma.dvi_vehicle_type.findUnique({
-        where: { vehicle_type_id: v.vehicle_type_id },
-        select: { vehicle_type_title: true },
-      });
-      const branch = await this.prisma.dvi_vendor_branches.findUnique({
-        where: { vendor_branch_id: v.vendor_branch_id },
-        select: { vendor_branch_name: true },
-      });
+    const hotelGroupMap = new Map<number, any>();
+    for (const hotel of hotels as any[]) {
+      const hotelId = Number(hotel.hotel_id || 0);
+      if (!hotelId) continue;
 
-      return {
-        ...v,
-        vendor_name: vendor?.vendor_name || 'N/A',
-        vehicle_type_title: vehicleType?.vehicle_type_title || 'N/A',
-        branch_label: branch?.vendor_branch_name || 'N/A',
-      };
-    }));
+      const dateKey = this.toDateOnly(hotel.itinerary_route_date);
+      const hotelMaster = hotelById.get(hotelId);
+      const hotelRoomsForRow = roomsByConfirmedHotelId.get(Number(hotel.confirmed_itinerary_plan_hotel_details_ID || 0)) || [];
+      const roomTypesForRow = Array.from(
+        new Set(
+          hotelRoomsForRow
+            .map((room: any) => roomTypeById.get(Number(room.room_type_id || 0)) || '')
+            .filter(Boolean),
+        ),
+      );
 
-    // Fetch additional details for hotels
-    const hotelDetails = await Promise.all(hotels.map(async (h) => {
-      const hotel = await this.prisma.dvi_hotel.findUnique({
-        where: { hotel_id: h.hotel_id },
-        select: { hotel_name: true },
-      });
-      
-      const rooms = await this.prisma.dvi_confirmed_itinerary_plan_hotel_room_details.findMany({
-        where: { confirmed_itinerary_plan_hotel_details_id: h.confirmed_itinerary_plan_hotel_details_ID, deleted: 0 },
-      });
-
-      const roomDetails = await Promise.all(rooms.map(async (r) => {
-        const roomType = await this.prisma.dvi_hotel_roomtype.findUnique({
-          where: { room_type_id: r.room_type_id },
-          select: { room_type_title: true },
+      if (!hotelGroupMap.has(hotelId)) {
+        hotelGroupMap.set(hotelId, {
+          routeId: Number(hotel.itinerary_route_id || 0),
+          hotelId,
+          hotelName: String(hotelMaster?.hotel_name || 'N/A'),
+          hotelEmail: String(hotelMaster?.hotel_email || ''),
+          hotelStateCity: [hotelMaster?.hotel_state, hotelMaster?.hotel_city].filter(Boolean).join(', '),
+          routeDates: [] as string[],
+          dayNumbers: [] as number[],
+          hotelDetailsIds: [] as number[],
+          confirmedHotelDetailsIds: [] as number[],
+          destinations: [] as string[],
+          roomTypes: [] as string[],
+          hotelRequired: Number(hotel.hotel_required || 0) === 1,
+          hotelCancellationStatus: Number(hotel.hotel_cancellation_status || 0),
         });
+      }
+
+      const group = hotelGroupMap.get(hotelId)!;
+      if (dateKey && !group.routeDates.includes(dateKey)) {
+        group.routeDates.push(dateKey);
+      }
+      const dayNumber = dayNumberByDate.get(dateKey);
+      if (dayNumber && !group.dayNumbers.includes(dayNumber)) {
+        group.dayNumbers.push(dayNumber);
+      }
+      const hotelDetailsId = Number(hotel.itinerary_plan_hotel_details_ID || 0);
+      if (hotelDetailsId > 0 && !group.hotelDetailsIds.includes(hotelDetailsId)) {
+        group.hotelDetailsIds.push(hotelDetailsId);
+      }
+      const confirmedHotelDetailsId = Number(hotel.confirmed_itinerary_plan_hotel_details_ID || 0);
+      if (confirmedHotelDetailsId > 0 && !group.confirmedHotelDetailsIds.includes(confirmedHotelDetailsId)) {
+        group.confirmedHotelDetailsIds.push(confirmedHotelDetailsId);
+      }
+      const destination = String(hotel.itinerary_route_location || '').trim();
+      if (destination && !group.destinations.includes(destination)) {
+        group.destinations.push(destination);
+      }
+      roomTypesForRow.forEach((roomType: string) => {
+        if (roomType && !group.roomTypes.includes(roomType)) {
+          group.roomTypes.push(roomType);
+        }
+      });
+      group.hotelCancellationStatus = Math.max(group.hotelCancellationStatus, Number(hotel.hotel_cancellation_status || 0));
+    }
+
+    const hotelVoucherGroups = Array.from(hotelGroupMap.values())
+      .map((group) => {
+        const matchedVouchers = hotelVouchers.filter((voucher: any) => {
+          const hotelDetailsId = Number(voucher.itinerary_plan_hotel_details_ID || 0);
+          const confirmedHotelDetailsId = Number(voucher.confirmed_itinerary_plan_hotel_details_ID || 0);
+          return (
+            Number(voucher.hotel_id || 0) === Number(group.hotelId) ||
+            group.hotelDetailsIds.includes(hotelDetailsId) ||
+            group.confirmedHotelDetailsIds.includes(confirmedHotelDetailsId)
+          );
+        });
+        const latestVoucher = matchedVouchers[0] || null;
+        const policyCount = hotelCancellationPolicies.filter((policy: any) => Number(policy.hotel_id || 0) === Number(group.hotelId)).length;
+        const voucherCancelled =
+          matchedVouchers.some((voucher: any) => Number(voucher.hotel_voucher_cancellation_status || 0) === 1) ||
+          Number(group.hotelCancellationStatus || 0) === 1;
+
         return {
-          ...r,
-          room_type_title: roomType?.room_type_title || 'N/A',
+          ...group,
+          routeDates: [...group.routeDates].sort(),
+          dayNumbers: [...group.dayNumbers].sort((a: number, b: number) => a - b),
+          roomTypes: [...group.roomTypes].sort(),
+          hasVoucher: matchedVouchers.length > 0,
+          voucherCount: matchedVouchers.length,
+          cancellationPolicyCount: policyCount,
+          voucherCancelled,
+          bookingStatusCode: Number(latestVoucher?.hotel_booking_status || 0),
+          bookingStatusLabel: this.getVoucherStatusLabel(
+            Number(latestVoucher?.hotel_booking_status || 0),
+            voucherCancelled,
+          ),
+          confirmedBy: String(latestVoucher?.hotel_confirmed_by || ''),
+          confirmedEmail: String(latestVoucher?.hotel_confirmed_email_id || ''),
+          confirmedMobile: String(latestVoucher?.hotel_confirmed_mobile_no || ''),
+          invoiceToCode: Number(latestVoucher?.invoice_to || 0),
+          invoiceToLabel: this.getInvoiceToLabel(Number(latestVoucher?.invoice_to || 0)),
         };
-      }));
+      })
+      .sort((a, b) => {
+        const aDay = Number(a.dayNumbers?.[0] || 0);
+        const bDay = Number(b.dayNumbers?.[0] || 0);
+        return aDay - bDay || Number(a.hotelId || 0) - Number(b.hotelId || 0);
+      });
+
+    const vehicleVoucherGroups = vehicles.map((vehicle: any) => {
+      const matchedVouchers = vehicleVouchers.filter((voucher: any) => {
+        return (
+          Number(voucher.confirmed_itinerary_plan_vendor_eligible_ID || 0) === Number(vehicle.confirmed_itinerary_plan_vendor_eligible_ID || 0) ||
+          Number(voucher.itinerary_plan_vendor_eligible_ID || 0) === Number(vehicle.itinerary_plan_vendor_eligible_ID || 0)
+        );
+      });
+      const latestVoucher = matchedVouchers[0] || null;
+      const cancellationPolicyCount = vehicleCancellationPolicies.filter(
+        (policy: any) =>
+          Number(policy.vendor_id || 0) === Number(vehicle.vendor_id || 0) &&
+          Number(policy.vendor_vehicle_type_id || 0) === Number(vehicle.vendor_vehicle_type_id || 0),
+      ).length;
+      const vendor = vendorById.get(Number(vehicle.vendor_id || 0));
+      const branch = vendorBranchById.get(Number(vehicle.vendor_branch_id || 0));
+      const vehicleTypeTitle = vehicleTypeById.get(Number(vehicle.vehicle_type_id || 0)) || 'N/A';
+      const totalQty = Number(vehicle.total_vehicle_qty || 0);
+      const totalAmount =
+        totalQty > 0 && Number(vehicle.vehicle_grand_total || 0) > 0
+          ? totalQty * Number(vehicle.vehicle_grand_total || 0)
+          : totalQty * Number(vehicle.vehicle_total_amount || 0);
+
+        return {
+          vendorEligibleId: Number(vehicle.itinerary_plan_vendor_eligible_ID || 0),
+          confirmedVendorEligibleId: Number(vehicle.confirmed_itinerary_plan_vendor_eligible_ID || 0),
+        vehicleTypeId: Number(vehicle.vehicle_type_id || 0),
+        vendorVehicleTypeId: Number(vehicle.vendor_vehicle_type_id || 0),
+        vendorId: Number(vehicle.vendor_id || 0),
+        vendorName: String(vendor?.vendor_name || 'N/A'),
+        vendorEmail: String(branch?.vendor_branch_emailid || vendor?.vendor_email || ''),
+        vendorBranchId: Number(vehicle.vendor_branch_id || 0),
+        vendorBranchName: String(branch?.vendor_branch_name || 'N/A'),
+        vehicleTypeTitle,
+        vehicleOrigin: String(vehicle.vehicle_orign || '').trim(),
+        totalQty,
+        totalAmount,
+        cancellationPolicyCount,
+        hasVoucher: matchedVouchers.length > 0,
+        voucherCount: matchedVouchers.length,
+          bookingStatusCode: Number(latestVoucher?.vehicle_booking_status || 0),
+          bookingStatusLabel: this.getVoucherStatusLabel(Number(latestVoucher?.vehicle_booking_status || 0), false),
+          confirmedBy: String(latestVoucher?.vehicle_confirmed_by || ''),
+          confirmedEmail: String(latestVoucher?.vehicle_confirmed_email_id || ''),
+          confirmedMobile: String(latestVoucher?.vehicle_confirmed_mobile_no || ''),
+          reservationNo: String(latestVoucher?.vehicle_confirmed_reservation || ''),
+          verifiedBy: String(latestVoucher?.vehicle_confirmation_verified_by || ''),
+          verifiedMobile: String(latestVoucher?.vehicle_confirmation_verified_mobile_no || ''),
+          verifiedEmail: String(latestVoucher?.vehicle_confirmation_verified_email_id || ''),
+          statusRemarks: String(latestVoucher?.vehicle_confirmation_status_remarks || ''),
+          invoiceToCode: Number(latestVoucher?.invoice_to || 0),
+          invoiceToLabel: this.getInvoiceToLabel(Number(latestVoucher?.invoice_to || 0)),
+        };
+      });
+
+    return {
+      summary: {
+        itineraryPlanId,
+        confirmedItineraryPlanId: Number(plan.confirmed_itinerary_plan_ID || 0),
+        quotationNo: String(plan.itinerary_quote_ID || ''),
+        itineraryPreference,
+        shouldShowHotels,
+        shouldShowVehicles,
+        arrivalLocation: plan.arrival_location || '',
+        departureLocation: plan.departure_location || '',
+        tripStartDateTime: plan.trip_start_date_and_time,
+        tripEndDateTime: plan.trip_end_date_and_time,
+        noOfDays: Number(plan.no_of_days || 0),
+        noOfNights: Number(plan.no_of_nights || 0),
+        adults: Number(plan.total_adult || 0),
+        children: Number(plan.total_children || 0),
+        infants: Number(plan.total_infants || 0),
+        roomCount: Number(plan.preferred_room_count || 0),
+        extraBed: Number(plan.total_extra_bed || 0),
+        childWithBed: Number(plan.total_child_with_bed || 0),
+        childWithoutBed: Number(plan.total_child_without_bed || 0),
+        existingHotelVoucherCount: hotelVouchers.length,
+        existingVehicleVoucherCount: vehicleVouchers.length,
+      },
+      customer: {
+        name: customer
+          ? `${String(customer.customer_salutation || '').trim()} ${String(customer.customer_name || '').trim()}`.trim()
+          : 'N/A',
+        age: customer?.customer_age || null,
+        contactNo: customer?.primary_contact_no || '',
+        emailId: customer?.email_id || '',
+      },
+      hotelVoucherGroups,
+      vehicleVoucherGroups,
+    };
+  }
+
+  private toDateOnly(value: Date | string | null | undefined): string {
+    if (!value) return '';
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    return date.toISOString().split('T')[0];
+  }
+
+  private getInvoiceToLabel(invoiceTo: number): string {
+    switch (Number(invoiceTo || 0)) {
+      case 1:
+        return 'GST Bill Against DVI';
+      case 2:
+        return 'Hotel Direct';
+      case 3:
+        return 'Agent';
+      default:
+        return 'Not Set';
+    }
+  }
+
+  private getVoucherStatusLabel(status: number, isCancelled: boolean): string {
+    if (isCancelled) {
+      return 'Cancelled';
+    }
+
+      switch (Number(status || 0)) {
+        case 4:
+          return 'Confirmed';
+        case 6:
+          return 'Cancelled';
+        case 5:
+          return 'Sold Out';
+        case 3:
+          return 'Blocked';
+        case 2:
+          return 'Waiting List';
+        case 1:
+          return 'Awaiting';
+        default:
+        return 'Not Created';
+      }
+    }
+
+    private buildPluckCardData(plan: any, customer: any, settings: any) {
+      return {
+        guestName: customer
+          ? `${String(customer.customer_salutation || '').trim()} ${String(customer.customer_name || '').trim()}`.trim()
+          : 'N/A',
+        contactNo: String(customer?.primary_contact_no || 'N/A'),
+        arrivalLocation: String(customer?.arrival_place || plan?.arrival_location || ''),
+        arrivalDateTime: customer?.arrival_date_and_time || plan?.trip_start_date_and_time || null,
+        arrivalFlightDetails: String(customer?.arrival_flight_details || ''),
+        departureLocation: String(customer?.departure_place || plan?.departure_location || ''),
+        departureDateTime: customer?.departure_date_and_time || plan?.trip_end_date_and_time || null,
+        departureFlightDetails: String(customer?.departure_flight_details || ''),
+        companyName: String(settings?.company_name || 'DVI'),
+        companyLogoUrl: settings?.company_logo ? `/uploads/logo/${String(settings.company_logo)}` : '',
+      };
+    }
+
+    private getStateNameFromGstCode(gstNo?: string | null): string {
+      const code = String(gstNo || '').trim().slice(0, 2);
+      const labels: Record<string, string> = {
+        '01': 'Jammu and Kashmir',
+        '02': 'Himachal Pradesh',
+        '03': 'Punjab',
+        '04': 'Chandigarh',
+        '05': 'Uttarakhand',
+        '06': 'Haryana',
+        '07': 'Delhi',
+        '08': 'Rajasthan',
+        '09': 'Uttar Pradesh',
+        '10': 'Bihar',
+        '11': 'Sikkim',
+        '12': 'Arunachal Pradesh',
+        '13': 'Nagaland',
+        '14': 'Manipur',
+        '15': 'Mizoram',
+        '16': 'Tripura',
+        '17': 'Meghalaya',
+        '18': 'Assam',
+        '19': 'West Bengal',
+        '20': 'Jharkhand',
+        '21': 'Odisha',
+        '22': 'Chhattisgarh',
+        '23': 'Madhya Pradesh',
+        '24': 'Gujarat',
+        '26': 'Dadra and Nagar Haveli and Daman and Diu',
+        '27': 'Maharashtra',
+        '28': 'Andhra Pradesh',
+        '29': 'Karnataka',
+        '30': 'Goa',
+        '31': 'Lakshadweep',
+        '32': 'Kerala',
+        '33': 'Tamil Nadu',
+        '34': 'Puducherry',
+        '35': 'Andaman and Nicobar Islands',
+        '36': 'Telangana',
+        '37': 'Andhra Pradesh',
+        '38': 'Ladakh',
+      };
+      return labels[code] || '';
+    }
+
+    async getPluckCardData(itineraryPlanId: number) {
+      const [plan, customer, settings] = await Promise.all([
+        this.prisma.dvi_confirmed_itinerary_plan_details.findFirst({
+          where: { itinerary_plan_ID: itineraryPlanId, deleted: 0 },
+        }),
+        this.prisma.dvi_confirmed_itinerary_customer_details.findFirst({
+          where: { itinerary_plan_ID: itineraryPlanId, primary_customer: 1, deleted: 0 },
+        }),
+        this.prisma.dvi_global_settings.findFirst({
+          where: { status: 1, deleted: 0 },
+        }),
+      ]);
+
+      if (!plan) {
+        throw new NotFoundException('Confirmed itinerary plan not found');
+      }
+
+      return this.buildPluckCardData(plan, customer, settings);
+    }
+  
+    async getPluckCardDataByConfirmedId(confirmedPlanId: number) {
+      const [plan, customer, settings] = await Promise.all([
+        this.prisma.dvi_confirmed_itinerary_plan_details.findUnique({
+          where: { confirmed_itinerary_plan_ID: confirmedPlanId },
+        }),
+        this.prisma.dvi_confirmed_itinerary_customer_details.findFirst({
+          where: { confirmed_itinerary_plan_ID: confirmedPlanId, primary_customer: 1, deleted: 0 },
+        }),
+        this.prisma.dvi_global_settings.findFirst({
+          where: { status: 1, deleted: 0 },
+        }),
+      ]);
+
+      if (!plan) {
+        throw new NotFoundException('Confirmed itinerary plan not found');
+      }
+
+      return this.buildPluckCardData(plan, customer, settings);
+    }
+  
+    async getInvoiceData(itineraryPlanId: number) {
+      const plan = await this.prisma.dvi_confirmed_itinerary_plan_details.findFirst({
+        where: { itinerary_plan_ID: itineraryPlanId, deleted: 0 },
+      });
+  
+      if (!plan) {
+        throw new NotFoundException('Confirmed itinerary plan not found');
+      }
+
+      const [
+        agent,
+        agentConfig,
+        customer,
+        settings,
+        accounts,
+        hotels,
+        vehicles,
+        activities,
+        guides,
+        hotspots,
+        travelExpert,
+      ] = await Promise.all([
+        this.prisma.dvi_agent.findUnique({
+          where: { agent_ID: plan.agent_id },
+        }),
+        this.prisma.dvi_agent_configuration.findFirst({
+          where: { agent_id: plan.agent_id, deleted: 0, status: 1 },
+        }),
+        this.prisma.dvi_confirmed_itinerary_customer_details.findFirst({
+          where: { itinerary_plan_ID: itineraryPlanId, primary_customer: 1, deleted: 0 },
+        }),
+        this.prisma.dvi_global_settings.findFirst({
+          where: { status: 1, deleted: 0 },
+        }),
+        this.prisma.dvi_accounts_itinerary_details.findFirst({
+          where: { itinerary_plan_ID: itineraryPlanId, deleted: 0 },
+        }),
+        this.prisma.dvi_confirmed_itinerary_plan_hotel_details.findMany({
+          where: { itinerary_plan_id: itineraryPlanId, deleted: 0, status: 1 },
+          orderBy: [{ itinerary_route_date: 'asc' }, { confirmed_itinerary_plan_hotel_details_ID: 'asc' }],
+        }),
+        this.prisma.dvi_confirmed_itinerary_plan_vendor_eligible_list.findMany({
+          where: { itinerary_plan_id: itineraryPlanId, deleted: 0, status: 1, itineary_plan_assigned_status: 1 },
+          orderBy: [{ confirmed_itinerary_plan_vendor_eligible_ID: 'asc' }],
+        }),
+        this.prisma.dvi_accounts_itinerary_activity_details.findMany({
+          where: { itinerary_plan_ID: itineraryPlanId, deleted: 0, status: 1 },
+        }),
+        this.prisma.dvi_accounts_itinerary_guide_details.findMany({
+          where: { itinerary_plan_ID: itineraryPlanId, deleted: 0, status: 1 },
+        }),
+        this.prisma.dvi_accounts_itinerary_hotspot_details.findMany({
+          where: { itinerary_plan_ID: itineraryPlanId, deleted: 0, status: 1 },
+        }),
+        plan.agent_id
+          ? (async () => {
+              const currentAgent = await this.prisma.dvi_agent.findUnique({
+                where: { agent_ID: plan.agent_id },
+                select: { travel_expert_id: true },
+              });
+              if (!currentAgent?.travel_expert_id) return null;
+              return this.prisma.dvi_staff_details.findFirst({
+                where: { staff_id: currentAgent.travel_expert_id, deleted: 0 },
+              });
+            })()
+          : Promise.resolve(null),
+      ]);
+
+      const hotelIds = Array.from(new Set(hotels.map((row: any) => Number(row.hotel_id || 0)).filter((id) => id > 0)));
+      const vendorIds = Array.from(new Set(vehicles.map((row: any) => Number(row.vendor_id || 0)).filter((id) => id > 0)));
+      const vehicleTypeIds = Array.from(
+        new Set(vehicles.map((row: any) => Number(row.vehicle_type_id || 0)).filter((id) => id > 0)),
+      );
+
+      const [hotelMasters, vendorMasters, vehicleTypeMasters] = await Promise.all([
+        hotelIds.length
+          ? this.prisma.dvi_hotel.findMany({
+              where: { hotel_id: { in: hotelIds } as any },
+              select: { hotel_id: true, hotel_name: true },
+            })
+          : Promise.resolve([] as any[]),
+        vendorIds.length
+          ? this.prisma.dvi_vendor_details.findMany({
+              where: { vendor_id: { in: vendorIds } as any },
+              select: { vendor_id: true, vendor_name: true },
+            })
+          : Promise.resolve([] as any[]),
+        vehicleTypeIds.length
+          ? this.prisma.dvi_vehicle_type.findMany({
+              where: { vehicle_type_id: { in: vehicleTypeIds } as any },
+              select: { vehicle_type_id: true, vehicle_type_title: true },
+            })
+          : Promise.resolve([] as any[]),
+      ]);
+
+      const hotelNameById = new Map<number, string>();
+      hotelMasters.forEach((row: any) => hotelNameById.set(Number(row.hotel_id), String(row.hotel_name || 'Hotel')));
+      const vendorNameById = new Map<number, string>();
+      vendorMasters.forEach((row: any) => vendorNameById.set(Number(row.vendor_id), String(row.vendor_name || 'Vendor')));
+      const vehicleTypeById = new Map<number, string>();
+      vehicleTypeMasters.forEach((row: any) =>
+        vehicleTypeById.set(Number(row.vehicle_type_id), String(row.vehicle_type_title || 'Vehicle')),
+      );
+
+      const hotelBaseAmount = hotels.reduce((sum: number, row: any) => sum + Number(row.total_hotel_cost || 0), 0);
+      const hotelMarginAmount = hotels.reduce((sum: number, row: any) => sum + Number(row.hotel_margin_rate || 0), 0);
+      const hotelMarginTaxAmount = hotels.reduce(
+        (sum: number, row: any) => sum + Number(row.hotel_margin_rate_tax_amt || 0),
+        0,
+      );
+      const vehicleMarginAmount = vehicles.reduce((sum: number, row: any) => sum + Number(row.vendor_margin_amount || 0), 0);
+      const vehicleTaxAmount = vehicles.reduce(
+        (sum: number, row: any) =>
+          sum + Number(row.vendor_margin_gst_amount || 0) + Number(row.vehicle_gst_amount || 0),
+        0,
+      );
+      const serviceBaseAmount =
+        Number(plan.itinerary_agent_margin_charges || 0) +
+        guides.reduce((sum: number, row: any) => sum + Number(row.total_payable || 0), 0) +
+        hotspots.reduce((sum: number, row: any) => sum + Number(row.total_payable || 0), 0) +
+        activities.reduce((sum: number, row: any) => sum + Number(row.total_payable || 0), 0);
+      const serviceTaxAmount = serviceBaseAmount > 0
+        ? (serviceBaseAmount * Number(plan.itinerary_agent_margin_gst_percentage || 0)) / 100
+        : 0;
+
+      const companyGst = String(settings?.company_gstin_no || '');
+      const buyerGst = String(agentConfig?.invoice_gstin_no || '');
+      const isSameState = companyGst.slice(0, 2) === buyerGst.slice(0, 2);
+      const gstLabel = isSameState ? 'CGST, SGST' : 'IGST';
+      const couponDiscount = Number(plan.itinerary_total_coupon_discount_amount || 0);
+      const totalAmount = Number(
+        accounts?.total_billed_amount ||
+          plan.itinerary_total_net_payable_amount ||
+          hotelBaseAmount + hotelMarginAmount + hotelMarginTaxAmount + vehicleMarginAmount + vehicleTaxAmount + serviceBaseAmount + serviceTaxAmount - couponDiscount,
+      );
 
       return {
-        ...h,
-        hotel_name: hotel?.hotel_name || 'N/A',
-        rooms: roomDetails,
+        meta: {
+          invoiceNo: String(plan.itinerary_quote_ID || ''),
+          invoiceDate: plan.trip_start_date_and_time,
+          deliveryNote: String(plan.itinerary_quote_ID || ''),
+          travelExpertName: String(travelExpert?.staff_name || ''),
+          itineraryPreference: Number(plan.itinerary_preference || 0),
+          gstLabel,
+        },
+        company: {
+          name: String(settings?.company_name || ''),
+          address: String(settings?.company_address || ''),
+          pincode: String(settings?.company_pincode || ''),
+          gstNo: companyGst,
+          gstStateCode: companyGst.slice(0, 2),
+          gstStateName: this.getStateNameFromGstCode(companyGst),
+          cin: String(settings?.company_cin || ''),
+          email: String(settings?.company_email_id || ''),
+          contactNo: String(settings?.company_contact_no || ''),
+          logoUrl: settings?.company_logo ? `/uploads/logo/${String(settings.company_logo)}` : '',
+          bank: {
+            accountName: String(settings?.bank_acc_holder_name || ''),
+            accountNo: String(settings?.bank_acc_no || ''),
+            branchName: String(settings?.branch_name || ''),
+            ifscCode: String(settings?.bank_ifsc_code || ''),
+            bankName: String(settings?.bank_name || ''),
+          },
+        },
+        buyer: {
+          companyName: String(agentConfig?.company_name || agent?.agent_name || ''),
+          address: String(agentConfig?.invoice_address || ''),
+          gstNo: buyerGst,
+          gstStateCode: buyerGst.slice(0, 2),
+          gstStateName: this.getStateNameFromGstCode(buyerGst),
+          panNo: String(agentConfig?.invoice_pan_no || ''),
+          agentName: `${String(agent?.agent_name || '').trim()} ${String(agent?.agent_lastname || '').trim()}`.trim(),
+          email: String(agent?.agent_email_id || ''),
+        },
+        guest: {
+          name: customer
+            ? `${String(customer.customer_salutation || '').trim()} ${String(customer.customer_name || '').trim()}`.trim()
+            : 'N/A',
+          contactNo: String(customer?.primary_contact_no || ''),
+          arrivalPlace: String(customer?.arrival_place || plan.arrival_location || ''),
+          arrivalDateTime: customer?.arrival_date_and_time || null,
+          departurePlace: String(customer?.departure_place || plan.departure_location || ''),
+          departureDateTime: customer?.departure_date_and_time || null,
+        },
+        itinerary: {
+          quoteId: String(plan.itinerary_quote_ID || ''),
+          tripStartDateTime: plan.trip_start_date_and_time,
+          tripEndDateTime: plan.trip_end_date_and_time,
+          routeSummary: `${String(plan.arrival_location || '')} to ${String(plan.departure_location || '')}`.trim(),
+        },
+        lineItems: [
+          {
+            key: 'hotel_base',
+            serialNo: 1,
+            title: 'HOTEL BOOKING CHARGES ONLY A/C (GST PAID)',
+            hsnSac: String(settings?.hotel_hsn || ''),
+            amount: hotelBaseAmount,
+            notes: hotels.map((row: any) => ({
+              label: `${row.itinerary_route_date ? new Date(row.itinerary_route_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : ''} - ${String(row.itinerary_route_location || '').trim()} - ${hotelNameById.get(Number(row.hotel_id || 0)) || 'Hotel'}`.replace(/^\s*-\s*/, ''),
+            })),
+          },
+          {
+            key: 'hotel_margin',
+            serialNo: '',
+            title: `${gstLabel} SALES @ ${Number(hotels[0]?.hotel_margin_gst_percentage || 0)}% ACCOMMODATION SERVICES`,
+            hsnSac: '',
+            amount: hotelMarginAmount,
+            notes: [],
+          },
+          {
+            key: 'hotel_tax',
+            serialNo: '',
+            title: isSameState
+              ? `OUTPUT CGST + SGST @ ${Number(hotels[0]?.hotel_margin_gst_percentage || 0) / 2}%`
+              : `OUTPUT IGST @ ${Number(hotels[0]?.hotel_margin_gst_percentage || 0)}%`,
+            hsnSac: '',
+            amount: hotelMarginTaxAmount,
+            notes: [],
+          },
+          ...(vehicles.length > 0
+            ? [
+                {
+                  key: 'vehicle_margin',
+                  serialNo: 2,
+                  title: `${gstLabel} SALES @ ${Number(vehicles[0]?.vendor_margin_gst_percentage || 0)}% TRANSPORTATION SERVICES`,
+                  hsnSac: String(settings?.vehicle_hsn || ''),
+                  amount: vehicleMarginAmount,
+                  notes: vehicles.map((row: any) => ({
+                    label: `${vendorNameById.get(Number(row.vendor_id || 0)) || 'Vendor'} - ${vehicleTypeById.get(Number(row.vehicle_type_id || 0)) || 'Vehicle'}${row.vehicle_orign ? ` - ${String(row.vehicle_orign).trim()}` : ''}`,
+                  })),
+                },
+                {
+                  key: 'vehicle_tax',
+                  serialNo: '',
+                  title: isSameState
+                    ? `OUTPUT CGST + SGST @ ${Number(vehicles[0]?.vendor_margin_gst_percentage || 0) / 2}%`
+                    : `OUTPUT IGST @ ${Number(vehicles[0]?.vendor_margin_gst_percentage || 0)}%`,
+                  hsnSac: '',
+                  amount: vehicleTaxAmount,
+                  notes: [],
+                },
+              ]
+            : []),
+          ...(serviceBaseAmount > 0
+            ? [
+                {
+                  key: 'service_base',
+                  serialNo: vehicles.length > 0 ? 3 : 2,
+                  title: 'TOTAL GUIDE / HOTSPOT / ACTIVITY / SERVICE COMPONENTS',
+                  hsnSac: String(settings?.service_component_hsn || ''),
+                  amount: serviceBaseAmount,
+                  notes: [],
+                },
+                {
+                  key: 'service_tax',
+                  serialNo: '',
+                  title: isSameState
+                    ? `OUTPUT CGST + SGST @ ${Number(plan.itinerary_agent_margin_gst_percentage || 0) / 2}%`
+                    : `OUTPUT IGST @ ${Number(plan.itinerary_agent_margin_gst_percentage || 0)}%`,
+                  hsnSac: '',
+                  amount: serviceTaxAmount,
+                  notes: [],
+                },
+              ]
+            : []),
+        ].filter((item: any) => Number(item.amount || 0) > 0),
+        totals: {
+          couponDiscount,
+          totalAmount,
+        },
+        declaration:
+          'The hotel bill charges are collected on behalf of the hotel hence the GST is payable by the hotel directly to the government.',
       };
-    }));
-
-    return {
-      plan,
-      customer,
-      vehicles: vehicleDetails,
-      hotels: hotelDetails,
-    };
-  }
-
-  async getPluckCardData(itineraryPlanId: number) {
-    const plan = await this.prisma.dvi_confirmed_itinerary_plan_details.findFirst({
-      where: { itinerary_plan_ID: itineraryPlanId, deleted: 0 },
-    });
-
-    if (!plan) {
-      throw new NotFoundException('Confirmed itinerary plan not found');
     }
-
-    const customer = await this.prisma.dvi_confirmed_itinerary_customer_details.findFirst({
-      where: { itinerary_plan_ID: itineraryPlanId, primary_customer: 1, deleted: 0 },
-    });
-
-    return {
-      guestName: customer ? `${customer.customer_salutation || ''} ${customer.customer_name}`.trim() : 'N/A',
-      contactNo: customer?.primary_contact_no || 'N/A',
-      arrivalLocation: plan.arrival_location,
-      arrivalDateTime: plan.trip_start_date_and_time,
-      departureLocation: plan.departure_location,
-      departureDateTime: plan.trip_end_date_and_time,
-      flightDetails: plan.special_instructions,
-    };
-  }
-
-  async getPluckCardDataByConfirmedId(confirmedPlanId: number) {
-    const plan = await this.prisma.dvi_confirmed_itinerary_plan_details.findUnique({
-      where: { confirmed_itinerary_plan_ID: confirmedPlanId },
-    });
-
-    if (!plan) {
-      throw new NotFoundException('Confirmed itinerary plan not found');
-    }
-
-    const customer = await this.prisma.dvi_confirmed_itinerary_customer_details.findFirst({
-      where: { confirmed_itinerary_plan_ID: confirmedPlanId, primary_customer: 1, deleted: 0 },
-    });
-
-    return {
-      guestName: customer ? `${customer.customer_salutation || ''} ${customer.customer_name}`.trim() : 'N/A',
-      contactNo: customer?.primary_contact_no || 'N/A',
-      arrivalLocation: plan.arrival_location,
-      arrivalDateTime: plan.trip_start_date_and_time,
-      departureLocation: plan.departure_location,
-      departureDateTime: plan.trip_end_date_and_time,
-      flightDetails: plan.special_instructions,
-    };
-  }
-
-  async getInvoiceData(itineraryPlanId: number) {
-    const plan = await this.prisma.dvi_confirmed_itinerary_plan_details.findFirst({
-      where: { itinerary_plan_ID: itineraryPlanId, deleted: 0 },
-    });
-
-    if (!plan) {
-      throw new NotFoundException('Confirmed itinerary plan not found');
-    }
-
-    const agent = await this.prisma.dvi_agent.findUnique({
-      where: { agent_ID: plan.agent_id },
-    });
-
-    const customer = await this.prisma.dvi_confirmed_itinerary_customer_details.findFirst({
-      where: { itinerary_plan_ID: itineraryPlanId, primary_customer: 1, deleted: 0 },
-    });
-
-    const settings = await this.prisma.dvi_global_settings.findFirst({
-      where: { status: 1, deleted: 0 },
-    });
-
-    const accounts = await this.prisma.dvi_accounts_itinerary_details.findFirst({
-      where: { itinerary_plan_ID: itineraryPlanId, deleted: 0 },
-    });
-
-    return {
-      company: settings,
-      agent,
-      guest: customer,
-      itinerary: plan,
-      totalAmount: accounts?.total_billed_amount || 0,
-    };
-  }
 
   /**
    * Preview manual hotspot addition.

@@ -15,6 +15,7 @@ import { HobseHotelBookingService } from './services/hobse-hotel-booking.service
 import { AxisRoomsBookingPushService } from './services/axisrooms-booking-push.service';
 import { StaahBookingPushService } from './services/staah-booking-push.service';
 import { HotelVoucherService } from './hotel-voucher.service';
+import { VehicleVoucherService } from './vehicle-voucher.service';
 import { HotelEngineService } from './engines/hotel-engine.service';
 import { HotelPricingService } from './hotels/hotel-pricing.service';
 
@@ -32,8 +33,10 @@ import { RouteValidationService } from './validation/route-validation.service';
 import { RouteSuggestionsService } from './route-suggestions.service';
 import { RouteSuggestionsV2Service } from './route-suggestions-v2.service';
 import { ArrivalHotelPolicyService } from './services/arrival-hotel-policy.service';
+import { VehicleVoucherEmailNotifierService } from './services/vehicle-voucher-email-notifier.service';
 import { HotelsModule } from '../hotels/hotels.module';
 import { ItineraryClipboardService } from './itinerary-clipboard.service';
+import { ItineraryPdfService } from './itinerary-pdf.service';
 
 @Module({
   imports: [HotelsModule],
@@ -51,6 +54,8 @@ import { ItineraryClipboardService } from './itinerary-clipboard.service';
     AxisRoomsBookingPushService,
     StaahBookingPushService,
     HotelVoucherService,
+    VehicleVoucherService,
+    VehicleVoucherEmailNotifierService,
 
     // existing engines you already had
     HotelEngineService,
@@ -70,6 +75,7 @@ import { ItineraryClipboardService } from './itinerary-clipboard.service';
     RouteSuggestionsV2Service,
     ItineraryClipboardService,
     ArrivalHotelPolicyService,
+    ItineraryPdfService,
   ],
 })
 export class ItinerariesModule {}
