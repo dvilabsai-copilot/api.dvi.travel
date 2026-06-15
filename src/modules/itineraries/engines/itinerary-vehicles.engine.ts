@@ -2161,6 +2161,22 @@ export class ItineraryVehiclesEngine {
               detailsData.total_pickup_duration = null;
             }
           }
+          const dropKmNumeric = Number(result.TOTAL_DROP_KM || 0);
+          if (route_count !== total_routes && dropKmNumeric > 0) {
+            console.error('[VEHICLE_DROP_KM_NON_FINAL_ROUTE]', {
+              ...insertDebugPayload,
+              route_count,
+              total_routes,
+              dropKmNumeric,
+            });
+            detailsData.total_drop_km = '0.00';
+            detailsData.total_drop_duration = null;
+            detailsData.total_travelled_km = (
+              Number(detailsData.total_pickup_km || 0) +
+              Number(detailsData.total_running_km || 0) +
+              Number(detailsData.total_siteseeing_km || 0)
+            ).toFixed(2);
+          }
 
           this.logSql(
             "VENDOR_VEHICLE_DETAILS_INSERT",
