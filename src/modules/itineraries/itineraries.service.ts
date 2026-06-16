@@ -579,6 +579,16 @@ export class ItinerariesService {
         );
       }
 
+      const finalStatus = await this.getVehicleBuildStatus(planId);
+      if (!finalStatus.hasUsableVehicleDetails) {
+        const failureMessage =
+          finalStatus.requestedVehicleCount > 0
+            ? 'Vehicle build completed without usable vehicle pricing rows'
+            : 'Vehicle build completed without requested vehicle rows';
+        await this.finishVehicleBuildRecord(planId, buildRunId, 'FAILED', failureMessage);
+        throw new Error(failureMessage);
+      }
+
       await this.finishVehicleBuildRecord(planId, buildRunId, 'READY', null);
       if (debugVehicleTrace) {
         console.log('[SYNC_VEHICLE_BUILD_DONE]', { planId, durationMs: Date.now() - jobStart });
