@@ -20,6 +20,7 @@
     "cert:tbo": "tsx verification-e2e/tbo-certification/run-tbo-certification.ts",
     "cert:staah": "node verification-e2e/staah-certification/run-staah-certification.js",
     "verify:hotspot-parity": "tsx verification-e2e/hotspot-engine-parity/run-hotspot-engine-parity.ts",
+    "verify:vehicle-build": "node scripts/verify-itinerary-vehicle-build.js",
     "test:api": "node scripts/test-api-endpoints.js",
     "test:api:all": "set RUN_FULL_SWEEP=true&& node scripts/test-api-endpoints.js",
     "test:swagger": "node scripts/check-swagger-coverage.js",
@@ -34,6 +35,8 @@
     "build:hotspot-matrix:retry": "tsx scripts/build-hotspot-route-matrix.ts --apply --retry-failed",
     "verify:hotspot:between": "node scripts/verify-hotspot-between-cheeyappara-eravikulam.js",
     "verify:hotspot:not-between": "node scripts/verify-hotspot-not-between-eravikulam-rosegarden.js",
+    "verify:dvi20260690:direct-no-via": "node scripts/verify-dvi20260690-direct-no-via.js",
+    "verify:dvi20260690:explicit-via": "node scripts/verify-dvi20260690-explicit-via.js",
     "test:matrix": "tsx scripts/test-matrix-autobuild.ts",
     "sync:tbo:missing-city": "node scripts/sync-missing-tbo-hotels-by-city.js",
     "sync:tbo:missing-city:dry": "node scripts/sync-missing-tbo-hotels-by-city.js --dry-run"

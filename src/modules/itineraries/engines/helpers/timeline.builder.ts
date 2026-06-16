@@ -977,6 +977,97 @@ export class TimelineBuilder {
     return false;
   }
 
+  private buildRouteLegs(
+    sourceCity: string | null | undefined,
+    viaLocationNames: string[],
+    destinationCity: string | null | undefined,
+  ): string[] {
+    const rawLegs = [
+      String(sourceCity || '').trim(),
+      ...(Array.isArray(viaLocationNames) ? viaLocationNames : [])
+        .map((x) => String(x || '').trim())
+        .filter(Boolean),
+      String(destinationCity || '').trim(),
+    ].filter(Boolean);
+
+    const legs: string[] = [];
+
+    for (const leg of rawLegs) {
+      const prev = legs[legs.length - 1];
+      if (prev && this.canonicalCityKey(prev) === this.canonicalCityKey(leg)) {
+        continue;
+      }
+
+      legs.push(leg);
+    }
+
+    return legs;
+  }
+
+  private routeSpecificHotspotMatchesRouteChain(
+    hotspotLocation: string | null | undefined,
+    hotspotToLocation: string | null | undefined,
+    routeLegs: string[],
+  ): { matches: boolean; fromIndex: number; toIndex: number } {
+    const legs = Array.isArray(routeLegs) ? routeLegs.filter(Boolean) : [];
+
+    if (legs.length < 2) {
+      return { matches: false, fromIndex: -1, toIndex: -1 };
+    }
+
+    for (let toIndex = 1; toIndex < legs.length; toIndex++) {
+      if (!this.hotspotLocationMatchesCity(hotspotToLocation, legs[toIndex])) {
+        continue;
+      }
+
+      for (let fromIndex = toIndex - 1; fromIndex >= 0; fromIndex--) {
+        if (this.hotspotLocationMatchesCity(hotspotLocation, legs[fromIndex])) {
+          return { matches: true, fromIndex, toIndex };
+        }
+      }
+    }
+
+    return { matches: false, fromIndex: -1, toIndex: -1 };
+  }
+
+  private routeMovementOrder(
+    fromIndex: number,
+    toIndex: number,
+    kind: 'en_route' | 'via_stop' | 'via_city' = 'en_route',
+  ): number {
+    const safeFrom = Number.isFinite(fromIndex) && fromIndex >= 0 ? fromIndex : 999;
+    const safeTo = Number.isFinite(toIndex) && toIndex >= 0 ? toIndex : safeFrom + 1;
+
+    if (kind === 'en_route') return safeFrom * 100 + 20;
+    if (kind === 'via_stop') return Math.max(0, safeTo - 1) * 100 + 90;
+    return Math.max(0, safeTo - 1) * 100 + 95;
+  }
+
+  private hotspotNameMatchesLocation(
+    hotspot: any,
+    locationName: string | null | undefined,
+  ): boolean {
+    const targetKey = this.canonicalCityKey(String(locationName || ''));
+    if (!targetKey) return false;
+
+    const candidates = [
+      hotspot?.hotspot_name,
+      hotspot?.hotspot_landmark,
+      hotspot?.hotspot_address,
+      hotspot?.address,
+    ]
+      .map((x) => this.canonicalCityKey(String(x || '')))
+      .filter(Boolean);
+
+    return candidates.some((candidateKey) => {
+      return (
+        candidateKey === targetKey ||
+        candidateKey.includes(targetKey) ||
+        targetKey.includes(candidateKey)
+      );
+    });
+  }
+
   private isCarryForwardHotspotCompatibleWithRoute(
     hotspot: Partial<SelectedHotspot> & Record<string, any>,
     routeContext: CarryForwardRouteContext,
@@ -2105,6 +2196,47 @@ export class TimelineBuilder {
       const day1SourceCompare = this.canonicalCityKey(String(sourceCity || ''));
       const day1DestinationCompare = this.canonicalCityKey(String(destinationCity || ''));
       const nextRoute = routeIndex < routes.length ? routes[routeIndex] : null;
+      const currentRouteViaRows =
+        (await (tx as any).dvi_itinerary_via_route_details?.findMany({
+          where: {
+            itinerary_plan_ID: planId,
+            itinerary_route_ID: route.itinerary_route_ID,
+            deleted: 0,
+            status: 1,
+          },
+        })) || [];
+
+      const currentRouteViaLocationNames = currentRouteViaRows
+        .map((viaRoute: any) =>
+          String(
+            viaRoute?.itinerary_via_location_name ??
+              viaRoute?.via_route_name ??
+              '',
+          ).trim(),
+        )
+        .filter(Boolean);
+
+      const hasExplicitViaRouteOnCurrentRoute = currentRouteViaLocationNames.length > 0;
+
+      const isIntercityTransferWithExplicitVia =
+        hasExplicitViaRouteOnCurrentRoute &&
+        day1SourceCompare !== '' &&
+        day1DestinationCompare !== '' &&
+        day1SourceCompare !== day1DestinationCompare;
+
+      const directToNextForCurrentRoute =
+        Number((route as any).direct_to_next_visiting_place || 0);
+
+      const isIntercityDirectDestinationTransfer =
+        directToNextForCurrentRoute === 1 &&
+        !hasExplicitViaRouteOnCurrentRoute &&
+        day1SourceCompare !== '' &&
+        day1DestinationCompare !== '' &&
+        day1SourceCompare !== day1DestinationCompare;
+
+      const isIntercityMovementFirstTransfer =
+        isIntercityTransferWithExplicitVia || isIntercityDirectDestinationTransfer;
+
       const previousRouteForCurrent = previousRouteByRouteId.get(Number((route as any).itinerary_route_ID || 0));
       const sameCityContinuationContextForRoute = this.buildSameCityContinuationContext(
         route,
@@ -2595,82 +2727,95 @@ export class TimelineBuilder {
           return bucket !== 'destination' && bucket !== 'dest';
         });
 
-        const sourceFallback = await this.fetchDay1TopPrioritySourceHotspots(
-          tx,
-          planId,
-          route.itinerary_route_ID,
-          sourceCity,
-          destinationCity,
-          addedHotspotIds,
-          Math.max(6, Math.min(20, this.estimateRouteHotspotCapacity(route as any) * 2)),
-          true,
-        );
-
         let sourceFallbackRows: SelectedHotspot[] = [];
+        if (!isIntercityMovementFirstTransfer) {
+          const sourceFallback = await this.fetchDay1TopPrioritySourceHotspots(
+            tx,
+            planId,
+            route.itinerary_route_ID,
+            sourceCity,
+            destinationCity,
+            addedHotspotIds,
+            Math.max(6, Math.min(20, this.estimateRouteHotspotCapacity(route as any) * 2)),
+            true,
+          );
 
-        if (sourceFallback.length > 0) {
-          sourceFallbackRows = sourceFallback
-            .map((h: any) => {
-              const hotspotId = Number((h as any).hotspot_ID || 0);
-              const master = hotspotMap.get(hotspotId) as any;
+          if (sourceFallback.length > 0) {
+            sourceFallbackRows = sourceFallback
+              .map((h: any) => {
+                const hotspotId = Number((h as any).hotspot_ID || 0);
+                const master = hotspotMap.get(hotspotId) as any;
 
-              return {
-                ...h,
-                hotspot_ID: hotspotId,
-                hotspot_name: String((h as any).hotspot_name || master?.hotspot_name || ''),
-                hotspot_location: String((h as any).hotspot_location || master?.hotspot_location || ''),
-                hotspot_to_location: String(
-                  (h as any).hotspot_to_location ||
-                    master?.hotspot_to_location ||
-                    master?.hotspot_location ||
-                    '',
-                ),
-                matched_bucket: 'source_fallback',
-              };
-            })
-            .filter((h: any) => {
-              const hotspotId = Number((h as any).hotspot_ID || 0);
-              if (!hotspotId) return false;
-              if (isHotspotAlreadyPlanned(hotspotId)) return false;
+                return {
+                  ...h,
+                  hotspot_ID: hotspotId,
+                  hotspot_name: String((h as any).hotspot_name || master?.hotspot_name || ''),
+                  hotspot_location: String((h as any).hotspot_location || master?.hotspot_location || ''),
+                  hotspot_to_location: String(
+                    (h as any).hotspot_to_location ||
+                      master?.hotspot_to_location ||
+                      master?.hotspot_location ||
+                      '',
+                  ),
+                  matched_bucket: 'source_fallback',
+                };
+              })
+              .filter((h: any) => {
+                const hotspotId = Number((h as any).hotspot_ID || 0);
+                if (!hotspotId) return false;
+                if (isHotspotAlreadyPlanned(hotspotId)) return false;
 
-              const hotspotLocation = String((h as any).hotspot_location || '');
-              const hotspotToLocation = String((h as any).hotspot_to_location || hotspotLocation || '');
+                const hotspotLocation = String((h as any).hotspot_location || '');
+                const hotspotToLocation = String((h as any).hotspot_to_location || hotspotLocation || '');
 
-              const sourceMatch =
-                this.hotspotLocationMatchesCity(hotspotLocation, sourceCity) ||
-                this.hotspotLocationMatchesCity(hotspotToLocation, sourceCity);
+                const sourceMatch =
+                  this.hotspotLocationMatchesCity(hotspotLocation, sourceCity) ||
+                  this.hotspotLocationMatchesCity(hotspotToLocation, sourceCity);
 
-              if (!sourceMatch) {
-                this.logBookingRule({
-                  rule: 'SOURCE_FALLBACK_REJECTED_SOURCE_MISMATCH',
-                  quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
-                  planId,
-                  routeId: Number(route.itinerary_route_ID || 0),
-                  routeDay: Number((route as any).no_of_days || routeIndex || 0),
-                  sourceCity,
-                  destinationCity,
-                  hotspotId,
-                  hotspotName: String((h as any).hotspot_name || ''),
-                  hotspotLocation,
-                  hotspotToLocation,
-                  reason: 'source_fallback_must_match_current_source_city',
-                });
-                return false;
-              }
+                if (!sourceMatch) {
+                  this.logBookingRule({
+                    rule: 'SOURCE_FALLBACK_REJECTED_SOURCE_MISMATCH',
+                    quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+                    planId,
+                    routeId: Number(route.itinerary_route_ID || 0),
+                    routeDay: Number((route as any).no_of_days || routeIndex || 0),
+                    sourceCity,
+                    destinationCity,
+                    hotspotId,
+                    hotspotName: String((h as any).hotspot_name || ''),
+                    hotspotLocation,
+                    hotspotToLocation,
+                    reason: 'source_fallback_must_match_current_source_city',
+                  });
+                  return false;
+                }
 
-              return true;
-            });
+                return true;
+              });
 
-          if (sourceFallbackRows.length > 0) {
-            selectedHotspots = [
-              ...sourceFallbackRows,
-              ...selectedHotspots,
-            ].filter((hs: any, idx: number, arr: any[]) => {
-              const id = Number((hs as any).hotspot_ID || 0);
-              if (!id) return false;
-              return arr.findIndex((x: any) => Number((x as any).hotspot_ID || 0) === id) === idx;
-            });
+            if (sourceFallbackRows.length > 0) {
+              selectedHotspots = [
+                ...sourceFallbackRows,
+                ...selectedHotspots,
+              ].filter((hs: any, idx: number, arr: any[]) => {
+                const id = Number((hs as any).hotspot_ID || 0);
+                if (!id) return false;
+                return arr.findIndex((x: any) => Number((x as any).hotspot_ID || 0) === id) === idx;
+              });
+            }
           }
+        } else {
+          this.logBookingRule({
+            rule: 'SOURCE_FALLBACK_SKIPPED_FOR_MOVEMENT_FIRST_TRANSFER',
+            quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+            planId,
+            routeId: Number(route.itinerary_route_ID || 0),
+            routeDay: Number((route as any).no_of_days || routeIndex || 0),
+            sourceCity,
+            destinationCity,
+            viaLocationNames: currentRouteViaLocationNames,
+            reason: 'Explicit via or direct destination route exists; source-city sightseeing must not be reintroduced before route movement.',
+          });
         }
 
         // Safety net:
@@ -2678,7 +2823,11 @@ export class TimelineBuilder {
         // candidates exist. This is the regression-case-07 Day 6 pattern:
         // Alleppey -> Kumarakom has exhausted Kumarakom destination inventory, but
         // still has unused Alleppey source inventory.
-        if (selectedHotspots.length === 0 && beforeReservationCandidates.length > 0) {
+        if (
+          !isIntercityMovementFirstTransfer &&
+          selectedHotspots.length === 0 &&
+          beforeReservationCandidates.length > 0
+        ) {
           const rescuedSourceLikeCandidates = beforeReservationCandidates
             .filter((h: any) => {
               if ((h as any).isManualSelection) return true;
@@ -2776,6 +2925,38 @@ export class TimelineBuilder {
           reason:
             'Intercity route before destination loopback day: reserve destination-city hotspots for next day, but preserve current source-city candidates.',
         });
+      }
+
+      if (isIntercityMovementFirstTransfer) {
+        const beforeViaSourceCleanupCount = selectedHotspots.length;
+
+        selectedHotspots = selectedHotspots.filter((h: any) => {
+          if ((h as any).isManualSelection) return true;
+
+          const bucket = String(
+            (h as any).matched_bucket ||
+              (h as any).__bucket ||
+              '',
+          ).toLowerCase();
+
+          return bucket !== 'source' && bucket !== 'source_fallback';
+        });
+
+        if (selectedHotspots.length !== beforeViaSourceCleanupCount) {
+          this.logBookingRule({
+            rule: 'SOURCE_BUCKETS_REMOVED_FOR_MOVEMENT_FIRST_TRANSFER',
+            quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
+            planId,
+            routeId: Number(route.itinerary_route_ID || 0),
+            routeDay: Number((route as any).no_of_days || routeIndex || 0),
+            sourceCity,
+            destinationCity,
+            viaLocationNames: currentRouteViaLocationNames,
+            removedCount: beforeViaSourceCleanupCount - selectedHotspots.length,
+            remainingHotspotIds: selectedHotspots.map((h: any) => Number((h as any).hotspot_ID || 0)),
+            reason: 'Explicit via or direct destination route must not show automatic source-city sightseeing before route movement.',
+          });
+        }
       }
 
       // IMPORTANT:
@@ -3843,12 +4024,50 @@ export class TimelineBuilder {
 
         const directToNextForPhase = Number((route as any).direct_to_next_visiting_place || 0);
 
+        const phaseViaRows =
+          (await (tx as any).dvi_itinerary_via_route_details?.findMany({
+            where: {
+              itinerary_plan_ID: planId,
+              itinerary_route_ID: route.itinerary_route_ID,
+              deleted: 0,
+              status: 1,
+            },
+          })) || [];
+
+        const phaseViaLocationNames = phaseViaRows
+          .map((viaRoute: any) =>
+            String(
+              viaRoute?.itinerary_via_location_name ??
+                viaRoute?.via_route_name ??
+                '',
+            ).trim(),
+          )
+          .filter(Boolean);
+
+        const routeLegsForPhase = this.buildRouteLegs(
+          sourceCity || currentLocationName || route.location_name || '',
+          phaseViaLocationNames,
+          destinationCity || route.next_visiting_location || '',
+        );
+
+        const hasExplicitViaRouteForPhase = phaseViaLocationNames.length > 0;
+
         const isIntercityRoute =
           routeSourceKeyForPhase !== '' &&
           routeDestinationKeyForPhase !== '' &&
           routeSourceKeyForPhase !== routeDestinationKeyForPhase;
-        const isIntercityDirectRoute = isIntercityRoute && directToNextForPhase === 1;
-        const isIntercityNonDirectRoute = isIntercityRoute && directToNextForPhase !== 1;
+        const isIntercityDirectRoute =
+          isIntercityRoute &&
+          directToNextForPhase === 1 &&
+          !hasExplicitViaRouteForPhase;
+        const isIntercityNonDirectRoute =
+          isIntercityRoute &&
+          (directToNextForPhase !== 1 || hasExplicitViaRouteForPhase);
+        const shouldBypassSourcePhaseForViaTransfer =
+          isIntercityRoute && hasExplicitViaRouteForPhase;
+        const shouldBypassSourcePhaseForMovementTransfer =
+          isIntercityRoute &&
+          (hasExplicitViaRouteForPhase || directToNextForPhase === 1);
 
         const candidateKey = (hs: any): string =>
           `${Number(hs?.hotspot_ID || 0)}:${getCandidateBucket(hs)}`;
@@ -3867,13 +4086,17 @@ export class TimelineBuilder {
             let afterBucket = beforeBucket;
             let reason = 'preserved';
 
-            if (
-              isIntercityNonDirectRoute &&
-              this.hotspotLocationMatchesCity(masterLocation, sourceCity) &&
-              this.hotspotLocationMatchesCity(masterToLocation, destinationCity)
-            ) {
+            const routeChainMatch = this.routeSpecificHotspotMatchesRouteChain(
+              masterLocation,
+              masterToLocation,
+              routeLegsForPhase,
+            );
+
+            if (isIntercityRoute && routeChainMatch.matches) {
               afterBucket = 'en_route';
-              reason = 'scheduler_final_master_source_to_destination_override';
+              reason = isIntercityDirectRoute
+                ? 'scheduler_direct_route_chain_corridor_override'
+                : 'scheduler_route_chain_corridor_override';
             }
 
             const next = {
@@ -3881,6 +4104,17 @@ export class TimelineBuilder {
               matched_bucket: afterBucket,
               __bucket: afterBucket,
               __bucket_reason: reason,
+              __route_chain_from_index:
+                Number((hs as any)?.__route_chain_from_index ?? (routeChainMatch.matches ? routeChainMatch.fromIndex : -1)),
+              __route_chain_to_index:
+                Number((hs as any)?.__route_chain_to_index ?? (routeChainMatch.matches ? routeChainMatch.toIndex : -1)),
+              __route_movement_order:
+                Number(
+                  (hs as any)?.__route_movement_order ??
+                    (routeChainMatch.matches
+                      ? this.routeMovementOrder(routeChainMatch.fromIndex, routeChainMatch.toIndex, 'en_route')
+                      : 999999),
+                ),
             };
 
             proofRows.push({
@@ -3930,11 +4164,22 @@ export class TimelineBuilder {
               masterLocationKey !== '' &&
               masterToLocationKey !== '' &&
               masterLocationKey !== masterToLocationKey;
+            const routeChainMatchForDirect = this.routeSpecificHotspotMatchesRouteChain(
+              masterLocation,
+              masterToLocation,
+              routeLegsForPhase,
+            );
+            const isDirectRouteCorridorHotspot =
+              isRouteSpecificMaster && routeChainMatchForDirect.matches;
             const isDestinationByLocation =
               this.hotspotLocationMatchesCity(masterLocation, destinationCityKeyForDirect) ||
               (!isRouteSpecificMaster &&
                 this.hotspotLocationMatchesCity(masterToLocation, destinationCityKeyForDirect));
             const isViaBucket = bucket === 'via';
+
+            if (isDirectRouteCorridorHotspot) {
+              return true;
+            }
 
             if (isDestinationByBucket || isDestinationByLocation) {
               return true;
@@ -3951,6 +4196,8 @@ export class TimelineBuilder {
               masterLocation,
               masterToLocation,
               isRouteSpecificMaster,
+              routeChainMatchForDirect,
+              isDirectRouteCorridorHotspot,
               destinationCity: routeDestinationKeyForPhase,
               reason: 'Direct route keeps only destination hotspots or explicit via hotspots',
             });
@@ -3971,10 +4218,11 @@ export class TimelineBuilder {
         };
         const corridorBelongsToCurrentRoute = (hotspotId: number): boolean => {
           const master = getMasterHotspot(hotspotId);
-          return (
-            this.hotspotLocationMatchesCity(master?.hotspot_location, sourceCity) &&
-            this.hotspotLocationMatchesCity(master?.hotspot_to_location, destinationCity)
-          );
+          return this.routeSpecificHotspotMatchesRouteChain(
+            String(master?.hotspot_location || ''),
+            String(master?.hotspot_to_location || master?.hotspot_location || ''),
+            routeLegsForPhase,
+          ).matches;
         };
         selectedHotspots = (selectedHotspots as Array<SelectedHotspot>).filter((hs: any) => {
           const hotspotId = Number(hs?.hotspot_ID || 0);
@@ -4000,15 +4248,23 @@ export class TimelineBuilder {
         const strictHotspots = (selectedHotspots as Array<SelectedHotspot>).filter((hs: any) => {
           const priority = getCandidatePriority(hs);
           const bucket = String((hs as any).matched_bucket || (hs as any).__bucket || '').toLowerCase();
+          const isExplicitViaStop = Boolean((hs as any).__explicit_via_stop);
 
           if (priority >= 1 && priority <= 3) {
             return true;
           }
           if (
             isIntercityNonDirectRoute &&
+            hasExplicitViaRouteForPhase &&
+            isExplicitViaStop &&
+            bucket === 'via'
+          ) {
+            return true;
+          }
+          if (
+            isIntercityRoute &&
             (bucket === 'en_route' || bucket === 'source_to_destination') &&
-            priority >= 1 &&
-            priority < 9999
+            corridorBelongsToCurrentRoute(Number(hs?.hotspot_ID || 0))
           ) {
             return true;
           }
@@ -4129,7 +4385,7 @@ export class TimelineBuilder {
             return !(bucket === 'destination' || bucket === 'dest');
           });
 
-          if (destinationStrict.length > 0 && nonDestinationStrict.length > 0) {
+          if (nonDestinationStrict.length > 0 || destinationStrict.length > 0) {
             const viaStrict = strictPassHotspots.filter((hs) => {
               const bucket = String((hs as any).matched_bucket || '').toLowerCase();
               return bucket === 'via';
@@ -4149,18 +4405,52 @@ export class TimelineBuilder {
               return bucket === 'destination' || bucket === 'dest';
             });
 
-            strictPassHotspots = isIntercityNonDirectRoute
-              ? [
-                  ...sourceStrict,
-                  ...enRouteStrict,
-                  ...viaStrict,
-                  ...destinationOnlyStrict,
-                ]
-              : [
-                  ...viaStrict,
-                  ...sourceStrict,
-                  ...destinationOnlyStrict,
-                ];
+            const compareSchedulerRouteMovementCandidates = (a: any, b: any) => {
+              const ao = Number(a.__route_movement_order ?? 999999);
+              const bo = Number(b.__route_movement_order ?? 999999);
+              if (ao !== bo) return ao - bo;
+
+              const ap = Number(a.hotspot_priority ?? 0);
+              const bp = Number(b.hotspot_priority ?? 0);
+              const ar = ap > 0 ? ap : 9999;
+              const br = bp > 0 ? bp : 9999;
+              if (ar !== br) return ar - br;
+
+              const ad = Number(a.hotspot_distance ?? 999999);
+              const bd = Number(b.hotspot_distance ?? 999999);
+              if (ad !== bd) return ad - bd;
+
+              return Number(a.hotspot_ID ?? 0) - Number(b.hotspot_ID ?? 0);
+            };
+
+            const routeMovementStrict = [
+              ...enRouteStrict,
+              ...viaStrict,
+            ].sort(compareSchedulerRouteMovementCandidates);
+
+            if (isIntercityDirectRoute) {
+              strictPassHotspots = [
+                ...routeMovementStrict,
+                ...destinationOnlyStrict,
+              ];
+            } else {
+              strictPassHotspots = isIntercityNonDirectRoute
+                ? shouldBypassSourcePhaseForViaTransfer
+                  ? [
+                      ...routeMovementStrict,
+                      ...destinationOnlyStrict,
+                    ]
+                  : [
+                      ...sourceStrict,
+                      ...routeMovementStrict,
+                      ...destinationOnlyStrict,
+                    ]
+                : [
+                    ...viaStrict,
+                    ...sourceStrict,
+                    ...destinationOnlyStrict,
+                  ];
+            }
 
             console.log('[HOTSPOT ORDER FIX]', {
               routeId: route.itinerary_route_ID,
@@ -4179,8 +4469,9 @@ export class TimelineBuilder {
                 name: x.hotspot_name,
                 priority: x.hotspot_priority,
               })),
-                reason:
-                'Intercity non-direct route: source hotspots are processed before via/destination to avoid source-city backtracking.',
+              reason: shouldBypassSourcePhaseForMovementTransfer
+                ? 'Explicit via or direct destination route: source sightseeing is suppressed; route movement is processed first.'
+                : 'Intercity non-direct route without explicit via: source/corridor/destination order preserved.',
             });
             this.logBookingRule({
               rule: 'STRICT_PHASE_ORDER_DEBUG',
@@ -4658,7 +4949,11 @@ export class TimelineBuilder {
               optionalCorridorIds: pendingOptionalCorridorHotspots.map((hs: any) => Number(hs?.hotspot_ID || 0)),
             });
           }
-          if (isIntercityNonDirectRoute && pass === PASS_STRICT) {
+          if (
+            isIntercityNonDirectRoute &&
+            pass === PASS_STRICT &&
+            !shouldBypassSourcePhaseForMovementTransfer
+          ) {
             const currentSecs = timeToSeconds(currentTime);
             if (currentSecs < sourcePhaseEndSeconds) {
               const remainingStrictSourceCandidates = getPendingSourcePhaseCandidates(
@@ -4762,7 +5057,10 @@ export class TimelineBuilder {
                 }),
             });
           }
-          const sourcePhaseActiveNow = isIntercityNonDirectRoute && timeToSeconds(currentTime) < sourcePhaseEndSeconds;
+          const sourcePhaseActiveNow =
+            isIntercityNonDirectRoute &&
+            !shouldBypassSourcePhaseForMovementTransfer &&
+            timeToSeconds(currentTime) < sourcePhaseEndSeconds;
           if (sourcePhaseActiveNow) {
             const sourceOnlyCandidates = hotspotsToTry.filter((hs: any) => isSourcePhaseEligibleCandidate(hs));
 
@@ -5015,7 +5313,9 @@ export class TimelineBuilder {
 
         if (isIntercityNonDirectRoute) {
           const currentSecs = timeToSeconds(currentTime);
-          const sourcePhaseActive = currentSecs < sourcePhaseEndSeconds;
+          const sourcePhaseActive =
+            !shouldBypassSourcePhaseForMovementTransfer &&
+            currentSecs < sourcePhaseEndSeconds;
           if (
             enRoutePhaseStarted &&
             (normalizedBucket === 'source' || normalizedBucket === 'source_fallback')
@@ -5147,7 +5447,10 @@ export class TimelineBuilder {
               bucket: normalizedBucket,
               priority: hotspotPriority,
               currentTime,
-              sourcePhaseActive: isIntercityNonDirectRoute && currentSecs < sourcePhaseEndSeconds,
+              sourcePhaseActive:
+                isIntercityNonDirectRoute &&
+                !shouldBypassSourcePhaseForMovementTransfer &&
+                currentSecs < sourcePhaseEndSeconds,
               accepted: false,
               rejectionReason: `php_${normalizedBucket || 'unknown'}_cutoff`,
             });
@@ -8266,7 +8569,76 @@ export class TimelineBuilder {
       const targetLower = targetLocation.toLowerCase();
       const nextLower = nextLocation.toLowerCase();
       const directToNextVisitingPlace = (route as any).direct_to_next_visiting_place || 0;
-      const debugBucketIds = new Set<number>([245, 243, 241, 228]);
+      const debugBucketIds = new Set<number>([245, 243, 241, 228, 357]);
+
+      const viaRoutes =
+        (await (tx as any).dvi_itinerary_via_route_details?.findMany({
+          where: {
+            itinerary_plan_ID: planId,
+            itinerary_route_ID: routeId,
+            deleted: 0,
+            status: 1,
+          },
+        })) || [];
+
+      const viaLocationNames = viaRoutes
+        .map((viaRoute: any) =>
+          String(
+            viaRoute?.itinerary_via_location_name ??
+              viaRoute?.via_route_name ??
+              '',
+          ).trim(),
+        )
+        .filter(Boolean);
+
+      const routeLegs = this.buildRouteLegs(
+        targetLocation,
+        viaLocationNames,
+        nextLocation,
+      );
+
+      const isIntercityRouteForBucket =
+        this.canonicalCityKey(String(targetLocation || '')) !== '' &&
+        this.canonicalCityKey(String(nextLocation || '')) !== '' &&
+        this.canonicalCityKey(String(targetLocation || '')) !==
+          this.canonicalCityKey(String(nextLocation || ''));
+
+      const hasExplicitViaRoutes = viaLocationNames.length > 0;
+      const earliestViaLegIndex = hasExplicitViaRoutes ? 1 : -1;
+
+      const isDirectDestinationRouteForBucket =
+        Number(directToNextVisitingPlace || 0) === 1 &&
+        isIntercityRouteForBucket &&
+        !hasExplicitViaRoutes;
+
+      const shouldSuppressSourceHotspotsForViaTransfer =
+        hasExplicitViaRoutes && isIntercityRouteForBucket;
+
+      const shouldSuppressSourceHotspotsForMovementTransfer =
+        isIntercityRouteForBucket &&
+        (hasExplicitViaRoutes || isDirectDestinationRouteForBucket);
+
+      const routeLegCoordsCache = new Map<number, { lat: number; lon: number } | null>();
+      const getRouteLegCoords = async (legIndex: number): Promise<{ lat: number; lon: number } | undefined> => {
+        if (!Number.isFinite(legIndex) || legIndex < 0) return undefined;
+        if (routeLegCoordsCache.has(legIndex)) {
+          return routeLegCoordsCache.get(legIndex) || undefined;
+        }
+
+        const legName = String(routeLegs[legIndex] || '').trim();
+        if (!legName) {
+          routeLegCoordsCache.set(legIndex, null);
+          return undefined;
+        }
+
+        const coords =
+          legIndex === 0 && startLat && startLon
+            ? { lat: startLat, lon: startLon }
+            : await this.resolvePlaceCoords(tx, legName, legIndex === routeLegs.length - 1 ? 'destination' : 'source');
+
+        routeLegCoordsCache.set(legIndex, coords || null);
+        return coords || undefined;
+      };
 
       // Get starting location coordinates from stored_locations (already fetched above)
       // PHP line 1108-1109: Uses source coordinates for starting point
@@ -8358,25 +8730,24 @@ export class TimelineBuilder {
         const matchesSource = containsLocation(hotspotFromLocation, targetLocation);
         const matchesDestination = containsLocation(hotspotFromLocation, nextLocation);
 
-        const matchesRouteFrom = containsLocation(hotspotFromLocation, targetLocation);
-        const matchesRouteTo = containsLocation(hotspotToLocation, nextLocation);
-        const isIntercityNonDirectForBucket =
-          this.canonicalCityKey(String(targetLocation || '')) !== '' &&
-          this.canonicalCityKey(String(nextLocation || '')) !== '' &&
-          this.canonicalCityKey(String(targetLocation || '')) !== this.canonicalCityKey(String(nextLocation || '')) &&
-          Number(directToNextVisitingPlace || 0) !== 1;
+        const routeChainMatch = isRouteSpecificHotspot
+          ? this.routeSpecificHotspotMatchesRouteChain(
+              hotspotFromLocation,
+              hotspotToLocation,
+              routeLegs,
+            )
+          : { matches: false, fromIndex: -1, toIndex: -1 };
 
         if (isRouteSpecificHotspot) {
-          if (!matchesRouteFrom || !matchesRouteTo) {
+          if (!routeChainMatch.matches) {
             console.log('[HOTSPOT ROUTE SKIP]', {
               routeId,
               hotspot_ID: h.hotspot_ID,
               hotspot_name: h.hotspot_name,
               hotspot_location: hotspotFromLocation,
               hotspot_to_location: hotspotToLocation,
-              route_from: targetLocation,
-              route_to: nextLocation,
-              reason: 'route-specific hotspot does not match current route',
+              route_chain: routeLegs,
+              reason: 'route-specific hotspot does not match current route chain',
             });
             continue;
           }
@@ -8390,14 +8761,28 @@ export class TimelineBuilder {
         const hsLat = Number(h.hotspot_latitude ?? 0);
         const hsLon = Number(h.hotspot_longitude ?? 0);
         let distance = Number.POSITIVE_INFINITY;
+        const effectiveRouteMovementFromIndex =
+          isRouteSpecificHotspot && routeChainMatch.matches
+            ? (hasExplicitViaRoutes
+                ? Math.max(routeChainMatch.fromIndex, earliestViaLegIndex)
+                : routeChainMatch.fromIndex)
+            : routeChainMatch.fromIndex;
+        const distanceSourceLocation =
+          isRouteSpecificHotspot && routeChainMatch.matches
+            ? String(routeLegs[effectiveRouteMovementFromIndex] || targetLocation)
+            : targetLocation;
+        const distanceSourceCoords =
+          isRouteSpecificHotspot && routeChainMatch.matches
+            ? await getRouteLegCoords(effectiveRouteMovementFromIndex)
+            : (startLat && startLon ? { lat: startLat, lon: startLon } : undefined);
 
-        if (startLat && startLon && hsLat && hsLon && hotspotPrimaryLocation) {
+        if (distanceSourceCoords?.lat && distanceSourceCoords?.lon && hsLat && hsLon && hotspotPrimaryLocation) {
           const distanceResult = await this.distanceHelper.fromSourceAndDestination(
             tx,
-            targetLocation,
+            distanceSourceLocation,
             hotspotPrimaryLocation,
-            this.getTravelLocationType(targetLocation, hotspotPrimaryLocation),
-            { lat: startLat, lon: startLon },
+            this.getTravelLocationType(distanceSourceLocation, hotspotPrimaryLocation),
+            distanceSourceCoords,
             { lat: hsLat, lon: hsLon },
           );
 
@@ -8449,73 +8834,39 @@ export class TimelineBuilder {
         // CRITICAL: Hotspot can be in BOTH buckets (e.g., hotspot_location = "Chennai|Pondicherry")
         // Deduplication happens AFTER bucket selection based on direct flag
         if (isRouteSpecificHotspot) {
-          if (isIntercityNonDirectForBucket && matchesRouteFrom && matchesRouteTo) {
-            enRouteHotspots.push({ ...hotspotWithDistance, __bucket: 'en_route' });
-            if (debugBucketIds.has(debugHotspotId)) {
-              console.log('[FETCH_SELECTED_BUCKETS_DEBUG]', {
-                routeId,
-                sourceCity: targetLocation,
-                destinationCity: nextLocation,
-                locationId: Number((route as any)?.location_id || 0),
-                candidate: {
-                  hotspot_ID: debugHotspotId,
-                  hotspot_name: String(h.hotspot_name || ''),
-                  __bucket: 'en_route',
-                  matched_bucket: null,
-                  hotspot_location: String(h.hotspot_location || ''),
-                  hotspot_to_location: String(h.hotspot_to_location || h.hotspot_location || ''),
-                  hotspot_priority: Number(h.hotspot_priority ?? 0),
-                },
-              });
-            }
-            continue;
-          }
-          if (Number(directToNextVisitingPlace || 0) === 1) {
-            this.logBookingRule({
-              rule: 'DIRECT_ROUTE_ROUTE_SPECIFIC_HOTSPOT_SKIPPED',
-              planId,
-              routeId,
-              hotspotId: Number(h.hotspot_ID || 0),
-              hotspotName: String(h.hotspot_name || ''),
-              hotspotLocation: hotspotFromLocation,
-              hotspotToLocation,
-              sourceCity: targetLocation,
-              destinationCity: nextLocation,
-              reason: 'Direct route should not include route-specific/enroute hotspot unless added as explicit via route',
-            });
-            continue;
-          }
-          console.log('[HOTSPOT ROUTE INCLUDE]', {
-            routeId,
-            hotspot_ID: h.hotspot_ID,
-            hotspot_name: h.hotspot_name,
-            hotspot_location: hotspotFromLocation,
-            hotspot_to_location: hotspotToLocation,
-            route_from: targetLocation,
-            route_to: nextLocation,
-            bucket: 'via',
+          enRouteHotspots.push({
+            ...hotspotWithDistance,
+            __bucket: 'en_route',
+            matched_bucket: 'en_route',
+            __route_chain_from_index: effectiveRouteMovementFromIndex,
+            __route_chain_to_index: routeChainMatch.toIndex,
+            __route_movement_order: this.routeMovementOrder(
+              effectiveRouteMovementFromIndex,
+              routeChainMatch.toIndex,
+              'en_route',
+            ),
+            __bucket_reason: 'route_specific_hotspot_matches_route_chain',
           });
-
-          viaRouteHotspots.push({ ...hotspotWithDistance, __bucket: 'via' });
           if (debugBucketIds.has(debugHotspotId)) {
             console.log('[FETCH_SELECTED_BUCKETS_DEBUG]', {
               routeId,
               sourceCity: targetLocation,
               destinationCity: nextLocation,
-              locationId: Number((route as any)?.location_id || 0),
+              routeChain: routeLegs,
               candidate: {
                 hotspot_ID: debugHotspotId,
                 hotspot_name: String(h.hotspot_name || ''),
-                __bucket: 'via',
-                matched_bucket: null,
+                __bucket: 'en_route',
                 hotspot_location: String(h.hotspot_location || ''),
                 hotspot_to_location: String(h.hotspot_to_location || h.hotspot_location || ''),
                 hotspot_priority: Number(h.hotspot_priority ?? 0),
+                routeChainMatch,
               },
             });
           }
+          continue;
         } else {
-          if (matchesSource) {
+          if (matchesSource && !shouldSuppressSourceHotspotsForMovementTransfer) {
             sourceLocationHotspots.push({ ...hotspotWithDistance, __bucket: 'source' });
             if (debugBucketIds.has(debugHotspotId)) {
               console.log('[FETCH_SELECTED_BUCKETS_DEBUG]', {
@@ -8559,27 +8910,20 @@ export class TimelineBuilder {
         }
       }
       
-      // Fetch via routes for this route and match hotspots
-      const viaRoutes = await (tx as any).dvi_itinerary_via_route_details?.findMany({
-        where: {
-          itinerary_plan_ID: planId,
-          itinerary_route_ID: routeId,
-          deleted: 0,
-          status: 1,
-        },
-      }) || [];
-      
-      // For each via location, find matching hotspots
       for (const viaRoute of viaRoutes) {
         const viaLocationName = String(
           (viaRoute as any)?.itinerary_via_location_name ??
             (viaRoute as any)?.via_route_name ??
-            "",
+            '',
         ).trim();
         if (!viaLocationName) continue;
-        
+
+        const viaLegIndex = routeLegs.findIndex((leg) =>
+          this.hotspotLocationMatchesCity(leg, viaLocationName) ||
+          this.hotspotLocationMatchesCity(viaLocationName, leg),
+        );
+
         for (const h of allHotspots) {
-          // Check if timing allows this hotspot on this day
           if (allowedHotspotIds && !allowedHotspotIds.has(Number(h.hotspot_ID ?? 0))) {
             this.logHotspotCandidateEvaluation({
               routeId,
@@ -8599,33 +8943,30 @@ export class TimelineBuilder {
             continue;
           }
 
-          // ⚡ PERF: Check city match FIRST before any expensive distance calculation.
-          // ~750 of 774 hotspots are in completely different cities and can be skipped immediately.
+          if (excludedHotspotIds.has(Number(h.hotspot_ID ?? 0))) {
+            continue;
+          }
+
           const hotspotFromLocation = String(h.hotspot_location || '').trim();
           const hotspotToLocation = String(h.hotspot_to_location || h.hotspot_location || '').trim();
-
           const hotspotPrimaryLocation = hotspotFromLocation
             .split('|')[0]
             .trim();
-
           const isRouteSpecificHotspot =
             hotspotFromLocation.toLowerCase() !== hotspotToLocation.toLowerCase();
 
-          if (isRouteSpecificHotspot) {
-            const matchesRouteFrom = containsLocation(hotspotFromLocation, targetLocation);
-            const matchesRouteTo = containsLocation(hotspotToLocation, nextLocation);
+          const isExplicitViaStop =
+            this.hotspotNameMatchesLocation(h, viaLocationName) ||
+            containsLocation(hotspotFromLocation, viaLocationName);
 
-            if (!matchesRouteFrom || !matchesRouteTo) {
-              continue;
-            }
-          } else {
-            const matchesViaEarly = containsLocation(hotspotFromLocation, viaLocationName);
-            if (!matchesViaEarly) {
-              continue;
-            }
+          if (isRouteSpecificHotspot && !this.hotspotNameMatchesLocation(h, viaLocationName)) {
+            continue;
           }
 
-          // PHP parity: use travel-distance engine for ordering, not haversine approximation.
+          if (!isExplicitViaStop) {
+            continue;
+          }
+
           const hsLat = Number(h.hotspot_latitude ?? 0);
           const hsLon = Number(h.hotspot_longitude ?? 0);
           let distance = Number.POSITIVE_INFINITY;
@@ -8653,47 +8994,21 @@ export class TimelineBuilder {
             distance = 999999;
           }
 
-          if (excludedHotspotIds.has(Number(h.hotspot_ID ?? 0))) {
-            const hotspotId = Number(h.hotspot_ID ?? 0);
-            console.log(`[Timeline] Hotspot ${hotspotId} (${h.hotspot_name}) REJECTED for route ${routeId} VIA - it's in excluded list`);
-            this.logHotspotCandidateEvaluation({
-              routeId,
-              hotspotId: hotspotId,
-              name: String(h.hotspot_name || h.hotspot_location || `hotspot_${hotspotId}`),
-              matchedBucket: 'via',
-              priority: Number(h.hotspot_priority ?? 0),
-              isMustVisit: Number(h.hotspot_priority ?? 0) > 0,
-              distanceFromRoute: Number.isFinite(distance) ? distance : null,
-              openingTime: null,
-              closingTime: null,
-              visitTime: '',
-              isOpenAtVisitTime: false,
-              selected: false,
-              rejectedReasons: ['Rejected: excluded'],
-            });
-            continue;
-          }
-          
-          const hotspotWithDistance = { ...h, hotspot_distance: distance };
-          
-          // Check if hotspot matches via location
-          let matchesVia = false;
-          if (Number(directToNextVisitingPlace || 0) === 1) {
-            matchesVia =
-              containsLocation(hotspotFromLocation, viaLocationName) &&
-              !containsLocation(hotspotToLocation, nextLocation);
-          } else {
-            matchesVia = isRouteSpecificHotspot
-              ? (
-                  containsLocation(hotspotFromLocation, viaLocationName) ||
-                  containsLocation(hotspotToLocation, viaLocationName)
-                )
-              : containsLocation(hotspotFromLocation, viaLocationName);
-          }
-          
-          if (matchesVia) {
-            viaRouteHotspots.push({ ...hotspotWithDistance, __bucket: 'via' });
-          }
+          viaRouteHotspots.push({
+            ...h,
+            hotspot_distance: distance,
+            __bucket: 'via',
+            matched_bucket: 'via',
+            __explicit_via_stop: true,
+            __route_chain_from_index: Math.max(0, viaLegIndex - 1),
+            __route_chain_to_index: viaLegIndex >= 0 ? viaLegIndex : 1,
+            __route_movement_order: this.routeMovementOrder(
+              Math.max(0, viaLegIndex - 1),
+              viaLegIndex >= 0 ? viaLegIndex : 1,
+              'via_stop',
+            ),
+            __bucket_reason: 'explicit_via_route_stop',
+          });
         }
       }
 
@@ -8794,23 +9109,47 @@ export class TimelineBuilder {
         });
       }
 
+      const compareRouteMovementCandidates = (a: any, b: any) => {
+        const ao = Number(a.__route_movement_order ?? 999999);
+        const bo = Number(b.__route_movement_order ?? 999999);
+        if (ao !== bo) return ao - bo;
+
+        const ap = Number(a.hotspot_priority ?? 0);
+        const bp = Number(b.hotspot_priority ?? 0);
+        const ar = ap > 0 ? ap : 9999;
+        const br = bp > 0 ? bp : 9999;
+        if (ar !== br) return ar - br;
+
+        const ad = Number(a.hotspot_distance ?? Number.POSITIVE_INFINITY);
+        const bd = Number(b.hotspot_distance ?? Number.POSITIVE_INFINITY);
+        if (ad !== bd) return ad - bd;
+
+        return Number(a.hotspot_ID ?? 0) - Number(b.hotspot_ID ?? 0);
+      };
+
+      const routeMovementHotspots = [
+        ...enRouteHotspots,
+        ...viaRouteHotspots,
+      ].sort(compareRouteMovementCandidates);
+
+      const sourceCandidatesForRoute = shouldSuppressSourceHotspotsForMovementTransfer
+        ? []
+        : sourceLocationHotspots;
+
       if (sameSourceAndDestination && hasViaHotspots) {
-        // Same-city route with via is treated as outstation movement for hotspot selection.
-        matchingHotspots = [...viaRouteHotspots];
-      } else if (directToNextVisitingPlace === 1) {
-        // Direct routes: prioritize via-city hotspots when present, otherwise destination hotspots.
-        matchingHotspots = hasViaHotspots ? [...viaRouteHotspots, ...destinationHotspots] : [...destinationHotspots];
+        matchingHotspots = routeMovementHotspots;
+      } else if (directToNextVisitingPlace === 1 && !hasExplicitViaRoutes) {
+        matchingHotspots = skipDestinationHotspots
+          ? routeMovementHotspots
+          : [...routeMovementHotspots, ...destinationHotspots];
+      } else if (hasExplicitViaRoutes && isIntercityRouteForBucket) {
+        matchingHotspots = skipDestinationHotspots
+          ? routeMovementHotspots
+          : [...routeMovementHotspots, ...destinationHotspots];
       } else {
-        // PHP ELSE BRANCH (direct == 0): Process source, via, then destination
-        // Order: source_location_hotspots → via_route_hotspots → destination_hotspots
-        
-        // DAY 1 NON-DIRECT: Skip destination hotspots entirely
-        // User requirement: "Day 1 should have max 3 Madurai hotspots, Day 2 will have Alleppey hotspots"
-        if (skipDestinationHotspots) {
-          matchingHotspots = [...sourceLocationHotspots, ...enRouteHotspots, ...viaRouteHotspots];
-        } else {
-          matchingHotspots = [...sourceLocationHotspots, ...enRouteHotspots, ...viaRouteHotspots, ...destinationHotspots];
-        }
+        matchingHotspots = skipDestinationHotspots
+          ? [...sourceCandidatesForRoute, ...enRouteHotspots, ...viaRouteHotspots]
+          : [...sourceCandidatesForRoute, ...enRouteHotspots, ...viaRouteHotspots, ...destinationHotspots];
       }
 
       // PHP parity: keep bucket-level candidates distinct.
@@ -8827,28 +9166,48 @@ export class TimelineBuilder {
         uniqueHotspots.push(h);
       }
 
-      const isIntercityNonDirectForFinalOverride =
-        this.canonicalCityKey(String(targetLocation || '')) !== '' &&
-        this.canonicalCityKey(String(nextLocation || '')) !== '' &&
-        this.canonicalCityKey(String(targetLocation || '')) !== this.canonicalCityKey(String(nextLocation || '')) &&
-        Number(directToNextVisitingPlace || 0) !== 1;
+      const isIntercityRouteForFinalCorridorOverride =
+        isIntercityRouteForBucket;
 
       const finalCandidates = uniqueHotspots.map((h: any) => {
         const hotspotId = Number(h.hotspot_ID || 0);
         const master = allHotspots.find((x: any) => Number(x.hotspot_ID || 0) === hotspotId) || h;
         const masterLocation = String(master.hotspot_location || '');
         const masterToLocation = String(master.hotspot_to_location || master.hotspot_location || '');
-        const sourceMatch = containsLocation(masterLocation, targetLocation);
-        const destMatch = containsLocation(masterToLocation, nextLocation);
-        const forceEnRoute = isIntercityNonDirectForFinalOverride && sourceMatch && destMatch;
+        const routeChainMatch = this.routeSpecificHotspotMatchesRouteChain(
+          masterLocation,
+          masterToLocation,
+          routeLegs,
+        );
+        const forceEnRoute = isIntercityRouteForFinalCorridorOverride && routeChainMatch.matches;
         const finalBucket = forceEnRoute ? 'en_route' : String(h.__bucket || 'unknown').toLowerCase();
         return {
           ...h,
           __bucket: finalBucket,
           __master_location: masterLocation,
           __master_to_location: masterToLocation,
-          __bucket_reason: forceEnRoute ? 'master_source_to_destination_override' : 'original',
+          __route_chain_from_index:
+            Number(h.__route_chain_from_index ?? (routeChainMatch.matches ? routeChainMatch.fromIndex : -1)),
+          __route_chain_to_index:
+            Number(h.__route_chain_to_index ?? (routeChainMatch.matches ? routeChainMatch.toIndex : -1)),
+          __route_movement_order:
+            Number(
+              h.__route_movement_order ??
+                (routeChainMatch.matches
+                  ? this.routeMovementOrder(routeChainMatch.fromIndex, routeChainMatch.toIndex, 'en_route')
+                  : 999999),
+            ),
+          __bucket_reason: forceEnRoute ? 'scheduler_route_chain_override' : String(h.__bucket_reason || 'original'),
         };
+      });
+
+      const seenCandidateIds = new Set<number>();
+      const dedupedFinalCandidates = finalCandidates.filter((candidate: any) => {
+        const id = Number(candidate?.hotspot_ID || 0);
+        if (!id) return true;
+        if (seenCandidateIds.has(id)) return false;
+        seenCandidateIds.add(id);
+        return true;
       });
 
       this.logBookingRule({
@@ -8858,7 +9217,7 @@ export class TimelineBuilder {
         routeId,
         sourceCity: String(targetLocation || ''),
         destinationCity: String(nextLocation || ''),
-        candidates: finalCandidates.map((h: any) => ({
+        candidates: dedupedFinalCandidates.map((h: any) => ({
           hotspotId: Number(h.hotspot_ID || 0),
           name: String(h.hotspot_name || ''),
           masterLocation: String(h.__master_location || ''),
@@ -8868,7 +9227,7 @@ export class TimelineBuilder {
         })),
       });
 
-      return finalCandidates.map((h: any, index: number) => ({
+      return dedupedFinalCandidates.map((h: any, index: number) => ({
         hotspot_ID: Number(h.hotspot_ID ?? 0) || 0,
         display_order: Number(h.hotspot_priority ?? index + 1) || index + 1,
         hotspot_priority: Number(h.hotspot_priority ?? 0) || 0,
@@ -8882,7 +9241,12 @@ export class TimelineBuilder {
             h.hotspot_location ||
             '',
         ),
-      }));
+        __route_chain_from_index: Number(h.__route_chain_from_index ?? -1),
+        __route_chain_to_index: Number(h.__route_chain_to_index ?? -1),
+        __route_movement_order: Number(h.__route_movement_order ?? 999999),
+        __explicit_via_stop: Boolean(h.__explicit_via_stop),
+        __bucket_reason: String(h.__bucket_reason || ''),
+      } as any));
     } catch (err) {
       console.error("[fetchSelectedHotspots] Error:", err);
       return [];
