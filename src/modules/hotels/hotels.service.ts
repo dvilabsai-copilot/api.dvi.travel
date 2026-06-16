@@ -940,13 +940,16 @@ export class HotelsService {
     ];
   }
 
-  getOne(hotel_id: number) {
+  async getOne(hotel_id: number) {
     const id = Number(hotel_id);
     if (!Number.isFinite(id) || id <= 0) {
       throw new Error('Invalid hotel_id');
     }
-    return this.prisma.dvi_hotel.findUnique({
-      where: { hotel_id: id },
+
+    const hotel = await this.prisma.dvi_hotel.findFirst({
+      where: {
+        AND: [this.notDeletedBool as any, { hotel_id: id }],
+      } as any,
       select: {
         hotel_id: true,
         hotel_name: true,
@@ -972,6 +975,20 @@ export class HotelsService {
         axisrooms_property_id: true,
       },
     });
+
+    if (!hotel) return null;
+
+    const [hydrated] = await this.hydrateHotelGeoNames([hotel as any]);
+
+    return {
+      ...hydrated,
+      hotel_country_id: hydrated.hotel_country,
+      hotel_state_id: hydrated.hotel_state,
+      hotel_city_id: hydrated.hotel_city,
+      countryId: hydrated.hotel_country,
+      stateId: hydrated.hotel_state,
+      cityId: hydrated.hotel_city,
+    };
   }
 
   async create(dto: CreateHotelDto) {
@@ -1014,6 +1031,7 @@ export class HotelsService {
           hotel_category: true,
           status: true,
           hotel_power_backup: true,
+          hotel_hotspot_status: true,
           hotel_country: true,
           hotel_state: true,
           hotel_city: true,
