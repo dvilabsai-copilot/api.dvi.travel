@@ -191,7 +191,18 @@ export interface ItineraryVehicleRowDto {
   totalDropKm?: number;
   totalDropDuration?: string;
   totalUsedKm?: number;
+  totalAllowedLocalKm?: number;
+  totalAllowedOutstationKm?: number;
   totalAllowedKm?: number;
+  localDaysCount?: number;
+  outstationDaysCount?: number;
+  outstationAllowedKmPerDay?: number;
+  localAllowedKmBreakdown?: Array<{
+    timeLimitId?: number;
+    allowedKm: number;
+    days: number;
+    label?: string;
+  }>;
   extraKms?: number;
   extraKmRate?: number;
   extraKmCharge?: number;
@@ -4254,12 +4265,48 @@ for (const vd of dayWiseDetails) {
         ? formatHmsDuration(String((lastDayVd as any).total_drop_duration))
         : '0 Hours 0 Min';
 
+      const localDayWiseDetails = dayWiseDetails.filter(
+        (vd: any) => Number((vd as any).travel_type || 0) === 1,
+      );
+      const outstationDayWiseDetails = dayWiseDetails.filter(
+        (vd: any) => Number((vd as any).travel_type || 0) === 2,
+      );
+      const localDaysCount = localDayWiseDetails.length;
+      const outstationDaysCount = outstationDayWiseDetails.length;
+      const localAllowedKmBreakdown = Array.from(
+        localDayWiseDetails.reduce((map, vd: any) => {
+          const timeLimitId = Number((vd as any).time_limit_id || 0);
+          const slabInfo = slabInfoByTimeLimit.get(timeLimitId);
+          const key = String(timeLimitId || 'unknown');
+          const allowedKm = Number(slabInfo?.kmLimit || 0);
+          const existing = map.get(key) || {
+            timeLimitId: timeLimitId || undefined,
+            allowedKm: 0,
+            days: 0,
+            label: slabInfo?.title || undefined,
+          };
+
+          existing.allowedKm += allowedKm;
+          existing.days += 1;
+          if (!existing.label && slabInfo?.title) {
+            existing.label = slabInfo.title;
+          }
+
+          map.set(key, existing);
+          return map;
+        }, new Map<string, { timeLimitId?: number; allowedKm: number; days: number; label?: string }>()),
+      )
+        .map(([, item]) => item)
+        .filter((item) => item.allowedKm > 0 || item.days > 0);
+
       // Summary fields from eligible_list
       const noOfDays = dayWiseDetails.length || 1;
       const totalUsedKm = parseFloat(String(eligAny.total_kms || 0)) || 0;
       const totalAllowedLocalKm = parseFloat(String(eligAny.total_allowed_local_kms || 0)) || 0;
       const totalAllowedOutstationKm = parseFloat(String(eligAny.total_allowed_kms || 0)) || 0;
       const totalAllowedKm = totalAllowedLocalKm + totalAllowedOutstationKm;
+      const outstationAllowedKmPerDay =
+        parseFloat(String((eligAny as any).outstation_allowed_km_per_day || 0)) || 0;
       const extraLocalKms = parseFloat(String(eligAny.total_extra_local_kms || 0)) || 0;
       const extraOutstationKms = parseFloat(String(eligAny.total_extra_kms || 0)) || 0;
       const extraKms = extraLocalKms + extraOutstationKms;
@@ -4337,7 +4384,13 @@ for (const vd of dayWiseDetails) {
         totalDropKm,
         totalDropDuration,
         totalUsedKm,
+        totalAllowedLocalKm,
+        totalAllowedOutstationKm,
         totalAllowedKm,
+        localDaysCount,
+        outstationDaysCount,
+        outstationAllowedKmPerDay,
+        localAllowedKmBreakdown: localAllowedKmBreakdown.length ? localAllowedKmBreakdown : undefined,
         extraKms,
         extraKmRate,
         extraKmCharge,
