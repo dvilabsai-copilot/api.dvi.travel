@@ -35,6 +35,7 @@
     "build:hotspot-matrix:retry": "tsx scripts/build-hotspot-route-matrix.ts --apply --retry-failed",
     "verify:hotspot:between": "node scripts/verify-hotspot-between-cheeyappara-eravikulam.js",
     "verify:hotspot:not-between": "node scripts/verify-hotspot-not-between-eravikulam-rosegarden.js",
+    "verify:day1:airport-munnar-via": "node scripts/verify-day1-airport-munnar-via.js",
     "verify:dvi20260690:direct-no-via": "node scripts/verify-dvi20260690-direct-no-via.js",
     "verify:dvi20260690:explicit-via": "node scripts/verify-dvi20260690-explicit-via.js",
     "test:matrix": "tsx scripts/test-matrix-autobuild.ts",
