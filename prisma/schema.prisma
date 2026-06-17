@@ -4632,6 +4632,7 @@ model dvi_kms_limit {
   @@index([updatedon], map: "idx_dvi_kms_limit_updatedon")
   @@index([vendor_id], map: "idx_dvi_kms_limit_vendor_id")
   @@index([vendor_vehicle_type_id], map: "idx_dvi_kms_limit_vendor_vehicle_type_id")
+  @@unique([vendor_id, vendor_vehicle_type_id, kms_limit, deleted], map: "uq_dvi_kms_limit_vendor_vehicle_type_kms_deleted")
 }
 
 model dvi_language {
@@ -5461,6 +5462,7 @@ model dvi_vehicle_outstation_price_book {
   @@index([vendor_branch_id], map: "idx_dvi_vehicle_outstation_price_book_vendor_branch_id")
   @@index([vendor_id], map: "idx_dvi_vehicle_outstation_price_book_vendor_id")
   @@index([year], map: "idx_dvi_vehicle_outstation_price_book_year")
+  @@unique([vendor_id, vendor_branch_id, vehicle_type_id, kms_limit_id, year, month, deleted], map: "uq_dvi_vehicle_outstation_price_book_scope_deleted")
 }
 
 model dvi_vehicle_review_details {
