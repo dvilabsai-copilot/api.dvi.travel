@@ -685,6 +685,7 @@ export class VendorsService {
         vendor_vehicle_type_ID: raw,
         vendor_id: vendorId,
         deleted: 0,
+        status: 1,
       },
       select: { vendor_vehicle_type_ID: true },
     });
@@ -695,10 +696,133 @@ export class VendorsService {
         vendor_id: vendorId,
         vehicle_type_id: raw,
         deleted: 0,
+        status: 1,
       },
+      orderBy: { vendor_vehicle_type_ID: 'asc' },
       select: { vendor_vehicle_type_ID: true },
     });
     return byBaseType?.vendor_vehicle_type_ID ?? null;
+  }
+
+  private normalizeOutstationKmSignature(limit: number | null, title: string | null | undefined): { normalizedLimit: number; normalizedTitle: string } {
+    const normalizedTitle = String(title ?? '').trim();
+    const numericFromLimit = Number(limit ?? 0);
+    if (Number.isFinite(numericFromLimit) && numericFromLimit > 0) {
+      return {
+        normalizedLimit: numericFromLimit,
+        normalizedTitle,
+      };
+    }
+
+    const titleMatch = normalizedTitle.match(/(\d+(?:\.\d+)?)/);
+    const numericFromTitle = titleMatch ? Number(titleMatch[1]) : 0;
+    return {
+      normalizedLimit: Number.isFinite(numericFromTitle) ? numericFromTitle : 0,
+      normalizedTitle,
+    };
+  }
+
+  private async findCanonicalActiveOutstationKmLimit(
+    vendorId: number,
+    vendorVehicleTypeId: number,
+    input: { kmsLimitId?: number | null; kmsLimit?: number | null; kmsLimitTitle?: string | null },
+  ): Promise<{ kms_limit_id: number; kms_limit: number; kms_limit_title: string | null } | null> {
+    const normalized = this.normalizeOutstationKmSignature(
+      input.kmsLimit ?? null,
+      input.kmsLimitTitle ?? null,
+    );
+
+    if (input.kmsLimitId) {
+      const direct = await this.prisma.dvi_kms_limit.findFirst({
+        where: {
+          kms_limit_id: input.kmsLimitId,
+          vendor_id: vendorId,
+          vendor_vehicle_type_id: vendorVehicleTypeId,
+          deleted: 0,
+          status: 1,
+        },
+        select: {
+          kms_limit_id: true,
+          kms_limit: true,
+          kms_limit_title: true,
+        },
+      });
+      if (direct) {
+        return direct;
+      }
+    }
+
+    if (normalized.normalizedLimit > 0) {
+      const byLimit = await this.prisma.dvi_kms_limit.findFirst({
+        where: {
+          vendor_id: vendorId,
+          vendor_vehicle_type_id: vendorVehicleTypeId,
+          kms_limit: normalized.normalizedLimit,
+          deleted: 0,
+          status: 1,
+        },
+        orderBy: { kms_limit_id: 'asc' },
+        select: {
+          kms_limit_id: true,
+          kms_limit: true,
+          kms_limit_title: true,
+        },
+      });
+      if (byLimit) {
+        return byLimit;
+      }
+    }
+
+    if (normalized.normalizedTitle) {
+      const byTitle = await this.prisma.dvi_kms_limit.findFirst({
+        where: {
+          vendor_id: vendorId,
+          vendor_vehicle_type_id: vendorVehicleTypeId,
+          kms_limit_title: normalized.normalizedTitle,
+          deleted: 0,
+          status: 1,
+        },
+        orderBy: { kms_limit_id: 'asc' },
+        select: {
+          kms_limit_id: true,
+          kms_limit: true,
+          kms_limit_title: true,
+        },
+      });
+      if (byTitle) {
+        return byTitle;
+      }
+    }
+
+    return null;
+  }
+
+  private normalizeLocalTimeLimitSignature(
+    hours: number | null,
+    kmLimit: number | null,
+    title: string | null | undefined,
+  ): { normalizedHours: number; normalizedKm: number; normalizedTitle: string } {
+    const normalizedTitle = String(title ?? '').trim();
+    const numericHours = Number(hours ?? 0);
+    const numericKm = Number(kmLimit ?? 0);
+
+    if (Number.isFinite(numericHours) && numericHours > 0 && Number.isFinite(numericKm) && numericKm > 0) {
+      return {
+        normalizedHours: numericHours,
+        normalizedKm: numericKm,
+        normalizedTitle,
+      };
+    }
+
+    const matches = normalizedTitle.match(/(\d+(?:\.\d+)?)/g) ?? [];
+    const parsedHours = Number(matches[0] ?? 0);
+    const parsedKm = Number(matches[1] ?? 0);
+
+    return {
+      normalizedHours: Number.isFinite(parsedHours) ? parsedHours : 0,
+      normalizedKm: Number.isFinite(parsedKm) ? parsedKm : 0,
+      normalizedTitle,
+    };
   }
 
   /**
@@ -1789,6 +1913,7 @@ async updateVendorVehicle(vehicleId: number, data: any): Promise<any> {
         OR: monthWhere,
       },
       select: {
+        vehicle_price_book_id: true,
         vehicle_type_id: true,
         time_limit_id: true,
         year: true,
@@ -1824,19 +1949,28 @@ async updateVendorVehicle(vehicleId: number, data: any): Promise<any> {
         day_29: true,
         day_30: true,
         day_31: true,
+        updatedon: true,
       },
     });
 
-    const vvTypeIds = [...new Set(entries.map((e) => e.vehicle_type_id))];
-    const vendorTypes = vvTypeIds.length
-      ? await this.prisma.dvi_vendor_vehicle_types.findMany({
-          where: { vendor_vehicle_type_ID: { in: vvTypeIds } },
-          select: { vendor_vehicle_type_ID: true, vehicle_type_id: true },
-        })
-      : [];
-    const vendorTypeToBaseType = new Map(
-      vendorTypes.map((v) => [v.vendor_vehicle_type_ID, v.vehicle_type_id]),
-    );
+    const vendorTypes = await this.prisma.dvi_vendor_vehicle_types.findMany({
+      where: { vendor_id: vendorId },
+      select: {
+        vendor_vehicle_type_ID: true,
+        vehicle_type_id: true,
+        deleted: true,
+        status: true,
+      },
+      orderBy: { vendor_vehicle_type_ID: 'asc' },
+    });
+    const vendorTypesById = new Map(vendorTypes.map((v) => [v.vendor_vehicle_type_ID, v]));
+    const activeVendorTypeByBaseType = new Map<number, typeof vendorTypes[number]>();
+    for (const row of vendorTypes) {
+      if (Number(row.deleted || 0) !== 0 || Number(row.status || 0) === 0) continue;
+      if (!activeVendorTypeByBaseType.has(row.vehicle_type_id)) {
+        activeVendorTypeByBaseType.set(row.vehicle_type_id, row);
+      }
+    }
 
     const baseTypeIds = [...new Set(vendorTypes.map((v) => v.vehicle_type_id))];
     const baseTypes = baseTypeIds.length
@@ -1849,50 +1983,129 @@ async updateVendorVehicle(vehicleId: number, data: any): Promise<any> {
       baseTypes.map((b) => [b.vehicle_type_id, b.vehicle_type_title ?? '']),
     );
 
-    const timeLimitIds = [...new Set(entries.map((e) => e.time_limit_id))];
-    const timeLimits = timeLimitIds.length
-      ? await this.prisma.dvi_time_limit.findMany({
-          where: { time_limit_id: { in: timeLimitIds } },
-          select: { time_limit_id: true, time_limit_title: true },
-        })
-      : [];
-    const timeLimitTitleMap = new Map(
-      timeLimits.map((t) => [t.time_limit_id, t.time_limit_title ?? '']),
-    );
-
-    const recordMap = new Map<string, any>();
-    for (const e of entries) {
-      recordMap.set(`${e.vehicle_type_id}|${e.time_limit_id}|${e.year}|${e.month}`, e);
+    const timeLimits = await this.prisma.dvi_time_limit.findMany({
+      where: { vendor_id: vendorId },
+      select: {
+        time_limit_id: true,
+        vendor_vehicle_type_id: true,
+        time_limit_title: true,
+        hours_limit: true,
+        km_limit: true,
+        deleted: true,
+        status: true,
+      },
+      orderBy: { time_limit_id: 'asc' },
+    });
+    const timeLimitById = new Map(timeLimits.map((t) => [t.time_limit_id, t]));
+    const activeCanonicalTimeLimitByVehicleAndSignature = new Map<string, typeof timeLimits[number]>();
+    for (const row of timeLimits) {
+      if (Number(row.deleted || 0) !== 0 || Number(row.status || 0) === 0) continue;
+      const normalized = this.normalizeLocalTimeLimitSignature(
+        row.hours_limit ?? null,
+        row.km_limit ?? null,
+        row.time_limit_title ?? null,
+      );
+      const key = `${row.vendor_vehicle_type_id}|${normalized.normalizedHours}|${normalized.normalizedKm}`;
+      if (!activeCanonicalTimeLimitByVehicleAndSignature.has(key)) {
+        activeCanonicalTimeLimitByVehicleAndSignature.set(key, row);
+      }
     }
 
-    const rowKeySet = new Set<string>();
-    for (const e of entries) {
-      rowKeySet.add(`${e.vehicle_type_id}|${e.time_limit_id}`);
+    type LocalPreviewEntry = typeof entries[number];
+    const candidateMap = new Map<string, LocalPreviewEntry[]>();
+
+    for (const entry of entries) {
+      const sourceTimeLimit = timeLimitById.get(entry.time_limit_id);
+      const sourceVendorType =
+        vendorTypesById.get(entry.vehicle_type_id) ??
+        (sourceTimeLimit ? vendorTypesById.get(sourceTimeLimit.vendor_vehicle_type_id) : undefined);
+      if (!sourceTimeLimit || !sourceVendorType) continue;
+
+      const activeVendorType = activeVendorTypeByBaseType.get(sourceVendorType.vehicle_type_id);
+      if (!activeVendorType) continue;
+
+      const normalized = this.normalizeLocalTimeLimitSignature(
+        sourceTimeLimit.hours_limit ?? null,
+        sourceTimeLimit.km_limit ?? null,
+        sourceTimeLimit.time_limit_title ?? null,
+      );
+
+      const activeCanonicalTimeLimit = activeCanonicalTimeLimitByVehicleAndSignature.get(
+        `${activeVendorType.vendor_vehicle_type_ID}|${normalized.normalizedHours}|${normalized.normalizedKm}`,
+      );
+      if (!activeCanonicalTimeLimit) continue;
+
+      const candidateKey = [
+        activeVendorType.vendor_vehicle_type_ID,
+        activeCanonicalTimeLimit.time_limit_id,
+        entry.year ?? '',
+        entry.month ?? '',
+      ].join('|');
+      const list = candidateMap.get(candidateKey) ?? [];
+      list.push(entry);
+      candidateMap.set(candidateKey, list);
     }
 
-    const rows = Array.from(rowKeySet).map((key) => {
-      const [vehicleTypeIdRaw, timeLimitIdRaw] = key.split('|');
-      const vehicleTypeId = Number(vehicleTypeIdRaw);
-      const timeLimitId = Number(timeLimitIdRaw);
-      const baseTypeId = vendorTypeToBaseType.get(vehicleTypeId) ?? vehicleTypeId;
-      const vehicleTypeTitle = baseTypeTitleMap.get(baseTypeId) ?? String(baseTypeId);
-      const timeLimitTitle = timeLimitTitleMap.get(timeLimitId) ?? String(timeLimitId);
+    const chooseDayValue = (rowsForDay: LocalPreviewEntry[], dayCol: keyof LocalPreviewEntry): number | null => {
+      const sorted = [...rowsForDay].sort((a, b) => {
+        const aValue = Number(a[dayCol] ?? 0);
+        const bValue = Number(b[dayCol] ?? 0);
+        const aPositive = aValue > 0 ? 1 : 0;
+        const bPositive = bValue > 0 ? 1 : 0;
+        if (aPositive !== bPositive) return bPositive - aPositive;
 
-      const prices = dayPoints.map((dp) => {
-        const rec = recordMap.get(`${vehicleTypeId}|${timeLimitId}|${dp.year}|${dp.month}`);
-        if (!rec) return null;
-        const value = rec[dp.dayCol];
-        return value === null || value === undefined ? null : Number(value);
+        const aUpdated = a.updatedon ? new Date(a.updatedon).getTime() : 0;
+        const bUpdated = b.updatedon ? new Date(b.updatedon).getTime() : 0;
+        if (aUpdated !== bUpdated) return bUpdated - aUpdated;
+
+        return b.vehicle_price_book_id - a.vehicle_price_book_id;
       });
 
-      return {
-        vehicle_type_id: vehicleTypeId,
-        time_limit_id: timeLimitId,
-        vehicle_type_title: vehicleTypeTitle,
-        time_limit_title: timeLimitTitle,
-        prices,
-      };
-    });
+      const chosen = sorted[0];
+      if (!chosen) return null;
+      const numeric = Number(chosen[dayCol] ?? 0);
+      return Number.isFinite(numeric) ? numeric : null;
+    };
+
+    const recordMap = new Map<string, Record<string, number | null>>();
+    const rowKeySet = new Set<string>();
+    for (const [candidateKey, group] of candidateMap.entries()) {
+      const [vehicleTypeId, timeLimitId, year, month] = candidateKey.split('|');
+      const rowKey = `${vehicleTypeId}|${timeLimitId}`;
+      rowKeySet.add(rowKey);
+
+      const mergedDays: Record<string, number | null> = {};
+      for (let day = 1; day <= 31; day += 1) {
+        mergedDays[`day_${day}`] = chooseDayValue(group, `day_${day}` as keyof LocalPreviewEntry);
+      }
+      recordMap.set(`${rowKey}|${year}|${month}`, mergedDays);
+    }
+
+    const rows = Array.from(rowKeySet)
+      .map((key) => {
+        const [vehicleTypeIdRaw, timeLimitIdRaw] = key.split('|');
+        const vehicleTypeId = Number(vehicleTypeIdRaw);
+        const timeLimitId = Number(timeLimitIdRaw);
+        const baseTypeId = vendorTypesById.get(vehicleTypeId)?.vehicle_type_id ?? vehicleTypeId;
+        const vehicleTypeTitle = baseTypeTitleMap.get(baseTypeId) ?? String(baseTypeId);
+        const timeLimitTitle = String(timeLimitById.get(timeLimitId)?.time_limit_title ?? timeLimitId);
+
+        const prices = dayPoints.map((dp) => {
+          const rec = recordMap.get(`${vehicleTypeId}|${timeLimitId}|${dp.year}|${dp.month}`);
+          if (!rec) return null;
+          const value = rec[dp.dayCol];
+          return value === null || value === undefined ? null : Number(value);
+        });
+
+        return {
+          vehicle_type_id: vehicleTypeId,
+          time_limit_id: timeLimitId,
+          vehicle_type_title: vehicleTypeTitle,
+          time_limit_title: timeLimitTitle,
+          prices,
+        };
+      })
+      .filter((row) => row.prices.some((value) => Number(value ?? 0) > 0));
 
     return {
       days: dayPoints.map((d) => ({ key: d.key, label: d.label })),
@@ -2338,16 +2551,47 @@ async updateVendorVehicle(vehicleId: number, data: any): Promise<any> {
 
       const rowVendorId = this.toNumberOrNull(vendorIds[i]) ?? vendorId;
       const vendorBranchId = this.toNumberOrNull(branchIds[i]) ?? 0;
-      const vehicleTypeId = this.toNumberOrNull(vehicleTypeIds[i]) ?? 0;
-      const kmsLimitId = this.toNumberOrNull(kmsLimitIds[i]) ?? 0;
-      if (!vehicleTypeId || !kmsLimitId) continue;
+      const requestedVehicleTypeId = this.toNumberOrNull(vehicleTypeIds[i]) ?? 0;
+      const vendorVehicleTypeId = await this.resolveVendorVehicleTypeId(rowVendorId, requestedVehicleTypeId);
+      const requestedKmsLimitId = this.toNumberOrNull(kmsLimitIds[i]) ?? 0;
+      if (!vendorVehicleTypeId || !requestedKmsLimitId) continue;
+
+      const requestedKmsLimit = await this.prisma.dvi_kms_limit.findFirst({
+        where: {
+          kms_limit_id: requestedKmsLimitId,
+          vendor_id: rowVendorId,
+        },
+        select: {
+          kms_limit_id: true,
+          kms_limit: true,
+          kms_limit_title: true,
+          deleted: true,
+          status: true,
+        },
+      });
+
+      const canonicalKmsLimit = await this.findCanonicalActiveOutstationKmLimit(
+        rowVendorId,
+        vendorVehicleTypeId,
+        {
+          kmsLimitId: requestedKmsLimitId,
+          kmsLimit: requestedKmsLimit?.kms_limit ?? null,
+          kmsLimitTitle: requestedKmsLimit?.kms_limit_title ?? null,
+        },
+      );
+
+      if (!canonicalKmsLimit?.kms_limit_id) {
+        throw new BadRequestException(
+          `Active outstation KM limit not found for vendor ${rowVendorId}, vehicle_type_id ${requestedVehicleTypeId}, kms_limit_id ${requestedKmsLimitId}`,
+        );
+      }
 
       for (const slice of slices) {
         const where = {
           vendor_id: rowVendorId,
           vendor_branch_id: vendorBranchId,
-          vehicle_type_id: vehicleTypeId,
-          kms_limit_id: kmsLimitId,
+          vehicle_type_id: vendorVehicleTypeId,
+          kms_limit_id: canonicalKmsLimit.kms_limit_id,
           year: slice.year,
           month: slice.month,
           deleted: 0,
@@ -2368,8 +2612,8 @@ async updateVendorVehicle(vehicleId: number, data: any): Promise<any> {
               ...patch,
               vendor_id: rowVendorId,
               vendor_branch_id: vendorBranchId,
-              vehicle_type_id: vehicleTypeId,
-              kms_limit_id: kmsLimitId,
+              vehicle_type_id: vendorVehicleTypeId,
+              kms_limit_id: canonicalKmsLimit.kms_limit_id,
               year: slice.year,
               month: slice.month,
               createdby: 0,
@@ -2398,6 +2642,42 @@ async updateVendorVehicle(vehicleId: number, data: any): Promise<any> {
     }
 
     const { vehicle_outstation_price_book_id, ...rest } = data;
+    const requestedVehicleTypeId = this.toNumberOrNull(rest.vehicle_type_id);
+    const requestedKmsLimitId = this.toNumberOrNull(rest.kms_limit_id);
+    if (requestedVehicleTypeId && requestedKmsLimitId) {
+      const vendorVehicleTypeId = await this.resolveVendorVehicleTypeId(vendorId, requestedVehicleTypeId);
+      if (!vendorVehicleTypeId) {
+        throw new BadRequestException(`vehicle_type_id ${requestedVehicleTypeId} is not configured for this vendor`);
+      }
+
+      const requestedKmsLimit = await this.prisma.dvi_kms_limit.findFirst({
+        where: {
+          kms_limit_id: requestedKmsLimitId,
+          vendor_id: vendorId,
+        },
+        select: {
+          kms_limit_id: true,
+          kms_limit: true,
+          kms_limit_title: true,
+        },
+      });
+
+      const canonicalKmsLimit = await this.findCanonicalActiveOutstationKmLimit(vendorId, vendorVehicleTypeId, {
+        kmsLimitId: requestedKmsLimitId,
+        kmsLimit: requestedKmsLimit?.kms_limit ?? null,
+        kmsLimitTitle: requestedKmsLimit?.kms_limit_title ?? null,
+      });
+
+      if (!canonicalKmsLimit?.kms_limit_id) {
+        throw new BadRequestException(
+          `Active outstation KM limit not found for vendor ${vendorId}, vehicle_type_id ${requestedVehicleTypeId}, kms_limit_id ${requestedKmsLimitId}`,
+        );
+      }
+
+      rest.vehicle_type_id = vendorVehicleTypeId;
+      rest.kms_limit_id = canonicalKmsLimit.kms_limit_id;
+    }
+
     if (vehicle_outstation_price_book_id) {
       return this.prisma.dvi_vehicle_outstation_price_book.update({
         where: { vehicle_outstation_price_book_id },
@@ -2555,15 +2835,86 @@ async updateVendorVehicle(vehicleId: number, data: any): Promise<any> {
 
       const existingDeleteRow = await this.prisma.dvi_kms_limit.findFirst({
         where: { kms_limit_id: kmsLimitId, vendor_id: vendorId, deleted: 0 },
+        select: {
+          kms_limit_id: true,
+          vendor_id: true,
+          vendor_vehicle_type_id: true,
+          kms_limit: true,
+        },
       });
       if (!existingDeleteRow) {
         throw new NotFoundException(`Outstation KM limit ${kmsLimitId} not found for vendor ${vendorId}`);
       }
 
-      return this.prisma.dvi_kms_limit.update({
-        where: { kms_limit_id: kmsLimitId },
-        data: { deleted: 1, status: 0, updatedon: new Date() },
+      const now = new Date();
+      const result = await this.prisma.$transaction(async (tx) => {
+        const activePricebooks = await tx.dvi_vehicle_outstation_price_book.findMany({
+          where: {
+            vendor_id: vendorId,
+            kms_limit_id: kmsLimitId,
+            deleted: 0,
+          },
+          select: {
+            vehicle_outstation_price_book_id: true,
+            vendor_id: true,
+            vendor_branch_id: true,
+            vehicle_type_id: true,
+            kms_limit_id: true,
+            year: true,
+            month: true,
+          },
+        });
+
+        let deletedPricebookCount = 0;
+        for (const pricebook of activePricebooks) {
+          const siblingRows = await tx.dvi_vehicle_outstation_price_book.findMany({
+            where: {
+              vendor_id: pricebook.vendor_id,
+              vendor_branch_id: pricebook.vendor_branch_id,
+              vehicle_type_id: pricebook.vehicle_type_id,
+              kms_limit_id: pricebook.kms_limit_id,
+              year: pricebook.year,
+              month: pricebook.month,
+            },
+            select: { deleted: true },
+          });
+          const nextDeletedValue =
+            Math.max(1, ...siblingRows.map((row) => Number(row.deleted || 0))) + 1;
+
+          await tx.dvi_vehicle_outstation_price_book.update({
+            where: { vehicle_outstation_price_book_id: pricebook.vehicle_outstation_price_book_id },
+            data: {
+              deleted: nextDeletedValue,
+              status: 0,
+              updatedon: now,
+            },
+          });
+          deletedPricebookCount += 1;
+        }
+
+        const kmsLimitSiblings = await tx.dvi_kms_limit.findMany({
+          where: {
+            vendor_id: vendorId,
+            vendor_vehicle_type_id: existingDeleteRow.vendor_vehicle_type_id,
+            kms_limit: existingDeleteRow.kms_limit,
+          },
+          select: { deleted: true },
+        });
+        const nextKmsLimitDeletedValue =
+          Math.max(1, ...kmsLimitSiblings.map((row) => Number(row.deleted || 0))) + 1;
+
+        const deletedKmLimit = await tx.dvi_kms_limit.update({
+          where: { kms_limit_id: kmsLimitId },
+          data: { deleted: nextKmsLimitDeletedValue, status: 0, updatedon: now },
+        });
+
+        return {
+          ...deletedKmLimit,
+          deleted_pricebook_rows: deletedPricebookCount,
+        };
       });
+
+      return result;
     }
 
     const requestedVehicleTypeId = this.toNumberOrNull(data.vehicle_type_id ?? data.vehicleTypeId);
@@ -2580,6 +2931,11 @@ async updateVendorVehicle(vehicleId: number, data: any): Promise<any> {
 
     const title = String(data.out_km_title ?? data.kms_limit_title ?? data.title ?? '').trim();
     const limit = this.toNumberOrNull(data.out_km_limit ?? data.kms_limit ?? data.kmLimit) ?? 0;
+    const canonicalExisting = await this.findCanonicalActiveOutstationKmLimit(vendorId, vendorVehicleTypeId, {
+      kmsLimitId,
+      kmsLimit: limit,
+      kmsLimitTitle: title,
+    });
     const mapped = {
       vendor_id: vendorId,
       vendor_vehicle_type_id: vendorVehicleTypeId,
@@ -2588,6 +2944,20 @@ async updateVendorVehicle(vehicleId: number, data: any): Promise<any> {
       status: 1,
     };
 
+    const duplicateOutstation = await this.prisma.dvi_kms_limit.findFirst({
+      where: {
+        vendor_id: vendorId,
+        vendor_vehicle_type_id: vendorVehicleTypeId,
+        deleted: 0,
+        ...(kmsLimitId ? { NOT: { kms_limit_id: kmsLimitId } } : {}),
+      },
+      select: { kms_limit_id: true, kms_limit: true, kms_limit_title: true },
+    });
+
+    if (duplicateOutstation) {
+      throw new BadRequestException('Already exist for this vehicle type');
+    }
+
     if (kmsLimitId) {
       return this.prisma.dvi_kms_limit.update({
         where: { kms_limit_id: kmsLimitId },
@@ -2595,19 +2965,8 @@ async updateVendorVehicle(vehicleId: number, data: any): Promise<any> {
       });
     }
 
-    const existing = await this.prisma.dvi_kms_limit.findFirst({
-      where: {
-        vendor_id: vendorId,
-        vendor_vehicle_type_id: vendorVehicleTypeId,
-        deleted: 0,
-      },
-    });
-
-    if (existing) {
-      return this.prisma.dvi_kms_limit.update({
-        where: { kms_limit_id: existing.kms_limit_id },
-        data: { ...mapped, updatedon: new Date() },
-      });
+    if (canonicalExisting) {
+      throw new BadRequestException('Already exist for this vehicle type');
     }
 
     return this.prisma.dvi_kms_limit.create({
@@ -2686,6 +3045,22 @@ async updateVendorVehicle(vehicleId: number, data: any): Promise<any> {
       status: 1,
     };
 
+    const duplicateLocal = await this.prisma.dvi_time_limit.findFirst({
+      where: {
+        vendor_id: vendorId,
+        vendor_vehicle_type_id: vendorVehicleTypeId,
+        hours_limit: hours,
+        km_limit: km,
+        deleted: 0,
+        ...(timeLimitId ? { NOT: { time_limit_id: timeLimitId } } : {}),
+      },
+      select: { time_limit_id: true },
+    });
+
+    if (duplicateLocal) {
+      throw new BadRequestException('Already exist for this vehicle type');
+    }
+
     if (timeLimitId) {
       return this.prisma.dvi_time_limit.update({
         where: { time_limit_id: timeLimitId },
@@ -2704,10 +3079,7 @@ async updateVendorVehicle(vehicleId: number, data: any): Promise<any> {
     });
 
     if (existing) {
-      return this.prisma.dvi_time_limit.update({
-        where: { time_limit_id: existing.time_limit_id },
-        data: { ...mapped, updatedon: new Date() },
-      });
+      throw new BadRequestException('Already exist for this vehicle type');
     }
 
     return this.prisma.dvi_time_limit.create({
