@@ -548,6 +548,35 @@ export class TimelineBuilder {
     return seconds < timeToSeconds('12:00:00') ? 'MORNING' : 'EVENING';
   }
 
+  private resolveTimelineBucket(hotspot: any): string {
+    return String(
+      hotspot?.matched_bucket ||
+      hotspot?.__bucket ||
+      hotspot?.bucket ||
+      '',
+    )
+      .trim()
+      .toLowerCase();
+  }
+
+  private isRouteMovementBucket(bucket: string): boolean {
+    return (
+      bucket === 'via' ||
+      bucket === 'en_route' ||
+      bucket === 'enroute' ||
+      bucket === 'boundary'
+    );
+  }
+
+  private isSourceBucket(bucket: string): boolean {
+    return (
+      bucket === 'source' ||
+      bucket === 'source_local' ||
+      bucket === 'source_hotspot' ||
+      bucket === 'source_fallback'
+    );
+  }
+
   private getNextSlotStart(currentSlot: DayTimeSlot): string | null {
     if (currentSlot === 'MORNING') return '12:00:00';
     return null;
@@ -3232,16 +3261,18 @@ export class TimelineBuilder {
         // Process each hotspot in priority order, wait for next operating window if needed
         
         for (const sh of selectedHotspots) {
-          const bucket = (sh as any).matched_bucket as string | undefined;
+          const bucket = this.resolveTimelineBucket(sh);
           const hotspotPriority = Number((sh as any).hotspot_priority ?? 0);
           const isManualSelection = Boolean((sh as any).isManualSelection);
+          const isRouteMovementBucket = this.isRouteMovementBucket(bucket);
+          const isSourceBucket = this.isSourceBucket(bucket);
 
-          if (!isManualSelection && hotspotPriority === 0) {
+          if (!isManualSelection && !isRouteMovementBucket && hotspotPriority === 0) {
             this.logHotspotCandidateEvaluation({
               routeId: route.itinerary_route_ID,
               hotspotId: Number(sh.hotspot_ID || 0),
               name: `hotspot_${Number(sh.hotspot_ID || 0)}`,
-              matchedBucket: bucket ?? null,
+              matchedBucket: bucket || null,
               priority: hotspotPriority,
               isMustVisit: false,
               distanceFromRoute: Number.isFinite(Number((sh as any).hotspot_distance))
@@ -3252,17 +3283,17 @@ export class TimelineBuilder {
               visitTime: `${currentTime} - ${currentTime}`,
               isOpenAtVisitTime: false,
               selected: false,
-              rejectedReasons: ['Rejected: Day1 strict pass skips priority=0 fillers'],
+              rejectedReasons: ['Rejected: Day1 strict pass skips non-movement priority=0 fillers'],
             });
             continue;
           }
 
-          if (!isManualSelection && hotspotPriority > 3) {
+          if (!isManualSelection && !isRouteMovementBucket && hotspotPriority > 3) {
             this.logHotspotCandidateEvaluation({
               routeId: route.itinerary_route_ID,
               hotspotId: Number(sh.hotspot_ID || 0),
               name: `hotspot_${Number(sh.hotspot_ID || 0)}`,
-              matchedBucket: bucket ?? null,
+              matchedBucket: bucket || null,
               priority: hotspotPriority,
               isMustVisit: false,
               distanceFromRoute: Number.isFinite(Number((sh as any).hotspot_distance))
@@ -3273,17 +3304,17 @@ export class TimelineBuilder {
               visitTime: `${currentTime} - ${currentTime}`,
               isOpenAtVisitTime: false,
               selected: false,
-              rejectedReasons: ['Rejected: Day1 strict pass skips priority>3'],
+              rejectedReasons: ['Rejected: Day1 strict pass skips non-movement priority>3'],
             });
             continue;
           }
 
-          if (!isManualSelection && isRouteSourceTerminal && hotspotPriority === 1) {
+          if (!isManualSelection && isRouteSourceTerminal && isSourceBucket && hotspotPriority === 1) {
             this.logHotspotCandidateEvaluation({
               routeId: route.itinerary_route_ID,
               hotspotId: Number(sh.hotspot_ID || 0),
               name: `hotspot_${Number(sh.hotspot_ID || 0)}`,
-              matchedBucket: bucket ?? null,
+              matchedBucket: bucket || null,
               priority: hotspotPriority,
               isMustVisit: true,
               distanceFromRoute: Number.isFinite(Number((sh as any).hotspot_distance))
@@ -3294,7 +3325,7 @@ export class TimelineBuilder {
               visitTime: `${currentTime} - ${currentTime}`,
               isOpenAtVisitTime: false,
               selected: false,
-              rejectedReasons: ['Rejected: Day1 terminal-arrival priority1 suppression'],
+              rejectedReasons: ['Rejected: Day1 terminal-arrival source-bucket priority1 suppression'],
             });
             continue;
           }
@@ -3336,7 +3367,7 @@ export class TimelineBuilder {
                 routeId: route.itinerary_route_ID,
                 hotspotId: Number(sh.hotspot_ID || 0),
                 name: `hotspot_${Number(sh.hotspot_ID || 0)}`,
-                matchedBucket: bucket ?? null,
+                matchedBucket: bucket || null,
                 priority: Number((sh as any).hotspot_priority ?? 0),
                 isMustVisit: false,
                 distanceFromRoute: null,
