@@ -9,6 +9,7 @@ import {
 import { ConfirmQuotationDto } from "./dto/confirm-quotation.dto";
 import { CancelItineraryDto } from "./dto/cancel-itinerary.dto";
 import { LatestItineraryQueryDto } from "./dto/latest-itinerary-query.dto";
+import { TransportVoucherDetails } from "./dto/transport-voucher-details.dto";
 import { PlanEngineService } from "./engines/plan-engine.service";
 import { RouteEngineService } from "./engines/route-engine.service";
 import { HotspotEngineService } from "./engines/hotspot-engine.service";
@@ -8809,6 +8810,401 @@ export class ItinerariesService {
       },
       hotelVoucherGroups,
       vehicleVoucherGroups,
+    };
+  }
+
+  async getTransportVoucherDetails(itineraryPlanId: number): Promise<TransportVoucherDetails> {
+    const plan = await this.prisma.dvi_confirmed_itinerary_plan_details.findFirst({
+      where: { itinerary_plan_ID: itineraryPlanId, deleted: 0 },
+    });
+
+    if (!plan) {
+      throw new NotFoundException('Confirmed itinerary plan not found');
+    }
+
+    const [
+      customer,
+      settings,
+      routes,
+      routeHotspots,
+      eligibleRows,
+      vehicleVouchers,
+      vehicleTypes,
+      vehicles,
+      vehicleImages,
+    ] = await Promise.all([
+      this.prisma.dvi_confirmed_itinerary_customer_details.findFirst({
+        where: { itinerary_plan_ID: itineraryPlanId, primary_customer: 1, deleted: 0 },
+      }),
+      this.prisma.dvi_global_settings.findFirst({
+        where: { status: 1, deleted: 0 },
+      }),
+      this.prisma.dvi_confirmed_itinerary_route_details.findMany({
+        where: { itinerary_plan_ID: itineraryPlanId, deleted: 0 },
+        orderBy: [{ itinerary_route_date: 'asc' }, { itinerary_route_ID: 'asc' }],
+      }),
+      (this.prisma as any).dvi_confirmed_itinerary_route_hotspot_details.findMany({
+        where: { itinerary_plan_ID: itineraryPlanId, deleted: 0, status: 1 },
+        orderBy: [{ itinerary_route_ID: 'asc' }, { hotspot_order: 'asc' }, { route_hotspot_ID: 'asc' }],
+      }),
+      this.prisma.dvi_confirmed_itinerary_plan_vendor_eligible_list.findMany({
+        where: {
+          itinerary_plan_id: itineraryPlanId,
+          deleted: 0,
+          status: 1,
+          itineary_plan_assigned_status: 1,
+        },
+        orderBy: [{ confirmed_itinerary_plan_vendor_eligible_ID: 'asc' }],
+      }),
+      this.prisma.dvi_confirmed_itinerary_plan_vehicle_voucher_details.findMany({
+        where: { itinerary_plan_id: itineraryPlanId, deleted: 0 },
+        orderBy: [{ updatedon: 'desc' }, { cnf_itinerary_plan_vehicle_voucher_details_ID: 'desc' }],
+      }),
+      this.prisma.dvi_vehicle_type.findMany({
+        where: { deleted: 0 },
+        select: { vehicle_type_id: true, vehicle_type_title: true, occupancy: true },
+      }),
+      this.prisma.dvi_vehicle.findMany({
+        where: { deleted: 0 },
+        select: {
+          vehicle_id: true,
+          vehicle_type_id: true,
+          registration_number: true,
+          insurance_policy_number: true,
+        },
+      }),
+      this.prisma.dvi_vehicle_gallery_details.findMany({
+        where: { deleted: 0, status: 1 },
+        orderBy: [{ vehicle_id: 'asc' }, { vehicle_gallery_details_id: 'asc' }],
+        select: { vehicle_id: true, vehicle_gallery_name: true },
+      }),
+    ]);
+
+    const hotspotIds = Array.from(
+      new Set(
+        (routeHotspots as any[])
+          .map((row: any) => Number(row.hotspot_ID || 0))
+          .filter((id: number) => id > 0),
+      ),
+    );
+
+    const hotspots = hotspotIds.length
+      ? await this.prisma.dvi_hotspot_place.findMany({
+          where: { hotspot_ID: { in: hotspotIds } as any, deleted: 0 },
+          select: { hotspot_ID: true, hotspot_name: true },
+        })
+      : [];
+
+    const vehicleTypeById = new Map<number, { title: string; occupancy: number }>();
+    for (const row of vehicleTypes) {
+      vehicleTypeById.set(Number(row.vehicle_type_id || 0), {
+        title: String(row.vehicle_type_title || 'Vehicle'),
+        occupancy: Number(row.occupancy || 0),
+      });
+    }
+
+    const vehicleById = new Map<number, { registrationNumber: string; insurancePolicy: string; vehicleTypeId: number }>();
+    for (const row of vehicles) {
+      vehicleById.set(Number(row.vehicle_id || 0), {
+        registrationNumber: String(row.registration_number || '').trim(),
+        insurancePolicy: String(row.insurance_policy_number || '').trim(),
+        vehicleTypeId: Number(row.vehicle_type_id || 0),
+      });
+    }
+
+    const vehicleImageByVehicleId = new Map<number, string>();
+    for (const row of vehicleImages) {
+      const vehicleId = Number(row.vehicle_id || 0);
+      const imageName = String(row.vehicle_gallery_name || '').trim();
+      if (!vehicleId || !imageName || vehicleImageByVehicleId.has(vehicleId)) continue;
+      vehicleImageByVehicleId.set(vehicleId, `/uploads/vehicle_gallery/${imageName}`);
+    }
+
+    const hotspotNameById = new Map<number, string>();
+    for (const hotspot of hotspots) {
+      hotspotNameById.set(Number(hotspot.hotspot_ID || 0), String(hotspot.hotspot_name || '').trim());
+    }
+
+    const eligibleIds = eligibleRows
+      .map((row: any) => Number(row.confirmed_itinerary_plan_vendor_eligible_ID || row.itinerary_plan_vendor_eligible_ID || 0))
+      .filter((id: number) => id > 0);
+
+    const vehicleDetailRows = eligibleIds.length
+      ? await this.prisma.$queryRawUnsafe(`
+          SELECT
+            itinerary_plan_vendor_eligible_ID,
+            itinerary_route_id,
+            itinerary_route_date,
+            vehicle_id,
+            itinerary_route_location_from,
+            itinerary_route_location_to
+          FROM dvi_itinerary_plan_vendor_vehicle_details
+          WHERE itinerary_plan_id = ${Number(itineraryPlanId || 0)}
+            AND deleted = 0
+            AND itinerary_plan_vendor_eligible_ID IN (${eligibleIds.join(',')})
+          ORDER BY itinerary_route_date ASC, itinerary_route_id ASC, itinerary_plan_vendor_vehicle_details_ID ASC
+        `) as any[]
+      : [];
+
+    const vehicleDetailByRouteId = new Map<number, any>();
+    const vehicleDetailByEligibleId = new Map<number, any>();
+    for (const row of vehicleDetailRows) {
+      const routeId = Number((row as any).itinerary_route_id || 0);
+      if (routeId && !vehicleDetailByRouteId.has(routeId)) {
+        vehicleDetailByRouteId.set(routeId, row);
+      }
+
+      const eligibleId = Number((row as any).itinerary_plan_vendor_eligible_ID || 0);
+      if (eligibleId && !vehicleDetailByEligibleId.has(eligibleId)) {
+        vehicleDetailByEligibleId.set(eligibleId, row);
+      }
+    }
+
+    const eligibleById = new Map<number, any>();
+    for (const row of eligibleRows as any[]) {
+      const eligibleId = Number(row.confirmed_itinerary_plan_vendor_eligible_ID || row.itinerary_plan_vendor_eligible_ID || 0);
+      if (!eligibleId || eligibleById.has(eligibleId)) continue;
+      eligibleById.set(eligibleId, row);
+    }
+
+    const noVehiclePlaceholder = '/uploads/hd_vehicle_gallery/no_vehicle.jpg';
+    const dedupeKeys = new Set<string>();
+    const vehicleRowsSource = vehicleVouchers.length ? vehicleVouchers : eligibleRows;
+    const vehiclesForVoucher = vehicleRowsSource
+      .map((sourceRow: any) => {
+        const eligibleId = Number(
+          sourceRow.confirmed_itinerary_plan_vendor_eligible_ID
+          || sourceRow.itinerary_plan_vendor_eligible_ID
+          || 0,
+        );
+        const eligible = eligibleById.get(eligibleId) || sourceRow;
+        const vehicleDetail = vehicleDetailByEligibleId.get(eligibleId) || null;
+        const vehicleTypeId = Number(
+          eligible?.vehicle_type_id
+          || sourceRow?.vehicle_type_id
+          || 0,
+        );
+        const vehicleId = Number(
+          eligible?.vehicle_id
+          || sourceRow?.vehicle_id
+          || vehicleDetail?.vehicle_id
+          || 0,
+        );
+        const dedupeKey = `${eligibleId || 0}:${vehicleTypeId || 0}:${vehicleId || 0}`;
+        if (dedupeKeys.has(dedupeKey)) {
+          return null;
+        }
+        dedupeKeys.add(dedupeKey);
+
+        const vehicleType = vehicleTypeById.get(vehicleTypeId) || { title: 'Vehicle', occupancy: 0 };
+        const vehicle = vehicleById.get(vehicleId) || null;
+        const amountValue = Number(
+          sourceRow?.total_amount
+          || sourceRow?.vehicle_amount
+          || eligible?.total_amount
+          || eligible?.vehicle_amount
+          || 0,
+        );
+
+        return {
+          type: String(vehicleType.title || sourceRow?.vehicle_type_title || 'Vehicle').trim() || 'Vehicle',
+          vehicleNo: String(vehicle?.registrationNumber || sourceRow?.vehicle_no || 'To be assigned').trim() || 'To be assigned',
+          seatingCapacity: vehicleType.occupancy > 0 ? `${vehicleType.occupancy} Seater` : 'As per vehicle type',
+          ac: 'Yes',
+          luggageSpace: 'Adequate',
+          insurance: vehicle?.insurancePolicy ? `Policy: ${vehicle.insurancePolicy}` : 'Comprehensive',
+          imagePath: vehicleImageByVehicleId.get(vehicleId)
+            || (vehicleId ? '/uploads/vehicle_gallery/no_vehicle.jpeg' : '')
+            || noVehiclePlaceholder,
+          vendorName: String(eligible?.vendor_name || sourceRow?.vendor_name || '').trim(),
+          origin: String(
+            eligible?.vehicle_origin
+            || eligible?.origin
+            || sourceRow?.vehicle_origin
+            || sourceRow?.origin
+            || '',
+          ).trim(),
+          qty: Number(sourceRow?.vehicle_count || eligible?.vehicle_count || sourceRow?.total_qty || eligible?.total_qty || 1) || 1,
+          amount: amountValue > 0 ? `Rs. ${amountValue.toLocaleString('en-IN', { maximumFractionDigits: 2 })}` : '',
+          confirmedBy: String(sourceRow?.vehicle_confirmed_by || sourceRow?.confirmed_by || '').trim(),
+          confirmedMobile: String(sourceRow?.vehicle_confirmed_mobile_no || sourceRow?.confirmed_mobile_no || '').trim(),
+          confirmedEmail: String(sourceRow?.vehicle_confirmed_email_id || sourceRow?.confirmed_email_id || '').trim(),
+        };
+      })
+      .filter(Boolean) as TransportVoucherDetails['vehicles'];
+
+    const fallbackVehicle: TransportVoucherDetails['vehicle'] = {
+      type: 'Vehicle',
+      vehicleNo: 'To be assigned',
+      seatingCapacity: 'As per vehicle type',
+      ac: 'Yes',
+      luggageSpace: 'Adequate',
+      insurance: 'Comprehensive',
+      imagePath: noVehiclePlaceholder,
+    };
+    const primaryVehicle = vehiclesForVoucher[0] || fallbackVehicle;
+    const primaryEligibleId = Number(
+      primaryVehicle && vehicleRowsSource.length
+        ? (
+            (vehicleRowsSource[0] as any)?.confirmed_itinerary_plan_vendor_eligible_ID
+            || (vehicleRowsSource[0] as any)?.itinerary_plan_vendor_eligible_ID
+            || 0
+          )
+        : 0,
+    );
+    const selectedVehicleVoucher = primaryEligibleId
+      ? vehicleVouchers.find((voucher: any) => (
+          Number(voucher.confirmed_itinerary_plan_vendor_eligible_ID || 0) === primaryEligibleId
+          || Number(voucher.itinerary_plan_vendor_eligible_ID || 0) === primaryEligibleId
+        ))
+      : (vehicleVouchers[0] || null);
+
+    const routeLocations = routes
+      .map((route: any) => this.shortTransportLocationName(String(route.location_name || '').trim()))
+      .filter(Boolean)
+      .filter((value: string, index: number, arr: string[]) => arr.indexOf(value) === index);
+    const departureLocation = this.shortTransportLocationName(
+      String(plan.departure_location || routeLocations[routeLocations.length - 1] || '').trim(),
+    );
+    if (departureLocation && routeLocations[routeLocations.length - 1] !== departureLocation) {
+      routeLocations.push(departureLocation);
+    }
+
+    const routeHotspotsByRouteId = new Map<number, any[]>();
+    for (const row of routeHotspots as any[]) {
+      const routeId = Number(row.itinerary_route_ID || 0);
+      if (!routeId) continue;
+      if (!routeHotspotsByRouteId.has(routeId)) {
+        routeHotspotsByRouteId.set(routeId, []);
+      }
+      routeHotspotsByRouteId.get(routeId)!.push(row);
+    }
+
+    const days = routes.map((route: any, index: number) => {
+      const routeId = Number(route.itinerary_route_ID || 0);
+      const rows = routeHotspotsByRouteId.get(routeId) || [];
+      const placeNames = Array.from(new Set(
+        rows
+          .map((row: any) => hotspotNameById.get(Number(row.hotspot_ID || 0)) || '')
+          .map((value: string) => value.trim())
+          .filter(Boolean),
+      ));
+      const vehicleDetail = vehicleDetailByRouteId.get(routeId);
+      const fromLocation = this.shortTransportLocationName(String(
+        vehicleDetail?.itinerary_route_location_from
+        || route.location_name
+        || plan.arrival_location
+        || '',
+      ).trim());
+      const toLocation = this.shortTransportLocationName(String(
+        vehicleDetail?.itinerary_route_location_to
+        || route.next_visiting_location
+        || routes[index + 1]?.location_name
+        || departureLocation
+        || fromLocation,
+      ).trim());
+      const routeDate = route.itinerary_route_date ? new Date(route.itinerary_route_date) : null;
+
+      return {
+        dayNo: index + 1,
+        date: routeDate && !Number.isNaN(routeDate.getTime())
+          ? routeDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+          : '--',
+        weekday: routeDate && !Number.isNaN(routeDate.getTime())
+          ? routeDate.toLocaleDateString('en-IN', { weekday: 'long' })
+          : '--',
+        routeAndPlaces: placeNames.length > 0
+          ? placeNames.map((name: string) => this.decodeTransportHtml(name)).join(', ')
+          : this.decodeTransportHtml(String(route.location_name || 'Sightseeing to be advised')),
+        travelRoute: [fromLocation, toLocation].filter(Boolean).join(' - ') || 'Route to be advised',
+        startTime: this.formatTime(route.route_start_time as any),
+        endTime: this.formatTime(route.route_end_time as any),
+      };
+    });
+
+    const fallbackVoucherNo = this.buildTransportVoucherNumber(itineraryPlanId, plan.createdon || new Date());
+    const rawVoucherNo = String(selectedVehicleVoucher?.vehicle_confirmed_reservation || '').trim();
+    const voucherNo = rawVoucherNo && rawVoucherNo.length > 3 ? rawVoucherNo : fallbackVoucherNo;
+
+    const primaryGuestName = customer
+      ? `${String(customer.customer_salutation || '').trim()} ${String(customer.customer_name || '').trim()}`.trim()
+      : '';
+    const guestName = primaryGuestName || 'Guest';
+    const flightArrival = this.parseTransportFlightDetails(customer?.arrival_flight_details, customer?.arrival_date_and_time || plan.trip_start_date_and_time);
+    const flightDeparture = this.parseTransportFlightDetails(customer?.departure_flight_details, customer?.departure_date_and_time || plan.trip_end_date_and_time);
+
+    if (process.env.DEBUG_TRANSPORT_VOUCHER_VEHICLES === '1') {
+      console.log('[TRANSPORT_VOUCHER_VEHICLES]', {
+        itineraryPlanId,
+        vehicleVoucherCount: vehicleVouchers.length,
+        eligibleRowsCount: eligibleRows.length,
+        vehiclesForVoucher: vehiclesForVoucher.map((vehicle) => ({
+          type: vehicle.type,
+          vehicleNo: vehicle.vehicleNo,
+          qty: vehicle.qty,
+          confirmedBy: vehicle.confirmedBy,
+        })),
+      });
+    }
+
+    return {
+      voucher: {
+        voucherNo,
+        date: this.formatTransportVoucherDate(selectedVehicleVoucher?.updatedon || plan.updatedon || new Date()),
+        title: String(plan.itinerary_quote_ID || `Plan ${itineraryPlanId}` || 'DVI Holidays Transport Voucher').trim(),
+        dateRange: this.buildTransportDateRange(plan.trip_start_date_and_time, plan.trip_end_date_and_time),
+      },
+      company: {
+        name: String(settings?.company_name || 'Doview Holidays India Pvt Ltd').trim() || 'Doview Holidays India Pvt Ltd',
+        tagline: 'Travel Beyond Expectations',
+        phone: String(settings?.company_contact_no || '9919911948').trim() || '9919911948',
+        email: String(settings?.company_email_id || 'vsr@dvi.co.in').trim() || 'vsr@dvi.co.in',
+        website: 'www.dvi.travel',
+        logoPath: settings?.company_logo ? `/uploads/logo/${String(settings.company_logo).trim()}` : '/uploads/logo/logo.png',
+        qrText: `Transport Voucher ${voucherNo}`,
+      },
+      guest: {
+        name: guestName,
+        pax: this.buildPassengerMixLabel(
+          Number(plan.total_adult || 0),
+          Number(plan.total_children || 0),
+          Number(plan.total_infants || 0),
+        ),
+        contactNo: String(customer?.primary_contact_no || '').trim() || '--',
+        email: String(customer?.email_id || '').trim() || '--',
+        pickupLocation: this.shortTransportLocationName(String(plan.arrival_location || routeLocations[0] || '').trim()) || 'To be advised',
+        dropLocation: departureLocation || 'To be advised',
+      },
+      trip: {
+        tourType: 'Private',
+        travelRegion: routeLocations.length > 0 ? routeLocations.join(' - ') : 'Travel region to be advised',
+        checkInDate: this.formatTransportVoucherDate(plan.trip_start_date_and_time),
+        checkOutDate: this.formatTransportVoucherDate(plan.trip_end_date_and_time),
+        duration: `${Number(plan.no_of_days || 0)} Days / ${Number(plan.no_of_nights || 0)} Nights`,
+      },
+        flight: {
+          arrival: flightArrival,
+          departure: flightDeparture,
+        },
+        vehicle: primaryVehicle,
+        vehicles: vehiclesForVoucher.length ? vehiclesForVoucher : [primaryVehicle],
+        days,
+      footer: {
+        inclusions: [
+          'Private vehicle as mentioned above',
+          'Fuel, driver allowance, toll and parking',
+          'Driver accommodation and meals',
+          'All transfers and sightseeing as per itinerary',
+        ],
+        notes: [
+          'This voucher is valid only for the dates mentioned above.',
+          'Itinerary is subject to change due to weather, traffic or unforeseen circumstances.',
+          'Please carry a valid ID proof during travel.',
+          'Please be ready 10 minutes before the scheduled start time.',
+        ],
+        emergencyPhone: String(settings?.company_contact_no || '9919911948').trim() || '9919911948',
+        emergencyEmail: String(settings?.company_email_id || 'vsr@dvi.co.in').trim() || 'vsr@dvi.co.in',
+      },
     };
   }
 
@@ -22267,6 +22663,132 @@ export class ItinerariesService {
     const hours = d.getUTCHours().toString().padStart(2, '0');
     const minutes = d.getUTCMinutes().toString().padStart(2, '0');
     return `${hours}:${minutes}`;
+  }
+
+  private formatTransportVoucherDate(value: Date | string | null | undefined): string {
+    if (!value) return '--';
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return '--';
+    return date.toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    });
+  }
+
+  private buildTransportDateRange(start: Date | string | null | undefined, end: Date | string | null | undefined): string {
+    const startLabel = this.formatTransportVoucherDate(start);
+    const endLabel = this.formatTransportVoucherDate(end);
+    if (startLabel === '--' && endLabel === '--') return '--';
+    if (startLabel === '--') return endLabel;
+    if (endLabel === '--') return startLabel;
+    return `${startLabel} - ${endLabel}`;
+  }
+
+  private buildPassengerMixLabel(adults: number, children: number, infants: number): string {
+    const items = [
+      adults > 0 ? `${adults} Adult${adults > 1 ? 's' : ''}` : '',
+      children > 0 ? `${children} Child${children > 1 ? 'ren' : ''}` : '',
+      infants > 0 ? `${infants} Infant${infants > 1 ? 's' : ''}` : '',
+    ].filter(Boolean);
+    return items.length > 0 ? items.join(', ') : 'Guests';
+  }
+
+  private buildTransportVoucherNumber(planId: number, createdOn: Date | string | null | undefined): string {
+    const basis = createdOn instanceof Date ? createdOn : createdOn ? new Date(createdOn) : new Date();
+    const date = Number.isNaN(basis.getTime()) ? new Date() : basis;
+    const year = String(date.getFullYear()).slice(-2);
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    return `DVI/TV/${year}${month}/${String(planId).padStart(4, '0')}`;
+  }
+
+  private formatTransportTime(value: Date | string | null | undefined): string {
+    if (!value) return 'Not Provided';
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return 'Not Provided';
+    return this.formatTime(date);
+  }
+
+  private shortTransportLocationName(value: string): string {
+    return String(value || '')
+      .replace(/Cochin International Airport/gi, 'Cochin Airport')
+      .replace(/Cochin Airport Terminal [^,|-]+/gi, 'Cochin Airport')
+      .replace(/Cochin International/gi, 'Cochin')
+      .replace(/Kochi International Airport/gi, 'Kochi Airport')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  private decodeTransportHtml(value: string): string {
+    return String(value || '')
+      .replace(/&amp;/gi, '&')
+      .replace(/&quot;/gi, '"')
+      .replace(/&#39;|&apos;/gi, "'")
+      .replace(/&lt;/gi, '<')
+      .replace(/&gt;/gi, '>')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  private parseTransportFlightDetails(raw: unknown, fallbackDateTime?: Date | string | null) {
+    const emptyFlight = {
+      airline: 'Not Provided',
+      flightNo: 'Not Provided',
+      from: 'Not Provided',
+      to: 'Not Provided',
+      date: this.formatTransportVoucherDate(fallbackDateTime),
+      time: this.formatTransportTime(fallbackDateTime),
+      rawText: typeof raw === 'string' && raw.trim() ? this.decodeTransportHtml(raw.trim()) : 'Not Provided',
+    };
+
+    if (!raw) {
+      return emptyFlight;
+    }
+
+    if (typeof raw === 'object' && raw !== null) {
+      const parsed = raw as Record<string, unknown>;
+      return {
+        airline: this.pickTransportFlightValue(parsed, ['airline', 'airlineName', 'carrier', 'name']) || 'Not Provided',
+        flightNo: this.pickTransportFlightValue(parsed, ['flightNo', 'flight_no', 'flightNumber', 'number']) || 'Not Provided',
+        from: this.pickTransportFlightValue(parsed, ['from', 'origin', 'departure', 'source']) || 'Not Provided',
+        to: this.pickTransportFlightValue(parsed, ['to', 'destination', 'arrival']) || 'Not Provided',
+        date: this.pickTransportFlightValue(parsed, ['date', 'travelDate']) || emptyFlight.date,
+        time: this.pickTransportFlightValue(parsed, ['time', 'arrivalTime', 'departureTime']) || emptyFlight.time,
+        rawText: this.decodeTransportHtml(JSON.stringify(parsed)),
+      };
+    }
+
+    const text = String(raw || '').trim();
+    if (!text) {
+      return emptyFlight;
+    }
+
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed && typeof parsed === 'object') {
+        return this.parseTransportFlightDetails(parsed, fallbackDateTime);
+      }
+    } catch {
+      // Ignore parse failures and keep the raw text as-is.
+    }
+
+    return {
+      ...emptyFlight,
+      rawText: this.decodeTransportHtml(text),
+    };
+  }
+
+  private pickTransportFlightValue(
+    parsed: Record<string, unknown>,
+    keys: string[],
+  ): string {
+    for (const key of keys) {
+      const value = parsed[key];
+      if (value === null || value === undefined) continue;
+      const normalized = String(value).trim();
+      if (normalized) return normalized;
+    }
+    return '';
   }
 
   /**

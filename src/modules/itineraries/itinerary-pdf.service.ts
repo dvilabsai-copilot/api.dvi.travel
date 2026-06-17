@@ -3,8 +3,11 @@ import { Response } from 'express';
 import PDFDocument from 'pdfkit';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as QRCode from 'qrcode';
 import { ItinerariesService } from './itineraries.service';
 import { PrismaService } from '../../prisma.service';
+import { TransportVoucherDetails } from './dto/transport-voucher-details.dto';
+import { renderTransportVoucherHtml } from './templates/transport-voucher.template';
 
 @Injectable()
 export class ItineraryPdfService {
@@ -393,7 +396,991 @@ export class ItineraryPdfService {
   }
 
   async downloadVehicleVoucherPdf(itineraryPlanId: number, res: Response) {
-    return this.downloadVoucherPdfByScope(itineraryPlanId, 'vehicle', res);
+    const data = await this.itinerariesService.getTransportVoucherDetails(itineraryPlanId);
+    const safeVoucherNo = data?.voucher?.voucherNo || String(itineraryPlanId);
+    const safeName = this.sanitizeFileName(`transport-voucher-${safeVoucherNo}.pdf`);
+    const html = renderTransportVoucherHtml(data, await this.buildTransportVoucherAssets(data, itineraryPlanId));
+    const pdfBuffer = await this.renderHtmlToPdfBuffer(html);
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeName}"`);
+    res.setHeader('Content-Length', pdfBuffer.length);
+    res.end(pdfBuffer);
+  }
+
+  private fileToDataUri(filePath?: string | null): string | null {
+    if (!filePath || !fs.existsSync(filePath)) {
+      return null;
+    }
+
+    const extension = path.extname(filePath).toLowerCase();
+    const mimeTypeMap: Record<string, string> = {
+      '.png': 'image/png',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.webp': 'image/webp',
+      '.svg': 'image/svg+xml',
+      '.gif': 'image/gif',
+    };
+    const mimeType = mimeTypeMap[extension];
+
+    if (!mimeType) {
+      return null;
+    }
+
+    return `data:${mimeType};base64,${fs.readFileSync(filePath).toString('base64')}`;
+  }
+
+  private resolveTransportDefaultVehicleImage(vehicleType?: string | null): string | null {
+    const normalizedType = String(vehicleType || '').toLowerCase();
+    const typedCandidates =
+      normalizedType.includes('sedan')
+        ? [
+            '/assets/vehicles/sedan.png',
+            '/assets/vehicles/car-sedan.png',
+            '/uploads/hd_vehicle_gallery/exterior (1).jpg',
+            '/uploads/vehicle_gallery/exterior (1).jpeg',
+          ]
+        : normalizedType.includes('innova') || normalizedType.includes('crysta')
+          ? [
+              '/assets/vehicles/innova.png',
+              '/assets/vehicles/muv.png',
+              '/uploads/hd_vehicle_gallery/exterior (2).jpg',
+              '/uploads/vehicle_gallery/exterior (2).jpeg',
+            ]
+          : normalizedType.includes('tempo') || normalizedType.includes('traveller')
+            ? [
+                '/assets/vehicles/tempo-traveller.png',
+                '/assets/vehicles/traveller.png',
+                '/uploads/hd_vehicle_gallery/exterior (3).jpg',
+                '/uploads/vehicle_gallery/exterior (3).jpeg',
+              ]
+            : [
+                '/assets/vehicles/default-vehicle.png',
+                '/assets/vehicles/car-default.png',
+                '/uploads/hd_vehicle_gallery/exterior (1).jpg',
+                '/uploads/vehicle_gallery/exterior (1).jpeg',
+              ];
+
+    const fallbackCandidates = [
+      ...typedCandidates,
+      '/uploads/hd_vehicle_gallery/no_vehicle.jpg',
+      '/uploads/vehicle_gallery/no_vehicle.jpeg',
+    ];
+
+    for (const candidate of fallbackCandidates) {
+      const resolved = this.resolveLogoPath(candidate);
+      if (resolved) {
+        return resolved;
+      }
+    }
+
+    return null;
+  }
+
+  private async buildTransportVoucherQrDataUri(
+    data: TransportVoucherDetails,
+    itineraryPlanId: number,
+  ): Promise<string | null> {
+    const baseUrl = String(process.env.BASE_URL || '').replace(/\/+$/, '');
+    const assistanceUrl = baseUrl
+      ? `${baseUrl}/api/v1/itineraries/${itineraryPlanId}/vehicle-voucher-pdf`
+      : '';
+    const qrPayload = [
+      `Transport Voucher: ${data.voucher.voucherNo || itineraryPlanId}`,
+      `Date: ${data.voucher.date || '--'}`,
+      `Guest: ${data.guest.name || '--'}`,
+      `Trip: ${data.voucher.title || 'Trip'}`,
+      assistanceUrl ? `Link: ${assistanceUrl}` : '',
+      data.footer.emergencyPhone ? `Support: ${data.footer.emergencyPhone}` : '',
+      data.company.website ? `Web: ${data.company.website}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    try {
+      return await QRCode.toDataURL(qrPayload, {
+        errorCorrectionLevel: 'M',
+        margin: 1,
+        width: 220,
+        color: {
+          dark: '#111111',
+          light: '#FFFFFF',
+        },
+      });
+    } catch {
+      return null;
+    }
+  }
+
+  private async buildTransportVoucherAssets(
+    data: TransportVoucherDetails,
+    itineraryPlanId: number,
+  ): Promise<{
+    logoDataUri?: string | null;
+    vehicleImageDataUri?: string | null;
+    qrDataUri?: string | null;
+  }> {
+    const logoPath = this.resolveLogoPath(data.company.logoPath || '');
+    const vehicleImagePath =
+      this.resolveLogoPath(data.vehicle.imagePath || '')
+      || this.resolveTransportDefaultVehicleImage(data.vehicle.type);
+
+    return {
+      logoDataUri: this.fileToDataUri(logoPath),
+      vehicleImageDataUri: this.fileToDataUri(vehicleImagePath),
+      qrDataUri: await this.buildTransportVoucherQrDataUri(data, itineraryPlanId),
+    };
+  }
+
+  private async renderHtmlToPdfBuffer(html: string): Promise<Buffer> {
+    const { chromium } = await import('playwright');
+    const browser = await chromium.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    });
+
+    try {
+      const page = await browser.newPage({
+        viewport: { width: 1240, height: 1754 },
+        deviceScaleFactor: 1,
+      });
+      await page.emulateMedia({ media: 'print' });
+      await page.setContent(html, { waitUntil: 'networkidle' });
+      return await page.pdf({
+        format: 'A4',
+        printBackground: true,
+        margin: {
+          top: '0mm',
+          right: '0mm',
+          bottom: '0mm',
+          left: '0mm',
+        },
+        preferCSSPageSize: true,
+      });
+    } finally {
+      await browser.close();
+    }
+  }
+
+  private drawTransportVoucherPdfCompact(doc: PDFKit.PDFDocument, data: TransportVoucherDetails): void {
+    const colors = {
+      primary: '#3d18d6',
+      primaryDark: '#08005d',
+      border: '#e3dcff',
+      softBg: '#faf9ff',
+      headerBg: '#f8f6ff',
+      muted: '#6b6699',
+      success: '#20a85a',
+      danger: '#e53935',
+    };
+    const margin = 14;
+    const contentWidth = doc.page.width - margin * 2;
+    const pageHeight = doc.page.height;
+    const cardGap = 10;
+    const cardWidth = (contentWidth - cardGap * 2) / 3;
+    const footerReserve = data.days.length <= 5 ? 145 : 24;
+    let y = 18;
+
+    const addPageIfNeeded = (requiredHeight: number, redrawTableHeader = false) => {
+      if (y + requiredHeight <= pageHeight - 24) return;
+      doc.addPage();
+      y = 18;
+      if (redrawTableHeader) {
+        y += 12;
+        y = this.drawTransportTableHeaderCompact(doc, margin, y, colors);
+      }
+    };
+
+    doc.rect(0, 0, doc.page.width, doc.page.height).fill('#ffffff');
+    this.drawTransportHeaderCompact(doc, data, colors);
+
+    y = 130;
+    this.drawTransportTrustStripCompact(doc, data, colors, y);
+
+    y = 190;
+    this.drawTransportInfoCardsCompact(doc, data, colors, y, cardWidth, cardGap, margin);
+
+    y = 388;
+    this.drawTransportVehicleCardCompact(doc, data, colors, y);
+
+    y = 525;
+    doc.fillColor(colors.primaryDark).font('Helvetica-Bold').fontSize(12).text('Day-wise Transport Itinerary', margin, y, {
+      width: contentWidth,
+    });
+    y += 18;
+    y = this.drawTransportTableHeaderCompact(doc, margin, y, colors);
+
+    for (let index = 0; index < data.days.length; index += 1) {
+      const row = data.days[index];
+      const rowHeight = this.measureTransportTableRowCompact(doc, row);
+      if (y + rowHeight + footerReserve > pageHeight - 24) {
+        addPageIfNeeded(rowHeight + 20, true);
+      }
+      this.drawTransportTableRowCompact(doc, margin, y, row, index, colors);
+      y += rowHeight;
+    }
+
+    y = data.days.length <= 5 ? Math.max(y + 8, pageHeight - 145) : y + 10;
+    this.drawTransportFooterCompact(doc, data, colors, y, margin, contentWidth);
+  }
+
+  private drawTransportHeaderCompact(
+    doc: PDFKit.PDFDocument,
+    data: TransportVoucherDetails,
+    colors: Record<string, string>,
+  ) {
+    doc.roundedRect(18, 18, 559, 100, 12).fillAndStroke(colors.headerBg, colors.border);
+    const logoPath = this.resolveLogoPath(data.company.logoPath || '');
+    if (logoPath) {
+      try {
+        doc.image(logoPath, 35, 38, { fit: [60, 50], align: 'center', valign: 'center' });
+      } catch {
+        this.drawTransportLogoFallbackCompact(doc, 35, 38, colors);
+      }
+    } else {
+      this.drawTransportLogoFallbackCompact(doc, 35, 38, colors);
+    }
+
+    const company = this.wrapTransportCompanyNameCompact(data.company.name || 'Doview Holidays India Pvt Ltd');
+    const companyX = 115;
+    const companyY = 38;
+    doc.fillColor(colors.primaryDark).font('Helvetica-Bold').fontSize(20).text(company.line1, companyX, companyY, {
+      width: 260,
+      lineGap: 1,
+    });
+    if (company.line2) {
+      doc.text(company.line2, companyX, companyY + 22, { width: 260, lineGap: 1 });
+    }
+    const taglineY = company.line2 ? companyY + 45 : companyY + 28;
+    doc.fillColor(colors.primary).font('Helvetica').fontSize(9).text(
+      data.company.tagline || 'Travel Beyond Expectations',
+      companyX,
+      taglineY,
+      { width: 260 },
+    );
+    doc.fillColor(colors.muted).font('Helvetica').fontSize(8).text(
+      `${data.company.phone || '9919911948'} | ${data.company.email || 'vsr@dvi.co.in'} | ${data.company.website || 'www.dvi.travel'}`,
+      companyX,
+      taglineY + 17,
+      { width: 300 },
+    );
+
+    doc.roundedRect(450, 34, 110, 72, 12).fillAndStroke('#ffffff', colors.border);
+    doc.fillColor(colors.primary).font('Helvetica-Bold').fontSize(14).text('TRANSPORT', 458, 46, { width: 94, align: 'center' });
+    doc.text('VOUCHER', 458, 60, { width: 94, align: 'center' });
+    doc.fillColor(colors.primaryDark).font('Helvetica-Bold').fontSize(7.2).text(
+      `Voucher No.: ${this.transportTruncateCompact(data.voucher.voucherNo || '--', 22)}`,
+      456,
+      77,
+      { width: 98, align: 'center' },
+    );
+    doc.font('Helvetica').fontSize(7.2).text(`Date: ${data.voucher.date || '--'}`, 456, 88, { width: 98, align: 'center' });
+    doc.roundedRect(470, 97, 70, 10, 5).fill(colors.primary);
+    doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(6.8).text('Scan for Assistance', 472, 100, { width: 66, align: 'center' });
+  }
+
+  private drawTransportTrustStripCompact(
+    doc: PDFKit.PDFDocument,
+    data: TransportVoucherDetails,
+    colors: Record<string, string>,
+    y: number,
+  ) {
+    doc.roundedRect(18, y, 559, 45, 12).fillAndStroke('#ffffff', colors.border);
+    doc.fillColor(colors.muted).font('Helvetica').fontSize(7.5).text(
+      'This voucher is valid for the following booking only and is non-transferable.',
+      30,
+      y + 11,
+      { width: 176 },
+    );
+    doc.fillColor(colors.primaryDark).font('Helvetica-Bold').fontSize(12).text(data.voucher.title || 'Trip', 208, y + 10, {
+      width: 180,
+      align: 'center',
+    });
+    doc.fillColor(colors.primary).font('Helvetica').fontSize(8.8).text(`(${data.voucher.dateRange || '--'})`, 208, y + 25, {
+      width: 180,
+      align: 'center',
+    });
+    doc.fillColor(colors.success).font('Helvetica-Bold').fontSize(8.5).text('Verified & Trusted', 402, y + 11, {
+      width: 160,
+      align: 'center',
+    });
+    doc.fillColor(colors.muted).font('Helvetica').fontSize(7.5).text('Thank you for choosing DVI Holidays', 402, y + 24, {
+      width: 160,
+      align: 'center',
+    });
+  }
+
+  private drawTransportInfoCardsCompact(
+    doc: PDFKit.PDFDocument,
+    data: TransportVoucherDetails,
+    colors: Record<string, string>,
+    y: number,
+    cardWidth: number,
+    cardGap: number,
+    margin: number,
+  ) {
+    const height = 188;
+    this.drawTransportCardCompact(doc, margin, y, cardWidth, height, 'Guest Details', colors);
+    this.drawTransportCardCompact(doc, margin + cardWidth + cardGap, y, cardWidth, height, 'Trip Details', colors);
+    this.drawTransportCardCompact(doc, margin + (cardWidth + cardGap) * 2, y, cardWidth, height, 'Flight Details', colors);
+
+    let guestY = y + 34;
+    guestY = this.drawTransportFieldCompact(doc, margin + 12, guestY, cardWidth - 24, 'Guest Name', data.guest.name, colors, 70);
+    guestY = this.drawTransportFieldCompact(doc, margin + 12, guestY, cardWidth - 24, 'No. of Pax', data.guest.pax, colors, 50);
+    guestY = this.drawTransportFieldCompact(doc, margin + 12, guestY, cardWidth - 24, 'Contact', data.guest.contactNo, colors, 48);
+    guestY = this.drawTransportFieldCompact(doc, margin + 12, guestY, cardWidth - 24, 'Email', data.guest.email, colors, 50);
+    guestY = this.drawTransportFieldCompact(doc, margin + 12, guestY, cardWidth - 24, 'Pickup', data.guest.pickupLocation, colors, 70);
+    this.drawTransportFieldCompact(doc, margin + 12, guestY, cardWidth - 24, 'Drop', data.guest.dropLocation, colors, 70);
+
+    let tripY = y + 34;
+    tripY = this.drawTransportFieldCompact(doc, margin + cardWidth + cardGap + 12, tripY, cardWidth - 24, 'Tour Type', data.trip.tourType, colors, 40);
+    tripY = this.drawTransportFieldCompact(doc, margin + cardWidth + cardGap + 12, tripY, cardWidth - 24, 'Travel Region', data.trip.travelRegion, colors, 78);
+    tripY = this.drawTransportFieldCompact(doc, margin + cardWidth + cardGap + 12, tripY, cardWidth - 24, 'Check-in', data.trip.checkInDate, colors, 40);
+    tripY = this.drawTransportFieldCompact(doc, margin + cardWidth + cardGap + 12, tripY, cardWidth - 24, 'Check-out', data.trip.checkOutDate, colors, 40);
+    this.drawTransportFieldCompact(doc, margin + cardWidth + cardGap + 12, tripY, cardWidth - 24, 'Duration', data.trip.duration, colors, 40);
+
+    const flightX = margin + (cardWidth + cardGap) * 2 + 12;
+    let flightY = y + 34;
+    doc.fillColor(colors.primary).font('Helvetica-Bold').fontSize(8).text('ARRIVAL FLIGHT', flightX, flightY, { width: cardWidth - 24 });
+    flightY += 14;
+    flightY = this.drawTransportFlightBlockCompact(doc, flightX, flightY, cardWidth - 24, data.flight.arrival, colors, 70);
+    doc.fillColor(colors.primary).font('Helvetica-Bold').fontSize(8).text('DEPARTURE FLIGHT', flightX, flightY + 4, { width: cardWidth - 24 });
+    this.drawTransportFlightBlockCompact(doc, flightX, flightY + 18, cardWidth - 24, data.flight.departure, colors, 70);
+  }
+
+  private drawTransportVehicleCardCompact(
+    doc: PDFKit.PDFDocument,
+    data: TransportVoucherDetails,
+    colors: Record<string, string>,
+    y: number,
+  ) {
+    this.drawTransportCardCompact(doc, 18, y, 559, 120, 'Vehicle Details', colors);
+    const imageX = 35;
+    const imageY = 425;
+    const imageW = 150;
+    const imageH = 70;
+    const vehicleImagePath = this.resolveLogoPath(data.vehicle.imagePath || '');
+    if (vehicleImagePath) {
+      try {
+        doc.roundedRect(imageX, imageY, imageW, imageH, 10).fillAndStroke('#ffffff', colors.border);
+        doc.image(vehicleImagePath, imageX + 6, imageY + 6, { fit: [imageW - 12, imageH - 12], align: 'center', valign: 'center' });
+      } catch {
+        this.drawTransportImagePlaceholderCompact(doc, imageX, imageY, imageW, imageH, colors, data.vehicle.type);
+      }
+    } else {
+      this.drawTransportImagePlaceholderCompact(doc, imageX, imageY, imageW, imageH, colors, data.vehicle.type);
+    }
+
+    let leftY = 425;
+    let rightY = 425;
+    leftY = this.drawTransportFieldCompact(doc, 215, leftY, 160, 'Vehicle Type', data.vehicle.type, colors, 42, true);
+    leftY = this.drawTransportFieldCompact(doc, 215, leftY, 160, 'Vehicle No.', data.vehicle.vehicleNo, colors, 42, true);
+    this.drawTransportFieldCompact(doc, 215, leftY, 160, 'Seating Capacity', data.vehicle.seatingCapacity, colors, 42, true);
+    rightY = this.drawTransportFieldCompact(doc, 405, rightY, 150, 'AC', data.vehicle.ac, colors, 28, true);
+    rightY = this.drawTransportFieldCompact(doc, 405, rightY, 150, 'Luggage Space', data.vehicle.luggageSpace, colors, 34, true);
+    this.drawTransportFieldCompact(doc, 405, rightY, 150, 'Insurance', data.vehicle.insurance, colors, 42, true);
+  }
+
+  private drawTransportFooterCompact(
+    doc: PDFKit.PDFDocument,
+    data: TransportVoucherDetails,
+    colors: Record<string, string>,
+    y: number,
+    margin: number,
+    contentWidth: number,
+  ) {
+    const footerCards = [
+      { title: 'Inclusions', items: data.footer.inclusions, accent: colors.success },
+      { title: 'Important Notes', items: data.footer.notes, accent: colors.primaryDark },
+      { title: 'Emergency Contact', items: [`Customer Support: ${data.footer.emergencyPhone || '--'}`, `Email: ${data.footer.emergencyEmail || '--'}`], accent: colors.danger },
+    ];
+    const cardGap = 8;
+    const cardWidth = (contentWidth - cardGap * 2) / 3;
+    const cardHeight = 105;
+    footerCards.forEach((card, index) => {
+      const x = margin + index * (cardWidth + cardGap);
+      this.drawTransportCardCompact(doc, x, y, cardWidth, cardHeight, card.title, colors, card.accent);
+      let itemY = y + 34;
+      card.items.forEach((item) => {
+        const compact = this.transportTruncateCompact(item, card.title === 'Emergency Contact' ? 52 : 78);
+        doc.fillColor(colors.primaryDark).font('Helvetica').fontSize(7.2).text(`- ${compact}`, x + 10, itemY, {
+          width: cardWidth - 20,
+          lineGap: 1,
+        });
+        itemY += doc.heightOfString(`- ${compact}`, { width: cardWidth - 20, lineGap: 1 }) + 3;
+      });
+    });
+
+    doc.fillColor(colors.muted).font('Helvetica-Oblique').fontSize(8).text(
+      'Thank you for choosing DVI Holidays. We wish you a safe & memorable journey!',
+      margin,
+      doc.page.height - 28,
+      { width: contentWidth, align: 'center' },
+    );
+  }
+
+  private drawTransportCardCompact(
+    doc: PDFKit.PDFDocument,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    title: string,
+    colors: Record<string, string>,
+    accentColor?: string,
+  ) {
+    doc.roundedRect(x, y, width, height, 12).fillAndStroke('#ffffff', colors.border);
+    doc.roundedRect(x, y, width, 26, 12).fill(accentColor || colors.softBg);
+    doc.fillColor(accentColor ? '#ffffff' : colors.primaryDark).font('Helvetica-Bold').fontSize(10.5).text(title, x + 12, y + 8, {
+      width: width - 24,
+    });
+  }
+
+  private drawTransportFieldCompact(
+    doc: PDFKit.PDFDocument,
+    x: number,
+    y: number,
+    width: number,
+    label: string,
+    value: string,
+    colors: Record<string, string>,
+    maxChars = 70,
+    showMarker = false,
+  ): number {
+    const safeValue = this.transportTruncateCompact(String(value || '--').trim() || '--', maxChars);
+    if (showMarker) {
+      doc.roundedRect(x, y + 3, 6, 6, 2).fill(colors.primary);
+    }
+    const textX = x + (showMarker ? 12 : 0);
+    const textWidth = width - (showMarker ? 12 : 0);
+    doc.fillColor(colors.muted).font('Helvetica-Bold').fontSize(7.4).text(label.toUpperCase(), textX, y, { width: textWidth });
+    const valueHeight = doc.heightOfString(safeValue, { width: textWidth, lineGap: 0 });
+    doc.fillColor(colors.primaryDark).font('Helvetica').fontSize(8.4).text(safeValue, textX, y + 10, {
+      width: textWidth,
+      lineGap: 0,
+    });
+    return y + 14 + valueHeight;
+  }
+
+  private drawTransportFlightBlockCompact(
+    doc: PDFKit.PDFDocument,
+    x: number,
+    y: number,
+    width: number,
+    flight: TransportVoucherDetails['flight']['arrival'],
+    colors: Record<string, string>,
+    maxChars = 70,
+  ): number {
+    const notProvided =
+      (!flight.airline || flight.airline === 'Not Provided')
+      && (!flight.flightNo || flight.flightNo === 'Not Provided')
+      && (!flight.rawText || flight.rawText === 'Not Provided');
+    const fields = notProvided
+      ? ['Flight details not provided']
+      : [
+          this.transportTruncateCompact(`${flight.airline || 'Not Provided'} | ${flight.flightNo || 'Not Provided'}`, maxChars),
+          this.transportTruncateCompact(`${flight.from || 'Not Provided'} | ${flight.to || 'Not Provided'}`, maxChars),
+          this.transportTruncateCompact(`${flight.date || '--'} | ${flight.time || 'Not Provided'}`, maxChars),
+        ];
+
+    let currentY = y;
+    for (const field of fields) {
+      doc.fillColor(colors.primaryDark).font('Helvetica').fontSize(8).text(field, x, currentY, { width, lineGap: 0 });
+      currentY += doc.heightOfString(field, { width, lineGap: 0 }) + 3;
+    }
+    return currentY;
+  }
+
+  private drawTransportImagePlaceholderCompact(
+    doc: PDFKit.PDFDocument,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    colors: Record<string, string>,
+    vehicleType?: string,
+  ) {
+    doc.roundedRect(x, y, width, height, 10).fillAndStroke(colors.softBg, colors.border);
+    doc.fillColor(colors.muted).font('Helvetica-Bold').fontSize(10).text('Vehicle Image', x, y + 22, {
+      width,
+      align: 'center',
+    });
+    doc.fillColor(colors.primary).font('Helvetica').fontSize(8).text(
+      this.transportTruncateCompact(vehicleType || 'Sedan / Innova / Tempo Traveller', 32),
+      x + 10,
+      y + 39,
+      { width: width - 20, align: 'center' },
+    );
+  }
+
+  private drawTransportTableHeaderCompact(
+    doc: PDFKit.PDFDocument,
+    x: number,
+    y: number,
+    colors: Record<string, string>,
+  ): number {
+    doc.roundedRect(x, y, doc.page.width - x * 2, 22, 8).fillAndStroke(colors.primary, colors.primary);
+    doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(7);
+    const columns = this.getTransportTableColumnsCompact();
+    let cursor = x;
+    for (const column of columns) {
+      doc.text(column.label, cursor + 4, y + 7, { width: column.width - 8, align: column.align || 'left' });
+      cursor += column.width;
+    }
+    return y + 24;
+  }
+
+  private getTransportTableColumnsCompact(): Array<{ key: string; label: string; width: number; align?: 'left' | 'center' | 'right' }> {
+    return [
+      { key: 'day', label: 'Day', width: 48, align: 'center' },
+      { key: 'date', label: 'Date', width: 72 },
+      { key: 'routeAndPlaces', label: 'Route & Places to Visit', width: 185 },
+      { key: 'travelRoute', label: 'Travel Route', width: 125 },
+      { key: 'startTime', label: 'Reporting / Start Time', width: 70, align: 'center' },
+      { key: 'endTime', label: 'End Time', width: 59, align: 'center' },
+    ];
+  }
+
+  private measureTransportTableRowCompact(doc: PDFKit.PDFDocument, row: TransportVoucherDetails['days'][number]): number {
+    const columns = this.getTransportTableColumnsCompact();
+    const heights = columns.map((column) => {
+      if (column.key === 'day') return 26;
+      const text = column.key === 'date'
+        ? `${row.date}\n${row.weekday}`
+        : column.key === 'routeAndPlaces'
+          ? this.transportTruncateCompact(String((row as Record<string, unknown>)[column.key] || '--'), 140)
+          : column.key === 'travelRoute'
+            ? this.transportTruncateCompact(String((row as Record<string, unknown>)[column.key] || '--'), 72)
+            : String((row as Record<string, unknown>)[column.key] || '--');
+      return doc.heightOfString(text, { width: column.width - 8, lineGap: 0 }) + 10;
+    });
+    return Math.max(42, Math.min(64, Math.max(...heights)));
+  }
+
+  private drawTransportTableRowCompact(
+    doc: PDFKit.PDFDocument,
+    x: number,
+    y: number,
+    row: TransportVoucherDetails['days'][number],
+    rowIndex: number,
+    colors: Record<string, string>,
+  ) {
+    const columns = this.getTransportTableColumnsCompact();
+    const rowHeight = this.measureTransportTableRowCompact(doc, row);
+    doc.roundedRect(x, y, doc.page.width - x * 2, rowHeight, 8).fillAndStroke(rowIndex % 2 === 0 ? '#ffffff' : colors.softBg, colors.border);
+
+    let cursor = x;
+    for (const column of columns) {
+      if (column.key === 'day') {
+        doc.roundedRect(cursor + 5, y + 11, column.width - 10, 16, 8).fill(colors.primary);
+        doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(7).text(`DAY ${row.dayNo}`, cursor + 5, y + 16, {
+          width: column.width - 10,
+          align: 'center',
+        });
+      } else {
+        const text = column.key === 'date'
+          ? `${row.date}\n${row.weekday}`
+          : column.key === 'routeAndPlaces'
+            ? this.transportTruncateCompact(String((row as Record<string, unknown>)[column.key] || '--'), 140)
+            : column.key === 'travelRoute'
+              ? this.transportTruncateCompact(String((row as Record<string, unknown>)[column.key] || '--'), 72)
+              : String((row as Record<string, unknown>)[column.key] || '--');
+        doc.fillColor(colors.primaryDark).font('Helvetica').fontSize(7.2).text(text, cursor + 4, y + 7, {
+          width: column.width - 8,
+          align: column.align || 'left',
+          lineGap: 0,
+        });
+      }
+      cursor += column.width;
+      if (cursor < doc.page.width - x) {
+        doc.moveTo(cursor, y + 4).lineTo(cursor, y + rowHeight - 4).lineWidth(0.4).strokeColor(colors.border).stroke();
+      }
+    }
+  }
+
+  private drawTransportLogoFallbackCompact(
+    doc: PDFKit.PDFDocument,
+    x: number,
+    y: number,
+    colors: Record<string, string>,
+  ) {
+    doc.roundedRect(x, y, 60, 50, 10).fillAndStroke('#ffffff', colors.border);
+    doc.fillColor(colors.primary).font('Helvetica-Bold').fontSize(16).text('DVi', x, y + 10, { width: 60, align: 'center' });
+    doc.fillColor(colors.primaryDark).font('Helvetica-Bold').fontSize(10).text('holidays', x, y + 28, { width: 60, align: 'center' });
+  }
+
+  private wrapTransportCompanyNameCompact(name: string): { line1: string; line2: string } {
+    const safe = String(name || '').trim() || 'Doview Holidays India Pvt Ltd';
+    if (safe.length <= 27) {
+      return { line1: safe, line2: '' };
+    }
+    if (safe.match(/Pvt Ltd\.?$/i)) {
+      return {
+        line1: safe.replace(/\s*Pvt Ltd\.?$/i, '').trim(),
+        line2: 'Pvt Ltd.',
+      };
+    }
+    return {
+      line1: this.transportTruncateCompact(safe, 26),
+      line2: '',
+    };
+  }
+
+  private transportTruncateCompact(value: string, maxChars: number): string {
+    const safe = String(value || '').replace(/\s+/g, ' ').trim();
+    if (!safe) return '--';
+    return safe.length > maxChars ? `${safe.slice(0, Math.max(0, maxChars - 3)).trim()}...` : safe;
+  }
+
+  private drawTransportVoucherPdf(doc: PDFKit.PDFDocument, data: TransportVoucherDetails): void {
+    const colors = {
+      primary: '#3d18d6',
+      text: '#08005d',
+      border: '#e7e2ff',
+      soft: '#faf9ff',
+      red: '#e53935',
+      green: '#2eaf5d',
+      muted: '#6f6897',
+    };
+    const margin = 34;
+    const contentWidth = doc.page.width - margin * 2;
+    const cardGap = 12;
+    const smallCardWidth = (contentWidth - cardGap * 2) / 3;
+    const bottomLimit = doc.page.height - 48;
+    let y = 32;
+
+    const addPageIfNeeded = (requiredHeight: number, redrawTableHeader = false) => {
+      if (y + requiredHeight <= bottomLimit) return;
+      doc.addPage();
+      y = 34;
+      if (redrawTableHeader) {
+        y = this.drawTransportTableHeader(doc, margin, y, colors);
+      }
+    };
+
+    doc.rect(0, 0, doc.page.width, doc.page.height).fill('#ffffff');
+    doc.roundedRect(margin, y, contentWidth, 108, 20).fillAndStroke(colors.soft, colors.border);
+    doc.roundedRect(doc.page.width - 188, y + 14, 140, 80, 16).fillAndStroke('#ffffff', colors.border);
+
+    const logoPath = this.resolveLogoPath(data.company.logoPath || '');
+    if (logoPath) {
+      try {
+        doc.image(logoPath, margin + 14, y + 16, { fit: [86, 54], align: 'center', valign: 'center' });
+      } catch {
+        // Keep generation successful if the image is unreadable.
+      }
+    } else {
+      doc.fillColor(colors.primary).font('Helvetica-Bold').fontSize(20).text('DVi', margin + 18, y + 22);
+      doc.fillColor(colors.text).font('Helvetica-Bold').fontSize(18).text('holidays', margin + 18, y + 48);
+    }
+
+    doc.fillColor(colors.text).font('Helvetica-Bold').fontSize(20).text(data.company.name || 'DVI Holidays', margin + 112, y + 18, { width: 230 });
+    doc.fillColor(colors.primary).font('Helvetica').fontSize(10).text(data.company.tagline || 'Travel Beyond Expectations', margin + 112, y + 44);
+    doc.fillColor(colors.muted).fontSize(9).text(
+      [data.company.phone, data.company.email, data.company.website].filter(Boolean).join(' | '),
+      margin + 112,
+      y + 64,
+      { width: 250 },
+    );
+
+    doc.fillColor(colors.primary).font('Helvetica-Bold').fontSize(15).text('TRANSPORT VOUCHER', doc.page.width - 177, y + 18, {
+      width: 118,
+      align: 'center',
+    });
+    doc.fillColor(colors.text).fontSize(9).font('Helvetica-Bold').text(`Voucher No.: ${data.voucher.voucherNo || '--'}`, doc.page.width - 177, y + 44, {
+      width: 118,
+      align: 'center',
+    });
+    doc.font('Helvetica').fontSize(9).text(`Date: ${data.voucher.date || '--'}`, doc.page.width - 177, y + 60, {
+      width: 118,
+      align: 'center',
+    });
+    doc.roundedRect(doc.page.width - 170, y + 76, 104, 16, 6).fillAndStroke('#ffffff', colors.border);
+    doc.fillColor(colors.primary).font('Helvetica-Bold').fontSize(7).text('Scan for Assistance', doc.page.width - 166, y + 81, {
+      width: 96,
+      align: 'center',
+    });
+
+    y += 122;
+    doc.roundedRect(margin, y, contentWidth, 44, 16).fillAndStroke('#ffffff', colors.border);
+    doc.fillColor(colors.muted).font('Helvetica').fontSize(8.5).text(
+      'This voucher is valid for the following booking only and is non-transferable.',
+      margin + 16,
+      y + 9,
+      { width: 145 },
+    );
+    doc.fillColor(colors.text).font('Helvetica-Bold').fontSize(12).text(data.voucher.title || 'Trip', margin + 172, y + 8, {
+      width: 190,
+      align: 'center',
+    });
+    doc.fillColor(colors.primary).font('Helvetica').fontSize(9).text(`(${data.voucher.dateRange || '--'})`, margin + 172, y + 24, {
+      width: 190,
+      align: 'center',
+    });
+    doc.fillColor(colors.green).font('Helvetica-Bold').fontSize(9).text('Verified & Trusted', margin + 388, y + 10, {
+      width: 110,
+      align: 'center',
+    });
+    doc.fillColor(colors.muted).font('Helvetica').fontSize(8).text('Thank you for choosing DVI Holidays', margin + 388, y + 24, {
+      width: 110,
+      align: 'center',
+    });
+
+    y += 58;
+    const detailTop = y;
+    const detailHeight = 176;
+    this.drawTransportCard(doc, margin, detailTop, smallCardWidth, detailHeight, 'Guest Details', colors);
+    this.drawTransportCard(doc, margin + smallCardWidth + cardGap, detailTop, smallCardWidth, detailHeight, 'Trip Details', colors);
+    this.drawTransportCard(doc, margin + (smallCardWidth + cardGap) * 2, detailTop, smallCardWidth, detailHeight, 'Flight Details', colors);
+
+    let guestY = detailTop + 34;
+    guestY = this.drawTransportField(doc, margin + 14, guestY, smallCardWidth - 28, 'Guest Name', data.guest.name, colors);
+    guestY = this.drawTransportField(doc, margin + 14, guestY, smallCardWidth - 28, 'No. of Pax', data.guest.pax, colors);
+    guestY = this.drawTransportField(doc, margin + 14, guestY, smallCardWidth - 28, 'Contact', data.guest.contactNo, colors);
+    guestY = this.drawTransportField(doc, margin + 14, guestY, smallCardWidth - 28, 'Email', data.guest.email, colors);
+    guestY = this.drawTransportField(doc, margin + 14, guestY, smallCardWidth - 28, 'Pickup', data.guest.pickupLocation, colors);
+    this.drawTransportField(doc, margin + 14, guestY, smallCardWidth - 28, 'Drop', data.guest.dropLocation, colors);
+
+    let tripY = detailTop + 34;
+    tripY = this.drawTransportField(doc, margin + smallCardWidth + cardGap + 14, tripY, smallCardWidth - 28, 'Tour Type', data.trip.tourType, colors);
+    tripY = this.drawTransportField(doc, margin + smallCardWidth + cardGap + 14, tripY, smallCardWidth - 28, 'Travel Region', data.trip.travelRegion, colors);
+    tripY = this.drawTransportField(doc, margin + smallCardWidth + cardGap + 14, tripY, smallCardWidth - 28, 'Check-in', data.trip.checkInDate, colors);
+    tripY = this.drawTransportField(doc, margin + smallCardWidth + cardGap + 14, tripY, smallCardWidth - 28, 'Check-out', data.trip.checkOutDate, colors);
+    this.drawTransportField(doc, margin + smallCardWidth + cardGap + 14, tripY, smallCardWidth - 28, 'Duration', data.trip.duration, colors);
+
+    const flightX = margin + (smallCardWidth + cardGap) * 2 + 14;
+    let flightY = detailTop + 36;
+    doc.fillColor(colors.primary).font('Helvetica-Bold').fontSize(8.5).text('ARRIVAL FLIGHT', flightX, flightY, { width: smallCardWidth - 28 });
+    flightY += 16;
+    flightY = this.drawTransportFlightBlock(doc, flightX, flightY, smallCardWidth - 28, data.flight.arrival, colors);
+    doc.fillColor(colors.primary).font('Helvetica-Bold').fontSize(8.5).text('DEPARTURE FLIGHT', flightX, flightY + 4, { width: smallCardWidth - 28 });
+    this.drawTransportFlightBlock(doc, flightX, flightY + 20, smallCardWidth - 28, data.flight.departure, colors);
+
+    y += detailHeight + 14;
+    addPageIfNeeded(160);
+    this.drawTransportCard(doc, margin, y, contentWidth, 132, 'Vehicle Details', colors);
+    const vehicleImageX = margin + 16;
+    const vehicleImageY = y + 18;
+    const vehicleImageW = 132;
+    const vehicleImageH = 88;
+    const vehicleImagePath = this.resolveLogoPath(data.vehicle.imagePath || '');
+    if (vehicleImagePath) {
+      try {
+        doc.roundedRect(vehicleImageX, vehicleImageY, vehicleImageW, vehicleImageH, 12).fillAndStroke('#ffffff', colors.border);
+        doc.image(vehicleImagePath, vehicleImageX + 6, vehicleImageY + 6, { fit: [vehicleImageW - 12, vehicleImageH - 12], align: 'center', valign: 'center' });
+      } catch {
+        this.drawTransportImagePlaceholder(doc, vehicleImageX, vehicleImageY, vehicleImageW, vehicleImageH, colors);
+      }
+    } else {
+      this.drawTransportImagePlaceholder(doc, vehicleImageX, vehicleImageY, vehicleImageW, vehicleImageH, colors);
+    }
+
+    const vehicleFieldX = vehicleImageX + vehicleImageW + 18;
+    const vehicleColumnGap = 20;
+    const vehicleFieldWidth = (contentWidth - (vehicleFieldX - margin) - 22 - vehicleColumnGap) / 2;
+    let vehicleYLeft = y + 26;
+    let vehicleYRight = y + 26;
+    vehicleYLeft = this.drawTransportField(doc, vehicleFieldX, vehicleYLeft, vehicleFieldWidth, 'Vehicle Type', data.vehicle.type, colors);
+    vehicleYLeft = this.drawTransportField(doc, vehicleFieldX, vehicleYLeft, vehicleFieldWidth, 'Vehicle No.', data.vehicle.vehicleNo, colors);
+    vehicleYLeft = this.drawTransportField(doc, vehicleFieldX, vehicleYLeft, vehicleFieldWidth, 'Seating Capacity', data.vehicle.seatingCapacity, colors);
+    vehicleYRight = this.drawTransportField(doc, vehicleFieldX + vehicleFieldWidth + vehicleColumnGap, vehicleYRight, vehicleFieldWidth, 'AC', data.vehicle.ac, colors);
+    vehicleYRight = this.drawTransportField(doc, vehicleFieldX + vehicleFieldWidth + vehicleColumnGap, vehicleYRight, vehicleFieldWidth, 'Luggage Space', data.vehicle.luggageSpace, colors);
+    this.drawTransportField(doc, vehicleFieldX + vehicleFieldWidth + vehicleColumnGap, vehicleYRight, vehicleFieldWidth, 'Insurance', data.vehicle.insurance, colors);
+
+    y += 146;
+    addPageIfNeeded(90, false);
+    doc.fillColor(colors.text).font('Helvetica-Bold').fontSize(13).text('Day-wise Transport Itinerary', margin, y, { width: contentWidth });
+    y += 20;
+    y = this.drawTransportTableHeader(doc, margin, y, colors);
+    for (let index = 0; index < data.days.length; index += 1) {
+      const row = data.days[index];
+      const rowHeight = this.measureTransportTableRow(doc, row);
+      addPageIfNeeded(rowHeight + 8, true);
+      this.drawTransportTableRow(doc, margin, y, row, index, colors);
+      y += rowHeight + 6;
+    }
+
+    y += 8;
+    const footerCards = [
+      { title: 'Inclusions', items: data.footer.inclusions, accent: colors.primary },
+      { title: 'Important Notes', items: data.footer.notes, accent: colors.red },
+      { title: 'Emergency Contact', items: [`Customer Support: ${data.footer.emergencyPhone || '--'}`, `Email: ${data.footer.emergencyEmail || '--'}`], accent: colors.green },
+    ];
+
+    for (const card of footerCards) {
+      const cardHeight = 34 + card.items.length * 16 + 16;
+      addPageIfNeeded(cardHeight + 10, false);
+      this.drawTransportCard(doc, margin, y, contentWidth, cardHeight, card.title, colors, card.accent);
+      let itemY = y + 36;
+      for (const item of card.items) {
+        doc.fillColor(colors.text).font('Helvetica').fontSize(9.5).text(`• ${item}`, margin + 16, itemY, { width: contentWidth - 32 });
+        itemY += 16;
+      }
+      y += cardHeight + 10;
+    }
+
+    addPageIfNeeded(42, false);
+    doc.roundedRect(margin, y, contentWidth, 34, 14).fillAndStroke(colors.soft, colors.border);
+    doc.fillColor(colors.text).font('Helvetica-Bold').fontSize(10.5).text(
+      'Thank you for choosing DVI Holidays. We wish you a safe and memorable journey!',
+      margin + 16,
+      y + 11,
+      { width: contentWidth - 32, align: 'center' },
+    );
+  }
+
+  private drawTransportCard(
+    doc: PDFKit.PDFDocument,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    title: string,
+    colors: Record<string, string>,
+    accentColor?: string,
+  ) {
+    doc.roundedRect(x, y, width, height, 16).fillAndStroke('#ffffff', colors.border);
+    doc.roundedRect(x, y, width, 26, 16).fill(accentColor || colors.soft);
+    doc.fillColor(accentColor ? '#ffffff' : colors.text).font('Helvetica-Bold').fontSize(10).text(title, x + 14, y + 8, {
+      width: width - 28,
+    });
+  }
+
+  private drawTransportField(
+    doc: PDFKit.PDFDocument,
+    x: number,
+    y: number,
+    width: number,
+    label: string,
+    value: string,
+    colors: Record<string, string>,
+  ): number {
+    const safeValue = String(value || '--').trim() || '--';
+    doc.fillColor(colors.muted).font('Helvetica-Bold').fontSize(8).text(label.toUpperCase(), x, y, { width });
+    const valueHeight = doc.heightOfString(safeValue, { width, align: 'left' });
+    doc.fillColor(colors.text).font('Helvetica').fontSize(9.2).text(safeValue, x, y + 11, { width });
+    return y + 17 + valueHeight;
+  }
+
+  private drawTransportFlightBlock(
+    doc: PDFKit.PDFDocument,
+    x: number,
+    y: number,
+    width: number,
+    flight: TransportVoucherDetails['flight']['arrival'],
+    colors: Record<string, string>,
+  ): number {
+    const fields = [
+      `${flight.airline || 'Not Provided'} | ${flight.flightNo || 'Not Provided'}`,
+      `${flight.from || 'Not Provided'} → ${flight.to || 'Not Provided'}`,
+      `${flight.date || '--'} | ${flight.time || 'Not Provided'}`,
+    ];
+    if (
+      (!flight.airline || flight.airline === 'Not Provided')
+      && flight.rawText
+      && flight.rawText !== 'Not Provided'
+    ) {
+      fields.push(flight.rawText);
+    }
+
+    let currentY = y;
+    for (const field of fields) {
+      doc.fillColor(colors.text).font('Helvetica').fontSize(8.8).text(field, x, currentY, { width });
+      currentY += doc.heightOfString(field, { width }) + 4;
+    }
+    return currentY;
+  }
+
+  private drawTransportImagePlaceholder(
+    doc: PDFKit.PDFDocument,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    colors: Record<string, string>,
+  ) {
+    doc.roundedRect(x, y, width, height, 12).fillAndStroke(colors.soft, colors.border);
+    doc.fillColor(colors.muted).font('Helvetica-Bold').fontSize(10).text('Vehicle Image', x, y + height / 2 - 6, {
+      width,
+      align: 'center',
+    });
+  }
+
+  private drawTransportTableHeader(
+    doc: PDFKit.PDFDocument,
+    x: number,
+    y: number,
+    colors: Record<string, string>,
+  ): number {
+    doc.roundedRect(x, y, doc.page.width - x * 2, 24, 10).fillAndStroke(colors.primary, colors.primary);
+    doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(8.5);
+    const columns = this.getTransportTableColumns();
+    let cursor = x;
+    for (const column of columns) {
+      doc.text(column.label, cursor + 6, y + 8, { width: column.width - 12, align: column.align || 'left' });
+      cursor += column.width;
+    }
+    return y + 30;
+  }
+
+  private getTransportTableColumns(): Array<{ key: string; label: string; width: number; align?: 'left' | 'center' | 'right' }> {
+    return [
+      { key: 'day', label: 'Day', width: 54, align: 'center' },
+      { key: 'date', label: 'Date', width: 72 },
+      { key: 'routeAndPlaces', label: 'Route & Places to Visit', width: 152 },
+      { key: 'travelRoute', label: 'Travel Route', width: 118 },
+      { key: 'startTime', label: 'Reporting / Start Time', width: 76, align: 'center' },
+      { key: 'endTime', label: 'End Time', width: 60, align: 'center' },
+    ];
+  }
+
+  private measureTransportTableRow(doc: PDFKit.PDFDocument, row: TransportVoucherDetails['days'][number]): number {
+    const columns = this.getTransportTableColumns();
+    const heights = columns.map((column) => {
+      if (column.key === 'day') return 26;
+      const text = column.key === 'date'
+        ? `${row.date}\n${row.weekday}`
+        : String((row as Record<string, unknown>)[column.key] || '--');
+      return doc.heightOfString(text, { width: column.width - 12 }) + 14;
+    });
+    return Math.max(38, ...heights);
+  }
+
+  private drawTransportTableRow(
+    doc: PDFKit.PDFDocument,
+    x: number,
+    y: number,
+    row: TransportVoucherDetails['days'][number],
+    rowIndex: number,
+    colors: Record<string, string>,
+  ) {
+    const columns = this.getTransportTableColumns();
+    const rowHeight = this.measureTransportTableRow(doc, row);
+    doc.roundedRect(x, y, doc.page.width - x * 2, rowHeight, 10).fillAndStroke(rowIndex % 2 === 0 ? '#ffffff' : colors.soft, colors.border);
+
+    let cursor = x;
+    for (const column of columns) {
+      if (column.key === 'day') {
+        doc.roundedRect(cursor + 8, y + 8, column.width - 16, 20, 10).fill(colors.primary);
+        doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(8).text(`DAY ${row.dayNo}`, cursor + 8, y + 14, {
+          width: column.width - 16,
+          align: 'center',
+        });
+      } else {
+        const text = column.key === 'date'
+          ? `${row.date}\n${row.weekday}`
+          : String((row as Record<string, unknown>)[column.key] || '--');
+        doc.fillColor(colors.text).font('Helvetica').fontSize(8.8).text(text, cursor + 6, y + 8, {
+          width: column.width - 12,
+          align: column.align || 'left',
+        });
+      }
+      cursor += column.width;
+      if (cursor < doc.page.width - x) {
+        doc.moveTo(cursor, y + 5).lineTo(cursor, y + rowHeight - 5).lineWidth(0.5).strokeColor(colors.border).stroke();
+      }
+    }
   }
 
   async downloadVoucherPdfByScope(
@@ -632,3 +1619,4 @@ export class ItineraryPdfService {
     doc.end();
   }
 }
+
