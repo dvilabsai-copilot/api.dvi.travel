@@ -41,7 +41,8 @@
     "verify:dvi20260690:explicit-via": "node scripts/verify-dvi20260690-explicit-via.js",
     "test:matrix": "tsx scripts/test-matrix-autobuild.ts",
     "sync:tbo:missing-city": "node scripts/sync-missing-tbo-hotels-by-city.js",
-    "sync:tbo:missing-city:dry": "node scripts/sync-missing-tbo-hotels-by-city.js --dry-run"
+    "sync:tbo:missing-city:dry": "node scripts/sync-missing-tbo-hotels-by-city.js --dry-run",
+    "cleanup:vendor-outstation-duplicates": "tsx scripts/cleanup-vendor-outstation-duplicates.ts"
   },
   "dependencies": {
     "@apollo/server": "^4.13.0",
