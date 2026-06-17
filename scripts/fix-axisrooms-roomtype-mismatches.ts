@@ -6,6 +6,7 @@ const prisma = new PrismaClient();
 type Args = {
   propertyId: string;
   apply: boolean;
+  createMissingRoomTypes: boolean;
 };
 
 type RoomTypeMaster = {
@@ -22,6 +23,7 @@ type CandidateSummary = {
 
 function parseArgs(argv: string[]): Args {
   const apply = argv.includes('--apply');
+  const createMissingRoomTypes = argv.includes('--create-missing-roomtypes');
 
   const propertyFlagIndex = argv.findIndex((arg) => arg === '--property-id');
   const propertyFromFlag =
@@ -36,7 +38,7 @@ function parseArgs(argv: string[]): Args {
     );
   }
 
-  return { propertyId, apply };
+  return { propertyId, apply, createMissingRoomTypes };
 }
 
 function normalizeLabel(value: string | null | undefined): string {
@@ -213,6 +215,29 @@ async function main(): Promise<void> {
     };
   });
 
+  const missingRoomTypeCreationPlan = args.createMissingRoomTypes
+    ? Array.from(
+        inspection
+          .filter((row) => row.status === 'no_master_match' && row.exactTrimmedRoomTitle)
+          .reduce((acc, row) => {
+            if (!acc.has(row.exactTrimmedRoomTitle)) {
+              acc.set(row.exactTrimmedRoomTitle, {
+                normalizedKey: row.exactTrimmedRoomTitle,
+                roomTypeTitle: row.roomTitle,
+                roomIds: [row.roomId],
+                roomRefCodes: [row.roomRefCode],
+              });
+            } else {
+              const current = acc.get(row.exactTrimmedRoomTitle)!;
+              current.roomIds.push(row.roomId);
+              current.roomRefCodes.push(row.roomRefCode);
+            }
+            return acc;
+          }, new Map<string, { normalizedKey: string; roomTypeTitle: string; roomIds: number[]; roomRefCodes: string[] }>())
+          .values(),
+      )
+    : [];
+
   const fixableRooms = inspection.filter((row) => row.status === 'fixable');
   const skippedRooms = inspection.filter((row) => row.status !== 'fixable');
 
@@ -221,6 +246,7 @@ async function main(): Promise<void> {
     safeJson({
       propertyId: args.propertyId,
       apply: args.apply,
+      createMissingRoomTypes: args.createMissingRoomTypes,
       selectedHotel: {
         hotelId,
         hotelName: selectedHotel.hotel_name,
@@ -238,18 +264,23 @@ async function main(): Promise<void> {
         noMasterMatch: inspection.filter((row) => row.status === 'no_master_match').length,
         ambiguousMasterMatch: inspection.filter((row) => row.status === 'ambiguous_master_match')
           .length,
+        missingRoomTypesCreatable: missingRoomTypeCreationPlan.length,
       },
       fixableRooms,
+      missingRoomTypeCreationPlan,
       skippedRooms,
     }),
   );
 
   if (!args.apply) {
-    console.log('\nDry run only. Re-run with --apply to persist fixable rows.');
+    console.log(
+      '\nDry run only. Re-run with --apply to persist fixable rows' +
+        (args.createMissingRoomTypes ? ' and create missing room type masters.' : '.'),
+    );
     return;
   }
 
-  if (!fixableRooms.length) {
+  if (!fixableRooms.length && !(args.createMissingRoomTypes && missingRoomTypeCreationPlan.length)) {
     console.log('\nNo fixable rows found. Nothing to update.');
     return;
   }
@@ -264,8 +295,61 @@ async function main(): Promise<void> {
       toRoomTypeId: number;
       updatedRoomRatePlans: number;
     }> = [];
+    const createdRoomTypes: Array<{
+      roomTypeId: number;
+      roomTypeTitle: string;
+      roomIds: number[];
+      roomRefCodes: string[];
+    }> = [];
 
-    for (const row of fixableRooms) {
+    const createdRoomTypeIdByExactTitle = new Map<string, number>();
+
+    if (args.createMissingRoomTypes) {
+      for (const pending of missingRoomTypeCreationPlan) {
+        const created = await tx.dvi_hotel_roomtype.create({
+          data: {
+            room_type_title: pending.roomTypeTitle,
+            createdby: 1,
+            createdon: appliedAt,
+            updatedon: appliedAt,
+            status: 1,
+            deleted: 0,
+          } as any,
+          select: {
+            room_type_id: true,
+            room_type_title: true,
+          } as any,
+        });
+
+        const createdRoomTypeId = Number((created as any).room_type_id);
+        createdRoomTypeIdByExactTitle.set(pending.normalizedKey, createdRoomTypeId);
+        createdRoomTypes.push({
+          roomTypeId: createdRoomTypeId,
+          roomTypeTitle: String((created as any).room_type_title || pending.roomTypeTitle),
+          roomIds: pending.roomIds,
+          roomRefCodes: pending.roomRefCodes,
+        });
+      }
+    }
+
+    const rowsToUpdate = [
+      ...fixableRooms,
+      ...inspection
+        .filter(
+          (row) =>
+            row.status === 'no_master_match' &&
+            args.createMissingRoomTypes &&
+            createdRoomTypeIdByExactTitle.has(row.exactTrimmedRoomTitle),
+        )
+        .map((row) => ({
+          ...row,
+          targetRoomTypeId: createdRoomTypeIdByExactTitle.get(row.exactTrimmedRoomTitle) || null,
+          targetRoomTypeTitle: row.roomTitle,
+          status: 'fixable' as const,
+        })),
+    ];
+
+    for (const row of rowsToUpdate) {
       await tx.dvi_hotel_rooms.update({
         where: { room_ID: row.roomId } as any,
         data: {
@@ -296,7 +380,10 @@ async function main(): Promise<void> {
       });
     }
 
-    return updatedRooms;
+    return {
+      createdRoomTypes,
+      updatedRooms,
+    };
   });
 
   console.log('\n=== Applied Fixes ===');
@@ -304,7 +391,8 @@ async function main(): Promise<void> {
     safeJson({
       propertyId: args.propertyId,
       hotelId,
-      updatedRooms: result,
+      createdRoomTypes: result.createdRoomTypes,
+      updatedRooms: result.updatedRooms,
     }),
   );
 }
