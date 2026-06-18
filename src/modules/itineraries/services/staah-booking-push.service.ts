@@ -366,6 +366,35 @@ export class StaahBookingPushService {
     throw new Error(`Missing staah_property_id for hotelCode=${String(row?.staah_hotel_code || '')}`);
   }
 
+  private buildStaahGuestCounts(adults: number, children: number): Array<{ AgeQualifyingCode: string; Count: string }> {
+    const guestCounts: Array<{ AgeQualifyingCode: string; Count: string }> = [];
+    const normalizedAdults = Math.max(Number(adults || 0), 0);
+    const normalizedChildren = Math.max(Number(children || 0), 0);
+
+    if (normalizedAdults > 0) {
+      guestCounts.push({
+        AgeQualifyingCode: '10',
+        Count: String(normalizedAdults),
+      });
+    }
+
+    if (normalizedChildren > 0) {
+      guestCounts.push({
+        AgeQualifyingCode: '8',
+        Count: String(normalizedChildren),
+      });
+    }
+
+    return guestCounts.length > 0
+      ? guestCounts
+      : [
+          {
+            AgeQualifyingCode: '10',
+            Count: '1',
+          },
+        ];
+  }
+
   async confirmItineraryHotels(params: {
     confirmedItineraryPlanId: number;
     itineraryPlanId: number;
@@ -413,6 +442,7 @@ export class StaahBookingPushService {
         const firstOcc = hotel.occupancies?.[0] || {};
         const adults = Number(firstOcc.adults || 1);
         const children = Number(firstOcc.children || 0);
+        const guestCounts = this.buildStaahGuestCounts(adults, children);
 
         const passenger = hotel.passenger || hotel.primaryPassenger || hotel.passengers?.[0] || {};
         const netAmount = Number(hotel.netAmount || hotel.totalAmount || 0);
@@ -464,12 +494,6 @@ export class StaahBookingPushService {
                         rate_id: outboundRateId,
                         rate_name: rateName || '',
                         amountaftertax: this.toMoneyString(baseAmountAfterTax),
-                        extraGuests: {
-                          extraAdult: '0',
-                          extraChild: '0',
-                          extraAdultRate: '0',
-                          extraChildRate: '0',
-                        },
                       },
                     ],
                     salutation: passenger.title || 'Mr.',
@@ -483,12 +507,7 @@ export class StaahBookingPushService {
                     ],
                     amountaftertax: this.toMoneyString(totalAmountAfterTax),
                     remarks: '',
-                    GuestCount: [
-                      {
-                        AgeQualifyingCode: '10',
-                        Count: String(adults),
-                      },
-                    ],
+                    GuestCount: guestCounts,
                   },
                 ],
                 POS: 'DVI',
@@ -508,7 +527,7 @@ export class StaahBookingPushService {
         };
 
         console.log('[STAAH_BOOKING_PUSH] Resolved identifiers', {
-          routeId: hotel.routeId, hotelCode: hotel.hotelCode, propertyid, roomId, rateId, outboundRoomId, outboundRateId, notes,
+          routeId: hotel.routeId, hotelCode: hotel.hotelCode, propertyid, roomId, rateId, outboundRoomId, outboundRateId, adults, children, guestCounts, notes,
         });
         console.log('[STAAH_BOOKING_PUSH] Request URL', this.apiUrl);
         console.log('[STAAH_BOOKING_PUSH] Request payload', JSON.stringify(this.maskPayload(payload)));
