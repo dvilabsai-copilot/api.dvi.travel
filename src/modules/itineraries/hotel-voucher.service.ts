@@ -31,7 +31,7 @@ export interface CreateVoucherDto {
   }>;
 }
 
-interface ProviderCancellationResult {
+export interface ProviderCancellationResult {
   provider: string;
   attempted: boolean;
   success: boolean;
@@ -234,6 +234,21 @@ export class HotelVoucherService {
   async createHotelVouchers(dto: CreateVoucherDto, userId: number = 1) {
     this.logger.log(`Creating ${dto.vouchers.length} hotel vouchers for plan ${dto.itineraryPlanId}`);
     this.logger.debug(`Voucher data: ${JSON.stringify(dto.vouchers, null, 2)}`);
+    this.logger.log(
+      `[HOTEL_VOUCHER_CREATE_REQUEST] ${JSON.stringify({
+        itineraryPlanId: dto.itineraryPlanId,
+        voucherCount: dto.vouchers.length,
+        vouchers: dto.vouchers.map((voucher) => ({
+          routeId: Number(voucher.routeId || 0),
+          hotelId: Number(voucher.hotelId || 0),
+          hotelDetailsIds: Array.isArray(voucher.hotelDetailsIds)
+            ? voucher.hotelDetailsIds.map((id) => Number(id || 0)).filter((id) => id > 0)
+            : [],
+          routeDates: Array.isArray(voucher.routeDates) ? voucher.routeDates : [],
+          status: String(voucher.status || ''),
+        })),
+      })}`,
+    );
 
     // Map string values to integers for database
     const invoiceToMap: Record<string, number> = {
@@ -409,10 +424,40 @@ export class HotelVoucherService {
               routeId: target.routeId,
               hotelId: target.hotelId,
             });
+            providerCancellation.push({
+              provider: 'staah',
+              attempted: !!staahCancellation?.attempted || !staahCancellation?.skipped,
+              skipped: !!staahCancellation?.skipped,
+              success: !!staahCancellation?.success,
+              routeId: target.routeId,
+              hotelId: target.hotelId ?? undefined,
+              hotelCode: staahCancellation?.hotelCode ?? null,
+              bookingId: staahCancellation?.bookingReference ?? staahCancellation?.bookingId ?? null,
+              httpStatus: staahCancellation?.status ?? null,
+              responseBody: staahCancellation?.response ?? null,
+              error: staahCancellation?.error ?? null,
+              reason: staahCancellation?.reason ?? null,
+            });
             this.logger.log(
               `✅ STAAH voucher cancellation completed for route=${target.routeId}, hotel=${target.hotelId}: ${JSON.stringify(staahCancellation)}`,
             );
+            this.logger.log(
+              `[HOTEL_VOUCHER_STAAH_CANCEL_RESULT] ${JSON.stringify({
+                itineraryPlanId: dto.itineraryPlanId,
+                routeId: target.routeId,
+                hotelId: target.hotelId,
+                result: staahCancellation,
+              })}`,
+            );
           } catch (error: any) {
+            providerCancellation.push({
+              provider: 'staah',
+              attempted: true,
+              success: false,
+              routeId: target.routeId,
+              hotelId: target.hotelId ?? undefined,
+              error: error?.message || String(error),
+            });
             this.logger.error(
               `❌ STAAH voucher cancellation failed for route=${target.routeId}, hotel=${target.hotelId}: ${error?.message || error}`,
             );
@@ -492,6 +537,7 @@ export class HotelVoucherService {
     return {
       success: true,
       message: `Successfully created ${createdVouchers.length} hotel voucher(s)`,
+      providerCancellation,
     };
   }
 
@@ -518,6 +564,16 @@ export class HotelVoucherService {
     if (!dto.cancel_all && routeIds.length === 0 && hotelDetailsIds.length === 0) {
       throw new BadRequestException('Provide route_ids or hotel_details_ids, or set cancel_all=true');
     }
+
+    this.logger.log(
+      `[HOTEL_CANCEL_REQUEST_RECEIVED] ${JSON.stringify({
+        itineraryPlanId,
+        reason,
+        routeIds,
+        hotelDetailsIds,
+        cancelAll: !!dto.cancel_all,
+      })}`,
+    );
 
     const where: any = {
       itinerary_plan_id: itineraryPlanId,
@@ -549,6 +605,15 @@ export class HotelVoucherService {
     );
     const targetRouteIds = Array.from(
       new Set(targetHotels.map((h: any) => Number(h.itinerary_route_id)).filter((id) => id > 0)),
+    );
+
+    this.logger.log(
+      `[HOTEL_CANCEL_TARGET_ROWS_RESOLVED] ${JSON.stringify({
+        itineraryPlanId,
+        targetRouteIds,
+        targetHotelDetailIds,
+        targetHotels,
+      })}`,
     );
 
     const providerResults: Record<string, any> = {
