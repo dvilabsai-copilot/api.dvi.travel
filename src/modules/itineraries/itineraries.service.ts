@@ -397,18 +397,119 @@ export class ItinerariesService {
   }
 
   private inferMealPlanFromInclusions(items: string[]): string | null {
-    const haystack = items.join(' ').toLowerCase();
-    if (!haystack) return null;
+  const haystack = items.join(' ').toLowerCase();
+  if (!haystack) return null;
 
-    if (haystack.includes('full board')) return 'Full Board';
-    if (haystack.includes('half board')) return 'Half Board';
-    if (haystack.includes('room only') || haystack.includes('no meals')) return 'Room Only';
-    if (haystack.includes('breakfast')) return 'Breakfast Included';
+  if (haystack.includes('full board')) return 'Full Board';
+  if (haystack.includes('half board')) return 'Half Board';
+  if (haystack.includes('room only') || haystack.includes('no meals')) return 'Room Only';
+  if (haystack.includes('breakfast')) return 'Breakfast Included';
 
-    return null;
+  return null;
+}
+
+private normalizePlanMealSelection(plan: any): {
+  code: '__ALL__' | 'EP' | 'CP' | 'MAP' | 'AP';
+  breakfast: number;
+  lunch: number;
+  dinner: number;
+} {
+  const rawMeal = String(
+    plan?.meal_plan_code ??
+      plan?.mealPlanCode ??
+      plan?.meal_plan ??
+      plan?.mealPlan ??
+      plan?.preferred_meal_plan ??
+      '',
+  )
+    .trim()
+    .toUpperCase();
+
+  const breakfast = Number(plan?.meal_plan_breakfast ?? 0) ? 1 : 0;
+  const lunch = Number(plan?.meal_plan_lunch ?? 0) ? 1 : 0;
+  const dinner = Number(plan?.meal_plan_dinner ?? 0) ? 1 : 0;
+
+  if (
+  rawMeal === '__ALL__' ||
+  rawMeal === 'ALL' ||
+  rawMeal === 'ALL_MEAL_PLANS' ||
+  rawMeal === 'ALL MEAL PLANS'
+) {
+  return { code: '__ALL__', breakfast: 0, lunch: 0, dinner: 0 };
+}
+
+if (rawMeal === 'AP') {
+  return { code: 'AP', breakfast: 1, lunch: 1, dinner: 1 };
+}
+
+  if (rawMeal === 'MAP') {
+    return { code: 'MAP', breakfast: 1, lunch: 0, dinner: 1 };
   }
 
-  async createPlan(
+  if (rawMeal === 'CP') {
+    return { code: 'CP', breakfast: 1, lunch: 0, dinner: 0 };
+  }
+
+if (rawMeal === 'EP') {
+  return { code: 'EP', breakfast: 0, lunch: 0, dinner: 0 };
+}
+
+  if (breakfast && lunch && dinner) {
+    return { code: 'AP', breakfast: 1, lunch: 1, dinner: 1 };
+  }
+
+  if ((breakfast && lunch) || (breakfast && dinner) || (lunch && dinner)) {
+    return { code: 'MAP', breakfast, lunch, dinner };
+  }
+
+  if (breakfast) {
+    return { code: 'CP', breakfast: 1, lunch: 0, dinner: 0 };
+  }
+
+  return { code: 'EP', breakfast: 0, lunch: 0, dinner: 0 };
+}
+
+private async syncPlanMealSelectionToSavedHotelRooms(
+  tx: any,
+  planId: number,
+  plan: any,
+): Promise<void> {
+  const meal = this.normalizePlanMealSelection(plan);
+  const now = new Date();
+
+  // IMPORTANT:
+  // Do not update meal_plan_code here unless your Prisma schema + DB table
+  // definitely contain that column. Missing column/model field will break Save Itinerary.
+  await tx.dvi_itinerary_plan_details.update({
+  where: {
+    itinerary_plan_ID: Number(planId),
+  },
+  data: {
+    // Store null for All Meal Plans.
+    // This clears old AP/CP/MAP/EP value and passes DTO validation because frontend sends null.
+    meal_plan_code: meal.code === '__ALL__' ? null : meal.code,
+    meal_plan_breakfast: meal.breakfast,
+    meal_plan_lunch: meal.lunch,
+    meal_plan_dinner: meal.dinner,
+    updatedon: now,
+  } as any,
+});
+
+  await tx.dvi_itinerary_plan_hotel_room_details.updateMany({
+    where: {
+      itinerary_plan_id: Number(planId),
+      deleted: 0,
+    },
+    data: {
+      breakfast_required: meal.breakfast,
+      lunch_required: meal.lunch,
+      dinner_required: meal.dinner,
+      updatedon: now,
+    },
+  });
+}
+
+async createPlan(
     dto: CreateItineraryDto,
     req: any,
     shouldOptimizeRoute: boolean = false,
@@ -518,12 +619,15 @@ export class ItinerariesService {
     const result = await this.prisma.$transaction(async (tx) => {
       const opStart = Date.now();
       const planId = await this.planEngine.upsertPlanHeader(
-        dto.plan,
-        dto.travellers,
-        tx,
-        userId,
-      );
-      console.log('[PERF] upsertPlanHeader:', Date.now() - opStart, 'ms');
+  dto.plan,
+  dto.travellers,
+  tx,
+  userId,
+);
+
+await this.syncPlanMealSelectionToSavedHotelRooms(tx, planId, dto.plan);
+
+console.log('[PERF] upsertPlanHeader:', Date.now() - opStart, 'ms');
 
       // ⚡ PRESERVE HOTSPOT CONTEXT: Fetch existing hotspots and their route dates BEFORE routes are deleted
       // This ensures that when we rebuild hotspots later, we know which day each "tombstone" (deleted hotspot) belonged to.
@@ -662,18 +766,21 @@ export class ItinerariesService {
       console.log('[PERF] rebuildTravellers:', Date.now() - opStart2, 'ms');
 
       if (
-        dto.plan.itinerary_preference === 1 ||
-        dto.plan.itinerary_preference === 3
-      ) {
-        opStart2 = Date.now();
-        await this.hotelEngine.rebuildPlanHotels(
-          planId,
-          tx,
-          userId,
-          
-        );
-        console.log('[PERF] rebuildPlanHotels:', Date.now() - opStart2, 'ms');
-      }
+  dto.plan.itinerary_preference === 1 ||
+  dto.plan.itinerary_preference === 3
+) {
+  opStart2 = Date.now();
+  await this.hotelEngine.rebuildPlanHotels(
+    planId,
+    tx,
+    userId,
+    
+  );
+
+  await this.syncPlanMealSelectionToSavedHotelRooms(tx, planId, dto.plan);
+
+  console.log('[PERF] rebuildPlanHotels:', Date.now() - opStart2, 'ms');
+}
 
       opStart2 = Date.now();
       await this.hotspotEngine.rebuildRouteHotspots(tx, planId, existingHotspotsWithDates);
@@ -19843,7 +19950,154 @@ export class ItinerariesService {
       throw new NotFoundException('Route not found');
     }
 
+    const hotelMaster = await this.prisma.dvi_hotel.findFirst({
+      where: {
+        hotel_id: params.hotel_id,
+        status: 1,
+        OR: [{ deleted: false }, { deleted: null }],
+      } as any,
+      select: {
+        hotel_id: true,
+        hotel_name: true,
+        axisrooms_enabled: true,
+      } as any,
+    });
+
+    const isAxisRoomsHotel = Number((hotelMaster as any)?.axisrooms_enabled || 0) === 1;
+
+    if (isAxisRoomsHotel) {
+      const dateOnly = route.itinerary_route_date;
+
+      const availabilityRows = await this.prisma.dvi_hotel_room_availability.findMany({
+        where: {
+          hotel_id: params.hotel_id,
+          start_date: { lte: dateOnly },
+          end_date: { gte: dateOnly },
+          free: { gt: 0 },
+        } as any,
+        select: {
+          room_id: true,
+        },
+      });
+
+      const availableRoomIds = Array.from(
+        new Set(
+          availabilityRows
+            .map((row: any) => Number(row.room_id || 0))
+            .filter((id) => id > 0)
+        )
+      );
+
+      const ratePlanRows = await this.prisma.dvi_hotel_room_rate_plan.findMany({
+        where: {
+          hotel_id: params.hotel_id,
+          room_id: { in: availableRoomIds },
+          axisrooms_room_id: { not: null },
+          status: 1,
+          deleted: 0,
+        } as any,
+        select: {
+          room_id: true,
+        },
+      });
+
+      const ratePlanRoomIds = Array.from(
+        new Set(
+          ratePlanRows
+            .map((row: any) => Number(row.room_id || 0))
+            .filter((id) => id > 0)
+        )
+      );
+
+      const roomRows = await this.prisma.dvi_hotel_rooms.findMany({
+        where: {
+          room_ID: { in: ratePlanRoomIds },
+          deleted: 0,
+        } as any,
+        select: {
+          room_ID: true,
+          room_title: true,
+          room_type_id: true,
+        } as any,
+        orderBy: {
+          room_title: 'asc',
+        } as any,
+      });
+
+      const availableRoomTypes = roomRows.map((room: any) => ({
+        room_type_id: Number(room.room_ID),
+        room_type_title: String(room.room_title || 'Room'),
+      }));
+
+      if (availableRoomTypes.length === 0) {
+        throw new NotFoundException('No AxisRooms room types available for this hotel');
+      }
+
+      const existingRooms = await this.prisma.dvi_itinerary_plan_hotel_room_details.findMany({
+        where: {
+          itinerary_plan_id: params.itinerary_plan_id,
+          itinerary_route_id: params.itinerary_route_id,
+          itinerary_route_date: route.itinerary_route_date,
+          hotel_id: params.hotel_id,
+          group_type: params.group_type,
+          deleted: 0,
+        } as any,
+        orderBy: {
+          itinerary_plan_hotel_room_details_ID: 'asc',
+        },
+      });
+
+      const rooms =
+        existingRooms.length > 0
+          ? existingRooms.map((room: any, index: number) => {
+              const selectedRoomType = availableRoomTypes.find(
+                (rt) => Number(rt.room_type_id) === Number(room.room_type_id)
+              );
+
+              return {
+                room_number: index + 1,
+                itinerary_plan_hotel_room_details_ID:
+                  room.itinerary_plan_hotel_room_details_ID,
+                room_type_id: Number(room.room_type_id || 0),
+                room_type_title:
+                  selectedRoomType?.room_type_title ||
+                  String(room.room_type_id || ''),
+                room_qty: Number(room.room_qty || 1),
+
+                all_meal_plan:
+                  Number(room.breakfast_required || 0) &&
+                  Number(room.lunch_required || 0) &&
+                  Number(room.dinner_required || 0)
+                    ? 1
+                    : 0,
+                breakfast_meal_plan: Number(room.breakfast_required || 0),
+                lunch_meal_plan: Number(room.lunch_required || 0),
+                dinner_meal_plan: Number(room.dinner_required || 0),
+
+                available_room_types: availableRoomTypes,
+              };
+            })
+          : Array.from({ length: Number(plan.preferred_room_count || 1) || 1 }).map(
+              (_, index) => ({
+                room_number: index + 1,
+                room_type_id: null,
+                room_type_title: '',
+                room_qty: 1,
+                available_room_types: availableRoomTypes,
+              })
+            );
+
+      return {
+        itinerary_plan_hotel_details_ID: params.itinerary_plan_hotel_details_ID,
+        hotel_id: params.hotel_id,
+        hotel_name: String((hotelMaster as any)?.hotel_name || ''),
+        preferred_room_count: Number(plan.preferred_room_count || 1) || 1,
+        rooms,
+      };
+    }
+
     // Fetch room details from TBO API
+
     const tboRoomDetails = await this.hotelDetailsTboService.getHotelRoomDetailsFromTbo(
       plan.itinerary_quote_ID,
       params.itinerary_route_id,
@@ -19969,89 +20223,251 @@ export class ItinerariesService {
       throw new NotFoundException('Itinerary plan details not found');
     }
 
-    // Fetch room details from TBO to get pricing and room information
-    const tboRoomDetails = await this.hotelDetailsTboService.getHotelRoomDetailsFromTbo(
-      planDetails.itinerary_quote_ID,
-      params.itinerary_route_id,
-    );
+    const hotelMasterForRoomUpdate = await (this.prisma as any).dvi_hotel.findFirst({
+  where: {
+    hotel_id: params.hotel_id,
+    status: 1,
+    OR: [{ deleted: false }, { deleted: null }, { deleted: 0 }],
+  },
+  select: {
+    hotel_id: true,
+    hotel_name: true,
+    axisrooms_enabled: true,
+  },
+});
 
-    // Find the specific hotel and room type in TBO results
-    const hotelRoom = tboRoomDetails.rooms.find(
-      (room) => room.hotelId === params.hotel_id && room.groupType === params.group_type
-    );
+const isAxisRoomsHotelForRoomUpdate =
+  Number(hotelMasterForRoomUpdate?.axisrooms_enabled || 0) === 1;
 
-    if (!hotelRoom) {
-      throw new NotFoundException('Hotel not found in TBO results');
-    }
+if (isAxisRoomsHotelForRoomUpdate) {
+  const selectedRoom = await (this.prisma as any).dvi_hotel_rooms.findFirst({
+    where: {
+      room_ID: Number(params.room_type_id || 0),
+      deleted: 0,
+    },
+    select: {
+      room_ID: true,
+      room_title: true,
+      room_type_id: true,
+    },
+  });
 
-    // Find the selected room type from TBO data
-    const selectedRoomType = hotelRoom.availableRoomTypes?.find(
-      (rt) => rt.roomTypeId === params.room_type_id
-    );
-
-    if (!selectedRoomType) {
-      throw new NotFoundException('Selected room type not available from TBO');
-    }
-
-    // Use TBO pricing data
-    const roomRate = hotelRoom.pricePerNight || 0;
-    const now = new Date();
-
-    // Check if record already exists
-    if (params.itinerary_plan_hotel_room_details_ID) {
-      // Update existing record
-      await this.prisma.dvi_itinerary_plan_hotel_room_details.update({
-        where: {
-          itinerary_plan_hotel_room_details_ID: params.itinerary_plan_hotel_room_details_ID,
-        },
-        data: {
-          room_type_id: params.room_type_id,
-          room_id: params.room_type_id, // Use room_type_id as room_id for TBO rooms
-          room_qty: params.room_qty || 1,
-          room_rate: roomRate,
-          breakfast_required: params.breakfast_meal_plan || params.all_meal_plan || 0,
-          lunch_required: params.lunch_meal_plan || params.all_meal_plan || 0,
-          dinner_required: params.dinner_meal_plan || params.all_meal_plan || 0,
-          updatedon: now,
-        },
-      });
-    } else {
-      // Create new record
-      await this.prisma.dvi_itinerary_plan_hotel_room_details.create({
-        data: {
-          itinerary_plan_hotel_details_id: params.itinerary_plan_hotel_details_ID,
-          group_type: params.group_type,
-          itinerary_plan_id: params.itinerary_plan_id,
-          itinerary_route_id: params.itinerary_route_id,
-          itinerary_route_date: route.itinerary_route_date,
-          hotel_id: params.hotel_id,
-          room_type_id: params.room_type_id,
-          room_id: params.room_type_id, // Use room_type_id as room_id for TBO rooms
-          room_qty: params.room_qty || 1,
-          room_rate: roomRate,
-          gst_type: 0, // TBO handles GST internally
-          gst_percentage: 0,
-          breakfast_required: params.breakfast_meal_plan || params.all_meal_plan || 0,
-          lunch_required: params.lunch_meal_plan || params.all_meal_plan || 0,
-          dinner_required: params.dinner_meal_plan || params.all_meal_plan || 0,
-          createdon: now,
-          updatedon: now,
-          status: 1,
-          deleted: 0,
-        },
-      });
-    }
-
-    return { 
-      success: true, 
-      message: 'Room category updated successfully',
-      roomTypeName: selectedRoomType.roomTypeTitle,
-    };
+  if (!selectedRoom) {
+    throw new NotFoundException('Selected AxisRooms room type not found');
   }
 
-  /**
-   * 🚀 ROUTE OPTIMIZATION: Reorder routes using TSP algorithm
-    * - For small candidate sets (<=8 movable stops): Exhaustive search
+  const availabilityRow = await (this.prisma as any).dvi_hotel_room_availability.findFirst({
+    where: {
+      hotel_id: params.hotel_id,
+      room_id: Number(params.room_type_id || 0),
+      start_date: { lte: route.itinerary_route_date },
+      end_date: { gte: route.itinerary_route_date },
+      free: { gt: 0 },
+    },
+    orderBy: {
+      start_date: 'desc',
+    },
+  });
+
+  if (!availabilityRow) {
+    throw new NotFoundException('Selected AxisRooms room type is not available for this route date');
+  }
+
+  const selectedRatePlan = await (this.prisma as any).dvi_hotel_room_rate_plan.findFirst({
+    where: {
+      hotel_id: params.hotel_id,
+      room_id: Number(params.room_type_id || 0),
+      axisrooms_room_id: { not: null },
+      status: 1,
+      deleted: 0,
+    },
+  });
+
+  if (!selectedRatePlan) {
+    throw new NotFoundException('Selected AxisRooms room type does not have an active AxisRooms rate plan');
+  }
+
+  const existingRoom = params.itinerary_plan_hotel_room_details_ID
+    ? await (this.prisma as any).dvi_itinerary_plan_hotel_room_details.findFirst({
+        where: {
+          itinerary_plan_hotel_room_details_ID:
+            params.itinerary_plan_hotel_room_details_ID,
+          deleted: 0,
+        },
+      })
+    : null;
+
+  const firstFiniteAmount = (...values: unknown[]): number => {
+    for (const value of values) {
+      const parsed = Number(value ?? 0);
+      if (Number.isFinite(parsed) && parsed > 0) {
+        return parsed;
+      }
+    }
+    return 0;
+  };
+
+  // AxisRooms room-rate table names differ across environments, so use the
+  // first available positive amount and otherwise preserve the existing DB rate.
+  const roomRate = firstFiniteAmount(
+    selectedRatePlan.room_rate,
+    selectedRatePlan.rate,
+    selectedRatePlan.base_rate,
+    selectedRatePlan.base_price,
+    selectedRatePlan.amount,
+    selectedRatePlan.price,
+    selectedRatePlan.single_occupancy_rate,
+    selectedRatePlan.double_occupancy_rate,
+    selectedRatePlan.extra_adult_rate,
+    availabilityRow.room_rate,
+    availabilityRow.rate,
+    availabilityRow.price,
+    existingRoom?.room_rate,
+  );
+
+  const now = new Date();
+  const breakfastRequired = Number(params.breakfast_meal_plan || params.all_meal_plan || 0) ? 1 : 0;
+  const lunchRequired = Number(params.lunch_meal_plan || params.all_meal_plan || 0) ? 1 : 0;
+  const dinnerRequired = Number(params.dinner_meal_plan || params.all_meal_plan || 0) ? 1 : 0;
+
+  const roomPayload = {
+    room_type_id: Number(params.room_type_id || 0),
+    room_id: Number(params.room_type_id || 0),
+    room_qty: Number(params.room_qty || 1) || 1,
+    room_rate: roomRate,
+    breakfast_required: breakfastRequired,
+    lunch_required: lunchRequired,
+    dinner_required: dinnerRequired,
+    updatedon: now,
+  };
+
+  if (params.itinerary_plan_hotel_room_details_ID) {
+    await (this.prisma as any).dvi_itinerary_plan_hotel_room_details.update({
+      where: {
+        itinerary_plan_hotel_room_details_ID:
+          params.itinerary_plan_hotel_room_details_ID,
+      },
+      data: roomPayload,
+    });
+  } else {
+    await (this.prisma as any).dvi_itinerary_plan_hotel_room_details.create({
+      data: {
+        itinerary_plan_hotel_details_id: params.itinerary_plan_hotel_details_ID,
+        group_type: params.group_type,
+        itinerary_plan_id: params.itinerary_plan_id,
+        itinerary_route_id: params.itinerary_route_id,
+        itinerary_route_date: route.itinerary_route_date,
+        hotel_id: params.hotel_id,
+        ...roomPayload,
+        gst_type: 0,
+        gst_percentage: 0,
+        createdon: now,
+        status: 1,
+        deleted: 0,
+      },
+    });
+  }
+
+ try {
+  (this.hotelDetailsTboService as any).clearHotelCacheForQuote?.(
+    String(planDetails.itinerary_quote_ID || ''),
+  );
+} catch {
+  // Cache clearing is best-effort only.
+}
+
+return {
+  success: true,
+  message: 'AxisRooms room category updated successfully',
+  roomTypeName: String(selectedRoom.room_title || 'Room'),
+};
+}
+
+// Non-AxisRooms / TBO fallback.
+// Keep this after the AxisRooms return so TBO hotels continue to work exactly as before.
+const tboRoomDetails = await this.hotelDetailsTboService.getHotelRoomDetailsFromTbo(
+  planDetails.itinerary_quote_ID,
+  params.itinerary_route_id,
+);
+
+const hotelRoom = tboRoomDetails.rooms.find(
+  (room) =>
+    Number(room.hotelId) === Number(params.hotel_id) &&
+    Number(room.groupType) === Number(params.group_type),
+);
+
+if (!hotelRoom) {
+  throw new NotFoundException('Hotel not found in TBO results');
+}
+
+const selectedRoomType = hotelRoom.availableRoomTypes?.find(
+  (rt) => Number(rt.roomTypeId) === Number(params.room_type_id),
+);
+
+if (!selectedRoomType) {
+  throw new NotFoundException('Selected room type not available from TBO');
+}
+
+const roomRate = Number(hotelRoom.pricePerNight || 0);
+const now = new Date();
+
+const breakfastRequired = Number(params.breakfast_meal_plan || params.all_meal_plan || 0) ? 1 : 0;
+const lunchRequired = Number(params.lunch_meal_plan || params.all_meal_plan || 0) ? 1 : 0;
+const dinnerRequired = Number(params.dinner_meal_plan || params.all_meal_plan || 0) ? 1 : 0;
+
+const tboRoomPayload = {
+  room_type_id: Number(params.room_type_id || 0),
+  room_id: Number(params.room_type_id || 0),
+  room_qty: Number(params.room_qty || 1) || 1,
+  room_rate: roomRate,
+  breakfast_required: breakfastRequired,
+  lunch_required: lunchRequired,
+  dinner_required: dinnerRequired,
+  updatedon: now,
+};
+
+if (params.itinerary_plan_hotel_room_details_ID) {
+  await this.prisma.dvi_itinerary_plan_hotel_room_details.update({
+    where: {
+      itinerary_plan_hotel_room_details_ID:
+        params.itinerary_plan_hotel_room_details_ID,
+    },
+    data: tboRoomPayload,
+  });
+} else {
+  await this.prisma.dvi_itinerary_plan_hotel_room_details.create({
+    data: {
+      itinerary_plan_hotel_details_id: params.itinerary_plan_hotel_details_ID,
+      group_type: params.group_type,
+      itinerary_plan_id: params.itinerary_plan_id,
+      itinerary_route_id: params.itinerary_route_id,
+      itinerary_route_date: route.itinerary_route_date,
+      hotel_id: params.hotel_id,
+      ...tboRoomPayload,
+      gst_type: 0,
+      gst_percentage: 0,
+      createdon: now,
+      status: 1,
+      deleted: 0,
+    },
+  });
+}
+
+try {
+  (this.hotelDetailsTboService as any).clearHotelCacheForQuote?.(
+    String(planDetails.itinerary_quote_ID || ''),
+  );
+} catch {
+  // Cache clearing is best-effort only.
+}
+
+return {
+  success: true,
+  message: 'Room category updated successfully',
+  roomTypeName: selectedRoomType.roomTypeTitle || 'Room',
+};
+  }
+    /* - For small candidate sets (<=8 movable stops): Exhaustive search
     * - For larger sets: Nearest Neighbor + Simulated Annealing
    * 
    * This finds the optimal or near-optimal route that minimizes total travel distance/time

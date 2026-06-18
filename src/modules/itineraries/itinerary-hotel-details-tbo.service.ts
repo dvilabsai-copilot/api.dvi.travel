@@ -1705,13 +1705,29 @@ export class ItineraryHotelDetailsTboService {
         }
       }
               const mealPlanByRatePlan = new Map<string, string>();
-              for (const rp of activeRatePlanRows as any[]) {
-                const rateplanId = String((rp as any).rateplan_id || '').trim();
-                const mealPlanDesc = String((rp as any).meal_plan_description || '').trim();
-                if (rateplanId && mealPlanDesc && !mealPlanByRatePlan.has(rateplanId)) {
-                  mealPlanByRatePlan.set(rateplanId, mealPlanDesc);
-                }
-              }
+
+for (const rp of activeRatePlanRows as any[]) {
+  const rateplanId = String((rp as any).rateplan_id || '').trim();
+
+  const mealText = [
+    (rp as any).rateplan_name,
+    (rp as any).rate_plan_name,
+    (rp as any).RatePlanName,
+    (rp as any).meal_plan_description,
+    (rp as any).mealPlanDescription,
+    (rp as any).meal_plan,
+    (rp as any).mealPlan,
+    (rp as any).plan_name,
+  ]
+    .map((value) => String(value || '').trim())
+    .filter(Boolean)
+    .join(' ')
+    .trim();
+
+  if (rateplanId && mealText && !mealPlanByRatePlan.has(rateplanId)) {
+    mealPlanByRatePlan.set(rateplanId, mealText);
+  }
+}
               const validRatePlanKeySet = new Set<string>(
         activeRatePlanRows.map(
           (rp: any) => `${Number((rp as any).hotel_id)}|${Number((rp as any).room_id)}|${String((rp as any).rateplan_id || '')}`,
@@ -1798,41 +1814,117 @@ export class ItineraryHotelDetailsTboService {
           continue; // No valid rates found for any meal plan
         }
 
-        const preferredCode = String(preferredMealPlanCode || '').trim().toUpperCase();
-        const preferredDef = preferredCode
-          ? HOTEL_RATE_PLAN_BY_CODE.get(preferredCode as any)
-          : undefined;
-        const preferredRatePlanCandidates = [
-          String(preferredDef?.defaultRateplanId || '').trim(),
-          String(preferredDef?.externalRateplanId || '').trim(),
-        ].filter((x) => !!x);
+const preferredCode = String(preferredMealPlanCode || '').trim().toUpperCase();
 
-        let selectedRateplanId = '';
-        let selectedRate = Number.POSITIVE_INFINITY;
-        let selectedRoomId = 0;
+const normalizeAxisRoomsMealCode = (
+  text: unknown,
+): '' | 'CP' | 'EP' | 'MAP' | 'AP' => {
+  const upper = String(text || '').trim().toUpperCase();
+  if (!upper) return '';
 
-        for (const candidate of preferredRatePlanCandidates) {
-          const hit = ratesByPlan.get(candidate);
-          if (hit) {
-            selectedRateplanId = candidate;
-            selectedRate = Number(hit.rate);
-            selectedRoomId = Number(hit.roomId);
-            break;
-          }
-        }
+  if (
+    upper === 'AP' ||
+    upper.includes('AMERICAN PLAN') ||
+    upper.includes('ALL MEAL') ||
+    upper.includes('FULL BOARD') ||
+    upper.includes('FULLBOARD') ||
+    (upper.includes('BREAKFAST') &&
+      upper.includes('LUNCH') &&
+      upper.includes('DINNER'))
+  ) {
+    return 'AP';
+  }
 
-        // Fallback: if preferred meal plan isn't present for this hotel, pick the lowest available rate plan.
-        if (!selectedRateplanId) {
-          for (const [rpid, hit] of ratesByPlan.entries()) {
-            const rateVal = Number(hit.rate);
-            if (Number.isFinite(rateVal) && rateVal > 0 && rateVal < selectedRate) {
-              selectedRateplanId = rpid;
-              selectedRate = rateVal;
-              selectedRoomId = Number(hit.roomId);
-            }
-          }
-        }
+  if (
+    upper === 'MAP' ||
+    upper.includes('MODIFIED AMERICAN') ||
+    upper.includes('HALF BOARD') ||
+    upper.includes('HALFBOARD') ||
+    upper.includes('BREAKFAST + DINNER') ||
+    upper.includes('BREAKFAST + LUNCH')
+  ) {
+    return 'MAP';
+  }
 
+  if (
+    upper === 'CP' ||
+    upper.includes('CONTINENTAL') ||
+    upper.includes('BREAKFAST')
+  ) {
+    return 'CP';
+  }
+
+  if (
+    upper === 'EP' ||
+    upper.includes('EUROPEAN') ||
+    upper.includes('ROOM ONLY') ||
+    upper.includes('NO MEAL')
+  ) {
+    return 'EP';
+  }
+
+  return '';
+};
+
+const getAxisRoomsMealText = (rateplanId: string): string =>
+  String(mealPlanByRatePlan.get(rateplanId) || '').trim();
+
+const getAxisRoomsMealCode = (
+  rateplanId: string,
+): '' | 'CP' | 'EP' | 'MAP' | 'AP' =>
+  normalizeAxisRoomsMealCode(getAxisRoomsMealText(rateplanId));
+
+let selectedRateplanId = '';
+let selectedRate = Number.POSITIVE_INFINITY;
+let selectedRoomId = 0;
+
+const candidateRatePlans = Array.from(ratesByPlan.entries())
+  .map(([rateplanId, hit]) => ({
+    rateplanId,
+    hit,
+    rate: Number(hit.rate || 0),
+    mealCode: getAxisRoomsMealCode(rateplanId),
+    mealText: getAxisRoomsMealText(rateplanId),
+  }))
+  .filter((item) => Number.isFinite(item.rate) && item.rate > 0);
+
+// If user selected CP/EP/MAP/AP, pick that exact AxisRooms meal plan.
+// If user selected All Meal Plans, prefer richer meal plans first instead of blindly picking cheapest EP.
+const matchingPreferredRatePlans = preferredCode
+  ? candidateRatePlans.filter((item) => item.mealCode === preferredCode)
+  : candidateRatePlans;
+
+const finalRatePlanCandidates =
+  matchingPreferredRatePlans.length > 0
+    ? matchingPreferredRatePlans
+    : candidateRatePlans;
+
+const mealPriority: Record<string, number> = {
+  AP: 1,
+  MAP: 2,
+  CP: 3,
+  EP: 4,
+  '': 5,
+};
+
+finalRatePlanCandidates.sort((a, b) => {
+  if (!preferredCode) {
+    const mealDiff =
+      (mealPriority[a.mealCode] ?? 5) - (mealPriority[b.mealCode] ?? 5);
+
+    if (mealDiff !== 0) return mealDiff;
+  }
+
+  return a.rate - b.rate;
+});
+
+const selectedCandidate = finalRatePlanCandidates[0];
+
+if (selectedCandidate) {
+  selectedRateplanId = selectedCandidate.rateplanId;
+  selectedRate = selectedCandidate.rate;
+  selectedRoomId = Number(selectedCandidate.hit.roomId || 0);
+}
         if (!selectedRateplanId || !Number.isFinite(selectedRate) || selectedRate <= 0 || !selectedRoomId) {
           continue;
         }
@@ -1850,7 +1942,76 @@ export class ItineraryHotelDetailsTboService {
         const inclusions = Array.from(new Set(rateMeta.inclusions));
         const cancelPolicyText = String((hotel as any).hotel_cancel_policy || '').trim();
 
-        const selectedMealPlan = mealPlanByRatePlan.get(selectedRateplanId) || '-';
+        const selectedMealPlanText = String(
+  mealPlanByRatePlan.get(selectedRateplanId) || ''
+).trim();
+
+const selectedMealPlanUpper = selectedMealPlanText.toUpperCase();
+
+const selectedMealCode =
+  selectedCandidate?.mealCode ||
+  normalizeAxisRoomsMealCode(selectedMealPlanText);
+
+const isAllMealPlanPreference = !preferredCode;
+
+const selectedMealPlan =
+  isAllMealPlanPreference ||
+  selectedMealPlanUpper.includes('ALL MEAL') ||
+  selectedMealPlanUpper.includes('ALL MEALS')
+    ? 'ALL_MEAL_PLANS'
+    : selectedMealCode ||
+      selectedMealPlanText ||
+      '';
+  const axisroomsRoomTypes = Array.from(roomSet)
+  .map((roomId) => {
+    const roomRates = Array.from(ratesByPlan.entries())
+      .filter(([, hit]) => Number(hit.roomId) === Number(roomId))
+      .map(([rateplanId, hit]) => ({
+        rateplanId,
+        rate: Number(hit.rate || 0),
+        mealCode: getAxisRoomsMealCode(rateplanId),
+      }))
+      .filter((item) => Number.isFinite(item.rate) && item.rate > 0)
+      .sort((a, b) => {
+        if (preferredCode) {
+          const aPreferred = a.mealCode === preferredCode ? 0 : 1;
+          const bPreferred = b.mealCode === preferredCode ? 0 : 1;
+          if (aPreferred !== bPreferred) return aPreferred - bPreferred;
+        } else {
+          const mealDiff =
+            (mealPriority[a.mealCode] ?? 5) - (mealPriority[b.mealCode] ?? 5);
+
+          if (mealDiff !== 0) return mealDiff;
+        }
+
+        return a.rate - b.rate;
+      });
+
+    const bestRoomRate = roomRates[0];
+    const roomTitle = roomTitleMap.get(Number(roomId)) || 'Room';
+
+return {
+  roomTypeId: Number(roomId),
+  roomTypeTitle: roomTitle,
+  roomTypeName: roomTitle,
+  roomCode: String(roomId),
+  roomName: roomTitle,
+  bedType: '',
+  capacity: 0,
+  price: Number(bestRoomRate?.rate || rate || 0),
+  cancellationPolicy: cancelPolicyText,
+};
+  })
+  .filter((room) => Number(room.price || 0) > 0);
+
+const orderedAxisroomsRoomTypes = [
+  ...axisroomsRoomTypes.filter(
+    (room) => String(room.roomCode) === String(selectedRoomId)
+  ),
+  ...axisroomsRoomTypes.filter(
+    (room) => String(room.roomCode) !== String(selectedRoomId)
+  ),
+];
 
         axisroomsRouteHotels.push({
           provider: 'axisrooms',
@@ -1867,18 +2028,24 @@ export class ItineraryHotelDetailsTboService {
           images: [],
           price: Number(rate),
           currency: 'INR',
-          roomTypes: [
-            {
-              roomCode: String(selectedRoomId),
-              roomName,
-              bedType: '',
-              capacity: 0,
-              price: Number(rate),
-              cancellationPolicy: cancelPolicyText,
-            },
-          ],
-          roomType: roomName,
-          mealPlan: selectedMealPlan,
+          roomTypes:
+  orderedAxisroomsRoomTypes.length > 0
+    ? orderedAxisroomsRoomTypes
+    : [
+        {
+  roomTypeId: Number(selectedRoomId),
+  roomTypeTitle: roomName,
+  roomTypeName: roomName,
+  roomCode: String(selectedRoomId),
+  roomName,
+  bedType: '',
+  capacity: 0,
+  price: Number(rate),
+  cancellationPolicy: cancelPolicyText,
+}
+      ],
+roomType: roomName,
+mealPlan: selectedMealPlan,
           searchReference: `AX-${hid}-${dateStamp}`,
           expiresAt: new Date(Date.now() + 15 * 60 * 1000),
         });
@@ -2281,17 +2448,125 @@ export class ItineraryHotelDetailsTboService {
     routes: any[],
     noOfNights: number,
   ): Promise<ItineraryHotelDetailsResponseDto> {
-    const plan = await this.prisma.dvi_itinerary_plan_details.findFirst({
-      where: { itinerary_plan_ID: planId, deleted: 0 },
-      select: { hotel_rates_visibility: true },
-    });
+const plan = await this.prisma.dvi_itinerary_plan_details.findFirst({
+  where: { itinerary_plan_ID: planId, deleted: 0 },
+  select: {
+    hotel_rates_visibility: true,
+    meal_plan_code: true,
+    meal_plan_breakfast: true,
+    meal_plan_lunch: true,
+    meal_plan_dinner: true,
+  } as any,
+});
 
+const planBreakfast = Number((plan as any)?.meal_plan_breakfast || 0) ? 1 : 0;
+const planLunch = Number((plan as any)?.meal_plan_lunch || 0) ? 1 : 0;
+const planDinner = Number((plan as any)?.meal_plan_dinner || 0) ? 1 : 0;
+
+const rawPlanMealPlanCode = String((plan as any)?.meal_plan_code || '')
+  .trim()
+  .toUpperCase();
+
+const hasPlanMealFlags = planBreakfast === 1 || planLunch === 1 || planDinner === 1;
+
+const planMealPlanCode =
+  rawPlanMealPlanCode ||
+  (hasPlanMealFlags
+    ? planBreakfast && planLunch && planDinner
+      ? 'AP'
+      : (planBreakfast && planLunch) ||
+          (planBreakfast && planDinner) ||
+          (planLunch && planDinner)
+        ? 'MAP'
+        : planBreakfast
+          ? 'CP'
+          : 'EP'
+    : '');
+
+const isAllMealPlansSelected = !rawPlanMealPlanCode && !hasPlanMealFlags;
     const hotelRatesVisible =
       Number((plan as any)?.hotel_rates_visibility || 0) === 1 ||
       (plan as any)?.hotel_rates_visibility === true;
 
     // Build hotel tabs (one per package with total cost)
     const marginProviderCodeSet = new Set<string>();
+    const savedRoomDetails = await (this.prisma as any).dvi_itinerary_plan_hotel_room_details.findMany({
+  where: {
+    itinerary_plan_id: planId,
+    deleted: 0,
+  },
+ select: {
+  itinerary_plan_hotel_room_details_ID: true,
+  itinerary_route_id: true,
+  hotel_id: true,
+  group_type: true,
+  room_id: true,
+  room_type_id: true,
+  breakfast_required: true,
+  lunch_required: true,
+  dinner_required: true,
+},
+});
+
+const savedRoomIds = Array.from(
+  new Set(
+    savedRoomDetails
+      .map((row: any) => Number(row.room_id || row.room_type_id || 0))
+      .filter((id: number) => id > 0)
+  )
+);
+
+const savedRoomRows = savedRoomIds.length
+  ? await (this.prisma as any).dvi_hotel_rooms.findMany({
+      where: {
+        room_ID: { in: savedRoomIds },
+        deleted: 0,
+      },
+      select: {
+        room_ID: true,
+        room_title: true,
+      },
+    })
+  : [];
+
+const savedRoomTitleById = new Map<number, string>(
+  savedRoomRows.map((room: any) => [
+    Number(room.room_ID),
+    String(room.room_title || '').trim(),
+  ])
+);
+
+const savedRoomDetailByRouteHotelGroup = new Map<string, any>();
+
+for (const row of savedRoomDetails as any[]) {
+  const key = [
+    Number(row.itinerary_route_id || 0),
+    Number(row.hotel_id || 0),
+    Number(row.group_type || 0),
+  ].join('|');
+
+  savedRoomDetailByRouteHotelGroup.set(key, row);
+}
+
+const resolveMealPlanFromSavedRoom = (savedRoom: any, fallbackMealPlan: string) => {
+  const fallback = String(fallbackMealPlan || '').trim();
+
+  const breakfast = Number(savedRoom?.breakfast_required || 0) ? 1 : 0;
+  const lunch = Number(savedRoom?.lunch_required || 0) ? 1 : 0;
+  const dinner = Number(savedRoom?.dinner_required || 0) ? 1 : 0;
+
+  // 0/0/0 should not become EP.
+  // It can mean "no saved room override", so keep supplier meal plan.
+  if (!breakfast && !lunch && !dinner) {
+    return fallback;
+  }
+
+  if (breakfast && lunch && dinner) return 'AP';
+  if ((breakfast && lunch) || (breakfast && dinner) || (lunch && dinner)) return 'MAP';
+  if (breakfast) return 'CP';
+
+  return fallback;
+};
     for (const pkg of packages) {
       for (const hotel of pkg.hotels || []) {
         const provider = String((hotel as any)?.provider || 'tbo').trim().toLowerCase();
@@ -2669,45 +2944,108 @@ export class ItineraryHotelDetailsTboService {
           normalizedProvider !== 'tbo' || rawBookingCode.includes('!TB!');
         const isPrebookReady = hasSupplierHotel && hasLiveBookingCode;
 
-        hotelRows.push({
-          groupType: pkg.groupType,
-          itineraryRouteId: routeId,
-          day: `Day ${routeIndex + 1} | ${dateLabel}`,
-          destination: destination,
-          hotelId: hotelId,
-          hotelName: displayHotelName,
-          category: hotel.rating ? parseInt(String(hotel.rating)) : 0,
-          roomType: hotel.roomType || '',
-          mealPlan: hotel.mealPlan || '',
-          baseHotelCost,
-          hotelMarginPercentage: this.getHotelMarginPercentage(pricedHotel),
-          totalHotelCost,
-          totalHotelTaxAmount: 0,
-          searchReference: hotel.searchReference,
-          bookingCode: isPrebookReady ? rawBookingCode : undefined,
-          provider: hasSupplierHotel ? normalizedProvider : 'external',
-          isBookable: hasSupplierHotel,
-          externalStay: !hasSupplierHotel,
-          availabilityStatus: hasSupplierHotel ? 'AVAILABLE' : 'NO_SUPPLIER_AVAILABILITY',
-          availabilityMessage: hasSupplierHotel
-            ? null
-            : 'No supplier hotel rooms are available for this city/date. Customer must arrange stay manually.',
-          voucherCancelled: voucherCancelled,
-          itineraryPlanHotelDetailsId: hotelDetailsId || 0,
-          date: dateLabel,
-          hotelDistance,
-          inclusions: hotel.inclusions && hotel.inclusions.length > 0 ? hotel.inclusions : (hotel.facilities && hotel.facilities.length > 0 ? hotel.facilities : undefined),
-          amenities: hotel.amenities && hotel.amenities.length > 0 ? hotel.amenities : undefined,
-          facilities: hotel.facilities && hotel.facilities.length > 0 ? hotel.facilities : undefined,
-          rateConditions: hotel.rateConditions && hotel.rateConditions.length > 0 ? hotel.rateConditions : undefined,
-          cancellationPolicy: Array.isArray((hotel as any).cancellationPolicy)
-            ? (hotel as any).cancellationPolicy
-            : (typeof (hotel as any).cancellationPolicy === 'string' && String((hotel as any).cancellationPolicy).trim()
-              ? [String((hotel as any).cancellationPolicy).trim()]
-              : undefined),
-          supplementSummary: hotel.supplementSummary,
-        });
+        const savedRoomKey = [routeId, hotelId, pkg.groupType].join('|');
+const savedRoomDetail = savedRoomDetailByRouteHotelGroup.get(savedRoomKey);
 
+const savedRoomId = Number(
+  savedRoomDetail?.room_id || savedRoomDetail?.room_type_id || 0
+);
+
+const savedRoomType = savedRoomId > 0
+  ? savedRoomTitleById.get(savedRoomId)
+  : '';
+
+const displayRoomType =
+  savedRoomType ||
+  String(hotel.roomType || '').trim();
+
+const displayMealPlan =
+  normalizedProvider === 'axisrooms'
+    ? String(hotel.mealPlan || planMealPlanCode || '').trim()
+    : resolveMealPlanFromSavedRoom(
+        savedRoomDetail,
+        String(planMealPlanCode || hotel.mealPlan || '').trim()
+      );
+
+const hotelRow = {
+  groupType: pkg.groupType,
+  itineraryRouteId: routeId,
+  day: `Day ${routeIndex + 1} | ${dateLabel}`,
+  destination: destination,
+  hotelId: hotelId,
+  hotelName: displayHotelName,
+  category: hotel.rating ? parseInt(String(hotel.rating)) : 0,
+roomType: displayRoomType,
+mealPlan: displayMealPlan,
+itineraryPlanHotelRoomDetailsId:
+  Number(savedRoomDetail?.itinerary_plan_hotel_room_details_ID || 0) || undefined,
+roomTypeId: savedRoomId || undefined,
+
+roomTypes: hotel.roomTypes || [],
+  availableRoomTypes: (hotel.roomTypes || []).map((rt: any, idx: number) => ({
+    roomTypeId:
+      Number(
+        rt.roomTypeId || rt.roomTypeId === 0
+          ? rt.roomTypeId
+          : rt.roomCode,
+      ) || idx + 1,
+    roomTypeTitle: String(
+      rt.roomTypeTitle || rt.roomTypeName || rt.roomName || 'Room',
+    ),
+    roomTypeName: String(
+      rt.roomTypeName || rt.roomTypeTitle || rt.roomName || 'Room',
+    ),
+    bookingCode: String(rt.bookingCode || rt.roomCode || ''),
+  })),
+
+  baseHotelCost,
+  hotelMarginPercentage: this.getHotelMarginPercentage(pricedHotel),
+  totalHotelCost,
+  totalHotelTaxAmount: 0,
+  searchReference: hotel.searchReference,
+  bookingCode: isPrebookReady ? rawBookingCode : undefined,
+  provider: hasSupplierHotel ? normalizedProvider : 'external',
+  isBookable: hasSupplierHotel,
+  externalStay: !hasSupplierHotel,
+  availabilityStatus: hasSupplierHotel ? 'AVAILABLE' : 'NO_SUPPLIER_AVAILABILITY',
+  availabilityMessage: hasSupplierHotel
+    ? null
+    : 'No supplier hotel rooms are available for this city/date. Customer must arrange stay manually.',
+  voucherCancelled: voucherCancelled,
+  itineraryPlanHotelDetailsId: hotelDetailsId || 0,
+  date: dateLabel,
+  hotelDistance,
+  inclusions:
+    hotel.inclusions && hotel.inclusions.length > 0
+      ? hotel.inclusions
+      : hotel.facilities && hotel.facilities.length > 0
+        ? hotel.facilities
+        : undefined,
+  amenities:
+    hotel.amenities && hotel.amenities.length > 0
+      ? hotel.amenities
+      : undefined,
+  facilities:
+    hotel.facilities && hotel.facilities.length > 0
+      ? hotel.facilities
+      : undefined,
+  rateConditions:
+    hotel.rateConditions && hotel.rateConditions.length > 0
+      ? hotel.rateConditions
+      : undefined,
+  cancellationPolicy: Array.isArray((hotel as any).cancellationPolicy)
+    ? (hotel as any).cancellationPolicy
+    : typeof (hotel as any).cancellationPolicy === 'string' &&
+        String((hotel as any).cancellationPolicy).trim()
+      ? [String((hotel as any).cancellationPolicy).trim()]
+      : undefined,
+  supplementSummary: hotel.supplementSummary,
+} as ItineraryHotelRowDto & {
+  roomTypes: any[];
+  availableRoomTypes: any[];
+};
+
+hotelRows.push(hotelRow);
         // Log HOBSE hotel codes for debugging
         if (hotel.provider === 'HOBSE') {
           this.logger.debug(`âœ… HOBSE Hotel Response: hotelCode="${hotel.hotelCode}", provider="${hotel.provider}"`);
