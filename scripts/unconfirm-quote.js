@@ -56,7 +56,16 @@ async function countRows(tx, PLAN_ID) {
     confirmedHotels: await tx.dvi_confirmed_itinerary_plan_hotel_details.count({
       where: { itinerary_plan_id: PLAN_ID },
     }),
+    hotelVouchers: await tx.dvi_confirmed_itinerary_plan_hotel_voucher_details.count({
+      where: { itinerary_plan_id: PLAN_ID },
+    }),
     confirmedRoutes: await tx.dvi_confirmed_itinerary_route_details.count({
+      where: { itinerary_plan_ID: PLAN_ID },
+    }),
+    vehicleVouchers: await tx.dvi_confirmed_itinerary_plan_vehicle_voucher_details.count({
+      where: { itinerary_plan_id: PLAN_ID },
+    }),
+    staahConfirmations: await tx.staah_hotel_booking_confirmation.count({
       where: { itinerary_plan_ID: PLAN_ID },
     }),
   };
@@ -84,17 +93,7 @@ async function main() {
     });
 
     if (!confirmedPlan) {
-      console.log('[UNCONFIRM] Confirmed plan not found. It may already be unconfirmed. Skipping delete flow.');
-
-      await tx.dvi_itinerary_plan_details.update({
-        where: { itinerary_plan_ID: PLAN_ID },
-        data: {
-          quotation_status: 0,
-          updatedon: new Date(),
-        },
-      });
-
-      return;
+      console.log('[UNCONFIRM] Confirmed plan row not found. Continuing cleanup for leftover confirmation and cancellation references.');
     }
 
     const debitRows = await tx.dvi_cash_wallet.findMany({
@@ -111,7 +110,7 @@ async function main() {
 
     console.log('[UNCONFIRM] Wallet debit rows to remove:', debitRows.length, 'amount:', totalDebit);
 
-    if (totalDebit > 0 && confirmedPlan.agent_id) {
+    if (totalDebit > 0 && confirmedPlan?.agent_id) {
       await tx.dvi_agent.update({
         where: { agent_ID: confirmedPlan.agent_id },
         data: {
@@ -131,6 +130,12 @@ async function main() {
     });
 
     await tx.axisrooms_hotel_booking_confirmation.deleteMany({
+      where: {
+        itinerary_plan_ID: PLAN_ID,
+      },
+    });
+
+    await tx.staah_hotel_booking_confirmation.deleteMany({
       where: {
         itinerary_plan_ID: PLAN_ID,
       },
@@ -176,6 +181,10 @@ async function main() {
       where: { itinerary_plan_id: PLAN_ID },
     });
 
+    await tx.dvi_confirmed_itinerary_plan_hotel_voucher_details.deleteMany({
+      where: { itinerary_plan_id: PLAN_ID },
+    });
+
     await tx.dvi_confirmed_itinerary_via_route_details.deleteMany({
       where: { itinerary_plan_ID: PLAN_ID },
     });
@@ -185,6 +194,10 @@ async function main() {
     });
 
     await tx.dvi_confirmed_itinerary_plan_vehicle_details.deleteMany({
+      where: { itinerary_plan_id: PLAN_ID },
+    });
+
+    await tx.dvi_confirmed_itinerary_plan_vehicle_voucher_details.deleteMany({
       where: { itinerary_plan_id: PLAN_ID },
     });
 
