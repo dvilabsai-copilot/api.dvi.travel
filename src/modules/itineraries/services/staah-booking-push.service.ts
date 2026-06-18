@@ -806,6 +806,17 @@ export class StaahBookingPushService {
       };
     }
 
+    console.log('[STAAH_CANCEL_CONFIRMATION_ROW_RESOLVED]', {
+      itineraryPlanId: params.itineraryPlanId,
+      routeId: params.routeId,
+      requestedHotelId: normalizedHotelId || null,
+      confirmationId: row.staah_hotel_booking_confirmation_ID,
+      hotelCode: row.staah_hotel_code || null,
+      bookingCode: row.booking_code || null,
+      bookingReference: row.staah_booking_reference || null,
+      endpointUrl: this.apiUrl,
+    });
+
     return this.cancelStaahBookingRow(row as any);
   }
 
@@ -845,6 +856,23 @@ export class StaahBookingPushService {
     reservation.status = 'Cancel';
     reservation.reservation_datetime = this.nowIstIsoSeconds();
 
+    console.log('[STAAH_CANCEL_PAYLOAD_BUILT]', {
+      itineraryPlanId: row.itinerary_plan_ID,
+      confirmedItineraryPlanId: row.confirmed_itinerary_plan_ID,
+      routeId: row.itinerary_route_ID,
+      hotelCode: row.staah_hotel_code,
+      bookingCode: row.booking_code || null,
+      bookingReference: row.staah_booking_reference || null,
+      confirmationId: row.staah_hotel_booking_confirmation_ID,
+      endpointUrl: this.apiUrl,
+      propertyid: cancelPayload.propertyid,
+      reservationId: reservation?.reservation_id || null,
+      roomId: reservation?.room?.[0]?.room_id || null,
+      rateId: reservation?.room?.[0]?.price?.[0]?.rate_id || null,
+      arrivalDate: reservation?.room?.[0]?.arrival_date || null,
+      departureDate: reservation?.room?.[0]?.departure_date || null,
+    });
+
     console.log('[STAAH_CANCEL_PUSH] Starting', {
       itineraryPlanId: row.itinerary_plan_ID,
       confirmedItineraryPlanId: row.confirmed_itinerary_plan_ID,
@@ -873,6 +901,7 @@ export class StaahBookingPushService {
         reservationId: String(row.staah_booking_reference || ''),
         payload: {
           source: 'website_voucher_cancel',
+          endpointUrl: this.apiUrl,
           request: this.maskPayload(cancelPayload),
           responseStatus: cancelResult?.status ?? null,
           responseBody: cancelResult?.response ?? null,
@@ -902,6 +931,7 @@ export class StaahBookingPushService {
           api_response: {
             ...oldResponse,
             cancellation: {
+              endpointUrl: this.apiUrl,
               request: this.maskPayload(cancelPayload),
               responseStatus: cancelResult?.status ?? null,
               response: cancelResult?.response || cancelResult,
@@ -911,6 +941,26 @@ export class StaahBookingPushService {
           },
         },
       });
+      console.log('[STAAH_CANCEL_API_RESPONSE]', {
+        itineraryPlanId: row.itinerary_plan_ID,
+        confirmedItineraryPlanId: row.confirmed_itinerary_plan_ID,
+        routeId: row.itinerary_route_ID,
+        hotelCode: row.staah_hotel_code,
+        bookingReference: row.staah_booking_reference || null,
+        endpointUrl: this.apiUrl,
+        success: !!cancelResult?.success,
+        httpStatus: cancelResult?.status ?? null,
+        response: cancelResult?.response ?? null,
+        error: cancelResult?.error ?? null,
+      });
+      console.log('[STAAH_CANCEL_DB_UPDATED]', {
+        itineraryPlanId: row.itinerary_plan_ID,
+        confirmedItineraryPlanId: row.confirmed_itinerary_plan_ID,
+        routeId: row.itinerary_route_ID,
+        hotelCode: row.staah_hotel_code,
+        bookingReference: row.staah_booking_reference || null,
+        confirmationId: row.staah_hotel_booking_confirmation_ID,
+      });
       return cancelResult;
     } catch (error: any) {
       await this.logStaahReservation({
@@ -919,6 +969,7 @@ export class StaahBookingPushService {
         reservationId: String(row?.staah_booking_reference || ''),
         payload: {
           source: 'website_voucher_cancel',
+          endpointUrl: this.apiUrl,
           request: cancelPayload ? this.maskPayload(cancelPayload) : null,
           success: false,
           error: error instanceof Error ? error.message : String(error),
@@ -945,6 +996,7 @@ export class StaahBookingPushService {
           api_response: {
             ...oldResponse,
             cancellation_error: {
+              endpointUrl: this.apiUrl,
               request: this.maskPayload(cancelPayload),
               error: error?.message || String(error),
               failedAt: new Date().toISOString(),
