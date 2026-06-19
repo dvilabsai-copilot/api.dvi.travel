@@ -15,6 +15,195 @@ function toNum(v: any): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+function normalizeLocalTimeLimitSignature(
+  hours: number | null,
+  kmLimit: number | null,
+  title: string | null | undefined,
+): { normalizedHours: number; normalizedKm: number } {
+  const normalizedTitle = String(title ?? '').trim();
+  const numericHours = Number(hours ?? 0);
+  const numericKm = Number(kmLimit ?? 0);
+
+  if (Number.isFinite(numericHours) && numericHours > 0 && Number.isFinite(numericKm) && numericKm > 0) {
+    return {
+      normalizedHours: numericHours,
+      normalizedKm: numericKm,
+    };
+  }
+
+  const matches = normalizedTitle.match(/(\d+(?:\.\d+)?)/g) ?? [];
+  const parsedHours = Number(matches[0] ?? 0);
+  const parsedKm = Number(matches[1] ?? 0);
+
+  return {
+    normalizedHours: Number.isFinite(parsedHours) ? parsedHours : 0,
+    normalizedKm: Number.isFinite(parsedKm) ? parsedKm : 0,
+  };
+}
+
+async function findVisibleLocalPricebookPrice(
+  prisma: any,
+  params: {
+    day: number;
+    year: string;
+    month: string;
+    vendor_id: number;
+    vendor_branch_id: number;
+    vendor_vehicle_type_ID: number;
+    time_limit_id: number;
+    master_vehicle_type_id?: number;
+  },
+): Promise<number> {
+  const {
+    day,
+    year,
+    month,
+    vendor_id,
+    vendor_branch_id,
+    vendor_vehicle_type_ID,
+    time_limit_id,
+    master_vehicle_type_id,
+  } = params;
+
+  const requestedTimeLimit = await prisma.dvi_time_limit.findFirst({
+    where: {
+      vendor_id,
+      time_limit_id,
+    },
+    select: {
+      time_limit_id: true,
+      vendor_vehicle_type_id: true,
+      hours_limit: true,
+      km_limit: true,
+      time_limit_title: true,
+    },
+  });
+  if (!requestedTimeLimit) return 0;
+
+  const vendorTypes = await prisma.dvi_vendor_vehicle_types.findMany({
+    where: {
+      vendor_id,
+      status: 1,
+      deleted: 0,
+    },
+    select: {
+      vendor_vehicle_type_ID: true,
+      vehicle_type_id: true,
+    },
+    orderBy: {
+      vendor_vehicle_type_ID: 'asc',
+    },
+  });
+  if (!vendorTypes.length) return 0;
+
+  const vendorTypeById = new Map(
+    vendorTypes.map((row: any) => [Number(row.vendor_vehicle_type_ID), row]),
+  );
+  const activeVendorTypeByBaseType = new Map<number, any>();
+  for (const row of vendorTypes) {
+    const baseTypeId = Number(row.vehicle_type_id || 0);
+    if (baseTypeId > 0 && !activeVendorTypeByBaseType.has(baseTypeId)) {
+      activeVendorTypeByBaseType.set(baseTypeId, row);
+    }
+  }
+
+  const sourceVendorType =
+    vendorTypeById.get(Number(vendor_vehicle_type_ID || 0)) ??
+    vendorTypeById.get(Number(requestedTimeLimit.vendor_vehicle_type_id || 0)) ??
+    (Number(master_vehicle_type_id || 0) > 0
+      ? activeVendorTypeByBaseType.get(Number(master_vehicle_type_id || 0))
+      : null);
+  if (!sourceVendorType) return 0;
+
+  const baseTypeId = Number(sourceVendorType.vehicle_type_id || 0);
+  if (baseTypeId <= 0) return 0;
+
+  const eligibleVendorTypeIds = new Set<number>();
+  for (const row of vendorTypes) {
+    if (Number(row.vehicle_type_id || 0) === baseTypeId) {
+      eligibleVendorTypeIds.add(Number(row.vendor_vehicle_type_ID));
+    }
+  }
+  if (!eligibleVendorTypeIds.size) return 0;
+
+  const normalized = normalizeLocalTimeLimitSignature(
+    requestedTimeLimit.hours_limit ?? null,
+    requestedTimeLimit.km_limit ?? null,
+    requestedTimeLimit.time_limit_title ?? null,
+  );
+
+  const timeLimits = await prisma.dvi_time_limit.findMany({
+    where: {
+      vendor_id,
+      status: 1,
+      deleted: 0,
+    },
+    select: {
+      time_limit_id: true,
+      vendor_vehicle_type_id: true,
+      hours_limit: true,
+      km_limit: true,
+      time_limit_title: true,
+    },
+    orderBy: {
+      time_limit_id: 'asc',
+    },
+  });
+
+  const matchingTimeLimitIds = timeLimits
+    .filter((row: any) => {
+      const candidate = normalizeLocalTimeLimitSignature(
+        row.hours_limit ?? null,
+        row.km_limit ?? null,
+        row.time_limit_title ?? null,
+      );
+      return (
+        candidate.normalizedHours === normalized.normalizedHours &&
+        candidate.normalizedKm === normalized.normalizedKm
+      );
+    })
+    .map((row: any) => Number(row.time_limit_id))
+    .filter((id: number) => id > 0);
+
+  if (!matchingTimeLimitIds.length) return 0;
+
+  const rows = await prisma.dvi_vehicle_local_pricebook.findMany({
+    where: {
+      vendor_id,
+      vendor_branch_id,
+      vehicle_type_id: {
+        in: [...eligibleVendorTypeIds],
+      },
+      time_limit_id: {
+        in: matchingTimeLimitIds,
+      },
+      year,
+      month,
+      status: 1,
+      deleted: 0,
+    },
+  });
+
+  if (!rows.length) return 0;
+
+  const dayColumn = `day_${day}`;
+  const sorted = [...rows].sort((a: any, b: any) => {
+    const aValue = toNum(a?.[dayColumn]);
+    const bValue = toNum(b?.[dayColumn]);
+    const aPositive = aValue > 0 ? 1 : 0;
+    const bPositive = bValue > 0 ? 1 : 0;
+    if (aPositive !== bPositive) return bPositive - aPositive;
+
+    const aUpdated = a?.updatedon ? new Date(a.updatedon).getTime() : 0;
+    const bUpdated = b?.updatedon ? new Date(b.updatedon).getTime() : 0;
+    if (aUpdated !== bUpdated) return bUpdated - aUpdated;
+
+    return Number(b?.vehicle_price_book_id || 0) - Number(a?.vehicle_price_book_id || 0);
+  });
+
+  return toNum(sorted[0]?.[dayColumn]);
+}
+
 function normalizeCityToken(value: string): string {
   const base = String(value || '').trim();
   if (!base) return '';
@@ -1538,6 +1727,26 @@ export async function getLocalVehiclePricingByDate(
       }
     });
 
+    const dayColumn = `day_${day}`;
+    const exactPrice = pricing ? toNum(pricing[dayColumn as keyof typeof pricing]) : 0;
+    if (exactPrice > 0) {
+      return exactPrice;
+    }
+
+    const remappedPrice = await findVisibleLocalPricebookPrice(prisma, {
+      day,
+      year,
+      month,
+      vendor_id,
+      vendor_branch_id,
+      vendor_vehicle_type_ID,
+      time_limit_id,
+      master_vehicle_type_id,
+    });
+    if (remappedPrice > 0) {
+      return remappedPrice;
+    }
+
     if (!pricing) {
       const fallbackVehicleTypeId = Number(master_vehicle_type_id || 0);
       const fallbackPricing = fallbackVehicleTypeId > 0
@@ -1573,12 +1782,9 @@ export async function getLocalVehiclePricingByDate(
         console.log(`[getLocalVehiclePricingByDate] No pricing found for vendor=${vendor_id}, branch=${vendor_branch_id}, vehicle_type=${vendor_vehicle_type_ID}, time_limit=${time_limit_id}, ${month} ${year}`);
         return 0;
       }
-      const dayColumn = `day_${day}`;
       return toNum(fallbackPricing[dayColumn as keyof typeof fallbackPricing]);
     }
 
-    // Get price from day column (day_1 through day_31)
-    const dayColumn = `day_${day}`;
     const price = pricing[dayColumn as keyof typeof pricing];
     if (debugVehicleTrace && Number(master_vehicle_type_id || 0) === 23) {
       console.log('[MUV_PRICEBOOK_LOOKUP]', {
@@ -1767,8 +1973,18 @@ export async function getPricedLocalTimeLimitId(
           deleted: 0,
         },
       });
-      if (!priceRow) continue;
-      const price = toNum((priceRow as any)[dayColumn]);
+      let price = priceRow ? toNum((priceRow as any)[dayColumn]) : 0;
+      if (price <= 0) {
+        price = await findVisibleLocalPricebookPrice(prisma, {
+          day,
+          year,
+          month,
+          vendor_id,
+          vendor_branch_id,
+          vendor_vehicle_type_ID,
+          time_limit_id: Number(slab.time_limit_id || 0),
+        });
+      }
       if (price <= 0) continue;
       priced.push({
         time_limit_id: Number(slab.time_limit_id || 0),
