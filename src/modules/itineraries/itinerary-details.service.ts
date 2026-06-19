@@ -273,6 +273,7 @@ export interface ItineraryDetailsResponseDto {
   planId: number;
   itineraryPreference?: number;
   itineraryType?: number;
+  guideForItinerary?: number;
   isConfirmed?: boolean;
   confirmed_itinerary_plan_ID?: number; // ID needed for /confirmed/:id endpoint
   dateRange: string;
@@ -4627,7 +4628,12 @@ for (const vd of dayWiseDetails) {
     const shouldIncludeHotels = itineraryPreference === 1 || itineraryPreference === 3;
     const effectiveHotelAmount = shouldIncludeHotels ? totalHotelAmount : 0;
 
-    const subtotal = effectiveHotelAmount + totalVehicleCost;
+    const subtotal =
+      effectiveHotelAmount +
+      totalVehicleCost +
+      totalGuideCost +
+      totalHotspotCost +
+      totalActivityCost;
     const additionalMargin = itineraryNoDays <= additionalMarginDayLimit 
       ? (subtotal * additionalMarginPercentage) / 100
       : 0;
@@ -4704,6 +4710,7 @@ for (const vd of dayWiseDetails) {
       planId: plan.itinerary_plan_ID,
       itineraryPreference: Number((plan as any).itinerary_preference || 0),
       itineraryType: Number((plan as any).itinerary_type || 0),
+      guideForItinerary: Number((plan as any).guide_for_itinerary || 0),
       isConfirmed: !!confirmedPlan,
       confirmed_itinerary_plan_ID: confirmedPlan?.confirmed_itinerary_plan_ID,
       dateRange,
