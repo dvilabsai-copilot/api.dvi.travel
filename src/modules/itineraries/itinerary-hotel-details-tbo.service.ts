@@ -680,6 +680,8 @@ export class ItineraryHotelDetailsTboService {
       this.logger.log(`ðŸ‘¦ Child ages from travellers: [${planChildAges.join(', ')}]`);
     }
 
+    const restrictedHotelsByRoute = new Map<number, HotelSearchResult[]>();
+
     // Step 3: Fetch hotels from TBO for each route (except last route if it's departure day)
     const hotelsByRoute = await this.fetchHotelsForRoutesWithRetry(
       routes,
@@ -779,12 +781,27 @@ export class ItineraryHotelDetailsTboService {
         noOfNights,
         savedMealPlansByRoute,
         preferredMealPlanCode,
+        true,
       );
       staahHotelsByRoute.forEach((staahHotels, routeId) => {
         const existingHotels = hotelsByRoute.get(routeId) || [];
-        const hotelStrs = existingHotels.map((h) => `${String(h.hotelCode)}|${String(h.provider).toLowerCase()}`);
-        const newHotels = staahHotels.filter(
-          (h) => !hotelStrs.includes(`${String(h.hotelCode)}|${String(h.provider).toLowerCase()}`),
+        const hotelStrs = existingHotels.map((h) =>
+          String((h as any).searchReference || `${String(h.hotelCode)}|${String(h.provider).toLowerCase()}`).trim(),
+        );
+        const selectableStaahHotels = staahHotels.filter(
+          (h) => String((h as any).availabilityStatus || '').trim().toUpperCase() !== 'NOT_BOOKABLE',
+        );
+        const restrictedStaahHotels = staahHotels.filter(
+          (h) => String((h as any).availabilityStatus || '').trim().toUpperCase() === 'NOT_BOOKABLE',
+        );
+        if (restrictedStaahHotels.length > 0) {
+          restrictedHotelsByRoute.set(routeId, restrictedStaahHotels);
+        }
+        const newHotels = selectableStaahHotels.filter(
+          (h) =>
+            !hotelStrs.includes(
+              String((h as any).searchReference || `${String(h.hotelCode)}|${String(h.provider).toLowerCase()}`).trim(),
+            ),
         );
         if (newHotels.length > 0) {
           this.logger.log(`   ✅ Added ${newHotels.length} new STAAH hotel(s) to route ${routeId}`);
@@ -841,6 +858,7 @@ export class ItineraryHotelDetailsTboService {
       planId,
       packages,
       filteredHotelsByRoute,
+      restrictedHotelsByRoute,
       routes,
       noOfNights,
     );
@@ -1515,6 +1533,208 @@ export class ItineraryHotelDetailsTboService {
     return scan(occupancyRates);
   }
 
+  private formatDateOnly(date: Date): string {
+    return date.toISOString().split('T')[0];
+  }
+
+  private addDays(date: Date, days: number): Date {
+    const next = new Date(date);
+    next.setUTCDate(next.getUTCDate() + days);
+    return next;
+  }
+
+  private getStaahRestrictionAvailableAgainFrom(row: any): string | null {
+    if (!row?.end_date) return null;
+    return this.formatDateOnly(this.addDays(this.toIstDateOnly(row.end_date), 1));
+  }
+
+  private buildStaahRestrictionAvailabilityMessage(
+    reason: string | null,
+    availableAgainFrom: string | null,
+  ): string {
+    const rawReason = String(reason || '').trim();
+    let baseReason = rawReason || 'This room is not available for the selected stay.';
+
+    const ctaMatch = rawReason.match(/CTA active on check-in date\s+(\d{4}-\d{2}-\d{2})/i);
+    if (ctaMatch) {
+      baseReason = `This room cannot be booked for arrival on ${ctaMatch[1]}. Check-in is closed for that date.`;
+    }
+
+    const ctdMatch = rawReason.match(/CTD active on check-out date\s+(\d{4}-\d{2}-\d{2})/i);
+    if (ctdMatch) {
+      baseReason = `This room cannot be booked for departure on ${ctdMatch[1]}. Check-out is closed for that date.`;
+    }
+
+    if (/stopsell/i.test(rawReason)) {
+      baseReason = 'This room is closed for sale for the selected stay dates.';
+    }
+
+    if (/minimum stay/i.test(rawReason)) {
+      baseReason = rawReason;
+    }
+
+    if (!availableAgainFrom) {
+      return baseReason;
+    }
+    return `${baseReason} You can try booking it again from ${availableAgainFrom}.`;
+  }
+
+  private isStaahRestrictionTruthy(value: unknown): boolean {
+    const normalized = String(value ?? '').trim().toLowerCase();
+    return ['1', 'true', 'yes', 'y', 'close', 'closed'].includes(normalized);
+  }
+
+  private normalizeStaahRestrictionType(value: unknown): string {
+    const normalized = String(value ?? '').trim().toLowerCase();
+    if (normalized === 'status') return 'status';
+    if (normalized.includes('stopsell') || normalized.includes('stop_sell')) return 'stopsell';
+    if (normalized === 'cta') return 'cta';
+    if (normalized === 'ctd') return 'ctd';
+    if (normalized === 'minstay') return 'minstay';
+    if (normalized === 'maxstay') return 'maxstay';
+    if (normalized === 'minstay_through') return 'minstay_through';
+    if (normalized === 'maxstay_through') return 'maxstay_through';
+    return normalized;
+  }
+
+  private getStaahStayWindow(
+    routes: any[],
+    routeIndex: number,
+  ): { checkInDate: Date; checkOutDate: Date; lengthOfStay: number } {
+    const currentRoute = routes[routeIndex];
+    const checkInDate = this.toIstDateOnly((currentRoute as any).itinerary_route_date);
+
+    const nextRoute = routes[routeIndex + 1];
+    const nextRouteDate = nextRoute
+      ? this.toIstDateOnly((nextRoute as any).itinerary_route_date)
+      : this.addDays(checkInDate, 1);
+
+    const diffMs = nextRouteDate.getTime() - checkInDate.getTime();
+    const lengthOfStay = Math.max(Math.round(diffMs / 86400000), 1);
+
+    return {
+      checkInDate,
+      checkOutDate: nextRouteDate,
+      lengthOfStay,
+    };
+  }
+
+  private evaluateStaahRestrictions(
+    rows: any[],
+    checkInDate: Date,
+    checkOutDate: Date,
+    lengthOfStay: number,
+  ): { blocked: boolean; reason: string | null; availableAgainFrom: string | null } {
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return { blocked: false, reason: null, availableAgainFrom: null };
+    }
+
+    const checkInLabel = this.formatDateOnly(checkInDate);
+    const checkOutLabel = this.formatDateOnly(checkOutDate);
+    const stayEndDate = this.addDays(checkOutDate, -1);
+    const stayEndLabel = this.formatDateOnly(stayEndDate);
+
+    const overlapsStay = (row: any): boolean => {
+      const rowStart = this.toIstDateOnly(row.start_date);
+      const rowEnd = this.toIstDateOnly(row.end_date);
+      return rowStart.getTime() <= stayEndDate.getTime() && rowEnd.getTime() >= checkInDate.getTime();
+    };
+
+    const activeOnDate = (row: any, date: Date): boolean => {
+      const rowStart = this.toIstDateOnly(row.start_date);
+      const rowEnd = this.toIstDateOnly(row.end_date);
+      return rowStart.getTime() <= date.getTime() && rowEnd.getTime() >= date.getTime();
+    };
+
+    const numericValuesFor = (type: string, matcher: (row: any) => boolean): number[] =>
+      rows
+        .filter((row) => this.normalizeStaahRestrictionType(row.type) === type && matcher(row))
+        .map((row) => Number(row.value))
+        .filter((value) => Number.isFinite(value));
+
+    for (const row of rows) {
+      const type = this.normalizeStaahRestrictionType(row.type);
+      if (!this.isStaahRestrictionTruthy(row.value)) continue;
+
+      if ((type === 'stopsell' || type === 'status') && overlapsStay(row)) {
+        return {
+          blocked: true,
+          reason:
+            type === 'status'
+              ? `status close active during stay ${checkInLabel} to ${stayEndLabel}`
+              : `stop sell active during stay ${checkInLabel} to ${stayEndLabel}`,
+          availableAgainFrom: this.getStaahRestrictionAvailableAgainFrom(row),
+        };
+      }
+
+      if (type === 'cta' && activeOnDate(row, checkInDate)) {
+        return {
+          blocked: true,
+          reason: `CTA active on check-in date ${checkInLabel}`,
+          availableAgainFrom: this.getStaahRestrictionAvailableAgainFrom(row),
+        };
+      }
+
+      if (type === 'ctd' && activeOnDate(row, checkOutDate)) {
+        return {
+          blocked: true,
+          reason: `CTD active on check-out date ${checkOutLabel}`,
+          availableAgainFrom: this.getStaahRestrictionAvailableAgainFrom(row),
+        };
+      }
+    }
+
+    const minStayValues = numericValuesFor('minstay', (row) => activeOnDate(row, checkInDate));
+    if (minStayValues.length > 0) {
+      const minStay = Math.max(...minStayValues);
+      if (lengthOfStay < minStay) {
+        return {
+          blocked: true,
+          reason: `minimum stay ${minStay} nights required for LOS ${lengthOfStay}`,
+          availableAgainFrom: null,
+        };
+      }
+    }
+
+    const maxStayValues = numericValuesFor('maxstay', (row) => activeOnDate(row, checkInDate));
+    if (maxStayValues.length > 0) {
+      const maxStay = Math.min(...maxStayValues);
+      if (lengthOfStay > maxStay) {
+        return {
+          blocked: true,
+          reason: `maximum stay ${maxStay} nights allows LOS ${lengthOfStay}`,
+          availableAgainFrom: null,
+        };
+      }
+    }
+
+    const minStayThroughValues = numericValuesFor('minstay_through', overlapsStay);
+    if (minStayThroughValues.length > 0) {
+      const minStayThrough = Math.max(...minStayThroughValues);
+      if (lengthOfStay < minStayThrough) {
+        return {
+          blocked: true,
+          reason: `minimum stay through ${minStayThrough} nights required for LOS ${lengthOfStay}`,
+          availableAgainFrom: null,
+        };
+      }
+    }
+
+    const maxStayThroughValues = numericValuesFor('maxstay_through', overlapsStay);
+    if (maxStayThroughValues.length > 0) {
+      const maxStayThrough = Math.min(...maxStayThroughValues);
+      if (lengthOfStay > maxStayThrough) {
+        return {
+          blocked: true,
+          reason: `maximum stay through ${maxStayThrough} nights allows LOS ${lengthOfStay}`,
+          availableAgainFrom: null,
+        };
+      }
+    }
+
+    return { blocked: false, reason: null, availableAgainFrom: null };
+  }
+
   /**
    * Load saved meal plan codes for each route in the itinerary
    * Maps route IDs to their configured meal plan codes (e.g., "AP", "CP", "EP", "MAP")
@@ -1917,6 +2137,7 @@ export class ItineraryHotelDetailsTboService {
     noOfNights: number,
     savedMealPlansByRoute?: Map<number, string>,
     preferredMealPlanCode?: string | null,
+    includeRestrictedForDisplay: boolean = false,
   ): Promise<Map<number, HotelSearchResult[]>> {
     const hotelsByRoute = new Map<number, HotelSearchResult[]>();
     let staahHotels: any[] = [];
@@ -1962,7 +2183,7 @@ export class ItineraryHotelDetailsTboService {
         if (isLastRoute && routeIndex >= noOfNights) continue;
         const destinationRaw = String((route as any).next_visiting_location || '');
         const routeCityToken = this.normalizeCityToken(destinationRaw);
-        const dateOnly = this.toIstDateOnly((route as any).itinerary_route_date);
+        const { checkInDate: dateOnly, checkOutDate, lengthOfStay } = this.getStaahStayWindow(routes, routeIndex);
         const dateStamp = dateOnly.toISOString().split('T')[0].replace(/-/g, '');
         const cityHotels = staahHotels.filter((h: any) => {
           const raw = String((h as any).hotel_city || '');
@@ -1998,15 +2219,16 @@ export class ItineraryHotelDetailsTboService {
         }
         const [rateRows, restrictionRows, roomRows] = await Promise.all([
           (this.prisma as any).staah_rate.findMany({ where: { staah_property_id: { in: propertyIds }, room_id: { in: roomIds }, rateplan_id: { in: ratePlanIds }, start_date: { lte: dateOnly }, end_date: { gte: dateOnly } } }),
-          (this.prisma as any).staah_restriction.findMany({ where: { staah_property_id: { in: propertyIds }, room_id: { in: roomIds }, rateplan_id: { in: ratePlanIds }, start_date: { lte: dateOnly }, end_date: { gte: dateOnly } } }),
+          (this.prisma as any).staah_restriction.findMany({ where: { staah_property_id: { in: propertyIds }, room_id: { in: roomIds }, rateplan_id: { in: ratePlanIds }, start_date: { lte: checkOutDate }, end_date: { gte: dateOnly } } }),
           this.prisma.dvi_hotel_rooms.findMany({ where: { deleted: 0 } as any, select: { room_ID: true, room_ref_code: true, room_title: true } as any }),
         ]);
-        const stopsellSet = new Set<string>();
+        const restrictionRowsByRateKey = new Map<string, any[]>();
         for (const row of restrictionRows as any[]) {
-          const restrictionType = String((row as any).type || (row as any).name || (row as any).restriction_type || '').toLowerCase();
-          if (!(restrictionType.includes('stopsell') || restrictionType.includes('stop_sell'))) continue;
-          if (!['1', 'true', 'yes', 'y'].includes(String((row as any).value || '').toLowerCase())) continue;
-          stopsellSet.add(`${row.staah_property_id}|${row.room_id}|${row.rateplan_id}`);
+          const rateKey = `${row.staah_property_id}|${row.room_id}|${row.rateplan_id}`;
+          if (!restrictionRowsByRateKey.has(rateKey)) {
+            restrictionRowsByRateKey.set(rateKey, []);
+          }
+          restrictionRowsByRateKey.get(rateKey)!.push(row);
         }
         const roomTitleMap = new Map<string, string>();
         for (const room of roomRows as any[]) {
@@ -2030,20 +2252,65 @@ export class ItineraryHotelDetailsTboService {
             continue;
           }
           let selected: any = null;
+          let selectedMatchedPreferred = false;
           let selectedReason = 'no valid rate';
           let best = Number.POSITIVE_INFINITY;
+          const validDisplayCandidates: Array<{
+            rate: any;
+            rp: any;
+            price: number;
+          }> = [];
+          const blockedDisplayCandidates: Array<{
+            rate: any;
+            rp: any;
+            price: number;
+            reason: string;
+            availableAgainFrom: string | null;
+          }> = [];
           for (const rate of rows) {
             const rateKey = `${rate.staah_property_id}|${rate.room_id}|${rate.rateplan_id}`;
-            if (stopsellSet.has(rateKey)) {
-              selectedReason = `stopsell blocked rateplan ${String((rate as any).rateplan_id || '')}`;
+            const rp = (ratePlanRows as any[]).find(
+              (x) =>
+                String(x.staah_property_id) === String(rate.staah_property_id) &&
+                String(x.rateplan_id) === String(rate.rateplan_id),
+            );
+            const roomId = String((rate as any).room_id || '');
+            const roomName = roomTitleMap.get(roomId) || `Room ${roomId}`;
+            const rateplanId = String((rate as any).rateplan_id || '');
+            const rateplanName = String((rp as any)?.rateplan_name || '').trim();
+            const mealPlanDescription = String((rp as any)?.meal_plan_description || '').trim();
+            const candidatePrice = this.extractStaahRate((rate as any).occupancy_rates);
+            const restrictionDecision = this.evaluateStaahRestrictions(
+              restrictionRowsByRateKey.get(rateKey) || [],
+              dateOnly,
+              checkOutDate,
+              lengthOfStay,
+            );
+            this.logger.debug(
+              `[STAAH CANDIDATE] routeId=${routeId} propertyId=${propertyId} hotelId=${String((hotel as any).hotel_id || '')} roomId=${roomId} roomName="${roomName}" rateplanId=${rateplanId} rateplanName="${rateplanName}" mealPlan="${mealPlanDescription}" price=${candidatePrice} blocked=${restrictionDecision.blocked ? 'true' : 'false'} reason="${restrictionDecision.reason || ''}" availableAgainFrom=${restrictionDecision.availableAgainFrom || ''} searchReference=STAAH-${propertyId}-${roomId}-${rateplanId}-${dateStamp}`,
+            );
+            if (restrictionDecision.blocked) {
+              selectedReason = restrictionDecision.reason || `restriction blocked rateplan ${String((rate as any).rateplan_id || '')}`;
+              this.logger.warn(
+                `[STAAH RESTRICTION] routeId=${routeId} propertyId=${propertyId} hotelId=${String((hotel as any).hotel_id || '')} roomId=${String((rate as any).room_id || '')} rateplanId=${String((rate as any).rateplan_id || '')} checkIn=${this.formatDateOnly(dateOnly)} checkOut=${this.formatDateOnly(checkOutDate)} los=${lengthOfStay} blocked=true reason="${selectedReason}"`,
+              );
+              if (includeRestrictedForDisplay) {
+                blockedDisplayCandidates.push({
+                  rate,
+                  rp,
+                  price: candidatePrice,
+                  reason: selectedReason,
+                  availableAgainFrom: restrictionDecision.availableAgainFrom,
+                });
+              }
               continue;
             }
-            const price = this.extractStaahRate((rate as any).occupancy_rates);
+            const price = candidatePrice;
             if (price <= 0) {
               selectedReason = `no positive price for rateplan ${String((rate as any).rateplan_id || '')}`;
               continue;
             }
-            const rp = (ratePlanRows as any[]).find((x) => String(x.staah_property_id) === String(rate.staah_property_id) && String(x.rateplan_id) === String(rate.rateplan_id));
+            validDisplayCandidates.push({ rate, rp, price });
             const preferredCode = String(preferredMealPlanCode || '').trim().toUpperCase();
             const preferredDef = preferredCode ? HOTEL_RATE_PLAN_BY_CODE.get(preferredCode as any) : undefined;
             const preferredIds = [String(preferredDef?.defaultRateplanId || ''), String(preferredDef?.externalRateplanId || '')].filter(Boolean);
@@ -2053,45 +2320,136 @@ export class ItineraryHotelDetailsTboService {
               if (!selected || price < best) {
                 selected = { rate, rp, price };
                 best = price;
+                selectedMatchedPreferred = Boolean(preferHit);
                 selectedReason = preferHit ? `matched preferred meal plan ${preferredCode}` : 'selected cheapest valid rate';
               }
             }
           }
+          const preferredCode = String(preferredMealPlanCode || '').trim().toUpperCase();
+          const preferredDef = preferredCode ? HOTEL_RATE_PLAN_BY_CODE.get(preferredCode as any) : undefined;
+          const preferredIds = [
+            String(preferredDef?.defaultRateplanId || ''),
+            String(preferredDef?.externalRateplanId || ''),
+          ].filter(Boolean);
+          const preferredBlocked = blockedDisplayCandidates.find((candidate) => {
+            if (!preferredCode) return false;
+            const mealText = `${String(candidate.rp?.rateplan_name || '')} ${String(candidate.rp?.meal_plan_description || '')}`.toLowerCase();
+            return preferredIds.includes(String((candidate.rate as any).rateplan_id || '')) || mealText.includes(preferredCode.toLowerCase());
+          });
+          const cheapestBlocked =
+            blockedDisplayCandidates.length > 0
+              ? [...blockedDisplayCandidates].sort((a, b) => {
+                  const priceA = Number.isFinite(Number(a.price)) && Number(a.price) > 0 ? Number(a.price) : Number.POSITIVE_INFINITY;
+                  const priceB = Number.isFinite(Number(b.price)) && Number(b.price) > 0 ? Number(b.price) : Number.POSITIVE_INFINITY;
+                  return priceA - priceB;
+                })[0]
+              : null;
+          const blockedCandidate =
+            preferredBlocked ||
+            cheapestBlocked;
+
+          const shouldSurfaceBlockedPreferred =
+            includeRestrictedForDisplay &&
+            Boolean(blockedCandidate) &&
+            (
+              !selected ||
+              (Boolean(preferredCode) && Boolean(preferredBlocked) && !selectedMatchedPreferred)
+            );
+
+          const shouldSurfaceBlockedVariant =
+            includeRestrictedForDisplay &&
+            !preferredCode &&
+            Boolean(blockedCandidate) &&
+            Boolean(selected);
+
+          this.logger.debug(
+            `[STAAH DECISION] routeId=${routeId} propertyId=${propertyId} hotelId=${String((hotel as any).hotel_id || '')} selectedRoomId=${String((selected as any)?.rate?.room_id || '')} selectedRateplanId=${String((selected as any)?.rate?.rateplan_id || '')} selectedMealPlan="${String((selected as any)?.rp?.meal_plan_description || (selected as any)?.rp?.rateplan_name || '').trim()}" selectedPrice=${Number((selected as any)?.price || 0)} selectedMatchedPreferred=${selectedMatchedPreferred ? 'true' : 'false'} blockedCandidateRoomId=${String((blockedCandidate as any)?.rate?.room_id || '')} blockedCandidateRateplanId=${String((blockedCandidate as any)?.rate?.rateplan_id || '')} blockedCandidateMealPlan="${String((blockedCandidate as any)?.rp?.meal_plan_description || (blockedCandidate as any)?.rp?.rateplan_name || '').trim()}" blockedCandidatePrice=${Number((blockedCandidate as any)?.price || 0)} shouldSurfaceBlockedPreferred=${shouldSurfaceBlockedPreferred ? 'true' : 'false'} shouldSurfaceBlockedVariant=${shouldSurfaceBlockedVariant ? 'true' : 'false'} selectedReason="${selectedReason}"`,
+          );
+
+          const pushedStaahResultKeys = new Set<string>();
+          const pushStaahResult = (
+            candidate: {
+              rate: any;
+              rp: any;
+              price: number;
+              reason?: string;
+              availableAgainFrom?: string | null;
+            },
+            isBookable: boolean,
+          ) => {
+            const roomId = String((candidate.rate as any).room_id || '');
+            const rateplanId = String((candidate.rate as any).rateplan_id || '');
+            const resultKey = `${roomId}|${rateplanId}|${isBookable ? 'bookable' : 'restricted'}`;
+            if (pushedStaahResultKeys.has(resultKey)) {
+              return;
+            }
+            pushedStaahResultKeys.add(resultKey);
+            const cancellation = String((hotel as any).hotel_cancel_policy || '').trim();
+            const mealPlan =
+              String((candidate.rp as any)?.meal_plan_description || (candidate.rp as any)?.rateplan_name || '-').trim() || '-';
+            const currency = String((candidate.rp as any)?.currency || 'INR').trim() || 'INR';
+            const roomName = roomTitleMap.get(roomId) || `Room ${roomId}`;
+            results.push({
+              provider: 'staah',
+              hotelCode: String((hotel as any).hotel_id),
+              hotelName: String((hotel as any).hotel_name || ''),
+              cityCode: String((hotel as any).hotel_city || destinationRaw),
+              address: String((hotel as any).hotel_address || ''),
+              rating: Number((hotel as any).hotel_category || 0),
+              facilities: [],
+              amenities: [],
+              inclusions: [],
+              rateConditions: [],
+              cancellationPolicy: cancellation ? [cancellation] : [],
+              images: [],
+              price: Number(candidate.price || 0),
+              currency,
+              roomTypes: [{
+                roomCode: roomId,
+                roomName,
+                bedType: '',
+                capacity: 0,
+                price: Number(candidate.price || 0),
+                cancellationPolicy: cancellation,
+              }],
+              roomType: roomName,
+              mealPlan,
+              hotel_margin: Number((hotel as any).hotel_margin || 0),
+              hotel_margin_gst_type: Number((hotel as any).hotel_margin_gst_type || 0),
+              hotel_margin_gst_percentage: Number((hotel as any).hotel_margin_gst_percentage || 0),
+              searchReference: `STAAH-${propertyId}-${roomId}-${rateplanId}-${dateStamp}`,
+              expiresAt: new Date(Date.now() + 15 * 60 * 1000),
+              isBookable,
+              externalStay: false,
+              availabilityStatus: isBookable ? 'AVAILABLE' : 'NOT_BOOKABLE',
+              availabilityMessage: isBookable
+                ? ''
+                : this.buildStaahRestrictionAvailabilityMessage(
+                    candidate.reason,
+                    candidate.availableAgainFrom,
+                  ),
+              availableAgainFrom: candidate.availableAgainFrom ?? null,
+            } as any);
+          };
+
+          if (shouldSurfaceBlockedPreferred && blockedCandidate) {
+            pushStaahResult(blockedCandidate, false);
+            continue;
+          }
+
+          if (shouldSurfaceBlockedVariant && blockedCandidate) {
+            pushStaahResult(blockedCandidate, false);
+          }
+
           if (!selected) {
             this.logger.debug(
               `[STAAH] routeId=${routeId} propertyId=${propertyId} hotelId=${String((hotel as any).hotel_id || '')} skipped: ${selectedReason}`,
             );
             continue;
           }
-          const roomId = String((selected.rate as any).room_id || '');
-          const roomName = roomTitleMap.get(roomId) || `Room ${roomId}`;
-          const cancellation = String((hotel as any).hotel_cancel_policy || '').trim();
-          const mealPlan = String((selected.rp as any)?.meal_plan_description || (selected.rp as any)?.rateplan_name || '-').trim() || '-';
-          const currency = String((selected.rp as any)?.currency || 'INR').trim() || 'INR';
-          results.push({
-            provider: 'staah',
-            hotelCode: String((hotel as any).hotel_id),
-            hotelName: String((hotel as any).hotel_name || ''),
-            cityCode: String((hotel as any).hotel_city || destinationRaw),
-            address: String((hotel as any).hotel_address || ''),
-            rating: Number((hotel as any).hotel_category || 0),
-            facilities: [],
-            amenities: [],
-            inclusions: [],
-            rateConditions: [],
-            cancellationPolicy: cancellation ? [cancellation] : [],
-            images: [],
-            price: Number((selected as any).price),
-            currency,
-            roomTypes: [{ roomCode: roomId, roomName, bedType: '', capacity: 0, price: Number((selected as any).price), cancellationPolicy: cancellation }],
-            roomType: roomName,
-            mealPlan,
-            hotel_margin: Number((hotel as any).hotel_margin || 0),
-            hotel_margin_gst_type: Number((hotel as any).hotel_margin_gst_type || 0),
-            hotel_margin_gst_percentage: Number((hotel as any).hotel_margin_gst_percentage || 0),
-            searchReference: `STAAH-${propertyId}-${roomId}-${String((selected.rate as any).rateplan_id)}-${dateStamp}`,
-            expiresAt: new Date(Date.now() + 15 * 60 * 1000),
-          } as any);
+          for (const candidate of validDisplayCandidates) {
+            pushStaahResult(candidate, true);
+          }
         }
         hotelsByRoute.set(routeId, results);
       } catch (error) {
@@ -2296,6 +2654,7 @@ export class ItineraryHotelDetailsTboService {
     planId: number,
     packages: Array<{ groupType: number; label: string; hotels: Array<HotelSearchResult & { routeId: number }> }>,
     hotelsByRoute: Map<number, HotelSearchResult[]>,
+    restrictedHotelsByRoute: Map<number, HotelSearchResult[]>,
     routes: any[],
     noOfNights: number,
   ): Promise<ItineraryHotelDetailsResponseDto> {
@@ -2819,6 +3178,79 @@ export class ItineraryHotelDetailsTboService {
       }
     }
 
+    const restrictedHotelRows: ItineraryHotelRowDto[] = [];
+    restrictedHotelsByRoute.forEach((restrictedHotels, routeId) => {
+      const route = routes.find((r: any) => Number((r as any).itinerary_route_ID || 0) === routeId);
+      if (!route) return;
+
+      const routeIndex = routes.indexOf(route);
+      const isLastRoute = routeIndex === routes.length - 1;
+      if (isLastRoute && routeIndex >= noOfNights) {
+        return;
+      }
+
+      const dateLabel = new Date((route as any).itinerary_route_date).toISOString().split('T')[0];
+      const destination = (route as any).next_visiting_location || (route as any).location_name || '';
+      const routeLocationId = Number((route as any).location_id || 0);
+      const routeCoords = routeDestinationCoordsByLocationId.get(routeLocationId);
+      const selectableHotelsForRoute = hotelsByRoute.get(routeId) || [];
+      const allPrices = [...selectableHotelsForRoute, ...restrictedHotels]
+        .map((hotel) => Number((hotel as any).price || 0))
+        .filter((price) => Number.isFinite(price) && price > 0);
+
+      restrictedHotels.forEach((hotel: any) => {
+        const providerCodeKey = `${String(hotel.provider || 'staah').trim().toLowerCase()}|${String(hotel.hotelCode || '').trim()}`;
+        const hotelCoords = hotelCoordsByProviderCode.get(providerCodeKey);
+        let hotelDistance: string | null = null;
+        if (routeCoords && hotelCoords) {
+          try {
+            const distanceKm = haversineKm(routeCoords.lat, routeCoords.lon, hotelCoords.lat, hotelCoords.lon);
+            if (Number.isFinite(distanceKm) && distanceKm > 0) {
+              hotelDistance = `${distanceKm.toFixed(2)} KM`;
+            }
+          } catch {
+            hotelDistance = null;
+          }
+        }
+
+        restrictedHotelRows.push({
+          groupType: this.getGroupTypeFromPrice(Number(hotel.price || 0), allPrices),
+          itineraryRouteId: routeId,
+          day: `Day ${routeIndex + 1} | ${dateLabel}`,
+          destination,
+          hotelId: Number.parseInt(String(hotel.hotelCode || '0'), 10) || 0,
+          hotelName: String(hotel.hotelName || 'Hotel'),
+          category: hotel.rating ? parseInt(String(hotel.rating), 10) : 0,
+          roomType: String(hotel.roomType || ''),
+          mealPlan: String(hotel.mealPlan || ''),
+          baseHotelCost: Number(hotel.price || 0),
+          hotelMarginPercentage: this.getHotelMarginPercentage(hotel),
+          totalHotelCost: this.applyInvisibleHotelMargin(Number(hotel.price || 0), hotel),
+          totalHotelTaxAmount: 0,
+          searchReference: String(hotel.searchReference || '').trim() || undefined,
+          bookingCode: undefined,
+          provider: String(hotel.provider || 'staah').trim().toLowerCase(),
+          isBookable: false,
+          externalStay: false,
+          availabilityStatus: 'NOT_BOOKABLE',
+          availabilityMessage: String((hotel as any).availabilityMessage || '').trim() || 'Restricted for the selected stay.',
+          availableAgainFrom: String((hotel as any).availableAgainFrom || '').trim() || null,
+          voucherCancelled: false,
+          itineraryPlanHotelDetailsId: 0,
+          date: dateLabel,
+          hotelDistance,
+          inclusions: hotel.inclusions && hotel.inclusions.length > 0 ? hotel.inclusions : undefined,
+          amenities: hotel.amenities && hotel.amenities.length > 0 ? hotel.amenities : undefined,
+          facilities: hotel.facilities && hotel.facilities.length > 0 ? hotel.facilities : undefined,
+          rateConditions: hotel.rateConditions && hotel.rateConditions.length > 0 ? hotel.rateConditions : undefined,
+          cancellationPolicy: Array.isArray(hotel.cancellationPolicy)
+            ? hotel.cancellationPolicy
+            : undefined,
+          supplementSummary: hotel.supplementSummary,
+        });
+      });
+    });
+
     const supplierRouteGroupKeys = new Set(
       hotelRows
         .filter(
@@ -2877,6 +3309,7 @@ export class ItineraryHotelDetailsTboService {
       hotelRatesVisible,
       hotelTabs,
       hotels: cleanedHotelRows,
+      restrictedHotels: restrictedHotelRows,
       totalRoomCount: cleanedHotelRows.length,
       hotelAvailability: {
         hasSupplierHotels,
@@ -2943,6 +3376,20 @@ export class ItineraryHotelDetailsTboService {
     const planRoomCount2 = Math.max(Number((plan as any).preferred_room_count || 1), 1);
     const planAdultCount2 = Number((plan as any).total_adult || 0);
     const planChildCount2 = Number((plan as any).total_children || 0);
+    const explicitMealPlanCode2 = inferCanonicalHotelRatePlanCode(String((plan as any).meal_plan_code || ''));
+    const mealPlanBreakfast2 = Number((plan as any).meal_plan_breakfast ?? 0) ? 1 : 0;
+    const mealPlanLunch2 = Number((plan as any).meal_plan_lunch ?? 0) ? 1 : 0;
+    const mealPlanDinner2 = Number((plan as any).meal_plan_dinner ?? 0) ? 1 : 0;
+    const hasExplicitMealFlags2 =
+      mealPlanBreakfast2 === 1 || mealPlanLunch2 === 1 || mealPlanDinner2 === 1;
+    const fallbackMealPlanCode2 = hasExplicitMealFlags2
+      ? inferCanonicalHotelRatePlanCodeFromMealFlags(
+          mealPlanBreakfast2,
+          mealPlanLunch2,
+          mealPlanDinner2,
+        )
+      : null;
+    const preferredMealPlanCode2 = explicitMealPlanCode2 || fallbackMealPlanCode2;
 
     let planChildAges2: number[] = [];
     if (planChildCount2 > 0) {
@@ -3014,6 +3461,28 @@ export class ItineraryHotelDetailsTboService {
         const existing = hotelsByRoute.get(routeId) || [];
         const hotelStrs = existing.map(h => `${String(h.hotelCode)}|${String(h.provider).toLowerCase()}`);
         const newHotels = axisroomsHotels.filter(h => !hotelStrs.includes(`${String(h.hotelCode)}|${String(h.provider).toLowerCase()}`));
+        hotelsByRoute.set(routeId, [...existing, ...newHotels]);
+      });
+
+      const savedMealPlansByRoute2 = await this.loadSavedMealPlansPerRoute(planId, routesToProcess);
+      const staahHotelsByRoute = await this.fetchStaahHotelsForRoutes(
+        routesToProcess,
+        noOfNights,
+        savedMealPlansByRoute2,
+        preferredMealPlanCode2,
+        true,
+      );
+      staahHotelsByRoute.forEach((staahHotels, routeId) => {
+        const existing = hotelsByRoute.get(routeId) || [];
+        const hotelStrs = existing.map((h) =>
+          String((h as any).searchReference || `${String(h.hotelCode)}|${String(h.provider).toLowerCase()}`).trim(),
+        );
+        const newHotels = staahHotels.filter(
+          (h) =>
+            !hotelStrs.includes(
+              String((h as any).searchReference || `${String(h.hotelCode)}|${String(h.provider).toLowerCase()}`).trim(),
+            ),
+        );
         hotelsByRoute.set(routeId, [...existing, ...newHotels]);
       });
     }
@@ -3135,6 +3604,11 @@ export class ItineraryHotelDetailsTboService {
             : (typeof (hotel as any).cancellationPolicy === 'string' && String((hotel as any).cancellationPolicy).trim()
               ? [String((hotel as any).cancellationPolicy).trim()]
               : (firstRoomType?.cancellationPolicy ? [String(firstRoomType.cancellationPolicy)] : [])),
+          isBookable: (hotel as any).isBookable ?? true,
+          externalStay: (hotel as any).externalStay ?? false,
+          availabilityStatus: (hotel as any).availabilityStatus || 'AVAILABLE',
+          availabilityMessage: (hotel as any).availabilityMessage || null,
+          availableAgainFrom: (hotel as any).availableAgainFrom || null,
         } as any);
     });
 

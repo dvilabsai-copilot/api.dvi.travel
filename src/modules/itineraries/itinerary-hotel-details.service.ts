@@ -38,6 +38,7 @@ export interface ItineraryHotelRowDto {
   externalStay?: boolean;
   availabilityStatus?: 'AVAILABLE' | 'NO_SUPPLIER_AVAILABILITY' | 'NOT_BOOKABLE';
   availabilityMessage?: string | null;
+  availableAgainFrom?: string | null;
   // Voucher cancellation status
   voucherCancelled?: boolean;
   itineraryPlanHotelDetailsId?: number;
@@ -81,6 +82,7 @@ export interface ItineraryHotelDetailsResponseDto {
   showHotelMargins?: boolean;
   hotelTabs: ItineraryHotelTabDto[];
   hotels: ItineraryHotelRowDto[];
+  restrictedHotels?: ItineraryHotelRowDto[];
   totalRoomCount: number;
   hotelAvailability?: HotelAvailabilityMetaDto;
   /** Present when ?page param is used; one entry per groupType requested */
@@ -124,6 +126,7 @@ export interface ItineraryHotelRoomDto {
   roomId: number;
   provider?: string;
   bookingCode?: string;
+  searchReference?: string;
   availableRoomTypes: RoomTypeOptionDto[];
   mealPlan?: string;
   numberOfNights?: number;
@@ -141,6 +144,11 @@ export interface ItineraryHotelRoomDto {
     requiresReview: boolean;
   };
   mandatorySupplements?: string[];
+  isBookable?: boolean;
+  externalStay?: boolean;
+  availabilityStatus?: 'AVAILABLE' | 'NO_SUPPLIER_AVAILABILITY' | 'NOT_BOOKABLE';
+  availabilityMessage?: string | null;
+  availableAgainFrom?: string | null;
 
   // Pricing & tax
   pricePerNight: number;

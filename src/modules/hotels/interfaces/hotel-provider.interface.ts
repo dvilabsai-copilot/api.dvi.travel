@@ -52,6 +52,11 @@ export interface HotelSearchResult {
     atPropertyChargeCount: number;
     requiresReview: boolean; // true if unknown types or mandatory charges
   };
+  isBookable?: boolean;
+  externalStay?: boolean;
+  availabilityStatus?: 'AVAILABLE' | 'NO_SUPPLIER_AVAILABILITY' | 'NOT_BOOKABLE';
+  availabilityMessage?: string | null;
+  availableAgainFrom?: string | null;
 }
 
 export interface RoomType {
