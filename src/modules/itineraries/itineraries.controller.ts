@@ -394,6 +394,59 @@ export class ItinerariesController {
     return this.detailsService.getItineraryDetails(quoteId, groupTypeNum);
   }
 
+  @Get(':id/guides')
+  @ApiOperation({ summary: 'List itinerary guide assignments for a draft itinerary' })
+  async listGuideAssignments(
+    @Param('id', ParseIntPipe) planId: number,
+  ) {
+    return this.svc.listGuideAssignments(planId);
+  }
+
+  @Get(':id/guides/options')
+  @ApiOperation({ summary: 'Get guide modal options and existing assignment data' })
+  async getGuideAssignmentOptions(
+    @Param('id', ParseIntPipe) planId: number,
+    @Query('routeGuideId') routeGuideId?: string,
+  ) {
+    return this.svc.getGuideAssignmentOptions(
+      planId,
+      routeGuideId ? Number(routeGuideId) : undefined,
+    );
+  }
+
+  @Post(':id/guides')
+  @ApiOperation({ summary: 'Create or update a draft itinerary guide assignment' })
+  async saveGuideAssignment(
+    @Param('id', ParseIntPipe) planId: number,
+    @Body()
+    body: {
+      routeGuideId?: number;
+      routeId?: number;
+      routeDate?: string;
+      guideType?: number;
+      guideLanguage: number;
+      guideSlots?: number[];
+    },
+    @Req() req: any,
+  ) {
+    const userId = Number(req.user?.userId ?? 1);
+    return this.svc.saveGuideAssignment(planId, body, userId);
+  }
+
+  @Delete(':id/guides/:routeGuideId')
+  @ApiOperation({ summary: 'Delete a draft itinerary guide assignment' })
+  async deleteGuideAssignment(
+    @Param('id', ParseIntPipe) planId: number,
+    @Param('routeGuideId', ParseIntPipe) routeGuideId: number,
+    @Query('routeId') routeId?: string,
+  ) {
+    return this.svc.deleteGuideAssignment(
+      planId,
+      routeGuideId,
+      routeId ? Number(routeId) : undefined,
+    );
+  }
+
   @Get('hotel_details/:quoteId')
   @ApiOperation({
     summary: 'Get dynamic hotel packages from TBO API',
@@ -1287,6 +1340,33 @@ export class ItinerariesController {
     @Param('confirmedId', ParseIntPipe) confirmedId: number,
   ) {
     return this.svc.getConfirmedItineraryDetails(confirmedId);
+  }
+
+  @Get('confirmed/:confirmedId/guides')
+  @ApiOperation({ summary: 'List confirmed itinerary guide assignments with slot costs' })
+  async getConfirmedGuideAssignments(
+    @Param('confirmedId', ParseIntPipe) confirmedId: number,
+  ) {
+    return this.svc.listConfirmedGuideAssignments(confirmedId);
+  }
+
+  @Post('confirmed/:confirmedId/guides/cancel-slot')
+  @ApiOperation({ summary: 'Cancel a confirmed itinerary guide slot' })
+  async cancelConfirmedGuideSlot(
+    @Param('confirmedId', ParseIntPipe) confirmedId: number,
+    @Body()
+    body: {
+      routeGuideId: number;
+      guideSlotCostDetailsId: number;
+      itineraryRouteId?: number;
+      cancellationPercentage?: number;
+      defectType?: string;
+      reason?: string;
+    },
+    @Req() req: any,
+  ) {
+    const userId = Number(req.user?.userId ?? 1);
+    return this.svc.cancelConfirmedGuideSlot(confirmedId, body, userId);
   }
 
   @Get(':id/voucher-details')

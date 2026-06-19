@@ -126,6 +126,66 @@ type VehicleBuildCounts = {
   hasUsableVehicleDetails: boolean;
 };
 
+type ItineraryGuideSlotOption = {
+  id: number;
+  label: string;
+};
+
+type ItineraryGuideAssignmentRow = {
+  routeGuideId: number;
+  planId: number;
+  routeId: number | null;
+  routeDate: string | null;
+  guideType: number;
+  guideId: number;
+  guideName: string;
+  guideLanguage: string;
+  guideLanguageIds: number[];
+  guideLanguageLabels: string[];
+  guideSlot: string;
+  guideSlotIds: number[];
+  guideSlotLabels: string[];
+  guideCost: number;
+};
+
+type ConfirmedGuideSlotRow = {
+  confirmedGuideSlotCostId: number;
+  guideSlotCostDetailsId: number;
+  routeGuideId: number;
+  itineraryRouteId: number;
+  itineraryRouteDate: string | null;
+  guideId: number;
+  guideType: number;
+  guideSlot: number;
+  guideSlotLabel: string;
+  guideSlotCost: number;
+  cancellationStatus: number;
+  cancellationDefectType: number;
+};
+
+type ConfirmedGuideAssignmentRow = {
+  routeGuideId: number;
+  itineraryRouteId: number;
+  itineraryRouteDate: string | null;
+  guideId: number;
+  guideName: string;
+  guideType: number;
+  guideCost: number;
+  guideLanguageIds: number[];
+  guideLanguageLabels: string[];
+  guideSlotIds: number[];
+  guideSlotLabels: string[];
+  cancellationStatus: number;
+  slots: ConfirmedGuideSlotRow[];
+};
+
+const ITINERARY_GUIDE_SLOT_OPTIONS: ItineraryGuideSlotOption[] = [
+  { id: 1, label: '8 AM to 1 PM' },
+  { id: 2, label: '1 PM to 6 PM' },
+  { id: 3, label: '8 AM to 6 PM' },
+  { id: 4, label: '6 PM to 9 PM' },
+];
+
 @Injectable()
 export class ItinerariesService {
   private readonly vehicleBuildStatusMap = new Map<number, VehicleBuildStatusMemory>();
@@ -179,6 +239,1097 @@ export class ItinerariesService {
     private readonly hotelDetailsTboService: ItineraryHotelDetailsTboService,
     private readonly supplementNormalizer: SupplementNormalizerService,
   ) {}
+
+  private parseCsvNumberList(value: unknown): number[] {
+    return String(value ?? '')
+      .split(',')
+      .map((item) => Number(String(item).trim()))
+      .filter((item) => Number.isFinite(item) && item > 0);
+  }
+
+  private formatDateOnly(value?: Date | string | null): string | null {
+    if (!value) return null;
+    const dt = value instanceof Date ? value : new Date(value);
+    if (!Number.isFinite(dt.getTime())) return null;
+    return dt.toISOString().slice(0, 10);
+  }
+
+  private getGuideSlotLabel(slotId: number): string {
+    return (
+      ITINERARY_GUIDE_SLOT_OPTIONS.find((slot) => slot.id === Number(slotId))?.label
+      || `Slot ${slotId}`
+    );
+  }
+
+  private getGuideCancellationDefectTypeId(defectType?: string): number {
+    return String(defectType || 'dvi').trim().toLowerCase() === 'guest' ? 2 : 1;
+  }
+
+  private getGuidePaxBucket(totalPax: number): number {
+    if (totalPax <= 5) return 1;
+    if (totalPax <= 14) return 2;
+    return 3;
+  }
+
+  private guideHasLanguage(guideLanguageProficiency: unknown, languageId: number): boolean {
+    if (!languageId) return false;
+    return this.parseCsvNumberList(guideLanguageProficiency).includes(languageId);
+  }
+
+  private guideHasAllSlots(guideAvailableSlot: unknown, slotIds: number[]): boolean {
+    const available = new Set(this.parseCsvNumberList(guideAvailableSlot));
+    return slotIds.every((slotId) => available.has(slotId));
+  }
+
+  private applyGuideGst(totalCharges: number, guideGst: number, gstType: number): number {
+    if (!(totalCharges > 0) || !(guideGst > 0)) {
+      return totalCharges;
+    }
+
+    if (gstType === 1) {
+      const baseAmount = totalCharges / (1 + guideGst / 100);
+      const taxAmount = totalCharges - baseAmount;
+      return baseAmount + taxAmount;
+    }
+
+    if (gstType === 2) {
+      return totalCharges + (totalCharges * guideGst) / 100;
+    }
+
+    return totalCharges;
+  }
+
+  private async getPlanRouteDates(planId: number): Promise<string[]> {
+    const rows = await this.prisma.dvi_itinerary_route_details.findMany({
+      where: {
+        itinerary_plan_ID: planId,
+        deleted: 0,
+        status: 1,
+      } as any,
+      orderBy: [{ itinerary_route_date: 'asc' }, { itinerary_route_ID: 'asc' }],
+      select: {
+        itinerary_route_date: true,
+      },
+    });
+
+    return rows
+      .map((row: any) => this.formatDateOnly(row.itinerary_route_date))
+      .filter((value: string | null): value is string => Boolean(value));
+  }
+
+  private async resolveEligibleGuideCost(params: {
+    planId: number;
+    routeId?: number | null;
+    routeDate?: string | null;
+    guideType: number;
+    languageId: number;
+    slotIds?: number[];
+    totalPaxCount: number;
+  }): Promise<{
+    guideId: number | null;
+    totalGuideCost: number;
+    datewiseCost: Record<string, number>;
+  }> {
+    const guideType = Number(params.guideType || 0);
+    const languageId = Number(params.languageId || 0);
+    const totalPaxCount = Number(params.totalPaxCount || 0);
+    const requestedSlotIds =
+      guideType === 1
+        ? [1, 2, 3]
+        : Array.from(
+            new Set(
+              (params.slotIds ?? [])
+                .map((slotId) => Number(slotId))
+                .filter((slotId) => Number.isFinite(slotId) && slotId > 0),
+            ),
+          );
+
+    if (![1, 2].includes(guideType)) {
+      return { guideId: null, totalGuideCost: 0, datewiseCost: {} };
+    }
+
+    if (!(languageId > 0)) {
+      return { guideId: null, totalGuideCost: 0, datewiseCost: {} };
+    }
+
+    if (guideType === 2 && requestedSlotIds.length === 0) {
+      return { guideId: null, totalGuideCost: 0, datewiseCost: {} };
+    }
+
+    const routeDates =
+      guideType === 1
+        ? await this.getPlanRouteDates(params.planId)
+        : [String(params.routeDate ?? '').slice(0, 10)].filter(Boolean);
+
+    if (routeDates.length === 0) {
+      return { guideId: null, totalGuideCost: 0, datewiseCost: {} };
+    }
+
+    const paxBucket = this.getGuidePaxBucket(totalPaxCount);
+    const guideCandidates = await this.prisma.dvi_guide_details.findMany({
+      where: {
+        deleted: 0,
+        status: 1,
+        guide_preffered_for: 3,
+      } as any,
+      orderBy: { guide_id: 'asc' },
+      select: {
+        guide_id: true,
+        guide_gst: true,
+        gst_type: true,
+        guide_language_proficiency: true,
+        guide_available_slot: true,
+      },
+    });
+
+    const eligibleGuide = guideCandidates.find((guide: any) => (
+      this.guideHasLanguage(guide.guide_language_proficiency, languageId)
+      && this.guideHasAllSlots(guide.guide_available_slot, requestedSlotIds)
+    ));
+
+    if (!eligibleGuide) {
+      return { guideId: null, totalGuideCost: 0, datewiseCost: {} };
+    }
+
+    const pricebookRows = await this.prisma.dvi_guide_pricebook.findMany({
+      where: {
+        deleted: 0,
+        guide_id: eligibleGuide.guide_id,
+        pax_count: paxBucket,
+        slot_type: { in: requestedSlotIds },
+      } as any,
+    });
+
+    let totalCharges = 0;
+    const datewiseCost: Record<string, number> = {};
+
+    for (const routeDate of routeDates) {
+      const dt = new Date(routeDate);
+      if (!Number.isFinite(dt.getTime())) continue;
+
+      const year = String(dt.getUTCFullYear());
+      const month = dt.toLocaleString('en-US', { month: 'long', timeZone: 'UTC' });
+      const dayKey = `day_${dt.getUTCDate()}`;
+
+      const matchingRows = pricebookRows.filter((row: any) => (
+        String(row.year ?? '') === year
+        && String(row.month ?? '').toLowerCase() === month.toLowerCase()
+      ));
+
+      const dailyCharge = matchingRows.reduce((sum: number, row: any) => {
+        const rawValue = Number(row?.[dayKey] ?? 0);
+        return sum + (Number.isFinite(rawValue) ? rawValue : 0);
+      }, 0);
+
+      totalCharges += dailyCharge;
+      datewiseCost[routeDate] = dailyCharge;
+    }
+
+    return {
+      guideId: eligibleGuide.guide_id,
+      totalGuideCost: this.applyGuideGst(
+        totalCharges,
+        Number(eligibleGuide.guide_gst ?? 0),
+        Number(eligibleGuide.gst_type ?? 0),
+      ),
+      datewiseCost,
+    };
+  }
+
+  async listGuideAssignments(planId: number): Promise<ItineraryGuideAssignmentRow[]> {
+    if (!(planId > 0)) {
+      throw new BadRequestException('planId is required');
+    }
+
+    const guideRows = await this.prisma.dvi_itinerary_route_guide_details.findMany({
+      where: {
+        itinerary_plan_ID: planId,
+        deleted: 0,
+        status: 1,
+      } as any,
+      orderBy: [{ guide_type: 'asc' }, { itinerary_route_ID: 'asc' }, { route_guide_ID: 'asc' }],
+      select: {
+        route_guide_ID: true,
+        itinerary_plan_ID: true,
+        itinerary_route_ID: true,
+        guide_id: true,
+        guide_type: true,
+        guide_language: true,
+        guide_slot: true,
+        guide_cost: true,
+      },
+    });
+
+    const routeIds = Array.from(
+      new Set(
+        guideRows
+          .map((row: any) => Number(row.itinerary_route_ID || 0))
+          .filter((routeId: number) => routeId > 0),
+      ),
+    );
+    const guideIds = Array.from(
+      new Set(
+        guideRows
+          .map((row: any) => Number(row.guide_id || 0))
+          .filter((guideId: number) => guideId > 0),
+      ),
+    );
+    const languageIds = Array.from(
+      new Set(
+        guideRows.flatMap((row: any) => this.parseCsvNumberList(row.guide_language)),
+      ),
+    );
+
+    const [routeRows, guideMasters, languageRows] = await Promise.all([
+      routeIds.length
+        ? this.prisma.dvi_itinerary_route_details.findMany({
+            where: { itinerary_route_ID: { in: routeIds }, deleted: 0 } as any,
+            select: { itinerary_route_ID: true, itinerary_route_date: true },
+          })
+        : Promise.resolve([] as any[]),
+      guideIds.length
+        ? this.prisma.dvi_guide_details.findMany({
+            where: { guide_id: { in: guideIds }, deleted: 0 } as any,
+            select: { guide_id: true, guide_name: true },
+          })
+        : Promise.resolve([] as any[]),
+      languageIds.length
+        ? this.prisma.dvi_language.findMany({
+            where: { language_id: { in: languageIds }, status: 1 as any } as any,
+            select: { language_id: true, language: true },
+          })
+        : Promise.resolve([] as any[]),
+    ]);
+
+    const routeMap = new Map<number, any>(
+      routeRows.map((route: any) => [Number(route.itinerary_route_ID), route]),
+    );
+    const guideMap = new Map<number, string>(
+      guideMasters.map((guide: any) => [Number(guide.guide_id), String(guide.guide_name ?? '')]),
+    );
+    const languageMap = new Map<number, string>(
+      languageRows.map((language: any) => [Number(language.language_id), String(language.language ?? '')]),
+    );
+
+    return guideRows.map((row: any) => {
+      const guideLanguageIds = this.parseCsvNumberList(row.guide_language);
+      const guideSlotIds = this.parseCsvNumberList(row.guide_slot);
+      const route = routeMap.get(Number(row.itinerary_route_ID || 0));
+
+      return {
+        routeGuideId: Number(row.route_guide_ID),
+        planId: Number(row.itinerary_plan_ID),
+        routeId: Number(row.itinerary_route_ID || 0) || null,
+        routeDate: this.formatDateOnly(route?.itinerary_route_date),
+        guideType: Number(row.guide_type || 0),
+        guideId: Number(row.guide_id || 0),
+        guideName: guideMap.get(Number(row.guide_id || 0)) || '',
+        guideLanguage: String(row.guide_language ?? ''),
+        guideLanguageIds,
+        guideLanguageLabels: guideLanguageIds
+          .map((languageId) => languageMap.get(languageId) || `Language ${languageId}`),
+        guideSlot: String(row.guide_slot ?? ''),
+        guideSlotIds,
+        guideSlotLabels: guideSlotIds
+          .map((slotId) => ITINERARY_GUIDE_SLOT_OPTIONS.find((slot) => slot.id === slotId)?.label || `Slot ${slotId}`),
+        guideCost: Number(row.guide_cost ?? 0),
+      };
+    });
+  }
+
+  async getGuideAssignmentOptions(planId: number, routeGuideId?: number) {
+    if (!(planId > 0)) {
+      throw new BadRequestException('planId is required');
+    }
+
+    const [languages, assignments] = await Promise.all([
+      this.prisma.dvi_language.findMany({
+        where: { status: 1 as any, deleted: false as any } as any,
+        orderBy: { language: 'asc' },
+        select: { language_id: true, language: true },
+      }),
+      routeGuideId ? this.listGuideAssignments(planId) : Promise.resolve([] as ItineraryGuideAssignmentRow[]),
+    ]);
+
+    const assignment = routeGuideId
+      ? assignments.find((item) => item.routeGuideId === routeGuideId) ?? null
+      : null;
+
+    return {
+      languages: languages.map((language: any) => ({
+        id: Number(language.language_id),
+        label: String(language.language ?? ''),
+      })),
+      slots: ITINERARY_GUIDE_SLOT_OPTIONS,
+      assignment,
+    };
+  }
+
+  async saveGuideAssignment(
+    planId: number,
+    payload: {
+      routeGuideId?: number;
+      routeId?: number;
+      routeDate?: string;
+      guideType?: number;
+      guideLanguage: number;
+      guideSlots?: number[];
+    },
+    userId: number,
+  ) {
+    if (!(planId > 0)) {
+      throw new BadRequestException('itinerary_plan_ID_required');
+    }
+
+    const guideType = Number(payload.guideType || 2);
+    const routeId = Number(payload.routeId || 0);
+    const routeGuideId = Number(payload.routeGuideId || 0);
+    const guideLanguage = Number(payload.guideLanguage || 0);
+    const guideSlots = Array.from(
+      new Set(
+        (payload.guideSlots ?? [])
+          .map((slotId) => Number(slotId))
+          .filter((slotId) => Number.isFinite(slotId) && slotId > 0),
+      ),
+    );
+
+    if (!(guideLanguage > 0)) {
+      throw new BadRequestException('guide_language_required');
+    }
+
+    if (![1, 2].includes(guideType)) {
+      throw new BadRequestException('guide_type_required');
+    }
+
+    if (guideType === 2 && !(routeId > 0)) {
+      throw new BadRequestException('itinerary_route_ID_required');
+    }
+
+    if (guideType === 2 && guideSlots.length === 0) {
+      throw new BadRequestException('guide_slot_required');
+    }
+
+    const plan = await this.prisma.dvi_itinerary_plan_details.findUnique({
+      where: { itinerary_plan_ID: planId },
+      select: {
+        itinerary_plan_ID: true,
+        total_adult: true,
+        total_children: true,
+        total_infants: true,
+      },
+    });
+    if (!plan || Number((plan as any).itinerary_plan_ID || 0) <= 0) {
+      throw new NotFoundException('Itinerary plan not found');
+    }
+
+    const routeRow = guideType === 2
+      ? await this.prisma.dvi_itinerary_route_details.findFirst({
+          where: {
+            itinerary_plan_ID: planId,
+            itinerary_route_ID: routeId,
+            deleted: 0,
+          } as any,
+          select: {
+            itinerary_route_ID: true,
+            itinerary_route_date: true,
+          },
+        })
+      : null;
+
+    if (guideType === 2 && !routeRow) {
+      throw new NotFoundException('Route not found');
+    }
+
+    const routeDate =
+      guideType === 2
+        ? (payload.routeDate?.slice(0, 10) || this.formatDateOnly(routeRow?.itinerary_route_date))
+        : null;
+
+    const totalPaxCount =
+      Number((plan as any).total_adult || 0)
+      + Number((plan as any).total_children || 0)
+      + Number((plan as any).total_infants || 0);
+
+    const guideResult = await this.resolveEligibleGuideCost({
+      planId,
+      routeId: routeId || null,
+      routeDate,
+      guideType,
+      languageId: guideLanguage,
+      slotIds: guideSlots,
+      totalPaxCount,
+    });
+
+    if (!(guideResult.totalGuideCost > 0) || !(Number(guideResult.guideId || 0) > 0)) {
+      throw new BadRequestException('guide_not_available');
+    }
+
+    const guideLanguageCsv = String(guideLanguage);
+    const guideSlotCsv = guideType === 1 ? '1,2,3' : guideSlots.join(',');
+
+    const savedGuide = await this.prisma.$transaction(async (tx) => {
+      let routeGuideRecord: any;
+
+      if (routeGuideId > 0) {
+        routeGuideRecord = await tx.dvi_itinerary_route_guide_details.update({
+          where: { route_guide_ID: routeGuideId },
+          data: {
+            itinerary_plan_ID: planId,
+            itinerary_route_ID: guideType === 2 ? routeId : 0,
+            guide_id: Number(guideResult.guideId),
+            guide_type: guideType,
+            guide_language: guideLanguageCsv,
+            guide_slot: guideSlotCsv,
+            guide_cost: Number(guideResult.totalGuideCost.toFixed(2)),
+            createdby: Number(userId || 1),
+            updatedon: new Date(),
+            status: 1 as any,
+            deleted: 0 as any,
+          } as any,
+        });
+      } else {
+        routeGuideRecord = await tx.dvi_itinerary_route_guide_details.create({
+          data: {
+            itinerary_plan_ID: planId,
+            itinerary_route_ID: guideType === 2 ? routeId : 0,
+            guide_id: Number(guideResult.guideId),
+            guide_type: guideType,
+            guide_language: guideLanguageCsv,
+            guide_slot: guideSlotCsv,
+            guide_cost: Number(guideResult.totalGuideCost.toFixed(2)),
+            createdby: Number(userId || 1),
+            createdon: new Date(),
+            updatedon: new Date(),
+            status: 1 as any,
+            deleted: 0 as any,
+          } as any,
+        });
+      }
+
+      await tx.dvi_itinerary_route_guide_slot_cost_details.deleteMany({
+        where: {
+          route_guide_id: Number(routeGuideRecord.route_guide_ID),
+          itinerary_plan_id: planId,
+        } as any,
+      });
+
+      if (guideType === 2 && routeDate) {
+        const slotRows = [];
+        for (const slotId of guideSlots) {
+          const slotGuideResult = await this.resolveEligibleGuideCost({
+            planId,
+            routeId,
+            routeDate,
+            guideType,
+            languageId: guideLanguage,
+            slotIds: [slotId],
+            totalPaxCount,
+          });
+
+          slotRows.push({
+            route_guide_id: Number(routeGuideRecord.route_guide_ID),
+            itinerary_plan_id: planId,
+            itinerary_route_id: routeId,
+            itinerary_route_date: new Date(routeDate),
+            guide_id: Number(slotGuideResult.guideId || guideResult.guideId || 0),
+            guide_type: guideType,
+            guide_slot: slotId,
+            guide_slot_cost: Number(slotGuideResult.totalGuideCost.toFixed(2)),
+            createdby: Number(userId || 1),
+            createdon: new Date(),
+            updatedon: new Date(),
+            status: 1 as any,
+            deleted: 0 as any,
+          });
+        }
+
+        if (slotRows.length > 0) {
+          await tx.dvi_itinerary_route_guide_slot_cost_details.createMany({
+            data: slotRows as any,
+          });
+        }
+      } else if (guideType === 1) {
+        const routeDates = await this.getPlanRouteDates(planId);
+        const slotCostRows = routeDates.map((day) => ({
+          route_guide_id: Number(routeGuideRecord.route_guide_ID),
+          itinerary_plan_id: planId,
+          itinerary_route_date: new Date(day),
+          guide_id: Number(guideResult.guideId || 0),
+          guide_type: guideType,
+          guide_slot_cost: Number((guideResult.datewiseCost[day] ?? 0).toFixed(2)),
+          createdby: Number(userId || 1),
+          createdon: new Date(),
+          updatedon: new Date(),
+          status: 1 as any,
+          deleted: 0 as any,
+        }));
+
+        if (slotCostRows.length > 0) {
+          await tx.dvi_itinerary_route_guide_slot_cost_details.createMany({
+            data: slotCostRows as any,
+          });
+        }
+      }
+
+      return routeGuideRecord;
+    });
+
+    return {
+      success: true,
+      routeGuideId: Number(savedGuide.route_guide_ID),
+      guideCost: Number(savedGuide.guide_cost ?? 0),
+    };
+  }
+
+  async deleteGuideAssignment(planId: number, routeGuideId: number, routeId?: number) {
+    if (!(planId > 0)) {
+      throw new BadRequestException('planId is required');
+    }
+    if (!(routeGuideId > 0)) {
+      throw new BadRequestException('routeGuideId is required');
+    }
+
+    const whereGuide: any = {
+      route_guide_ID: routeGuideId,
+      itinerary_plan_ID: planId,
+    };
+    if (routeId && routeId > 0) {
+      whereGuide.itinerary_route_ID = routeId;
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.dvi_itinerary_route_guide_slot_cost_details.deleteMany({
+        where: {
+          route_guide_id: routeGuideId,
+          itinerary_plan_id: planId,
+        } as any,
+      });
+
+      await tx.dvi_itinerary_route_guide_details.deleteMany({
+        where: whereGuide,
+      });
+    });
+
+    return { success: true };
+  }
+
+  private async ensureConfirmedGuideSlotCostRows(
+    tx: any,
+    itineraryPlanId: number,
+    userId: number,
+  ) {
+    const existingCount = await tx.dvi_confirmed_itinerary_route_guide_slot_cost_details.count({
+      where: {
+        itinerary_plan_id: itineraryPlanId,
+        deleted: 0,
+      },
+    });
+
+    if (existingCount > 0) {
+      return;
+    }
+
+    const draftSlotRows = await tx.dvi_itinerary_route_guide_slot_cost_details.findMany({
+      where: {
+        itinerary_plan_id: itineraryPlanId,
+        deleted: 0,
+      },
+      orderBy: [
+        { route_guide_id: 'asc' },
+        { itinerary_route_date: 'asc' },
+      ],
+    });
+
+    if (!draftSlotRows.length) {
+      return;
+    }
+
+    await tx.dvi_confirmed_itinerary_route_guide_slot_cost_details.createMany({
+      data: draftSlotRows.map((row: any) => ({
+        guide_slot_cost_details_id: Number(row.guide_slot_cost_details_id || 0),
+        route_guide_id: Number(row.route_guide_id || 0),
+        itinerary_plan_id: itineraryPlanId,
+        itinerary_route_id: Number(row.itinerary_route_id || 0),
+        itinerary_route_date: row.itinerary_route_date,
+        guide_id: Number(row.guide_id || 0),
+        guide_type: Number(row.guide_type || 0),
+        guide_slot: Number(row.guide_slot || 0),
+        guide_slot_cost: Number(row.guide_slot_cost || 0),
+        cancellation_status: 0,
+        cancellation_defect_type: 0,
+        createdby: Number(userId || 1),
+        createdon: new Date(),
+        updatedon: new Date(),
+        status: 1,
+        deleted: 0,
+      })),
+    });
+  }
+
+  async listConfirmedGuideAssignments(confirmedPlanId: number) {
+    const confirmedPlan = await this.prisma.dvi_confirmed_itinerary_plan_details.findUnique({
+      where: { confirmed_itinerary_plan_ID: confirmedPlanId },
+      select: { itinerary_plan_ID: true },
+    });
+
+    if (!confirmedPlan?.itinerary_plan_ID) {
+      throw new NotFoundException('Confirmed itinerary not found');
+    }
+
+    const itineraryPlanId = Number(confirmedPlan.itinerary_plan_ID);
+
+    const guideRows = await this.prisma.dvi_confirmed_itinerary_route_guide_details.findMany({
+      where: { itinerary_plan_ID: itineraryPlanId, deleted: 0 },
+      orderBy: [{ guide_type: 'asc' }, { itinerary_route_ID: 'asc' }, { route_guide_ID: 'asc' }],
+    });
+
+    const guideIds = Array.from(
+      new Set(guideRows.map((row: any) => Number(row.guide_id || 0)).filter((id) => id > 0)),
+    );
+    const languageIds = Array.from(
+      new Set(guideRows.flatMap((row: any) => this.parseCsvNumberList(row.guide_language))),
+    );
+
+    const [slotRows, routeRows, guideMasters, languageRows] = await Promise.all([
+      this.prisma.dvi_confirmed_itinerary_route_guide_slot_cost_details.findMany({
+        where: { itinerary_plan_id: itineraryPlanId, deleted: 0 },
+        orderBy: [{ route_guide_id: 'asc' }, { itinerary_route_date: 'asc' }, { guide_slot: 'asc' }],
+      }),
+      this.prisma.dvi_itinerary_route_details.findMany({
+        where: { itinerary_plan_ID: itineraryPlanId, deleted: 0 },
+        select: { itinerary_route_ID: true, itinerary_route_date: true },
+      }),
+      guideIds.length
+        ? this.prisma.dvi_guide_details.findMany({
+            where: { guide_id: { in: guideIds } },
+            select: { guide_id: true, guide_name: true },
+          })
+        : Promise.resolve([] as any[]),
+      languageIds.length
+        ? this.prisma.dvi_language.findMany({
+            where: {
+              language_id: { in: languageIds },
+              deleted: 0,
+            } as any,
+            select: { language_id: true, language: true },
+          })
+        : Promise.resolve([] as any[]),
+    ]);
+
+    const routeMap = new Map<number, string | null>(
+      routeRows.map((row: any) => [
+        Number(row.itinerary_route_ID || 0),
+        this.formatDateOnly(row.itinerary_route_date),
+      ]),
+    );
+    const guideMap = new Map<number, string>(
+      guideMasters.map((row: any) => [Number(row.guide_id || 0), String(row.guide_name || '')]),
+    );
+    const languageMap = new Map<number, string>(
+      languageRows.map((row: any) => [Number(row.language_id || 0), String(row.language || '')]),
+    );
+    const slotRowsByRouteGuideId = new Map<number, ConfirmedGuideSlotRow[]>();
+
+    slotRows.forEach((row: any) => {
+      const routeGuideId = Number(row.route_guide_id || 0);
+      if (!slotRowsByRouteGuideId.has(routeGuideId)) {
+        slotRowsByRouteGuideId.set(routeGuideId, []);
+      }
+      slotRowsByRouteGuideId.get(routeGuideId)?.push({
+        confirmedGuideSlotCostId: Number(row.cnf_itinerary_guide_slot_cost_details_ID || 0),
+        guideSlotCostDetailsId: Number(row.guide_slot_cost_details_id || 0),
+        routeGuideId,
+        itineraryRouteId: Number(row.itinerary_route_id || 0),
+        itineraryRouteDate: this.formatDateOnly(row.itinerary_route_date),
+        guideId: Number(row.guide_id || 0),
+        guideType: Number(row.guide_type || 0),
+        guideSlot: Number(row.guide_slot || 0),
+        guideSlotLabel: this.getGuideSlotLabel(Number(row.guide_slot || 0)),
+        guideSlotCost: Number(row.guide_slot_cost || 0),
+        cancellationStatus: Number(row.cancellation_status || 0),
+        cancellationDefectType: Number(row.cancellation_defect_type || 0),
+      });
+    });
+
+    return guideRows.map((row: any) => {
+      const guideLanguageIds = this.parseCsvNumberList(row.guide_language);
+      const guideSlotIds = this.parseCsvNumberList(row.guide_slot);
+      return {
+        routeGuideId: Number(row.route_guide_ID || 0),
+        itineraryRouteId: Number(row.itinerary_route_ID || 0),
+        itineraryRouteDate:
+          routeMap.get(Number(row.itinerary_route_ID || 0))
+          || slotRowsByRouteGuideId.get(Number(row.route_guide_ID || 0))?.[0]?.itineraryRouteDate
+          || null,
+        guideId: Number(row.guide_id || 0),
+        guideName: guideMap.get(Number(row.guide_id || 0)) || '',
+        guideType: Number(row.guide_type || 0),
+        guideCost: Number(row.guide_cost || 0),
+        guideLanguageIds,
+        guideLanguageLabels: guideLanguageIds.map((id) => languageMap.get(id) || `Language ${id}`),
+        guideSlotIds,
+        guideSlotLabels: guideSlotIds.map((id) => this.getGuideSlotLabel(id)),
+        cancellationStatus: Number(row.cancellation_status || 0),
+        slots: slotRowsByRouteGuideId.get(Number(row.route_guide_ID || 0)) || [],
+      } satisfies ConfirmedGuideAssignmentRow;
+    });
+  }
+
+  async cancelConfirmedGuideSlot(
+    confirmedPlanId: number,
+    payload: {
+      routeGuideId: number;
+      guideSlotCostDetailsId: number;
+      itineraryRouteId?: number;
+      cancellationPercentage?: number;
+      defectType?: string;
+      reason?: string;
+    },
+    userId: number,
+  ) {
+    if (!(confirmedPlanId > 0)) {
+      throw new BadRequestException('confirmedPlanId is required');
+    }
+    if (!(Number(payload.routeGuideId || 0) > 0)) {
+      throw new BadRequestException('routeGuideId is required');
+    }
+    if (!(Number(payload.guideSlotCostDetailsId || 0) > 0)) {
+      throw new BadRequestException('guideSlotCostDetailsId is required');
+    }
+
+    const confirmedPlan = await this.prisma.dvi_confirmed_itinerary_plan_details.findUnique({
+      where: { confirmed_itinerary_plan_ID: confirmedPlanId },
+      select: {
+        confirmed_itinerary_plan_ID: true,
+        itinerary_plan_ID: true,
+        itinerary_quote_ID: true,
+        itinerary_total_net_payable_amount: true,
+      },
+    });
+
+    if (!confirmedPlan?.itinerary_plan_ID) {
+      throw new NotFoundException('Confirmed itinerary not found');
+    }
+
+    const itineraryPlanId = Number(confirmedPlan.itinerary_plan_ID);
+    const cancellationPercentage = Math.max(0, Math.min(100, Number(payload.cancellationPercentage ?? 10) || 10));
+    const defectTypeId = this.getGuideCancellationDefectTypeId(payload.defectType);
+    const cancellationReason = String(payload.reason || 'Guide slot cancelled').trim();
+
+    return this.prisma.$transaction(async (tx) => {
+      await this.ensureConfirmedGuideSlotCostRows(tx, itineraryPlanId, userId);
+
+      const confirmedGuide = await tx.dvi_confirmed_itinerary_route_guide_details.findFirst({
+        where: {
+          itinerary_plan_ID: itineraryPlanId,
+          route_guide_ID: Number(payload.routeGuideId),
+          deleted: 0,
+        },
+      });
+
+      if (!confirmedGuide) {
+        throw new NotFoundException('Confirmed guide not found');
+      }
+
+      const confirmedSlot = await tx.dvi_confirmed_itinerary_route_guide_slot_cost_details.findFirst({
+        where: {
+          itinerary_plan_id: itineraryPlanId,
+          route_guide_id: Number(payload.routeGuideId),
+          guide_slot_cost_details_id: Number(payload.guideSlotCostDetailsId),
+          deleted: 0,
+        },
+      });
+
+      if (!confirmedSlot) {
+        throw new NotFoundException('Confirmed guide slot not found');
+      }
+
+      if (Number(confirmedSlot.cancellation_status || 0) === 1) {
+        throw new ConflictException('Guide slot already cancelled');
+      }
+
+      let cancellation = await tx.dvi_cancelled_itineraries.findFirst({
+        where: { itinerary_plan_id: itineraryPlanId, deleted: 0 },
+      });
+
+      if (!cancellation) {
+        const timestamp = new Date().toISOString().split('T')[0].replace(/-/g, '');
+        cancellation = await tx.dvi_cancelled_itineraries.create({
+          data: {
+            itinerary_plan_id: itineraryPlanId,
+            cancellation_reason: cancellationReason,
+            cancellation_reference: `CANCEL_${timestamp}_${itineraryPlanId}`,
+            cancellation_status: 'completed',
+            cancelled_by: userId,
+            cancelled_on: new Date(),
+            modify_hotspot: 0,
+            modify_hotel: 0,
+            modify_vehicle: 0,
+            modify_guide: 1,
+            modify_activity: 0,
+            itinerary_cancellation_status: 2,
+            total_cancelled_service_amount: 0,
+            total_cancellation_charge: 0,
+            total_refund_amount: 0,
+            createdby: userId,
+            createdon: new Date(),
+            updatedon: new Date(),
+            status: 1,
+            deleted: 0,
+          },
+        });
+      }
+
+      let cancelledGuide = await tx.dvi_cancelled_itinerary_route_guide_details.findFirst({
+        where: {
+          itinerary_plan_ID: itineraryPlanId,
+          route_guide_ID: Number(payload.routeGuideId),
+          deleted: 0,
+        },
+      });
+
+      if (!cancelledGuide) {
+        cancelledGuide = await tx.dvi_cancelled_itinerary_route_guide_details.create({
+          data: {
+            cancelled_itinerary_ID: Number(cancellation.cancelled_itinerary_ID),
+            confirmed_route_guide_ID: Number(confirmedGuide.confirmed_route_guide_ID || 0),
+            route_guide_ID: Number(confirmedGuide.route_guide_ID || 0),
+            itinerary_plan_ID: itineraryPlanId,
+            itinerary_route_ID: Number(confirmedGuide.itinerary_route_ID || 0),
+            guide_id: Number(confirmedGuide.guide_id || 0),
+            guide_status: Number(confirmedGuide.guide_status || 0),
+            guide_not_visited_description: confirmedGuide.guide_not_visited_description,
+            driver_guide_status: Number(confirmedGuide.driver_guide_status || 0),
+            driver_not_visited_description: confirmedGuide.driver_not_visited_description,
+            guide_type: Number(confirmedGuide.guide_type || 0),
+            guide_language: confirmedGuide.guide_language,
+            guide_slot: confirmedGuide.guide_slot,
+            guide_cost: Number(confirmedGuide.guide_cost || 0),
+            createdby: userId,
+            createdon: new Date(),
+            updatedon: new Date(),
+            status: 1,
+            deleted: 0,
+          },
+        });
+      }
+
+      let cancelledSlot = await tx.dvi_cancelled_itinerary_route_guide_slot_cost_details.findFirst({
+        where: {
+          itinerary_plan_id: itineraryPlanId,
+          route_guide_id: Number(payload.routeGuideId),
+          guide_slot_cost_details_id: Number(payload.guideSlotCostDetailsId),
+          deleted: 0,
+        },
+      });
+
+      if (!cancelledSlot) {
+        cancelledSlot = await tx.dvi_cancelled_itinerary_route_guide_slot_cost_details.create({
+          data: {
+            cancelled_itinerary_ID: Number(cancellation.cancelled_itinerary_ID),
+            cnf_itinerary_guide_slot_cost_details_ID: Number(confirmedSlot.cnf_itinerary_guide_slot_cost_details_ID || 0),
+            guide_slot_cost_details_id: Number(confirmedSlot.guide_slot_cost_details_id || 0),
+            route_guide_id: Number(confirmedSlot.route_guide_id || 0),
+            itinerary_plan_id: itineraryPlanId,
+            itinerary_route_id: Number(confirmedSlot.itinerary_route_id || 0),
+            itinerary_route_date: confirmedSlot.itinerary_route_date,
+            guide_id: Number(confirmedSlot.guide_id || 0),
+            guide_type: Number(confirmedSlot.guide_type || 0),
+            guide_slot: Number(confirmedSlot.guide_slot || 0),
+            guide_slot_cost: Number(confirmedSlot.guide_slot_cost || 0),
+            createdby: userId,
+            createdon: new Date(),
+            updatedon: new Date(),
+            status: 1,
+            deleted: 0,
+          },
+        });
+      }
+
+      const slotCost = Number(confirmedSlot.guide_slot_cost || 0);
+      const cancellationCharge = Number(((slotCost * cancellationPercentage) / 100).toFixed(2));
+      const refundAmount = Number((slotCost - cancellationCharge).toFixed(2));
+      const cancelledOn = new Date();
+
+      await tx.dvi_cancelled_itinerary_route_guide_slot_cost_details.update({
+        where: {
+          cancelled_itinerary_guide_slot_cost_details_ID: Number(cancelledSlot.cancelled_itinerary_guide_slot_cost_details_ID),
+        },
+        data: {
+          cancelled_itinerary_ID: Number(cancellation.cancelled_itinerary_ID),
+          slot_cancellation_status: 1,
+          cancelled_on: cancelledOn,
+          defect_type: defectTypeId,
+          slot_cancellation_percentage: cancellationPercentage,
+          total_slot_cancelled_service_amount: slotCost,
+          total_slot_cancellation_charge: cancellationCharge,
+          total_slot_refund_amount: refundAmount,
+          updatedon: new Date(),
+        },
+      });
+
+      await tx.dvi_confirmed_itinerary_route_guide_slot_cost_details.update({
+        where: {
+          cnf_itinerary_guide_slot_cost_details_ID: Number(confirmedSlot.cnf_itinerary_guide_slot_cost_details_ID),
+        },
+        data: {
+          cancellation_status: 1,
+          cancellation_defect_type: defectTypeId,
+          updatedon: new Date(),
+        },
+      });
+
+      await tx.dvi_cancelled_itinerary_details.create({
+        data: {
+          cancelled_itinerary_id: Number(cancellation.cancelled_itinerary_ID),
+          itinerary_plan_id: itineraryPlanId,
+          itinerary_guide_cancellation_status: 1,
+          cancellation_date: cancelledOn,
+          cancelled_by: userId,
+          total_cancelled_service_amount: slotCost,
+          total_cancellation_charge: cancellationCharge,
+          total_refund_amount: Math.round(refundAmount),
+          createdby: userId,
+          createdon: new Date(),
+          updatedon: new Date(),
+          status: 1,
+          deleted: 0,
+        },
+      });
+
+      const routeCancelledSlots = await tx.dvi_cancelled_itinerary_route_guide_slot_cost_details.aggregate({
+        where: {
+          itinerary_plan_id: itineraryPlanId,
+          route_guide_id: Number(payload.routeGuideId),
+          slot_cancellation_status: 1,
+          deleted: 0,
+        },
+        _sum: {
+          total_slot_cancelled_service_amount: true,
+          total_slot_cancellation_charge: true,
+          total_slot_refund_amount: true,
+        },
+        _count: {
+          cancelled_itinerary_guide_slot_cost_details_ID: true,
+        },
+      });
+
+      const totalRouteSlots = await tx.dvi_confirmed_itinerary_route_guide_slot_cost_details.count({
+        where: {
+          itinerary_plan_id: itineraryPlanId,
+          route_guide_id: Number(payload.routeGuideId),
+          deleted: 0,
+        },
+      });
+
+      const cancelledRouteSlotCount = Number(routeCancelledSlots._count?.cancelled_itinerary_guide_slot_cost_details_ID || 0);
+      const routeFullyCancelled = totalRouteSlots > 0 && cancelledRouteSlotCount >= totalRouteSlots;
+
+      await tx.dvi_cancelled_itinerary_route_guide_details.update({
+        where: {
+          cancelled_route_guide_ID: Number(cancelledGuide.cancelled_route_guide_ID),
+        },
+        data: {
+          cancelled_itinerary_ID: Number(cancellation.cancelled_itinerary_ID),
+          route_cancellation_status: routeFullyCancelled ? 1 : 0,
+          cancelled_on: routeFullyCancelled ? cancelledOn : cancelledGuide.cancelled_on,
+          total_route_cancelled_service_amount: Number(routeCancelledSlots._sum?.total_slot_cancelled_service_amount || 0),
+          total_route_cancellation_charge: Number(routeCancelledSlots._sum?.total_slot_cancellation_charge || 0),
+          total_route_refund_amount: Number(routeCancelledSlots._sum?.total_slot_refund_amount || 0),
+          updatedon: new Date(),
+        },
+      });
+
+      if (routeFullyCancelled) {
+        await tx.dvi_confirmed_itinerary_route_guide_details.update({
+          where: {
+            confirmed_route_guide_ID: Number(confirmedGuide.confirmed_route_guide_ID),
+          },
+          data: {
+            cancellation_status: 1,
+            updatedon: new Date(),
+          },
+        });
+      }
+
+      const itineraryCancelledGuideCount = await tx.dvi_confirmed_itinerary_route_guide_details.count({
+        where: {
+          itinerary_plan_ID: itineraryPlanId,
+          cancellation_status: 1,
+          deleted: 0,
+        },
+      });
+      const itineraryGuideCount = await tx.dvi_confirmed_itinerary_route_guide_details.count({
+        where: {
+          itinerary_plan_ID: itineraryPlanId,
+          deleted: 0,
+        },
+      });
+      const allGuidesCancelled = itineraryGuideCount > 0 && itineraryCancelledGuideCount >= itineraryGuideCount;
+
+      const aggregatedCancellation = await tx.dvi_cancelled_itinerary_route_guide_slot_cost_details.aggregate({
+        where: {
+          itinerary_plan_id: itineraryPlanId,
+          slot_cancellation_status: 1,
+          deleted: 0,
+        },
+        _sum: {
+          total_slot_cancelled_service_amount: true,
+          total_slot_cancellation_charge: true,
+          total_slot_refund_amount: true,
+        },
+      });
+
+      await tx.dvi_cancelled_itineraries.update({
+        where: { cancelled_itinerary_ID: Number(cancellation.cancelled_itinerary_ID) },
+        data: {
+          cancellation_reason: cancellationReason,
+          cancelled_by: userId,
+          cancelled_on: cancelledOn,
+          modify_guide: 1,
+          total_cancelled_service_amount: Number(aggregatedCancellation._sum?.total_slot_cancelled_service_amount || 0),
+          total_cancellation_charge: Number(aggregatedCancellation._sum?.total_slot_cancellation_charge || 0),
+          total_refund_amount: Math.round(Number(aggregatedCancellation._sum?.total_slot_refund_amount || 0)),
+          itinerary_cancellation_status: allGuidesCancelled ? 1 : 2,
+          cancellation_status: 'completed',
+          updatedon: new Date(),
+        },
+      });
+
+      await tx.dvi_confirmed_itinerary_plan_details.update({
+        where: { confirmed_itinerary_plan_ID: confirmedPlanId },
+        data: {
+          itinerary_cancellation_status: allGuidesCancelled ? 1 : 2,
+          updatedon: new Date(),
+        },
+      });
+
+      await this.logCancellationAction(
+        tx,
+        Number(cancellation.cancelled_itinerary_ID),
+        itineraryPlanId,
+        'guide_slot_cancelled',
+        `routeGuideId=${payload.routeGuideId}, slotCostId=${payload.guideSlotCostDetailsId}, refund=${refundAmount}`,
+        userId,
+      );
+
+      return {
+        success: true,
+        message: 'Guide slot cancelled successfully',
+        data: {
+          routeGuideId: Number(payload.routeGuideId),
+          guideSlotCostDetailsId: Number(payload.guideSlotCostDetailsId),
+          slotCost,
+          cancellationPercentage,
+          cancellationCharge,
+          refundAmount,
+          routeFullyCancelled,
+          itineraryGuideCancellationStatus: allGuidesCancelled ? 1 : 2,
+          cancelledOn,
+        },
+      };
+    });
+  }
 
   private createVehicleBuildRunId(planId: number): string {
     return `${planId}-${Date.now()}-${randomUUID()}`;
@@ -7301,6 +8452,29 @@ export class ItinerariesService {
           guide_language: g.guide_language,
           guide_slot: g.guide_slot,
           guide_cost: g.guide_cost,
+          createdby: userId,
+          status: 1,
+        },
+      });
+    }
+
+    const guideSlotCosts = await tx.dvi_itinerary_route_guide_slot_cost_details.findMany({
+      where: { itinerary_plan_id: draftPlanId, deleted: 0 },
+    });
+    for (const slotCost of guideSlotCosts) {
+      await tx.dvi_confirmed_itinerary_route_guide_slot_cost_details.create({
+        data: {
+          guide_slot_cost_details_id: Number(slotCost.guide_slot_cost_details_id || 0),
+          route_guide_id: Number(slotCost.route_guide_id || 0),
+          itinerary_plan_id: draftPlanId,
+          itinerary_route_id: Number(slotCost.itinerary_route_id || 0),
+          itinerary_route_date: slotCost.itinerary_route_date,
+          guide_id: Number(slotCost.guide_id || 0),
+          guide_type: Number(slotCost.guide_type || 0),
+          guide_slot: Number(slotCost.guide_slot || 0),
+          guide_slot_cost: Number(slotCost.guide_slot_cost || 0),
+          cancellation_status: 0,
+          cancellation_defect_type: 0,
           createdby: userId,
           status: 1,
         },
@@ -20964,6 +22138,8 @@ export class ItinerariesService {
 
     console.log('   📍 Found', routes.length, 'routes');
 
+    const guideAssignments = await this.listConfirmedGuideAssignments(confirmedPlanId);
+
     const confirmedHotels = await this.prisma.dvi_confirmed_itinerary_plan_hotel_details.findMany({
       where: {
         itinerary_plan_id: plan.itinerary_plan_ID,
@@ -21441,6 +22617,7 @@ export class ItinerariesService {
         itinerary_plan_ID: originalPlan.itinerary_plan_ID,
         confirmed_itinerary_plan_ID: confirmedPlanId,
       },
+      guideAssignments,
     };
   }
 

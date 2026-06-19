@@ -1,6 +1,6 @@
 // FILE: src/modules/accounts-manager/accounts-manager.controller.ts
 
-import { Body, Controller, Get, Post, Query, UseGuards, Req } from "@nestjs/common";
+import { Body, Controller, Get, Post, Query, UseGuards, Req, UploadedFile, UseInterceptors } from "@nestjs/common";
 import { AccountsManagerService } from "./accounts-manager.service";
 import { AccountsManagerQueryDto } from "./dto/accounts-manager-query.dto";
 import { AccountsManagerRowDto } from "./dto/accounts-manager-row.dto";
@@ -19,6 +19,29 @@ import {
   ApiTags,
 } from "@nestjs/swagger";
 import { JwtAuthGuard } from "../../auth/jwt-auth.guard";
+import { FileInterceptor } from "@nestjs/platform-express";
+import { diskStorage } from "multer";
+import * as fs from "fs";
+import * as path from "path";
+
+const resolveBackendRoot = () => path.resolve(process.cwd());
+
+const paymentScreenshotStorage = diskStorage({
+  destination: (_req, _file, cb) => {
+    const dest = path.join(resolveBackendRoot(), "public", "uploads", "accounts_payment_screenshots");
+    fs.mkdirSync(dest, { recursive: true });
+    cb(null, dest);
+  },
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname || "").toLowerCase() || ".png";
+    const safeBase = path
+      .basename(file.originalname || "payment_screenshot", ext)
+      .replace(/[^a-zA-Z0-9_-]+/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .slice(0, 60) || "payment_screenshot";
+    cb(null, `${Date.now()}_${safeBase}${ext}`);
+  },
+});
 
 @ApiTags("accounts-manager")
 @ApiBearerAuth() // uses default bearer auth from main.ts
@@ -144,9 +167,28 @@ export class AccountsManagerController {
   @ApiBearerAuth() // optional (redundant but explicit for this route)
   @ApiBody({ type: AccountsManagerPayDto })
   @ApiOkResponse({ description: "Payment recorded" })
+  @UseInterceptors(
+    FileInterceptor("paymentScreenshot", {
+      storage: paymentScreenshotStorage,
+    }),
+  )
   async pay(
     @Body() body: AccountsManagerPayDto,
+    @UploadedFile() paymentScreenshot?: Express.Multer.File,
   ): Promise<void> {
-    return this.service.recordPayment(body);
+    const normalizedBody: AccountsManagerPayDto = {
+      ...body,
+      accountsItineraryDetailsId: Number((body as any).accountsItineraryDetailsId ?? 0),
+      componentDetailId: Number((body as any).componentDetailId ?? 0),
+      amount: Number((body as any).amount ?? 0),
+      modeOfPaymentId:
+        (body as any).modeOfPaymentId !== undefined && (body as any).modeOfPaymentId !== ""
+          ? Number((body as any).modeOfPaymentId)
+          : undefined,
+      paymentScreenshotPath: paymentScreenshot
+        ? `/uploads/accounts_payment_screenshots/${paymentScreenshot.filename}`
+        : String((body as any).paymentScreenshotPath ?? "").trim() || undefined,
+    };
+    return this.service.recordPayment(normalizedBody);
   }
 }

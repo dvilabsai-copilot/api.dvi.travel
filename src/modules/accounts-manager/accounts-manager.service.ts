@@ -1034,6 +1034,7 @@ export class AccountsManagerService {
       utrNumber,
       processedBy,
       routeDate,
+      paymentScreenshotPath,
     } = body;
 
     const transactionDate =
@@ -1047,7 +1048,7 @@ export class AccountsManagerService {
       transaction_done_by: processedBy ?? null,
       mode_of_pay: modeOfPaymentId ?? null, // 1: Cash, 2: UPI, 3: Net Banking
       transaction_utr_no: utrNumber ?? null,
-      transaction_attachment: "", // screenshot upload not wired yet
+      transaction_attachment: paymentScreenshotPath ?? "",
       deleted: 0,
     };
 
