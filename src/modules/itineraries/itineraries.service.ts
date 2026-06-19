@@ -629,6 +629,18 @@ export class ItinerariesService {
     return result.status;
   }
 
+  private isTransientVehicleBuildFailure(error: any): boolean {
+    const message = String(error?.message || error || '');
+    return (
+      message === 'Vehicle build completed without usable vehicle pricing rows' ||
+      message === 'Vehicle build completed without requested vehicle rows'
+    );
+  }
+
+  private async sleep(ms: number): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
   private async autoSelectLowestVehicleVendors(planId: number): Promise<void> {
     try {
       const eligibleRows = await this.prisma.dvi_itinerary_plan_vendor_eligible_list.findMany({
@@ -766,12 +778,50 @@ export class ItinerariesService {
     const u: any = (req as any)?.user ?? {};
     const userId = Number(u.userId ?? 1);
     const { quoteId, vehicles } = await this.getVehicleBuildPlanContext(normalizedPlanId);
-    const buildRunId = this.createVehicleBuildRunId(normalizedPlanId);
+    const startedAtMs = Date.now();
+    const startedAt = new Date(startedAtMs).toISOString();
+    let buildRunId = this.createVehicleBuildRunId(normalizedPlanId);
     await this.startVehicleBuildRecord(normalizedPlanId, buildRunId, userId);
-    const result = await this.executeVehicleBuild(normalizedPlanId, vehicles, userId, quoteId, {
-      buildRunId,
-      skipPermitBuild: true,
-    });
+
+    let result;
+    try {
+      result = await this.executeVehicleBuild(normalizedPlanId, vehicles, userId, quoteId, {
+        buildRunId,
+        skipPermitBuild: true,
+      });
+    } catch (error: any) {
+      if (!this.isTransientVehicleBuildFailure(error)) {
+        throw error;
+      }
+
+      console.warn('[ItinerariesService] Retrying sync vehicle build after transient failure', {
+        planId: normalizedPlanId,
+        buildRunId,
+        message: String(error?.message || error || 'Vehicle build failed'),
+      });
+
+      await this.sleep(1000);
+      const statusAfterWait = await this.getVehicleBuildStatus(normalizedPlanId);
+      if (statusAfterWait.hasUsableVehicleDetails) {
+        return {
+          planId: normalizedPlanId,
+          status: statusAfterWait.status,
+          stage: 'vehicle_building',
+          buildRunId: statusAfterWait.buildRunId || buildRunId,
+          durationMs: Date.now() - startedAtMs,
+          startedAt,
+          finishedAt: new Date().toISOString(),
+          timings: [],
+        };
+      }
+
+      buildRunId = this.createVehicleBuildRunId(normalizedPlanId);
+      await this.startVehicleBuildRecord(normalizedPlanId, buildRunId, userId);
+      result = await this.executeVehicleBuild(normalizedPlanId, vehicles, userId, quoteId, {
+        buildRunId,
+        skipPermitBuild: true,
+      });
+    }
 
     return {
       planId: normalizedPlanId,
