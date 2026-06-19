@@ -1299,7 +1299,9 @@ export class HotelsService {
     if (nor !== undefined) data.no_of_rooms_available = nor;
 
     const ac = this.toNumStrict(input?.ac_availability ?? input?.air_conditioner_availability);
-    if (ac !== undefined) data.air_conditioner_availability = ac;
+    if (ac !== undefined) {
+      data.air_conditioner_availability = ac === 0 ? 0 : 1;
+    }
 
     const maxA = this.toNumStrict(input?.total_max_adults ?? input?.max_adult);
     if (maxA !== undefined) data.total_max_adults = maxA;
@@ -1334,7 +1336,9 @@ export class HotelsService {
     if (dn !== undefined) data.dinner_included = dn ? 1 : 0;
 
     const st = this.toNumStrict(input?.status);
-    if (st !== undefined) data.status = st;
+    if (st !== undefined) {
+      data.status = st === 0 ? 0 : 1;
+    }
 
     Object.keys(data).forEach((k) => data[k] === undefined && delete data[k]);
     return data;
@@ -1427,7 +1431,7 @@ export class HotelsService {
     if (!Number.isFinite(id) || id <= 0) return [];
 
     const rows = await this.prisma.dvi_hotel_rooms.findMany({
-      where: { hotel_id: id } as any,
+      where: { hotel_id: id, deleted: 0 } as any,
       orderBy: { room_ID: 'asc' } as any,
       select: {
         room_ID: true,
@@ -1499,6 +1503,11 @@ export class HotelsService {
     if (data.hotel_id === undefined) {
       throw new Error('hotel_id is required to create a room');
     }
+    if (data.status === undefined) data.status = 1;
+    if (data.air_conditioner_availability === undefined) {
+      data.air_conditioner_availability = 1;
+    }
+    if ((data as any).deleted === undefined) (data as any).deleted = 0;
     if (data.createdby === undefined) data.createdby = 1;
     const now = new Date();
     if (data.createdon === undefined) data.createdon = now;
@@ -1538,10 +1547,78 @@ export class HotelsService {
     });
   }
 
-  removeRoom(_hotel_id: number, room_id: number) {
-    return this.prisma.dvi_hotel_rooms.delete({
-      where: { room_ID: Number(room_id) } as any,
+  async removeRoom(hotel_id: number, room_id: number) {
+    const hotelId = Number(hotel_id);
+    const roomId = Number(room_id);
+
+    const room = await this.prisma.dvi_hotel_rooms.findFirst({
+      where: {
+        hotel_id: hotelId,
+        room_ID: roomId,
+        deleted: 0,
+      } as any,
+      select: {
+        room_ID: true,
+      } as any,
     });
+
+    if (!room) {
+      throw new BadRequestException('Room not found');
+    }
+
+    const now = new Date();
+
+    await this.prisma.$transaction([
+      this.prisma.dvi_hotel_rooms.update({
+        where: { room_ID: roomId } as any,
+        data: {
+          deleted: 1,
+          status: 0,
+          updatedon: now,
+        } as any,
+      }),
+      this.prisma.dvi_hotel_room_rate_plan.updateMany({
+        where: {
+          hotel_id: hotelId,
+          room_id: roomId,
+          deleted: 0,
+        } as any,
+        data: {
+          deleted: 1,
+          status: 0,
+          updatedon: now,
+        } as any,
+      }),
+      this.prisma.dvi_hotel_room_price_book.updateMany({
+        where: {
+          hotel_id: hotelId,
+          room_id: roomId,
+          deleted: 0,
+        } as any,
+        data: {
+          deleted: 1,
+          status: 0,
+          updatedon: now,
+        } as any,
+      }),
+      this.prisma.dvi_hotel_room_gallery_details.updateMany({
+        where: {
+          hotel_id: hotelId,
+          room_id: roomId,
+          deleted: 0,
+        } as any,
+        data: {
+          deleted: 1,
+          status: 0,
+          updatedon: now,
+        } as any,
+      }),
+    ]);
+
+    return {
+      success: true,
+      room_ID: roomId,
+    };
   }
 
   async saveRoom(body: any) {
