@@ -1,0 +1,22 @@
+CREATE TABLE IF NOT EXISTS dvi_activity_booking_requests (
+  activity_booking_request_id INT NOT NULL AUTO_INCREMENT,
+  activity_id INT NOT NULL DEFAULT 0,
+  activity_date DATE NULL,
+  guests INT NOT NULL DEFAULT 1,
+  customer_name VARCHAR(250) NULL,
+  customer_phone VARCHAR(50) NULL,
+  customer_email VARCHAR(250) NULL,
+  notes TEXT NULL,
+  booking_status VARCHAR(50) NOT NULL DEFAULT 'pending',
+  createdby INT NOT NULL DEFAULT 0,
+  createdon DATETIME NULL,
+  updatedon DATETIME NULL,
+  status TINYINT NOT NULL DEFAULT 1,
+  deleted TINYINT NOT NULL DEFAULT 0,
+  PRIMARY KEY (activity_booking_request_id),
+  INDEX idx_activity_booking_request_activity_id (activity_id),
+  INDEX idx_activity_booking_request_activity_date (activity_date),
+  INDEX idx_activity_booking_request_status (status),
+  INDEX idx_activity_booking_request_deleted (deleted),
+  INDEX idx_activity_booking_request_createdon (createdon)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

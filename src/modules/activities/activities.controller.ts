@@ -21,6 +21,8 @@ import { SaveTimeSlotsDto } from './dto/save-timeslots.dto';
 import { SavePriceBookDto } from './dto/save-pricebook.dto';
 import { SaveReviewDto } from './dto/save-review.dto';
 import { ToggleStatusDto } from './dto/toggle-status.dto';
+import { ActivityStorefrontQueryDto } from './dto/activity-storefront-query.dto';
+import { CreateActivityBookingDto } from './dto/create-activity-booking.dto';
 
 // ⬇️ NEW: Multer imports (non-breaking)
 import { FilesInterceptor } from '@nestjs/platform-express';
@@ -69,6 +71,67 @@ export class ActivitiesController {
   @Get('hotspots')
   async hotspots(@Query('q') q?: string) {
     return this.service.hotspots(q);
+  }
+
+  // Keep static storefront routes above dynamic :id routes.
+  @Get('storefront/categories')
+  async storefrontCategories() {
+    return this.service.getStorefrontCategories();
+  }
+
+  @Get('storefront/locations')
+  async storefrontLocations(@Query('q') q?: string) {
+    return this.service.getStorefrontActivityLocations(q);
+  }
+
+  @Get('storefront/agents')
+  async storefrontAgents() {
+    return this.service.getStorefrontAgents();
+  }
+
+  @Get('storefront/agents/:agentId/wallet')
+  async storefrontAgentWallet(@Param('agentId', ParseIntPipe) agentId: number) {
+    return this.service.getStorefrontAgentWallet(agentId);
+  }
+
+  @Get('storefront/wishlist')
+  async storefrontWishlist(@Query('userKey') userKey?: string) {
+    return this.service.getStorefrontWishlist(userKey);
+  }
+
+  @Post('storefront/wishlist/toggle')
+  async toggleStorefrontWishlist(
+    @Body() body: { activityId: number; userKey?: string },
+  ) {
+    return this.service.toggleStorefrontWishlist(body);
+  }
+
+  @Delete('storefront/wishlist/:activityId')
+  async removeStorefrontWishlist(
+    @Param('activityId', ParseIntPipe) activityId: number,
+    @Query('userKey') userKey?: string,
+  ) {
+    return this.service.removeStorefrontWishlist(activityId, userKey);
+  }
+
+  @Get('storefront/bookings')
+  async storefrontBookings(
+    @Query('agentId') agentId?: string,
+    @Query('status') status?: string,
+    @Query('q') q?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.service.getStorefrontBookings({ agentId, status, q, limit });
+  }
+
+  @Get('storefront')
+  async storefront(@Query() query: ActivityStorefrontQueryDto) {
+    return this.service.getStorefrontActivities(query);
+  }
+
+  @Post('storefront/bookings')
+  async createStorefrontBooking(@Body() dto: CreateActivityBookingDto) {
+    return this.service.createStorefrontBooking(dto);
   }
 
   // === BASIC INFO (Create) ===
