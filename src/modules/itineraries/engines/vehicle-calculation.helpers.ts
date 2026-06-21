@@ -3243,12 +3243,6 @@ export async function calculateRouteVehicleDetails(
       kms_limit_id
     );
     
-    // If no pricing found, fall back to 3200
-    if (vehicle_cost_for_the_day === 0) {
-      console.log(`[calculateRouteVehicleDetails] Using fallback OUTSTATION pricing 3200 for route ${route.itinerary_route_ID}`);
-      vehicle_cost_for_the_day = 3200;
-    }
-
     // Outstation extra KM is charged once at the eligible/trip summary level.
     // Keep the per-route detail row at zero so it does not get summed day-wise.
     TOTAL_LOCAL_EXTRA_KM = 0;

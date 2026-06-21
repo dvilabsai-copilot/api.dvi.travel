@@ -4,6 +4,7 @@ import { Request } from 'express';
 import { PrismaService } from '../../prisma.service';
 import { LatestItineraryQueryDto } from './dto/latest-itinerary-query.dto';
 import { calculateRouteTollCharges, getEffectiveTimeLimitKm } from './engines/vehicle-calculation.helpers';
+import { filterActiveVendorCandidateRows } from './utils/active-vendor-candidate.util';
 
 // ---------------------------------------------------------------------------
 // DTOs for Itinerary Details response (shared shape with frontend)
@@ -3215,7 +3216,7 @@ sightseeingDistance,       // local sightseeing separately
         rawRowCount: number;
       }
     >();
-    const eligibleRows = Array.from(eligibleGroups.values()).map((groupRows) => {
+    let eligibleRows = Array.from(eligibleGroups.values()).map((groupRows) => {
       const representative = [...groupRows].sort(
         (a, b) =>
           Number((b as any).itineary_plan_assigned_status || 0) -
@@ -3244,7 +3245,15 @@ sightseeingDistance,       // local sightseeing separately
       return representative;
     });
 
-    const assignedEligibleRows = eligibleRows.filter(
+    const dedupedEligibleCount = eligibleRows.length;
+    const {
+      rows: activeEligibleRows,
+    } = shouldIncludeVehicles
+      ? await filterActiveVendorCandidateRows<any>(this.prisma, eligibleRows as any[])
+      : { rows: [] as any[] };
+    eligibleRows = activeEligibleRows;
+
+    const assignedEligibleRows = activeEligibleRows.filter(
       (e) => (e as any).itineary_plan_assigned_status === 1,
     );
     const debugVehicleTrace =
@@ -3254,8 +3263,9 @@ sightseeingDistance,       // local sightseeing separately
       console.log('[DETAILS_VEHICLE_ELIGIBLE_ROWS]', {
         planId,
         rawCount: rawEligibleRows.length,
-        dedupedCount: eligibleRows.length,
-        rows: eligibleRows.map((x: any) => ({
+        dedupedCount: dedupedEligibleCount,
+        activeCount: activeEligibleRows.length,
+        rows: activeEligibleRows.map((x: any) => ({
           eligibleId: Number(x.itinerary_plan_vendor_eligible_ID || 0),
           vehicleTypeId: Number(x.vehicle_type_id || 0),
           vendorVehicleTypeId: Number(x.vendor_vehicle_type_id || 0),
@@ -3270,7 +3280,7 @@ sightseeingDistance,       // local sightseeing separately
 
     // Fetch all vehicle type names to map vehicleTypeId -> vehicleTypeName
     const vehicleTypeIds = Array.from(
-      new Set(eligibleRows.map(r => (r as any).vehicle_type_id).filter(Boolean))
+      new Set(activeEligibleRows.map(r => (r as any).vehicle_type_id).filter(Boolean))
     );
     const vehicleTypes = vehicleTypeIds.length > 0
       ? await (this.prisma as any).dvi_vehicle_type.findMany({
@@ -3560,7 +3570,7 @@ sightseeingDistance,       // local sightseeing separately
     const branchIds = Array.from(
       new Set(
         eligibleRows
-          .map((e) => (e as any).vendor_branch_id)
+        .map((e) => (e as any).vendor_branch_id)
           .filter((id: number) => typeof id === 'number' && id > 0),
       ),
     );
@@ -3856,7 +3866,7 @@ sightseeingDistance,       // local sightseeing separately
     }
 
     // Build vehicles array directly from eligible list (like PHP does)
-    const vehicles: ItineraryVehicleRowDto[] = eligibleRows.map((eligible) => {
+    const vehicles: ItineraryVehicleRowDto[] = activeEligibleRows.map((eligible) => {
       const branchId = (eligible as any).vendor_branch_id ?? 0;
       const branch = branchMap.get(branchId) || null;
       const branchCityName = branch
@@ -4438,7 +4448,8 @@ for (const vd of dayWiseDetails) {
       quoteId,
       planId,
       rawEligibleCount: rawEligibleRows.length,
-      dedupedEligibleCount: eligibleRows.length,
+      activeEligibleCount: activeEligibleRows.length,
+      dedupedEligibleCount,
       rawVehicleDetailCount: rawVehicleDetailsRows.length,
       dedupedVehicleDetailCount: vehicleDetailsRows.length,
       returnedVehicleCount: vehicles.length,
