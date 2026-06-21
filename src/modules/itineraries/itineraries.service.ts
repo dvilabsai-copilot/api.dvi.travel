@@ -1730,34 +1730,16 @@ export class ItinerariesService {
           () => this.autoSelectLowestVehicleVendors(planId),
         );
       }
-const finalStatus = await this.getVehicleBuildStatus(planId);
 
-if (!finalStatus.hasUsableVehicleDetails) {
-  const failureMessage =
-    finalStatus.requestedVehicleCount > 0
-      ? 'Vehicle build completed without usable vehicle pricing rows'
-      : 'Vehicle build completed without requested vehicle rows';
-
-  console.warn('[VEHICLE_BUILD_WARNING] Continuing without vehicle rows', {
-    planId,
-    buildRunId,
-    failureMessage,
-    requestedVehicleCount: finalStatus.requestedVehicleCount,
-    eligibleCount: finalStatus.eligibleCount,
-    vehicleDetailCount: finalStatus.vehicleDetailCount,
-  });
-
-  await this.finishVehicleBuildRecord(planId, buildRunId, 'FAILED', failureMessage);
-
-  return {
-    status: await this.getVehicleBuildStatus(planId),
-    buildRunId,
-    startedAt: startedAtIso,
-    finishedAt: new Date().toISOString(),
-    durationMs: Date.now() - jobStart,
-    timings,
-  };
-}
+      const finalStatus = await this.getVehicleBuildStatus(planId);
+      if (!finalStatus.hasUsableVehicleDetails) {
+        const failureMessage =
+          finalStatus.requestedVehicleCount > 0
+            ? 'Vehicle build completed without usable vehicle pricing rows'
+            : 'Vehicle build completed without requested vehicle rows';
+        await this.finishVehicleBuildRecord(planId, buildRunId, 'FAILED', failureMessage);
+        throw new Error(failureMessage);
+      }
 
       await this.finishVehicleBuildRecord(planId, buildRunId, 'READY', null);
       if (debugVehicleTrace) {
