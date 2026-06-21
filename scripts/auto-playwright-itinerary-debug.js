@@ -3,14 +3,30 @@ const { chromium } = require('playwright');
 (async () => {
   const LOGIN_EMAIL = 'admin@dvi.co.in';
   const LOGIN_PASSWORD = 'Keerthi@2404ias';
-  const ACCESS_TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwiZW1haWwiOiJhZG1pbkBkdmkuY28uaW4iLCJyb2xlIjoxLCJhZ2VudElkIjowLCJzdGFmZklkIjowLCJndWlkZUlkIjowLCJpYXQiOjE3ODEzNzgwOTcsImV4cCI6MTc4MTk4Mjg5N30.SyGkfVJmzJCFmm28Wv67Ut4Zad2qYAfEuIBn_5jzLgE';
-  const TARGET_URL = 'http://localhost:8080/itinerary-details/DVI20260660';
+  const TARGET_URL = 'http://localhost:8080/itinerary-details/DVI202606122';
 
   const browser = await chromium.launch({ headless: false });
   const context = await browser.newContext();
+  const authResponse = await context.request.post('http://127.0.0.1:4006/api/v1/auth/login', {
+    data: {
+      email: LOGIN_EMAIL,
+      password: LOGIN_PASSWORD,
+    },
+  });
+
+  if (!authResponse.ok()) {
+    throw new Error(`Login failed with status ${authResponse.status()}`);
+  }
+
+  const authData = await authResponse.json();
+  const accessToken = authData?.accessToken;
+  if (!accessToken) {
+    throw new Error('Login succeeded but accessToken was missing');
+  }
+
   await context.addInitScript((token) => {
     localStorage.setItem('accessToken', token);
-  }, ACCESS_TOKEN);
+  }, accessToken);
 
   const page = await context.newPage();
   page.setDefaultTimeout(5000);
