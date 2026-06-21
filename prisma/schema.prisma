@@ -319,6 +319,56 @@ model dvi_activity_image_gallery_details {
   @@index([updatedon], map: "idx_act_img_gal_dls_updatedon")
 }
 
+model dvi_activity_booking_requests {
+  activity_booking_request_id Int       @id @default(autoincrement())
+  activity_id                 Int       @default(0)
+  agent_id                    Int       @default(0)
+  activity_date               DateTime? @db.Date
+  guests                      Int       @default(1)
+  total_amount                Decimal   @default(0.00) @db.Decimal(12, 2)
+  wallet_balance_before       Decimal   @default(0.00) @db.Decimal(12, 2)
+  wallet_balance_after        Decimal   @default(0.00) @db.Decimal(12, 2)
+  salutation                  String?   @db.VarChar(20)
+  customer_name               String?   @db.VarChar(250)
+  customer_phone              String?   @db.VarChar(50)
+  alternative_phone           String?   @db.VarChar(50)
+  customer_email              String?   @db.VarChar(250)
+  customer_age                String?   @db.VarChar(20)
+  nationality                 String?   @db.VarChar(50)
+  pan_no                      String?   @db.VarChar(50)
+  passport_no                 String?   @db.VarChar(80)
+  destination                 String?   @db.VarChar(250)
+  notes                       String?   @db.Text
+  booking_status              String    @default("confirmed") @db.VarChar(50)
+  createdby                   Int       @default(0)
+  createdon                   DateTime? @db.DateTime(0)
+  updatedon                   DateTime? @db.DateTime(0)
+  status                      Int       @default(1) @db.TinyInt
+  deleted                     Int       @default(0) @db.TinyInt
+
+  @@index([activity_id], map: "idx_activity_booking_request_activity_id")
+  @@index([agent_id], map: "idx_activity_booking_request_agent_id")
+  @@index([activity_date], map: "idx_activity_booking_request_activity_date")
+  @@index([status], map: "idx_activity_booking_request_status")
+  @@index([deleted], map: "idx_activity_booking_request_deleted")
+  @@index([createdon], map: "idx_activity_booking_request_createdon")
+}
+
+model dvi_activity_wishlist {
+  activity_wishlist_id Int       @id @default(autoincrement())
+  activity_id          Int       @default(0)
+  user_key             String    @default("admin") @db.VarChar(120)
+  createdon            DateTime? @db.DateTime(0)
+  updatedon            DateTime? @db.DateTime(0)
+  status               Int       @default(1) @db.TinyInt
+  deleted              Int       @default(0) @db.TinyInt
+
+  @@unique([user_key, activity_id], map: "uniq_activity_wishlist_user_activity")
+  @@index([activity_id], map: "idx_activity_wishlist_activity_id")
+  @@index([user_key], map: "idx_activity_wishlist_user_key")
+  @@index([status, deleted], map: "idx_activity_wishlist_status_deleted")
+}
+
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model dvi_activity_pricebook {
   activity_price_book_id Int       @id @default(autoincrement())
@@ -4623,6 +4673,7 @@ model dvi_kms_limit {
   status                 Int       @default(0) @db.TinyInt
   deleted                Int       @default(0) @db.TinyInt
 
+  @@unique([vendor_id, vendor_vehicle_type_id, kms_limit, deleted], map: "uq_dvi_kms_limit_vendor_vehicle_type_kms_deleted")
   @@index([createdby], map: "idx_dvi_kms_limit_createdby")
   @@index([createdon], map: "idx_dvi_kms_limit_createdon")
   @@index([deleted], map: "idx_dvi_kms_limit_deleted")
@@ -4632,7 +4683,6 @@ model dvi_kms_limit {
   @@index([updatedon], map: "idx_dvi_kms_limit_updatedon")
   @@index([vendor_id], map: "idx_dvi_kms_limit_vendor_id")
   @@index([vendor_vehicle_type_id], map: "idx_dvi_kms_limit_vendor_vehicle_type_id")
-  @@unique([vendor_id, vendor_vehicle_type_id, kms_limit, deleted], map: "uq_dvi_kms_limit_vendor_vehicle_type_kms_deleted")
 }
 
 model dvi_language {
@@ -5420,6 +5470,7 @@ model dvi_vehicle_outstation_price_book {
   status                           Int       @default(0) @db.TinyInt
   deleted                          Int       @default(0) @db.TinyInt
 
+  @@unique([vendor_id, vendor_branch_id, vehicle_type_id, kms_limit_id, year, month, deleted], map: "uq_dvi_vehicle_outstation_price_book_scope_deleted")
   @@index([createdby], map: "idx_dvi_vehicle_outstation_price_book_createdby")
   @@index([createdon], map: "idx_dvi_vehicle_outstation_price_book_createdon")
   @@index([day_1], map: "idx_dvi_vehicle_outstation_price_book_day_1")
@@ -5462,7 +5513,6 @@ model dvi_vehicle_outstation_price_book {
   @@index([vendor_branch_id], map: "idx_dvi_vehicle_outstation_price_book_vendor_branch_id")
   @@index([vendor_id], map: "idx_dvi_vehicle_outstation_price_book_vendor_id")
   @@index([year], map: "idx_dvi_vehicle_outstation_price_book_year")
-  @@unique([vendor_id, vendor_branch_id, vehicle_type_id, kms_limit_id, year, month, deleted], map: "uq_dvi_vehicle_outstation_price_book_scope_deleted")
 }
 
 model dvi_vehicle_review_details {
@@ -6254,24 +6304,24 @@ model hotspot_route_between_map {
 }
 
 model hotspot_hotel_between_map {
-  id                       BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
-  itinerary_plan_id        BigInt?
-  itinerary_route_id       BigInt?
-  from_hotspot_id          BigInt    @db.UnsignedBigInt
-  hotel_id                 BigInt    @db.UnsignedBigInt
-  between_hotspot_id       BigInt    @db.UnsignedBigInt
-  route_fit_type           String?   @db.VarChar(64)
-  route_decision_reason    String?   @db.Text
-  ab_osrm_distance_km      Decimal?  @db.Decimal(12, 3)
-  ac_osrm_distance_km      Decimal?  @db.Decimal(12, 3)
-  cb_osrm_distance_km      Decimal?  @db.Decimal(12, 3)
+  id                         BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  itinerary_plan_id          BigInt?
+  itinerary_route_id         BigInt?
+  from_hotspot_id            BigInt   @db.UnsignedBigInt
+  hotel_id                   BigInt   @db.UnsignedBigInt
+  between_hotspot_id         BigInt   @db.UnsignedBigInt
+  route_fit_type             String?  @db.VarChar(64)
+  route_decision_reason      String?  @db.Text
+  ab_osrm_distance_km        Decimal? @db.Decimal(12, 3)
+  ac_osrm_distance_km        Decimal? @db.Decimal(12, 3)
+  cb_osrm_distance_km        Decimal? @db.Decimal(12, 3)
   inserted_route_distance_km Decimal? @db.Decimal(12, 3)
-  road_detour_km           Decimal?  @db.Decimal(12, 3)
-  osrm_used                Boolean   @default(false) @db.TinyInt
-  status                   Int       @default(1) @db.TinyInt
-  deleted                  Int       @default(0) @db.TinyInt
-  created_at               DateTime  @default(now()) @db.DateTime(0)
-  updated_at               DateTime  @default(now()) @updatedAt @db.DateTime(0)
+  road_detour_km             Decimal? @db.Decimal(12, 3)
+  osrm_used                  Boolean  @default(false) @db.TinyInt
+  status                     Int      @default(1) @db.TinyInt
+  deleted                    Int      @default(0) @db.TinyInt
+  created_at                 DateTime @default(now()) @db.DateTime(0)
+  updated_at                 DateTime @default(now()) @updatedAt @db.DateTime(0)
 
   @@unique([from_hotspot_id, hotel_id, between_hotspot_id], map: "uniq_hotel_between")
   @@index([itinerary_plan_id, itinerary_route_id], map: "idx_plan_route")
