@@ -34,6 +34,7 @@ import { normalizeCityName } from "./utils/city-normalization.util";
 import { haversineKm } from "./utils/distance-utils";
 import { buildMissingManualHotspotMatrix as buildMissingManualHotspotMatrixHelper } from './helpers/manual-hotspot-matrix-builder';
 import { randomUUID } from "crypto";
+import { filterActiveVendorCandidateRows } from "./utils/active-vendor-candidate.util";
 
 type ManualInsertionCandidateResult = {
   success: boolean;
@@ -5850,11 +5851,32 @@ export class ItinerariesService {
     vehicleTypeId: number;
     vendorEligibleId: number;
   }) {
+    const selectedEligible = await (this.prisma as any).dvi_itinerary_plan_vendor_eligible_list.findFirst({
+      where: {
+        itinerary_plan_vendor_eligible_ID: Number(data.vendorEligibleId),
+        itinerary_plan_id: Number(data.planId),
+        vehicle_type_id: Number(data.vehicleTypeId),
+        status: 1,
+        deleted: 0,
+      },
+    });
+
+    if (!selectedEligible) {
+      throw new NotFoundException('Selected vendor eligible row not found for plan/vehicle type');
+    }
+
+    const { rows: activeSelectedRows } = await filterActiveVendorCandidateRows<any>(this.prisma, [selectedEligible]);
+    if (!activeSelectedRows.length) {
+      throw new BadRequestException('Selected vendor is no longer active and cannot be assigned');
+    }
+
     // First, reset all vendors for this vehicle type to unassigned (0)
     await (this.prisma as any).dvi_itinerary_plan_vendor_eligible_list.updateMany({
       where: {
         itinerary_plan_id: data.planId,
         vehicle_type_id: data.vehicleTypeId,
+        status: 1,
+        deleted: 0,
       },
       data: {
         itineary_plan_assigned_status: 0,

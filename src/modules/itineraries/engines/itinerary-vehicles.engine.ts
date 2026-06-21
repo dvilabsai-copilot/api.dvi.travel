@@ -14,6 +14,7 @@ import {
   getEffectiveTimeLimitKm,
 } from "./vehicle-calculation.helpers";
 import { timeStringToPrismaTime } from "../utils/itinerary.utils";
+import { filterActiveVendorCandidateRows } from "../utils/active-vendor-candidate.util";
 
 function toNum(v: any) {
   const n = typeof v === "number" ? v : Number(String(v ?? "").trim());
@@ -1432,9 +1433,6 @@ export class ItineraryVehiclesEngine {
               }
             }
 
-            if (!rentalPerDayNum || rentalPerDayNum === 0) {
-              rentalPerDayNum = 3200;
-            }
             priceBookCache.set(pbKey, rentalPerDayNum);
           }
 
@@ -1807,13 +1805,15 @@ export class ItineraryVehiclesEngine {
         { where: eligiblesWhere },
       );
 
-      const eligibles: any[] =
+      const rawEligibles: any[] =
         await tx.dvi_itinerary_plan_vendor_eligible_list.findMany({
           where: eligiblesWhere },
       );
+      const { rows: eligibles } = await filterActiveVendorCandidateRows<any>(this.prisma, rawEligibles);
       if (debugVehicleTrace) {
         console.log('[VEHICLE_ELIGIBLE_ROWS_FOR_BUILD]', {
           planId,
+          rawCount: rawEligibles.length,
           count: eligibles.length,
           rows: eligibles.map((x: any) => ({
             eligibleId: Number(x.itinerary_plan_vendor_eligible_ID ?? 0),
@@ -1831,6 +1831,7 @@ export class ItineraryVehiclesEngine {
       if (process.env.DEBUG_LOCAL_KM_FIX === 'true') {
         this.log('VEHICLE_ELIGIBLE_ROWS', {
           planId,
+          rawCount: rawEligibles.length,
           count: eligibles.length,
           rows: eligibles.map((x: any) => ({
             itinerary_plan_vendor_eligible_ID: x.itinerary_plan_vendor_eligible_ID,
@@ -2148,8 +2149,23 @@ export class ItineraryVehiclesEngine {
             }
           });
 
-          // Skip if vehicle cost is 0 (PHP line 1771)
-          if (result.vehicle_cost_for_the_day === 0) {
+          const hasRealTravelForDisplay = Number(result.TOTAL_KM || 0) > 0;
+
+          const isEdgeLocalTransferRoute =
+            Number(result.travel_type || 0) === 1 &&
+            (route_count === 1 || route_count === total_routes) &&
+            hasRealTravelForDisplay;
+
+          const isOutstationRowWithoutRate =
+            Number(result.travel_type || 0) === 2 &&
+            hasRealTravelForDisplay;
+
+          const shouldPreserveZeroCostRoute =
+            isEdgeLocalTransferRoute || isOutstationRowWithoutRate;
+
+          // Preserve visible travel rows even when rate setup is missing.
+          // We want the UI to show "Rates not available", not silently remove the day.
+          if (result.vehicle_cost_for_the_day === 0 && !shouldPreserveZeroCostRoute) {
             this.log('SKIP_ZERO_COST', { routeId, vendorId, vvtId, vehicleId });
             if (debugVehicleTrace) {
               console.log('[SKIP_ZERO_COST]', {
@@ -2165,6 +2181,20 @@ export class ItineraryVehiclesEngine {
               });
             }
             continue;
+          }
+          if (result.vehicle_cost_for_the_day === 0 && shouldPreserveZeroCostRoute) {
+            console.log('[PRESERVE_ZERO_COST_ROUTE_FOR_UNAVAILABLE_RATE]', {
+              planId,
+              eligibleId,
+              routeId,
+              route_count,
+              total_routes,
+              totalKm: result.TOTAL_KM,
+              travelType: result.travel_type,
+              vehicleTypeId,
+              vendorVehicleTypeId: vvtId,
+              vehicleId,
+            });
           }
 
           // Helper: convert "HH:MM:SS" to Date object for DateTime fields
@@ -2422,7 +2452,7 @@ export class ItineraryVehiclesEngine {
     // NOW update eligible_list with toll/permit charges from vehicle_details
     // (this runs AFTER all vehicle_details records have been created above)
     this.writeLog(`[vehiclesEngine] Starting eligible_list update for plan ${planId}`);
-    const eligibleRecords = await tx.dvi_itinerary_plan_vendor_eligible_list.findMany({
+    const rawEligibleRecords = await tx.dvi_itinerary_plan_vendor_eligible_list.findMany({
       where: {
         itinerary_plan_id: planId,
         status: 1,
@@ -2445,6 +2475,7 @@ export class ItineraryVehiclesEngine {
         vendor_margin_gst_percentage: true,
       },
     });
+    const { rows: eligibleRecords } = await filterActiveVendorCandidateRows<any>(this.prisma, rawEligibleRecords);
     this.writeLog(`[vehiclesEngine] Found ${eligibleRecords.length} eligible records to update`);
 
     const allVehicleDetailsRows = await tx.dvi_itinerary_plan_vendor_vehicle_details.findMany({
