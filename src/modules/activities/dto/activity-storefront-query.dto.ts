@@ -4,6 +4,10 @@ import { IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 export class ActivityStorefrontQueryDto {
   @IsString()
   @IsOptional()
+  source?: string;
+
+  @IsString()
+  @IsOptional()
   destination?: string;
 
   @IsString()

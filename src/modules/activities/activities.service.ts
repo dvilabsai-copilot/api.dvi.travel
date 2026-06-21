@@ -278,6 +278,100 @@ function cleanActivityLocationLabel(raw: string): string {
   return toTitleCasePreservingAcronyms(bestFullCandidate);
 }
 
+function normalizeRouteSearchToken(value: string): string {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+}
+
+function normalizeStoredRouteName(value: string): string {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/\s*,\s*/g, ', ')
+    .replace(/,\s*india$/i, '');
+}
+
+function buildRouteLocationCandidates(value: string): string[] {
+  const raw = String(value || '').trim();
+  if (!raw) return [];
+
+  const full = cleanActivityLocationLabel(raw);
+  const pipeSegments = raw
+    .split('|')
+    .map((part) => cleanActivityLocationLabel(part))
+    .filter(Boolean);
+
+  const all = [full, ...pipeSegments]
+    .map((part) => String(part || '').trim())
+    .filter(Boolean);
+
+  return Array.from(
+    new Map(all.map((item) => [normalizeRouteSearchToken(item), item])).values(),
+  );
+}
+
+function buildRouteEndpointClauses(sourceTerms: string[], destinationTerms: string[]) {
+  const sourceOnlyClauses = sourceTerms.flatMap((term) => [
+    { hotspot_location: { contains: term } },
+    { hotspot_to_location: { contains: term } },
+  ]);
+
+  const destinationOnlyClauses = destinationTerms.flatMap((term) => [
+    { hotspot_location: { contains: term } },
+    { hotspot_to_location: { contains: term } },
+  ]);
+
+  const pairedClauses = sourceTerms.flatMap((sourceTerm) =>
+    destinationTerms.flatMap((destinationTerm) => [
+      {
+        AND: [
+          { hotspot_location: { contains: sourceTerm } },
+          { hotspot_to_location: { contains: destinationTerm } },
+        ],
+      },
+      {
+        AND: [
+          { hotspot_location: { contains: destinationTerm } },
+          { hotspot_to_location: { contains: sourceTerm } },
+        ],
+      },
+    ]),
+  );
+
+  return [...pairedClauses, ...sourceOnlyClauses, ...destinationOnlyClauses];
+}
+
+function buildStoredLocationNameCandidates(value: string): string[] {
+  const raw = String(value || '').trim();
+  if (!raw) return [];
+
+  const short = raw.split(',')[0]?.trim() || raw;
+  return Array.from(
+    new Map(
+      [raw, short]
+        .map((item) => String(item || '').trim())
+        .filter(Boolean)
+        .map((item) => [normalizeStoredRouteName(item), item]),
+    ).values(),
+  );
+}
+
+function routeNamesRoughlyMatch(input: string, stored: string): boolean {
+  const normalizedInput = normalizeStoredRouteName(input);
+  const normalizedStored = normalizeStoredRouteName(stored);
+
+  if (!normalizedInput || !normalizedStored) return false;
+  if (normalizedInput === normalizedStored) return true;
+
+  return (
+    normalizedInput.includes(normalizedStored) ||
+    normalizedStored.includes(normalizedInput)
+  );
+}
+
 @Injectable()
 export class ActivitiesService {
   constructor(private readonly prisma: PrismaService) {}
@@ -388,6 +482,7 @@ export class ActivitiesService {
   }
 
   async getStorefrontActivities(opts: {
+    source?: string;
     destination?: string;
     activityType?: string;
     q?: string;
@@ -395,6 +490,7 @@ export class ActivitiesService {
     guests?: number | string;
     limit?: number | string;
   }) {
+    const source = String(opts?.source ?? '').trim();
     const destination = String(opts?.destination ?? '').trim();
     const q = String(opts?.q ?? '').trim();
     const activityType = String(opts?.activityType ?? '').trim();
@@ -419,19 +515,162 @@ export class ActivitiesService {
     }
 
     let destinationHotspotIds: number[] = [];
-    if (destination) {
+    const routeSearchMode = Boolean(source);
+    if (routeSearchMode) {
+      const sourceCandidates = buildRouteLocationCandidates(source);
+      const destinationCandidates = buildRouteLocationCandidates(destination || source);
+      const primarySource = sourceCandidates[0] || source;
+      const primaryDestination = destinationCandidates[0] || destination || source;
+
+      let viaRouteLabels: string[] = [];
+      if (
+        primarySource &&
+        primaryDestination &&
+        normalizeRouteSearchToken(primarySource) !== normalizeRouteSearchToken(primaryDestination)
+      ) {
+        const sourceLookupCandidates = buildStoredLocationNameCandidates(primarySource);
+        const destinationLookupCandidates = buildStoredLocationNameCandidates(primaryDestination);
+
+        const storedLocationCandidates = await this.prisma.dvi_stored_locations.findMany({
+          where: {
+            deleted: 0,
+            status: 1,
+            AND: [
+              {
+                OR: sourceLookupCandidates.flatMap((candidate) => [
+                  { source_location: candidate },
+                  { source_location: { contains: candidate } },
+                ]),
+              },
+              {
+                OR: destinationLookupCandidates.flatMap((candidate) => [
+                  { destination_location: candidate },
+                  { destination_location: { contains: candidate } },
+                ]),
+              },
+            ],
+          } as any,
+          select: {
+            location_ID: true,
+            source_location: true,
+            destination_location: true,
+          },
+          take: 25,
+        } as any);
+
+        const storedLocation =
+          storedLocationCandidates.find(
+            (row: any) =>
+              routeNamesRoughlyMatch(primarySource, String(row?.source_location || '')) &&
+              routeNamesRoughlyMatch(primaryDestination, String(row?.destination_location || '')),
+          ) ??
+          storedLocationCandidates[0];
+
+        if (storedLocation?.location_ID) {
+          const viaRows = await this.prisma.dvi_stored_location_via_routes.findMany({
+            where: {
+              deleted: 0,
+              status: 1,
+              location_id: storedLocation.location_ID,
+            } as any,
+            select: {
+              via_route_location: true,
+            },
+            orderBy: {
+              via_route_location: 'asc',
+            },
+          } as any);
+
+          viaRouteLabels = viaRows
+            .map((row: any) => cleanActivityLocationLabel(String(row?.via_route_location || '')))
+            .filter(Boolean);
+        }
+      }
+
+      const endpointTerms = Array.from(
+        new Map(
+          [...sourceCandidates, ...destinationCandidates, ...viaRouteLabels].map((term) => [
+            normalizeRouteSearchToken(term),
+            term,
+          ]),
+        ).values(),
+      );
+
+      const routeEndpointClauses = buildRouteEndpointClauses(
+        Array.from(
+          new Map(
+            [...sourceCandidates, ...viaRouteLabels].map((term) => [
+              normalizeRouteSearchToken(term),
+              term,
+            ]),
+          ).values(),
+        ),
+        Array.from(
+          new Map(
+            [...destinationCandidates, ...viaRouteLabels].map((term) => [
+              normalizeRouteSearchToken(term),
+              term,
+            ]),
+          ).values(),
+        ),
+      );
+
+      if (routeEndpointClauses.length) {
+        const matchingHotspots = await this.prisma.dvi_hotspot_place.findMany({
+          where: {
+            deleted: 0,
+            status: 1,
+            OR: routeEndpointClauses,
+          },
+          select: {
+            hotspot_ID: true,
+            hotspot_name: true,
+            hotspot_location: true,
+            hotspot_to_location: true,
+          },
+        });
+
+        destinationHotspotIds = matchingHotspots
+          .map((row) => Number(row.hotspot_ID ?? 0))
+          .filter((id) => id > 0);
+      }
+
+      console.log('[BookActivities] route-aware search', {
+        source: primarySource,
+        destination: primaryDestination,
+        viaRouteLabels,
+        endpointTerms,
+        viaSourceLookupCandidates: buildStoredLocationNameCandidates(primarySource),
+        viaDestinationLookupCandidates: buildStoredLocationNameCandidates(primaryDestination),
+        matchedHotspotIdsCount: destinationHotspotIds.length,
+        matchedHotspots: destinationHotspotIds.length
+          ? destinationHotspotIds.slice(0, 20)
+          : [],
+      });
+
+      if (destinationHotspotIds.length) {
+        activityAndFilters.push({
+          hotspot_id: { in: destinationHotspotIds },
+        });
+      } else {
+        activityAndFilters.push({
+          hotspot_id: { in: [-1] },
+        });
+      }
+    } else if (destination) {
+      const destinationCandidates = buildRouteLocationCandidates(destination);
+      const destinationClauses = buildRouteEndpointClauses(destinationCandidates, []);
+
       const matchingHotspots = await this.prisma.dvi_hotspot_place.findMany({
         where: {
           deleted: 0,
           status: 1,
-          OR: [
-            { hotspot_name: { contains: destination } },
-            { hotspot_location: { contains: destination } },
-            { hotspot_to_location: { contains: destination } },
-            { hotspot_description: { contains: destination } },
-            { hotspot_landmark: { contains: destination } },
-            { city_boundaries: { contains: destination } },
-          ],
+          OR: destinationClauses.length
+            ? destinationClauses
+            : [
+                { hotspot_location: { contains: destination } },
+                { hotspot_to_location: { contains: destination } },
+              ],
         },
         select: {
           hotspot_ID: true,
@@ -448,20 +687,15 @@ export class ActivitiesService {
         matchedHotspotIds: destinationHotspotIds.slice(0, 20),
       });
 
-      const destinationOrFilters: any[] = [
-        { activity_title: { contains: destination } },
-        { activity_description: { contains: destination } },
-      ];
-
       if (destinationHotspotIds.length) {
-        destinationOrFilters.unshift({
+        activityAndFilters.push({
           hotspot_id: { in: destinationHotspotIds },
         });
+      } else {
+        activityAndFilters.push({
+          hotspot_id: { in: [-1] },
+        });
       }
-
-      activityAndFilters.push({
-        OR: destinationOrFilters,
-      });
     }
 
     if (q) {
