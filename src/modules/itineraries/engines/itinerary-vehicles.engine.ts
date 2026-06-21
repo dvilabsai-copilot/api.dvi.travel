@@ -499,6 +499,11 @@ export class ItineraryVehiclesEngine {
       const amount = Number.parseFloat(String(value ?? 0));
       return Number.isFinite(amount) ? amount.toFixed(2) : '0.00';
     };
+    const roundMoney = (value: unknown): number => {
+      const amount = Number(value ?? 0);
+      if (!Number.isFinite(amount)) return 0;
+      return Number(amount.toFixed(2));
+    };
     const buildEligiblePersistenceKey = (row: any): string =>
       [
         Number(row?.vendor_id || 0),
@@ -1357,7 +1362,7 @@ export class ItineraryVehiclesEngine {
           const extraKmRateNum = toNum(vehicle.extra_km_charge) || 0;
           const totalExtraKmsNum =
             totalAllowedKmsNum > 0 ? Math.max(0, Math.ceil(totalOutstationKmNum - totalAllowedKmsNum)) : 0;
-          const totalExtraKmsChargeNum = totalExtraKmsNum * extraKmRateNum;
+          const totalExtraKmsChargeNum = roundMoney(totalExtraKmsNum * extraKmRateNum);
 
           const pricebookVehicleTypeCandidates = Array.from(
             new Set(
@@ -1467,19 +1472,22 @@ export class ItineraryVehiclesEngine {
           const branchGst = branchGstById.get(vendorBranchId) || { type: 2, percentage: 5 };
           const vehicleGstType = branchGst.type;
           const vehicleGstPercentage = branchGst.percentage;
-          const vehicleGstAmount = vehicleGstType === 2 ? 
-            (vehicleBaseTotal * vehicleGstPercentage / 100) : 0;
+          const vehicleGstAmount = vehicleGstType === 2
+            ? roundMoney((vehicleBaseTotal * vehicleGstPercentage) / 100)
+            : 0;
           
           const vehicleTotalAmount = vehicleBaseTotal;
 
           // Vendor margin calculation - use values from vendor_details table (PHP parity)
           // Values fetched earlier in the loop from dvi_vendor_details
-          const vendorMarginAmount = vehicleTotalAmount * vendorMarginPercentage / 100;
+          const vendorMarginBase = vehicleTotalAmount + vehicleGstAmount;
+          const vendorMarginAmount = roundMoney((vendorMarginBase * vendorMarginPercentage) / 100);
           const vendorMarginGstAmount = vendorMarginGstType === 2 ?
-            (vendorMarginAmount * vendorMarginGstPercentage / 100) : 0;
+            roundMoney((vendorMarginAmount * vendorMarginGstPercentage) / 100) : 0;
 
-          const vehicleGrandTotalNum = vehicleTotalAmount + vehicleGstAmount + 
-                                       vendorMarginAmount + vendorMarginGstAmount;
+          const vehicleGrandTotalNum = roundMoney(
+            vehicleTotalAmount + vehicleGstAmount + vendorMarginAmount + vendorMarginGstAmount,
+          );
 
           const baseData: any = {
             itinerary_plan_id: planId,
@@ -2571,7 +2579,7 @@ export class ItineraryVehiclesEngine {
         Math.ceil(totalOutstationKm - totalAllowedKms),
       );
       const outstationExtraKmRate = Number(eligible.extra_km_rate || 0);
-      const totalExtraOutstationKmsCharge = totalExtraOutstationKms * outstationExtraKmRate;
+      const totalExtraOutstationKmsCharge = roundMoney(totalExtraOutstationKms * outstationExtraKmRate);
       const totalRentalCharges = vehicleDetailsRecords.reduce((sum: number, record: any) => {
         return sum + Number(record.vehicle_rental_charges || 0);
       }, 0);
@@ -2626,19 +2634,21 @@ export class ItineraryVehiclesEngine {
       const vehicleGstType = Number(eligible.vehicle_gst_type || 2);
       const vehicleGstPercentage = Number(eligible.vehicle_gst_percentage || 5);
       const vehicleGstAmount = vehicleGstType === 2 ?
-        (vehicleBaseTotal * vehicleGstPercentage / 100) : 0;
+        roundMoney((vehicleBaseTotal * vehicleGstPercentage) / 100) : 0;
 
       const vehicleTotalAmount = vehicleBaseTotal;
 
       const vendorMarginPercentage = Number(eligible.vendor_margin_percentage || 10);
       const vendorMarginGstType = Number(eligible.vendor_margin_gst_type || 2);
       const vendorMarginGstPercentage = Number(eligible.vendor_margin_gst_percentage || 5);
-      const vendorMarginAmount = vehicleTotalAmount * vendorMarginPercentage / 100;
+      const vendorMarginBase = vehicleTotalAmount + vehicleGstAmount;
+      const vendorMarginAmount = roundMoney((vendorMarginBase * vendorMarginPercentage) / 100);
       const vendorMarginGstAmount = vendorMarginGstType === 2 ?
-        (vendorMarginAmount * vendorMarginGstPercentage / 100) : 0;
+        roundMoney((vendorMarginAmount * vendorMarginGstPercentage) / 100) : 0;
 
-      const vehicleGrandTotalNum = vehicleTotalAmount + vehicleGstAmount +
-                                   vendorMarginAmount + vendorMarginGstAmount;
+      const vehicleGrandTotalNum = roundMoney(
+        vehicleTotalAmount + vehicleGstAmount + vendorMarginAmount + vendorMarginGstAmount,
+      );
 
       // Update eligible_list record with correct toll/permit charges and recalculated totals
       await tx.dvi_itinerary_plan_vendor_eligible_list.update({

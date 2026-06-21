@@ -38,6 +38,10 @@ function normalizeVehicleOfferAmount(value: unknown): string {
   return Number.isFinite(amount) ? amount.toFixed(2) : '0.00';
 }
 
+function roundCurrency(value: number): number {
+  return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+}
+
 function buildVehicleOfferKey(row: any): string {
   return [
     Number(row?.vendor_id || 0),
@@ -3886,10 +3890,10 @@ sightseeingDistance,       // local sightseeing separately
 
       // Get all charge breakdowns
       let rentalCharges = Number((eligible as any).total_rental_charges ?? 0);
-      const tollCharges = (eligible as any).total_toll_charges ?? 0;
-      const parkingCharges = (eligible as any).total_parking_charges ?? 0;
-      const driverCharges = (eligible as any).total_driver_charges ?? 0;
-      const permitCharges = (eligible as any).total_permit_charges ?? 0;
+      let tollCharges = Number((eligible as any).total_toll_charges ?? 0);
+      let parkingCharges = Number((eligible as any).total_parking_charges ?? 0);
+      let driverCharges = Number((eligible as any).total_driver_charges ?? 0);
+      let permitCharges = Number((eligible as any).total_permit_charges ?? 0);
       const before6amDriver = (eligible as any).total_before_6_am_charges_for_driver ?? 0;
       const before6amVendor = (eligible as any).total_before_6_am_charges_for_vehicle ?? 0;
       const after8pmDriver = (eligible as any).total_after_8_pm_charges_for_driver ?? 0;
@@ -4232,6 +4236,10 @@ for (const vd of dayWiseDetails) {
       }
 
       const dayWiseRentalTotal = dayWisePricing.reduce((s, d) => s + Number(d.rentalCharges || 0), 0);
+      const dayWiseTollTotal = dayWisePricing.reduce((s, d) => s + Number(d.tollCharges || 0), 0);
+      const dayWiseParkingTotal = dayWisePricing.reduce((s, d) => s + Number(d.parkingCharges || 0), 0);
+      const dayWiseDriverTotal = dayWisePricing.reduce((s, d) => s + Number(d.driverCharges || 0), 0);
+      const dayWisePermitTotal = dayWisePricing.reduce((s, d) => s + Number(d.permitCharges || 0), 0);
       const dayWiseExtraHourCountTotal = dayWisePricing.reduce((s, d) => s + Number(d.extraHourCount || 0), 0);
       const dayWiseExtraHourRate = Number(dayWisePricing.find((d) => Number(d.extraHourRate || 0) > 0)?.extraHourRate || 0);
       const dayWiseExtraHourTotal = dayWisePricing.reduce((s, d) => s + Number(d.extraHourCharges || 0), 0);
@@ -4239,6 +4247,18 @@ for (const vd of dayWiseDetails) {
       extraHourCharge = dayWiseExtraHourTotal;
       if (dayWiseRentalTotal > 0) {
         rentalCharges = dayWiseRentalTotal;
+      }
+      if (dayWiseTollTotal > 0) {
+        tollCharges = dayWiseTollTotal;
+      }
+      if (dayWiseParkingTotal > 0) {
+        parkingCharges = dayWiseParkingTotal;
+      }
+      if (dayWiseDriverTotal > 0) {
+        driverCharges = dayWiseDriverTotal;
+      }
+      if (dayWisePermitTotal > 0) {
+        permitCharges = dayWisePermitTotal;
       }
       const eligAny = eligible as any;
 
@@ -4252,7 +4272,6 @@ for (const vd of dayWiseDetails) {
 
       pushItem('Rental Charges', rentalCharges);
       pushItem('Extra Hour Charges', extraHourCharge);
-      pushItem('Extra KM Charges', dayWiseExtraKmChargeTotal + (parseFloat(String(eligAny.total_extra_kms_charge || 0)) || 0));
       pushItem('Toll Charges', tollCharges);
       pushItem('Parking Charges', parkingCharges);
       pushItem('Driver Charges', driverCharges);
@@ -4261,8 +4280,6 @@ for (const vd of dayWiseDetails) {
       pushItem('Before 6 AM (Vehicle)', before6amVendor);
       pushItem('After 8 PM (Driver)', after8pmDriver);
       pushItem('After 8 PM (Vehicle)', after8pmVendor);
-
-      breakdown = tmp.length ? tmp : undefined;
 
       // Aggregate pickup/drop KMs from day-wise vehicle details
       const totalPickupKm = dayWiseDetails.reduce((s: number, vd: any) => s + (parseFloat(String(vd.total_pickup_km || 0)) || 0), 0);
@@ -4322,22 +4339,42 @@ for (const vd of dayWiseDetails) {
       const extraOutstationKms = parseFloat(String(eligAny.total_extra_kms || 0)) || 0;
       const extraKms = extraLocalKms + extraOutstationKms;
       const extraKmRate = parseFloat(String(eligAny.extra_km_rate || 0)) || 0;
-      const extraKmCharge = dayWiseExtraKmChargeTotal +
-        (parseFloat(String(eligAny.total_extra_kms_charge || 0)) || 0);
+      const aggregatedExtraKmCharge =
+        extraKms > 0 && extraKmRate > 0
+          ? roundCurrency(extraKms * extraKmRate)
+          : (parseFloat(String(eligAny.total_extra_kms_charge || 0)) || 0);
+      const localExtraKmCharge =
+        parseFloat(String((eligAny as any).total_extra_local_kms_charge || 0)) || 0;
+      const extraKmCharge =
+        extraKms > 0 && extraKmRate > 0
+          ? roundCurrency(extraKms * extraKmRate)
+          : aggregatedExtraKmCharge;
+      pushItem('Extra KM Charges', aggregatedExtraKmCharge);
+      pushItem('Local Extra KM Charges', localExtraKmCharge);
+      breakdown = tmp.length ? tmp : undefined;
       const totalCostOfVehicle = rentalCharges + tollCharges + parkingCharges + driverCharges + permitCharges
         + Number(eligAny.total_before_6_am_charges_for_driver ?? 0)
         + Number(eligAny.total_before_6_am_charges_for_vehicle ?? 0)
         + Number(eligAny.total_after_8_pm_charges_for_driver ?? 0)
         + Number(eligAny.total_after_8_pm_charges_for_vehicle ?? 0)
-        + extraHourCharge;
-      const subtotal = totalCostOfVehicle + extraKmCharge;
+        + extraHourCharge
+        + localExtraKmCharge;
+      const subtotal = roundCurrency(totalCostOfVehicle + extraKmCharge);
       const vehicleGstPercentage = parseFloat(String(eligAny.vehicle_gst_percentage || 0)) || 0;
       const vehicleGstAmount = parseFloat(String(eligAny.vehicle_gst_amount || 0)) || 0;
       const vendorMarginPercentage = parseFloat(String(eligAny.vendor_margin_percentage || 0)) || 0;
-      const vendorMarginAmount = parseFloat(String(eligAny.vendor_margin_amount || 0)) || 0;
+      const vendorMarginAmount = roundCurrency(
+        ((subtotal + vehicleGstAmount) * vendorMarginPercentage) / 100,
+      );
       const vendorMarginGstPercentage = parseFloat(String(eligAny.vendor_margin_gst_percentage || 0)) || 0;
-      const vendorMarginGstAmount = parseFloat(String(eligAny.vendor_margin_gst_amount || 0)) || 0;
-      const grandTotal = parseFloat(String(eligAny.vehicle_grand_total || 0)) || 0;
+      const vendorMarginGstType = parseFloat(String(eligAny.vendor_margin_gst_type || 0)) || 0;
+      const vendorMarginGstAmount =
+        vendorMarginGstType === 2
+          ? roundCurrency((vendorMarginAmount * vendorMarginGstPercentage) / 100)
+          : 0;
+      const grandTotal = roundCurrency(
+        subtotal + vehicleGstAmount + vendorMarginAmount + vendorMarginGstAmount,
+      );
 
       const vehicleResponseRow = {
         vendorName: branch?.vendor_branch_name ?? null,
@@ -4481,11 +4518,9 @@ for (const vd of dayWiseDetails) {
 
     // 5) Total vehicle amount for footer: sum only ASSIGNED vehicles (itineary_plan_assigned_status = 1)
     // This matches PHP behavior which filters by assigned status
-    const totalVehicleAmountFromEligible = eligibleRows.reduce(
-      (sum, e) => {
-        const isAssigned = (e as any).itineary_plan_assigned_status === 1;
-        return sum + (isAssigned ? ((e as any).vehicle_grand_total ?? 0) : 0);
-      },
+    const totalVehicleAmountFromEligible = vehicles.reduce(
+      (sum: number, vehicle: any) =>
+        sum + (vehicle?.isAssigned ? Number(vehicle?.grandTotal || vehicle?.totalAmount || 0) : 0),
       0,
     );
 
