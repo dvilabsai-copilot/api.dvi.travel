@@ -113,6 +113,122 @@ function makeBookingId(label) {
   return `DVI-CERT-${label.toUpperCase().replace(/\s+/g, '-')}-${Date.now()}`;
 }
 
+function buildGuestCount({
+  adultCount = '2',
+  childCount = '0',
+  infantCount = '0',
+}) {
+  const guestCount = [];
+  if (Number(adultCount || 0) > 0) {
+    guestCount.push({
+      AgeQualifyingCode: '10',
+      Count: String(adultCount),
+    });
+  }
+  if (Number(childCount || 0) > 0) {
+    guestCount.push({
+      AgeQualifyingCode: '8',
+      Count: String(childCount),
+    });
+  }
+  if (Number(infantCount || 0) > 0) {
+    guestCount.push({
+      AgeQualifyingCode: '7',
+      Count: String(infantCount),
+    });
+  }
+  return guestCount;
+}
+
+function buildRoomPayload(roomOptions) {
+  const {
+    arrivalDate,
+    departureDate,
+    roomId = ROOM_ID,
+    roomName = 'Studio',
+    rateId = RATE_ID,
+    rateName = 'Test MK',
+    amountAfterTax = '1200',
+    totalTax = '120',
+    basePriceAmountAfterTax = '1100',
+    extraAdult = '1',
+    extraChild = '0',
+    extraAdultRate = '100',
+    extraChildRate = '0',
+    adultCount = '2',
+    childCount = '0',
+    infantCount = '0',
+    salutation = 'Mr.',
+    firstName = 'Test',
+    lastName = 'Test',
+    remarks = 'No Smoking',
+    addons = [],
+    fees = [],
+  } = roomOptions;
+
+  const roomAmountAfterTaxNum = Number(amountAfterTax || 0);
+  const totalTaxNum = Number(totalTax || 0);
+  const extraAdultNum = Number(extraAdult || 0);
+  const extraChildNum = Number(extraChild || 0);
+  const extraAdultRateNum = Number(extraAdultRate || 0);
+  const extraChildRateNum = Number(extraChildRate || 0);
+  const configuredBasePriceNum = Number(basePriceAmountAfterTax || 0);
+  const extrasTotalNum = (extraAdultNum * extraAdultRateNum) + (extraChildNum * extraChildRateNum);
+  const derivedBasePriceNum = Math.max(roomAmountAfterTaxNum - extrasTotalNum, 0);
+  const configuredIsConsistent = Math.abs((configuredBasePriceNum + extrasTotalNum) - roomAmountAfterTaxNum) < 0.01;
+  const effectiveBasePriceAfterTaxNum = configuredIsConsistent
+    ? configuredBasePriceNum
+    : derivedBasePriceNum;
+
+  const roomTotalAmountAfterTaxNum = roomAmountAfterTaxNum + totalTaxNum;
+
+  return {
+    room: {
+      arrival_date: arrivalDate,
+      departure_date: departureDate,
+      room_id: roomId,
+      room_name: roomName,
+      price: [
+        {
+          date: arrivalDate,
+          rate_id: rateId,
+          rate_name: rateName,
+          amountaftertax: toMoneyString(effectiveBasePriceAfterTaxNum),
+          extraGuests: {
+            extraAdult: String(extraAdult),
+            extraChild: String(extraChild),
+            extraAdultRate: String(extraAdultRate),
+            extraChildRate: String(extraChildRate),
+          },
+        },
+      ],
+      salutation: salutation,
+      first_name: firstName,
+      last_name: lastName,
+      taxes: [
+        {
+          name: 'service charge',
+          value: toMoneyString(totalTaxNum),
+        },
+      ],
+      ...(addons.length > 0 ? { Addons: addons } : {}),
+      ...(fees.length > 0 ? { fees } : {}),
+      amountaftertax: toMoneyString(roomTotalAmountAfterTaxNum),
+      remarks: remarks,
+      GuestCount: buildGuestCount({
+        adultCount,
+        childCount,
+        infantCount,
+      }),
+    },
+    totals: {
+      roomAmountAfterTaxNum,
+      totalTaxNum,
+      roomTotalAmountAfterTaxNum,
+    },
+  };
+}
+
 function buildReservationPayload(options) {
   const {
     reservationId,
@@ -130,27 +246,33 @@ function buildReservationPayload(options) {
     adultCount = '2',
     remarks = 'Please Provide Wine Upon Checking and Do not Disturb',
     roomRemarks = 'No Smoking',
+    rooms,
   } = options;
 
-  const roomAmountAfterTaxNum = Number(amountAfterTax || 0);
-  const totalTaxNum = Number(totalTax || 0);
-  const extraAdultNum = Number(extraAdult || 0);
-  const extraChildNum = Number(extraChild || 0);
-  const extraAdultRateNum = Number(extraAdultRate || 0);
-  const extraChildRateNum = Number(extraChildRate || 0);
-  const configuredBasePriceNum = Number(basePriceAmountAfterTax || 0);
-  const extrasTotalNum = (extraAdultNum * extraAdultRateNum) + (extraChildNum * extraChildRateNum);
-  const derivedBasePriceNum = Math.max(roomAmountAfterTaxNum - extrasTotalNum, 0);
-  const configuredIsConsistent = Math.abs((configuredBasePriceNum + extrasTotalNum) - roomAmountAfterTaxNum) < 0.01;
-  const effectiveBasePriceAfterTaxNum = configuredIsConsistent
-    ? configuredBasePriceNum
-    : derivedBasePriceNum;
+  const roomPayloads = Array.isArray(rooms) && rooms.length > 0
+    ? rooms.map((room) => buildRoomPayload(room))
+    : [
+        buildRoomPayload({
+          arrivalDate,
+          departureDate,
+          amountAfterTax,
+          totalTax,
+          basePriceAmountAfterTax,
+          extraAdult,
+          extraChild,
+          extraAdultRate,
+          extraChildRate,
+          adultCount,
+          remarks: roomRemarks,
+        }),
+      ];
 
-  // Keep amount-after-tax consistent at room and reservation levels.
-  // STAAH certification expects the reservation total to match room total when tax is included.
-  const roomTotalAmountAfterTaxNum = roomAmountAfterTaxNum + totalTaxNum;
-  const totalAmountAfterTax = toMoneyString(roomTotalAmountAfterTaxNum);
-  const totalTaxAmount = toMoneyString(totalTaxNum);
+  const totalAmountAfterTax = toMoneyString(
+    roomPayloads.reduce((sum, entry) => sum + entry.totals.roomTotalAmountAfterTaxNum, 0),
+  );
+  const totalTaxAmount = toMoneyString(
+    roomPayloads.reduce((sum, entry) => sum + entry.totals.totalTaxNum, 0),
+  );
   const runtimeReservationDateTime = reservationDateTime || nowIstIsoSeconds();
 
   return {
@@ -192,45 +314,7 @@ function buildReservationPayload(options) {
             CardNumber: '4111111111111111',
             cvv: '123',
           },
-          room: [
-            {
-              arrival_date: arrivalDate,
-              departure_date: departureDate,
-              room_id: ROOM_ID,
-              room_name: 'Studio',
-              price: [
-                {
-                  date: arrivalDate,
-                  rate_id: RATE_ID,
-                  rate_name: 'Test MK',
-                  amountaftertax: toMoneyString(effectiveBasePriceAfterTaxNum),
-                  extraGuests: {
-                    extraAdult: extraAdult,
-                    extraChild: extraChild,
-                    extraAdultRate: extraAdultRate,
-                    extraChildRate: extraChildRate,
-                  },
-                },
-              ],
-              salutation: 'Mr.',
-              first_name: 'Test',
-              last_name: 'Test',
-              taxes: [
-                {
-                  name: 'service charge',
-                  value: totalTaxAmount,
-                },
-              ],
-              amountaftertax: toMoneyString(roomTotalAmountAfterTaxNum),
-              remarks: roomRemarks,
-              GuestCount: [
-                {
-                  AgeQualifyingCode: '10',
-                  Count: adultCount,
-                },
-              ],
-            },
-          ],
+          room: roomPayloads.map((entry) => entry.room),
           POS: 'TEST',
           extraData: [
             {
@@ -323,6 +407,8 @@ async function main() {
   const bookingId2 = makeBookingId('S2');
   const bookingId3 = makeBookingId('S3');
   const bookingId4 = makeBookingId('S4');
+  const bookingId5 = makeBookingId('S5');
+  const bookingId6 = makeBookingId('S6');
 
   const plan = [
     { label: 'S1_01_Pre-Book', row: 5, endpointName: 'fetch', url: FETCH_URL, bookingId: bookingId1, payload: buildArrInfoPayload('2026-07-20', '2026-07-20') },
@@ -348,6 +434,198 @@ async function main() {
     { label: 'S4_03_Pre-Modify', row: 22, endpointName: 'fetch', url: FETCH_URL, bookingId: bookingId4, payload: buildArrInfoPayload('2026-10-06', '2026-10-06') },
     { label: 'S4_04_Modify', row: 23, endpointName: 'booking', url: BOOKING_URL, bookingId: bookingId4, payload: buildReservationPayload({ reservationId: bookingId4, arrivalDate: '2026-10-06', departureDate: '2026-10-07', status: 'Modified', amountAfterTax: '2500', totalTax: '280', basePriceAmountAfterTax: '2300', adultCount: '4' }) },
     { label: 'S4_05_Cancel', row: 24, endpointName: 'booking', url: BOOKING_URL, bookingId: bookingId4, payload: buildReservationPayload({ reservationId: bookingId4, arrivalDate: '2026-10-06', departureDate: '2026-10-07', status: 'Cancel', amountAfterTax: '2500', totalTax: '280', basePriceAmountAfterTax: '2300', adultCount: '4' }) },
+
+    { label: 'S5_01_Pre-Book', row: 25, endpointName: 'fetch', url: FETCH_URL, bookingId: bookingId5, payload: buildArrInfoPayload('2026-07-15', '2026-07-16') },
+    {
+      label: 'S5_02_Confirm_MultiRoom_Child_Infant',
+      row: 26,
+      endpointName: 'booking',
+      url: BOOKING_URL,
+      bookingId: bookingId5,
+      payload: buildReservationPayload({
+        reservationId: bookingId5,
+        arrivalDate: '2026-07-15',
+        departureDate: '2026-07-16',
+        status: 'Confirm',
+        rooms: [
+          {
+            arrivalDate: '2026-07-15',
+            departureDate: '2026-07-16',
+            amountAfterTax: '1200',
+            totalTax: '120',
+            basePriceAmountAfterTax: '1100',
+            extraAdult: '0',
+            extraChild: '1',
+            extraAdultRate: '0',
+            extraChildRate: '100',
+            adultCount: '2',
+            childCount: '1',
+            infantCount: '0',
+            roomName: 'Studio',
+            remarks: 'Room 1: child with extra bed',
+          },
+          {
+            arrivalDate: '2026-07-15',
+            departureDate: '2026-07-16',
+            amountAfterTax: '1100',
+            totalTax: '110',
+            basePriceAmountAfterTax: '1100',
+            extraAdult: '0',
+            extraChild: '0',
+            extraAdultRate: '0',
+            extraChildRate: '0',
+            adultCount: '2',
+            childCount: '1',
+            infantCount: '1',
+            roomName: 'Studio',
+            remarks: 'Room 2: child without extra bed and infant',
+          },
+        ],
+      }),
+    },
+    {
+      label: 'S5_03_Cancel_MultiRoom_Child_Infant',
+      row: 27,
+      endpointName: 'booking',
+      url: BOOKING_URL,
+      bookingId: bookingId5,
+      payload: buildReservationPayload({
+        reservationId: bookingId5,
+        arrivalDate: '2026-07-15',
+        departureDate: '2026-07-16',
+        status: 'Cancel',
+        rooms: [
+          {
+            arrivalDate: '2026-07-15',
+            departureDate: '2026-07-16',
+            amountAfterTax: '1200',
+            totalTax: '120',
+            basePriceAmountAfterTax: '1100',
+            extraAdult: '0',
+            extraChild: '1',
+            extraAdultRate: '0',
+            extraChildRate: '100',
+            adultCount: '2',
+            childCount: '1',
+            infantCount: '0',
+            roomName: 'Studio',
+            remarks: 'Room 1: child with extra bed',
+          },
+          {
+            arrivalDate: '2026-07-15',
+            departureDate: '2026-07-16',
+            amountAfterTax: '1100',
+            totalTax: '110',
+            basePriceAmountAfterTax: '1100',
+            extraAdult: '0',
+            extraChild: '0',
+            extraAdultRate: '0',
+            extraChildRate: '0',
+            adultCount: '2',
+            childCount: '1',
+            infantCount: '1',
+            roomName: 'Studio',
+            remarks: 'Room 2: child without extra bed and infant',
+          },
+        ],
+      }),
+    },
+
+    { label: 'S6_01_Pre-Book', row: 28, endpointName: 'fetch', url: FETCH_URL, bookingId: bookingId6, payload: buildArrInfoPayload('2026-07-15', '2026-07-16') },
+    {
+      label: 'S6_02_Confirm_MultiRoom_2Adults',
+      row: 29,
+      endpointName: 'booking',
+      url: BOOKING_URL,
+      bookingId: bookingId6,
+      payload: buildReservationPayload({
+        reservationId: bookingId6,
+        arrivalDate: '2026-07-15',
+        departureDate: '2026-07-16',
+        status: 'Confirm',
+        rooms: [
+          {
+            arrivalDate: '2026-07-15',
+            departureDate: '2026-07-16',
+            amountAfterTax: '1100',
+            totalTax: '120',
+            basePriceAmountAfterTax: '1100',
+            extraAdult: '0',
+            extraChild: '0',
+            extraAdultRate: '0',
+            extraChildRate: '0',
+            adultCount: '2',
+            childCount: '0',
+            infantCount: '0',
+            roomName: 'Studio',
+            remarks: 'Room 1: two adults',
+          },
+          {
+            arrivalDate: '2026-07-15',
+            departureDate: '2026-07-16',
+            amountAfterTax: '1100',
+            totalTax: '120',
+            basePriceAmountAfterTax: '1100',
+            extraAdult: '0',
+            extraChild: '0',
+            extraAdultRate: '0',
+            extraChildRate: '0',
+            adultCount: '2',
+            childCount: '0',
+            infantCount: '0',
+            roomName: 'Studio',
+            remarks: 'Room 2: two adults',
+          },
+        ],
+      }),
+    },
+    {
+      label: 'S6_03_Cancel_MultiRoom_2Adults',
+      row: 30,
+      endpointName: 'booking',
+      url: BOOKING_URL,
+      bookingId: bookingId6,
+      payload: buildReservationPayload({
+        reservationId: bookingId6,
+        arrivalDate: '2026-07-15',
+        departureDate: '2026-07-16',
+        status: 'Cancel',
+        rooms: [
+          {
+            arrivalDate: '2026-07-15',
+            departureDate: '2026-07-16',
+            amountAfterTax: '1100',
+            totalTax: '120',
+            basePriceAmountAfterTax: '1100',
+            extraAdult: '0',
+            extraChild: '0',
+            extraAdultRate: '0',
+            extraChildRate: '0',
+            adultCount: '2',
+            childCount: '0',
+            infantCount: '0',
+            roomName: 'Studio',
+            remarks: 'Room 1: two adults',
+          },
+          {
+            arrivalDate: '2026-07-15',
+            departureDate: '2026-07-16',
+            amountAfterTax: '1100',
+            totalTax: '120',
+            basePriceAmountAfterTax: '1100',
+            extraAdult: '0',
+            extraChild: '0',
+            extraAdultRate: '0',
+            extraChildRate: '0',
+            adultCount: '2',
+            childCount: '0',
+            infantCount: '0',
+            roomName: 'Studio',
+            remarks: 'Room 2: two adults',
+          },
+        ],
+      }),
+    },
   ];
 
   for (const t of plan) {
