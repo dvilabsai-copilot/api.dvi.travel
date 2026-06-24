@@ -9258,6 +9258,23 @@ export class TimelineBuilder {
         })),
       });
 
+      if (
+        process.env.DEBUG_HOTSPOT_WRITER === '1' ||
+        process.env.NODE_ENV !== 'production'
+      ) {
+        console.log('[HOTSPOT_RCA] hotspot candidates', {
+          planId,
+          routeId,
+          sourceName: String(targetLocation || ''),
+          destName: String(nextLocation || ''),
+          normalizedSource: this.canonicalCityKey(String(targetLocation || '')),
+          normalizedDest: this.canonicalCityKey(String(nextLocation || '')),
+          locationId: Number((route as any)?.location_id || 0),
+          candidateCount: dedupedFinalCandidates.length,
+          insertedCount: dedupedFinalCandidates.length,
+        });
+      }
+
       return dedupedFinalCandidates.map((h: any, index: number) => ({
         hotspot_ID: Number(h.hotspot_ID ?? 0) || 0,
         display_order: Number(h.hotspot_priority ?? index + 1) || index + 1,
