@@ -2253,6 +2253,7 @@ export class HotelsService {
     if (!Number.isFinite(hid) || hid <= 0) {
       throw new BadRequestException('hotelId must be a valid number');
     }
+
     if (!Number.isFinite(rid) || rid <= 0) {
       throw new BadRequestException('roomId must be a valid number');
     }
@@ -2264,41 +2265,228 @@ export class HotelsService {
       throw new BadRequestException('startDate must be less than or equal to endDate');
     }
 
-    const rows = await (this.prisma as any).dvi_hotel_room_availability.findMany({
+    const hotel = await (this.prisma as any).dvi_hotel.findFirst({
       where: {
         hotel_id: hid,
-        room_id: rid,
-        start_date: { lte: end },
-        end_date: { gte: start },
+        deleted: { not: true },
       },
-      orderBy: { received_at: 'desc' },
+      select: {
+        hotel_id: true,
+        staah_property_id: true,
+        staah_enabled: true,
+        axisrooms_property_id: true,
+        axisrooms_enabled: true,
+      },
     });
+
+    if (!hotel) {
+      throw new BadRequestException('Hotel not found');
+    }
+
+    const [availabilityRows, roomRow, roomRatePlans] = await Promise.all([
+      (this.prisma as any).dvi_hotel_room_availability.findMany({
+        where: {
+          hotel_id: hid,
+          room_id: rid,
+          start_date: { lte: end },
+          end_date: { gte: start },
+        },
+        orderBy: [{ received_at: 'desc' }, { id: 'desc' }],
+      }),
+
+      (this.prisma as any).dvi_hotel_rooms.findFirst({
+        where: {
+          hotel_id: hid,
+          room_ID: BigInt(rid),
+          deleted: 0,
+        },
+        select: {
+          room_ID: true,
+          room_ref_code: true,
+        },
+      }),
+
+      (this.prisma as any).dvi_hotel_room_rate_plan.findMany({
+        where: {
+          hotel_id: hid,
+          room_id: rid,
+          deleted: 0,
+          status: 1,
+        },
+        select: {
+          axisrooms_room_id: true,
+          rateplan_id: true,
+        },
+        orderBy: { hotel_room_rate_plan_id: 'asc' },
+      }),
+    ]);
 
     const dates: string[] = [];
     const cur = new Date(start);
+
     while (cur <= end) {
       dates.push(cur.toISOString().slice(0, 10));
       cur.setUTCDate(cur.getUTCDate() + 1);
     }
 
-    const items = dates
-      .map((date) => {
-        const dt = new Date(`${date}T00:00:00.000Z`);
-        const best = (rows as any[]).find(
-          (row: any) => new Date(row.start_date) <= dt && new Date(row.end_date) >= dt,
+    const providerRoomIds = Array.from(
+      new Set(
+        [
+          String(rid),
+          String(roomRow?.room_ref_code || '').trim(),
+          ...roomRatePlans.map((rp: any) => String(rp.axisrooms_room_id || '').trim()),
+        ].filter(Boolean),
+      ),
+    );
+
+    const providerRatePlanIds = Array.from(
+      new Set(roomRatePlans.map((rp: any) => String(rp.rateplan_id || '').trim()).filter(Boolean)),
+    );
+
+    const restrictionTypes = ['cta', 'ctd', 'stopsell'];
+
+    const [staahRestrictionRows, axisroomsRestrictionRows] = await Promise.all([
+      hotel.staah_enabled && hotel.staah_property_id && providerRoomIds.length
+        ? (this.prisma as any).staah_restriction.findMany({
+            where: {
+              staah_property_id: String(hotel.staah_property_id),
+              room_id: { in: providerRoomIds },
+              ...(providerRatePlanIds.length
+                ? { rateplan_id: { in: providerRatePlanIds } }
+                : {}),
+              type: { in: restrictionTypes },
+              start_date: { lte: end },
+              end_date: { gte: start },
+            },
+            orderBy: [{ received_at: 'desc' }, { id: 'desc' }],
+          })
+        : Promise.resolve([]),
+
+      hotel.axisrooms_enabled && hotel.axisrooms_property_id && providerRoomIds.length
+        ? (this.prisma as any).axisrooms_restriction.findMany({
+            where: {
+              axisrooms_property_id: String(hotel.axisrooms_property_id),
+              room_id: { in: providerRoomIds },
+              ...(providerRatePlanIds.length
+                ? { rateplan_id: { in: providerRatePlanIds } }
+                : {}),
+              type: { in: ['cta', 'ctd', 'stopsell', 'COA', 'COD', 'Status'] },
+              start_date: { lte: end },
+              end_date: { gte: start },
+            },
+            orderBy: [{ received_at: 'desc' }, { id: 'desc' }],
+          })
+        : Promise.resolve([]),
+    ]);
+
+    const normalizeRestrictionType = (type: unknown): 'cta' | 'ctd' | 'stopsell' | null => {
+      const value = String(type || '').trim().toLowerCase();
+
+      if (value === 'cta' || value === 'coa' || value === 'closeonarrival') {
+        return 'cta';
+      }
+
+      if (value === 'ctd' || value === 'cod' || value === 'closeondeparture') {
+        return 'ctd';
+      }
+
+      if (
+        value === 'stopsell' ||
+        value === 'stop_sell' ||
+        value === 'stop sell' ||
+        value === 'status'
+      ) {
+        return 'stopsell';
+      }
+
+      return null;
+    };
+
+    const isRestrictionOn = (value: unknown): boolean => {
+      const normalized = String(value ?? '').trim().toLowerCase();
+
+      return [
+        '1',
+        'true',
+        'yes',
+        'y',
+        'close',
+        'closed',
+        'stop',
+        'stopsell',
+        'stop sell',
+        'on',
+      ].includes(normalized);
+    };
+
+    const restrictionRows = [
+      ...(staahRestrictionRows as any[]).map((row) => ({
+        ...row,
+        provider: 'staah',
+      })),
+      ...(axisroomsRestrictionRows as any[]).map((row) => ({
+        ...row,
+        provider: 'axisrooms',
+      })),
+    ];
+
+    const getRestrictionsForDate = (date: string) => {
+      const dt = new Date(`${date}T00:00:00.000Z`);
+
+      const matchingRows = restrictionRows.filter((row: any) => {
+        const startDate = new Date(row.start_date);
+        const endDate = new Date(row.end_date);
+        return startDate <= dt && endDate >= dt;
+      });
+
+      const result = {
+        cta: false,
+        ctd: false,
+        stopsell: false,
+        source: null as string | null,
+      };
+
+      for (const restrictionType of restrictionTypes) {
+        const typedRows = matchingRows.filter(
+          (row: any) => normalizeRestrictionType(row.type) === restrictionType,
         );
 
-        if (!best) {
-          return null;
+        if (!typedRows.length) {
+          continue;
         }
 
-        return {
-          date,
-          free: Number(best.free),
-          source: String(best.source || 'manual'),
-        };
-      })
-      .filter(Boolean);
+        const hasClosedRestriction = typedRows.some((row: any) => isRestrictionOn(row.value));
+
+        result[restrictionType as 'cta' | 'ctd' | 'stopsell'] = hasClosedRestriction;
+        result.source = String(typedRows[0]?.provider || result.source || '');
+      }
+
+      return result;
+    };
+
+    const items = dates.map((date) => {
+      const dt = new Date(`${date}T00:00:00.000Z`);
+
+      const bestAvailability = (availabilityRows as any[]).find(
+        (row: any) => new Date(row.start_date) <= dt && new Date(row.end_date) >= dt,
+      );
+
+      const restrictions = getRestrictionsForDate(date);
+
+      return {
+        date,
+        free:
+          bestAvailability?.free === null || bestAvailability?.free === undefined
+            ? null
+            : Number(bestAvailability.free),
+        source: String(bestAvailability?.source || restrictions.source || 'manual'),
+        restrictions: {
+          cta: restrictions.cta,
+          ctd: restrictions.ctd,
+          stopsell: restrictions.stopsell,
+        },
+      };
+    });
 
     return { dates, items };
   }

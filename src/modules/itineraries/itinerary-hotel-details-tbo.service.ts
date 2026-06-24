@@ -19,6 +19,10 @@ import {
   inferCanonicalHotelRatePlanCodeFromMealFlags,
   inferCanonicalHotelRatePlanCodeFromMealText,
 } from '../hotels/hotel-rate-plans';
+import {
+  calculateStaahOccupancyAmount,
+  type StaahPricingPaxInput,
+} from './helpers/staah-occupancy-pricing';
 
 /**
  * This service generates dynamic hotel packages from TBO API
@@ -26,6 +30,17 @@ import {
  */
 @Injectable()
 export class ItineraryHotelDetailsTboService {
+  private normalizeExactRoomCode(value: unknown): string {
+    return String(value || '').trim().toUpperCase();
+  }
+
+  private normalizeLooseRoomCode(value: unknown): string {
+    return String(value || '')
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, '');
+  }
+
   private parseStaahSearchReference(reference: any): {
     propertyId: string;
     roomId: string;
@@ -782,6 +797,14 @@ export class ItineraryHotelDetailsTboService {
         savedMealPlansByRoute,
         preferredMealPlanCode,
         true,
+        {
+          roomCount: planRoomCount,
+          adults: planAdultCount,
+          children: planChildCount,
+          extraBedCount: Number((plan as any).total_extra_bed || 0),
+          childWithBedCount: Number((plan as any).total_child_with_bed || 0),
+          childWithoutBedCount: Number((plan as any).total_child_without_bed || 0),
+        },
       );
       staahHotelsByRoute.forEach((staahHotels, routeId) => {
         const existingHotels = hotelsByRoute.get(routeId) || [];
@@ -1492,45 +1515,7 @@ export class ItineraryHotelDetailsTboService {
   }
 
   private extractStaahRate(occupancyRates: unknown): number {
-    const asPositive = (value: unknown): number => {
-      const num = Number(value);
-      return Number.isFinite(num) && num > 0 ? num : 0;
-    };
-    const scan = (value: unknown): number => {
-      if (typeof value === 'string') {
-        const raw = value.trim();
-        if (!raw) return 0;
-        try {
-          return scan(JSON.parse(raw));
-        } catch {
-          return 0;
-        }
-      }
-      if (Array.isArray(value)) {
-        for (const item of value) {
-          const n = asPositive(item);
-          if (n > 0) return n;
-          const deep = scan(item);
-          if (deep > 0) return deep;
-        }
-        return 0;
-      }
-      if (!value || typeof value !== 'object') return 0;
-      const obj = value as Record<string, unknown>;
-      const preferred = ['amountAfterTax', 'amountBeforeTax', 'single', 'double', 'base', 'rate', 'price'];
-      for (const key of preferred) {
-        const n = asPositive(obj[key]);
-        if (n > 0) return n;
-      }
-      for (const nested of Object.values(obj)) {
-        const direct = asPositive(nested);
-        if (direct > 0) return direct;
-        const deep = scan(nested);
-        if (deep > 0) return deep;
-      }
-      return 0;
-    };
-    return scan(occupancyRates);
+    return calculateStaahOccupancyAmount(occupancyRates, { roomCount: 1, adults: 1 }).finalCalculatedAmount;
   }
 
   private formatDateOnly(date: Date): string {
@@ -2138,6 +2123,7 @@ export class ItineraryHotelDetailsTboService {
     savedMealPlansByRoute?: Map<number, string>,
     preferredMealPlanCode?: string | null,
     includeRestrictedForDisplay: boolean = false,
+    paxProfile?: StaahPricingPaxInput,
   ): Promise<Map<number, HotelSearchResult[]>> {
     const hotelsByRoute = new Map<number, HotelSearchResult[]>();
     let staahHotels: any[] = [];
@@ -2204,10 +2190,134 @@ export class ItineraryHotelDetailsTboService {
           hotelsByRoute.set(routeId, []);
           continue;
         }
-        const [inventoryRows, ratePlanRows] = await Promise.all([
+        const hotelIds = cityHotels
+          .map((h: any) => Number(h.hotel_id || 0))
+          .filter((id) => Number.isFinite(id) && id > 0);
+        const activeAdminRooms = hotelIds.length
+          ? await this.prisma.dvi_hotel_rooms.findMany({
+              where: {
+                hotel_id: { in: hotelIds },
+                status: 1,
+                deleted: 0,
+              } as any,
+              select: {
+                hotel_id: true,
+                room_ID: true,
+                room_ref_code: true,
+                room_title: true,
+              } as any,
+            })
+          : [];
+        const activeRoomCodesByHotelId = new Map<number, Set<string>>();
+        const activeRoomLooseCodesByHotelId = new Map<number, Set<string>>();
+        const activeRoomLooseExactCodesByHotelId = new Map<number, Map<string, Set<string>>>();
+        const roomTitleByHotelAndCode = new Map<string, string>();
+        for (const room of activeAdminRooms as any[]) {
+          const hotelId = Number(room.hotel_id || 0);
+          const exactCode = this.normalizeExactRoomCode(room.room_ref_code);
+          const looseCode = this.normalizeLooseRoomCode(room.room_ref_code);
+          const roomTitle = String(room.room_title || '').trim();
+          if (!hotelId || !exactCode) continue;
+
+          if (!activeRoomCodesByHotelId.has(hotelId)) {
+            activeRoomCodesByHotelId.set(hotelId, new Set<string>());
+          }
+          if (!activeRoomLooseCodesByHotelId.has(hotelId)) {
+            activeRoomLooseCodesByHotelId.set(hotelId, new Set<string>());
+          }
+          if (!activeRoomLooseExactCodesByHotelId.has(hotelId)) {
+            activeRoomLooseExactCodesByHotelId.set(hotelId, new Map<string, Set<string>>());
+          }
+
+          activeRoomCodesByHotelId.get(hotelId)!.add(exactCode);
+          activeRoomLooseCodesByHotelId.get(hotelId)!.add(looseCode);
+
+          const looseMap = activeRoomLooseExactCodesByHotelId.get(hotelId)!;
+          if (!looseMap.has(looseCode)) {
+            looseMap.set(looseCode, new Set<string>());
+          }
+          looseMap.get(looseCode)!.add(exactCode);
+
+          roomTitleByHotelAndCode.set(`${hotelId}|${exactCode}`, roomTitle);
+          roomTitleByHotelAndCode.set(`${hotelId}|${looseCode}`, roomTitle);
+        }
+        const allowedRoomCodesByPropertyId = new Map<string, Set<string>>();
+        const allowedLooseRoomCodesByPropertyId = new Map<string, Set<string>>();
+        const allowedLooseExactCodesByPropertyId = new Map<string, Map<string, Set<string>>>();
+        const hotelIdByPropertyId = new Map<string, number>();
+        for (const hotel of cityHotels as any[]) {
+          const propertyId = String(hotel.staah_property_id || '').trim();
+          const hotelId = Number(hotel.hotel_id || 0);
+          if (!propertyId || !hotelId) continue;
+
+          hotelIdByPropertyId.set(propertyId, hotelId);
+          allowedRoomCodesByPropertyId.set(
+            propertyId,
+            activeRoomCodesByHotelId.get(hotelId) || new Set<string>(),
+          );
+          allowedLooseRoomCodesByPropertyId.set(
+            propertyId,
+            activeRoomLooseCodesByHotelId.get(hotelId) || new Set<string>(),
+          );
+          allowedLooseExactCodesByPropertyId.set(
+            propertyId,
+            activeRoomLooseExactCodesByHotelId.get(hotelId) || new Map<string, Set<string>>(),
+          );
+        }
+        const loggedStaahSkippedRooms = new Set<string>();
+        const isAllowedStaahRoom = (propertyIdValue: unknown, roomIdValue: unknown): boolean => {
+          const propertyId = String(propertyIdValue || '').trim();
+          const roomIdExact = this.normalizeExactRoomCode(roomIdValue);
+          const roomIdLoose = this.normalizeLooseRoomCode(roomIdValue);
+          const logKey = `${propertyId}|${roomIdExact}`;
+          const exactCodes = allowedRoomCodesByPropertyId.get(propertyId);
+          const looseCodes = allowedLooseRoomCodesByPropertyId.get(propertyId);
+          const looseExactCodes = allowedLooseExactCodesByPropertyId.get(propertyId);
+
+          if (!exactCodes || exactCodes.size === 0) {
+            if (!loggedStaahSkippedRooms.has(logKey)) {
+              loggedStaahSkippedRooms.add(logKey);
+              this.logger.warn(
+                `[STAAH STALE ROOM SKIPPED] routeId=${routeId} propertyId=${propertyId} providerRoomId=${roomIdExact}. No active dvi_hotel_rooms.room_ref_code mapping found for hotel/property.`,
+              );
+            }
+            return false;
+          }
+
+          if (exactCodes.has(roomIdExact)) {
+            return true;
+          }
+
+          const looseMatches = looseExactCodes?.get(roomIdLoose);
+          if (looseCodes?.has(roomIdLoose) && looseMatches && looseMatches.size === 1) {
+            if (!loggedStaahSkippedRooms.has(logKey)) {
+              loggedStaahSkippedRooms.add(logKey);
+              this.logger.warn(
+                `[STAAH STALE ROOM SKIPPED] routeId=${routeId} propertyId=${propertyId} providerRoomId=${roomIdExact}. Only normalized match found (${Array.from(looseMatches).join(', ')}); exact active room_ref_code required.`,
+              );
+            }
+            return false;
+          }
+
+          if (!loggedStaahSkippedRooms.has(logKey)) {
+            loggedStaahSkippedRooms.add(logKey);
+            this.logger.warn(
+              `[STAAH STALE ROOM SKIPPED] routeId=${routeId} propertyId=${propertyId} providerRoomId=${roomIdExact}. Not found in active dvi_hotel_rooms.room_ref_code.`,
+            );
+          }
+          return false;
+        };
+
+        const [inventoryRowsRaw, ratePlanRowsRaw] = await Promise.all([
           (this.prisma as any).staah_inventory.findMany({ where: { staah_property_id: { in: propertyIds }, start_date: { lte: dateOnly }, end_date: { gte: dateOnly }, free: { gt: 0 } } }),
           (this.prisma as any).staah_rateplan.findMany({ where: { staah_property_id: { in: propertyIds } } }),
         ]);
+        const inventoryRows = (inventoryRowsRaw as any[]).filter((row) =>
+          isAllowedStaahRoom(row.staah_property_id, row.room_id),
+        );
+        const ratePlanRows = (ratePlanRowsRaw as any[]).filter((row) =>
+          isAllowedStaahRoom(row.staah_property_id, row.room_id),
+        );
         const roomIds = Array.from(new Set(inventoryRows.map((r: any) => String(r.room_id || '').trim()).filter(Boolean)));
         const ratePlanIds = Array.from(new Set(ratePlanRows.map((r: any) => String(r.rateplan_id || '').trim()).filter(Boolean)));
         if (!roomIds.length || !ratePlanIds.length) {
@@ -2217,11 +2327,13 @@ export class ItineraryHotelDetailsTboService {
           hotelsByRoute.set(routeId, []);
           continue;
         }
-        const [rateRows, restrictionRows, roomRows] = await Promise.all([
+        const [rateRowsRaw, restrictionRows] = await Promise.all([
           (this.prisma as any).staah_rate.findMany({ where: { staah_property_id: { in: propertyIds }, room_id: { in: roomIds }, rateplan_id: { in: ratePlanIds }, start_date: { lte: dateOnly }, end_date: { gte: dateOnly } } }),
           (this.prisma as any).staah_restriction.findMany({ where: { staah_property_id: { in: propertyIds }, room_id: { in: roomIds }, rateplan_id: { in: ratePlanIds }, start_date: { lte: checkOutDate }, end_date: { gte: dateOnly } } }),
-          this.prisma.dvi_hotel_rooms.findMany({ where: { deleted: 0 } as any, select: { room_ID: true, room_ref_code: true, room_title: true } as any }),
         ]);
+        const rateRows = (rateRowsRaw as any[]).filter((row) =>
+          isAllowedStaahRoom(row.staah_property_id, row.room_id),
+        );
         const restrictionRowsByRateKey = new Map<string, any[]>();
         for (const row of restrictionRows as any[]) {
           const rateKey = `${row.staah_property_id}|${row.room_id}|${row.rateplan_id}`;
@@ -2230,14 +2342,10 @@ export class ItineraryHotelDetailsTboService {
           }
           restrictionRowsByRateKey.get(rateKey)!.push(row);
         }
-        const roomTitleMap = new Map<string, string>();
-        for (const room of roomRows as any[]) {
-          roomTitleMap.set(String((room as any).room_ref_code || '').trim(), String((room as any).room_title || '').trim());
-          roomTitleMap.set(String((room as any).room_ID || '').trim(), String((room as any).room_title || '').trim());
-        }
         const results: HotelSearchResult[] = [];
         for (const hotel of cityHotels as any[]) {
           const propertyId = String((hotel as any).staah_property_id || '').trim();
+          const hotelId = Number((hotel as any).hotel_id || 0);
           if (!propertyId) {
             this.logger.debug(`[STAAH] routeId=${routeId} hotelId=${String((hotel as any).hotel_id || '')} skipped: missing staah_property_id`);
             continue;
@@ -2275,11 +2383,25 @@ export class ItineraryHotelDetailsTboService {
                 String(x.rateplan_id) === String(rate.rateplan_id),
             );
             const roomId = String((rate as any).room_id || '');
-            const roomName = roomTitleMap.get(roomId) || `Room ${roomId}`;
+            if (!isAllowedStaahRoom(propertyId, roomId)) {
+              this.logger.warn(
+                `[STAAH STALE ROOM SKIPPED IN RATE LOOP] routeId=${routeId} propertyId=${propertyId} roomId=${roomId}`,
+              );
+              continue;
+            }
+            const exactRoomCode = this.normalizeExactRoomCode(roomId);
+            const looseRoomCode = this.normalizeLooseRoomCode(roomId);
+            const roomName =
+              roomTitleByHotelAndCode.get(`${hotelId}|${exactRoomCode}`) ||
+              roomTitleByHotelAndCode.get(`${hotelId}|${looseRoomCode}`) ||
+              `Room ${roomId}`;
             const rateplanId = String((rate as any).rateplan_id || '');
             const rateplanName = String((rp as any)?.rateplan_name || '').trim();
             const mealPlanDescription = String((rp as any)?.meal_plan_description || '').trim();
-            const candidatePrice = this.extractStaahRate((rate as any).occupancy_rates);
+            const candidatePrice =
+              paxProfile && Object.keys(paxProfile).length > 0
+                ? calculateStaahOccupancyAmount((rate as any).occupancy_rates, paxProfile).finalCalculatedAmount
+                : this.extractStaahRate((rate as any).occupancy_rates);
             const restrictionDecision = this.evaluateStaahRestrictions(
               restrictionRowsByRateKey.get(rateKey) || [],
               dateOnly,
@@ -2383,12 +2505,24 @@ export class ItineraryHotelDetailsTboService {
             if (pushedStaahResultKeys.has(resultKey)) {
               return;
             }
+            if (!isAllowedStaahRoom(propertyId, roomId)) {
+              this.logger.warn(
+                `[STAAH STALE ROOM SKIPPED IN RESULT PUSH] routeId=${routeId} propertyId=${propertyId} roomId=${roomId}`,
+              );
+              return;
+            }
             pushedStaahResultKeys.add(resultKey);
             const cancellation = String((hotel as any).hotel_cancel_policy || '').trim();
             const mealPlan =
               String((candidate.rp as any)?.meal_plan_description || (candidate.rp as any)?.rateplan_name || '-').trim() || '-';
             const currency = String((candidate.rp as any)?.currency || 'INR').trim() || 'INR';
-            const roomName = roomTitleMap.get(roomId) || `Room ${roomId}`;
+            const exactRoomCode = this.normalizeExactRoomCode(roomId);
+            const looseRoomCode = this.normalizeLooseRoomCode(roomId);
+            const hotelIdForProperty = hotelIdByPropertyId.get(propertyId) || hotelId;
+            const roomName =
+              roomTitleByHotelAndCode.get(`${hotelIdForProperty}|${exactRoomCode}`) ||
+              roomTitleByHotelAndCode.get(`${hotelIdForProperty}|${looseRoomCode}`) ||
+              `Room ${roomId}`;
             results.push({
               provider: 'staah',
               hotelCode: String((hotel as any).hotel_id),
@@ -2419,6 +2553,8 @@ export class ItineraryHotelDetailsTboService {
               hotel_margin_gst_percentage: Number((hotel as any).hotel_margin_gst_percentage || 0),
               searchReference: `STAAH-${propertyId}-${roomId}-${rateplanId}-${dateStamp}`,
               expiresAt: new Date(Date.now() + 15 * 60 * 1000),
+              isMappedAdminRoom: true,
+              providerRoomId: roomId,
               isBookable,
               externalStay: false,
               availabilityStatus: isBookable ? 'AVAILABLE' : 'NOT_BOOKABLE',
@@ -3471,6 +3607,14 @@ export class ItineraryHotelDetailsTboService {
         savedMealPlansByRoute2,
         preferredMealPlanCode2,
         true,
+        {
+          roomCount: planRoomCount2,
+          adults: planAdultCount2,
+          children: planChildCount2,
+          extraBedCount: Number((plan as any).total_extra_bed || 0),
+          childWithBedCount: Number((plan as any).total_child_with_bed || 0),
+          childWithoutBedCount: Number((plan as any).total_child_without_bed || 0),
+        },
       );
       staahHotelsByRoute.forEach((staahHotels, routeId) => {
         const existing = hotelsByRoute.get(routeId) || [];
