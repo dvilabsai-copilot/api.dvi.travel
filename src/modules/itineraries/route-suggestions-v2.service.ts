@@ -241,7 +241,7 @@ export class RouteSuggestionsV2Service {
       }
 
       // Process routes - limit to 5
-      const selectedRoutes = storedRoutes.slice(0, 5);
+      const selectedRoutes = storedRoutes;
       const routes: RouteData[] = [];
 
       for (const route of selectedRoutes) {
