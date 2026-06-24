@@ -26,6 +26,7 @@ import { ResAvenueHotelBookingService } from "./services/resavenue-hotel-booking
 import { HobseHotelBookingService } from "./services/hobse-hotel-booking.service";
 import { AxisRoomsBookingPushService } from "./services/axisrooms-booking-push.service";
 import { StaahBookingPushService } from "./services/staah-booking-push.service";
+import { HotelStayBlockValidationService } from "./services/hotel-stay-block-validation.service";
 import { ItineraryHotelDetailsTboService } from "./itinerary-hotel-details-tbo.service";
 import { TimelineEnricher } from "./engines/helpers/timeline.enricher";
 import { normalizePassengerTitle } from "../../common/utils/passenger-title.util";
@@ -237,6 +238,7 @@ export class ItinerariesService {
     private readonly hobseHotelBooking: HobseHotelBookingService,
     private readonly axisroomsBookingPushService: AxisRoomsBookingPushService,
     private readonly staahBookingPushService: StaahBookingPushService,
+    private readonly hotelStayBlockValidationService: HotelStayBlockValidationService,
     private readonly hotelDetailsTboService: ItineraryHotelDetailsTboService,
     private readonly supplementNormalizer: SupplementNormalizerService,
   ) {}
@@ -6368,6 +6370,13 @@ export class ItinerariesService {
     }
 
     const shouldConfirmHotels = [1, 3].includes(Number(plan.itinerary_preference || 0));
+
+    if (shouldConfirmHotels && Array.isArray((dto as any).hotel_bookings)) {
+      (dto as any).hotel_bookings = this.pruneHotelBookingsCoveredByMultiNight(
+        this.mergeConsecutiveSupplierHotelBookings((dto as any).hotel_bookings),
+      );
+    }
+
     const hotelSelectionState = shouldConfirmHotels
       ? await this.syncSelectedHotelDraftRowsForConfirmation(dto, userId)
       : {
@@ -6405,6 +6414,56 @@ export class ItinerariesService {
       netAmount: h.netAmount,
       prebookNetAmount: h?.prebookContext?.prebookNetAmount,
     })));
+
+    if (shouldConfirmHotels && providerHotelBookings.length > 0) {
+      for (const hotel of providerHotelBookings) {
+        const provider = String(hotel?.provider || hotel?.__provider || '').trim().toLowerCase();
+        if (!['staah', 'axisrooms'].includes(provider)) {
+          continue;
+        }
+
+        const routeId = Number(hotel?.routeId || 0);
+        const checkInDate = this.formatDateOnly(hotel?.checkInDate);
+        const hotelCode = String(hotel?.hotelCode || '').trim();
+        if (!routeId || !checkInDate || !hotelCode) {
+          throw new BadRequestException('Invalid multi-night hotel booking payload');
+        }
+
+        const preview = await this.hotelStayBlockValidationService.previewStayExtension({
+          planId: dto.itinerary_plan_ID,
+          routeId,
+          provider: provider as 'staah' | 'axisrooms',
+          hotelCode,
+          hotelName: String(hotel?.hotelName || '').trim() || undefined,
+          roomId: String(hotel?.roomId || '').trim() || undefined,
+          rateId: String(hotel?.rateId || '').trim() || undefined,
+          roomType: String(hotel?.roomType || '').trim() || undefined,
+          mealPlan: String(hotel?.mealPlan || '').trim() || undefined,
+          checkInDate,
+        });
+
+        const isMultiNightBooking = Boolean(hotel?.multiNightBooking);
+        if (isMultiNightBooking && (preview.blocked || !preview.canBookMultiNight)) {
+          throw new BadRequestException({
+            message: 'Continuous stay booking is blocked for the selected hotel.',
+            provider,
+            routeId,
+            stayKey: preview.stayKey,
+            restrictionConflicts: preview.restrictionConflicts,
+          });
+        }
+
+        if (!isMultiNightBooking && !preview.canBookSingleNight) {
+          throw new BadRequestException({
+            message: 'Selected hotel cannot be booked on the requested date.',
+            provider,
+            routeId,
+            stayKey: preview.stayKey,
+            restrictionConflicts: preview.restrictionConflicts,
+          });
+        }
+      }
+    }
 
     // Cost must be calculated only after stale hotel rows are deactivated.
     const details = await this.itineraryDetails.getItineraryDetails(quoteId);
@@ -6772,6 +6831,409 @@ export class ItinerariesService {
     );
   }
 
+  private addOneDateOnly(date: string): string {
+    const raw = String(date || '').trim();
+    if (!raw) return '';
+
+    const parsed = new Date(`${raw}T00:00:00.000Z`);
+    if (!Number.isFinite(parsed.getTime())) return '';
+
+    parsed.setUTCDate(parsed.getUTCDate() + 1);
+    return parsed.toISOString().slice(0, 10);
+  }
+
+  private getSupplierStayMergeKey(booking: any): string {
+    return [
+      String(booking?.provider || booking?.__provider || '').trim().toLowerCase(),
+      String(booking?.hotelCode || '').trim().toLowerCase(),
+      String(booking?.roomId || '').trim().toLowerCase(),
+      String(booking?.rateId || '').trim().toLowerCase(),
+      String(booking?.roomType || '').trim().toLowerCase(),
+      this.normalizeHotelSelectionIdentity(booking?.mealPlan),
+    ].join('|');
+  }
+
+  private canMergeSupplierStayBooking(booking: any): boolean {
+    const provider = String(booking?.provider || booking?.__provider || '').trim().toLowerCase();
+
+    if (provider !== 'staah' && provider !== 'axisrooms') {
+      return false;
+    }
+
+    return Boolean(
+      String(booking?.hotelCode || '').trim() &&
+      String(booking?.roomId || '').trim() &&
+      String(booking?.rateId || '').trim() &&
+      String(booking?.checkInDate || '').trim(),
+    );
+  }
+
+  private mergeConsecutiveSupplierHotelBookings<T extends any>(bookings: T[]): T[] {
+    const sortedBookings = [...(bookings || [])].sort((a: any, b: any) => {
+      const dateA = String(a?.checkInDate || '').trim();
+      const dateB = String(b?.checkInDate || '').trim();
+
+      if (dateA !== dateB) {
+        return dateA.localeCompare(dateB);
+      }
+
+      return Number(a?.routeId || 0) - Number(b?.routeId || 0);
+    });
+
+    const merged: any[] = [];
+    const consumed = new Set<number>();
+
+    for (let i = 0; i < sortedBookings.length; i += 1) {
+      if (consumed.has(i)) {
+        continue;
+      }
+
+      const first = sortedBookings[i] as any;
+
+      if (!this.canMergeSupplierStayBooking(first)) {
+        merged.push(first);
+        consumed.add(i);
+        continue;
+      }
+
+      const mergeKey = this.getSupplierStayMergeKey(first);
+      const group = [first];
+      let lastCheckOutDate =
+        this.formatDateOnly(first.checkOutDate) ||
+        this.addOneDateOnly(String(first.checkInDate || ''));
+
+      for (let j = i + 1; j < sortedBookings.length; j += 1) {
+        if (consumed.has(j)) {
+          continue;
+        }
+
+        const next = sortedBookings[j] as any;
+
+        if (!this.canMergeSupplierStayBooking(next)) {
+          continue;
+        }
+
+        const nextKey = this.getSupplierStayMergeKey(next);
+        const nextCheckInDate = this.formatDateOnly(next.checkInDate);
+
+        if (nextKey !== mergeKey || nextCheckInDate !== lastCheckOutDate) {
+          continue;
+        }
+
+        group.push(next);
+        lastCheckOutDate =
+          this.formatDateOnly(next.checkOutDate) ||
+          this.addOneDateOnly(String(next.checkInDate || ''));
+        consumed.add(j);
+      }
+
+      consumed.add(i);
+
+      if (group.length === 1) {
+        merged.push(first);
+        continue;
+      }
+
+      const routeIds = this.uniquePositiveNumbers(group.map((booking: any) => booking.routeId));
+      const nightlyRates = group.map((booking: any) => ({
+        date: this.formatDateOnly(booking.checkInDate) || String(booking.checkInDate || '').trim(),
+        amountAfterTax: Number(
+          booking?.totalAmountAfterTax ??
+            booking?.netAmount ??
+            booking?.totalAmount ??
+            booking?.totalHotelCost ??
+            0,
+        ),
+      }));
+
+      const totalAmountAfterTax = Number(
+        nightlyRates.reduce((sum, night) => sum + Number(night.amountAfterTax || 0), 0).toFixed(2),
+      );
+
+      const checkInDate = this.formatDateOnly(group[0].checkInDate) || String(group[0].checkInDate || '').trim();
+      const checkOutDate = lastCheckOutDate;
+
+      merged.push({
+        ...first,
+        routeId: routeIds[0],
+        checkInDate,
+        checkOutDate,
+        netAmount: totalAmountAfterTax,
+        totalAmountAfterTax,
+        totalAmount: totalAmountAfterTax,
+        totalHotelCost: totalAmountAfterTax,
+        multiNightBooking: true,
+        routeIds,
+        nights: routeIds.length,
+        nightlyRates,
+        stayKey: [
+          String(first?.provider || first?.__provider || '').trim().toLowerCase(),
+          String(first?.hotelCode || '').trim(),
+          String(first?.roomId || '').trim(),
+          String(first?.rateId || '').trim(),
+          `${checkInDate}_to_${checkOutDate}`,
+        ].join(':'),
+      });
+    }
+
+    console.log('[SUPPLIER_HOTEL_BOOKINGS_MERGED_FOR_MULTI_NIGHT]', {
+      before: bookings?.length || 0,
+      after: merged.length,
+      merged: merged
+        .filter((booking: any) => Boolean(booking?.multiNightBooking))
+        .map((booking: any) => ({
+          provider: booking?.provider || booking?.__provider,
+          routeId: booking?.routeId,
+          routeIds: booking?.routeIds,
+          hotelCode: booking?.hotelCode,
+          roomId: booking?.roomId,
+          rateId: booking?.rateId,
+          checkInDate: booking?.checkInDate,
+          checkOutDate: booking?.checkOutDate,
+          nights: booking?.nights,
+          totalAmountAfterTax: booking?.totalAmountAfterTax,
+        })),
+    });
+
+    return merged as T[];
+  }
+
+  private pruneHotelBookingsCoveredByMultiNight<T extends any>(bookings: T[]): T[] {
+    const rows = bookings || [];
+
+    const canonicalParents = new Map<string, {
+      booking: any;
+      routeIds: number[];
+      canonicalRouteId: number;
+    }>();
+
+    for (const booking of rows as any[]) {
+      const routeId = Number(booking?.routeId || 0);
+      const routeIds = Array.isArray(booking?.routeIds)
+        ? this.uniquePositiveNumbers(booking.routeIds)
+        : [];
+
+      if (
+        !Boolean(booking?.multiNightBooking) ||
+        !routeId ||
+        routeIds.length <= 1
+      ) {
+        continue;
+      }
+
+      const canonicalRouteId = routeIds[0];
+      const groupKey = [
+        String(booking?.provider || booking?.__provider || '').trim().toLowerCase(),
+        String(booking?.hotelCode || '').trim().toLowerCase(),
+        String(booking?.roomId || '').trim().toLowerCase(),
+        String(booking?.rateId || '').trim().toLowerCase(),
+        routeIds.join(','),
+      ].join('|');
+
+      const existing = canonicalParents.get(groupKey);
+      const normalizedParent = {
+        ...booking,
+        routeId: canonicalRouteId,
+        routeIds,
+        multiNightBooking: true,
+      };
+
+      if (!existing || routeId === canonicalRouteId) {
+        canonicalParents.set(groupKey, {
+          booking: normalizedParent,
+          routeIds,
+          canonicalRouteId,
+        });
+      }
+    }
+
+    if (canonicalParents.size === 0) {
+      return rows;
+    }
+
+    const coveredRouteIdToGroupKey = new Map<number, string>();
+    canonicalParents.forEach((parent, groupKey) => {
+      parent.routeIds.forEach((routeId) => {
+        coveredRouteIdToGroupKey.set(routeId, groupKey);
+      });
+    });
+
+    const pruned: any[] = [];
+
+    for (const booking of rows as any[]) {
+      const routeId = Number(booking?.routeId || 0);
+      const groupKey = coveredRouteIdToGroupKey.get(routeId);
+
+      if (!groupKey) {
+        pruned.push(booking);
+        continue;
+      }
+
+      const parent = canonicalParents.get(groupKey);
+
+      if (!parent) {
+        pruned.push(booking);
+        continue;
+      }
+
+      if (routeId === parent.canonicalRouteId) {
+        const alreadyAdded = pruned.some((row: any) => row === parent.booking);
+        if (!alreadyAdded) {
+          pruned.push(parent.booking);
+        }
+      }
+    }
+
+    const deduped = pruned.filter((booking: any, index: number, list: any[]) => {
+      const routeId = Number(booking?.routeId || 0);
+      const routeIds = Array.isArray(booking?.routeIds)
+        ? this.uniquePositiveNumbers(booking.routeIds)
+        : [];
+
+      const key = [
+        String(booking?.provider || booking?.__provider || '').trim().toLowerCase(),
+        String(booking?.hotelCode || '').trim().toLowerCase(),
+        String(booking?.roomId || '').trim().toLowerCase(),
+        String(booking?.rateId || '').trim().toLowerCase(),
+        String(routeId),
+        routeIds.join(','),
+        String(Boolean(booking?.multiNightBooking)),
+      ].join('|');
+
+      return list.findIndex((candidate: any) => {
+        const candidateRouteId = Number(candidate?.routeId || 0);
+        const candidateRouteIds = Array.isArray(candidate?.routeIds)
+          ? this.uniquePositiveNumbers(candidate.routeIds)
+          : [];
+
+        const candidateKey = [
+          String(candidate?.provider || candidate?.__provider || '').trim().toLowerCase(),
+          String(candidate?.hotelCode || '').trim().toLowerCase(),
+          String(candidate?.roomId || '').trim().toLowerCase(),
+          String(candidate?.rateId || '').trim().toLowerCase(),
+          String(candidateRouteId),
+          candidateRouteIds.join(','),
+          String(Boolean(candidate?.multiNightBooking)),
+        ].join('|');
+
+        return candidateKey === key;
+      }) === index;
+    });
+
+    if (deduped.length !== rows.length) {
+      console.warn('[SUPPLIER_HOTEL_BOOKINGS_PRUNED_MULTI_NIGHT_CHILD_ROWS]', {
+        before: rows.length,
+        after: deduped.length,
+        removed: (rows as any[])
+          .filter((row: any) => !deduped.includes(row))
+          .map((booking: any) => ({
+            provider: booking?.provider || booking?.__provider,
+            routeId: booking?.routeId,
+            routeIds: booking?.routeIds,
+            hotelCode: booking?.hotelCode,
+            roomId: booking?.roomId,
+            rateId: booking?.rateId,
+            checkInDate: booking?.checkInDate,
+            checkOutDate: booking?.checkOutDate,
+            multiNightBooking: booking?.multiNightBooking,
+            stayKey: booking?.stayKey,
+          })),
+        remaining: deduped.map((booking: any) => ({
+          provider: booking?.provider || booking?.__provider,
+          routeId: booking?.routeId,
+          routeIds: booking?.routeIds,
+          hotelCode: booking?.hotelCode,
+          roomId: booking?.roomId,
+          rateId: booking?.rateId,
+          checkInDate: booking?.checkInDate,
+          checkOutDate: booking?.checkOutDate,
+          multiNightBooking: booking?.multiNightBooking,
+          stayKey: booking?.stayKey,
+        })),
+      });
+    }
+
+    return deduped as T[];
+  }
+
+  private normalizeHotelSelectionIdentity(value: unknown): string {
+    return String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, ' ');
+  }
+
+  private assertConsistentMultiNightHotelSelection(providerHotelBookings: any[]): void {
+    /**
+     * Business rule:
+     * - Manual single-day selection may intentionally use a different room/meal plan.
+     * - True continuous stay booking must use the same supplier room/rate/meal across all nights.
+     *
+     * So this guard only applies to rows explicitly marked as multiNightBooking.
+     */
+    const multiNightBookings = (providerHotelBookings || []).filter((booking: any) =>
+      Boolean(booking?.multiNightBooking) &&
+      Array.isArray(booking?.routeIds) &&
+      booking.routeIds.length > 1,
+    );
+
+    for (const booking of multiNightBookings) {
+      const bookingRouteIds = (booking?.routeIds || []).map((value: any) => Number(value));
+      const selectedIdentity = [
+        this.normalizeHotelSelectionIdentity(booking?.provider),
+        this.normalizeHotelSelectionIdentity(booking?.hotelCode),
+        this.normalizeHotelSelectionIdentity(booking?.roomId),
+        this.normalizeHotelSelectionIdentity(booking?.rateId),
+        this.normalizeHotelSelectionIdentity(booking?.roomType),
+        this.normalizeHotelSelectionIdentity(booking?.mealPlan),
+      ].join('|');
+
+      const conflictingRows = providerHotelBookings.filter((candidate: any) => {
+        const candidateRouteId = Number(candidate?.routeId || 0);
+
+        if (!candidateRouteId || !bookingRouteIds.includes(candidateRouteId)) {
+          return false;
+        }
+
+        const candidateIdentity = [
+          this.normalizeHotelSelectionIdentity(candidate?.provider),
+          this.normalizeHotelSelectionIdentity(candidate?.hotelCode),
+          this.normalizeHotelSelectionIdentity(candidate?.roomId),
+          this.normalizeHotelSelectionIdentity(candidate?.rateId),
+          this.normalizeHotelSelectionIdentity(candidate?.roomType),
+          this.normalizeHotelSelectionIdentity(candidate?.mealPlan),
+        ].join('|');
+
+        return candidateIdentity !== selectedIdentity;
+      });
+
+      if (conflictingRows.length > 0) {
+        throw new BadRequestException({
+          message: 'Continuous stay has inconsistent room/rate selections across routes.',
+          stayKey: booking?.stayKey,
+          routeIds: booking?.routeIds,
+          expected: {
+            provider: booking?.provider,
+            hotelCode: booking?.hotelCode,
+            roomId: booking?.roomId,
+            rateId: booking?.rateId,
+            roomType: booking?.roomType,
+            mealPlan: booking?.mealPlan,
+          },
+          conflicts: conflictingRows.map((row: any) => ({
+            routeId: row?.routeId,
+            provider: row?.provider,
+            hotelCode: row?.hotelCode,
+            roomId: row?.roomId,
+            rateId: row?.rateId,
+            roomType: row?.roomType,
+            mealPlan: row?.mealPlan,
+          })),
+        });
+      }
+    }
+  }
+
   private async syncSelectedHotelDraftRowsForConfirmation(
     dto: ConfirmQuotationDto,
     userId: number,
@@ -6782,13 +7244,51 @@ export class ItinerariesService {
     groupType: number;
     skippedExternalStayCount: number;
   }> {
-    const incomingHotelBookings = dto.hotel_bookings || [];
+    console.debug(
+      `[CONFIRM_HOTELS] incoming hotel_bookings count=${dto.hotel_bookings?.length || 0}`,
+    );
+    const incomingHotelBookings = this.pruneHotelBookingsCoveredByMultiNight(
+      this.mergeConsecutiveSupplierHotelBookings(dto.hotel_bookings || []),
+    );
+    (dto as any).hotel_bookings = incomingHotelBookings;
     const providerHotelBookings = this.getProviderBookableHotelBookings(incomingHotelBookings);
     const groupType = this.getConfirmHotelGroupType(dto);
+    console.debug(
+      `[CONFIRM_HOTELS] normalized hotel_bookings count=${incomingHotelBookings.length}`,
+    );
+
+    this.assertConsistentMultiNightHotelSelection(providerHotelBookings);
+
+    const manualMismatchOverrideRows = providerHotelBookings.filter((booking: any) =>
+      Boolean(booking?.manualRoomMealMismatchOverride),
+    );
+
+    if (manualMismatchOverrideRows.length > 0) {
+      console.warn('[CONFIRM_QUOTATION_MANUAL_ROOM_MEAL_MISMATCH_OVERRIDE]', {
+        planId: dto.itinerary_plan_ID,
+        count: manualMismatchOverrideRows.length,
+        rows: manualMismatchOverrideRows.map((booking: any) => ({
+          routeId: booking?.routeId,
+          provider: booking?.provider,
+          hotelCode: booking?.hotelCode,
+          hotelName: booking?.hotelName,
+          roomId: booking?.roomId,
+          rateId: booking?.rateId,
+          roomType: booking?.roomType,
+          mealPlan: booking?.mealPlan,
+        })),
+      });
+    }
 
     const selectedRouteIds = this.uniquePositiveNumbers([
       ...((dto as any).selected_hotel_route_ids || []),
-      ...providerHotelBookings.map((hotel: any) => hotel?.routeId),
+      ...providerHotelBookings.flatMap((hotel: any) => {
+        const routeIds = Array.isArray(hotel?.routeIds) && hotel.routeIds.length > 0
+          ? hotel.routeIds
+          : [hotel?.routeId];
+
+        return routeIds;
+      }),
     ]);
 
     const externalRouteIds = this.uniquePositiveNumbers(
@@ -6977,7 +7477,88 @@ export class ItinerariesService {
       }
     }
 
-    for (const booking of providerHotelBookings) {
+    const getNextDateOnly = (date: string): string => {
+      const raw = String(date || '').trim();
+
+      if (!raw) {
+        return '';
+      }
+
+      const parsed = new Date(`${raw}T00:00:00.000Z`);
+
+      if (Number.isNaN(parsed.getTime())) {
+        return '';
+      }
+
+      parsed.setUTCDate(parsed.getUTCDate() + 1);
+      return parsed.toISOString().slice(0, 10);
+    };
+
+    const expandedDraftBookings = providerHotelBookings.flatMap((booking: any) => {
+      const isMultiNightBooking = Boolean(booking?.multiNightBooking);
+
+      const routeIds = isMultiNightBooking && Array.isArray(booking?.routeIds) && booking.routeIds.length > 0
+        ? this.uniquePositiveNumbers(booking.routeIds)
+        : this.uniquePositiveNumbers([booking?.routeId]);
+
+      if (routeIds.length <= 1) {
+        return [booking];
+      }
+
+      const nightlyRates = Array.isArray(booking?.nightlyRates)
+        ? booking.nightlyRates
+        : [];
+
+      const fallbackTotal = Number(
+        booking?.totalAmountAfterTax ??
+          booking?.netAmount ??
+          booking?.totalAmount ??
+          booking?.totalHotelCost ??
+          0,
+      );
+
+      const fallbackPerNight =
+        routeIds.length > 0 && fallbackTotal > 0
+          ? fallbackTotal / routeIds.length
+          : fallbackTotal;
+
+      return routeIds.map((routeId: number, index: number) => {
+        const nightlyRate = nightlyRates[index];
+        const checkInDate = String(
+          nightlyRate?.date ||
+            booking?.checkInDate ||
+            '',
+        ).trim();
+
+        const amountAfterTax = Number(
+          nightlyRate?.amountAfterTax ??
+            nightlyRate?.baseAmount ??
+            fallbackPerNight ??
+            0,
+        );
+
+        return {
+          ...booking,
+          routeId,
+          checkInDate,
+          checkOutDate: getNextDateOnly(checkInDate),
+          netAmount: amountAfterTax,
+          totalAmount: amountAfterTax,
+          totalHotelCost: amountAfterTax,
+          totalAmountAfterTax: amountAfterTax,
+          roomId: String(booking?.roomId || '').trim() || undefined,
+          rateId: String(booking?.rateId || '').trim() || undefined,
+          roomType: String(booking?.roomType || '').trim() || undefined,
+          mealPlan: String(booking?.mealPlan || '').trim() || undefined,
+          multiNightBooking: true,
+          multiNightParentRouteId: Number(booking?.routeId || 0),
+          routeIds,
+          stayKey: booking?.stayKey,
+        };
+      });
+    });
+
+    for (const booking of expandedDraftBookings) {
       const normalizedProvider = String((booking as any).provider || '')
         .trim()
         .toLowerCase();
@@ -7124,8 +7705,15 @@ export class ItinerariesService {
         hotelId,
         hotelCode: hotelCodeForSave,
         hotelName: (booking as any).hotelName,
+        roomType: (booking as any).roomType,
+        mealPlan: (booking as any).mealPlan,
+        checkInDate: (booking as any).checkInDate,
+        checkOutDate: (booking as any).checkOutDate,
         bookingAmount,
         groupType,
+        multiNightBooking: Boolean((booking as any).multiNightBooking),
+        stayKey: (booking as any).stayKey,
+        routeIds: (booking as any).routeIds,
       });
     }
 
@@ -7827,7 +8415,11 @@ export class ItinerariesService {
     endUserIp: string = '192.168.1.1',
   ) {
     const userId = 1; // TODO: Get from authenticated user
-    const providerHotelBookings = this.getProviderBookableHotelBookings(dto.hotel_bookings || []);
+    const mergedHotelBookings = this.pruneHotelBookingsCoveredByMultiNight(
+      this.mergeConsecutiveSupplierHotelBookings(dto.hotel_bookings || []),
+    );
+
+    const providerHotelBookings = this.getProviderBookableHotelBookings(mergedHotelBookings);
     const skippedExternalStayCount = (dto.hotel_bookings || []).length - providerHotelBookings.length;
 
     // If no supplier-bookable hotels are selected, still return DB-backed confirmed hotel details.
@@ -7855,7 +8447,31 @@ export class ItinerariesService {
     }
 
     console.log('[CONFIRM_QUOTATION_DEBUG] [Hotel Booking] Processing', providerHotelBookings.length, 'hotel(s)');
-    console.log('[CONFIRM_QUOTATION_DEBUG] [Hotel Booking] Incoming supplier hotel_bookings:', JSON.stringify(providerHotelBookings, null, 2));
+    console.log(
+      '[CONFIRM_QUOTATION_DEBUG] [Hotel Booking] Incoming supplier hotel_bookings:',
+      JSON.stringify(
+        providerHotelBookings.map((booking: any) => ({
+          provider: booking?.provider || booking?.__provider,
+          routeId: booking?.routeId,
+          routeIds: booking?.routeIds,
+          hotelCode: booking?.hotelCode,
+          hotelName: booking?.hotelName,
+          roomId: booking?.roomId,
+          rateId: booking?.rateId,
+          roomType: booking?.roomType,
+          mealPlan: booking?.mealPlan,
+          checkInDate: booking?.checkInDate,
+          checkOutDate: booking?.checkOutDate,
+          netAmount: booking?.netAmount,
+          multiNightBooking: booking?.multiNightBooking,
+          nights: booking?.nights,
+          nightlyRates: booking?.nightlyRates,
+          stayKey: booking?.stayKey,
+        })),
+        null,
+        2,
+      ),
+    );
 
     // Group hotels by provider and skip bookings that are already successful in DB.
     const normalizedHotelBookings = providerHotelBookings.map((hotel) => ({
@@ -8028,7 +8644,19 @@ export class ItinerariesService {
         console.log('[AxisRooms Booking Push] Processing', axisroomsHotels.length, 'hotel(s)');
 
         const axisroomsPushResults = [];
+        const processedAxisStayKeys = new Set<string>();
         for (const hotel of axisroomsHotels) {
+          const stayKey = String(
+            hotel?.stayKey ||
+            `axisrooms:${hotel?.hotelCode || ''}:${hotel?.roomId || ''}:${hotel?.rateId || ''}:${hotel?.checkInDate || ''}_${hotel?.checkOutDate || ''}`,
+          ).trim();
+          if (hotel?.multiNightBooking && processedAxisStayKeys.has(stayKey)) {
+            continue;
+          }
+          if (hotel?.multiNightBooking) {
+            processedAxisStayKeys.add(stayKey);
+          }
+
           const pushResult = await this.axisroomsBookingPushService.pushForHotelSelection({
             bookingStatus: 'confirmed',
             confirmedItineraryPlanId: baseResult.confirmed_itinerary_plan_ID,
@@ -8052,11 +8680,24 @@ export class ItinerariesService {
 
       if (staahHotels.length > 0) {
         console.log('[STAAH Booking Push] Processing', staahHotels.length, 'hotel(s)');
+        const processedStaahStayKeys = new Set<string>();
         const staahBookingResults =
           await this.staahBookingPushService.confirmItineraryHotels({
             confirmedItineraryPlanId: baseResult.confirmed_itinerary_plan_ID,
             itineraryPlanId: baseResult.itinerary_plan_ID,
-            hotels: staahHotels,
+            hotels: staahHotels.filter((hotel: any) => {
+              const stayKey = String(
+                hotel?.stayKey ||
+                `staah:${hotel?.hotelCode || ''}:${hotel?.roomId || ''}:${hotel?.rateId || ''}:${hotel?.checkInDate || ''}_${hotel?.checkOutDate || ''}`,
+              ).trim();
+              if (hotel?.multiNightBooking && processedStaahStayKeys.has(stayKey)) {
+                return false;
+              }
+              if (hotel?.multiNightBooking) {
+                processedStaahStayKeys.add(stayKey);
+              }
+              return true;
+            }),
             fallbackBookedBy: (dto as any)?.primary_guest_name || 'DVI User',
             fallbackEmail: (dto as any)?.primary_guest_email_id || '',
             fallbackPhone: (dto as any)?.primary_guest_contact_no || '',
@@ -8067,7 +8708,16 @@ export class ItinerariesService {
       const successKeySet = new Set(
         allBookingResults
           .filter((r) => this.isBookingResultSuccess(r))
-          .map((r) => this.bookingKey(r?.provider, Number(r?.routeId || 0))),
+          .flatMap((r) => {
+            const provider = String(r?.provider || '').trim().toLowerCase();
+            const routeIds = Array.isArray(r?.routeIds) && r.routeIds.length > 0
+              ? r.routeIds
+              : [Number(r?.routeId || 0)];
+            return routeIds
+              .map((routeId: any) => Number(routeId || 0))
+              .filter((routeId: number) => Number.isFinite(routeId) && routeId > 0)
+              .map((routeId: number) => this.bookingKey(provider, routeId));
+          }),
       );
 
       const pendingAfterAttempt = normalizedHotelBookings

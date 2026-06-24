@@ -33,6 +33,7 @@ import { RouteValidationService } from './validation/route-validation.service';
 import { RouteSuggestionsService } from './route-suggestions.service';
 import { RouteSuggestionsV2Service } from './route-suggestions-v2.service';
 import { ArrivalHotelPolicyService } from './services/arrival-hotel-policy.service';
+import { HotelStayBlockValidationService } from './services/hotel-stay-block-validation.service';
 import { VehicleVoucherEmailNotifierService } from './services/vehicle-voucher-email-notifier.service';
 import { HotelsModule } from '../hotels/hotels.module';
 import { ItineraryClipboardService } from './itinerary-clipboard.service';
@@ -75,6 +76,7 @@ import { ItineraryPdfService } from './itinerary-pdf.service';
     RouteSuggestionsV2Service,
     ItineraryClipboardService,
     ArrivalHotelPolicyService,
+    HotelStayBlockValidationService,
     ItineraryPdfService,
   ],
 })

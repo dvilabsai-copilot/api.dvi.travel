@@ -172,6 +172,11 @@ export class HotelSelectionDto {
   @IsString()
   rateId?: string;
 
+  @ApiProperty({ example: 'MAP', required: false })
+  @IsOptional()
+  @IsString()
+  mealPlan?: string;
+
   @ApiProperty({ example: 'Double Bed' })
   @IsString()
   roomType!: string;
@@ -253,6 +258,54 @@ export class HotelSelectionDto {
   @IsOptional()
   @IsString()
   availabilityMessage?: string | null;
+
+  @ApiProperty({ example: true, required: false })
+  @IsOptional()
+  @IsBoolean()
+  multiNightBooking?: boolean;
+
+  @ApiProperty({ example: false, required: false })
+  @IsOptional()
+  @IsBoolean()
+  manualRoomMealMismatchOverride?: boolean;
+
+  @ApiProperty({ example: 'staah:934001:10512556XPQ3:STAAH194181:2026-07-15_to_2026-07-17', required: false })
+  @IsOptional()
+  @IsString()
+  stayKey?: string;
+
+  @ApiProperty({ type: [Number], required: false })
+  @IsOptional()
+  @IsArray()
+  @Type(() => Number)
+  @IsInt({ each: true })
+  routeIds?: number[];
+
+  @ApiProperty({ example: 2, required: false })
+  @IsOptional()
+  @IsInt()
+  nights?: number;
+
+  @ApiProperty({
+    type: [Object],
+    required: false,
+  })
+  @IsOptional()
+  @IsArray()
+  nightlyRates?: Array<{
+    date: string;
+    amountAfterTax: number;
+    baseAmount?: number;
+    extraAdultCount?: number;
+    extraChildCount?: number;
+    extraAdultRate?: number;
+    extraChildRate?: number;
+  }>;
+
+  @ApiProperty({ example: 2526, required: false })
+  @IsOptional()
+  @IsNumber()
+  totalAmountAfterTax?: number;
 }
 
 export class ConfirmQuotationDto {

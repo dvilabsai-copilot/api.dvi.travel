@@ -126,17 +126,23 @@ export class AxisRoomsBookingPushService {
     fallbackBookedBy?: string;
     fallbackEmail?: string;
     fallbackPhone?: string;
-  }): Promise<{ success: boolean; message: string; payload: any; response?: any; error?: string }> {
+  }): Promise<{ success: boolean; message: string; payload: any; response?: any; error?: string; routeIds?: number[]; stayKey?: string }> {
     const now = this.toTimestamp(new Date());
     const booking = input.hotel || {};
     const hotelCode = String(booking.hotelCode || '').trim();
     const passengers = Array.isArray(booking.passengers) ? booking.passengers : [];
     const { adults, children } = this.countGuests(passengers);
+    const routeIds = Array.isArray(booking.routeIds) && booking.routeIds.length > 0
+      ? booking.routeIds.map((id: any) => Number(id)).filter((id: number) => Number.isFinite(id) && id > 0)
+      : [Number(booking.routeId || 0)].filter((id) => id > 0);
+    const nightlyRates = Array.isArray(booking.nightlyRates) ? booking.nightlyRates : [];
 
     const lead = passengers.find((p: any) => p?.leadPassenger) || passengers[0] || {};
     const leadName = [lead?.firstName, lead?.lastName].filter(Boolean).join(' ').trim();
 
-    const roomStayAmount = Number(booking?.netAmount || 0);
+    const roomStayAmount = nightlyRates.length > 0
+      ? nightlyRates.reduce((sum: number, night: any) => sum + Number(night?.amountAfterTax || 0), 0)
+      : Number(booking?.totalAmountAfterTax || booking?.netAmount || 0);
     const noOfUnits = String(Number(booking?.numberOfRooms || 1));
 
     const payload: Record<string, any> = {
@@ -180,6 +186,14 @@ export class AxisRoomsBookingPushService {
       payload.cancelledTime = now;
     }
 
+    payload.extraData = {
+      multiNightBooking: Boolean(booking?.multiNightBooking),
+      stayKey: String(booking?.stayKey || ''),
+      routeIds,
+      nights: Number(booking?.nights || nightlyRates.length || 1),
+      nightlyRates,
+    };
+
     const result = await this.pushBookingNotification(payload);
     // Persist confirmation for successful confirms
     try {
@@ -188,34 +202,38 @@ export class AxisRoomsBookingPushService {
         const hotelCode = String(booking.hotelCode || '').trim();
         const passengers = Array.isArray(booking.passengers) ? booking.passengers : [];
 
-        await this.prisma.axisrooms_hotel_booking_confirmation.create({
-          data: {
-            confirmed_itinerary_plan_ID: input.confirmedItineraryPlanId,
-            itinerary_plan_ID: input.itineraryPlanId,
-            itinerary_route_ID: Number(booking.routeId || 0),
-            axisrooms_hotel_code: hotelCode,
-            axisrooms_booking_reference: String(payload.confirmationNo || ''),
-            booking_code: String(booking.bookingCode || ''),
-            check_in_date: booking.checkInDate ? new Date(booking.checkInDate) : null,
-            check_out_date: booking.checkOutDate ? new Date(booking.checkOutDate) : null,
-            number_of_rooms: Number(booking.numberOfRooms || 1),
-            net_amount: Number(booking.netAmount || 0),
-            guest_nationality: String(booking.guestNationality || ''),
-            total_guests: Array.isArray(passengers) ? passengers.length : 0,
-            api_response: {
-              confirm: {
-                request: payload,
-                response: result.response || result,
-                error: result.error || null,
-                createdAt: new Date().toISOString(),
+        for (const routeId of routeIds) {
+          await this.prisma.axisrooms_hotel_booking_confirmation.create({
+            data: {
+              confirmed_itinerary_plan_ID: input.confirmedItineraryPlanId,
+              itinerary_plan_ID: input.itineraryPlanId,
+              itinerary_route_ID: Number(routeId || 0),
+              axisrooms_hotel_code: hotelCode,
+              axisrooms_booking_reference: String(payload.confirmationNo || ''),
+              booking_code: String(booking.bookingCode || ''),
+              check_in_date: booking.checkInDate ? new Date(booking.checkInDate) : null,
+              check_out_date: booking.checkOutDate ? new Date(booking.checkOutDate) : null,
+              number_of_rooms: Number(booking.numberOfRooms || 1),
+              net_amount: Number(roomStayAmount || 0),
+              guest_nationality: String(booking.guestNationality || ''),
+              total_guests: Array.isArray(passengers) ? passengers.length : 0,
+              api_response: {
+                confirm: {
+                  request: payload,
+                  response: result.response || result,
+                  error: result.error || null,
+                  stayKey: booking?.stayKey || null,
+                  routeIds,
+                  createdAt: new Date().toISOString(),
+                },
               },
+              createdby: 1,
+              createdon: new Date(),
+              status: 1,
+              deleted: 0,
             },
-            createdby: 1,
-            createdon: new Date(),
-            status: 1,
-            deleted: 0,
-          },
-        });
+          });
+        }
       }
     } catch (e) {
       this.logger.error('Failed to persist AxisRooms confirmation: ' + String(e?.message || e));
@@ -227,6 +245,8 @@ export class AxisRoomsBookingPushService {
       payload,
       response: result.response,
       error: result.error,
+      routeIds,
+      stayKey: booking?.stayKey,
     };
   }
 

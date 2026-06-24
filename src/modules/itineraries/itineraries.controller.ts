@@ -55,6 +55,7 @@ import {
   HotelArrivalPolicyRequestDto,
   HotelArrivalPolicyResponseDto,
 } from './dto/hotel-arrival-policy.dto';
+import { StayExtensionPreviewDto } from './dto/stay-extension-preview.dto';
 import { ItineraryHotelDetailsService } from './itinerary-hotel-details.service';
 import { ItineraryHotelDetailsTboService } from './itinerary-hotel-details-tbo.service';
 import { ItineraryExportService } from './itinerary-export.service';
@@ -72,6 +73,7 @@ import { RouteSuggestionsService } from './route-suggestions.service';
 import { RouteSuggestionsV2Service } from './route-suggestions-v2.service';
 import { ItineraryClipboardService } from './itinerary-clipboard.service';
 import { ItineraryPdfService } from './itinerary-pdf.service';
+import { HotelStayBlockValidationService } from './services/hotel-stay-block-validation.service';
 
 @ApiTags('Itineraries')
 @ApiBearerAuth()
@@ -99,6 +101,7 @@ export class ItinerariesController {
     private readonly clipboardService: ItineraryClipboardService,
     private readonly arrivalHotelPolicyService: ArrivalHotelPolicyService,
     private readonly itineraryPdfService: ItineraryPdfService,
+    private readonly hotelStayBlockValidationService: HotelStayBlockValidationService,
   ) {}
 
   private parseClipboardGroupTypes(query: Record<string, any>): number[] {
@@ -1237,6 +1240,27 @@ export class ItinerariesController {
     },
   ) {
     return this.svc.prebookHotels(body);
+  }
+
+  @Public()
+  @Post(':planId/hotels/stay-extension-preview')
+  @ApiOperation({ summary: 'Preview continuous multi-night hotel booking for STAAH and AxisRooms' })
+  async previewHotelStayExtension(
+    @Param('planId', ParseIntPipe) planId: number,
+    @Body() body: StayExtensionPreviewDto,
+  ) {
+    return this.hotelStayBlockValidationService.previewStayExtension({
+      planId,
+      routeId: Number(body.routeId),
+      provider: body.provider,
+      hotelCode: body.hotelCode,
+      hotelName: body.hotelName,
+      roomId: body.roomId,
+      rateId: body.rateId,
+      roomType: body.roomType,
+      mealPlan: body.mealPlan,
+      checkInDate: body.checkInDate,
+    });
   }
 
   @Public()
