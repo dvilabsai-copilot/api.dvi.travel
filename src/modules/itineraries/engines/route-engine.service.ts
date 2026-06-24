@@ -31,6 +31,7 @@
 import { Injectable } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { CreatePlanDto, CreateRouteDto } from "../dto/create-itinerary.dto";
+import { normalizeCityName } from "../utils/city-normalization.util";
 import { timeStringToPrismaTime } from "../utils/itinerary.utils";
 
 type Tx = Prisma.TransactionClient;
@@ -259,6 +260,9 @@ private normalizeKmValue(value: unknown): string {
     destName: string,
     requestedKm?: unknown,
   ): Promise<{ locationId: bigint; distanceKm: string; travelSeconds: number | null }> {
+    const shouldDebugHotspotRca =
+      process.env.DEBUG_HOTSPOT_WRITER === "1" ||
+      process.env.NODE_ENV !== "production";
     const trimmedSource = String(sourceName ?? "").trim();
     const trimmedDest = String(destName ?? "").trim();
 
@@ -269,10 +273,13 @@ private normalizeKmValue(value: unknown): string {
     const normalizeText = (value: string) =>
       value.replace(/\s+/g, " ").trim().toLowerCase();
 
-    const normalizedSource = normalizeText(trimmedSource);
-    const normalizedDest = normalizeText(trimmedDest);
-    const normalizeCityAlias = (value: string) =>
-      normalizeText(value)
+    const normalizeCityKey = (value: string) => {
+      const normalized = normalizeCityName(value);
+      if (normalized) {
+        return normalizeText(normalized);
+      }
+
+      return normalizeText(value)
         .replace(/\binternational\b/g, " ")
         .replace(/\bdomestic\b/g, " ")
         .replace(/\bair\s*port\b/g, " ")
@@ -282,9 +289,12 @@ private normalizeKmValue(value: unknown): string {
         .replace(/\bterminal\b/g, " ")
         .replace(/\s+/g, " ")
         .trim();
+    };
 
-    const sourceCityKey = normalizeCityAlias(trimmedSource);
-    const destCityKey = normalizeCityAlias(trimmedDest);
+    const normalizedSource = normalizeText(trimmedSource);
+    const normalizedDest = normalizeText(trimmedDest);
+    const sourceCityKey = normalizeCityKey(trimmedSource);
+    const destCityKey = normalizeCityKey(trimmedDest);
     const requestedKmNumber = Number(this.normalizeKmValue(requestedKm as any) || 0);
     const hasRequestedKm = Number.isFinite(requestedKmNumber) && requestedKmNumber > 0;
 
@@ -402,6 +412,18 @@ private normalizeKmValue(value: unknown): string {
     const row = rows?.[0] || null;
 
     if (!row) {
+      if (shouldDebugHotspotRca) {
+        console.log("[HOTSPOT_RCA] route resolution", {
+          sourceName: trimmedSource,
+          destName: trimmedDest,
+          normalizedSource,
+          normalizedDest,
+          normalizedSourceCity: sourceCityKey,
+          normalizedDestCity: destCityKey,
+          requestedKm: requestedKmNumber || null,
+          locationId: 0,
+        });
+      }
       console.warn("[ROUTE_MASTER_LOOKUP_FAILED]", {
         sourceName: trimmedSource,
         destName: trimmedDest,
@@ -438,6 +460,22 @@ private normalizeKmValue(value: unknown): string {
     const distanceRaw = (row as any).distance;
     const distanceKm = this.normalizeKmValue(distanceRaw);
     const travelSeconds = this.parseDurationToSeconds((row as any).duration ?? null);
+
+    if (shouldDebugHotspotRca) {
+      console.log("[HOTSPOT_RCA] route resolution", {
+        sourceName: trimmedSource,
+        destName: trimmedDest,
+        normalizedSource,
+        normalizedDest,
+        normalizedSourceCity: sourceCityKey,
+        normalizedDestCity: destCityKey,
+        locationId: Number(locationId || 0),
+        matchedSource: String((row as any).source_location || ""),
+        matchedDestination: String((row as any).destination_location || ""),
+        matchedSourceCity: String((row as any).source_location_city || ""),
+        matchedDestinationCity: String((row as any).destination_location_city || ""),
+      });
+    }
 
     return { locationId, distanceKm, travelSeconds };
   }

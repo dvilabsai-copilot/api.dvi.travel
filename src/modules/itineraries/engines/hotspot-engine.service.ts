@@ -8,6 +8,7 @@ import { TimelineBuilder } from "./helpers/timeline.builder";
 import { TimelineEnricher } from "./helpers/timeline.enricher";
 import { OperatingHoursChecker } from "./helpers/timeline.operating-hours";
 import { TimeConverter } from "./helpers/time-converter";
+import { normalizeCityName } from "../utils/city-normalization.util";
 import {
   RebuildSummary,
   RouteRejectionSummary,
@@ -1849,14 +1850,14 @@ export class HotspotEngineService {
   }
 
   private normalizeRoutePlaceKey(value: any): string {
-    return String(value ?? '')
-      .replace(/&amp;/gi, '&')
-      .replace(/\([^)]*\)/g, ' ')
-      .replace(/\[[^\]]*]/g, ' ')
-      .toLowerCase()
-      .replace(/[^a-z0-9\s|,/-]/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
+    // Use the shared city normalizer so route validation and route resolution
+    // agree on aliases such as Tirupathi -> Tirupati.
+    return normalizeCityName(
+      String(value ?? '')
+        .replace(/&amp;/gi, '&')
+        .replace(/\([^)]*\)/g, ' ')
+        .replace(/\[[^\]]*]/g, ' '),
+    );
   }
 
   private splitRoutePlaceTokens(value: any): string[] {
