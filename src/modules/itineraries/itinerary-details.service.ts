@@ -85,8 +85,12 @@ export interface VehicleDayWisePricingDto {
   route: string; // "Chennai → Mahabalipuram"
   travelType?: 'Local' | 'Outstation' | 'Mixed';
   timeLimitId?: number;
+  chargeableTimeLimitId?: number;
   kmsLimitId?: number;
   slabTitle?: string;
+  chargeableSlabTitle?: string;
+  originalSlabTitle?: string;
+  slabUpgraded?: boolean;
   packageTitle?: string;
   slabHoursLimit?: number;
   slabKmLimit?: number;
@@ -196,6 +200,8 @@ export interface ItineraryVehicleRowDto {
   totalDropKm?: number;
   totalDropDuration?: string;
   totalUsedKm?: number;
+  localUsedKm?: number;
+  outstationUsedKm?: number;
   totalAllowedLocalKm?: number;
   totalAllowedOutstationKm?: number;
   totalAllowedKm?: number;
@@ -209,6 +215,10 @@ export interface ItineraryVehicleRowDto {
     label?: string;
   }>;
   extraKms?: number;
+  localExtraKms?: number;
+  localExtraKmCharge?: number;
+  outstationExtraKms?: number;
+  outstationExtraKmCharge?: number;
   extraKmRate?: number;
   extraKmCharge?: number;
   extraHourCount?: number;
@@ -261,6 +271,14 @@ export interface CostBreakdownDto {
   totalAllowedKm?: number;
   totalTravelledKm?: number;
   totalExtraKm?: number;
+  totalAllowedLocalKm?: number;
+  totalAllowedOutstationKm?: number;
+  localUsedKm?: number;
+  outstationUsedKm?: number;
+  localExtraKms?: number;
+  localExtraKmCharge?: number;
+  outstationExtraKms?: number;
+  outstationExtraKmCharge?: number;
   
   // Final calculations
   additionalMargin: number;
@@ -3735,6 +3753,7 @@ sightseeingDistance,       // local sightseeing separately
       const totalTimeSecondsFromParts =
         (parseTimeToSeconds(vd.total_pickup_duration) || 0) +
         (parseTimeToSeconds(vd.total_running_time) || 0) +
+        (parseTimeToSeconds(vd.total_siteseeing_time) || 0) +
         (parseTimeToSeconds(vd.total_drop_duration) || 0);
       const totalTimeSeconds =
         totalTimeSecondsDirect !== null
@@ -3995,8 +4014,12 @@ sightseeingDistance,       // local sightseeing separately
             extraKm: 0,
             travelType: '',
             timeLimitId: 0,
+            chargeableTimeLimitId: 0,
             kmsLimitId: 0,
             slabTitle: '',
+            chargeableSlabTitle: '',
+            originalSlabTitle: '',
+            slabUpgraded: false,
             packageTitle: '',
             slabHoursLimit: 0,
             slabKmLimit: 0,
@@ -4083,6 +4106,19 @@ sightseeingDistance,       // local sightseeing separately
         const dropDurationMinutes = parseDurationToMinutes((vd as any).total_drop_duration);
         dayData.dropDurationMinutes += dropDurationMinutes;
         const rowTravelType = rowTravelTypeId === 2 ? 'Outstation' : 'Local';
+        const rowChargeableTimeLimitId =
+          Number((vd as any).chargeable_time_limit_id || (vd as any).time_limit_id || 0);
+        const rowChargeableSlabTitle =
+          String((vd as any).chargeable_slab_title || '').trim();
+        const rowChargeableHoursLimit =
+          Number((vd as any).chargeable_slab_hours_limit || 0);
+        const rowChargeableKmLimit =
+          Number((vd as any).chargeable_slab_km_limit || 0);
+        const rowOriginalSlabTitle =
+          String((vd as any).original_slab_title || '').trim();
+        const rowSlabUpgraded =
+          Number((vd as any).slab_upgraded || 0) === 1 ||
+          (vd as any).slab_upgraded === true;
 
         if (!dayData.travelType) {
           dayData.travelType = rowTravelType;
@@ -4116,19 +4152,41 @@ sightseeingDistance,       // local sightseeing separately
             dayData.kmsLimitId = rowKmsLimitId;
           }
         } else {
-          const slabInfo = slabInfoByTimeLimit.get(rowTimeLimitId);
+          const slabInfo = slabInfoByTimeLimit.get(rowChargeableTimeLimitId || rowTimeLimitId);
 
           if (!dayData.timeLimitId && rowTimeLimitId > 0) {
             dayData.timeLimitId = rowTimeLimitId;
-            dayData.slabTitle = slabInfo?.title || '';
-            dayData.slabHoursLimit = Number(slabInfo?.hoursLimit || 0);
-            dayData.slabKmLimit = Number(slabInfo?.kmLimit || 0);
-          } else if (
-            dayData.timeLimitId > 0 &&
-            rowTimeLimitId > 0 &&
-            dayData.timeLimitId !== rowTimeLimitId
+          }
+
+          if (!dayData.chargeableTimeLimitId && rowChargeableTimeLimitId > 0) {
+            dayData.chargeableTimeLimitId = rowChargeableTimeLimitId;
+          }
+
+          if (!dayData.slabTitle) {
+            dayData.slabTitle = rowChargeableSlabTitle || slabInfo?.title || '';
+          }
+          if (!dayData.chargeableSlabTitle) {
+            dayData.chargeableSlabTitle = rowChargeableSlabTitle || slabInfo?.title || '';
+          }
+          if (!dayData.originalSlabTitle && rowOriginalSlabTitle) {
+            dayData.originalSlabTitle = rowOriginalSlabTitle;
+          }
+          if (rowSlabUpgraded) {
+            dayData.slabUpgraded = true;
+          }
+          if (!dayData.slabHoursLimit) {
+            dayData.slabHoursLimit = rowChargeableHoursLimit || Number(slabInfo?.hoursLimit || 0);
+          }
+          if (!dayData.slabKmLimit) {
+            dayData.slabKmLimit = rowChargeableKmLimit || Number(slabInfo?.kmLimit || 0);
+          }
+          if (
+            dayData.chargeableTimeLimitId > 0 &&
+            rowChargeableTimeLimitId > 0 &&
+            dayData.chargeableTimeLimitId !== rowChargeableTimeLimitId
           ) {
             dayData.slabTitle = 'Mixed Slabs';
+            dayData.chargeableSlabTitle = 'Mixed Slabs';
           }
 
           const kmsLimitInfo = kmsLimitInfoById.get(rowKmsLimitId);
@@ -4151,6 +4209,12 @@ sightseeingDistance,       // local sightseeing separately
         const sightseeingDurationMinutes = parseDurationToMinutes((vd as any).total_siteseeing_time);
         const pickupKm = parseFloat(String((vd as any).total_pickup_km || 0)) || 0;
         const dropKm = parseFloat(String((vd as any).total_drop_km || 0)) || 0;
+        const directTotalDurationMinutes = parseDurationToMinutes((vd as any).total_travelled_time);
+        const computedTotalDurationMinutes =
+          pickupDurationMinutes +
+          runningDurationMinutes +
+          sightseeingDurationMinutes +
+          dropDurationMinutes;
         const expectedTotalKm = Number((pickupKm + runningKm + sightseeingKm + dropKm).toFixed(2));
 
         dayData.travelKms += runningKm;
@@ -4158,9 +4222,9 @@ sightseeingDistance,       // local sightseeing separately
         dayData.sightseeingKms += sightseeingKm;
         dayData.sightseeingDurationMinutes += sightseeingDurationMinutes;
         dayData.totalDurationMinutes +=
-          pickupDurationMinutes +
-          runningDurationMinutes +
-          dropDurationMinutes;
+          directTotalDurationMinutes > 0
+            ? directTotalDurationMinutes
+            : computedTotalDurationMinutes;
         dayData.totalKms += expectedTotalKm;
       }
 
@@ -4185,8 +4249,12 @@ sightseeingDistance,       // local sightseeing separately
           route,
           travelType: dayData.travelType || undefined,
           timeLimitId: dayData.timeLimitId || undefined,
+          chargeableTimeLimitId: dayData.chargeableTimeLimitId || dayData.timeLimitId || undefined,
           kmsLimitId: dayData.kmsLimitId || undefined,
           slabTitle: dayData.slabTitle || undefined,
+          chargeableSlabTitle: dayData.chargeableSlabTitle || dayData.slabTitle || undefined,
+          originalSlabTitle: dayData.originalSlabTitle || undefined,
+          slabUpgraded: dayData.slabUpgraded || undefined,
           packageTitle: dayData.packageTitle || undefined,
           slabHoursLimit: dayData.slabHoursLimit || undefined,
           slabKmLimit: dayData.slabKmLimit || undefined,
@@ -4286,8 +4354,22 @@ sightseeingDistance,       // local sightseeing separately
       const outstationDayWiseDetails = dayWiseDetails.filter(
         (vd: any) => Number((vd as any).travel_type || 0) === 2,
       );
-      const localDaysCount = localDayWiseDetails.length;
-      const outstationDaysCount = outstationDayWiseDetails.length;
+      const getRouteDateKey = (vd: any): string => {
+        const raw = vd?.itinerary_route_date;
+        if (!raw) return '';
+
+        if (raw instanceof Date && !Number.isNaN(raw.getTime())) {
+          return raw.toISOString().split('T')[0];
+        }
+
+        return String(raw).slice(0, 10);
+      };
+      const localDaysCount = new Set(
+        localDayWiseDetails.map(getRouteDateKey).filter(Boolean),
+      ).size;
+      const outstationDaysCount = new Set(
+        outstationDayWiseDetails.map(getRouteDateKey).filter(Boolean),
+      ).size;
       const localAllowedKmBreakdown = Array.from(
         localDayWiseDetails.reduce((map, vd: any) => {
           const timeLimitId = Number((vd as any).time_limit_id || 0);
@@ -4316,16 +4398,51 @@ sightseeingDistance,       // local sightseeing separately
 
       // Summary fields from eligible_list
       const noOfDays = dayWiseDetails.length || 1;
-      const totalUsedKm = vehicleComponentKmTotal;
+      const persistedTotalUsedKm =
+        parseFloat(String((eligAny as any).total_kms || 0)) || 0;
+      const computedLocalUsedKm = localDayWiseDetails.reduce((sum: number, vd: any) => {
+        const pickupKm = parseFloat(String((vd as any).total_pickup_km || 0)) || 0;
+        const runningKm = parseFloat(String((vd as any).total_running_km || 0)) || 0;
+        const sightseeingKm = parseFloat(String((vd as any).total_siteseeing_km || 0)) || 0;
+        const dropKm = parseFloat(String((vd as any).total_drop_km || 0)) || 0;
+        return sum + pickupKm + runningKm + sightseeingKm + dropKm;
+      }, 0);
+      const computedOutstationUsedKm = outstationDayWiseDetails.reduce((sum: number, vd: any) => {
+        const pickupKm = parseFloat(String((vd as any).total_pickup_km || 0)) || 0;
+        const runningKm = parseFloat(String((vd as any).total_running_km || 0)) || 0;
+        const sightseeingKm = parseFloat(String((vd as any).total_siteseeing_km || 0)) || 0;
+        const dropKm = parseFloat(String((vd as any).total_drop_km || 0)) || 0;
+        return sum + pickupKm + runningKm + sightseeingKm + dropKm;
+      }, 0);
+      const persistedLocalUsedKm =
+        parseFloat(String((eligAny as any).total_local_km || 0)) || 0;
+      const persistedOutstationUsedKm =
+        parseFloat(String((eligAny as any).total_outstation_km || 0)) || 0;
+      const localUsedKm = roundCurrency(
+        persistedLocalUsedKm > 0 ? persistedLocalUsedKm : computedLocalUsedKm,
+      );
+      const outstationUsedKm = roundCurrency(
+        persistedOutstationUsedKm > 0 ? persistedOutstationUsedKm : computedOutstationUsedKm,
+      );
+      const totalUsedKm = roundCurrency(
+        persistedTotalUsedKm > 0 ? persistedTotalUsedKm : localUsedKm + outstationUsedKm,
+      );
       const totalAllowedLocalKm = parseFloat(String(eligAny.total_allowed_local_kms || 0)) || 0;
       const totalAllowedOutstationKm = parseFloat(String(eligAny.total_allowed_kms || 0)) || 0;
-      const totalAllowedKm = totalAllowedLocalKm + totalAllowedOutstationKm;
+      const totalAllowedKm = roundCurrency(totalAllowedLocalKm + totalAllowedOutstationKm);
       const outstationAllowedKmPerDay =
         parseFloat(String((eligAny as any).outstation_allowed_km_per_day || 0)) || 0;
       const extraKmRate = parseFloat(String(eligAny.extra_km_rate || 0)) || 0;
-      const extraKms = Math.max(0, totalUsedKm - totalAllowedKm);
-      const extraKmCharge = extraKms > 0 && extraKmRate > 0 ? roundCurrency(extraKms * extraKmRate) : 0;
-      pushItem('Extra KM Charges', extraKmCharge);
+      const localExtraKms = parseFloat(String((eligAny as any).total_extra_local_kms || 0)) || 0;
+      const localExtraKmCharge =
+        parseFloat(String((eligAny as any).total_extra_local_kms_charge || 0)) || 0;
+      const outstationExtraKms = parseFloat(String((eligAny as any).total_extra_kms || 0)) || 0;
+      const outstationExtraKmCharge =
+        parseFloat(String((eligAny as any).total_extra_kms_charge || 0)) || 0;
+      const extraKms = roundCurrency(localExtraKms + outstationExtraKms);
+      const extraKmCharge = roundCurrency(localExtraKmCharge + outstationExtraKmCharge);
+      pushItem('Local Extra KM Charges', localExtraKmCharge);
+      pushItem('Outstation Extra KM Charges', outstationExtraKmCharge);
       breakdown = tmp.length ? tmp : undefined;
       const totalCostOfVehicle = rentalCharges + tollCharges + parkingCharges + driverCharges + permitCharges
         + Number(eligAny.total_before_6_am_charges_for_driver ?? 0)
@@ -4333,7 +4450,7 @@ sightseeingDistance,       // local sightseeing separately
         + Number(eligAny.total_after_8_pm_charges_for_driver ?? 0)
         + Number(eligAny.total_after_8_pm_charges_for_vehicle ?? 0)
         + extraHourCharge;
-      const subtotal = roundCurrency(totalCostOfVehicle + extraKmCharge);
+      const subtotal = roundCurrency(totalCostOfVehicle + localExtraKmCharge + outstationExtraKmCharge);
       const vehicleGstPercentage = parseFloat(String(eligAny.vehicle_gst_percentage || 0)) || 0;
       const vehicleGstAmount = parseFloat(String(eligAny.vehicle_gst_amount || 0)) || 0;
       const vendorMarginPercentage = parseFloat(String(eligAny.vendor_margin_percentage || 0)) || 0;
@@ -4350,15 +4467,29 @@ sightseeingDistance,       // local sightseeing separately
         subtotal + vehicleGstAmount + vendorMarginAmount + vendorMarginGstAmount,
       );
 
-      if ((process.env.DEBUG_VEHICLE_KM_SUMMARY || '').toLowerCase() === 'true') {
-        console.log('[VEHICLE_KM_SUMMARY_DEBUG]', {
-          eligibleId: eligible.itinerary_plan_vendor_eligible_ID,
-          routeBadgeKmTotal: Number(routeBadgeKmTotal.toFixed(2)),
-          pickupKmTotal: Number(totalPickupKm.toFixed(2)),
-          travelKmTotal: Number(totalTravelKm.toFixed(2)),
-          sightseeingKmTotal: Number(totalSightseeingKm.toFixed(2)),
-          dropKmTotal: Number(totalDropKm.toFixed(2)),
-          vehicleComponentKmTotal: Number(vehicleComponentKmTotal.toFixed(2)),
+      if (process.env.DEBUG_VEHICLE_KM_SUMMARY === 'true') {
+        console.log('[VEHICLE_DISTANCE_SUMMARY_SOURCE]', {
+          quoteId,
+          planId,
+          vendorEligibleId: eligible.itinerary_plan_vendor_eligible_ID,
+          totalUsedKm,
+          persistedTotalUsedKm,
+          computedLocalUsedKm,
+          computedOutstationUsedKm,
+          localUsedKm,
+          outstationUsedKm,
+          totalAllowedLocalKm,
+          totalAllowedOutstationKm,
+          totalAllowedKm,
+          outstationAllowedKmPerDay,
+          localDaysCount,
+          outstationDaysCount,
+          localExtraKms,
+          localExtraKmCharge,
+          outstationExtraKms,
+          outstationExtraKmCharge,
+          extraKms,
+          extraKmCharge,
         });
       }
 
@@ -4420,6 +4551,8 @@ sightseeingDistance,       // local sightseeing separately
         totalDropKm,
         totalDropDuration,
         totalUsedKm,
+        localUsedKm,
+        outstationUsedKm,
         totalAllowedLocalKm,
         totalAllowedOutstationKm,
         totalAllowedKm,
@@ -4428,6 +4561,10 @@ sightseeingDistance,       // local sightseeing separately
         outstationAllowedKmPerDay,
         localAllowedKmBreakdown: localAllowedKmBreakdown.length ? localAllowedKmBreakdown : undefined,
         extraKms,
+        localExtraKms,
+        localExtraKmCharge,
+        outstationExtraKms,
+        outstationExtraKmCharge,
         extraKmRate,
         extraKmCharge,
         extraHourCount: dayWiseExtraHourCountTotal,
@@ -4567,18 +4704,46 @@ sightseeingDistance,       // local sightseeing separately
      * If multiple selected vehicle types exist, do not multiply the same itinerary KM
      * into a fake large warning number. Use the worst selected row for warning display.
      */
-    const kmWarningRows = selectedVehicleRows.length > 0 ? selectedVehicleRows : (vehicles as any[]);
+    const kmWarningRowsSource = selectedVehicleRows.length > 0 ? selectedVehicleRows : (vehicles as any[]);
+    const kmWarningRows = Array.from(
+      kmWarningRowsSource.reduce((map, vehicle: any) => {
+        const key = `${Number(vehicle?.vehicleTypeId || 0)}:${Number(vehicle?.vendorEligibleId || 0)}`;
+        if (!map.has(key)) {
+          map.set(key, vehicle);
+        }
+        return map;
+      }, new Map<string, any>()),
+    ).map(([, vehicle]) => vehicle);
 
     const selectedKmRows = kmWarningRows
-      .map((vehicle: any) => ({
-        vendorEligibleId: Number(vehicle?.vendorEligibleId || 0),
-        vehicleTypeId: Number(vehicle?.vehicleTypeId || 0),
-        vendorName: String(vehicle?.vendorName || ''),
-        totalAllowedKm: Number(vehicle?.totalAllowedKm || 0),
-        totalUsedKm: Number(vehicle?.totalUsedKm || 0),
-        extraKms: Math.max(0, Number(vehicle?.extraKms || 0)),
-        isAssigned: vehicle?.isAssigned === true,
-      }))
+      .map((vehicle: any) => {
+        const localExtraKms = Number(vehicle?.localExtraKms || 0);
+        const outstationExtraKms = Number(vehicle?.outstationExtraKms || 0);
+
+        return {
+          vendorEligibleId: Number(vehicle?.vendorEligibleId || 0),
+          vehicleTypeId: Number(vehicle?.vehicleTypeId || 0),
+          vendorName: String(vehicle?.vendorName || ''),
+          totalAllowedKm: Number(vehicle?.totalAllowedKm || 0),
+          totalAllowedLocalKm: Number(vehicle?.totalAllowedLocalKm || 0),
+          totalAllowedOutstationKm: Number(vehicle?.totalAllowedOutstationKm || 0),
+          totalUsedKm: Number(vehicle?.totalUsedKm || 0),
+          localUsedKm: Number(vehicle?.localUsedKm || 0),
+          outstationUsedKm: Number(vehicle?.outstationUsedKm || 0),
+          localExtraKms,
+          localExtraKmCharge: Number(vehicle?.localExtraKmCharge || 0),
+          outstationExtraKms,
+          outstationExtraKmCharge: Number(vehicle?.outstationExtraKmCharge || 0),
+          extraKms: Math.max(0, localExtraKms + outstationExtraKms),
+          extraKmCharge:
+            Number(vehicle?.localExtraKmCharge || 0) +
+            Number(vehicle?.outstationExtraKmCharge || 0),
+          outstationAllowedKmPerDay: Number(vehicle?.outstationAllowedKmPerDay || 0),
+          outstationDaysCount: Number(vehicle?.outstationDaysCount || 0),
+          localDaysCount: Number(vehicle?.localDaysCount || 0),
+          isAssigned: vehicle?.isAssigned === true,
+        };
+      })
       .filter(
         (row) =>
           row.totalAllowedKm > 0 ||
@@ -4603,21 +4768,26 @@ sightseeingDistance,       // local sightseeing separately
         vehicleTypeId: number;
         vendorName: string;
         totalAllowedKm: number;
+        totalAllowedLocalKm: number;
+        totalAllowedOutstationKm: number;
         totalUsedKm: number;
         extraKms: number;
+        extraKmCharge: number;
+        localUsedKm: number;
+        outstationUsedKm: number;
+        localExtraKms: number;
+        localExtraKmCharge: number;
+        outstationExtraKms: number;
+        outstationExtraKmCharge: number;
+        outstationAllowedKmPerDay: number;
+        outstationDaysCount: number;
+        localDaysCount: number;
         isAssigned: boolean;
       });
 
     const totalAllowedKmFromAssigned = Number((kmWarningBaseRow?.totalAllowedKm || 0).toFixed(2));
     const totalTravelledKmFromAssigned = Number((kmWarningBaseRow?.totalUsedKm || 0).toFixed(2));
-    const totalExtraKmFromAssigned = Number(
-      Math.max(
-        kmWarningBaseRow?.extraKms || 0,
-        totalTravelledKmFromAssigned > totalAllowedKmFromAssigned
-          ? totalTravelledKmFromAssigned - totalAllowedKmFromAssigned
-          : 0,
-      ).toFixed(2),
-    );
+    const totalExtraKmFromAssigned = Number((kmWarningBaseRow?.extraKms || 0).toFixed(2));
 
     if (totalExtraKmFromAssigned > 0) {
       kmLimitWarning = `Planner warning: assigned vehicles exceed allowed KM by ${totalExtraKmFromAssigned.toFixed(2)} km (extra KM charges may apply).`;
@@ -4836,6 +5006,38 @@ sightseeingDistance,       // local sightseeing separately
           : undefined,
       totalExtraKm:
         totalExtraKmFromAssigned > 0 ? Number(totalExtraKmFromAssigned.toFixed(2)) : undefined,
+      totalAllowedLocalKm:
+        kmWarningBaseRow?.totalAllowedLocalKm && kmWarningBaseRow.totalAllowedLocalKm > 0
+          ? Number(kmWarningBaseRow.totalAllowedLocalKm.toFixed(2))
+          : undefined,
+      totalAllowedOutstationKm:
+        kmWarningBaseRow?.totalAllowedOutstationKm && kmWarningBaseRow.totalAllowedOutstationKm > 0
+          ? Number(kmWarningBaseRow.totalAllowedOutstationKm.toFixed(2))
+          : undefined,
+      localUsedKm:
+        kmWarningBaseRow?.localUsedKm && kmWarningBaseRow.localUsedKm > 0
+          ? Number(kmWarningBaseRow.localUsedKm.toFixed(2))
+          : undefined,
+      outstationUsedKm:
+        kmWarningBaseRow?.outstationUsedKm && kmWarningBaseRow.outstationUsedKm > 0
+          ? Number(kmWarningBaseRow.outstationUsedKm.toFixed(2))
+          : undefined,
+      localExtraKms:
+        kmWarningBaseRow?.localExtraKms && kmWarningBaseRow.localExtraKms > 0
+          ? Number(kmWarningBaseRow.localExtraKms.toFixed(2))
+          : undefined,
+      localExtraKmCharge:
+        kmWarningBaseRow?.localExtraKmCharge && kmWarningBaseRow.localExtraKmCharge > 0
+          ? Number(kmWarningBaseRow.localExtraKmCharge.toFixed(2))
+          : undefined,
+      outstationExtraKms:
+        kmWarningBaseRow?.outstationExtraKms && kmWarningBaseRow.outstationExtraKms > 0
+          ? Number(kmWarningBaseRow.outstationExtraKms.toFixed(2))
+          : undefined,
+      outstationExtraKmCharge:
+        kmWarningBaseRow?.outstationExtraKmCharge && kmWarningBaseRow.outstationExtraKmCharge > 0
+          ? Number(kmWarningBaseRow.outstationExtraKmCharge.toFixed(2))
+          : undefined,
       
       // Final calculations
       additionalMargin: additionalMargin,
