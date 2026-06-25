@@ -1774,8 +1774,10 @@ export class ItinerariesController {
   async removeManualHotspot(
     @Param('id', ParseIntPipe) planId: number,
     @Param('hotspotId', ParseIntPipe) hotspotId: number,
+    @Req() req: any,
   ) {
-    return this.svc.removeManualHotspot(planId, hotspotId);
+    const userId = Number(req.user?.userId ?? 1);
+    return this.svc.removeManualHotspot(planId, hotspotId, userId);
   }
 
   @Post(':id/route/:routeId/rebuild')
@@ -1816,7 +1818,9 @@ export class ItinerariesController {
       previousDayBillingDecisionProvided?: boolean;
       previousDayBillingConfirmed?: boolean;
     },
+    @Req() req: any,
   ) {
+    const userId = Number(req.user?.userId ?? 1);
     return this.svc.updateRouteTimes(
       planId,
       routeId,
@@ -1824,6 +1828,7 @@ export class ItinerariesController {
       body.endTime,
       body.previousDayBillingDecisionProvided,
       body.previousDayBillingConfirmed,
+      userId,
     );
   }
 
