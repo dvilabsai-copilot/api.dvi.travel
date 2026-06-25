@@ -6118,7 +6118,7 @@ export class ItinerariesService {
     });
     const beforeKm = vehicleRowsBefore.reduce((sum: number, r: any) => sum + Number(r?.total_travelled_km || 0), 0);
     const beforeAmount = vehicleRowsBefore.reduce((sum: number, r: any) => sum + Number(r?.total_vehicle_amount || 0), 0);
-    console.log('[HOTSPOT_DELETE_VEHICLE_REBUILD_BEFORE]', {
+    console.log('[HOTSPOT_CHANGE_VEHICLE_REBUILD_BEFORE]', {
       planId: normalizedPlanId,
       routeId: routeId || null,
       totalKms: Number(beforeKm.toFixed(2)),
@@ -6170,7 +6170,7 @@ export class ItinerariesService {
     });
     const afterKm = vehicleRowsAfter.reduce((sum: number, r: any) => sum + Number(r?.total_travelled_km || 0), 0);
     const afterAmount = vehicleRowsAfter.reduce((sum: number, r: any) => sum + Number(r?.total_vehicle_amount || 0), 0);
-    console.log('[HOTSPOT_DELETE_VEHICLE_REBUILD_AFTER]', {
+    console.log('[HOTSPOT_CHANGE_VEHICLE_REBUILD_AFTER]', {
       planId: normalizedPlanId,
       routeId: routeId || null,
       totalKms: Number(afterKm.toFixed(2)),
@@ -12127,6 +12127,21 @@ export class ItinerariesService {
           }
         }
       }
+    }
+
+    if (applyResult?.success === true && applyResult?.inserted === true) {
+      await this.hotspotEngine.rebuildParkingCharges(Number(planId), Number(userId || 1));
+
+      await this.forceRebuildVehiclePricingAfterHotspotChange(
+        Number(planId),
+        Number(routeId),
+      );
+
+      return {
+        ...applyResult,
+        parkingChargesRebuilt: true,
+        vehiclePricingRebuilt: true,
+      };
     }
 
     return applyResult;
@@ -22046,25 +22061,71 @@ export class ItinerariesService {
   /**
    * Remove a manual hotspot and rebuild the timeline.
    */
-  async removeManualHotspot(planId: number, hotspotId: number) {
-    return this.prisma.$transaction(async (tx) => {
-      await (tx as any).dvi_itinerary_route_hotspot_details.updateMany({
+  async removeManualHotspot(planId: number, hotspotId: number, userId: number = 1) {
+    const normalizedPlanId = Number(planId);
+    const normalizedHotspotId = Number(hotspotId);
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const affectedRows = await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
         where: {
-          itinerary_plan_ID: Number(planId),
-          hotspot_ID: Number(hotspotId),
+          itinerary_plan_ID: normalizedPlanId,
+          hotspot_ID: normalizedHotspotId,
           hotspot_plan_own_way: 1,
+          deleted: 0,
         },
-        data: { deleted: 1 }
+        select: {
+          itinerary_route_ID: true,
+        },
       });
 
-      const rebuildResult = await this.hotspotEngine.rebuildRouteHotspots(tx, Number(planId));
+      const affectedRouteIds = Array.from(
+        new Set(
+          (affectedRows || [])
+            .map((row: any) => Number(row?.itinerary_route_ID || 0))
+            .filter((id: number) => Number.isFinite(id) && id > 0),
+        ),
+      );
+
+      await (tx as any).dvi_itinerary_route_hotspot_details.updateMany({
+        where: {
+          itinerary_plan_ID: normalizedPlanId,
+          hotspot_ID: normalizedHotspotId,
+          hotspot_plan_own_way: 1,
+        },
+        data: {
+          deleted: 1,
+          updatedon: new Date(),
+        }
+      });
+
+      const rebuildResult = await this.hotspotEngine.rebuildRouteHotspots(tx, normalizedPlanId);
 
       return {
         success: true,
+        affectedRouteIds,
         rebuildSummary: rebuildResult.rebuildSummary,
         warnings: rebuildResult.warnings,
       };
        }, { timeout: 120000 });
+
+    await this.hotspotEngine.rebuildParkingCharges(normalizedPlanId, Number(userId || 1));
+
+    if (result.affectedRouteIds.length > 0) {
+      for (const affectedRouteId of result.affectedRouteIds) {
+        await this.forceRebuildVehiclePricingAfterHotspotChange(
+          normalizedPlanId,
+          Number(affectedRouteId),
+        );
+      }
+    } else {
+      await this.forceRebuildVehiclePricingAfterHotspotChange(normalizedPlanId);
+    }
+
+    return {
+      ...result,
+      parkingChargesRebuilt: true,
+      vehiclePricingRebuilt: true,
+    };
   }
 
   /**
@@ -22210,6 +22271,7 @@ export class ItinerariesService {
     endTime: string,
     previousDayBillingDecisionProvided?: boolean,
     previousDayBillingConfirmed?: boolean,
+    userId: number = 1,
   ) {
     console.log(`[updateRouteTimes] planId=${planId}, routeId=${routeId}, startTime=${startTime}, endTime=${endTime}`);
 
@@ -22524,17 +22586,22 @@ export class ItinerariesService {
       };
     }, { timeout: 180000, maxWait: 20000 });
 
-   // IMPORTANT:
-// Route time edit should update only itinerary timing/timeline.
-// Do not rebuild parking or vehicle slabs here, because that changes the package price.
-// Price changes must happen only from explicit vehicle/hotel/package update actions.
+    // Route time changes can change active hotspot segments, sightseeing KM,
+    // travel KM, running time, extra KM, and vehicle pricing.
+    // Therefore vehicle pricing must be rebuilt after the timeline rebuild.
+    await this.hotspotEngine.rebuildParkingCharges(normalizedPlanId, Number(userId || 1));
 
-return {
-  ...transactionResult,
-  parkingChargesRebuilt: false,
-  vehiclePricingRebuilt: false,
-  pricePreserved: true,
-};
+    await this.forceRebuildVehiclePricingAfterHotspotChange(
+      normalizedPlanId,
+      normalizedRouteId,
+    );
+
+    return {
+      ...transactionResult,
+      parkingChargesRebuilt: true,
+      vehiclePricingRebuilt: true,
+      pricePreserved: false,
+    };
   }
 
   /**
