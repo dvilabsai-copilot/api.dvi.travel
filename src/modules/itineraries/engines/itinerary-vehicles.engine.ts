@@ -2236,7 +2236,7 @@ export class ItineraryVehiclesEngine {
             vehicle_id: vehicleId,
             vendor_branch_id: vendorBranchId,
             time_limit_id: result.time_limit_id,
-            kms_limit_id: 0,
+            kms_limit_id: result.kms_limit_id,
             travel_type: result.travel_type,
             itinerary_route_location_from: fromLoc,
             itinerary_route_location_to: toLoc,
@@ -2468,6 +2468,9 @@ export class ItineraryVehiclesEngine {
       },
       select: {
         itinerary_plan_vendor_eligible_ID: true,
+        vendor_id: true,
+        vendor_branch_id: true,
+        vehicle_id: true,
         vendor_vehicle_type_id: true,
         vehicle_type_id: true,
         outstation_allowed_km_per_day: true,
@@ -2495,6 +2498,11 @@ export class ItineraryVehiclesEngine {
       select: {
         itinerary_plan_vendor_eligible_ID: true,
         time_limit_id: true,
+        kms_limit_id: true,
+        total_pickup_km: true,
+        total_running_km: true,
+        total_siteseeing_km: true,
+        total_drop_km: true,
         total_travelled_km: true,
         total_travelled_time: true,
         travel_type: true,
@@ -2539,7 +2547,26 @@ export class ItineraryVehiclesEngine {
     const localKmByTimeLimit = new Map<number, number>(
       allTimeLimitRows.map((row: any) => [Number(row.time_limit_id || 0), getEffectiveTimeLimitKm(row)]),
     );
-
+    const allOutstationKmsLimitIds = Array.from(
+      new Set(
+        allVehicleDetailsRows
+          .filter((row: any) => Number(row.travel_type || 0) === 2)
+          .map((row: any) => Number(row.kms_limit_id || 0))
+          .filter((id: number) => id > 0),
+      ),
+    );
+    const allOutstationKmsLimitRows = allOutstationKmsLimitIds.length
+      ? await tx.dvi_kms_limit.findMany({
+          where: { kms_limit_id: { in: allOutstationKmsLimitIds } },
+          select: { kms_limit_id: true, kms_limit: true },
+        })
+      : [];
+    const outstationKmByLimitId = new Map<number, number>(
+      allOutstationKmsLimitRows.map((row: any) => [
+        Number(row.kms_limit_id || 0),
+        Number(row.kms_limit || 0),
+      ]),
+    );
     for (const eligible of eligibleRecords) {
       this.writeLog(`[vehiclesEngine] Updating eligible ${eligible.itinerary_plan_vendor_eligible_ID} (vendor_veh_type=${eligible.vendor_vehicle_type_id}, veh_type=${eligible.vehicle_type_id})`);
 
@@ -2548,22 +2575,55 @@ export class ItineraryVehiclesEngine {
       ) ?? [];
       const outstationDaysCount = vehicleDetailsRecords.filter((record: any) => Number(record.travel_type || 0) === 2).length;
       this.writeLog(`[vehiclesEngine] Outstation days count: ${outstationDaysCount}`);
-
-      const allowedKmPerDay = Number(eligible.outstation_allowed_km_per_day || 250);
-      const totalAllowedKms = allowedKmPerDay * outstationDaysCount;
-      this.writeLog(`[vehiclesEngine] Allowed KM per day: ${allowedKmPerDay}, Total allowed KMs: ${totalAllowedKms}`);
-
-      const totalKms = vehicleDetailsRecords.reduce((sum: number, record: any) => {
-        return sum + Number(record.total_travelled_km || 0);
-      }, 0);
       const localRecords = vehicleDetailsRecords.filter((r: any) => Number(r.travel_type || 0) === 1);
       const outstationRecords = vehicleDetailsRecords.filter((r: any) => Number(r.travel_type || 0) === 2);
-      const totalOutstationKm = outstationRecords.reduce((sum: number, record: any) => {
-        return sum + Number(record.total_travelled_km || 0);
+      const toComponentKm = (record: any): number =>
+        Number(record.total_pickup_km || 0) +
+        Number(record.total_running_km || 0) +
+        Number(record.total_siteseeing_km || 0) +
+        Number(record.total_drop_km || 0);
+      const localUsedKm = localRecords.reduce((sum: number, record: any) => {
+        return sum + toComponentKm(record);
       }, 0);
-      const totalLocalKms = localRecords.reduce((sum: number, record: any) => {
-        return sum + Number(record.total_travelled_km || 0);
+      const outstationUsedKm = outstationRecords.reduce((sum: number, record: any) => {
+        return sum + toComponentKm(record);
       }, 0);
+      const totalKms = roundMoney(localUsedKm + outstationUsedKm);
+      const totalOutstationKm = roundMoney(outstationUsedKm);
+      const totalLocalKms = roundMoney(localUsedKm);
+      const outstationKmsLimitId = Number(
+        outstationRecords.find((record: any) => Number(record.kms_limit_id || 0) > 0)?.kms_limit_id || 0,
+      );
+      const allowedKmPerDayFromKmsLimit = Number(outstationKmByLimitId.get(outstationKmsLimitId) || 0);
+      const persistedAllowedKmPerDay = Number(eligible.outstation_allowed_km_per_day || 0);
+      const defaultOutstationAllowedKmPerDay =
+        outstationKmsLimitId > 0 && outstationRecords.length > 0 ? 250 : 0;
+      const allowedKmPerDay =
+        allowedKmPerDayFromKmsLimit > 0
+          ? allowedKmPerDayFromKmsLimit
+          : persistedAllowedKmPerDay > 0
+            ? persistedAllowedKmPerDay
+            : defaultOutstationAllowedKmPerDay;
+      if (
+        process.env.DEBUG_VEHICLE_KM_SUMMARY === 'true' &&
+        outstationDaysCount > 0 &&
+        outstationKmsLimitId > 0 &&
+        allowedKmPerDayFromKmsLimit <= 0 &&
+        allowedKmPerDay > 0
+      ) {
+        console.warn('[VEHICLE_ELIGIBLE_OUTSTATION_DEFAULT_FALLBACK]', {
+          planId,
+          vendorEligibleId: eligible.itinerary_plan_vendor_eligible_ID,
+          outstationKmsLimitId,
+          allowedKmPerDay,
+          reason: 'kms_limit_row_zero_or_missing',
+        });
+      }
+      const totalAllowedKms =
+        outstationDaysCount > 0 && allowedKmPerDay > 0
+          ? roundMoney(allowedKmPerDay * outstationDaysCount)
+          : 0;
+      this.writeLog(`[vehiclesEngine] Allowed KM per day: ${allowedKmPerDay}, Total allowed KMs: ${totalAllowedKms}`);
 
       const totalAllowedLocalKms = localRecords.reduce((sum: number, r: any) => {
         return sum + Number(localKmByTimeLimit.get(Number(r.time_limit_id || 0)) || 0);
@@ -2576,7 +2636,7 @@ export class ItineraryVehiclesEngine {
       }, 0);
       const totalExtraOutstationKms = Math.max(
         0,
-        Math.ceil(totalOutstationKm - totalAllowedKms),
+        totalAllowedKms > 0 ? Math.ceil(totalOutstationKm - totalAllowedKms) : 0,
       );
       const outstationExtraKmRate = Number(eligible.extra_km_rate || 0);
       const totalExtraOutstationKmsCharge = roundMoney(totalExtraOutstationKms * outstationExtraKmRate);
@@ -2595,6 +2655,28 @@ export class ItineraryVehiclesEngine {
 
       this.writeLog(`[vehiclesEngine] Total kms: ${totalKms}, Local kms: ${totalLocalKms}, Local extra: ${totalExtraLocalKms}, Local extra charge: ${totalExtraLocalKmsCharge}, records count: ${vehicleDetailsRecords.length}`);
       this.writeLog(`[vehiclesEngine] Outstation extra kms: ${totalExtraOutstationKms}, Outstation extra charge: ${totalExtraOutstationKmsCharge}`);
+      if (process.env.DEBUG_VEHICLE_KM_SUMMARY === 'true') {
+        console.log('[VEHICLE_ELIGIBLE_OUTSTATION_TOTALS_BEFORE_SAVE]', {
+          planId,
+          vendorId: (eligible as any).vendor_id,
+          vendorEligibleId: eligible.itinerary_plan_vendor_eligible_ID,
+          vehicleTypeId: eligible.vehicle_type_id,
+          outstationDaysCount,
+          outstationAllowedKmPerDay: allowedKmPerDay,
+          totalAllowedOutstationKm: totalAllowedKms,
+          outstationUsedKm: totalOutstationKm,
+          totalExtraOutstationKms,
+          totalExtraOutstationKmsCharge,
+          totalAllowedLocalKm: totalAllowedLocalKms,
+          localUsedKm: totalLocalKms,
+          totalExtraLocalKms,
+          totalExtraLocalKmsCharge,
+          extraKmRate: outstationExtraKmRate,
+          outstationKmsLimitId,
+          allowedKmPerDayFromKmsLimit,
+          persistedAllowedKmPerDay,
+        });
+      }
       
       // Convert HH:MM:SS format to decimal hours and sum
       const totalTime = vehicleDetailsRecords.reduce((sum: number, record: any) => {
@@ -2658,6 +2740,7 @@ export class ItineraryVehiclesEngine {
         data: {
           total_kms: String(totalKms),
           total_outstation_km: String(totalOutstationKm),
+          outstation_allowed_km_per_day: String(allowedKmPerDay),
           total_time: String(totalTime),
           total_rental_charges: totalRentalCharges,
           total_allowed_kms: String(totalAllowedKms),
