@@ -336,17 +336,13 @@ export class ItinerariesService {
     const guideType = Number(params.guideType || 0);
     const languageId = Number(params.languageId || 0);
     const totalPaxCount = Number(params.totalPaxCount || 0);
-    const requestedSlotIds =
-      guideType === 1
-        ? [1, 2, 3]
-        : Array.from(
-            new Set(
-              (params.slotIds ?? [])
-                .map((slotId) => Number(slotId))
-                .filter((slotId) => Number.isFinite(slotId) && slotId > 0),
-            ),
-          );
-
+   const requestedSlotIds = Array.from(
+  new Set(
+    (params.slotIds ?? [])
+      .map((slotId) => Number(slotId))
+      .filter((slotId) => Number.isFinite(slotId) && slotId > 0),
+  ),
+);
     if (![1, 2].includes(guideType)) {
       return { guideId: null, totalGuideCost: 0, datewiseCost: {} };
     }
@@ -608,9 +604,9 @@ export class ItinerariesService {
       throw new BadRequestException('itinerary_route_ID_required');
     }
 
-    if (guideType === 2 && guideSlots.length === 0) {
-      throw new BadRequestException('guide_slot_required');
-    }
+   if (guideSlots.length === 0) {
+  throw new BadRequestException('guide_slot_required');
+}
 
     const plan = await this.prisma.dvi_itinerary_plan_details.findUnique({
       where: { itinerary_plan_ID: planId },
@@ -667,8 +663,8 @@ export class ItinerariesService {
       throw new BadRequestException('guide_not_available');
     }
 
-    const guideLanguageCsv = String(guideLanguage);
-    const guideSlotCsv = guideType === 1 ? '1,2,3' : guideSlots.join(',');
+   const guideLanguageCsv = String(guideLanguage);
+const guideSlotCsv = guideSlots.join(',');
 
     const savedGuide = await this.prisma.$transaction(async (tx) => {
       let routeGuideRecord: any;
@@ -751,28 +747,46 @@ export class ItinerariesService {
             data: slotRows as any,
           });
         }
-      } else if (guideType === 1) {
-        const routeDates = await this.getPlanRouteDates(planId);
-        const slotCostRows = routeDates.map((day) => ({
-          route_guide_id: Number(routeGuideRecord.route_guide_ID),
-          itinerary_plan_id: planId,
-          itinerary_route_date: new Date(day),
-          guide_id: Number(guideResult.guideId || 0),
-          guide_type: guideType,
-          guide_slot_cost: Number((guideResult.datewiseCost[day] ?? 0).toFixed(2)),
-          createdby: Number(userId || 1),
-          createdon: new Date(),
-          updatedon: new Date(),
-          status: 1 as any,
-          deleted: 0 as any,
-        }));
+    } else if (guideType === 1) {
+  const routeDates = await this.getPlanRouteDates(planId);
+  const slotCostRows: any[] = [];
 
-        if (slotCostRows.length > 0) {
-          await tx.dvi_itinerary_route_guide_slot_cost_details.createMany({
-            data: slotCostRows as any,
-          });
-        }
-      }
+  for (const day of routeDates) {
+    for (const slotId of guideSlots) {
+      const slotGuideResult = await this.resolveEligibleGuideCost({
+        planId,
+        routeId: null,
+        routeDate: day,
+        guideType,
+        languageId: guideLanguage,
+        slotIds: [slotId],
+        totalPaxCount,
+      });
+
+      slotCostRows.push({
+        route_guide_id: Number(routeGuideRecord.route_guide_ID),
+        itinerary_plan_id: planId,
+        itinerary_route_id: 0,
+        itinerary_route_date: new Date(day),
+        guide_id: Number(slotGuideResult.guideId || guideResult.guideId || 0),
+        guide_type: guideType,
+        guide_slot: slotId,
+        guide_slot_cost: Number((slotGuideResult.datewiseCost[day] ?? 0).toFixed(2)),
+        createdby: Number(userId || 1),
+        createdon: new Date(),
+        updatedon: new Date(),
+        status: 1 as any,
+        deleted: 0 as any,
+      });
+    }
+  }
+
+  if (slotCostRows.length > 0) {
+    await tx.dvi_itinerary_route_guide_slot_cost_details.createMany({
+      data: slotCostRows as any,
+    });
+  }
+}
 
       return routeGuideRecord;
     });
