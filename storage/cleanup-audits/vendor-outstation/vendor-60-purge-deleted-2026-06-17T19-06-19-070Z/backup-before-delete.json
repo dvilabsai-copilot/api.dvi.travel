@@ -1,0 +1,130 @@
+{
+  "kmsRows": [
+    {
+      "kms_limit_id": 196,
+      "vendor_id": 60,
+      "vendor_vehicle_type_id": 221,
+      "kms_limit_title": "250",
+      "kms_limit": 250,
+      "createdby": 0,
+      "createdon": "2026-06-10T00:36:44.000Z",
+      "updatedon": "2026-06-11T02:02:24.000Z",
+      "status": 1,
+      "deleted": 1
+    },
+    {
+      "kms_limit_id": 197,
+      "vendor_id": 60,
+      "vendor_vehicle_type_id": 222,
+      "kms_limit_title": "9",
+      "kms_limit": 9,
+      "createdby": 0,
+      "createdon": "2026-06-10T02:01:45.000Z",
+      "updatedon": "2026-06-15T02:31:14.000Z",
+      "status": 1,
+      "deleted": 1
+    },
+    {
+      "kms_limit_id": 198,
+      "vendor_id": 60,
+      "vendor_vehicle_type_id": 223,
+      "kms_limit_title": "250",
+      "kms_limit": 250,
+      "createdby": 0,
+      "createdon": "2026-06-10T02:12:52.000Z",
+      "updatedon": "2026-06-10T02:13:20.000Z",
+      "status": 1,
+      "deleted": 1
+    },
+    {
+      "kms_limit_id": 203,
+      "vendor_id": 60,
+      "vendor_vehicle_type_id": 233,
+      "kms_limit_title": "8",
+      "kms_limit": 8,
+      "createdby": 0,
+      "createdon": "2026-06-12T07:54:56.000Z",
+      "updatedon": null,
+      "status": 1,
+      "deleted": 1
+    },
+    {
+      "kms_limit_id": 205,
+      "vendor_id": 60,
+      "vendor_vehicle_type_id": 236,
+      "kms_limit_title": "300",
+      "kms_limit": 300,
+      "createdby": 0,
+      "createdon": "2026-06-12T23:02:03.000Z",
+      "updatedon": null,
+      "status": 1,
+      "deleted": 1
+    }
+  ],
+  "vvtRows": [
+    {
+      "vendor_vehicle_type_ID": 222,
+      "vendor_id": 60,
+      "vehicle_type_id": 1,
+      "driver_batta": 9,
+      "food_cost": 9,
+      "accomodation_cost": 9,
+      "extra_cost": 9,
+      "driver_early_morning_charges": 9,
+      "driver_evening_charges": 9,
+      "createdby": 0,
+      "createdon": "2026-06-10T01:59:27.000Z",
+      "updatedon": "2026-06-15T02:31:31.000Z",
+      "status": 0,
+      "deleted": 1
+    },
+    {
+      "vendor_vehicle_type_ID": 225,
+      "vendor_id": 60,
+      "vehicle_type_id": 23,
+      "driver_batta": 400,
+      "food_cost": 100,
+      "accomodation_cost": 100,
+      "extra_cost": 100,
+      "driver_early_morning_charges": 100,
+      "driver_evening_charges": 100,
+      "createdby": 0,
+      "createdon": "2026-06-10T20:32:08.000Z",
+      "updatedon": "2026-06-11T01:34:39.000Z",
+      "status": 0,
+      "deleted": 1
+    },
+    {
+      "vendor_vehicle_type_ID": 232,
+      "vendor_id": 60,
+      "vehicle_type_id": 38,
+      "driver_batta": 111111,
+      "food_cost": 8,
+      "accomodation_cost": 8,
+      "extra_cost": 8,
+      "driver_early_morning_charges": 8,
+      "driver_evening_charges": 88,
+      "createdby": 0,
+      "createdon": "2026-06-12T07:54:08.000Z",
+      "updatedon": "2026-06-12T07:54:12.000Z",
+      "status": 0,
+      "deleted": 1
+    },
+    {
+      "vendor_vehicle_type_ID": 233,
+      "vendor_id": 60,
+      "vehicle_type_id": 38,
+      "driver_batta": 0,
+      "food_cost": 0,
+      "accomodation_cost": 0,
+      "extra_cost": 0,
+      "driver_early_morning_charges": 0,
+      "driver_evening_charges": 0,
+      "createdby": 0,
+      "createdon": "2026-06-12T07:54:40.000Z",
+      "updatedon": "2026-06-12T09:35:49.000Z",
+      "status": 0,
+      "deleted": 1
+    }
+  ]
+}

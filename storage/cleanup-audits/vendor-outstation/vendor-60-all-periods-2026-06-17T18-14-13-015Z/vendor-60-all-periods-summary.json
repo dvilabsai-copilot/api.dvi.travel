@@ -1,0 +1,55 @@
+{
+  "mode": "apply",
+  "vendorId": 60,
+  "branchId": null,
+  "year": null,
+  "month": null,
+  "mergeVendorVehicleTypes": false,
+  "outputDirectory": "C:\\wamp64\\www\\dvi_fullstack\\api.dvi.travel\\storage\\cleanup-audits\\vendor-outstation\\vendor-60-all-periods-2026-06-17T18-14-13-015Z",
+  "files": {
+    "auditBefore": "C:\\wamp64\\www\\dvi_fullstack\\api.dvi.travel\\storage\\cleanup-audits\\vendor-outstation\\vendor-60-all-periods-2026-06-17T18-14-13-015Z\\vendor-60-all-periods-audit-before.json",
+    "plan": "C:\\wamp64\\www\\dvi_fullstack\\api.dvi.travel\\storage\\cleanup-audits\\vendor-outstation\\vendor-60-all-periods-2026-06-17T18-14-13-015Z\\vendor-60-all-periods-plan.json",
+    "auditAfter": "C:\\wamp64\\www\\dvi_fullstack\\api.dvi.travel\\storage\\cleanup-audits\\vendor-outstation\\vendor-60-all-periods-2026-06-17T18-14-13-015Z\\vendor-60-all-periods-audit-after.json",
+    "summary": "C:\\wamp64\\www\\dvi_fullstack\\api.dvi.travel\\storage\\cleanup-audits\\vendor-outstation\\vendor-60-all-periods-2026-06-17T18-14-13-015Z\\vendor-60-all-periods-summary.json"
+  },
+  "countsBefore": {
+    "vendorVehicleTypeRows": 16,
+    "kmsLimitRows": 13,
+    "pricebookRowsInScope": 303,
+    "duplicateVendorVehicleTypeGroups": 0,
+    "duplicateKmsGroups": 0,
+    "exactDuplicatePricebookGroups": 0
+  },
+  "countsAfter": {
+    "vendorVehicleTypeRows": 16,
+    "kmsLimitRows": 13,
+    "pricebookRowsInScope": 303,
+    "duplicateVendorVehicleTypeGroups": 0,
+    "duplicateKmsGroups": 0,
+    "exactDuplicatePricebookGroups": 0
+  },
+  "actionsPlanned": {
+    "kmsMergeGroups": 0,
+    "monthlyPricebookGroupsWithinKmsMerges": 0,
+    "exactDuplicatePricebookGroups": 0,
+    "pricebookRowsToUpdate": 0,
+    "pricebookRowsToSoftDelete": 0,
+    "kmsLimitRowsToSoftDelete": 0,
+    "vendorVehicleTypeDuplicateGroups": 0
+  },
+  "actionsApplied": {
+    "pricebookRowsUpdated": 0,
+    "pricebookRowsSoftDeleted": 0,
+    "kmsLimitRowsSoftDeleted": 0
+  },
+  "skipped": {
+    "kmsGroupsWithoutScopedPricebooks": 0,
+    "duplicateKmsLimitRowsBlockedByReferences": 0,
+    "vendorVehicleTypeMergeSkipped": true
+  },
+  "notes": [
+    "Vendor vehicle type duplicates are audited only in this version.",
+    "Duplicate KM limits are only soft-deleted when no active outstation pricebook rows still reference them.",
+    "Apply mode executed with transaction-scoped merges and soft deletes."
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "snapshot": {
+    "generatedAt": "2026-06-17T18:10:36.366Z",
+    "filters": {
+      "vendorId": 60,
+      "branchId": null,
+      "year": "2026",
+      "month": "June"
+    },
+    "counts": {
+      "vendorVehicleTypeRows": 16,
+      "kmsLimitRows": 13,
+      "pricebookRowsInScope": 17,
+      "duplicateVendorVehicleTypeGroups": 0,
+      "duplicateKmsGroups": 0,
+      "exactDuplicatePricebookGroups": 0
+    },
+    "duplicateVendorVehicleTypeGroups": [],
+    "duplicateKmsGroups": [],
+    "exactDuplicatePricebookGroups": [],
+    "verification": {
+      "duplicateKmsReferenceCounts": []
+    }
+  },
+  "backups": {
+    "affectedPricebookRows": [],
+    "affectedKmsLimitRows": [],
+    "duplicateVendorVehicleTypeRows": []
+  }
+}

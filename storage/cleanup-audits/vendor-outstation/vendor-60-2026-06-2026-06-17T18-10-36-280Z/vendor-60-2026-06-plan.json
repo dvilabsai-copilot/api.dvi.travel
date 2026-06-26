@@ -1,0 +1,15 @@
+{
+  "generatedAt": "2026-06-17T18:10:36.367Z",
+  "mode": "dry-run",
+  "filters": {
+    "vendorId": 60,
+    "branchId": null,
+    "year": "2026",
+    "month": "June"
+  },
+  "plan": {
+    "kmsMergePlans": [],
+    "exactDuplicatePricebookPlans": [],
+    "vendorVehicleTypeDuplicateGroups": []
+  }
+}

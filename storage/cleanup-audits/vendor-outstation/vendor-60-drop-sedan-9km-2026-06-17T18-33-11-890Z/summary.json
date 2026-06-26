@@ -1,0 +1,11 @@
+{
+  "generatedAt": "2026-06-17T18:33:11.890Z",
+  "vendorId": 60,
+  "vehicleTypeId": 221,
+  "kmsLimitId": 218,
+  "result": {
+    "pricebookSoftDeleted": 40,
+    "activeReferencesRemaining": 0,
+    "kmsSoftDeleted": 0
+  }
+}

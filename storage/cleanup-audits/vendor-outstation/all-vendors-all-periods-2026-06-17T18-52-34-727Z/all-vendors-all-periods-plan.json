@@ -1,0 +1,682 @@
+{
+  "generatedAt": "2026-06-17T18:52:35.146Z",
+  "mode": "dry-run",
+  "filters": {
+    "vendorId": null,
+    "allVendors": true,
+    "branchId": null,
+    "year": null,
+    "month": null
+  },
+  "plan": {
+    "kmsMergePlans": [],
+    "exactDuplicatePricebookPlans": [
+      {
+        "key": "4|5|9|8|2024|",
+        "vendorId": 4,
+        "vendorBranchId": 5,
+        "vendorBranchName": "Uma Travels Madurai",
+        "vehicleTypeId": 9,
+        "baseVehicleTypeId": 1,
+        "baseVehicleTypeTitle": "Sedan",
+        "kmsLimitId": 8,
+        "kmsLimitTitle": "200 KM",
+        "year": "2024",
+        "month": "",
+        "keeperRowId": 15,
+        "rowIdsInGroup": [
+          15,
+          13
+        ],
+        "duplicateRowIdsToSoftDelete": [
+          13
+        ],
+        "keeperNeedsUpdate": false,
+        "dayChanges": [],
+        "mergedDays": {
+          "day_1": 4350,
+          "day_2": 4350,
+          "day_3": 4350,
+          "day_4": 4350,
+          "day_5": 4350,
+          "day_6": 4350,
+          "day_7": 4350,
+          "day_8": 4350,
+          "day_9": 4350,
+          "day_10": 4350,
+          "day_11": 4350,
+          "day_12": 4350,
+          "day_13": 4350,
+          "day_14": 4350,
+          "day_15": 4350,
+          "day_16": 4350,
+          "day_17": 4350,
+          "day_18": 4350,
+          "day_19": 4350,
+          "day_20": 4350,
+          "day_21": 4350,
+          "day_22": 4350,
+          "day_23": 4350,
+          "day_24": 4350,
+          "day_25": 4350,
+          "day_26": 4350,
+          "day_27": 4350,
+          "day_28": 4350,
+          "day_29": 4350,
+          "day_30": 4350,
+          "day_31": 4350
+        },
+        "mergedDaySources": [
+          {
+            "day": "day_1",
+            "rowId": 15,
+            "value": 4350
+          },
+          {
+            "day": "day_2",
+            "rowId": 15,
+            "value": 4350
+          },
+          {
+            "day": "day_3",
+            "rowId": 15,
+            "value": 4350
+          },
+          {
+            "day": "day_4",
+            "rowId": 15,
+            "value": 4350
+          },
+          {
+            "day": "day_5",
+            "rowId": 15,
+            "value": 4350
+          },
+          {
+            "day": "day_6",
+            "rowId": 15,
+            "value": 4350
+          },
+          {
+            "day": "day_7",
+            "rowId": 15,
+            "value": 4350
+          },
+          {
+            "day": "day_8",
+            "rowId": 15,
+            "value": 4350
+          },
+          {
+            "day": "day_9",
+            "rowId": 15,
+            "value": 4350
+          },
+          {
+            "day": "day_10",
+            "rowId": 15,
+            "value": 4350
+          },
+          {
+            "day": "day_11",
+            "rowId": 15,
+            "value": 4350
+          },
+          {
+            "day": "day_12",
+            "rowId": 15,
+            "value": 4350
+          },
+          {
+            "day": "day_13",
+            "rowId": 15,
+            "value": 4350
+          },
+          {
+            "day": "day_14",
+            "rowId": 15,
+            "value": 4350
+          },
+          {
+            "day": "day_15",
+            "rowId": 15,
+            "value": 4350
+          },
+          {
+            "day": "day_16",
+            "rowId": 15,
+            "value": 4350
+          },
+          {
+            "day": "day_17",
+            "rowId": 15,
+            "value": 4350
+          },
+          {
+            "day": "day_18",
+            "rowId": 15,
+            "value": 4350
+          },
+          {
+            "day": "day_19",
+            "rowId": 15,
+            "value": 4350
+          },
+          {
+            "day": "day_20",
+            "rowId": 15,
+            "value": 4350
+          },
+          {
+            "day": "day_21",
+            "rowId": 15,
+            "value": 4350
+          },
+          {
+            "day": "day_22",
+            "rowId": 15,
+            "value": 4350
+          },
+          {
+            "day": "day_23",
+            "rowId": 15,
+            "value": 4350
+          },
+          {
+            "day": "day_24",
+            "rowId": 15,
+            "value": 4350
+          },
+          {
+            "day": "day_25",
+            "rowId": 15,
+            "value": 4350
+          },
+          {
+            "day": "day_26",
+            "rowId": 15,
+            "value": 4350
+          },
+          {
+            "day": "day_27",
+            "rowId": 15,
+            "value": 4350
+          },
+          {
+            "day": "day_28",
+            "rowId": 15,
+            "value": 4350
+          },
+          {
+            "day": "day_29",
+            "rowId": 15,
+            "value": 4350
+          },
+          {
+            "day": "day_30",
+            "rowId": 15,
+            "value": 4350
+          },
+          {
+            "day": "day_31",
+            "rowId": 15,
+            "value": 4350
+          }
+        ]
+      },
+      {
+        "key": "5|7|11|10|2024|",
+        "vendorId": 5,
+        "vendorBranchId": 7,
+        "vendorBranchName": "Palakkad Branck",
+        "vehicleTypeId": 11,
+        "baseVehicleTypeId": 1,
+        "baseVehicleTypeTitle": "Sedan",
+        "kmsLimitId": 10,
+        "kmsLimitTitle": "250 KM",
+        "year": "2024",
+        "month": "",
+        "keeperRowId": 24,
+        "rowIdsInGroup": [
+          24,
+          21
+        ],
+        "duplicateRowIdsToSoftDelete": [
+          21
+        ],
+        "keeperNeedsUpdate": false,
+        "dayChanges": [],
+        "mergedDays": {
+          "day_1": 1452,
+          "day_2": 1452,
+          "day_3": 1452,
+          "day_4": 1452,
+          "day_5": 1452,
+          "day_6": 1452,
+          "day_7": 1452,
+          "day_8": 1452,
+          "day_9": 1452,
+          "day_10": 1452,
+          "day_11": 1452,
+          "day_12": 1452,
+          "day_13": 1452,
+          "day_14": 1452,
+          "day_15": 1452,
+          "day_16": 1452,
+          "day_17": 1452,
+          "day_18": 1452,
+          "day_19": 1452,
+          "day_20": 1452,
+          "day_21": 1452,
+          "day_22": 1452,
+          "day_23": 1452,
+          "day_24": 1452,
+          "day_25": 1452,
+          "day_26": 1452,
+          "day_27": 1452,
+          "day_28": 1452,
+          "day_29": 1452,
+          "day_30": 1452,
+          "day_31": 1452
+        },
+        "mergedDaySources": [
+          {
+            "day": "day_1",
+            "rowId": 24,
+            "value": 1452
+          },
+          {
+            "day": "day_2",
+            "rowId": 24,
+            "value": 1452
+          },
+          {
+            "day": "day_3",
+            "rowId": 24,
+            "value": 1452
+          },
+          {
+            "day": "day_4",
+            "rowId": 24,
+            "value": 1452
+          },
+          {
+            "day": "day_5",
+            "rowId": 24,
+            "value": 1452
+          },
+          {
+            "day": "day_6",
+            "rowId": 24,
+            "value": 1452
+          },
+          {
+            "day": "day_7",
+            "rowId": 24,
+            "value": 1452
+          },
+          {
+            "day": "day_8",
+            "rowId": 24,
+            "value": 1452
+          },
+          {
+            "day": "day_9",
+            "rowId": 24,
+            "value": 1452
+          },
+          {
+            "day": "day_10",
+            "rowId": 24,
+            "value": 1452
+          },
+          {
+            "day": "day_11",
+            "rowId": 24,
+            "value": 1452
+          },
+          {
+            "day": "day_12",
+            "rowId": 24,
+            "value": 1452
+          },
+          {
+            "day": "day_13",
+            "rowId": 24,
+            "value": 1452
+          },
+          {
+            "day": "day_14",
+            "rowId": 24,
+            "value": 1452
+          },
+          {
+            "day": "day_15",
+            "rowId": 24,
+            "value": 1452
+          },
+          {
+            "day": "day_16",
+            "rowId": 24,
+            "value": 1452
+          },
+          {
+            "day": "day_17",
+            "rowId": 24,
+            "value": 1452
+          },
+          {
+            "day": "day_18",
+            "rowId": 24,
+            "value": 1452
+          },
+          {
+            "day": "day_19",
+            "rowId": 24,
+            "value": 1452
+          },
+          {
+            "day": "day_20",
+            "rowId": 24,
+            "value": 1452
+          },
+          {
+            "day": "day_21",
+            "rowId": 24,
+            "value": 1452
+          },
+          {
+            "day": "day_22",
+            "rowId": 24,
+            "value": 1452
+          },
+          {
+            "day": "day_23",
+            "rowId": 24,
+            "value": 1452
+          },
+          {
+            "day": "day_24",
+            "rowId": 24,
+            "value": 1452
+          },
+          {
+            "day": "day_25",
+            "rowId": 24,
+            "value": 1452
+          },
+          {
+            "day": "day_26",
+            "rowId": 24,
+            "value": 1452
+          },
+          {
+            "day": "day_27",
+            "rowId": 24,
+            "value": 1452
+          },
+          {
+            "day": "day_28",
+            "rowId": 24,
+            "value": 1452
+          },
+          {
+            "day": "day_29",
+            "rowId": 24,
+            "value": 1452
+          },
+          {
+            "day": "day_30",
+            "rowId": 24,
+            "value": 1452
+          },
+          {
+            "day": "day_31",
+            "rowId": 24,
+            "value": 1452
+          }
+        ]
+      },
+      {
+        "key": "5|8|11|10|2024|",
+        "vendorId": 5,
+        "vendorBranchId": 8,
+        "vendorBranchName": "Kochin Branch",
+        "vehicleTypeId": 11,
+        "baseVehicleTypeId": 1,
+        "baseVehicleTypeTitle": "Sedan",
+        "kmsLimitId": 10,
+        "kmsLimitTitle": "250 KM",
+        "year": "2024",
+        "month": "",
+        "keeperRowId": 25,
+        "rowIdsInGroup": [
+          25,
+          22
+        ],
+        "duplicateRowIdsToSoftDelete": [
+          22
+        ],
+        "keeperNeedsUpdate": false,
+        "dayChanges": [],
+        "mergedDays": {
+          "day_1": 1452,
+          "day_2": 1452,
+          "day_3": 1452,
+          "day_4": 1452,
+          "day_5": 1452,
+          "day_6": 1452,
+          "day_7": 1452,
+          "day_8": 1452,
+          "day_9": 1452,
+          "day_10": 1452,
+          "day_11": 1452,
+          "day_12": 1452,
+          "day_13": 1452,
+          "day_14": 1452,
+          "day_15": 1452,
+          "day_16": 1452,
+          "day_17": 1452,
+          "day_18": 1452,
+          "day_19": 1452,
+          "day_20": 1452,
+          "day_21": 1452,
+          "day_22": 1452,
+          "day_23": 1452,
+          "day_24": 1452,
+          "day_25": 1452,
+          "day_26": 1452,
+          "day_27": 1452,
+          "day_28": 1452,
+          "day_29": 1452,
+          "day_30": 1452,
+          "day_31": 1452
+        },
+        "mergedDaySources": [
+          {
+            "day": "day_1",
+            "rowId": 25,
+            "value": 1452
+          },
+          {
+            "day": "day_2",
+            "rowId": 25,
+            "value": 1452
+          },
+          {
+            "day": "day_3",
+            "rowId": 25,
+            "value": 1452
+          },
+          {
+            "day": "day_4",
+            "rowId": 25,
+            "value": 1452
+          },
+          {
+            "day": "day_5",
+            "rowId": 25,
+            "value": 1452
+          },
+          {
+            "day": "day_6",
+            "rowId": 25,
+            "value": 1452
+          },
+          {
+            "day": "day_7",
+            "rowId": 25,
+            "value": 1452
+          },
+          {
+            "day": "day_8",
+            "rowId": 25,
+            "value": 1452
+          },
+          {
+            "day": "day_9",
+            "rowId": 25,
+            "value": 1452
+          },
+          {
+            "day": "day_10",
+            "rowId": 25,
+            "value": 1452
+          },
+          {
+            "day": "day_11",
+            "rowId": 25,
+            "value": 1452
+          },
+          {
+            "day": "day_12",
+            "rowId": 25,
+            "value": 1452
+          },
+          {
+            "day": "day_13",
+            "rowId": 25,
+            "value": 1452
+          },
+          {
+            "day": "day_14",
+            "rowId": 25,
+            "value": 1452
+          },
+          {
+            "day": "day_15",
+            "rowId": 25,
+            "value": 1452
+          },
+          {
+            "day": "day_16",
+            "rowId": 25,
+            "value": 1452
+          },
+          {
+            "day": "day_17",
+            "rowId": 25,
+            "value": 1452
+          },
+          {
+            "day": "day_18",
+            "rowId": 25,
+            "value": 1452
+          },
+          {
+            "day": "day_19",
+            "rowId": 25,
+            "value": 1452
+          },
+          {
+            "day": "day_20",
+            "rowId": 25,
+            "value": 1452
+          },
+          {
+            "day": "day_21",
+            "rowId": 25,
+            "value": 1452
+          },
+          {
+            "day": "day_22",
+            "rowId": 25,
+            "value": 1452
+          },
+          {
+            "day": "day_23",
+            "rowId": 25,
+            "value": 1452
+          },
+          {
+            "day": "day_24",
+            "rowId": 25,
+            "value": 1452
+          },
+          {
+            "day": "day_25",
+            "rowId": 25,
+            "value": 1452
+          },
+          {
+            "day": "day_26",
+            "rowId": 25,
+            "value": 1452
+          },
+          {
+            "day": "day_27",
+            "rowId": 25,
+            "value": 1452
+          },
+          {
+            "day": "day_28",
+            "rowId": 25,
+            "value": 1452
+          },
+          {
+            "day": "day_29",
+            "rowId": 25,
+            "value": 1452
+          },
+          {
+            "day": "day_30",
+            "rowId": 25,
+            "value": 1452
+          },
+          {
+            "day": "day_31",
+            "rowId": 25,
+            "value": 1452
+          }
+        ]
+      }
+    ],
+    "deletedKmsLimitNormalizationPlans": [
+      {
+        "key": "60|221|9",
+        "vendorId": 60,
+        "vendorVehicleTypeId": 221,
+        "baseVehicleTypeId": 1,
+        "baseVehicleTypeTitle": "Sedan",
+        "normalizedKm": 9,
+        "keptRowId": 217,
+        "keptDeletedValue": 1,
+        "rowIdsInGroup": [
+          217,
+          218
+        ],
+        "reassignedRows": [
+          {
+            "kmsLimitId": 218,
+            "fromDeleted": 1,
+            "toDeleted": 2
+          }
+        ]
+      }
+    ],
+    "deletedPricebookNormalizationPlans": [],
+    "staleReferenceRepairPlans": [],
+    "vendorVehicleTypeDuplicateGroups": [],
+    "unresolvedStaleReferenceGroups": []
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "generatedAt": "2026-06-17T18:54:15.509Z",
+  "mode": "apply",
+  "filters": {
+    "vendorId": null,
+    "allVendors": true,
+    "branchId": null,
+    "year": null,
+    "month": null
+  },
+  "plan": {
+    "kmsMergePlans": [],
+    "exactDuplicatePricebookPlans": [],
+    "deletedKmsLimitNormalizationPlans": [],
+    "deletedPricebookNormalizationPlans": [],
+    "staleReferenceRepairPlans": [],
+    "vendorVehicleTypeDuplicateGroups": [],
+    "unresolvedStaleReferenceGroups": []
+  }
+}

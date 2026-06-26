@@ -1,0 +1,74 @@
+{
+  "mode": "dry-run",
+  "vendorId": null,
+  "allVendors": true,
+  "branchId": null,
+  "year": null,
+  "month": null,
+  "mergeVendorVehicleTypes": false,
+  "outputDirectory": "C:\\wamp64\\www\\dvi_fullstack\\api.dvi.travel\\storage\\cleanup-audits\\vendor-outstation\\all-vendors-all-periods-2026-06-17T18-52-06-106Z",
+  "files": {
+    "auditBefore": "C:\\wamp64\\www\\dvi_fullstack\\api.dvi.travel\\storage\\cleanup-audits\\vendor-outstation\\all-vendors-all-periods-2026-06-17T18-52-06-106Z\\all-vendors-all-periods-audit-before.json",
+    "plan": "C:\\wamp64\\www\\dvi_fullstack\\api.dvi.travel\\storage\\cleanup-audits\\vendor-outstation\\all-vendors-all-periods-2026-06-17T18-52-06-106Z\\all-vendors-all-periods-plan.json",
+    "auditAfter": "C:\\wamp64\\www\\dvi_fullstack\\api.dvi.travel\\storage\\cleanup-audits\\vendor-outstation\\all-vendors-all-periods-2026-06-17T18-52-06-106Z\\all-vendors-all-periods-audit-after.json",
+    "summary": "C:\\wamp64\\www\\dvi_fullstack\\api.dvi.travel\\storage\\cleanup-audits\\vendor-outstation\\all-vendors-all-periods-2026-06-17T18-52-06-106Z\\all-vendors-all-periods-summary.json"
+  },
+  "countsBefore": {
+    "vendorVehicleTypeRows": 92,
+    "kmsLimitRows": 58,
+    "pricebookRowsInScope": 3672,
+    "duplicateVendorVehicleTypeGroups": 0,
+    "duplicateKmsGroups": 0,
+    "exactDuplicatePricebookGroups": 3,
+    "deletedKmsLimitDuplicateGroups": 1,
+    "deletedPricebookDuplicateGroups": 0,
+    "stalePricebookReferenceGroups": 2832
+  },
+  "countsAfter": {
+    "vendorVehicleTypeRows": 92,
+    "kmsLimitRows": 58,
+    "pricebookRowsInScope": 3672,
+    "duplicateVendorVehicleTypeGroups": 0,
+    "duplicateKmsGroups": 0,
+    "exactDuplicatePricebookGroups": 3,
+    "deletedKmsLimitDuplicateGroups": 1,
+    "deletedPricebookDuplicateGroups": 0,
+    "stalePricebookReferenceGroups": 2832
+  },
+  "actionsPlanned": {
+    "kmsMergeGroups": 0,
+    "monthlyPricebookGroupsWithinKmsMerges": 0,
+    "exactDuplicatePricebookGroups": 3,
+    "deletedKmsLimitDuplicateGroups": 1,
+    "deletedPricebookDuplicateGroups": 0,
+    "staleReferenceRepairGroups": 2832,
+    "pricebookRowsToUpdate": 2832,
+    "pricebookRowsToSoftDelete": 79,
+    "kmsLimitRowsToSoftDelete": 0,
+    "kmsLimitRowsToCreate": 2604,
+    "deletedKmsLimitRowsToRetag": 1,
+    "deletedPricebookRowsToRetag": 0,
+    "vendorVehicleTypeDuplicateGroups": 0
+  },
+  "actionsApplied": {
+    "pricebookRowsUpdated": 0,
+    "pricebookRowsSoftDeleted": 0,
+    "kmsLimitRowsSoftDeleted": 0,
+    "kmsLimitRowsCreated": 0,
+    "deletedKmsLimitRowsRetagged": 0,
+    "deletedPricebookRowsRetagged": 0
+  },
+  "skipped": {
+    "kmsGroupsWithoutScopedPricebooks": 0,
+    "duplicateKmsLimitRowsBlockedByReferences": 0,
+    "unresolvedStaleReferenceGroups": 0,
+    "vendorVehicleTypeMergeSkipped": true
+  },
+  "notes": [
+    "Vendor vehicle type duplicates are audited only in this version.",
+    "Duplicate KM limits are only soft-deleted when no active outstation pricebook rows still reference them.",
+    "Already-deleted duplicate rows are re-tagged to unique non-zero deleted values so MySQL unique constraints can be added without hard-deleting history.",
+    "Active pricebook rows pointing to deleted or mismatched vendor/KM masters are re-keyed when a safe active target exists, and stale orphan packages are soft-deleted instead of recreated when that would leave duplicate visible vehicle entries.",
+    "Dry-run mode wrote audits and merge plans without changing database rows."
+  ]
+}

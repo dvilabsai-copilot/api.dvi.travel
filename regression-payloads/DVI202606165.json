@@ -1,0 +1,93 @@
+{
+  "plan": {
+    "itinerary_plan_id": 9704,
+    "agent_id": 68,
+    "staff_id": 0,
+    "location_id": 0,
+    "arrival_point": "Madurai Airport",
+    "departure_point": "Trivandrum, Domestic Airport",
+    "itinerary_preference": 2,
+    "itinerary_type": 2,
+    "preferred_hotel_category": [],
+    "hotel_facilities": [],
+    "trip_start_date": "2026-07-01T15:00:00+05:30",
+    "trip_end_date": "2026-07-04T17:00:00+05:30",
+    "pick_up_date_and_time": "2026-07-01T15:00:00+05:30",
+    "arrival_type": 1,
+    "departure_type": 1,
+    "no_of_nights": 3,
+    "no_of_days": 4,
+    "budget": 15000,
+    "entry_ticket_required": 0,
+    "guide_for_itinerary": 0,
+    "nationality": 101,
+    "food_type": 0,
+    "meal_plan_breakfast": 0,
+    "meal_plan_lunch": 0,
+    "meal_plan_dinner": 0,
+    "adult_count": 2,
+    "child_count": 0,
+    "infant_count": 0,
+    "special_instructions": ""
+  },
+  "routes": [
+    {
+      "location_name": "Madurai Airport",
+      "next_visiting_location": "Madurai",
+      "itinerary_route_date": "2026-07-01T00:00:00+05:30",
+      "no_of_days": 1,
+      "no_of_km": 12.4,
+      "direct_to_next_visiting_place": 0,
+      "via_route": "",
+      "via_routes": []
+    },
+    {
+      "location_name": "Madurai",
+      "next_visiting_location": "Rameswaram",
+      "itinerary_route_date": "2026-07-02T00:00:00+05:30",
+      "no_of_days": 2,
+      "no_of_km": 173,
+      "direct_to_next_visiting_place": 1,
+      "via_route": "",
+      "via_routes": []
+    },
+    {
+      "location_name": "Rameswaram",
+      "next_visiting_location": "Kanyakumari",
+      "itinerary_route_date": "2026-07-03T00:00:00+05:30",
+      "no_of_days": 3,
+      "no_of_km": 308,
+      "direct_to_next_visiting_place": 0,
+      "via_route": "",
+      "via_routes": []
+    },
+    {
+      "location_name": "Kanyakumari",
+      "next_visiting_location": "Trivandrum, Domestic Airport",
+      "itinerary_route_date": "2026-07-04T00:00:00+05:30",
+      "no_of_days": 4,
+      "no_of_km": 89.4,
+      "direct_to_next_visiting_place": 0,
+      "via_route": "",
+      "via_routes": []
+    }
+  ],
+  "vehicles": [
+    {
+      "vehicle_type_id": 1,
+      "vehicle_count": 1
+    }
+  ],
+  "travellers": [
+    {
+      "room_id": 1,
+      "traveller_type": 1
+    },
+    {
+      "room_id": 1,
+      "traveller_type": 1
+    }
+  ],
+  "previousDayBillingDecisionProvided": false,
+  "previousDayBillingConfirmed": false
+}

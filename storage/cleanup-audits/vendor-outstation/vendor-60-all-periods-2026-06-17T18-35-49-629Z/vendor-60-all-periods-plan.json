@@ -1,0 +1,202 @@
+{
+  "generatedAt": "2026-06-17T18:35:49.697Z",
+  "mode": "dry-run",
+  "filters": {
+    "vendorId": 60,
+    "branchId": null,
+    "year": null,
+    "month": null
+  },
+  "plan": {
+    "kmsMergePlans": [],
+    "exactDuplicatePricebookPlans": [],
+    "staleReferenceRepairPlans": [],
+    "vendorVehicleTypeDuplicateGroups": [],
+    "unresolvedStaleReferenceGroups": [
+      {
+        "key": "60|68|234|204|2025|May",
+        "reasons": [
+          "deleted_vendor_vehicle_type",
+          "kms_limit_vehicle_type_mismatch",
+          "no_active_vendor_vehicle_type_for_base_type"
+        ]
+      },
+      {
+        "key": "60|68|234|204|2025|June",
+        "reasons": [
+          "deleted_vendor_vehicle_type",
+          "kms_limit_vehicle_type_mismatch",
+          "no_active_vendor_vehicle_type_for_base_type"
+        ]
+      },
+      {
+        "key": "60|68|234|204|2025|July",
+        "reasons": [
+          "deleted_vendor_vehicle_type",
+          "kms_limit_vehicle_type_mismatch",
+          "no_active_vendor_vehicle_type_for_base_type"
+        ]
+      },
+      {
+        "key": "60|68|234|204|2025|August",
+        "reasons": [
+          "deleted_vendor_vehicle_type",
+          "kms_limit_vehicle_type_mismatch",
+          "no_active_vendor_vehicle_type_for_base_type"
+        ]
+      },
+      {
+        "key": "60|68|234|204|2025|September",
+        "reasons": [
+          "deleted_vendor_vehicle_type",
+          "kms_limit_vehicle_type_mismatch",
+          "no_active_vendor_vehicle_type_for_base_type"
+        ]
+      },
+      {
+        "key": "60|68|234|204|2025|October",
+        "reasons": [
+          "deleted_vendor_vehicle_type",
+          "kms_limit_vehicle_type_mismatch",
+          "no_active_vendor_vehicle_type_for_base_type"
+        ]
+      },
+      {
+        "key": "60|68|234|204|2025|November",
+        "reasons": [
+          "deleted_vendor_vehicle_type",
+          "kms_limit_vehicle_type_mismatch",
+          "no_active_vendor_vehicle_type_for_base_type"
+        ]
+      },
+      {
+        "key": "60|68|234|204|2025|December",
+        "reasons": [
+          "deleted_vendor_vehicle_type",
+          "kms_limit_vehicle_type_mismatch",
+          "no_active_vendor_vehicle_type_for_base_type"
+        ]
+      },
+      {
+        "key": "60|68|234|204|2026|January",
+        "reasons": [
+          "deleted_vendor_vehicle_type",
+          "kms_limit_vehicle_type_mismatch",
+          "no_active_vendor_vehicle_type_for_base_type"
+        ]
+      },
+      {
+        "key": "60|68|234|204|2026|February",
+        "reasons": [
+          "deleted_vendor_vehicle_type",
+          "kms_limit_vehicle_type_mismatch",
+          "no_active_vendor_vehicle_type_for_base_type"
+        ]
+      },
+      {
+        "key": "60|68|234|204|2026|March",
+        "reasons": [
+          "deleted_vendor_vehicle_type",
+          "kms_limit_vehicle_type_mismatch",
+          "no_active_vendor_vehicle_type_for_base_type"
+        ]
+      },
+      {
+        "key": "60|68|234|204|2026|April",
+        "reasons": [
+          "deleted_vendor_vehicle_type",
+          "kms_limit_vehicle_type_mismatch",
+          "no_active_vendor_vehicle_type_for_base_type"
+        ]
+      },
+      {
+        "key": "60|68|234|204|2026|May",
+        "reasons": [
+          "deleted_vendor_vehicle_type",
+          "kms_limit_vehicle_type_mismatch",
+          "no_active_vendor_vehicle_type_for_base_type"
+        ]
+      },
+      {
+        "key": "60|68|234|204|2026|June",
+        "reasons": [
+          "deleted_vendor_vehicle_type",
+          "kms_limit_vehicle_type_mismatch",
+          "no_active_vendor_vehicle_type_for_base_type"
+        ]
+      },
+      {
+        "key": "60|68|234|204|2026|July",
+        "reasons": [
+          "deleted_vendor_vehicle_type",
+          "kms_limit_vehicle_type_mismatch",
+          "no_active_vendor_vehicle_type_for_base_type"
+        ]
+      },
+      {
+        "key": "60|68|234|204|2026|August",
+        "reasons": [
+          "deleted_vendor_vehicle_type",
+          "kms_limit_vehicle_type_mismatch",
+          "no_active_vendor_vehicle_type_for_base_type"
+        ]
+      },
+      {
+        "key": "60|68|234|204|2026|September",
+        "reasons": [
+          "deleted_vendor_vehicle_type",
+          "kms_limit_vehicle_type_mismatch",
+          "no_active_vendor_vehicle_type_for_base_type"
+        ]
+      },
+      {
+        "key": "60|68|234|204|2026|October",
+        "reasons": [
+          "deleted_vendor_vehicle_type",
+          "kms_limit_vehicle_type_mismatch",
+          "no_active_vendor_vehicle_type_for_base_type"
+        ]
+      },
+      {
+        "key": "60|68|234|204|2026|November",
+        "reasons": [
+          "deleted_vendor_vehicle_type",
+          "kms_limit_vehicle_type_mismatch",
+          "no_active_vendor_vehicle_type_for_base_type"
+        ]
+      },
+      {
+        "key": "60|68|234|204|2026|December",
+        "reasons": [
+          "deleted_vendor_vehicle_type",
+          "kms_limit_vehicle_type_mismatch",
+          "no_active_vendor_vehicle_type_for_base_type"
+        ]
+      },
+      {
+        "key": "60|68|234|204|2027|January",
+        "reasons": [
+          "deleted_vendor_vehicle_type",
+          "kms_limit_vehicle_type_mismatch",
+          "no_active_vendor_vehicle_type_for_base_type"
+        ]
+      },
+      {
+        "key": "60|68|234|204|2027|February",
+        "reasons": [
+          "deleted_vendor_vehicle_type",
+          "kms_limit_vehicle_type_mismatch",
+          "no_active_vendor_vehicle_type_for_base_type"
+        ]
+      },
+      {
+        "key": "60|68|234|204|2027|March",
+        "reasons": [
+          "deleted_vendor_vehicle_type",
+          "kms_limit_vehicle_type_mismatch",
+          "no_active_vendor_vehicle_type_for_base_type"
+        ]
+      }
+    ]
+  }
+}

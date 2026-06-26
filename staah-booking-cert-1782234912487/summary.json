@@ -1,0 +1,2070 @@
+{
+  "generatedAt": "2026-06-23T17:15:15.623Z",
+  "propertyId": "STAAHTESTHOTEL1",
+  "fetchUrl": "https://channelconnect.otaswitch.com/common-cgi/dviholidays/test/services.pl",
+  "bookingUrl": "https://reservation.otaswitch.com/getapi/reservation/v2",
+  "roomId": "DELUXEROOM",
+  "rateId": "CPPLAN",
+  "results": [
+    {
+      "label": "S1_01_Pre-Book",
+      "excelRow": 5,
+      "endpointName": "fetch",
+      "requestedAt": "2026-06-23T17:15:12Z",
+      "bookingId": "DVI-CERT-S1-1782234912490",
+      "request": {
+        "propertyid": "STAAHTESTHOTEL1",
+        "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+        "room_id": "DELUXEROOM",
+        "rate_id": "CPPLAN",
+        "action": "ARR_info",
+        "from_date": "2026-07-20",
+        "to_date": "2026-07-20",
+        "version": "2"
+      },
+      "response": {
+        "status": 403,
+        "body": "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\n<html><head>\n<title>403 Forbidden</title>\n</head><body>\n<h1>Forbidden</h1>\n<p>You don't have permission to access this resource.</p>\n</body></html>\n"
+      },
+      "status": 403,
+      "pass": false,
+      "body": "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\n<html><head>\n<title>403 Forbidden</title>\n</head><body>\n<h1>Forbidden</h1>\n<p>You don't have permission to access this resource.</p>\n</body></html>\n"
+    },
+    {
+      "label": "S1_02_Confirm",
+      "excelRow": 6,
+      "endpointName": "booking",
+      "requestedAt": "2026-06-23T17:15:13Z",
+      "bookingId": "DVI-CERT-S1-1782234912490",
+      "request": {
+        "propertyid": "STAAHTESTHOTEL1",
+        "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+        "action": "reservation_info",
+        "version": "2",
+        "reservations": {
+          "reservation": [
+            {
+              "reservation_datetime": "2026-06-23T22:45:13",
+              "propertyname": "STAAH TEST",
+              "reservation_id": "DVI-CERT-S1-1782234912490",
+              "payment_required": "15",
+              "payment_type": "Hotel Collect",
+              "commissionamount": "0.00",
+              "discountamount": "0.00",
+              "deposit": "0.00",
+              "totalamountaftertax": "1320.00",
+              "totaltax": "120.00",
+              "currencycode": "INR",
+              "status": "Confirm",
+              "customer": {
+                "address": "Ring Road",
+                "city": "Surat",
+                "country": "India",
+                "email": "rk@staah.com",
+                "salutation": "Mr.",
+                "first_name": "Test",
+                "last_name": "Test",
+                "remarks": "Please Provide Wine Upon Checking and Do not Disturb",
+                "telephone": "+91 97734 84053",
+                "zip": "395004"
+              },
+              "paymentcarddetail": {
+                "CardHolderName": "Test STAAH",
+                "CardType": "MC",
+                "ExpireDate": "07/28",
+                "CardNumber": "4111111111111111",
+                "cvv": "123"
+              },
+              "room": [
+                {
+                  "arrival_date": "2026-07-20",
+                  "departure_date": "2026-07-21",
+                  "room_id": "DELUXEROOM",
+                  "room_name": "Studio",
+                  "price": [
+                    {
+                      "date": "2026-07-20",
+                      "rate_id": "CPPLAN",
+                      "rate_name": "Test MK",
+                      "amountaftertax": "1100.00",
+                      "extraGuests": {
+                        "extraAdult": "1",
+                        "extraChild": "0",
+                        "extraAdultRate": "100",
+                        "extraChildRate": "0"
+                      }
+                    }
+                  ],
+                  "salutation": "Mr.",
+                  "first_name": "Test",
+                  "last_name": "Test",
+                  "taxes": [
+                    {
+                      "name": "service charge",
+                      "value": "120.00"
+                    }
+                  ],
+                  "amountaftertax": "1320.00",
+                  "remarks": "No Smoking",
+                  "GuestCount": [
+                    {
+                      "AgeQualifyingCode": "10",
+                      "Count": "2"
+                    }
+                  ]
+                }
+              ],
+              "POS": "TEST",
+              "extraData": [
+                {
+                  "name": "Key",
+                  "value": "Value of key"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 403,
+        "body": "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">\n<HTML><HEAD><META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=iso-8859-1\">\n<TITLE>ERROR: The request could not be satisfied</TITLE>\n</HEAD><BODY>\n<H1>403 ERROR</H1>\n<H2>The request could not be satisfied.</H2>\n<HR noshade size=\"1px\">\nRequest blocked.\nWe can't connect to the server for this app or website at this time. There might be too much traffic or a configuration error. Try again later, or contact the app or website owner.\n<BR clear=\"all\">\nIf you provide content to customers through CloudFront, you can find steps to troubleshoot and help prevent this error by reviewing the CloudFront documentation.\n<BR clear=\"all\">\n<HR noshade size=\"1px\">\n<PRE>\nGenerated by cloudfront (CloudFront)\nRequest ID: cbHX9MS4WKOgKHeg2RdtBbbhjz9f_g9_fdE_ag3rSpcp410Ab3_FqA==\n</PRE>\n<ADDRESS>\n</ADDRESS>\n</BODY></HTML>"
+      },
+      "status": 403,
+      "pass": false,
+      "body": "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">\n<HTML><HEAD><META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=iso-8859-1\">\n<TITLE>ERROR: The request could not be satisfied</TITLE>\n</HEAD><BODY>\n<H1>403 ERROR</H1>\n<H2>The request could not be satisfied.</H2>\n<HR noshade size=\"1px\">\nRequest blocked.\nWe can't connect to the server for this app or website at this time. There might be too much traffic or a configuration error. Try again later, or contact the app or website owner.\n<BR clear=\"all\">\nIf you provide content to customers through CloudFront, you can find steps to troubleshoot and help prevent this error by reviewing the CloudFront documentation.\n<BR clear=\"all\">\n<HR noshade size=\"1px\">\n<PRE>\nGenerated by cloudfront (CloudFront)\nRequest ID: cbHX9MS4WKOgKHeg2RdtBbbhjz9f_g9_fdE_ag3rSpcp410Ab3_FqA==\n</PRE>\n<ADDRESS>\n</ADDRESS>\n</BODY></HTML>"
+    },
+    {
+      "label": "S1_03_Pre-Modify",
+      "excelRow": 7,
+      "endpointName": "fetch",
+      "requestedAt": "2026-06-23T17:15:13Z",
+      "bookingId": "DVI-CERT-S1-1782234912490",
+      "request": {
+        "propertyid": "STAAHTESTHOTEL1",
+        "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+        "room_id": "DELUXEROOM",
+        "rate_id": "CPPLAN",
+        "action": "ARR_info",
+        "from_date": "2026-07-21",
+        "to_date": "2026-07-21",
+        "version": "2"
+      },
+      "response": {
+        "status": 403,
+        "body": "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\n<html><head>\n<title>403 Forbidden</title>\n</head><body>\n<h1>Forbidden</h1>\n<p>You don't have permission to access this resource.</p>\n</body></html>\n"
+      },
+      "status": 403,
+      "pass": false,
+      "body": "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\n<html><head>\n<title>403 Forbidden</title>\n</head><body>\n<h1>Forbidden</h1>\n<p>You don't have permission to access this resource.</p>\n</body></html>\n"
+    },
+    {
+      "label": "S1_04_Modify",
+      "excelRow": 8,
+      "endpointName": "booking",
+      "requestedAt": "2026-06-23T17:15:13Z",
+      "bookingId": "DVI-CERT-S1-1782234912490",
+      "request": {
+        "propertyid": "STAAHTESTHOTEL1",
+        "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+        "action": "reservation_info",
+        "version": "2",
+        "reservations": {
+          "reservation": [
+            {
+              "reservation_datetime": "2026-06-23T22:45:13",
+              "propertyname": "STAAH TEST",
+              "reservation_id": "DVI-CERT-S1-1782234912490",
+              "payment_required": "15",
+              "payment_type": "Hotel Collect",
+              "commissionamount": "0.00",
+              "discountamount": "0.00",
+              "deposit": "0.00",
+              "totalamountaftertax": "1320.00",
+              "totaltax": "120.00",
+              "currencycode": "INR",
+              "status": "Modified",
+              "customer": {
+                "address": "Ring Road",
+                "city": "Surat",
+                "country": "India",
+                "email": "rk@staah.com",
+                "salutation": "Mr.",
+                "first_name": "Test",
+                "last_name": "Test",
+                "remarks": "Please Provide Wine Upon Checking and Do not Disturb",
+                "telephone": "+91 97734 84053",
+                "zip": "395004"
+              },
+              "paymentcarddetail": {
+                "CardHolderName": "Test STAAH",
+                "CardType": "MC",
+                "ExpireDate": "07/28",
+                "CardNumber": "4111111111111111",
+                "cvv": "123"
+              },
+              "room": [
+                {
+                  "arrival_date": "2026-07-21",
+                  "departure_date": "2026-07-22",
+                  "room_id": "DELUXEROOM",
+                  "room_name": "Studio",
+                  "price": [
+                    {
+                      "date": "2026-07-21",
+                      "rate_id": "CPPLAN",
+                      "rate_name": "Test MK",
+                      "amountaftertax": "1100.00",
+                      "extraGuests": {
+                        "extraAdult": "1",
+                        "extraChild": "0",
+                        "extraAdultRate": "100",
+                        "extraChildRate": "0"
+                      }
+                    }
+                  ],
+                  "salutation": "Mr.",
+                  "first_name": "Test",
+                  "last_name": "Test",
+                  "taxes": [
+                    {
+                      "name": "service charge",
+                      "value": "120.00"
+                    }
+                  ],
+                  "amountaftertax": "1320.00",
+                  "remarks": "No Smoking",
+                  "GuestCount": [
+                    {
+                      "AgeQualifyingCode": "10",
+                      "Count": "2"
+                    }
+                  ]
+                }
+              ],
+              "POS": "TEST",
+              "extraData": [
+                {
+                  "name": "Key",
+                  "value": "Value of key"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 403,
+        "body": "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">\n<HTML><HEAD><META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=iso-8859-1\">\n<TITLE>ERROR: The request could not be satisfied</TITLE>\n</HEAD><BODY>\n<H1>403 ERROR</H1>\n<H2>The request could not be satisfied.</H2>\n<HR noshade size=\"1px\">\nRequest blocked.\nWe can't connect to the server for this app or website at this time. There might be too much traffic or a configuration error. Try again later, or contact the app or website owner.\n<BR clear=\"all\">\nIf you provide content to customers through CloudFront, you can find steps to troubleshoot and help prevent this error by reviewing the CloudFront documentation.\n<BR clear=\"all\">\n<HR noshade size=\"1px\">\n<PRE>\nGenerated by cloudfront (CloudFront)\nRequest ID: heSYlmGn8QFf1DeTXK12Gwp0YiTdIPPPRQMYnAF7OoXvyfiA7NAs5g==\n</PRE>\n<ADDRESS>\n</ADDRESS>\n</BODY></HTML>"
+      },
+      "status": 403,
+      "pass": false,
+      "body": "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">\n<HTML><HEAD><META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=iso-8859-1\">\n<TITLE>ERROR: The request could not be satisfied</TITLE>\n</HEAD><BODY>\n<H1>403 ERROR</H1>\n<H2>The request could not be satisfied.</H2>\n<HR noshade size=\"1px\">\nRequest blocked.\nWe can't connect to the server for this app or website at this time. There might be too much traffic or a configuration error. Try again later, or contact the app or website owner.\n<BR clear=\"all\">\nIf you provide content to customers through CloudFront, you can find steps to troubleshoot and help prevent this error by reviewing the CloudFront documentation.\n<BR clear=\"all\">\n<HR noshade size=\"1px\">\n<PRE>\nGenerated by cloudfront (CloudFront)\nRequest ID: heSYlmGn8QFf1DeTXK12Gwp0YiTdIPPPRQMYnAF7OoXvyfiA7NAs5g==\n</PRE>\n<ADDRESS>\n</ADDRESS>\n</BODY></HTML>"
+    },
+    {
+      "label": "S1_05_Cancel",
+      "excelRow": 9,
+      "endpointName": "booking",
+      "requestedAt": "2026-06-23T17:15:13Z",
+      "bookingId": "DVI-CERT-S1-1782234912490",
+      "request": {
+        "propertyid": "STAAHTESTHOTEL1",
+        "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+        "action": "reservation_info",
+        "version": "2",
+        "reservations": {
+          "reservation": [
+            {
+              "reservation_datetime": "2026-06-23T22:45:13",
+              "propertyname": "STAAH TEST",
+              "reservation_id": "DVI-CERT-S1-1782234912490",
+              "payment_required": "15",
+              "payment_type": "Hotel Collect",
+              "commissionamount": "0.00",
+              "discountamount": "0.00",
+              "deposit": "0.00",
+              "totalamountaftertax": "1320.00",
+              "totaltax": "120.00",
+              "currencycode": "INR",
+              "status": "Cancel",
+              "customer": {
+                "address": "Ring Road",
+                "city": "Surat",
+                "country": "India",
+                "email": "rk@staah.com",
+                "salutation": "Mr.",
+                "first_name": "Test",
+                "last_name": "Test",
+                "remarks": "Please Provide Wine Upon Checking and Do not Disturb",
+                "telephone": "+91 97734 84053",
+                "zip": "395004"
+              },
+              "paymentcarddetail": {
+                "CardHolderName": "Test STAAH",
+                "CardType": "MC",
+                "ExpireDate": "07/28",
+                "CardNumber": "4111111111111111",
+                "cvv": "123"
+              },
+              "room": [
+                {
+                  "arrival_date": "2026-07-21",
+                  "departure_date": "2026-07-22",
+                  "room_id": "DELUXEROOM",
+                  "room_name": "Studio",
+                  "price": [
+                    {
+                      "date": "2026-07-21",
+                      "rate_id": "CPPLAN",
+                      "rate_name": "Test MK",
+                      "amountaftertax": "1100.00",
+                      "extraGuests": {
+                        "extraAdult": "1",
+                        "extraChild": "0",
+                        "extraAdultRate": "100",
+                        "extraChildRate": "0"
+                      }
+                    }
+                  ],
+                  "salutation": "Mr.",
+                  "first_name": "Test",
+                  "last_name": "Test",
+                  "taxes": [
+                    {
+                      "name": "service charge",
+                      "value": "120.00"
+                    }
+                  ],
+                  "amountaftertax": "1320.00",
+                  "remarks": "No Smoking",
+                  "GuestCount": [
+                    {
+                      "AgeQualifyingCode": "10",
+                      "Count": "2"
+                    }
+                  ]
+                }
+              ],
+              "POS": "TEST",
+              "extraData": [
+                {
+                  "name": "Key",
+                  "value": "Value of key"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 403,
+        "body": "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">\n<HTML><HEAD><META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=iso-8859-1\">\n<TITLE>ERROR: The request could not be satisfied</TITLE>\n</HEAD><BODY>\n<H1>403 ERROR</H1>\n<H2>The request could not be satisfied.</H2>\n<HR noshade size=\"1px\">\nRequest blocked.\nWe can't connect to the server for this app or website at this time. There might be too much traffic or a configuration error. Try again later, or contact the app or website owner.\n<BR clear=\"all\">\nIf you provide content to customers through CloudFront, you can find steps to troubleshoot and help prevent this error by reviewing the CloudFront documentation.\n<BR clear=\"all\">\n<HR noshade size=\"1px\">\n<PRE>\nGenerated by cloudfront (CloudFront)\nRequest ID: mAqETOa5Q5nPjWWZ4InXCDu-yz0qWiu4RAuStvCxQdBCcvoRz0We7Q==\n</PRE>\n<ADDRESS>\n</ADDRESS>\n</BODY></HTML>"
+      },
+      "status": 403,
+      "pass": false,
+      "body": "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">\n<HTML><HEAD><META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=iso-8859-1\">\n<TITLE>ERROR: The request could not be satisfied</TITLE>\n</HEAD><BODY>\n<H1>403 ERROR</H1>\n<H2>The request could not be satisfied.</H2>\n<HR noshade size=\"1px\">\nRequest blocked.\nWe can't connect to the server for this app or website at this time. There might be too much traffic or a configuration error. Try again later, or contact the app or website owner.\n<BR clear=\"all\">\nIf you provide content to customers through CloudFront, you can find steps to troubleshoot and help prevent this error by reviewing the CloudFront documentation.\n<BR clear=\"all\">\n<HR noshade size=\"1px\">\n<PRE>\nGenerated by cloudfront (CloudFront)\nRequest ID: mAqETOa5Q5nPjWWZ4InXCDu-yz0qWiu4RAuStvCxQdBCcvoRz0We7Q==\n</PRE>\n<ADDRESS>\n</ADDRESS>\n</BODY></HTML>"
+    },
+    {
+      "label": "S2_01_Pre-Book",
+      "excelRow": 10,
+      "endpointName": "fetch",
+      "requestedAt": "2026-06-23T17:15:13Z",
+      "bookingId": "DVI-CERT-S2-1782234912490",
+      "request": {
+        "propertyid": "STAAHTESTHOTEL1",
+        "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+        "room_id": "DELUXEROOM",
+        "rate_id": "CPPLAN",
+        "action": "ARR_info",
+        "from_date": "2026-08-10",
+        "to_date": "2026-08-10",
+        "version": "2"
+      },
+      "response": {
+        "status": 403,
+        "body": "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\n<html><head>\n<title>403 Forbidden</title>\n</head><body>\n<h1>Forbidden</h1>\n<p>You don't have permission to access this resource.</p>\n</body></html>\n"
+      },
+      "status": 403,
+      "pass": false,
+      "body": "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\n<html><head>\n<title>403 Forbidden</title>\n</head><body>\n<h1>Forbidden</h1>\n<p>You don't have permission to access this resource.</p>\n</body></html>\n"
+    },
+    {
+      "label": "S2_02_Confirm",
+      "excelRow": 11,
+      "endpointName": "booking",
+      "requestedAt": "2026-06-23T17:15:13Z",
+      "bookingId": "DVI-CERT-S2-1782234912490",
+      "request": {
+        "propertyid": "STAAHTESTHOTEL1",
+        "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+        "action": "reservation_info",
+        "version": "2",
+        "reservations": {
+          "reservation": [
+            {
+              "reservation_datetime": "2026-06-23T22:45:13",
+              "propertyname": "STAAH TEST",
+              "reservation_id": "DVI-CERT-S2-1782234912490",
+              "payment_required": "15",
+              "payment_type": "Hotel Collect",
+              "commissionamount": "0.00",
+              "discountamount": "0.00",
+              "deposit": "0.00",
+              "totalamountaftertax": "1440.00",
+              "totaltax": "140.00",
+              "currencycode": "INR",
+              "status": "Confirm",
+              "customer": {
+                "address": "Ring Road",
+                "city": "Surat",
+                "country": "India",
+                "email": "rk@staah.com",
+                "salutation": "Mr.",
+                "first_name": "Test",
+                "last_name": "Test",
+                "remarks": "Please Provide Wine Upon Checking and Do not Disturb",
+                "telephone": "+91 97734 84053",
+                "zip": "395004"
+              },
+              "paymentcarddetail": {
+                "CardHolderName": "Test STAAH",
+                "CardType": "MC",
+                "ExpireDate": "07/28",
+                "CardNumber": "4111111111111111",
+                "cvv": "123"
+              },
+              "room": [
+                {
+                  "arrival_date": "2026-08-10",
+                  "departure_date": "2026-08-11",
+                  "room_id": "DELUXEROOM",
+                  "room_name": "Studio",
+                  "price": [
+                    {
+                      "date": "2026-08-10",
+                      "rate_id": "CPPLAN",
+                      "rate_name": "Test MK",
+                      "amountaftertax": "1100.00",
+                      "extraGuests": {
+                        "extraAdult": "1",
+                        "extraChild": "1",
+                        "extraAdultRate": "100",
+                        "extraChildRate": "100"
+                      }
+                    }
+                  ],
+                  "salutation": "Mr.",
+                  "first_name": "Test",
+                  "last_name": "Test",
+                  "taxes": [
+                    {
+                      "name": "service charge",
+                      "value": "140.00"
+                    }
+                  ],
+                  "amountaftertax": "1440.00",
+                  "remarks": "No Smoking",
+                  "GuestCount": [
+                    {
+                      "AgeQualifyingCode": "10",
+                      "Count": "3"
+                    }
+                  ]
+                }
+              ],
+              "POS": "TEST",
+              "extraData": [
+                {
+                  "name": "Key",
+                  "value": "Value of key"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 403,
+        "body": "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">\n<HTML><HEAD><META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=iso-8859-1\">\n<TITLE>ERROR: The request could not be satisfied</TITLE>\n</HEAD><BODY>\n<H1>403 ERROR</H1>\n<H2>The request could not be satisfied.</H2>\n<HR noshade size=\"1px\">\nRequest blocked.\nWe can't connect to the server for this app or website at this time. There might be too much traffic or a configuration error. Try again later, or contact the app or website owner.\n<BR clear=\"all\">\nIf you provide content to customers through CloudFront, you can find steps to troubleshoot and help prevent this error by reviewing the CloudFront documentation.\n<BR clear=\"all\">\n<HR noshade size=\"1px\">\n<PRE>\nGenerated by cloudfront (CloudFront)\nRequest ID: BQCyugMkUtSVIJdaAggI64xZ6e5VHcln-0gY9P-VplQ55lK2xB-ASg==\n</PRE>\n<ADDRESS>\n</ADDRESS>\n</BODY></HTML>"
+      },
+      "status": 403,
+      "pass": false,
+      "body": "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">\n<HTML><HEAD><META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=iso-8859-1\">\n<TITLE>ERROR: The request could not be satisfied</TITLE>\n</HEAD><BODY>\n<H1>403 ERROR</H1>\n<H2>The request could not be satisfied.</H2>\n<HR noshade size=\"1px\">\nRequest blocked.\nWe can't connect to the server for this app or website at this time. There might be too much traffic or a configuration error. Try again later, or contact the app or website owner.\n<BR clear=\"all\">\nIf you provide content to customers through CloudFront, you can find steps to troubleshoot and help prevent this error by reviewing the CloudFront documentation.\n<BR clear=\"all\">\n<HR noshade size=\"1px\">\n<PRE>\nGenerated by cloudfront (CloudFront)\nRequest ID: BQCyugMkUtSVIJdaAggI64xZ6e5VHcln-0gY9P-VplQ55lK2xB-ASg==\n</PRE>\n<ADDRESS>\n</ADDRESS>\n</BODY></HTML>"
+    },
+    {
+      "label": "S2_03_Pre-Modify",
+      "excelRow": 12,
+      "endpointName": "fetch",
+      "requestedAt": "2026-06-23T17:15:13Z",
+      "bookingId": "DVI-CERT-S2-1782234912490",
+      "request": {
+        "propertyid": "STAAHTESTHOTEL1",
+        "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+        "room_id": "DELUXEROOM",
+        "rate_id": "CPPLAN",
+        "action": "ARR_info",
+        "from_date": "2026-08-11",
+        "to_date": "2026-08-11",
+        "version": "2"
+      },
+      "response": {
+        "status": 403,
+        "body": "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\n<html><head>\n<title>403 Forbidden</title>\n</head><body>\n<h1>Forbidden</h1>\n<p>You don't have permission to access this resource.</p>\n</body></html>\n"
+      },
+      "status": 403,
+      "pass": false,
+      "body": "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\n<html><head>\n<title>403 Forbidden</title>\n</head><body>\n<h1>Forbidden</h1>\n<p>You don't have permission to access this resource.</p>\n</body></html>\n"
+    },
+    {
+      "label": "S2_04_Modify",
+      "excelRow": 13,
+      "endpointName": "booking",
+      "requestedAt": "2026-06-23T17:15:14Z",
+      "bookingId": "DVI-CERT-S2-1782234912490",
+      "request": {
+        "propertyid": "STAAHTESTHOTEL1",
+        "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+        "action": "reservation_info",
+        "version": "2",
+        "reservations": {
+          "reservation": [
+            {
+              "reservation_datetime": "2026-06-23T22:45:14",
+              "propertyname": "STAAH TEST",
+              "reservation_id": "DVI-CERT-S2-1782234912490",
+              "payment_required": "15",
+              "payment_type": "Hotel Collect",
+              "commissionamount": "0.00",
+              "discountamount": "0.00",
+              "deposit": "0.00",
+              "totalamountaftertax": "1440.00",
+              "totaltax": "140.00",
+              "currencycode": "INR",
+              "status": "Modified",
+              "customer": {
+                "address": "Ring Road",
+                "city": "Surat",
+                "country": "India",
+                "email": "rk@staah.com",
+                "salutation": "Mr.",
+                "first_name": "Test",
+                "last_name": "Test",
+                "remarks": "Please Provide Wine Upon Checking and Do not Disturb",
+                "telephone": "+91 97734 84053",
+                "zip": "395004"
+              },
+              "paymentcarddetail": {
+                "CardHolderName": "Test STAAH",
+                "CardType": "MC",
+                "ExpireDate": "07/28",
+                "CardNumber": "4111111111111111",
+                "cvv": "123"
+              },
+              "room": [
+                {
+                  "arrival_date": "2026-08-11",
+                  "departure_date": "2026-08-12",
+                  "room_id": "DELUXEROOM",
+                  "room_name": "Studio",
+                  "price": [
+                    {
+                      "date": "2026-08-11",
+                      "rate_id": "CPPLAN",
+                      "rate_name": "Test MK",
+                      "amountaftertax": "1100.00",
+                      "extraGuests": {
+                        "extraAdult": "1",
+                        "extraChild": "1",
+                        "extraAdultRate": "100",
+                        "extraChildRate": "100"
+                      }
+                    }
+                  ],
+                  "salutation": "Mr.",
+                  "first_name": "Test",
+                  "last_name": "Test",
+                  "taxes": [
+                    {
+                      "name": "service charge",
+                      "value": "140.00"
+                    }
+                  ],
+                  "amountaftertax": "1440.00",
+                  "remarks": "No Smoking",
+                  "GuestCount": [
+                    {
+                      "AgeQualifyingCode": "10",
+                      "Count": "3"
+                    }
+                  ]
+                }
+              ],
+              "POS": "TEST",
+              "extraData": [
+                {
+                  "name": "Key",
+                  "value": "Value of key"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 403,
+        "body": "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">\n<HTML><HEAD><META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=iso-8859-1\">\n<TITLE>ERROR: The request could not be satisfied</TITLE>\n</HEAD><BODY>\n<H1>403 ERROR</H1>\n<H2>The request could not be satisfied.</H2>\n<HR noshade size=\"1px\">\nRequest blocked.\nWe can't connect to the server for this app or website at this time. There might be too much traffic or a configuration error. Try again later, or contact the app or website owner.\n<BR clear=\"all\">\nIf you provide content to customers through CloudFront, you can find steps to troubleshoot and help prevent this error by reviewing the CloudFront documentation.\n<BR clear=\"all\">\n<HR noshade size=\"1px\">\n<PRE>\nGenerated by cloudfront (CloudFront)\nRequest ID: h-AsoTXzIC9Xoa_EbBfBTC3xLc9n1t0VIm8eC0aiXc-yQ1lcReWrkg==\n</PRE>\n<ADDRESS>\n</ADDRESS>\n</BODY></HTML>"
+      },
+      "status": 403,
+      "pass": false,
+      "body": "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">\n<HTML><HEAD><META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=iso-8859-1\">\n<TITLE>ERROR: The request could not be satisfied</TITLE>\n</HEAD><BODY>\n<H1>403 ERROR</H1>\n<H2>The request could not be satisfied.</H2>\n<HR noshade size=\"1px\">\nRequest blocked.\nWe can't connect to the server for this app or website at this time. There might be too much traffic or a configuration error. Try again later, or contact the app or website owner.\n<BR clear=\"all\">\nIf you provide content to customers through CloudFront, you can find steps to troubleshoot and help prevent this error by reviewing the CloudFront documentation.\n<BR clear=\"all\">\n<HR noshade size=\"1px\">\n<PRE>\nGenerated by cloudfront (CloudFront)\nRequest ID: h-AsoTXzIC9Xoa_EbBfBTC3xLc9n1t0VIm8eC0aiXc-yQ1lcReWrkg==\n</PRE>\n<ADDRESS>\n</ADDRESS>\n</BODY></HTML>"
+    },
+    {
+      "label": "S2_05_Cancel",
+      "excelRow": 14,
+      "endpointName": "booking",
+      "requestedAt": "2026-06-23T17:15:14Z",
+      "bookingId": "DVI-CERT-S2-1782234912490",
+      "request": {
+        "propertyid": "STAAHTESTHOTEL1",
+        "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+        "action": "reservation_info",
+        "version": "2",
+        "reservations": {
+          "reservation": [
+            {
+              "reservation_datetime": "2026-06-23T22:45:14",
+              "propertyname": "STAAH TEST",
+              "reservation_id": "DVI-CERT-S2-1782234912490",
+              "payment_required": "15",
+              "payment_type": "Hotel Collect",
+              "commissionamount": "0.00",
+              "discountamount": "0.00",
+              "deposit": "0.00",
+              "totalamountaftertax": "1440.00",
+              "totaltax": "140.00",
+              "currencycode": "INR",
+              "status": "Cancel",
+              "customer": {
+                "address": "Ring Road",
+                "city": "Surat",
+                "country": "India",
+                "email": "rk@staah.com",
+                "salutation": "Mr.",
+                "first_name": "Test",
+                "last_name": "Test",
+                "remarks": "Please Provide Wine Upon Checking and Do not Disturb",
+                "telephone": "+91 97734 84053",
+                "zip": "395004"
+              },
+              "paymentcarddetail": {
+                "CardHolderName": "Test STAAH",
+                "CardType": "MC",
+                "ExpireDate": "07/28",
+                "CardNumber": "4111111111111111",
+                "cvv": "123"
+              },
+              "room": [
+                {
+                  "arrival_date": "2026-08-11",
+                  "departure_date": "2026-08-12",
+                  "room_id": "DELUXEROOM",
+                  "room_name": "Studio",
+                  "price": [
+                    {
+                      "date": "2026-08-11",
+                      "rate_id": "CPPLAN",
+                      "rate_name": "Test MK",
+                      "amountaftertax": "1100.00",
+                      "extraGuests": {
+                        "extraAdult": "1",
+                        "extraChild": "1",
+                        "extraAdultRate": "100",
+                        "extraChildRate": "100"
+                      }
+                    }
+                  ],
+                  "salutation": "Mr.",
+                  "first_name": "Test",
+                  "last_name": "Test",
+                  "taxes": [
+                    {
+                      "name": "service charge",
+                      "value": "140.00"
+                    }
+                  ],
+                  "amountaftertax": "1440.00",
+                  "remarks": "No Smoking",
+                  "GuestCount": [
+                    {
+                      "AgeQualifyingCode": "10",
+                      "Count": "3"
+                    }
+                  ]
+                }
+              ],
+              "POS": "TEST",
+              "extraData": [
+                {
+                  "name": "Key",
+                  "value": "Value of key"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 403,
+        "body": "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">\n<HTML><HEAD><META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=iso-8859-1\">\n<TITLE>ERROR: The request could not be satisfied</TITLE>\n</HEAD><BODY>\n<H1>403 ERROR</H1>\n<H2>The request could not be satisfied.</H2>\n<HR noshade size=\"1px\">\nRequest blocked.\nWe can't connect to the server for this app or website at this time. There might be too much traffic or a configuration error. Try again later, or contact the app or website owner.\n<BR clear=\"all\">\nIf you provide content to customers through CloudFront, you can find steps to troubleshoot and help prevent this error by reviewing the CloudFront documentation.\n<BR clear=\"all\">\n<HR noshade size=\"1px\">\n<PRE>\nGenerated by cloudfront (CloudFront)\nRequest ID: XmWGPUFZ0cxMZnV-OPNck1tQBunWJsaf_padUZgwvT5I7IB0uFPKXA==\n</PRE>\n<ADDRESS>\n</ADDRESS>\n</BODY></HTML>"
+      },
+      "status": 403,
+      "pass": false,
+      "body": "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">\n<HTML><HEAD><META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=iso-8859-1\">\n<TITLE>ERROR: The request could not be satisfied</TITLE>\n</HEAD><BODY>\n<H1>403 ERROR</H1>\n<H2>The request could not be satisfied.</H2>\n<HR noshade size=\"1px\">\nRequest blocked.\nWe can't connect to the server for this app or website at this time. There might be too much traffic or a configuration error. Try again later, or contact the app or website owner.\n<BR clear=\"all\">\nIf you provide content to customers through CloudFront, you can find steps to troubleshoot and help prevent this error by reviewing the CloudFront documentation.\n<BR clear=\"all\">\n<HR noshade size=\"1px\">\n<PRE>\nGenerated by cloudfront (CloudFront)\nRequest ID: XmWGPUFZ0cxMZnV-OPNck1tQBunWJsaf_padUZgwvT5I7IB0uFPKXA==\n</PRE>\n<ADDRESS>\n</ADDRESS>\n</BODY></HTML>"
+    },
+    {
+      "label": "S3_01_Pre-Book",
+      "excelRow": 15,
+      "endpointName": "fetch",
+      "requestedAt": "2026-06-23T17:15:14Z",
+      "bookingId": "DVI-CERT-S3-1782234912490",
+      "request": {
+        "propertyid": "STAAHTESTHOTEL1",
+        "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+        "room_id": "DELUXEROOM",
+        "rate_id": "CPPLAN",
+        "action": "ARR_info",
+        "from_date": "2026-09-01",
+        "to_date": "2026-09-03",
+        "version": "2"
+      },
+      "response": {
+        "status": 403,
+        "body": "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\n<html><head>\n<title>403 Forbidden</title>\n</head><body>\n<h1>Forbidden</h1>\n<p>You don't have permission to access this resource.</p>\n</body></html>\n"
+      },
+      "status": 403,
+      "pass": false,
+      "body": "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\n<html><head>\n<title>403 Forbidden</title>\n</head><body>\n<h1>Forbidden</h1>\n<p>You don't have permission to access this resource.</p>\n</body></html>\n"
+    },
+    {
+      "label": "S3_02_Confirm",
+      "excelRow": 16,
+      "endpointName": "booking",
+      "requestedAt": "2026-06-23T17:15:14Z",
+      "bookingId": "DVI-CERT-S3-1782234912490",
+      "request": {
+        "propertyid": "STAAHTESTHOTEL1",
+        "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+        "action": "reservation_info",
+        "version": "2",
+        "reservations": {
+          "reservation": [
+            {
+              "reservation_datetime": "2026-06-23T22:45:14",
+              "propertyname": "STAAH TEST",
+              "reservation_id": "DVI-CERT-S3-1782234912490",
+              "payment_required": "15",
+              "payment_type": "Hotel Collect",
+              "commissionamount": "0.00",
+              "discountamount": "0.00",
+              "deposit": "0.00",
+              "totalamountaftertax": "2320.00",
+              "totaltax": "220.00",
+              "currencycode": "INR",
+              "status": "Confirm",
+              "customer": {
+                "address": "Ring Road",
+                "city": "Surat",
+                "country": "India",
+                "email": "rk@staah.com",
+                "salutation": "Mr.",
+                "first_name": "Test",
+                "last_name": "Test",
+                "remarks": "Please Provide Wine Upon Checking and Do not Disturb",
+                "telephone": "+91 97734 84053",
+                "zip": "395004"
+              },
+              "paymentcarddetail": {
+                "CardHolderName": "Test STAAH",
+                "CardType": "MC",
+                "ExpireDate": "07/28",
+                "CardNumber": "4111111111111111",
+                "cvv": "123"
+              },
+              "room": [
+                {
+                  "arrival_date": "2026-09-01",
+                  "departure_date": "2026-09-03",
+                  "room_id": "DELUXEROOM",
+                  "room_name": "Studio",
+                  "price": [
+                    {
+                      "date": "2026-09-01",
+                      "rate_id": "CPPLAN",
+                      "rate_name": "Test MK",
+                      "amountaftertax": "2000.00",
+                      "extraGuests": {
+                        "extraAdult": "1",
+                        "extraChild": "0",
+                        "extraAdultRate": "100",
+                        "extraChildRate": "0"
+                      }
+                    }
+                  ],
+                  "salutation": "Mr.",
+                  "first_name": "Test",
+                  "last_name": "Test",
+                  "taxes": [
+                    {
+                      "name": "service charge",
+                      "value": "220.00"
+                    }
+                  ],
+                  "amountaftertax": "2320.00",
+                  "remarks": "No Smoking",
+                  "GuestCount": [
+                    {
+                      "AgeQualifyingCode": "10",
+                      "Count": "2"
+                    }
+                  ]
+                }
+              ],
+              "POS": "TEST",
+              "extraData": [
+                {
+                  "name": "Key",
+                  "value": "Value of key"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 403,
+        "body": "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">\n<HTML><HEAD><META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=iso-8859-1\">\n<TITLE>ERROR: The request could not be satisfied</TITLE>\n</HEAD><BODY>\n<H1>403 ERROR</H1>\n<H2>The request could not be satisfied.</H2>\n<HR noshade size=\"1px\">\nRequest blocked.\nWe can't connect to the server for this app or website at this time. There might be too much traffic or a configuration error. Try again later, or contact the app or website owner.\n<BR clear=\"all\">\nIf you provide content to customers through CloudFront, you can find steps to troubleshoot and help prevent this error by reviewing the CloudFront documentation.\n<BR clear=\"all\">\n<HR noshade size=\"1px\">\n<PRE>\nGenerated by cloudfront (CloudFront)\nRequest ID: zgfEdHEAm0UVGAQQuJmxvWzMXU4ouHHjHpCHo2Tt5SVwl9xzgrtmXQ==\n</PRE>\n<ADDRESS>\n</ADDRESS>\n</BODY></HTML>"
+      },
+      "status": 403,
+      "pass": false,
+      "body": "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">\n<HTML><HEAD><META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=iso-8859-1\">\n<TITLE>ERROR: The request could not be satisfied</TITLE>\n</HEAD><BODY>\n<H1>403 ERROR</H1>\n<H2>The request could not be satisfied.</H2>\n<HR noshade size=\"1px\">\nRequest blocked.\nWe can't connect to the server for this app or website at this time. There might be too much traffic or a configuration error. Try again later, or contact the app or website owner.\n<BR clear=\"all\">\nIf you provide content to customers through CloudFront, you can find steps to troubleshoot and help prevent this error by reviewing the CloudFront documentation.\n<BR clear=\"all\">\n<HR noshade size=\"1px\">\n<PRE>\nGenerated by cloudfront (CloudFront)\nRequest ID: zgfEdHEAm0UVGAQQuJmxvWzMXU4ouHHjHpCHo2Tt5SVwl9xzgrtmXQ==\n</PRE>\n<ADDRESS>\n</ADDRESS>\n</BODY></HTML>"
+    },
+    {
+      "label": "S3_03_Pre-Modify",
+      "excelRow": 17,
+      "endpointName": "fetch",
+      "requestedAt": "2026-06-23T17:15:14Z",
+      "bookingId": "DVI-CERT-S3-1782234912490",
+      "request": {
+        "propertyid": "STAAHTESTHOTEL1",
+        "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+        "room_id": "DELUXEROOM",
+        "rate_id": "CPPLAN",
+        "action": "ARR_info",
+        "from_date": "2026-09-02",
+        "to_date": "2026-09-04",
+        "version": "2"
+      },
+      "response": {
+        "status": 403,
+        "body": "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\n<html><head>\n<title>403 Forbidden</title>\n</head><body>\n<h1>Forbidden</h1>\n<p>You don't have permission to access this resource.</p>\n</body></html>\n"
+      },
+      "status": 403,
+      "pass": false,
+      "body": "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\n<html><head>\n<title>403 Forbidden</title>\n</head><body>\n<h1>Forbidden</h1>\n<p>You don't have permission to access this resource.</p>\n</body></html>\n"
+    },
+    {
+      "label": "S3_04_Modify",
+      "excelRow": 18,
+      "endpointName": "booking",
+      "requestedAt": "2026-06-23T17:15:14Z",
+      "bookingId": "DVI-CERT-S3-1782234912490",
+      "request": {
+        "propertyid": "STAAHTESTHOTEL1",
+        "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+        "action": "reservation_info",
+        "version": "2",
+        "reservations": {
+          "reservation": [
+            {
+              "reservation_datetime": "2026-06-23T22:45:14",
+              "propertyname": "STAAH TEST",
+              "reservation_id": "DVI-CERT-S3-1782234912490",
+              "payment_required": "15",
+              "payment_type": "Hotel Collect",
+              "commissionamount": "0.00",
+              "discountamount": "0.00",
+              "deposit": "0.00",
+              "totalamountaftertax": "2440.00",
+              "totaltax": "240.00",
+              "currencycode": "INR",
+              "status": "Modified",
+              "customer": {
+                "address": "Ring Road",
+                "city": "Surat",
+                "country": "India",
+                "email": "rk@staah.com",
+                "salutation": "Mr.",
+                "first_name": "Test",
+                "last_name": "Test",
+                "remarks": "Please Provide Wine Upon Checking and Do not Disturb",
+                "telephone": "+91 97734 84053",
+                "zip": "395004"
+              },
+              "paymentcarddetail": {
+                "CardHolderName": "Test STAAH",
+                "CardType": "MC",
+                "ExpireDate": "07/28",
+                "CardNumber": "4111111111111111",
+                "cvv": "123"
+              },
+              "room": [
+                {
+                  "arrival_date": "2026-09-02",
+                  "departure_date": "2026-09-04",
+                  "room_id": "DELUXEROOM",
+                  "room_name": "Studio",
+                  "price": [
+                    {
+                      "date": "2026-09-02",
+                      "rate_id": "CPPLAN",
+                      "rate_name": "Test MK",
+                      "amountaftertax": "2100.00",
+                      "extraGuests": {
+                        "extraAdult": "1",
+                        "extraChild": "0",
+                        "extraAdultRate": "100",
+                        "extraChildRate": "0"
+                      }
+                    }
+                  ],
+                  "salutation": "Mr.",
+                  "first_name": "Test",
+                  "last_name": "Test",
+                  "taxes": [
+                    {
+                      "name": "service charge",
+                      "value": "240.00"
+                    }
+                  ],
+                  "amountaftertax": "2440.00",
+                  "remarks": "No Smoking",
+                  "GuestCount": [
+                    {
+                      "AgeQualifyingCode": "10",
+                      "Count": "2"
+                    }
+                  ]
+                }
+              ],
+              "POS": "TEST",
+              "extraData": [
+                {
+                  "name": "Key",
+                  "value": "Value of key"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 403,
+        "body": "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">\n<HTML><HEAD><META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=iso-8859-1\">\n<TITLE>ERROR: The request could not be satisfied</TITLE>\n</HEAD><BODY>\n<H1>403 ERROR</H1>\n<H2>The request could not be satisfied.</H2>\n<HR noshade size=\"1px\">\nRequest blocked.\nWe can't connect to the server for this app or website at this time. There might be too much traffic or a configuration error. Try again later, or contact the app or website owner.\n<BR clear=\"all\">\nIf you provide content to customers through CloudFront, you can find steps to troubleshoot and help prevent this error by reviewing the CloudFront documentation.\n<BR clear=\"all\">\n<HR noshade size=\"1px\">\n<PRE>\nGenerated by cloudfront (CloudFront)\nRequest ID: vtVPZSeguI1pJF8fOsb3dCudreQz5f8pjc6BuzYcwa9NWuBu5l31QA==\n</PRE>\n<ADDRESS>\n</ADDRESS>\n</BODY></HTML>"
+      },
+      "status": 403,
+      "pass": false,
+      "body": "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">\n<HTML><HEAD><META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=iso-8859-1\">\n<TITLE>ERROR: The request could not be satisfied</TITLE>\n</HEAD><BODY>\n<H1>403 ERROR</H1>\n<H2>The request could not be satisfied.</H2>\n<HR noshade size=\"1px\">\nRequest blocked.\nWe can't connect to the server for this app or website at this time. There might be too much traffic or a configuration error. Try again later, or contact the app or website owner.\n<BR clear=\"all\">\nIf you provide content to customers through CloudFront, you can find steps to troubleshoot and help prevent this error by reviewing the CloudFront documentation.\n<BR clear=\"all\">\n<HR noshade size=\"1px\">\n<PRE>\nGenerated by cloudfront (CloudFront)\nRequest ID: vtVPZSeguI1pJF8fOsb3dCudreQz5f8pjc6BuzYcwa9NWuBu5l31QA==\n</PRE>\n<ADDRESS>\n</ADDRESS>\n</BODY></HTML>"
+    },
+    {
+      "label": "S3_05_Cancel",
+      "excelRow": 19,
+      "endpointName": "booking",
+      "requestedAt": "2026-06-23T17:15:14Z",
+      "bookingId": "DVI-CERT-S3-1782234912490",
+      "request": {
+        "propertyid": "STAAHTESTHOTEL1",
+        "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+        "action": "reservation_info",
+        "version": "2",
+        "reservations": {
+          "reservation": [
+            {
+              "reservation_datetime": "2026-06-23T22:45:14",
+              "propertyname": "STAAH TEST",
+              "reservation_id": "DVI-CERT-S3-1782234912490",
+              "payment_required": "15",
+              "payment_type": "Hotel Collect",
+              "commissionamount": "0.00",
+              "discountamount": "0.00",
+              "deposit": "0.00",
+              "totalamountaftertax": "2440.00",
+              "totaltax": "240.00",
+              "currencycode": "INR",
+              "status": "Cancel",
+              "customer": {
+                "address": "Ring Road",
+                "city": "Surat",
+                "country": "India",
+                "email": "rk@staah.com",
+                "salutation": "Mr.",
+                "first_name": "Test",
+                "last_name": "Test",
+                "remarks": "Please Provide Wine Upon Checking and Do not Disturb",
+                "telephone": "+91 97734 84053",
+                "zip": "395004"
+              },
+              "paymentcarddetail": {
+                "CardHolderName": "Test STAAH",
+                "CardType": "MC",
+                "ExpireDate": "07/28",
+                "CardNumber": "4111111111111111",
+                "cvv": "123"
+              },
+              "room": [
+                {
+                  "arrival_date": "2026-09-02",
+                  "departure_date": "2026-09-04",
+                  "room_id": "DELUXEROOM",
+                  "room_name": "Studio",
+                  "price": [
+                    {
+                      "date": "2026-09-02",
+                      "rate_id": "CPPLAN",
+                      "rate_name": "Test MK",
+                      "amountaftertax": "2100.00",
+                      "extraGuests": {
+                        "extraAdult": "1",
+                        "extraChild": "0",
+                        "extraAdultRate": "100",
+                        "extraChildRate": "0"
+                      }
+                    }
+                  ],
+                  "salutation": "Mr.",
+                  "first_name": "Test",
+                  "last_name": "Test",
+                  "taxes": [
+                    {
+                      "name": "service charge",
+                      "value": "240.00"
+                    }
+                  ],
+                  "amountaftertax": "2440.00",
+                  "remarks": "No Smoking",
+                  "GuestCount": [
+                    {
+                      "AgeQualifyingCode": "10",
+                      "Count": "2"
+                    }
+                  ]
+                }
+              ],
+              "POS": "TEST",
+              "extraData": [
+                {
+                  "name": "Key",
+                  "value": "Value of key"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 403,
+        "body": "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">\n<HTML><HEAD><META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=iso-8859-1\">\n<TITLE>ERROR: The request could not be satisfied</TITLE>\n</HEAD><BODY>\n<H1>403 ERROR</H1>\n<H2>The request could not be satisfied.</H2>\n<HR noshade size=\"1px\">\nRequest blocked.\nWe can't connect to the server for this app or website at this time. There might be too much traffic or a configuration error. Try again later, or contact the app or website owner.\n<BR clear=\"all\">\nIf you provide content to customers through CloudFront, you can find steps to troubleshoot and help prevent this error by reviewing the CloudFront documentation.\n<BR clear=\"all\">\n<HR noshade size=\"1px\">\n<PRE>\nGenerated by cloudfront (CloudFront)\nRequest ID: YRSXjzvZk8rHLu5ORYtk9IUnLV-oF7xgw6eH-M-Y9YSl8AyYSq3mzw==\n</PRE>\n<ADDRESS>\n</ADDRESS>\n</BODY></HTML>"
+      },
+      "status": 403,
+      "pass": false,
+      "body": "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">\n<HTML><HEAD><META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=iso-8859-1\">\n<TITLE>ERROR: The request could not be satisfied</TITLE>\n</HEAD><BODY>\n<H1>403 ERROR</H1>\n<H2>The request could not be satisfied.</H2>\n<HR noshade size=\"1px\">\nRequest blocked.\nWe can't connect to the server for this app or website at this time. There might be too much traffic or a configuration error. Try again later, or contact the app or website owner.\n<BR clear=\"all\">\nIf you provide content to customers through CloudFront, you can find steps to troubleshoot and help prevent this error by reviewing the CloudFront documentation.\n<BR clear=\"all\">\n<HR noshade size=\"1px\">\n<PRE>\nGenerated by cloudfront (CloudFront)\nRequest ID: YRSXjzvZk8rHLu5ORYtk9IUnLV-oF7xgw6eH-M-Y9YSl8AyYSq3mzw==\n</PRE>\n<ADDRESS>\n</ADDRESS>\n</BODY></HTML>"
+    },
+    {
+      "label": "S4_01_Pre-Book",
+      "excelRow": 20,
+      "endpointName": "fetch",
+      "requestedAt": "2026-06-23T17:15:14Z",
+      "bookingId": "DVI-CERT-S4-1782234912490",
+      "request": {
+        "propertyid": "STAAHTESTHOTEL1",
+        "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+        "room_id": "DELUXEROOM",
+        "rate_id": "CPPLAN",
+        "action": "ARR_info",
+        "from_date": "2026-10-05",
+        "to_date": "2026-10-05",
+        "version": "2"
+      },
+      "response": {
+        "status": 403,
+        "body": "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\n<html><head>\n<title>403 Forbidden</title>\n</head><body>\n<h1>Forbidden</h1>\n<p>You don't have permission to access this resource.</p>\n</body></html>\n"
+      },
+      "status": 403,
+      "pass": false,
+      "body": "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\n<html><head>\n<title>403 Forbidden</title>\n</head><body>\n<h1>Forbidden</h1>\n<p>You don't have permission to access this resource.</p>\n</body></html>\n"
+    },
+    {
+      "label": "S4_02_Confirm",
+      "excelRow": 21,
+      "endpointName": "booking",
+      "requestedAt": "2026-06-23T17:15:14Z",
+      "bookingId": "DVI-CERT-S4-1782234912490",
+      "request": {
+        "propertyid": "STAAHTESTHOTEL1",
+        "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+        "action": "reservation_info",
+        "version": "2",
+        "reservations": {
+          "reservation": [
+            {
+              "reservation_datetime": "2026-06-23T22:45:14",
+              "propertyname": "STAAH TEST",
+              "reservation_id": "DVI-CERT-S4-1782234912490",
+              "payment_required": "15",
+              "payment_type": "Hotel Collect",
+              "commissionamount": "0.00",
+              "discountamount": "0.00",
+              "deposit": "0.00",
+              "totalamountaftertax": "2660.00",
+              "totaltax": "260.00",
+              "currencycode": "INR",
+              "status": "Confirm",
+              "customer": {
+                "address": "Ring Road",
+                "city": "Surat",
+                "country": "India",
+                "email": "rk@staah.com",
+                "salutation": "Mr.",
+                "first_name": "Test",
+                "last_name": "Test",
+                "remarks": "Please Provide Wine Upon Checking and Do not Disturb",
+                "telephone": "+91 97734 84053",
+                "zip": "395004"
+              },
+              "paymentcarddetail": {
+                "CardHolderName": "Test STAAH",
+                "CardType": "MC",
+                "ExpireDate": "07/28",
+                "CardNumber": "4111111111111111",
+                "cvv": "123"
+              },
+              "room": [
+                {
+                  "arrival_date": "2026-10-05",
+                  "departure_date": "2026-10-06",
+                  "room_id": "DELUXEROOM",
+                  "room_name": "Studio",
+                  "price": [
+                    {
+                      "date": "2026-10-05",
+                      "rate_id": "CPPLAN",
+                      "rate_name": "Test MK",
+                      "amountaftertax": "2300.00",
+                      "extraGuests": {
+                        "extraAdult": "1",
+                        "extraChild": "0",
+                        "extraAdultRate": "100",
+                        "extraChildRate": "0"
+                      }
+                    }
+                  ],
+                  "salutation": "Mr.",
+                  "first_name": "Test",
+                  "last_name": "Test",
+                  "taxes": [
+                    {
+                      "name": "service charge",
+                      "value": "260.00"
+                    }
+                  ],
+                  "amountaftertax": "2660.00",
+                  "remarks": "No Smoking",
+                  "GuestCount": [
+                    {
+                      "AgeQualifyingCode": "10",
+                      "Count": "4"
+                    }
+                  ]
+                }
+              ],
+              "POS": "TEST",
+              "extraData": [
+                {
+                  "name": "Key",
+                  "value": "Value of key"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 403,
+        "body": "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">\n<HTML><HEAD><META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=iso-8859-1\">\n<TITLE>ERROR: The request could not be satisfied</TITLE>\n</HEAD><BODY>\n<H1>403 ERROR</H1>\n<H2>The request could not be satisfied.</H2>\n<HR noshade size=\"1px\">\nRequest blocked.\nWe can't connect to the server for this app or website at this time. There might be too much traffic or a configuration error. Try again later, or contact the app or website owner.\n<BR clear=\"all\">\nIf you provide content to customers through CloudFront, you can find steps to troubleshoot and help prevent this error by reviewing the CloudFront documentation.\n<BR clear=\"all\">\n<HR noshade size=\"1px\">\n<PRE>\nGenerated by cloudfront (CloudFront)\nRequest ID: hWSBzVpNci2B89lRQ2Y6GtANKRoRzUzf4UWO0g9GQZ6TV_YJAwj5cQ==\n</PRE>\n<ADDRESS>\n</ADDRESS>\n</BODY></HTML>"
+      },
+      "status": 403,
+      "pass": false,
+      "body": "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">\n<HTML><HEAD><META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=iso-8859-1\">\n<TITLE>ERROR: The request could not be satisfied</TITLE>\n</HEAD><BODY>\n<H1>403 ERROR</H1>\n<H2>The request could not be satisfied.</H2>\n<HR noshade size=\"1px\">\nRequest blocked.\nWe can't connect to the server for this app or website at this time. There might be too much traffic or a configuration error. Try again later, or contact the app or website owner.\n<BR clear=\"all\">\nIf you provide content to customers through CloudFront, you can find steps to troubleshoot and help prevent this error by reviewing the CloudFront documentation.\n<BR clear=\"all\">\n<HR noshade size=\"1px\">\n<PRE>\nGenerated by cloudfront (CloudFront)\nRequest ID: hWSBzVpNci2B89lRQ2Y6GtANKRoRzUzf4UWO0g9GQZ6TV_YJAwj5cQ==\n</PRE>\n<ADDRESS>\n</ADDRESS>\n</BODY></HTML>"
+    },
+    {
+      "label": "S4_03_Pre-Modify",
+      "excelRow": 22,
+      "endpointName": "fetch",
+      "requestedAt": "2026-06-23T17:15:14Z",
+      "bookingId": "DVI-CERT-S4-1782234912490",
+      "request": {
+        "propertyid": "STAAHTESTHOTEL1",
+        "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+        "room_id": "DELUXEROOM",
+        "rate_id": "CPPLAN",
+        "action": "ARR_info",
+        "from_date": "2026-10-06",
+        "to_date": "2026-10-06",
+        "version": "2"
+      },
+      "response": {
+        "status": 403,
+        "body": "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\n<html><head>\n<title>403 Forbidden</title>\n</head><body>\n<h1>Forbidden</h1>\n<p>You don't have permission to access this resource.</p>\n</body></html>\n"
+      },
+      "status": 403,
+      "pass": false,
+      "body": "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\n<html><head>\n<title>403 Forbidden</title>\n</head><body>\n<h1>Forbidden</h1>\n<p>You don't have permission to access this resource.</p>\n</body></html>\n"
+    },
+    {
+      "label": "S4_04_Modify",
+      "excelRow": 23,
+      "endpointName": "booking",
+      "requestedAt": "2026-06-23T17:15:15Z",
+      "bookingId": "DVI-CERT-S4-1782234912490",
+      "request": {
+        "propertyid": "STAAHTESTHOTEL1",
+        "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+        "action": "reservation_info",
+        "version": "2",
+        "reservations": {
+          "reservation": [
+            {
+              "reservation_datetime": "2026-06-23T22:45:15",
+              "propertyname": "STAAH TEST",
+              "reservation_id": "DVI-CERT-S4-1782234912490",
+              "payment_required": "15",
+              "payment_type": "Hotel Collect",
+              "commissionamount": "0.00",
+              "discountamount": "0.00",
+              "deposit": "0.00",
+              "totalamountaftertax": "2780.00",
+              "totaltax": "280.00",
+              "currencycode": "INR",
+              "status": "Modified",
+              "customer": {
+                "address": "Ring Road",
+                "city": "Surat",
+                "country": "India",
+                "email": "rk@staah.com",
+                "salutation": "Mr.",
+                "first_name": "Test",
+                "last_name": "Test",
+                "remarks": "Please Provide Wine Upon Checking and Do not Disturb",
+                "telephone": "+91 97734 84053",
+                "zip": "395004"
+              },
+              "paymentcarddetail": {
+                "CardHolderName": "Test STAAH",
+                "CardType": "MC",
+                "ExpireDate": "07/28",
+                "CardNumber": "4111111111111111",
+                "cvv": "123"
+              },
+              "room": [
+                {
+                  "arrival_date": "2026-10-06",
+                  "departure_date": "2026-10-07",
+                  "room_id": "DELUXEROOM",
+                  "room_name": "Studio",
+                  "price": [
+                    {
+                      "date": "2026-10-06",
+                      "rate_id": "CPPLAN",
+                      "rate_name": "Test MK",
+                      "amountaftertax": "2400.00",
+                      "extraGuests": {
+                        "extraAdult": "1",
+                        "extraChild": "0",
+                        "extraAdultRate": "100",
+                        "extraChildRate": "0"
+                      }
+                    }
+                  ],
+                  "salutation": "Mr.",
+                  "first_name": "Test",
+                  "last_name": "Test",
+                  "taxes": [
+                    {
+                      "name": "service charge",
+                      "value": "280.00"
+                    }
+                  ],
+                  "amountaftertax": "2780.00",
+                  "remarks": "No Smoking",
+                  "GuestCount": [
+                    {
+                      "AgeQualifyingCode": "10",
+                      "Count": "4"
+                    }
+                  ]
+                }
+              ],
+              "POS": "TEST",
+              "extraData": [
+                {
+                  "name": "Key",
+                  "value": "Value of key"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 403,
+        "body": "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">\n<HTML><HEAD><META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=iso-8859-1\">\n<TITLE>ERROR: The request could not be satisfied</TITLE>\n</HEAD><BODY>\n<H1>403 ERROR</H1>\n<H2>The request could not be satisfied.</H2>\n<HR noshade size=\"1px\">\nRequest blocked.\nWe can't connect to the server for this app or website at this time. There might be too much traffic or a configuration error. Try again later, or contact the app or website owner.\n<BR clear=\"all\">\nIf you provide content to customers through CloudFront, you can find steps to troubleshoot and help prevent this error by reviewing the CloudFront documentation.\n<BR clear=\"all\">\n<HR noshade size=\"1px\">\n<PRE>\nGenerated by cloudfront (CloudFront)\nRequest ID: BWZXvMUcFj6NEs-3VwB8rM_VE14QlfWs_pspSK9mvzqnP4wstpHs5g==\n</PRE>\n<ADDRESS>\n</ADDRESS>\n</BODY></HTML>"
+      },
+      "status": 403,
+      "pass": false,
+      "body": "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">\n<HTML><HEAD><META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=iso-8859-1\">\n<TITLE>ERROR: The request could not be satisfied</TITLE>\n</HEAD><BODY>\n<H1>403 ERROR</H1>\n<H2>The request could not be satisfied.</H2>\n<HR noshade size=\"1px\">\nRequest blocked.\nWe can't connect to the server for this app or website at this time. There might be too much traffic or a configuration error. Try again later, or contact the app or website owner.\n<BR clear=\"all\">\nIf you provide content to customers through CloudFront, you can find steps to troubleshoot and help prevent this error by reviewing the CloudFront documentation.\n<BR clear=\"all\">\n<HR noshade size=\"1px\">\n<PRE>\nGenerated by cloudfront (CloudFront)\nRequest ID: BWZXvMUcFj6NEs-3VwB8rM_VE14QlfWs_pspSK9mvzqnP4wstpHs5g==\n</PRE>\n<ADDRESS>\n</ADDRESS>\n</BODY></HTML>"
+    },
+    {
+      "label": "S4_05_Cancel",
+      "excelRow": 24,
+      "endpointName": "booking",
+      "requestedAt": "2026-06-23T17:15:15Z",
+      "bookingId": "DVI-CERT-S4-1782234912490",
+      "request": {
+        "propertyid": "STAAHTESTHOTEL1",
+        "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+        "action": "reservation_info",
+        "version": "2",
+        "reservations": {
+          "reservation": [
+            {
+              "reservation_datetime": "2026-06-23T22:45:15",
+              "propertyname": "STAAH TEST",
+              "reservation_id": "DVI-CERT-S4-1782234912490",
+              "payment_required": "15",
+              "payment_type": "Hotel Collect",
+              "commissionamount": "0.00",
+              "discountamount": "0.00",
+              "deposit": "0.00",
+              "totalamountaftertax": "2780.00",
+              "totaltax": "280.00",
+              "currencycode": "INR",
+              "status": "Cancel",
+              "customer": {
+                "address": "Ring Road",
+                "city": "Surat",
+                "country": "India",
+                "email": "rk@staah.com",
+                "salutation": "Mr.",
+                "first_name": "Test",
+                "last_name": "Test",
+                "remarks": "Please Provide Wine Upon Checking and Do not Disturb",
+                "telephone": "+91 97734 84053",
+                "zip": "395004"
+              },
+              "paymentcarddetail": {
+                "CardHolderName": "Test STAAH",
+                "CardType": "MC",
+                "ExpireDate": "07/28",
+                "CardNumber": "4111111111111111",
+                "cvv": "123"
+              },
+              "room": [
+                {
+                  "arrival_date": "2026-10-06",
+                  "departure_date": "2026-10-07",
+                  "room_id": "DELUXEROOM",
+                  "room_name": "Studio",
+                  "price": [
+                    {
+                      "date": "2026-10-06",
+                      "rate_id": "CPPLAN",
+                      "rate_name": "Test MK",
+                      "amountaftertax": "2400.00",
+                      "extraGuests": {
+                        "extraAdult": "1",
+                        "extraChild": "0",
+                        "extraAdultRate": "100",
+                        "extraChildRate": "0"
+                      }
+                    }
+                  ],
+                  "salutation": "Mr.",
+                  "first_name": "Test",
+                  "last_name": "Test",
+                  "taxes": [
+                    {
+                      "name": "service charge",
+                      "value": "280.00"
+                    }
+                  ],
+                  "amountaftertax": "2780.00",
+                  "remarks": "No Smoking",
+                  "GuestCount": [
+                    {
+                      "AgeQualifyingCode": "10",
+                      "Count": "4"
+                    }
+                  ]
+                }
+              ],
+              "POS": "TEST",
+              "extraData": [
+                {
+                  "name": "Key",
+                  "value": "Value of key"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 403,
+        "body": "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">\n<HTML><HEAD><META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=iso-8859-1\">\n<TITLE>ERROR: The request could not be satisfied</TITLE>\n</HEAD><BODY>\n<H1>403 ERROR</H1>\n<H2>The request could not be satisfied.</H2>\n<HR noshade size=\"1px\">\nRequest blocked.\nWe can't connect to the server for this app or website at this time. There might be too much traffic or a configuration error. Try again later, or contact the app or website owner.\n<BR clear=\"all\">\nIf you provide content to customers through CloudFront, you can find steps to troubleshoot and help prevent this error by reviewing the CloudFront documentation.\n<BR clear=\"all\">\n<HR noshade size=\"1px\">\n<PRE>\nGenerated by cloudfront (CloudFront)\nRequest ID: wu1zPpEmVl0wZX1-Pu8qlPEA_5eZzgkkjTt69jtoFO-05-2K3fax5w==\n</PRE>\n<ADDRESS>\n</ADDRESS>\n</BODY></HTML>"
+      },
+      "status": 403,
+      "pass": false,
+      "body": "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">\n<HTML><HEAD><META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=iso-8859-1\">\n<TITLE>ERROR: The request could not be satisfied</TITLE>\n</HEAD><BODY>\n<H1>403 ERROR</H1>\n<H2>The request could not be satisfied.</H2>\n<HR noshade size=\"1px\">\nRequest blocked.\nWe can't connect to the server for this app or website at this time. There might be too much traffic or a configuration error. Try again later, or contact the app or website owner.\n<BR clear=\"all\">\nIf you provide content to customers through CloudFront, you can find steps to troubleshoot and help prevent this error by reviewing the CloudFront documentation.\n<BR clear=\"all\">\n<HR noshade size=\"1px\">\n<PRE>\nGenerated by cloudfront (CloudFront)\nRequest ID: wu1zPpEmVl0wZX1-Pu8qlPEA_5eZzgkkjTt69jtoFO-05-2K3fax5w==\n</PRE>\n<ADDRESS>\n</ADDRESS>\n</BODY></HTML>"
+    },
+    {
+      "label": "S5_01_Pre-Book",
+      "excelRow": 25,
+      "endpointName": "fetch",
+      "requestedAt": "2026-06-23T17:15:15Z",
+      "bookingId": "DVI-CERT-S5-1782234912490",
+      "request": {
+        "propertyid": "STAAHTESTHOTEL1",
+        "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+        "room_id": "DELUXEROOM",
+        "rate_id": "CPPLAN",
+        "action": "ARR_info",
+        "from_date": "2026-07-15",
+        "to_date": "2026-07-16",
+        "version": "2"
+      },
+      "response": {
+        "status": 403,
+        "body": "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\n<html><head>\n<title>403 Forbidden</title>\n</head><body>\n<h1>Forbidden</h1>\n<p>You don't have permission to access this resource.</p>\n</body></html>\n"
+      },
+      "status": 403,
+      "pass": false,
+      "body": "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\n<html><head>\n<title>403 Forbidden</title>\n</head><body>\n<h1>Forbidden</h1>\n<p>You don't have permission to access this resource.</p>\n</body></html>\n"
+    },
+    {
+      "label": "S5_02_Confirm_MultiRoom_Child_Infant",
+      "excelRow": 26,
+      "endpointName": "booking",
+      "requestedAt": "2026-06-23T17:15:15Z",
+      "bookingId": "DVI-CERT-S5-1782234912490",
+      "request": {
+        "propertyid": "STAAHTESTHOTEL1",
+        "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+        "action": "reservation_info",
+        "version": "2",
+        "reservations": {
+          "reservation": [
+            {
+              "reservation_datetime": "2026-06-23T22:45:15",
+              "propertyname": "STAAH TEST",
+              "reservation_id": "DVI-CERT-S5-1782234912490",
+              "payment_required": "15",
+              "payment_type": "Hotel Collect",
+              "commissionamount": "0.00",
+              "discountamount": "0.00",
+              "deposit": "0.00",
+              "totalamountaftertax": "2530.00",
+              "totaltax": "230.00",
+              "currencycode": "INR",
+              "status": "Confirm",
+              "customer": {
+                "address": "Ring Road",
+                "city": "Surat",
+                "country": "India",
+                "email": "rk@staah.com",
+                "salutation": "Mr.",
+                "first_name": "Test",
+                "last_name": "Test",
+                "remarks": "Please Provide Wine Upon Checking and Do not Disturb",
+                "telephone": "+91 97734 84053",
+                "zip": "395004"
+              },
+              "paymentcarddetail": {
+                "CardHolderName": "Test STAAH",
+                "CardType": "MC",
+                "ExpireDate": "07/28",
+                "CardNumber": "4111111111111111",
+                "cvv": "123"
+              },
+              "room": [
+                {
+                  "arrival_date": "2026-07-15",
+                  "departure_date": "2026-07-16",
+                  "room_id": "DELUXEROOM",
+                  "room_name": "Studio",
+                  "price": [
+                    {
+                      "date": "2026-07-15",
+                      "rate_id": "CPPLAN",
+                      "rate_name": "Test MK",
+                      "amountaftertax": "1100.00",
+                      "extraGuests": {
+                        "extraAdult": "0",
+                        "extraChild": "1",
+                        "extraAdultRate": "0",
+                        "extraChildRate": "100"
+                      }
+                    }
+                  ],
+                  "salutation": "Mr.",
+                  "first_name": "Test",
+                  "last_name": "Test",
+                  "taxes": [
+                    {
+                      "name": "service charge",
+                      "value": "120.00"
+                    }
+                  ],
+                  "amountaftertax": "1320.00",
+                  "remarks": "Room 1: child with extra bed",
+                  "GuestCount": [
+                    {
+                      "AgeQualifyingCode": "10",
+                      "Count": "2"
+                    },
+                    {
+                      "AgeQualifyingCode": "8",
+                      "Count": "1"
+                    }
+                  ]
+                },
+                {
+                  "arrival_date": "2026-07-15",
+                  "departure_date": "2026-07-16",
+                  "room_id": "DELUXEROOM",
+                  "room_name": "Studio",
+                  "price": [
+                    {
+                      "date": "2026-07-15",
+                      "rate_id": "CPPLAN",
+                      "rate_name": "Test MK",
+                      "amountaftertax": "1100.00",
+                      "extraGuests": {
+                        "extraAdult": "0",
+                        "extraChild": "0",
+                        "extraAdultRate": "0",
+                        "extraChildRate": "0"
+                      }
+                    }
+                  ],
+                  "salutation": "Mr.",
+                  "first_name": "Test",
+                  "last_name": "Test",
+                  "taxes": [
+                    {
+                      "name": "service charge",
+                      "value": "110.00"
+                    }
+                  ],
+                  "amountaftertax": "1210.00",
+                  "remarks": "Room 2: child without extra bed and infant",
+                  "GuestCount": [
+                    {
+                      "AgeQualifyingCode": "10",
+                      "Count": "2"
+                    },
+                    {
+                      "AgeQualifyingCode": "8",
+                      "Count": "1"
+                    },
+                    {
+                      "AgeQualifyingCode": "7",
+                      "Count": "1"
+                    }
+                  ]
+                }
+              ],
+              "POS": "TEST",
+              "extraData": [
+                {
+                  "name": "Key",
+                  "value": "Value of key"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 403,
+        "body": "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">\n<HTML><HEAD><META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=iso-8859-1\">\n<TITLE>ERROR: The request could not be satisfied</TITLE>\n</HEAD><BODY>\n<H1>403 ERROR</H1>\n<H2>The request could not be satisfied.</H2>\n<HR noshade size=\"1px\">\nRequest blocked.\nWe can't connect to the server for this app or website at this time. There might be too much traffic or a configuration error. Try again later, or contact the app or website owner.\n<BR clear=\"all\">\nIf you provide content to customers through CloudFront, you can find steps to troubleshoot and help prevent this error by reviewing the CloudFront documentation.\n<BR clear=\"all\">\n<HR noshade size=\"1px\">\n<PRE>\nGenerated by cloudfront (CloudFront)\nRequest ID: 0dEM25PlJ2tje9HevGwbh-kKbNferObUzs_TKP_6JUPA827hf57urw==\n</PRE>\n<ADDRESS>\n</ADDRESS>\n</BODY></HTML>"
+      },
+      "status": 403,
+      "pass": false,
+      "body": "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">\n<HTML><HEAD><META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=iso-8859-1\">\n<TITLE>ERROR: The request could not be satisfied</TITLE>\n</HEAD><BODY>\n<H1>403 ERROR</H1>\n<H2>The request could not be satisfied.</H2>\n<HR noshade size=\"1px\">\nRequest blocked.\nWe can't connect to the server for this app or website at this time. There might be too much traffic or a configuration error. Try again later, or contact the app or website owner.\n<BR clear=\"all\">\nIf you provide content to customers through CloudFront, you can find steps to troubleshoot and help prevent this error by reviewing the CloudFront documentation.\n<BR clear=\"all\">\n<HR noshade size=\"1px\">\n<PRE>\nGenerated by cloudfront (CloudFront)\nRequest ID: 0dEM25PlJ2tje9HevGwbh-kKbNferObUzs_TKP_6JUPA827hf57urw==\n</PRE>\n<ADDRESS>\n</ADDRESS>\n</BODY></HTML>"
+    },
+    {
+      "label": "S5_03_Cancel_MultiRoom_Child_Infant",
+      "excelRow": 27,
+      "endpointName": "booking",
+      "requestedAt": "2026-06-23T17:15:15Z",
+      "bookingId": "DVI-CERT-S5-1782234912490",
+      "request": {
+        "propertyid": "STAAHTESTHOTEL1",
+        "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+        "action": "reservation_info",
+        "version": "2",
+        "reservations": {
+          "reservation": [
+            {
+              "reservation_datetime": "2026-06-23T22:45:15",
+              "propertyname": "STAAH TEST",
+              "reservation_id": "DVI-CERT-S5-1782234912490",
+              "payment_required": "15",
+              "payment_type": "Hotel Collect",
+              "commissionamount": "0.00",
+              "discountamount": "0.00",
+              "deposit": "0.00",
+              "totalamountaftertax": "2530.00",
+              "totaltax": "230.00",
+              "currencycode": "INR",
+              "status": "Cancel",
+              "customer": {
+                "address": "Ring Road",
+                "city": "Surat",
+                "country": "India",
+                "email": "rk@staah.com",
+                "salutation": "Mr.",
+                "first_name": "Test",
+                "last_name": "Test",
+                "remarks": "Please Provide Wine Upon Checking and Do not Disturb",
+                "telephone": "+91 97734 84053",
+                "zip": "395004"
+              },
+              "paymentcarddetail": {
+                "CardHolderName": "Test STAAH",
+                "CardType": "MC",
+                "ExpireDate": "07/28",
+                "CardNumber": "4111111111111111",
+                "cvv": "123"
+              },
+              "room": [
+                {
+                  "arrival_date": "2026-07-15",
+                  "departure_date": "2026-07-16",
+                  "room_id": "DELUXEROOM",
+                  "room_name": "Studio",
+                  "price": [
+                    {
+                      "date": "2026-07-15",
+                      "rate_id": "CPPLAN",
+                      "rate_name": "Test MK",
+                      "amountaftertax": "1100.00",
+                      "extraGuests": {
+                        "extraAdult": "0",
+                        "extraChild": "1",
+                        "extraAdultRate": "0",
+                        "extraChildRate": "100"
+                      }
+                    }
+                  ],
+                  "salutation": "Mr.",
+                  "first_name": "Test",
+                  "last_name": "Test",
+                  "taxes": [
+                    {
+                      "name": "service charge",
+                      "value": "120.00"
+                    }
+                  ],
+                  "amountaftertax": "1320.00",
+                  "remarks": "Room 1: child with extra bed",
+                  "GuestCount": [
+                    {
+                      "AgeQualifyingCode": "10",
+                      "Count": "2"
+                    },
+                    {
+                      "AgeQualifyingCode": "8",
+                      "Count": "1"
+                    }
+                  ]
+                },
+                {
+                  "arrival_date": "2026-07-15",
+                  "departure_date": "2026-07-16",
+                  "room_id": "DELUXEROOM",
+                  "room_name": "Studio",
+                  "price": [
+                    {
+                      "date": "2026-07-15",
+                      "rate_id": "CPPLAN",
+                      "rate_name": "Test MK",
+                      "amountaftertax": "1100.00",
+                      "extraGuests": {
+                        "extraAdult": "0",
+                        "extraChild": "0",
+                        "extraAdultRate": "0",
+                        "extraChildRate": "0"
+                      }
+                    }
+                  ],
+                  "salutation": "Mr.",
+                  "first_name": "Test",
+                  "last_name": "Test",
+                  "taxes": [
+                    {
+                      "name": "service charge",
+                      "value": "110.00"
+                    }
+                  ],
+                  "amountaftertax": "1210.00",
+                  "remarks": "Room 2: child without extra bed and infant",
+                  "GuestCount": [
+                    {
+                      "AgeQualifyingCode": "10",
+                      "Count": "2"
+                    },
+                    {
+                      "AgeQualifyingCode": "8",
+                      "Count": "1"
+                    },
+                    {
+                      "AgeQualifyingCode": "7",
+                      "Count": "1"
+                    }
+                  ]
+                }
+              ],
+              "POS": "TEST",
+              "extraData": [
+                {
+                  "name": "Key",
+                  "value": "Value of key"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 403,
+        "body": "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">\n<HTML><HEAD><META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=iso-8859-1\">\n<TITLE>ERROR: The request could not be satisfied</TITLE>\n</HEAD><BODY>\n<H1>403 ERROR</H1>\n<H2>The request could not be satisfied.</H2>\n<HR noshade size=\"1px\">\nRequest blocked.\nWe can't connect to the server for this app or website at this time. There might be too much traffic or a configuration error. Try again later, or contact the app or website owner.\n<BR clear=\"all\">\nIf you provide content to customers through CloudFront, you can find steps to troubleshoot and help prevent this error by reviewing the CloudFront documentation.\n<BR clear=\"all\">\n<HR noshade size=\"1px\">\n<PRE>\nGenerated by cloudfront (CloudFront)\nRequest ID: k7mre7PbYmTRINXBgjY1mM2990azsUhBhd2jFubW6yml9_ew_rQOTQ==\n</PRE>\n<ADDRESS>\n</ADDRESS>\n</BODY></HTML>"
+      },
+      "status": 403,
+      "pass": false,
+      "body": "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">\n<HTML><HEAD><META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=iso-8859-1\">\n<TITLE>ERROR: The request could not be satisfied</TITLE>\n</HEAD><BODY>\n<H1>403 ERROR</H1>\n<H2>The request could not be satisfied.</H2>\n<HR noshade size=\"1px\">\nRequest blocked.\nWe can't connect to the server for this app or website at this time. There might be too much traffic or a configuration error. Try again later, or contact the app or website owner.\n<BR clear=\"all\">\nIf you provide content to customers through CloudFront, you can find steps to troubleshoot and help prevent this error by reviewing the CloudFront documentation.\n<BR clear=\"all\">\n<HR noshade size=\"1px\">\n<PRE>\nGenerated by cloudfront (CloudFront)\nRequest ID: k7mre7PbYmTRINXBgjY1mM2990azsUhBhd2jFubW6yml9_ew_rQOTQ==\n</PRE>\n<ADDRESS>\n</ADDRESS>\n</BODY></HTML>"
+    },
+    {
+      "label": "S6_01_Pre-Book",
+      "excelRow": 28,
+      "endpointName": "fetch",
+      "requestedAt": "2026-06-23T17:15:15Z",
+      "bookingId": "DVI-CERT-S6-1782234912490",
+      "request": {
+        "propertyid": "STAAHTESTHOTEL1",
+        "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+        "room_id": "DELUXEROOM",
+        "rate_id": "CPPLAN",
+        "action": "ARR_info",
+        "from_date": "2026-07-15",
+        "to_date": "2026-07-16",
+        "version": "2"
+      },
+      "response": {
+        "status": 403,
+        "body": "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\n<html><head>\n<title>403 Forbidden</title>\n</head><body>\n<h1>Forbidden</h1>\n<p>You don't have permission to access this resource.</p>\n</body></html>\n"
+      },
+      "status": 403,
+      "pass": false,
+      "body": "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\n<html><head>\n<title>403 Forbidden</title>\n</head><body>\n<h1>Forbidden</h1>\n<p>You don't have permission to access this resource.</p>\n</body></html>\n"
+    },
+    {
+      "label": "S6_02_Confirm_MultiRoom_2Adults",
+      "excelRow": 29,
+      "endpointName": "booking",
+      "requestedAt": "2026-06-23T17:15:15Z",
+      "bookingId": "DVI-CERT-S6-1782234912490",
+      "request": {
+        "propertyid": "STAAHTESTHOTEL1",
+        "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+        "action": "reservation_info",
+        "version": "2",
+        "reservations": {
+          "reservation": [
+            {
+              "reservation_datetime": "2026-06-23T22:45:15",
+              "propertyname": "STAAH TEST",
+              "reservation_id": "DVI-CERT-S6-1782234912490",
+              "payment_required": "15",
+              "payment_type": "Hotel Collect",
+              "commissionamount": "0.00",
+              "discountamount": "0.00",
+              "deposit": "0.00",
+              "totalamountaftertax": "2440.00",
+              "totaltax": "240.00",
+              "currencycode": "INR",
+              "status": "Confirm",
+              "customer": {
+                "address": "Ring Road",
+                "city": "Surat",
+                "country": "India",
+                "email": "rk@staah.com",
+                "salutation": "Mr.",
+                "first_name": "Test",
+                "last_name": "Test",
+                "remarks": "Please Provide Wine Upon Checking and Do not Disturb",
+                "telephone": "+91 97734 84053",
+                "zip": "395004"
+              },
+              "paymentcarddetail": {
+                "CardHolderName": "Test STAAH",
+                "CardType": "MC",
+                "ExpireDate": "07/28",
+                "CardNumber": "4111111111111111",
+                "cvv": "123"
+              },
+              "room": [
+                {
+                  "arrival_date": "2026-07-15",
+                  "departure_date": "2026-07-16",
+                  "room_id": "DELUXEROOM",
+                  "room_name": "Studio",
+                  "price": [
+                    {
+                      "date": "2026-07-15",
+                      "rate_id": "CPPLAN",
+                      "rate_name": "Test MK",
+                      "amountaftertax": "1100.00",
+                      "extraGuests": {
+                        "extraAdult": "0",
+                        "extraChild": "0",
+                        "extraAdultRate": "0",
+                        "extraChildRate": "0"
+                      }
+                    }
+                  ],
+                  "salutation": "Mr.",
+                  "first_name": "Test",
+                  "last_name": "Test",
+                  "taxes": [
+                    {
+                      "name": "service charge",
+                      "value": "120.00"
+                    }
+                  ],
+                  "amountaftertax": "1220.00",
+                  "remarks": "Room 1: two adults",
+                  "GuestCount": [
+                    {
+                      "AgeQualifyingCode": "10",
+                      "Count": "2"
+                    }
+                  ]
+                },
+                {
+                  "arrival_date": "2026-07-15",
+                  "departure_date": "2026-07-16",
+                  "room_id": "DELUXEROOM",
+                  "room_name": "Studio",
+                  "price": [
+                    {
+                      "date": "2026-07-15",
+                      "rate_id": "CPPLAN",
+                      "rate_name": "Test MK",
+                      "amountaftertax": "1100.00",
+                      "extraGuests": {
+                        "extraAdult": "0",
+                        "extraChild": "0",
+                        "extraAdultRate": "0",
+                        "extraChildRate": "0"
+                      }
+                    }
+                  ],
+                  "salutation": "Mr.",
+                  "first_name": "Test",
+                  "last_name": "Test",
+                  "taxes": [
+                    {
+                      "name": "service charge",
+                      "value": "120.00"
+                    }
+                  ],
+                  "amountaftertax": "1220.00",
+                  "remarks": "Room 2: two adults",
+                  "GuestCount": [
+                    {
+                      "AgeQualifyingCode": "10",
+                      "Count": "2"
+                    }
+                  ]
+                }
+              ],
+              "POS": "TEST",
+              "extraData": [
+                {
+                  "name": "Key",
+                  "value": "Value of key"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 403,
+        "body": "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">\n<HTML><HEAD><META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=iso-8859-1\">\n<TITLE>ERROR: The request could not be satisfied</TITLE>\n</HEAD><BODY>\n<H1>403 ERROR</H1>\n<H2>The request could not be satisfied.</H2>\n<HR noshade size=\"1px\">\nRequest blocked.\nWe can't connect to the server for this app or website at this time. There might be too much traffic or a configuration error. Try again later, or contact the app or website owner.\n<BR clear=\"all\">\nIf you provide content to customers through CloudFront, you can find steps to troubleshoot and help prevent this error by reviewing the CloudFront documentation.\n<BR clear=\"all\">\n<HR noshade size=\"1px\">\n<PRE>\nGenerated by cloudfront (CloudFront)\nRequest ID: zeHFzoALOHRnKlvYXUYuF5wR9gkF7lADUEd7AL5xFhSQ7VS1mFu5Kw==\n</PRE>\n<ADDRESS>\n</ADDRESS>\n</BODY></HTML>"
+      },
+      "status": 403,
+      "pass": false,
+      "body": "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">\n<HTML><HEAD><META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=iso-8859-1\">\n<TITLE>ERROR: The request could not be satisfied</TITLE>\n</HEAD><BODY>\n<H1>403 ERROR</H1>\n<H2>The request could not be satisfied.</H2>\n<HR noshade size=\"1px\">\nRequest blocked.\nWe can't connect to the server for this app or website at this time. There might be too much traffic or a configuration error. Try again later, or contact the app or website owner.\n<BR clear=\"all\">\nIf you provide content to customers through CloudFront, you can find steps to troubleshoot and help prevent this error by reviewing the CloudFront documentation.\n<BR clear=\"all\">\n<HR noshade size=\"1px\">\n<PRE>\nGenerated by cloudfront (CloudFront)\nRequest ID: zeHFzoALOHRnKlvYXUYuF5wR9gkF7lADUEd7AL5xFhSQ7VS1mFu5Kw==\n</PRE>\n<ADDRESS>\n</ADDRESS>\n</BODY></HTML>"
+    },
+    {
+      "label": "S6_03_Cancel_MultiRoom_2Adults",
+      "excelRow": 30,
+      "endpointName": "booking",
+      "requestedAt": "2026-06-23T17:15:15Z",
+      "bookingId": "DVI-CERT-S6-1782234912490",
+      "request": {
+        "propertyid": "STAAHTESTHOTEL1",
+        "apikey": "Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH",
+        "action": "reservation_info",
+        "version": "2",
+        "reservations": {
+          "reservation": [
+            {
+              "reservation_datetime": "2026-06-23T22:45:15",
+              "propertyname": "STAAH TEST",
+              "reservation_id": "DVI-CERT-S6-1782234912490",
+              "payment_required": "15",
+              "payment_type": "Hotel Collect",
+              "commissionamount": "0.00",
+              "discountamount": "0.00",
+              "deposit": "0.00",
+              "totalamountaftertax": "2440.00",
+              "totaltax": "240.00",
+              "currencycode": "INR",
+              "status": "Cancel",
+              "customer": {
+                "address": "Ring Road",
+                "city": "Surat",
+                "country": "India",
+                "email": "rk@staah.com",
+                "salutation": "Mr.",
+                "first_name": "Test",
+                "last_name": "Test",
+                "remarks": "Please Provide Wine Upon Checking and Do not Disturb",
+                "telephone": "+91 97734 84053",
+                "zip": "395004"
+              },
+              "paymentcarddetail": {
+                "CardHolderName": "Test STAAH",
+                "CardType": "MC",
+                "ExpireDate": "07/28",
+                "CardNumber": "4111111111111111",
+                "cvv": "123"
+              },
+              "room": [
+                {
+                  "arrival_date": "2026-07-15",
+                  "departure_date": "2026-07-16",
+                  "room_id": "DELUXEROOM",
+                  "room_name": "Studio",
+                  "price": [
+                    {
+                      "date": "2026-07-15",
+                      "rate_id": "CPPLAN",
+                      "rate_name": "Test MK",
+                      "amountaftertax": "1100.00",
+                      "extraGuests": {
+                        "extraAdult": "0",
+                        "extraChild": "0",
+                        "extraAdultRate": "0",
+                        "extraChildRate": "0"
+                      }
+                    }
+                  ],
+                  "salutation": "Mr.",
+                  "first_name": "Test",
+                  "last_name": "Test",
+                  "taxes": [
+                    {
+                      "name": "service charge",
+                      "value": "120.00"
+                    }
+                  ],
+                  "amountaftertax": "1220.00",
+                  "remarks": "Room 1: two adults",
+                  "GuestCount": [
+                    {
+                      "AgeQualifyingCode": "10",
+                      "Count": "2"
+                    }
+                  ]
+                },
+                {
+                  "arrival_date": "2026-07-15",
+                  "departure_date": "2026-07-16",
+                  "room_id": "DELUXEROOM",
+                  "room_name": "Studio",
+                  "price": [
+                    {
+                      "date": "2026-07-15",
+                      "rate_id": "CPPLAN",
+                      "rate_name": "Test MK",
+                      "amountaftertax": "1100.00",
+                      "extraGuests": {
+                        "extraAdult": "0",
+                        "extraChild": "0",
+                        "extraAdultRate": "0",
+                        "extraChildRate": "0"
+                      }
+                    }
+                  ],
+                  "salutation": "Mr.",
+                  "first_name": "Test",
+                  "last_name": "Test",
+                  "taxes": [
+                    {
+                      "name": "service charge",
+                      "value": "120.00"
+                    }
+                  ],
+                  "amountaftertax": "1220.00",
+                  "remarks": "Room 2: two adults",
+                  "GuestCount": [
+                    {
+                      "AgeQualifyingCode": "10",
+                      "Count": "2"
+                    }
+                  ]
+                }
+              ],
+              "POS": "TEST",
+              "extraData": [
+                {
+                  "name": "Key",
+                  "value": "Value of key"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "response": {
+        "status": 403,
+        "body": "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">\n<HTML><HEAD><META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=iso-8859-1\">\n<TITLE>ERROR: The request could not be satisfied</TITLE>\n</HEAD><BODY>\n<H1>403 ERROR</H1>\n<H2>The request could not be satisfied.</H2>\n<HR noshade size=\"1px\">\nRequest blocked.\nWe can't connect to the server for this app or website at this time. There might be too much traffic or a configuration error. Try again later, or contact the app or website owner.\n<BR clear=\"all\">\nIf you provide content to customers through CloudFront, you can find steps to troubleshoot and help prevent this error by reviewing the CloudFront documentation.\n<BR clear=\"all\">\n<HR noshade size=\"1px\">\n<PRE>\nGenerated by cloudfront (CloudFront)\nRequest ID: 0rzaoo_V5x-atnZx_zgQLEKptKRTeHHRaV6jaIzZXcrQ-FqepKFNaA==\n</PRE>\n<ADDRESS>\n</ADDRESS>\n</BODY></HTML>"
+      },
+      "status": 403,
+      "pass": false,
+      "body": "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">\n<HTML><HEAD><META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=iso-8859-1\">\n<TITLE>ERROR: The request could not be satisfied</TITLE>\n</HEAD><BODY>\n<H1>403 ERROR</H1>\n<H2>The request could not be satisfied.</H2>\n<HR noshade size=\"1px\">\nRequest blocked.\nWe can't connect to the server for this app or website at this time. There might be too much traffic or a configuration error. Try again later, or contact the app or website owner.\n<BR clear=\"all\">\nIf you provide content to customers through CloudFront, you can find steps to troubleshoot and help prevent this error by reviewing the CloudFront documentation.\n<BR clear=\"all\">\n<HR noshade size=\"1px\">\n<PRE>\nGenerated by cloudfront (CloudFront)\nRequest ID: 0rzaoo_V5x-atnZx_zgQLEKptKRTeHHRaV6jaIzZXcrQ-FqepKFNaA==\n</PRE>\n<ADDRESS>\n</ADDRESS>\n</BODY></HTML>"
+    }
+  ]
+}
