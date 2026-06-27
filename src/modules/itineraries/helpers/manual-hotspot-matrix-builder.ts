@@ -10,6 +10,19 @@ type HotspotMeta = {
   lng: number;
 };
 
+type MatrixEndpointType = 'HOTSPOT' | 'CITY';
+
+type MatrixEndpoint = {
+  endpointType: MatrixEndpointType;
+  id: number;
+  name: string;
+  location: string | null;
+  lat: number;
+  lng: number;
+  hotspotId?: number | null;
+  locationId?: number | null;
+};
+
 type RouteLeg = {
   distanceKm: number;
   durationMin: number;
@@ -21,6 +34,7 @@ type SlotResultRow = {
   fromName: string;
   toHotspotId: number;
   toName: string;
+  slotContext?: string;
   routeFitType?: string;
   abDistanceKm?: number;
   acDistanceKm?: number;
@@ -45,6 +59,9 @@ export type ManualHotspotMatrixBuildResult = {
   hasFeasibleMatrixSlot: boolean;
   allSlotsAreOffRouteOrBacktrack: boolean;
   nextPreviewExpectedState: 'FEASIBLE_PREVIEW' | 'NO_FEASIBLE_ROUTE_SLOT';
+  code?: string;
+  message?: string;
+  skipped?: boolean;
 };
 
 export type ManualHotspotMatrixBuildParams = {
@@ -256,6 +273,17 @@ async function ensureHelperTables(prisma: PrismaService): Promise<void> {
     ['destination_distance_from_ac_route_meters', 'DOUBLE NULL'],
     ['crosses_destination_before_candidate', 'TINYINT(1) NOT NULL DEFAULT 0'],
     ['route_decision_reason', 'TEXT NULL'],
+    ['from_endpoint_type', `VARCHAR(30) NOT NULL DEFAULT 'HOTSPOT'`],
+    ['from_location_id', 'INT NULL'],
+    ['from_location_name', 'TEXT NULL'],
+    ['from_lat', 'DOUBLE NULL'],
+    ['from_lng', 'DOUBLE NULL'],
+    ['to_endpoint_type', `VARCHAR(30) NOT NULL DEFAULT 'HOTSPOT'`],
+    ['to_location_id', 'INT NULL'],
+    ['to_location_name', 'TEXT NULL'],
+    ['to_lat', 'DOUBLE NULL'],
+    ['to_lng', 'DOUBLE NULL'],
+    ['slot_context', `VARCHAR(50) NOT NULL DEFAULT 'HOTSPOT_TO_HOTSPOT'`],
   ];
 
   for (const [columnName, definition] of requiredColumns) {
@@ -272,6 +300,133 @@ async function ensureHelperTables(prisma: PrismaService): Promise<void> {
       await prisma.$executeRawUnsafe(`ALTER TABLE hotspot_route_between_map ADD COLUMN ${columnName} ${definition}`);
     }
   }
+
+  const slotContextIndex = await prisma.$queryRawUnsafe<Array<{ index_name: string }>>(`
+    SELECT INDEX_NAME AS index_name
+    FROM INFORMATION_SCHEMA.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'hotspot_route_between_map'
+      AND INDEX_NAME = 'idx_hotspot_between_endpoint_context'
+    LIMIT 1
+  `);
+
+  if (!slotContextIndex.length) {
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE hotspot_route_between_map
+      ADD INDEX idx_hotspot_between_endpoint_context (slot_context)
+    `);
+  }
+}
+
+function hotspotToEndpoint(hotspot: HotspotMeta): MatrixEndpoint {
+  return {
+    endpointType: 'HOTSPOT',
+    id: hotspot.id,
+    hotspotId: hotspot.id,
+    locationId: null,
+    name: hotspot.name,
+    location: hotspot.location,
+    lat: hotspot.lat,
+    lng: hotspot.lng,
+  };
+}
+
+function endpointStorageHotspotId(endpoint: MatrixEndpoint): number {
+  if (endpoint.endpointType === 'HOTSPOT') {
+    return Number(endpoint.hotspotId || endpoint.id || 0);
+  }
+
+  const locationId = Number(endpoint.locationId || endpoint.id || 0);
+  return locationId > 0 ? -locationId : 0;
+}
+
+async function fetchRouteCityEndpoints(params: {
+  prisma: PrismaService;
+  planId: number;
+  routeId: number;
+}): Promise<{ sourceEndpoint: MatrixEndpoint | null; destinationEndpoint: MatrixEndpoint | null }> {
+  const { prisma, routeId } = params;
+
+  const route = await prisma.dvi_itinerary_route_details.findFirst({
+    where: {
+      itinerary_plan_ID: Number(params.planId),
+      itinerary_route_ID: Number(routeId),
+      deleted: 0,
+    },
+    select: {
+      location_id: true,
+      location_name: true,
+      next_visiting_location: true,
+    },
+  });
+
+  const locationId = Number(route?.location_id || 0);
+  if (!locationId) {
+    return { sourceEndpoint: null, destinationEndpoint: null };
+  }
+
+  const storedLocation = await prisma.dvi_stored_locations.findFirst({
+    where: {
+      location_ID: BigInt(locationId),
+      deleted: 0,
+      status: 1,
+    },
+    select: {
+      location_ID: true,
+      source_location: true,
+      source_location_lattitude: true,
+      source_location_longitude: true,
+      destination_location: true,
+      destination_location_lattitude: true,
+      destination_location_longitude: true,
+    },
+  });
+
+  if (!storedLocation) {
+    return { sourceEndpoint: null, destinationEndpoint: null };
+  }
+
+  const buildEndpoint = (
+    kind: 'source' | 'destination',
+    fallbackName: string,
+  ): MatrixEndpoint | null => {
+    const name = String(
+      kind === 'source'
+        ? storedLocation.source_location || fallbackName
+        : storedLocation.destination_location || fallbackName,
+    ).trim();
+    const lat = Number(
+      kind === 'source'
+        ? storedLocation.source_location_lattitude
+        : storedLocation.destination_location_lattitude,
+    );
+    const lng = Number(
+      kind === 'source'
+        ? storedLocation.source_location_longitude
+        : storedLocation.destination_location_longitude,
+    );
+
+    if (!name || !Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+
+    return {
+      endpointType: 'CITY',
+      id: Number(storedLocation.location_ID),
+      locationId: Number(storedLocation.location_ID),
+      hotspotId: null,
+      name,
+      location: name,
+      lat,
+      lng,
+    };
+  };
+
+  const sourceEndpoint = buildEndpoint('source', String(route?.location_name || '').trim());
+  const destinationEndpoint = buildEndpoint('destination', String(route?.next_visiting_location || '').trim());
+
+  return {
+    sourceEndpoint,
+    destinationEndpoint: destinationEndpoint || sourceEndpoint,
+  };
 }
 
 async function fetchHotspotMeta(prisma: PrismaService, ids: number[]): Promise<Map<number, HotspotMeta>> {
@@ -309,8 +464,8 @@ async function fetchHotspotMeta(prisma: PrismaService, ids: number[]): Promise<M
 }
 
 async function fetchOsrmRoute(params: {
-  from: HotspotMeta;
-  to: HotspotMeta;
+  from: { id: number; lat: number; lng: number; name: string };
+  to: { id: number; lat: number; lng: number; name: string };
   osrmBaseUrl: string;
   timeoutMs: number;
   logger: Pick<Console, 'log' | 'warn' | 'error'>;
@@ -355,6 +510,32 @@ async function fetchOsrmRoute(params: {
   } finally {
     clearTimeout(timeoutHandle);
   }
+}
+
+async function fetchEndpointRoute(params: {
+  from: MatrixEndpoint;
+  to: MatrixEndpoint;
+  osrmBaseUrl: string;
+  osrmTimeoutMs: number;
+  logger: Pick<Console, 'log' | 'warn' | 'error'>;
+}): Promise<RouteLeg> {
+  return fetchOsrmRoute({
+    from: {
+      id: Number(params.from.hotspotId || params.from.locationId || params.from.id || 0),
+      lat: params.from.lat,
+      lng: params.from.lng,
+      name: params.from.name,
+    },
+    to: {
+      id: Number(params.to.hotspotId || params.to.locationId || params.to.id || 0),
+      lat: params.to.lat,
+      lng: params.to.lng,
+      name: params.to.name,
+    },
+    osrmBaseUrl: params.osrmBaseUrl,
+    timeoutMs: params.osrmTimeoutMs,
+    logger: params.logger,
+  });
 }
 
 async function getCachedLeg(prisma: PrismaService, fromId: number, toId: number): Promise<RouteLeg | null> {
@@ -487,9 +668,9 @@ async function ensureLeg(params: {
 }
 
 async function upsertBetweenMapRow(prisma: PrismaService, params: {
-  from: HotspotMeta;
-  to: HotspotMeta;
-  candidate: HotspotMeta;
+  from: MatrixEndpoint;
+  to: MatrixEndpoint;
+  candidate: MatrixEndpoint;
   ab: RouteLeg;
   ac: RouteLeg;
   cb: RouteLeg;
@@ -502,6 +683,7 @@ async function upsertBetweenMapRow(prisma: PrismaService, params: {
   destinationProgressOnAcRatio: number;
   crossesDestinationBeforeCandidate: boolean;
   routeDecisionReason: string;
+  slotContext?: string;
 }): Promise<void> {
   const p = params;
   await prisma.$executeRawUnsafe(`
@@ -514,6 +696,17 @@ async function upsertBetweenMapRow(prisma: PrismaService, params: {
       to_hotspot_id,
       between_hotspot_id,
       between_hotspot_name,
+      from_endpoint_type,
+      from_location_id,
+      from_location_name,
+      from_lat,
+      from_lng,
+      to_endpoint_type,
+      to_location_id,
+      to_location_name,
+      to_lat,
+      to_lng,
+      slot_context,
       distance_from_route_meters,
       candidate_distance_from_ab_route_meters,
       candidate_progress_on_ab_ratio,
@@ -530,13 +723,24 @@ async function upsertBetweenMapRow(prisma: PrismaService, params: {
       route_fit_type,
       created_at,
       updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
     ON DUPLICATE KEY UPDATE
       from_hotspot_name = VALUES(from_hotspot_name),
       from_hotspot_location = VALUES(from_hotspot_location),
       to_hotspot_name = VALUES(to_hotspot_name),
       to_hotspot_location = VALUES(to_hotspot_location),
       between_hotspot_name = VALUES(between_hotspot_name),
+      from_endpoint_type = VALUES(from_endpoint_type),
+      from_location_id = VALUES(from_location_id),
+      from_location_name = VALUES(from_location_name),
+      from_lat = VALUES(from_lat),
+      from_lng = VALUES(from_lng),
+      to_endpoint_type = VALUES(to_endpoint_type),
+      to_location_id = VALUES(to_location_id),
+      to_location_name = VALUES(to_location_name),
+      to_lat = VALUES(to_lat),
+      to_lng = VALUES(to_lng),
+      slot_context = VALUES(slot_context),
       distance_from_route_meters = VALUES(distance_from_route_meters),
       candidate_distance_from_ab_route_meters = VALUES(candidate_distance_from_ab_route_meters),
       candidate_progress_on_ab_ratio = VALUES(candidate_progress_on_ab_ratio),
@@ -555,12 +759,23 @@ async function upsertBetweenMapRow(prisma: PrismaService, params: {
   `,
   p.from.name,
   p.from.location,
-  p.from.id,
+  endpointStorageHotspotId(p.from),
   p.to.name,
   p.to.location,
-  p.to.id,
-  p.candidate.id,
+  endpointStorageHotspotId(p.to),
+  Number(p.candidate.hotspotId || p.candidate.id || 0),
   p.candidate.name,
+  p.from.endpointType,
+  p.from.locationId ?? null,
+  p.from.endpointType === 'CITY' ? p.from.name : null,
+  p.from.lat,
+  p.from.lng,
+  p.to.endpointType,
+  p.to.locationId ?? null,
+  p.to.endpointType === 'CITY' ? p.to.name : null,
+  p.to.lat,
+  p.to.lng,
+  String(p.slotContext || 'HOTSPOT_TO_HOTSPOT'),
   p.candidateDistanceFromAbRouteMeters,
   p.candidateDistanceFromAbRouteMeters,
   p.candidateProgressOnAbRatio,
@@ -576,6 +791,413 @@ async function upsertBetweenMapRow(prisma: PrismaService, params: {
   p.routeDecisionReason,
   p.routeFitType,
   );
+}
+
+type SingleCitySlot = {
+  from: MatrixEndpoint;
+  candidate: MatrixEndpoint;
+  to: MatrixEndpoint;
+  slotContext: 'CITY_TO_HOTSPOT' | 'HOTSPOT_TO_CITY' | 'CITY_TO_CITY';
+};
+
+async function buildSingleHotspotCityEndpointMatrix(params: {
+  prisma: PrismaService;
+  planId: number;
+  routeId: number;
+  candidate: MatrixEndpoint;
+  existingHotspot: MatrixEndpoint;
+  sourceCityEndpoint: MatrixEndpoint;
+  destinationCityEndpoint: MatrixEndpoint;
+  osrmBaseUrl: string;
+  osrmDelayMs: number;
+  osrmTimeoutMs: number;
+  destinationCrossingRadiusMeters: number;
+  destinationCrossingMaxProgressRatio: number;
+  logger: Pick<Console, 'log' | 'warn' | 'error'>;
+}): Promise<ManualHotspotMatrixBuildResult & Record<string, any>> {
+  const slots: SingleCitySlot[] = [
+    {
+      from: params.sourceCityEndpoint,
+      candidate: params.candidate,
+      to: params.existingHotspot,
+      slotContext: 'CITY_TO_HOTSPOT',
+    },
+    {
+      from: params.existingHotspot,
+      candidate: params.candidate,
+      to: params.destinationCityEndpoint,
+      slotContext: 'HOTSPOT_TO_CITY',
+    },
+  ];
+
+  let successCount = 0;
+  let failedCount = 0;
+  const rows: SlotResultRow[] = [];
+
+  for (const slot of slots) {
+    try {
+      const ab = slot.from.endpointType === 'HOTSPOT' && slot.to.endpointType === 'HOTSPOT'
+        ? await ensureLeg({
+            prisma: params.prisma,
+            from: {
+              id: Number(slot.from.hotspotId || slot.from.id || 0),
+              name: slot.from.name,
+              location: slot.from.location,
+              lat: slot.from.lat,
+              lng: slot.from.lng,
+            },
+            to: {
+              id: Number(slot.to.hotspotId || slot.to.id || 0),
+              name: slot.to.name,
+              location: slot.to.location,
+              lat: slot.to.lat,
+              lng: slot.to.lng,
+            },
+            osrmBaseUrl: params.osrmBaseUrl,
+            osrmDelayMs: params.osrmDelayMs,
+            osrmTimeoutMs: params.osrmTimeoutMs,
+            logger: params.logger,
+          })
+        : await fetchEndpointRoute({
+            from: slot.from,
+            to: slot.to,
+            osrmBaseUrl: params.osrmBaseUrl,
+            osrmTimeoutMs: params.osrmTimeoutMs,
+            logger: params.logger,
+          });
+
+      await sleep(params.osrmDelayMs);
+
+      const ac = slot.from.endpointType === 'HOTSPOT' && slot.candidate.endpointType === 'HOTSPOT'
+        ? await ensureLeg({
+            prisma: params.prisma,
+            from: {
+              id: Number(slot.from.hotspotId || slot.from.id || 0),
+              name: slot.from.name,
+              location: slot.from.location,
+              lat: slot.from.lat,
+              lng: slot.from.lng,
+            },
+            to: {
+              id: Number(slot.candidate.hotspotId || slot.candidate.id || 0),
+              name: slot.candidate.name,
+              location: slot.candidate.location,
+              lat: slot.candidate.lat,
+              lng: slot.candidate.lng,
+            },
+            osrmBaseUrl: params.osrmBaseUrl,
+            osrmDelayMs: params.osrmDelayMs,
+            osrmTimeoutMs: params.osrmTimeoutMs,
+            logger: params.logger,
+          })
+        : await fetchEndpointRoute({
+            from: slot.from,
+            to: slot.candidate,
+            osrmBaseUrl: params.osrmBaseUrl,
+            osrmTimeoutMs: params.osrmTimeoutMs,
+            logger: params.logger,
+          });
+
+      await sleep(params.osrmDelayMs);
+
+      const cb = slot.candidate.endpointType === 'HOTSPOT' && slot.to.endpointType === 'HOTSPOT'
+        ? await ensureLeg({
+            prisma: params.prisma,
+            from: {
+              id: Number(slot.candidate.hotspotId || slot.candidate.id || 0),
+              name: slot.candidate.name,
+              location: slot.candidate.location,
+              lat: slot.candidate.lat,
+              lng: slot.candidate.lng,
+            },
+            to: {
+              id: Number(slot.to.hotspotId || slot.to.id || 0),
+              name: slot.to.name,
+              location: slot.to.location,
+              lat: slot.to.lat,
+              lng: slot.to.lng,
+            },
+            osrmBaseUrl: params.osrmBaseUrl,
+            osrmDelayMs: params.osrmDelayMs,
+            osrmTimeoutMs: params.osrmTimeoutMs,
+            logger: params.logger,
+          })
+        : await fetchEndpointRoute({
+            from: slot.candidate,
+            to: slot.to,
+            osrmBaseUrl: params.osrmBaseUrl,
+            osrmTimeoutMs: params.osrmTimeoutMs,
+            logger: params.logger,
+          });
+
+      const candidateOnAb = findNearestProgressOnRoute(
+        { lat: slot.candidate.lat, lng: slot.candidate.lng },
+        ab.coordinates,
+      );
+
+      const destinationOnAc = findNearestProgressOnRoute(
+        { lat: slot.to.lat, lng: slot.to.lng },
+        ac.coordinates,
+      );
+
+      const insertedDistanceKm = ac.distanceKm + cb.distanceKm;
+      const roadDetourKm = Math.max(0, insertedDistanceKm - ab.distanceKm);
+      const roadDetourRatio = ab.distanceKm > 0 ? roadDetourKm / ab.distanceKm : 0;
+
+      const crossesDestinationBeforeCandidate =
+        destinationOnAc.distanceMeters <= params.destinationCrossingRadiusMeters
+        && destinationOnAc.progressRatio <= params.destinationCrossingMaxProgressRatio;
+
+      const routeFitType = classifyRouteFit({
+        roadDetourKm,
+        roadDetourRatio,
+        candidateDistanceFromAbRouteMeters: candidateOnAb.distanceMeters,
+        crossesDestinationBeforeCandidate,
+      });
+
+      const routeDecisionReason =
+        `${buildDecisionReason(routeFitType)} Single-hotspot city endpoint slot: ${slot.from.name} -> ${slot.candidate.name} -> ${slot.to.name}.`;
+
+      await upsertBetweenMapRow(params.prisma, {
+        from: slot.from,
+        to: slot.to,
+        candidate: slot.candidate,
+        ab,
+        ac,
+        cb,
+        candidateDistanceFromAbRouteMeters: candidateOnAb.distanceMeters,
+        candidateProgressOnAbRatio: candidateOnAb.progressRatio,
+        destinationDistanceFromAcRouteMeters: destinationOnAc.distanceMeters,
+        destinationProgressOnAcRatio: destinationOnAc.progressRatio,
+        crossesDestinationBeforeCandidate,
+        roadDetourKm,
+        roadDetourRatio,
+        routeDecisionReason,
+        routeFitType,
+        slotContext: slot.slotContext,
+      });
+
+      rows.push({
+        fromHotspotId: Number(slot.from.hotspotId || 0),
+        fromName: slot.from.name,
+        toHotspotId: Number(slot.to.hotspotId || 0),
+        toName: slot.to.name,
+        slotContext: slot.slotContext,
+        routeFitType,
+        abDistanceKm: Number(ab.distanceKm.toFixed(3)),
+        acDistanceKm: Number(ac.distanceKm.toFixed(3)),
+        cbDistanceKm: Number(cb.distanceKm.toFixed(3)),
+        roadDetourKm: Number(roadDetourKm.toFixed(3)),
+      });
+
+      successCount += 1;
+    } catch (error: any) {
+      failedCount += 1;
+      rows.push({
+        fromHotspotId: Number(slot.from.hotspotId || 0),
+        fromName: slot.from.name,
+        toHotspotId: Number(slot.to.hotspotId || 0),
+        toName: slot.to.name,
+        slotContext: slot.slotContext,
+        error: error?.message || String(error),
+      });
+    }
+  }
+
+  const hasAnyMatrixData = successCount > 0;
+  const hasFeasibleMatrixSlot = rows.some((row: any) => {
+    const fit = String(row?.routeFitType || '').toUpperCase();
+    return fit === 'ON_ROUTE' || fit === 'MINOR_DETOUR';
+  });
+
+  return {
+    success: hasAnyMatrixData,
+    skipped: false,
+    code: hasAnyMatrixData
+      ? 'SINGLE_HOTSPOT_CITY_MATRIX_BUILT'
+      : 'SINGLE_HOTSPOT_CITY_MATRIX_FAILED',
+    message: hasAnyMatrixData
+      ? 'Single-hotspot matrix built using city endpoint.'
+      : 'Single-hotspot city endpoint matrix failed.',
+    planId: params.planId,
+    routeId: params.routeId,
+    candidateHotspotId: Number(params.candidate.hotspotId || params.candidate.id),
+    candidateName: params.candidate.name,
+    cityEndpointName: params.sourceCityEndpoint.name,
+    existingHotspotName: params.existingHotspot.name,
+    slotPairs: slots.length,
+    successCount,
+    failedCount,
+    rows,
+    osrmSource: params.osrmBaseUrl,
+    publicDemoWarning: params.osrmBaseUrl.includes('router.project-osrm.org'),
+    hasAnyMatrixData,
+    hasFeasibleMatrixSlot,
+    allSlotsAreOffRouteOrBacktrack: hasAnyMatrixData && !hasFeasibleMatrixSlot,
+    nextPreviewExpectedState: hasFeasibleMatrixSlot ? 'FEASIBLE_PREVIEW' : 'NO_FEASIBLE_ROUTE_SLOT',
+  };
+}
+
+async function buildEmptyRouteCityEndpointMatrix(params: {
+  prisma: PrismaService;
+  planId: number;
+  routeId: number;
+  candidate: MatrixEndpoint;
+  sourceEndpoint: MatrixEndpoint;
+  destinationEndpoint: MatrixEndpoint;
+  osrmBaseUrl: string;
+  osrmDelayMs: number;
+  osrmTimeoutMs: number;
+  destinationCrossingRadiusMeters: number;
+  destinationCrossingMaxProgressRatio: number;
+  logger: Pick<Console, 'log' | 'warn' | 'error'>;
+}): Promise<any> {
+  const slot: SingleCitySlot = {
+    from: params.sourceEndpoint,
+    candidate: params.candidate,
+    to: params.destinationEndpoint,
+    slotContext: 'CITY_TO_CITY',
+  };
+
+  let successCount = 0;
+  let failedCount = 0;
+  const rows: SlotResultRow[] = [];
+
+  try {
+    const ab = await fetchEndpointRoute({
+      from: slot.from,
+      to: slot.to,
+      osrmBaseUrl: params.osrmBaseUrl,
+      osrmTimeoutMs: params.osrmTimeoutMs,
+      logger: params.logger,
+    });
+
+    await sleep(params.osrmDelayMs);
+
+    const ac = await fetchEndpointRoute({
+      from: slot.from,
+      to: slot.candidate,
+      osrmBaseUrl: params.osrmBaseUrl,
+      osrmTimeoutMs: params.osrmTimeoutMs,
+      logger: params.logger,
+    });
+
+    await sleep(params.osrmDelayMs);
+
+    const cb = await fetchEndpointRoute({
+      from: slot.candidate,
+      to: slot.to,
+      osrmBaseUrl: params.osrmBaseUrl,
+      osrmTimeoutMs: params.osrmTimeoutMs,
+      logger: params.logger,
+    });
+
+    const candidateOnAb = findNearestProgressOnRoute(
+      { lat: slot.candidate.lat, lng: slot.candidate.lng },
+      ab.coordinates,
+    );
+
+    const destinationOnAc = findNearestProgressOnRoute(
+      { lat: slot.to.lat, lng: slot.to.lng },
+      ac.coordinates,
+    );
+
+    const insertedDistanceKm = ac.distanceKm + cb.distanceKm;
+    const roadDetourKm = Math.max(0, insertedDistanceKm - ab.distanceKm);
+    const roadDetourRatio = ab.distanceKm > 0 ? roadDetourKm / ab.distanceKm : 0;
+
+    const crossesDestinationBeforeCandidate =
+      destinationOnAc.distanceMeters <= params.destinationCrossingRadiusMeters
+      && destinationOnAc.progressRatio <= params.destinationCrossingMaxProgressRatio;
+
+    const routeFitType = classifyRouteFit({
+      roadDetourKm,
+      roadDetourRatio,
+      candidateDistanceFromAbRouteMeters: candidateOnAb.distanceMeters,
+      crossesDestinationBeforeCandidate,
+    });
+
+    const routeDecisionReason =
+      `${buildDecisionReason(routeFitType)} Empty-route city endpoint slot: ${slot.from.name} -> ${slot.candidate.name} -> ${slot.to.name}.`;
+
+    await upsertBetweenMapRow(params.prisma, {
+      from: slot.from,
+      to: slot.to,
+      candidate: slot.candidate,
+      ab,
+      ac,
+      cb,
+      candidateDistanceFromAbRouteMeters: candidateOnAb.distanceMeters,
+      candidateProgressOnAbRatio: candidateOnAb.progressRatio,
+      destinationDistanceFromAcRouteMeters: destinationOnAc.distanceMeters,
+      destinationProgressOnAcRatio: destinationOnAc.progressRatio,
+      crossesDestinationBeforeCandidate,
+      roadDetourKm,
+      roadDetourRatio,
+      routeDecisionReason,
+      routeFitType,
+      slotContext: slot.slotContext,
+    });
+
+    rows.push({
+      fromHotspotId: endpointStorageHotspotId(slot.from),
+      fromName: slot.from.name,
+      toHotspotId: endpointStorageHotspotId(slot.to),
+      toName: slot.to.name,
+      slotContext: slot.slotContext,
+      routeFitType,
+      abDistanceKm: Number(ab.distanceKm.toFixed(3)),
+      acDistanceKm: Number(ac.distanceKm.toFixed(3)),
+      cbDistanceKm: Number(cb.distanceKm.toFixed(3)),
+      roadDetourKm: Number(roadDetourKm.toFixed(3)),
+    } as any);
+
+    successCount += 1;
+  } catch (error: any) {
+    failedCount += 1;
+    rows.push({
+      fromHotspotId: endpointStorageHotspotId(slot.from),
+      fromName: slot.from.name,
+      toHotspotId: endpointStorageHotspotId(slot.to),
+      toName: slot.to.name,
+      slotContext: slot.slotContext,
+      error: error?.message || String(error),
+    } as any);
+  }
+
+  const hasAnyMatrixData = successCount > 0;
+  const hasFeasibleMatrixSlot = rows.some((row: any) => {
+    const fit = String(row?.routeFitType || '').toUpperCase();
+    return fit === 'ON_ROUTE' || fit === 'MINOR_DETOUR';
+  });
+
+  return {
+    success: hasAnyMatrixData,
+    skipped: false,
+    code: hasAnyMatrixData
+      ? 'EMPTY_ROUTE_CITY_MATRIX_BUILT'
+      : 'EMPTY_ROUTE_CITY_MATRIX_FAILED',
+    message: hasAnyMatrixData
+      ? 'Matrix built using city endpoint for first hotspot insertion.'
+      : 'City endpoint matrix failed for first hotspot insertion.',
+    planId: params.planId,
+    routeId: params.routeId,
+    candidateHotspotId: Number(params.candidate.hotspotId || params.candidate.id),
+    candidateName: params.candidate.name,
+    cityEndpointName: params.sourceEndpoint.name,
+    slotPairs: 1,
+    successCount,
+    failedCount,
+    rows,
+    osrmSource: params.osrmBaseUrl,
+    publicDemoWarning: params.osrmBaseUrl.includes('router.project-osrm.org'),
+    hasAnyMatrixData,
+    hasFeasibleMatrixSlot,
+    allSlotsAreOffRouteOrBacktrack: hasAnyMatrixData && !hasFeasibleMatrixSlot,
+    nextPreviewExpectedState: hasFeasibleMatrixSlot
+      ? 'FEASIBLE_PREVIEW'
+      : 'NO_FEASIBLE_ROUTE_SLOT',
+  };
 }
 
 export async function buildMissingManualHotspotMatrix(params: {
@@ -638,14 +1260,94 @@ export async function buildMissingManualHotspotMatrix(params: {
     .filter((id: number, idx: number, arr: number[]) => arr.indexOf(id) === idx)
     .filter((id: number) => id !== Number(candidateHotspotId));
 
-  if (routeHotspotIds.length < 2) {
-    throw new Error('Route has fewer than two active attraction hotspots. Cannot build matrix slots.');
-  }
-
   const allMeta = await fetchHotspotMeta(prisma, [...routeHotspotIds, Number(candidateHotspotId)]);
   const candidate = allMeta.get(Number(candidateHotspotId));
   if (!candidate) {
     throw new Error(`Candidate hotspot ${candidateHotspotId} is missing coordinates or does not exist.`);
+  }
+
+  if (routeHotspotIds.length === 0) {
+    const cityEndpoints = await fetchRouteCityEndpoints({
+      prisma,
+      planId: Number(planId),
+      routeId: Number(routeId),
+    });
+
+    const sourceEndpoint = cityEndpoints.sourceEndpoint || cityEndpoints.destinationEndpoint;
+    const destinationEndpoint = cityEndpoints.destinationEndpoint || cityEndpoints.sourceEndpoint;
+
+    if (!sourceEndpoint || !destinationEndpoint) {
+      return {
+        success: false,
+        skipped: true,
+        code: 'CITY_ENDPOINT_NOT_FOUND_FOR_EMPTY_ROUTE_MATRIX',
+        message: 'Cannot build matrix because route city endpoint was not found in dvi_stored_locations.',
+        planId: Number(planId),
+        routeId: Number(routeId),
+        candidateHotspotId: Number(candidateHotspotId),
+        activeRouteHotspotCount: routeHotspotIds.length,
+      } as any;
+    }
+
+    return await buildEmptyRouteCityEndpointMatrix({
+      prisma,
+      planId: Number(planId),
+      routeId: Number(routeId),
+      candidate: hotspotToEndpoint(candidate),
+      sourceEndpoint,
+      destinationEndpoint,
+      osrmBaseUrl,
+      osrmDelayMs,
+      osrmTimeoutMs,
+      destinationCrossingRadiusMeters,
+      destinationCrossingMaxProgressRatio,
+      logger,
+    });
+  }
+
+  if (routeHotspotIds.length === 1) {
+    const existingHotspot = allMeta.get(Number(routeHotspotIds[0]));
+    if (!existingHotspot) {
+      throw new Error(`Existing route hotspot ${routeHotspotIds[0]} is missing coordinates or does not exist.`);
+    }
+
+    const cityEndpoints = await fetchRouteCityEndpoints({
+      prisma,
+      planId: Number(planId),
+      routeId: Number(routeId),
+    });
+
+    const sourceCityEndpoint = cityEndpoints.sourceEndpoint || cityEndpoints.destinationEndpoint;
+    const destinationCityEndpoint = cityEndpoints.destinationEndpoint || cityEndpoints.sourceEndpoint;
+
+    if (!sourceCityEndpoint || !destinationCityEndpoint) {
+      return {
+        success: false,
+        skipped: true,
+        code: 'CITY_ENDPOINT_NOT_FOUND_FOR_SINGLE_HOTSPOT_MATRIX',
+        message: 'Cannot build single-hotspot matrix because route city endpoint was not found in dvi_stored_locations.',
+        planId: Number(planId),
+        routeId: Number(routeId),
+        candidateHotspotId: Number(candidateHotspotId),
+        activeRouteHotspotCount: routeHotspotIds.length,
+      } as any;
+    }
+
+    return await buildSingleHotspotCityEndpointMatrix({
+      prisma,
+      planId: Number(planId),
+      routeId: Number(routeId),
+      candidate: hotspotToEndpoint(candidate),
+      existingHotspot: hotspotToEndpoint(existingHotspot),
+      sourceCityEndpoint,
+      destinationCityEndpoint,
+      osrmBaseUrl,
+      osrmDelayMs,
+      osrmTimeoutMs,
+      destinationCrossingRadiusMeters,
+      destinationCrossingMaxProgressRatio,
+      logger,
+    });
   }
 
   const pairs: Array<{ from: HotspotMeta; to: HotspotMeta }> = [];
@@ -693,9 +1395,9 @@ export async function buildMissingManualHotspotMatrix(params: {
       const routeDecisionReason = buildDecisionReason(routeFitType);
 
       await upsertBetweenMapRow(prisma, {
-        from: pair.from,
-        to: pair.to,
-        candidate,
+        from: hotspotToEndpoint(pair.from),
+        to: hotspotToEndpoint(pair.to),
+        candidate: hotspotToEndpoint(candidate),
         ab,
         ac,
         cb,
@@ -708,6 +1410,7 @@ export async function buildMissingManualHotspotMatrix(params: {
         destinationProgressOnAcRatio: destinationOnAc.progressRatio,
         crossesDestinationBeforeCandidate,
         routeDecisionReason,
+        slotContext: 'HOTSPOT_TO_HOTSPOT',
       });
 
       successCount += 1;

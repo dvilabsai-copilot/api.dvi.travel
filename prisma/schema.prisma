@@ -6275,11 +6275,22 @@ model hotspot_route_between_map {
   from_hotspot_id                           Int
   from_hotspot_name                         String?  @db.Text
   from_hotspot_location                     String?  @db.Text
+  from_endpoint_type                        String   @default("HOTSPOT") @db.VarChar(30)
+  from_location_id                          Int?
+  from_location_name                        String?  @db.Text
+  from_lat                                  Float?   @db.Double
+  from_lng                                  Float?   @db.Double
   to_hotspot_id                             Int
   to_hotspot_name                           String?  @db.Text
   to_hotspot_location                       String?  @db.Text
+  to_endpoint_type                          String   @default("HOTSPOT") @db.VarChar(30)
+  to_location_id                            Int?
+  to_location_name                          String?  @db.Text
+  to_lat                                    Float?   @db.Double
+  to_lng                                    Float?   @db.Double
   between_hotspot_id                        Int
   between_hotspot_name                      String?  @db.Text
+  slot_context                              String   @default("HOTSPOT_TO_HOTSPOT") @db.VarChar(50)
   distance_from_route_meters                Float?   @db.Double
   detour_km                                 Float?   @db.Double
   detour_ratio                              Float?   @db.Double
@@ -6301,6 +6312,7 @@ model hotspot_route_between_map {
 
   @@unique([from_hotspot_id, to_hotspot_id, between_hotspot_id], map: "uniq_hotspot_route_between")
   @@index([route_fit_type], map: "idx_hotspot_route_between_fit")
+  @@index([slot_context], map: "idx_hotspot_between_endpoint_context")
 }
 
 model hotspot_hotel_between_map {
