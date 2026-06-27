@@ -190,8 +190,7 @@ export class RouteSuggestionsV2Service {
         `[getDefaultRouteSuggestions] Called with: ${arrivalLocation} → ${departureLocation}, ${noOfRouteDays} days`,
       );
 
-      const requestedDays = Math.max(Number(noOfRouteDays || 1), 1);
-      const requestedNights = Math.max(requestedDays - 1, 0);
+      const adjustedDays = noOfRouteDays - 1;
 
       // Get location ID
       const locationId = await this.getLocationIdFromSourceDestination(
@@ -211,35 +210,35 @@ export class RouteSuggestionsV2Service {
       }
 
       // Get stored routes
-      const storedRoutes = await this.getStoredRoutes(locationId, requestedNights);
+      const storedRoutes = await this.getStoredRoutes(locationId, adjustedDays);
 
       console.log(
         `[getDefaultRouteSuggestions] Found ${storedRoutes.length} stored routes`,
       );
 
-     if (storedRoutes.length === 0) {
-  // Check available alternatives
-  const availabilityInfo = await this.checkAvailableRoutes(
-    locationId,
-    requestedNights,
-  );
+      if (storedRoutes.length === 0) {
+        // Check available alternatives
+        const availabilityInfo = await this.checkAvailableRoutes(
+          locationId,
+          adjustedDays,
+        );
 
-  let messageText = 'No routes are available for this location.';
+        let messageText = 'No routes are available for this location.';
 
-  if (availabilityInfo.exactCount > 0) {
-    messageText = `Routes are available for exactly ${requestedNights} nights.`;
-  } else if (availabilityInfo.greaterCount > 0) {
-    messageText = `Routes are not available for ${requestedNights} night(s), but available for minimum ${availabilityInfo.minNights} nights and above.`;
-  } else if (availabilityInfo.availableNights.length > 0) {
-    messageText = `Routes are not available for ${requestedNights} nights, but available for: ${availabilityInfo.availableNights.join(', ')} nights.`;
-  }
+        if (availabilityInfo.exactCount > 0) {
+          messageText = `Routes are available for exactly ${adjustedDays} nights.`;
+        } else if (availabilityInfo.greaterCount > 0) {
+          messageText = `Routes are not available for ${adjustedDays} night(s), but available for minimum ${availabilityInfo.minNights} nights and above.`;
+        } else if (availabilityInfo.availableNights.length > 0) {
+          messageText = `Routes are not available for ${adjustedDays} nights, but available for: ${availabilityInfo.availableNights.join(', ')} nights.`;
+        }
 
-  return {
-    success: false,
-    no_routes_found: true,
-    no_routes_message: messageText,
-  };
-}
+        return {
+          success: false,
+          no_routes_found: true,
+          no_routes_message: messageText,
+        };
+      }
 
       // Process routes - limit to 5
       const selectedRoutes = storedRoutes;
@@ -247,86 +246,58 @@ export class RouteSuggestionsV2Service {
 
       for (const route of selectedRoutes) {
         const routeDetails = await this.getRouteLocationDetails(
-  route.stored_route_ID,
-  requestedNights,
-);
+          route.stored_route_ID,
+          adjustedDays,
+        );
 
-// Build exactly the number of days selected by the user.
-// Example: 9 nights must produce 10 day rows.
-const days: DayDetail[] = [];
+        // Build day details
+        const days: DayDetail[] = [];
+        
+        // Parse DD/MM/YYYY format date
+        const dateParts = formattedStartDate.split('/');
+        const day = parseInt(dateParts[0], 10);
+        const month = parseInt(dateParts[1], 10);
+        const year = parseInt(dateParts[2], 10);
+        
+        console.log(`[getDefaultRouteSuggestions] Parsing date: ${formattedStartDate} -> D:${day}, M:${month}, Y:${year}`);
+        
+        const startDate = new Date(year, month - 1, day);
+        console.log(`[getDefaultRouteSuggestions] Calculated startDate: ${startDate.toString()}`);
 
-// Parse DD/MM/YYYY format date
-const dateParts = formattedStartDate.split('/');
-const day = parseInt(dateParts[0], 10);
-const month = parseInt(dateParts[1], 10);
-const year = parseInt(dateParts[2], 10);
+        for (let i = 0; i < adjustedDays; i++) {
+          const currentDate = new Date(startDate);
+          currentDate.setDate(currentDate.getDate() + i);
 
-console.log(
-  `[getDefaultRouteSuggestions] Parsing date: ${formattedStartDate} -> D:${day}, M:${month}, Y:${year}`,
-);
+          // Format as DD/MM/YYYY (with slashes, matching Customize mode)
+          const dateStr = `${String(currentDate.getDate()).padStart(2, '0')}/${String(currentDate.getMonth() + 1).padStart(2, '0')}/${currentDate.getFullYear()}`;
+          
+          console.log(`[getDefaultRouteSuggestions] Day ${i + 1}: ${dateStr}`);
 
-const startDate = new Date(year, month - 1, day);
-console.log(
-  `[getDefaultRouteSuggestions] Calculated startDate: ${startDate.toString()}`,
-);
+          const sourceLocation =
+            i === 0
+              ? arrivalLocation
+              : routeDetails[i - 1]?.route_location_name || '';
 
-const normalizeLocation = (value: string) =>
-  String(value || '').trim().toLowerCase();
+          const nextLocation =
+            routeDetails[i]?.route_location_name ||
+            (i === adjustedDays - 1 ? departureLocation : '');
 
-const routeStops = routeDetails
-  .map((detail: any) => String(detail?.route_location_name || '').trim())
-  .filter((location: string) => Boolean(location));
+          days.push({
+            dayNo: i + 1,
+            date: dateStr,
+            sourceLocation,
+            nextLocation,
+            viaRoute: '',
+            directVisit: false,
+          });
+        }
 
-// Departure is always handled on the final day.
-// So if DB route details already contain departure as last stop,
-// remove it from intermediate stops to avoid duplicate departure rows.
-const departureKey = normalizeLocation(departureLocation);
-
-const intermediateStops = routeStops
-  .filter((location: string, index: number) => {
-    const isLastStop = index === routeStops.length - 1;
-    return !(isLastStop && normalizeLocation(location) === departureKey);
-  })
-  .slice(0, Math.max(requestedDays - 1, 0));
-
-let currentSource = arrivalLocation;
-
-for (let i = 0; i < requestedDays; i++) {
-  const currentDate = new Date(startDate);
-  currentDate.setDate(startDate.getDate() + i);
-
-  const dateStr = `${String(currentDate.getDate()).padStart(2, '0')}/${String(
-    currentDate.getMonth() + 1,
-  ).padStart(2, '0')}/${currentDate.getFullYear()}`;
-
-  console.log(`[getDefaultRouteSuggestions] Day ${i + 1}: ${dateStr}`);
-
-  const isFinalDay = i === requestedDays - 1;
-
-  const sourceLocation = currentSource;
-
-  const nextLocation = isFinalDay
-    ? departureLocation
-    : intermediateStops[i] || currentSource;
-
-  days.push({
-    dayNo: i + 1,
-    date: dateStr,
-    sourceLocation,
-    nextLocation,
-    viaRoute: '',
-    directVisit: false,
-  });
-
-  currentSource = nextLocation;
-}
-
-routes.push({
-  routeId: route.stored_route_ID,
-  routeName: route.route_name,
-  noOfDays: requestedDays,
-  days,
-});
+        routes.push({
+          routeId: route.stored_route_ID,
+          routeName: route.route_name,
+          noOfDays: adjustedDays,
+          days,
+        });
       }
 
       return {
