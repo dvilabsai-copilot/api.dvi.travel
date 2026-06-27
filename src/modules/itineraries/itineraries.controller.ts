@@ -1735,6 +1735,7 @@ export class ItinerariesController {
       anchorIndex?: number;
       allowTopPriorityRemoval?: boolean;
       forceConflictInsertion?: boolean;
+      manualTimingPolicy?: any;
       matrixPreferredSlot?: {
         fromHotspotId?: number;
         toHotspotId?: number;
@@ -1751,6 +1752,7 @@ export class ItinerariesController {
       anchorIndex: body.anchorIndex,
       allowTopPriorityRemoval: body.allowTopPriorityRemoval === true,
       forceConflictInsertion: body.forceConflictInsertion === true,
+      manualTimingPolicy: body.manualTimingPolicy,
       matrixPreferredSlot: body.matrixPreferredSlot,
     });
 

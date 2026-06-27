@@ -79,6 +79,19 @@ type ManualInsertionPosition = {
 
 type ManualHotspotCityContext = 'SOURCE_CITY' | 'DESTINATION_CITY' | 'UNKNOWN';
 
+type ManualHotspotTimingPolicy = {
+  mode: 'MANUAL_HOTSPOT';
+  startTime: string;
+  endTime: string;
+  isFirstRoute: boolean;
+  isLastRoute: boolean;
+  autoBuildCutoffBypassed: boolean;
+  hotelCheckInCutoff: string;
+  lastDayDepartureBufferApplied: boolean;
+  allowOffRouteWhenTimePermits?: boolean;
+  note: string;
+};
+
 type VehicleBuildState = 'PENDING' | 'PROCESSING' | 'READY' | 'FAILED';
 
 type VehicleBuildStatus = {
@@ -11806,9 +11819,14 @@ const guideSlotCsv = guideSlots.join(',');
         },
       });
 
+      const resultCode = String((result as any)?.code || '').toUpperCase();
+
       return {
         ...result,
-        success: result.successCount > 0 && result.failedCount === 0,
+        success:
+          result.successCount > 0
+          || result.hasAnyMatrixData === true
+          || resultCode === 'SINGLE_HOTSPOT_CITY_MATRIX_BUILT',
       };
     } catch (error: any) {
       return {
@@ -11898,6 +11916,7 @@ const guideSlotCsv = guideSlots.join(',');
       anchorIndex?: number;
       allowTopPriorityRemoval?: boolean;
       forceConflictInsertion?: boolean;
+      manualTimingPolicy?: ManualHotspotTimingPolicy;
       matrixPreferredSlot?: {
         fromHotspotId?: number;
         toHotspotId?: number;
@@ -13435,6 +13454,7 @@ const guideSlotCsv = guideSlots.join(',');
       selectedHotspotIds: number[];
       userId: number;
       manualInsertionFit: any;
+      manualTimingPolicy?: ManualHotspotTimingPolicy;
       matrixPreferredSlot?: {
         fromHotspotId?: number;
         toHotspotId?: number;
@@ -13450,6 +13470,7 @@ const guideSlotCsv = guideSlots.join(',');
       : [];
     const userId = Number(params?.userId || 1);
     const manualInsertionFit = params?.manualInsertionFit || null;
+    const manualTimingPolicy = params?.manualTimingPolicy || null;
     const matrixPreferredSlot = params?.matrixPreferredSlot || null;
     const fitSelectedId = Number(manualInsertionFit?.selectedHotspotId || manualInsertionFit?.hotspotId || 0);
 
@@ -13516,15 +13537,63 @@ const guideSlotCsv = guideSlots.join(',');
     const selectedHotspotId = Number(newSelectedHotspotIds[0]);
     const bestSlot = manualInsertionFit?.bestSlot || null;
     const bestRouteFitType = String(bestSlot?.routeFitType || '').toUpperCase();
+    const bestSlotContext = String(bestSlot?.slotContext || '').toUpperCase();
     const bestFrom = Number(bestSlot?.fromHotspotId || 0);
     const bestTo = Number(bestSlot?.toHotspotId || 0);
+    const isNormalMatrixSlot =
+      bestRouteFitType === 'ON_ROUTE' || bestRouteFitType === 'MINOR_DETOUR';
+    const isSingleHotspotBeforeSlot =
+      bestRouteFitType === 'SINGLE_HOTSPOT_BEFORE';
+    const isSingleHotspotAfterSlot =
+      bestRouteFitType === 'SINGLE_HOTSPOT_AFTER';
+    const isDestinationSideSlot =
+      bestRouteFitType === 'DESTINATION_SIDE_INSERTION';
+    const isCityEndpointBeforeSlot =
+      bestSlotContext === 'CITY_TO_HOTSPOT';
+    const isCityEndpointAfterSlot =
+      bestSlotContext === 'HOTSPOT_TO_CITY';
+    const isCityToCitySlot =
+      bestSlotContext === 'CITY_TO_CITY';
     const matrixSlotValid =
       !!bestSlot
-      && (bestRouteFitType === 'ON_ROUTE' || bestRouteFitType === 'MINOR_DETOUR')
-      && bestFrom > 0
-      && bestTo > 0
-      && selectedHotspotId !== bestFrom
-      && selectedHotspotId !== bestTo;
+      && (
+        (
+          isNormalMatrixSlot
+          && bestFrom > 0
+          && bestTo > 0
+          && selectedHotspotId !== bestFrom
+          && selectedHotspotId !== bestTo
+        )
+        || (
+          isSingleHotspotBeforeSlot
+          && bestTo > 0
+          && selectedHotspotId !== bestTo
+        )
+        || (
+          isSingleHotspotAfterSlot
+          && bestFrom > 0
+          && selectedHotspotId !== bestFrom
+        )
+        || (
+          isDestinationSideSlot
+          && bestFrom > 0
+          && selectedHotspotId !== bestFrom
+        )
+        || (
+          isCityEndpointBeforeSlot
+          && bestTo > 0
+          && selectedHotspotId !== bestTo
+        )
+        || (
+          isCityEndpointAfterSlot
+          && bestFrom > 0
+          && selectedHotspotId !== bestFrom
+        )
+        || (
+          isCityToCitySlot
+          && selectedHotspotId > 0
+        )
+      );
 
     const payloadMatchesBest = !matrixPreferredSlot
       || (
@@ -13537,7 +13606,7 @@ const guideSlotCsv = guideSlots.join(',');
         success: false,
         inserted: false,
         code: 'MATRIX_SAFE_SLOT_INVALID',
-        message: 'Matrix best slot is not valid for apply.',
+        message: 'Selected insertion slot is not valid for apply.',
       });
     }
 
@@ -13678,20 +13747,51 @@ const guideSlotCsv = guideSlots.join(',');
 
     const baseAttractions = routeAttractions.filter((row: any) => Number(row?.hotspot_ID || 0) !== selectedHotspotId);
     const baseIds = baseAttractions.map((row: any) => Number(row?.hotspot_ID || 0));
-    const fromIndex = baseIds.findIndex((id: number) => id === bestFrom);
-    const toIndex = fromIndex >= 0 ? fromIndex + 1 : -1;
+    let newOrderIds = [...baseIds];
 
-    if (fromIndex < 0 || toIndex >= baseIds.length || baseIds[toIndex] !== bestTo) {
-      throw new ConflictException({
-        success: false,
-        inserted: false,
-        code: 'MATRIX_SAFE_SLOT_INVALID',
-        message: 'Matrix slot endpoints are not consecutive in this route.',
-      });
+    if (isCityToCitySlot) {
+      newOrderIds = [selectedHotspotId];
+    } else if (isSingleHotspotBeforeSlot || isCityEndpointBeforeSlot) {
+      const anchorIndex = baseIds.findIndex((id: number) => id === bestTo);
+
+      if (anchorIndex < 0) {
+        throw new ConflictException({
+          success: false,
+          inserted: false,
+          code: 'SINGLE_HOTSPOT_SLOT_INVALID',
+          message: 'Single-hotspot before slot anchor was not found in this route.',
+        });
+      }
+
+      newOrderIds.splice(anchorIndex, 0, selectedHotspotId);
+    } else if (isSingleHotspotAfterSlot || isDestinationSideSlot || isCityEndpointAfterSlot) {
+      const anchorIndex = baseIds.findIndex((id: number) => id === bestFrom);
+
+      if (anchorIndex < 0) {
+        throw new ConflictException({
+          success: false,
+          inserted: false,
+          code: 'SINGLE_HOTSPOT_SLOT_INVALID',
+          message: 'Single-hotspot after slot anchor was not found in this route.',
+        });
+      }
+
+      newOrderIds.splice(anchorIndex + 1, 0, selectedHotspotId);
+    } else {
+      const fromIndex = baseIds.findIndex((id: number) => id === bestFrom);
+      const toIndex = fromIndex >= 0 ? fromIndex + 1 : -1;
+
+      if (fromIndex < 0 || toIndex >= baseIds.length || baseIds[toIndex] !== bestTo) {
+        throw new ConflictException({
+          success: false,
+          inserted: false,
+          code: 'MATRIX_SAFE_SLOT_INVALID',
+          message: 'Matrix slot endpoints are not consecutive in this route.',
+        });
+      }
+
+      newOrderIds.splice(fromIndex + 1, 0, selectedHotspotId);
     }
-
-    const newOrderIds = [...baseIds];
-    newOrderIds.splice(fromIndex + 1, 0, selectedHotspotId);
 
     const rowByHotspotId = new Map<number, number>();
     for (const row of routeAttractions) {
@@ -13724,9 +13824,13 @@ const guideSlotCsv = guideSlots.join(',');
       },
     });
 
-    const routeEndMinutesApply = route?.route_end_time
-      ? Math.floor(this.hmsToSeconds(TimeConverter.toTimeString(route.route_end_time)) / 60)
-      : 20 * 60;
+    const routeEndMinutesApply = manualTimingPolicy?.endTime
+      ? Math.floor(this.hmsToSeconds(TimeConverter.toTimeString(manualTimingPolicy.endTime)) / 60)
+      : (
+          route?.route_end_time
+            ? Math.floor(this.hmsToSeconds(TimeConverter.toTimeString(route.route_end_time)) / 60)
+            : 23 * 60
+        );
     const baselineTimeline = await this.getRouteTimelineForScoring(tx, planId, routeId);
     let adjustedTimeline = await this.buildMatrixRescheduledPreviewTimeline({
       baselineTimeline,
@@ -13746,7 +13850,11 @@ const guideSlotCsv = guideSlots.join(',');
     });
 
     let removedLowPriorityHotspots: Array<{ id: number; name: string; priority: number; reason: string }> = [];
-    const overflowMinutes = this.calculateRouteEndOverflowMinutes(adjustedTimeline || [], route);
+    const overflowMinutes = this.calculateRouteEndOverflowMinutes(
+      adjustedTimeline || [],
+      route,
+      manualTimingPolicy?.endTime,
+    );
     if (overflowMinutes > 0) {
       const dayEndMinutes = routeEndMinutesApply;
       const preselectedRemovalHotspotIds = Array.isArray(manualInsertionFit?.lowPriorityRemovalPlanPreview?.plannedRemovals)
@@ -14155,7 +14263,11 @@ const guideSlotCsv = guideSlots.join(',');
     const hotelRows = (adjustedTimeline || []).filter((row: any) => String(row?.type || '').toLowerCase() === 'hotel');
     const hotelIsLast = hotelRows.length === 0
       || (adjustedTimeline || []).findIndex((row: any) => row === hotelRows[0]) >= ((adjustedTimeline || []).length - hotelRows.length);
-    const finalOverflow = this.calculateRouteEndOverflowMinutes(adjustedTimeline || [], route);
+    const finalOverflow = this.calculateRouteEndOverflowMinutes(
+      adjustedTimeline || [],
+      route,
+      manualTimingPolicy?.endTime,
+    );
 
     const afterPlanAttractions = await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
       where: {
@@ -14926,6 +15038,65 @@ const guideSlotCsv = guideSlots.join(',');
       bestSlot?.cbOsrmDistanceKm != null ? Number(bestSlot.cbOsrmDistanceKm) : null,
     );
 
+    const isHotelLikeRow = (row: any) => {
+      const type = String(row?.type || '').toLowerCase();
+      const text = String(row?.text || row?.name || '').toLowerCase();
+      return (
+        type === 'hotel'
+        || Number(row?.item_type || 0) === 6
+        || text.includes('check-in at hotel')
+      );
+    };
+
+    const isCityEndpointEmptyRoute =
+      manualInsertionFit?.emptyRouteCityEndpointMode === true
+      || manualInsertionFit?.cityEndpointInsertionMode === true
+      || bestSlot?.emptyRouteCityEndpointMode === true
+      || bestSlot?.cityEndpointInsertionMode === true
+      || String(bestSlot?.slotContext || '').toUpperCase() === 'CITY_TO_CITY';
+
+    if (isCityEndpointEmptyRoute) {
+      const hotelIndex = normalizedBaseline.findIndex((row: any) => isHotelLikeRow(row));
+      const hotelRow = hotelIndex >= 0
+        ? {
+            ...normalizedBaseline[hotelIndex],
+            timeRange: 'Needs recalculation',
+            hotspot_start_time: null,
+            hotspot_end_time: null,
+            isConflict: false,
+            conflictReason: null,
+          }
+        : {
+            type: 'hotel',
+            item_type: 6,
+            text: 'Check-in at Hotel',
+            name: 'Check-in at Hotel',
+            timeRange: 'Needs recalculation',
+            isZeroDurationHotel: true,
+            isConflict: false,
+            conflictReason: null,
+          };
+
+      const keepUntilIndex =
+        travelRowIndex >= 0
+          ? travelRowIndex
+          : Math.max(0, insertAfterIndex + 1);
+
+      const prefixRows = normalizedBaseline
+        .slice(0, keepUntilIndex)
+        .filter((row: any) => !isHotelLikeRow(row));
+
+      const merged = [
+        ...prefixRows,
+        travelAToC,
+        selectedRowWithMatrix,
+        travelCToB,
+        hotelRow,
+      ];
+
+      return this.finalizeMatrixPreviewTimeline(merged);
+    }
+
     const merged = [...normalizedBaseline];
     if (travelRowIndex >= 0) {
       merged.splice(travelRowIndex, 1, travelAToC, selectedRowWithMatrix, travelCToB);
@@ -15556,7 +15727,63 @@ const guideSlotCsv = guideSlots.join(',');
   }
 
   private getPreviewRowDurationMinutes(row: any): number | null {
-    // Try to parse duration from timeRange
+    const parseDurationLikeValue = (value: any): number | null => {
+      if (value == null) return null;
+
+      if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+        return Math.round(value);
+      }
+
+      if (value instanceof Date && Number.isFinite(value.getTime())) {
+        const hours = value.getUTCHours();
+        const minutes = value.getUTCMinutes();
+        const seconds = value.getUTCSeconds();
+        const total = hours * 60 + minutes + (seconds > 0 ? 1 : 0);
+        return total > 0 ? total : null;
+      }
+
+      const raw = String(value || '').trim();
+      if (!raw) return null;
+
+      const isoDate = new Date(raw);
+      if (/^\d{4}-\d{2}-\d{2}T/.test(raw) && Number.isFinite(isoDate.getTime())) {
+        const hours = isoDate.getUTCHours();
+        const minutes = isoDate.getUTCMinutes();
+        const seconds = isoDate.getUTCSeconds();
+        const total = hours * 60 + minutes + (seconds > 0 ? 1 : 0);
+        return total > 0 ? total : null;
+      }
+
+      const hourMatch = raw.match(/(\d+(?:\.\d+)?)\s*(?:hour|hours|hr|hrs|h)/i);
+      const minMatch = raw.match(/(\d+(?:\.\d+)?)\s*(?:minute|minutes|min|mins|m)/i);
+      if (hourMatch || minMatch) {
+        const hours = hourMatch ? Number.parseFloat(hourMatch[1]) : 0;
+        const minutes = minMatch ? Number.parseFloat(minMatch[1]) : 0;
+        const total = Math.round((Number.isFinite(hours) ? hours * 60 : 0) + (Number.isFinite(minutes) ? minutes : 0));
+        return total > 0 ? total : null;
+      }
+
+      const colonMatch = raw.match(/(?:^|T|\s)(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+      if (colonMatch) {
+        const hours = Number(colonMatch[1] || 0);
+        const minutes = Number(colonMatch[2] || 0);
+        const seconds = Number(colonMatch[3] || 0);
+        const total = hours * 60 + minutes + (seconds > 0 ? 1 : 0);
+        return total > 0 ? total : null;
+      }
+
+      return null;
+    };
+
+    const explicitDuration =
+      parseDurationLikeValue(row?.duration)
+      ?? parseDurationLikeValue(row?.hotspot_traveling_time)
+      ?? parseDurationLikeValue(row?.hotspot_duration);
+
+    if (explicitDuration !== null) {
+      return explicitDuration;
+    }
+
     if (row?.timeRange && String(row.timeRange).includes('-')) {
       const startMinutes = this.parsePreviewTimeToMinutes(
         String(row.timeRange).split('-')[0]?.trim() || '',
@@ -15564,27 +15791,12 @@ const guideSlotCsv = guideSlots.join(',');
       const endMinutes = this.parsePreviewTimeToMinutes(
         String(row.timeRange).split('-')[1]?.trim() || '',
       );
+
       if (startMinutes !== null && endMinutes !== null) {
-        return endMinutes - startMinutes;
-      }
-    }
-
-    // Try from duration field
-    if (row?.duration) {
-      const durationStr = String(row.duration).trim();
-      // Parse "1 Hour 30 Min" or "1h 30m" or "1:30"
-      const hourMatch = durationStr.match(/(\d+)\s*(?:hour|h)/i);
-      const minMatch = durationStr.match(/(\d+)\s*(?:min|m)/i);
-      const colonMatch = durationStr.match(/(\d+):(\d+)/);
-
-      if (hourMatch || minMatch || colonMatch) {
-        let minutes = 0;
-        if (hourMatch) minutes += Number(hourMatch[1]) * 60;
-        if (minMatch) minutes += Number(minMatch[1]);
-        if (colonMatch) {
-          minutes = Number(colonMatch[1]) * 60 + Number(colonMatch[2]);
-        }
-        if (minutes > 0) return minutes;
+        const diff = endMinutes >= startMinutes
+          ? endMinutes - startMinutes
+          : (24 * 60 - startMinutes) + endMinutes;
+        return diff > 0 ? diff : null;
       }
     }
 
@@ -15734,6 +15946,7 @@ const guideSlotCsv = guideSlots.join(',');
       previewOnly?: boolean;
       debug?: boolean;
       forceConflictInsertion?: boolean;
+      manualTimingPolicy?: ManualHotspotTimingPolicy;
       matrixPreferredSlot?: {
         fromHotspotId?: number;
         toHotspotId?: number;
@@ -15811,6 +16024,12 @@ const guideSlotCsv = guideSlots.join(',');
 
     const routeManualHotspotIds = await this.getRouteManualHotspotIds(tx, Number(planId), Number(routeId), requestedHotspotIds);
 
+    const manualTimingPolicy = await this.getManualHotspotTimingPolicyInTx(
+      tx,
+      Number(planId),
+      route,
+    );
+
     const callerHasAnchor =
       options?.anchorType === 'after_travel' &&
       Number.isInteger(Number(options?.anchorIndex));
@@ -15862,6 +16081,7 @@ const guideSlotCsv = guideSlots.join(',');
         planId: Number(planId),
         routeId: Number(routeId),
         hotspotIds: requestedHotspotIds,
+        manualTimingPolicy,
         message: 'Manual hotspots inserted as conflicts after user confirmation.',
         distanceAndToFro: this.buildDistanceAndToFroLabels({
           totalTravelKm: 0,
@@ -15894,6 +16114,7 @@ const guideSlotCsv = guideSlots.join(',');
             requiresPriorityConfirmation: false,
             stillUnschedulable: true,
             routeEndOverflowMinutes: 0,
+            manualTimingPolicy,
             openingHourConflictCount: requestedHotspotIds.length,
             selectedManualConflictCount: requestedHotspotIds.length,
             scheduledSelectedManualCount: 0,
@@ -15925,7 +16146,12 @@ const guideSlotCsv = guideSlots.join(',');
       options?.anchorType,
       baselineTimelineForMatrix,
       options?.debug === true,
+      manualTimingPolicy,
     );
+
+    if (manualInsertionFit && !manualInsertionFit.manualTimingPolicy) {
+      manualInsertionFit.manualTimingPolicy = manualTimingPolicy;
+    }
 
     const hasValidMatrixSlot = this.hasValidManualMatrixSlot(manualInsertionFit);
     const emptyRouteSchedulerEligible = this.isEmptyRouteSchedulerEligible(manualInsertionFit);
@@ -15958,15 +16184,20 @@ const guideSlotCsv = guideSlots.join(',');
         routeId: Number(routeId),
         hotspotId: Number(preFocusHotspotId),
         hotspotIds: requestedHotspotIds,
+        manualTimingPolicy,
         fullTimeline: baselineTimelineForMatrix,
         routeTimeline: baselineTimelineForMatrix,
-        manualInsertionFit,
+        manualInsertionFit: {
+          ...(manualInsertionFit || {}),
+          manualTimingPolicy,
+        },
         validation: {
           passesScheduleRules: false,
           readyToApply: false,
           requiresPriorityConfirmation: false,
           stillUnschedulable: true,
           routeEndOverflowMinutes: 0,
+          manualTimingPolicy,
           openingHourConflictCount: 0,
           selectedManualConflictCount: 0,
           scheduledSelectedManualCount: 0,
@@ -15980,14 +16211,22 @@ const guideSlotCsv = guideSlots.join(',');
     if (requiresMatrixBuild) {
       if (options?.previewOnly === true) {
         const osrmRouteCheckFailed = String(manualInsertionFit?.reason || manualInsertionFit?.previewBlockReason || '') === 'OSRM_ROUTE_CHECK_FAILED';
-        const noFeasibleRouteSlot = String(manualInsertionFit?.previewBlockReason || manualInsertionFit?.code || '').toUpperCase() === 'NO_FEASIBLE_ROUTE_SLOT'
-          || String(manualInsertionFit?.code || '').toUpperCase() === 'MANUAL_HOTSPOT_NO_FEASIBLE_ROUTE_SLOT';
+        const manualFitCode = String(manualInsertionFit?.code || '').toUpperCase();
+        const manualFitBlockReason = String(manualInsertionFit?.previewBlockReason || '').toUpperCase();
+        const matrixExistsButNoFeasibleSlot =
+          manualInsertionFit?.requiresMatrixBuild !== true
+          && manualInsertionFit?.hasAnyMatrixData === true
+          && manualInsertionFit?.hasFeasibleMatrixSlot === false;
+        const noFeasibleRouteSlot = manualFitBlockReason === 'NO_FEASIBLE_ROUTE_SLOT'
+          || manualFitCode === 'MANUAL_HOTSPOT_NO_FEASIBLE_ROUTE_SLOT'
+          || matrixExistsButNoFeasibleSlot;
         const blockedValidation = {
           passesScheduleRules: false,
           readyToApply: false,
           requiresPriorityConfirmation: false,
           stillUnschedulable: true,
           routeEndOverflowMinutes: 0,
+          manualTimingPolicy,
           openingHourConflictCount: 0,
           selectedManualConflictCount: 0,
           scheduledSelectedManualCount: 0,
@@ -16008,19 +16247,37 @@ const guideSlotCsv = guideSlots.join(',');
           message: osrmRouteCheckFailed
             ? 'OSRM route validation failed while checking source-city route anchor.'
             : noFeasibleRouteSlot
-              ? 'Matrix data exists, but this hotspot is off-route or backtracking for all current route segments.'
+              ? (
+                  manualTimingPolicy?.allowOffRouteWhenTimePermits === true
+                    ? 'This hotspot adds extra distance or off-route travel. Manual add can continue if the rebuilt route fits within the allowed timing window.'
+                    : 'Matrix data exists, but this hotspot is off-route or backtracking for all current route segments.'
+                )
               : 'Route-fit matrix data is missing for this hotspot and current route. Build matrix before preview/apply.',
           planId: Number(planId),
           routeId: Number(routeId),
           hotspotId: Number(requestedHotspotIds[0] || 0),
           hotspotIds: requestedHotspotIds,
+          manualTimingPolicy,
+          canBuildMatrix: !noFeasibleRouteSlot && !osrmRouteCheckFailed,
+          matrixBuildCandidateId: Number(preFocusHotspotId || requestedHotspotIds[0] || 0),
           fullTimeline: baselineTimelineForMatrix,
           routeTimeline: baselineTimelineForMatrix,
-          manualInsertionFit,
+          manualInsertionFit: {
+            ...manualInsertionFit,
+            manualTimingPolicy,
+            canBuildMatrix: !noFeasibleRouteSlot && !osrmRouteCheckFailed,
+            matrixBuildCandidateId: Number(preFocusHotspotId || requestedHotspotIds[0] || 0),
+          },
           missingMatrixBuildSuggestion,
           validation: blockedValidation,
           resolution: {
-            manualInsertionFit,
+            manualTimingPolicy,
+            manualInsertionFit: {
+              ...manualInsertionFit,
+              manualTimingPolicy,
+              canBuildMatrix: !noFeasibleRouteSlot && !osrmRouteCheckFailed,
+              matrixBuildCandidateId: Number(preFocusHotspotId || requestedHotspotIds[0] || 0),
+            },
             requiresConfirmation: false,
             removedOptionalHotspots: [],
             removedTopPriorityHotspots: [],
@@ -16030,7 +16287,11 @@ const guideSlotCsv = guideSlots.join(',');
               id: Number(id),
               name: String(hotspotMasters.find((m: any) => Number(m?.hotspot_ID || 0) === Number(id))?.hotspot_name || `Hotspot #${id}`),
               reason: noFeasibleRouteSlot
-                ? 'Matrix data exists, but this hotspot is off-route or backtracking for all current route segments.'
+                ? (
+                    manualTimingPolicy?.allowOffRouteWhenTimePermits === true
+                      ? 'This hotspot adds extra distance or off-route travel. Manual add can continue if the rebuilt route fits within the allowed timing window.'
+                      : 'Matrix data exists, but this hotspot is off-route or backtracking for all current route segments.'
+                  )
                 : 'Matrix data missing. Build route matrix for this candidate before preview/apply.',
             })),
             shiftedHotspots: [],
@@ -16071,14 +16332,67 @@ const guideSlotCsv = guideSlots.join(',');
     const bestRouteFitType = String(manualInsertionFit?.bestSlot?.routeFitType || '').toUpperCase();
     const bestFromHotspotId = Number(manualInsertionFit?.bestSlot?.fromHotspotId || 0);
     const bestToHotspotId = Number(manualInsertionFit?.bestSlot?.toHotspotId || 0);
+    const bestSlotContext = String(manualInsertionFit?.bestSlot?.slotContext || '').toUpperCase();
+    const manualRelaxedRouteFit =
+      manualTimingPolicy?.mode === 'MANUAL_HOTSPOT'
+      && manualTimingPolicy?.allowOffRouteWhenTimePermits === true;
+    const isNormalMatrixSlot =
+      bestRouteFitType === 'ON_ROUTE'
+      || bestRouteFitType === 'MINOR_DETOUR'
+      || (
+        manualRelaxedRouteFit
+        && (bestRouteFitType === 'BACKTRACK' || bestRouteFitType === 'OFF_ROUTE')
+      );
+    const isSingleHotspotBeforeSlot =
+      bestRouteFitType === 'SINGLE_HOTSPOT_BEFORE';
+    const isSingleHotspotAfterSlot =
+      bestRouteFitType === 'SINGLE_HOTSPOT_AFTER';
+    const isDestinationSideSlot =
+      bestRouteFitType === 'DESTINATION_SIDE_INSERTION';
+    const isCityEndpointBeforeSlot =
+      bestSlotContext === 'CITY_TO_HOTSPOT';
+    const isCityEndpointAfterSlot =
+      bestSlotContext === 'HOTSPOT_TO_CITY';
+    const isCityToCitySlot =
+      bestSlotContext === 'CITY_TO_CITY';
     const hasMatrixSafeSlot =
       options?.previewOnly !== true
       && options?.forceConflictInsertion !== true
       && requestedHotspotIds.length === 1
       && !!manualInsertionFit?.bestSlot
-      && (bestRouteFitType === 'ON_ROUTE' || bestRouteFitType === 'MINOR_DETOUR')
-      && bestFromHotspotId > 0
-      && bestToHotspotId > 0;
+      && (
+        (
+          isNormalMatrixSlot
+          && bestFromHotspotId > 0
+          && bestToHotspotId > 0
+        )
+        || (
+          isSingleHotspotBeforeSlot
+          && bestToHotspotId > 0
+        )
+        || (
+          isSingleHotspotAfterSlot
+          && bestFromHotspotId > 0
+        )
+        || (
+          isDestinationSideSlot
+          && bestFromHotspotId > 0
+        )
+        || (
+          isNormalMatrixSlot
+          && isCityEndpointBeforeSlot
+          && bestToHotspotId > 0
+        )
+        || (
+          isNormalMatrixSlot
+          && isCityEndpointAfterSlot
+          && bestFromHotspotId > 0
+        )
+        || (
+          isCityToCitySlot
+          && Number(preFocusHotspotId || 0) > 0
+        )
+      );
 
     if (hasMatrixSafeSlot && options?.previewOnly !== true) {
       return this.applyMatrixSafeManualHotspotInsertionInTx(tx, {
@@ -16087,6 +16401,7 @@ const guideSlotCsv = guideSlots.join(',');
         selectedHotspotIds: requestedHotspotIds,
         userId: Number(userId || 1),
         manualInsertionFit,
+        manualTimingPolicy,
         matrixPreferredSlot: options?.matrixPreferredSlot,
       });
     }
@@ -16154,6 +16469,7 @@ const guideSlotCsv = guideSlots.join(',');
         previewOnly: options?.previewOnly === true,
         destinationInsertionMode: manualInsertionFit?.destinationInsertionMode === true,
         destinationMinCandidateIndex: Number(manualInsertionFit?.destinationMinCandidateIndex || 0) || undefined,
+        manualTimingPolicy,
       },
     );
 
@@ -16207,15 +16523,16 @@ const guideSlotCsv = guideSlots.join(',');
       route,
       requestedHotspotIds,
       fullTimeline: previewTimeline,
+      manualTimingPolicy,
       adaptive,
     });
 
     // ── Apply matrix-fit positioning to preview timeline ──
     // Keep the full baseline route and merge the matrix-selected hotspot into the best slot.
     // With timing recalculation and forward time-shifting.
-    const routeEndMinutesPreview = route?.route_end_time
-      ? Math.floor(this.hmsToSeconds(TimeConverter.toTimeString(route.route_end_time)) / 60)
-      : 20 * 60;
+    const routeEndMinutesPreview = manualTimingPolicy?.endTime
+      ? Math.floor(this.hmsToSeconds(TimeConverter.toTimeString(manualTimingPolicy.endTime)) / 60)
+      : 23 * 60;
     let adjustedPreviewTimeline = await this.buildMatrixRescheduledPreviewTimeline({
       baselineTimeline: baselineTimelineForMatrix,
       enginePreviewTimeline: previewTimeline,
@@ -16409,7 +16726,9 @@ const guideSlotCsv = guideSlots.join(',');
       });
       manualInsertionFit.selectedManualPriority = selectedManualPriority;
       manualInsertionFit.selectedPriorityLabel = `Manual / P${selectedManualPriority}`;
-      const dayEndMinutes = Math.floor(this.hmsToSeconds(TimeConverter.toTimeString(route?.route_end_time || '00:00:00')) / 60);
+      const dayEndMinutes = Math.floor(
+        this.hmsToSeconds(TimeConverter.toTimeString(manualTimingPolicy.endTime || route?.route_end_time || '23:00:00')) / 60,
+      );
 
       const lowPriorityRemovalPlanPreview = await this.resolveLowPriorityRemovalForMatrixOverflowInTx(tx, {
         planId: Number(planId),
@@ -16624,8 +16943,12 @@ const guideSlotCsv = guideSlots.join(',');
       hotspotIds: requestedHotspotIds,
       fullTimeline: adjustedPreviewTimeline,
       routeTimeline: adjustedPreviewTimeline,
+      manualTimingPolicy,
       distanceAndToFro: adaptive.insertionMetrics,
-      manualInsertionFit,
+      manualInsertionFit: {
+        ...(manualInsertionFit || {}),
+        manualTimingPolicy,
+      },
       selectedIncluded: validation.stillUnschedulable !== true,
       code: finalRequiresConfirmation
         ? 'MANUAL_HOTSPOT_CONFIRM_PRIORITY_REPLACEMENT'
@@ -16656,7 +16979,11 @@ const guideSlotCsv = guideSlots.join(',');
                 : 'Manual hotspots applied successfully')),
       validation: finalValidation,
       resolution: {
-        manualInsertionFit,
+        manualTimingPolicy,
+        manualInsertionFit: {
+          ...(manualInsertionFit || {}),
+          manualTimingPolicy,
+        },
         requiresConfirmation: finalRequiresConfirmation,
         forceConflictInsertionApplied: canForceConflictInsertion,
         removedOptionalHotspots: adaptive.removedOptionalHotspots,
@@ -17231,8 +17558,14 @@ const guideSlotCsv = guideSlots.join(',');
     );
   }
 
-  private calculateRouteEndOverflowMinutes(fullTimeline: any[], route: any): number {
-    const routeEndRaw = TimeConverter.toTimeString(route?.route_end_time || '00:00:00');
+  private calculateRouteEndOverflowMinutes(
+    fullTimeline: any[],
+    route: any,
+    overrideEndTime?: string,
+  ): number {
+    const routeEndRaw = overrideEndTime
+      ? TimeConverter.toTimeString(overrideEndTime)
+      : TimeConverter.toTimeString(route?.route_end_time || '00:00:00');
     const routeEndSec = this.hmsToSeconds(routeEndRaw);
     let maxEndSec = 0;
 
@@ -17245,6 +17578,58 @@ const guideSlotCsv = guideSlots.join(',');
 
     if (maxEndSec <= routeEndSec) return 0;
     return Math.ceil((maxEndSec - routeEndSec) / 60);
+  }
+
+  private async getManualHotspotTimingPolicyInTx(
+    tx: any,
+    planId: number,
+    route: any,
+  ): Promise<ManualHotspotTimingPolicy> {
+    const routeRows = await (tx as any).dvi_itinerary_route_details.findMany({
+      where: {
+        itinerary_plan_ID: Number(planId),
+        deleted: 0,
+      },
+      select: {
+        itinerary_route_ID: true,
+        route_start_time: true,
+        route_end_time: true,
+        itinerary_route_date: true,
+      },
+      orderBy: [
+        { itinerary_route_date: 'asc' },
+        { itinerary_route_ID: 'asc' },
+      ],
+    });
+
+    const currentRouteId = Number(route?.itinerary_route_ID || 0);
+    const currentIndex = routeRows.findIndex(
+      (row: any) => Number(row?.itinerary_route_ID || 0) === currentRouteId,
+    );
+
+    const isFirstRoute = currentIndex <= 0;
+    const isLastRoute = currentIndex >= 0 && currentIndex === routeRows.length - 1;
+
+    const routeStartTime = TimeConverter.toTimeString(route?.route_start_time || '08:00:00');
+    const routeEndTime = TimeConverter.toTimeString(route?.route_end_time || '20:00:00');
+
+    const startTime = isFirstRoute ? routeStartTime : '05:00:00';
+    const endTime = isLastRoute ? routeEndTime : '23:00:00';
+
+    return {
+      mode: 'MANUAL_HOTSPOT',
+      startTime,
+      endTime,
+      isFirstRoute,
+      isLastRoute,
+      autoBuildCutoffBypassed: true,
+      hotelCheckInCutoff: isLastRoute ? routeEndTime : '23:00:00',
+      lastDayDepartureBufferApplied: isLastRoute,
+      allowOffRouteWhenTimePermits: true,
+      note: isLastRoute
+        ? 'Manual hotspot follows last-day departure buffer. Off-route/manual detour is allowed if timing permits.'
+        : 'Manual hotspot bypasses auto-build cutoff and can extend the day until 11:00 PM hotel check-in. Off-route/manual detour is allowed if timing permits.',
+    };
   }
 
   private buildDistanceAndToFroLabels(metrics?: {
@@ -17367,13 +17752,52 @@ const guideSlotCsv = guideSlots.join(',');
   private hasValidManualMatrixSlot(manualInsertionFit: any): boolean {
     const slot = manualInsertionFit?.chosenSlot;
     const bestSlot = manualInsertionFit?.bestSlot;
+    const chosenSlotType = String(slot?.routeFitType || '').toUpperCase();
+    const bestSlotType = String(bestSlot?.routeFitType || '').toUpperCase();
+    const chosenSlotContext = String(slot?.slotContext || '').toUpperCase();
+    const bestSlotContext = String(bestSlot?.slotContext || '').toUpperCase();
+    const manualTimingPolicy = manualInsertionFit?.manualTimingPolicy;
+    const manualRelaxedRouteFit =
+      manualTimingPolicy?.mode === 'MANUAL_HOTSPOT'
+      && manualTimingPolicy?.allowOffRouteWhenTimePermits === true;
+    const isManualAllowedFitType = (type: string) =>
+      this.isFeasibleFitType(type)
+      || (
+        manualRelaxedRouteFit
+        && this.isUsableMatrixRouteFitType(type)
+      );
 
     const chosenSlotValid = (
       !!slot
       && manualInsertionFit?.routeFitAvailable !== false
-      && this.isFeasibleFitType(String(slot?.routeFitType || '').toUpperCase())
-      && Number(slot?.fromHotspotId || 0) > 0
-      && Number(slot?.toHotspotId || 0) > 0
+      && (
+        (
+          isManualAllowedFitType(chosenSlotType)
+          && Number(slot?.fromHotspotId || 0) > 0
+          && Number(slot?.toHotspotId || 0) > 0
+        )
+        || (
+          chosenSlotType === 'SINGLE_HOTSPOT_BEFORE'
+          && Number(slot?.toHotspotId || 0) > 0
+        )
+        || (
+          chosenSlotType === 'SINGLE_HOTSPOT_AFTER'
+          && Number(slot?.fromHotspotId || 0) > 0
+        )
+        || (
+          isManualAllowedFitType(chosenSlotType)
+          && manualInsertionFit?.cityEndpointInsertionMode === true
+          && (
+            (chosenSlotContext === 'CITY_TO_HOTSPOT' && Number(slot?.toHotspotId || 0) > 0)
+            || (chosenSlotContext === 'HOTSPOT_TO_CITY' && Number(slot?.fromHotspotId || 0) > 0)
+            || (
+              chosenSlotContext === 'CITY_TO_CITY'
+              && manualInsertionFit?.emptyRouteCityEndpointMode === true
+              && Number(manualInsertionFit?.selectedHotspotId || slot?.betweenHotspotId || 0) > 0
+            )
+          )
+        )
+      )
     );
 
     const sourceExitAnchorBestSlotValid = (
@@ -17382,27 +17806,55 @@ const guideSlotCsv = guideSlots.join(',');
         String(bestSlot?.source || '') === 'SOURCE_CITY_EXIT_ANCHOR'
         || String(bestSlot?.source || '') === 'OSRM_SOURCE_CITY_ROUTE_ANCHOR'
       )
-      && this.isFeasibleFitType(String(bestSlot?.routeFitType || '').toUpperCase())
+      && isManualAllowedFitType(bestSlotType)
       && Number(bestSlot?.fromHotspotId || 0) > 0
       && Number(bestSlot?.toHotspotId || 0) > 0
+    );
+
+    const singleHotspotBestSlotValid = (
+      !!bestSlot
+      && (
+        (bestSlotType === 'SINGLE_HOTSPOT_BEFORE' && Number(bestSlot?.toHotspotId || 0) > 0)
+        || (bestSlotType === 'SINGLE_HOTSPOT_AFTER' && Number(bestSlot?.fromHotspotId || 0) > 0)
+        || (
+          isManualAllowedFitType(bestSlotType)
+          && manualInsertionFit?.cityEndpointInsertionMode === true
+          && (
+            (bestSlotContext === 'CITY_TO_HOTSPOT' && Number(bestSlot?.toHotspotId || 0) > 0)
+            || (bestSlotContext === 'HOTSPOT_TO_CITY' && Number(bestSlot?.fromHotspotId || 0) > 0)
+            || (
+              bestSlotContext === 'CITY_TO_CITY'
+              && manualInsertionFit?.emptyRouteCityEndpointMode === true
+              && Number(manualInsertionFit?.selectedHotspotId || bestSlot?.betweenHotspotId || 0) > 0
+            )
+          )
+        )
+      )
     );
 
     const destinationHotelSideBestSlotValid = (
       !!bestSlot
       && String(bestSlot?.source || '') === 'DESTINATION_HOTEL_SIDE'
-      && this.isFeasibleFitType(String(bestSlot?.routeFitType || '').toUpperCase())
+      && isManualAllowedFitType(bestSlotType)
       && Number(bestSlot?.fromHotspotId || 0) > 0
       && Number(manualInsertionFit?.destinationAnchorOrder || 0) > 0
     );
 
-    return chosenSlotValid || sourceExitAnchorBestSlotValid || destinationHotelSideBestSlotValid;
+    return chosenSlotValid || sourceExitAnchorBestSlotValid || singleHotspotBestSlotValid || destinationHotelSideBestSlotValid;
   }
 
   private isEmptyRouteSchedulerEligible(manualInsertionFit: any): boolean {
     return (
       String(manualInsertionFit?.chosenSlotSource || '') === 'EMPTY_ROUTE_SCHEDULER'
+      && manualInsertionFit?.emptyRouteCityEndpointMode === true
+      && manualInsertionFit?.selectedIncluded === true
+      && manualInsertionFit?.canApply === true
+    ) || (
+      manualInsertionFit?.emptyRouteCityEndpointMode === true
       && manualInsertionFit?.routeFitAvailable === true
       && manualInsertionFit?.canApply === true
+      && manualInsertionFit?.selectedIncluded === true
+      && manualInsertionFit?.hasFeasibleMatrixSlot !== true
     );
   }
 
@@ -17489,6 +17941,12 @@ const guideSlotCsv = guideSlots.join(',');
       || (!!destinationNorm && (locationCityNorm === destinationNorm || nameCityNorm === destinationNorm))
     );
 
+    const sameCityRoute = (
+      (!!sourceNorm && !!destinationNorm && sourceNorm === destinationNorm)
+      || (!!sourceKey && !!destinationKey && sourceKey === destinationKey)
+    );
+
+    if (sameCityRoute && matchesSource && matchesDestination) return 'SOURCE_CITY';
     if (matchesDestination && !matchesSource) return 'DESTINATION_CITY';
     if (matchesSource && !matchesDestination) return 'SOURCE_CITY';
     if (matchesDestination) return 'DESTINATION_CITY';
@@ -18859,6 +19317,7 @@ const guideSlotCsv = guideSlots.join(',');
     requestedAnchorType: string | undefined,
     baselineTimeline: any[] = [],
     debugEnabled = false,
+    manualTimingPolicy?: ManualHotspotTimingPolicy,
   ): Promise<any> {
     const routeRow = await (tx as any).dvi_itinerary_route_details.findFirst({
       where: {
@@ -18944,23 +19403,307 @@ const guideSlotCsv = guideSlots.join(',');
       && hotspotCityContext === 'SOURCE_CITY'
       && Number(routeRow?.direct_to_next_visiting_place || 0) !== 1;
     if (routeAttractions.length === 0) {
+      const cityRows = await (tx as any).$queryRawUnsafe(`
+        SELECT
+          from_hotspot_id AS fromHotspotId,
+          from_hotspot_name AS fromName,
+          to_hotspot_id AS toHotspotId,
+          to_hotspot_name AS toName,
+          from_endpoint_type AS fromEndpointType,
+          from_location_id AS fromLocationId,
+          from_location_name AS fromLocationName,
+          to_endpoint_type AS toEndpointType,
+          to_location_id AS toLocationId,
+          to_location_name AS toLocationName,
+          slot_context AS slotContext,
+          between_hotspot_id AS betweenHotspotId,
+          between_hotspot_name AS betweenHotspotName,
+          route_fit_type AS routeFitType,
+          ab_osrm_distance_km AS abOsrmDistanceKm,
+          ac_osrm_distance_km AS acOsrmDistanceKm,
+          cb_osrm_distance_km AS cbOsrmDistanceKm,
+          inserted_route_distance_km AS insertedRouteDistanceKm,
+          road_detour_km AS roadDetourKm,
+          road_detour_ratio AS roadDetourRatio,
+          candidate_distance_from_ab_route_meters AS candidateDistanceFromAbRouteMeters,
+          destination_distance_from_ac_route_meters AS destinationDistanceFromAcRouteMeters,
+          route_decision_reason AS routeDecisionReason
+        FROM hotspot_route_between_map
+        WHERE between_hotspot_id = ?
+          AND slot_context = 'CITY_TO_CITY'
+        ORDER BY
+          CASE route_fit_type
+            WHEN 'ON_ROUTE' THEN 1
+            WHEN 'MINOR_DETOUR' THEN 2
+            WHEN 'BACKTRACK' THEN 3
+            WHEN 'OFF_ROUTE' THEN 4
+            ELSE 9
+          END,
+          road_detour_km ASC
+        LIMIT 5
+      `, candidateHotspotId) as any[];
+
+      const manualRelaxedRouteFit =
+        manualTimingPolicy?.mode === 'MANUAL_HOTSPOT'
+        && manualTimingPolicy?.allowOffRouteWhenTimePermits === true;
+
+      const allCitySlots = cityRows.map((row: any, index: number) => {
+        const routeFitType = String(row?.routeFitType || '').toUpperCase();
+        const routePossible = this.isFeasibleFitType(routeFitType)
+          || (
+            manualRelaxedRouteFit
+            && this.isUsableMatrixRouteFitType(routeFitType)
+          );
+
+        return {
+          slotIndex: index,
+          fromHotspotId: Number(row?.fromHotspotId || 0),
+          fromName: String(row?.fromLocationName || row?.fromName || 'City Start'),
+          toHotspotId: Number(row?.toHotspotId || 0),
+          toName: String(row?.toLocationName || row?.toName || 'City End'),
+          fromEndpointType: row?.fromEndpointType || 'CITY',
+          fromLocationId: Number(row?.fromLocationId || 0) || null,
+          toEndpointType: row?.toEndpointType || 'CITY',
+          toLocationId: Number(row?.toLocationId || 0) || null,
+          routeFitType,
+          slotContext: 'CITY_TO_CITY',
+          cityEndpointInsertionMode: true,
+          emptyRouteCityEndpointMode: true,
+          label: `Insert between ${String(row?.fromLocationName || row?.fromName || 'City')} and ${String(row?.toLocationName || row?.toName || 'City')}`,
+          displayLabel: `Insert between ${String(row?.fromLocationName || row?.fromName || 'City')} and ${String(row?.toLocationName || row?.toName || 'City')}`,
+          shortLabel: 'City endpoint slot',
+          roadDetourKm: row?.roadDetourKm == null ? null : Number(row.roadDetourKm),
+          roadDetourRatio: row?.roadDetourRatio == null ? null : Number(row.roadDetourRatio),
+          insertedRouteDistanceKm: row?.insertedRouteDistanceKm == null ? null : Number(row.insertedRouteDistanceKm),
+          abOsrmDistanceKm: row?.abOsrmDistanceKm == null ? null : Number(row.abOsrmDistanceKm),
+          acOsrmDistanceKm: row?.acOsrmDistanceKm == null ? null : Number(row.acOsrmDistanceKm),
+          cbOsrmDistanceKm: row?.cbOsrmDistanceKm == null ? null : Number(row.cbOsrmDistanceKm),
+          candidateDistanceFromAbRouteMeters: row?.candidateDistanceFromAbRouteMeters == null ? null : Number(row.candidateDistanceFromAbRouteMeters),
+          destinationDistanceFromAcRouteMeters: row?.destinationDistanceFromAcRouteMeters == null ? null : Number(row.destinationDistanceFromAcRouteMeters),
+          routePossible,
+          timingPossible: routePossible,
+          prioritySafe: true,
+          selectedAsBest: false,
+          attempted: true,
+          source: 'CITY_ENDPOINT_MATRIX',
+          routeDecisionReason: row?.routeDecisionReason || 'City endpoint matrix slot.',
+          finalDecisionReason: routePossible
+            ? 'Selected: first hotspot can be inserted using city endpoint matrix.'
+            : 'Not selected: city endpoint route-fit is not feasible.',
+        };
+      });
+
+      const bestCitySlot =
+        allCitySlots.find((slot: any) => slot.routeFitType === 'ON_ROUTE')
+        || allCitySlots.find((slot: any) => slot.routeFitType === 'MINOR_DETOUR')
+        || (manualRelaxedRouteFit
+          ? allCitySlots.find((slot: any) => slot.routeFitType === 'BACKTRACK' || slot.routeFitType === 'OFF_ROUTE')
+          : null)
+        || null;
+
+      if (bestCitySlot) {
+        bestCitySlot.selectedAsBest = true;
+      }
+
       return {
         selectedHotspotId: candidateHotspotId,
         selectedHotspotName: candidateHotspotName,
-        requestedSlot: null,
-        bestSlot: null,
-        chosenSlot: null,
-        allSlotResults: [],
-        chosenSlotSource: emptyRouteSourceCityEligible ? 'EMPTY_ROUTE_SCHEDULER' : 'NO_MATRIX_DATA',
-        routeFitAvailable: emptyRouteSourceCityEligible,
-        requiresMatrixBuild: emptyRouteSourceCityEligible ? false : true,
-        canAutoMove: false,
-        canApply: emptyRouteSourceCityEligible,
-        selectedIncluded: emptyRouteSourceCityEligible,
-        warning: emptyRouteSourceCityEligible
-          ? 'Empty route will be validated by the main timeline builder without matrix slot scoring.'
-          : 'Route has no active attraction hotspots; cannot evaluate insertion slots.',
-        previewBlockReason: emptyRouteSourceCityEligible ? null : 'MATRIX_MISSING',
+        requestedSlot: bestCitySlot,
+        bestSlot: bestCitySlot,
+        chosenSlot: bestCitySlot,
+        allSlotResults: allCitySlots,
+        chosenSlotSource: bestCitySlot
+          ? 'BEST_FIT'
+          : (emptyRouteSourceCityEligible ? 'EMPTY_ROUTE_SCHEDULER' : 'NO_MATRIX_DATA'),
+        routeFitAvailable: !!bestCitySlot,
+        hasAnyMatrixData: allCitySlots.length > 0,
+        hasFeasibleMatrixSlot: !!bestCitySlot,
+        requiresMatrixBuild: allCitySlots.length === 0,
+        canAutoMove: !!bestCitySlot,
+        canApply: !!bestCitySlot || emptyRouteSourceCityEligible,
+        selectedIncluded: !!bestCitySlot || emptyRouteSourceCityEligible,
+        warning: allCitySlots.length === 0
+          ? 'Route has no active attraction hotspots; build city endpoint matrix before preview/apply.'
+          : (emptyRouteSourceCityEligible && !bestCitySlot)
+            ? 'City endpoint matrix marks this same-city arrival route as off-route/backtracking, so fallback timing evaluation is allowed.'
+          : null,
+        previewBlockReason: allCitySlots.length === 0 ? 'MATRIX_MISSING' : null,
+        emptyRouteInsertionMode: true,
+        emptyRouteCityEndpointMode: true,
+        cityEndpointInsertionMode: true,
+      };
+    }
+
+    if (routeAttractions.length === 1) {
+      const onlyRouteHotspotId = Number(routeAttractions[0]?.hotspot_ID || 0);
+      const onlyRouteHotspotOrder = Number(routeAttractions[0]?.hotspot_order || 1);
+
+      const citySlotRows: any[] = await (tx as any).$queryRawUnsafe(`
+        SELECT
+          from_hotspot_id,
+          from_hotspot_name,
+          to_hotspot_id,
+          to_hotspot_name,
+          between_hotspot_id,
+          route_fit_type,
+          route_decision_reason,
+          road_detour_km,
+          road_detour_ratio,
+          ab_osrm_distance_km,
+          ac_osrm_distance_km,
+          cb_osrm_distance_km,
+          inserted_route_distance_km,
+          candidate_distance_from_ab_route_meters,
+          destination_distance_from_ac_route_meters,
+          from_endpoint_type,
+          from_location_id,
+          from_location_name,
+          to_endpoint_type,
+          to_location_id,
+          to_location_name,
+          slot_context
+        FROM hotspot_route_between_map
+        WHERE between_hotspot_id = ?
+          AND slot_context IN ('CITY_TO_HOTSPOT', 'HOTSPOT_TO_CITY')
+          AND (from_hotspot_id = ? OR to_hotspot_id = ?)
+      `, Number(candidateHotspotId), onlyRouteHotspotId, onlyRouteHotspotId);
+
+      if (!Array.isArray(citySlotRows) || citySlotRows.length === 0) {
+        return {
+          selectedHotspotId: candidateHotspotId,
+          selectedHotspotName: candidateHotspotName,
+          requestedSlot: null,
+          bestSlot: null,
+          chosenSlot: null,
+          allSlotResults: [],
+          chosenSlotSource: 'NO_MATRIX_DATA',
+          routeFitAvailable: false,
+          requiresMatrixBuild: true,
+          canAutoMove: false,
+          canApply: false,
+          code: 'MANUAL_HOTSPOT_MATRIX_DATA_MISSING',
+          previewBlockReason: 'MATRIX_MISSING',
+          warning: 'Route-fit matrix data is missing for the single-hotspot city endpoint slots.',
+          cityEndpointInsertionMode: true,
+          singleHotspotAnchorHotspotId: onlyRouteHotspotId,
+        };
+      }
+
+      const selectionRank = (type: string): number => {
+        if (type === 'ON_ROUTE') return 1;
+        if (type === 'MINOR_DETOUR') return 2;
+        if (type === 'BACKTRACK') return 3;
+        if (type === 'OFF_ROUTE') return 4;
+        return 5;
+      };
+
+      const allSlotResults = citySlotRows.map((row: any, index: number) => {
+        const slotContext = String(row?.slot_context || '').toUpperCase();
+        const fromName = String(row?.from_location_name || row?.from_hotspot_name || '').trim();
+        const toName = String(row?.to_location_name || row?.to_hotspot_name || '').trim();
+        const routeFitType = String(row?.route_fit_type || 'UNKNOWN').toUpperCase();
+        const manualRelaxedRouteFit =
+          manualTimingPolicy?.mode === 'MANUAL_HOTSPOT'
+          && manualTimingPolicy?.allowOffRouteWhenTimePermits === true;
+        const routePossible = this.isFeasibleFitType(routeFitType)
+          || (
+            manualRelaxedRouteFit
+            && this.isUsableMatrixRouteFitType(routeFitType)
+          );
+        const displayLabel = slotContext === 'CITY_TO_HOTSPOT'
+          ? `Will be inserted between ${fromName} and ${toName}`
+          : `Will be inserted between ${fromName} and ${toName}`;
+
+        return {
+          slotIndex: index,
+          fromHotspotId: Number(row?.from_hotspot_id || 0),
+          fromName,
+          toHotspotId: Number(row?.to_hotspot_id || 0),
+          toName,
+          fromEndpointType: String(row?.from_endpoint_type || 'HOTSPOT').toUpperCase(),
+          fromLocationId: Number(row?.from_location_id || 0) || null,
+          toEndpointType: String(row?.to_endpoint_type || 'HOTSPOT').toUpperCase(),
+          toLocationId: Number(row?.to_location_id || 0) || null,
+          slotContext,
+          routeFitType,
+          label: displayLabel,
+          displayLabel,
+          shortLabel: slotContext === 'CITY_TO_HOTSPOT' ? 'City to hotspot' : 'Hotspot to city',
+          roadDetourKm: row?.road_detour_km != null ? Number(row.road_detour_km) : null,
+          roadDetourRatio: row?.road_detour_ratio != null ? Number(row.road_detour_ratio) : null,
+          insertedRouteDistanceKm: row?.inserted_route_distance_km != null ? Number(row.inserted_route_distance_km) : null,
+          abOsrmDistanceKm: row?.ab_osrm_distance_km != null ? Number(row.ab_osrm_distance_km) : null,
+          acOsrmDistanceKm: row?.ac_osrm_distance_km != null ? Number(row.ac_osrm_distance_km) : null,
+          cbOsrmDistanceKm: row?.cb_osrm_distance_km != null ? Number(row.cb_osrm_distance_km) : null,
+          candidateDistanceFromAbRouteMeters: row?.candidate_distance_from_ab_route_meters != null ? Number(row.candidate_distance_from_ab_route_meters) : null,
+          destinationDistanceFromAcRouteMeters: row?.destination_distance_from_ac_route_meters != null ? Number(row.destination_distance_from_ac_route_meters) : null,
+          routePossible,
+          timingPossible: true,
+          prioritySafe: true,
+          selectedAsBest: false,
+          attempted: true,
+          routeDecisionReason: row?.route_decision_reason ? String(row.route_decision_reason) : null,
+          timingDecisionReason: 'Timing will be validated by the main timeline rebuild.',
+          priorityDecisionReason: null,
+          finalDecisionReason: routePossible
+            ? `Selected: ${displayLabel}.`
+            : `Not selected: ${displayLabel}.`,
+          existingAnchorHotspotId: onlyRouteHotspotId,
+          existingAnchorOrder: onlyRouteHotspotOrder,
+        };
+      }).sort((a: any, b: any) => selectionRank(String(a?.routeFitType || '')) - selectionRank(String(b?.routeFitType || '')));
+
+      const bestSlot = allSlotResults[0] || null;
+      const manualRelaxedRouteFit =
+        manualTimingPolicy?.mode === 'MANUAL_HOTSPOT'
+        && manualTimingPolicy?.allowOffRouteWhenTimePermits === true;
+      const chosenSlot = bestSlot && (
+        this.isFeasibleFitType(String(bestSlot?.routeFitType || '').toUpperCase())
+        || (
+          manualRelaxedRouteFit
+          && this.isUsableMatrixRouteFitType(String(bestSlot?.routeFitType || '').toUpperCase())
+        )
+      )
+        ? { ...bestSlot, selectedAsBest: true }
+        : bestSlot ? { ...bestSlot, selectedAsBest: true } : null;
+      const hasFeasibleMatrixSlot = allSlotResults.some((slot: any) => (
+        this.isFeasibleFitType(String(slot?.routeFitType || '').toUpperCase())
+        || (
+          manualRelaxedRouteFit
+          && this.isUsableMatrixRouteFitType(String(slot?.routeFitType || '').toUpperCase())
+        )
+      ));
+
+      return {
+        selectedHotspotId: candidateHotspotId,
+        selectedHotspotName: candidateHotspotName,
+        requestedSlot: chosenSlot,
+        bestSlot: chosenSlot,
+        chosenSlot,
+        allSlotResults,
+        chosenSlotSource: 'BEST_FIT',
+        routeFitAvailable: true,
+        hasAnyMatrixData: true,
+        hasFeasibleMatrixSlot,
+        requiresMatrixBuild: false,
+        canAutoMove: hasFeasibleMatrixSlot,
+        canApply: hasFeasibleMatrixSlot,
+        selectedIncluded: hasFeasibleMatrixSlot,
+        warning: hasFeasibleMatrixSlot
+          ? (
+              manualRelaxedRouteFit
+              && chosenSlot
+              && !this.isFeasibleFitType(String(chosenSlot?.routeFitType || '').toUpperCase())
+                ? `Manual add allows this route-fit as long as the rebuilt timeline finishes within ${manualTimingPolicy?.endTime || 'the manual day end'}.`
+                : null
+            )
+          : 'Matrix data exists, but no feasible city endpoint insertion slot is available.',
+        previewBlockReason: hasFeasibleMatrixSlot ? null : 'NO_FEASIBLE_ROUTE_SLOT',
+        code: hasFeasibleMatrixSlot ? 'SINGLE_HOTSPOT_CITY_MATRIX_READY' : 'MANUAL_HOTSPOT_NO_FEASIBLE_ROUTE_SLOT',
+        cityEndpointInsertionMode: true,
+        singleHotspotAnchorHotspotId: onlyRouteHotspotId,
+        singleHotspotAnchorHotspotName: String(chosenSlot?.toName || chosenSlot?.fromName || ''),
+        manualTimingPolicy,
       };
     }
 
@@ -20067,10 +20810,15 @@ const guideSlotCsv = guideSlots.join(',');
     let chosenSlot: any;
     let chosenSlotSource: 'BEST_FIT' | 'REQUESTED_SLOT' | 'FALLBACK_TIMING' | 'NO_MATRIX_DATA';
     let warning: string | null = null;
+    const manualRelaxedRouteFit =
+      manualTimingPolicy?.mode === 'MANUAL_HOTSPOT'
+      && manualTimingPolicy?.allowOffRouteWhenTimePermits === true;
 
     // Explicit state detection: distinguish between no matrix data and no feasible slot
     const usableTypes = ['ON_ROUTE', 'MINOR_DETOUR', 'BACKTRACK', 'OFF_ROUTE'];
-    const feasibleTypes = ['ON_ROUTE', 'MINOR_DETOUR'];
+    const feasibleTypes = manualRelaxedRouteFit
+      ? ['ON_ROUTE', 'MINOR_DETOUR', 'BACKTRACK', 'OFF_ROUTE']
+      : ['ON_ROUTE', 'MINOR_DETOUR'];
 
     const hasAnyMatrixData = allSlotResults.some((slot) =>
       usableTypes.includes(String(slot?.routeFitType || '').toUpperCase())
@@ -20157,7 +20905,7 @@ const guideSlotCsv = guideSlots.join(',');
     }
 
     // Case 2: MATRIX_BUILT_BUT_NO_FEASIBLE_SLOT — matrix exists but all slots are OFF_ROUTE or BACKTRACK
-    if (hasOnlyOffRouteOrBacktrack) {
+    if (hasOnlyOffRouteOrBacktrack && !manualRelaxedRouteFit) {
       const normalizedAllSlotResults = allSlotResults.map((slot) => ({
         ...slot,
         selectedAsBest: false,
@@ -20192,7 +20940,16 @@ const guideSlotCsv = guideSlots.join(',');
       };
     }
 
-    if (bestSlot && this.isFeasibleFitType(String(bestSlot.routeFitType || '').toUpperCase())) {
+    if (
+      bestSlot
+      && (
+        this.isFeasibleFitType(String(bestSlot.routeFitType || '').toUpperCase())
+        || (
+          manualRelaxedRouteFit
+          && this.isUsableMatrixRouteFitType(String(bestSlot.routeFitType || '').toUpperCase())
+        )
+      )
+    ) {
       // Best slot is feasible — use it
       chosenSlotSource = 'BEST_FIT';
       chosenSlot = {
@@ -20209,7 +20966,7 @@ const guideSlotCsv = guideSlots.join(',');
         source: 'BEST_FIT',
         isZeroExtraDetour: bestSlot.isZeroExtraDetour === true,
         distanceComparisonNote: bestSlot.distanceComparisonNote || null,
-        routePossible: bestSlot.routePossible,
+        routePossible: bestSlot.routePossible || manualRelaxedRouteFit,
         timingPossible: bestSlot.timingPossible,
         prioritySafe: bestSlot.prioritySafe,
         selectedAsBest: true,
@@ -20236,7 +20993,9 @@ const guideSlotCsv = guideSlots.join(',');
         selectedAsBest: true,
         attempted: true,
       };
-      warning = `No ON_ROUTE/MINOR_DETOUR insertion slot found. Best available route-fit slot is ${bestSlot.fromName} → ${bestSlot.toName} (${bestSlot.label}).`;
+      warning = manualRelaxedRouteFit
+        ? `Manual add allows this route-fit as long as the rebuilt timeline finishes within ${manualTimingPolicy?.endTime || 'the manual day end'}. Best available slot is ${bestSlot.fromName} → ${bestSlot.toName} (${bestSlot.label}).`
+        : `No ON_ROUTE/MINOR_DETOUR insertion slot found. Best available route-fit slot is ${bestSlot.fromName} → ${bestSlot.toName} (${bestSlot.label}).`;
     } else if (requestedSlot && isHotspotSlot && requestedSlot.routeFitType !== 'MATRIX_UNAVAILABLE') {
       chosenSlotSource = 'REQUESTED_SLOT';
       chosenSlot = {
@@ -20253,10 +21012,19 @@ const guideSlotCsv = guideSlots.join(',');
     }
 
     const routeFitAvailable = hasAnyMatrixData;
-    const canAutoMove = chosenSlotSource === 'BEST_FIT' && this.isFeasibleFitType(String(chosenSlot?.routeFitType || '').toUpperCase());
+    const chosenRouteFitType = String(chosenSlot?.routeFitType || '').toUpperCase();
+    const manualRouteFitAllowed =
+      manualRelaxedRouteFit
+      && this.isUsableMatrixRouteFitType(chosenRouteFitType);
+    const canAutoMove =
+      chosenSlotSource === 'BEST_FIT'
+      && (
+        this.isFeasibleFitType(chosenRouteFitType)
+        || manualRouteFitAllowed
+      );
     const destinationSideSlotChosen = (
       destinationInsertionMode
-      && String(chosenSlot?.routeFitType || '').toUpperCase() === 'DESTINATION_SIDE_INSERTION'
+      && chosenRouteFitType === 'DESTINATION_SIDE_INSERTION'
       && Number(chosenSlot?.fromHotspotId || 0) > 0
     );
     const destinationSideReady = (
@@ -20298,11 +21066,16 @@ const guideSlotCsv = guideSlots.join(',');
         String(slot?.routeFitType || '').toUpperCase() === 'UNKNOWN'
           ? false
           : (
-            String(slot?.routeFitType || '').toUpperCase() === 'DESTINATION_SIDE_INSERTION'
-            && Number(slot?.destinationHotelId || 0) <= 0
-          )
-            ? false
-          : slot?.routePossible,
+          String(slot?.routeFitType || '').toUpperCase() === 'DESTINATION_SIDE_INSERTION'
+          && Number(slot?.destinationHotelId || 0) <= 0
+        )
+          ? false
+        : (
+          manualRelaxedRouteFit
+          && this.isUsableMatrixRouteFitType(String(slot?.routeFitType || '').toUpperCase())
+        )
+          ? true
+        : slot?.routePossible,
       finalDecisionReason:
         String(slot?.routeFitType || '').toUpperCase() === 'UNKNOWN'
           ? 'Not selected: route-fit data missing.'
@@ -20348,6 +21121,7 @@ const guideSlotCsv = guideSlots.join(',');
       destinationMinCandidateIndex,
       destinationHotelId: Number(destinationHotelEndpoint?.hotelId || 0) || null,
       destinationHotelName: destinationHotelLabel,
+      manualTimingPolicy,
     };
   }
 
@@ -20478,60 +21252,128 @@ const guideSlotCsv = guideSlots.join(',');
     route: any;
     requestedHotspotIds: number[];
     fullTimeline: any[];
+    manualTimingPolicy: ManualHotspotTimingPolicy;
     adaptive: {
       requiresConfirmation: boolean;
       unscheduledManualHotspots: Array<{ id: number; name: string; reason: string }>;
       reason: string | null;
     };
   }) {
-    const { route, requestedHotspotIds, fullTimeline, adaptive } = params;
+    const { route, requestedHotspotIds, fullTimeline, manualTimingPolicy, adaptive } = params;
     const requestedHotspotIdSet = new Set(
       (requestedHotspotIds || [])
         .map((id: any) => Number(id))
         .filter((id: number) => Number.isFinite(id) && id > 0),
     );
 
-    const routeEndOverflowMinutes = this.calculateRouteEndOverflowMinutes(fullTimeline || [], route);
-    const openingHourConflictRows = (fullTimeline || []).filter(
-      (row: any) => row?.isConflict === true && Number(row?.item_type || 0) === 4,
+    const routeEndOverflowMinutes = this.calculateRouteEndOverflowMinutes(
+      fullTimeline || [],
+      route,
+      manualTimingPolicy.endTime,
     );
-    const selectedManualConflictRows = openingHourConflictRows.filter((row: any) => {
-      const hotspotId = Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || 0);
-      return requestedHotspotIdSet.has(hotspotId);
+    const isAttractionRow = (row: any) => (
+      String(row?.type || '').toLowerCase() === 'attraction'
+      || Number(row?.item_type || 0) === 4
+    );
+    const getRowHotspotId = (row: any) => Number(
+      row?.locationId
+      || row?.hotspot_ID
+      || row?.hotspotId
+      || row?.hotspot_id
+      || 0,
+    );
+    const selectedAttractionRows = (fullTimeline || []).filter((row: any) => (
+      isAttractionRow(row)
+      && requestedHotspotIdSet.has(getRowHotspotId(row))
+    ));
+    const openingHourConflictRows = selectedAttractionRows.filter((row: any) => {
+      const reason = String(row?.conflictReason || row?.conflict_reason || '').toLowerCase();
+      return (
+        row?.isConflict === true
+        || Number(row?.is_conflict || 0) === 1
+        || reason.includes('opening')
+        || reason.includes('operating')
+        || reason.includes('time gap')
+        || reason.includes('does not fit')
+        || reason.includes('needs reschedule')
+      );
     });
-    const scheduledSelectedRows = (fullTimeline || []).filter((row: any) => {
-      if (String(row?.type || '').toLowerCase() !== 'attraction' && Number(row?.item_type || 0) !== 4) {
-        return false;
-      }
-      const hotspotId = Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || 0);
-      return requestedHotspotIdSet.has(hotspotId) && row?.isConflict !== true;
-    });
+    const selectedManualConflictRows = openingHourConflictRows;
+    const scheduledSelectedRows = selectedAttractionRows.filter((row: any) => (
+      row?.isConflict !== true
+      && Number(row?.is_conflict || 0) !== 1
+    ));
 
-    const stillUnschedulable = Array.isArray(adaptive?.unscheduledManualHotspots)
+    const rawStillUnschedulable = Array.isArray(adaptive?.unscheduledManualHotspots)
       && adaptive.unscheduledManualHotspots.length > 0;
     const requiresPriorityConfirmation = adaptive?.requiresConfirmation === true;
-    const passesScheduleRules =
-      !stillUnschedulable
+    const manualRelaxedRouteFit =
+      manualTimingPolicy?.mode === 'MANUAL_HOTSPOT'
+      && manualTimingPolicy?.allowOffRouteWhenTimePermits === true;
+    const selectedHasPreviewRow = selectedAttractionRows.length > 0;
+    const stillUnschedulable =
+      rawStillUnschedulable
+      && !selectedHasPreviewRow;
+    const unscheduledReasons = [
+      String(adaptive?.reason || ''),
+      ...((adaptive?.unscheduledManualHotspots || []).map((row: any) => String(row?.reason || ''))),
+    ].join(' ').toUpperCase();
+    const onlySoftManualRouteFitConflict =
+      manualRelaxedRouteFit
+      && rawStillUnschedulable
       && routeEndOverflowMinutes === 0
-      && selectedManualConflictRows.length === 0;
+      && selectedManualConflictRows.length === 0
+      && (
+        unscheduledReasons.includes('NO_FEASIBLE_ROUTE_SLOT')
+        || unscheduledReasons.includes('OFF-ROUTE')
+        || unscheduledReasons.includes('OFF_ROUTE')
+        || unscheduledReasons.includes('BACKTRACK')
+        || unscheduledReasons.includes('DETOUR')
+      );
+    const passesScheduleRules =
+      routeEndOverflowMinutes === 0
+      && selectedManualConflictRows.length === 0
+      && (!stillUnschedulable || onlySoftManualRouteFitConflict);
 
     let reason: string | null = null;
     if (requiresPriorityConfirmation) {
       reason = 'Top-priority hotspots would need to be replaced. Confirmation required.';
-    } else if (stillUnschedulable) {
-      reason = adaptive?.reason || adaptive?.unscheduledManualHotspots?.[0]?.reason || 'Manual hotspot could not be scheduled within valid route constraints.';
     } else if (routeEndOverflowMinutes > 0) {
       reason = 'Route end time overflow after rebuilt manual hotspot insertion.';
     } else if (selectedManualConflictRows.length > 0) {
-      reason = 'Selected manual hotspot does not fit the rebuilt time slot or operating window.';
+      const firstConflict = selectedManualConflictRows[0];
+      const conflictReason = String(
+        firstConflict?.conflictReason
+        || firstConflict?.conflict_reason
+        || '',
+      ).trim();
+
+      reason = conflictReason
+        ? `Opening/timing conflict: ${conflictReason}`
+        : 'Opening/timing conflict: selected manual hotspot does not fit the rebuilt time slot or operating window.';
+    } else if (onlySoftManualRouteFitConflict) {
+      reason = 'Manual hotspot adds extra distance or off-route travel, but it is allowed because the rebuilt route is within the manual timing window.';
+    } else if (stillUnschedulable) {
+      reason =
+        adaptive?.reason
+        || adaptive?.unscheduledManualHotspots?.[0]?.reason
+        || 'Manual hotspot could not be scheduled within valid route constraints.';
     }
+
+    const requiresForceConfirmation =
+      routeEndOverflowMinutes === 0
+      && selectedManualConflictRows.length > 0
+      && !requiresPriorityConfirmation;
 
     return {
       passesScheduleRules,
       readyToApply: passesScheduleRules && !requiresPriorityConfirmation,
       requiresPriorityConfirmation,
-      stillUnschedulable,
+      requiresForceConfirmation,
+      stillUnschedulable: stillUnschedulable && !onlySoftManualRouteFitConflict,
+      softManualRouteFitConflict: onlySoftManualRouteFitConflict,
       routeEndOverflowMinutes,
+      manualTimingPolicy,
       openingHourConflictCount: openingHourConflictRows.length,
       selectedManualConflictCount: selectedManualConflictRows.length,
       scheduledSelectedManualCount: scheduledSelectedRows.length,
@@ -20600,6 +21442,7 @@ const guideSlotCsv = guideSlots.join(',');
       allowTopPriorityRemoval?: boolean;
       removedOptionalHotspots?: any[];
       removedTopPriorityHotspots?: any[];
+      manualTimingPolicy?: ManualHotspotTimingPolicy;
     },
   ): Promise<ManualInsertionCandidateResult> {
     const allowTopPriorityRemoval = options?.allowTopPriorityRemoval === true;
@@ -20637,7 +21480,11 @@ const guideSlotCsv = guideSlots.join(',');
     const topPriorityAffected = this.detectTopPriorityImpact(baselineTopPriorityByHotspotId, afterCandidates);
 
     const openingHourConflictCount = Number((fullTimeline || []).filter((row: any) => row?.isConflict === true && Number(row?.item_type || 0) === 4).length || 0);
-    const routeEndOverflowMinutes = this.calculateRouteEndOverflowMinutes(fullTimeline, route);
+    const routeEndOverflowMinutes = this.calculateRouteEndOverflowMinutes(
+      fullTimeline,
+      route,
+      options?.manualTimingPolicy?.endTime,
+    );
 
     const score = this.scoreManualInsertionCandidate({
       waitingMinutes,
@@ -20722,6 +21569,7 @@ const guideSlotCsv = guideSlots.join(',');
       removedTopPriorityHotspots?: any[];
       baselineTopPriorityByHotspotId?: Map<number, { id: number; name: string; priority: number }>;
       masterMap?: Map<number, any>;
+      manualTimingPolicy?: ManualHotspotTimingPolicy;
     },
   ): Promise<ManualInsertionCandidateResult> {
     const route = await (tx as any).dvi_itinerary_route_details.findFirst({
@@ -20764,6 +21612,7 @@ const guideSlotCsv = guideSlots.join(',');
           allowTopPriorityRemoval: options?.allowTopPriorityRemoval === true,
           removedOptionalHotspots: options?.removedOptionalHotspots || [],
           removedTopPriorityHotspots: options?.removedTopPriorityHotspots || [],
+          manualTimingPolicy: options?.manualTimingPolicy,
         },
       );
       candidates.push(simulated);
@@ -21687,6 +22536,7 @@ const guideSlotCsv = guideSlots.join(',');
       previewOnly?: boolean;
       destinationInsertionMode?: boolean;
       destinationMinCandidateIndex?: number;
+      manualTimingPolicy?: ManualHotspotTimingPolicy;
     },
   ): Promise<{
     removedOptionalHotspots: Array<{ id: number; name: string; priority: number; reason?: string }>;
@@ -21766,6 +22616,7 @@ const guideSlotCsv = guideSlots.join(',');
         removedTopPriorityHotspots,
         baselineTopPriorityByHotspotId,
         masterMap: baselineCandidates.masterMap,
+        manualTimingPolicy: options?.manualTimingPolicy,
       },
     );
 
@@ -21854,10 +22705,13 @@ const guideSlotCsv = guideSlots.join(',');
           previewOnly: isPreviewOnly,
           anchorType: anchor?.anchorType,
           anchorIndex: anchor?.anchorIndex,
+          destinationInsertionMode: options?.destinationInsertionMode === true,
+          destinationMinCandidateIndex: Number(options?.destinationMinCandidateIndex || 0) || undefined,
           removedOptionalHotspots,
           removedTopPriorityHotspots,
           baselineTopPriorityByHotspotId,
           masterMap: baselineCandidates.masterMap,
+          manualTimingPolicy: options?.manualTimingPolicy,
         },
       );
 
@@ -21942,10 +22796,13 @@ const guideSlotCsv = guideSlots.join(',');
           previewOnly: isPreviewOnly,
           anchorType: anchor?.anchorType,
           anchorIndex: anchor?.anchorIndex,
+          destinationInsertionMode: options?.destinationInsertionMode === true,
+          destinationMinCandidateIndex: Number(options?.destinationMinCandidateIndex || 0) || undefined,
           removedOptionalHotspots,
           removedTopPriorityHotspots,
           baselineTopPriorityByHotspotId,
           masterMap: baselineCandidates.masterMap,
+          manualTimingPolicy: options?.manualTimingPolicy,
         },
       );
 
