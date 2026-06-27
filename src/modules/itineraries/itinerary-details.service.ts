@@ -473,9 +473,36 @@ export class ItineraryDetailsService {
     return String(n).padStart(2, '0');
   }
 
-  /** YYYY-MM-DD using server local timezone (DB stores IST wall-clock). */
-  private formatISODateLocal(d: Date): string {
-    return `${d.getFullYear()}-${this.pad2(d.getMonth() + 1)}-${this.pad2(d.getDate())}`;
+  /**
+   * YYYY-MM-DD from MySQL DATETIME without server timezone conversion.
+   *
+   * IMPORTANT:
+   * - MySQL DATETIME is a wall-clock value.
+   * - Prisma returns it as a JS Date like 2026-07-08T20:00:00.000Z.
+   * - Do NOT use getFullYear/getMonth/getDate because that depends on server timezone.
+   * - Use UTC getters so local and production both show the DB date consistently.
+   */
+  private formatDbDateOnly(value?: Date | string | null): string {
+    if (!value) return '';
+
+    // If DB/date value ever comes as string, preserve the YYYY-MM-DD part directly.
+    if (typeof value === 'string') {
+      const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (match) return `${match[1]}-${match[2]}-${match[3]}`;
+
+      const parsed = new Date(value);
+      if (Number.isNaN(parsed.getTime())) return '';
+
+      return `${parsed.getUTCFullYear()}-${this.pad2(parsed.getUTCMonth() + 1)}-${this.pad2(
+        parsed.getUTCDate(),
+      )}`;
+    }
+
+    if (Number.isNaN(value.getTime())) return '';
+
+    return `${value.getUTCFullYear()}-${this.pad2(value.getUTCMonth() + 1)}-${this.pad2(
+      value.getUTCDate(),
+    )}`;
   }
 
   private formatCreatedOn(d?: Date | string | null) {
@@ -5048,15 +5075,14 @@ sightseeingDistance,       // local sightseeing separately
       netPayable: netPayable,
       companyName: 'Doview Holidays India Pvt ltd',
     };
-
     // ------------------------------ TOP SUMMARY ------------------------------
-    const dateRange =
-      plan.trip_start_date_and_time && plan.trip_end_date_and_time
-        ? `${this.formatISODateLocal(plan.trip_start_date_and_time)} to ${this.formatISODateLocal(
-            plan.trip_end_date_and_time,
-          )}`
-        : '';
+    const tripStartDate = this.formatDbDateOnly(plan.trip_start_date_and_time);
+    const tripEndDate = this.formatDbDateOnly(plan.trip_end_date_and_time);
 
+    const dateRange =
+      tripStartDate && tripEndDate ? `${tripStartDate} to ${tripEndDate}` : '';
+   
+    
     // Room count belongs to the plan header and should remain available even for vehicle-only itineraries.
     const roomCount = Number(plan.preferred_room_count ?? 0);
 
