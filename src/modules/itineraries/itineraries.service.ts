@@ -33,7 +33,10 @@ import { normalizePassengerTitle } from "../../common/utils/passenger-title.util
 import { SupplementNormalizerService } from "../../modules/hotels/services/supplement-normalizer.service";
 import { normalizeCityName } from "./utils/city-normalization.util";
 import { haversineKm } from "./utils/distance-utils";
-import { buildMissingManualHotspotMatrix as buildMissingManualHotspotMatrixHelper } from './helpers/manual-hotspot-matrix-builder';
+import {
+  buildMissingManualHotspotMatrix as buildMissingManualHotspotMatrixHelper,
+  ManualHotspotMatrixBuildResult,
+} from './helpers/manual-hotspot-matrix-builder';
 import { randomUUID } from "crypto";
 import { filterActiveVendorCandidateRows } from "./utils/active-vendor-candidate.util";
 
@@ -5079,6 +5082,7 @@ const guideSlotCsv = guideSlots.join(',');
           hotspot_description: true,
           hotspot_duration: true,
           hotspot_location: true,
+          hotspot_to_location: true,
           hotspot_priority: true,
           hotspot_video_url: true,
         },
@@ -5254,6 +5258,8 @@ const guideSlotCsv = guideSlots.join(',');
           description: h.hotspot_description || "",
           timeSpend: h.hotspot_duration ? new Date(h.hotspot_duration).getUTCHours() : 0,
           locationMap: h.hotspot_location || null,
+          hotspot_location: h.hotspot_location || null,
+          hotspot_to_location: h.hotspot_to_location || h.hotspot_location || null,
           timings: timingMap.get(h.hotspot_ID) || "No timings available",
           image: (hotspotGalleryMap.get(hotspotId) || [])[0] || null,
           galleryImages: hotspotGalleryMap.get(hotspotId) || [],
@@ -5310,10 +5316,13 @@ const guideSlotCsv = guideSlots.join(',');
       destinationReachedTime: null as string | null,
       destinationReachedAfter3Pm: false,
       destinationCityHotspotsHidden: 0,
+      destinationCityHotspotsVisibleAfter3Pm: true,
+      routeMovementHotspotsHidden: 0,
       anchorType: data?.anchorType || null,
       anchorIndex,
       anchorFrom: null as string | null,
       anchorTo: null as string | null,
+      anchorRepresentsRouteMovement: false,
       filterFallbackUsed: false,
     };
 
@@ -5479,8 +5488,34 @@ const guideSlotCsv = guideSlots.join(',');
       const selectedAnchorRow = travelRows[anchorIndex] || null;
       const anchorOrder = Number(selectedAnchorRow?.hotspot_order || 0) || null;
       const parsedAnchor = parseTravelFromTo(selectedAnchorRow?.via_location_name || '');
-      const anchorFromKey = this.deriveLooseCityKey(parsedAnchor.from || '');
-      const anchorToKey = this.deriveLooseCityKey(parsedAnchor.to || '');
+      const selectedAnchorMaster = masterById.get(Number(selectedAnchorRow?.hotspot_ID || 0));
+      const previousVisitedRow = [...(routeRows || [])]
+        .filter((row: any) =>
+          Number(row?.item_type || 0) === 4 &&
+          Number(row?.hotspot_order || 0) < Number(selectedAnchorRow?.hotspot_order || 0),
+        )
+        .sort((a: any, b: any) => Number(b?.hotspot_order || 0) - Number(a?.hotspot_order || 0))[0] || null;
+      const previousVisitedMaster = masterById.get(Number(previousVisitedRow?.hotspot_ID || 0));
+      const previousVisitedMatchesSelected =
+        Number(previousVisitedRow?.hotspot_ID || 0) > 0 &&
+        Number(previousVisitedRow?.hotspot_ID || 0) === Number(selectedAnchorRow?.hotspot_ID || 0);
+
+      const resolvedAnchorFrom = String(
+        parsedAnchor.from ||
+        (previousVisitedMatchesSelected ? '' : previousVisitedMaster?.hotspot_name) ||
+        route?.location_name ||
+        '',
+      ).trim();
+      const resolvedAnchorTo = String(
+        parsedAnchor.to ||
+        selectedAnchorMaster?.hotspot_name ||
+        (Number(selectedAnchorRow?.item_type || 0) === 5 ? 'Hotel' : '') ||
+        route?.next_visiting_location ||
+        '',
+      ).trim();
+
+      const anchorFromKey = this.deriveLooseCityKey(resolvedAnchorFrom || '');
+      const anchorToKey = this.deriveLooseCityKey(resolvedAnchorTo || '');
 
       const anchorInsideSourcePortion = !!sourceCityKey && (
         anchorFromKey === sourceCityKey
@@ -5498,8 +5533,8 @@ const guideSlotCsv = guideSlots.join(',');
         destinationCityKey,
         anchorType: data?.anchorType || null,
         anchorIndex,
-        anchorFrom: parsedAnchor.from || null,
-        anchorTo: parsedAnchor.to || null,
+        anchorFrom: resolvedAnchorFrom || null,
+        anchorTo: resolvedAnchorTo || null,
         anchorInsideSourcePortion,
         anchorBeforeDestination,
       });
@@ -5510,42 +5545,149 @@ const guideSlotCsv = guideSlots.join(',');
         destinationReachedOrder,
       });
 
-      const shouldHideDestinationHotspots = (
-        directToggleOff
-        && destinationReachedAfter3Pm
-        && (anchorInsideSourcePortion || anchorBeforeDestination)
-      );
+      // Manual hotspot insertion is now relaxed:
+      // destination-city hotspots must remain visible even if the destination is reached after 3 PM.
+      // Users can continue the itinerary and reach the hotel by 11 PM.
+      // Keep route-movement filtering below, but do not hide destination-city hotspots here.
+      const shouldHideDestinationHotspots = false;
 
-      let destinationCityHotspotsHidden = 0;
+      const splitLocationTokens = (value: unknown): string[] => {
+        return String(value || '')
+          .split('|')
+          .flatMap((part) => String(part || '').split(','))
+          .map((part) => this.normalizeLocationText(part))
+          .filter(Boolean);
+      };
+
+      const tokenMatchesCity = (value: unknown, cityKey: string): boolean => {
+        if (!cityKey) return false;
+
+        return splitLocationTokens(value).some((token) => (
+          token === cityKey
+          || token.startsWith(`${cityKey} `)
+          || token.includes(` ${cityKey} `)
+          || token.endsWith(` ${cityKey}`)
+        ));
+      };
+
+      const hotspotLocationRaw = (row: any): string => String(
+        row?.hotspot_location
+        || row?.hotspotLocation
+        || row?.locationMap
+        || '',
+      ).trim();
+
+      const hotspotToLocationRaw = (row: any): string => String(
+        row?.hotspot_to_location
+        || row?.hotspotToLocation
+        || row?.toLocationMap
+        || row?.hotspot_location
+        || row?.hotspotLocation
+        || row?.locationMap
+        || '',
+      ).trim();
+
+      const isRouteMovementHotspot = (row: any): boolean => {
+        const fromRaw = hotspotLocationRaw(row);
+        const toRaw = hotspotToLocationRaw(row);
+
+        if (!fromRaw || !toRaw) return false;
+
+        const fromTokens = splitLocationTokens(fromRaw);
+        const toTokens = splitLocationTokens(toRaw);
+
+        if (!fromTokens.length || !toTokens.length) return false;
+
+        return fromTokens.join('|') !== toTokens.join('|');
+      };
+
+      const isHotspotForCurrentRoutePair = (row: any): boolean => {
+        const fromRaw = hotspotLocationRaw(row);
+        const toRaw = hotspotToLocationRaw(row);
+
+        const fromMatchesSource = tokenMatchesCity(fromRaw, sourceCityKey);
+        const fromMatchesDest = tokenMatchesCity(fromRaw, destinationCityKey);
+        const toMatchesSource = tokenMatchesCity(toRaw, sourceCityKey);
+        const toMatchesDest = tokenMatchesCity(toRaw, destinationCityKey);
+
+        const sameCityRoute =
+          !!sourceCityKey &&
+          !!destinationCityKey &&
+          sourceCityKey === destinationCityKey;
+
+        if (sameCityRoute) {
+          return (
+            fromMatchesSource ||
+            fromMatchesDest ||
+            toMatchesSource ||
+            toMatchesDest
+          );
+        }
+
+        return (
+          (fromMatchesSource && toMatchesDest) ||
+          (fromMatchesDest && toMatchesSource)
+        );
+      };
+
+      const anchorFromRaw = resolvedAnchorFrom;
+      const anchorToRaw = resolvedAnchorTo;
+
+      const anchorFromMatchesSource = tokenMatchesCity(anchorFromRaw, sourceCityKey);
+      const anchorFromMatchesDestination = tokenMatchesCity(anchorFromRaw, destinationCityKey);
+      const anchorToMatchesSource = tokenMatchesCity(anchorToRaw, sourceCityKey);
+      const anchorToMatchesDestination = tokenMatchesCity(anchorToRaw, destinationCityKey);
+
+      const routeIsSameCity =
+        !!sourceCityKey &&
+        !!destinationCityKey &&
+        sourceCityKey === destinationCityKey;
+
+      const hasConcreteAnchorLeg = !!anchorFromRaw || !!anchorToRaw;
+
+      const anchorRepresentsRouteMovement =
+        !routeIsSameCity &&
+        hasConcreteAnchorLeg &&
+        (
+          (anchorFromMatchesSource && anchorToMatchesDestination) ||
+          (anchorFromMatchesDestination && anchorToMatchesSource)
+        );
+
+      const isHotspotAllowedForCurrentAnchor = (row: any): boolean => {
+        if (!isRouteMovementHotspot(row)) return true;
+
+        if (hasConcreteAnchorLeg && !anchorRepresentsRouteMovement) {
+          return false;
+        }
+
+        return isHotspotForCurrentRoutePair(row);
+      };
+
+      let routeMovementHotspotsHidden = 0;
       const hotspots = safeBaseHotspots.filter((row: any) => {
-        if (!shouldHideDestinationHotspots) return true;
+        const name = String(row?.name || row?.hotspot_name || '').trim();
+        const fromRaw = hotspotLocationRaw(row);
+        const toRaw = hotspotToLocationRaw(row);
 
-        const name = String(row?.name || '').trim();
-        const locationMap = String(row?.locationMap || row?.hotspot_location || '').trim();
-        const rowSourceKey = this.deriveLooseCityKey(locationMap || name);
-        const rowNormalizedLocation = this.normalizeLocationText(locationMap || name);
-
-        const sourceMatch = !!sourceCityKey && (
-          rowSourceKey === sourceCityKey || rowNormalizedLocation.includes(sourceCityKey)
-        );
-        if (sourceMatch) return true;
-
-        const destinationMatch = !!destinationCityKey && (
-          rowSourceKey === destinationCityKey
-          || rowNormalizedLocation.includes(destinationCityKey)
-          || this.normalizeLocationText(name).includes(destinationCityKey)
-        );
-
-        if (destinationMatch) {
-          destinationCityHotspotsHidden += 1;
-          console.log('[AddHotspotFilter] hiding_destination_hotspot', {
-            hotspotId: Number(row?.id || 0),
+        if (!isHotspotAllowedForCurrentAnchor(row)) {
+          routeMovementHotspotsHidden += 1;
+          console.log('[AddHotspotFilter] hiding_route_movement_hotspot_wrong_anchor', {
+            hotspotId: Number(row?.id || row?.hotspot_ID || 0),
             hotspotName: name,
-            hotspotLocation: locationMap,
+            hotspotLocation: fromRaw,
+            hotspotToLocation: toRaw,
+            sourceCityKey,
+            destinationCityKey,
+            anchorFrom: anchorFromRaw || null,
+            anchorTo: anchorToRaw || null,
+            anchorRepresentsRouteMovement,
           });
           return false;
         }
 
+        // Destination-city hotspots are no longer hidden for manual insertion.
+        // This allows the destination-city tab and destination hotspots to be shown.
+        // Route-movement hotspots are still filtered above when the anchor is wrong.
         return true;
       });
 
@@ -5555,19 +5697,27 @@ const guideSlotCsv = guideSlots.join(',');
         destinationCityKey,
         destinationReachedTime,
         destinationReachedAfter3Pm,
-        destinationCityHotspotsHidden,
+        destinationCityHotspotsHidden: 0,
+        destinationCityHotspotsVisibleAfter3Pm: true,
+        routeMovementHotspotsHidden,
         anchorType: data?.anchorType || null,
         anchorIndex,
-        anchorFrom: parsedAnchor.from || null,
-        anchorTo: parsedAnchor.to || null,
+        anchorFrom: resolvedAnchorFrom || null,
+        anchorTo: resolvedAnchorTo || null,
+        anchorRepresentsRouteMovement,
         filterFallbackUsed: false,
       };
 
       console.log('[AddHotspotFilter] result_counts', {
         beforeCount: safeBaseHotspots.length,
         afterCount: hotspots.length,
-        destinationCityHotspotsHidden,
+        destinationCityHotspotsHidden: 0,
+        destinationCityHotspotsVisibleAfter3Pm: true,
+        routeMovementHotspotsHidden,
         shouldHideDestinationHotspots,
+        anchorFrom: anchorFromRaw || null,
+        anchorTo: anchorToRaw || null,
+        anchorRepresentsRouteMovement,
       });
 
       return {
@@ -11743,32 +11893,7 @@ const guideSlotCsv = guideSlots.join(',');
     routeId: number;
     candidateHotspotId: number;
     userId?: number;
-  }): Promise<{
-    success: boolean;
-    planId: number;
-    routeId: number;
-    candidateHotspotId: number;
-    candidateName: string;
-    slotPairs: number;
-    successCount: number;
-    failedCount: number;
-    rows: Array<{
-      fromHotspotId: number;
-      fromName: string;
-      toHotspotId: number;
-      toName: string;
-      routeFitType?: string;
-      abDistanceKm?: number;
-      acDistanceKm?: number;
-      cbDistanceKm?: number;
-      roadDetourKm?: number;
-      error?: string;
-    }>;
-    code?: string;
-    message?: string;
-    osrmSource?: string;
-    publicDemoWarning?: boolean;
-  }> {
+  }): Promise<ManualHotspotMatrixBuildResult> {
     const planId = Number(params?.planId || 0);
     const routeId = Number(params?.routeId || 0);
     const candidateHotspotId = Number(params?.candidateHotspotId || 0);
@@ -11798,11 +11923,74 @@ const guideSlotCsv = guideSlots.join(',');
         successCount: 0,
         failedCount: 0,
         rows: [],
+        osrmSource: String(process.env.OSRM_BASE_URL || 'https://router.project-osrm.org/route/v1/driving').trim(),
+        publicDemoWarning: String(process.env.OSRM_BASE_URL || 'https://router.project-osrm.org/route/v1/driving').includes('router.project-osrm.org'),
+        hasAnyMatrixData: false,
+        hasFeasibleMatrixSlot: false,
+        allSlotsAreOffRouteOrBacktrack: false,
+        nextPreviewExpectedState: 'NO_FEASIBLE_ROUTE_SLOT',
       };
     }
 
     this.manualHotspotMatrixBuildLocks.add(lockKey);
     try {
+      const routeRow = await this.prisma.dvi_itinerary_route_details.findFirst({
+        where: {
+          itinerary_route_ID: Number(routeId),
+          deleted: 0,
+        },
+        select: {
+          location_name: true,
+          next_visiting_location: true,
+          location_id: true,
+        },
+      });
+
+      const candidate = await this.prisma.dvi_hotspot_place.findFirst({
+        where: {
+          hotspot_ID: Number(candidateHotspotId),
+          deleted: 0,
+        },
+        select: {
+          hotspot_ID: true,
+          hotspot_name: true,
+          hotspot_location: true,
+        },
+      });
+
+      const sourceCityKey = this.deriveLooseCityKey(String(routeRow?.location_name || ''));
+      const destinationCityKey = this.deriveLooseCityKey(String(routeRow?.next_visiting_location || ''));
+      const candidateText = this.normalizeLocationText(
+        `${candidate?.hotspot_name || ''} ${candidate?.hotspot_location || ''}`,
+      );
+
+      const candidateIsDestinationSide =
+        !!destinationCityKey &&
+        destinationCityKey !== sourceCityKey &&
+        candidateText.includes(destinationCityKey);
+
+      if (candidateIsDestinationSide) {
+        return {
+          success: true,
+          code: 'DESTINATION_SIDE_MATRIX_NOT_REQUIRED',
+          message: 'Destination-side manual hotspot does not require normal hotspot-to-hotspot matrix. Preview/apply should use destination-to-hotel timing logic.',
+          planId,
+          routeId,
+          candidateHotspotId,
+          candidateName: String(candidate?.hotspot_name || `Hotspot #${candidateHotspotId}`),
+          slotPairs: 0,
+          successCount: 0,
+          failedCount: 0,
+          rows: [],
+          osrmSource: String(process.env.OSRM_BASE_URL || 'https://router.project-osrm.org/route/v1/driving').trim(),
+          publicDemoWarning: String(process.env.OSRM_BASE_URL || 'https://router.project-osrm.org/route/v1/driving').includes('router.project-osrm.org'),
+          hasAnyMatrixData: true,
+          hasFeasibleMatrixSlot: true,
+          allSlotsAreOffRouteOrBacktrack: false,
+          nextPreviewExpectedState: 'FEASIBLE_PREVIEW',
+        };
+      }
+
       const result = await buildMissingManualHotspotMatrixHelper({
         prisma: this.prisma,
         input: {
@@ -11843,6 +12031,10 @@ const guideSlotCsv = guideSlots.join(',');
         rows: [],
         osrmSource: String(process.env.OSRM_BASE_URL || 'https://router.project-osrm.org/route/v1/driving').trim(),
         publicDemoWarning: String(process.env.OSRM_BASE_URL || 'https://router.project-osrm.org/route/v1/driving').includes('router.project-osrm.org'),
+        hasAnyMatrixData: false,
+        hasFeasibleMatrixSlot: false,
+        allSlotsAreOffRouteOrBacktrack: false,
+        nextPreviewExpectedState: 'NO_FEASIBLE_ROUTE_SLOT',
       };
     } finally {
       this.manualHotspotMatrixBuildLocks.delete(lockKey);
@@ -15211,6 +15403,20 @@ const guideSlotCsv = guideSlots.join(',');
     const bestSlot = manualInsertionFit?.bestSlot || manualInsertionFit?.chosenSlot || null;
     if (!bestSlot) return baseMerged;
 
+    const isTravelRow = (row: any) => {
+      const type = String(row?.type || '').toLowerCase();
+      return type === 'travel' || Number(row?.item_type || 0) === 3 || Number(row?.item_type || 0) === 5;
+    };
+    const isAttractionRow = (row: any) => {
+      const type = String(row?.type || '').toLowerCase();
+      return type === 'attraction' || Number(row?.item_type || 0) === 4;
+    };
+    const isHotelLikeRow = (row: any) => {
+      const type = String(row?.type || '').toLowerCase();
+      const text = String(row?.text || row?.name || '').toLowerCase();
+      return type === 'hotel' || Number(row?.item_type || 0) === 6 || text.includes('check-in at hotel');
+    };
+
     const fromHotspotId = Number(bestSlot?.fromHotspotId || 0);
     const toHotspotId = Number(bestSlot?.toHotspotId || 0);
     console.log('[ManualTimelineBuild] selected_slot', {
@@ -15221,21 +15427,44 @@ const guideSlotCsv = guideSlots.join(',');
       source: bestSlot?.source || null,
       label: bestSlot?.label || null,
     });
-    if (!fromHotspotId || !toHotspotId) {
+    if (!fromHotspotId) {
       return this.finalizeMatrixPreviewTimeline(baseMerged);
     }
+
+    const destinationSideHotelSlot =
+      manualInsertionFit?.destinationInsertionMode === true
+      || String(bestSlot?.routeFitType || '').toUpperCase() === 'DESTINATION_SIDE_INSERTION'
+      || String(bestSlot?.slotContext || '').toUpperCase() === 'LAST_SOURCE_HOTSPOT_TO_DESTINATION_HOTEL'
+      || String(bestSlot?.source || '').toUpperCase() === 'FINAL_TRAVEL_TO_HOTEL_SPLIT'
+      || String(bestSlot?.source || '').toUpperCase() === 'DESTINATION_CITY_AFTER_REACHED';
 
     // Find key matrix indices
     const fromRowIndex = baseMerged.findIndex(
       (row: any) => Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || 0) === fromHotspotId
-        && String(row?.type || '').toLowerCase() === 'attraction',
+        && isAttractionRow(row),
     );
-    const toRowIndex = baseMerged.findIndex(
+    let toRowIndex = baseMerged.findIndex(
       (row: any) => Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || 0) === toHotspotId
-        && String(row?.type || '').toLowerCase() === 'attraction',
+        && isAttractionRow(row),
     );
 
+    if (toRowIndex < 0 && destinationSideHotelSlot) {
+      toRowIndex = baseMerged.findIndex((row: any, index: number) => (
+        index > fromRowIndex && isHotelLikeRow(row)
+      ));
+    }
+
     if (fromRowIndex < 0 || toRowIndex < 0 || fromRowIndex >= toRowIndex) {
+      console.warn('[ManualTimelineBuild] cannot_reschedule_matrix_slot', {
+        selectedHotspotId: selectedIdNum,
+        fromHotspotId,
+        toHotspotId,
+        destinationSideHotelSlot,
+        fromRowIndex,
+        toRowIndex,
+        slotSource: bestSlot?.source || null,
+        slotContext: bestSlot?.slotContext || null,
+      });
       return this.finalizeMatrixPreviewTimeline(baseMerged);
     }
 
@@ -15265,18 +15494,32 @@ const guideSlotCsv = guideSlots.join(',');
     });
 
     // Fetch or estimate durations
+    const normalizePositiveMinutes = (value: any): number | null => {
+      const num = Number(value);
+      return Number.isFinite(num) && num > 0 ? Math.max(1, Math.round(num)) : null;
+    };
+    const slotAcDurationMin =
+      normalizePositiveMinutes(bestSlot?.acDurationMin)
+      ?? normalizePositiveMinutes(bestSlot?.routeLegSummary?.acDurationMin);
+    const slotCbDurationMin =
+      normalizePositiveMinutes(bestSlot?.cbDurationMin)
+      ?? normalizePositiveMinutes(bestSlot?.routeLegSummary?.cbDurationMin);
     const cachedAcDurationMin = tx ? await this.getCachedRouteDurationMinutes(tx, fromHotspotId, selectedIdNum) : null;
-    const cachedCbDurationMin = tx ? await this.getCachedRouteDurationMinutes(tx, selectedIdNum, toHotspotId) : null;
+    const cachedCbDurationMin = tx && toHotspotId > 0
+      ? await this.getCachedRouteDurationMinutes(tx, selectedIdNum, toHotspotId)
+      : null;
     const acDurationMin =
-      cachedAcDurationMin
-      || this.estimateDurationFromDistance(Number(bestSlot?.acOsrmDistanceKm || null))
-      || 10;
+      slotAcDurationMin
+      ?? normalizePositiveMinutes(cachedAcDurationMin)
+      ?? this.estimateDurationFromDistance(Number(bestSlot?.acOsrmDistanceKm || null))
+      ?? 10;
     const cbDurationMin =
-      cachedCbDurationMin
-      || this.estimateDurationFromDistance(Number(bestSlot?.cbOsrmDistanceKm || null))
-      || 10;
-    const acEstimated = !Number.isFinite(Number(cachedAcDurationMin || 0)) || Number(cachedAcDurationMin || 0) <= 0;
-    const cbEstimated = !Number.isFinite(Number(cachedCbDurationMin || 0)) || Number(cachedCbDurationMin || 0) <= 0;
+      slotCbDurationMin
+      ?? normalizePositiveMinutes(cachedCbDurationMin)
+      ?? this.estimateDurationFromDistance(Number(bestSlot?.cbOsrmDistanceKm || null))
+      ?? 10;
+    const acEstimated = slotAcDurationMin == null && normalizePositiveMinutes(cachedAcDurationMin) == null;
+    const cbEstimated = slotCbDurationMin == null && normalizePositiveMinutes(cachedCbDurationMin) == null;
 
     const selectedRow = baseMerged[insertedRowIndex];
     const selectedHotspotMaster = hotspotMasters.find((hotspot: any) => Number(hotspot?.hotspot_ID || hotspot?.id || 0) === selectedIdNum) || null;
@@ -15425,19 +15668,6 @@ const guideSlotCsv = guideSlots.join(',');
     const tailSource = baseMerged.slice(toRowIndex);
     const tailRows: any[] = [];
 
-    const isTravelRow = (row: any) => {
-      const type = String(row?.type || '').toLowerCase();
-      return type === 'travel' || Number(row?.item_type || 0) === 3 || Number(row?.item_type || 0) === 5;
-    };
-    const isAttractionRow = (row: any) => {
-      const type = String(row?.type || '').toLowerCase();
-      return type === 'attraction' || Number(row?.item_type || 0) === 4;
-    };
-    const isHotelLikeRow = (row: any) => {
-      const type = String(row?.type || '').toLowerCase();
-      const text = String(row?.text || row?.name || '').toLowerCase();
-      return type === 'hotel' || Number(row?.item_type || 0) === 6 || text.includes('check-in at hotel');
-    };
     const isTravelToHotelRow = (row: any) => {
       const type = String(row?.type || '').toLowerCase();
       const text = String(row?.text || row?.name || '').toLowerCase();
@@ -15584,6 +15814,7 @@ const guideSlotCsv = guideSlots.join(',');
         timeRange: this.minutesRangeToTimeString(cursor, cursor),
         hotspot_start_time: null,
         hotspot_end_time: null,
+        isZeroDurationHotel: true,
       });
     }
 
@@ -15691,8 +15922,8 @@ const guideSlotCsv = guideSlots.join(',');
     const cToBIndex = timeline.findIndex((row: any) => row?.isMatrixSplitTravel === true && row?.matrixTravelLeg === 'C_TO_B');
     if (cToBIndex >= 0) {
       const next = timeline[cToBIndex + 1];
-      if (!next || !isAttraction(next)) {
-        errors.push('C_TO_B travel is not immediately before B attraction');
+      if (!next || (!isAttraction(next) && !isHotelLike(next))) {
+        errors.push('C_TO_B travel is not immediately before B attraction or destination hotel');
       }
     }
 
@@ -16163,9 +16394,28 @@ const guideSlotCsv = guideSlots.join(',');
       manualInsertionFit?.destinationInsertionMode === true
       && String(manualInsertionFit?.code || '').toUpperCase() === 'MANUAL_HOTSPOT_DESTINATION_INSERT_PREVIEW_READY'
     );
+    const manualRelaxedRouteFitForMatrixRequirement =
+      manualTimingPolicy?.mode === 'MANUAL_HOTSPOT'
+      && manualTimingPolicy?.allowOffRouteWhenTimePermits === true;
+    const manualRelaxedMatrixUsable =
+      manualRelaxedRouteFitForMatrixRequirement
+      && manualInsertionFit?.hasAnyMatrixData === true
+      && hasValidMatrixSlot;
+    const destinationSideInsertion =
+      manualInsertionFit?.destinationInsertionMode === true
+      || String(manualInsertionFit?.hotspotCityContext || '').toUpperCase() === 'DESTINATION_CITY';
     const requiresMatrixBuild = (
-      manualInsertionFit?.requiresMatrixBuild === true
-      || (!hasValidMatrixSlot && !destinationHotelSideReady && !emptyRouteSchedulerEligible)
+      (
+        manualInsertionFit?.requiresMatrixBuild === true
+        && !destinationSideInsertion
+        && !manualRelaxedMatrixUsable
+      )
+      || (
+        !hasValidMatrixSlot
+        && !destinationHotelSideReady
+        && !emptyRouteSchedulerEligible
+        && !destinationSideInsertion
+      )
     ) && !destinationSlotNotFound;
     const missingMatrixBuildSuggestion = this.buildMissingMatrixBuildSuggestion(
       Number(planId),
@@ -16210,6 +16460,50 @@ const guideSlotCsv = guideSlots.join(',');
 
     if (requiresMatrixBuild) {
       if (options?.previewOnly === true) {
+        if (
+          manualInsertionFit?.destinationInsertionMode === true
+          || String(manualInsertionFit?.hotspotCityContext || '').toUpperCase() === 'DESTINATION_CITY'
+        ) {
+          return {
+            success: true,
+            inserted: false,
+            selectedIncluded: true,
+            code: 'MANUAL_HOTSPOT_DESTINATION_INSERT_PREVIEW_READY',
+            message: 'Destination-side manual hotspot can be previewed without normal route-fit matrix.',
+            planId: Number(planId),
+            routeId: Number(routeId),
+            hotspotId: Number(preFocusHotspotId),
+            hotspotIds: requestedHotspotIds,
+            manualTimingPolicy,
+            canBuildMatrix: false,
+            fullTimeline: baselineTimelineForMatrix,
+            routeTimeline: baselineTimelineForMatrix,
+            manualInsertionFit: {
+              ...manualInsertionFit,
+              requiresMatrixBuild: false,
+              canBuildMatrix: false,
+              destinationInsertionMode: true,
+              manualTimingPolicy,
+              previewBlockReason: null,
+              code: 'MANUAL_HOTSPOT_DESTINATION_INSERT_PREVIEW_READY',
+            },
+            validation: {
+              passesScheduleRules: true,
+              readyToApply: true,
+              requiresPriorityConfirmation: false,
+              stillUnschedulable: false,
+              routeEndOverflowMinutes: 0,
+              manualTimingPolicy,
+              openingHourConflictCount: 0,
+              selectedManualConflictCount: 0,
+              scheduledSelectedManualCount: requestedHotspotIds.length,
+              unscheduledManualCount: 0,
+              requiresMatrixBuild: false,
+              reason: 'DESTINATION_SIDE_MATRIX_NOT_REQUIRED',
+            },
+          };
+        }
+
         const osrmRouteCheckFailed = String(manualInsertionFit?.reason || manualInsertionFit?.previewBlockReason || '') === 'OSRM_ROUTE_CHECK_FAILED';
         const manualFitCode = String(manualInsertionFit?.code || '').toUpperCase();
         const manualFitBlockReason = String(manualInsertionFit?.previewBlockReason || '').toUpperCase();
@@ -18255,6 +18549,55 @@ const guideSlotCsv = guideSlots.join(',');
     return null;
   }
 
+  private async resolveRouteDestinationCityEndpoint(
+    tx: any,
+    routeId: number,
+  ): Promise<{ hotelId: number; hotelName: string; latitude: number; longitude: number } | null> {
+    const route = await (tx as any).dvi_itinerary_route_details.findFirst({
+      where: {
+        itinerary_route_ID: Number(routeId),
+        deleted: 0,
+      },
+      select: {
+        location_id: true,
+        next_visiting_location: true,
+      },
+    });
+
+    const locationId = Number(route?.location_id || 0);
+    if (!locationId) return null;
+
+    const stored = await (tx as any).dvi_stored_locations.findFirst({
+      where: {
+        location_ID: locationId,
+        deleted: 0,
+      },
+      select: {
+        destination_location: true,
+        destination_location_lattitude: true,
+        destination_location_longitude: true,
+      },
+    });
+
+    const destinationName = String(
+      stored?.destination_location || route?.next_visiting_location || 'Destination',
+    ).trim();
+
+    const latitude = Number(stored?.destination_location_lattitude);
+    const longitude = Number(stored?.destination_location_longitude);
+
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      return null;
+    }
+
+    return {
+      hotelId: 0,
+      hotelName: `${destinationName} Hotel`,
+      latitude,
+      longitude,
+    };
+  }
+
   private async resolveHotelEndpointByLooseName(
     tx: any,
     rawName: string,
@@ -19750,7 +20093,14 @@ const guideSlotCsv = guideSlots.join(',');
         destinationHotelEndpoint = await this.resolveHotelEndpointByLooseName(tx, hotelNameHint);
       }
     }
+    if (destinationInsertionMode && !destinationHotelEndpoint) {
+      destinationHotelEndpoint = await this.resolveRouteDestinationCityEndpoint(tx, Number(routeId));
+    }
     const destinationHotelLabel = String(destinationHotelEndpoint?.hotelName || 'Hotel');
+    const destinationHotelEndpointResolved =
+      !!destinationHotelEndpoint
+      && Number.isFinite(Number(destinationHotelEndpoint.latitude))
+      && Number.isFinite(Number(destinationHotelEndpoint.longitude));
 
     const attractionCityContexts = routeAttractions.map((row: any, index: number) => {
       const rowId = Number(row?.hotspot_ID || 0);
@@ -19846,7 +20196,10 @@ const guideSlotCsv = guideSlots.join(',');
     }
 
     if (slotPairs.length === 0) {
-      if (destinationInsertionMode && Number(destinationAnchorHotspotId || 0) > 0) {
+      const lastRouteAttraction = attractionCityContexts.length > 0
+        ? attractionCityContexts[attractionCityContexts.length - 1]
+        : null;
+      if (destinationInsertionMode && destinationHotelEndpointResolved) {
         const baselineRowsLocal = Array.isArray(baselineTimeline) ? baselineTimeline : [];
         const baselineRowsByIdLocal = new Map<number, any>();
         for (const row of baselineRowsLocal) {
@@ -19861,8 +20214,47 @@ const guideSlotCsv = guideSlots.join(',');
           const text = String(row?.text || row?.name || '').toLowerCase();
           return type === 'hotel' || type === 'checkin' || Number(row?.item_type || 0) === 6 || text.includes('check-in at hotel');
         }) || null;
-        const anchorId = Number(destinationAnchorHotspotId || 0);
-        const anchorName = String(destinationAnchorName || nameById.get(anchorId) || `Hotspot #${anchorId}`);
+        const anchorId = Number(destinationAnchorHotspotId || lastRouteAttraction?.hotspotId || 0);
+        const anchorName = String(
+          destinationAnchorName
+          || lastRouteAttraction?.name
+          || nameById.get(anchorId)
+          || `Hotspot #${anchorId}`,
+        );
+        const destinationSlotReasonLocal = Number(destinationAnchorHotspotId || 0) > 0
+          ? 'A_LAST_DESTINATION_TO_HOTEL'
+          : 'C_FINAL_TRAVEL_TO_HOTEL_SPLIT';
+        if (anchorId <= 0) {
+          return {
+            selectedHotspotId: candidateHotspotId,
+            selectedHotspotName: candidateHotspotName,
+            requestedSlot: null,
+            bestSlot: null,
+            chosenSlot: null,
+            allSlotResults: [],
+            chosenSlotSource: 'NO_MATRIX_DATA',
+            routeFitAvailable: false,
+            hasAnyMatrixData: false,
+            hasFeasibleMatrixSlot: false,
+            requiresMatrixBuild: false,
+            canAutoMove: false,
+            canApply: false,
+            code: 'DESTINATION_SLOT_NOT_FOUND',
+            previewBlockReason: 'DESTINATION_SLOT_NOT_FOUND',
+            warning: 'No valid destination-side insertion slot was found after destination is reached.',
+            reason: 'DESTINATION_SLOT_NOT_FOUND',
+            hotspotCityContext,
+            destinationInsertionMode: true,
+            destinationAnchorHotspotId,
+            destinationAnchorName,
+            destinationAnchorOrder,
+            destinationSlotReason: 'DESTINATION_SLOT_NOT_FOUND',
+            destinationMinCandidateIndex,
+            destinationHotelId: Number(destinationHotelEndpoint?.hotelId || 0) || null,
+            destinationHotelName: destinationHotelLabel,
+            destinationHotelEndpointResolved,
+          };
+        }
         const selectedName = String(candidateHotspotName || candidateMaster?.hotspot_name || `Hotspot #${candidateHotspotId}`);
         const hotelLabel = destinationHotelLabel;
 
@@ -19912,11 +20304,26 @@ const guideSlotCsv = guideSlots.join(',');
         const fromBaselineRow = baselineRowsByIdLocal.get(anchorId);
         const hotelStartMinutes = this.parseSegmentStartMinutes(baselineHotelRow);
         const anchorEndMinutes = this.parseSegmentEndMinutes(fromBaselineRow);
+        const finalTravelToHotelRow = [...baselineRowsLocal].reverse().find((row: any) => {
+          const type = String(row?.type || '').toLowerCase();
+          const text = String(row?.text || row?.name || '').toLowerCase();
+          return (
+            type === 'travel'
+            && (
+              text.includes('travel to hotel')
+              || Number(row?.item_type || 0) === 5
+            )
+          );
+        }) || null;
+        const finalTravelStartMinutes = this.parseSegmentStartMinutes(finalTravelToHotelRow);
+        const finalTravelEndMinutes = this.parseSegmentEndMinutes(finalTravelToHotelRow);
         const totalRequiredMinutes = Number(candidateDurationMinutes || 0) + Number(acDurationMin || 0) + Number(cbDurationMin || 0);
         const availableGapMinutes = (
           hotelStartMinutes != null && anchorEndMinutes != null
             ? (hotelStartMinutes - anchorEndMinutes)
-            : null
+            : finalTravelStartMinutes != null && finalTravelEndMinutes != null
+              ? (finalTravelEndMinutes - finalTravelStartMinutes)
+              : null
         );
         const timingPossible = availableGapMinutes == null ? true : availableGapMinutes >= totalRequiredMinutes;
 
@@ -19927,11 +20334,15 @@ const guideSlotCsv = guideSlots.join(',');
           toHotspotId: Number(destinationHotelEndpoint?.hotelId || 0),
           toName: hotelLabel,
           destinationHotelId: Number(destinationHotelEndpoint?.hotelId || 0) || null,
-          source: 'DESTINATION_CITY_AFTER_REACHED',
+          destinationHotelEndpointResolved: true,
+          source: destinationSlotReasonLocal === 'C_FINAL_TRAVEL_TO_HOTEL_SPLIT'
+            ? 'FINAL_TRAVEL_TO_HOTEL_SPLIT'
+            : 'DESTINATION_CITY_AFTER_REACHED',
           routeFitType: 'DESTINATION_SIDE_INSERTION',
-          label: `Insert after reaching ${String(routeCityContext?.next_visiting_location || 'destination')}`,
-          displayLabel: `Insert after reaching ${String(routeCityContext?.next_visiting_location || 'destination')}`,
-          shortLabel: 'Destination insertion',
+          slotContext: 'LAST_SOURCE_HOTSPOT_TO_DESTINATION_HOTEL',
+          label: `Before reaching ${String(routeCityContext?.next_visiting_location || 'destination')} hotel`,
+          displayLabel: `After Madurai sightseeing, before ${String(routeCityContext?.next_visiting_location || 'destination')} hotel`,
+          shortLabel: 'Before destination hotel',
           routePossible: true,
           timingPossible,
           prioritySafe: true,
@@ -19939,13 +20350,15 @@ const guideSlotCsv = guideSlots.join(',');
           attempted: true,
           acOsrmDistanceKm: acDistanceKm,
           acDurationMin,
-          routeDecisionReason: 'Destination-side insertion uses destination anchor and hotel endpoint; matrix is skipped for hotel endpoint.',
+          routeDecisionReason: 'Destination hotspot insertion is evaluated by splitting the final travel-to-hotel leg. Normal hotspot-to-hotspot matrix is not required.',
           timingDecisionReason: timingPossible
-            ? 'Timing fits after destination anchor before hotel/check-in using anchor-to-candidate travel, hotspot visit duration, and candidate-to-hotel travel.'
-            : 'Timing requires reschedule because available gap before hotel is smaller than anchor-to-candidate travel, hotspot visit duration, and candidate-to-hotel travel.',
+            ? 'Timing fits before hotel/check-in within the manual 11 PM hotel reach policy.'
+            : 'Timing requires reschedule because the available final hotel-leg window is not enough.',
           priorityDecisionReason: null,
-          finalDecisionReason: 'Selected: destination-side insertion after destination anchor with hotel endpoint.',
-          decisionReason: 'Destination-side insertion uses destination anchor and hotel endpoint; matrix is skipped for hotel endpoint.',
+          finalDecisionReason: destinationSlotReasonLocal === 'C_FINAL_TRAVEL_TO_HOTEL_SPLIT'
+            ? 'Selected: final travel-to-hotel leg is split for destination-side hotspot insertion.'
+            : 'Selected: destination-side insertion after destination is reached.',
+          decisionReason: 'Destination hotspot insertion is evaluated by splitting the final travel-to-hotel leg. Normal hotspot-to-hotspot matrix is not required.',
           abOsrmDistanceKm: abDistanceKm,
           cbOsrmDistanceKm: cbDistanceKm,
           cbDurationMin,
@@ -20015,10 +20428,61 @@ const guideSlotCsv = guideSlots.join(',');
           destinationAnchorHotspotId,
           destinationAnchorName,
           destinationAnchorOrder,
-          destinationSlotReason: 'A_LAST_DESTINATION_TO_HOTEL',
+          destinationSlotReason: destinationSlotReasonLocal,
           destinationMinCandidateIndex,
           destinationHotelId: Number(destinationHotelEndpoint?.hotelId || 0) || null,
           destinationHotelName: destinationHotelLabel,
+          destinationHotelEndpointResolved: true,
+        };
+      }
+
+      if (destinationInsertionMode) {
+        return {
+          selectedHotspotId: candidateHotspotId,
+          selectedHotspotName: candidateHotspotName,
+          requestedSlot: {
+            fromHotspotId: Number(destinationAnchorHotspotId || 0) || null,
+            fromName: String(destinationAnchorName || routeCityContext?.next_visiting_location || 'Destination'),
+            toHotspotId: Number(destinationHotelEndpoint?.hotelId || 0) || null,
+            toName: destinationHotelLabel,
+            destinationHotelId: Number(destinationHotelEndpoint?.hotelId || 0) || null,
+            routeFitType: 'DESTINATION_SIDE_INSERTION',
+            label: 'Destination insertion',
+            displayLabel: 'Destination insertion',
+            shortLabel: 'Destination insertion',
+            roadDetourKm: null,
+            roadDetourRatio: null,
+            insertedRouteDistanceKm: null,
+            abOsrmDistanceKm: null,
+            acOsrmDistanceKm: null,
+            cbOsrmDistanceKm: null,
+            candidateDistanceFromAbRouteMeters: null,
+            decisionReason: 'No existing destination hotspot anchor is available to create a destination-side insertion slot.',
+          },
+          bestSlot: null,
+          chosenSlot: null,
+          allSlotResults: [],
+          chosenSlotSource: 'NO_MATRIX_DATA',
+          routeFitAvailable: false,
+          hasAnyMatrixData: false,
+          hasFeasibleMatrixSlot: false,
+          requiresMatrixBuild: false,
+          canAutoMove: false,
+          canApply: false,
+          code: 'DESTINATION_SLOT_NOT_FOUND',
+          previewBlockReason: 'DESTINATION_SLOT_NOT_FOUND',
+          reason: 'DESTINATION_SLOT_NOT_FOUND',
+          warning: 'No valid destination-side insertion slot was found after destination is reached.',
+          hotspotCityContext,
+          destinationInsertionMode: true,
+          destinationAnchorHotspotId,
+          destinationAnchorName,
+          destinationAnchorOrder,
+          destinationSlotReason: 'DESTINATION_SLOT_NOT_FOUND',
+          destinationMinCandidateIndex,
+          destinationHotelId: Number(destinationHotelEndpoint?.hotelId || 0) || null,
+          destinationHotelName: destinationHotelLabel,
+          destinationHotelEndpointResolved,
         };
       }
 
@@ -20461,6 +20925,9 @@ const guideSlotCsv = guideSlots.join(',');
         return type === 'hotel' || type === 'checkin' || Number(row?.item_type || 0) === 6 || text.includes('check-in at hotel');
       }) || null;
       const destinationReachedAt = firstDestinationAttraction || lastDestinationAttraction || null;
+      const lastRouteAttraction = attractionCityContexts.length > 0
+        ? attractionCityContexts[attractionCityContexts.length - 1]
+        : null;
 
       console.log('[ManualDestinationInsert] destination_reached_at', {
         routeId: Number(routeId),
@@ -20470,33 +20937,101 @@ const guideSlotCsv = guideSlots.join(',');
         destinationReachedAtOrder: Number(destinationReachedAt?.hotspotOrder || 0) || null,
       });
 
-      const anchorForHotelSlot = lastDestinationAttraction || destinationReachedAt;
+      const getSafeAnchorContext = (ctx: any): any | null => {
+        if (!ctx) return null;
+
+        const hotspotId = Number(ctx?.hotspotId || 0);
+        const attractionRow = hotspotId > 0 ? baselineRowsById.get(hotspotId) : null;
+        if (!attractionRow) return ctx;
+
+        const attractionStart = this.parseSegmentStartMinutes(attractionRow);
+        const attractionEnd = this.parseSegmentEndMinutes(attractionRow);
+
+        const travelToAnchor = [...baselineRows].reverse().find((row: any) => {
+          const type = String(row?.type || '').toLowerCase();
+          const toId = Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || 0);
+          const toText = String(row?.toName || row?.to || row?.text || row?.name || '').toLowerCase();
+          const anchorName = String(ctx?.name || attractionRow?.text || attractionRow?.name || '').toLowerCase();
+
+          return (
+            (type === 'travel' || Number(row?.item_type || 0) === 3 || Number(row?.item_type || 0) === 5)
+            && (
+              toId === hotspotId
+              || (!!anchorName && toText.includes(anchorName))
+            )
+          );
+        }) || null;
+
+        const travelEnd = this.parseSegmentEndMinutes(travelToAnchor);
+        if (
+          attractionStart !== null
+          && travelEnd !== null
+          && travelEnd > attractionStart
+        ) {
+          console.warn('[ManualDestinationInsert] skipping_invalid_destination_anchor', {
+            routeId: Number(routeId),
+            selectedHotspotId: Number(candidateHotspotId),
+            anchorHotspotId: hotspotId,
+            anchorName: ctx?.name || attractionRow?.text || attractionRow?.name || null,
+            travelEnd,
+            attractionStart,
+            attractionEnd,
+          });
+          return null;
+        }
+
+        return ctx;
+      };
+
+      const anchorForHotelSlot =
+        getSafeAnchorContext(lastDestinationAttraction)
+        || getSafeAnchorContext(destinationReachedAt)
+        || getSafeAnchorContext(lastRouteAttraction);
       const hotelStartMinutes = this.parseSegmentStartMinutes(baselineHotelRow);
       const fromBaselineRow = anchorForHotelSlot
         ? baselineRowsById.get(Number(anchorForHotelSlot.hotspotId))
         : null;
       const anchorEndMinutes = this.parseSegmentEndMinutes(fromBaselineRow);
+      const finalTravelToHotelRow = [...baselineRows].reverse().find((row: any) => {
+        const type = String(row?.type || '').toLowerCase();
+        const text = String(row?.text || row?.name || '').toLowerCase();
+        return (
+          type === 'travel'
+          && (
+            text.includes('travel to hotel')
+            || Number(row?.item_type || 0) === 5
+          )
+        );
+      }) || null;
+      const finalTravelStartMinutes = this.parseSegmentStartMinutes(finalTravelToHotelRow);
+      const finalTravelEndMinutes = this.parseSegmentEndMinutes(finalTravelToHotelRow);
+      const availableWindowMinutes = (
+        hotelStartMinutes !== null && anchorEndMinutes !== null
+          ? hotelStartMinutes - anchorEndMinutes
+          : finalTravelStartMinutes !== null && finalTravelEndMinutes !== null
+            ? finalTravelEndMinutes - finalTravelStartMinutes
+            : null
+      );
       const timingPossible = (
-        hotelStartMinutes === null
-        || anchorEndMinutes === null
-        || (hotelStartMinutes - anchorEndMinutes) >= candidateDurationMinutes
+        availableWindowMinutes === null
+        || availableWindowMinutes >= candidateDurationMinutes
       );
 
       let destinationSlotPriorityRank = 999;
-      if (anchorForHotelSlot && baselineHotelRow) {
+      if (lastDestinationAttraction && baselineHotelRow) {
         destinationSlotReason = 'A_LAST_DESTINATION_TO_HOTEL';
         destinationSlotPriorityRank = 1;
       } else if (firstDestinationAttraction && destinationRows.length >= 2) {
         destinationSlotReason = 'B_BETWEEN_DESTINATION_ATTRACTIONS';
         destinationSlotPriorityRank = 2;
-      } else if (baselineHotelRow) {
-        destinationSlotReason = 'C_BEFORE_HOTEL';
+      } else if (anchorForHotelSlot && baselineHotelRow) {
+        destinationSlotReason = 'C_FINAL_TRAVEL_TO_HOTEL_SPLIT';
         destinationSlotPriorityRank = 3;
       } else {
         destinationSlotReason = 'DESTINATION_SLOT_NOT_FOUND';
       }
 
-      if (destinationSlotReason !== 'DESTINATION_SLOT_NOT_FOUND' && anchorForHotelSlot) {
+      if (destinationSlotReason !== 'DESTINATION_SLOT_NOT_FOUND' && anchorForHotelSlot && destinationHotelEndpointResolved) {
         const selectedName = String(candidateHotspotName || candidateMaster?.hotspot_name || `Hotspot #${candidateHotspotId}`);
         const anchorToCandidateLeg = await this.getCachedRouteMatrixLeg(
           tx,
@@ -20551,10 +21086,11 @@ const guideSlotCsv = guideSlots.join(',');
           toHotspotId: Number(destinationHotelEndpoint?.hotelId || 0),
           toName: destinationHotelLabel,
           destinationHotelId: Number(destinationHotelEndpoint?.hotelId || 0) || null,
+          destinationHotelEndpointResolved: true,
           routeFitType: 'DESTINATION_SIDE_INSERTION',
-          label: `Insert after reaching ${String(routeCityContext?.next_visiting_location || 'destination')}`,
-          displayLabel: `Insert after reaching ${String(routeCityContext?.next_visiting_location || 'destination')}`,
-          shortLabel: 'Destination insertion',
+          label: `Before reaching ${String(routeCityContext?.next_visiting_location || 'destination')} hotel`,
+          displayLabel: `After Madurai sightseeing, before ${String(routeCityContext?.next_visiting_location || 'destination')} hotel`,
+          shortLabel: 'Before destination hotel',
           roadDetourKm,
           isZeroExtraDetour: roadDetourKm != null ? Number(roadDetourKm) <= 0.5 : false,
           distanceComparisonNote: null,
@@ -20572,14 +21108,19 @@ const guideSlotCsv = guideSlots.join(',');
           prioritySafe: true,
           selectedAsBest: false,
           attempted: true,
-          source: 'DESTINATION_CITY_AFTER_REACHED',
+          source: destinationSlotReason === 'C_FINAL_TRAVEL_TO_HOTEL_SPLIT'
+            ? 'FINAL_TRAVEL_TO_HOTEL_SPLIT'
+            : 'DESTINATION_CITY_AFTER_REACHED',
+          slotContext: 'LAST_SOURCE_HOTSPOT_TO_DESTINATION_HOTEL',
           destinationSlotPriorityRank,
-          routeDecisionReason: 'Destination hotspot insertion evaluated on destination-side hotel leg without requiring hotspot-to-hotspot matrix.',
+          routeDecisionReason: 'Destination hotspot insertion is evaluated by splitting the final travel-to-hotel leg. Normal hotspot-to-hotspot matrix is not required.',
           timingDecisionReason: timingPossible
-            ? 'Timing fits before hotel/check-in after destination is reached.'
-            : 'Timing requires reschedule because available gap before hotel is not enough.',
+            ? 'Timing fits before hotel/check-in within the manual 11 PM hotel reach policy.'
+            : 'Timing requires reschedule because the available final hotel-leg window is not enough.',
           priorityDecisionReason: null,
-          finalDecisionReason: 'Selected destination-side insertion after destination is reached.',
+          finalDecisionReason: destinationSlotReason === 'C_FINAL_TRAVEL_TO_HOTEL_SPLIT'
+            ? 'Selected: final travel-to-hotel leg is split for destination-side hotspot insertion.'
+            : 'Selected: destination-side insertion after destination is reached.',
           attemptedSlotLabel: `${String(anchorForHotelSlot.name || `Hotspot #${anchorForHotelSlot.hotspotId}`)} -> ${selectedName} -> ${destinationHotelLabel}`,
         };
 
@@ -20668,6 +21209,9 @@ const guideSlotCsv = guideSlots.join(',');
             return sortByRouteFit(a, b);
           });
 
+    const hasResolvedDestinationEndpoint = (slot: any): boolean =>
+      Number(slot?.destinationHotelId || 0) > 0 || slot?.destinationHotelEndpointResolved === true;
+
     const bestSlotData = sortedByUsable.length > 0 ? sortedByUsable[0] : null;
 
     const bestSlot = bestSlotData
@@ -20678,6 +21222,7 @@ const guideSlotCsv = guideSlots.join(',');
           toHotspotId: bestSlotData.toHotspotId,
           toName: bestSlotData.toName,
           destinationHotelId: bestSlotData.destinationHotelId,
+          destinationHotelEndpointResolved: bestSlotData.destinationHotelEndpointResolved === true,
           routeFitType: bestSlotData.routeFitType,
           label: bestSlotData.label,
           displayLabel: bestSlotData.displayLabel || bestSlotData.label,
@@ -20711,7 +21256,7 @@ const guideSlotCsv = guideSlots.join(',');
           priorityDecisionReason: bestSlotData.priorityDecisionReason,
           finalDecisionReason:
             String(bestSlotData.routeFitType || '').toUpperCase() === 'DESTINATION_SIDE_INSERTION'
-            && Number(bestSlotData.destinationHotelId || 0) <= 0
+            && !hasResolvedDestinationEndpoint(bestSlotData)
               ? 'Not selected: destination hotel endpoint is missing. Select a route hotel with valid coordinates.'
               : this.buildRouteFitDisplayMeta({
                   routeFitType: String(bestSlotData.routeFitType || ''),
@@ -20739,6 +21284,7 @@ const guideSlotCsv = guideSlots.join(',');
         toHotspotId: rs.toHotspotId,
         toName: rs.toName,
         destinationHotelId: rs.destinationHotelId,
+        destinationHotelEndpointResolved: rs.destinationHotelEndpointResolved === true,
         routeFitType: rs.routeFitType,
         label: rs.label,
         displayLabel: rs.displayLabel || rs.label,
@@ -20829,7 +21375,7 @@ const guideSlotCsv = guideSlots.join(',');
       feasibleTypes.includes(String(slot?.routeFitType || '').toUpperCase())
       || (
         String(slot?.routeFitType || '').toUpperCase() === 'DESTINATION_SIDE_INSERTION'
-        && Number(slot?.destinationHotelId || 0) > 0
+        && hasResolvedDestinationEndpoint(slot)
       )
     );
 
@@ -20959,6 +21505,7 @@ const guideSlotCsv = guideSlots.join(',');
         toHotspotId: bestSlot.toHotspotId,
         toName: bestSlot.toName,
         destinationHotelId: bestSlot.destinationHotelId,
+        destinationHotelEndpointResolved: bestSlot.destinationHotelEndpointResolved === true,
         routeFitType: bestSlot.routeFitType,
         label: bestSlot.label,
         displayLabel: bestSlot.displayLabel || bestSlot.label,
@@ -21029,7 +21576,7 @@ const guideSlotCsv = guideSlots.join(',');
     );
     const destinationSideReady = (
       destinationSideSlotChosen
-      && Number(chosenSlot?.destinationHotelId || 0) > 0
+      && hasResolvedDestinationEndpoint(chosenSlot)
     );
     const canApply = destinationSideReady || (
       canAutoMove
@@ -21039,12 +21586,12 @@ const guideSlotCsv = guideSlots.join(',');
     const destinationHotelMissingForChosen = (
       destinationInsertionMode
       && destinationSideSlotChosen
-      && Number(chosenSlot?.destinationHotelId || 0) <= 0
+      && !hasResolvedDestinationEndpoint(chosenSlot)
     );
     const destinationHotelMissingWarning = (
       destinationInsertionMode
       && destinationSideSlotChosen
-      && Number(chosenSlot?.destinationHotelId || 0) <= 0
+      && !hasResolvedDestinationEndpoint(chosenSlot)
     )
       ? 'Destination-side slot found, but selected route hotel is missing or has no valid coordinates. Select a hotel for this route to enable insertion.'
       : null;
@@ -21059,7 +21606,7 @@ const guideSlotCsv = guideSlots.join(',');
         )
         && !(
           String(slot?.routeFitType || '').toUpperCase() === 'DESTINATION_SIDE_INSERTION'
-          && Number(slot?.destinationHotelId || 0) <= 0
+          && !hasResolvedDestinationEndpoint(slot)
         )
         && Number(slot?.slotIndex) === Number(bestSlotData?.slotIndex),
       routePossible:
@@ -21067,7 +21614,7 @@ const guideSlotCsv = guideSlots.join(',');
           ? false
           : (
           String(slot?.routeFitType || '').toUpperCase() === 'DESTINATION_SIDE_INSERTION'
-          && Number(slot?.destinationHotelId || 0) <= 0
+          && !hasResolvedDestinationEndpoint(slot)
         )
           ? false
         : (
@@ -21081,7 +21628,7 @@ const guideSlotCsv = guideSlots.join(',');
           ? 'Not selected: route-fit data missing.'
           : (
             String(slot?.routeFitType || '').toUpperCase() === 'DESTINATION_SIDE_INSERTION'
-            && Number(slot?.destinationHotelId || 0) <= 0
+            && !hasResolvedDestinationEndpoint(slot)
           )
             ? 'Not selected: destination hotel endpoint is missing. Select a route hotel with valid coordinates.'
           : slot?.finalDecisionReason,
@@ -21121,6 +21668,7 @@ const guideSlotCsv = guideSlots.join(',');
       destinationMinCandidateIndex,
       destinationHotelId: Number(destinationHotelEndpoint?.hotelId || 0) || null,
       destinationHotelName: destinationHotelLabel,
+      destinationHotelEndpointResolved,
       manualTimingPolicy,
     };
   }
