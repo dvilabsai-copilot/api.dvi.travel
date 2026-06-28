@@ -309,11 +309,21 @@ export interface ItineraryDetailsResponseDto {
   adults: number;
   children: number;
   infants: number;
-  overallCost: string;
-  meal_plan_code?: string | null;
+ overallCost: string;
+meal_plan_code?: string | null;
 
-  // DAY / ROUTE TIMELINE
-  days: {
+// Guest food preference for frontend day-wise header
+food_type?: string | null;
+foodType?: string | null;
+food_type_name?: string | null;
+foodTypeName?: string | null;
+guest_food_preference?: string | null;
+guestFoodPreference?: string | null;
+guest_food_preference_name?: string | null;
+guestFoodPreferenceName?: string | null;
+
+// DAY / ROUTE TIMELINE
+days: {
   id: number;
   dayNumber: number;
   date: Date | string;
@@ -395,8 +405,25 @@ export class ItineraryDetailsService {
   // Low-level helpers
   // ---------------------------------------------------------------------------
 
-  private formatKm(value: number): string {
-  return `${value.toFixed(2)} KM`;
+private formatKm(value: number): string {
+return `${value.toFixed(2)} KM`;
+}
+
+private getFoodPreferenceLabel(value: unknown): string | null {
+  const raw = String(value ?? '').trim();
+
+  if (!raw || raw === '0' || raw.toLowerCase() === 'null') {
+    return null;
+  }
+
+  const foodTypeMap: Record<string, string> = {
+    '1': 'Veg',
+    '2': 'Non Veg',
+    '3': 'Jain',
+    '4': 'Vegan',
+  };
+
+  return foodTypeMap[raw] || raw;
 }
 
   private toBigIntOrZero(value?: number | string | bigint | null): bigint {
@@ -5083,11 +5110,15 @@ sightseeingDistance,       // local sightseeing separately
       tripStartDate && tripEndDate ? `${tripStartDate} to ${tripEndDate}` : '';
    
     
-    // Room count belongs to the plan header and should remain available even for vehicle-only itineraries.
-    const roomCount = Number(plan.preferred_room_count ?? 0);
+ // Room count belongs to the plan header and should remain available even for vehicle-only itineraries.
+const roomCount = Number(plan.preferred_room_count ?? 0);
 
-    const response: ItineraryDetailsResponseDto = {
-      quoteId: plan.itinerary_quote_ID ?? '',
+const guestFoodPreference = this.getFoodPreferenceLabel(
+  (plan as any).food_type ?? (confirmedPlan as any)?.food_type,
+);
+
+const response: ItineraryDetailsResponseDto = {
+  quoteId: plan.itinerary_quote_ID ?? '',
       planId: plan.itinerary_plan_ID,
       itineraryPreference: Number((plan as any).itinerary_preference || 0),
       itineraryType: Number((plan as any).itinerary_type || 0),
@@ -5104,10 +5135,20 @@ sightseeingDistance,       // local sightseeing separately
       adults: plan.total_adult ?? 0,
       children: plan.total_children ?? 0,
       infants: plan.total_infants ?? 0,
-      overallCost: netPayable.toFixed(2), // Use calculated net payable
-      meal_plan_code: (plan as any).meal_plan_code ?? null,
+    overallCost: netPayable.toFixed(2), // Use calculated net payable
+meal_plan_code: (plan as any).meal_plan_code ?? null,
 
-      days,
+// Guest food preference for frontend day-wise header
+food_type: guestFoodPreference,
+foodType: guestFoodPreference,
+food_type_name: guestFoodPreference,
+foodTypeName: guestFoodPreference,
+guest_food_preference: guestFoodPreference,
+guestFoodPreference: guestFoodPreference,
+guest_food_preference_name: guestFoodPreference,
+guestFoodPreferenceName: guestFoodPreference,
+
+days,
 
       vehicles,
       packageIncludes: {
