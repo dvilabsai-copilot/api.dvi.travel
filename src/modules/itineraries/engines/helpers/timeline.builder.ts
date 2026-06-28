@@ -1751,12 +1751,14 @@ export class TimelineBuilder {
             })
           : null;
 
-      const isEarlyArrivalDeclinedSameDayFlow =
+      const arrivalPolicyWantsHotelDeferredToEnd =
         !!evaluatedArrivalPolicy &&
-        evaluatedArrivalPolicy.arrivalWindow === ArrivalWindow.EARLY_01_TO_0759 &&
-        evaluatedArrivalPolicy.resolutionStatus === PolicyResolutionStatus.RESOLVED &&
-        evaluatedArrivalPolicy.hotelFlowAction === HotelFlowAction.DIRECT_SIGHTSEEING &&
-        evaluatedArrivalPolicy.deferHotelToEndOfDay &&
+        evaluatedArrivalPolicy.resolutionStatus ===
+          PolicyResolutionStatus.RESOLVED &&
+        evaluatedArrivalPolicy.hotelFlowAction ===
+          HotelFlowAction.DIRECT_SIGHTSEEING &&
+        evaluatedArrivalPolicy.deferHotelToEndOfDay === true &&
+        evaluatedArrivalPolicy.goToHotelImmediately !== true &&
         evaluatedArrivalPolicy.hotelSearchMode === HotelSearchMode.SAME_DAY;
 
       const isEarlyArrivalAwaitingDecisionSameDayFlow =
@@ -1769,8 +1771,15 @@ export class TimelineBuilder {
 
       const suppressHotelInsertionUntilEndOfDay =
         isFirstRoute &&
-        (isEarlyArrivalDeclinedSameDayFlow ||
+        (arrivalPolicyWantsHotelDeferredToEnd ||
           isEarlyArrivalAwaitingDecisionSameDayFlow);
+
+      const arrivalPolicyAllowsHotelFirst =
+        !evaluatedArrivalPolicy ||
+        evaluatedArrivalPolicy.hotelFlowAction ===
+          HotelFlowAction.DIRECT_HOTEL ||
+        evaluatedArrivalPolicy.goToHotelImmediately === true ||
+        evaluatedArrivalPolicy.deferHotelToEndOfDay !== true;
 
       const enforceStrictDay1EarlyArrivalDeferredFlow =
         suppressHotelInsertionUntilEndOfDay;
@@ -1868,6 +1877,7 @@ export class TimelineBuilder {
         isFirstRoute &&
         isArrivalCityStayRoute &&
         isArrivalAfterNoon &&
+        arrivalPolicyAllowsHotelFirst &&
         hotelDistanceFromArrivalKm != null &&
         hotelDistanceFromArrivalKm <= 20;
 
@@ -1977,7 +1987,7 @@ export class TimelineBuilder {
         arrivalAfterNoon: isArrivalAfterNoon,
         sameCityStay: isArrivalCityStayRoute,
         forceNoSightseeingOnThisRoute,
-        earlyArrivalDeclinedSameDayFlow: isEarlyArrivalDeclinedSameDayFlow,
+        arrivalPolicyWantsHotelDeferredToEnd,
         earlyArrivalPrevDayConfirmed: isEarlyArrivalPrevDayConfirmed,
         specialDay1OnePmHotelFirstFlow: isSpecialDay1OnePmHotelFirstFlow,
       });
@@ -3674,7 +3684,7 @@ export class TimelineBuilder {
               hotspotId: sh.hotspot_ID,
               hotspotLocationName,
               reason:
-                'Early-arrival declined same-day flow: suppress hotel insertion during hotspot scheduling.',
+                'Arrival policy requires sightseeing first: suppress hotel insertion during hotspot scheduling.',
             });
             continue;
           }
@@ -5971,8 +5981,8 @@ export class TimelineBuilder {
             routeId: route.itinerary_route_ID,
             hotspotId: sh.hotspot_ID,
             hotspotLocationName,
-            reason:
-              'Early-arrival declined same-day flow: suppress hotel insertion during hotspot scheduling.',
+              reason:
+                'Arrival policy requires sightseeing first: suppress hotel insertion during hotspot scheduling.',
           });
           continue;
         }
@@ -7361,7 +7371,8 @@ export class TimelineBuilder {
               null,
             planId,
             routeId: route.itinerary_route_ID,
-            reason: 'Early-arrival declined same-day flow: hotel insertion deferred until end-of-day block.',
+            reason:
+              'Arrival policy requires sightseeing first: hotel insertion deferred until end-of-day block.',
             currentTime,
           });
         }

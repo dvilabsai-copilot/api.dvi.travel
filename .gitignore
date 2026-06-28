@@ -10,6 +10,7 @@ tbo-hotel-provider.log
 public/
 start-dev.log
 *.txt
+scripts/*.local.ts
 scripts/staah-sync.env
 backups/staah/
 resavenue-hotel-provider.log
