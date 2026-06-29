@@ -1693,6 +1693,46 @@ export class ItinerariesController {
     });
   }
 
+  @Post(':planId/manual-hotspot/fit-preview')
+  @ApiOperation({ summary: 'Preview exact Fit Here manual hotspot insertion and cache the attempt' })
+  async previewManualHotspotFitHere(
+    @Param('planId', ParseIntPipe) planId: number,
+    @Body()
+    body: {
+      routeId: number;
+      selectedHotspotId: number;
+      anchor: {
+        anchorType?: 'BETWEEN_ROWS' | 'BEFORE_ROW' | 'AFTER_ROW' | 'BEFORE_HOTEL' | 'after_travel';
+        anchorIndex?: number;
+        beforeRowId?: string | number | null;
+        afterRowId?: string | number | null;
+        beforeHotspotId?: number | null;
+        afterHotspotId?: number | null;
+        anchorFrom?: string | null;
+        anchorTo?: string | null;
+        anchorTimeRange?: string | null;
+      };
+      allowP3Removal?: boolean;
+      allowP1P2Removal?: boolean;
+    },
+  ) {
+    return this.svc.previewManualHotspotFitHere(planId, body);
+  }
+
+  @Post(':planId/manual-hotspot/fit-confirm')
+  @ApiOperation({ summary: 'Confirm a cached Fit Here manual hotspot insertion attempt' })
+  async confirmManualHotspotFitHere(
+    @Param('planId', ParseIntPipe) planId: number,
+    @Body() body: { attemptId: string },
+    @Req() req: any,
+  ) {
+    return this.svc.confirmManualHotspotFitHere(
+      planId,
+      String(body?.attemptId || ''),
+      Number(req?.user?.userId || 1),
+    );
+  }
+
   @Post(':planId/routes/:routeId/manual-hotspots/:candidateHotspotId/build-matrix')
   @ApiOperation({ summary: 'Build focused manual hotspot matrix for selected route slot pairs' })
   async buildManualHotspotMatrix(
