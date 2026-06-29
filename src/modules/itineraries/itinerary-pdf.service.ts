@@ -399,7 +399,10 @@ export class ItineraryPdfService {
     const data = await this.itinerariesService.getTransportVoucherDetails(itineraryPlanId);
     const safeVoucherNo = data?.voucher?.voucherNo || String(itineraryPlanId);
     const safeName = this.sanitizeFileName(`transport-voucher-${safeVoucherNo}.pdf`);
-    const html = renderTransportVoucherHtml(data, await this.buildTransportVoucherAssets(data, itineraryPlanId));
+    const html = renderTransportVoucherHtml(
+      data,
+      await this.buildTransportVoucherAssets(data, itineraryPlanId),
+    );
     const pdfBuffer = await this.renderHtmlToPdfBuffer(html);
 
     res.setHeader('Content-Type', 'application/pdf');
@@ -533,11 +536,41 @@ export class ItineraryPdfService {
     };
   }
 
+  private resolveChromiumExecutablePath(): string | undefined {
+    const candidates = [
+      process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH,
+      process.env.CHROME_BIN,
+      process.env.CHROMIUM_PATH,
+      '/usr/bin/google-chrome',
+      '/usr/bin/google-chrome-stable',
+      '/usr/bin/chromium',
+      '/usr/bin/chromium-browser',
+    ].filter(Boolean) as string[];
+
+    return candidates.find((candidate) => {
+      try {
+        return fs.existsSync(candidate);
+      } catch {
+        return false;
+      }
+    });
+  }
+
   private async renderHtmlToPdfBuffer(html: string): Promise<Buffer> {
     const { chromium } = await import('playwright');
+
+    const executablePath = this.resolveChromiumExecutablePath();
+
     const browser = await chromium.launch({
       headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+      executablePath,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--no-zygote',
+      ],
     });
 
     try {
@@ -545,8 +578,20 @@ export class ItineraryPdfService {
         viewport: { width: 1240, height: 1754 },
         deviceScaleFactor: 1,
       });
+
       await page.emulateMedia({ media: 'print' });
-      await page.setContent(html, { waitUntil: 'networkidle' });
+
+      await page.setContent(html, {
+        waitUntil: 'load',
+        timeout: 60000,
+      });
+
+      await page
+        .waitForLoadState('networkidle', {
+          timeout: 15000,
+        })
+        .catch(() => undefined);
+
       return await page.pdf({
         format: 'A4',
         printBackground: true,
@@ -559,7 +604,7 @@ export class ItineraryPdfService {
         preferCSSPageSize: true,
       });
     } finally {
-      await browser.close();
+      await browser.close().catch(() => undefined);
     }
   }
 
