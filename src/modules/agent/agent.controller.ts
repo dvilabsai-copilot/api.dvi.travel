@@ -85,11 +85,47 @@ export class AgentController {
     return this.service.getSubscriptions(id);
   }
 
-  /** Create */
-  @Post()
-  create(@Body() body: CreateAgentDto) {
-    return this.service.create(body);
-  }
+ /** Agent configuration */
+@Get(':id/config')
+getConfig(@Param('id', ParseIntPipe) id: number) {
+  return this.service.getConfig(id);
+}
+
+/** Cash wallet history */
+@Get(':id/wallet/cash')
+getCashWalletHistory(@Param('id', ParseIntPipe) id: number) {
+  return this.service.getCashWalletHistory(id);
+}
+
+/** Coupon wallet history */
+@Get(':id/wallet/coupon')
+getCouponWalletHistory(@Param('id', ParseIntPipe) id: number) {
+  return this.service.getCouponWalletHistory(id);
+}
+
+/** Add cash wallet */
+@Post(':id/wallet/cash')
+addCashWallet(
+  @Param('id', ParseIntPipe) id: number,
+  @Body() body: { amount: number; remark: string },
+) {
+  return this.service.addCashWallet(id, body);
+}
+
+/** Add coupon wallet */
+@Post(':id/wallet/coupon')
+addCouponWallet(
+  @Param('id', ParseIntPipe) id: number,
+  @Body() body: { amount: number; remark: string },
+) {
+  return this.service.addCouponWallet(id, body);
+}
+
+/** Create */
+@Post()
+create(@Body() body: CreateAgentDto) {
+  return this.service.create(body);
+}
 
   /** Update */
   @Put(':id')
