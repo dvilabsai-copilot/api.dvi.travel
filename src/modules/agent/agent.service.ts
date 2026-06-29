@@ -1,5 +1,5 @@
 // FILE: src/modules/agent/agent.service.ts
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
 import { ListAgentQueryDto } from './dto/list-agent.dto';
 import { CreateAgentDto } from './dto/create-agent.dto';
@@ -392,6 +392,337 @@ export class AgentService {
       limit: data.length,
     };
   }
+/** ---------- Agent config ---------- */
+async getConfig(agentId: number) {
+  const agent = await this.prisma.dvi_agent.findFirst({
+    where: { agent_ID: agentId, deleted: 0 },
+    select: {
+      agent_ID: true,
+      agent_name: true,
+      agent_lastname: true,
+    },
+  });
+
+  if (!agent) throw new NotFoundException('Agent not found');
+
+  return {
+    itineraryDiscountMargin: 0,
+    serviceCharge: 0,
+    agentMarginGstType: 'INCLUSIVE',
+    agentMarginGstPercentage: '0',
+    companyName: [agent.agent_name ?? '', agent.agent_lastname ?? '']
+      .join(' ')
+      .replace(/\s+/g, ' ')
+      .trim(),
+    address: '',
+  };
+}
+
+/** ---------- Wallet helpers ---------- */
+private validateWalletInput(body: { amount: number; remark: string }) {
+  const amount = Number(body?.amount);
+  const remark = String(body?.remark ?? '').trim();
+
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new BadRequestException('Amount must be greater than 0');
+  }
+
+  if (!remark) {
+    throw new BadRequestException('Remark is required');
+  }
+
+  return { amount, remark };
+}
+
+private async ensureAgentExists(agentId: number) {
+  const agent = await this.prisma.dvi_agent.findFirst({
+    where: { agent_ID: agentId, deleted: 0 },
+    select: { agent_ID: true },
+  });
+
+  if (!agent) throw new NotFoundException('Agent not found');
+}
+
+private quoteIdent(name: string) {
+  return `\`${name.replace(/`/g, '')}\``;
+}
+
+private async getTableColumns(tableName: string) {
+  const rows = await this.prisma.$queryRawUnsafe<Array<{ COLUMN_NAME: string }>>(
+    `
+      SELECT COLUMN_NAME
+      FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = ?
+    `,
+    tableName,
+  );
+
+  return new Set(rows.map((r) => r.COLUMN_NAME));
+}
+
+private pickColumn(
+  columns: Set<string>,
+  candidates: string[],
+  requiredName?: string,
+) {
+  const found = candidates.find((c) => columns.has(c));
+
+  if (!found && requiredName) {
+    throw new BadRequestException(`${requiredName} column not found`);
+  }
+
+  return found ?? null;
+}
+
+private getWalletTable(type: 'cash' | 'coupon') {
+  return type === 'cash' ? 'dvi_cash_wallet' : 'dvi_coupon_wallet';
+}
+
+private async getWalletHistory(agentId: number, type: 'cash' | 'coupon') {
+  const tableName = this.getWalletTable(type);
+  const columns = await this.getTableColumns(tableName);
+
+  if (!columns.size) {
+    throw new BadRequestException(`${tableName} table not found`);
+  }
+
+  const idCol = this.pickColumn(columns, [
+    `${type}_wallet_ID`,
+    `${type}_wallet_id`,
+    'wallet_ID',
+    'wallet_id',
+    'id',
+  ]);
+
+  const agentCol = this.pickColumn(
+    columns,
+    ['agent_ID', 'agent_id', 'agentId', 'agentID'],
+    'agent',
+  );
+
+  const amountCol = this.pickColumn(
+    columns,
+    [
+      `${type}_wallet_amount`,
+      `${type}_wallet_amt`,
+      'wallet_amount',
+      'wallet_amt',
+      'transaction_amount',
+      'amount',
+      'credit_amount',
+      'value',
+    ],
+    'amount',
+  );
+
+  const remarkCol = this.pickColumn(columns, [
+    `${type}_wallet_remark`,
+    `${type}_wallet_remarks`,
+    'remark',
+    'remarks',
+    'description',
+    'note',
+  ]);
+
+  const typeCol = this.pickColumn(columns, [
+    'transaction_type',
+    'wallet_transaction_type',
+    `${type}_wallet_transaction_type`,
+    'type',
+  ]);
+
+  const createdCol = this.pickColumn(columns, [
+    'createdon',
+    'created_on',
+    'createdAt',
+    'created_at',
+    'date',
+  ]);
+
+  const deletedCol = this.pickColumn(columns, ['deleted', 'is_deleted']);
+
+  const selectParts = [
+    idCol ? `${this.quoteIdent(idCol)} AS id` : `0 AS id`,
+    createdCol
+      ? `${this.quoteIdent(createdCol)} AS transaction_date`
+      : `NULL AS transaction_date`,
+    `${this.quoteIdent(amountCol!)} AS transaction_amount`,
+    typeCol
+      ? `${this.quoteIdent(typeCol)} AS transaction_type`
+      : `'Credit' AS transaction_type`,
+    remarkCol ? `${this.quoteIdent(remarkCol)} AS remark` : `'' AS remark`,
+  ];
+
+  const whereParts = [`${this.quoteIdent(agentCol!)} = ?`];
+
+  if (deletedCol) {
+    whereParts.push(`${this.quoteIdent(deletedCol)} = 0`);
+  }
+
+  const orderParts = [
+    createdCol ? this.quoteIdent(createdCol) : null,
+    idCol ? this.quoteIdent(idCol) : null,
+  ].filter(Boolean);
+
+  const rows = await this.prisma.$queryRawUnsafe<any[]>(
+    `
+      SELECT ${selectParts.join(', ')}
+      FROM ${this.quoteIdent(tableName)}
+      WHERE ${whereParts.join(' AND ')}
+      ${
+        orderParts.length
+          ? `ORDER BY ${orderParts.join(' DESC, ')} DESC`
+          : ''
+      }
+    `,
+    agentId,
+  );
+
+  return {
+    data: rows.map((r) => ({
+      id: Number(r.id ?? 0),
+      transaction_date: r.transaction_date,
+      transaction_amount: Number(r.transaction_amount ?? 0),
+      transaction_type: r.transaction_type ?? 'Credit',
+      remark: r.remark ?? '',
+    })),
+  };
+}
+
+async getCashWalletHistory(agentId: number) {
+  await this.ensureAgentExists(agentId);
+  return this.getWalletHistory(agentId, 'cash');
+}
+
+async getCouponWalletHistory(agentId: number) {
+  await this.ensureAgentExists(agentId);
+  return this.getWalletHistory(agentId, 'coupon');
+}
+
+async addCashWallet(agentId: number, body: { amount: number; remark: string }) {
+  await this.ensureAgentExists(agentId);
+  const input = this.validateWalletInput(body);
+  return this.addWallet(agentId, 'cash', input);
+}
+
+async addCouponWallet(agentId: number, body: { amount: number; remark: string }) {
+  await this.ensureAgentExists(agentId);
+  const input = this.validateWalletInput(body);
+  return this.addWallet(agentId, 'coupon', input);
+}
+
+private async addWallet(
+  agentId: number,
+  type: 'cash' | 'coupon',
+  input: { amount: number; remark: string },
+) {
+  const tableName = this.getWalletTable(type);
+  const columns = await this.getTableColumns(tableName);
+
+  if (!columns.size) {
+    throw new BadRequestException(`${tableName} table not found`);
+  }
+
+  const agentCol = this.pickColumn(
+    columns,
+    ['agent_ID', 'agent_id', 'agentId', 'agentID'],
+    'agent',
+  );
+
+  const amountCol = this.pickColumn(
+    columns,
+    [
+      `${type}_wallet_amount`,
+      `${type}_wallet_amt`,
+      'wallet_amount',
+      'wallet_amt',
+      'transaction_amount',
+      'amount',
+      'credit_amount',
+      'value',
+    ],
+    'amount',
+  );
+
+  const remarkCol = this.pickColumn(columns, [
+    `${type}_wallet_remark`,
+    `${type}_wallet_remarks`,
+    'remark',
+    'remarks',
+    'description',
+    'note',
+  ]);
+
+  const typeCol = this.pickColumn(columns, [
+    'transaction_type',
+    'wallet_transaction_type',
+    `${type}_wallet_transaction_type`,
+    'type',
+  ]);
+
+  const deletedCol = this.pickColumn(columns, ['deleted', 'is_deleted']);
+  const statusCol = this.pickColumn(columns, ['status', 'is_active']);
+
+  const createdCol = this.pickColumn(columns, [
+    'createdon',
+    'created_on',
+    'createdAt',
+    'created_at',
+  ]);
+
+  const updatedCol = this.pickColumn(columns, [
+    'updatedon',
+    'updated_on',
+    'updatedAt',
+    'updated_at',
+  ]);
+
+  const insertCols: string[] = [];
+  const placeholders: string[] = [];
+  const params: any[] = [];
+
+  const addValue = (col: string | null, value: any) => {
+    if (!col) return;
+    insertCols.push(this.quoteIdent(col));
+    placeholders.push('?');
+    params.push(value);
+  };
+
+  const addNow = (col: string | null) => {
+    if (!col) return;
+    insertCols.push(this.quoteIdent(col));
+    placeholders.push('NOW()');
+  };
+
+  addValue(agentCol, agentId);
+  addValue(amountCol, input.amount);
+  addValue(remarkCol, input.remark);
+  addValue(typeCol, 'Credit');
+  addValue(deletedCol, 0);
+  addValue(statusCol, 1);
+  addNow(createdCol);
+  addNow(updatedCol);
+
+  await this.prisma.$executeRawUnsafe(
+    `
+      INSERT INTO ${this.quoteIdent(tableName)}
+        (${insertCols.join(', ')})
+      VALUES
+        (${placeholders.join(', ')})
+    `,
+    ...params,
+  );
+
+  return {
+    ok: true,
+    agent_ID: agentId,
+    wallet_type: type,
+    amount: input.amount,
+    remark: input.remark,
+  };
+}
+
 
   /** ---------- LIGHTWEIGHT NAMES LIST ---------- */
   async listNames() {
