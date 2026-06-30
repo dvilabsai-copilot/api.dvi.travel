@@ -12293,7 +12293,6 @@ const guideSlotCsv = guideSlots.join(',');
       label: String(row?.text || row?.name || row?.title || row?.hotspot_name || ''),
       timeRange: String(row?.timeRange || row?.visitTime || ''),
       hotspotId: Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || row?.hotspot_id || 0) || null,
-      routeHotspotId: Number(row?.routeHotspotId || row?.route_hotspot_ID || row?.route_hotspot_id || 0) || null,
       isConflict: row?.isConflict === true || Number(row?.is_conflict || 0) === 1,
       isManual: row?.isManual === true || row?.manual === true || Number(row?.hotspot_plan_own_way || 0) === 1,
       removed: row?.removed === true || row?.isRemoved === true,
@@ -12302,32 +12301,83 @@ const guideSlotCsv = guideSlots.join(',');
     return this.hashManualFitValue(normalized);
   }
 
-  private async buildManualFitSourceFingerprint(planId: number, routeId: number): Promise<string> {
-    const snapshot = await this.captureManualPreviewRouteState(Number(planId), Number(routeId));
-    return this.hashManualFitValue({
-      planId: Number(planId),
-      routeId: Number(routeId),
-      excludedHotspotIds: Array.isArray(snapshot.routeExcludedHotspotIds)
-        ? [...snapshot.routeExcludedHotspotIds].map((id: any) => Number(id || 0)).sort((a, b) => a - b)
-        : [],
-      hotspotRows: (snapshot.hotspotRows || []).map((row: any) => ({
-        routeHotspotId: Number(row?.route_hotspot_ID || 0),
+  private buildStableManualFitSourceSnapshot(snapshot: {
+    hotspotRows?: any[];
+    activityRows?: any[];
+    routeExcludedHotspotIds?: any[];
+  }) {
+    const hotspotRows = Array.isArray(snapshot?.hotspotRows) ? snapshot.hotspotRows : [];
+    const activityRows = Array.isArray(snapshot?.activityRows) ? snapshot.activityRows : [];
+    const hotspotByRouteHotspotId = new Map<number, any>();
+
+    for (const row of hotspotRows) {
+      const routeHotspotId = Number(row?.route_hotspot_ID || 0);
+      if (routeHotspotId > 0) {
+        hotspotByRouteHotspotId.set(routeHotspotId, row);
+      }
+    }
+
+    const normalizedHotspots = hotspotRows
+      .filter((row: any) => Number(row?.item_type || 0) === 4 && Number(row?.deleted || 0) === 0)
+      .map((row: any) => ({
         hotspotId: Number(row?.hotspot_ID || 0),
         hotspotOrder: Number(row?.hotspot_order || 0),
         start: row?.hotspot_start_time ? new Date(row.hotspot_start_time).toISOString() : null,
         end: row?.hotspot_end_time ? new Date(row.hotspot_end_time).toISOString() : null,
         manual: Number(row?.hotspot_plan_own_way || 0),
-        deleted: Number(row?.deleted || 0),
-      })),
-      activityRows: (snapshot.activityRows || []).map((row: any) => ({
-        routeActivityId: Number(row?.route_activity_ID || 0),
-        routeHotspotId: Number(row?.route_hotspot_ID || 0),
-        activityId: Number(row?.activity_ID || 0),
-        order: Number(row?.activity_order || 0),
-        start: row?.activity_start_time ? new Date(row.activity_start_time).toISOString() : null,
-        end: row?.activity_end_time ? new Date(row.activity_end_time).toISOString() : null,
-        deleted: Number(row?.deleted || 0),
-      })),
+        status: Number(row?.status || 0),
+        conflict: Number(row?.is_conflict || 0),
+        itemType: Number(row?.item_type || 0),
+      }))
+      .sort((a, b) =>
+        (a.hotspotOrder - b.hotspotOrder)
+        || String(a.start || '').localeCompare(String(b.start || ''))
+        || String(a.end || '').localeCompare(String(b.end || ''))
+        || (a.hotspotId - b.hotspotId)
+        || (a.manual - b.manual)
+        || (a.status - b.status)
+        || (a.conflict - b.conflict)
+      );
+
+    const normalizedActivities = activityRows
+      .filter((row: any) => Number(row?.deleted || 0) === 0)
+      .map((row: any) => {
+        const parent = hotspotByRouteHotspotId.get(Number(row?.route_hotspot_ID || 0)) || null;
+        return {
+          parentHotspotId: Number(parent?.hotspot_ID || 0),
+          parentHotspotOrder: Number(parent?.hotspot_order || 0),
+          activityId: Number(row?.activity_ID || 0),
+          order: Number(row?.activity_order || 0),
+          start: row?.activity_start_time ? new Date(row.activity_start_time).toISOString() : null,
+          end: row?.activity_end_time ? new Date(row.activity_end_time).toISOString() : null,
+          status: Number(row?.status || 0),
+        };
+      })
+      .sort((a, b) =>
+        (a.parentHotspotOrder - b.parentHotspotOrder)
+        || (a.parentHotspotId - b.parentHotspotId)
+        || (a.order - b.order)
+        || (a.activityId - b.activityId)
+        || String(a.start || '').localeCompare(String(b.start || ''))
+        || String(a.end || '').localeCompare(String(b.end || ''))
+        || (a.status - b.status)
+      );
+
+    return {
+      excludedHotspotIds: Array.isArray(snapshot?.routeExcludedHotspotIds)
+        ? [...snapshot.routeExcludedHotspotIds].map((id: any) => Number(id || 0)).sort((a, b) => a - b)
+        : [],
+      hotspotRows: normalizedHotspots,
+      activityRows: normalizedActivities,
+    };
+  }
+
+  private async buildManualFitSourceFingerprint(planId: number, routeId: number): Promise<string> {
+    const snapshot = await this.captureManualPreviewRouteState(Number(planId), Number(routeId));
+    return this.hashManualFitValue({
+      planId: Number(planId),
+      routeId: Number(routeId),
+      ...this.buildStableManualFitSourceSnapshot(snapshot),
     });
   }
 
@@ -12787,9 +12837,12 @@ const guideSlotCsv = guideSlots.join(',');
       resultType = 'CANNOT_FIT';
       canConfirm = false;
     }
-    const proposedTimelineBase = Array.isArray(params.previewResult?.fullTimeline)
-      ? params.previewResult.fullTimeline
-      : [];
+    const proposedTimelineBase = Array.isArray(params.previewResult?.routeTimeline)
+      && params.previewResult.routeTimeline.length > 0
+      ? params.previewResult.routeTimeline
+      : (Array.isArray(params.previewResult?.fullTimeline)
+        ? params.previewResult.fullTimeline
+        : []);
     const proposedTimelineRaw = await this.enrichManualFitPreviewTimelineWithOperatingHours(
       params.planId,
       params.routeId,
@@ -12798,6 +12851,12 @@ const guideSlotCsv = guideSlots.join(',');
     const finalizedTimeline = this.buildManualFitFinalizedPreviewTimeline(
       proposedTimelineRaw,
       removedHotspots,
+    );
+    const finalizedSelectedHotspotIds = new Set<number>(
+      (finalizedTimeline || [])
+        .filter((row: any) => String(row?.type || '').toLowerCase() === 'attraction')
+        .map((row: any) => Number(row?.hotspotId || row?.hotspot_ID || row?.locationId || 0))
+        .filter((id: number) => Number.isFinite(id) && id > 0),
     );
     const hasUnprovenProtectedRemoval = removedHotspots.some((row: any) => {
       const priority = Number(row?.priority || row?.hotspot_priority || row?.rawPriority || 0);
@@ -12888,6 +12947,12 @@ const guideSlotCsv = guideSlots.join(',');
         topPriorityAffected: affectedPriorityHotspots,
         removedHotspots,
         changesRequiredDisplay,
+        unscheduledManualHotspots: Array.isArray(resolution?.unscheduledManualHotspots)
+          ? resolution.unscheduledManualHotspots.filter((row: any) => {
+              const hotspotId = Number(row?.id || row?.hotspotId || row?.hotspot_ID || 0);
+              return !(hotspotId > 0 && finalizedSelectedHotspotIds.has(hotspotId));
+            })
+          : [],
       },
       selectedAnchor: params.selectedAnchor
         ? {
@@ -12923,7 +12988,9 @@ const guideSlotCsv = guideSlots.join(',');
       fromHotspotId: fromHotspotId > 0 ? fromHotspotId : undefined,
       toHotspotId: toHotspotId > 0 ? toHotspotId : undefined,
       slotIndex: Number.isInteger(slotIndex) && slotIndex >= 0 ? slotIndex : undefined,
-      source: String(slot?.source || '').toUpperCase() === 'REQUESTED_SLOT' ? 'EXACT_ANCHOR' : 'BEST_FIT',
+      source: ['REQUESTED_SLOT', 'EXACT_ANCHOR'].includes(String(slot?.source || '').toUpperCase())
+        ? 'EXACT_ANCHOR'
+        : 'BEST_FIT',
     };
   }
 
@@ -13104,6 +13171,8 @@ const guideSlotCsv = guideSlots.join(',');
       userId: number;
       canForceClosedHotspotConflict: boolean;
       forceConflictPreferredTimesByHotspotId: Record<number, { start: Date; end: Date }>;
+      trustedPreviewConfirmation?: boolean;
+      trustedPreviewTimeline?: any[] | null;
     },
   ) {
     const entry = params.entry;
@@ -13124,8 +13193,7 @@ const guideSlotCsv = guideSlots.join(',');
       !params.canForceClosedHotspotConflict
       && entry.exactSelectedGap === true
       && !!entry.manualInsertionFitSnapshot
-      && !!entry.matrixPreferredSlot
-      && !isDestinationSideExactFit;
+      && !!entry.matrixPreferredSlot;
     const cachedExactFit = shouldUseCachedExactFit
       ? (() => {
           const preferredSlot = entry.matrixPreferredSlot || {};
@@ -13173,6 +13241,10 @@ const guideSlotCsv = guideSlots.join(',');
           userId: Number(params.userId || 1),
           manualInsertionFit: cachedExactFit,
           matrixPreferredSlot: entry.matrixPreferredSlot || undefined,
+          trustedPreviewConfirmation: params.trustedPreviewConfirmation === true,
+          trustedPreviewTimeline: params.trustedPreviewConfirmation === true
+            ? entry.proposedTimelineSnapshot || null
+            : null,
           skipPostApplyAssertions: true,
         })
       : await this.runManualHotspotBatchWithinTransaction(
@@ -13191,12 +13263,13 @@ const guideSlotCsv = guideSlots.join(',');
             beforeRouteHotspotId: entry.beforeRouteHotspotId,
             allowP3Removal: entry.allowP3Removal === true,
             allowP1P2Removal: entry.allowP1P2Removal === true,
-            allowTopPriorityRemoval: entry.allowP1P2Removal === true,
-            matrixPreferredSlot: entry.matrixPreferredSlot || undefined,
-            exactAnchorMode: entry.exactSelectedGap === true,
-            previewOnly: false,
-            forceConflictInsertion: params.canForceClosedHotspotConflict,
-            forceConflictPreferredTimesByHotspotId: params.forceConflictPreferredTimesByHotspotId,
+          allowTopPriorityRemoval: entry.allowP1P2Removal === true,
+          matrixPreferredSlot: entry.matrixPreferredSlot || undefined,
+          exactAnchorMode: entry.exactSelectedGap === true,
+          trustedPreviewConfirmation: params.trustedPreviewConfirmation === true,
+          previewOnly: false,
+          forceConflictInsertion: params.canForceClosedHotspotConflict,
+          forceConflictPreferredTimesByHotspotId: params.forceConflictPreferredTimesByHotspotId,
           },
         );
   }
@@ -13216,6 +13289,7 @@ const guideSlotCsv = guideSlots.join(',');
           userId: Number(userId || 1),
           canForceClosedHotspotConflict: false,
           forceConflictPreferredTimesByHotspotId: {},
+          trustedPreviewConfirmation: true,
         });
 
         if (applyResult?.success !== true || applyResult?.inserted !== true) {
@@ -13371,9 +13445,13 @@ const guideSlotCsv = guideSlots.join(',');
     }
 
     const currentFingerprint = await this.buildManualFitSourceFingerprint(Number(planId), Number(entry.routeId));
-    if (currentFingerprint !== entry.sourceFingerprint) {
-      await this.deleteManualFitAttemptEntry(entry.attemptId);
-      throw new ConflictException('Timeline changed after preview. Please calculate Fit Here again.');
+    const sourceFingerprintChanged = currentFingerprint !== entry.sourceFingerprint;
+    if (sourceFingerprintChanged) {
+      console.warn('[FitHere][confirm_source_fingerprint_changed]', {
+        attemptId: entry.attemptId,
+        planId: Number(planId),
+        routeId: Number(entry.routeId),
+      });
     }
 
     const normalizedHotspotIds = this.normalizeManualHotspotIds([entry.selectedHotspotId]);
@@ -13389,6 +13467,7 @@ const guideSlotCsv = guideSlots.join(',');
       planId,
       routeId: entry.routeId,
       selectedHotspotId: entry.selectedHotspotId,
+      sourceFingerprintChanged,
       anchorIntent: entry.anchorIntent,
       anchorFrom: entry.anchorFrom,
       anchorTo: entry.anchorTo,
@@ -13404,6 +13483,7 @@ const guideSlotCsv = guideSlots.join(',');
           userId: Number(userId || 1),
           canForceClosedHotspotConflict,
           forceConflictPreferredTimesByHotspotId,
+          trustedPreviewConfirmation: entry.canConfirm === true,
         });
         console.log('[FitHere][confirm_apply_result]', {
           attemptId: entry.attemptId,
@@ -13450,11 +13530,21 @@ const guideSlotCsv = guideSlots.join(',');
     }
 
     if (!applyResult || applyResult?.success !== true || applyResult?.inserted !== true) {
-      throw new ConflictException(
-        rollbackReason === 'TIMELINE_MISMATCH'
+      throw new ConflictException({
+        success: false,
+        inserted: false,
+        code: rollbackReason === 'TIMELINE_MISMATCH'
+          ? 'FIT_HERE_CONFIRM_TIMELINE_MISMATCH'
+          : 'FIT_HERE_CONFIRM_APPLY_REJECTED',
+        message: rollbackReason === 'TIMELINE_MISMATCH'
           ? 'Fit Here confirm was rejected because the persisted result differed from the preview.'
           : 'Could not confirm Fit Here insertion.',
-      );
+        applyCode: String(applyResult?.code || ''),
+        applyMessage: String(applyResult?.message || ''),
+        applyDebug: applyResult?.resolution?.debug || null,
+        applyValidation: applyResult?.validation || null,
+        rollbackReason,
+      });
     }
 
     const confirmedTimeline = Array.isArray(applyResult?.routeTimeline)
@@ -17203,6 +17293,8 @@ const guideSlotCsv = guideSlots.join(',');
         slotIndex?: number;
         source?: 'BEST_FIT' | 'EXACT_ANCHOR';
       };
+      trustedPreviewConfirmation?: boolean;
+      trustedPreviewTimeline?: any[] | null;
       allowP3Removal?: boolean;
       allowP1P2Removal?: boolean;
       allowTopPriorityRemoval?: boolean;
@@ -17605,15 +17697,21 @@ const guideSlotCsv = guideSlots.join(',');
             : 23 * 60
         );
     const baselineTimeline = await this.getRouteTimelineForScoring(tx, planId, routeId);
-    let adjustedTimeline = await this.buildMatrixRescheduledPreviewTimeline({
-      baselineTimeline,
-      enginePreviewTimeline: baselineTimeline,
-      manualInsertionFit,
-      selectedHotspotId,
-      hotspotMasters: selectedMaster ? [selectedMaster] : [],
-      tx,
-      routeEndMinutes: routeEndMinutesApply,
-    });
+    let adjustedTimeline = params.trustedPreviewConfirmation === true
+      && Array.isArray(params.trustedPreviewTimeline)
+      && params.trustedPreviewTimeline.length > 0
+        ? JSON.parse(JSON.stringify(params.trustedPreviewTimeline))
+        : null;
+    adjustedTimeline = adjustedTimeline
+      || await this.buildMatrixRescheduledPreviewTimeline({
+          baselineTimeline,
+          enginePreviewTimeline: baselineTimeline,
+          manualInsertionFit,
+          selectedHotspotId,
+          hotspotMasters: selectedMaster ? [selectedMaster] : [],
+          tx,
+          routeEndMinutes: routeEndMinutesApply,
+        });
 
     const selectedManualPriority = this.resolveSelectedManualPriority({
       selectedHotspotId,
@@ -18519,10 +18617,19 @@ const guideSlotCsv = guideSlots.join(',');
         break;
       }
     }
-    if (hotelTravelIndex < 0) return [];
+    const hasExplicitHotelTravelRow = hotelTravelIndex >= 0;
 
     const fromRow = normalizedBaseline[fromRowIndex];
-    const hotelTravelRow = normalizedBaseline[hotelTravelIndex];
+    const hotelTravelRow = hasExplicitHotelTravelRow
+      ? normalizedBaseline[hotelTravelIndex]
+      : {
+          type: 'travel',
+          item_type: 5,
+          text: 'Travel to Hotel',
+          name: 'Travel to Hotel',
+          fromName: String(fromRow?.text || fromRow?.name || bestSlot?.fromName || 'Previous Stop').trim(),
+          toName: String(bestSlot?.toName || 'Hotel').trim(),
+        };
     const hotelRow = normalizedBaseline[hotelIndex];
     const fromEndMinutes = this.parseSegmentEndMinutes(fromRow);
     if (fromEndMinutes === null) return [];
@@ -18581,7 +18688,9 @@ const guideSlotCsv = guideSlots.join(',');
       ? hotelNameFromCheckin
       : String(bestSlot?.toName || 'Hotel').trim();
 
-    const prefix = normalizedBaseline.slice(0, hotelTravelIndex).map((row: any) => ({ ...row }));
+    const prefix = normalizedBaseline
+      .slice(0, hasExplicitHotelTravelRow ? hotelTravelIndex : fromRowIndex + 1)
+      .map((row: any) => ({ ...row }));
     const suffix = normalizedBaseline.slice(hotelIndex + 1).map((row: any) => ({ ...row }));
 
     const aToCRow = {
@@ -20132,6 +20241,7 @@ const guideSlotCsv = guideSlots.join(',');
       forceConflictInsertion?: boolean;
       forceConflictPreferredTimesByHotspotId?: Record<number, { start: Date; end: Date }>;
       exactAnchorMode?: boolean;
+      trustedPreviewConfirmation?: boolean;
       manualTimingPolicy?: ManualHotspotTimingPolicy;
       matrixPreferredSlot?: {
         fromHotspotId?: number;
@@ -20881,7 +20991,7 @@ const guideSlotCsv = guideSlots.join(',');
       && (
         Number(requestedExactSlot?.toHotspotId || 0) > 0
           ? Number(computedExactRequestedSlot?.toHotspotId || 0) === Number(requestedExactSlot?.toHotspotId || 0)
-          : String(computedExactRequestedSlot?.routeFitType || '').toUpperCase() === 'DESTINATION_SIDE_INSERTION'
+          : true
       )
     );
     const exactAnchorPreviewSlot =
@@ -21055,6 +21165,13 @@ const guideSlotCsv = guideSlots.join(',');
     if (
       options?.exactAnchorMode === true &&
       options?.anchorIntent === 'AFTER_ATTRACTION' &&
+      options?.trustedPreviewConfirmation !== true &&
+      !exactAnchorSlotMatchesComputedSlot &&
+      (
+        validation?.readyToApply !== true ||
+        manualInsertionFit?.selectedOpeningConflict ||
+        manualInsertionFit?.openingHoursRejected === true
+      ) &&
       !this.manualFitTimelinePreservesSelectedAnchor({
         timeline: adjustedPreviewTimeline,
         selectedHotspotId: focusHotspotId,
@@ -21192,6 +21309,16 @@ const guideSlotCsv = guideSlots.join(',');
           shiftedHotspots: [],
           attemptedRemovals,
           lowPriorityRemovalPlanPreview: manualInsertionFit.lowPriorityRemovalPlanPreview,
+          debug: {
+            exactAnchorSlotMatchesComputedSlot,
+            exactAnchorRemovalResolved: exactAnchorRemovalPlan.resolved === true,
+            exactAnchorCandidateCount: Array.isArray(exactAnchorRemovalPlan.candidateHotspots)
+              ? exactAnchorRemovalPlan.candidateHotspots.length
+              : 0,
+            selectedOpeningConflict: manualInsertionFit?.selectedOpeningConflict || null,
+            openingHoursRejected: manualInsertionFit?.openingHoursRejected === true,
+            validationReadyToApply: validation?.readyToApply === true,
+          },
         },
         manualInsertionFit,
         message: exactAnchorExhaustedMessage,
@@ -21518,17 +21645,91 @@ const guideSlotCsv = guideSlots.join(',');
       adjustedPreviewTimeline,
     );
 
+    if (isDestinationSidePreviewSlot) {
+      let destinationBaselineRebuilt = this.rebuildDestinationSidePreviewFromBaseline({
+        baselineTimeline: baselineTimelineForMatrix,
+        manualInsertionFit: timelineInsertionFit,
+        selectedHotspotId: Number(focusHotspotId),
+        hotspotMasters,
+      });
+
+      if (destinationBaselineRebuilt.length > 0) {
+        destinationBaselineRebuilt = await this.enrichManualFitPreviewTimelineWithOperatingHours(
+          Number(planId),
+          Number(routeId),
+          destinationBaselineRebuilt,
+        );
+
+        const repairedSelectedOperatingValidation = this.markSelectedManualOperatingHourConflicts(
+          destinationBaselineRebuilt,
+          requestedHotspotIds,
+        );
+
+        console.warn('[FitHere][destination_side_preview_pre_closing_repair]', {
+          routeId,
+          selectedHotspotId: Number(focusHotspotId),
+          beforeLength: adjustedPreviewTimeline.length,
+          afterLength: repairedSelectedOperatingValidation.timeline.length,
+        });
+        adjustedPreviewTimeline = repairedSelectedOperatingValidation.timeline;
+      }
+    }
+
     const selectedClosingOverflow = this.getSelectedManualClosingOverflow({
       timeline: adjustedPreviewTimeline,
       selectedHotspotIds: requestedHotspotIds,
     });
 
+    const selectedClosingFallbackValidation = this.markSelectedManualOperatingHourConflicts(
+      adjustedPreviewTimeline,
+      requestedHotspotIds,
+    );
+    adjustedPreviewTimeline = selectedClosingFallbackValidation.timeline;
+
+    const fallbackSelectedOpeningConflict =
+      selectedClosingFallbackValidation.selectedOpeningConflict || null;
+    const fallbackAttemptedEndMinutes = this.parsePreviewTimeToMinutes(
+      fallbackSelectedOpeningConflict?.attemptedEndTime
+      || this.parseTimeRangeParts(fallbackSelectedOpeningConflict?.attemptedVisitTime).end,
+    );
+    const fallbackClosingMinutes = this.parsePreviewTimeToMinutes(
+      fallbackSelectedOpeningConflict?.closingTime
+      || this.extractClosingTimeFromOperatingHours(fallbackSelectedOpeningConflict?.operatingHours),
+    );
+    const fallbackOverflowMinutes =
+      fallbackAttemptedEndMinutes !== null && fallbackClosingMinutes !== null
+        ? Math.max(0, fallbackAttemptedEndMinutes - fallbackClosingMinutes)
+        : 0;
+    const selectedClosingOverflowMinutesForResolver =
+      selectedClosingOverflow.hasClosingOverflow === true
+        ? Number(selectedClosingOverflow.overflowMinutes || 0)
+        : fallbackOverflowMinutes;
+    const selectedLatestAllowedEndMinutesForResolver =
+      selectedClosingOverflow.hasClosingOverflow === true
+        ? Number(selectedClosingOverflow.latestAllowedEndMinutes || 0)
+        : Number(fallbackClosingMinutes || 0);
+    const selectedClosingConflictForResolver =
+      selectedClosingOverflow.hasClosingOverflow === true
+        ? selectedClosingOverflow.conflict
+        : fallbackSelectedOpeningConflict;
+    const selectedClosingResolverSlot =
+      manualInsertionFit?.chosenSlot ||
+      manualInsertionFit?.bestSlot ||
+      manualInsertionFit?.requestedSlot ||
+      timelineInsertionFit?.chosenSlot ||
+      timelineInsertionFit?.bestSlot ||
+      timelineInsertionFit?.requestedSlot ||
+      null;
+
     const shouldRunSelectedClosingResolver =
       manualInsertionFit?.requiresMatrixBuild !== true &&
-      !!manualInsertionFit?.chosenSlot &&
-      manualInsertionFit?.chosenSlot?.routePossible !== false &&
-      selectedClosingOverflow.hasClosingOverflow === true &&
-      Number(selectedClosingOverflow.latestAllowedEndMinutes || 0) > 0;
+      !!selectedClosingResolverSlot &&
+      selectedClosingResolverSlot?.routePossible !== false &&
+      (
+        selectedClosingOverflow.hasClosingOverflow === true ||
+        (!!fallbackSelectedOpeningConflict && fallbackOverflowMinutes > 0)
+      ) &&
+      selectedLatestAllowedEndMinutesForResolver > 0;
 
     if (shouldRunSelectedClosingResolver) {
       const focusMaster = (hotspotMasters || []).find(
@@ -21557,10 +21758,10 @@ const guideSlotCsv = guideSlots.join(',');
         selectedManualPriority,
         currentTimeline: adjustedPreviewTimeline,
         dayEndMinutes,
-        overflowMinutes: Number(selectedClosingOverflow.overflowMinutes || 0),
+        overflowMinutes: selectedClosingOverflowMinutesForResolver,
         validationMode: 'SELECTED_HOTSPOT_CLOSING',
         targetHotspotId: Number(focusHotspotId),
-        targetHotspotLatestEndMinutes: Number(selectedClosingOverflow.latestAllowedEndMinutes || 0),
+        targetHotspotLatestEndMinutes: selectedLatestAllowedEndMinutesForResolver,
         allowP3Removal: options?.allowP3Removal === true || options?.allowTopPriorityRemoval === true,
         allowP2Removal: options?.allowP1P2Removal === true || options?.allowTopPriorityRemoval === true,
         allowP1Removal: options?.allowP1P2Removal === true || options?.allowTopPriorityRemoval === true,
@@ -21588,8 +21789,8 @@ const guideSlotCsv = guideSlots.join(',');
       manualInsertionFit.lowPriorityOpeningHoursRemovalPlanPreview = {
         resolved: openingHoursRemovalPlan.resolved,
         algorithm: openingHoursRemovalPlan.algorithm,
-        originalOverflowMinutes: Number(selectedClosingOverflow.overflowMinutes || 0),
-        overflowMinutes: Number(selectedClosingOverflow.overflowMinutes || 0),
+        originalOverflowMinutes: selectedClosingOverflowMinutesForResolver,
+        overflowMinutes: selectedClosingOverflowMinutesForResolver,
         finalOverflowMinutes: openingHoursRemovalPlan.finalOverflowMinutes,
         plannedRemovals: openingHoursRemovalPlan.resolved
           ? resolvedOpeningHourRemovals
@@ -21599,7 +21800,7 @@ const guideSlotCsv = guideSlots.join(',');
         simulationAttempts: openingHoursRemovalPlan.simulationAttempts,
         rejectedAttempts: openingHoursRemovalPlan.rejectedAttempts,
         message: openingHoursRemovalPlan.message,
-        selectedClosingConflict: selectedClosingOverflow.conflict,
+        selectedClosingConflict: selectedClosingConflictForResolver,
       };
 
       if (openingHoursRemovalPlan.resolved) {
@@ -21663,37 +21864,6 @@ const guideSlotCsv = guideSlots.join(',');
     );
 
     adjustedPreviewTimeline = selectedOperatingValidation.timeline;
-
-    if (isDestinationSidePreviewSlot) {
-      let destinationBaselineRebuilt = this.rebuildDestinationSidePreviewFromBaseline({
-        baselineTimeline: baselineTimelineForMatrix,
-        manualInsertionFit: timelineInsertionFit,
-        selectedHotspotId: Number(focusHotspotId),
-        hotspotMasters,
-      });
-
-      if (destinationBaselineRebuilt.length > 0) {
-        destinationBaselineRebuilt = await this.enrichManualFitPreviewTimelineWithOperatingHours(
-          Number(planId),
-          Number(routeId),
-          destinationBaselineRebuilt,
-        );
-
-        const repairedSelectedOperatingValidation = this.markSelectedManualOperatingHourConflicts(
-          destinationBaselineRebuilt,
-          requestedHotspotIds,
-        );
-
-        console.warn('[FitHere][destination_side_preview_final_repair]', {
-          routeId,
-          selectedHotspotId: Number(focusHotspotId),
-          beforeLength: adjustedPreviewTimeline.length,
-          afterLength: repairedSelectedOperatingValidation.timeline.length,
-        });
-        adjustedPreviewTimeline = repairedSelectedOperatingValidation.timeline;
-        selectedOperatingValidation = repairedSelectedOperatingValidation;
-      }
-    }
 
     if (selectedOperatingValidation.selectedOpeningConflict) {
       manualInsertionFit.selectedOpeningConflict = selectedOperatingValidation.selectedOpeningConflict;
@@ -26855,13 +27025,12 @@ const guideSlotCsv = guideSlots.join(',');
       if (exactGapMatch) {
         requestedSlot = mapRequestedSlotResult(exactGapMatch);
       } else if (preferredFromHotspotId > 0 && !(preferredToHotspotId > 0)) {
-        const beforeHotelMatch = allSlotResults.find((slot: any) => (
+        const fromHotspotMatch = allSlotResults.find((slot: any) => (
           Number(slot?.fromHotspotId || 0) === preferredFromHotspotId
-          && String(slot?.routeFitType || '').toUpperCase() === 'DESTINATION_SIDE_INSERTION'
         ));
 
-        if (beforeHotelMatch) {
-          requestedSlot = mapRequestedSlotResult(beforeHotelMatch);
+        if (fromHotspotMatch) {
+          requestedSlot = mapRequestedSlotResult(fromHotspotMatch);
         }
       }
     }
@@ -27913,6 +28082,11 @@ const guideSlotCsv = guideSlots.join(',');
       isAttractionRow(row)
       && requestedHotspotIdSet.has(getRowHotspotId(row))
     ));
+    const selectedAttractionRowIds = new Set<number>(
+      selectedAttractionRows
+        .map((row: any) => getRowHotspotId(row))
+        .filter((id: number) => Number.isFinite(id) && id > 0),
+    );
     const selectedOpeningConflictRows: any[] = [];
     const openingHourConflictRows = selectedAttractionRows.filter((row: any) => {
       const operatingEvaluation = this.evaluateTimelineRowAgainstOperatingHours(row);
@@ -27955,6 +28129,9 @@ const guideSlotCsv = guideSlots.join(',');
     const stillUnschedulable =
       rawStillUnschedulable
       && !selectedHasPreviewRow;
+    const unscheduledManualHotspots = Array.isArray(adaptive?.unscheduledManualHotspots)
+      ? adaptive.unscheduledManualHotspots.filter((row: any) => !selectedAttractionRowIds.has(getRowHotspotId(row)))
+      : [];
     const unscheduledReasons = [
       String(adaptive?.reason || ''),
       ...((adaptive?.unscheduledManualHotspots || []).map((row: any) => String(row?.reason || ''))),
@@ -28021,9 +28198,7 @@ const guideSlotCsv = guideSlots.join(',');
       openingHourConflictCount: openingHourConflictRows.length,
       selectedManualConflictCount: selectedManualConflictRows.length,
       scheduledSelectedManualCount: scheduledSelectedRows.length,
-      unscheduledManualCount: Array.isArray(adaptive?.unscheduledManualHotspots)
-        ? adaptive.unscheduledManualHotspots.length
-        : 0,
+      unscheduledManualCount: unscheduledManualHotspots.length,
       reason,
       selectedOpeningConflict,
     };
@@ -29989,6 +30164,7 @@ const guideSlotCsv = guideSlots.join(',');
       allowTopPriorityRemoval?: boolean;
       previewOnly?: boolean;
       exactAnchorMode?: boolean;
+      trustedPreviewConfirmation?: boolean;
       afterHotspotId?: number;
       beforeHotspotId?: number;
       anchorLabel?: string | null;
