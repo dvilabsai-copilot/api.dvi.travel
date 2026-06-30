@@ -43,7 +43,8 @@
     "test:available-hotspots-anchor": "tsx scripts/test-available-hotspots-anchor.local.ts",
     "sync:tbo:missing-city": "node scripts/sync-missing-tbo-hotels-by-city.js",
     "sync:tbo:missing-city:dry": "node scripts/sync-missing-tbo-hotels-by-city.js --dry-run",
-    "cleanup:vendor-outstation-duplicates": "tsx scripts/cleanup-vendor-outstation-duplicates.ts"
+    "cleanup:vendor-outstation-duplicates": "tsx scripts/cleanup-vendor-outstation-duplicates.ts",
+    "postinstall": "npx playwright install chromium"
   },
   "dependencies": {
     "@apollo/server": "^4.13.0",
