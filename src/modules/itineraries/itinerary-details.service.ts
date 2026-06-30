@@ -299,6 +299,10 @@ export interface ItineraryDetailsResponseDto {
   guideForItinerary?: number;
   isConfirmed?: boolean;
   confirmed_itinerary_plan_ID?: number; // ID needed for /confirmed/:id endpoint
+  special_instructions?: string | null;
+  specialInstructions?: string | null;
+  special_instruction?: string | null;
+  specialInstruction?: string | null;
   dateRange: string;
   dayCount: number;
   nightCount: number;
@@ -5117,6 +5121,12 @@ const guestFoodPreference = this.getFoodPreferenceLabel(
   (plan as any).food_type ?? (confirmedPlan as any)?.food_type,
 );
 
+const specialInstructions = String(
+  (plan as any).special_instructions ??
+    (confirmedPlan as any)?.special_instructions ??
+    ""
+).trim();
+
 const response: ItineraryDetailsResponseDto = {
   quoteId: plan.itinerary_quote_ID ?? '',
       planId: plan.itinerary_plan_ID,
@@ -5125,6 +5135,10 @@ const response: ItineraryDetailsResponseDto = {
       guideForItinerary: Number((plan as any).guide_for_itinerary || 0),
       isConfirmed: !!confirmedPlan,
       confirmed_itinerary_plan_ID: confirmedPlan?.confirmed_itinerary_plan_ID,
+      special_instructions: specialInstructions,
+      specialInstructions,
+      special_instruction: specialInstructions,
+      specialInstruction: specialInstructions,
       dateRange,
       dayCount: Number((plan as any).no_of_days || days.length || 0),
       nightCount: Number((plan as any).no_of_nights || 0),
