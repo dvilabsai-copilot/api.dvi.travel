@@ -234,7 +234,7 @@ export class CreateTravellerDto {
   @IsString()
   traveller_age?: string;
 
-  @ApiProperty({
+      @ApiProperty({
     example: 1,
     required: false,
     description: 'Child bed type (0=NA, 1=Without Bed, 2=With Bed).',
@@ -242,6 +242,16 @@ export class CreateTravellerDto {
   @IsOptional()
   @IsInt()
   child_bed_type?: number;
+
+  @ApiProperty({
+    example: 0,
+    required: false,
+    description:
+      '1 when user chooses to proceed without extra bed subject to hotel approval.',
+  })
+  @IsOptional()
+  @IsInt()
+  child_extra_bed_hotel_approval_required?: number;
 }
 
 export class CreateItineraryDto {
