@@ -1203,9 +1203,8 @@ export class TimelineBuilder {
     const timingRecords = timingMap.get(hotspotId)?.get(dayOfWeek) || [];
 
     if (!timingRecords || timingRecords.length === 0) {
-      // Global engine behavior: missing timing rows should not block scheduling.
-      // Treat as open-all-day fallback and let route-time constraints decide fit.
-      return { canVisitNow: true, nextWindowStart: null, isClosedForDay: false };
+      // Hotspots with no timing configured should not be auto-scheduled.
+      return { canVisitNow: false, nextWindowStart: null, isClosedForDay: true };
     }
 
     let nextWindowStart: string | null = null;

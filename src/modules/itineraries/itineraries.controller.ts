@@ -1723,12 +1723,26 @@ export class ItinerariesController {
   @ApiOperation({ summary: 'Confirm a cached Fit Here manual hotspot insertion attempt' })
   async confirmManualHotspotFitHere(
     @Param('planId', ParseIntPipe) planId: number,
-    @Body() body: { attemptId: string },
+    @Body() body: {
+      attemptId: string;
+      allowTimingRisk?: boolean;
+      allowPriorityRemoval?: boolean;
+      allowClosedHotspotConflict?: boolean;
+      acknowledgedRemovedHotspotIds?: number[];
+    },
     @Req() req: any,
   ) {
     return this.svc.confirmManualHotspotFitHere(
       planId,
-      String(body?.attemptId || ''),
+      {
+        attemptId: String(body?.attemptId || ''),
+        allowTimingRisk: body?.allowTimingRisk === true,
+        allowPriorityRemoval: body?.allowPriorityRemoval === true,
+        allowClosedHotspotConflict: body?.allowClosedHotspotConflict === true,
+        acknowledgedRemovedHotspotIds: Array.isArray(body?.acknowledgedRemovedHotspotIds)
+          ? body.acknowledgedRemovedHotspotIds.map((id: any) => Number(id)).filter((id: number) => id > 0)
+          : [],
+      },
       Number(req?.user?.userId || 1),
     );
   }

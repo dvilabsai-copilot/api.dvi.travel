@@ -77,13 +77,13 @@ export class OperatingHoursChecker {
       merged.push(r);
     }
 
-    // If no records at all, treat as open (legacy often behaves like this)
+    // Hotspots without configured timing rows should not be auto-scheduled.
     if (!merged.length) {
       return {
-        canVisitNow: true,
+        canVisitNow: false,
         nextWindowStart: null,
         adjustedStartTime: null,
-        reason: "No timing rows (treat as open)",
+        reason: "No timing rows configured",
       };
     }
 
