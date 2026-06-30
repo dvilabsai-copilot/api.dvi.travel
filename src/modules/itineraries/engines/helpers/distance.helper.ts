@@ -60,6 +60,14 @@ function parseDurationToMinutes(duration: any): number | null {
   return days * 1440 + hours * 60 + mins;
 }
 
+function normalizeDistanceName(value: string): string {
+  return String(value || '')
+    .split('|')[0]
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
 export class DistanceHelper {
   private globalSettings: any = null;
 
@@ -180,6 +188,29 @@ export class DistanceHelper {
     // ✅ duration in DB is string like "3 hours 5 mins" / "1 day 1 hour"
     const totalMinutes = parseDurationToMinutes(loc.duration);
 
+    // Guard against obviously corrupted stored rows like "0.10 KM / 5h15m".
+    if (
+      Number.isFinite(distance) &&
+      distance > 0 &&
+      distance <= 0.5 &&
+      Number.isFinite(Number(totalMinutes)) &&
+      Number(totalMinutes) > 30
+    ) {
+      console.warn('[DistanceHelper][SUSPICIOUS_STORED_ROUTE_DURATION]', {
+        locationId,
+        distanceKm: distance,
+        durationMinutes: totalMinutes,
+        source: String((loc as any).source_location || ''),
+        destination: String((loc as any).destination_location || ''),
+      });
+
+      return {
+        distanceKm: Math.max(distance, 0.1),
+        travelTime: minutesToDurationTime(MIN_TRAVEL_MINUTES),
+        bufferTime: await this.getBufferTime(tx, travelLocationType),
+      };
+    }
+
     // ✅ IMPORTANT: use *duration* formatter (NO wrap)
     const travelTime = minutesToDurationTime(Math.max(totalMinutes ?? 0, MIN_TRAVEL_MINUTES));
 
@@ -213,13 +244,6 @@ export class DistanceHelper {
       Number.isFinite(Number(destCoords.lat)) &&
       Number.isFinite(Number(destCoords.lon)) &&
       (Number(destCoords.lat) !== 0 || Number(destCoords.lon) !== 0);
-
-    const normalizeDistanceName = (value: string) =>
-      String(value || '')
-        .split('|')[0]
-        .replace(/\s+/g, ' ')
-        .trim()
-        .toLowerCase();
 
     const sourceDestNamesSame =
       normalizeDistanceName(trimmedSource) === normalizeDistanceName(trimmedDest);
@@ -298,6 +322,48 @@ export class DistanceHelper {
 
     if (loc) {
       const distance = Number(loc.distance ?? 0);
+      const storedTotalMinutes = parseDurationToMinutes(loc.duration);
+
+      if (
+        !sourceDestNamesSame &&
+        Number.isFinite(distance) &&
+        distance > 0 &&
+        distance <= 0.5 &&
+        Number.isFinite(Number(storedTotalMinutes)) &&
+        Number(storedTotalMinutes) > 30
+      ) {
+        console.warn('[DistanceHelper][SUSPICIOUS_STORED_ROUTE_DURATION]', {
+          source: trimmedSource,
+          destination: trimmedDest,
+          distanceKm: distance,
+          durationMinutes: storedTotalMinutes,
+          locationId: Number((loc as any).location_ID || 0),
+        });
+
+        if (destCoords && (destCoords.lat !== 0 || destCoords.lon !== 0)) {
+          const s = trimmedSource.split('|')[0].trim();
+          const sourceLoc = await (tx as any).dvi_stored_locations.findFirst({
+            where: { source_location: s, deleted: 0 },
+          });
+          if (sourceLoc?.source_location_lattitude && sourceLoc?.source_location_longitude) {
+            return this.fromCoordinates(
+              tx,
+              Number(sourceLoc.source_location_lattitude),
+              Number(sourceLoc.source_location_longitude),
+              destCoords.lat,
+              destCoords.lon,
+              travelLocationType,
+            );
+          }
+        }
+
+        return {
+          distanceKm: Math.max(distance, 0.1),
+          travelTime: minutesToDurationTime(MIN_TRAVEL_MINUTES),
+          bufferTime: "00:00:00",
+        };
+      }
+
       if (!sourceDestNamesSame && (!Number.isFinite(distance) || distance <= 0)) {
         console.warn("[DISTANCE_LOOKUP_FALLBACK_MIN_DISTANCE]", {
           source: trimmedSource,
@@ -312,8 +378,7 @@ export class DistanceHelper {
         };
       }
 
-      const totalMinutes = parseDurationToMinutes(loc.duration);
-      const travelTime = minutesToDurationTime(Math.max(totalMinutes ?? 0, MIN_TRAVEL_MINUTES));
+      const travelTime = minutesToDurationTime(Math.max(storedTotalMinutes ?? 0, MIN_TRAVEL_MINUTES));
       const bufferTime = await this.getBufferTime(tx, travelLocationType);
       return { distanceKm: distance, travelTime, bufferTime };
     }

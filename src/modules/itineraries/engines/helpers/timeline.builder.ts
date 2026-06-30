@@ -1505,6 +1505,19 @@ export class TimelineBuilder {
 
       return true;
     };
+
+    if (options?.scopeToRouteId && Array.isArray(existingHotspots) && existingHotspots.length > 0) {
+      const scopedRouteId = Number(options.scopeToRouteId || 0);
+      for (const row of existingHotspots) {
+        if (Number((row as any)?.deleted || 0) !== 0) continue;
+        if (Number((row as any)?.item_type || 0) !== 4) continue;
+        const routeId = Number((row as any)?.itinerary_route_ID || 0);
+        const hotspotId = Number((row as any)?.hotspot_ID || 0);
+        if (!routeId || !hotspotId) continue;
+        if (routeId === scopedRouteId) continue;
+        addedHotspotIds.add(hotspotId);
+      }
+    }
     
     // Track last added hotspot ID for cache-first distance computation (hotspot→hotspot)
     let lastAddedHotspotId: number | null = null;
