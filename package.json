@@ -39,6 +39,8 @@
     "verify:day1:airport-munnar-via": "node scripts/verify-day1-airport-munnar-via.js",
     "verify:dvi20260690:direct-no-via": "node scripts/verify-dvi20260690-direct-no-via.js",
     "verify:dvi20260690:explicit-via": "node scripts/verify-dvi20260690-explicit-via.js",
+    "debug:fit-preview": "tsx scripts/debug-fit-preview-source.ts",
+    "debug:fit-confirm": "tsx scripts/debug-fit-confirm.ts",
     "test:matrix": "tsx scripts/test-matrix-autobuild.ts",
     "test:available-hotspots-anchor": "tsx scripts/test-available-hotspots-anchor.local.ts",
     "sync:tbo:missing-city": "node scripts/sync-missing-tbo-hotels-by-city.js",

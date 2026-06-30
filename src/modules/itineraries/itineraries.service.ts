@@ -150,6 +150,21 @@ type ManualScheduleAttempt = {
   reason: string | null;
 };
 
+type ManualFitTimingRisk = {
+  type: 'PARTIAL_STAY_AFTER_CLOSING';
+  severity: 'warning' | 'danger';
+  hotspotId: number;
+  hotspotName: string;
+  proposedVisitStart: string;
+  proposedVisitEnd: string;
+  closingTime: string;
+  requestedDurationMinutes: number;
+  usableDurationMinutes: number;
+  overflowMinutes: number;
+  message: string;
+  canForceConfirm: true;
+};
+
 type ManualOptimizerAttemptLog = {
   decisionOrder: string[];
   selectedStrategyKey: string | null;
@@ -233,6 +248,9 @@ type ManualFitAttemptCacheEntry = {
   allowP3Removal: boolean;
   allowP1P2Removal: boolean;
   canConfirm: boolean;
+  requiresTimingRiskConfirmation?: boolean;
+  requiresPriorityRemovalConfirmation?: boolean;
+  timingRisk?: ManualFitTimingRisk | null;
   matrixPreferredSlot?: {
     fromHotspotId?: number;
     toHotspotId?: number;
@@ -359,6 +377,7 @@ export class ItinerariesService {
   private readonly manualHotspotMatrixBuildLocks = new Set<string>();
   private readonly manualFitAttemptCache = new Map<string, ManualFitAttemptCacheEntry>();
   private vehicleBuildStatusTableEnsured = false;
+  private manualFitAttemptStoreTableEnsured = false;
   private readonly osrmLegRuntimeCache = new Map<string, {
     distanceKm: number | null;
     durationMin: number | null;
@@ -1544,6 +1563,139 @@ const guideSlotCsv = guideSlots.join(',');
     `);
 
     this.vehicleBuildStatusTableEnsured = true;
+  }
+
+  private async ensureManualFitAttemptStoreTable(): Promise<void> {
+    if (this.manualFitAttemptStoreTableEnsured) return;
+
+    await this.prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS dvi_manual_fit_preview_attempts (
+        id BIGINT NOT NULL AUTO_INCREMENT,
+        attempt_id VARCHAR(64) NOT NULL,
+        itinerary_plan_id INT NOT NULL,
+        itinerary_route_id INT NOT NULL,
+        selected_hotspot_id INT NOT NULL,
+        payload_json LONGTEXT NOT NULL,
+        expires_at DATETIME NOT NULL,
+        created_on DATETIME NOT NULL,
+        updated_on DATETIME NOT NULL,
+        PRIMARY KEY (id),
+        UNIQUE KEY uq_manual_fit_preview_attempt (attempt_id),
+        KEY idx_manual_fit_preview_expires_at (expires_at),
+        KEY idx_manual_fit_preview_plan_route (itinerary_plan_id, itinerary_route_id)
+      )
+    `);
+
+    this.manualFitAttemptStoreTableEnsured = true;
+  }
+
+  private parseStoredManualFitAttemptEntry(value: any): ManualFitAttemptCacheEntry | null {
+    const parsed = typeof value === 'string'
+      ? JSON.parse(value)
+      : value;
+    if (!parsed || typeof parsed !== 'object') return null;
+
+    const attemptId = String(parsed?.attemptId || '').trim();
+    const planId = Number(parsed?.planId || 0);
+    const routeId = Number(parsed?.routeId || 0);
+    const selectedHotspotId = Number(parsed?.selectedHotspotId || 0);
+    const expiresAt = String(parsed?.expiresAt || '').trim();
+
+    if (!attemptId || !(planId > 0) || !(routeId > 0) || !(selectedHotspotId > 0) || !expiresAt) {
+      return null;
+    }
+
+    return parsed as ManualFitAttemptCacheEntry;
+  }
+
+  private async saveManualFitAttemptEntry(entry: ManualFitAttemptCacheEntry): Promise<void> {
+    const attemptId = String(entry?.attemptId || '').trim();
+    if (!attemptId) return;
+
+    await this.ensureManualFitAttemptStoreTable();
+    const now = new Date();
+    const expiresAt = new Date(entry.expiresAt);
+
+    await this.prisma.$executeRawUnsafe(
+      `
+        INSERT INTO dvi_manual_fit_preview_attempts (
+          attempt_id,
+          itinerary_plan_id,
+          itinerary_route_id,
+          selected_hotspot_id,
+          payload_json,
+          expires_at,
+          created_on,
+          updated_on
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          itinerary_plan_id = VALUES(itinerary_plan_id),
+          itinerary_route_id = VALUES(itinerary_route_id),
+          selected_hotspot_id = VALUES(selected_hotspot_id),
+          payload_json = VALUES(payload_json),
+          expires_at = VALUES(expires_at),
+          updated_on = VALUES(updated_on)
+      `,
+      attemptId,
+      Number(entry.planId || 0),
+      Number(entry.routeId || 0),
+      Number(entry.selectedHotspotId || 0),
+      JSON.stringify(entry),
+      Number.isFinite(expiresAt.getTime()) ? expiresAt : new Date(Date.now() + 10 * 60 * 1000),
+      now,
+      now,
+    );
+
+    this.manualFitAttemptCache.set(attemptId, entry);
+  }
+
+  private async loadManualFitAttemptEntry(attemptId: string): Promise<ManualFitAttemptCacheEntry | null> {
+    const normalizedAttemptId = String(attemptId || '').trim();
+    if (!normalizedAttemptId) return null;
+
+    const cached = this.manualFitAttemptCache.get(normalizedAttemptId);
+    if (cached) {
+      return cached;
+    }
+
+    await this.ensureManualFitAttemptStoreTable();
+    const rows = await this.prisma.$queryRawUnsafe<Array<{ payload_json: string }>>(
+      `
+        SELECT payload_json
+        FROM dvi_manual_fit_preview_attempts
+        WHERE attempt_id = ?
+        LIMIT 1
+      `,
+      normalizedAttemptId,
+    );
+
+    const payloadText = String(rows?.[0]?.payload_json || '').trim();
+    if (!payloadText) return null;
+
+    try {
+      const parsed = this.parseStoredManualFitAttemptEntry(payloadText);
+      if (!parsed) return null;
+      this.manualFitAttemptCache.set(normalizedAttemptId, parsed);
+      return parsed;
+    } catch (error) {
+      console.warn('[FitHere][attempt_store_parse_failed]', {
+        attemptId: normalizedAttemptId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
+  }
+
+  private async deleteManualFitAttemptEntry(attemptId: string): Promise<void> {
+    const normalizedAttemptId = String(attemptId || '').trim();
+    if (!normalizedAttemptId) return;
+
+    this.manualFitAttemptCache.delete(normalizedAttemptId);
+    await this.ensureManualFitAttemptStoreTable();
+    await this.prisma.$executeRawUnsafe(
+      `DELETE FROM dvi_manual_fit_preview_attempts WHERE attempt_id = ?`,
+      normalizedAttemptId,
+    );
   }
 
   private setVehicleBuildStatus(
@@ -5176,7 +5328,12 @@ const guideSlotCsv = guideSlots.join(',');
         status: 1,
         item_type: 4,
       },
-      select: { hotspot_ID: true, itinerary_route_ID: true },
+      select: {
+        hotspot_ID: true,
+        itinerary_route_ID: true,
+        route_hotspot_ID: true,
+        hotspot_plan_own_way: true,
+      },
     });
 
     // Guard against stale/orphan rows from replaced routes during rebuilds.
@@ -5205,6 +5362,22 @@ const guideSlotCsv = guideSlots.join(',');
         .map((r: any) => Number(r.hotspot_ID))
         .filter((n: number) => Number.isFinite(n) && n > 0),
     );
+    const thisRouteAddedRowByHotspotId = new Map<number, {
+      routeHotspotId: number | null;
+      planOwnWay: boolean;
+      isManual: boolean;
+    }>();
+    for (const row of allPlanAddedRows || []) {
+      if (Number(row?.itinerary_route_ID || 0) !== Number(routeId)) continue;
+      const hotspotId = Number(row?.hotspot_ID || 0);
+      if (!(hotspotId > 0) || thisRouteAddedRowByHotspotId.has(hotspotId)) continue;
+      const isManual = Number(row?.hotspot_plan_own_way || 0) === 1;
+      thisRouteAddedRowByHotspotId.set(hotspotId, {
+        routeHotspotId: Number(row?.route_hotspot_ID || 0) || null,
+        planOwnWay: isManual,
+        isManual,
+      });
+    }
 
     // Hotspots on OTHER routes of the same plan
     const otherRouteAddedIds = new Set<number>(
@@ -5395,6 +5568,7 @@ const guideSlotCsv = guideSlots.join(',');
         }
 
         const actionDisabled = availabilityStatus === 'ACTIVE_THIS_ROUTE' || availabilityStatus === 'EXCLUDED_BY_ROUTE';
+        const activeRouteRow = thisRouteAddedRowByHotspotId.get(hotspotId) || null;
         const cityContext = this.classifyManualHotspotCityContext({
           location_name: sourceName,
           next_visiting_location: destName,
@@ -5420,6 +5594,9 @@ const guideSlotCsv = guideSlots.join(',');
           visitAgain: isActiveThisRoute || isActiveOtherRoute,
           alreadyAdded: isActiveThisRoute || isActiveOtherRoute,
           alreadyAddedOnOtherRoute: isActiveOtherRoute,
+          routeHotspotId: activeRouteRow?.routeHotspotId ?? null,
+          planOwnWay: activeRouteRow?.planOwnWay === true,
+          isManual: activeRouteRow?.isManual === true,
           availabilityStatus,
           availabilityReason,
           actionDisabled,
@@ -11894,6 +12071,8 @@ const guideSlotCsv = guideSlots.join(',');
       beforeHotspotId?: number;
       afterRouteHotspotId?: number;
       beforeRouteHotspotId?: number;
+      allowP3Removal?: boolean;
+      allowP1P2Removal?: boolean;
       allowTopPriorityRemoval?: boolean;
       debug?: boolean;
       focusHotspotId?: number;
@@ -12053,13 +12232,37 @@ const guideSlotCsv = guideSlots.join(',');
     await (tx as any).$executeRawUnsafe(sql, ...params);
   }
 
-  private purgeExpiredManualFitAttempts() {
+  private async purgeExpiredManualFitAttempts() {
     const now = Date.now();
     for (const [attemptId, entry] of this.manualFitAttemptCache.entries()) {
       if (new Date(entry.expiresAt).getTime() <= now) {
         this.manualFitAttemptCache.delete(attemptId);
       }
     }
+
+    await this.ensureManualFitAttemptStoreTable();
+    await this.prisma.$executeRawUnsafe(
+      `DELETE FROM dvi_manual_fit_preview_attempts WHERE expires_at <= ?`,
+      new Date(now),
+    );
+  }
+
+  private extractManualFitErrorDetails(error: any): { message: string; body: any } {
+    const body =
+      typeof error?.getResponse === 'function'
+        ? error.getResponse()
+        : (error?.response ?? null);
+
+    const message = String(
+      typeof body === 'string'
+        ? body
+        : body?.message || error?.message || 'Could not confirm Fit Here insertion.',
+    ).trim();
+
+    return {
+      message: message || 'Could not confirm Fit Here insertion.',
+      body,
+    };
   }
 
   private hashManualFitValue(value: unknown): string {
@@ -12285,12 +12488,14 @@ const guideSlotCsv = guideSlots.join(',');
       },
       {
         id: 'priority_protection',
-        label: 'P1/P2 priority protection checked',
-        status: affectedPriority.length > 0 || removedTopPriority.length > 0 ? 'failed' : 'passed',
+        label: 'Priority protection checked',
+        status: affectedPriority.length > 0 ? 'failed' : (removedTopPriority.length > 0 ? 'warning' : 'passed'),
         message:
-          affectedPriority.length > 0 || removedTopPriority.length > 0
-            ? 'One or more protected P1/P2 hotspots would be removed or become invalid.'
-            : 'No P1/P2 hotspot is removed or invalidated by this insertion.',
+          affectedPriority.length > 0
+            ? 'One or more protected high work-priority hotspots would be removed or become invalid.'
+            : removedTopPriority.length > 0
+              ? 'One or more high work-priority hotspots would be removed only with explicit confirmation.'
+            : 'No high work-priority hotspot is removed or invalidated by this insertion.',
         details: {
           affectedPriorityCount: affectedPriority.length,
           removedTopPriorityCount: removedTopPriority.length,
@@ -12314,7 +12519,7 @@ const guideSlotCsv = guideSlots.join(',');
         status: removedOptional.length > 0 || p3ToRemove.length > 0 ? 'warning' : 'passed',
         message:
           removedOptional.length > 0 || p3ToRemove.length > 0
-            ? 'One or more optional/P3 hotspots may need removal to keep the route feasible.'
+            ? 'One or more optional or lower-priority hotspots may need removal to keep the route feasible.'
             : 'No optional hotspot removal is required.',
         details: {
           removedOptionalCount: removedOptional.length,
@@ -12339,9 +12544,31 @@ const guideSlotCsv = guideSlots.join(',');
       },
     ];
 
-    const attemptRows = Array.isArray(resolution?.manualOptimizer?.attempts)
+    const selectedStrategyKey = String(resolution?.manualOptimizer?.selectedStrategyKey || '');
+    const attemptRowsRaw = Array.isArray(resolution?.manualOptimizer?.attempts)
       ? resolution.manualOptimizer.attempts
       : [];
+    const attemptRows = attemptRowsRaw.map((row: any) => {
+      if (
+        selectedStrategyKey === 'exact_anchor_sequential_rebuild' &&
+        String(row?.strategyKey || '') === 'exact_anchor_sequential_rebuild'
+      ) {
+        return {
+          ...row,
+          source: 'REAL_CLUSTER_SIMULATION',
+          readyToApply: canApply,
+          requiresConfirmation: false,
+          summary: canApply
+            ? 'Exact-anchor sequential rebuild preserved the selected insertion order and produced the final preview timeline.'
+            : String(validation?.reason || row?.summary || row?.reason || 'Exact-anchor sequential rebuild could not be confirmed.'),
+          reason: canApply
+            ? 'Exact-anchor sequential rebuild matched the authoritative final preview timeline.'
+            : String(validation?.reason || row?.reason || 'Exact-anchor sequential rebuild could not be confirmed.'),
+        };
+      }
+
+      return row;
+    });
 
     const attemptLogs: FitHereAttemptLogItem[] = attemptRows.slice(0, 6).map((row: any, index: number) => ({
       id: `optimizer_attempt_${index + 1}`,
@@ -12361,7 +12588,7 @@ const guideSlotCsv = guideSlots.join(',');
     return [...logs, ...attemptLogs];
   }
 
-  private buildManualFitPreviewEnvelope(params: {
+  private async buildManualFitPreviewEnvelope(params: {
     attemptId: string;
     planId: number;
     routeId: number;
@@ -12371,9 +12598,13 @@ const guideSlotCsv = guideSlots.join(',');
     sourceFingerprint: string;
     expiresAt: string;
     previewResult: any;
+    activeRemovalEvidence?: {
+      activeHotspotIds: Set<number>;
+      activeRouteHotspotIds: Set<number>;
+    };
   }) {
-    const validation = params.previewResult?.validation || {};
     const resolution = params.previewResult?.resolution || {};
+    const validation = params.previewResult?.validation || resolution?.validation || {};
     const removedOptional = Array.isArray(resolution?.removedOptionalHotspots)
       ? resolution.removedOptionalHotspots
       : [];
@@ -12389,28 +12620,67 @@ const guideSlotCsv = guideSlots.join(',');
     const removedHotspotsRaw = Array.isArray(resolution?.removedHotspots)
       ? resolution.removedHotspots
       : [];
+    const dayEndPlan = params.previewResult?.manualInsertionFit?.lowPriorityRemovalPlanPreview || null;
+    const openingHoursPlan = params.previewResult?.manualInsertionFit?.lowPriorityOpeningHoursRemovalPlanPreview || null;
+    const resolvedLowPriorityRemovedHotspots = Array.isArray(params.previewResult?.manualInsertionFit?.removedLowPriorityHotspots)
+      ? params.previewResult.manualInsertionFit.removedLowPriorityHotspots
+      : [];
 
-    const removedHotspots = [
+    const plannedSequentialRemovals = [
+      ...resolvedLowPriorityRemovedHotspots,
+      ...(dayEndPlan?.resolved === true && Array.isArray(dayEndPlan?.plannedRemovals)
+        ? dayEndPlan.plannedRemovals
+        : []),
+      ...(openingHoursPlan?.resolved === true && Array.isArray(openingHoursPlan?.plannedRemovals)
+        ? openingHoursPlan.plannedRemovals
+        : []),
+    ];
+
+    const unsafeMergedRemovalRows = [
       ...removedHotspotsRaw,
       ...removedOptional,
       ...p3Hotspots,
       ...removedTopPriority,
-    ].filter((row: any, index: number, list: any[]) => {
-      const id = Number(row?.id || row?.hotspotId || row?.hotspot_ID || 0);
-      if (!id) return true;
-      return list.findIndex((candidate: any) => (
-        Number(candidate?.id || candidate?.hotspotId || candidate?.hotspot_ID || 0) === id
-      )) === index;
+      ...resolvedLowPriorityRemovedHotspots,
+      ...plannedSequentialRemovals,
+    ];
+    const removedHotspots = this.sanitizeUserFacingManualFitRemovals(unsafeMergedRemovalRows, {
+      routeId: params.routeId,
+      selectedHotspotId: params.selectedHotspotId,
+      activeRemovalEvidence: params.activeRemovalEvidence,
     });
-
-    const affectedPriorityHotspots = [
+    const safeRemovedOptional = this.sanitizeUserFacingManualFitRemovals(removedOptional, {
+      routeId: params.routeId,
+      selectedHotspotId: params.selectedHotspotId,
+      activeRemovalEvidence: params.activeRemovalEvidence,
+    });
+    const safeRemovedTopPriority = this.sanitizeUserFacingManualFitRemovals(removedTopPriority, {
+      routeId: params.routeId,
+      selectedHotspotId: params.selectedHotspotId,
+      activeRemovalEvidence: params.activeRemovalEvidence,
+    });
+    const safeP3Hotspots = this.sanitizeUserFacingManualFitRemovals(p3Hotspots, {
+      routeId: params.routeId,
+      selectedHotspotId: params.selectedHotspotId,
+      activeRemovalEvidence: params.activeRemovalEvidence,
+    });
+    const safeSequentialRemovals = this.sanitizeUserFacingManualFitRemovals(plannedSequentialRemovals, {
+      routeId: params.routeId,
+      selectedHotspotId: params.selectedHotspotId,
+      activeRemovalEvidence: params.activeRemovalEvidence,
+    });
+    const affectedPriorityHotspots = this.sanitizeUserFacingManualFitRemovals([
       ...topPriorityAffected,
       ...removedTopPriority,
-    ].filter((row: any, index: number, list: any[]) => {
+    ], {
+      routeId: params.routeId,
+      selectedHotspotId: params.selectedHotspotId,
+      activeRemovalEvidence: params.activeRemovalEvidence,
+    }).filter((row: any, index: number, list: any[]) => {
       const priority = Number(row?.priority || row?.hotspot_priority || row?.rawPriority || 0);
-      const id = Number(row?.id || row?.hotspotId || row?.hotspot_ID || 0);
+      const id = this.getManualFitRemovalHotspotId(row);
 
-      if (priority > 2 && removedTopPriority.length === 0) {
+      if (priority > 2 && safeRemovedTopPriority.length === 0) {
         return false;
       }
 
@@ -12420,6 +12690,35 @@ const guideSlotCsv = guideSlots.join(',');
         Number(candidate?.id || candidate?.hotspotId || candidate?.hotspot_ID || 0) === id
       )) === index;
     });
+    const timingRisk = resolution?.timingRisk || params.previewResult?.timingRisk || null;
+    const removedPrioritySummary = this.buildRemovedPrioritySummary(removedHotspots);
+    const changesRequiredDisplay = this.buildManualFitChangesRequiredDisplay({
+      removedHotspots,
+      affectedPriorityHotspots,
+      removedPrioritySummary,
+    });
+    const highestSequentialRemovedPriority = safeSequentialRemovals.reduce((highest: number, row: any) => {
+      const priority = Number(row?.priority || row?.hotspotPriority || row?.hotspot_priority || 0);
+      if (!priority) return highest;
+      return highest === 0 ? priority : Math.min(highest, priority);
+    }, 0);
+    const hasSequentialP1P2Removal =
+      safeSequentialRemovals.some((row: any) => [1, 2].includes(Number(row?.priority || row?.hotspotPriority || row?.hotspot_priority || 0)));
+    if (safeSequentialRemovals.length > 0) {
+      removedPrioritySummary.removalOrder = safeSequentialRemovals
+        .map((row: any) => Number(row?.priority || row?.hotspotPriority || row?.hotspot_priority || 0))
+        .filter((priority: number) => priority > 0);
+
+      removedPrioritySummary.requiresPriorityRemovalConfirmation = true;
+      removedPrioritySummary.severity = hasSequentialP1P2Removal ? 'danger' : 'warning';
+      removedPrioritySummary.message = hasSequentialP1P2Removal
+        ? 'This Fit Here requires removing high work-priority hotspot(s). Review carefully before confirming.'
+        : 'This Fit Here requires removing Priority 3 hotspot(s). Please confirm before applying.';
+
+      if (highestSequentialRemovedPriority > 0) {
+        removedPrioritySummary.highestRemovedPriority = highestSequentialRemovedPriority;
+      }
+    }
 
     let resultType:
       | 'FITS_DIRECTLY'
@@ -12427,31 +12726,55 @@ const guideSlotCsv = guideSlots.join(',');
       | 'REQUIRES_P3_CONFIRMATION'
       | 'PRIORITY_CONFLICT'
       | 'CANNOT_FIT'
-      | 'CONFLICT_ONLY' = 'CANNOT_FIT';
+      | 'CONFLICT_ONLY'
+      | 'SELECTED_HOTSPOT_CLOSED_AT_ATTEMPTED_TIME' = 'CANNOT_FIT';
     let canConfirm = false;
 
     const readyToApply =
       validation?.readyToApply === true ||
+      resolution?.validation?.readyToApply === true ||
       params.previewResult?.readyToApply === true ||
       params.previewResult?.success === true ||
       params.previewResult?.inserted === true;
 
     const hasPriorityConflict =
       affectedPriorityHotspots.length > 0 ||
-      removedTopPriority.length > 0;
+      safeRemovedTopPriority.length > 0;
 
     const hasOptionalRemoval =
-      removedOptional.length > 0 ||
-      p3Hotspots.length > 0 ||
+      safeRemovedOptional.length > 0 ||
+      safeP3Hotspots.length > 0 ||
       removedHotspots.some((row: any) => {
         const priority = Number(row?.priority || row?.hotspot_priority || row?.rawPriority || 0);
         return priority >= 3 || priority === 0;
       });
 
-    if (hasPriorityConflict) {
+    const requiresTimingRiskConfirmation =
+      resolution?.requiresTimingRiskConfirmation === true
+      || params.previewResult?.requiresTimingRiskConfirmation === true
+      || !!timingRisk;
+    const requiresPriorityRemovalConfirmation =
+      removedPrioritySummary.requiresPriorityRemovalConfirmation === true;
+    const allowClosedHotspotForceConflict = true;
+    const selectedOpeningConflict =
+      validation?.selectedOpeningConflict ||
+      resolution?.validation?.selectedOpeningConflict ||
+      params.previewResult?.manualInsertionFit?.selectedOpeningConflict ||
+      null;
+    const hasSelectedOpeningConflict =
+      !!selectedOpeningConflict ||
+      (
+        !readyToApply &&
+        String(params.previewResult?.manualInsertionFit?.previewBlockReason || '').toUpperCase() === 'SELECTED_HOTSPOT_CLOSED_AT_ATTEMPTED_TIME'
+      );
+
+    if (hasSelectedOpeningConflict) {
+      resultType = 'SELECTED_HOTSPOT_CLOSED_AT_ATTEMPTED_TIME';
+      canConfirm = false;
+    } else if (hasPriorityConflict) {
       resultType = 'PRIORITY_CONFLICT';
       canConfirm = false;
-    } else if (readyToApply && hasOptionalRemoval) {
+    } else if (readyToApply && (hasOptionalRemoval || requiresPriorityRemovalConfirmation || requiresTimingRiskConfirmation)) {
       resultType = 'FITS_WITH_OPTIONAL_REMOVAL';
       canConfirm = true;
     } else if (readyToApply) {
@@ -12464,7 +12787,47 @@ const guideSlotCsv = guideSlots.join(',');
       resultType = 'CANNOT_FIT';
       canConfirm = false;
     }
-    const proposedTimeline = Array.isArray(params.previewResult?.fullTimeline) ? params.previewResult.fullTimeline : [];
+    const proposedTimelineBase = Array.isArray(params.previewResult?.fullTimeline)
+      ? params.previewResult.fullTimeline
+      : [];
+    const proposedTimelineRaw = await this.enrichManualFitPreviewTimelineWithOperatingHours(
+      params.planId,
+      params.routeId,
+      proposedTimelineBase,
+    );
+    const finalizedTimeline = this.buildManualFitFinalizedPreviewTimeline(
+      proposedTimelineRaw,
+      removedHotspots,
+    );
+    const hasUnprovenProtectedRemoval = removedHotspots.some((row: any) => {
+      const priority = Number(row?.priority || row?.hotspot_priority || row?.rawPriority || 0);
+      const reasonCode = String(row?.removalReasonCode || '').toUpperCase();
+      return (priority === 1 || priority === 2) && reasonCode === 'UNPROVEN_REMOVAL';
+    });
+
+    if (hasUnprovenProtectedRemoval) {
+      resultType = 'PRIORITY_CONFLICT';
+      canConfirm = false;
+    }
+
+    const rejectedReasons = canConfirm
+      ? []
+      : [
+          hasSelectedOpeningConflict
+            ? String(
+                selectedOpeningConflict?.reason ||
+                `${selectedOpeningConflict?.hotspotName || 'Selected hotspot'} cannot be inserted here because attempted visit time is ${selectedOpeningConflict?.attemptedVisitTime || 'outside operating hours'}, but operating hours are ${selectedOpeningConflict?.operatingHours || 'not available'}.`,
+              )
+            : String(validation?.reason || params.previewResult?.message || 'Selected hotspot cannot fit at this anchor.'),
+        ];
+
+    if (hasUnprovenProtectedRemoval) {
+      rejectedReasons.splice(
+        0,
+        rejectedReasons.length,
+        'This preview removed a protected hotspot without proven operating-hours conflict, route-end overflow, or downstream route-feasibility evidence. Please treat this preview as invalid.',
+      );
+    }
 
     return {
       attemptId: params.attemptId,
@@ -12473,14 +12836,29 @@ const guideSlotCsv = guideSlots.join(',');
       selectedHotspotId: params.selectedHotspotId,
       resultType,
       canConfirm,
-      canForceConflict: resolution?.canForceConflict === true,
-      requiresP3Confirmation: canConfirm ? false : (resolution?.requiresP3RemovalConfirmation === true || p3Hotspots.length > 0),
+      canForceConflict:
+        resolution?.canForceConflict === true ||
+        (hasSelectedOpeningConflict && allowClosedHotspotForceConflict),
+      selectedOpeningConflict,
+      requiresP3Confirmation: canConfirm ? false : safeP3Hotspots.length > 0,
       requiresP1P2Override: affectedPriorityHotspots.some((row: any) => Number(row?.priority || 0) > 0 && Number(row?.priority || 0) <= 2),
+      requiresTimingRiskConfirmation,
+      requiresPriorityRemovalConfirmation,
+      timingRisk,
+      removedPrioritySummary,
+      changesRequiredDisplay,
+      confirmButtonVariant: (requiresTimingRiskConfirmation || requiresPriorityRemovalConfirmation) ? 'danger' : 'default',
       acceptedReason: canConfirm ? String(params.previewResult?.message || validation?.reason || '').trim() || null : null,
-      rejectedReasons: canConfirm
-        ? []
-        : [String(validation?.reason || params.previewResult?.message || 'Selected hotspot cannot fit at this anchor.')],
-      proposedTimeline,
+      rejectedReasons,
+      proposedTimeline: finalizedTimeline,
+      finalizedTimeline,
+      authoritativeTimelineSource: 'BACKEND_FINALIZED_PATCHED_TIMELINE',
+      authoritativeRemovedHotspotIds: removedHotspots
+        .map((row: any) => this.getManualFitRemovalHotspotId(row))
+        .filter((id: number) => Number.isFinite(id) && id > 0),
+      requiresRemovalAcknowledgementHotspotIds: changesRequiredDisplay.removedItems
+        .map((row: any) => Number(row?.hotspotId || 0))
+        .filter((id: number) => Number.isFinite(id) && id > 0),
       removedHotspots,
       shiftedHotspots: Array.isArray(resolution?.shiftedHotspots) ? resolution.shiftedHotspots : [],
       affectedPriorityHotspots,
@@ -12496,6 +12874,21 @@ const guideSlotCsv = guideSlots.join(',');
             }))
         : [],
       anchorLabel: params.anchorLabel,
+      manualInsertionFit: params.previewResult?.manualInsertionFit || null,
+      resolution: {
+        ...(resolution || {}),
+        manualInsertionFit: params.previewResult?.manualInsertionFit || resolution?.manualInsertionFit || null,
+        lowPriorityOpeningHoursRemovalPlanPreview:
+          params.previewResult?.manualInsertionFit?.lowPriorityOpeningHoursRemovalPlanPreview ||
+          resolution?.lowPriorityOpeningHoursRemovalPlanPreview ||
+          null,
+        removedOptionalHotspots: safeRemovedOptional,
+        removedTopPriorityHotspots: safeRemovedTopPriority,
+        p3HotspotsToRemove: safeP3Hotspots,
+        topPriorityAffected: affectedPriorityHotspots,
+        removedHotspots,
+        changesRequiredDisplay,
+      },
       selectedAnchor: params.selectedAnchor
         ? {
             anchorType: params.selectedAnchor.anchorType,
@@ -12509,7 +12902,7 @@ const guideSlotCsv = guideSlots.join(',');
       sourceFingerprint: params.sourceFingerprint,
       expiresAt: params.expiresAt,
       attemptLog: this.buildManualFitAttemptLog(params.previewResult),
-      proposedTimelineFingerprint: this.buildManualFitTimelineFingerprint(proposedTimeline),
+      proposedTimelineFingerprint: this.buildManualFitTimelineFingerprint(finalizedTimeline),
     };
   }
 
@@ -12544,11 +12937,12 @@ const guideSlotCsv = guideSlots.join(',');
       allowP1P2Removal?: boolean;
     },
   ) {
+    // See docs/manual-fit-here-exact-anchor-rules.md before changing exact-anchor Fit Here logic.
     if (!(Number(planId) > 0) || !(Number(data?.routeId) > 0) || !(Number(data?.selectedHotspotId) > 0)) {
       throw new BadRequestException('planId, routeId, and selectedHotspotId are required');
     }
 
-    this.purgeExpiredManualFitAttempts();
+    await this.purgeExpiredManualFitAttempts();
 
     const resolvedAnchor = await this.resolveManualFitHereAnchor(Number(data.routeId), data.anchor || {});
     const exactAnchorPreferredSlot =
@@ -12572,7 +12966,9 @@ const guideSlotCsv = guideSlots.join(',');
         beforeHotspotId: resolvedAnchor.beforeHotspotId || undefined,
         afterRouteHotspotId: resolvedAnchor.afterRouteHotspotId || undefined,
         beforeRouteHotspotId: resolvedAnchor.beforeRouteHotspotId || undefined,
-        allowTopPriorityRemoval: data.allowP3Removal === true || data.allowP1P2Removal === true,
+        allowTopPriorityRemoval: data.allowP1P2Removal === true,
+        allowP3Removal: data.allowP3Removal === true,
+        allowP1P2Removal: data.allowP1P2Removal === true,
         focusHotspotId: Number(data.selectedHotspotId),
         previewOnly: true,
         exactAnchorMode: true,
@@ -12583,7 +12979,11 @@ const guideSlotCsv = guideSlots.join(',');
     const attemptId = randomUUID();
     const sourceFingerprint = await this.buildManualFitSourceFingerprint(Number(planId), Number(data.routeId));
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
-    const response = this.buildManualFitPreviewEnvelope({
+    const activeRemovalEvidence = await this.getActiveRouteManualFitRemovalEvidence(
+      Number(planId),
+      Number(data.routeId),
+    );
+    const response = await this.buildManualFitPreviewEnvelope({
       attemptId,
       planId: Number(planId),
       routeId: Number(data.routeId),
@@ -12593,7 +12993,12 @@ const guideSlotCsv = guideSlots.join(',');
       sourceFingerprint,
       expiresAt,
       previewResult,
+      activeRemovalEvidence,
     });
+    (response as any).removalPolicy = {
+      allowP3Removal: data.allowP3Removal === true,
+      allowP1P2Removal: data.allowP1P2Removal === true,
+    };
     const matrixPreferredSlot = this.extractManualFitPreferredSlot(previewResult);
     console.log('[FitHere][preview_anchor_cache]', {
       attemptId,
@@ -12607,7 +13012,7 @@ const guideSlotCsv = guideSlots.join(',');
       cachedSlot: exactAnchorPreferredSlot || matrixPreferredSlot,
     });
 
-    this.manualFitAttemptCache.set(attemptId, {
+    const cacheEntry: ManualFitAttemptCacheEntry = {
       attemptId,
       planId: Number(planId),
       routeId: Number(data.routeId),
@@ -12629,6 +13034,9 @@ const guideSlotCsv = guideSlots.join(',');
       allowP3Removal: data.allowP3Removal === true,
       allowP1P2Removal: data.allowP1P2Removal === true,
       canConfirm: response.canConfirm === true,
+      requiresTimingRiskConfirmation: (response as any).requiresTimingRiskConfirmation === true,
+      requiresPriorityRemovalConfirmation: (response as any).requiresPriorityRemovalConfirmation === true,
+      timingRisk: (response as any).timingRisk || null,
       matrixPreferredSlot: exactAnchorPreferredSlot || matrixPreferredSlot,
       manualInsertionFitSnapshot: previewResult?.manualInsertionFit || null,
       proposedTimelineSnapshot: Array.isArray((response as any).proposedTimeline)
@@ -12650,31 +13058,321 @@ const guideSlotCsv = guideSlots.join(',');
       sourceFingerprint,
       proposedTimelineFingerprint: String((response as any).proposedTimelineFingerprint || ''),
       expiresAt,
-    });
+    };
+
+    if ((response as any).canConfirm === true) {
+      const preflight = await this.preflightManualFitAttemptConfirmation(cacheEntry, 1);
+      if (!preflight.canConfirm) {
+        const preflightMessage = String(preflight.message || 'This Fit Here preview cannot be confirmed safely.').trim();
+        (response as any).canConfirm = false;
+        (response as any).resultType = 'CANNOT_FIT';
+        (response as any).acceptedReason = null;
+        (response as any).rejectedReasons = [preflightMessage];
+        (response as any).confirmButtonVariant = 'default';
+        (response as any).requiresTimingRiskConfirmation = false;
+        (response as any).requiresPriorityRemovalConfirmation = false;
+        (response as any).preflightFailure = {
+          message: preflightMessage,
+          body: preflight.body || null,
+        };
+
+        if ((response as any).resolution && typeof (response as any).resolution === 'object') {
+          (response as any).resolution.requiresTimingRiskConfirmation = false;
+          (response as any).resolution.requiresPriorityRemovalConfirmation = false;
+          (response as any).resolution.preflightFailure = {
+            message: preflightMessage,
+            body: preflight.body || null,
+          };
+        }
+
+        cacheEntry.canConfirm = false;
+        cacheEntry.requiresTimingRiskConfirmation = false;
+        cacheEntry.requiresPriorityRemovalConfirmation = false;
+      }
+    }
+
+    await this.saveManualFitAttemptEntry(cacheEntry);
 
     return response;
   }
 
-  async confirmManualHotspotFitHere(planId: number, attemptId: string, userId: number) {
-    this.purgeExpiredManualFitAttempts();
+  private async applyManualFitAttemptWithinTransaction(
+    tx: any,
+    params: {
+      planId: number;
+      entry: ManualFitAttemptCacheEntry;
+      userId: number;
+      canForceClosedHotspotConflict: boolean;
+      forceConflictPreferredTimesByHotspotId: Record<number, { start: Date; end: Date }>;
+    },
+  ) {
+    const entry = params.entry;
+    const snapshotRouteFitType = String(
+      entry?.manualInsertionFitSnapshot?.chosenSlot?.routeFitType
+      || entry?.manualInsertionFitSnapshot?.bestSlot?.routeFitType
+      || '',
+    ).toUpperCase();
+    const snapshotSlotContext = String(
+      entry?.manualInsertionFitSnapshot?.chosenSlot?.slotContext
+      || entry?.manualInsertionFitSnapshot?.bestSlot?.slotContext
+      || '',
+    ).toUpperCase();
+    const isDestinationSideExactFit =
+      snapshotRouteFitType === 'DESTINATION_SIDE_INSERTION'
+      || snapshotSlotContext === 'LAST_SOURCE_HOTSPOT_TO_DESTINATION_HOTEL';
+    const shouldUseCachedExactFit =
+      !params.canForceClosedHotspotConflict
+      && entry.exactSelectedGap === true
+      && !!entry.manualInsertionFitSnapshot
+      && !!entry.matrixPreferredSlot
+      && !isDestinationSideExactFit;
+    const cachedExactFit = shouldUseCachedExactFit
+      ? (() => {
+          const preferredSlot = entry.matrixPreferredSlot || {};
+          const inferredRouteFitType =
+            Number(preferredSlot?.fromHotspotId || 0) > 0 && Number(preferredSlot?.toHotspotId || 0) > 0
+              ? 'ON_ROUTE'
+              : Number(preferredSlot?.fromHotspotId || 0) > 0
+                ? 'SINGLE_HOTSPOT_AFTER'
+                : Number(preferredSlot?.toHotspotId || 0) > 0
+                  ? 'SINGLE_HOTSPOT_BEFORE'
+                  : String(
+                      entry?.manualInsertionFitSnapshot?.chosenSlot?.routeFitType
+                      || entry?.manualInsertionFitSnapshot?.bestSlot?.routeFitType
+                      || '',
+                    ).toUpperCase();
 
-    const entry = this.manualFitAttemptCache.get(String(attemptId || '').trim());
+          return {
+            ...(entry.manualInsertionFitSnapshot || {}),
+            chosenSlot: {
+              ...(entry.manualInsertionFitSnapshot?.chosenSlot || entry.manualInsertionFitSnapshot?.bestSlot || {}),
+              ...(entry.matrixPreferredSlot || {}),
+              routeFitType: inferredRouteFitType,
+              source: 'EXACT_ANCHOR',
+              chosenSlotSource: 'EXACT_ANCHOR',
+              selectedAsBest: false,
+            },
+            bestSlot: {
+              ...(entry.manualInsertionFitSnapshot?.bestSlot || entry.manualInsertionFitSnapshot?.chosenSlot || {}),
+              ...(entry.matrixPreferredSlot || {}),
+              routeFitType: inferredRouteFitType,
+              source: 'EXACT_ANCHOR',
+              chosenSlotSource: 'EXACT_ANCHOR',
+              selectedAsBest: false,
+            },
+            chosenSlotSource: 'EXACT_ANCHOR',
+          };
+        })()
+      : null;
+
+    return shouldUseCachedExactFit
+      ? await this.applyMatrixSafeManualHotspotInsertionInTx(tx, {
+          planId: Number(params.planId),
+          routeId: Number(entry.routeId),
+          selectedHotspotIds: [Number(entry.selectedHotspotId)],
+          userId: Number(params.userId || 1),
+          manualInsertionFit: cachedExactFit,
+          matrixPreferredSlot: entry.matrixPreferredSlot || undefined,
+          skipPostApplyAssertions: true,
+        })
+      : await this.runManualHotspotBatchWithinTransaction(
+          tx,
+          Number(params.planId),
+          Number(entry.routeId),
+          [Number(entry.selectedHotspotId)],
+          Number(params.userId || 1),
+          {
+            anchorType: entry.anchorType,
+            anchorIntent: entry.anchorIntent,
+            anchorIndex: entry.anchorIndex,
+            afterHotspotId: entry.afterHotspotId,
+            beforeHotspotId: entry.beforeHotspotId,
+            afterRouteHotspotId: entry.afterRouteHotspotId,
+            beforeRouteHotspotId: entry.beforeRouteHotspotId,
+            allowP3Removal: entry.allowP3Removal === true,
+            allowP1P2Removal: entry.allowP1P2Removal === true,
+            allowTopPriorityRemoval: entry.allowP1P2Removal === true,
+            matrixPreferredSlot: entry.matrixPreferredSlot || undefined,
+            exactAnchorMode: entry.exactSelectedGap === true,
+            previewOnly: false,
+            forceConflictInsertion: params.canForceClosedHotspotConflict,
+            forceConflictPreferredTimesByHotspotId: params.forceConflictPreferredTimesByHotspotId,
+          },
+        );
+  }
+
+  private async preflightManualFitAttemptConfirmation(
+    entry: ManualFitAttemptCacheEntry,
+    userId: number,
+  ): Promise<{ canConfirm: true; body?: null; message?: null } | { canConfirm: false; message: string; body: any }> {
+    const rollbackError = new Error('__MANUAL_FIT_CONFIRM_PREFLIGHT_ROLLBACK__');
+    const manualHotspotTxTimeoutMs = 180000;
+
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        const applyResult = await this.applyManualFitAttemptWithinTransaction(tx, {
+          planId: Number(entry.planId),
+          entry,
+          userId: Number(userId || 1),
+          canForceClosedHotspotConflict: false,
+          forceConflictPreferredTimesByHotspotId: {},
+        });
+
+        if (applyResult?.success !== true || applyResult?.inserted !== true) {
+          throw new ConflictException(applyResult || 'Could not confirm Fit Here insertion.');
+        }
+
+        throw rollbackError;
+      }, { timeout: manualHotspotTxTimeoutMs });
+    } catch (error: any) {
+      if (error === rollbackError) {
+        return { canConfirm: true, body: null, message: null };
+      }
+
+      const details = this.extractManualFitErrorDetails(error);
+      return {
+        canConfirm: false,
+        message: details.message,
+        body: details.body,
+      };
+    }
+
+    return {
+      canConfirm: false,
+      message: 'This Fit Here preview cannot be confirmed safely.',
+      body: null,
+    };
+  }
+
+  async confirmManualHotspotFitHere(planId: number, payload: {
+    attemptId: string;
+    allowTimingRisk?: boolean;
+    allowPriorityRemoval?: boolean;
+    allowClosedHotspotConflict?: boolean;
+    acknowledgedRemovedHotspotIds?: number[];
+  }, userId: number) {
+    await this.purgeExpiredManualFitAttempts();
+
+    const attemptId = String(payload?.attemptId || '').trim();
+    const entry = await this.loadManualFitAttemptEntry(attemptId);
     if (!entry || Number(entry.planId) !== Number(planId)) {
       throw new NotFoundException('Fit Here preview attempt was not found.');
     }
 
     if (new Date(entry.expiresAt).getTime() <= Date.now()) {
-      this.manualFitAttemptCache.delete(entry.attemptId);
+      await this.deleteManualFitAttemptEntry(entry.attemptId);
       throw new ConflictException('Fit Here preview attempt expired. Please preview again.');
     }
 
-    if (entry.canConfirm !== true) {
-      throw new ConflictException('This Fit Here attempt cannot be confirmed.');
+    const allowClosedHotspotConflict = payload?.allowClosedHotspotConflict === true;
+    const canForceClosedHotspotConflict =
+      entry.canConfirm !== true &&
+      allowClosedHotspotConflict === true &&
+      entry.manualInsertionFitSnapshot?.selectedOpeningConflict;
+    const forceConflictPreferredTimesByHotspotId: Record<number, { start: Date; end: Date }> = {};
+
+    if (canForceClosedHotspotConflict) {
+      const selectedOpeningConflict = entry.manualInsertionFitSnapshot?.selectedOpeningConflict || null;
+      const attemptedVisitTime = selectedOpeningConflict?.attemptedVisitTime;
+      const parsedAttemptedTimes = this.parsePreviewTimeRangeToUtcDates(attemptedVisitTime);
+
+      if (parsedAttemptedTimes.start && parsedAttemptedTimes.end) {
+        forceConflictPreferredTimesByHotspotId[Number(entry.selectedHotspotId)] = {
+          start: parsedAttemptedTimes.start,
+          end: parsedAttemptedTimes.end,
+        };
+      } else {
+        console.warn('[FitHere][force_conflict_missing_attempted_time]', {
+          attemptId: entry.attemptId,
+          selectedHotspotId: entry.selectedHotspotId,
+          attemptedVisitTime,
+          selectedOpeningConflict,
+        });
+      }
+    }
+
+    if (entry.canConfirm !== true && !canForceClosedHotspotConflict) {
+      throw new ConflictException('This Fit Here attempt cannot be confirmed as a clean fit.');
+    }
+
+    const freshActiveRemovalEvidence = await this.getActiveRouteManualFitRemovalEvidence(
+      Number(planId),
+      Number(entry.routeId),
+    );
+    const cachedRemovedHotspots = Array.isArray(entry.removedHotspotsSnapshot)
+      ? entry.removedHotspotsSnapshot
+      : [];
+    const sanitizedCachedRemovedHotspots = this.sanitizeUserFacingManualFitRemovals(cachedRemovedHotspots, {
+      routeId: Number(entry.routeId),
+      selectedHotspotId: Number(entry.selectedHotspotId),
+      activeRemovalEvidence: freshActiveRemovalEvidence,
+    });
+
+    if (sanitizedCachedRemovedHotspots.length !== cachedRemovedHotspots.length) {
+      throw new ConflictException({
+        success: false,
+        inserted: false,
+        code: 'FIT_HERE_INVALID_REMOVAL_SCOPE',
+        message: 'This Fit Here preview contains stale or invalid removal rows. Please recalculate the preview before confirming.',
+      });
+    }
+
+    const acknowledgedRemovedHotspotIds = Array.isArray(payload?.acknowledgedRemovedHotspotIds)
+      ? payload.acknowledgedRemovedHotspotIds.map((id: any) => Number(id)).filter((id: number) => id > 0)
+      : [];
+    const plannedRemovalRows = sanitizedCachedRemovedHotspots;
+    const plannedRemovalIds = plannedRemovalRows
+      .map((row: any) => Number(row?.id || row?.hotspotId || row?.hotspot_ID || 0))
+      .filter((id: number) => Number.isFinite(id) && id > 0);
+    const plannedRemovalPriorities = plannedRemovalRows
+      .map((row: any) => Number(row?.priority || row?.hotspotPriority || row?.hotspot_priority || 0))
+      .filter((priority: number) => Number.isFinite(priority) && priority > 0);
+    const requiresAnyPriorityRemovalAcknowledgement = plannedRemovalIds.length > 0;
+    const hasP1P2PlannedRemoval = plannedRemovalPriorities.some((priority) => priority === 1 || priority === 2);
+    const acknowledgedSet = new Set(
+      (payload?.acknowledgedRemovedHotspotIds || [])
+        .map((id: any) => Number(id))
+        .filter((id: number) => Number.isFinite(id) && id > 0),
+    );
+
+    if (requiresAnyPriorityRemovalAcknowledgement) {
+      const missingAcknowledgement = plannedRemovalIds.some((id) => !acknowledgedSet.has(id));
+
+      if (payload?.allowPriorityRemoval !== true || missingAcknowledgement) {
+        throw new ConflictException({
+          success: false,
+          inserted: false,
+          code: 'MANUAL_INSERT_REMOVAL_ACKNOWLEDGEMENT_REQUIRED',
+          message: hasP1P2PlannedRemoval
+            ? 'This Fit Here requires removing Priority 1 / Priority 2 hotspot(s). Please acknowledge each listed removal.'
+            : 'This Fit Here requires removing Priority 3 hotspot(s). Please acknowledge each listed removal.',
+          plannedRemovalIds,
+          acknowledgedRemovedHotspotIds: Array.from(acknowledgedSet),
+        });
+      }
+    }
+    const requiredRemovedHotspotIds = sanitizedCachedRemovedHotspots
+      .map((row: any) => Number(row?.id || row?.hotspotId || row?.hotspot_ID || 0))
+      .filter((id: number) => id > 0);
+
+    if (entry.requiresTimingRiskConfirmation === true && payload?.allowTimingRisk !== true) {
+      throw new ConflictException('This Fit Here attempt requires explicit timing-risk confirmation.');
+    }
+
+    if (entry.requiresPriorityRemovalConfirmation === true && payload?.allowPriorityRemoval !== true) {
+      throw new ConflictException('This Fit Here attempt requires explicit hotspot-removal confirmation.');
+    }
+
+    if (entry.requiresPriorityRemovalConfirmation === true) {
+      const missingAcknowledgements = requiredRemovedHotspotIds.filter((id) => !acknowledgedRemovedHotspotIds.includes(id));
+      if (missingAcknowledgements.length > 0) {
+        throw new ConflictException('Please acknowledge all removed hotspots before confirming this Fit Here change.');
+      }
     }
 
     const currentFingerprint = await this.buildManualFitSourceFingerprint(Number(planId), Number(entry.routeId));
     if (currentFingerprint !== entry.sourceFingerprint) {
-      this.manualFitAttemptCache.delete(entry.attemptId);
+      await this.deleteManualFitAttemptEntry(entry.attemptId);
       throw new ConflictException('Timeline changed after preview. Please calculate Fit Here again.');
     }
 
@@ -12700,81 +13398,13 @@ const guideSlotCsv = guideSlots.join(',');
 
     try {
       await this.prisma.$transaction(async (tx) => {
-        const shouldUseCachedExactFit =
-          entry.exactSelectedGap === true
-          && !!entry.manualInsertionFitSnapshot
-          && !!entry.matrixPreferredSlot;
-        const cachedExactFit = shouldUseCachedExactFit
-          ? (() => {
-              const preferredSlot = entry.matrixPreferredSlot || {};
-              const inferredRouteFitType =
-                Number(preferredSlot?.fromHotspotId || 0) > 0 && Number(preferredSlot?.toHotspotId || 0) > 0
-                  ? 'ON_ROUTE'
-                  : Number(preferredSlot?.fromHotspotId || 0) > 0
-                    ? 'SINGLE_HOTSPOT_AFTER'
-                    : Number(preferredSlot?.toHotspotId || 0) > 0
-                      ? 'SINGLE_HOTSPOT_BEFORE'
-                      : String(
-                          entry?.manualInsertionFitSnapshot?.chosenSlot?.routeFitType
-                          || entry?.manualInsertionFitSnapshot?.bestSlot?.routeFitType
-                          || '',
-                        ).toUpperCase();
-
-              return {
-                ...(entry.manualInsertionFitSnapshot || {}),
-                chosenSlot: {
-                  ...(entry.manualInsertionFitSnapshot?.chosenSlot || entry.manualInsertionFitSnapshot?.bestSlot || {}),
-                  ...(entry.matrixPreferredSlot || {}),
-                  routeFitType: inferredRouteFitType,
-                  source: 'EXACT_ANCHOR',
-                  chosenSlotSource: 'EXACT_ANCHOR',
-                  selectedAsBest: false,
-                },
-                bestSlot: {
-                  ...(entry.manualInsertionFitSnapshot?.bestSlot || entry.manualInsertionFitSnapshot?.chosenSlot || {}),
-                  ...(entry.matrixPreferredSlot || {}),
-                  routeFitType: inferredRouteFitType,
-                  source: 'EXACT_ANCHOR',
-                  chosenSlotSource: 'EXACT_ANCHOR',
-                  selectedAsBest: false,
-                },
-                chosenSlotSource: 'EXACT_ANCHOR',
-              };
-            })()
-          : null;
-
-        applyResult = shouldUseCachedExactFit
-          ? await this.applyMatrixSafeManualHotspotInsertionInTx(tx, {
-              planId: Number(planId),
-              routeId: Number(entry.routeId),
-              selectedHotspotIds: [Number(entry.selectedHotspotId)],
-              userId: Number(userId || 1),
-              manualInsertionFit: cachedExactFit,
-              matrixPreferredSlot: entry.matrixPreferredSlot || undefined,
-              skipPostApplyAssertions: true,
-            })
-          : await this.runManualHotspotBatchWithinTransaction(
-              tx,
-              Number(planId),
-              Number(entry.routeId),
-              [Number(entry.selectedHotspotId)],
-              Number(userId || 1),
-              {
-                // Confirm must use the same exact semantic anchor preview used.
-                // Do not recompute a different global best-fit slot here.
-                anchorType: entry.anchorType,
-                anchorIntent: entry.anchorIntent,
-                anchorIndex: entry.anchorIndex,
-                afterHotspotId: entry.afterHotspotId,
-                beforeHotspotId: entry.beforeHotspotId,
-                afterRouteHotspotId: entry.afterRouteHotspotId,
-                beforeRouteHotspotId: entry.beforeRouteHotspotId,
-                allowTopPriorityRemoval: entry.allowP3Removal === true || entry.allowP1P2Removal === true,
-                matrixPreferredSlot: entry.matrixPreferredSlot || undefined,
-                exactAnchorMode: entry.exactSelectedGap === true,
-                previewOnly: false,
-              },
-            );
+        applyResult = await this.applyManualFitAttemptWithinTransaction(tx, {
+          planId: Number(planId),
+          entry,
+          userId: Number(userId || 1),
+          canForceClosedHotspotConflict,
+          forceConflictPreferredTimesByHotspotId,
+        });
         console.log('[FitHere][confirm_apply_result]', {
           attemptId: entry.attemptId,
           durationMs: Date.now() - confirmStartedAt,
@@ -12793,8 +13423,14 @@ const guideSlotCsv = guideSlots.join(',');
           ? applyResult.routeTimeline
           : (Array.isArray(applyResult?.fullTimeline) ? applyResult.fullTimeline : []);
         const persistedFingerprint = this.buildManualFitTimelineFingerprint(persistedTimeline);
+        const skipStrictFingerprintForClosedConflict =
+          canForceClosedHotspotConflict === true &&
+          applyResult?.forceConflictInsertionApplied === true;
 
-        if (persistedFingerprint !== entry.proposedTimelineFingerprint) {
+        if (
+          !skipStrictFingerprintForClosedConflict &&
+          persistedFingerprint !== entry.proposedTimelineFingerprint
+        ) {
           console.warn('[FitHere][confirm_fingerprint_mismatch]', {
             attemptId: entry.attemptId,
             expected: entry.proposedTimelineFingerprint,
@@ -12821,7 +13457,41 @@ const guideSlotCsv = guideSlots.join(',');
       );
     }
 
-    this.manualFitAttemptCache.delete(entry.attemptId);
+    const confirmedTimeline = Array.isArray(applyResult?.routeTimeline)
+      ? applyResult.routeTimeline
+      : (Array.isArray(applyResult?.fullTimeline) ? applyResult.fullTimeline : []);
+    const confirmedAttractions = confirmedTimeline
+      .filter((row: any) => String(row?.type || '').toLowerCase() === 'attraction');
+    const confirmedSelectedRow = confirmedAttractions.find((row: any) => (
+      Number(row?.hotspotId || row?.hotspot_ID || row?.locationId || 0) === Number(entry.selectedHotspotId)
+    ));
+    const confirmedSelectedTimes = this.parsePreviewTimeRangeToUtcDates(confirmedSelectedRow?.timeRange);
+    const confirmedSelectedOrder = confirmedAttractions.findIndex((row: any) => (
+      Number(row?.hotspotId || row?.hotspot_ID || row?.locationId || 0) === Number(entry.selectedHotspotId)
+    ));
+
+    if (confirmedSelectedTimes.start && confirmedSelectedTimes.end) {
+      await this.prisma.$transaction(async (tx) => {
+        await this.activateManualHotspotRowWithTimes(tx, {
+          planId: Number(planId),
+          routeId: Number(entry.routeId),
+          hotspotId: Number(entry.selectedHotspotId),
+          userId: Number(userId || 1),
+          start: confirmedSelectedTimes.start,
+          end: confirmedSelectedTimes.end,
+          hotspotOrder: confirmedSelectedOrder >= 0 ? confirmedSelectedOrder + 1 : undefined,
+        });
+      });
+    }
+
+    const persistedManualRow = await this.assertConfirmedManualHotspotPersisted({
+      planId: Number(planId),
+      routeId: Number(entry.routeId),
+      hotspotId: Number(entry.selectedHotspotId),
+    });
+    const persistedRouteHotspotId = Number(persistedManualRow.route_hotspot_ID || 0);
+
+    await this.deleteManualFitAttemptEntry(entry.attemptId);
     return {
       success: true,
       attemptId: entry.attemptId,
@@ -12830,7 +13500,64 @@ const guideSlotCsv = guideSlots.join(',');
       selectedHotspotId: Number(entry.selectedHotspotId),
       anchorLabel: entry.anchorLabel,
       ...applyResult,
+      routeHotspotId: persistedRouteHotspotId,
+      resolution: {
+        ...(applyResult?.resolution || {}),
+        scheduledManualHotspots: Array.isArray(applyResult?.resolution?.scheduledManualHotspots)
+          ? applyResult.resolution.scheduledManualHotspots.map((row: any) => {
+              const hotspotId = Number(row?.hotspotId || row?.id || 0);
+              if (hotspotId !== Number(entry.selectedHotspotId)) return row;
+
+              return {
+                ...row,
+                hotspotId,
+                routeHotspotId: persistedRouteHotspotId,
+                isManual: true,
+                planOwnWay: true,
+              };
+            })
+          : [{
+              hotspotId: Number(entry.selectedHotspotId),
+              routeHotspotId: persistedRouteHotspotId,
+              isManual: true,
+              planOwnWay: true,
+            }],
+      },
     };
+  }
+
+  private async assertConfirmedManualHotspotPersisted(params: {
+    planId: number;
+    routeId: number;
+    hotspotId: number;
+  }) {
+    const row = await (this.prisma as any).dvi_itinerary_route_hotspot_details.findFirst({
+      where: {
+        itinerary_plan_ID: Number(params.planId),
+        itinerary_route_ID: Number(params.routeId),
+        hotspot_ID: Number(params.hotspotId),
+        item_type: 4,
+        deleted: 0,
+        status: 1,
+        hotspot_plan_own_way: 1,
+      },
+      orderBy: { route_hotspot_ID: 'desc' },
+      select: {
+        route_hotspot_ID: true,
+        hotspot_ID: true,
+        itinerary_route_ID: true,
+        hotspot_plan_own_way: true,
+        hotspot_order: true,
+      },
+    });
+
+    if (!row?.route_hotspot_ID) {
+      throw new InternalServerErrorException(
+        'Fit Here confirm returned success but the manual hotspot was not persisted. Please retry.',
+      );
+    }
+
+    return row;
   }
 
   async buildMissingManualHotspotMatrix(params: {
@@ -13555,6 +14282,9 @@ const guideSlotCsv = guideSlots.join(',');
     tx: any,
     timeline: any[],
     removedHotspotIds: number[],
+    options?: {
+      routeId?: number;
+    },
   ): Promise<any[]> {
     const ordered = this.sortTimelineSegmentsForPreview(Array.isArray(timeline) ? timeline : []);
     const removedSet = new Set<number>(removedHotspotIds.map((id: any) => Number(id)).filter((id: number) => id > 0));
@@ -13700,6 +14430,98 @@ const guideSlotCsv = guideSlots.join(',');
       const scheduled = scheduleRowAtCursor(row, cursor);
       cursor = scheduled.cursor;
       rebuilt.push(scheduled.row);
+    }
+
+    const firstKeptHotspotId = Number(
+      firstKeptAttraction?.locationId
+      || firstKeptAttraction?.hotspot_ID
+      || firstKeptAttraction?.hotspotId
+      || 0,
+    );
+    const fallbackInitialTravel = ordered.find((row: any) => {
+      if (!isTravelRow(row) || isTravelToHotelRow(row)) return false;
+      const toHotspotId = Number(row?.toHotspotId || 0);
+      const toName = String(row?.toName || row?.text || row?.name || '').trim().toLowerCase();
+      const targetName = String(firstKeptAttraction?.text || firstKeptAttraction?.name || '').trim().toLowerCase();
+      return (
+        (firstKeptHotspotId > 0 && toHotspotId === firstKeptHotspotId)
+        || (!!targetName && toName.includes(targetName))
+      );
+    }) || ordered.find((row: any, index: number) => (
+      index < firstKeptIndex
+      && isTravelRow(row)
+      && !isTravelToHotelRow(row)
+    )) || null;
+    if (Number(options?.routeId || 0) > 0 && firstKeptHotspotId > 0) {
+      const sourceLeg = await this.resolveSourceToHotspotLeg(tx, Number(options?.routeId || 0), firstKeptHotspotId);
+      const initialTravelDuration = Math.max(
+        1,
+        Math.round(
+          Number(
+            fallbackInitialTravel?.matrixDurationMin
+            ?? this.getPreviewRowDurationMinutes(fallbackInitialTravel)
+            ?? sourceLeg.durationMin
+            ?? 10,
+          ),
+        ),
+      );
+      if (initialTravelDuration > 0) {
+        const toLabel = String(firstKeptAttraction?.text || firstKeptAttraction?.name || `Hotspot #${firstKeptHotspotId}`).trim();
+        const fromLabel = String(
+          sourceLeg.sourceName
+          || fallbackInitialTravel?.fromName
+          || fallbackInitialTravel?.from
+          || 'Route Start',
+        ).trim();
+        const scheduledInitialTravel = scheduleRowAtCursor(
+          {
+            ...(fallbackInitialTravel || {}),
+            type: 'travel',
+            item_type: Number(fallbackInitialTravel?.item_type || 3),
+            text: `Travel to ${toLabel}`,
+            name: `Travel to ${toLabel}`,
+            fromName: fromLabel,
+            toName: toLabel,
+            from: fromLabel,
+            to: toLabel,
+            displayFromName: fromLabel,
+            displayToName: toLabel,
+            matrixDistanceKm:
+              fallbackInitialTravel?.matrixDistanceKm != null
+                ? Number(fallbackInitialTravel.matrixDistanceKm)
+                : (sourceLeg.distanceKm != null ? Number(sourceLeg.distanceKm) : null),
+            distanceKm:
+              fallbackInitialTravel?.distanceKm != null
+                ? Number(fallbackInitialTravel.distanceKm)
+                : (sourceLeg.distanceKm != null ? Number(sourceLeg.distanceKm) : null),
+            travelDistanceKm:
+              fallbackInitialTravel?.travelDistanceKm != null
+                ? Number(fallbackInitialTravel.travelDistanceKm)
+                : (sourceLeg.distanceKm != null ? Number(sourceLeg.distanceKm) : null),
+            matrixDurationMin: initialTravelDuration,
+            duration: `${initialTravelDuration} min`,
+            distance:
+              fallbackInitialTravel?.distance
+              || (sourceLeg.distanceKm != null ? `${Number(sourceLeg.distanceKm).toFixed(1)} km` : null),
+            isMatrixReconnectedTravel: true,
+            id: undefined,
+            locationId: undefined,
+            hotspot_ID: undefined,
+            hotspotId: undefined,
+            hotspot_id: undefined,
+            fromHotspotId: undefined,
+            toHotspotId: firstKeptHotspotId,
+            isEstimatedTravel:
+              fallbackInitialTravel?.matrixDurationMin == null
+              && this.getPreviewRowDurationMinutes(fallbackInitialTravel) == null
+              && sourceLeg.durationMin == null,
+          },
+          cursor,
+          initialTravelDuration,
+        );
+        cursor = scheduledInitialTravel.cursor;
+        rebuilt.push(scheduledInitialTravel.row);
+      }
     }
 
     const firstAttractionScheduled = scheduleRowAtCursor(firstKeptAttraction, cursor);
@@ -13902,6 +14724,316 @@ const guideSlotCsv = guideSlots.join(',');
       previewOrder: index,
       matrixPreviewOrder: index,
     }));
+  }
+
+  private async buildExactAnchorSequentialTimelineAfterRemoval(
+    tx: any,
+    timeline: any[],
+    params: {
+      removedHotspotIds: number[];
+      targetHotspotId: number;
+      routeId: number;
+      planId: number;
+    },
+  ): Promise<any[]> {
+    const ordered = Array.isArray(timeline) ? timeline : [];
+
+    const removedSet = new Set(
+      (params.removedHotspotIds || [])
+        .map((id: any) => Number(id))
+        .filter((id: number) => Number.isFinite(id) && id > 0),
+    );
+
+    const getHotspotId = (row: any): number =>
+      Number(row?.locationId || row?.hotspotId || row?.hotspot_ID || row?.hotspot_id || row?.id || 0);
+
+    const isAttractionRow = (row: any): boolean => {
+      const type = String(row?.type || '').toLowerCase();
+      return type === 'attraction' || Number(row?.item_type || 0) === 4;
+    };
+
+    const isTravelRow = (row: any): boolean => {
+      const type = String(row?.type || '').toLowerCase();
+      return type === 'travel' || Number(row?.item_type || 0) === 3 || Number(row?.item_type || 0) === 5;
+    };
+
+    const isHotelLikeRow = (row: any): boolean => {
+      const type = String(row?.type || '').toLowerCase();
+      const text = String(row?.text || row?.name || '').toLowerCase();
+      return type === 'hotel'
+        || type === 'checkin'
+        || Number(row?.item_type || 0) === 6
+        || text.includes('check-in at hotel')
+        || text.includes('check-in at ');
+    };
+
+    const cloneForUi = (row: any): any => ({ ...(row || {}) });
+
+    const getName = (row: any): string =>
+      String(row?.text || row?.name || row?.title || row?.hotspot_name || row?.to || 'Stop').trim();
+
+    const getDurationMinutes = (row: any, fallback: number): number => {
+      const duration = Number(
+        this.getPreviewRowDurationMinutes(row)
+        || row?.durationMinutes
+        || row?.duration_minutes
+        || row?.visitDurationMinutes
+        || row?.matrixDurationMin
+        || fallback,
+      );
+
+      return Math.max(0, Number.isFinite(duration) ? Math.round(duration) : fallback);
+    };
+
+    const scheduleRow = (row: any, startMinutes: number, durationMinutes: number): any => ({
+      ...cloneForUi(row),
+      timeRange: this.minutesRangeToFitPreviewLabel(startMinutes, startMinutes + durationMinutes),
+      hotspot_start_time: null,
+      hotspot_end_time: null,
+    });
+
+    const firstStartMinutes =
+      this.parseSegmentStartMinutes(ordered[0])
+      ?? this.parseSegmentStartMinutes(ordered.find((row: any) => isAttractionRow(row)))
+      ?? 8 * 60;
+
+    const keptRows = ordered.filter((row: any) => {
+      if (isAttractionRow(row)) {
+        const hotspotId = getHotspotId(row);
+        return hotspotId <= 0 || !removedSet.has(hotspotId);
+      }
+
+      if (isTravelRow(row)) {
+        const toHotspotId = Number(row?.toHotspotId || 0);
+        const fromHotspotId = Number(row?.fromHotspotId || 0);
+        if (toHotspotId > 0 && removedSet.has(toHotspotId)) return false;
+        if (fromHotspotId > 0 && removedSet.has(fromHotspotId)) return false;
+      }
+
+      return true;
+    });
+
+    const rebuilt: any[] = [];
+    let cursor = firstStartMinutes;
+    let previousAttraction: any | null = null;
+
+    const hotelRows = keptRows.filter((row: any) => isHotelLikeRow(row));
+    const firstAttractionRow = keptRows.find((row: any) => isAttractionRow(row)) || null;
+    const fallbackInitialTravel = keptRows.find((row: any) => {
+      if (!isTravelRow(row) || isHotelLikeRow(row)) return false;
+      const toHotspotId = Number(row?.toHotspotId || 0);
+      const toName = String(row?.toName || row?.text || row?.name || '').trim().toLowerCase();
+      const targetName = String(firstAttractionRow?.text || firstAttractionRow?.name || '').trim().toLowerCase();
+      const targetHotspotId = getHotspotId(firstAttractionRow);
+      return (
+        (targetHotspotId > 0 && toHotspotId === targetHotspotId)
+        || (!!targetName && toName.includes(targetName))
+      );
+    }) || keptRows.find((row: any) => isTravelRow(row) && !isHotelLikeRow(row)) || null;
+
+    for (const row of keptRows) {
+      if (isHotelLikeRow(row)) {
+        continue;
+      }
+
+      if (isTravelRow(row)) {
+        continue;
+      }
+
+      if (!isAttractionRow(row)) {
+        const duration = getDurationMinutes(row, 0);
+        const scheduled = scheduleRow(row, cursor, duration);
+        cursor += duration;
+        rebuilt.push(scheduled);
+        continue;
+      }
+
+      const currentAttraction = row;
+
+      if (!previousAttraction) {
+        const toId = getHotspotId(currentAttraction);
+        if (toId > 0 && currentAttraction === firstAttractionRow) {
+          const sourceLeg = await this.resolveSourceToHotspotLeg(tx, Number(params.routeId), toId);
+          const initialTravelMinutes = Math.max(
+            1,
+            Math.round(
+              Number(
+                fallbackInitialTravel?.matrixDurationMin
+                || this.getPreviewRowDurationMinutes(fallbackInitialTravel)
+                || sourceLeg.durationMin
+                || 10,
+              ),
+            ),
+          );
+          const toLabel = getName(currentAttraction);
+          const fromLabel = String(
+            sourceLeg.sourceName
+            || fallbackInitialTravel?.fromName
+            || fallbackInitialTravel?.from
+            || 'Route Start',
+          ).trim();
+
+          rebuilt.push({
+            ...(fallbackInitialTravel || {}),
+            type: 'travel',
+            item_type: Number(fallbackInitialTravel?.item_type || 3),
+            text: `Travel to ${toLabel}`,
+            name: `Travel to ${toLabel}`,
+            fromName: fromLabel,
+            toName: toLabel,
+            from: fromLabel,
+            to: toLabel,
+            displayFromName: fromLabel,
+            displayToName: toLabel,
+            fromHotspotId: undefined,
+            toHotspotId: toId,
+            matrixDurationMin: initialTravelMinutes,
+            duration: `${initialTravelMinutes} min`,
+            matrixDistanceKm:
+              fallbackInitialTravel?.matrixDistanceKm != null
+                ? Number(fallbackInitialTravel.matrixDistanceKm)
+                : (sourceLeg.distanceKm != null ? Number(sourceLeg.distanceKm) : null),
+            distanceKm:
+              fallbackInitialTravel?.distanceKm != null
+                ? Number(fallbackInitialTravel.distanceKm)
+                : (sourceLeg.distanceKm != null ? Number(sourceLeg.distanceKm) : null),
+            travelDistanceKm:
+              fallbackInitialTravel?.travelDistanceKm != null
+                ? Number(fallbackInitialTravel.travelDistanceKm)
+                : (sourceLeg.distanceKm != null ? Number(sourceLeg.distanceKm) : null),
+            distance:
+              fallbackInitialTravel?.distance
+              || (sourceLeg.distanceKm != null ? `${Number(sourceLeg.distanceKm).toFixed(1)} km` : null),
+            timeRange: this.minutesRangeToFitPreviewLabel(cursor, cursor + initialTravelMinutes),
+            isMatrixReconnectedTravel: true,
+            isEstimatedTravel:
+              fallbackInitialTravel?.matrixDurationMin == null
+              && this.getPreviewRowDurationMinutes(fallbackInitialTravel) == null
+              && sourceLeg.durationMin == null,
+            id: undefined,
+            locationId: undefined,
+            hotspot_ID: undefined,
+            hotspotId: undefined,
+            hotspot_id: undefined,
+          });
+
+          cursor += initialTravelMinutes;
+        }
+      } else {
+        const fromId = getHotspotId(previousAttraction);
+        const toId = getHotspotId(currentAttraction);
+        const leg = await this.getCachedRouteMatrixLeg(tx, fromId, toId);
+        const travelMinutes = Math.max(
+          1,
+          Math.round(
+            Number(
+              leg.durationMin
+              ?? this.estimateDurationFromDistance(leg.distanceKm)
+              ?? 10,
+            ),
+          ),
+        );
+
+        const fromLabel = getName(previousAttraction);
+        const toLabel = getName(currentAttraction);
+
+        rebuilt.push({
+          type: 'travel',
+          item_type: 3,
+          text: `Travel to ${toLabel}`,
+          name: `Travel to ${toLabel}`,
+          fromName: fromLabel,
+          toName: toLabel,
+          from: fromLabel,
+          to: toLabel,
+          displayFromName: fromLabel,
+          displayToName: toLabel,
+          fromHotspotId: fromId,
+          toHotspotId: toId,
+          matrixDurationMin: travelMinutes,
+          duration: `${travelMinutes} min`,
+          matrixDistanceKm: leg.distanceKm != null ? Number(leg.distanceKm) : null,
+          timeRange: this.minutesRangeToFitPreviewLabel(cursor, cursor + travelMinutes),
+          isMatrixReconnectedTravel: true,
+        });
+
+        cursor += travelMinutes;
+      }
+
+      const visitMinutes = getDurationMinutes(currentAttraction, 60);
+      const scheduledAttraction = scheduleRow(currentAttraction, cursor, visitMinutes);
+      rebuilt.push(scheduledAttraction);
+      cursor += visitMinutes;
+      previousAttraction = currentAttraction;
+    }
+
+    if (previousAttraction && hotelRows.length > 0) {
+      const hotelRow = hotelRows[0];
+      const fromLabel = getName(previousAttraction);
+      const hotelName = getName(hotelRow).replace(/^Check-?in at\s*/i, '') || 'Hotel';
+      const fallbackHotelTravel = ordered.find((row: any) => {
+        const text = String(row?.text || row?.name || '').toLowerCase();
+        return isTravelRow(row) && text.includes('travel to hotel');
+      });
+
+      const hotelTravelMinutes = Math.max(
+        1,
+        Math.round(
+          Number(
+            fallbackHotelTravel?.matrixDurationMin
+            || this.getPreviewRowDurationMinutes(fallbackHotelTravel)
+            || 10,
+          ),
+        ),
+      );
+
+      rebuilt.push({
+        ...(fallbackHotelTravel || {}),
+        type: 'travel',
+        item_type: 5,
+        text: `Travel to ${hotelName}`,
+        name: `Travel to ${hotelName}`,
+        fromName: fromLabel,
+        toName: hotelName,
+        from: fromLabel,
+        to: hotelName,
+        displayFromName: fromLabel,
+        displayToName: hotelName,
+        matrixDurationMin: hotelTravelMinutes,
+        duration: `${hotelTravelMinutes} min`,
+        timeRange: this.minutesRangeToFitPreviewLabel(cursor, cursor + hotelTravelMinutes),
+        isMatrixReconnectedTravel: true,
+        id: undefined,
+        locationId: undefined,
+        hotspot_ID: undefined,
+        hotspotId: undefined,
+        hotspot_id: undefined,
+      });
+
+      cursor += hotelTravelMinutes;
+
+      for (const hotelRowItem of hotelRows) {
+        rebuilt.push({
+          ...cloneForUi(hotelRowItem),
+          timeRange: this.minutesRangeToFitPreviewLabel(cursor, cursor),
+          hotspot_start_time: null,
+          hotspot_end_time: null,
+          isZeroDurationHotel: true,
+        });
+      }
+    }
+
+    const enriched = await this.enrichManualFitPreviewTimelineWithOperatingHours(
+      Number(params.planId),
+      Number(params.routeId),
+      rebuilt.map((row: any, index: number) => ({
+        ...row,
+        previewOrder: index,
+        matrixPreviewOrder: index,
+      })),
+    );
+
+    return this.normalizeTravelLabelsToNextStop(enriched);
   }
 
   private validateResolvedLowPriorityTimeline(
@@ -14550,7 +15682,9 @@ const guideSlotCsv = guideSlots.join(',');
           .filter((id: number) => id > 0 && candidateById.has(id)),
       ));
       const removedRows = makeRemovedRows(removalIds);
-      const finalTimeline = await this.buildMatrixRouteTimelineAfterLowPriorityRemoval(tx, currentTimeline, removalIds);
+      const finalTimeline = await this.buildMatrixRouteTimelineAfterLowPriorityRemoval(tx, currentTimeline, removalIds, {
+        routeId: Number(params.routeId),
+      });
 
       const maxEndMinutes = (finalTimeline || []).reduce((max: number, row: any) => {
         const end = this.parseSegmentEndMinutes(row);
@@ -14746,6 +15880,1314 @@ const guideSlotCsv = guideSlots.join(',');
     };
   }
 
+  private buildProgressiveRemovalReason(
+    validationMode: 'DAY_END' | 'SELECTED_HOTSPOT_CLOSING',
+    priority: number,
+  ): string {
+    const priorityLabel = `Priority ${priority}`;
+
+    if (validationMode === 'SELECTED_HOTSPOT_CLOSING') {
+      return `${priorityLabel} hotspot removed after sequential check to keep the selected manual hotspot within operating hours.`;
+    }
+
+    return `${priorityLabel} hotspot removed after sequential check to keep the route within day end.`;
+  }
+
+  private buildProgressiveRemovalSuccessMessage(
+    validationMode: 'DAY_END' | 'SELECTED_HOTSPOT_CLOSING',
+    removedRows: Array<{ priority?: number; name?: string }>,
+  ): string {
+    const priorityText = removedRows
+      .map((row) => `P${Number(row.priority || 0)}`)
+      .filter(Boolean)
+      .join(' -> ');
+
+    if (validationMode === 'SELECTED_HOTSPOT_CLOSING') {
+      return `Selected manual hotspot fits within operating hours after sequential removal check (${priorityText}).`;
+    }
+
+    return `Selected manual hotspot fits within route end after sequential removal check (${priorityText}).`;
+  }
+
+  private async getActiveRouteHotspotIdSetInTx(
+    tx: any,
+    planId: number,
+    routeId: number,
+  ): Promise<Set<number>> {
+    const rows = await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
+      where: {
+        itinerary_plan_ID: Number(planId),
+        itinerary_route_ID: Number(routeId),
+        item_type: 4,
+        deleted: 0,
+        status: 1,
+      },
+      select: {
+        hotspot_ID: true,
+      },
+    });
+
+    return new Set(
+      (rows || [])
+        .map((row: any) => Number(row?.hotspot_ID || 0))
+        .filter((id: number) => Number.isFinite(id) && id > 0),
+    );
+  }
+
+  private async getActiveRouteManualFitRemovalEvidenceInTx(
+    tx: any,
+    planId: number,
+    routeId: number,
+  ): Promise<{
+    activeHotspotIds: Set<number>;
+    activeRouteHotspotIds: Set<number>;
+  }> {
+    const rows = await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
+      where: {
+        itinerary_plan_ID: Number(planId),
+        itinerary_route_ID: Number(routeId),
+        item_type: 4,
+        deleted: 0,
+        status: 1,
+      },
+      select: {
+        hotspot_ID: true,
+        route_hotspot_ID: true,
+      },
+    });
+
+    return {
+      activeHotspotIds: new Set(
+        (rows || [])
+          .map((row: any) => Number(row?.hotspot_ID || 0))
+          .filter((id: number) => Number.isFinite(id) && id > 0),
+      ),
+      activeRouteHotspotIds: new Set(
+        (rows || [])
+          .map((row: any) => Number(row?.route_hotspot_ID || 0))
+          .filter((id: number) => Number.isFinite(id) && id > 0),
+      ),
+    };
+  }
+
+  private async getActiveRouteManualFitRemovalEvidence(
+    planId: number,
+    routeId: number,
+  ): Promise<{
+    activeHotspotIds: Set<number>;
+    activeRouteHotspotIds: Set<number>;
+  }> {
+    const rows = await (this.prisma as any).dvi_itinerary_route_hotspot_details.findMany({
+      where: {
+        itinerary_plan_ID: Number(planId),
+        itinerary_route_ID: Number(routeId),
+        item_type: 4,
+        deleted: 0,
+        status: 1,
+      },
+      select: {
+        hotspot_ID: true,
+        route_hotspot_ID: true,
+      },
+    });
+
+    return {
+      activeHotspotIds: new Set(
+        (rows || [])
+          .map((row: any) => Number(row?.hotspot_ID || 0))
+          .filter((id: number) => Number.isFinite(id) && id > 0),
+      ),
+      activeRouteHotspotIds: new Set(
+        (rows || [])
+          .map((row: any) => Number(row?.route_hotspot_ID || 0))
+          .filter((id: number) => Number.isFinite(id) && id > 0),
+      ),
+    };
+  }
+
+  private getManualFitRemovalHotspotId(row: any): number {
+    return Number(row?.id || row?.hotspotId || row?.hotspot_ID || row?.hotspot_id || row?.locationId || 0);
+  }
+
+  private getManualFitRemovalRouteHotspotId(row: any): number {
+    return Number(row?.routeHotspotId || row?.route_hotspot_ID || row?.route_hotspot_id || 0);
+  }
+
+  private getManualFitRemovalRouteId(row: any): number | null {
+    const routeId = Number(row?.itinerary_route_ID || row?.routeId || row?.route_id || 0);
+    return routeId > 0 ? routeId : null;
+  }
+
+  private sanitizeUserFacingManualFitRemovals(
+    rows: any[],
+    params: {
+      routeId: number;
+      selectedHotspotId: number;
+      activeRemovalEvidence?: {
+        activeHotspotIds: Set<number>;
+        activeRouteHotspotIds: Set<number>;
+      };
+    },
+  ): any[] {
+    const activeHotspotIds = params.activeRemovalEvidence?.activeHotspotIds || new Set<number>();
+    const activeRouteHotspotIds = params.activeRemovalEvidence?.activeRouteHotspotIds || new Set<number>();
+    const seenHotspotIds = new Set<number>();
+
+    return (Array.isArray(rows) ? rows : []).filter((row: any) => {
+      const hotspotId = this.getManualFitRemovalHotspotId(row);
+      const routeHotspotId = this.getManualFitRemovalRouteHotspotId(row);
+      const rowRouteId = this.getManualFitRemovalRouteId(row);
+      const removalReasonCode = String(row?.removalReasonCode || '').toUpperCase();
+      const reasonCode = String(row?.reasonCode || '').toUpperCase();
+      const attemptedTimelineSource = String(row?.attemptedTimelineSource || '').toUpperCase();
+
+      if (!hotspotId) return false;
+      if (hotspotId === Number(params.selectedHotspotId || 0)) return false;
+      if (removalReasonCode === 'UNPROVEN_REMOVAL' || reasonCode === 'UNPROVEN_REMOVAL') return false;
+      if (attemptedTimelineSource === 'FAILED_BEFORE_REMOVAL') return false;
+      if (removalReasonCode.includes('FAILED') || reasonCode.includes('FAILED')) return false;
+      if (rowRouteId !== null && rowRouteId !== Number(params.routeId)) return false;
+      if (!activeHotspotIds.has(hotspotId)) return false;
+      if (routeHotspotId > 0 && !activeRouteHotspotIds.has(routeHotspotId)) return false;
+      if (seenHotspotIds.has(hotspotId)) return false;
+
+      seenHotspotIds.add(hotspotId);
+      return true;
+    });
+  }
+
+  private buildManualFitFinalizedPreviewTimeline(
+    timeline: any[],
+    removedRows: any[],
+  ): any[] {
+    const removedHotspotIds = new Set(
+      (Array.isArray(removedRows) ? removedRows : [])
+        .map((row: any) => this.getManualFitRemovalHotspotId(row))
+        .filter((id: number) => Number.isFinite(id) && id > 0),
+    );
+    const removedNames = new Set(
+      (Array.isArray(removedRows) ? removedRows : [])
+        .map((row: any) => String(row?.name || row?.hotspotName || row?.hotspot_name || '').trim().toLowerCase())
+        .filter(Boolean),
+    );
+
+    const rowMentionsRemovedHotspot = (row: any): boolean => {
+      const rowHotspotId = Number(
+        row?.locationId ||
+        row?.hotspotId ||
+        row?.hotspot_ID ||
+        row?.hotspot_id ||
+        row?.id ||
+        0,
+      );
+      if (rowHotspotId > 0 && removedHotspotIds.has(rowHotspotId)) {
+        return true;
+      }
+
+      const rowParts = [
+        row?.text,
+        row?.name,
+        row?.title,
+        row?.from,
+        row?.fromName,
+        row?.to,
+        row?.toName,
+        row?.displayFromName,
+        row?.displayToName,
+      ]
+        .map((value: any) => String(value || '').trim().toLowerCase())
+        .filter(Boolean);
+
+      for (const removedName of removedNames) {
+        if (!removedName) continue;
+        if (rowParts.some((value: string) => value.includes(removedName))) {
+          return true;
+        }
+      }
+
+      return false;
+    };
+
+    return (Array.isArray(timeline) ? timeline : []).filter((row: any) => {
+      if (!row || typeof row !== 'object') return false;
+
+      const rowType = String(row?.type || '').toLowerCase();
+      if (rowType === 'waiting') return false;
+
+      const isAttraction =
+        rowType === 'attraction' ||
+        Number(row?.item_type || 0) === 4;
+      const isTravelLike =
+        rowType === 'travel' ||
+        Number(row?.item_type || 0) === 3 ||
+        Number(row?.item_type || 0) === 5 ||
+        Number(row?.item_type || 0) === 7;
+
+      if (isAttraction && rowMentionsRemovedHotspot(row)) {
+        return false;
+      }
+
+      if (isTravelLike && rowMentionsRemovedHotspot(row)) {
+        return false;
+      }
+
+      return true;
+    });
+  }
+
+  private buildManualFitAttemptTimelineSnapshot(
+    timeline: any[],
+    params: {
+      removedHotspotIds?: number[];
+      selectedHotspotId?: number;
+    } = {},
+  ): any[] {
+    const removedSet = new Set(
+      (params.removedHotspotIds || [])
+        .map((id: any) => Number(id))
+        .filter((id: number) => Number.isFinite(id) && id > 0),
+    );
+    const selectedHotspotId = Number(params.selectedHotspotId || 0);
+
+    const getHotspotId = (row: any): number =>
+      Number(
+        row?.locationId ||
+        row?.hotspotId ||
+        row?.hotspot_ID ||
+        row?.hotspot_id ||
+        row?.id ||
+        0,
+      );
+
+    const getRouteHotspotId = (row: any): number =>
+      Number(
+        row?.routeHotspotId ||
+        row?.route_hotspot_ID ||
+        row?.route_hotspot_id ||
+        0,
+      );
+
+    const getName = (row: any): string =>
+      String(
+        row?.name ||
+        row?.title ||
+        row?.hotspotName ||
+        row?.hotspot_name ||
+        row?.text ||
+        row?.to ||
+        row?.type ||
+        'Row',
+      );
+
+    return (Array.isArray(timeline) ? timeline : []).map((row: any, index: number) => {
+      const hotspotId = getHotspotId(row);
+      const isAttraction =
+        String(row?.type || '').toLowerCase() === 'attraction' ||
+        Number(row?.item_type || 0) === 4;
+      const isActionableAttraction = isAttraction && hotspotId > 0;
+      const isRemoved = isActionableAttraction && removedSet.has(hotspotId);
+      const isSelected = isActionableAttraction && selectedHotspotId > 0 && hotspotId === selectedHotspotId;
+      const selectedOpeningConflict =
+        row?.selectedOpeningConflict ||
+        row?.openingConflict ||
+        null;
+
+      return {
+        index,
+        type: row?.type || null,
+        itemType: Number(row?.item_type || 0) || null,
+        hotspotId: hotspotId || null,
+        routeHotspotId: getRouteHotspotId(row) || null,
+        name: getName(row),
+        title: row?.title || row?.name || row?.text || null,
+        timeRange:
+          row?.timeRange ||
+          row?.visitTime ||
+          row?.startTime ||
+          row?.hotspot_start_time ||
+          null,
+        operatingHours: row?.operatingHours || row?.timings || row?.hotspot_timings || null,
+        openingTime: row?.openingTime || null,
+        closingTime: row?.closingTime || null,
+        priority: Number(row?.priority || row?.hotspot_priority || row?.rawPriority || 0) || null,
+        isAttraction,
+        isInserted:
+          row?.isInserted === true ||
+          row?.inserted === true ||
+          row?.source === 'MANUAL_INSERTION',
+        isManual:
+          row?.isManual === true ||
+          row?.mustInclude === true ||
+          Number(row?.hotspot_plan_own_way || 0) === 1,
+        isRemoved,
+        isSelected,
+        hasConflict: isSelected && !!selectedOpeningConflict,
+        selectedOpeningConflict,
+        status: isRemoved
+          ? 'REMOVED'
+          : isSelected && selectedOpeningConflict
+            ? 'CONFLICT'
+            : row?.status || null,
+      };
+    });
+  }
+
+  private buildManualFitAttemptDisplayTimelineSnapshot(
+    displaySourceTimeline: any[],
+    params: {
+      removedHotspotIds?: number[];
+      selectedHotspotId?: number;
+      selectedConflict?: any | null;
+      protectedHotspotIds?: number[];
+    } = {},
+  ): any[] {
+    const removedSet = new Set(
+      (params.removedHotspotIds || [])
+        .map((id: any) => Number(id))
+        .filter((id: number) => Number.isFinite(id) && id > 0),
+    );
+
+    const protectedSet = new Set(
+      (params.protectedHotspotIds || [])
+        .map((id: any) => Number(id))
+        .filter((id: number) => Number.isFinite(id) && id > 0),
+    );
+
+    const selectedHotspotId = Number(params.selectedHotspotId || 0);
+
+    const getHotspotId = (row: any): number =>
+      Number(
+        row?.locationId ||
+        row?.hotspotId ||
+        row?.hotspot_ID ||
+        row?.hotspot_id ||
+        row?.id ||
+        0,
+      );
+
+    const getRouteHotspotId = (row: any): number =>
+      Number(
+        row?.routeHotspotId ||
+        row?.route_hotspot_ID ||
+        row?.route_hotspot_id ||
+        0,
+      );
+
+    const getName = (row: any): string =>
+      String(
+        row?.name ||
+        row?.title ||
+        row?.hotspotName ||
+        row?.hotspot_name ||
+        row?.text ||
+        row?.to ||
+        row?.type ||
+        'Row',
+      );
+
+    return (Array.isArray(displaySourceTimeline) ? displaySourceTimeline : []).map((row: any, index: number) => {
+      const hotspotId = getHotspotId(row);
+      const isAttraction =
+        String(row?.type || '').toLowerCase() === 'attraction' ||
+        Number(row?.item_type || 0) === 4;
+      const isActionableAttraction = isAttraction && hotspotId > 0;
+
+      const isRemoved = isActionableAttraction && removedSet.has(hotspotId);
+      const isSelected = isActionableAttraction && selectedHotspotId > 0 && hotspotId === selectedHotspotId;
+      const isProtected = isActionableAttraction && protectedSet.has(hotspotId);
+
+      const selectedOpeningConflict =
+        isSelected
+          ? (params.selectedConflict || row?.selectedOpeningConflict || row?.openingConflict || null)
+          : null;
+
+      return {
+        index,
+        originalIndex: index,
+        type: row?.type || null,
+        itemType: Number(row?.item_type || 0) || null,
+        hotspotId: hotspotId || null,
+        routeHotspotId: getRouteHotspotId(row) || null,
+        name: getName(row),
+        title: row?.title || row?.name || row?.text || null,
+        timeRange:
+          row?.timeRange ||
+          row?.visitTime ||
+          row?.startTime ||
+          row?.hotspot_start_time ||
+          null,
+        operatingHours: row?.operatingHours || row?.timings || row?.hotspot_timings || null,
+        openingTime: row?.openingTime || null,
+        closingTime: row?.closingTime || null,
+        priority: Number(row?.priority || row?.hotspot_priority || row?.rawPriority || 0) || null,
+        isAttraction,
+        isInserted:
+          row?.isInserted === true ||
+          row?.inserted === true ||
+          row?.source === 'MANUAL_INSERTION',
+        isManual:
+          row?.isManual === true ||
+          row?.mustInclude === true ||
+          Number(row?.hotspot_plan_own_way || 0) === 1,
+        isRemoved,
+        isSelected,
+        isProtected,
+        hasConflict: isSelected && !!selectedOpeningConflict,
+        selectedOpeningConflict,
+        status: isRemoved
+          ? 'REMOVED'
+          : isSelected && selectedOpeningConflict
+            ? 'CONFLICT'
+            : isProtected
+              ? 'PROTECTED'
+              : row?.status || null,
+      };
+    });
+  }
+
+  private buildManualFitAttemptComputedDisplayTimelineSnapshot(
+    originalDisplayTimeline: any[],
+    recalculatedTimeline: any[],
+    params: {
+      removedHotspotIds?: number[];
+      selectedHotspotId?: number;
+      selectedConflict?: any | null;
+      protectedHotspotIds?: number[];
+    } = {},
+  ): any[] {
+    const removedSet = new Set(
+      (params.removedHotspotIds || [])
+        .map((id: any) => Number(id))
+        .filter((id: number) => Number.isFinite(id) && id > 0),
+    );
+
+    const protectedSet = new Set(
+      (params.protectedHotspotIds || [])
+        .map((id: any) => Number(id))
+        .filter((id: number) => Number.isFinite(id) && id > 0),
+    );
+
+    const selectedHotspotId = Number(params.selectedHotspotId || 0);
+
+    const getHotspotId = (row: any): number =>
+      Number(row?.locationId || row?.hotspotId || row?.hotspot_ID || row?.hotspot_id || row?.id || 0);
+
+    const getName = (row: any): string =>
+      String(row?.name || row?.title || row?.hotspotName || row?.hotspot_name || row?.text || row?.to || row?.type || 'Row');
+
+    const isAttractionRow = (row: any): boolean =>
+      String(row?.type || '').toLowerCase() === 'attraction' || Number(row?.item_type || 0) === 4;
+
+    const isTravelRow = (row: any): boolean =>
+      String(row?.type || '').toLowerCase() === 'travel' || Number(row?.item_type || 0) === 3 || Number(row?.item_type || 0) === 5;
+
+    const computedRows = (Array.isArray(recalculatedTimeline) ? recalculatedTimeline : [])
+      .filter((row: any) => {
+        const hotspotId = getHotspotId(row);
+
+        if (hotspotId > 0 && removedSet.has(hotspotId) && isAttractionRow(row)) {
+          return false;
+        }
+
+        if (isTravelRow(row)) {
+          const fromHotspotId = Number(row?.fromHotspotId || row?.from_hotspot_ID || row?.fromHotspot_ID || 0);
+          const toHotspotId = Number(row?.toHotspotId || row?.to_hotspot_ID || row?.toHotspot_ID || 0);
+
+          if (fromHotspotId > 0 && removedSet.has(fromHotspotId)) return false;
+          if (toHotspotId > 0 && removedSet.has(toHotspotId)) return false;
+        }
+
+        return true;
+      })
+      .map((row: any, index: number) => {
+        const hotspotId = getHotspotId(row);
+        const isSelected = selectedHotspotId > 0 && hotspotId === selectedHotspotId;
+        const isProtected = hotspotId > 0 && protectedSet.has(hotspotId);
+        const selectedOpeningConflict =
+          isSelected
+            ? (params.selectedConflict || row?.selectedOpeningConflict || row?.openingConflict || null)
+            : null;
+
+        return {
+          index,
+          originalIndex: index,
+          type: row?.type || null,
+          itemType: Number(row?.item_type || 0) || null,
+          hotspotId: hotspotId || null,
+          routeHotspotId: Number(row?.routeHotspotId || row?.route_hotspot_ID || row?.route_hotspot_id || 0) || null,
+          fromHotspotId: Number(row?.fromHotspotId || row?.from_hotspot_ID || row?.fromHotspot_ID || 0) || null,
+          toHotspotId: Number(row?.toHotspotId || row?.to_hotspot_ID || row?.toHotspot_ID || 0) || null,
+          name: getName(row),
+          text: row?.text || row?.name || null,
+          title: row?.title || row?.name || row?.text || null,
+          timeRange: row?.timeRange || row?.visitTime || row?.startTime || row?.hotspot_start_time || null,
+          operatingHours: row?.operatingHours || row?.timings || row?.hotspot_timings || null,
+          openingTime: row?.openingTime || null,
+          closingTime: row?.closingTime || null,
+          priority: Number(row?.priority || row?.hotspot_priority || row?.rawPriority || 0) || null,
+          isAttraction: isAttractionRow(row),
+          isInserted: row?.isInserted === true || row?.inserted === true || row?.source === 'MANUAL_INSERTION',
+          isManual: row?.isManual === true || row?.mustInclude === true || Number(row?.hotspot_plan_own_way || 0) === 1,
+          isRemoved: false,
+          isSelected,
+          isProtected,
+          hasConflict: isSelected && !!selectedOpeningConflict,
+          selectedOpeningConflict,
+          status: isSelected && selectedOpeningConflict
+            ? 'CONFLICT'
+            : isProtected
+              ? 'PROTECTED'
+              : row?.status || null,
+        };
+      });
+    return computedRows.map((row: any, index: number) => ({
+      ...row,
+      index,
+      originalIndex: index,
+    }));
+  }
+
+  private validateManualFitAttemptDisplayTimeline(
+    rows: any[],
+    params: {
+      removedHotspotIds: number[];
+      selectedHotspotId: number;
+    },
+  ): string[] {
+    const errors: string[] = [];
+    const removedSet = new Set(
+      (params.removedHotspotIds || []).map(Number).filter((id) => Number.isFinite(id) && id > 0),
+    );
+
+    const getHotspotId = (row: any): number =>
+      Number(row?.hotspotId || row?.locationId || row?.hotspot_ID || row?.hotspot_id || row?.id || 0);
+
+    const parseStartMinutes = (value: any): number | null => {
+      const raw = String(value || '');
+      const plusDayMatch = raw.match(/\+(\d+)d/);
+      const dayOffset = plusDayMatch ? Number(plusDayMatch[1] || 0) : 0;
+      const match = raw.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+      if (!match) return null;
+      let hour = Number(match[1]);
+      const minute = Number(match[2]);
+      const ap = String(match[3]).toUpperCase();
+      if (ap === 'AM' && hour === 12) hour = 0;
+      if (ap === 'PM' && hour !== 12) hour += 12;
+      return hour * 60 + minute + dayOffset * 24 * 60;
+    };
+
+    let lastStart: number | null = null;
+
+    for (const row of Array.isArray(rows) ? rows : []) {
+      const hotspotId = getHotspotId(row);
+      const type = String(row?.type || '').toLowerCase();
+      const itemType = Number(row?.itemType || row?.item_type || 0);
+      const isTravel = type === 'travel' || itemType === 3 || itemType === 5;
+      const isRemoved = row?.isRemoved === true || String(row?.status || '').toUpperCase() === 'REMOVED';
+
+      if (isTravel) {
+        const fromHotspotId = Number(row?.fromHotspotId || row?.from_hotspot_ID || row?.fromHotspot_ID || 0);
+        const toHotspotId = Number(row?.toHotspotId || row?.to_hotspot_ID || row?.toHotspot_ID || 0);
+        if (fromHotspotId > 0 && removedSet.has(fromHotspotId)) {
+          errors.push(`Display timeline contains travel from removed hotspot ${fromHotspotId}.`);
+        }
+        if (toHotspotId > 0 && removedSet.has(toHotspotId)) {
+          errors.push(`Display timeline contains travel to removed hotspot ${toHotspotId}.`);
+        }
+      }
+
+      if (hotspotId > 0 && removedSet.has(hotspotId) && !isRemoved) {
+        errors.push(`Removed hotspot ${hotspotId} appears as active row.`);
+      }
+
+      if (!isRemoved) {
+        const start = parseStartMinutes(row?.timeRange || row?.visitTime);
+        if (start !== null) {
+          if (lastStart !== null && start + 60 < lastStart) {
+            errors.push(`Display timeline is non-monotonic around ${row?.name || row?.title || row?.text || hotspotId}.`);
+          }
+          lastStart = start;
+        }
+      }
+    }
+
+    return errors;
+  }
+
+  private async filterPlannedRemovalsToSameRouteInTx(
+    tx: any,
+    planId: number,
+    routeId: number,
+    removals: any[],
+  ): Promise<any[]> {
+    const activeRouteEvidence = await this.getActiveRouteManualFitRemovalEvidenceInTx(tx, planId, routeId);
+
+    return (Array.isArray(removals) ? removals : []).filter((row: any) => {
+      const hotspotId = this.getManualFitRemovalHotspotId(row);
+      const routeHotspotId = this.getManualFitRemovalRouteHotspotId(row);
+      return (
+        hotspotId > 0
+        && activeRouteEvidence.activeHotspotIds.has(hotspotId)
+        && (routeHotspotId <= 0 || activeRouteEvidence.activeRouteHotspotIds.has(routeHotspotId))
+      );
+    });
+  }
+
+  private async resolveProgressivePriorityRemovalForManualFitInTx(
+    tx: any,
+    params: {
+      planId: number;
+      routeId: number;
+      selectedHotspotId: number;
+      selectedManualPriority: number;
+      currentTimeline: any[];
+      dayEndMinutes: number;
+      overflowMinutes: number;
+      validationMode?: 'DAY_END' | 'SELECTED_HOTSPOT_CLOSING';
+      targetHotspotId?: number;
+      targetHotspotLatestEndMinutes?: number;
+      allowP3Removal?: boolean;
+      allowP2Removal?: boolean;
+      allowP1Removal?: boolean;
+      preselectedRemovalHotspotIds?: number[];
+    },
+  ): Promise<{
+    resolved: boolean;
+    algorithm: 'PROGRESSIVE_PRIORITY_REMOVAL';
+    validationMode: 'DAY_END' | 'SELECTED_HOTSPOT_CLOSING';
+    removedHotspots: Array<{
+      id: number;
+      name: string;
+      priority: number;
+      estimatedMinutes?: number;
+      reason: string;
+      removalReasonCode: string;
+      requiresAcknowledgement: boolean;
+    }>;
+    candidateHotspots: Array<any>;
+    finalTimeline: any[];
+    finalOverflowMinutes: number;
+    finalArrivalTime: string | null;
+    simulationAttempts: Array<any>;
+    rejectedAttempts: Array<any>;
+    candidateAudit: Array<any>;
+    message: string;
+  }> {
+    const validationMode = params.validationMode || 'DAY_END';
+    const currentTimeline = Array.isArray(params.currentTimeline) ? params.currentTimeline : [];
+    const selectedHotspotId = Number(params.selectedHotspotId || 0);
+    const activeRouteRows = await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
+      where: {
+        itinerary_plan_ID: Number(params.planId),
+        itinerary_route_ID: Number(params.routeId),
+        item_type: 4,
+        deleted: 0,
+        status: 1,
+      },
+      select: {
+        hotspot_ID: true,
+        hotspot_plan_own_way: true,
+      },
+    });
+
+    const getRowHotspotId = (row: any): number =>
+      Number(row?.locationId || row?.hotspotId || row?.hotspot_ID || row?.hotspot_id || row?.id || 0);
+
+    const isAttractionLikeRow = (row: any): boolean => {
+      if (this.isAttractionTimelineRow(row)) return true;
+
+      const hotspotId = getRowHotspotId(row);
+      if (!hotspotId) return false;
+
+      const label = String(row?.name || row?.text || '').trim();
+      if (!label) return false;
+      if (/^travel to\b/i.test(label)) return false;
+      if (/^(hotel|check-?in|check out|refreshment|start)$/i.test(label)) return false;
+
+      return true;
+    };
+
+    const activeRouteHotspotIds = new Set(
+      [
+        ...(activeRouteRows || [])
+          .map((row: any) => Number(row?.hotspot_ID || 0))
+          .filter((id: number) => Number.isFinite(id) && id > 0),
+        ...currentTimeline
+          .filter((row: any) => isAttractionLikeRow(row))
+          .map((row: any) => getRowHotspotId(row))
+          .filter((id: number) => Number.isFinite(id) && id > 0),
+      ],
+    );
+
+    const manualRouteHotspotIds = new Set(
+      [
+        ...(activeRouteRows || [])
+          .filter((row: any) => Number(row?.hotspot_plan_own_way || 0) === 1)
+          .map((row: any) => Number(row?.hotspot_ID || 0))
+          .filter((id: number) => Number.isFinite(id) && id > 0),
+        ...currentTimeline
+          .filter((row: any) => {
+            const hotspotId = getRowHotspotId(row);
+            if (!hotspotId) return false;
+            return (
+              row?.isManual === true ||
+              row?.mustInclude === true ||
+              row?.planOwnWay === true ||
+              Number(row?.hotspot_plan_own_way || 0) === 1
+            );
+          })
+          .map((row: any) => getRowHotspotId(row))
+          .filter((id: number) => Number.isFinite(id) && id > 0),
+      ],
+    );
+
+    const targetHotspotId = Number(params.targetHotspotId || selectedHotspotId);
+    const protectedHotspotIds = new Set(
+      [selectedHotspotId, targetHotspotId]
+        .map((id) => Number(id || 0))
+        .filter((id: number) => Number.isFinite(id) && id > 0),
+    );
+
+    const targetTimelineIndex = currentTimeline.findIndex((row: any) => {
+      return isAttractionLikeRow(row) && getRowHotspotId(row) === targetHotspotId;
+    });
+
+    const getCandidateRemovalPriority = (row: any): number => {
+      const normalized = this.normalizeHotspotPriority(
+        Number(
+          row?.effectivePriority
+          ?? row?.normalizedPriority
+          ?? row?.rawPriority
+          ?? row?.priority
+          ?? row?.hotspot_priority
+          ?? 9999,
+        ),
+      );
+
+      if (normalized === 9999) return 3;
+      if (normalized >= 5) return 2;
+      if ([1, 2, 3].includes(normalized)) return normalized;
+      return 0;
+    };
+
+    const candidateRows = currentTimeline
+      .map((row: any, rowIndex: number) => ({ row, rowIndex }))
+      .filter(({ row, rowIndex }: any) => {
+        if (!isAttractionLikeRow(row)) return false;
+
+        const hotspotId = getRowHotspotId(row);
+        if (!hotspotId) return false;
+        if (protectedHotspotIds.has(hotspotId)) return false;
+        if (manualRouteHotspotIds.has(hotspotId)) return false;
+        if (!activeRouteHotspotIds.has(hotspotId)) return false;
+
+        if (
+          validationMode === 'SELECTED_HOTSPOT_CLOSING' &&
+          targetTimelineIndex >= 0 &&
+          rowIndex >= targetTimelineIndex
+        ) {
+          return false;
+        }
+
+        const isManual =
+          row?.isManual === true ||
+          row?.mustInclude === true ||
+          row?.planOwnWay === true ||
+          Number(row?.hotspot_plan_own_way || 0) === 1;
+
+        if (isManual) return false;
+
+        const priority = getCandidateRemovalPriority(row);
+
+        if (priority === 3 && params.allowP3Removal !== true) return false;
+        if (priority === 2 && params.allowP2Removal !== true) return false;
+        if (priority === 1 && params.allowP1Removal !== true) return false;
+
+        return [1, 2, 3].includes(priority);
+      })
+      .map(({ row, rowIndex }: any) => {
+        const priority = getCandidateRemovalPriority(row);
+        return {
+          row,
+          timelineIndex: rowIndex,
+          routeOrder: Number(row?.hotspot_order || row?.order || rowIndex),
+          id: getRowHotspotId(row),
+          name: String(row?.name || row?.text || row?.hotspot_name || `Hotspot #${getRowHotspotId(row)}`),
+          priority,
+          estimatedMinutes: Number(
+            row?.durationMinutes ||
+            row?.duration_minutes ||
+            row?.visitDurationMinutes ||
+            row?.hotspot_duration_minutes ||
+            this.getPreviewRowDurationMinutes(row) ||
+            0,
+          ),
+          endMinutes: this.parseSegmentEndMinutes(row) ?? 0,
+        };
+      })
+      .sort((a: any, b: any) => {
+        if (a.priority !== b.priority) return b.priority - a.priority;
+        if (a.timelineIndex !== b.timelineIndex) {
+          return a.timelineIndex - b.timelineIndex;
+        }
+        return a.id - b.id;
+      });
+    const candidateAudit = currentTimeline
+      .map((row: any, rowIndex: number) => {
+        const hotspotId = getRowHotspotId(row);
+        const label = String(row?.name || row?.text || row?.hotspot_name || '').trim();
+        const priority = getCandidateRemovalPriority(row);
+        const isManual =
+          row?.isManual === true ||
+          row?.mustInclude === true ||
+          row?.planOwnWay === true ||
+          Number(row?.hotspot_plan_own_way || 0) === 1;
+        const beforeTarget = !(validationMode === 'SELECTED_HOTSPOT_CLOSING' && targetTimelineIndex >= 0 && rowIndex >= targetTimelineIndex);
+        const allowedByPriority =
+          (priority === 3 ? params.allowP3Removal === true : true) &&
+          (priority === 2 ? params.allowP2Removal === true : true) &&
+          (priority === 1 ? params.allowP1Removal === true : true);
+
+        return {
+          rowIndex,
+          hotspotId,
+          name: label || `Hotspot #${hotspotId || 0}`,
+          attractionLike: isAttractionLikeRow(row),
+          protected: protectedHotspotIds.has(hotspotId),
+          manualRoute: manualRouteHotspotIds.has(hotspotId),
+          sameRouteActive: activeRouteHotspotIds.has(hotspotId),
+          beforeTarget,
+          isManual,
+          priority,
+          allowedByPriority,
+          included:
+            isAttractionLikeRow(row) &&
+            hotspotId > 0 &&
+            !protectedHotspotIds.has(hotspotId) &&
+            !manualRouteHotspotIds.has(hotspotId) &&
+            activeRouteHotspotIds.has(hotspotId) &&
+            beforeTarget &&
+            !isManual &&
+            allowedByPriority &&
+            [1, 2, 3].includes(priority),
+        };
+      })
+      .filter((row: any) => row.hotspotId > 0);
+
+    const simulationAttempts: any[] = [];
+    const rejectedAttempts: any[] = [];
+    const protectedHotspotMetadata = currentTimeline
+      .map((row: any) => {
+        const hotspotId = getRowHotspotId(row);
+        if (!(hotspotId > 0)) return null;
+
+        const isSelectedProtected = protectedHotspotIds.has(hotspotId);
+        const isManualProtected = manualRouteHotspotIds.has(hotspotId);
+        if (!isSelectedProtected && !isManualProtected) return null;
+
+        const reasons: string[] = [];
+        if (hotspotId === targetHotspotId || hotspotId === selectedHotspotId) {
+          reasons.push('Selected hotspot is protected from removal.');
+        }
+        if (isManualProtected) {
+          reasons.push('Manually added / own-way hotspot is protected from removal.');
+        }
+
+        return {
+          hotspotId,
+          name: String(row?.name || row?.text || row?.hotspot_name || `Hotspot #${hotspotId}`),
+          reason: reasons.join(' '),
+          isManualProtected,
+        };
+      })
+      .filter(Boolean)
+      .filter((row: any, index: number, list: any[]) => (
+        list.findIndex((candidate: any) => Number(candidate?.hotspotId || 0) === Number(row?.hotspotId || 0)) === index
+      ));
+    const protectedHotspotIdsForDisplay = Array.from(
+      new Set([
+        Number(params.selectedHotspotId || 0),
+        targetHotspotId,
+        ...protectedHotspotMetadata.map((row: any) => Number(row?.hotspotId || 0)),
+        ...candidateAudit
+          .filter((row: any) => row?.manualRoute === true || row?.protected === true || row?.isManual === true)
+          .map((row: any) => Number(row?.hotspotId || row?.id || row?.hotspotId || 0)),
+      ].filter((id: number) => Number.isFinite(id) && id > 0)),
+    );
+    const buildProtectedHotspotsForSummary = (removedIds: number[]) => protectedHotspotIdsForDisplay
+      .filter((id: number) => !removedIds.includes(id))
+      .map((id: number) => {
+        const matchingRow = currentTimeline.find((row: any) => getRowHotspotId(row) === id);
+
+        return {
+          hotspotId: id,
+          name:
+            matchingRow?.name ||
+            matchingRow?.title ||
+            matchingRow?.hotspot_name ||
+            `Hotspot #${id}`,
+          reason: id === targetHotspotId
+            ? 'Selected hotspot is protected from removal.'
+            : 'Manually added / own-way hotspot is protected from removal.',
+        };
+      });
+
+    const getAttemptSelectedWindow = (timeline: any[]) => {
+      const targetRow = (Array.isArray(timeline) ? timeline : []).find((row: any) => {
+        return isAttractionLikeRow(row) && getRowHotspotId(row) === targetHotspotId;
+      });
+
+      return {
+        attemptedVisitTime: targetRow?.timeRange || targetRow?.visitTime || null,
+        operatingHours: targetRow?.operatingHours || targetRow?.timings || null,
+        selectedOpeningConflict: targetRow?.selectedOpeningConflict || null,
+      };
+    };
+
+    const evaluateTimeline = async (timeline: any[]) => {
+      let evaluatedTimeline = Array.isArray(timeline) ? timeline : [];
+      if (validationMode === 'SELECTED_HOTSPOT_CLOSING') {
+        evaluatedTimeline = await this.enrichManualFitPreviewTimelineWithOperatingHours(
+          Number(params.planId),
+          Number(params.routeId),
+          evaluatedTimeline,
+        );
+      }
+
+      const maxEndMinutes = evaluatedTimeline.reduce((max: number, row: any) => {
+        const end = this.parseSegmentEndMinutes(row);
+        return end === null ? max : Math.max(max, end);
+      }, 0);
+
+      const dayEndOverflowMinutes = Math.max(0, maxEndMinutes - Number(params.dayEndMinutes || 0));
+      const selectedTargetRow = evaluatedTimeline.find((row: any) => {
+        if (!isAttractionLikeRow(row)) return false;
+        return getRowHotspotId(row) === targetHotspotId;
+      });
+
+      const selectedTargetEndMinutes =
+        selectedTargetRow ? this.parseSegmentEndMinutes(selectedTargetRow) : null;
+
+      let selectedClosingOverflowMinutes = 0;
+      let selectedOpeningConflict: any | null = null;
+
+      if (validationMode === 'SELECTED_HOTSPOT_CLOSING') {
+        const selectedClosingCheck = this.getSelectedManualClosingOverflow({
+          timeline: evaluatedTimeline,
+          selectedHotspotIds: [targetHotspotId],
+        });
+
+        const selectedOperatingValidation = this.markSelectedManualOperatingHourConflicts(
+          evaluatedTimeline,
+          [targetHotspotId],
+        );
+
+        evaluatedTimeline = selectedOperatingValidation.timeline;
+        selectedOpeningConflict = selectedOperatingValidation.selectedOpeningConflict || null;
+
+        const selectedStillInvalid =
+          selectedClosingCheck.hasClosingOverflow === true ||
+          !!selectedOpeningConflict;
+
+        selectedClosingOverflowMinutes = Number(selectedClosingCheck.overflowMinutes || 0);
+
+        const finalOverflowMinutes = selectedStillInvalid
+          ? Number(selectedClosingCheck.overflowMinutes || 1)
+          : 0;
+
+        const valid = !selectedStillInvalid && dayEndOverflowMinutes <= 0 && !!selectedTargetRow;
+        const selectedWindow = getAttemptSelectedWindow(evaluatedTimeline);
+
+        return {
+          valid,
+          finalOverflowMinutes,
+          dayEndOverflowMinutes,
+          selectedClosingOverflowMinutes,
+          maxEndMinutes,
+          selectedTargetEndMinutes,
+          selectedTargetRow,
+          finalArrivalTime:
+            selectedTargetEndMinutes
+              ? this.minutesRangeToFitPreviewLabel(selectedTargetEndMinutes, selectedTargetEndMinutes)
+              : (maxEndMinutes > 0 ? this.minutesRangeToFitPreviewLabel(maxEndMinutes, maxEndMinutes) : null),
+          evaluatedTimeline,
+          selectedAttemptedVisitTime: selectedWindow.attemptedVisitTime,
+          selectedOperatingHours: selectedWindow.operatingHours,
+          selectedOpeningConflict: selectedWindow.selectedOpeningConflict || selectedOpeningConflict,
+        };
+      }
+
+      const finalOverflowMinutes = dayEndOverflowMinutes;
+      const valid = finalOverflowMinutes <= 0 && dayEndOverflowMinutes <= 0;
+
+      return {
+        valid,
+        finalOverflowMinutes,
+        dayEndOverflowMinutes,
+        selectedClosingOverflowMinutes,
+        maxEndMinutes,
+        selectedTargetEndMinutes,
+        selectedTargetRow,
+        finalArrivalTime:
+          maxEndMinutes > 0 ? this.minutesRangeToTimeString(maxEndMinutes, maxEndMinutes) : null,
+        evaluatedTimeline,
+        selectedAttemptedVisitTime: null,
+        selectedOperatingHours: null,
+        selectedOpeningConflict: null,
+      };
+    };
+
+    const rebuildAfterRemoval = async (removedIds: number[]) => {
+      if (removedIds.length === 0) return currentTimeline;
+
+      if (validationMode === 'SELECTED_HOTSPOT_CLOSING') {
+        return this.buildExactAnchorSequentialTimelineAfterRemoval(tx, currentTimeline, {
+          removedHotspotIds: removedIds,
+          targetHotspotId,
+          routeId: Number(params.routeId),
+          planId: Number(params.planId),
+        });
+      }
+
+      return this.buildMatrixRouteTimelineAfterLowPriorityRemoval(
+        tx,
+        currentTimeline,
+        removedIds,
+        {
+          routeId: Number(params.routeId),
+        },
+      );
+    };
+
+    const toRemovedRows = (rows: any[]) => rows.map((row: any) => ({
+      id: row.id,
+      name: row.name,
+      priority: row.priority,
+      estimatedMinutes: row.estimatedMinutes,
+      reason: this.buildProgressiveRemovalReason(validationMode, row.priority),
+      removalReasonCode:
+        validationMode === 'SELECTED_HOTSPOT_CLOSING'
+          ? 'SELECTED_HOTSPOT_CLOSING_RESCUE'
+          : 'DAY_END_RESCUE',
+      requiresAcknowledgement: true,
+    }));
+
+    const preselectedRemovalIds = Array.isArray(params.preselectedRemovalHotspotIds)
+      ? params.preselectedRemovalHotspotIds.map(Number).filter((id) => id > 0)
+      : [];
+
+    let selectedRemovedIds: number[] = [];
+    let selectedRemovedRows: any[] = [];
+    let workingTimeline = currentTimeline;
+
+    if (preselectedRemovalIds.length > 0) {
+      selectedRemovedIds = [...preselectedRemovalIds];
+      selectedRemovedRows = candidateRows.filter((candidate: any) => selectedRemovedIds.includes(candidate.id));
+      workingTimeline = await rebuildAfterRemoval(selectedRemovedIds);
+
+      const evaluation = await evaluateTimeline(workingTimeline);
+      workingTimeline = evaluation.evaluatedTimeline;
+      const attemptNumber = simulationAttempts.length + 1;
+      const selectedWindow = getAttemptSelectedWindow(workingTimeline);
+      const attemptComputedTimeline = this.buildManualFitAttemptTimelineSnapshot(workingTimeline, {
+        removedHotspotIds: selectedRemovedIds,
+        selectedHotspotId: targetHotspotId,
+      });
+      const attemptDisplayTimeline = this.buildManualFitAttemptComputedDisplayTimelineSnapshot(
+        currentTimeline,
+        workingTimeline,
+        {
+          removedHotspotIds: selectedRemovedIds,
+          selectedHotspotId: targetHotspotId,
+          selectedConflict:
+            selectedWindow?.selectedOpeningConflict ||
+            evaluation?.selectedOpeningConflict ||
+            null,
+          protectedHotspotIds: protectedHotspotIdsForDisplay,
+        },
+      );
+      const displayTimelineErrors = this.validateManualFitAttemptDisplayTimeline(attemptDisplayTimeline, {
+        removedHotspotIds: selectedRemovedIds,
+        selectedHotspotId: targetHotspotId,
+      });
+
+      simulationAttempts.push({
+        attemptNumber,
+        cumulative: true,
+        validationMode,
+        removedHotspotIds: [...selectedRemovedIds],
+        removedHotspotNames: selectedRemovedRows.map((row: any) => row.name),
+        removedCount: selectedRemovedIds.length,
+        priorities: selectedRemovedRows.map((row: any) => row.priority),
+        selectedAttemptedVisitTime: evaluation.selectedAttemptedVisitTime,
+        selectedOperatingHours: evaluation.selectedOperatingHours,
+        selectedOpeningConflict: evaluation.selectedOpeningConflict,
+        finalArrivalTime: evaluation.finalArrivalTime,
+        finalOverflowMinutes: evaluation.finalOverflowMinutes,
+        dayEndOverflowMinutes: evaluation.dayEndOverflowMinutes,
+        selectedClosingOverflowMinutes: evaluation.selectedClosingOverflowMinutes,
+        valid: evaluation.valid,
+        resolved: evaluation.valid,
+        strategy: 'PRESELECTED_PROGRESSIVE_REMOVAL',
+        displayTimelineErrors,
+        displayTimelineWarning: displayTimelineErrors.length > 0,
+        previewTimelineDisplay: attemptDisplayTimeline,
+        displayTimeline: attemptDisplayTimeline,
+        previewTimeline: attemptDisplayTimeline,
+        computedTimelineDebug: attemptComputedTimeline,
+        removalSummary: {
+          removedHotspotIds: [...selectedRemovedIds],
+          removedHotspotNames: selectedRemovedRows.map((row: any) => row.name),
+          protectedHotspots: buildProtectedHotspotsForSummary(selectedRemovedIds),
+          result: evaluation.valid ? 'FITS_AFTER_REMOVAL' : 'STILL_DOES_NOT_FIT',
+        },
+      });
+
+      if (evaluation.valid) {
+        return {
+          resolved: true,
+          algorithm: 'PROGRESSIVE_PRIORITY_REMOVAL',
+          validationMode,
+          removedHotspots: toRemovedRows(selectedRemovedRows),
+          candidateHotspots: candidateRows,
+          finalTimeline: evaluation.evaluatedTimeline,
+          finalOverflowMinutes: 0,
+          finalArrivalTime: evaluation.finalArrivalTime,
+          simulationAttempts,
+          rejectedAttempts,
+          candidateAudit,
+          message: this.buildProgressiveRemovalSuccessMessage(validationMode, selectedRemovedRows),
+        };
+      }
+    }
+
+    const candidateByPriority = {
+      3: candidateRows.filter((row: any) => row.priority === 3),
+      2: candidateRows.filter((row: any) => row.priority === 2),
+      1: candidateRows.filter((row: any) => row.priority === 1),
+    } as Record<number, any[]>;
+
+    for (const priority of [3, 2, 1]) {
+      const rowsForPriority = candidateByPriority[priority] || [];
+
+      for (const candidate of rowsForPriority) {
+        if (selectedRemovedIds.includes(candidate.id)) continue;
+
+        const nextRemovedIds = [...selectedRemovedIds, candidate.id];
+        const nextRemovedRows = [
+          ...selectedRemovedRows,
+          candidate,
+        ];
+
+        let nextTimeline = await rebuildAfterRemoval(nextRemovedIds);
+        const evaluation = await evaluateTimeline(nextTimeline);
+        nextTimeline = evaluation.evaluatedTimeline;
+        const attemptNumber = simulationAttempts.length + 1;
+        const selectedWindow = getAttemptSelectedWindow(nextTimeline);
+        const attemptComputedTimeline = this.buildManualFitAttemptTimelineSnapshot(nextTimeline, {
+          removedHotspotIds: nextRemovedIds,
+          selectedHotspotId: targetHotspotId,
+        });
+        const attemptDisplayTimeline = this.buildManualFitAttemptComputedDisplayTimelineSnapshot(
+          currentTimeline,
+          nextTimeline,
+          {
+            removedHotspotIds: nextRemovedIds,
+            selectedHotspotId: targetHotspotId,
+            selectedConflict:
+              selectedWindow?.selectedOpeningConflict ||
+              evaluation?.selectedOpeningConflict ||
+              null,
+            protectedHotspotIds: protectedHotspotIdsForDisplay,
+          },
+        );
+        const displayTimelineErrors = this.validateManualFitAttemptDisplayTimeline(attemptDisplayTimeline, {
+          removedHotspotIds: nextRemovedIds,
+          selectedHotspotId: targetHotspotId,
+        });
+
+        const attempt = {
+          attemptNumber,
+          cumulative: true,
+          validationMode,
+          removedHotspotIds: nextRemovedIds,
+          removedHotspotNames: nextRemovedRows.map((row: any) => row.name),
+          removedCount: nextRemovedIds.length,
+          priorities: nextRemovedRows.map((row: any) => row.priority),
+          justTriedHotspotId: candidate.id,
+          justTriedName: candidate.name,
+          justTriedPriority: priority,
+          selectedAttemptedVisitTime: evaluation.selectedAttemptedVisitTime,
+          selectedOperatingHours: evaluation.selectedOperatingHours,
+          selectedOpeningConflict: evaluation.selectedOpeningConflict,
+          finalArrivalTime: evaluation.finalArrivalTime,
+          finalOverflowMinutes: evaluation.finalOverflowMinutes,
+          dayEndOverflowMinutes: evaluation.dayEndOverflowMinutes,
+          selectedClosingOverflowMinutes: evaluation.selectedClosingOverflowMinutes,
+          valid: evaluation.valid,
+          resolved: evaluation.valid,
+          strategy: 'CUMULATIVE_PRIORITY_REMOVAL',
+          displayTimelineErrors,
+          displayTimelineWarning: displayTimelineErrors.length > 0,
+          previewTimelineDisplay: attemptDisplayTimeline,
+          displayTimeline: attemptDisplayTimeline,
+          previewTimeline: attemptDisplayTimeline,
+          computedTimelineDebug: attemptComputedTimeline,
+          removalSummary: {
+            removedHotspotIds: [...nextRemovedIds],
+            removedHotspotNames: nextRemovedRows.map((row: any) => row.name),
+            protectedHotspots: buildProtectedHotspotsForSummary(nextRemovedIds),
+            result: evaluation.valid ? 'FITS_AFTER_REMOVAL' : 'STILL_DOES_NOT_FIT',
+          },
+        };
+
+        simulationAttempts.push(attempt);
+
+        if (evaluation.valid) {
+          return {
+            resolved: true,
+            algorithm: 'PROGRESSIVE_PRIORITY_REMOVAL',
+            validationMode,
+            removedHotspots: toRemovedRows(nextRemovedRows),
+            candidateHotspots: candidateRows,
+            finalTimeline: nextTimeline,
+            finalOverflowMinutes: 0,
+            finalArrivalTime: evaluation.finalArrivalTime,
+            simulationAttempts,
+            rejectedAttempts,
+            candidateAudit,
+            message: this.buildProgressiveRemovalSuccessMessage(validationMode, nextRemovedRows),
+          };
+        }
+
+        rejectedAttempts.push(attempt);
+        selectedRemovedIds = nextRemovedIds;
+        selectedRemovedRows = nextRemovedRows;
+        workingTimeline = nextTimeline;
+      }
+    }
+
+    const finalEvaluation = await evaluateTimeline(workingTimeline);
+
+    return {
+      resolved: false,
+      algorithm: 'PROGRESSIVE_PRIORITY_REMOVAL',
+      validationMode,
+      removedHotspots: [],
+      candidateHotspots: candidateRows,
+      finalTimeline: currentTimeline,
+      finalOverflowMinutes: finalEvaluation.finalOverflowMinutes,
+      finalArrivalTime: finalEvaluation.finalArrivalTime,
+      simulationAttempts,
+      rejectedAttempts,
+      candidateAudit,
+      message:
+        validationMode === 'SELECTED_HOTSPOT_CLOSING'
+          ? 'Could not fit the selected manual hotspot within operating hours after trying cumulative same-route generated removals.'
+          : 'Could not fit the selected manual hotspot within route end after checking same-route Priority 3, then Priority 2, then Priority 1 removals one by one.',
+    };
+  }
+
   private async applyMatrixSafeManualHotspotInsertionInTx(
     tx: any,
     params: {
@@ -14761,6 +17203,9 @@ const guideSlotCsv = guideSlots.join(',');
         slotIndex?: number;
         source?: 'BEST_FIT' | 'EXACT_ANCHOR';
       };
+      allowP3Removal?: boolean;
+      allowP1P2Removal?: boolean;
+      allowTopPriorityRemoval?: boolean;
       skipPostApplyAssertions?: boolean;
     },
   ): Promise<any> {
@@ -15190,7 +17635,7 @@ const guideSlotCsv = guideSlots.join(',');
             .map((row: any) => Number(row?.id || 0))
             .filter((id: number) => Number.isFinite(id) && id > 0)
         : [];
-      const lowPriorityPlan = await this.resolveLowPriorityRemovalForMatrixOverflowInTx(tx, {
+      const lowPriorityPlan = await this.resolveProgressivePriorityRemovalForManualFitInTx(tx, {
         planId,
         routeId,
         selectedHotspotId,
@@ -15199,6 +17644,10 @@ const guideSlotCsv = guideSlots.join(',');
         dayEndMinutes,
         overflowMinutes,
         preselectedRemovalHotspotIds,
+        validationMode: 'DAY_END',
+        allowP3Removal: true,
+        allowP2Removal: params?.allowP1P2Removal === true || params?.allowTopPriorityRemoval === true,
+        allowP1Removal: params?.allowP1P2Removal === true || params?.allowTopPriorityRemoval === true,
       });
 
       if (!lowPriorityPlan.resolved) {
@@ -15238,6 +17687,83 @@ const guideSlotCsv = guideSlots.join(',');
             itinerary_route_ID: routeId,
             item_type: 4,
             hotspot_ID: { in: removedIds },
+            hotspot_plan_own_way: { not: 1 },
+            deleted: 0,
+            status: 1,
+          },
+          data: {
+            deleted: 1,
+            status: 0,
+            updatedon: new Date(),
+          },
+        });
+      }
+    }
+
+    adjustedTimeline = await this.enrichManualFitPreviewTimelineWithOperatingHours(
+      Number(planId),
+      Number(routeId),
+      adjustedTimeline,
+    );
+
+    const selectedClosingOverflowForApply = this.getSelectedManualClosingOverflow({
+      timeline: adjustedTimeline,
+      selectedHotspotIds: [selectedHotspotId],
+    });
+
+    if (selectedClosingOverflowForApply.hasClosingOverflow) {
+      const preselectedOpeningRemovalHotspotIds = Array.isArray(
+        manualInsertionFit?.lowPriorityOpeningHoursRemovalPlanPreview?.plannedRemovals,
+      )
+        ? manualInsertionFit.lowPriorityOpeningHoursRemovalPlanPreview.plannedRemovals
+            .map((row: any) => Number(row?.id || row?.hotspotId || row?.hotspot_ID || 0))
+            .filter((id: number) => Number.isFinite(id) && id > 0)
+        : [];
+
+      const openingHoursApplyPlan = await this.resolveProgressivePriorityRemovalForManualFitInTx(tx, {
+        planId,
+        routeId,
+        selectedHotspotId,
+        selectedManualPriority,
+        currentTimeline: adjustedTimeline,
+        dayEndMinutes: routeEndMinutesApply,
+        overflowMinutes: Number(selectedClosingOverflowForApply.overflowMinutes || 0),
+        preselectedRemovalHotspotIds: preselectedOpeningRemovalHotspotIds,
+        targetHotspotId: selectedHotspotId,
+        targetHotspotLatestEndMinutes: Number(selectedClosingOverflowForApply.latestAllowedEndMinutes || 0),
+        validationMode: 'SELECTED_HOTSPOT_CLOSING',
+        allowP3Removal: params?.allowP3Removal === true || params?.allowTopPriorityRemoval === true,
+        allowP2Removal: params?.allowP1P2Removal === true || params?.allowTopPriorityRemoval === true,
+        allowP1Removal: params?.allowP1P2Removal === true || params?.allowTopPriorityRemoval === true,
+      });
+
+      if (!openingHoursApplyPlan.resolved) {
+        throw new ConflictException({
+          success: false,
+          inserted: false,
+          code: 'MANUAL_INSERT_SELECTED_HOTSPOT_CLOSING_NOT_RESOLVED',
+          message:
+            openingHoursApplyPlan.message ||
+            'The selected hotspot still exceeds closing time and the preview removal plan could not be reapplied.',
+          selectedClosingOverflow: selectedClosingOverflowForApply,
+          openingHoursRemovalPlan: openingHoursApplyPlan,
+        });
+      }
+
+      adjustedTimeline = openingHoursApplyPlan.finalTimeline || adjustedTimeline;
+
+      const removedIds = (openingHoursApplyPlan.removedHotspots || [])
+        .map((row: any) => Number(row?.id || row?.hotspotId || row?.hotspot_ID || 0))
+        .filter((id: number) => id > 0);
+
+      if (removedIds.length > 0) {
+        await (tx as any).dvi_itinerary_route_hotspot_details.updateMany({
+          where: {
+            itinerary_plan_ID: planId,
+            itinerary_route_ID: routeId,
+            item_type: 4,
+            hotspot_ID: { in: removedIds },
+            hotspot_plan_own_way: { not: 1 },
             deleted: 0,
             status: 1,
           },
@@ -15905,6 +18431,275 @@ const guideSlotCsv = guideSlots.join(',');
     return adjustedTimeline;
   }
 
+  private destinationSidePreviewDroppedBaselineRows(params: {
+    baselineTimeline: any[];
+    previewTimeline: any[];
+    selectedHotspotId: number;
+    removedHotspotIds?: number[];
+  }): boolean {
+    const baselineRows = Array.isArray(params.baselineTimeline) ? params.baselineTimeline : [];
+    const previewRows = Array.isArray(params.previewTimeline) ? params.previewTimeline : [];
+    const selectedHotspotId = Number(params.selectedHotspotId || 0);
+    const removedSet = new Set<number>(
+      (Array.isArray(params.removedHotspotIds) ? params.removedHotspotIds : [])
+        .map((id: any) => Number(id || 0))
+        .filter((id: number) => Number.isFinite(id) && id > 0),
+    );
+
+    const attractionIdsOf = (rows: any[]): number[] => rows
+      .filter((row: any) => (
+        String(row?.type || '').toLowerCase() === 'attraction'
+        || Number(row?.item_type || 0) === 4
+      ))
+      .map((row: any) => Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || row?.hotspot_id || 0))
+      .filter((id: number) => (
+        Number.isFinite(id)
+        && id > 0
+        && id !== selectedHotspotId
+        && !removedSet.has(id)
+      ));
+
+    const baselineAttractionIds = attractionIdsOf(baselineRows);
+    const previewAttractionIds = new Set<number>(attractionIdsOf(previewRows));
+
+    return baselineAttractionIds.some((id: number) => !previewAttractionIds.has(id));
+  }
+
+  private rebuildDestinationSidePreviewFromBaseline(params: {
+    baselineTimeline: any[];
+    manualInsertionFit: any;
+    selectedHotspotId: number;
+    hotspotMasters: any[];
+  }): any[] {
+    const baselineRows = Array.isArray(params.baselineTimeline) ? [...params.baselineTimeline] : [];
+    const manualInsertionFit = params.manualInsertionFit || null;
+    const selectedHotspotId = Number(params.selectedHotspotId || 0);
+    const hotspotMasters = Array.isArray(params.hotspotMasters) ? params.hotspotMasters : [];
+
+    if (baselineRows.length === 0 || !manualInsertionFit || selectedHotspotId <= 0) return [];
+
+    const bestSlot = manualInsertionFit?.chosenSlot || manualInsertionFit?.bestSlot || null;
+    const fromHotspotId = Number(bestSlot?.fromHotspotId || 0);
+    if (!bestSlot || fromHotspotId <= 0) return [];
+
+    const isAttractionRow = (row: any): boolean => {
+      const type = String(row?.type || '').toLowerCase();
+      return type === 'attraction' || Number(row?.item_type || 0) === 4;
+    };
+    const isTravelRow = (row: any): boolean => {
+      const type = String(row?.type || '').toLowerCase();
+      return type === 'travel' || Number(row?.item_type || 0) === 3 || Number(row?.item_type || 0) === 5;
+    };
+    const isHotelLikeRow = (row: any): boolean => {
+      const type = String(row?.type || '').toLowerCase();
+      const text = String(row?.text || row?.name || '').toLowerCase();
+      return type === 'hotel' || Number(row?.item_type || 0) === 6 || text.includes('check-in at hotel');
+    };
+
+    const normalizedBaseline = baselineRows.filter((row: any) => {
+      const hotspotId = Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || row?.hotspot_id || 0);
+      return hotspotId !== selectedHotspotId;
+    });
+
+    const fromRowIndex = normalizedBaseline.findIndex((row: any) => (
+      isAttractionRow(row)
+      && Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || row?.hotspot_id || 0) === fromHotspotId
+    ));
+    if (fromRowIndex < 0) return [];
+
+    const hotelIndex = normalizedBaseline.findIndex((row: any, index: number) => (
+      index > fromRowIndex && isHotelLikeRow(row)
+    ));
+    if (hotelIndex < 0) return [];
+
+    let hotelTravelIndex = -1;
+    for (let i = hotelIndex - 1; i > fromRowIndex; i -= 1) {
+      if (isTravelRow(normalizedBaseline[i])) {
+        hotelTravelIndex = i;
+        break;
+      }
+    }
+    if (hotelTravelIndex < 0) return [];
+
+    const fromRow = normalizedBaseline[fromRowIndex];
+    const hotelTravelRow = normalizedBaseline[hotelTravelIndex];
+    const hotelRow = normalizedBaseline[hotelIndex];
+    const fromEndMinutes = this.parseSegmentEndMinutes(fromRow);
+    if (fromEndMinutes === null) return [];
+
+    const selectedFromMaster = hotspotMasters.find(
+      (row: any) => Number(row?.hotspot_ID || row?.id || 0) === selectedHotspotId,
+    ) || null;
+    const selectedLabel = String(
+      selectedFromMaster?.hotspot_name
+      || manualInsertionFit?.selectedHotspotName
+      || `Hotspot #${selectedHotspotId}`,
+    ).trim();
+    const selectedDurationMinutes =
+      this.getHotspotDurationMinutesFromMasterFirst(selectedFromMaster, selectedFromMaster)
+      || this.getPreviewRowDurationFromDurationFieldsOnly(selectedFromMaster)
+      || 60;
+    const acDurationMin = Math.max(
+      1,
+      Math.round(
+        Number(
+          bestSlot?.acDurationMin
+          || bestSlot?.routeLegSummary?.acDurationMin
+          || 10,
+        ),
+      ),
+    );
+    const cbDurationMin = Math.max(
+      1,
+      Math.round(
+        Number(
+          bestSlot?.cbDurationMin
+          || bestSlot?.routeLegSummary?.cbDurationMin
+          || this.getPreviewRowDurationMinutes(hotelTravelRow)
+          || 10,
+        ),
+      ),
+    );
+
+    let cursor = fromEndMinutes;
+    const acStartMin = cursor;
+    const acEndMin = cursor + acDurationMin;
+    cursor = acEndMin;
+
+    const selectedStartMin = cursor;
+    const selectedEndMin = cursor + selectedDurationMinutes;
+    cursor = selectedEndMin;
+
+    const cbStartMin = cursor;
+    const cbEndMin = cursor + cbDurationMin;
+    cursor = cbEndMin;
+
+    const hotelCheckinText = String(hotelRow?.text || hotelRow?.name || '').trim();
+    const hotelCheckinMatch = hotelCheckinText.match(/check-?in\s+at\s+(.+)/i);
+    const hotelNameFromCheckin = String(hotelCheckinMatch?.[1] || '').trim();
+    const hotelLabel = hotelNameFromCheckin && hotelNameFromCheckin.toLowerCase() !== 'hotel'
+      ? hotelNameFromCheckin
+      : String(bestSlot?.toName || 'Hotel').trim();
+
+    const prefix = normalizedBaseline.slice(0, hotelTravelIndex).map((row: any) => ({ ...row }));
+    const suffix = normalizedBaseline.slice(hotelIndex + 1).map((row: any) => ({ ...row }));
+
+    const aToCRow = {
+      ...hotelTravelRow,
+      type: 'travel',
+      item_type: Number(hotelTravelRow?.item_type || 3),
+      text: `Travel to ${selectedLabel}`,
+      name: `Travel to ${selectedLabel}`,
+      fromName: String(fromRow?.text || fromRow?.name || bestSlot?.fromName || 'Previous Stop').trim(),
+      toName: selectedLabel,
+      from: String(fromRow?.text || fromRow?.name || bestSlot?.fromName || 'Previous Stop').trim(),
+      to: selectedLabel,
+      displayFromName: String(fromRow?.text || fromRow?.name || bestSlot?.fromName || 'Previous Stop').trim(),
+      displayToName: selectedLabel,
+      isMatrixSplitTravel: true,
+      isMatrixReconnectedTravel: true,
+      matrixTravelLeg: 'A_TO_C',
+      matrixDistanceKm: bestSlot?.acOsrmDistanceKm != null ? Number(bestSlot.acOsrmDistanceKm) : null,
+      distanceKm: bestSlot?.acOsrmDistanceKm != null ? Number(bestSlot.acOsrmDistanceKm) : null,
+      travelDistanceKm: bestSlot?.acOsrmDistanceKm != null ? Number(bestSlot.acOsrmDistanceKm) : null,
+      matrixDurationMin: acDurationMin,
+      duration: `${acDurationMin} Min`,
+      timeRange: this.minutesRangeToTimeString(acStartMin, acEndMin),
+      locationId: selectedHotspotId,
+      hotspot_ID: selectedHotspotId,
+      hotspotId: selectedHotspotId,
+      hotspot_start_time: null,
+      hotspot_end_time: null,
+    };
+
+    const selectedRow = {
+      ...(selectedFromMaster || {}),
+      type: 'attraction',
+      item_type: 4,
+      locationId: selectedHotspotId,
+      hotspot_ID: selectedHotspotId,
+      hotspotId: selectedHotspotId,
+      text: selectedLabel,
+      name: selectedLabel,
+      isManual: true,
+      isUserSelectedPreview: true,
+      isMatrixPositioned: true,
+      timeRange: this.minutesRangeToTimeString(selectedStartMin, selectedEndMin),
+      isConflict: false,
+      conflictReason: null,
+      matrixFit: {
+        routeFitType: bestSlot?.routeFitType,
+        label: bestSlot?.label,
+        displayLabel: bestSlot?.displayLabel || bestSlot?.label,
+        shortLabel: bestSlot?.shortLabel || bestSlot?.label,
+        fromName: bestSlot?.fromName,
+        toName: bestSlot?.toName,
+        roadDetourKm: bestSlot?.roadDetourKm,
+        isZeroExtraDetour: bestSlot?.isZeroExtraDetour === true,
+        distanceComparisonNote: bestSlot?.distanceComparisonNote || null,
+        roadDetourRatio: bestSlot?.roadDetourRatio,
+        routeDecisionReason: bestSlot?.routeDecisionReason || bestSlot?.decisionReason || null,
+        finalDecisionReason: bestSlot?.finalDecisionReason || 'Selected: destination-side insertion after destination is reached.',
+        routeLegSummary: {
+          directDistanceKm: bestSlot?.abOsrmDistanceKm != null ? Number(bestSlot.abOsrmDistanceKm) : null,
+          viaDistanceKm: bestSlot?.insertedRouteDistanceKm != null ? Number(bestSlot.insertedRouteDistanceKm) : null,
+          extraDistanceKm: bestSlot?.roadDetourKm != null ? Number(bestSlot.roadDetourKm) : null,
+          acDistanceKm: bestSlot?.acOsrmDistanceKm != null ? Number(bestSlot.acOsrmDistanceKm) : null,
+          cbDistanceKm: bestSlot?.cbOsrmDistanceKm != null ? Number(bestSlot.cbOsrmDistanceKm) : null,
+          acDurationMin,
+          cbDurationMin,
+        },
+      },
+      hotspot_start_time: null,
+      hotspot_end_time: null,
+    };
+
+    const cToBRow = {
+      ...hotelTravelRow,
+      type: 'travel',
+      item_type: 5,
+      text: `Travel to ${hotelLabel}`,
+      name: `Travel to ${hotelLabel}`,
+      fromName: selectedLabel,
+      toName: hotelLabel,
+      from: selectedLabel,
+      to: hotelLabel,
+      displayFromName: selectedLabel,
+      displayToName: hotelLabel,
+      isMatrixSplitTravel: true,
+      isMatrixReconnectedTravel: true,
+      matrixTravelLeg: 'C_TO_B',
+      matrixDistanceKm: bestSlot?.cbOsrmDistanceKm != null ? Number(bestSlot.cbOsrmDistanceKm) : null,
+      distanceKm: bestSlot?.cbOsrmDistanceKm != null ? Number(bestSlot.cbOsrmDistanceKm) : null,
+      travelDistanceKm: bestSlot?.cbOsrmDistanceKm != null ? Number(bestSlot.cbOsrmDistanceKm) : null,
+      matrixDurationMin: cbDurationMin,
+      duration: `${cbDurationMin} Min`,
+      timeRange: this.minutesRangeToTimeString(cbStartMin, cbEndMin),
+      locationId: 0,
+      hotspot_ID: 0,
+      hotspotId: 0,
+      hotspot_start_time: null,
+      hotspot_end_time: null,
+    };
+
+    const rebuilt = [
+      ...prefix,
+      aToCRow,
+      selectedRow,
+      cToBRow,
+      {
+        ...hotelRow,
+        timeRange: this.minutesRangeToTimeString(cursor, cursor),
+        hotspot_start_time: null,
+        hotspot_end_time: null,
+        isZeroDurationHotel: true,
+      },
+      ...suffix,
+    ];
+
+    return this.finalizeMatrixPreviewTimeline(rebuilt);
+  }
+
   private async getCachedRouteDurationMinutes(
     tx: any,
     fromHotspotId: number,
@@ -16376,12 +19171,11 @@ const guideSlotCsv = guideSlots.join(',');
       );
     };
 
+    const slotContextUpper = String(bestSlot?.slotContext || '').toUpperCase();
     const isCityEndpointEmptyRoute =
       manualInsertionFit?.emptyRouteCityEndpointMode === true
-      || manualInsertionFit?.cityEndpointInsertionMode === true
       || bestSlot?.emptyRouteCityEndpointMode === true
-      || bestSlot?.cityEndpointInsertionMode === true
-      || String(bestSlot?.slotContext || '').toUpperCase() === 'CITY_TO_CITY';
+      || slotContextUpper === 'CITY_TO_CITY';
 
     if (isCityEndpointEmptyRoute) {
       const hotelIndex = normalizedBaseline.findIndex((row: any) => isHotelLikeRow(row));
@@ -17240,6 +20034,22 @@ const guideSlotCsv = guideSlots.join(',');
     return `${toTimeStr(startMinutes)} - ${toTimeStr(endMinutes)}`;
   }
 
+  private minutesRangeToFitPreviewLabel(startMinutes: number, endMinutes: number): string {
+    const format = (minutes: number): string => {
+      const roundedMinutes = Math.round(minutes);
+      const dayOffset = Math.floor(roundedMinutes / (24 * 60));
+      const normalized = ((roundedMinutes % (24 * 60)) + (24 * 60)) % (24 * 60);
+      const hours = Math.floor(normalized / 60) % 24;
+      const minsRemainder = normalized % 60;
+      const ampm = hours >= 12 ? 'PM' : 'AM';
+      const displayHours = hours % 12 === 0 ? 12 : hours % 12;
+      const label = `${String(displayHours).padStart(1, '0')}:${String(minsRemainder).padStart(2, '0')} ${ampm}`;
+      return dayOffset > 0 ? `${label} +${dayOffset}d` : label;
+    };
+
+    return `${format(startMinutes)} - ${format(endMinutes)}`;
+  }
+
   private normalizeTravelLabelsToNextStop(timeline: any[]): any[] {
     const rows = Array.isArray(timeline) ? timeline : [];
     if (rows.length === 0) return rows;
@@ -17313,11 +20123,14 @@ const guideSlotCsv = guideSlots.join(',');
       beforeHotspotId?: number;
       afterRouteHotspotId?: number;
       beforeRouteHotspotId?: number;
+      allowP3Removal?: boolean;
+      allowP1P2Removal?: boolean;
       allowTopPriorityRemoval?: boolean;
       focusHotspotId?: number;
       previewOnly?: boolean;
       debug?: boolean;
       forceConflictInsertion?: boolean;
+      forceConflictPreferredTimesByHotspotId?: Record<number, { start: Date; end: Date }>;
       exactAnchorMode?: boolean;
       manualTimingPolicy?: ManualHotspotTimingPolicy;
       matrixPreferredSlot?: {
@@ -17447,7 +20260,28 @@ const guideSlotCsv = guideSlots.join(',');
           Number(routeId),
           Number(hotspotId),
           Number(userId || 1),
+          options?.forceConflictPreferredTimesByHotspotId?.[Number(hotspotId)],
         );
+      }
+      const refreshedTimeline = await this.buildRouteTimelineSnapshotAfterManualConflictInsert(
+        tx,
+        Number(planId),
+        Number(routeId),
+      );
+      const refreshedSelectedRows = Array.isArray(refreshedTimeline)
+        ? refreshedTimeline.filter((row: any) => (
+            String(row?.type || '').toLowerCase() === 'attraction' &&
+            requestedHotspotIds.includes(Number(row?.hotspotId || row?.hotspot_ID || row?.locationId || 0))
+          ))
+        : [];
+
+      if (refreshedSelectedRows.length === 0) {
+        console.warn('[FitHere][force_conflict_refreshed_timeline_missing_selected_hotspot]', {
+          planId: Number(planId),
+          routeId: Number(routeId),
+          requestedHotspotIds,
+          refreshedTimelineCount: Array.isArray(refreshedTimeline) ? refreshedTimeline.length : 0,
+        });
       }
       return {
         success: true,
@@ -17457,6 +20291,8 @@ const guideSlotCsv = guideSlots.join(',');
         routeId: Number(routeId),
         hotspotIds: requestedHotspotIds,
         manualTimingPolicy,
+        fullTimeline: refreshedTimeline,
+        routeTimeline: refreshedTimeline,
         message: 'Manual hotspots inserted as conflicts after user confirmation.',
         distanceAndToFro: this.buildDistanceAndToFroLabels({
           totalTravelKm: 0,
@@ -17848,11 +20684,13 @@ const guideSlotCsv = guideSlots.join(',');
         routeId: Number(routeId),
         selectedHotspotIds: requestedHotspotIds,
         userId: Number(userId || 1),
-        manualInsertionFit,
-        manualTimingPolicy,
-        matrixPreferredSlot: options?.matrixPreferredSlot,
-      });
-    }
+      manualInsertionFit,
+      manualTimingPolicy,
+      matrixPreferredSlot: options?.matrixPreferredSlot,
+      allowP1P2Removal: options?.allowP1P2Removal === true,
+      allowTopPriorityRemoval: options?.allowTopPriorityRemoval === true,
+    });
+  }
 
     const preparedByHotspotId = new Map<number, { alreadyExisted: boolean }>();
     for (const hotspotId of requestedHotspotIds) {
@@ -17913,8 +20751,19 @@ const guideSlotCsv = guideSlots.join(',');
         anchorIndex: resolvedAnchorIndex,
       },
       {
+        allowP3Removal: options?.allowP3Removal === true,
+        allowP1P2Removal: options?.allowP1P2Removal === true,
         allowTopPriorityRemoval: options?.allowTopPriorityRemoval === true,
         previewOnly: options?.previewOnly === true,
+        exactAnchorMode: options?.exactAnchorMode === true,
+        afterHotspotId: options?.afterHotspotId,
+        beforeHotspotId: options?.beforeHotspotId,
+        anchorLabel: this.buildManualFitAnchorLabel({
+          anchorType: resolvedAnchorType,
+          anchorIndex: resolvedAnchorIndex,
+          afterHotspotId: options?.afterHotspotId ?? null,
+          beforeHotspotId: options?.beforeHotspotId ?? null,
+        }),
         destinationInsertionMode: manualInsertionFit?.destinationInsertionMode === true,
         destinationMinCandidateIndex: Number(manualInsertionFit?.destinationMinCandidateIndex || 0) || undefined,
         manualTimingPolicy,
@@ -17992,8 +20841,79 @@ const guideSlotCsv = guideSlots.join(',');
             source: 'EXACT_ANCHOR' as const,
           }
         : null;
-    const timelineInsertionFit =
+    const exactAnchorCandidateSlots = [
+      manualInsertionFit?.requestedSlot,
+      manualInsertionFit?.chosenSlot,
+      manualInsertionFit?.bestSlot,
+      ...(Array.isArray(manualInsertionFit?.allSlotResults) ? manualInsertionFit.allSlotResults : []),
+    ].filter(Boolean);
+    const exactAnchorMatchedSlot = requestedExactSlot
+      ? (
+          exactAnchorCandidateSlots.find((slot: any) => (
+            Number(slot?.fromHotspotId || 0) === Number(requestedExactSlot?.fromHotspotId || 0)
+            && Number(slot?.toHotspotId || 0) === Number(requestedExactSlot?.toHotspotId || 0)
+          ))
+          || (
+            Number(requestedExactSlot?.toHotspotId || 0) <= 0
+              ? exactAnchorCandidateSlots.find((slot: any) => (
+                  Number(slot?.fromHotspotId || 0) === Number(requestedExactSlot?.fromHotspotId || 0)
+                  && (
+                    Number(slot?.toHotspotId || 0) === 0
+                    || String(slot?.routeFitType || '').toUpperCase() === 'DESTINATION_SIDE_INSERTION'
+                    || String(slot?.slotContext || '').toUpperCase() === 'LAST_SOURCE_HOTSPOT_TO_DESTINATION_HOTEL'
+                    || String(slot?.source || '').toUpperCase() === 'FINAL_TRAVEL_TO_HOTEL_SPLIT'
+                    || String(slot?.source || '').toUpperCase() === 'DESTINATION_CITY_AFTER_REACHED'
+                  )
+                ))
+              : null
+          )
+          || exactAnchorCandidateSlots.find((slot: any) => (
+            Number(slot?.fromHotspotId || 0) === Number(requestedExactSlot?.fromHotspotId || 0)
+          ))
+        )
+      : null;
+    const computedExactRequestedSlot =
+      exactAnchorMatchedSlot || manualInsertionFit?.requestedSlot || manualInsertionFit?.chosenSlot || manualInsertionFit?.bestSlot || null;
+    const exactAnchorSlotMatchesComputedSlot = Boolean(
       requestedExactSlot
+      && computedExactRequestedSlot
+      && Number(computedExactRequestedSlot?.fromHotspotId || 0) === Number(requestedExactSlot?.fromHotspotId || 0)
+      && (
+        Number(requestedExactSlot?.toHotspotId || 0) > 0
+          ? Number(computedExactRequestedSlot?.toHotspotId || 0) === Number(requestedExactSlot?.toHotspotId || 0)
+          : String(computedExactRequestedSlot?.routeFitType || '').toUpperCase() === 'DESTINATION_SIDE_INSERTION'
+      )
+    );
+    const exactAnchorPreviewSlot =
+      requestedExactSlot
+      && options?.exactAnchorMode === true
+      && (exactAnchorMatchedSlot || manualInsertionFit?.requestedSlot)
+        ? {
+            ...(exactAnchorMatchedSlot || manualInsertionFit?.requestedSlot || {}),
+            ...requestedExactSlot,
+          }
+        : null;
+    const timelineInsertionFit =
+      exactAnchorPreviewSlot
+        ? {
+            ...(manualInsertionFit || {}),
+            chosenSlot: {
+              ...(manualInsertionFit?.requestedSlot || manualInsertionFit?.chosenSlot || manualInsertionFit?.bestSlot || {}),
+              ...exactAnchorPreviewSlot,
+              selectedAsBest: false,
+              source: 'EXACT_ANCHOR',
+              chosenSlotSource: 'EXACT_ANCHOR',
+            },
+            bestSlot: {
+              ...(manualInsertionFit?.requestedSlot || manualInsertionFit?.chosenSlot || manualInsertionFit?.bestSlot || {}),
+              ...exactAnchorPreviewSlot,
+              selectedAsBest: false,
+              source: 'EXACT_ANCHOR',
+              chosenSlotSource: 'EXACT_ANCHOR',
+            },
+            chosenSlotSource: 'EXACT_ANCHOR',
+          }
+        : requestedExactSlot && exactAnchorSlotMatchesComputedSlot
         ? {
             ...(manualInsertionFit || {}),
             chosenSlot: {
@@ -18042,6 +20962,97 @@ const guideSlotCsv = guideSlots.join(',');
     );
 
     if (
+      options?.exactAnchorMode === true
+      && manualInsertionFit?.destinationInsertionMode === true
+      && Number(options?.afterHotspotId || 0) > 0
+      && Number(options?.beforeHotspotId || 0) <= 0
+    ) {
+      let destinationExactAnchorRebuilt = await this.buildMatrixRescheduledPreviewTimeline({
+        baselineTimeline: baselineTimelineForMatrix,
+        enginePreviewTimeline: previewTimeline,
+        manualInsertionFit: timelineInsertionFit,
+        selectedHotspotId: focusHotspotId,
+        hotspotMasters,
+        tx,
+        routeEndMinutes: routeEndMinutesPreview,
+      });
+
+      destinationExactAnchorRebuilt = this.removeManualFitDroppedRowsFromTimeline(
+        destinationExactAnchorRebuilt,
+        removedPreviewHotspots,
+      );
+
+      const rebuiltPreservesAnchor = this.manualFitTimelinePreservesSelectedAnchor({
+        timeline: destinationExactAnchorRebuilt,
+        selectedHotspotId: focusHotspotId,
+        afterHotspotId: options?.afterHotspotId,
+        beforeHotspotId: options?.beforeHotspotId,
+        anchorIntent: options?.anchorIntent,
+      });
+
+      if (
+        rebuiltPreservesAnchor
+        && destinationExactAnchorRebuilt.length > adjustedPreviewTimeline.length
+      ) {
+        adjustedPreviewTimeline = destinationExactAnchorRebuilt;
+      }
+    }
+
+    const destinationPreviewSlot = timelineInsertionFit?.chosenSlot || timelineInsertionFit?.bestSlot || manualInsertionFit?.chosenSlot || manualInsertionFit?.bestSlot || null;
+    const destinationPreviewSlotContext = String(destinationPreviewSlot?.slotContext || '').toUpperCase();
+    const destinationPreviewSlotSource = String(destinationPreviewSlot?.source || '').toUpperCase();
+    const destinationPreviewRouteFitType = String(destinationPreviewSlot?.routeFitType || '').toUpperCase();
+    const isDestinationSidePreviewSlot =
+      timelineInsertionFit?.destinationInsertionMode === true
+      || manualInsertionFit?.destinationInsertionMode === true
+      || destinationPreviewRouteFitType === 'DESTINATION_SIDE_INSERTION'
+      || destinationPreviewSlotContext === 'LAST_SOURCE_HOTSPOT_TO_DESTINATION_HOTEL'
+      || destinationPreviewSlotSource === 'FINAL_TRAVEL_TO_HOTEL_SPLIT'
+      || destinationPreviewSlotSource === 'DESTINATION_CITY_AFTER_REACHED'
+      || (
+        Number(destinationPreviewSlot?.fromHotspotId || 0) > 0
+        && Number(destinationPreviewSlot?.toHotspotId || 0) <= 0
+      );
+    const removedPreviewHotspotIds = removedPreviewHotspots
+      .map((row: any) => Number(this.getManualFitRemovalHotspotId(row) || 0))
+      .filter((id: number) => Number.isFinite(id) && id > 0);
+    const destinationPreviewDroppedBaselineRows =
+      isDestinationSidePreviewSlot
+      && this.destinationSidePreviewDroppedBaselineRows({
+        baselineTimeline: baselineTimelineForMatrix,
+        previewTimeline: adjustedPreviewTimeline,
+        selectedHotspotId: Number(focusHotspotId),
+        removedHotspotIds: removedPreviewHotspotIds,
+      });
+
+    if (destinationPreviewDroppedBaselineRows) {
+      const destinationBaselineRebuilt = this.rebuildDestinationSidePreviewFromBaseline({
+        baselineTimeline: baselineTimelineForMatrix,
+        manualInsertionFit: timelineInsertionFit,
+        selectedHotspotId: Number(focusHotspotId),
+        hotspotMasters,
+      });
+
+      if (destinationBaselineRebuilt.length > adjustedPreviewTimeline.length) {
+        console.warn('[FitHere][destination_side_preview_baseline_rebuild]', {
+          routeId,
+          selectedHotspotId: Number(focusHotspotId),
+          beforeLength: adjustedPreviewTimeline.length,
+          afterLength: destinationBaselineRebuilt.length,
+        });
+        adjustedPreviewTimeline = destinationBaselineRebuilt;
+      } else {
+        console.warn('[FitHere][destination_side_preview_baseline_rebuild_skipped]', {
+          routeId,
+          selectedHotspotId: Number(focusHotspotId),
+          currentLength: adjustedPreviewTimeline.length,
+          rebuiltLength: destinationBaselineRebuilt.length,
+          isDestinationSidePreviewSlot,
+        });
+      }
+    }
+
+    if (
       options?.exactAnchorMode === true &&
       options?.anchorIntent === 'AFTER_ATTRACTION' &&
       !this.manualFitTimelinePreservesSelectedAnchor({
@@ -18060,24 +21071,132 @@ const guideSlotCsv = guideSlots.join(',');
         beforeHotspotId: options?.beforeHotspotId,
       });
 
+      const focusMaster = (hotspotMasters || []).find(
+        (row: any) => Number(row?.hotspot_ID || 0) === Number(focusHotspotId),
+      );
+      const selectedManualPriority = this.resolveSelectedManualPriority({
+        selectedHotspotId: Number(focusHotspotId),
+        manualInsertionFit,
+        options,
+        focusMaster,
+      });
+      const dayEndMinutes = Math.floor(
+        this.hmsToSeconds(
+          TimeConverter.toTimeString(
+            manualTimingPolicy.endTime || route?.route_end_time || '23:00:00',
+          ),
+        ) / 60,
+      );
+      const exactAnchorOverflowMinutes = Math.max(
+        1,
+        Number(
+          this.calculateRouteEndOverflowMinutes(
+            adjustedPreviewTimeline,
+            route,
+            manualTimingPolicy.endTime,
+          )
+          || manualInsertionFit?.dayOverflowMinutes
+          || validation?.routeEndOverflowMinutes
+          || 0,
+        ),
+      );
+      const exactAnchorRemovalPlan = await this.resolveProgressivePriorityRemovalForManualFitInTx(tx, {
+        planId: Number(planId),
+        routeId: Number(routeId),
+        selectedHotspotId: Number(focusHotspotId),
+        selectedManualPriority,
+        currentTimeline: adjustedPreviewTimeline,
+        dayEndMinutes,
+        overflowMinutes: exactAnchorOverflowMinutes,
+        validationMode: 'SELECTED_HOTSPOT_CLOSING',
+        allowP3Removal: true,
+        allowP2Removal: options?.allowP1P2Removal === true || options?.allowTopPriorityRemoval === true,
+        allowP1Removal: options?.allowP1P2Removal === true || options?.allowTopPriorityRemoval === true,
+      });
+      const sameRouteExactAnchorRemovals = await this.filterPlannedRemovalsToSameRouteInTx(
+        tx,
+        Number(planId),
+        Number(routeId),
+        exactAnchorRemovalPlan.removedHotspots || [],
+      );
+      const resolvedExactAnchorRemovals =
+        sameRouteExactAnchorRemovals.length > 0
+          ? sameRouteExactAnchorRemovals
+          : ((exactAnchorRemovalPlan.removedHotspots || []).filter((row: any) => this.getManualFitRemovalHotspotId(row) > 0));
+
+      manualInsertionFit.lowPriorityRemovalPlanPreview = {
+        resolved: exactAnchorRemovalPlan.resolved,
+        algorithm: exactAnchorRemovalPlan.algorithm,
+        originalOverflowMinutes: exactAnchorOverflowMinutes,
+        overflowMinutes: exactAnchorOverflowMinutes,
+        finalOverflowMinutes: Number(exactAnchorRemovalPlan.finalOverflowMinutes || exactAnchorOverflowMinutes),
+        plannedRemovals: exactAnchorRemovalPlan.resolved ? resolvedExactAnchorRemovals : [],
+        candidates: exactAnchorRemovalPlan.candidateHotspots,
+        candidateAudit: exactAnchorRemovalPlan.candidateAudit,
+        simulationAttempts: exactAnchorRemovalPlan.simulationAttempts,
+        rejectedAttempts: exactAnchorRemovalPlan.rejectedAttempts,
+        message: exactAnchorRemovalPlan.message,
+      };
+
+      if (
+        exactAnchorRemovalPlan.resolved === true &&
+        this.manualFitTimelinePreservesSelectedAnchor({
+          timeline: exactAnchorRemovalPlan.finalTimeline,
+          selectedHotspotId: focusHotspotId,
+          afterHotspotId: options?.afterHotspotId,
+          beforeHotspotId: options?.beforeHotspotId,
+          anchorIntent: options?.anchorIntent,
+        })
+      ) {
+        adjustedPreviewTimeline = exactAnchorRemovalPlan.finalTimeline;
+        manualInsertionFit.removedLowPriorityHotspots = resolvedExactAnchorRemovals;
+        manualInsertionFit.rescheduleApplied = true;
+        manualInsertionFit.dayOverflowMinutes = 0;
+      } else {
+      const exactAnchorExhaustedMessage =
+        Array.isArray(exactAnchorRemovalPlan.candidateHotspots) && exactAnchorRemovalPlan.candidateHotspots.length > 0
+          ? 'Could not preserve the selected Fit Here position after trying same-route non-manual hotspot removals.'
+          : (
+              exactAnchorRemovalPlan.message
+              || 'Selected Fit Here anchor could not be preserved. Please try another position.'
+            );
+      manualInsertionFit.lowPriorityRemovalPlanPreview = {
+        ...manualInsertionFit.lowPriorityRemovalPlanPreview,
+        resolved: false,
+        plannedRemovals: [],
+        finalOverflowMinutes: Number(exactAnchorRemovalPlan.finalOverflowMinutes || exactAnchorOverflowMinutes),
+        message: exactAnchorExhaustedMessage,
+      };
+      const attemptedRemovals = [
+        ...(Array.isArray(adaptive?.removedOptionalHotspots) ? adaptive.removedOptionalHotspots : []),
+        ...(Array.isArray(adaptive?.removedTopPriorityHotspots) ? adaptive.removedTopPriorityHotspots : []),
+        ...(Array.isArray(adaptive?.p3HotspotsToRemove) ? adaptive.p3HotspotsToRemove : []),
+        ...resolvedExactAnchorRemovals,
+      ];
+
       return {
         success: false,
         inserted: false,
         fullTimeline: adjustedPreviewTimeline,
         validation: {
           readyToApply: false,
-          reason: 'Selected Fit Here anchor could not be preserved. Please try another position.',
+          reason: exactAnchorExhaustedMessage,
         },
         resolution: {
-          ...(adaptive || {}),
           exactAnchorDrift: true,
-          removedOptionalHotspots: adaptive?.removedOptionalHotspots || [],
-          removedTopPriorityHotspots: adaptive?.removedTopPriorityHotspots || [],
-          shiftedHotspots: adaptive?.shiftedHotspots || [],
+          removedHotspots: [],
+          removedOptionalHotspots: [],
+          removedTopPriorityHotspots: [],
+          p3HotspotsToRemove: [],
+          topPriorityAffected: [],
+          shiftedHotspots: [],
+          attemptedRemovals,
+          lowPriorityRemovalPlanPreview: manualInsertionFit.lowPriorityRemovalPlanPreview,
         },
         manualInsertionFit,
-        message: 'Selected Fit Here anchor could not be preserved.',
+        message: exactAnchorExhaustedMessage,
       };
+      }
     }
 
     if (manualInsertionFit?.destinationInsertionMode === true) {
@@ -18268,7 +21387,7 @@ const guideSlotCsv = guideSlots.join(',');
         this.hmsToSeconds(TimeConverter.toTimeString(manualTimingPolicy.endTime || route?.route_end_time || '23:00:00')) / 60,
       );
 
-      const lowPriorityRemovalPlanPreview = await this.resolveLowPriorityRemovalForMatrixOverflowInTx(tx, {
+      const lowPriorityRemovalPlanPreview = await this.resolveProgressivePriorityRemovalForManualFitInTx(tx, {
         planId: Number(planId),
         routeId: Number(routeId),
         selectedHotspotId: Number(focusHotspotId),
@@ -18276,7 +21395,30 @@ const guideSlotCsv = guideSlots.join(',');
         currentTimeline: adjustedPreviewTimeline,
         dayEndMinutes,
         overflowMinutes: previewOverflowMinutes,
+        validationMode: 'DAY_END',
+        allowP3Removal: true,
+        allowP2Removal: options?.allowP1P2Removal === true || options?.allowTopPriorityRemoval === true,
+        allowP1Removal: options?.allowP1P2Removal === true || options?.allowTopPriorityRemoval === true,
       });
+
+      const sameRouteDayEndResolvedRemovals = await this.filterPlannedRemovalsToSameRouteInTx(
+        tx,
+        Number(planId),
+        Number(routeId),
+        lowPriorityRemovalPlanPreview.removedHotspots || [],
+      );
+      const resolvedDayEndRemovals =
+        sameRouteDayEndResolvedRemovals.length > 0
+          ? sameRouteDayEndResolvedRemovals
+          : ((lowPriorityRemovalPlanPreview.removedHotspots || []).filter((row: any) => this.getManualFitRemovalHotspotId(row) > 0));
+      if (sameRouteDayEndResolvedRemovals.length !== (lowPriorityRemovalPlanPreview.removedHotspots || []).length) {
+        console.warn('[FitHere][cross_route_removal_candidate_blocked]', {
+          planId: Number(planId),
+          routeId: Number(routeId),
+          originalRemovalIds: (lowPriorityRemovalPlanPreview.removedHotspots || []).map((row: any) => row?.id),
+          sameRouteRemovalIds: sameRouteDayEndResolvedRemovals.map((row: any) => row?.id),
+        });
+      }
 
       manualInsertionFit.lowPriorityRemovalPlanPreview = {
         resolved: lowPriorityRemovalPlanPreview.resolved,
@@ -18284,8 +21426,11 @@ const guideSlotCsv = guideSlots.join(',');
         originalOverflowMinutes: previewOverflowMinutes,
         overflowMinutes: previewOverflowMinutes,
         finalOverflowMinutes: lowPriorityRemovalPlanPreview.finalOverflowMinutes,
-        plannedRemovals: lowPriorityRemovalPlanPreview.removedHotspots,
+        plannedRemovals: lowPriorityRemovalPlanPreview.resolved
+          ? resolvedDayEndRemovals
+          : [],
         candidates: lowPriorityRemovalPlanPreview.candidateHotspots,
+        candidateAudit: lowPriorityRemovalPlanPreview.candidateAudit,
         simulationAttempts: lowPriorityRemovalPlanPreview.simulationAttempts,
         rejectedAttempts: lowPriorityRemovalPlanPreview.rejectedAttempts,
         message: lowPriorityRemovalPlanPreview.message,
@@ -18294,12 +21439,12 @@ const guideSlotCsv = guideSlots.join(',');
       if (lowPriorityRemovalPlanPreview.resolved) {
         const finalResolvedTimeline = this.sanitizeResolvedLowPriorityTimeline(
           Array.isArray(lowPriorityRemovalPlanPreview.finalTimeline) ? lowPriorityRemovalPlanPreview.finalTimeline : adjustedPreviewTimeline,
-          lowPriorityRemovalPlanPreview.removedHotspots || [],
+          resolvedDayEndRemovals,
         );
 
         const invariantMessage = this.validateResolvedLowPriorityTimeline(
           finalResolvedTimeline,
-          lowPriorityRemovalPlanPreview.removedHotspots || [],
+          resolvedDayEndRemovals,
           dayEndMinutes,
         );
         if (invariantMessage) {
@@ -18317,7 +21462,7 @@ const guideSlotCsv = guideSlots.join(',');
         manualInsertionFit.exceedsDayEnd = false;
         manualInsertionFit.dayOverflowMinutes = 0;
         manualInsertionFit.overflowResolved = true;
-        manualInsertionFit.removedLowPriorityHotspots = lowPriorityRemovalPlanPreview.removedHotspots || [];
+        manualInsertionFit.removedLowPriorityHotspots = resolvedDayEndRemovals;
         manualInsertionFit.finalArrivalTime = lowPriorityRemovalPlanPreview.finalArrivalTime || manualInsertionFit.finalArrivalTime;
         manualInsertionFit.rescheduleApplied = true;
         manualInsertionFit.fullTimelineIsResolvedRemovalPlan = true;
@@ -18328,7 +21473,7 @@ const guideSlotCsv = guideSlots.join(',');
           resolved: true,
           originalOverflowMinutes: previewOverflowMinutes,
           finalOverflowMinutes: 0,
-          plannedRemovals: lowPriorityRemovalPlanPreview.removedHotspots || [],
+          plannedRemovals: resolvedDayEndRemovals,
           finalTimelineHotspotIds: finalResolvedTimeline
             .map((row: any) => Number(row?.locationId || row?.hotspotId || row?.hotspot_ID || row?.hotspot_id || 0))
             .filter((id: number) => Number.isFinite(id) && id > 0),
@@ -18367,6 +21512,196 @@ const guideSlotCsv = guideSlots.join(',');
       removedPreviewHotspots,
     );
 
+    adjustedPreviewTimeline = await this.enrichManualFitPreviewTimelineWithOperatingHours(
+      Number(planId),
+      Number(routeId),
+      adjustedPreviewTimeline,
+    );
+
+    const selectedClosingOverflow = this.getSelectedManualClosingOverflow({
+      timeline: adjustedPreviewTimeline,
+      selectedHotspotIds: requestedHotspotIds,
+    });
+
+    const shouldRunSelectedClosingResolver =
+      manualInsertionFit?.requiresMatrixBuild !== true &&
+      !!manualInsertionFit?.chosenSlot &&
+      manualInsertionFit?.chosenSlot?.routePossible !== false &&
+      selectedClosingOverflow.hasClosingOverflow === true &&
+      Number(selectedClosingOverflow.latestAllowedEndMinutes || 0) > 0;
+
+    if (shouldRunSelectedClosingResolver) {
+      const focusMaster = (hotspotMasters || []).find(
+        (row: any) => Number(row?.hotspot_ID || 0) === Number(focusHotspotId),
+      );
+
+      const selectedManualPriority = this.resolveSelectedManualPriority({
+        selectedHotspotId: Number(focusHotspotId),
+        manualInsertionFit,
+        options,
+        focusMaster,
+      });
+
+      const dayEndMinutes = Math.floor(
+        this.hmsToSeconds(
+          TimeConverter.toTimeString(
+            manualTimingPolicy.endTime || route?.route_end_time || '23:00:00',
+          ),
+        ) / 60,
+      );
+
+      const openingHoursRemovalPlan = await this.resolveProgressivePriorityRemovalForManualFitInTx(tx, {
+        planId: Number(planId),
+        routeId: Number(routeId),
+        selectedHotspotId: Number(focusHotspotId),
+        selectedManualPriority,
+        currentTimeline: adjustedPreviewTimeline,
+        dayEndMinutes,
+        overflowMinutes: Number(selectedClosingOverflow.overflowMinutes || 0),
+        validationMode: 'SELECTED_HOTSPOT_CLOSING',
+        targetHotspotId: Number(focusHotspotId),
+        targetHotspotLatestEndMinutes: Number(selectedClosingOverflow.latestAllowedEndMinutes || 0),
+        allowP3Removal: options?.allowP3Removal === true || options?.allowTopPriorityRemoval === true,
+        allowP2Removal: options?.allowP1P2Removal === true || options?.allowTopPriorityRemoval === true,
+        allowP1Removal: options?.allowP1P2Removal === true || options?.allowTopPriorityRemoval === true,
+      });
+
+      const sameRouteResolvedRemovals = await this.filterPlannedRemovalsToSameRouteInTx(
+        tx,
+        Number(planId),
+        Number(routeId),
+        openingHoursRemovalPlan.removedHotspots || [],
+      );
+      const resolvedOpeningHourRemovals =
+        sameRouteResolvedRemovals.length > 0
+          ? sameRouteResolvedRemovals
+          : ((openingHoursRemovalPlan.removedHotspots || []).filter((row: any) => this.getManualFitRemovalHotspotId(row) > 0));
+      if (sameRouteResolvedRemovals.length !== (openingHoursRemovalPlan.removedHotspots || []).length) {
+        console.warn('[FitHere][cross_route_removal_candidate_blocked]', {
+          planId: Number(planId),
+          routeId: Number(routeId),
+          originalRemovalIds: (openingHoursRemovalPlan.removedHotspots || []).map((row: any) => row?.id),
+          sameRouteRemovalIds: sameRouteResolvedRemovals.map((row: any) => row?.id),
+        });
+      }
+
+      manualInsertionFit.lowPriorityOpeningHoursRemovalPlanPreview = {
+        resolved: openingHoursRemovalPlan.resolved,
+        algorithm: openingHoursRemovalPlan.algorithm,
+        originalOverflowMinutes: Number(selectedClosingOverflow.overflowMinutes || 0),
+        overflowMinutes: Number(selectedClosingOverflow.overflowMinutes || 0),
+        finalOverflowMinutes: openingHoursRemovalPlan.finalOverflowMinutes,
+        plannedRemovals: openingHoursRemovalPlan.resolved
+          ? resolvedOpeningHourRemovals
+          : [],
+        candidates: openingHoursRemovalPlan.candidateHotspots,
+        candidateAudit: openingHoursRemovalPlan.candidateAudit,
+        simulationAttempts: openingHoursRemovalPlan.simulationAttempts,
+        rejectedAttempts: openingHoursRemovalPlan.rejectedAttempts,
+        message: openingHoursRemovalPlan.message,
+        selectedClosingConflict: selectedClosingOverflow.conflict,
+      };
+
+      if (openingHoursRemovalPlan.resolved) {
+        let finalResolvedTimeline = this.sanitizeResolvedLowPriorityTimeline(
+          Array.isArray(openingHoursRemovalPlan.finalTimeline)
+            ? openingHoursRemovalPlan.finalTimeline
+            : adjustedPreviewTimeline,
+          resolvedOpeningHourRemovals,
+        );
+
+        finalResolvedTimeline = await this.enrichManualFitPreviewTimelineWithOperatingHours(
+          Number(planId),
+          Number(routeId),
+          finalResolvedTimeline,
+        );
+
+        const selectedAfterRescue = this.getSelectedManualClosingOverflow({
+          timeline: finalResolvedTimeline,
+          selectedHotspotIds: requestedHotspotIds,
+        });
+
+        if (selectedAfterRescue.hasClosingOverflow !== true) {
+          adjustedPreviewTimeline = finalResolvedTimeline;
+
+          manualInsertionFit.openingHoursRejected = false;
+          manualInsertionFit.selectedOpeningConflict = null;
+          manualInsertionFit.previewBlockReason = null;
+          manualInsertionFit.canApply = true;
+          manualInsertionFit.overflowResolved = true;
+          manualInsertionFit.rescheduleApplied = true;
+          manualInsertionFit.fullTimelineIsResolvedRemovalPlan = true;
+          manualInsertionFit.timelineSource = 'LOW_PRIORITY_OPENING_HOURS_REMOVAL_FINAL_TIMELINE';
+          manualInsertionFit.removedLowPriorityHotspots = [
+            ...(manualInsertionFit.removedLowPriorityHotspots || []),
+            ...resolvedOpeningHourRemovals,
+          ];
+
+          manualInsertionFit.lowPriorityOpeningHoursRemovalPlanPreview = {
+            ...manualInsertionFit.lowPriorityOpeningHoursRemovalPlanPreview,
+            resolved: true,
+            finalOverflowMinutes: 0,
+            plannedRemovals: resolvedOpeningHourRemovals,
+          };
+
+          finalValidation = {
+            ...finalValidation,
+            passesScheduleRules: true,
+            readyToApply: true,
+            stillUnschedulable: false,
+            routeEndOverflowMinutes: 0,
+            selectedOpeningConflict: null,
+            reason: 'Opening-hours overflow resolved by checking Priority 3 -> Priority 2 -> Priority 1 removals.',
+          };
+        }
+      }
+    }
+
+    let selectedOperatingValidation = this.markSelectedManualOperatingHourConflicts(
+      adjustedPreviewTimeline,
+      requestedHotspotIds,
+    );
+
+    adjustedPreviewTimeline = selectedOperatingValidation.timeline;
+
+    if (isDestinationSidePreviewSlot) {
+      let destinationBaselineRebuilt = this.rebuildDestinationSidePreviewFromBaseline({
+        baselineTimeline: baselineTimelineForMatrix,
+        manualInsertionFit: timelineInsertionFit,
+        selectedHotspotId: Number(focusHotspotId),
+        hotspotMasters,
+      });
+
+      if (destinationBaselineRebuilt.length > 0) {
+        destinationBaselineRebuilt = await this.enrichManualFitPreviewTimelineWithOperatingHours(
+          Number(planId),
+          Number(routeId),
+          destinationBaselineRebuilt,
+        );
+
+        const repairedSelectedOperatingValidation = this.markSelectedManualOperatingHourConflicts(
+          destinationBaselineRebuilt,
+          requestedHotspotIds,
+        );
+
+        console.warn('[FitHere][destination_side_preview_final_repair]', {
+          routeId,
+          selectedHotspotId: Number(focusHotspotId),
+          beforeLength: adjustedPreviewTimeline.length,
+          afterLength: repairedSelectedOperatingValidation.timeline.length,
+        });
+        adjustedPreviewTimeline = repairedSelectedOperatingValidation.timeline;
+        selectedOperatingValidation = repairedSelectedOperatingValidation;
+      }
+    }
+
+    if (selectedOperatingValidation.selectedOpeningConflict) {
+      manualInsertionFit.selectedOpeningConflict = selectedOperatingValidation.selectedOpeningConflict;
+      manualInsertionFit.canApply = false;
+      manualInsertionFit.openingHoursRejected = true;
+      manualInsertionFit.previewBlockReason = 'SELECTED_HOTSPOT_CLOSED_AT_ATTEMPTED_TIME';
+    }
+
     finalValidationBase = this.buildManualHotspotValidation({
       route,
       requestedHotspotIds,
@@ -18380,6 +21715,68 @@ const guideSlotCsv = guideSlots.join(',');
       requiresPriorityConfirmation: finalRequiresConfirmation,
       readyToApply: finalValidationBase.passesScheduleRules && !finalRequiresConfirmation,
     };
+    const unresolvedDayEndOverflowMinutes = Math.max(
+      0,
+      Number(
+        manualInsertionFit?.lowPriorityRemovalPlanPreview?.resolved === true
+          ? 0
+          : (
+              manualInsertionFit?.lowPriorityRemovalPlanPreview?.finalOverflowMinutes
+              || finalValidation?.routeEndOverflowMinutes
+              || finalValidationBase?.routeEndOverflowMinutes
+              || manualInsertionFit?.dayOverflowMinutes
+              || 0
+            ),
+      ),
+    );
+    const hasUnresolvedDayEndRemovalPlan =
+      !!manualInsertionFit?.lowPriorityRemovalPlanPreview
+      && manualInsertionFit.lowPriorityRemovalPlanPreview.resolved !== true
+      && unresolvedDayEndOverflowMinutes > 0;
+
+    if (hasUnresolvedDayEndRemovalPlan) {
+      manualInsertionFit.canApply = false;
+      manualInsertionFit.exceedsDayEnd = true;
+      manualInsertionFit.dayOverflowMinutes = unresolvedDayEndOverflowMinutes;
+      finalValidation = {
+        ...finalValidation,
+        passesScheduleRules: false,
+        readyToApply: false,
+        routeEndOverflowMinutes: unresolvedDayEndOverflowMinutes,
+        reason:
+          manualInsertionFit?.lowPriorityRemovalPlanPreview?.message
+          || finalValidation?.reason
+          || 'Could not resolve route overflow with same-route lower-priority hotspots.',
+      };
+    }
+
+    const timingRisk = this.detectManualFitTimingRisk({
+      timeline: adjustedPreviewTimeline,
+      selectedHotspotId: Number(focusHotspotId),
+    });
+    const hasHardSelectedOpeningConflict =
+      !!manualInsertionFit?.selectedOpeningConflict ||
+      !!finalValidation?.selectedOpeningConflict ||
+      String(manualInsertionFit?.previewBlockReason || '').toUpperCase() === 'SELECTED_HOTSPOT_CLOSED_AT_ATTEMPTED_TIME';
+    const allowsPartialStayRiskConfirmation =
+      !!timingRisk
+      && !hasHardSelectedOpeningConflict
+      && Number(finalValidation?.routeEndOverflowMinutes || 0) <= 0
+      && finalValidation.stillUnschedulable !== true;
+
+    if (allowsPartialStayRiskConfirmation) {
+      manualInsertionFit.canApply = true;
+      finalValidation = {
+        ...finalValidation,
+        passesScheduleRules: true,
+        readyToApply: true,
+        requiresPriorityConfirmation: false,
+        requiresTimingRiskConfirmation: true,
+        requiresForceConfirmation: false,
+        stillUnschedulable: false,
+        reason: timingRisk?.message || finalValidation.reason,
+      };
+    }
 
     const strictTimingValidation = this.validateStrictMatrixTimeline(adjustedPreviewTimeline);
     if (!strictTimingValidation.passes) {
@@ -18420,6 +21817,8 @@ const guideSlotCsv = guideSlots.join(',');
       chosenSlotFeasible
       && selectedManualPresentInPreview
       && !selectedManualConflictInPreview
+      && !manualInsertionFit?.selectedOpeningConflict
+      && manualInsertionFit?.openingHoursRejected !== true
       && Number(finalValidation?.routeEndOverflowMinutes || 0) <= 0
       && finalRequiresConfirmation !== true
     ) {
@@ -18434,6 +21833,17 @@ const guideSlotCsv = guideSlots.join(',');
           ? 'Manual hotspot can be inserted and timeline will be recalculated.'
           : 'Manual hotspot can be inserted in the selected route-fit slot.',
       };
+    }
+
+    if (
+      finalValidation?.readyToApply === true
+      && !finalValidation?.selectedOpeningConflict
+    ) {
+      manualInsertionFit.selectedOpeningConflict = null;
+      manualInsertionFit.openingHoursRejected = false;
+      if (String(manualInsertionFit?.previewBlockReason || '').toUpperCase() === 'SELECTED_HOTSPOT_CLOSED_AT_ATTEMPTED_TIME') {
+        manualInsertionFit.previewBlockReason = null;
+      }
     }
 
     const canForceConflictInsertion =
@@ -18470,6 +21880,10 @@ const guideSlotCsv = guideSlots.join(',');
 
     const success = finalValidation.readyToApply || canForceConflictInsertion;
     const inserted = success;
+    const removedPrioritySummary = this.buildRemovedPrioritySummary([
+      ...allRemovedHotspots,
+      ...(adaptive.p3HotspotsToRemove || []),
+    ]);
     const selectedStrategyKey = String(adaptive.manualOptimizer?.selectedStrategyKey || '').trim();
     const selectedStrategyLabel = String(adaptive.manualOptimizer?.selectedStrategyLabel || '').trim()
       || (finalValidation.readyToApply
@@ -18499,6 +21913,25 @@ const guideSlotCsv = guideSlots.join(',');
       }
     }
 
+    if (
+      options?.previewOnly === true
+      && options?.exactAnchorMode === true
+      && manualInsertionFit?.destinationInsertionMode === true
+    ) {
+      console.log('[FitPreview][final_response_timeline]', {
+        routeId: Number(routeId),
+        selectedHotspotIds: requestedHotspotIds,
+        timelineLength: Array.isArray(adjustedPreviewTimeline) ? adjustedPreviewTimeline.length : 0,
+        rows: (Array.isArray(adjustedPreviewTimeline) ? adjustedPreviewTimeline : []).map((row: any, index: number) => ({
+          index,
+          type: String(row?.type || row?.item_type || ''),
+          text: String(row?.text || row?.name || ''),
+          hotspotId: Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || 0) || null,
+          timeRange: String(row?.timeRange || ''),
+        })),
+      });
+    }
+
     const response = {
       ...enginePreview,
       success,
@@ -18514,9 +21947,19 @@ const guideSlotCsv = guideSlots.join(',');
       selectedStrategyLabel,
       canForceConflict: canForceConflictInsertion,
       finalConflictModeOnly,
+      timingRisk,
+      requiresTimingRiskConfirmation: finalValidation?.requiresTimingRiskConfirmation === true,
+      confirmButtonVariant: (
+        timingRisk
+        || removedPrioritySummary.requiresPriorityRemovalConfirmation === true
+        || removedPrioritySummary.highestRemovedPriority === 1
+        || removedPrioritySummary.highestRemovedPriority === 2
+      ) ? 'danger' : 'default',
+      removedPrioritySummary,
       manualOptimizer: adaptive.manualOptimizer || null,
       distanceAndToFro: adaptive.insertionMetrics,
       manualInsertionFit: {
+        ...(manualInsertionFit || {}),
         ...(timelineInsertionFit || {}),
         manualTimingPolicy,
       },
@@ -18536,14 +21979,14 @@ const guideSlotCsv = guideSlots.join(',');
                 ? 'MANUAL_HOTSPOT_INSERTED_WITH_MATRIX_SLOT'
                 : undefined)),
       message: finalRequiresConfirmation
-        ? 'P3 hotspot removal confirmation required.'
+        ? 'Priority 3 hotspot removal confirmation required.'
         : (canForceConflictInsertion
             ? 'Manual hotspots inserted as conflicts after user confirmation.'
             : !finalValidation.passesScheduleRules
             ? (selectedStrategyKey === 'opening_urgency' && Number(finalValidation?.selectedManualConflictCount || 0) > 0
                 ? 'Opening-hours rescue was attempted, but the selected manual hotspot would end after its closing window.'
                 : (removedPreviewHotspots.length > 0
-                ? 'P3 hotspot was removed, but the selected manual hotspot still conflicts with opening/timing rules.'
+                ? 'A Priority 3 hotspot was removed, but the selected manual hotspot still conflicts with opening/timing rules.'
                 : (Number(finalValidation.routeEndOverflowMinutes || manualInsertionFit?.dayOverflowMinutes || 0) > 0
                   ? (manualInsertionFit?.lowPriorityRemovalPlanPreview?.resolved === true
                     ? (manualInsertionFit?.lowPriorityRemovalPlanPreview?.message || 'Manual hotspot can be applied by removing lower-priority hotspots from this route.')
@@ -18561,9 +22004,13 @@ const guideSlotCsv = guideSlots.join(',');
         },
         requiresConfirmation: finalRequiresConfirmation,
         requiresP3RemovalConfirmation: adaptive.requiresP3RemovalConfirmation === true,
+        requiresTimingRiskConfirmation: finalValidation?.requiresTimingRiskConfirmation === true,
+        requiresPriorityRemovalConfirmation: removedPrioritySummary.requiresPriorityRemovalConfirmation === true,
         forceConflictInsertionApplied: canForceConflictInsertion,
         canForceConflict: canForceConflictInsertion,
         finalConflictModeOnly,
+        timingRisk,
+        removedPrioritySummary,
         removedOptionalHotspots: adaptive.removedOptionalHotspots,
         removedTopPriorityHotspots: finalRemovedTopPriority,
         p3HotspotsToRemove: adaptive.p3HotspotsToRemove || [],
@@ -18598,24 +22045,66 @@ const guideSlotCsv = guideSlots.join(',');
     };
 
     if (success && options?.previewOnly !== true) {
-      const insertedRow = await (tx as any).dvi_itinerary_route_hotspot_details.findFirst({
+      const insertedRows = await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
         where: {
           itinerary_plan_ID: Number(planId),
           itinerary_route_ID: Number(routeId),
-          hotspot_ID: Number(focusHotspotId),
+          hotspot_ID: { in: requestedHotspotIds },
           item_type: 4,
           deleted: 0,
           hotspot_plan_own_way: 1,
         },
-        orderBy: { route_hotspot_ID: 'desc' },
-        select: { route_hotspot_ID: true, hotspot_order: true, hotspot_ID: true },
+        orderBy: [
+          { hotspot_order: 'asc' },
+          { route_hotspot_ID: 'desc' },
+        ],
+        select: {
+          route_hotspot_ID: true,
+          hotspot_order: true,
+          hotspot_ID: true,
+        },
       });
-      console.log('[ManualHotspotApply] inserted row id', {
+
+      const insertedRowByHotspotId = new Map<number, any>();
+      for (const row of insertedRows || []) {
+        const hotspotId = Number(row?.hotspot_ID || 0);
+        if (hotspotId > 0 && !insertedRowByHotspotId.has(hotspotId)) {
+          insertedRowByHotspotId.set(hotspotId, row);
+        }
+      }
+
+      const focusInsertedRow = insertedRowByHotspotId.get(Number(focusHotspotId)) || null;
+      const focusRouteHotspotId = Number(focusInsertedRow?.route_hotspot_ID || 0) || null;
+
+      response.routeHotspotId = focusRouteHotspotId;
+
+      response.resolution = {
+        ...(response.resolution || {}),
+        scheduledManualHotspots: Array.isArray(response?.resolution?.scheduledManualHotspots)
+          ? response.resolution.scheduledManualHotspots.map((row: any) => {
+              const hotspotId = Number(row?.hotspotId || row?.id || 0);
+              const insertedRow = insertedRowByHotspotId.get(hotspotId) || null;
+
+              return {
+                ...row,
+                hotspotId,
+                routeHotspotId: Number(insertedRow?.route_hotspot_ID || 0) || row?.routeHotspotId || null,
+                isManual: true,
+                planOwnWay: true,
+              };
+            })
+          : [],
+      };
+
+      console.log('[ManualHotspotApply] inserted row ids', {
         planId: Number(planId),
         routeId: Number(routeId),
-        routeHotspotId: Number(insertedRow?.route_hotspot_ID || 0) || null,
-        hotspotOrder: Number(insertedRow?.hotspot_order || 0) || null,
-        hotspotId: Number(insertedRow?.hotspot_ID || 0) || null,
+        routeHotspotId: focusRouteHotspotId,
+        insertedRows: (insertedRows || []).map((row: any) => ({
+          routeHotspotId: Number(row?.route_hotspot_ID || 0) || null,
+          hotspotOrder: Number(row?.hotspot_order || 0) || null,
+          hotspotId: Number(row?.hotspot_ID || 0) || null,
+        })),
       });
     }
 
@@ -18930,14 +22419,593 @@ const guideSlotCsv = guideSlots.join(',');
   private parsePreviewTimeToMinutes(value: any): number | null {
     const raw = String(value || '').trim();
     if (!raw) return null;
-    const match = raw.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
-    if (!match) return null;
-    let hour = Number(match[1]);
-    const minute = Number(match[2]);
-    const ampm = String(match[3] || '').toUpperCase();
-    if (ampm === 'AM' && hour === 12) hour = 0;
-    if (ampm === 'PM' && hour !== 12) hour += 12;
+    const twelveHourMatch = raw.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+    if (twelveHourMatch) {
+      let hour = Number(twelveHourMatch[1]);
+      const minute = Number(twelveHourMatch[2]);
+      const ampm = String(twelveHourMatch[3] || '').toUpperCase();
+      if (ampm === 'AM' && hour === 12) hour = 0;
+      if (ampm === 'PM' && hour !== 12) hour += 12;
+      return (hour * 60) + minute;
+    }
+
+    const twentyFourHourMatch = raw.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+    if (!twentyFourHourMatch) return null;
+    const hour = Number(twentyFourHourMatch[1]);
+    const minute = Number(twentyFourHourMatch[2]);
+    if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
+    if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
     return (hour * 60) + minute;
+  }
+
+  private formatManualDurationMinutes(minutes: number): string {
+    const safe = Number.isFinite(minutes) ? Math.max(0, Math.round(minutes)) : 0;
+    const hours = Math.floor(safe / 60);
+    const mins = safe % 60;
+    if (hours > 0 && mins > 0) return `${hours} hour ${mins} minute${mins === 1 ? '' : 's'}`;
+    if (hours > 0) return `${hours} hour${hours === 1 ? '' : 's'}`;
+    return `${mins} minute${mins === 1 ? '' : 's'}`;
+  }
+
+  private formatMinutesHuman(minutes: number): string {
+    const safeMinutes = Math.max(0, Math.round(Number(minutes || 0)));
+
+    if (safeMinutes < 60) {
+      return `${safeMinutes} minute${safeMinutes === 1 ? '' : 's'}`;
+    }
+
+    const hours = Math.floor(safeMinutes / 60);
+    const mins = safeMinutes % 60;
+
+    if (mins === 0) {
+      return `${hours} hour${hours === 1 ? '' : 's'}`;
+    }
+
+    return `${hours} hour${hours === 1 ? '' : 's'} ${mins} minute${mins === 1 ? '' : 's'}`;
+  }
+
+  private parseTimeRangeParts(value: unknown): { start: string | null; end: string | null } {
+    const raw = String(value || '').trim();
+    if (!raw) return { start: null, end: null };
+
+    const parts = raw.split(/\s*-\s*/);
+    return {
+      start: parts[0]?.trim() || null,
+      end: parts[1]?.trim() || null,
+    };
+  }
+
+  private extractOpeningTimeFromOperatingHours(value: unknown): string | null {
+    const raw = String(value || '').trim();
+    if (!raw) return null;
+
+    const matches = raw.match(/\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM)?/gi) || [];
+    return matches[0] || null;
+  }
+
+  private extractClosingTimeFromOperatingHours(value: unknown): string | null {
+    const raw = String(value || '').trim();
+    if (!raw) return null;
+
+    const matches = raw.match(/\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM)?/gi) || [];
+    if (matches.length < 2) return null;
+
+    return matches[matches.length - 1] || null;
+  }
+
+  private isAttractionTimelineRow(row: any): boolean {
+    const type = String(row?.type || row?.rowType || '').trim().toLowerCase();
+    const itemType = Number(row?.item_type || row?.itemType || 0);
+
+    return (
+      type === 'attraction' ||
+      type === 'hotspot' ||
+      itemType === 4
+    );
+  }
+
+  private getTimelineRowHotspotId(row: any): number {
+    return Number(
+      row?.hotspotId ||
+      row?.hotspot_ID ||
+      row?.hotspot_id ||
+      row?.locationId ||
+      row?.location_id ||
+      0,
+    ) || 0;
+  }
+
+  private findAttemptedAttractionRowForHotspot(params: {
+    attemptedTimeline?: any[];
+    hotspotId: number;
+  }): any | null {
+    const hotspotId = Number(params.hotspotId || 0);
+    if (!(hotspotId > 0) || !Array.isArray(params.attemptedTimeline)) {
+      return null;
+    }
+
+    return params.attemptedTimeline.find((row: any) => (
+      this.isAttractionTimelineRow(row) &&
+      this.getTimelineRowHotspotId(row) === hotspotId
+    )) || null;
+  }
+
+  private getPriorityLabel(priority: unknown): string {
+    const value = Number(priority || 0);
+    if (value === 1) return 'Priority 1';
+    if (value === 2) return 'Priority 2';
+    if (value === 3) return 'Priority 3';
+    return 'Priority';
+  }
+
+  private getRemovedHotspotVisitTime(row: any): string | null {
+    return String(
+      row?.timeRange ||
+      row?.visitTime ||
+      row?.hotspot_visit_time ||
+      (
+        row?.startTime && row?.endTime
+          ? `${row.startTime} - ${row.endTime}`
+          : ''
+      ) ||
+      (
+        row?.hotspot_start_time && row?.hotspot_end_time
+          ? `${row.hotspot_start_time} - ${row.hotspot_end_time}`
+          : ''
+      ) ||
+      '',
+    ).trim() || null;
+  }
+
+  private getRemovedHotspotOperatingHours(row: any): string | null {
+    return String(
+      row?.timings ||
+      row?.operatingHours ||
+      row?.openingHours ||
+      row?.hotspot_timing ||
+      row?.hotspot_timings ||
+      row?.hotspotTiming ||
+      '',
+    ).trim() || null;
+  }
+
+  private enrichRemovedHotspotCandidateWithAttempt(params: {
+    candidate: any;
+    attemptedTimeline?: any[];
+    attemptedTimelineSource?:
+      | 'EXACT_ANCHOR_SEQUENTIAL_REBUILD'
+      | 'FAILED_BEFORE_REMOVAL'
+      | 'AFTER_REMOVAL'
+      | 'FINAL_PROPOSED_TIMELINE'
+      | 'UNKNOWN';
+  }): any {
+    const candidateHotspotId = Number(
+      params.candidate?.hotspotId ||
+      params.candidate?.id ||
+      params.candidate?.hotspot_ID ||
+      0,
+    );
+
+    const attemptedAttractionRow = this.findAttemptedAttractionRowForHotspot({
+      attemptedTimeline: params.attemptedTimeline,
+      hotspotId: candidateHotspotId,
+    });
+
+    const attemptedVisitTime = attemptedAttractionRow
+      ? String(
+          attemptedAttractionRow?.visitTime ||
+          attemptedAttractionRow?.timeRange ||
+          attemptedAttractionRow?.hotspot_visit_time ||
+          '',
+        ).trim() || null
+      : null;
+
+    const attemptedRange = this.parseTimeRangeParts(attemptedVisitTime);
+
+    return {
+      ...params.candidate,
+
+      // Never use travel-time rows as attraction visit attempts.
+      attemptedVisitTime,
+      attemptedArrivalTime:
+        attemptedAttractionRow?.arrivalTime ||
+        attemptedRange.start ||
+        null,
+      attemptedEndTime:
+        attemptedAttractionRow?.departureTime ||
+        attemptedRange.end ||
+        null,
+      operatingHours:
+        params.candidate?.operatingHours ||
+        params.candidate?.timings ||
+        params.candidate?.hotspot_timing ||
+        attemptedAttractionRow?.timings ||
+        attemptedAttractionRow?.operatingHours ||
+        null,
+      outsideOperatingMinutes:
+        attemptedAttractionRow?.outsideOperatingMinutes ||
+        attemptedAttractionRow?.openingHoursOverflowMinutes ||
+        attemptedAttractionRow?.closingOverflowMinutes ||
+        params.candidate?.outsideOperatingMinutes ||
+        0,
+      attemptedVisitSource: attemptedAttractionRow ? 'ATTRACTION_ROW' : 'NONE',
+      attemptedTimelineSource: params.attemptedTimelineSource || 'UNKNOWN',
+    };
+  }
+
+  private buildRemovedHotspotExplanation(params: {
+    row: any;
+    priority: number;
+    removalStage: 'P3_FIRST' | 'P2_AFTER_P3' | 'P1_AFTER_P3_P2' | 'OPTIONAL';
+    reasonCode?:
+      | 'ARRIVAL_AFTER_CLOSING'
+      | 'VISIT_END_AFTER_CLOSING'
+      | 'ARRIVAL_BEFORE_OPENING'
+      | 'ROUTE_END_OVERFLOW'
+      | 'LOWER_PRIORITY_REMOVAL_REQUIRED'
+      | 'OPENING_HOURS_CONFLICT'
+      | 'ANCHOR_PRESERVATION'
+      | 'MANUAL_HOTSPOT_TIME_WINDOW'
+      | 'UNPROVEN_REMOVAL'
+      | 'UNKNOWN';
+    manualHotspotName?: string;
+    anchorLabel?: string | null;
+    routeEndOverflowMinutes?: number;
+    routeEndTime?: string | null;
+    openingHourConflictCount?: number;
+    openingHoursOverflowMinutes?: number;
+  }): any {
+    const priorityLabel = this.getPriorityLabel(params.priority);
+    const name = String(
+      params.row?.name ||
+      params.row?.hotspotName ||
+      params.row?.hotspot_name ||
+      `Hotspot #${params.row?.hotspotId || params.row?.id || ''}`,
+    ).trim();
+
+    const originalVisitTime = this.getRemovedHotspotVisitTime(params.row);
+    const operatingHours = this.getRemovedHotspotOperatingHours(params.row);
+    const routeEndOverflowMinutes = Math.max(0, Number(params.routeEndOverflowMinutes || 0));
+    const openingHourConflictCount = Number(params.openingHourConflictCount || 0);
+    const manualHotspotName = String(params.manualHotspotName || 'the selected manual hotspot').trim();
+
+    const attemptedVisitTime = String(
+      params.row?.attemptedVisitTime ||
+      params.row?.newVisitTime ||
+      params.row?.proposedVisitTime ||
+      params.row?.recalculatedVisitTime ||
+      '',
+    ).trim() || null;
+
+    const attemptedRange = this.parseTimeRangeParts(attemptedVisitTime);
+
+    const attemptedArrivalTime = String(
+      params.row?.attemptedArrivalTime ||
+      params.row?.arrivalTime ||
+      attemptedRange.start ||
+      '',
+    ).trim() || null;
+
+    const attemptedEndTime = String(
+      params.row?.attemptedEndTime ||
+      params.row?.departureTime ||
+      attemptedRange.end ||
+      '',
+    ).trim() || null;
+
+    const openingTime = String(
+      params.row?.openingTime ||
+      this.extractOpeningTimeFromOperatingHours(operatingHours) ||
+      '',
+    ).trim() || null;
+
+    const closingTime = String(
+      params.row?.closingTime ||
+      this.extractClosingTimeFromOperatingHours(operatingHours) ||
+      '',
+    ).trim() || null;
+
+    const outsideOperatingMinutes = Math.max(
+      0,
+      Number(
+        params.row?.outsideOperatingMinutes ||
+        params.row?.openingHoursOverflowMinutes ||
+        params.row?.closingOverflowMinutes ||
+        params.openingHoursOverflowMinutes ||
+        0,
+      ),
+    );
+
+    const routeEndTime = String(params.row?.routeEndTime || params.routeEndTime || '').trim() || null;
+    const routeEndOverflowBeforeRemoval = Math.max(
+      0,
+      Number(params.row?.routeEndOverflowBeforeRemoval ?? params.routeEndOverflowMinutes ?? 0),
+    );
+    const routeEndOverflowAfterRemoval = Math.max(0, Number(params.row?.routeEndOverflowAfterRemoval ?? 0));
+    const openingHourConflictCountBeforeRemoval = Math.max(
+      0,
+      Number(params.row?.openingHourConflictCountBeforeRemoval ?? params.openingHourConflictCount ?? 0),
+    );
+    const openingHourConflictCountAfterRemoval = Math.max(0, Number(params.row?.openingHourConflictCountAfterRemoval ?? 0));
+    const removalImprovedFeasibility = params.row?.removalImprovedFeasibility === true;
+    const attemptedTimelineSource = String(params.row?.attemptedTimelineSource || 'UNKNOWN');
+
+    let removalReasonCode = params.reasonCode || 'LOWER_PRIORITY_REMOVAL_REQUIRED';
+
+    let reason = '';
+    if (params.removalStage === 'P3_FIRST') {
+      reason = `Removed first because this is a ${priorityLabel} hotspot and lower-priority rows are removed before higher-priority rows.`;
+    } else if (params.removalStage === 'P2_AFTER_P3') {
+      reason = 'Removed after Priority 3 removals were not enough to fit the selected manual hotspot.';
+    } else if (params.removalStage === 'P1_AFTER_P3_P2') {
+      reason = 'Removed only after Priority 3 and Priority 2 removals were exhausted.';
+    } else {
+      reason = 'Removed because this optional/lower-priority hotspot conflicts with the selected manual hotspot insertion.';
+    }
+
+    let fitFailureExplanation = '';
+
+    if (attemptedArrivalTime && closingTime && outsideOperatingMinutes > 0) {
+      removalReasonCode = 'ARRIVAL_AFTER_CLOSING';
+      fitFailureExplanation =
+        `After inserting ${manualHotspotName}, the guest would reach ${name} at ${attemptedArrivalTime}, but it closes at ${closingTime}. It is outside operating hours by ${this.formatMinutesHuman(outsideOperatingMinutes)}.`;
+    } else if (attemptedEndTime && closingTime && outsideOperatingMinutes > 0) {
+      removalReasonCode = 'VISIT_END_AFTER_CLOSING';
+      fitFailureExplanation =
+        `After inserting ${manualHotspotName}, the visit to ${name} would continue until ${attemptedEndTime}, but it closes at ${closingTime}. It exceeds operating hours by ${this.formatMinutesHuman(outsideOperatingMinutes)}.`;
+    } else if (attemptedArrivalTime && openingTime && outsideOperatingMinutes > 0) {
+      removalReasonCode = 'ARRIVAL_BEFORE_OPENING';
+      fitFailureExplanation =
+        `After inserting ${manualHotspotName}, the guest would reach ${name} at ${attemptedArrivalTime}, before it opens at ${openingTime}. It is outside operating hours by ${this.formatMinutesHuman(outsideOperatingMinutes)}.`;
+    } else if (routeEndOverflowMinutes > 0) {
+      removalReasonCode = 'ROUTE_END_OVERFLOW';
+      fitFailureExplanation =
+        `Keeping ${name} would push the route beyond the allowed day${routeEndTime ? ` end time of ${routeEndTime}` : ' end time'} by ${this.formatMinutesHuman(routeEndOverflowMinutes)} after inserting ${manualHotspotName}.`;
+    } else if (openingHourConflictCount > 0) {
+      removalReasonCode = 'OPENING_HOURS_CONFLICT';
+      fitFailureExplanation =
+        `After inserting ${manualHotspotName}, keeping ${name} creates an opening-hours conflict in the recalculated route.`;
+    } else if (attemptedVisitTime && operatingHours && outsideOperatingMinutes <= 0) {
+      removalReasonCode = 'UNPROVEN_REMOVAL';
+      fitFailureExplanation =
+        `${name} is open during the recalculated visit time of ${attemptedVisitTime}. Its operating hours are ${operatingHours}. No direct operating-hours conflict or route-end overflow was proven for this hotspot, so this removal requires additional route-feasibility evidence.`;
+    } else if (originalVisitTime && operatingHours) {
+      removalReasonCode = 'UNPROVEN_REMOVAL';
+      fitFailureExplanation =
+        `${name} was originally planned at ${originalVisitTime}, and its operating hours are ${operatingHours}. The system did not prove a direct timing violation for this hotspot.`;
+    } else {
+      removalReasonCode = 'UNPROVEN_REMOVAL';
+      fitFailureExplanation =
+        `The optimizer selected ${name} for removal, but no direct operating-hours conflict, route-end overflow, or downstream route failure was attached as proof.`;
+    }
+
+    if (params.anchorLabel && !/selected fit here position/i.test(fitFailureExplanation)) {
+      fitFailureExplanation += ` Selected position: ${params.anchorLabel}.`;
+    }
+
+    const attemptedVisitSource = String(params.row?.attemptedVisitSource || '').trim();
+    const safeAttemptedVisitTime =
+      attemptedVisitSource === 'ATTRACTION_ROW'
+        ? attemptedVisitTime
+        : null;
+
+    const safeAttemptedArrivalTime =
+      attemptedVisitSource === 'ATTRACTION_ROW'
+        ? attemptedArrivalTime
+        : null;
+
+    const safeAttemptedEndTime =
+      attemptedVisitSource === 'ATTRACTION_ROW'
+        ? attemptedEndTime
+        : null;
+    const isWithinOperatingHours =
+      Boolean(safeAttemptedVisitTime && operatingHours) &&
+      outsideOperatingMinutes <= 0;
+    const hasProvenTimingReason =
+      outsideOperatingMinutes > 0 ||
+      routeEndOverflowMinutes > 0 ||
+      openingHourConflictCount > 0;
+
+    return {
+      id: Number(params.row?.hotspotId || params.row?.id || params.row?.hotspot_ID || 0),
+      hotspotId: Number(params.row?.hotspotId || params.row?.id || params.row?.hotspot_ID || 0),
+      routeHotspotId: Number(params.row?.routeHotspotId || params.row?.route_hotspot_ID || 0) || null,
+      name,
+      priority: params.priority,
+      priorityLabel,
+      originalVisitTime,
+      attemptedVisitTime: safeAttemptedVisitTime,
+      attemptedArrivalTime: safeAttemptedArrivalTime,
+      attemptedEndTime: safeAttemptedEndTime,
+      attemptedVisitSource,
+      attemptedTimelineSource,
+      openingTime,
+      closingTime,
+      outsideOperatingMinutes,
+      operatingHours,
+      isWithinOperatingHours,
+      routeEndTime,
+      routeEndOverflowMinutes,
+      routeEndOverflowBeforeRemoval,
+      routeEndOverflowAfterRemoval,
+      openingHourConflictCount,
+      openingHourConflictCountBeforeRemoval,
+      openingHourConflictCountAfterRemoval,
+      removalImprovedFeasibility,
+      hasProvenTimingReason,
+      removalStage: params.removalStage,
+      removalReasonCode,
+      reason,
+      fitFailureExplanation,
+    };
+  }
+
+  private detectManualFitTimingRisk(params: {
+    timeline: any[];
+    selectedHotspotId: number;
+  }): ManualFitTimingRisk | null {
+    const timeline = Array.isArray(params.timeline) ? params.timeline : [];
+    const selectedHotspotId = Number(params.selectedHotspotId || 0);
+    if (!(selectedHotspotId > 0)) return null;
+
+    const selectedRow = timeline.find((row: any) => {
+      const isAttraction = String(row?.type || '').toLowerCase() === 'attraction' || Number(row?.item_type || 0) === 4;
+      if (!isAttraction) return false;
+      const hotspotId = Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || row?.hotspot_id || 0);
+      return hotspotId === selectedHotspotId;
+    });
+
+    if (!selectedRow) return null;
+
+    const timeRange = String(selectedRow?.timeRange || selectedRow?.visitTime || '').trim();
+    if (!timeRange.includes('-')) return null;
+
+    const startPart = timeRange.split('-')[0]?.trim() || '';
+    const endPart = timeRange.split('-')[1]?.trim() || '';
+    const startMin = this.parsePreviewTimeToMinutes(startPart);
+    const endMin = this.parsePreviewTimeToMinutes(endPart);
+    const closingMinute = this.parseManualHotspotLatestClosingMinute(selectedRow?.timings);
+
+    if (startMin === null || endMin === null) return null;
+    if (!(closingMinute > 0) || closingMinute >= 24 * 60) return null;
+    if (startMin >= closingMinute || endMin <= closingMinute || endMin <= startMin) return null;
+
+    const requestedDurationMinutes = Math.max(0, endMin - startMin);
+    const usableDurationMinutes = Math.max(0, closingMinute - startMin);
+    const overflowMinutes = Math.max(0, endMin - closingMinute);
+    if (requestedDurationMinutes <= 0 || usableDurationMinutes <= 0 || overflowMinutes <= 0) return null;
+
+    const severity: 'warning' | 'danger' =
+      overflowMinutes >= 30 || usableDurationMinutes < Math.ceil(requestedDurationMinutes * 0.6)
+        ? 'danger'
+        : 'warning';
+
+    const hotspotName = String(
+      selectedRow?.name ||
+      selectedRow?.hotspot_name ||
+      selectedRow?.text ||
+      `Hotspot #${selectedHotspotId}`,
+    ).trim();
+    const closingTime = this.formatTime(this.minutesToUtcTimeDate(closingMinute) as any);
+
+    return {
+      type: 'PARTIAL_STAY_AFTER_CLOSING',
+      severity,
+      hotspotId: selectedHotspotId,
+      hotspotName,
+      proposedVisitStart: startPart,
+      proposedVisitEnd: endPart,
+      closingTime,
+      requestedDurationMinutes,
+      usableDurationMinutes,
+      overflowMinutes,
+      message: `${hotspotName} closes at ${closingTime}. Your planned stay continues until ${endPart}, so you will have only about ${this.formatManualDurationMinutes(usableDurationMinutes)} of usable time instead of ${this.formatManualDurationMinutes(requestedDurationMinutes)}.`,
+      canForceConfirm: true,
+    };
+  }
+
+  private buildRemovedPrioritySummary(removedRows: any[]) {
+    const rows = Array.isArray(removedRows) ? removedRows : [];
+    const removedP3 = rows.filter((row: any) => Number(row?.priority || 0) === 3).length;
+    const removedP2 = rows.filter((row: any) => Number(row?.priority || 0) === 2).length;
+    const removedP1 = rows.filter((row: any) => Number(row?.priority || 0) === 1).length;
+    const highestRemovedPriority = removedP1 > 0 ? 1 : removedP2 > 0 ? 2 : removedP3 > 0 ? 3 : null;
+    const requiresPriorityRemovalConfirmation = rows.length > 0;
+    const severity: 'none' | 'warning' | 'danger' =
+      highestRemovedPriority === null
+        ? 'none'
+        : highestRemovedPriority <= 2
+          ? 'danger'
+          : 'warning';
+    const message =
+      highestRemovedPriority === null
+        ? 'No existing route hotspot removal is required.'
+        : highestRemovedPriority === 3
+          ? 'This manual insertion will remove existing hotspots. Removal order used: Priority 3 -> Priority 2 -> Priority 1.'
+          : 'This manual insertion will remove existing priority hotspots. Removal order used: Priority 3 -> Priority 2 -> Priority 1.';
+
+    return {
+      removedP3,
+      removedP2,
+      removedP1,
+      highestRemovedPriority,
+      removalOrder: [3, 2, 1],
+      requiresPriorityRemovalConfirmation,
+      severity,
+      message,
+    };
+  }
+
+  private buildManualFitChangesRequiredDisplay(params: {
+    removedHotspots?: any[];
+    affectedPriorityHotspots?: any[];
+    removedPrioritySummary?: any;
+  }): {
+    hasRemovals: boolean;
+    title: string;
+    removalOrderLabel: string;
+    removedItems: Array<{
+      hotspotId: number;
+      routeHotspotId?: number | null;
+      name: string;
+      workPriority: number | null;
+      workPriorityLabel: string;
+      reason?: string | null;
+    }>;
+    noRemovalText: string;
+  } {
+    const getHotspotId = (row: any): number =>
+      Number(row?.id || row?.hotspotId || row?.hotspot_ID || row?.hotspot_id || row?.locationId || 0);
+
+    const getRouteHotspotId = (row: any): number | null => {
+      const value = Number(row?.routeHotspotId || row?.route_hotspot_ID || row?.route_hotspot_id || 0);
+      return Number.isFinite(value) && value > 0 ? value : null;
+    };
+
+    const getName = (row: any): string =>
+      String(row?.name || row?.hotspotName || row?.hotspot_name || row?.title || row?.text || `Hotspot #${getHotspotId(row)}`);
+
+    const getPriority = (row: any): number | null => {
+      const value = Number(row?.priority || row?.hotspotPriority || row?.hotspot_priority || row?.rawPriority || 0);
+      return Number.isFinite(value) && value > 0 ? value : null;
+    };
+
+    const seen = new Set<number>();
+
+    const removedItems = (Array.isArray(params.removedHotspots) ? params.removedHotspots : [])
+      .map((row: any) => {
+        const hotspotId = getHotspotId(row);
+        const workPriority = getPriority(row);
+
+        return {
+          hotspotId,
+          routeHotspotId: getRouteHotspotId(row),
+          name: getName(row),
+          workPriority,
+          workPriorityLabel: workPriority ? `Priority ${workPriority}` : 'Priority not set',
+          reason: row?.reason || row?.message || null,
+        };
+      })
+      .filter((row: any) => {
+        if (!(row.hotspotId > 0)) return false;
+        if (seen.has(row.hotspotId)) return false;
+        seen.add(row.hotspotId);
+        return true;
+      })
+      .sort((a: any, b: any) => {
+        const ap = Number(a.workPriority || 99);
+        const bp = Number(b.workPriority || 99);
+        if (ap !== bp) return bp - ap;
+        return String(a.name).localeCompare(String(b.name));
+      });
+
+    return {
+      hasRemovals: removedItems.length > 0,
+      title: 'Changes Required',
+      removalOrderLabel: 'Removal order checked: Priority 3 -> Priority 2 -> Priority 1',
+      removedItems,
+      noRemovalText: 'No hotspot removed',
+    };
   }
 
   private parseSegmentStartMinutes(segment: any): number | null {
@@ -19168,6 +23236,27 @@ const guideSlotCsv = guideSlots.join(',');
 
     if (maxEndSec <= routeEndSec) return 0;
     return Math.ceil((maxEndSec - routeEndSec) / 60);
+  }
+
+  private async buildRouteTimelineSnapshotAfterManualConflictInsert(
+    tx: any,
+    planId: number,
+    routeId: number,
+  ): Promise<any[]> {
+    try {
+      return await this.getRouteTimelineForScoring(
+        tx,
+        Number(planId),
+        Number(routeId),
+      );
+    } catch (error) {
+      console.warn('[FitHere][force_conflict_timeline_refresh_failed]', {
+        planId,
+        routeId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return [];
+    }
   }
 
   private async getManualHotspotTimingPolicyInTx(
@@ -20006,6 +24095,113 @@ const guideSlotCsv = guideSlots.join(',');
       distanceKm: Number.isFinite(Number(fallbackDistanceKm)) ? Number(fallbackDistanceKm) : null,
       durationMin: this.estimateDurationFromDistance(Number.isFinite(Number(fallbackDistanceKm)) ? Number(fallbackDistanceKm) : null),
       osrmUsed: false,
+    };
+  }
+
+  private async resolveRouteSourceEndpoint(
+    tx: any,
+    routeId: number,
+  ): Promise<{ sourceName: string; latitude: number; longitude: number } | null> {
+    const route = await (tx as any).dvi_itinerary_route_details.findFirst({
+      where: {
+        itinerary_route_ID: Number(routeId),
+        deleted: 0,
+      },
+      select: {
+        location_id: true,
+        location_name: true,
+      },
+    });
+
+    const locationId = Number(route?.location_id || 0);
+    const routeSourceName = String(route?.location_name || '').trim();
+
+    if (!locationId) {
+      return routeSourceName ? { sourceName: routeSourceName, latitude: NaN, longitude: NaN } : null;
+    }
+
+    const stored = await (tx as any).dvi_stored_locations.findFirst({
+      where: {
+        location_ID: locationId,
+        deleted: 0,
+      },
+      select: {
+        source_location: true,
+        source_location_lattitude: true,
+        source_location_longitude: true,
+      },
+    });
+
+    const sourceName = String(stored?.source_location || routeSourceName || '').trim();
+    const latitude = Number(stored?.source_location_lattitude);
+    const longitude = Number(stored?.source_location_longitude);
+
+    if (!sourceName) return null;
+
+    return {
+      sourceName,
+      latitude,
+      longitude,
+    };
+  }
+
+  private async resolveSourceToHotspotLeg(
+    tx: any,
+    routeId: number,
+    hotspotId: number,
+  ): Promise<{ distanceKm: number | null; durationMin: number | null; osrmUsed: boolean; sourceName: string | null }> {
+    const source = await this.resolveRouteSourceEndpoint(tx, Number(routeId));
+    if (!source?.sourceName) {
+      return { distanceKm: null, durationMin: null, osrmUsed: false, sourceName: null };
+    }
+
+    const hotspot = await (tx as any).dvi_hotspot_place.findFirst({
+      where: {
+        hotspot_ID: Number(hotspotId),
+        deleted: 0,
+      },
+      select: {
+        hotspot_latitude: true,
+        hotspot_longitude: true,
+      },
+    });
+
+    const toLat = Number(hotspot?.hotspot_latitude);
+    const toLng = Number(hotspot?.hotspot_longitude);
+    const fromLat = Number(source?.latitude);
+    const fromLng = Number(source?.longitude);
+
+    if (!Number.isFinite(fromLat) || !Number.isFinite(fromLng) || !Number.isFinite(toLat) || !Number.isFinite(toLng)) {
+      return {
+        distanceKm: null,
+        durationMin: null,
+        osrmUsed: false,
+        sourceName: source.sourceName,
+      };
+    }
+
+    const osrmRoute = await this.getOsrmRouteGeometry(
+      fromLat,
+      fromLng,
+      toLat,
+      toLng,
+    );
+
+    if (osrmRoute && Number.isFinite(Number(osrmRoute.distanceKm))) {
+      return {
+        distanceKm: osrmRoute.distanceKm != null ? Number(osrmRoute.distanceKm) : null,
+        durationMin: osrmRoute.durationMin != null ? Number(osrmRoute.durationMin) : this.estimateDurationFromDistance(osrmRoute.distanceKm ?? null),
+        osrmUsed: true,
+        sourceName: source.sourceName,
+      };
+    }
+
+    const fallbackDistanceKm = haversineKm(fromLat, fromLng, toLat, toLng);
+    return {
+      distanceKm: Number.isFinite(Number(fallbackDistanceKm)) ? Number(fallbackDistanceKm) : null,
+      durationMin: this.estimateDurationFromDistance(Number.isFinite(Number(fallbackDistanceKm)) ? Number(fallbackDistanceKm) : null),
+      osrmUsed: false,
+      sourceName: source.sourceName,
     };
   }
 
@@ -22607,98 +26803,72 @@ const guideSlotCsv = guideSlots.join(',');
     const preferredFromHotspotId = Number(matrixPreferredSlot?.fromHotspotId || 0);
     const preferredToHotspotId = Number(matrixPreferredSlot?.toHotspotId || 0);
 
+    const mapRequestedSlotResult = (rs: any) => ({
+      fromHotspotId: rs.fromHotspotId,
+      fromName: rs.fromName,
+      toHotspotId: rs.toHotspotId,
+      toName: rs.toName,
+      destinationHotelId: rs.destinationHotelId,
+      destinationHotelEndpointResolved: rs.destinationHotelEndpointResolved === true,
+      routeFitType: rs.routeFitType,
+      label: rs.label,
+      displayLabel: rs.displayLabel || rs.label,
+      shortLabel: rs.shortLabel || rs.label,
+      roadDetourKm: rs.roadDetourKm,
+      isZeroExtraDetour: rs.isZeroExtraDetour === true,
+      distanceComparisonNote: rs.distanceComparisonNote || null,
+      roadDetourRatio: rs.roadDetourRatio,
+      insertedRouteDistanceKm: rs.insertedRouteDistanceKm,
+      abOsrmDistanceKm: rs.abOsrmDistanceKm,
+      acOsrmDistanceKm: rs.acOsrmDistanceKm,
+      cbOsrmDistanceKm: rs.cbOsrmDistanceKm,
+      candidateDistanceFromAbRouteMeters: rs.candidateDistanceFromAbRouteMeters,
+      sourceCityExitAnchorHotspotId: rs.sourceCityExitAnchorHotspotId,
+      sourceCityExitAnchorName: rs.sourceCityExitAnchorName,
+      sourceCityExitAnchorProgressRatio: rs.sourceCityExitAnchorProgressRatio,
+      sourceCityExitAnchorDistanceFromRouteMeters: rs.sourceCityExitAnchorDistanceFromRouteMeters,
+      sourceCityExitAnchorSelectionWhy: debugEnabled ? rs.sourceCityExitAnchorSelectionWhy : undefined,
+      sourceCityExitAnchorSelectionDebug: debugEnabled ? rs.sourceCityExitAnchorSelectionDebug : undefined,
+      source: rs.source,
+      routePossible: rs.routePossible,
+      timingPossible: rs.timingPossible,
+      prioritySafe: rs.prioritySafe,
+      selectedAsBest: false,
+      attempted: true,
+      decisionReason: rs.routeDecisionReason,
+      routeDecisionReason: rs.routeDecisionReason,
+      timingDecisionReason: rs.timingDecisionReason,
+      priorityDecisionReason: rs.priorityDecisionReason,
+      finalDecisionReason: rs.finalDecisionReason,
+    });
+
     if (
       exactAnchorMode
       && (preferredFromHotspotId > 0 || preferredToHotspotId > 0)
       && Array.isArray(allSlotResults)
     ) {
-      const rs = allSlotResults.find((slot: any) => (
+      const exactGapMatch = allSlotResults.find((slot: any) => (
         Number(slot?.fromHotspotId || 0) === preferredFromHotspotId
         && Number(slot?.toHotspotId || 0) === preferredToHotspotId
       ));
 
-      if (rs) {
-        requestedSlot = {
-          fromHotspotId: rs.fromHotspotId,
-          fromName: rs.fromName,
-          toHotspotId: rs.toHotspotId,
-          toName: rs.toName,
-          destinationHotelId: rs.destinationHotelId,
-          destinationHotelEndpointResolved: rs.destinationHotelEndpointResolved === true,
-          routeFitType: rs.routeFitType,
-          label: rs.label,
-          displayLabel: rs.displayLabel || rs.label,
-          shortLabel: rs.shortLabel || rs.label,
-          roadDetourKm: rs.roadDetourKm,
-          isZeroExtraDetour: rs.isZeroExtraDetour === true,
-          distanceComparisonNote: rs.distanceComparisonNote || null,
-          roadDetourRatio: rs.roadDetourRatio,
-          insertedRouteDistanceKm: rs.insertedRouteDistanceKm,
-          abOsrmDistanceKm: rs.abOsrmDistanceKm,
-          acOsrmDistanceKm: rs.acOsrmDistanceKm,
-          cbOsrmDistanceKm: rs.cbOsrmDistanceKm,
-          candidateDistanceFromAbRouteMeters: rs.candidateDistanceFromAbRouteMeters,
-          sourceCityExitAnchorHotspotId: rs.sourceCityExitAnchorHotspotId,
-          sourceCityExitAnchorName: rs.sourceCityExitAnchorName,
-          sourceCityExitAnchorProgressRatio: rs.sourceCityExitAnchorProgressRatio,
-          sourceCityExitAnchorDistanceFromRouteMeters: rs.sourceCityExitAnchorDistanceFromRouteMeters,
-          sourceCityExitAnchorSelectionWhy: debugEnabled ? rs.sourceCityExitAnchorSelectionWhy : undefined,
-          sourceCityExitAnchorSelectionDebug: debugEnabled ? rs.sourceCityExitAnchorSelectionDebug : undefined,
-          source: rs.source,
-          routePossible: rs.routePossible,
-          timingPossible: rs.timingPossible,
-          prioritySafe: rs.prioritySafe,
-          selectedAsBest: false,
-          attempted: true,
-          decisionReason: rs.routeDecisionReason,
-          routeDecisionReason: rs.routeDecisionReason,
-          timingDecisionReason: rs.timingDecisionReason,
-          priorityDecisionReason: rs.priorityDecisionReason,
-          finalDecisionReason: rs.finalDecisionReason,
-        };
+      if (exactGapMatch) {
+        requestedSlot = mapRequestedSlotResult(exactGapMatch);
+      } else if (preferredFromHotspotId > 0 && !(preferredToHotspotId > 0)) {
+        const beforeHotelMatch = allSlotResults.find((slot: any) => (
+          Number(slot?.fromHotspotId || 0) === preferredFromHotspotId
+          && String(slot?.routeFitType || '').toUpperCase() === 'DESTINATION_SIDE_INSERTION'
+        ));
+
+        if (beforeHotelMatch) {
+          requestedSlot = mapRequestedSlotResult(beforeHotelMatch);
+        }
       }
     }
 
-    if (!requestedSlot && isHotspotSlot && requestedSlotIndex >= 0 && requestedSlotIndex < allSlotResults.length) {
+    if (!requestedSlot && !exactAnchorMode && isHotspotSlot && requestedSlotIndex >= 0 && requestedSlotIndex < allSlotResults.length) {
       const rs = allSlotResults[requestedSlotIndex];
-      requestedSlot = {
-        fromHotspotId: rs.fromHotspotId,
-        fromName: rs.fromName,
-        toHotspotId: rs.toHotspotId,
-        toName: rs.toName,
-        destinationHotelId: rs.destinationHotelId,
-        destinationHotelEndpointResolved: rs.destinationHotelEndpointResolved === true,
-        routeFitType: rs.routeFitType,
-        label: rs.label,
-        displayLabel: rs.displayLabel || rs.label,
-        shortLabel: rs.shortLabel || rs.label,
-        roadDetourKm: rs.roadDetourKm,
-        isZeroExtraDetour: rs.isZeroExtraDetour === true,
-        distanceComparisonNote: rs.distanceComparisonNote || null,
-        roadDetourRatio: rs.roadDetourRatio,
-        insertedRouteDistanceKm: rs.insertedRouteDistanceKm,
-        abOsrmDistanceKm: rs.abOsrmDistanceKm,
-        acOsrmDistanceKm: rs.acOsrmDistanceKm,
-        cbOsrmDistanceKm: rs.cbOsrmDistanceKm,
-        candidateDistanceFromAbRouteMeters: rs.candidateDistanceFromAbRouteMeters,
-        sourceCityExitAnchorHotspotId: rs.sourceCityExitAnchorHotspotId,
-        sourceCityExitAnchorName: rs.sourceCityExitAnchorName,
-        sourceCityExitAnchorProgressRatio: rs.sourceCityExitAnchorProgressRatio,
-        sourceCityExitAnchorDistanceFromRouteMeters: rs.sourceCityExitAnchorDistanceFromRouteMeters,
-        sourceCityExitAnchorSelectionWhy: debugEnabled ? rs.sourceCityExitAnchorSelectionWhy : undefined,
-        sourceCityExitAnchorSelectionDebug: debugEnabled ? rs.sourceCityExitAnchorSelectionDebug : undefined,
-        source: rs.source,
-        routePossible: rs.routePossible,
-        timingPossible: rs.timingPossible,
-        prioritySafe: rs.prioritySafe,
-        selectedAsBest: false,
-        attempted: true,
-        decisionReason: rs.routeDecisionReason,
-        routeDecisionReason: rs.routeDecisionReason,
-        timingDecisionReason: rs.timingDecisionReason,
-        priorityDecisionReason: rs.priorityDecisionReason,
-        finalDecisionReason: rs.finalDecisionReason,
-      };
+      requestedSlot = mapRequestedSlotResult(rs);
     } else if (anchorIdx === 0 || !isHotspotSlot) {
       // Hotel/source segment or first segment before any hotspot
       const toName = routeAttractions.length > 0
@@ -23192,6 +27362,503 @@ const guideSlotCsv = guideSlots.join(',');
     return built;
   }
 
+  private async enrichManualFitPreviewTimelineWithOperatingHours(
+    planId: number,
+    routeId: number,
+    timeline: any[],
+  ): Promise<any[]> {
+    const rows = Array.isArray(timeline) ? timeline : [];
+    if (rows.length === 0) return rows;
+
+    const attractionIds = Array.from(new Set(
+      rows
+        .filter((row: any) => (
+          String(row?.type || '').toLowerCase() === 'attraction'
+          || Number(row?.item_type || 0) === 4
+        ))
+        .map((row: any) => Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || row?.hotspot_id || 0))
+        .filter((id: number) => Number.isFinite(id) && id > 0),
+    ));
+
+    if (attractionIds.length === 0) return rows;
+
+    const route = await (this.prisma as any).dvi_itinerary_route_details.findFirst({
+      where: {
+        itinerary_plan_ID: Number(planId),
+        itinerary_route_ID: Number(routeId),
+        deleted: 0,
+      },
+      select: {
+        itinerary_route_date: true,
+      },
+    });
+
+    const routeDate = route?.itinerary_route_date ? new Date(route.itinerary_route_date) : null;
+    const dayOfWeek = routeDate ? (routeDate.getDay() + 6) % 7 : 0;
+    const timingRows = await (this.prisma as any).dvi_hotspot_timing.findMany({
+      where: {
+        hotspot_ID: { in: attractionIds },
+        status: 1,
+        deleted: 0,
+      },
+      orderBy: [
+        { hotspot_timing_day: 'asc' },
+        { hotspot_start_time: 'asc' },
+        { hotspot_timing_ID: 'asc' },
+      ],
+    });
+
+    const timingMap = new Map<number, any[]>();
+    for (const timing of timingRows || []) {
+      const hotspotId = Number(timing?.hotspot_ID || 0);
+      if (!hotspotId) continue;
+      if (!timingMap.has(hotspotId)) {
+        timingMap.set(hotspotId, []);
+      }
+      timingMap.get(hotspotId)!.push(timing);
+    }
+
+    const buildOperatingHours = (timings: any[]): {
+      operatingHours: string | null;
+      openingTime: string | null;
+      closingTime: string | null;
+    } => {
+      const dayTimings = (timings || []).filter((row: any) => Number(row?.hotspot_timing_day) === dayOfWeek);
+      const todayTimings = dayTimings.filter((row: any) => Number(row?.hotspot_closed || 0) !== 1);
+
+      if (dayTimings.length > 0 && todayTimings.length === 0) {
+        return {
+          operatingHours: 'Closed',
+          openingTime: null,
+          closingTime: null,
+        };
+      }
+
+      if (todayTimings.length === 0) {
+        return {
+          operatingHours: null,
+          openingTime: null,
+          closingTime: null,
+        };
+      }
+
+      if (todayTimings.some((row: any) => Number(row?.hotspot_open_all_time || 0) === 1)) {
+        return {
+          operatingHours: 'Open 24 Hours',
+          openingTime: '00:00:00',
+          closingTime: '23:59:59',
+        };
+      }
+
+      const operatingHours = todayTimings
+        .map((row: any) => `${this.formatTime(row?.hotspot_start_time as any)} - ${this.formatTime(row?.hotspot_end_time as any)}`)
+        .join(', ');
+
+      const openingTime = todayTimings[0]?.hotspot_start_time
+        ? this.formatTime(todayTimings[0].hotspot_start_time as any)
+        : null;
+      const closingTime = todayTimings[todayTimings.length - 1]?.hotspot_end_time
+        ? this.formatTime(todayTimings[todayTimings.length - 1].hotspot_end_time as any)
+        : null;
+
+      return {
+        operatingHours: operatingHours || null,
+        openingTime,
+        closingTime,
+      };
+    };
+
+    return rows.map((row: any) => {
+      const isAttractionLike =
+        String(row?.type || '').toLowerCase() === 'attraction' ||
+        Number(row?.item_type || 0) === 4;
+      if (!isAttractionLike) return row;
+
+      const hotspotId = Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || row?.hotspot_id || 0);
+      if (!hotspotId) return row;
+
+      const timingSummary = buildOperatingHours(timingMap.get(hotspotId) || []);
+      return {
+        ...row,
+        timings: timingSummary.operatingHours || row?.timings || null,
+        operatingHours: timingSummary.operatingHours || row?.operatingHours || row?.timings || null,
+        openingTime: timingSummary.openingTime || row?.openingTime || null,
+        closingTime: timingSummary.closingTime || row?.closingTime || null,
+      };
+    });
+  }
+
+  private normalizeManualFitTimeText(value: any): string {
+    return String(value || '')
+      .replace(/\u2013|\u2014/g, '-')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  private extractTimeWindowsFromLabel(value: any): Array<{
+    startLabel: string;
+    endLabel: string;
+    startMinutes: number;
+    endMinutes: number;
+  }> {
+    const raw = this.normalizeManualFitTimeText(value);
+    if (!raw || /open\s*24/i.test(raw)) return [];
+
+    const windows: Array<{
+      startLabel: string;
+      endLabel: string;
+      startMinutes: number;
+      endMinutes: number;
+    }> = [];
+
+    const regex =
+      /(\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM)?)\s*(?:-|to)\s*(\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM)?)/gi;
+
+    let match: RegExpExecArray | null;
+    while ((match = regex.exec(raw)) !== null) {
+      const startLabel = this.normalizeManualFitTimeText(match[1]);
+      const endLabel = this.normalizeManualFitTimeText(match[2]);
+      const startMinutes = this.parsePreviewTimeToMinutes(startLabel);
+      const endMinutes = this.parsePreviewTimeToMinutes(endLabel);
+
+      if (startMinutes === null || endMinutes === null) continue;
+
+      windows.push({
+        startLabel,
+        endLabel,
+        startMinutes,
+        endMinutes,
+      });
+    }
+
+    return windows;
+  }
+
+  private evaluateTimelineRowAgainstOperatingHours(row: any): {
+    valid: boolean;
+    reason: string | null;
+    attemptedVisitTime: string | null;
+    operatingHours: string | null;
+    attemptedStartLabel: string | null;
+    attemptedEndLabel: string | null;
+    openingLabel: string | null;
+    closingLabel: string | null;
+  } {
+    const attemptedVisitTime = this.normalizeManualFitTimeText(
+      row?.timeRange || row?.visitTime || row?.attemptedVisitTime || '',
+    );
+
+    const operatingHours = this.normalizeManualFitTimeText(
+      row?.timings || row?.operatingHours || row?.hotspot_timings || '',
+    );
+
+    if (!attemptedVisitTime || !attemptedVisitTime.includes('-')) {
+      return {
+        valid: false,
+        reason: 'Selected hotspot has no valid attempted visit time in the preview timeline.',
+        attemptedVisitTime: attemptedVisitTime || null,
+        operatingHours: operatingHours || null,
+        attemptedStartLabel: null,
+        attemptedEndLabel: null,
+        openingLabel: null,
+        closingLabel: null,
+      };
+    }
+
+    if (/^closed$/i.test(operatingHours)) {
+      return {
+        valid: false,
+        reason: `Selected hotspot is closed on this route date. Attempted visit time is ${attemptedVisitTime}.`,
+        attemptedVisitTime,
+        operatingHours,
+        attemptedStartLabel: null,
+        attemptedEndLabel: null,
+        openingLabel: null,
+        closingLabel: null,
+      };
+    }
+
+    if (!operatingHours || /open\s*24/i.test(operatingHours)) {
+      return {
+        valid: true,
+        reason: null,
+        attemptedVisitTime,
+        operatingHours: operatingHours || null,
+        attemptedStartLabel: null,
+        attemptedEndLabel: null,
+        openingLabel: null,
+        closingLabel: null,
+      };
+    }
+
+    const attemptedWindows = this.extractTimeWindowsFromLabel(attemptedVisitTime);
+    const operatingWindows = this.extractTimeWindowsFromLabel(operatingHours);
+    const attempted = attemptedWindows[0];
+
+    if (!attempted || operatingWindows.length === 0) {
+      return {
+        valid: true,
+        reason: null,
+        attemptedVisitTime,
+        operatingHours,
+        attemptedStartLabel: attempted?.startLabel || null,
+        attemptedEndLabel: attempted?.endLabel || null,
+        openingLabel: operatingWindows[0]?.startLabel || null,
+        closingLabel: operatingWindows[0]?.endLabel || null,
+      };
+    }
+
+    const fitsAnyWindow = operatingWindows.some((window) => {
+      if (window.endMinutes >= window.startMinutes) {
+        return attempted.startMinutes >= window.startMinutes && attempted.endMinutes <= window.endMinutes;
+      }
+
+      const attemptedStart = attempted.startMinutes < window.startMinutes
+        ? attempted.startMinutes + (24 * 60)
+        : attempted.startMinutes;
+      const attemptedEnd = attempted.endMinutes < window.startMinutes
+        ? attempted.endMinutes + (24 * 60)
+        : attempted.endMinutes;
+      const operatingEnd = window.endMinutes + (24 * 60);
+
+      return attemptedStart >= window.startMinutes && attemptedEnd <= operatingEnd;
+    });
+
+    if (fitsAnyWindow) {
+      return {
+        valid: true,
+        reason: null,
+        attemptedVisitTime,
+        operatingHours,
+        attemptedStartLabel: attempted.startLabel,
+        attemptedEndLabel: attempted.endLabel,
+        openingLabel: operatingWindows[0]?.startLabel || null,
+        closingLabel: operatingWindows[0]?.endLabel || null,
+      };
+    }
+
+    const firstWindow = operatingWindows[0];
+
+    return {
+      valid: false,
+      reason: `Selected hotspot is closed at attempted visit time ${attemptedVisitTime}. Operating hours are ${operatingHours}.`,
+      attemptedVisitTime,
+      operatingHours,
+      attemptedStartLabel: attempted.startLabel,
+      attemptedEndLabel: attempted.endLabel,
+      openingLabel: firstWindow?.startLabel || null,
+      closingLabel: firstWindow?.endLabel || null,
+    };
+  }
+
+  private getSelectedManualClosingOverflow(params: {
+    timeline: any[];
+    selectedHotspotIds: number[];
+  }): {
+    hasClosingOverflow: boolean;
+    hotspotId: number | null;
+    hotspotName: string | null;
+    attemptedVisitTime: string | null;
+    operatingHours: string | null;
+    overflowMinutes: number;
+    latestAllowedEndMinutes: number | null;
+    conflict: any | null;
+  } {
+    const selectedSet = new Set(
+      (params.selectedHotspotIds || [])
+        .map((id: any) => Number(id))
+        .filter((id: number) => Number.isFinite(id) && id > 0),
+    );
+
+    const timeline = Array.isArray(params.timeline) ? params.timeline : [];
+
+    for (const row of timeline) {
+      const isAttraction =
+        String(row?.type || '').toLowerCase() === 'attraction' ||
+        Number(row?.item_type || 0) === 4;
+
+      if (!isAttraction) continue;
+
+      const hotspotId = Number(
+        row?.locationId ||
+        row?.hotspotId ||
+        row?.hotspot_ID ||
+        row?.hotspot_id ||
+        0,
+      );
+
+      if (!selectedSet.has(hotspotId)) continue;
+
+      const evaluation = this.evaluateTimelineRowAgainstOperatingHours(row);
+
+      if (evaluation.valid) {
+        return {
+          hasClosingOverflow: false,
+          hotspotId,
+          hotspotName: String(row?.name || row?.text || row?.hotspot_name || `Hotspot #${hotspotId}`),
+          attemptedVisitTime: evaluation.attemptedVisitTime,
+          operatingHours: evaluation.operatingHours,
+          overflowMinutes: 0,
+          latestAllowedEndMinutes: null,
+          conflict: null,
+        };
+      }
+
+      const attemptedWindows = this.extractTimeWindowsFromLabel(evaluation.attemptedVisitTime || '');
+      const operatingWindows = this.extractTimeWindowsFromLabel(evaluation.operatingHours || '');
+      const attempted = attemptedWindows[0];
+      const operating = operatingWindows[0];
+
+      if (!attempted || !operating) {
+        return {
+          hasClosingOverflow: false,
+          hotspotId,
+          hotspotName: String(row?.name || row?.text || row?.hotspot_name || `Hotspot #${hotspotId}`),
+          attemptedVisitTime: evaluation.attemptedVisitTime,
+          operatingHours: evaluation.operatingHours,
+          overflowMinutes: 0,
+          latestAllowedEndMinutes: null,
+          conflict: null,
+        };
+      }
+
+      const overflowMinutes = Math.max(0, attempted.endMinutes - operating.endMinutes);
+
+      if (overflowMinutes <= 0) {
+        return {
+          hasClosingOverflow: false,
+          hotspotId,
+          hotspotName: String(row?.name || row?.text || row?.hotspot_name || `Hotspot #${hotspotId}`),
+          attemptedVisitTime: evaluation.attemptedVisitTime,
+          operatingHours: evaluation.operatingHours,
+          overflowMinutes: 0,
+          latestAllowedEndMinutes: operating.endMinutes,
+          conflict: null,
+        };
+      }
+
+      const hotspotName = String(row?.name || row?.text || row?.hotspot_name || `Hotspot #${hotspotId}`);
+      const conflict = {
+        hotspotId,
+        hotspotName,
+        attemptedVisitTime: evaluation.attemptedVisitTime,
+        attemptedStartTime: evaluation.attemptedStartLabel,
+        attemptedEndTime: evaluation.attemptedEndLabel,
+        operatingHours: evaluation.operatingHours,
+        openingTime: evaluation.openingLabel,
+        closingTime: evaluation.closingLabel,
+        overflowMinutes,
+        reasonCode: 'SELECTED_HOTSPOT_EXCEEDS_CLOSING_TIME',
+        reason: `${hotspotName} ends ${overflowMinutes} minute(s) after closing. Attempted: ${evaluation.attemptedVisitTime}. Operating hours: ${evaluation.operatingHours}.`,
+      };
+
+      return {
+        hasClosingOverflow: true,
+        hotspotId,
+        hotspotName,
+        attemptedVisitTime: evaluation.attemptedVisitTime,
+        operatingHours: evaluation.operatingHours,
+        overflowMinutes,
+        latestAllowedEndMinutes: operating.endMinutes,
+        conflict,
+      };
+    }
+
+    return {
+      hasClosingOverflow: false,
+      hotspotId: null,
+      hotspotName: null,
+      attemptedVisitTime: null,
+      operatingHours: null,
+      overflowMinutes: 0,
+      latestAllowedEndMinutes: null,
+      conflict: null,
+    };
+  }
+
+  private markSelectedManualOperatingHourConflicts(
+    timeline: any[],
+    selectedHotspotIds: number[],
+  ): {
+    timeline: any[];
+    selectedOpeningConflict: any | null;
+  } {
+    const selectedSet = new Set(
+      (selectedHotspotIds || [])
+        .map((id: any) => Number(id))
+        .filter((id: number) => Number.isFinite(id) && id > 0),
+    );
+
+    if (!Array.isArray(timeline) || selectedSet.size === 0) {
+      return { timeline: Array.isArray(timeline) ? timeline : [], selectedOpeningConflict: null };
+    }
+
+    let selectedOpeningConflict: any | null = null;
+
+    const nextTimeline = timeline.map((row: any) => {
+      const isAttraction =
+        String(row?.type || '').toLowerCase() === 'attraction' ||
+        Number(row?.item_type || 0) === 4;
+
+      if (!isAttraction) return row;
+
+      const hotspotId = Number(
+        row?.locationId ||
+        row?.hotspot_ID ||
+        row?.hotspotId ||
+        row?.hotspot_id ||
+        0,
+      );
+
+      if (!selectedSet.has(hotspotId)) return row;
+
+      const evaluation = this.evaluateTimelineRowAgainstOperatingHours(row);
+
+      if (evaluation.valid) {
+        return {
+          ...row,
+          isConflict: false,
+          is_conflict: 0,
+          conflictReason: null,
+          conflict_reason: null,
+          selectedOpeningConflict: null,
+          attemptedVisitTime: evaluation.attemptedVisitTime,
+          operatingHours: evaluation.operatingHours,
+          manualFitStatus: row?.manualFitStatus === 'INSERTED' ? row.manualFitStatus : null,
+        };
+      }
+
+      const conflictPayload = {
+        hotspotId,
+        hotspotName: String(row?.name || row?.text || row?.hotspot_name || `Hotspot #${hotspotId}`),
+        attemptedVisitTime: evaluation.attemptedVisitTime,
+        attemptedStartTime: evaluation.attemptedStartLabel,
+        attemptedEndTime: evaluation.attemptedEndLabel,
+        operatingHours: evaluation.operatingHours,
+        openingTime: evaluation.openingLabel,
+        closingTime: evaluation.closingLabel,
+        reason: evaluation.reason,
+        reasonCode: 'SELECTED_HOTSPOT_CLOSED_AT_ATTEMPTED_TIME',
+      };
+
+      selectedOpeningConflict = selectedOpeningConflict || conflictPayload;
+
+      return {
+        ...row,
+        isConflict: true,
+        is_conflict: 1,
+        conflictReason: evaluation.reason,
+        conflict_reason: evaluation.reason,
+        selectedOpeningConflict: conflictPayload,
+        attemptedVisitTime: evaluation.attemptedVisitTime,
+        operatingHours: evaluation.operatingHours,
+        manualFitStatus: 'CANNOT_INSERT',
+      };
+    });
+
+    return { timeline: nextTimeline, selectedOpeningConflict };
+  }
+
   private buildManualHotspotValidation(params: {
     route: any;
     requestedHotspotIds: number[];
@@ -23202,7 +27869,23 @@ const guideSlotCsv = guideSlots.join(',');
       unscheduledManualHotspots: Array<{ id: number; name: string; reason: string }>;
       reason: string | null;
     };
-  }) {
+  }): {
+    passesScheduleRules: boolean;
+    readyToApply: boolean;
+    requiresPriorityConfirmation: boolean;
+    requiresTimingRiskConfirmation?: boolean;
+    requiresForceConfirmation: boolean;
+    stillUnschedulable: boolean;
+    softManualRouteFitConflict: boolean;
+    routeEndOverflowMinutes: number;
+    manualTimingPolicy: ManualHotspotTimingPolicy;
+    openingHourConflictCount: number;
+    selectedManualConflictCount: number;
+    scheduledSelectedManualCount: number;
+    unscheduledManualCount: number;
+    reason: string | null;
+    selectedOpeningConflict?: any | null;
+  } {
     const { route, requestedHotspotIds, fullTimeline, manualTimingPolicy, adaptive } = params;
     const requestedHotspotIdSet = new Set(
       (requestedHotspotIds || [])
@@ -23230,23 +27913,37 @@ const guideSlotCsv = guideSlots.join(',');
       isAttractionRow(row)
       && requestedHotspotIdSet.has(getRowHotspotId(row))
     ));
+    const selectedOpeningConflictRows: any[] = [];
     const openingHourConflictRows = selectedAttractionRows.filter((row: any) => {
-      const reason = String(row?.conflictReason || row?.conflict_reason || '').toLowerCase();
-      return (
-        row?.isConflict === true
-        || Number(row?.is_conflict || 0) === 1
-        || reason.includes('opening')
-        || reason.includes('operating')
-        || reason.includes('time gap')
-        || reason.includes('does not fit')
-        || reason.includes('needs reschedule')
-      );
+      const operatingEvaluation = this.evaluateTimelineRowAgainstOperatingHours(row);
+
+      if (operatingEvaluation.valid === false) {
+        selectedOpeningConflictRows.push({
+          hotspotId: getRowHotspotId(row),
+          hotspotName: String(row?.name || row?.text || row?.hotspot_name || `Hotspot #${getRowHotspotId(row)}`),
+          attemptedVisitTime: operatingEvaluation.attemptedVisitTime,
+          attemptedStartTime: operatingEvaluation.attemptedStartLabel,
+          attemptedEndTime: operatingEvaluation.attemptedEndLabel,
+          operatingHours: operatingEvaluation.operatingHours,
+          openingTime: operatingEvaluation.openingLabel,
+          closingTime: operatingEvaluation.closingLabel,
+          reason: operatingEvaluation.reason,
+          reasonCode: 'SELECTED_HOTSPOT_CLOSED_AT_ATTEMPTED_TIME',
+        });
+        return true;
+      }
+      return false;
     });
     const selectedManualConflictRows = openingHourConflictRows;
-    const scheduledSelectedRows = selectedAttractionRows.filter((row: any) => (
-      row?.isConflict !== true
-      && Number(row?.is_conflict || 0) !== 1
-    ));
+    const scheduledSelectedRows = selectedAttractionRows.filter((row: any) => {
+      const operatingEvaluation = this.evaluateTimelineRowAgainstOperatingHours(row);
+      return (
+        row?.isConflict !== true
+        && Number(row?.is_conflict || 0) !== 1
+        && operatingEvaluation.valid !== false
+      );
+    });
+    const selectedOpeningConflict = selectedOpeningConflictRows[0] || null;
 
     const rawStillUnschedulable = Array.isArray(adaptive?.unscheduledManualHotspots)
       && adaptive.unscheduledManualHotspots.length > 0;
@@ -23282,6 +27979,9 @@ const guideSlotCsv = guideSlots.join(',');
     let reason: string | null = null;
     if (requiresPriorityConfirmation) {
       reason = 'Priority 3 hotspots would need to be removed. Confirmation required.';
+    } else if (selectedOpeningConflict) {
+      reason = selectedOpeningConflict.reason
+        || `${selectedOpeningConflict.hotspotName} cannot be inserted here because attempted visit time is ${selectedOpeningConflict.attemptedVisitTime}, but operating hours are ${selectedOpeningConflict.operatingHours}.`;
     } else if (routeEndOverflowMinutes > 0) {
       reason = 'Route end time overflow after rebuilt manual hotspot insertion.';
     } else if (selectedManualConflictRows.length > 0) {
@@ -23325,6 +28025,7 @@ const guideSlotCsv = guideSlots.join(',');
         ? adaptive.unscheduledManualHotspots.length
         : 0,
       reason,
+      selectedOpeningConflict,
     };
   }
 
@@ -23413,18 +28114,91 @@ const guideSlotCsv = guideSlots.join(',');
     return attempt;
   }
 
+  private buildExactAnchorSequentialScheduleAttempt(params: {
+    strategy: ManualCandidateOrder;
+    candidate: ManualInsertionCandidateResult;
+  }): ManualScheduleAttempt {
+    const timeline = Array.isArray(params.candidate?.fullTimeline) ? params.candidate.fullTimeline : [];
+    const attractionRows = timeline.filter((row: any) => this.isAttractionTimelineRow(row));
+    const actualOrder = attractionRows
+      .map((row: any) => this.getTimelineRowHotspotId(row))
+      .filter((id: number) => id > 0);
+    const manualHotspotId = Number(
+      params.candidate?.scheduledManualHotspots?.[0]?.id ||
+      (params.strategy.hotspotOrder || [])[0] ||
+      0,
+    );
+    const orderPreserved = manualHotspotId > 0 && actualOrder.includes(manualHotspotId);
+
+    let overlapCount = 0;
+    let previousEnd: number | null = null;
+    for (const row of attractionRows) {
+      const rawRange = String(row?.timeRange || row?.visitTime || '').trim();
+      if (!rawRange.includes('-')) continue;
+      const [startPart, endPart] = rawRange.split('-').map((value: string) => value.trim());
+      const startMin = this.parsePreviewTimeToMinutes(startPart);
+      const endMin = this.parsePreviewTimeToMinutes(endPart);
+      if (startMin === null || endMin === null) continue;
+      if (previousEnd !== null && startMin < previousEnd) {
+        overlapCount += 1;
+      }
+      previousEnd = endMin;
+    }
+
+    const routeEndOverflowMinutes = Number(params.candidate?.routeEndOverflowMinutes || 0);
+    const openingHourConflictCount = Number(params.candidate?.openingHourConflictCount || 0);
+    const topPriorityAffectedCount = Number(params.candidate?.topPriorityAffected?.length || 0);
+    const timingSafe =
+      routeEndOverflowMinutes === 0 &&
+      openingHourConflictCount === 0 &&
+      overlapCount === 0;
+    const readyToApply =
+      params.candidate?.success === true &&
+      params.candidate?.requiresConfirmation !== true &&
+      timingSafe &&
+      orderPreserved;
+
+    const reason = !orderPreserved
+      ? 'Exact-anchor sequential rebuild did not place the selected manual hotspot in the rebuilt preview timeline.'
+      : overlapCount > 0
+        ? 'Exact-anchor sequential rebuild produced overlapping kept hotspot times.'
+        : params.candidate?.reason || null;
+
+    const attempt: ManualScheduleAttempt = {
+      source: 'REAL_CLUSTER_SIMULATION',
+      strategyKey: params.strategy.strategyKey,
+      strategyLabel: params.strategy.strategyLabel,
+      description: params.strategy.description,
+      hotspotOrder: params.strategy.hotspotOrder,
+      candidateIndex: Number(params.candidate?.candidateIndex ?? -1),
+      success: params.candidate?.success === true && orderPreserved && overlapCount === 0,
+      requiresConfirmation: params.candidate?.requiresConfirmation === true,
+      readyToApply,
+      routeEndOverflowMinutes,
+      openingHourConflictCount,
+      topPriorityAffectedCount,
+      removedOptionalCount: Number(params.candidate?.removedOptionalHotspots?.length || 0),
+      removedTopPriorityCount: Number(params.candidate?.removedTopPriorityHotspots?.length || 0),
+      waitingMinutes: Number(params.candidate?.waitingMinutes || 0),
+      extraTravelKm: Number(params.candidate?.extraTravelKm || 0),
+      totalTravelKm: Number(params.candidate?.totalTravelKm || 0),
+      timingSafe,
+      selected: false,
+      summary: null,
+      reason,
+    };
+    attempt.summary = this.explainManualScheduleAttempt(attempt);
+    return attempt;
+  }
+
   private async simulateManualClusterOrder(params: {
     strategy: ManualCandidateOrder;
     candidate: ManualInsertionCandidateResult;
   }): Promise<ManualScheduleAttempt> {
-    // TODO: Replace this candidate-wrapper bridge with a true cluster simulator that:
-    // 1. applies strategy.hotspotOrder exactly,
-    // 2. removes strategy.removedHotspotIds before scheduling,
-    // 3. rebuilds travel between every consecutive pair,
-    // 4. validates multi-window opening hours plus route-end overflow,
-    // 5. returns the exact timeline and violations for that strategy.
-    // Until then, attempts are explicitly labeled as CANDIDATE_WRAPPER so frontend
-    // does not present them as authoritative cluster simulations.
+    if (params.strategy?.strategyKey === 'exact_anchor_sequential_rebuild') {
+      return this.buildExactAnchorSequentialScheduleAttempt(params);
+    }
+
     return this.buildManualScheduleAttemptFromCandidate(params);
   }
 
@@ -23590,8 +28364,11 @@ const guideSlotCsv = guideSlots.join(',');
     routeId: number,
     manualHotspotIds: number[],
     options?: {
+      allowP3Removal?: boolean;
+      allowP1P2Removal?: boolean;
       allowTopPriorityRemoval?: boolean;
       previewOnly?: boolean;
+      exactAnchorMode?: boolean;
       anchorIndex?: number;
       anchorType?: 'after_travel' | 'BETWEEN_ROWS';
       destinationInsertionMode?: boolean;
@@ -23762,8 +28539,11 @@ const guideSlotCsv = guideSlots.join(',');
     manualHotspotIds: number[],
     baselineCandidates: any,
     options?: {
+      allowP3Removal?: boolean;
+      allowP1P2Removal?: boolean;
       allowTopPriorityRemoval?: boolean;
       previewOnly?: boolean;
+      exactAnchorMode?: boolean;
       anchorIndex?: number;
       anchorType?: 'after_travel' | 'BETWEEN_ROWS';
       destinationInsertionMode?: boolean;
@@ -23781,7 +28561,9 @@ const guideSlotCsv = guideSlots.join(',');
       hotspots: baselineCandidates?.hotspotRows || [],
       manualHotspotIds,
       anchorIndex: options?.anchorIndex,
+      allowP3Removal: options?.allowP3Removal === true,
       allowTopPriorityRemoval: options?.allowTopPriorityRemoval === true,
+      exactAnchorMode: options?.exactAnchorMode === true,
       masterMap: baselineCandidates?.masterMap || new Map<number, any>(),
     });
 
@@ -23793,8 +28575,11 @@ const guideSlotCsv = guideSlots.join(',');
         Number(routeId),
         manualHotspotIds,
         {
+          allowP3Removal: options?.allowP3Removal === true,
+          allowP1P2Removal: options?.allowP1P2Removal === true,
           allowTopPriorityRemoval: options?.allowTopPriorityRemoval === true,
           previewOnly: options?.previewOnly === true,
+          exactAnchorMode: options?.exactAnchorMode === true,
           anchorType: options?.anchorType,
           anchorIndex: options?.anchorIndex,
           destinationInsertionMode: options?.destinationInsertionMode === true,
@@ -23826,8 +28611,11 @@ const guideSlotCsv = guideSlots.join(',');
         Number(routeId),
         manualHotspotIds,
         {
+          allowP3Removal: options?.allowP3Removal === true,
+          allowP1P2Removal: options?.allowP1P2Removal === true,
           allowTopPriorityRemoval: options?.allowTopPriorityRemoval === true,
           previewOnly: options?.previewOnly === true,
+          exactAnchorMode: options?.exactAnchorMode === true,
           anchorType: options?.anchorType,
           anchorIndex: options?.anchorIndex,
           destinationInsertionMode: options?.destinationInsertionMode === true,
@@ -24092,17 +28880,7 @@ const guideSlotCsv = guideSlots.join(',');
     if (/open\s*24/i.test(raw)) return 24 * 60;
 
     const toMinutes = (value: string): number | null => {
-      const match = String(value || '').trim().toUpperCase().match(/(\d{1,2})(?::(\d{2}))?\s*(AM|PM)/);
-      if (!match) return null;
-
-      let hour = Number(match[1]);
-      const minute = Number(match[2] || 0);
-      const ampm = match[3];
-
-      if (ampm === 'PM' && hour < 12) hour += 12;
-      if (ampm === 'AM' && hour === 12) hour = 0;
-
-      return hour * 60 + minute;
+      return this.parsePreviewTimeToMinutes(String(value || '').trim());
     };
 
     const closingMinutes: number[] = [];
@@ -24262,9 +29040,12 @@ const guideSlotCsv = guideSlots.join(',');
     hotspots: any[];
     manualHotspotIds: number[];
     anchorIndex?: number;
+    allowP3Removal?: boolean;
     allowTopPriorityRemoval?: boolean;
+    exactAnchorMode?: boolean;
     masterMap: Map<number, any>;
   }): ManualCandidateOrder[] {
+    // See docs/manual-fit-here-exact-anchor-rules.md before changing exact-anchor Fit Here logic.
     const cluster = this.buildManualHotspotDestinationCluster({
       hotspots: params.hotspots,
       manualHotspotIds: params.manualHotspotIds,
@@ -24329,59 +29110,55 @@ const guideSlotCsv = guideSlots.join(',');
       })
       .map((row) => Number(row.hotspotId));
 
-    const optionalDroppedIds = [...clusterWithManual]
-      .filter((row) => row.isManual || !this.isAutoRemovableHotspotForManualInsertion(row))
-      .sort((a, b) => a.closingMinute - b.closingMinute || a.effectivePriority - b.effectivePriority || a.startTs - b.startTs)
-      .map((row) => Number(row.hotspotId));
-
     const p3DroppedIds = [...clusterWithManual]
       .filter((row) => row.isManual || !this.isP3ConfirmationHotspotForManualInsertion(row))
       .sort((a, b) => a.closingMinute - b.closingMinute || a.effectivePriority - b.effectivePriority || a.startTs - b.startTs)
       .map((row) => Number(row.hotspotId));
 
+    const exactAnchorSequentialStrategy: ManualCandidateOrder = {
+      strategyKey: 'exact_anchor_sequential_rebuild',
+      strategyLabel: 'Selected Fit Here Sequence',
+      description: 'Exact anchor rebuild: insert the manual hotspot at the clicked position, then preserve existing hotspot order after the anchor.',
+      hotspotOrder: this.buildManualClusterOrderFromClusterPoints(
+        cluster.baseOrder,
+        cluster.clusterHotspots,
+        insertManualAt(currentCluster, anchorAfterIndex),
+      ),
+    };
+
+    if (params.exactAnchorMode === true) {
+      return [exactAnchorSequentialStrategy];
+    }
+
     const strategies: ManualCandidateOrder[] = [
-      {
-        strategyKey: 'clicked_anchor_after',
-        strategyLabel: 'Selected Timing-Safe Schedule',
-        description: 'Existing order plus manual hotspot after the clicked anchor.',
-        hotspotOrder: this.buildManualClusterOrderFromClusterPoints(cluster.baseOrder, cluster.clusterHotspots, insertManualAt(currentCluster, anchorAfterIndex)),
-      },
+      exactAnchorSequentialStrategy,
       {
         strategyKey: 'clicked_anchor_before',
-        strategyLabel: 'Selected Timing-Safe Schedule',
-        description: 'Existing order plus manual hotspot before the clicked anchor.',
+        strategyLabel: 'Alternative Timing-Safe Suggestion',
+        description: 'Suggestion only: existing order plus manual hotspot before the clicked anchor.',
         hotspotOrder: this.buildManualClusterOrderFromClusterPoints(cluster.baseOrder, cluster.clusterHotspots, insertManualAt(currentCluster, anchorBeforeIndex)),
       },
       {
         strategyKey: 'opening_urgency',
-        strategyLabel: 'Selected Timing-Safe Schedule',
-        description: 'Opening-hours rescue order inside the same-city cluster.',
+        strategyLabel: 'Opening-Hours Rescue Suggestion',
+        description: 'Suggestion only: opening-hours rescue order inside the same-city cluster.',
         hotspotOrder: this.buildManualClusterOrderFromClusterPoints(cluster.baseOrder, cluster.clusterHotspots, openingUrgencyIds),
       },
       {
         strategyKey: 'priority_then_opening',
-        strategyLabel: 'Selected Timing-Safe Schedule',
-        description: 'Priority-first, then earlier-closing hotspots within the cluster.',
+        strategyLabel: 'Priority-First Suggestion',
+        description: 'Suggestion only: priority-first, then earlier-closing hotspots within the cluster.',
         hotspotOrder: this.buildManualClusterOrderFromClusterPoints(cluster.baseOrder, cluster.clusterHotspots, priorityThenOpeningIds),
       },
       {
         strategyKey: 'geo_nearest',
-        strategyLabel: 'Selected Timing-Safe Schedule',
-        description: 'Nearest-neighbor geographic order inside the same-city cluster.',
+        strategyLabel: 'Nearest-Route Suggestion',
+        description: 'Suggestion only: nearest-neighbor geographic order inside the same-city cluster.',
         hotspotOrder: this.buildManualClusterOrderFromClusterPoints(cluster.baseOrder, cluster.clusterHotspots, geoNearestIds),
-      },
-      {
-        strategyKey: 'drop_p4_non_priority',
-        strategyLabel: 'Selected After Same-City Reshuffle',
-        description: 'Try the cluster again after dropping P4/non-priority cluster fillers.',
-        hotspotOrder: this.buildManualClusterOrderFromClusterPoints(cluster.baseOrder, cluster.clusterHotspots, optionalDroppedIds),
-        removedHotspotIds: cluster.clusterHotspots
-          .filter((row) => !optionalDroppedIds.includes(Number(row.hotspotId)))
-          .map((row) => Number(row.hotspotId)),
       },
     ];
 
-    if (params.allowTopPriorityRemoval === true) {
+    if (params.allowP3Removal === true) {
       strategies.push({
         strategyKey: 'drop_p3_confirmed',
         strategyLabel: 'P3 Removal Required',
@@ -25183,6 +29960,7 @@ const guideSlotCsv = guideSlots.join(',');
     return {
       scheduled: result.unscheduledManualHotspots.length === 0,
       removedHotspots: [...(result.removedOptionalHotspots || []), ...(result.removedTopPriorityHotspots || [])].map((row: any) => ({
+        ...row,
         id: Number(row.id),
         name: row.name,
         priority: Number(row.priority || 0),
@@ -25206,26 +29984,26 @@ const guideSlotCsv = guideSlots.join(',');
       anchorIndex?: number;
     },
     options?: {
+      allowP3Removal?: boolean;
+      allowP1P2Removal?: boolean;
       allowTopPriorityRemoval?: boolean;
       previewOnly?: boolean;
+      exactAnchorMode?: boolean;
+      afterHotspotId?: number;
+      beforeHotspotId?: number;
+      anchorLabel?: string | null;
       destinationInsertionMode?: boolean;
       destinationMinCandidateIndex?: number;
       manualTimingPolicy?: ManualHotspotTimingPolicy;
       preferredHotspotOrder?: number[];
     },
   ): Promise<{
-    removedOptionalHotspots: Array<{ id: number; name: string; priority: number; reason?: string }>;
-    removedTopPriorityHotspots: Array<{ id: number; name: string; priority: number; reason?: string }>;
+    removedOptionalHotspots: Array<any>;
+    removedTopPriorityHotspots: Array<any>;
     topPriorityAffected: Array<{ id: number; name: string; priority: number; reason: string }>;
     requiresConfirmation: boolean;
     requiresP3RemovalConfirmation?: boolean;
-    p3HotspotsToRemove?: Array<{
-      id: number;
-      hotspotId: number;
-      name: string;
-      priority: number;
-      reason?: string;
-    }>;
+    p3HotspotsToRemove?: Array<any>;
     sameCityShuffleApplied?: boolean;
     sameCityShuffleOrder?: number[];
     scheduledHotspotIds: number[];
@@ -25258,20 +30036,69 @@ const guideSlotCsv = guideSlots.join(',');
       };
     };
   }> {
+    // See docs/manual-fit-here-exact-anchor-rules.md before changing exact-anchor Fit Here logic.
     const normalizedManualHotspotIds = this.normalizeManualHotspotIds(manualHotspotIds);
-    const allowTopPriorityRemoval = options?.allowTopPriorityRemoval === true;
+    const allowP3Removal = options?.allowP3Removal === true;
+    const allowProtectedPriorityRemoval =
+      options?.allowP1P2Removal === true ||
+      options?.allowTopPriorityRemoval === true;
+
+    const allowTopPriorityRemoval = allowProtectedPriorityRemoval;
     const isPreviewOnly = options?.previewOnly === true;
+    const isExactAnchorMode = options?.exactAnchorMode === true;
     const previewTimeBudgetMs = 15000;
     const startedAtMs = Date.now();
-    const removedOptionalHotspots: Array<{ id: number; name: string; priority: number; reason?: string }> = [];
-    const removedTopPriorityHotspots: Array<{ id: number; name: string; priority: number; reason?: string }> = [];
+    const removedOptionalHotspots: Array<any> = [];
+    const removedTopPriorityHotspots: Array<any> = [];
     const topPriorityAffected: Array<{ id: number; name: string; priority: number; reason: string }> = [];
+    const simulatedRemovedHotspotIds = new Set<number>();
+    const protectedAnchorHotspotIds = new Set<number>();
+
+    const markCandidateRemovedForPreview = (candidate: any) => {
+      const hotspotId = Number(candidate?.hotspotId || candidate?.id || candidate?.hotspot_ID || 0);
+      if (hotspotId > 0) {
+        simulatedRemovedHotspotIds.add(hotspotId);
+      }
+    };
+
+    const filterSimulatedRemovedCandidates = (candidateState: any) => {
+      const filterRows = (rows: any[] = []) =>
+        rows.filter((row: any) => {
+          const hotspotId = Number(row?.hotspotId || row?.id || row?.hotspot_ID || 0);
+          return !(hotspotId > 0 && simulatedRemovedHotspotIds.has(hotspotId));
+        });
+
+      return {
+        ...candidateState,
+        hotspotRows: filterRows(candidateState?.hotspotRows || []),
+        classified: {
+          ...(candidateState?.classified || {}),
+          p3ConfirmationCandidates: filterRows(candidateState?.classified?.p3ConfirmationCandidates || []),
+          optionalFillers: filterRows(candidateState?.classified?.optionalFillers || []),
+          strictTopPriority: filterRows(candidateState?.classified?.strictTopPriority || []),
+          manualRequired: filterRows(candidateState?.classified?.manualRequired || []),
+        },
+      };
+    };
+
+    if (options?.exactAnchorMode === true) {
+      const afterHotspotId = Number(options?.afterHotspotId || 0);
+      const beforeHotspotId = Number(options?.beforeHotspotId || 0);
+
+      if (afterHotspotId > 0) protectedAnchorHotspotIds.add(afterHotspotId);
+      if (beforeHotspotId > 0) protectedAnchorHotspotIds.add(beforeHotspotId);
+    }
 
     const baselineCandidates = await this.buildRouteHotspotInsertionCandidates(
       tx,
       Number(planId),
       Number(routeId),
       normalizedManualHotspotIds,
+    );
+    const selectedManualHotspotNameForReason = String(
+      (baselineCandidates?.hotspotMasters || [])
+        .find((row: any) => normalizedManualHotspotIds.includes(Number(row?.hotspot_ID || 0)))?.hotspot_name
+      || 'the selected manual hotspot',
     );
 
     const baselineTopPriorityByHotspotId = new Map<number, { id: number; name: string; priority: number }>();
@@ -25303,8 +30130,11 @@ const guideSlotCsv = guideSlots.join(',');
       normalizedManualHotspotIds,
       baselineCandidates,
       {
+        allowP3Removal,
+        allowP1P2Removal: allowProtectedPriorityRemoval,
         allowTopPriorityRemoval,
         previewOnly: isPreviewOnly,
+        exactAnchorMode: isExactAnchorMode,
         anchorType: anchor?.anchorType,
         anchorIndex: anchor?.anchorIndex,
         destinationInsertionMode: options?.destinationInsertionMode === true,
@@ -25343,15 +30173,26 @@ const guideSlotCsv = guideSlots.join(',');
       };
     }
 
-    const currentCandidates = await this.buildRouteHotspotInsertionCandidates(
+    const currentCandidatesRaw = await this.buildRouteHotspotInsertionCandidates(
       tx,
       Number(planId),
       Number(routeId),
       normalizedManualHotspotIds,
     );
+    const currentCandidates = isPreviewOnly
+      ? filterSimulatedRemovedCandidates(currentCandidatesRaw)
+      : currentCandidatesRaw;
 
-    const optionalCandidates = [...(currentCandidates.classified.optionalFillers || [])]
-      .filter((row: any) => !normalizedManualHotspotIds.includes(Number(row.hotspotId || 0)))
+    const optionalCandidates = allowP3Removal
+      ? [...(currentCandidates.classified.optionalFillers || [])]
+      .filter((row: any) => {
+        const hotspotId = Number(row?.hotspotId || row?.id || row?.hotspot_ID || 0);
+        return (
+          hotspotId > 0 &&
+          !normalizedManualHotspotIds.includes(hotspotId) &&
+          !protectedAnchorHotspotIds.has(hotspotId)
+        );
+      })
       .sort((a: any, b: any) => {
         const aPriority = this.getEffectivePriorityForManualInsertion(a);
         const bPriority = this.getEffectivePriorityForManualInsertion(b);
@@ -25360,7 +30201,8 @@ const guideSlotCsv = guideSlots.join(',');
         if (aPriority !== bPriority) return bPriority - aPriority;
         if (a.startTs !== b.startTs) return b.startTs - a.startTs;
         return b.routeHotspotId - a.routeHotspotId;
-      });
+      })
+      : [];
 
     for (const candidate of optionalCandidates) {
       if (isPreviewOnly && (Date.now() - startedAtMs) > previewTimeBudgetMs) {
@@ -25379,29 +30221,43 @@ const guideSlotCsv = guideSlots.join(',');
         };
       }
 
-      await (tx as any).dvi_itinerary_route_hotspot_details.deleteMany({
-        where: {
-          route_hotspot_ID: Number(candidate.routeHotspotId),
-          itinerary_plan_ID: Number(planId),
-          itinerary_route_ID: Number(routeId),
-          deleted: 0,
-        },
+      if (isPreviewOnly) {
+        markCandidateRemovedForPreview(candidate);
+      } else {
+        await (tx as any).dvi_itinerary_route_hotspot_details.updateMany({
+          where: {
+            route_hotspot_ID: Number(candidate.routeHotspotId),
+            itinerary_plan_ID: Number(planId),
+            itinerary_route_ID: Number(routeId),
+            deleted: 0,
+          },
+          data: {
+            deleted: 1,
+            status: 0,
+            updatedon: new Date(),
+          },
+        });
+
+        await this.addRouteHotspotToExcludedList(tx, Number(routeId), Number(candidate.hotspotId));
+      }
+      const beforeRemovalCandidate: any = bestCandidate || {};
+      const explainedCandidate = this.enrichRemovedHotspotCandidateWithAttempt({
+        candidate,
+        attemptedTimeline: beforeRemovalCandidate?.fullTimeline || beforeRemovalCandidate?.rows || [],
+        attemptedTimelineSource: isExactAnchorMode
+          ? 'FAILED_BEFORE_REMOVAL'
+          : 'UNKNOWN',
       });
 
-      await this.addRouteHotspotToExcludedList(tx, Number(routeId), Number(candidate.hotspotId));
-      removedOptionalHotspots.push({
-        id: Number(candidate.hotspotId),
-        name: candidate.name,
-        priority: Number(candidate.effectivePriority || candidate.rawPriority || 0),
-        reason: 'Removed lower-priority hotspot because manual hotspots are treated as Manual / P4.',
-      });
-
-      const refreshedCandidates = await this.buildRouteHotspotInsertionCandidates(
+      const refreshedCandidatesRaw = await this.buildRouteHotspotInsertionCandidates(
         tx,
         Number(planId),
         Number(routeId),
         normalizedManualHotspotIds,
       );
+      const refreshedCandidates = isPreviewOnly
+        ? filterSimulatedRemovedCandidates(refreshedCandidatesRaw)
+        : refreshedCandidatesRaw;
       const optionalRun = await this.runManualClusterOptimizer(
         tx,
         Number(planId),
@@ -25409,8 +30265,11 @@ const guideSlotCsv = guideSlots.join(',');
         normalizedManualHotspotIds,
         refreshedCandidates,
         {
+          allowP3Removal,
+          allowP1P2Removal: allowProtectedPriorityRemoval,
           allowTopPriorityRemoval,
           previewOnly: isPreviewOnly,
+          exactAnchorMode: isExactAnchorMode,
           anchorType: anchor?.anchorType,
           anchorIndex: anchor?.anchorIndex,
           destinationInsertionMode: options?.destinationInsertionMode === true,
@@ -25426,6 +30285,56 @@ const guideSlotCsv = guideSlots.join(',');
         ...optionalRun.optimizerLog,
         attempts: [...(optimizerLog.attempts || []), ...(optionalRun.optimizerLog.attempts || [])],
       };
+      const beforeOverflowMinutes = Number(beforeRemovalCandidate?.routeEndOverflowMinutes || 0);
+      const afterOverflowMinutes = Number(bestCandidate?.routeEndOverflowMinutes || 0);
+      const beforeOpeningConflictCount = Number(beforeRemovalCandidate?.openingHourConflictCount || 0);
+      const afterOpeningConflictCount = Number(bestCandidate?.openingHourConflictCount || 0);
+      const removalImprovedFeasibility =
+        bestCandidate?.success === true ||
+        afterOverflowMinutes < beforeOverflowMinutes ||
+        afterOpeningConflictCount < beforeOpeningConflictCount;
+
+      let candidateReasonCode:
+        | 'ROUTE_END_OVERFLOW'
+        | 'OPENING_HOURS_CONFLICT'
+        | 'LOWER_PRIORITY_REMOVAL_REQUIRED'
+        | 'UNPROVEN_REMOVAL'
+        | 'UNKNOWN' = 'UNKNOWN';
+
+      if (beforeOverflowMinutes > 0 && afterOverflowMinutes < beforeOverflowMinutes) {
+        candidateReasonCode = 'ROUTE_END_OVERFLOW';
+      } else if (beforeOpeningConflictCount > 0 && afterOpeningConflictCount < beforeOpeningConflictCount) {
+        candidateReasonCode = 'OPENING_HOURS_CONFLICT';
+      } else if (removalImprovedFeasibility) {
+        candidateReasonCode = 'LOWER_PRIORITY_REMOVAL_REQUIRED';
+      } else {
+        candidateReasonCode = 'UNPROVEN_REMOVAL';
+      }
+
+      removedOptionalHotspots.push({
+        ...this.buildRemovedHotspotExplanation({
+          row: {
+            ...explainedCandidate,
+            routeEndOverflowBeforeRemoval: beforeOverflowMinutes,
+            routeEndOverflowAfterRemoval: afterOverflowMinutes,
+            openingHourConflictCountBeforeRemoval: beforeOpeningConflictCount,
+            openingHourConflictCountAfterRemoval: afterOpeningConflictCount,
+            removalImprovedFeasibility,
+          },
+          priority: Number(candidate.effectivePriority || candidate.rawPriority || 0),
+          removalStage: 'OPTIONAL',
+          reasonCode: candidateReasonCode,
+          manualHotspotName: selectedManualHotspotNameForReason,
+          anchorLabel: options?.anchorLabel || null,
+          routeEndOverflowMinutes: beforeOverflowMinutes,
+          openingHourConflictCount: beforeOpeningConflictCount,
+        }),
+        routeEndOverflowBeforeRemoval: beforeOverflowMinutes,
+        routeEndOverflowAfterRemoval: afterOverflowMinutes,
+        openingHourConflictCountBeforeRemoval: beforeOpeningConflictCount,
+        openingHourConflictCountAfterRemoval: afterOpeningConflictCount,
+        removalImprovedFeasibility,
+      });
 
       for (const row of bestCandidate.topPriorityAffected || []) {
         if (!topPriorityAffected.some((existing) => Number(existing.id) === Number(row.id))) {
@@ -25451,18 +30360,48 @@ const guideSlotCsv = guideSlots.join(',');
       }
     }
 
-    const p3HotspotsToRemove = [...(currentCandidates.classified.p3ConfirmationCandidates || [])]
-      .filter((row: any) => !normalizedManualHotspotIds.includes(Number(row.hotspotId || 0)))
-      .map((row: any) => ({
-        id: Number(row.hotspotId),
-        hotspotId: Number(row.hotspotId),
-        name: String(row.name || `Hotspot #${row.hotspotId}`),
-        priority: this.CONFIRMATION_REQUIRED_PRIORITY,
-        reason: 'Removed P3 hotspot to fit the selected manual hotspot within opening hours and route timing.',
-      }));
+    const p3HotspotsToRemove = allowP3Removal
+      ? [...(currentCandidates.classified.p3ConfirmationCandidates || [])]
+      .filter((row: any) => {
+        const hotspotId = Number(row?.hotspotId || row?.id || row?.hotspot_ID || 0);
+        return (
+          hotspotId > 0 &&
+          !normalizedManualHotspotIds.includes(hotspotId) &&
+          !protectedAnchorHotspotIds.has(hotspotId)
+        );
+      })
+      .map((row: any) => {
+        const explainedRow = this.enrichRemovedHotspotCandidateWithAttempt({
+          candidate: row,
+          attemptedTimeline: bestCandidate?.fullTimeline || bestCandidate?.rows || [],
+          attemptedTimelineSource: isExactAnchorMode
+            ? 'EXACT_ANCHOR_SEQUENTIAL_REBUILD'
+            : 'UNKNOWN',
+        });
 
-    const p3ConfirmedCandidates = [...(currentCandidates.classified.p3ConfirmationCandidates || [])]
-      .filter((row: any) => !normalizedManualHotspotIds.includes(Number(row.hotspotId || 0)))
+        return this.buildRemovedHotspotExplanation({
+          row: explainedRow,
+          priority: this.CONFIRMATION_REQUIRED_PRIORITY,
+          removalStage: 'P3_FIRST',
+          reasonCode: 'MANUAL_HOTSPOT_TIME_WINDOW',
+          manualHotspotName: selectedManualHotspotNameForReason,
+          anchorLabel: options?.anchorLabel || null,
+          routeEndOverflowMinutes: Number(bestCandidate?.routeEndOverflowMinutes || 0),
+          openingHourConflictCount: Number(bestCandidate?.openingHourConflictCount || 0),
+        });
+      })
+      : [];
+
+    const p3ConfirmedCandidates = allowP3Removal
+      ? [...(currentCandidates.classified.p3ConfirmationCandidates || [])]
+      .filter((row: any) => {
+        const hotspotId = Number(row?.hotspotId || row?.id || row?.hotspot_ID || 0);
+        return (
+          hotspotId > 0 &&
+          !normalizedManualHotspotIds.includes(hotspotId) &&
+          !protectedAnchorHotspotIds.has(hotspotId)
+        );
+      })
       .sort((a: any, b: any) => {
         if (b.effectivePriority !== a.effectivePriority) {
           return b.effectivePriority - a.effectivePriority;
@@ -25471,32 +30410,47 @@ const guideSlotCsv = guideSlots.join(',');
           return b.startTs - a.startTs;
         }
         return b.routeHotspotId - a.routeHotspotId;
-      });
+      })
+      : [];
 
     for (const candidate of p3ConfirmedCandidates) {
-      await (tx as any).dvi_itinerary_route_hotspot_details.deleteMany({
-        where: {
-          route_hotspot_ID: Number(candidate.routeHotspotId),
-          itinerary_plan_ID: Number(planId),
-          itinerary_route_ID: Number(routeId),
-          deleted: 0,
-        },
+      if (isPreviewOnly) {
+        markCandidateRemovedForPreview(candidate);
+      } else {
+        await (tx as any).dvi_itinerary_route_hotspot_details.updateMany({
+          where: {
+            route_hotspot_ID: Number(candidate.routeHotspotId),
+            itinerary_plan_ID: Number(planId),
+            itinerary_route_ID: Number(routeId),
+            deleted: 0,
+          },
+          data: {
+            deleted: 1,
+            status: 0,
+            updatedon: new Date(),
+          },
+        });
+
+        await this.addRouteHotspotToExcludedList(tx, Number(routeId), Number(candidate.hotspotId));
+      }
+      const beforeRemovalCandidate: any = bestCandidate || {};
+      const explainedCandidate = this.enrichRemovedHotspotCandidateWithAttempt({
+        candidate,
+        attemptedTimeline: beforeRemovalCandidate?.fullTimeline || beforeRemovalCandidate?.rows || [],
+        attemptedTimelineSource: isExactAnchorMode
+          ? 'FAILED_BEFORE_REMOVAL'
+          : 'UNKNOWN',
       });
 
-      await this.addRouteHotspotToExcludedList(tx, Number(routeId), Number(candidate.hotspotId));
-      removedOptionalHotspots.push({
-        id: Number(candidate.hotspotId),
-        name: candidate.name,
-        priority: Number(candidate.effectivePriority || candidate.rawPriority || 0),
-        reason: 'Removed P3 hotspot to fit manual hotspot batch.',
-      });
-
-      const refreshedCandidates = await this.buildRouteHotspotInsertionCandidates(
+      const refreshedCandidatesRaw = await this.buildRouteHotspotInsertionCandidates(
         tx,
         Number(planId),
         Number(routeId),
         normalizedManualHotspotIds,
       );
+      const refreshedCandidates = isPreviewOnly
+        ? filterSimulatedRemovedCandidates(refreshedCandidatesRaw)
+        : refreshedCandidatesRaw;
       const p3Run = await this.runManualClusterOptimizer(
         tx,
         Number(planId),
@@ -25504,8 +30458,11 @@ const guideSlotCsv = guideSlots.join(',');
         normalizedManualHotspotIds,
         refreshedCandidates,
         {
-          allowTopPriorityRemoval: true,
+          allowP3Removal,
+          allowP1P2Removal: allowProtectedPriorityRemoval,
+          allowTopPriorityRemoval,
           previewOnly: isPreviewOnly,
+          exactAnchorMode: isExactAnchorMode,
           anchorType: anchor?.anchorType,
           anchorIndex: anchor?.anchorIndex,
           destinationInsertionMode: options?.destinationInsertionMode === true,
@@ -25521,6 +30478,56 @@ const guideSlotCsv = guideSlots.join(',');
         ...p3Run.optimizerLog,
         attempts: [...(optimizerLog.attempts || []), ...(p3Run.optimizerLog.attempts || [])],
       };
+      const beforeOverflowMinutes = Number(beforeRemovalCandidate?.routeEndOverflowMinutes || 0);
+      const afterOverflowMinutes = Number(bestCandidate?.routeEndOverflowMinutes || 0);
+      const beforeOpeningConflictCount = Number(beforeRemovalCandidate?.openingHourConflictCount || 0);
+      const afterOpeningConflictCount = Number(bestCandidate?.openingHourConflictCount || 0);
+      const removalImprovedFeasibility =
+        bestCandidate?.success === true ||
+        afterOverflowMinutes < beforeOverflowMinutes ||
+        afterOpeningConflictCount < beforeOpeningConflictCount;
+
+      let candidateReasonCode:
+        | 'ROUTE_END_OVERFLOW'
+        | 'OPENING_HOURS_CONFLICT'
+        | 'LOWER_PRIORITY_REMOVAL_REQUIRED'
+        | 'UNPROVEN_REMOVAL'
+        | 'UNKNOWN' = 'UNKNOWN';
+
+      if (beforeOverflowMinutes > 0 && afterOverflowMinutes < beforeOverflowMinutes) {
+        candidateReasonCode = 'ROUTE_END_OVERFLOW';
+      } else if (beforeOpeningConflictCount > 0 && afterOpeningConflictCount < beforeOpeningConflictCount) {
+        candidateReasonCode = 'OPENING_HOURS_CONFLICT';
+      } else if (removalImprovedFeasibility) {
+        candidateReasonCode = 'LOWER_PRIORITY_REMOVAL_REQUIRED';
+      } else {
+        candidateReasonCode = 'UNPROVEN_REMOVAL';
+      }
+
+      removedOptionalHotspots.push({
+        ...this.buildRemovedHotspotExplanation({
+          row: {
+            ...explainedCandidate,
+            routeEndOverflowBeforeRemoval: beforeOverflowMinutes,
+            routeEndOverflowAfterRemoval: afterOverflowMinutes,
+            openingHourConflictCountBeforeRemoval: beforeOpeningConflictCount,
+            openingHourConflictCountAfterRemoval: afterOpeningConflictCount,
+            removalImprovedFeasibility,
+          },
+          priority: Number(candidate.effectivePriority || candidate.rawPriority || 0),
+          removalStage: 'P3_FIRST',
+          reasonCode: candidateReasonCode,
+          manualHotspotName: selectedManualHotspotNameForReason,
+          anchorLabel: options?.anchorLabel || null,
+          routeEndOverflowMinutes: beforeOverflowMinutes,
+          openingHourConflictCount: beforeOpeningConflictCount,
+        }),
+        routeEndOverflowBeforeRemoval: beforeOverflowMinutes,
+        routeEndOverflowAfterRemoval: afterOverflowMinutes,
+        openingHourConflictCountBeforeRemoval: beforeOpeningConflictCount,
+        openingHourConflictCountAfterRemoval: afterOpeningConflictCount,
+        removalImprovedFeasibility,
+      });
 
       for (const row of bestCandidate.topPriorityAffected || []) {
         if (!topPriorityAffected.some((existing) => Number(existing.id) === Number(row.id))) {
@@ -25545,6 +30552,181 @@ const guideSlotCsv = guideSlots.join(',');
           slotInsights: bestCandidate.slotInsights || [],
           insertionMetrics: this.buildDistanceAndToFroLabels(bestCandidate),
         };
+      }
+    }
+
+    const shouldExploreProtectedPriorityRemovals =
+      allowTopPriorityRemoval === true;
+
+    if (shouldExploreProtectedPriorityRemovals) {
+      const removablePriorityOrder = [2, 1];
+
+      for (const priorityLevel of removablePriorityOrder) {
+        let priorityCandidatesStateRaw = await this.buildRouteHotspotInsertionCandidates(
+          tx,
+          Number(planId),
+          Number(routeId),
+          normalizedManualHotspotIds,
+        );
+        let priorityCandidatesState = isPreviewOnly
+          ? filterSimulatedRemovedCandidates(priorityCandidatesStateRaw)
+          : priorityCandidatesStateRaw;
+        const priorityCandidates = [...(priorityCandidatesState.classified.strictTopPriority || [])]
+          .filter((row: any) => Number(row?.effectivePriority || row?.rawPriority || 0) === priorityLevel)
+          .filter((row: any) => {
+            const hotspotId = Number(row?.hotspotId || row?.id || row?.hotspot_ID || 0);
+            return (
+              hotspotId > 0 &&
+              !normalizedManualHotspotIds.includes(hotspotId) &&
+              !protectedAnchorHotspotIds.has(hotspotId)
+            );
+          })
+          .sort((a: any, b: any) => {
+            if (b.startTs !== a.startTs) return b.startTs - a.startTs;
+            return b.routeHotspotId - a.routeHotspotId;
+          });
+
+        for (const candidate of priorityCandidates) {
+          if (isPreviewOnly) {
+            markCandidateRemovedForPreview(candidate);
+          } else {
+            await (tx as any).dvi_itinerary_route_hotspot_details.updateMany({
+              where: {
+                route_hotspot_ID: Number(candidate.routeHotspotId),
+                itinerary_plan_ID: Number(planId),
+                itinerary_route_ID: Number(routeId),
+                deleted: 0,
+              },
+              data: {
+                deleted: 1,
+                status: 0,
+                updatedon: new Date(),
+              },
+            });
+
+            await this.addRouteHotspotToExcludedList(tx, Number(routeId), Number(candidate.hotspotId));
+          }
+          const beforeRemovalCandidate: any = bestCandidate || {};
+          const explainedCandidate = this.enrichRemovedHotspotCandidateWithAttempt({
+            candidate,
+            attemptedTimeline: beforeRemovalCandidate?.fullTimeline || beforeRemovalCandidate?.rows || [],
+            attemptedTimelineSource: isExactAnchorMode
+              ? 'FAILED_BEFORE_REMOVAL'
+              : 'UNKNOWN',
+          });
+
+          priorityCandidatesStateRaw = await this.buildRouteHotspotInsertionCandidates(
+            tx,
+            Number(planId),
+            Number(routeId),
+            normalizedManualHotspotIds,
+          );
+          priorityCandidatesState = isPreviewOnly
+            ? filterSimulatedRemovedCandidates(priorityCandidatesStateRaw)
+            : priorityCandidatesStateRaw;
+          const priorityRun = await this.runManualClusterOptimizer(
+            tx,
+            Number(planId),
+            Number(routeId),
+            normalizedManualHotspotIds,
+            priorityCandidatesState,
+            {
+              allowP3Removal,
+              allowP1P2Removal: allowProtectedPriorityRemoval,
+              allowTopPriorityRemoval,
+              previewOnly: isPreviewOnly,
+              exactAnchorMode: isExactAnchorMode,
+              anchorType: anchor?.anchorType,
+              anchorIndex: anchor?.anchorIndex,
+              destinationInsertionMode: options?.destinationInsertionMode === true,
+              destinationMinCandidateIndex: Number(options?.destinationMinCandidateIndex || 0) || undefined,
+              removedOptionalHotspots,
+              removedTopPriorityHotspots,
+              baselineTopPriorityByHotspotId,
+              manualTimingPolicy: options?.manualTimingPolicy,
+            },
+          );
+          bestCandidate = priorityRun.bestCandidate;
+          optimizerLog = {
+            ...priorityRun.optimizerLog,
+            attempts: [...(optimizerLog.attempts || []), ...(priorityRun.optimizerLog.attempts || [])],
+          };
+          const beforeOverflowMinutes = Number(beforeRemovalCandidate?.routeEndOverflowMinutes || 0);
+          const afterOverflowMinutes = Number(bestCandidate?.routeEndOverflowMinutes || 0);
+          const beforeOpeningConflictCount = Number(beforeRemovalCandidate?.openingHourConflictCount || 0);
+          const afterOpeningConflictCount = Number(bestCandidate?.openingHourConflictCount || 0);
+          const removalImprovedFeasibility =
+            bestCandidate?.success === true ||
+            afterOverflowMinutes < beforeOverflowMinutes ||
+            afterOpeningConflictCount < beforeOpeningConflictCount;
+
+          let candidateReasonCode:
+            | 'ROUTE_END_OVERFLOW'
+            | 'OPENING_HOURS_CONFLICT'
+            | 'LOWER_PRIORITY_REMOVAL_REQUIRED'
+            | 'UNPROVEN_REMOVAL'
+            | 'UNKNOWN' = 'UNKNOWN';
+
+          if (beforeOverflowMinutes > 0 && afterOverflowMinutes < beforeOverflowMinutes) {
+            candidateReasonCode = 'ROUTE_END_OVERFLOW';
+          } else if (beforeOpeningConflictCount > 0 && afterOpeningConflictCount < beforeOpeningConflictCount) {
+            candidateReasonCode = 'OPENING_HOURS_CONFLICT';
+          } else if (removalImprovedFeasibility) {
+            candidateReasonCode = 'LOWER_PRIORITY_REMOVAL_REQUIRED';
+          } else {
+            candidateReasonCode = 'UNPROVEN_REMOVAL';
+          }
+
+          removedTopPriorityHotspots.push({
+            ...this.buildRemovedHotspotExplanation({
+              row: {
+                ...explainedCandidate,
+                routeEndOverflowBeforeRemoval: beforeOverflowMinutes,
+                routeEndOverflowAfterRemoval: afterOverflowMinutes,
+                openingHourConflictCountBeforeRemoval: beforeOpeningConflictCount,
+                openingHourConflictCountAfterRemoval: afterOpeningConflictCount,
+                removalImprovedFeasibility,
+              },
+              priority: Number(candidate.effectivePriority || candidate.rawPriority || priorityLevel),
+              removalStage: priorityLevel === 2 ? 'P2_AFTER_P3' : 'P1_AFTER_P3_P2',
+              reasonCode: candidateReasonCode,
+              manualHotspotName: selectedManualHotspotNameForReason,
+              anchorLabel: options?.anchorLabel || null,
+              routeEndOverflowMinutes: beforeOverflowMinutes,
+              openingHourConflictCount: beforeOpeningConflictCount,
+            }),
+            routeEndOverflowBeforeRemoval: beforeOverflowMinutes,
+            routeEndOverflowAfterRemoval: afterOverflowMinutes,
+            openingHourConflictCountBeforeRemoval: beforeOpeningConflictCount,
+            openingHourConflictCountAfterRemoval: afterOpeningConflictCount,
+            removalImprovedFeasibility,
+          });
+
+          for (const row of bestCandidate.topPriorityAffected || []) {
+            if (!topPriorityAffected.some((existing) => Number(existing.id) === Number(row.id))) {
+              topPriorityAffected.push(row);
+            }
+          }
+
+          if (bestCandidate.success) {
+            return {
+              removedOptionalHotspots,
+              removedTopPriorityHotspots,
+              topPriorityAffected,
+              requiresConfirmation: allowTopPriorityRemoval ? false : removedTopPriorityHotspots.length > 0,
+              requiresP3RemovalConfirmation: false,
+              p3HotspotsToRemove,
+              scheduledHotspotIds: (bestCandidate.scheduledManualHotspots || []).map((row: any) => Number(row.id)),
+              unscheduledManualHotspots: bestCandidate.unscheduledManualHotspots || [],
+              shiftedHotspots: [],
+              deferredHotspots: removedTopPriorityHotspots,
+              manualOptimizer: optimizerLog,
+              reason: `Removed priority hotspots in reverse order up to P${priorityLevel} to fit manual hotspot batch.`,
+              slotInsights: bestCandidate.slotInsights || [],
+              insertionMetrics: this.buildDistanceAndToFroLabels(bestCandidate),
+            };
+          }
+        }
       }
     }
 
@@ -25773,22 +30955,33 @@ const guideSlotCsv = guideSlots.join(',');
         .filter((id: number) => Number.isFinite(id) && id > 0);
 
       if (manualRouteHotspotIds.length > 0) {
-        await (tx as any).dvi_itinerary_route_activity_details.deleteMany({
+        await (tx as any).dvi_itinerary_route_activity_details.updateMany({
           where: {
             itinerary_plan_ID: normalizedPlanId,
             itinerary_route_ID: normalizedRouteId,
             route_hotspot_ID: { in: manualRouteHotspotIds },
+            deleted: 0,
+          },
+          data: {
+            deleted: 1,
+            status: 0,
+            updatedon: new Date(),
           },
         });
       }
 
-      await (tx as any).dvi_itinerary_route_hotspot_details.deleteMany({
+      await (tx as any).dvi_itinerary_route_hotspot_details.updateMany({
         where: {
           itinerary_plan_ID: normalizedPlanId,
           itinerary_route_ID: normalizedRouteId,
           hotspot_plan_own_way: 1,
           item_type: 4,
           deleted: 0,
+        },
+        data: {
+          deleted: 1,
+          status: 0,
+          updatedon: new Date(),
         },
       });
 
