@@ -17795,6 +17795,10 @@ const guideSlotCsv = guideSlots.join(',');
             updatedon: new Date(),
           },
         });
+
+        for (const removedId of removedIds) {
+          await this.addRouteHotspotToExcludedList(tx, Number(routeId), Number(removedId));
+        }
       }
     }
 
@@ -17871,6 +17875,10 @@ const guideSlotCsv = guideSlots.join(',');
             updatedon: new Date(),
           },
         });
+
+        for (const removedId of removedIds) {
+          await this.addRouteHotspotToExcludedList(tx, Number(routeId), Number(removedId));
+        }
       }
     }
 
@@ -29225,15 +29233,13 @@ const guideSlotCsv = guideSlots.join(',');
       hotspots: params.hotspots,
       manualHotspotIds: params.manualHotspotIds,
     });
-    const manualIds = new Set((params.manualHotspotIds || []).map(Number).filter((id) => id > 0));
     const manualId = Number(cluster.manualPoint?.hotspotId || params.manualHotspotIds?.[0] || 0);
     const currentCluster = cluster.clusterHotspots
-      .filter((row) => !manualIds.has(Number(row.hotspotId)))
+      // Preserve every already-active manual hotspot in the cluster.
+      // The only hotspot we may need to re-position here is the selected manual hotspot itself.
+      .filter((row) => Number(row.hotspotId) !== manualId)
       .sort((a, b) => Number(a.hotspotOrder) - Number(b.hotspotOrder));
     const clusterWithManual = [...currentCluster];
-    if (manualId > 0 && !clusterWithManual.some((row) => Number(row.hotspotId) === manualId) && cluster.manualPoint) {
-      clusterWithManual.push(cluster.manualPoint);
-    }
 
     const anchorAfterIndex = Math.max(0, Number(params.anchorIndex || 0));
     const anchorBeforeIndex = Math.max(0, anchorAfterIndex - 1);
