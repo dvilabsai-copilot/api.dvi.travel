@@ -3,7 +3,7 @@
 //
 // Single source of truth for dvi_itinerary_plan_details header row.
 
-import { Injectable } from "@nestjs/common";
+import { BadRequestException, Injectable } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import {
   CreatePlanDto,
@@ -111,6 +111,64 @@ export class PlanEngineService {
       totalChildWithBed,
       totalChildWithoutBed,
     };
+  }
+
+    private isChildAgeFiveOrAbove(age: string | undefined | null): boolean {
+    const rawAge = String(age ?? "").trim();
+
+    if (!rawAge) {
+      return true;
+    }
+
+    const numericAge = Number(rawAge);
+    return Number.isFinite(numericAge) && numericAge >= 5;
+  }
+
+  private assertChildExtraBedOccupancyRule(
+    travellers: CreateTravellerDto[],
+  ): void {
+    const childrenByRoom = new Map<number, CreateTravellerDto[]>();
+
+    for (const traveller of travellers || []) {
+      if (Number(traveller?.traveller_type) !== 2) {
+        continue;
+      }
+
+      if (!this.isChildAgeFiveOrAbove(traveller.traveller_age)) {
+        continue;
+      }
+
+      const roomId = Number(traveller.room_id || 0);
+      if (roomId <= 0) {
+        continue;
+      }
+
+      const roomChildren = childrenByRoom.get(roomId) || [];
+      roomChildren.push(traveller);
+      childrenByRoom.set(roomId, roomChildren);
+    }
+
+    for (const [roomId, roomChildren] of childrenByRoom.entries()) {
+      if (roomChildren.length < 2) {
+        continue;
+      }
+
+      const unresolvedChild = roomChildren.slice(1).find((child) => {
+        const hasExtraBed = Number(child.child_bed_type ?? 0) === 2;
+        const hasHotelApproval =
+          Number(
+            (child as any).child_extra_bed_hotel_approval_required ?? 0,
+          ) === 1;
+
+        return !hasExtraBed && !hasHotelApproval;
+      });
+
+      if (unresolvedChild) {
+        throw new BadRequestException(
+          `Occupancy alert: Room ${roomId} has two children aged 5 or above. Add one extra bed, add another room, or proceed without extra bed subject to hotel approval.`,
+        );
+      }
+    }
   }
 
   private normalizeStringList(list: string[] | undefined | null): string {
@@ -353,9 +411,11 @@ export class PlanEngineService {
     const tripEnd = this.parseDate(plan.trip_end_date);
     const pickup = this.parseDate(plan.pick_up_date_and_time);
 
-    const totalAdult = Number(plan.adult_count ?? 0);
+        const totalAdult = Number(plan.adult_count ?? 0);
     const totalChildren = Number(plan.child_count ?? 0);
     const totalInfants = Number(plan.infant_count ?? 0);
+
+    this.assertChildExtraBedOccupancyRule(travellers || []);
 
     const {
       totalExtraBed,
