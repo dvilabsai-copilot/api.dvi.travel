@@ -16058,6 +16058,7 @@ const guideSlotCsv = guideSlots.join(',');
         : null;
     adjustedTimeline = adjustedTimeline
       || await this.buildMatrixRescheduledPreviewTimeline({
+          routeId,
           baselineTimeline,
           enginePreviewTimeline: baselineTimeline,
           manualInsertionFit,
@@ -17980,6 +17981,7 @@ const guideSlotCsv = guideSlots.join(',');
     selectedHotspotId: number;
     hotspotMasters: any[];
     tx?: any;
+    routeId?: number;
     routeEndMinutes?: number;
   }): Promise<any[]> {
     const {
@@ -17989,6 +17991,7 @@ const guideSlotCsv = guideSlots.join(',');
       selectedHotspotId,
       hotspotMasters,
       tx,
+      routeId,
     } = params;
 
     const baseMerged = this.buildMatrixMergedPreviewTimeline({
@@ -18033,6 +18036,238 @@ const guideSlotCsv = guideSlots.join(',');
       source: bestSlot?.source || null,
       label: bestSlot?.label || null,
     });
+    const isTravelToHotelRow = (row: any) => {
+      const type = String(row?.type || '').toLowerCase();
+      const text = String(row?.text || row?.name || '').toLowerCase();
+      return (type === 'travel' || Number(row?.item_type || 0) === 3 || Number(row?.item_type || 0) === 5) && text.includes('travel to hotel');
+    };
+
+    if (!fromHotspotId && toHotspotId > 0) {
+      const toRowIndex = baseMerged.findIndex(
+        (row: any) => Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || 0) === toHotspotId
+          && isAttractionRow(row),
+      );
+      const insertedRowIndex = baseMerged.findIndex(
+        (row: any) => row?.isMatrixPositioned === true && Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || 0) === selectedIdNum,
+      );
+
+      if (toRowIndex >= 0 && insertedRowIndex >= 0 && tx && Number(routeId || 0) > 0) {
+        const prefix = baseMerged
+          .slice(0, toRowIndex)
+          .filter((row: any) => !isHotelLikeRow(row) && !isTravelRow(row))
+          .map((row: any) => ({ ...row }));
+
+        let cursor = prefix.length > 0
+          ? (this.parseSegmentEndMinutes(prefix[prefix.length - 1]) ?? this.parseSegmentStartMinutes(baseMerged[0]) ?? 8 * 60)
+          : (this.parseSegmentStartMinutes(baseMerged[0]) ?? 8 * 60);
+
+        const selectedRow = baseMerged[insertedRowIndex];
+        const selectedHotspotMaster = hotspotMasters.find((hotspot: any) => Number(hotspot?.hotspot_ID || hotspot?.id || 0) === selectedIdNum) || null;
+        const selectedDurationMinutes =
+          this.getHotspotDurationMinutesFromMasterFirst(selectedHotspotMaster, selectedRow)
+          || this.getPreviewRowDurationFromDurationFieldsOnly(selectedRow)
+          || 60;
+
+        const sourceLeg = await this.resolveSourceToHotspotLeg(tx, Number(routeId || 0), selectedIdNum);
+        const selectedToAnchorLeg = await this.getCachedRouteMatrixLeg(tx, selectedIdNum, toHotspotId);
+        const anchorRow = baseMerged[toRowIndex];
+        const anchorLabel = String(anchorRow?.text || anchorRow?.name || bestSlot?.toName || `Hotspot #${toHotspotId}`).trim();
+        const selectedLabel = String(selectedRow?.text || selectedRow?.name || manualInsertionFit?.selectedHotspotName || `Hotspot #${selectedIdNum}`).trim();
+
+        const sourceTravelDuration = Math.max(
+          1,
+          Math.round(Number(sourceLeg.durationMin || this.estimateDurationFromDistance(Number(sourceLeg.distanceKm || null)) || 10)),
+        );
+        const selectedToAnchorDuration = Math.max(
+          1,
+          Math.round(Number(selectedToAnchorLeg.durationMin || this.estimateDurationFromDistance(Number(selectedToAnchorLeg.distanceKm || null)) || 10)),
+        );
+        const sourceTravelDistance = this.chooseReliableTravelDistanceKm(
+          sourceLeg.distanceKm != null ? Number(sourceLeg.distanceKm) : null,
+          null,
+        );
+        const selectedToAnchorDistance = this.chooseReliableTravelDistanceKm(
+          selectedToAnchorLeg.distanceKm != null ? Number(selectedToAnchorLeg.distanceKm) : null,
+          null,
+        );
+
+        const scheduleTravel = (
+          row: any,
+          start: number,
+          duration: number,
+          fromLabel: string,
+          toLabel: string,
+          distanceKm: number | null,
+          leg: 'A_TO_C' | 'C_TO_B',
+          locationId: number,
+        ) => ({
+          ...row,
+          type: 'travel',
+          item_type: Number(row?.item_type || 3),
+          isMatrixSplitTravel: true,
+          isMatrixReconnectedTravel: true,
+          matrixTravelLeg: leg,
+          fromName: fromLabel,
+          toName: toLabel,
+          from: fromLabel,
+          to: toLabel,
+          displayFromName: fromLabel,
+          displayToName: toLabel,
+          text: `Travel to ${toLabel}`,
+          name: `Travel to ${toLabel}`,
+          matrixDistanceKm: distanceKm,
+          distanceKm: distanceKm,
+          travelDistanceKm: distanceKm,
+          matrixDurationMin: duration,
+          duration: `${duration} Min`,
+          distance: distanceKm != null ? `${Number(distanceKm).toFixed(1)} km` : null,
+          timeRange: this.minutesRangeToTimeString(start, start + duration),
+          locationId,
+          hotspot_ID: locationId,
+          hotspotId: locationId,
+          hotspot_start_time: null,
+          hotspot_end_time: null,
+        });
+
+        const sourceTravel = scheduleTravel(
+          {},
+          cursor,
+          sourceTravelDuration,
+          String(sourceLeg.sourceName || 'Route Start').trim(),
+          selectedLabel,
+          sourceTravelDistance,
+          'A_TO_C',
+          selectedIdNum,
+        );
+        cursor += sourceTravelDuration;
+
+        const insertedRow = {
+          ...selectedRow,
+          type: 'attraction',
+          item_type: 4,
+          locationId: selectedIdNum,
+          hotspot_ID: selectedIdNum,
+          hotspotId: selectedIdNum,
+          text: selectedLabel,
+          name: selectedLabel,
+          isManual: true,
+          isMatrixPositioned: true,
+          timeRange: this.minutesRangeToTimeString(cursor, cursor + selectedDurationMinutes),
+          hotspot_start_time: null,
+          hotspot_end_time: null,
+          isConflict: false,
+          conflictReason: null,
+        };
+        cursor += selectedDurationMinutes;
+
+        const selectedToAnchorTravel = scheduleTravel(
+          {},
+          cursor,
+          selectedToAnchorDuration,
+          selectedLabel,
+          anchorLabel,
+          selectedToAnchorDistance,
+          'C_TO_B',
+          toHotspotId,
+        );
+        cursor += selectedToAnchorDuration;
+
+        const tailSource = baseMerged.slice(toRowIndex);
+        const bodyRows = [sourceTravel, insertedRow, selectedToAnchorTravel, ...tailSource]
+          .filter((row: any, index: number) => {
+            if (index < 3) return true;
+            if (!row) return false;
+            if (row?.isMatrixSplitTravel === true) return false;
+            if (Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || 0) === selectedIdNum) return false;
+            return true;
+          });
+
+        const rescheduledBody: any[] = [];
+        const pendingHotelTravelRows: any[] = [];
+        const pendingHotelRows: any[] = [];
+        cursor = prefix.length > 0
+          ? (this.parseSegmentEndMinutes(prefix[prefix.length - 1]) ?? this.parseSegmentStartMinutes(baseMerged[0]) ?? 8 * 60)
+          : (this.parseSegmentStartMinutes(baseMerged[0]) ?? 8 * 60);
+
+        for (const row of bodyRows) {
+          if (isTravelToHotelRow(row)) {
+            pendingHotelTravelRows.push({ ...row });
+            continue;
+          }
+          if (isHotelLikeRow(row)) {
+            pendingHotelRows.push({ ...row });
+            continue;
+          }
+          if (isTravelRow(row)) {
+            const duration = Math.max(1, Math.round(Number(row?.matrixDurationMin || this.getPreviewRowDurationMinutes(row) || 10)));
+            rescheduledBody.push({
+              ...row,
+              timeRange: this.minutesRangeToTimeString(cursor, cursor + duration),
+              hotspot_start_time: null,
+              hotspot_end_time: null,
+            });
+            cursor += duration;
+            continue;
+          }
+          if (isAttractionRow(row)) {
+            const duration = Math.max(1, Math.round(Number(this.getPreviewRowDurationMinutes(row) || 60)));
+            rescheduledBody.push({
+              ...row,
+              timeRange: this.minutesRangeToTimeString(cursor, cursor + duration),
+              hotspot_start_time: null,
+              hotspot_end_time: null,
+            });
+            cursor += duration;
+            continue;
+          }
+          rescheduledBody.push({ ...row });
+        }
+
+        for (const row of pendingHotelTravelRows) {
+          const duration = Math.max(1, Math.round(Number(this.getPreviewRowDurationMinutes(row) || row?.matrixDurationMin || 10)));
+          const previousStop = [...rescheduledBody].reverse().find((candidate: any) => isAttractionRow(candidate)) || null;
+          const previousStopLabel = String(previousStop?.text || previousStop?.name || row?.fromName || 'Previous Stop').trim();
+          const hotelRow = pendingHotelRows[0] || null;
+          const hotelCheckinText = String(hotelRow?.text || hotelRow?.name || '').trim();
+          const hotelCheckinMatch = hotelCheckinText.match(/check-?in\s+at\s+(.+)/i);
+          const hotelNameFromCheckin = String(hotelCheckinMatch?.[1] || '').trim();
+          const hotelLabel = hotelNameFromCheckin && hotelNameFromCheckin.toLowerCase() !== 'hotel'
+            ? hotelNameFromCheckin
+            : 'Hotel';
+          rescheduledBody.push({
+            ...row,
+            item_type: 5,
+            text: `Travel to ${hotelLabel}`,
+            name: `Travel to ${hotelLabel}`,
+            fromName: previousStopLabel,
+            toName: hotelLabel,
+            from: previousStopLabel,
+            to: hotelLabel,
+            displayFromName: previousStopLabel,
+            displayToName: hotelLabel,
+            timeRange: this.minutesRangeToTimeString(cursor, cursor + duration),
+            hotspot_start_time: null,
+            hotspot_end_time: null,
+          });
+          cursor += duration;
+        }
+
+        for (const hotelRow of pendingHotelRows) {
+          rescheduledBody.push({
+            ...hotelRow,
+            timeRange: this.minutesRangeToTimeString(cursor, cursor),
+            hotspot_start_time: null,
+            hotspot_end_time: null,
+            isZeroDurationHotel: true,
+          });
+        }
+
+        const rescheduled = this.finalizeMatrixPreviewTimeline([...prefix, ...rescheduledBody]);
+        this.assertTimelineOrderForMatrixPreview(rescheduled, selectedIdNum);
+        return rescheduled;
+      }
+    }
+
     if (!fromHotspotId) {
       return this.finalizeMatrixPreviewTimeline(baseMerged);
     }
@@ -18273,12 +18508,6 @@ const guideSlotCsv = guideSlots.join(',');
     // 3) Continue with remaining rows in logical baseline order, skipping replaced originals.
     const tailSource = baseMerged.slice(toRowIndex);
     const tailRows: any[] = [];
-
-    const isTravelToHotelRow = (row: any) => {
-      const type = String(row?.type || '').toLowerCase();
-      const text = String(row?.text || row?.name || '').toLowerCase();
-      return (type === 'travel' || Number(row?.item_type || 0) === 3 || Number(row?.item_type || 0) === 5) && text.includes('travel to hotel');
-    };
 
     for (const row of tailSource) {
       if (!row) continue;
@@ -19531,6 +19760,15 @@ const guideSlotCsv = guideSlots.join(',');
             && Number(slot?.toHotspotId || 0) === Number(requestedExactSlot?.toHotspotId || 0)
           ))
           || (
+            Number(requestedExactSlot?.fromHotspotId || 0) <= 0
+            && Number(requestedExactSlot?.toHotspotId || 0) > 0
+              ? exactAnchorCandidateSlots.find((slot: any) => (
+                  Number(slot?.toHotspotId || 0) === Number(requestedExactSlot?.toHotspotId || 0)
+                  && Number(slot?.fromHotspotId || 0) <= 0
+                ))
+              : null
+          )
+          || (
             Number(requestedExactSlot?.toHotspotId || 0) <= 0
               ? exactAnchorCandidateSlots.find((slot: any) => (
                   Number(slot?.fromHotspotId || 0) === Number(requestedExactSlot?.fromHotspotId || 0)
@@ -19611,6 +19849,7 @@ const guideSlotCsv = guideSlots.join(',');
           }
         : manualInsertionFit;
     let adjustedPreviewTimeline = await this.buildMatrixRescheduledPreviewTimeline({
+      routeId: Number(route?.itinerary_route_ID || routeId || 0),
       baselineTimeline: baselineTimelineForMatrix,
       enginePreviewTimeline: previewTimeline,
       manualInsertionFit: timelineInsertionFit,
@@ -19645,6 +19884,7 @@ const guideSlotCsv = guideSlots.join(',');
       && Number(options?.beforeHotspotId || 0) <= 0
     ) {
       let destinationExactAnchorRebuilt = await this.buildMatrixRescheduledPreviewTimeline({
+        routeId: Number(route?.itinerary_route_ID || routeId || 0),
         baselineTimeline: baselineTimelineForMatrix,
         enginePreviewTimeline: previewTimeline,
         manualInsertionFit: timelineInsertionFit,
@@ -25455,6 +25695,15 @@ const guideSlotCsv = guideSlots.join(',');
 
       if (exactGapMatch) {
         requestedSlot = mapRequestedSlotResult(exactGapMatch);
+      } else if (!(preferredFromHotspotId > 0) && preferredToHotspotId > 0) {
+        const toHotspotMatch = allSlotResults.find((slot: any) => (
+          Number(slot?.toHotspotId || 0) === preferredToHotspotId
+          && Number(slot?.fromHotspotId || 0) <= 0
+        ));
+
+        if (toHotspotMatch) {
+          requestedSlot = mapRequestedSlotResult(toHotspotMatch);
+        }
       } else if (preferredFromHotspotId > 0 && !(preferredToHotspotId > 0)) {
         const fromHotspotMatch = allSlotResults.find((slot: any) => (
           Number(slot?.fromHotspotId || 0) === preferredFromHotspotId

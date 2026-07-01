@@ -57,8 +57,14 @@ export async function resolveManualFitHereAnchorImpl(
     ? Number(anchor.anchorIndex)
     : 0;
 
+  let resolvedBeforeRow = beforeRow;
+
   if (anchorIntent === 'AFTER_START') {
     anchorIndex = 0;
+    // Treat "after start" as the concrete gap before the first attraction.
+    // This keeps the exact anchor pinned to the route's first hotspot instead
+    // of letting downstream slot matching drift toward hotel/destination gaps.
+    resolvedBeforeRow = rows[0] || null;
   }
 
   if (anchorIntent === 'AFTER_ATTRACTION') {
@@ -88,8 +94,8 @@ export async function resolveManualFitHereAnchorImpl(
     beforeRowType: String(anchor?.beforeRowType || '').trim() || null,
     afterRouteHotspotId: afterRow?.routeHotspotId ?? null,
     afterHotspotId: afterRow?.hotspotId ?? null,
-    beforeRouteHotspotId: beforeRow?.routeHotspotId ?? null,
-    beforeHotspotId: beforeRow?.hotspotId ?? null,
+    beforeRouteHotspotId: resolvedBeforeRow?.routeHotspotId ?? null,
+    beforeHotspotId: resolvedBeforeRow?.hotspotId ?? null,
     exactSelectedGap: true,
   };
 }
