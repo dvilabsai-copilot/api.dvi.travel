@@ -14127,9 +14127,30 @@ const guideSlotCsv = guideSlots.join(',');
       }
 
       const visitMinutes = getDurationMinutes(currentAttraction, 60);
-      const scheduledAttraction = scheduleRow(currentAttraction, cursor, visitMinutes);
+      const operatingAdjustment = this.adjustManualFitVisitStartToOperatingWindow(
+        currentAttraction,
+        cursor,
+        visitMinutes,
+      );
+
+      if (operatingAdjustment.waitingMinutes > 0) {
+        rebuilt.push({
+          type: 'waiting',
+          item_type: 0,
+          text: `Wait for ${getName(currentAttraction)} to open`,
+          name: `Wait for ${getName(currentAttraction)} to open`,
+          gapMinutes: operatingAdjustment.waitingMinutes,
+          isSyntheticWaiting: true,
+          timeRange: this.minutesRangeToFitPreviewLabel(cursor, operatingAdjustment.startMinutes),
+        });
+      }
+
+      const adjustedStartMinutes = operatingAdjustment.valid
+        ? operatingAdjustment.startMinutes
+        : cursor;
+      const scheduledAttraction = scheduleRow(currentAttraction, adjustedStartMinutes, visitMinutes);
       rebuilt.push(scheduledAttraction);
-      cursor += visitMinutes;
+      cursor = adjustedStartMinutes + visitMinutes;
       previousAttraction = currentAttraction;
     }
 
@@ -15355,7 +15376,8 @@ const guideSlotCsv = guideSlots.join(',');
         if (
           validationMode === 'SELECTED_HOTSPOT_CLOSING' &&
           targetTimelineIndex >= 0 &&
-          rowIndex >= targetTimelineIndex
+          rowIndex >= targetTimelineIndex &&
+          params.exactAnchorMode !== true
         ) {
           return false;
         }
@@ -15414,7 +15436,12 @@ const guideSlotCsv = guideSlots.join(',');
           row?.mustInclude === true ||
           row?.planOwnWay === true ||
           Number(row?.hotspot_plan_own_way || 0) === 1;
-        const beforeTarget = !(validationMode === 'SELECTED_HOTSPOT_CLOSING' && targetTimelineIndex >= 0 && rowIndex >= targetTimelineIndex);
+        const beforeTarget = !(
+          validationMode === 'SELECTED_HOTSPOT_CLOSING'
+          && targetTimelineIndex >= 0
+          && rowIndex >= targetTimelineIndex
+          && params.exactAnchorMode !== true
+        );
         const allowedByPriority =
           (priority === 4 || priority === 3 ? params.allowP3Removal === true : true) &&
           (priority === 2 ? params.allowP2Removal === true : true) &&
@@ -26730,6 +26757,78 @@ const guideSlotCsv = guideSlots.join(',');
     };
   }
 
+  private adjustManualFitVisitStartToOperatingWindow(
+    row: any,
+    arrivalMinutes: number,
+    durationMinutes: number,
+  ): {
+    valid: boolean;
+    startMinutes: number;
+    waitingMinutes: number;
+    operatingHours: string | null;
+  } {
+    const operatingHours = this.normalizeManualFitTimeText(
+      row?.timings || row?.operatingHours || row?.hotspot_timings || '',
+    );
+
+    if (!operatingHours || /open\s*24/i.test(operatingHours)) {
+      return {
+        valid: true,
+        startMinutes: arrivalMinutes,
+        waitingMinutes: 0,
+        operatingHours: operatingHours || null,
+      };
+    }
+
+    if (/^closed$/i.test(operatingHours)) {
+      return {
+        valid: false,
+        startMinutes: arrivalMinutes,
+        waitingMinutes: 0,
+        operatingHours,
+      };
+    }
+
+    const windows = this.extractTimeWindowsFromLabel(operatingHours);
+    if (windows.length === 0) {
+      return {
+        valid: true,
+        startMinutes: arrivalMinutes,
+        waitingMinutes: 0,
+        operatingHours,
+      };
+    }
+
+    const safeDurationMinutes = Math.max(1, Math.round(Number(durationMinutes || 0) || 0));
+    let bestStart: number | null = null;
+
+    for (const window of windows) {
+      if (window.endMinutes < window.startMinutes) continue;
+
+      const candidateStart = Math.max(arrivalMinutes, window.startMinutes);
+      if ((candidateStart + safeDurationMinutes) <= window.endMinutes) {
+        bestStart = candidateStart;
+        break;
+      }
+    }
+
+    if (bestStart === null) {
+      return {
+        valid: false,
+        startMinutes: arrivalMinutes,
+        waitingMinutes: 0,
+        operatingHours,
+      };
+    }
+
+    return {
+      valid: true,
+      startMinutes: bestStart,
+      waitingMinutes: Math.max(0, bestStart - arrivalMinutes),
+      operatingHours,
+    };
+  }
+
   private getSelectedManualClosingOverflow(params: {
     timeline: any[];
     selectedHotspotIds: number[];
@@ -27296,14 +27395,18 @@ const guideSlotCsv = guideSlots.join(',');
       return 4;
     };
 
+    const totalRemovedCount = (attempt: ManualScheduleAttempt): number => (
+      Number(attempt.removedOptionalCount || 0) + Number(attempt.removedTopPriorityCount || 0)
+    );
+
     const ac = category(a);
     const bc = category(b);
     if (ac !== bc) return ac - bc;
+    if (totalRemovedCount(a) !== totalRemovedCount(b)) return totalRemovedCount(a) - totalRemovedCount(b);
+    if (a.removedTopPriorityCount !== b.removedTopPriorityCount) return a.removedTopPriorityCount - b.removedTopPriorityCount;
     if (a.topPriorityAffectedCount !== b.topPriorityAffectedCount) return a.topPriorityAffectedCount - b.topPriorityAffectedCount;
     if (a.openingHourConflictCount !== b.openingHourConflictCount) return a.openingHourConflictCount - b.openingHourConflictCount;
     if (a.routeEndOverflowMinutes !== b.routeEndOverflowMinutes) return a.routeEndOverflowMinutes - b.routeEndOverflowMinutes;
-    if (a.removedTopPriorityCount !== b.removedTopPriorityCount) return a.removedTopPriorityCount - b.removedTopPriorityCount;
-    if (a.removedOptionalCount !== b.removedOptionalCount) return a.removedOptionalCount - b.removedOptionalCount;
     if (a.waitingMinutes !== b.waitingMinutes) return a.waitingMinutes - b.waitingMinutes;
     if (a.extraTravelKm !== b.extraTravelKm) return a.extraTravelKm - b.extraTravelKm;
     if (a.totalTravelKm !== b.totalTravelKm) return a.totalTravelKm - b.totalTravelKm;
@@ -28146,7 +28249,7 @@ const guideSlotCsv = guideSlots.join(',');
     exactAnchorMode?: boolean;
     masterMap: Map<number, any>;
   }): ManualCandidateOrder[] {
-    // See docs/manual-fit-here-exact-anchor-rules.md before changing exact-anchor Fit Here logic.
+    // See docs/manual-hotspot-reorder-and-removal-rules.md before changing exact-anchor Fit Here logic.
     const cluster = this.buildManualHotspotDestinationCluster({
       hotspots: params.hotspots,
       manualHotspotIds: params.manualHotspotIds,
@@ -28185,6 +28288,62 @@ const guideSlotCsv = guideSlots.join(',');
       const safeIndex = Math.max(0, Math.min(Number(index), withoutManual.length));
       withoutManual.splice(safeIndex, 0, manualId);
       return withoutManual.filter((id) => id > 0);
+    };
+
+    const buildExactAnchorPinnedOrder = (orderedIds: number[]): number[] => {
+      const routeWithoutManual = cluster.baseOrder
+        .map(Number)
+        .filter((id) => id > 0 && id !== manualId);
+
+      if (!(manualId > 0)) {
+        return routeWithoutManual;
+      }
+
+      if (String(params.anchorIntent || '').toUpperCase() === 'AFTER_START') {
+        const seen = new Set<number>([manualId]);
+        const suffix = orderedIds
+          .map(Number)
+          .filter((id) => id > 0 && id !== manualId && routeWithoutManual.includes(id) && !seen.has(id));
+        for (const id of routeWithoutManual) {
+          if (!seen.has(id) && !suffix.includes(id)) {
+            suffix.push(id);
+          }
+        }
+        return [manualId, ...suffix];
+      }
+
+      let anchorPrefix: number[] = [];
+      if (exactAnchorAfterHotspotId > 0) {
+        const afterIndex = routeWithoutManual.findIndex((id) => id === exactAnchorAfterHotspotId);
+        if (afterIndex >= 0) {
+          anchorPrefix = routeWithoutManual.slice(0, afterIndex + 1);
+        }
+      }
+
+      if (anchorPrefix.length === 0) {
+        const safeIndex = Math.max(0, Math.min(anchorAfterIndex, routeWithoutManual.length));
+        anchorPrefix = routeWithoutManual.slice(0, safeIndex);
+      }
+
+      const suffixBase = routeWithoutManual.filter((id) => !anchorPrefix.includes(id));
+      const seen = new Set<number>([...anchorPrefix, manualId]);
+      const orderedSuffix: number[] = [];
+
+      for (const id of orderedIds.map(Number)) {
+        if (id > 0 && suffixBase.includes(id) && !seen.has(id)) {
+          orderedSuffix.push(id);
+          seen.add(id);
+        }
+      }
+
+      for (const id of suffixBase) {
+        if (!seen.has(id)) {
+          orderedSuffix.push(id);
+          seen.add(id);
+        }
+      }
+
+      return [...anchorPrefix, manualId, ...orderedSuffix];
     };
 
     const geoNearestIds = (() => {
@@ -28261,7 +28420,7 @@ const guideSlotCsv = guideSlots.join(',');
     const exactAnchorSequentialStrategy: ManualCandidateOrder = {
       strategyKey: 'exact_anchor_sequential_rebuild',
       strategyLabel: 'Selected Fit Here Sequence',
-      description: 'Exact anchor rebuild: insert the manual hotspot at the clicked position, then preserve existing hotspot order after the anchor.',
+      description: 'Exact anchor rebuild: keep the clicked anchor fixed, then keep original downstream order.',
       hotspotOrder: params.exactAnchorMode === true
         ? buildExactRouteOrder()
         : this.buildManualClusterOrderFromClusterPoints(
@@ -28270,10 +28429,6 @@ const guideSlotCsv = guideSlots.join(',');
             insertManualAt(currentCluster, anchorAfterIndex),
           ),
     };
-
-    if (params.exactAnchorMode === true) {
-      return [exactAnchorSequentialStrategy];
-    }
 
     const strategies: ManualCandidateOrder[] = [
       exactAnchorSequentialStrategy,
@@ -28302,6 +28457,51 @@ const guideSlotCsv = guideSlots.join(',');
         hotspotOrder: this.buildManualClusterOrderFromClusterPoints(cluster.baseOrder, cluster.clusterHotspots, geoNearestIds),
       },
     ];
+
+    if (params.exactAnchorMode === true) {
+      const exactAnchorStrategies: ManualCandidateOrder[] = [
+        exactAnchorSequentialStrategy,
+        {
+          strategyKey: 'exact_anchor_opening_urgency',
+          strategyLabel: 'Selected Anchor Opening Rescue',
+          description: 'Keep the clicked anchor fixed, then reorder downstream hotspots by earlier closing windows first.',
+          hotspotOrder: buildExactAnchorPinnedOrder(openingUrgencyIds),
+        },
+        {
+          strategyKey: 'exact_anchor_priority_then_opening',
+          strategyLabel: 'Selected Anchor Priority Rescue',
+          description: 'Keep the clicked anchor fixed, then reorder downstream hotspots to preserve higher priorities before later-closing hotspots.',
+          hotspotOrder: buildExactAnchorPinnedOrder(priorityThenOpeningIds),
+        },
+        {
+          strategyKey: 'exact_anchor_geo_nearest',
+          strategyLabel: 'Selected Anchor Nearest Route',
+          description: 'Keep the clicked anchor fixed, then reorder downstream hotspots by nearest next movement.',
+          hotspotOrder: buildExactAnchorPinnedOrder(geoNearestIds),
+        },
+      ];
+
+      if (params.allowP3Removal === true) {
+        exactAnchorStrategies.push({
+          strategyKey: 'exact_anchor_drop_p3_confirmed',
+          strategyLabel: 'Selected Anchor P3 Removal',
+          description: 'Keep the clicked anchor fixed, allow confirmed P3 removals, then retry downstream reorder.',
+          hotspotOrder: buildExactAnchorPinnedOrder(p3DroppedIds),
+          removedHotspotIds: cluster.clusterHotspots
+            .filter((row) => !p3DroppedIds.includes(Number(row.hotspotId)))
+            .map((row) => Number(row.hotspotId)),
+          needsP3Confirmation: true,
+        });
+      }
+
+      const seenExact = new Set<string>();
+      return exactAnchorStrategies.filter((row) => {
+        const key = row.hotspotOrder.join('>');
+        if (!key || seenExact.has(key)) return false;
+        seenExact.add(key);
+        return true;
+      });
+    }
 
     if (params.allowP3Removal === true) {
       strategies.push({
@@ -29185,7 +29385,7 @@ const guideSlotCsv = guideSlots.join(',');
       };
     };
   }> {
-    // See docs/manual-fit-here-exact-anchor-rules.md before changing exact-anchor Fit Here logic.
+    // See docs/manual-hotspot-reorder-and-removal-rules.md before changing exact-anchor Fit Here logic.
     const normalizedManualHotspotIds = this.normalizeManualHotspotIds(manualHotspotIds);
     const allowP3Removal = options?.allowP3Removal === true;
     const allowProtectedPriorityRemoval =
