@@ -5,6 +5,7 @@ import { PrismaService } from '../../prisma.service';
 import { LatestItineraryQueryDto } from './dto/latest-itinerary-query.dto';
 import { calculateRouteTollCharges, getEffectiveTimeLimitKm } from './engines/vehicle-calculation.helpers';
 import { filterActiveVendorCandidateRows } from './utils/active-vendor-candidate.util';
+import { haversineKm } from './utils/distance-utils';
 
 // ---------------------------------------------------------------------------
 // DTOs for Itinerary Details response (shared shape with frontend)
@@ -411,6 +412,138 @@ export class ItineraryDetailsService {
 
 private formatKm(value: number): string {
 return `${value.toFixed(2)} KM`;
+}
+
+private parseFiniteNumber(value: unknown): number | null {
+  const num = Number.parseFloat(String(value ?? '').trim());
+  return Number.isFinite(num) ? num : null;
+}
+
+private parseStoredDistanceKm(value: unknown): number | null {
+  const num = this.parseFiniteNumber(value);
+  return num !== null && num >= 0 ? num : null;
+}
+
+private formatTravelDistance(distanceKm: number | null): string {
+  return distanceKm !== null && Number.isFinite(distanceKm)
+    ? `${distanceKm.toFixed(2)} KM`
+    : '--';
+}
+
+private async getOsrmRouteDistanceKm(
+  fromLat: number,
+  fromLng: number,
+  toLat: number,
+  toLng: number,
+): Promise<number | null> {
+  if (
+    !Number.isFinite(fromLat)
+    || !Number.isFinite(fromLng)
+    || !Number.isFinite(toLat)
+    || !Number.isFinite(toLng)
+  ) {
+    return null;
+  }
+
+  try {
+    const osrmBaseUrl = String(process.env.OSRM_BASE_URL || 'http://localhost:5000/route/v1/driving').trim();
+    const url = `${osrmBaseUrl}/${fromLng},${fromLat};${toLng},${toLat}?overview=false&alternatives=false&steps=false`;
+    const response = await fetch(url, { method: 'GET' });
+    if (!response.ok) return null;
+
+    const body = await response.json();
+    const route = Array.isArray(body?.routes) ? body.routes[0] : null;
+    const meters = Number(route?.distance);
+    if (!Number.isFinite(meters) || meters <= 0) return null;
+
+    const km = meters / 1000;
+    return Number.isFinite(km) && km > 0 ? km : null;
+  } catch {
+    return null;
+  }
+}
+
+private isSuspiciousTravelDistance(params: {
+  distanceKm: number | null;
+  durationRaw?: Date | string | null;
+  fromName?: string | null;
+  toName?: string | null;
+}): boolean {
+  const { distanceKm, durationRaw, fromName, toName } = params;
+  const samePlace = this.isSamePlaceLike(fromName, toName);
+  if (samePlace) return false;
+  if (distanceKm === null || !Number.isFinite(distanceKm) || distanceKm <= 0) return true;
+  if (distanceKm <= 0.15) return true;
+
+  const durationMin = this.durationToMinutes(durationRaw ?? null);
+  if (durationMin !== null && durationMin >= 15 && distanceKm <= 0.5) {
+    return true;
+  }
+
+  return false;
+}
+
+private async resolveTravelDistanceKm(params: {
+  row: any;
+  itemType: number;
+  location: any;
+  route: any;
+  semanticFromHotspotId?: number | null;
+  semanticToHotspotId?: number | null;
+  fromName?: string | null;
+  toName?: string | null;
+  hotspotMap: Map<number, any>;
+}): Promise<number | null> {
+  const baseDistanceKm = this.parseStoredDistanceKm(params.row?.hotspot_travelling_distance);
+  if (!this.isSuspiciousTravelDistance({
+    distanceKm: baseDistanceKm,
+    durationRaw: params.row?.hotspot_traveling_time ?? null,
+    fromName: params.fromName,
+    toName: params.toName,
+  })) {
+    return baseDistanceKm;
+  }
+
+  const toHotspotId = Number(params.semanticToHotspotId || 0);
+  const fromHotspotId = Number(params.semanticFromHotspotId || 0);
+
+    if (fromHotspotId > 0 && toHotspotId > 0 && fromHotspotId !== toHotspotId) {
+      const fromMaster = params.hotspotMap.get(fromHotspotId);
+      const toMaster = params.hotspotMap.get(toHotspotId);
+      const fromLat = this.parseFiniteNumber(fromMaster?.hotspot_latitude);
+      const fromLng = this.parseFiniteNumber(fromMaster?.hotspot_longitude);
+      const toLat = this.parseFiniteNumber(toMaster?.hotspot_latitude);
+      const toLng = this.parseFiniteNumber(toMaster?.hotspot_longitude);
+
+      if (fromLat !== null && fromLng !== null && toLat !== null && toLng !== null) {
+        const osrmKm = await this.getOsrmRouteDistanceKm(fromLat, fromLng, toLat, toLng);
+        if (osrmKm !== null) return osrmKm;
+        return haversineKm(Number(fromLat), Number(fromLng), Number(toLat), Number(toLng));
+      }
+    }
+
+    if (toHotspotId > 0) {
+    const toMaster = params.hotspotMap.get(toHotspotId);
+      const toLat = this.parseFiniteNumber(toMaster?.hotspot_latitude);
+      const toLng = this.parseFiniteNumber(toMaster?.hotspot_longitude);
+      const sourceLat = this.parseFiniteNumber(params.location?.source_location_lattitude);
+      const sourceLng = this.parseFiniteNumber(params.location?.source_location_longitude);
+
+      if (sourceLat !== null && sourceLng !== null && toLat !== null && toLng !== null) {
+        const osrmKm = await this.getOsrmRouteDistanceKm(sourceLat, sourceLng, toLat, toLng);
+        if (osrmKm !== null) return osrmKm;
+        return haversineKm(Number(sourceLat), Number(sourceLng), Number(toLat), Number(toLng));
+      }
+    }
+
+  if (params.itemType === 2) {
+    const storedRouteKm = this.parseStoredDistanceKm(params.location?.distance ?? params.route?.no_of_km);
+    if (storedRouteKm !== null && storedRouteKm > 0) {
+      return storedRouteKm;
+    }
+  }
+
+  return baseDistanceKm;
 }
 
 private getFoodPreferenceLabel(value: unknown): string | null {
@@ -1427,6 +1560,23 @@ for (const row of vehicleKmRows) {
         : [];
 
       const hotspotMap = new Map(hotspotMasters.map((h) => [h.hotspot_ID, h]));
+      const normalizeLookupName = (value?: string | null): string =>
+        String(value ?? '')
+          .replace(/&amp;/gi, '&')
+          .replace(/&quot;/gi, '"')
+          .replace(/&#39;/gi, "'")
+          .replace(/&lt;/gi, '<')
+          .replace(/&gt;/gi, '>')
+          .replace(/\s*\([^)]*\)\s*$/g, '')
+          .trim()
+          .toLowerCase();
+      const hotspotNameToIdMap = new Map<string, number>();
+      for (const hotspot of hotspotMasters) {
+        const name = normalizeLookupName((hotspot as any)?.hotspot_name);
+        if (name && !hotspotNameToIdMap.has(name)) {
+          hotspotNameToIdMap.set(name, Number((hotspot as any)?.hotspot_ID || 0));
+        }
+      }
 
       // Fetch hotspot timing data for opening hours
       const hotspotTimings = hotspotIds.length
@@ -1607,6 +1757,19 @@ for (const row of vehicleKmRows) {
         return null;
       };
 
+      const inferHotspotIdFromLabel = (label?: string | null): number | null => {
+        const normalized = normalizeLookupName(label);
+        if (!normalized) return null;
+        const exact = hotspotNameToIdMap.get(normalized);
+        if (exact && exact > 0) return exact;
+        for (const [name, id] of hotspotNameToIdMap.entries()) {
+          if (name.includes(normalized) || normalized.includes(name)) {
+            return id > 0 ? id : null;
+          }
+        }
+        return null;
+      };
+
       // Find item_type 1 (START/BREAK) to get actual start time
       const startHotspot = routeHotspots.find(
         (rh) => Number((rh as any).item_type ?? 0) === 1,
@@ -1623,8 +1786,18 @@ for (const row of vehicleKmRows) {
       // they represent TRAVEL TO those attractions. The "from" is the previous
       // different location we visited.
       
-      const buildTravelSegmentSemantics = (): Map<number, {from: string; to: string}> => {
-        const travelSemantics = new Map<number, {from: string; to: string}>();
+      const buildTravelSegmentSemantics = (): Map<number, {
+        from: string;
+        to: string;
+        fromHotspotId: number | null;
+        toHotspotId: number | null;
+      }> => {
+        const travelSemantics = new Map<number, {
+          from: string;
+          to: string;
+          fromHotspotId: number | null;
+          toHotspotId: number | null;
+        }>();
         
         // First pass: collect all attractions and their visit order
         const visitSequence: Array<{hotspotId: number; hotspotName: string}> = [];
@@ -1718,6 +1891,8 @@ for (const row of vehicleKmRows) {
             travelSemantics.set(row.route_hotspot_ID, {
               from: origin,
               to: destination,
+              fromHotspotId: destIndex > 0 ? visitSequence[destIndex - 1].hotspotId : null,
+              toHotspotId: hotspotId > 0 ? hotspotId : null,
             });
           }
         }
@@ -1810,13 +1985,8 @@ for (const row of vehicleKmRows) {
 
         const itemType = Number((rh as any).item_type ?? 0);
 
-        const distanceStr = (rh as any)
-          .hotspot_travelling_distance as string | null | undefined;
-        const distanceNum =
-          distanceStr && distanceStr.trim().length
-            ? parseFloat(distanceStr)
-            : 0;
-        const travelDistance = `${(distanceNum || 0).toFixed(2)} KM`;
+        let distanceNum = this.parseStoredDistanceKm((rh as any).hotspot_travelling_distance) ?? 0;
+        let travelDistance = this.formatTravelDistance(distanceNum);
 
         const travelDuration = (rh as any).hotspot_traveling_time ?? null;
         const startTimeText = this.formatTime(
@@ -1878,7 +2048,19 @@ for (const row of vehicleKmRows) {
             continue;
           }
 
-          if (!Number.isNaN(distanceNum)) {
+          const resolvedDistanceKm = await this.resolveTravelDistanceKm({
+            row: rh,
+            itemType,
+            location,
+            route,
+            fromName: previousStopName,
+            toName,
+            hotspotMap,
+          });
+          distanceNum = resolvedDistanceKm ?? 0;
+          travelDistance = this.formatTravelDistance(resolvedDistanceKm);
+
+          if (Number.isFinite(distanceNum) && distanceNum > 0) {
             totalDistanceKm += distanceNum;
           }
 
@@ -1947,9 +2129,20 @@ for (const row of vehicleKmRows) {
           } else if (allowViaRoute === 1 && viaLocationName) {
             // VIA ROUTE (Travel via a location)
             const toName = viaLocationName;
+            const resolvedDistanceKm = await this.resolveTravelDistanceKm({
+              row: rh,
+              itemType,
+              location,
+              route,
+              fromName: previousStopName,
+              toName,
+              hotspotMap,
+            });
+            distanceNum = resolvedDistanceKm ?? 0;
+            travelDistance = this.formatTravelDistance(resolvedDistanceKm);
             const travelRange = this.getTravelTimeRangeWithDuration(startTimeText, endTimeText, travelDuration);
 
-            if (!Number.isNaN(distanceNum)) {
+            if (Number.isFinite(distanceNum) && distanceNum > 0) {
               totalDistanceKm += distanceNum;
             }
 
@@ -2181,7 +2374,27 @@ for (const row of vehicleKmRows) {
               });
             }
 
-            if (!Number.isNaN(distanceNum)) {
+            const resolvedDistanceKm = await this.resolveTravelDistanceKm({
+              row: rh,
+              itemType,
+              location,
+              route,
+              semanticFromHotspotId:
+                semanticMapping?.fromHotspotId
+                ?? inferHotspotIdFromLabel(fromName)
+                ?? null,
+              semanticToHotspotId:
+                semanticMapping?.toHotspotId
+                ?? inferHotspotIdFromLabel(toName)
+                ?? (Number(rh.hotspot_ID ?? 0) || null),
+              fromName,
+              toName,
+              hotspotMap,
+            });
+            distanceNum = resolvedDistanceKm ?? 0;
+            travelDistance = this.formatTravelDistance(resolvedDistanceKm);
+
+            if (Number.isFinite(distanceNum) && distanceNum > 0) {
               totalDistanceKm += distanceNum;
             }
 
