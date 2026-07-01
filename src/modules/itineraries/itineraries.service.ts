@@ -16124,29 +16124,6 @@ const guideSlotCsv = guideSlots.join(',');
       beforeByRoute.get(rid)!.push(Number(row?.hotspot_ID || 0));
     }
 
-    const selectedOnOtherRoute = await (tx as any).dvi_itinerary_route_hotspot_details.findFirst({
-      where: {
-        itinerary_plan_ID: planId,
-        itinerary_route_ID: { not: routeId },
-        hotspot_ID: selectedHotspotId,
-        item_type: 4,
-        deleted: 0,
-        status: 1,
-      },
-      select: {
-        itinerary_route_ID: true,
-      },
-    });
-
-    if (selectedOnOtherRoute) {
-      throw new ConflictException({
-        success: false,
-        inserted: false,
-        code: 'MATRIX_SAFE_SLOT_INVALID',
-        message: 'Selected manual hotspot is active on another route. Cross-route move is not allowed in matrix-safe apply.',
-      });
-    }
-
     const selectedAlreadyInRoute = await (tx as any).dvi_itinerary_route_hotspot_details.findFirst({
       where: {
         itinerary_plan_ID: planId,
