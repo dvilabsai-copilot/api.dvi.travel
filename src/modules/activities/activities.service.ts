@@ -133,6 +133,55 @@ const PRICEBOOK_DAY_KEYS = [
 
 type PricebookDayKey = (typeof PRICEBOOK_DAY_KEYS)[number];
 
+type ActivityPricingUnitType = 'PER_ADULT' | 'UNIT';
+
+const ACTIVITY_PRICE_TYPE_ADULT = 1;
+const ACTIVITY_PRICE_TYPE_CHILD = 2;
+const ACTIVITY_PRICE_TYPE_INFANT = 3;
+const ACTIVITY_PRICE_TYPE_UNIT = 4;
+
+function normalizeActivityPricingUnitType(value: unknown): ActivityPricingUnitType {
+  return String(value ?? '').toUpperCase() === 'UNIT' ? 'UNIT' : 'PER_ADULT';
+}
+
+function getActivityPriceUnitLabel(unitType: ActivityPricingUnitType): string {
+  return unitType === 'UNIT' ? 'per unit' : 'per adult';
+}
+
+function setPreferredActivityPrice(
+  priceMap: Map<number, number>,
+  unitTypeMap: Map<number, ActivityPricingUnitType>,
+  activityId: number,
+  price: number,
+  unitType: ActivityPricingUnitType,
+): void {
+  if (!activityId || price <= 0) return;
+
+  const oldPrice = priceMap.get(activityId);
+  const oldUnitType = unitTypeMap.get(activityId);
+
+  if (oldPrice == null || oldUnitType == null) {
+    priceMap.set(activityId, price);
+    unitTypeMap.set(activityId, unitType);
+    return;
+  }
+
+  if (oldUnitType === 'UNIT' && unitType !== 'UNIT') {
+    return;
+  }
+
+  if (unitType === 'UNIT' && oldUnitType !== 'UNIT') {
+    priceMap.set(activityId, price);
+    unitTypeMap.set(activityId, unitType);
+    return;
+  }
+
+  if (price < oldPrice) {
+    priceMap.set(activityId, price);
+    unitTypeMap.set(activityId, unitType);
+  }
+}
+
 function inferActivityCategory(title?: string | null, description?: string | null, hotspotType?: string | null): string {
   const haystack = `${title ?? ''} ${description ?? ''} ${hotspotType ?? ''}`.toLowerCase();
   for (const category of STOREFRONT_CATEGORIES) {
@@ -753,13 +802,22 @@ export class ActivitiesService {
             },
           })
         : Promise.resolve([]),
-      activityIds.length
-        ? this.prisma.dvi_activity_pricebook.findMany({
-            where: { activity_id: { in: activityIds }, deleted: 0, status: 1, nationality: 1, price_type: 1 },
-            select: {
-              activity_id: true,
-              year: true,
-              month: true,
+activityIds.length
+  ? this.prisma.dvi_activity_pricebook.findMany({
+      where: {
+        activity_id: { in: activityIds },
+        deleted: 0,
+        status: 1,
+        nationality: 1,
+        price_type: {
+          in: [ACTIVITY_PRICE_TYPE_ADULT, ACTIVITY_PRICE_TYPE_UNIT],
+        },
+      },
+      select: {
+        activity_id: true,
+        price_type: true,
+        year: true,
+        month: true,
               day_1: true,
               day_2: true,
               day_3: true,
@@ -826,28 +884,41 @@ export class ActivitiesService {
     });
 
     const minPriceMap = new Map<number, number>();
-    const selectedDatePriceMap = new Map<number, number>();
-    priceRows.forEach((row) => {
-      const activityId = Number(row.activity_id ?? 0);
-      if (!activityId) return;
+const minPriceUnitTypeMap = new Map<number, ActivityPricingUnitType>();
+const selectedDatePriceMap = new Map<number, number>();
+const selectedDatePriceUnitTypeMap = new Map<number, ActivityPricingUnitType>();
 
-      for (const dayKey of PRICEBOOK_DAY_KEYS) {
-        const price = Number(row[dayKey] ?? 0);
-        if (price <= 0) continue;
-        const old = minPriceMap.get(activityId);
-        if (old == null || price < old) minPriceMap.set(activityId, price);
-      }
+priceRows.forEach((row) => {
+  const activityId = Number(row.activity_id ?? 0);
+  if (!activityId) return;
 
-      if (!selectedDate || !selectedDayColumn) return;
-      if (String(row.year ?? '') !== String(selectedYear)) return;
-      if (String(row.month ?? '').toLowerCase() !== selectedMonthName.toLowerCase()) return;
+  const pricingUnitType: ActivityPricingUnitType =
+    Number(row.price_type) === ACTIVITY_PRICE_TYPE_UNIT ? 'UNIT' : 'PER_ADULT';
 
-      const selectedPrice = Number(row[selectedDayColumn] ?? 0);
-      if (selectedPrice > 0) {
-        selectedDatePriceMap.set(activityId, selectedPrice);
-      }
-    });
+  for (const dayKey of PRICEBOOK_DAY_KEYS) {
+    const price = Number(row[dayKey] ?? 0);
+    setPreferredActivityPrice(
+      minPriceMap,
+      minPriceUnitTypeMap,
+      activityId,
+      price,
+      pricingUnitType,
+    );
+  }
 
+  if (!selectedDate || !selectedDayColumn) return;
+  if (String(row.year ?? '') !== String(selectedYear)) return;
+  if (String(row.month ?? '').toLowerCase() !== selectedMonthName.toLowerCase()) return;
+
+  const selectedPrice = Number(row[selectedDayColumn] ?? 0);
+  setPreferredActivityPrice(
+    selectedDatePriceMap,
+    selectedDatePriceUnitTypeMap,
+    activityId,
+    selectedPrice,
+    pricingUnitType,
+  );
+});
     console.log('[BookActivities] date availability', {
       selectedDate: selectedDate ? fmtDateISO(selectedDate) : null,
       selectedMonth,
@@ -926,12 +997,21 @@ export class ActivitiesService {
         const hotspotRating = Number(hotspot?.hotspot_rating ?? 0);
         const ratingValue = avgRating?.count ? avgRating.total / avgRating.count : hotspotRating || 4.5;
         const reviewCount = avgRating?.count ?? 0;
-        const selectedDatePrice = selectedDate ? (selectedDatePriceMap.get(row.activity_id) ?? null) : null;
-        const price =
-          selectedDatePrice ??
-          minPriceMap.get(row.activity_id) ??
-          Number(hotspot?.hotspot_adult_entry_cost ?? 0);
-        const location = [hotspot?.hotspot_name, hotspot?.hotspot_location].filter(Boolean).join(', ') || 'India';
+const selectedDatePrice = selectedDate ? (selectedDatePriceMap.get(row.activity_id) ?? null) : null;
+
+const pricingUnitType: ActivityPricingUnitType =
+  selectedDate
+    ? selectedDatePriceUnitTypeMap.get(row.activity_id) ??
+      minPriceUnitTypeMap.get(row.activity_id) ??
+      'PER_ADULT'
+    : minPriceUnitTypeMap.get(row.activity_id) ?? 'PER_ADULT';
+
+const price =
+  selectedDatePrice ??
+  minPriceMap.get(row.activity_id) ??
+  Number(hotspot?.hotspot_adult_entry_cost ?? 0);
+
+const location = [hotspot?.hotspot_name, hotspot?.hotspot_location].filter(Boolean).join(', ') || 'India';
         const specialSlotsForDate =
           selectedDate && fmtDateISO(selectedDate)
             ? specialTimeSlotsMap.get(row.activity_id)?.get(fmtDateISO(selectedDate) as string) ?? []
@@ -953,8 +1033,10 @@ export class ActivitiesService {
           ratingValue: Number(ratingValue.toFixed(1)),
           reviewCount,
           price,
-          priceLabel: price > 0 ? formatCurrencyINR(price) : 'On Request',
-          availableDate: selectedDate ? fmtDateISO(selectedDate) : null,
+pricingUnitType,
+priceUnitLabel: getActivityPriceUnitLabel(pricingUnitType),
+priceLabel: price > 0 ? formatCurrencyINR(price) : 'On Request',
+availableDate: selectedDate ? fmtDateISO(selectedDate) : null,
           availableOnSelectedDate: selectedDate ? selectedDatePrice != null : false,
           selectedDatePrice,
           image:
@@ -1217,20 +1299,23 @@ export class ActivitiesService {
           })
         : Promise.resolve([]),
 
-      uniqueIds.length
-        ? this.prisma.dvi_activity_pricebook.findMany({
-            where: {
-              activity_id: { in: uniqueIds },
-              deleted: 0,
-              status: 1,
-              nationality: 1,
-              price_type: 1,
-            },
-            select: {
-              activity_id: true,
-              day_1: true,
-            },
-          })
+uniqueIds.length
+  ? this.prisma.dvi_activity_pricebook.findMany({
+      where: {
+        activity_id: { in: uniqueIds },
+        deleted: 0,
+        status: 1,
+        nationality: 1,
+        price_type: {
+          in: [ACTIVITY_PRICE_TYPE_ADULT, ACTIVITY_PRICE_TYPE_UNIT],
+        },
+      },
+      select: {
+        activity_id: true,
+        price_type: true,
+        day_1: true,
+      },
+    })
         : Promise.resolve([]),
 
       uniqueIds.length
@@ -1260,14 +1345,22 @@ export class ActivitiesService {
     });
 
     const minPriceMap = new Map<number, number>();
-    priceRows.forEach((row) => {
-      const activityId = Number(row.activity_id ?? 0);
-      const price = Number(row.day_1 ?? 0);
-      if (!activityId || price <= 0) return;
+const minPriceUnitTypeMap = new Map<number, ActivityPricingUnitType>();
 
-      const old = minPriceMap.get(activityId);
-      if (old == null || price < old) minPriceMap.set(activityId, price);
-    });
+priceRows.forEach((row) => {
+  const activityId = Number(row.activity_id ?? 0);
+  const price = Number(row.day_1 ?? 0);
+  const pricingUnitType: ActivityPricingUnitType =
+    Number(row.price_type) === ACTIVITY_PRICE_TYPE_UNIT ? 'UNIT' : 'PER_ADULT';
+
+  setPreferredActivityPrice(
+    minPriceMap,
+    minPriceUnitTypeMap,
+    activityId,
+    price,
+    pricingUnitType,
+  );
+});
 
     const ratingMap = new Map<number, { total: number; count: number }>();
     reviewRows.forEach((row) => {
@@ -1296,12 +1389,16 @@ export class ActivitiesService {
           ? avgRating.total / avgRating.count
           : hotspotRating || 4.5;
 
-        const reviewCount = avgRating?.count ?? 0;
-        const price =
-          minPriceMap.get(row.activity_id) ??
-          Number(hotspot?.hotspot_adult_entry_cost ?? 0);
+const reviewCount = avgRating?.count ?? 0;
 
-        const location =
+const pricingUnitType: ActivityPricingUnitType =
+  minPriceUnitTypeMap.get(row.activity_id) ?? 'PER_ADULT';
+
+const price =
+  minPriceMap.get(row.activity_id) ??
+  Number(hotspot?.hotspot_adult_entry_cost ?? 0);
+
+const location =
           [hotspot?.hotspot_name, hotspot?.hotspot_location].filter(Boolean).join(', ') ||
           'India';
 
@@ -1319,8 +1416,10 @@ export class ActivitiesService {
             ratingValue: Number(ratingValue.toFixed(1)),
             reviewCount,
             price,
-            priceLabel: price > 0 ? formatCurrencyINR(price) : 'On Request',
-            image:
+pricingUnitType,
+priceUnitLabel: getActivityPriceUnitLabel(pricingUnitType),
+priceLabel: price > 0 ? formatCurrencyINR(price) : 'On Request',
+image:
               firstImageMap.get(row.activity_id) ??
               ACTIVITY_IMAGE_FALLBACKS[category] ??
               ACTIVITY_IMAGE_FALLBACKS.Sightseeing,
@@ -2106,174 +2205,250 @@ export class ActivitiesService {
 
   // ====== PRICEBOOK (month rows with 31 day columns) ======
   async getPriceBook(activityId: number) {
-    const rows = await this.prisma.dvi_activity_pricebook.findMany({
-      where: { activity_id: activityId, deleted: 0, status: 1 },
-      orderBy: [{ nationality: 'asc' }, { price_type: 'asc' }],
-    });
-    if (!rows.length) return null;
+  const rows = await this.prisma.dvi_activity_pricebook.findMany({
+    where: { activity_id: activityId, deleted: 0, status: 1 },
+    orderBy: [{ nationality: 'asc' }, { price_type: 'asc' }],
+  });
+  if (!rows.length) return null;
 
-    // Derive start/end date from rows
-    const years = rows.map((r) => Number(r.year));
-    const minYear = Math.min(...years);
-    const maxYear = Math.max(...years);
-    const monthNums: number[] = [];
-    rows.forEach((r) => {
-      const m = new Date(`${r.year}-01-01`).getFullYear() === Number(r.year)
-        ? new Date(`1 ${r.month} 2000`).getMonth() + 1
-        : 1;
-      monthNums.push(m);
-    });
-    const minMonth = Math.min(...monthNums);
-    const maxMonth = Math.max(...monthNums);
+  // Derive start/end date from rows
+  const years = rows.map((r) => Number(r.year));
+  const minYear = Math.min(...years);
+  const maxYear = Math.max(...years);
+  const monthNums: number[] = [];
+  rows.forEach((r) => {
+    const m = new Date(`${r.year}-01-01`).getFullYear() === Number(r.year)
+      ? new Date(`1 ${r.month} 2000`).getMonth() + 1
+      : 1;
+    monthNums.push(m);
+  });
+  const minMonth = Math.min(...monthNums);
+  const maxMonth = Math.max(...monthNums);
 
-    const startDate = `${minYear}-${String(minMonth).padStart(2, '0')}-01`;
-    const lastDay = new Date(maxYear, maxMonth, 0).getDate();
-    const endDate = `${maxYear}-${String(maxMonth).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+  const startDate = `${minYear}-${String(minMonth).padStart(2, '0')}-01`;
+  const lastDay = new Date(maxYear, maxMonth, 0).getDate();
+  const endDate = `${maxYear}-${String(maxMonth).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
 
-    // Extract per-type prices from day_1 value (uniform per row)
-    const getPrice = (nat: number, type: number): number => {
-      const row = rows.find((r) => Number(r.nationality) === nat && Number(r.price_type) === type);
-      return row ? Number((row as any).day_1 ?? 0) : 0;
-    };
+  // Extract per-type prices from day_1 value (uniform per row)
+  const getPrice = (nat: number, type: number): number => {
+    const row = rows.find((r) => Number(r.nationality) === nat && Number(r.price_type) === type);
+    return row ? Number((row as any).day_1 ?? 0) : 0;
+  };
 
-    return {
-      start_date: startDate,
-      end_date: endDate,
-      hotspot_id: rows[0]?.hotspot_id ? Number(rows[0].hotspot_id) : null,
-      indian: {
-        adult_cost: getPrice(1, 1),
-        child_cost: getPrice(1, 2),
-        infant_cost: getPrice(1, 3),
-      },
-      nonindian: {
-        adult_cost: getPrice(2, 1),
-        child_cost: getPrice(2, 2),
-        infant_cost: getPrice(2, 3),
-      },
-    };
-  }
+  const indianUnitCost = getPrice(1, ACTIVITY_PRICE_TYPE_UNIT);
+  const nonIndianUnitCost = getPrice(2, ACTIVITY_PRICE_TYPE_UNIT);
+
+  const pricingUnitType: ActivityPricingUnitType =
+    indianUnitCost > 0 || nonIndianUnitCost > 0 ? 'UNIT' : 'PER_ADULT';
+
+  return {
+    start_date: startDate,
+    end_date: endDate,
+    pricing_unit_type: pricingUnitType,
+    hotspot_id: rows[0]?.hotspot_id ? Number(rows[0].hotspot_id) : null,
+    indian: {
+      adult_cost: getPrice(1, ACTIVITY_PRICE_TYPE_ADULT),
+      child_cost: getPrice(1, ACTIVITY_PRICE_TYPE_CHILD),
+      infant_cost: getPrice(1, ACTIVITY_PRICE_TYPE_INFANT),
+      unit_cost: indianUnitCost,
+    },
+    nonindian: {
+      adult_cost: getPrice(2, ACTIVITY_PRICE_TYPE_ADULT),
+      child_cost: getPrice(2, ACTIVITY_PRICE_TYPE_CHILD),
+      infant_cost: getPrice(2, ACTIVITY_PRICE_TYPE_INFANT),
+      unit_cost: nonIndianUnitCost,
+    },
+  };
+}
 
   async savePriceBook(
-    activityId: number,
-    dto: {
-      hotspot_id: number | string; // BigInt in schema
-      start_date: string; // yyyy-mm-dd
-      end_date: string; // yyyy-mm-dd
-      createdby?: number;
-      // flags per nationality
-      indian?: {
-        adult_cost?: number | string;
-        child_cost?: number | string;
-        infant_cost?: number | string;
-      };
-      nonindian?: {
-        adult_cost?: number | string;
-        child_cost?: number | string;
-        infant_cost?: number | string;
-      };
-    },
-  ) {
-    const existing = await this.prisma.dvi_activity.findFirst({ where: { activity_id: activityId, deleted: 0 } });
-    if (!existing) throw new NotFoundException('Activity not found');
+  activityId: number,
+  dto: {
+    hotspot_id: number | string; // BigInt in schema
+    start_date: string; // yyyy-mm-dd
+    end_date: string; // yyyy-mm-dd
+    pricing_unit_type?: ActivityPricingUnitType | string;
+    createdby?: number;
+    // flags per nationality
+    indian?: {
+      adult_cost?: number | string;
+      child_cost?: number | string;
+      infant_cost?: number | string;
+      unit_cost?: number | string;
+    };
+    nonindian?: {
+      adult_cost?: number | string;
+      child_cost?: number | string;
+      infant_cost?: number | string;
+      unit_cost?: number | string;
+    };
+  },
+) {
+  const existing = await this.prisma.dvi_activity.findFirst({ where: { activity_id: activityId, deleted: 0 } });
+  if (!existing) throw new NotFoundException('Activity not found');
 
-    const hotspotId = toBigIntSafe(dto.hotspot_id);
-    const start = toDateOnly(dto.start_date);
-    const end = toDateOnly(dto.end_date);
-    if (!start || !end || start > end) throw new BadRequestException('Invalid date range');
+  const hotspotId = toBigIntSafe(dto.hotspot_id);
+  const start = toDateOnly(dto.start_date);
+  const end = toDateOnly(dto.end_date);
+  if (!start || !end || start > end) throw new BadRequestException('Invalid date range');
 
-    const createdby = toInt(dto.createdby, 0);
+  const createdby = toInt(dto.createdby, 0);
 
-    // Expand month by month
-    const months: Array<{ y: number; m: number }> = [];
-    {
-      const cur = new Date(start);
-      cur.setDate(1);
-      const endMonth = new Date(end);
-      endMonth.setDate(1);
-      while (cur <= endMonth) {
-        months.push({ y: cur.getFullYear(), m: cur.getMonth() + 1 });
-        cur.setMonth(cur.getMonth() + 1);
-      }
+  const indianUnitCost = toFloat(dto.indian?.unit_cost, 0);
+  const nonIndianUnitCost = toFloat(dto.nonindian?.unit_cost, 0);
+
+  const pricingUnitType = normalizeActivityPricingUnitType(
+    dto.pricing_unit_type ??
+      (indianUnitCost > 0 || nonIndianUnitCost > 0 ? 'UNIT' : 'PER_ADULT'),
+  );
+
+  // Expand month by month
+  const months: Array<{ y: number; m: number }> = [];
+  {
+    const cur = new Date(start);
+    cur.setDate(1);
+    const endMonth = new Date(end);
+    endMonth.setDate(1);
+    while (cur <= endMonth) {
+      months.push({ y: cur.getFullYear(), m: cur.getMonth() + 1 });
+      cur.setMonth(cur.getMonth() + 1);
     }
+  }
 
-    // helper to upsert a month row with a flat price across all days in that month
-    const upsertMonth = async (year: number, month: number, priceType: number, nationality: number, value: number) => {
-      const yyyy = String(year);
-      const monthName = new Date(year, month - 1, 1).toLocaleString('en-US', { month: 'long' }); // e.g., "January"
-      const dayVals: Record<string, number> = {};
-      // fill all possible day1..31 with the price; PHP does the same when a month row is created
-      for (let d = 1; d <= 31; d++) {
-        dayVals[`day_${d}`] = value;
-      }
+  const deactivatePriceTypes = async (priceTypes: number[]) => {
+    for (const { y, m } of months) {
+      const monthName = new Date(y, m - 1, 1).toLocaleString('en-US', { month: 'long' });
 
-      const existingRow = await this.prisma.dvi_activity_pricebook.findFirst({
+      await this.prisma.dvi_activity_pricebook.updateMany({
         where: {
           activity_id: activityId,
           hotspot_id: hotspotId,
-          nationality,
-          price_type: priceType,
-          year: yyyy,
-        // @ts-ignore (Prisma model has `month` as string, e.g. "January")
+          price_type: {
+            in: priceTypes,
+          },
+          year: String(y),
+          // @ts-ignore (Prisma model has `month` as string, e.g. "January")
           month: monthName,
           deleted: 0,
         },
-        select: { activity_price_book_id: true },
+        data: {
+          status: 0,
+          deleted: 1,
+          updatedon: new Date(),
+        } as any,
       });
+    }
+  };
 
-      if (existingRow) {
-        await this.prisma.dvi_activity_pricebook.update({
-          where: { activity_price_book_id: existingRow.activity_price_book_id },
-          data: {
-            ...dayVals,
-            updatedon: new Date(),
-            status: 1,
-          },
-        });
-      } else {
-        await this.prisma.dvi_activity_pricebook.create({
-          data: {
-            hotspot_id: hotspotId,
-            activity_id: activityId,
-            nationality,
-            price_type: priceType,
-            year: yyyy,
-            month: monthName,
-            ...dayVals,
-            createdby,
-            createdon: new Date(),
-            status: 1,
-            deleted: 0,
-          } as any,
-        });
+  // helper to upsert a month row with a flat price across all days in that month
+  const upsertMonth = async (year: number, month: number, priceType: number, nationality: number, value: number) => {
+    const yyyy = String(year);
+    const monthName = new Date(year, month - 1, 1).toLocaleString('en-US', { month: 'long' }); // e.g., "January"
+    const dayVals: Record<string, number> = {};
+    // fill all possible day1..31 with the price; PHP does the same when a month row is created
+    for (let d = 1; d <= 31; d++) {
+      dayVals[`day_${d}`] = value;
+    }
+
+    const existingRow = await this.prisma.dvi_activity_pricebook.findFirst({
+      where: {
+        activity_id: activityId,
+        hotspot_id: hotspotId,
+        nationality,
+        price_type: priceType,
+        year: yyyy,
+      // @ts-ignore (Prisma model has `month` as string, e.g. "January")
+        month: monthName,
+        deleted: 0,
+      },
+      select: { activity_price_book_id: true },
+    });
+
+    if (existingRow) {
+      await this.prisma.dvi_activity_pricebook.update({
+        where: { activity_price_book_id: existingRow.activity_price_book_id },
+        data: {
+          ...dayVals,
+          updatedon: new Date(),
+          status: 1,
+          deleted: 0,
+        } as any,
+      });
+    } else {
+      await this.prisma.dvi_activity_pricebook.create({
+        data: {
+          hotspot_id: hotspotId,
+          activity_id: activityId,
+          nationality,
+          price_type: priceType,
+          year: yyyy,
+          month: monthName,
+          ...dayVals,
+          createdby,
+          createdon: new Date(),
+          status: 1,
+          deleted: 0,
+        } as any,
+      });
+    }
+  };
+
+  if (pricingUnitType === 'UNIT') {
+    await deactivatePriceTypes([
+      ACTIVITY_PRICE_TYPE_ADULT,
+      ACTIVITY_PRICE_TYPE_CHILD,
+      ACTIVITY_PRICE_TYPE_INFANT,
+    ]);
+
+    for (const { y, m } of months) {
+      if (indianUnitCost > 0) {
+        await upsertMonth(y, m, ACTIVITY_PRICE_TYPE_UNIT, 1, indianUnitCost);
       }
+
+      if (nonIndianUnitCost > 0) {
+        await upsertMonth(y, m, ACTIVITY_PRICE_TYPE_UNIT, 2, nonIndianUnitCost);
+      }
+    }
+
+    return {
+      ok: true,
+      months: months.length,
+      pricing_unit_type: pricingUnitType,
     };
-
-    // Indian: nationality=1; price_type: 1=Adult, 2=Child, 3=Infant
-    if (dto.indian) {
-      const adult = toFloat(dto.indian.adult_cost, 0);
-      const child = toFloat(dto.indian.child_cost, 0);
-      const infant = toFloat(dto.indian.infant_cost, 0);
-      for (const { y, m } of months) {
-        if (adult > 0) await upsertMonth(y, m, 1, 1, adult);
-        if (child > 0) await upsertMonth(y, m, 2, 1, child);
-        if (infant > 0) await upsertMonth(y, m, 3, 1, infant);
-      }
-    }
-
-    // Non-Indian: nationality=2
-    if (dto.nonindian) {
-      const adult = toFloat(dto.nonindian.adult_cost, 0);
-      const child = toFloat(dto.nonindian.child_cost, 0);
-      const infant = toFloat(dto.nonindian.infant_cost, 0);
-      for (const { y, m } of months) {
-        if (adult > 0) await upsertMonth(y, m, 1, 2, adult);
-        if (child > 0) await upsertMonth(y, m, 2, 2, child);
-        if (infant > 0) await upsertMonth(y, m, 3, 2, infant);
-      }
-    }
-
-    return { ok: true, months: months.length };
   }
+
+  await deactivatePriceTypes([ACTIVITY_PRICE_TYPE_UNIT]);
+
+  // Indian: nationality=1; price_type: 1=Adult, 2=Child, 3=Infant
+  if (dto.indian) {
+    const adult = toFloat(dto.indian.adult_cost, 0);
+    const child = toFloat(dto.indian.child_cost, 0);
+    const infant = toFloat(dto.indian.infant_cost, 0);
+    for (const { y, m } of months) {
+      if (adult > 0) await upsertMonth(y, m, ACTIVITY_PRICE_TYPE_ADULT, 1, adult);
+      if (child > 0) await upsertMonth(y, m, ACTIVITY_PRICE_TYPE_CHILD, 1, child);
+      if (infant > 0) await upsertMonth(y, m, ACTIVITY_PRICE_TYPE_INFANT, 1, infant);
+    }
+  }
+
+  // Non-Indian: nationality=2
+  if (dto.nonindian) {
+    const adult = toFloat(dto.nonindian.adult_cost, 0);
+    const child = toFloat(dto.nonindian.child_cost, 0);
+    const infant = toFloat(dto.nonindian.infant_cost, 0);
+    for (const { y, m } of months) {
+      if (adult > 0) await upsertMonth(y, m, ACTIVITY_PRICE_TYPE_ADULT, 2, adult);
+      if (child > 0) await upsertMonth(y, m, ACTIVITY_PRICE_TYPE_CHILD, 2, child);
+      if (infant > 0) await upsertMonth(y, m, ACTIVITY_PRICE_TYPE_INFANT, 2, infant);
+    }
+  }
+
+  return {
+    ok: true,
+    months: months.length,
+    pricing_unit_type: pricingUnitType,
+  };
+}
 
   // ====== REVIEWS ======
   async addOrUpdateReview(
