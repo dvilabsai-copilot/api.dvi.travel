@@ -180,6 +180,60 @@ export async function previewManualHotspotFitHereImpl(
     previewResult,
     activeRemovalEvidence,
   });
+  const finalizedTimelineForAnchorValidation =
+    Array.isArray((response as any).finalizedTimeline) && (response as any).finalizedTimeline.length > 0
+      ? (response as any).finalizedTimeline
+      : (Array.isArray((response as any).proposedTimeline) ? (response as any).proposedTimeline : []);
+  const selectedAnchorPreserved =
+    resolvedAnchor.exactSelectedGap === true
+      ? this.manualFitTimelinePreservesSelectedAnchor({
+          timeline: finalizedTimelineForAnchorValidation,
+          selectedHotspotId: Number(data.selectedHotspotId),
+          afterHotspotId: resolvedAnchor.afterHotspotId ?? null,
+          beforeHotspotId: resolvedAnchor.beforeHotspotId ?? null,
+          anchorIntent: resolvedAnchor.anchorIntent,
+        })
+      : true;
+
+  (response as any).selectedAnchorPreserved = selectedAnchorPreserved === true;
+
+  if (resolvedAnchor.exactSelectedGap === true && selectedAnchorPreserved !== true) {
+    const anchorMismatchMessage = String(
+      resolvedAnchor.anchorIntent === 'AFTER_START'
+        ? 'This hotspot could not be kept before the first attraction in the finalized Fit Here timeline.'
+        : `This hotspot could not be kept at the exact Fit Here position after ${resolvedAnchor.anchorFrom || 'the selected attraction'}.`,
+    ).trim();
+
+    (response as any).canConfirm = false;
+    (response as any).resultType = 'CANNOT_FIT';
+    (response as any).acceptedReason = null;
+    (response as any).rejectedReasons = [anchorMismatchMessage];
+    (response as any).confirmButtonVariant = 'default';
+    (response as any).requiresTimingRiskConfirmation = false;
+    (response as any).requiresPriorityRemovalConfirmation = false;
+    (response as any).exactAnchorMismatch = {
+      message: anchorMismatchMessage,
+      anchorIntent: resolvedAnchor.anchorIntent,
+      anchorFrom: resolvedAnchor.anchorFrom ?? null,
+      anchorTo: resolvedAnchor.anchorTo ?? null,
+      afterHotspotId: resolvedAnchor.afterHotspotId ?? null,
+      beforeHotspotId: resolvedAnchor.beforeHotspotId ?? null,
+    };
+
+    if ((response as any).resolution && typeof (response as any).resolution === 'object') {
+      (response as any).resolution.requiresTimingRiskConfirmation = false;
+      (response as any).resolution.requiresPriorityRemovalConfirmation = false;
+      (response as any).resolution.exactAnchorMismatch = {
+        message: anchorMismatchMessage,
+        anchorIntent: resolvedAnchor.anchorIntent,
+        anchorFrom: resolvedAnchor.anchorFrom ?? null,
+        anchorTo: resolvedAnchor.anchorTo ?? null,
+        afterHotspotId: resolvedAnchor.afterHotspotId ?? null,
+        beforeHotspotId: resolvedAnchor.beforeHotspotId ?? null,
+      };
+    }
+  }
+
   (response as any).removalPolicy = {
     allowP3Removal: data.allowP3Removal === true,
     allowP1P2Removal: data.allowP1P2Removal === true,
@@ -216,6 +270,7 @@ export async function previewManualHotspotFitHereImpl(
     beforeRouteHotspotId: resolvedAnchor.beforeRouteHotspotId ?? null,
     beforeHotspotId: resolvedAnchor.beforeHotspotId ?? null,
     exactSelectedGap: resolvedAnchor.exactSelectedGap === true,
+    selectedAnchorPreserved: selectedAnchorPreserved === true,
     allowP3Removal: data.allowP3Removal === true,
     allowP1P2Removal: data.allowP1P2Removal === true,
     canConfirm: response.canConfirm === true,
@@ -279,6 +334,193 @@ export async function previewManualHotspotFitHereImpl(
   await this.saveManualFitAttemptEntry(cacheEntry);
 
   return response;
+}
+
+const getManualAutoFitRemovedRows = (attempt: any): any[] => {
+  const rows = [
+    ...(Array.isArray(attempt?.removedHotspots) ? attempt.removedHotspots : []),
+    ...(Array.isArray(attempt?.resolution?.removedHotspots) ? attempt.resolution.removedHotspots : []),
+    ...(Array.isArray(attempt?.changesRequiredDisplay?.removedItems) ? attempt.changesRequiredDisplay.removedItems : []),
+  ];
+
+  const seen = new Set<number>();
+
+  return rows.filter((row: any) => {
+    const id = Number(row?.id || row?.hotspotId || row?.hotspot_ID || row?.hotspot_id || row?.locationId || 0);
+    if (!(id > 0)) return false;
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+};
+
+const getManualAutoFitHighestRemovedPriority = (attempt: any): number | null => {
+  const rows = getManualAutoFitRemovedRows(attempt);
+
+  const priorities = rows
+    .map((row: any) => Number(row?.priority || row?.hotspotPriority || row?.hotspot_priority || row?.rawPriority || row?.workPriority || 0))
+    .filter((priority: number) => [1, 2, 3].includes(priority));
+
+  if (priorities.length === 0) {
+    return null;
+  }
+
+  return Math.min(...priorities);
+};
+
+const scoreManualAutoFitAttempt = (attempt: any): { score: number; reason: string } => {
+  const resultType = String(attempt?.resultType || '').toUpperCase();
+  const removedRows = getManualAutoFitRemovedRows(attempt);
+  const removedCount = removedRows.length;
+  const highestRemovedPriority = getManualAutoFitHighestRemovedPriority(attempt);
+
+  let score = 0;
+  let reason = 'Cannot fit at this position.';
+
+  if (resultType === 'FITS_DIRECTLY' && attempt?.canConfirm === true) {
+    score = 1000;
+    reason = 'Clean fit. No hotspot removal required.';
+  } else if (resultType === 'FITS_WITH_OPTIONAL_REMOVAL' && attempt?.canConfirm === true) {
+    score = 800;
+    reason = 'Fits with confirmed changes.';
+  } else if (resultType === 'REQUIRES_P3_CONFIRMATION' && attempt?.canConfirm === true) {
+    score = 650;
+    reason = 'Fits with Priority 3 removal acknowledgement.';
+  } else if (resultType === 'PRIORITY_CONFLICT') {
+    score = 250;
+    reason = 'Protected hotspot impact detected.';
+  } else if (resultType === 'SELECTED_HOTSPOT_CLOSED_AT_ATTEMPTED_TIME') {
+    score = 150;
+    reason = 'Selected hotspot is closed at attempted time.';
+  } else if (attempt?.canConfirm === true) {
+    score = 500;
+    reason = 'Can confirm with warnings.';
+  }
+
+  score -= removedCount * 120;
+
+  if (highestRemovedPriority === 1) score -= 400;
+  if (highestRemovedPriority === 2) score -= 250;
+  if (highestRemovedPriority === 3) score -= 100;
+
+  if (attempt?.requiresTimingRiskConfirmation === true) score -= 150;
+  if (attempt?.requiresPriorityRemovalConfirmation === true) score -= 100;
+  if (attempt?.selectedOpeningConflict) score -= 150;
+
+  return {
+    score: Math.max(0, score),
+    reason,
+  };
+};
+
+export async function previewManualHotspotAutoFitHereImpl(
+  this: any,
+  planId: number,
+  data: any,
+) {
+  if (!(Number(planId) > 0) || !(Number(data?.routeId) > 0) || !(Number(data?.selectedHotspotId) > 0)) {
+    throw new BadRequestException('planId, routeId, and selectedHotspotId are required');
+  }
+
+  const anchors = Array.isArray(data?.anchors) ? data.anchors : [];
+
+  if (anchors.length === 0) {
+    throw new BadRequestException('At least one Fit Here anchor is required for Auto-Preview.');
+  }
+
+  const normalizedAnchors = anchors
+    .filter((anchor: any) => {
+      const intent = String(anchor?.anchorIntent || '').trim().toUpperCase();
+      return intent === 'AFTER_START' || intent === 'AFTER_ATTRACTION';
+    })
+    .map((anchor: any, index: number) => ({
+      ...anchor,
+      anchorType: 'BETWEEN_ROWS',
+      anchorIntent: String(anchor.anchorIntent).trim().toUpperCase(),
+      anchorIndex: Number.isFinite(Number(anchor?.anchorIndex)) ? Number(anchor.anchorIndex) : index,
+    }));
+
+  if (normalizedAnchors.length === 0) {
+    throw new BadRequestException('Auto-Preview only supports Before first attraction and After attraction anchors.');
+  }
+
+  const results: any[] = [];
+
+  for (let index = 0; index < normalizedAnchors.length; index += 1) {
+    const anchor = normalizedAnchors[index];
+
+    try {
+      const attempt = await previewManualHotspotFitHereImpl.call(this, planId, {
+        routeId: Number(data.routeId),
+        selectedHotspotId: Number(data.selectedHotspotId),
+        anchor,
+        allowP3Removal: data.allowP3Removal === true,
+        allowP1P2Removal: data.allowP1P2Removal === true,
+      });
+
+      const ranking = scoreManualAutoFitAttempt(attempt);
+
+      results.push({
+        anchorKey: [
+          anchor.anchorIntent,
+          Number(anchor.anchorIndex ?? index),
+          String(anchor.anchorFrom || ''),
+          String(anchor.anchorTo || ''),
+          Number(anchor.afterHotspotId || 0),
+          Number(anchor.beforeHotspotId || 0),
+        ].join(':'),
+        anchor,
+        attempt,
+        status: 'COMPLETED',
+        score: ranking.score,
+        rankReason: ranking.reason,
+        removedCount: getManualAutoFitRemovedRows(attempt).length,
+      });
+    } catch (error: any) {
+      results.push({
+        anchorKey: [
+          anchor.anchorIntent,
+          Number(anchor.anchorIndex ?? index),
+          String(anchor.anchorFrom || ''),
+          String(anchor.anchorTo || ''),
+          Number(anchor.afterHotspotId || 0),
+          Number(anchor.beforeHotspotId || 0),
+        ].join(':'),
+        anchor,
+        attempt: null,
+        status: 'FAILED',
+        score: 0,
+        rankReason: 'This position could not be previewed.',
+        removedCount: 0,
+        error: error?.message || 'Could not preview this Fit Here position.',
+      });
+    }
+  }
+
+  const sortedResults = [...results].sort((a, b) => {
+    if (Number(b.score || 0) !== Number(a.score || 0)) {
+      return Number(b.score || 0) - Number(a.score || 0);
+    }
+
+    return Number(a.anchor?.anchorIndex ?? 9999) - Number(b.anchor?.anchorIndex ?? 9999);
+  });
+
+  const best =
+    sortedResults.find((row) => row?.attempt?.canConfirm === true) ||
+    sortedResults[0] ||
+    null;
+
+  return {
+    planId: Number(planId),
+    routeId: Number(data.routeId),
+    selectedHotspotId: Number(data.selectedHotspotId),
+    totalPositions: normalizedAnchors.length,
+    completedPositions: results.filter((row) => row.status === 'COMPLETED').length,
+    failedPositions: results.filter((row) => row.status === 'FAILED').length,
+    selectedBestAttemptId: best?.attempt?.attemptId || null,
+    bestAnchorKey: best?.anchorKey || null,
+    results: sortedResults,
+  };
 }
 
 export async function applyManualFitAttemptWithinTransactionImpl(

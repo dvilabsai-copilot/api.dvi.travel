@@ -1089,10 +1089,11 @@ export function detectManualFitTimingRiskImpl(this: any, params: any): any | nul
 
 export function buildRemovedPrioritySummaryImpl(this: any, removedRows: any[]) {
   const rows = Array.isArray(removedRows) ? removedRows : [];
+  const removedP4 = rows.filter((row: any) => Number(row?.priority || 0) >= 4).length;
   const removedP3 = rows.filter((row: any) => Number(row?.priority || 0) === 3).length;
   const removedP2 = rows.filter((row: any) => Number(row?.priority || 0) === 2).length;
   const removedP1 = rows.filter((row: any) => Number(row?.priority || 0) === 1).length;
-  const highestRemovedPriority = removedP1 > 0 ? 1 : removedP2 > 0 ? 2 : removedP3 > 0 ? 3 : null;
+  const highestRemovedPriority = removedP1 > 0 ? 1 : removedP2 > 0 ? 2 : removedP3 > 0 ? 3 : removedP4 > 0 ? 4 : null;
   const requiresPriorityRemovalConfirmation = rows.length > 0;
   const severity: 'none' | 'warning' | 'danger' =
     highestRemovedPriority === null
@@ -1103,16 +1104,19 @@ export function buildRemovedPrioritySummaryImpl(this: any, removedRows: any[]) {
   const message =
     highestRemovedPriority === null
       ? 'No existing route hotspot removal is required.'
+      : highestRemovedPriority === 4
+        ? 'This manual insertion will remove non-manual / optional hotspots first before checking Priority 3 -> Priority 2 -> Priority 1.'
       : highestRemovedPriority === 3
-        ? 'This manual insertion will remove existing hotspots. Removal order used: Priority 3 -> Priority 2 -> Priority 1.'
-        : 'This manual insertion will remove existing priority hotspots. Removal order used: Priority 3 -> Priority 2 -> Priority 1.';
+        ? 'This manual insertion will remove existing hotspots. Removal order used: Non-manual / Priority 4 -> Priority 3 -> Priority 2 -> Priority 1.'
+        : 'This manual insertion will remove existing priority hotspots. Removal order used: Non-manual / Priority 4 -> Priority 3 -> Priority 2 -> Priority 1.';
 
   return {
+    removedP4,
     removedP3,
     removedP2,
     removedP1,
     highestRemovedPriority,
-    removalOrder: [3, 2, 1],
+    removalOrder: [4, 3, 2, 1],
     requiresPriorityRemovalConfirmation,
     severity,
     message,
@@ -1168,7 +1172,7 @@ export function buildManualFitChangesRequiredDisplayImpl(this: any, params: any)
   return {
     hasRemovals: removedItems.length > 0,
     title: 'Changes Required',
-    removalOrderLabel: 'Removal order checked: Priority 3 -> Priority 2 -> Priority 1',
+    removalOrderLabel: 'Removal order checked: Non-manual / Priority 4 -> Priority 3 -> Priority 2 -> Priority 1',
     removedItems,
     noRemovalText: 'No hotspot removed',
   };
