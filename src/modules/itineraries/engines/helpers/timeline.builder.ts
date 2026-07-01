@@ -2355,11 +2355,42 @@ export class TimelineBuilder {
       const isRouteSourceTerminal = /airport|railway station/i.test(
         String(sourceCity || route.location_name || ''),
       );
+      const remainingRoutes = scopedRoutes.slice(routeIndex);
+      const hasLaterOvernightInSourceCity =
+        day1SourceCompare !== '' &&
+        remainingRoutes.some((candidateRoute: any) => {
+          const candidateSourceCompare = this.canonicalCityKey(
+            String(candidateRoute?.location_name || ''),
+          );
+          const candidateDestinationCompare = this.canonicalCityKey(
+            String(candidateRoute?.next_visiting_location || ''),
+          );
+
+          return (
+            candidateDestinationCompare === day1SourceCompare ||
+            (
+              candidateSourceCompare === day1SourceCompare &&
+              candidateDestinationCompare === day1SourceCompare
+            )
+          );
+        });
       const tracePhpIncludeFlow = this.verboseTimelineProofLogs;
       const isLoopbackRoute =
         day1SourceCompare !== '' &&
         day1SourceCompare === day1DestinationCompare;
       const shouldApplySourceHotspotCutoff = !isLoopbackRoute;
+      this.logBookingRule({
+        rule: 'DAY1_SOURCE_CITY_RETURN_STAY_CHECK',
+        planId,
+        routeId: route.itinerary_route_ID,
+        sourceCity,
+        sourceCityKey: day1SourceCompare,
+        isRouteSourceTerminal,
+        hasLaterOvernightInSourceCity,
+        remainingRouteIds: remainingRoutes.map((candidateRoute: any) => (
+          Number(candidateRoute?.itinerary_route_ID || 0)
+        )).filter((candidateRouteId: number) => candidateRouteId > 0),
+      });
 
       if (isDay1DifferentCities) {
         this.logBookingRule({
@@ -3331,7 +3362,13 @@ export class TimelineBuilder {
             continue;
           }
 
-          if (!isManualSelection && isRouteSourceTerminal && isSourceBucket && hotspotPriority === 1) {
+          if (
+            !isManualSelection &&
+            isRouteSourceTerminal &&
+            hasLaterOvernightInSourceCity &&
+            isSourceBucket &&
+            hotspotPriority === 1
+          ) {
             this.logHotspotCandidateEvaluation({
               routeId: route.itinerary_route_ID,
               hotspotId: Number(sh.hotspot_ID || 0),
@@ -3347,7 +3384,7 @@ export class TimelineBuilder {
               visitTime: `${currentTime} - ${currentTime}`,
               isOpenAtVisitTime: false,
               selected: false,
-              rejectedReasons: ['Rejected: Day1 terminal-arrival source-bucket priority1 suppression'],
+              rejectedReasons: ['Rejected: Day1 terminal-arrival source-bucket priority1 suppression with later overnight return/stay'],
             });
             continue;
           }
