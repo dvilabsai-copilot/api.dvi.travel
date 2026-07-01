@@ -1727,6 +1727,36 @@ export class ItinerariesController {
     return this.svc.previewManualHotspotFitHere(planId, body);
   }
 
+  @Post(':planId/manual-hotspot/auto-fit-preview')
+  @ApiOperation({ summary: 'Auto-preview selected manual hotspot across all valid Fit Here positions' })
+  async previewManualHotspotAutoFitHere(
+    @Param('planId', ParseIntPipe) planId: number,
+    @Body()
+    body: {
+      routeId: number;
+      selectedHotspotId: number;
+      anchors: Array<{
+        anchorType?: 'BETWEEN_ROWS';
+        anchorIntent?: 'AFTER_START' | 'AFTER_ATTRACTION';
+        anchorIndex?: number;
+        beforeHotspotId?: number | null;
+        afterHotspotId?: number | null;
+        beforeRouteHotspotId?: number | null;
+        afterRouteHotspotId?: number | null;
+        anchorFrom?: string | null;
+        anchorTo?: string | null;
+        anchorLabel?: string | null;
+        anchorTimeRange?: string | null;
+        afterRowType?: string | null;
+        beforeRowType?: string | null;
+      }>;
+      allowP3Removal?: boolean;
+      allowP1P2Removal?: boolean;
+    },
+  ) {
+    return this.svc.previewManualHotspotAutoFitHere(planId, body);
+  }
+
   @Post(':planId/manual-hotspot/fit-confirm')
   @ApiOperation({ summary: 'Confirm a cached Fit Here manual hotspot insertion attempt' })
   async confirmManualHotspotFitHere(

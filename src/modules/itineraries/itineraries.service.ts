@@ -43,6 +43,7 @@ import {
   confirmManualHotspotFitHereImpl,
   extractManualFitPreferredSlotImpl,
   preflightManualFitAttemptConfirmationImpl,
+  previewManualHotspotAutoFitHereImpl,
   previewManualHotspotFitHereImpl,
   resolveManualFitHereAnchorImpl,
 } from "./helpers/manual-fit-here.helper";
@@ -12594,6 +12595,19 @@ const guideSlotCsv = guideSlots.join(',');
     return previewManualHotspotFitHereImpl.call(this, planId, data);
   }
 
+  async previewManualHotspotAutoFitHere(
+    planId: number,
+    data: {
+      routeId: number;
+      selectedHotspotId: number;
+      anchors: any[];
+      allowP3Removal?: boolean;
+      allowP1P2Removal?: boolean;
+    },
+  ) {
+    return previewManualHotspotAutoFitHereImpl.call(this, planId, data);
+  }
+
   private async applyManualFitAttemptWithinTransaction(
     tx: any,
     params: {
@@ -13807,6 +13821,9 @@ const guideSlotCsv = guideSlots.join(',');
       targetHotspotId: number;
       routeId: number;
       planId: number;
+      anchorIntent?: 'AFTER_START' | 'AFTER_ATTRACTION';
+      afterHotspotId?: number;
+      beforeHotspotId?: number;
     },
   ): Promise<any[]> {
     const ordered = Array.isArray(timeline) ? timeline : [];
@@ -13886,12 +13903,81 @@ const guideSlotCsv = guideSlots.join(',');
       return true;
     });
 
+    const attractionSortKey = (row: any, index: number): number => {
+      const hotspotOrder = Number(row?.hotspotOrder ?? row?.hotspot_order ?? 0);
+      if (Number.isFinite(hotspotOrder) && hotspotOrder > 0) {
+        return hotspotOrder * 1000 + index;
+      }
+      return index + 1;
+    };
+
+    const originalAttractions = ordered
+      .map((row: any, index: number) => ({ row, index }))
+      .filter((entry: any) => isAttractionRow(entry.row))
+      .sort((a: any, b: any) => attractionSortKey(a.row, a.index) - attractionSortKey(b.row, b.index))
+      .map((entry: any) => entry.row);
+
+    const selectedAttractionRow =
+      originalAttractions.find((row: any) => getHotspotId(row) === Number(params.targetHotspotId || 0))
+      || keptRows.find((row: any) => isAttractionRow(row) && getHotspotId(row) === Number(params.targetHotspotId || 0))
+      || null;
+
+    const survivingAttractions = originalAttractions.filter((row: any) => {
+      const hotspotId = getHotspotId(row);
+      return hotspotId > 0 && hotspotId !== Number(params.targetHotspotId || 0) && !removedSet.has(hotspotId);
+    });
+
+    const anchorIntent = String(params.anchorIntent || '').toUpperCase();
+    const anchorAfterHotspotId = Number(params.afterHotspotId || 0);
+    const anchorBeforeHotspotId = Number(params.beforeHotspotId || 0);
+
+    const scheduledAttractions = (() => {
+      if (!selectedAttractionRow) {
+        return survivingAttractions;
+      }
+
+      if (anchorIntent === 'AFTER_START') {
+        return [selectedAttractionRow, ...survivingAttractions];
+      }
+
+      if (anchorAfterHotspotId > 0) {
+        const nextRows: any[] = [];
+        let inserted = false;
+
+        for (const row of survivingAttractions) {
+          nextRows.push(row);
+          if (!inserted && getHotspotId(row) === anchorAfterHotspotId) {
+            nextRows.push(selectedAttractionRow);
+            inserted = true;
+          }
+        }
+
+        if (!inserted) {
+          if (anchorBeforeHotspotId > 0) {
+            const beforeIndex = nextRows.findIndex((row: any) => getHotspotId(row) === anchorBeforeHotspotId);
+            if (beforeIndex >= 0) {
+              nextRows.splice(beforeIndex, 0, selectedAttractionRow);
+              inserted = true;
+            }
+          }
+        }
+
+        if (!inserted) {
+          nextRows.push(selectedAttractionRow);
+        }
+
+        return nextRows;
+      }
+
+      return [...survivingAttractions, selectedAttractionRow];
+    })();
+
     const rebuilt: any[] = [];
     let cursor = firstStartMinutes;
     let previousAttraction: any | null = null;
 
     const hotelRows = keptRows.filter((row: any) => isHotelLikeRow(row));
-    const firstAttractionRow = keptRows.find((row: any) => isAttractionRow(row)) || null;
+    const firstAttractionRow = scheduledAttractions[0] || null;
     const fallbackInitialTravel = keptRows.find((row: any) => {
       if (!isTravelRow(row) || isHotelLikeRow(row)) return false;
       const toHotspotId = Number(row?.toHotspotId || 0);
@@ -13904,20 +13990,26 @@ const guideSlotCsv = guideSlots.join(',');
       );
     }) || keptRows.find((row: any) => isTravelRow(row) && !isHotelLikeRow(row)) || null;
 
-    for (const row of keptRows) {
+    const leadingStaticRows = keptRows.filter((row: any) => {
+      if (isHotelLikeRow(row)) return false;
+      if (isTravelRow(row)) return false;
+      if (isAttractionRow(row)) return false;
+      return true;
+    });
+
+    for (const row of leadingStaticRows) {
+      const duration = getDurationMinutes(row, 0);
+      const scheduled = scheduleRow(row, cursor, duration);
+      cursor += duration;
+      rebuilt.push(scheduled);
+    }
+
+    for (const row of scheduledAttractions) {
       if (isHotelLikeRow(row)) {
         continue;
       }
 
       if (isTravelRow(row)) {
-        continue;
-      }
-
-      if (!isAttractionRow(row)) {
-        const duration = getDurationMinutes(row, 0);
-        const scheduled = scheduleRow(row, cursor, duration);
-        cursor += duration;
-        rebuilt.push(scheduled);
         continue;
       }
 
@@ -14862,7 +14954,10 @@ const guideSlotCsv = guideSlots.join(',');
     validationMode: 'DAY_END' | 'SELECTED_HOTSPOT_CLOSING',
     priority: number,
   ): string {
-    const priorityLabel = `Priority ${priority}`;
+    const priorityLabel =
+      Number(priority || 0) >= this.MANUAL_HOTSPOT_EFFECTIVE_PRIORITY
+        ? 'Non-manual / Priority 4'
+        : `Priority ${priority}`;
 
     if (validationMode === 'SELECTED_HOTSPOT_CLOSING') {
       return `${priorityLabel} hotspot removed after sequential check to keep the selected manual hotspot within operating hours.`;
@@ -14876,7 +14971,11 @@ const guideSlotCsv = guideSlots.join(',');
     removedRows: Array<{ priority?: number; name?: string }>,
   ): string {
     const priorityText = removedRows
-      .map((row) => `P${Number(row.priority || 0)}`)
+      .map((row) => (
+        Number(row.priority || 0) >= this.MANUAL_HOTSPOT_EFFECTIVE_PRIORITY
+          ? 'P4'
+          : `P${Number(row.priority || 0)}`
+      ))
       .filter(Boolean)
       .join(' -> ');
 
@@ -15127,6 +15226,10 @@ const guideSlotCsv = guideSlots.join(',');
       allowP2Removal?: boolean;
       allowP1Removal?: boolean;
       preselectedRemovalHotspotIds?: number[];
+      exactAnchorMode?: boolean;
+      anchorIntent?: 'AFTER_START' | 'AFTER_ATTRACTION';
+      afterHotspotId?: number;
+      beforeHotspotId?: number;
     },
   ): Promise<{
     resolved: boolean;
@@ -15230,20 +15333,11 @@ const guideSlotCsv = guideSlots.join(',');
     });
 
     const getCandidateRemovalPriority = (row: any): number => {
-      const normalized = this.normalizeHotspotPriority(
-        Number(
-          row?.effectivePriority
-          ?? row?.normalizedPriority
-          ?? row?.rawPriority
-          ?? row?.priority
-          ?? row?.hotspot_priority
-          ?? 9999,
-        ),
-      );
+      const normalized = this.getEffectivePriorityForManualInsertion(row);
 
-      if (normalized === 9999) return 3;
-      if (normalized >= 5) return 2;
-      if ([1, 2, 3].includes(normalized)) return normalized;
+      if (normalized >= this.MANUAL_HOTSPOT_EFFECTIVE_PRIORITY || normalized === 9999) return 4;
+      if (normalized === this.CONFIRMATION_REQUIRED_PRIORITY) return 3;
+      if ([1, 2].includes(normalized)) return normalized;
       return 0;
     };
 
@@ -15276,11 +15370,12 @@ const guideSlotCsv = guideSlots.join(',');
 
         const priority = getCandidateRemovalPriority(row);
 
+        if (priority === 4) return true;
         if (priority === 3 && params.allowP3Removal !== true) return false;
         if (priority === 2 && params.allowP2Removal !== true) return false;
         if (priority === 1 && params.allowP1Removal !== true) return false;
 
-        return [1, 2, 3].includes(priority);
+        return [1, 2, 3, 4].includes(priority);
       })
       .map(({ row, rowIndex }: any) => {
         const priority = getCandidateRemovalPriority(row);
@@ -15321,7 +15416,7 @@ const guideSlotCsv = guideSlots.join(',');
           Number(row?.hotspot_plan_own_way || 0) === 1;
         const beforeTarget = !(validationMode === 'SELECTED_HOTSPOT_CLOSING' && targetTimelineIndex >= 0 && rowIndex >= targetTimelineIndex);
         const allowedByPriority =
-          (priority === 3 ? params.allowP3Removal === true : true) &&
+          (priority === 4 || priority === 3 ? params.allowP3Removal === true : true) &&
           (priority === 2 ? params.allowP2Removal === true : true) &&
           (priority === 1 ? params.allowP1Removal === true : true);
 
@@ -15346,7 +15441,7 @@ const guideSlotCsv = guideSlots.join(',');
             beforeTarget &&
             !isManual &&
             allowedByPriority &&
-            [1, 2, 3].includes(priority),
+            [1, 2, 3, 4].includes(priority),
         };
       })
       .filter((row: any) => row.hotspotId > 0);
@@ -15517,12 +15612,15 @@ const guideSlotCsv = guideSlots.join(',');
     const rebuildAfterRemoval = async (removedIds: number[]) => {
       if (removedIds.length === 0) return currentTimeline;
 
-      if (validationMode === 'SELECTED_HOTSPOT_CLOSING') {
+      if (validationMode === 'SELECTED_HOTSPOT_CLOSING' || params.exactAnchorMode === true) {
         return this.buildExactAnchorSequentialTimelineAfterRemoval(tx, currentTimeline, {
           removedHotspotIds: removedIds,
           targetHotspotId,
           routeId: Number(params.routeId),
           planId: Number(params.planId),
+          anchorIntent: params.anchorIntent,
+          afterHotspotId: params.afterHotspotId,
+          beforeHotspotId: params.beforeHotspotId,
         });
       }
 
@@ -15639,12 +15737,13 @@ const guideSlotCsv = guideSlots.join(',');
     }
 
     const candidateByPriority = {
+      4: candidateRows.filter((row: any) => row.priority === 4),
       3: candidateRows.filter((row: any) => row.priority === 3),
       2: candidateRows.filter((row: any) => row.priority === 2),
       1: candidateRows.filter((row: any) => row.priority === 1),
     } as Record<number, any[]>;
 
-    for (const priority of [3, 2, 1]) {
+    for (const priority of [4, 3, 2, 1]) {
       const rowsForPriority = candidateByPriority[priority] || [];
 
       for (const candidate of rowsForPriority) {
@@ -15752,7 +15851,7 @@ const guideSlotCsv = guideSlots.join(',');
       validationMode,
       removedHotspots: [],
       candidateHotspots: candidateRows,
-      finalTimeline: currentTimeline,
+      finalTimeline: finalEvaluation.evaluatedTimeline,
       finalOverflowMinutes: finalEvaluation.finalOverflowMinutes,
       finalArrivalTime: finalEvaluation.finalArrivalTime,
       simulationAttempts,
@@ -15761,7 +15860,7 @@ const guideSlotCsv = guideSlots.join(',');
       message:
         validationMode === 'SELECTED_HOTSPOT_CLOSING'
           ? 'Could not fit the selected manual hotspot within operating hours after trying cumulative same-route generated removals.'
-          : 'Could not fit the selected manual hotspot within route end after checking same-route Priority 3, then Priority 2, then Priority 1 removals one by one.',
+          : 'Could not fit the selected manual hotspot within route end after checking same-route Non-manual / Priority 4, then Priority 3, then Priority 2, then Priority 1 removals one by one.',
     };
   }
 
@@ -19793,7 +19892,10 @@ const guideSlotCsv = guideSlots.join(',');
       routeManualHotspotIds,
       {
         anchorType: resolvedAnchorType,
+        anchorIntent: options?.anchorIntent,
         anchorIndex: resolvedAnchorIndex,
+        afterHotspotId: options?.afterHotspotId,
+        beforeHotspotId: options?.beforeHotspotId,
       },
       {
         allowP3Removal: options?.allowP3Removal === true,
@@ -20172,6 +20274,10 @@ const guideSlotCsv = guideSlots.join(',');
         dayEndMinutes,
         overflowMinutes: exactAnchorOverflowMinutes,
         validationMode: 'SELECTED_HOTSPOT_CLOSING',
+        exactAnchorMode: options?.exactAnchorMode === true,
+        anchorIntent: options?.anchorIntent,
+        afterHotspotId: options?.afterHotspotId,
+        beforeHotspotId: options?.beforeHotspotId,
         allowP3Removal: true,
         allowP2Removal: options?.allowP1P2Removal === true || options?.allowTopPriorityRemoval === true,
         allowP1Removal: options?.allowP1P2Removal === true || options?.allowTopPriorityRemoval === true,
@@ -20469,6 +20575,10 @@ const guideSlotCsv = guideSlots.join(',');
         dayEndMinutes,
         overflowMinutes: previewOverflowMinutes,
         validationMode: 'DAY_END',
+        exactAnchorMode: options?.exactAnchorMode === true,
+        anchorIntent: options?.anchorIntent,
+        afterHotspotId: options?.afterHotspotId,
+        beforeHotspotId: options?.beforeHotspotId,
         allowP3Removal: true,
         allowP2Removal: options?.allowP1P2Removal === true || options?.allowTopPriorityRemoval === true,
         allowP1Removal: options?.allowP1P2Removal === true || options?.allowTopPriorityRemoval === true,
@@ -20708,6 +20818,10 @@ const guideSlotCsv = guideSlots.join(',');
         validationMode: 'SELECTED_HOTSPOT_CLOSING',
         targetHotspotId: Number(focusHotspotId),
         targetHotspotLatestEndMinutes: selectedLatestAllowedEndMinutesForResolver,
+        exactAnchorMode: options?.exactAnchorMode === true,
+        anchorIntent: options?.anchorIntent,
+        afterHotspotId: options?.afterHotspotId,
+        beforeHotspotId: options?.beforeHotspotId,
         allowP3Removal: options?.allowP3Removal === true || options?.allowTopPriorityRemoval === true,
         allowP2Removal: options?.allowP1P2Removal === true || options?.allowTopPriorityRemoval === true,
         allowP1Removal: options?.allowP1P2Removal === true || options?.allowTopPriorityRemoval === true,
@@ -20798,7 +20912,7 @@ const guideSlotCsv = guideSlots.join(',');
             stillUnschedulable: false,
             routeEndOverflowMinutes: 0,
             selectedOpeningConflict: null,
-            reason: 'Opening-hours overflow resolved by checking Priority 3 -> Priority 2 -> Priority 1 removals.',
+            reason: 'Opening-hours overflow resolved by checking Non-manual / Priority 4 -> Priority 3 -> Priority 2 -> Priority 1 removals.',
           };
         }
       }
@@ -27430,6 +27544,16 @@ const guideSlotCsv = guideSlots.join(',');
             if (aDiff !== bDiff) return aDiff - bDiff;
             return Number(a.candidateIndex) - Number(b.candidateIndex);
           });
+
+      if (options?.exactAnchorMode === true && preferredCandidateIndex !== null) {
+        const exactPositions = orderedBase.filter((pos) => (
+          Number(pos.candidateIndex) === Number(preferredCandidateIndex)
+        ));
+        if (exactPositions.length > 0) {
+          return exactPositions;
+        }
+      }
+
       if (options?.destinationInsertionMode === true) {
         const minIndex = Math.max(0, Number(options?.destinationMinCandidateIndex || 0));
         const destinationSide = orderedBase.filter((pos) => Number(pos.candidateIndex) >= minIndex);
@@ -27538,6 +27662,8 @@ const guideSlotCsv = guideSlots.join(',');
       allowTopPriorityRemoval?: boolean;
       previewOnly?: boolean;
       exactAnchorMode?: boolean;
+      anchorIntent?: 'AFTER_START' | 'AFTER_ATTRACTION';
+      afterHotspotId?: number;
       anchorIndex?: number;
       anchorType?: 'after_travel' | 'BETWEEN_ROWS';
       destinationInsertionMode?: boolean;
@@ -27555,6 +27681,8 @@ const guideSlotCsv = guideSlots.join(',');
       hotspots: baselineCandidates?.hotspotRows || [],
       manualHotspotIds,
       anchorIndex: options?.anchorIndex,
+      anchorIntent: options?.anchorIntent,
+      afterHotspotId: options?.afterHotspotId,
       allowP3Removal: options?.allowP3Removal === true,
       allowTopPriorityRemoval: options?.allowTopPriorityRemoval === true,
       exactAnchorMode: options?.exactAnchorMode === true,
@@ -28034,6 +28162,8 @@ const guideSlotCsv = guideSlots.join(',');
     hotspots: any[];
     manualHotspotIds: number[];
     anchorIndex?: number;
+    anchorIntent?: 'AFTER_START' | 'AFTER_ATTRACTION';
+    afterHotspotId?: number;
     allowP3Removal?: boolean;
     allowTopPriorityRemoval?: boolean;
     exactAnchorMode?: boolean;
@@ -28052,7 +28182,25 @@ const guideSlotCsv = guideSlots.join(',');
       .sort((a, b) => Number(a.hotspotOrder) - Number(b.hotspotOrder));
     const clusterWithManual = [...currentCluster];
 
-    const anchorAfterIndex = Math.max(0, Number(params.anchorIndex || 0));
+    const exactAnchorAfterHotspotId = Number(params.afterHotspotId || 0);
+    const anchorAfterIndex = (() => {
+      if (params.exactAnchorMode === true) {
+        if (String(params.anchorIntent || '').toUpperCase() === 'AFTER_START') {
+          return 0;
+        }
+
+        if (exactAnchorAfterHotspotId > 0) {
+          const exactAnchorClusterIndex = currentCluster.findIndex(
+            (row) => Number(row.hotspotId || 0) === exactAnchorAfterHotspotId,
+          );
+          if (exactAnchorClusterIndex >= 0) {
+            return exactAnchorClusterIndex + 1;
+          }
+        }
+      }
+
+      return Math.max(0, Number(params.anchorIndex || 0));
+    })();
     const anchorBeforeIndex = Math.max(0, anchorAfterIndex - 1);
 
     const insertManualAt = (rows: ManualClusterPoint[], index: number): number[] => {
@@ -28107,15 +28255,43 @@ const guideSlotCsv = guideSlots.join(',');
       .sort((a, b) => a.closingMinute - b.closingMinute || a.effectivePriority - b.effectivePriority || a.startTs - b.startTs)
       .map((row) => Number(row.hotspotId));
 
+    const buildExactRouteOrder = (): number[] => {
+      const routeWithoutManual = cluster.baseOrder
+        .map(Number)
+        .filter((id) => id > 0 && id !== manualId);
+
+      if (!(manualId > 0)) {
+        return routeWithoutManual;
+      }
+
+      if (String(params.anchorIntent || '').toUpperCase() === 'AFTER_START') {
+        return [manualId, ...routeWithoutManual];
+      }
+
+      if (exactAnchorAfterHotspotId > 0) {
+        const afterIndex = routeWithoutManual.findIndex((id) => id === exactAnchorAfterHotspotId);
+        if (afterIndex >= 0) {
+          routeWithoutManual.splice(afterIndex + 1, 0, manualId);
+          return routeWithoutManual;
+        }
+      }
+
+      const safeIndex = Math.max(0, Math.min(anchorAfterIndex, routeWithoutManual.length));
+      routeWithoutManual.splice(safeIndex, 0, manualId);
+      return routeWithoutManual;
+    };
+
     const exactAnchorSequentialStrategy: ManualCandidateOrder = {
       strategyKey: 'exact_anchor_sequential_rebuild',
       strategyLabel: 'Selected Fit Here Sequence',
       description: 'Exact anchor rebuild: insert the manual hotspot at the clicked position, then preserve existing hotspot order after the anchor.',
-      hotspotOrder: this.buildManualClusterOrderFromClusterPoints(
-        cluster.baseOrder,
-        cluster.clusterHotspots,
-        insertManualAt(currentCluster, anchorAfterIndex),
-      ),
+      hotspotOrder: params.exactAnchorMode === true
+        ? buildExactRouteOrder()
+        : this.buildManualClusterOrderFromClusterPoints(
+            cluster.baseOrder,
+            cluster.clusterHotspots,
+            insertManualAt(currentCluster, anchorAfterIndex),
+          ),
     };
 
     if (params.exactAnchorMode === true) {
@@ -28973,7 +29149,10 @@ const guideSlotCsv = guideSlots.join(',');
     manualHotspotIds: number[],
     anchor?: {
       anchorType?: 'after_travel' | 'BETWEEN_ROWS';
+      anchorIntent?: 'AFTER_START' | 'AFTER_ATTRACTION';
       anchorIndex?: number;
+      afterHotspotId?: number;
+      beforeHotspotId?: number;
     },
     options?: {
       allowP3Removal?: boolean;
@@ -29128,6 +29307,8 @@ const guideSlotCsv = guideSlots.join(',');
         allowTopPriorityRemoval,
         previewOnly: isPreviewOnly,
         exactAnchorMode: isExactAnchorMode,
+        anchorIntent: anchor?.anchorIntent,
+        afterHotspotId: Number(anchor?.afterHotspotId || 0) || undefined,
         anchorType: anchor?.anchorType,
         anchorIndex: anchor?.anchorIndex,
         destinationInsertionMode: options?.destinationInsertionMode === true,
@@ -29263,6 +29444,8 @@ const guideSlotCsv = guideSlots.join(',');
           allowTopPriorityRemoval,
           previewOnly: isPreviewOnly,
           exactAnchorMode: isExactAnchorMode,
+          anchorIntent: anchor?.anchorIntent,
+          afterHotspotId: Number(anchor?.afterHotspotId || 0) || undefined,
           anchorType: anchor?.anchorType,
           anchorIndex: anchor?.anchorIndex,
           destinationInsertionMode: options?.destinationInsertionMode === true,
@@ -29456,6 +29639,8 @@ const guideSlotCsv = guideSlots.join(',');
           allowTopPriorityRemoval,
           previewOnly: isPreviewOnly,
           exactAnchorMode: isExactAnchorMode,
+          anchorIntent: anchor?.anchorIntent,
+          afterHotspotId: Number(anchor?.afterHotspotId || 0) || undefined,
           anchorType: anchor?.anchorType,
           anchorIndex: anchor?.anchorIndex,
           destinationInsertionMode: options?.destinationInsertionMode === true,
@@ -29629,6 +29814,8 @@ const guideSlotCsv = guideSlots.join(',');
               allowTopPriorityRemoval,
               previewOnly: isPreviewOnly,
               exactAnchorMode: isExactAnchorMode,
+              anchorIntent: anchor?.anchorIntent,
+              afterHotspotId: Number(anchor?.afterHotspotId || 0) || undefined,
               anchorType: anchor?.anchorType,
               anchorIndex: anchor?.anchorIndex,
               destinationInsertionMode: options?.destinationInsertionMode === true,
