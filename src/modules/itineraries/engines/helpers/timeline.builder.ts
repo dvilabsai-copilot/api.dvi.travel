@@ -240,7 +240,7 @@ export class TimelineBuilder {
     ) {
       return {
         ...row,
-        hotspot_travelling_distance: '0.10',
+        hotspot_travelling_distance: null,
       };
     }
 
