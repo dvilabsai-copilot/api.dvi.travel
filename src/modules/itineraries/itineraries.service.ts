@@ -495,6 +495,145 @@ export class ItinerariesService {
     return slotIds.every((slotId) => available.has(slotId));
   }
 
+  private async guideDateHasAnyAvailablePrice(params: {
+    routeDate: string;
+    totalPaxCount: number;
+  }): Promise<boolean> {
+    const routeDate = String(params.routeDate || '').slice(0, 10);
+    const dt = new Date(routeDate);
+
+    if (!Number.isFinite(dt.getTime())) {
+      return false;
+    }
+
+    const paxBucket = this.getGuidePaxBucket(Number(params.totalPaxCount || 0));
+    const year = String(dt.getUTCFullYear());
+    const month = dt.toLocaleString('en-US', { month: 'long', timeZone: 'UTC' });
+    const dayKey = `day_${dt.getUTCDate()}`;
+    const guideSlotIds = ITINERARY_GUIDE_SLOT_OPTIONS.map((slot) => Number(slot.id));
+
+    const guideCandidates = await this.prisma.dvi_guide_details.findMany({
+      where: {
+        deleted: 0,
+        status: 1,
+        guide_preffered_for: 3,
+      } as any,
+      select: {
+        guide_id: true,
+        guide_available_slot: true,
+      },
+    });
+
+    if (!guideCandidates.length) {
+      return false;
+    }
+
+    const guideSlotMap = new Map<number, Set<number>>();
+    const guideIds: number[] = [];
+
+    for (const guide of guideCandidates as any[]) {
+      const guideId = Number(guide.guide_id || 0);
+      if (!(guideId > 0)) continue;
+
+      const availableSlots = new Set(
+        this.parseCsvNumberList(guide.guide_available_slot)
+          .filter((slotId) => guideSlotIds.includes(Number(slotId))),
+      );
+
+      if (availableSlots.size === 0) continue;
+
+      guideIds.push(guideId);
+      guideSlotMap.set(guideId, availableSlots);
+    }
+
+    if (!guideIds.length) {
+      return false;
+    }
+
+    const pricebookRows = await this.prisma.dvi_guide_pricebook.findMany({
+      where: {
+        deleted: 0,
+        guide_id: { in: guideIds },
+        pax_count: paxBucket,
+        slot_type: { in: guideSlotIds },
+        year,
+        month,
+      } as any,
+    });
+
+    return pricebookRows.some((row: any) => {
+      const guideId = Number(row.guide_id || 0);
+      const slotType = Number(row.slot_type || 0);
+      const slotAllowedForGuide = guideSlotMap.get(guideId)?.has(slotType) === true;
+      const price = Number(row?.[dayKey] ?? 0);
+
+      return slotAllowedForGuide && Number.isFinite(price) && price > 0;
+    });
+  }
+
+  async getGuideAvailability(planId: number) {
+    if (!(planId > 0)) {
+      throw new BadRequestException('planId is required');
+    }
+
+    const plan = await this.prisma.dvi_itinerary_plan_details.findUnique({
+      where: { itinerary_plan_ID: planId },
+      select: {
+        itinerary_plan_ID: true,
+        total_adult: true,
+        total_children: true,
+        total_infants: true,
+      },
+    });
+
+    if (!plan || Number((plan as any).itinerary_plan_ID || 0) <= 0) {
+      throw new NotFoundException('Itinerary plan not found');
+    }
+
+    const totalPaxCount =
+      Number((plan as any).total_adult || 0) +
+      Number((plan as any).total_children || 0) +
+      Number((plan as any).total_infants || 0);
+
+    const routeRows = await this.prisma.dvi_itinerary_route_details.findMany({
+      where: {
+        itinerary_plan_ID: planId,
+        deleted: 0,
+        status: 1,
+      } as any,
+      orderBy: [{ itinerary_route_date: 'asc' }, { itinerary_route_ID: 'asc' }],
+      select: {
+        itinerary_route_ID: true,
+        itinerary_route_date: true,
+      },
+    });
+
+    const days = await Promise.all(
+      routeRows.map(async (route: any) => {
+        const routeDate = this.formatDateOnly(route.itinerary_route_date);
+        const available = routeDate
+          ? await this.guideDateHasAnyAvailablePrice({
+              routeDate,
+              totalPaxCount,
+            })
+          : false;
+
+        return {
+          routeId: Number(route.itinerary_route_ID || 0),
+          routeDate,
+          available,
+        };
+      }),
+    );
+
+    return {
+      planId,
+      wholeItineraryAvailable: days.length > 0 && days.every((day) => day.available),
+      hasAnyGuidePrice: days.some((day) => day.available),
+      days,
+    };
+  }
+
   private applyGuideGst(totalCharges: number, guideGst: number, gstType: number): number {
     if (!(totalCharges > 0) || !(guideGst > 0)) {
       return totalCharges;
