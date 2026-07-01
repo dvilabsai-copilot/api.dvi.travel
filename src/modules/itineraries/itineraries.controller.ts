@@ -397,6 +397,14 @@ export class ItinerariesController {
     return this.detailsService.getItineraryDetails(quoteId, groupTypeNum);
   }
 
+   @Get(':id/guides/availability')
+  @ApiOperation({ summary: 'Check whether guide prices are available for itinerary days' })
+  async getGuideAvailability(
+    @Param('id', ParseIntPipe) planId: number,
+  ) {
+    return this.svc.getGuideAvailability(planId);
+  }
+
   @Get(':id/guides')
   @ApiOperation({ summary: 'List itinerary guide assignments for a draft itinerary' })
   async listGuideAssignments(
