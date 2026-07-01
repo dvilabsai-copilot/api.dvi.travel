@@ -478,6 +478,10 @@ export async function buildManualFitPreviewEnvelopeImpl(this: any, params: any) 
           anchorFrom: params.selectedAnchor.anchorFrom ?? null,
           anchorTo: params.selectedAnchor.anchorTo ?? null,
           anchorLabel: params.selectedAnchor.anchorLabel,
+          afterRouteHotspotId: params.selectedAnchor.afterRouteHotspotId ?? null,
+          afterHotspotId: params.selectedAnchor.afterHotspotId ?? null,
+          beforeRouteHotspotId: params.selectedAnchor.beforeRouteHotspotId ?? null,
+          beforeHotspotId: params.selectedAnchor.beforeHotspotId ?? null,
         }
       : null,
     sourceFingerprint: params.sourceFingerprint,
