@@ -469,7 +469,194 @@ export class ItinerariesService {
     return dt.toISOString().slice(0, 10);
   }
 
-  private getGuideSlotLabel(slotId: number): string {
+  private async calculateActivityPlanPricing(
+  params: {
+    planId?: number | null;
+    routeId?: number | null;
+    activityId: number;
+    hotspotId?: number | null;
+  },
+  db: any = this.prisma,
+): Promise<{
+  pricingUnitType: 'PER_ADULT' | 'UNIT';
+  priceUnitLabel: string;
+  nationalityType: number;
+  adults: number;
+  children: number;
+  adultRate: number;
+  childRate: number;
+  unitRate: number;
+  totalAmount: number;
+  priceDate: string | null;
+}> {
+  const empty = {
+    pricingUnitType: 'PER_ADULT' as const,
+    priceUnitLabel: 'per adult',
+    nationalityType: 1,
+    adults: 0,
+    children: 0,
+    adultRate: 0,
+    childRate: 0,
+    unitRate: 0,
+    totalAmount: 0,
+    priceDate: null as string | null,
+  };
+
+  const activityId = Number(params.activityId || 0);
+  if (!activityId) return empty;
+
+  const planId = Number(params.planId || 0);
+  const routeId = Number(params.routeId || 0);
+
+  const plan = planId
+    ? await (db as any).dvi_itinerary_plan_details.findFirst({
+        where: { itinerary_plan_ID: planId, deleted: 0 },
+        select: {
+          total_adult: true,
+          total_children: true,
+          nationality: true,
+          trip_start_date_and_time: true,
+        },
+      })
+    : null;
+
+  const route =
+    planId && routeId
+      ? await (db as any).dvi_itinerary_route_details.findFirst({
+          where: {
+            itinerary_plan_ID: planId,
+            itinerary_route_ID: routeId,
+            deleted: 0,
+          },
+          select: { itinerary_route_date: true },
+        })
+      : null;
+
+  const adults = Math.max(Number(plan?.total_adult || 0), 0);
+  const children = Math.max(Number(plan?.total_children || 0), 0);
+
+  const rawDate =
+    route?.itinerary_route_date ||
+    plan?.trip_start_date_and_time ||
+    new Date();
+
+  const priceDate = this.formatDateOnly(rawDate);
+  const [yearText, monthText, dayText] = String(priceDate || '').split('-');
+
+  const year = Number(yearText || 0);
+  const month = Number(monthText || 0);
+  const day = Number(dayText || 0);
+
+  let nationalityType = 1;
+
+  const nationalityId = Number(plan?.nationality || 0);
+  if (nationalityId > 0) {
+    const country = await (db as any).dvi_countries.findFirst({
+      where: { id: nationalityId, deleted: 0, status: 1 },
+      select: { shortname: true },
+    });
+
+    const iso2 = String(country?.shortname || '').trim().toUpperCase();
+
+    if (iso2 && iso2 !== 'IN') {
+      nationalityType = 2;
+    } else if (!iso2 && nationalityId === 2) {
+      nationalityType = 2;
+    }
+  }
+
+  const monthNames = [
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ];
+
+  const monthName = month >= 1 && month <= 12 ? monthNames[month - 1] : '';
+  const dayKey = day >= 1 && day <= 31 ? `day_${day}` : 'day_1';
+
+  const priceSelect = {
+    price_type: true,
+    [dayKey]: true,
+  } as any;
+
+  let priceRows =
+    year && monthName
+      ? await (db as any).dvi_activity_pricebook.findMany({
+          where: {
+            activity_id: activityId,
+            nationality: nationalityType,
+            year: String(year),
+            month: monthName,
+            deleted: 0,
+            status: 1,
+          },
+          select: priceSelect,
+        })
+      : [];
+
+  let effectiveDayKey = dayKey;
+
+  if (!priceRows.length) {
+    priceRows = await (db as any).dvi_activity_pricebook.findMany({
+      where: {
+        activity_id: activityId,
+        nationality: nationalityType,
+        deleted: 0,
+        status: 1,
+      },
+      select: {
+        price_type: true,
+        day_1: true,
+      },
+    });
+
+    effectiveDayKey = 'day_1';
+  }
+
+  const getRate = (priceType: number) => {
+    const row = priceRows.find(
+      (item: any) => Number(item?.price_type || 0) === priceType,
+    );
+
+    return Number(row?.[effectiveDayKey] || 0);
+  };
+
+  const adultRate = getRate(1);
+  const childRate = getRate(2);
+  const unitRate = getRate(4);
+
+  const pricingUnitType: 'PER_ADULT' | 'UNIT' =
+    unitRate > 0 ? 'UNIT' : 'PER_ADULT';
+
+  const totalAmount =
+    pricingUnitType === 'UNIT'
+      ? unitRate
+      : adultRate * adults + childRate * children;
+
+  return {
+    pricingUnitType,
+    priceUnitLabel: pricingUnitType === 'UNIT' ? 'per unit' : 'per adult',
+    nationalityType,
+    adults,
+    children,
+    adultRate,
+    childRate,
+    unitRate,
+    totalAmount,
+    priceDate,
+  };
+}
+
+private getGuideSlotLabel(slotId: number): string {
     return (
       ITINERARY_GUIDE_SLOT_OPTIONS.find((slot) => slot.id === Number(slotId))?.label
       || `Slot ${slotId}`
@@ -3422,27 +3609,27 @@ const guideSlotCsv = guideSlots.join(',');
   /**
    * Get available activities for a hotspot location
    */
-  async getAvailableActivities(hotspotId: number) {
-    const activities = await (this.prisma as any).dvi_activity.findMany({
-      where: {
-        hotspot_id: hotspotId,
-        deleted: 0,
-        status: 1,
-      },
-      select: {
-        activity_id: true,
-        activity_title: true,
-        activity_description: true,
-        activity_duration: true,
-        max_allowed_person_count: true,
-      },
-      orderBy: { activity_title: 'asc' },
-    });
+async getAvailableActivities(hotspotId: number, planId?: number, routeId?: number) {
+  const activities = await (this.prisma as any).dvi_activity.findMany({
+    where: {
+      hotspot_id: hotspotId,
+      deleted: 0,
+      status: 1,
+    },
+    select: {
+      activity_id: true,
+      activity_title: true,
+      activity_description: true,
+      activity_duration: true,
+      max_allowed_person_count: true,
+    },
+    orderBy: { activity_title: 'asc' },
+  });
 
-    // Fetch time slots for each activity
-    const activitiesWithSlots = await Promise.all(
-      activities.map(async (a: any) => {
-        const timeSlots = await (this.prisma as any).dvi_activity_time_slot_details.findMany({
+  const activitiesWithSlots = await Promise.all(
+    activities.map(async (a: any) => {
+      const [timeSlots, pricing] = await Promise.all([
+        (this.prisma as any).dvi_activity_time_slot_details.findMany({
           where: {
             activity_id: a.activity_id,
             deleted: 0,
@@ -3456,27 +3643,47 @@ const guideSlotCsv = guideSlots.join(',');
             end_time: true,
           },
           orderBy: { start_time: 'asc' },
-        });
+        }),
+        this.calculateActivityPlanPricing({
+          planId,
+          routeId,
+          activityId: Number(a.activity_id || 0),
+          hotspotId,
+        }),
+      ]);
 
-        return {
-          id: a.activity_id,
-          title: a.activity_title || '',
-          description: a.activity_description || '',
-          duration: a.activity_duration || null,
-          maxPersons: a.max_allowed_person_count || 0,
-          timeSlots: timeSlots.map((ts: any) => ({
-            id: ts.activity_time_slot_ID,
-            type: ts.time_slot_type,
-            specialDate: ts.special_date,
-            startTime: ts.start_time,
-            endTime: ts.end_time,
-          })),
-        };
-      })
-    );
+      return {
+        id: a.activity_id,
+        title: a.activity_title || '',
+        description: a.activity_description || '',
+        duration: a.activity_duration || null,
+        maxPersons: a.max_allowed_person_count || 0,
 
-    return activitiesWithSlots;
-  }
+        pricingUnitType: pricing.pricingUnitType,
+        priceUnitLabel: pricing.priceUnitLabel,
+        nationalityType: pricing.nationalityType,
+        adultCount: pricing.adults,
+        childCount: pricing.children,
+        costAdult: pricing.adultRate,
+        costChild: pricing.childRate,
+        unitCost: pricing.unitRate,
+        totalAmount: pricing.totalAmount,
+        totalPrice: pricing.totalAmount,
+        priceDate: pricing.priceDate,
+
+        timeSlots: timeSlots.map((ts: any) => ({
+          id: ts.activity_time_slot_ID,
+          type: ts.time_slot_type,
+          specialDate: ts.special_date,
+          startTime: ts.start_time,
+          endTime: ts.end_time,
+        })),
+      };
+    }),
+  );
+
+  return activitiesWithSlots;
+}
 
   /**
    * Add an activity to a hotspot in the itinerary
@@ -3551,10 +3758,25 @@ const guideSlotCsv = guideSlots.join(',');
       });
 
       if (duplicate) {
-        throw new ConflictException('This activity is already added for this hotspot');
-      }
+  throw new ConflictException('This activity is already added for this hotspot');
+}
 
-      // Get the next activity order and calculate start time
+const activityPricing = await this.calculateActivityPlanPricing(
+  {
+    planId: data.planId,
+    routeId: data.routeId,
+    hotspotId: routeHotspot.hotspot_ID || data.hotspotId,
+    activityId: data.activityId,
+  },
+  tx,
+);
+
+const computedActivityAmount =
+  activityPricing.totalAmount > 0
+    ? activityPricing.totalAmount
+    : Number(data.amount || 0);
+
+// Get the next activity order and calculate start time
       const existingActivities = await (tx as any).dvi_itinerary_route_activity_details.findMany({
         where: {
           itinerary_plan_ID: data.planId,
@@ -3596,9 +3818,9 @@ const guideSlotCsv = guideSlots.join(',');
           route_hotspot_ID: data.routeHotspotId,
           hotspot_ID: routeHotspot.hotspot_ID,
           activity_ID: data.activityId,
-          activity_order: nextOrder,
-          activity_amout: data.amount || 0,
-          activity_traveling_time: activity.activity_duration,
+activity_order: nextOrder,
+activity_amout: computedActivityAmount,
+activity_traveling_time: activity.activity_duration,
           activity_start_time: activityStartTime,
           activity_end_time: activityEndTime,
           createdby: userId,
@@ -3705,6 +3927,16 @@ const guideSlotCsv = guideSlots.join(',');
           endTime: activityEndTime,
         },
         warnings: activityImpact.warnings,
+pricing: {
+  pricingUnitType: activityPricing.pricingUnitType,
+  adultRate: activityPricing.adultRate,
+  childRate: activityPricing.childRate,
+  unitRate: activityPricing.unitRate,
+  adults: activityPricing.adults,
+  children: activityPricing.children,
+  totalAmount: computedActivityAmount,
+  nationalityType: activityPricing.nationalityType,
+},
       };
     }, { timeout: 30000 });
   }
