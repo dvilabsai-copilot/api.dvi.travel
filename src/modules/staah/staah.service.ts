@@ -352,36 +352,31 @@ export class StaahService {
     row: Record<string, any>,
   ): Promise<void> {
     const restrictions = this.extractAriRestrictionEntries(row);
+    const receivedAt = new Date();
 
     for (const restriction of restrictions) {
-      const identityWhere = {
-        staah_property_id: propertyId,
-        room_id: roomId,
-        rateplan_id: rateId,
-        start_date: startDate,
-        end_date: endDate,
-        type: restriction.type,
-      };
-
-      const existing = await tx.staah_restriction.findFirst({
-        where: identityWhere,
-        select: { id: true },
-      });
-
-      if (existing) {
-        await tx.staah_restriction.updateMany({
-          where: identityWhere,
-          data: {
-            value: restriction.value,
-            received_at: new Date(),
+      await tx.staah_restriction.upsert({
+        where: {
+          staah_property_id_room_id_rateplan_id_start_date_end_date_type: {
+            staah_property_id: propertyId,
+            room_id: roomId,
+            rateplan_id: rateId,
+            start_date: startDate,
+            end_date: endDate,
+            type: restriction.type,
           },
-        });
-        continue;
-      }
-
-      await tx.staah_restriction.create({
-        data: {
-          ...identityWhere,
+        },
+        update: {
+          value: restriction.value,
+          received_at: receivedAt,
+        },
+        create: {
+          staah_property_id: propertyId,
+          room_id: roomId,
+          rateplan_id: rateId,
+          start_date: startDate,
+          end_date: endDate,
+          type: restriction.type,
           value: restriction.value,
         },
       });
@@ -1327,6 +1322,13 @@ export class StaahService {
   }
 
   async ariUpdate(dto: AriRequestDto): Promise<AriResponseDto> {
+    const startedAt = Date.now();
+    const rowCount = Array.isArray(dto.data) ? dto.data.length : 0;
+
+    this.logger.log(
+      `STAAH ARI received property=${dto.propertyid} room=${dto.room_id} rate=${dto.rate_id} rows=${rowCount}`,
+    );
+
     await this.logInbound('ari', dto.propertyid, dto.room_id, dto.rate_id, dto);
     const resolvedIds = await this.resolveStaahInternalIds(
       dto.propertyid,
@@ -1344,103 +1346,145 @@ export class StaahService {
       };
     }
 
-    try {
-      await this.prisma.$transaction(async (tx) => {
-        const matchedHotel = await this.findStaahHotel(tx, dto.propertyid);
-        const dviRatePlanId = this.toDviLegacyRatePlanId(dto.rate_id);
-        const latestInventory = this.getLatestStaahInventory(dto.data || []);
-        const roomTypeId = await this.ensureStaahNativeRoomType(tx, dto.room_id);
-        const syncedRoom = await this.upsertStaahNativeRoom(
-          tx,
-          matchedHotel.hotel_id,
-          dto,
-          roomTypeId,
-          latestInventory,
-        );
-        const nativeRoomId = Number(syncedRoom.room_ID);
-
-        await this.upsertStaahNativeRatePlan(
-          tx,
-          matchedHotel.hotel_id,
-          nativeRoomId,
-          roomTypeId,
-          dto,
-          dviRatePlanId,
-        );
-
-        for (const rawRow of dto.data || []) {
-          if (!rawRow || typeof rawRow !== 'object' || Array.isArray(rawRow)) {
-            throw new BadRequestException('Each ARI data row must be a JSON object.');
-          }
-
-          const row = rawRow as Record<string, any>;
-          const hasInventory = this.hasDefinedValue(row.inventory);
-          const hasRate = this.hasDefinedValue(row.amountBeforeTax)
-            || this.hasDefinedValue(row.amountAfterTax);
-          const hasRestrictions = this.extractAriRestrictionEntries(row).length > 0;
-
-          if (!hasInventory && !hasRate && !hasRestrictions) {
-            continue;
-          }
-
-          const startDate = this.parseIsoDateOnly(row.from_date, 'from_date');
-          const endDate = this.parseIsoDateOnly(row.to_date, 'to_date');
-
-          if (hasInventory) {
-            await this.upsertAriInventoryRow(
-              tx,
-              dto.propertyid,
-              internalRoomId,
-              startDate,
-              endDate,
-              row.inventory,
-            );
-
-            await this.upsertStaahNativeAvailabilityRow(
-              tx,
-              matchedHotel.hotel_id,
-              nativeRoomId,
-              startDate,
-              endDate,
-              row.inventory,
-            );
-          }
-
-          if (hasRate) {
-            await this.upsertAriRateRow(
-              tx,
-              dto.propertyid,
-              internalRoomId,
-              internalRateId,
-              startDate,
-              endDate,
-              row,
-            );
-
-            await this.upsertStaahNativeOccupancyRateRow(
-              tx,
-              matchedHotel.hotel_id,
-              nativeRoomId,
-              dviRatePlanId,
-              startDate,
-              endDate,
-              row,
-            );
-          }
-
-          if (hasRestrictions) {
-            await this.upsertAriRestrictionRows(
-              tx,
-              dto.propertyid,
-              internalRoomId,
-              internalRateId,
-              startDate,
-              endDate,
-              row,
-            );
-          }
+    const rows = (dto.data || [])
+      .map((rawRow, index) => {
+        if (!rawRow || typeof rawRow !== 'object' || Array.isArray(rawRow)) {
+          throw new BadRequestException(`ARI data row ${index + 1} must be a JSON object.`);
         }
-      });
+
+        const row = rawRow as Record<string, any>;
+        const hasInventory = this.hasDefinedValue(row.inventory);
+        const hasRate = this.hasDefinedValue(row.amountBeforeTax)
+          || this.hasDefinedValue(row.amountAfterTax);
+        const restrictions = this.extractAriRestrictionEntries(row);
+        const hasRestrictions = restrictions.length > 0;
+
+        if (!hasInventory && !hasRate && !hasRestrictions) {
+          return null;
+        }
+
+        const startDate = this.parseIsoDateOnly(row.from_date, 'from_date');
+        const endDate = this.parseIsoDateOnly(row.to_date, 'to_date');
+        this.ensureValidArrDateRange(startDate, endDate);
+
+        return {
+          row,
+          startDate,
+          endDate,
+          hasInventory,
+          hasRate,
+          hasRestrictions,
+        };
+      })
+      .filter(Boolean) as Array<{
+        row: Record<string, any>;
+        startDate: Date;
+        endDate: Date;
+        hasInventory: boolean;
+        hasRate: boolean;
+        hasRestrictions: boolean;
+      }>;
+
+    const inventoryRowCount = rows.filter((row) => row.hasInventory).length;
+    const rateRowCount = rows.filter((row) => row.hasRate).length;
+    const restrictionRowCount = rows.filter((row) => row.hasRestrictions).length;
+
+    this.logger.log(
+      `STAAH ARI prepared property=${dto.propertyid} room=${dto.room_id} rate=${dto.rate_id} writableRows=${rows.length} inventoryRows=${inventoryRowCount} rateRows=${rateRowCount} restrictionRows=${restrictionRowCount}`,
+    );
+
+    try {
+      await this.prisma.$transaction(
+        async (tx) => {
+          const matchedHotel = await this.findStaahHotel(tx, dto.propertyid);
+          const dviRatePlanId = this.toDviLegacyRatePlanId(dto.rate_id);
+          const latestInventory = this.getLatestStaahInventory(dto.data || []);
+          const roomTypeId = await this.ensureStaahNativeRoomType(tx, dto.room_id);
+          const syncedRoom = await this.upsertStaahNativeRoom(
+            tx,
+            matchedHotel.hotel_id,
+            dto,
+            roomTypeId,
+            latestInventory,
+          );
+          const nativeRoomId = Number(syncedRoom.room_ID);
+
+          await this.upsertStaahNativeRatePlan(
+            tx,
+            matchedHotel.hotel_id,
+            nativeRoomId,
+            roomTypeId,
+            dto,
+            dviRatePlanId,
+          );
+
+          for (const prepared of rows) {
+            const { row, startDate, endDate } = prepared;
+
+            if (prepared.hasInventory) {
+              await this.upsertAriInventoryRow(
+                tx,
+                dto.propertyid,
+                internalRoomId,
+                startDate,
+                endDate,
+                row.inventory,
+              );
+
+              await this.upsertStaahNativeAvailabilityRow(
+                tx,
+                matchedHotel.hotel_id,
+                nativeRoomId,
+                startDate,
+                endDate,
+                row.inventory,
+              );
+            }
+
+            if (prepared.hasRate) {
+              await this.upsertAriRateRow(
+                tx,
+                dto.propertyid,
+                internalRoomId,
+                internalRateId,
+                startDate,
+                endDate,
+                row,
+              );
+
+              await this.upsertStaahNativeOccupancyRateRow(
+                tx,
+                matchedHotel.hotel_id,
+                nativeRoomId,
+                dviRatePlanId,
+                startDate,
+                endDate,
+                row,
+              );
+            }
+
+            if (prepared.hasRestrictions) {
+              await this.upsertAriRestrictionRows(
+                tx,
+                dto.propertyid,
+                internalRoomId,
+                internalRateId,
+                startDate,
+                endDate,
+                row,
+              );
+            }
+          }
+        },
+        {
+          timeout: 30000,
+          maxWait: 10000,
+        },
+      );
+
+      this.logger.log(
+        `STAAH ARI processed property=${dto.propertyid} room=${dto.room_id} rate=${dto.rate_id} rows=${rowCount} writableRows=${rows.length} durationMs=${Date.now() - startedAt}`,
+      );
 
       return {
         status: 'success',
@@ -1452,6 +1496,10 @@ export class StaahService {
       }
 
       this.logger.error(`ARI update error: ${error.message}`);
+      this.logger.error(
+        `STAAH ARI failed property=${dto.propertyid} room=${dto.room_id} rate=${dto.rate_id} rows=${rowCount} durationMs=${Date.now() - startedAt} error=${error.message}`,
+        error.stack,
+      );
       return {
         status: 'fail',
         error_desc: `Failed to process ARI update. ${error.message}`,
@@ -1484,34 +1532,28 @@ export class StaahService {
         const startDate = this.parseIsoDateOnly(row.start_date, 'start_date');
         const endDate = this.parseIsoDateOnly(row.end_date, 'end_date');
 
-        const identityWhere = {
-          staah_property_id: dto.propertyid,
-          room_id: internalRoomId,
-          rateplan_id: internalRateId,
-          start_date: startDate,
-          end_date: endDate,
-          type: row.type,
-        };
-
-        const existing = await this.prisma.staah_restriction.findFirst({
-          where: identityWhere,
-          select: { id: true },
-        });
-
-        if (existing) {
-          await this.prisma.staah_restriction.updateMany({
-            where: identityWhere,
-            data: {
-              value: row.value,
-              received_at: new Date(),
+        await this.prisma.staah_restriction.upsert({
+          where: {
+            staah_property_id_room_id_rateplan_id_start_date_end_date_type: {
+              staah_property_id: dto.propertyid,
+              room_id: internalRoomId,
+              rateplan_id: internalRateId,
+              start_date: startDate,
+              end_date: endDate,
+              type: row.type,
             },
-          });
-          continue;
-        }
-
-        await this.prisma.staah_restriction.create({
-          data: {
-            ...identityWhere,
+          },
+          update: {
+            value: row.value,
+            received_at: new Date(),
+          },
+          create: {
+            staah_property_id: dto.propertyid,
+            room_id: internalRoomId,
+            rateplan_id: internalRateId,
+            start_date: startDate,
+            end_date: endDate,
+            type: row.type,
             value: row.value,
           },
         });

@@ -38,6 +38,11 @@ try {
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { cors: true });
 
+  // Allow large STAAH ARI inventory/rate/restriction payloads.
+  // Default Express JSON limit is too small for multi-date ARI pushes.
+  app.use(express.json({ limit: '25mb' }));
+  app.use(express.urlencoded({ limit: '25mb', extended: true }));
+
   // Trust reverse proxy when explicitly configured (required for accurate client IP behind Nginx/LB).
   const trustProxyRaw = String(process.env.TRUST_PROXY || '').trim().toLowerCase();
   if (trustProxyRaw) {

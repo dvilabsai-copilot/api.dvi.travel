@@ -6148,6 +6148,7 @@ model staah_restriction {
   value             String   @db.VarChar(50)
   received_at       DateTime @default(now()) @db.DateTime(0)
 
+  @@unique([staah_property_id, room_id, rateplan_id, start_date, end_date, type], map: "uniq_staah_restriction")
   @@index([staah_property_id], map: "idx_staah_restriction_property")
   @@index([room_id], map: "idx_staah_restriction_room")
   @@index([rateplan_id], map: "idx_staah_restriction_rateplan")
