@@ -803,9 +803,17 @@ export class ItinerariesController {
     description: 'Hotspot Location ID',
   })
   @ApiOkResponse({ description: 'List of available activities' })
-  async getAvailableActivities(@Param('hotspotId') hotspotId: string) {
-    return this.svc.getAvailableActivities(Number(hotspotId));
-  }
+async getAvailableActivities(
+  @Param('hotspotId') hotspotId: string,
+  @Query('planId') planId?: string,
+  @Query('routeId') routeId?: string,
+) {
+  return this.svc.getAvailableActivities(
+    Number(hotspotId),
+    planId ? Number(planId) : undefined,
+    routeId ? Number(routeId) : undefined,
+  );
+}
 
   @Post('activities/preview')
   @ApiOperation({ summary: 'Preview activity addition to check for timing conflicts' })
