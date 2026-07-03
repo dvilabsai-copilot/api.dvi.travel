@@ -184,6 +184,47 @@ export async function previewManualHotspotFitHereImpl(
     Array.isArray((response as any).finalizedTimeline) && (response as any).finalizedTimeline.length > 0
       ? (response as any).finalizedTimeline
       : (Array.isArray((response as any).proposedTimeline) ? (response as any).proposedTimeline : []);
+  const timelineAttractionHotspotIds = finalizedTimelineForAnchorValidation
+    .filter((row: any) => {
+      const rowType = String(row?.type || '').toLowerCase();
+      return rowType === 'attraction' || Number(row?.item_type || 0) === 4;
+    })
+    .map((row: any) => Number(
+      row?.hotspotId ??
+      row?.hotspot_ID ??
+      row?.locationId ??
+      row?.hotspot_id ??
+      row?.id ??
+      0,
+    ))
+    .filter((id: number) => Number.isFinite(id) && id > 0);
+
+  const selectedHotspotIdForPreview = Number(data.selectedHotspotId || 0);
+  const selectedAttractionIndex = timelineAttractionHotspotIds.indexOf(selectedHotspotIdForPreview);
+
+  let selectedHotspotPreservedInPreview =
+    selectedHotspotIdForPreview > 0 && selectedAttractionIndex >= 0;
+
+  if (resolvedAnchor.exactSelectedGap === true && selectedHotspotPreservedInPreview === true) {
+    const beforeHotspotId = Number(resolvedAnchor.beforeHotspotId || 0);
+    const beforeIndex = beforeHotspotId > 0
+      ? timelineAttractionHotspotIds.indexOf(beforeHotspotId)
+      : -1;
+
+    if (beforeIndex >= 0 && selectedAttractionIndex > beforeIndex) {
+      selectedHotspotPreservedInPreview = false;
+    }
+
+    if (resolvedAnchor.anchorIntent === 'AFTER_START') {
+      const blockersBeforeSelected = timelineAttractionHotspotIds
+        .slice(0, selectedAttractionIndex)
+        .filter((id: number) => id !== selectedHotspotIdForPreview);
+
+      if (blockersBeforeSelected.length > 0) {
+        selectedHotspotPreservedInPreview = false;
+      }
+    }
+  }
   const selectedAnchorPreserved =
     resolvedAnchor.exactSelectedGap === true
       ? this.manualFitTimelinePreservesSelectedAnchor({
@@ -196,21 +237,72 @@ export async function previewManualHotspotFitHereImpl(
       : true;
 
   (response as any).selectedAnchorPreserved = selectedAnchorPreserved === true;
+  (response as any).selectedHotspotPreserved = selectedHotspotPreservedInPreview;
 
-  if (resolvedAnchor.exactSelectedGap === true && selectedAnchorPreserved !== true) {
-    const anchorMismatchMessage = String(
-      resolvedAnchor.anchorIntent === 'AFTER_START'
-        ? 'This hotspot could not be kept before the first attraction in the finalized Fit Here timeline.'
-        : `This hotspot could not be kept at the exact Fit Here position after ${resolvedAnchor.anchorFrom || 'the selected attraction'}.`,
-    ).trim();
+  const normalizeCannotFitExactAnchorResponse = (rejectedMessage: string, exactAnchorMismatch: any | null) => {
+    const failedRescueDisplay = {
+      hasRemovals: false,
+      title: 'Rescue attempts checked',
+      removalOrderLabel: 'Rescue order checked: Non-manual / Priority 4 -> Priority 3 -> Priority 2 -> Priority 1',
+      removedItems: [],
+      noRemovalText: 'No anchor-preserving rescue removal unlocked this position.',
+      exactAnchorFailure: true,
+    };
 
     (response as any).canConfirm = false;
     (response as any).resultType = 'CANNOT_FIT';
     (response as any).acceptedReason = null;
-    (response as any).rejectedReasons = [anchorMismatchMessage];
+    (response as any).rejectedReasons = [String(rejectedMessage || 'No valid anchor-preserving solution found for this selected position.').trim()];
     (response as any).confirmButtonVariant = 'default';
     (response as any).requiresTimingRiskConfirmation = false;
     (response as any).requiresPriorityRemovalConfirmation = false;
+    (response as any).changesRequiredDisplay = failedRescueDisplay;
+    (response as any).removedHotspots = [];
+    (response as any).affectedPriorityHotspots = [];
+    (response as any).requiresRemovalAcknowledgementHotspotIds = [];
+    (response as any).proposedTimeline = [];
+    (response as any).finalizedTimeline = [];
+    (response as any).authoritativeTimelineSource = 'EXACT_ANCHOR_NO_VALID_RESULT';
+    (response as any).proposedTimelineFingerprint = this.buildManualFitTimelineFingerprint([]);
+    (response as any).exactAnchorMismatch = exactAnchorMismatch;
+    (response as any).selectedAnchorPreserved = false;
+
+    if ((response as any).resolution && typeof (response as any).resolution === 'object') {
+      (response as any).resolution.requiresTimingRiskConfirmation = false;
+      (response as any).resolution.requiresPriorityRemovalConfirmation = false;
+      (response as any).resolution.changesRequiredDisplay = failedRescueDisplay;
+      (response as any).resolution.removedHotspots = [];
+      (response as any).resolution.topPriorityAffected = [];
+      (response as any).resolution.exactAnchorMismatch = exactAnchorMismatch;
+    }
+  };
+
+  if (
+    resolvedAnchor.exactSelectedGap === true &&
+    (response as any).canConfirm === true &&
+    selectedHotspotPreservedInPreview !== true
+  ) {
+    normalizeCannotFitExactAnchorResponse(
+      'The selected manual hotspot was only placed after the clicked before-row or downstream blockers. This is not a valid selected-hotspot-preserving rescue.',
+      {
+        message: 'The selected manual hotspot was only placed after the clicked before-row or downstream blockers.',
+        anchorIntent: resolvedAnchor.anchorIntent,
+        anchorFrom: resolvedAnchor.anchorFrom ?? null,
+        anchorTo: resolvedAnchor.anchorTo ?? null,
+        afterHotspotId: resolvedAnchor.afterHotspotId ?? null,
+        beforeHotspotId: resolvedAnchor.beforeHotspotId ?? null,
+      },
+    );
+    (response as any).selectedHotspotPreserved = false;
+  }
+
+  if (resolvedAnchor.exactSelectedGap === true && selectedAnchorPreserved !== true) {
+    const anchorMismatchMessage = String(
+      resolvedAnchor.anchorIntent === 'AFTER_START'
+        ? 'The selected hotspot was rescued, but it could not stay before the first attraction.'
+        : `The selected hotspot was rescued, but it could not stay immediately after ${resolvedAnchor.anchorFrom || 'the selected attraction'}.`,
+    ).trim();
+    (response as any).selectedAnchorPreserved = false;
     (response as any).exactAnchorMismatch = {
       message: anchorMismatchMessage,
       anchorIntent: resolvedAnchor.anchorIntent,
@@ -221,17 +313,46 @@ export async function previewManualHotspotFitHereImpl(
     };
 
     if ((response as any).resolution && typeof (response as any).resolution === 'object') {
-      (response as any).resolution.requiresTimingRiskConfirmation = false;
-      (response as any).resolution.requiresPriorityRemovalConfirmation = false;
-      (response as any).resolution.exactAnchorMismatch = {
-        message: anchorMismatchMessage,
-        anchorIntent: resolvedAnchor.anchorIntent,
-        anchorFrom: resolvedAnchor.anchorFrom ?? null,
-        anchorTo: resolvedAnchor.anchorTo ?? null,
-        afterHotspotId: resolvedAnchor.afterHotspotId ?? null,
-        beforeHotspotId: resolvedAnchor.beforeHotspotId ?? null,
-      };
+      (response as any).resolution.exactAnchorMismatch = (response as any).exactAnchorMismatch;
     }
+
+    if (
+      (response as any).canConfirm !== true &&
+      selectedHotspotPreservedInPreview !== true &&
+      selectedAnchorPreserved !== true
+    ) {
+      normalizeCannotFitExactAnchorResponse(anchorMismatchMessage, (response as any).exactAnchorMismatch);
+      (response as any).selectedHotspotPreserved = false;
+    }
+  } else if (
+    resolvedAnchor.exactSelectedGap === true &&
+    (response as any).canConfirm !== true &&
+    selectedHotspotPreservedInPreview !== true &&
+    selectedAnchorPreserved !== true
+  ) {
+    normalizeCannotFitExactAnchorResponse(
+      String(
+        Array.isArray((response as any).rejectedReasons) && (response as any).rejectedReasons.length > 0
+          ? (response as any).rejectedReasons[0]
+          : 'No valid selected-hotspot-preserving solution was found after all allowed rescue attempts.',
+      ).trim(),
+      null,
+    );
+    (response as any).selectedHotspotPreserved = false;
+  }
+
+  if (
+    resolvedAnchor.exactSelectedGap === true &&
+    (response as any).canConfirm !== true &&
+    selectedHotspotPreservedInPreview === true
+  ) {
+    (response as any).resultType = Array.isArray((response as any).removedHotspots) && (response as any).removedHotspots.length > 0
+      ? 'FITS_WITH_OPTIONAL_REMOVAL'
+      : 'FITS_DIRECTLY';
+    (response as any).acceptedReason =
+      String((response as any).exactAnchorMismatch?.message || (response as any).acceptedReason || '').trim() || null;
+    (response as any).rejectedReasons = [];
+    (response as any).authoritativeTimelineSource = 'BACKEND_FINALIZED_PATCHED_TIMELINE';
   }
 
   (response as any).removalPolicy = {
@@ -330,6 +451,82 @@ export async function previewManualHotspotFitHereImpl(
       cacheEntry.requiresPriorityRemovalConfirmation = false;
     }
   }
+
+  if (
+    resolvedAnchor.exactSelectedGap === true &&
+    (response as any).canConfirm !== true &&
+    (response as any).selectedHotspotPreserved !== true
+  ) {
+    const failedRescueDisplay = {
+      hasRemovals: false,
+      title: 'Rescue attempts checked',
+      removalOrderLabel: 'Rescue order checked: Non-manual / Priority 4 -> Priority 3 -> Priority 2 -> Priority 1',
+      removedItems: [],
+      noRemovalText: 'No selected-hotspot-preserving rescue removal unlocked this position.',
+      exactAnchorFailure: true,
+    };
+
+    (response as any).changesRequiredDisplay = failedRescueDisplay;
+    (response as any).removedHotspots = [];
+    (response as any).affectedPriorityHotspots = [];
+    (response as any).requiresRemovalAcknowledgementHotspotIds = [];
+    (response as any).proposedTimeline = [];
+    (response as any).finalizedTimeline = [];
+    (response as any).authoritativeTimelineSource = 'EXACT_ANCHOR_NO_VALID_RESULT';
+    (response as any).proposedTimelineFingerprint = this.buildManualFitTimelineFingerprint([]);
+    (response as any).selectedAnchorPreserved = false;
+    (response as any).selectedHotspotPreserved = false;
+
+    if ((response as any).resolution && typeof (response as any).resolution === 'object') {
+      (response as any).resolution.changesRequiredDisplay = failedRescueDisplay;
+      (response as any).resolution.removedHotspots = [];
+      (response as any).resolution.topPriorityAffected = [];
+    }
+  }
+
+  if (
+    resolvedAnchor.exactSelectedGap === true &&
+    selectedHotspotPreservedInPreview === true &&
+    (response as any).canConfirm !== true
+  ) {
+    (response as any).canConfirm = true;
+    (response as any).resultType = Array.isArray((response as any).removedHotspots) && (response as any).removedHotspots.length > 0
+      ? 'FITS_WITH_OPTIONAL_REMOVAL'
+      : 'FITS_DIRECTLY';
+    (response as any).acceptedReason =
+      String((response as any).exactAnchorMismatch?.message || (response as any).acceptedReason || '').trim() || null;
+    (response as any).rejectedReasons = [];
+
+    if ((response as any).changesRequiredDisplay && typeof (response as any).changesRequiredDisplay === 'object') {
+      (response as any).changesRequiredDisplay.exactAnchorFailure = false;
+      if (!String((response as any).changesRequiredDisplay.noRemovalText || '').trim()) {
+        (response as any).changesRequiredDisplay.noRemovalText = 'The selected hotspot was rescued, but the clicked anchor moved.';
+      }
+    }
+
+    if ((response as any).resolution && typeof (response as any).resolution === 'object') {
+      (response as any).resolution.canForceConflict = false;
+      (response as any).resolution.requiresTimingRiskConfirmation = false;
+      (response as any).resolution.requiresPriorityRemovalConfirmation = false;
+    }
+  }
+
+  const isExactAnchorNoValidResult =
+    String((response as any).authoritativeTimelineSource || '').toUpperCase() === 'EXACT_ANCHOR_NO_VALID_RESULT';
+  const normalizedSelectedAnchorPreserved =
+    isExactAnchorNoValidResult
+      ? false
+      : this.manualFitTimelinePreservesSelectedAnchor({
+          timeline: Array.isArray((response as any).finalizedTimeline) && (response as any).finalizedTimeline.length > 0
+            ? (response as any).finalizedTimeline
+            : (response as any).proposedTimeline,
+          selectedHotspotId: Number(data.selectedHotspotId),
+          afterHotspotId: resolvedAnchor.afterHotspotId ?? null,
+          beforeHotspotId: resolvedAnchor.beforeHotspotId ?? null,
+          anchorIntent: resolvedAnchor.anchorIntent,
+        });
+
+  (response as any).selectedAnchorPreserved = normalizedSelectedAnchorPreserved;
 
   await this.saveManualFitAttemptEntry(cacheEntry);
 
@@ -445,9 +642,50 @@ export async function previewManualHotspotAutoFitHereImpl(
   }
 
   const results: any[] = [];
+  const anchorPerformance: Array<{
+    anchorKey: string;
+    anchorLabel: string;
+    elapsedMs: number;
+    status: 'COMPLETED' | 'FAILED';
+    canConfirm: boolean;
+    removedCount: number;
+  }> = [];
+  const startedAtMs = Date.now();
+
+  console.log('[AutoFitHere][start]', {
+    planId: Number(planId),
+    routeId: Number(data.routeId),
+    selectedHotspotId: Number(data.selectedHotspotId),
+    totalPositions: normalizedAnchors.length,
+  });
 
   for (let index = 0; index < normalizedAnchors.length; index += 1) {
     const anchor = normalizedAnchors[index];
+    const anchorStartedAtMs = Date.now();
+    const anchorKey = [
+      anchor.anchorIntent,
+      Number(anchor.anchorIndex ?? index),
+      String(anchor.anchorFrom || ''),
+      String(anchor.anchorTo || ''),
+      Number(anchor.afterHotspotId || 0),
+      Number(anchor.beforeHotspotId || 0),
+    ].join(':');
+    const anchorLabel = String(
+      anchor?.anchorLabel ||
+      (anchor?.anchorIntent === 'AFTER_START'
+        ? 'Before first attraction'
+        : `After ${String(anchor?.anchorFrom || 'selected attraction')}`),
+    ).trim();
+
+    console.log('[AutoFitHere][anchor_start]', {
+      index: index + 1,
+      totalPositions: normalizedAnchors.length,
+      anchorKey,
+      anchorLabel,
+      anchorIntent: anchor.anchorIntent,
+      afterHotspotId: Number(anchor.afterHotspotId || 0) || null,
+      beforeHotspotId: Number(anchor.beforeHotspotId || 0) || null,
+    });
 
     try {
       const attempt = await previewManualHotspotFitHereImpl.call(this, planId, {
@@ -459,39 +697,67 @@ export async function previewManualHotspotAutoFitHereImpl(
       });
 
       const ranking = scoreManualAutoFitAttempt(attempt);
+      const elapsedMs = Date.now() - anchorStartedAtMs;
+      const removedCount = getManualAutoFitRemovedRows(attempt).length;
 
       results.push({
-        anchorKey: [
-          anchor.anchorIntent,
-          Number(anchor.anchorIndex ?? index),
-          String(anchor.anchorFrom || ''),
-          String(anchor.anchorTo || ''),
-          Number(anchor.afterHotspotId || 0),
-          Number(anchor.beforeHotspotId || 0),
-        ].join(':'),
+        anchorKey,
         anchor,
         attempt,
         status: 'COMPLETED',
         score: ranking.score,
         rankReason: ranking.reason,
-        removedCount: getManualAutoFitRemovedRows(attempt).length,
+        removedCount,
+      });
+
+      anchorPerformance.push({
+        anchorKey,
+        anchorLabel,
+        elapsedMs,
+        status: 'COMPLETED',
+        canConfirm: attempt?.canConfirm === true,
+        removedCount,
+      });
+
+      console.log('[AutoFitHere][anchor_done]', {
+        index: index + 1,
+        totalPositions: normalizedAnchors.length,
+        anchorKey,
+        anchorLabel,
+        elapsedMs,
+        resultType: String(attempt?.resultType || '').toUpperCase() || null,
+        canConfirm: attempt?.canConfirm === true,
+        removedCount,
+        score: ranking.score,
       });
     } catch (error: any) {
+      const elapsedMs = Date.now() - anchorStartedAtMs;
       results.push({
-        anchorKey: [
-          anchor.anchorIntent,
-          Number(anchor.anchorIndex ?? index),
-          String(anchor.anchorFrom || ''),
-          String(anchor.anchorTo || ''),
-          Number(anchor.afterHotspotId || 0),
-          Number(anchor.beforeHotspotId || 0),
-        ].join(':'),
+        anchorKey,
         anchor,
         attempt: null,
         status: 'FAILED',
         score: 0,
         rankReason: 'This position could not be previewed.',
         removedCount: 0,
+        error: error?.message || 'Could not preview this Fit Here position.',
+      });
+
+      anchorPerformance.push({
+        anchorKey,
+        anchorLabel,
+        elapsedMs,
+        status: 'FAILED',
+        canConfirm: false,
+        removedCount: 0,
+      });
+
+      console.log('[AutoFitHere][anchor_failed]', {
+        index: index + 1,
+        totalPositions: normalizedAnchors.length,
+        anchorKey,
+        anchorLabel,
+        elapsedMs,
         error: error?.message || 'Could not preview this Fit Here position.',
       });
     }
@@ -510,6 +776,26 @@ export async function previewManualHotspotAutoFitHereImpl(
     sortedResults[0] ||
     null;
 
+  const totalElapsedMs = Date.now() - startedAtMs;
+  const completedAnchorRuns = anchorPerformance.filter((row) => row.status === 'COMPLETED');
+  const avgAnchorMs = anchorPerformance.length > 0
+    ? Math.round(anchorPerformance.reduce((sum, row) => sum + Number(row.elapsedMs || 0), 0) / anchorPerformance.length)
+    : 0;
+  const slowestAnchor = [...anchorPerformance].sort((a, b) => Number(b.elapsedMs || 0) - Number(a.elapsedMs || 0))[0] || null;
+
+  console.log('[AutoFitHere][summary]', {
+    planId: Number(planId),
+    routeId: Number(data.routeId),
+    selectedHotspotId: Number(data.selectedHotspotId),
+    totalPositions: normalizedAnchors.length,
+    completedPositions: completedAnchorRuns.length,
+    failedPositions: anchorPerformance.filter((row) => row.status === 'FAILED').length,
+    totalElapsedMs,
+    avgAnchorMs,
+    slowestAnchorLabel: slowestAnchor?.anchorLabel || null,
+    slowestAnchorMs: slowestAnchor?.elapsedMs || null,
+  });
+
   return {
     planId: Number(planId),
     routeId: Number(data.routeId),
@@ -519,6 +805,12 @@ export async function previewManualHotspotAutoFitHereImpl(
     failedPositions: results.filter((row) => row.status === 'FAILED').length,
     selectedBestAttemptId: best?.attempt?.attemptId || null,
     bestAnchorKey: best?.anchorKey || null,
+    performanceSummary: {
+      totalElapsedMs,
+      avgAnchorMs,
+      slowestAnchorLabel: slowestAnchor?.anchorLabel || null,
+      slowestAnchorMs: slowestAnchor?.elapsedMs || null,
+    },
     results: sortedResults,
   };
 }

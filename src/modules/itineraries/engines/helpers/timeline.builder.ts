@@ -2689,6 +2689,42 @@ export class TimelineBuilder {
       // For other days, use multi-pass scheduling to fill gaps with deferred hotspots
       
       const manualPlacementByRoute = options?.manualPlacementByRoute || {};
+      const existingRouteOrderByHotspotId = new Map<number, number>();
+      for (const row of (existingHotspots || []) as any[]) {
+        if (Number((row as any)?.itinerary_route_ID || 0) !== Number(route.itinerary_route_ID || 0)) continue;
+        if (Number((row as any)?.deleted || 0) !== 0) continue;
+        if (Number((row as any)?.item_type || 0) !== 4) continue;
+
+        const hotspotId = Number((row as any)?.hotspot_ID || 0);
+        const hotspotOrder = Number((row as any)?.hotspot_order || 0);
+        if (!(hotspotId > 0) || !(hotspotOrder > 0)) continue;
+
+        const existingOrder = Number(existingRouteOrderByHotspotId.get(hotspotId) || 0);
+        if (!existingOrder || hotspotOrder < existingOrder) {
+          existingRouteOrderByHotspotId.set(hotspotId, hotspotOrder);
+        }
+      }
+
+      if (existingRouteOrderByHotspotId.size > 0) {
+        selectedHotspots = [...selectedHotspots].map((hotspot: any) => {
+          const hotspotId = Number((hotspot as any)?.hotspot_ID || 0);
+          const existingOrder = Number(existingRouteOrderByHotspotId.get(hotspotId) || 0);
+          if (!(existingOrder > 0)) {
+            return hotspot;
+          }
+
+          return {
+            ...hotspot,
+            display_order: existingOrder,
+          };
+        }).sort((a: any, b: any) => {
+          const ao = Number((a as any).display_order || Number.MAX_SAFE_INTEGER);
+          const bo = Number((b as any).display_order || Number.MAX_SAFE_INTEGER);
+          if (ao !== bo) return ao - bo;
+          return Number((a as any).hotspot_ID || 0) - Number((b as any).hotspot_ID || 0);
+        });
+      }
+
       const manualExistingForRoute = (existingHotspots || []).filter((row: any) =>
         Number(row?.itinerary_route_ID || 0) === Number(route.itinerary_route_ID) &&
         Number(row?.hotspot_plan_own_way || 0) === 1 &&

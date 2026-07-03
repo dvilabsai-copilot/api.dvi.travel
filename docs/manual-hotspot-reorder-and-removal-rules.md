@@ -1,114 +1,498 @@
 # Manual Hotspot Reorder And Removal Rules
 
-## Goal
+## Core principle
 
-When a user manually adds a hotspot with `Fit Here`, the selected manual hotspot is the primary objective.
+Manual Fit Here is not a generic best-fit insertion.
 
-The backend must try to make that selected hotspot work before saying `cannot fit`.
+The selected manual hotspot is the primary objective.
 
-## Core Rules
+The exact clicked anchor is tried first.
+If it fails because of cross-city direction, backtracking, route end, or operating hours, do not immediately return `CANNOT_FIT`.
+Continue rescue.
+Return `CANNOT_FIT` only when the selected manual hotspot cannot fit after all allowed non-manual removal and reorder attempts are exhausted.
 
-1. The selected manual hotspot is protected.
-2. Already-active manual hotspots are protected.
-3. Non-manual hotspots may be pushed later, reordered, or removed if needed.
-4. Every kept hotspot must still obey operating hours after the rebuild.
-5. If the selected manual hotspot has multiple operating windows, the solver must keep trying later valid windows when possible.
-6. `Cannot fit` should be returned only after all allowed non-manual rescue options are exhausted.
+## Plain-English APJ selected-pivot rule
 
-## Exact Anchor Rule
+APJ is the selected manual hotspot, so APJ must win.
 
-For `Fit Here`, the clicked anchor must stay respected.
+The route is:
 
-- If the user clicked `After Start`, the selected manual hotspot must stay immediately after the route start boundary.
-- If the user clicked `After Attraction`, the selected manual hotspot must stay after that anchor hotspot.
+```text
+Madurai -> Rameshwaram
+```
 
-What is allowed after that:
+Once APJ is inserted, the route has entered the Rameshwaram side.
 
-- Downstream non-manual hotspots may be reordered.
-- Downstream non-manual hotspots may be delayed into later valid opening windows.
-- Downstream non-manual hotspots may be removed according to priority rules.
+After APJ, the system must not send the customer back to Madurai-side attractions like Meenakshi or Thirumalai.
 
-What is not allowed:
+Wrong:
 
-- Moving the selected manual hotspot away from the clicked anchor.
-- Removing any manual hotspot.
+```text
+Refreshment -> APJ -> Thirumalai -> Hotel
+```
 
-## Search Strategy
+Because it means:
 
-For an exact-anchor preview/apply flow, the backend should evaluate multiple anchor-preserving strategies, not just original route order.
+```text
+Madurai -> Rameshwaram -> Madurai
+```
 
-Recommended strategy family:
+That backtracking must be avoided by removing or repositioning Thirumalai if policy allows.
 
-1. Keep original downstream order.
-2. Reorder downstream by earliest closing window first.
-3. Reorder downstream by higher priority first, then earlier closing window.
-4. Reorder downstream by nearest-next movement as a tie-break route shape.
-5. If allowed, retry after removable P3 hotspots are excluded.
+The backend should not think:
 
-## Removal Rules
+```text
+Can I keep all attractions somehow?
+```
 
-Removal order should be:
+The backend should think:
 
-1. Optional / lower-priority non-manual hotspots.
-2. P3 hotspots if confirmation/removal policy allows.
-3. P2 hotspots only if policy allows.
-4. P1 hotspots only if policy allows.
+```text
+Can I fit APJ at or near the clicked target?
+After APJ, can I keep only valid same-direction Rameshwaram attractions?
+Which Madurai/backtracking or operating-hour blockers must be removed?
+```
+
+Exact business rule:
+
+- APJ selected manual hotspot is the pivot.
+- Clicked anchor is tried first.
+- If clicked anchor blocks APJ, remove or reposition allowed blockers.
+- After APJ, do not go back to Madurai-side hotspots.
+- Always explain removals by reason: backtracking, operating hours, route end, or policy.
+
+## Different-city route rules
+
+Different-city route example:
+
+```text
+Madurai -> Rameshwaram
+```
+
+Source-side / Madurai hotspots:
+
+- Meenakshi Amman Temple
+- Thirumalai Nayakkar Mahal
+
+Destination-side / Rameshwaram hotspots:
+
+- APJ Abdul Kalam National Memorial
+- Ramanatha Swamy Temple
+- Agni Teertham
+
+APJ is destination-side.
+Once APJ is inserted, APJ becomes the directional pivot.
+After APJ, source-side / Madurai hotspots become backtracking blockers.
+
+The system must not produce:
+
+```text
+Madurai -> Rameshwaram -> Madurai -> Hotel
+```
+
+Invalid:
+
+```text
+Refreshment -> APJ -> Thirumalai -> Hotel
+```
+
+Valid:
+
+```text
+Refreshment -> APJ -> Ramanatha -> Agni -> Hotel
+```
+
+## Operating-hours handling
+
+For every kept survivor:
+
+- If arrival is before opening time, wait until opening.
+- If visit can finish inside operating hours, keep it.
+- If arrival or visit crosses closing time, remove it if policy allows.
+- Give a clear removal reason:
+  - reached after operating hours
+  - visit crosses closing
+  - route-end overflow
+  - backtracking
+  - selected hotspot cannot fit unless this blocker is removed
+- Do not remove simply because arrival is early. Waiting is allowed.
+- Do not keep a hotspot visited after closing.
+
+## Destination-side APJ examples for Madurai -> Rameshwaram
+
+### Case A: APJ before all attractions
+
+Clicked position:
+
+```text
+Refreshment -> APJ
+```
+
+Expected logic:
+
+```text
+Refreshment
+-> APJ
+-> try Ramanatha
+-> try Agni
+-> Hotel
+```
+
+Rules:
+
+- Fit APJ from refreshment/start first.
+- Meenakshi and Thirumalai are Madurai-side, so after APJ they become backtrack blockers.
+- Remove Meenakshi if non-manual and policy allows.
+- Remove Thirumalai if non-manual and policy allows.
+- Try Ramanatha after APJ.
+  - If reached before opening, wait.
+  - If reached within operating hours, keep.
+  - If reached after closing or visit crosses closing, remove with reason.
+- Try Agni after APJ with the same operating-hours logic.
+- Do not return `CANNOT_FIT` unless APJ itself cannot fit after all allowed rescue removals.
+- Never return confirmable timeline like:
+
+```text
+Refreshment -> APJ -> Thirumalai -> Hotel
+```
+
+Example removal reasons:
+
+- Thirumalai removed because it is source-side after destination-side APJ and causes backtracking.
+- Ramanatha removed because arrival or visit crossed operating hours.
+- Agni removed because arrival or visit crossed operating hours.
+
+### Case B: APJ after Meenakshi
+
+Clicked position:
+
+```text
+Meenakshi -> APJ
+```
+
+First try to keep Meenakshi because it is clicked anchor and P1:
+
+```text
+Refreshment
+-> Meenakshi
+-> APJ
+-> Ramanatha
+-> Agni
+-> Hotel
+```
+
+Rules:
+
+- Try to keep Meenakshi first because it is clicked anchor and P1.
+- After APJ, Thirumalai is Madurai-side, so remove it even if P2 because it causes backtracking.
+- Try Ramanatha P2 after APJ using operating-hours logic.
+- Try Agni P3 after APJ using operating-hours logic.
+- If keeping Meenakshi makes APJ too late or APJ cannot fit, remove Meenakshi also if non-manual and policy allows.
+- Rescue order is not simply "never remove P1."
+- Try to keep P1 anchor first, but if APJ cannot fit, APJ wins and Meenakshi can also be removed if non-manual and allowed.
+- Never fake success by placing APJ later after Thirumalai, Ramanatha, or Agni.
+- Do not return empty `CANNOT_FIT` while Thirumalai, Ramanatha, Agni, or Meenakshi are removable rescue candidates.
+
+### Case C: APJ after Thirumalai
+
+Clicked position:
+
+```text
+Thirumalai -> APJ
+```
+
+First try:
+
+```text
+Refreshment
+-> Meenakshi
+-> Thirumalai
+-> APJ
+-> Ramanatha
+-> Agni
+-> Hotel
+```
+
+Rules:
+
+- Meenakshi and Thirumalai are before APJ in the literal attempt, so they are not backtracking yet.
+- If APJ cannot fit because it becomes too late:
+  - try removing Meenakshi
+  - try removing Thirumalai
+  - try removing both
+- Then retry APJ earlier.
+- After APJ fits, continue only with Rameshwaram-side attractions:
+  - Ramanatha
+  - Agni
+  - Hotel
+- Ramanatha and Agni must be checked by operating hours:
+  - reached before opening -> wait
+  - reached within opening -> keep
+  - reached after closing -> remove with reason
+- Do not return `CANNOT_FIT` until all allowed removal combinations have been tried.
+
+### Case D: APJ after Ramanatha
+
+Clicked position:
+
+```text
+Ramanatha -> APJ
+```
+
+First try:
+
+```text
+Refreshment
+-> Meenakshi
+-> Thirumalai
+-> Ramanatha
+-> APJ
+-> Agni
+-> Hotel
+```
+
+Rules:
+
+- First try exact anchor Ramanatha -> APJ.
+- If APJ is closed because it is reached too late, do not immediately return `CANNOT_FIT`.
+- Rescue is required.
+- Ramanatha and Thirumalai can both be P2 or tie-type blockers.
+- Try both tie directions:
+  1. Remove Thirumalai, keep Ramanatha, then try APJ.
+  2. Keep Thirumalai, remove Ramanatha, then try APJ if directionally valid.
+  3. Remove both Thirumalai and Ramanatha, then try APJ.
+- Whichever gives APJ a valid operating-hours fit should be accepted.
+- If APJ still does not fit, remove Meenakshi also if non-manual and policy allows.
+- Once APJ fits, try Agni after APJ.
+- Agni is destination-side, so it is allowed after APJ, but it still must pass operating hours.
+- Return `CANNOT_FIT` only if APJ cannot fit after all allowed removals and reorders.
+
+### Case E: APJ after Agni
+
+Clicked position:
+
+```text
+Agni -> APJ
+```
+
+First build normally:
+
+```text
+Refreshment
+-> Meenakshi
+-> Thirumalai
+-> Ramanatha
+-> Agni
+-> APJ
+-> Hotel
+```
+
+Rules:
+
+- First try exact anchor Agni -> APJ.
+- If Agni itself cannot fit after Ramanatha, do not blindly keep Agni and fail APJ.
+- APJ is selected manual hotspot, so APJ wins.
+- Try removing or reordering earlier blockers.
+- Try making APJ fit.
+- Then decide whether Agni can remain before APJ or must be removed or repositioned.
+- If Agni blocks APJ, Agni may be removed or repositioned if non-manual and policy allows.
+- Return `CANNOT_FIT` only if APJ cannot fit after all allowed rescue attempts.
+
+## Key selected-hotspot-first algorithm
+
+For every clicked Fit Here position:
+
+1. Try the exact clicked position first.
+2. If APJ fits there, continue rebuilding after APJ.
+3. After APJ, remove source-side Madurai blockers.
+4. Try destination-side Rameshwaram attractions after APJ.
+5. For every remaining attraction:
+   - if early, wait
+   - if within operating hours, keep
+   - if late or closed, remove with clear reason
+6. If APJ itself does not fit:
+   - progressively remove allowed non-manual blockers
+   - try tied priority removals both ways
+   - retry APJ after each removal set
+7. Return `CANNOT_FIT` only when APJ cannot fit even after all allowed removals.
+
+Implementation note:
+
+- The backend should treat this as a bounded selected-hotspot-first candidate-array search.
+- Each state is a candidate attraction array plus removed hotspot IDs and rescue reasons.
+- The solver should rank states by:
+  1. selected manual hotspot preserved
+  2. fewer removals
+  3. clicked anchor preserved if possible
+  4. fewer high-priority removals
+  5. fewer operating-hours conflicts
+  6. lower route-end overflow
+  7. less waiting
+- Exact-anchor rescue should therefore behave like best-first graph search over candidate arrays, not one cumulative removal path.
+
+## Removal and candidate rules
+
+Removal policy:
 
 Never remove:
 
-- The selected manual hotspot.
-- Any other manual hotspot already active on the route.
-- Anchor-protected hotspots explicitly marked as non-removable for the current attempt.
+- selected manual hotspot
+- already-active manual hotspots
+- protected manual rows
+- non-removable rows according to policy
 
-## Candidate Selection Rules
+May remove or reposition if policy allows:
 
-When comparing two feasible solutions:
+- non-manual P4
+- non-manual P3
+- non-manual P2
+- non-manual P1
+- clicked anchor itself, only after literal clicked-anchor attempt fails and only if non-manual and policy allows
 
-1. Prefer the one with fewer total removals.
-2. If tied, prefer the one that removes fewer higher-priority hotspots.
-3. If tied, prefer fewer operating-hour conflicts.
-4. If tied, prefer lower route-end overflow.
-5. If tied, prefer less waiting.
-6. If tied, prefer less extra detour.
+Candidate ranking:
 
-This means wait time and detour are tie-breakers, not primary blockers, as long as the rebuilt route still finishes within the allowed manual timing window.
+1. Selected manual hotspot preserved
+2. Fewer total removals
+3. Clicked anchor preserved if possible
+4. Fewer high-priority removals
+5. Fewer operating-hours conflicts
+6. Lower route-end overflow
+7. Less waiting
+8. Less detour
 
-## UI Meaning
+Tie priority:
 
-The UI should not show `cannot fit` just because the first attempted order failed.
+When two blockers have the same priority, try both removal orders before deciding.
 
-`Cannot fit` is correct only when:
+## Backend implementation requirements
 
-- the selected manual hotspot still cannot be scheduled after all allowed downstream reorder attempts, and
-- all allowed non-manual removals have been exhausted, and
-- only protected manual hotspots remain as blockers.
+The backend must implement selected-hotspot-first rescue.
 
-## Timeline Expectation
+Required behavior:
 
-If the solver chooses a feasible solution, the preview should show the full journey clearly, including:
+1. Try literal clicked anchor first.
+2. If literal clicked anchor succeeds, finalize.
+3. If literal clicked anchor fails:
+   - do not immediately `CANNOT_FIT`
+   - generate rescue removal and reorder candidates
+   - remove or reposition allowed non-manual blockers
+   - for different-city route, apply direction pivot logic
+   - validate operating hours
+   - validate route end and manual timing
+4. Return best feasible candidate.
+5. Return `CANNOT_FIT` only after all allowed candidates fail.
 
-- start / refreshment
-- travel to anchor hotspot
-- stay at anchor hotspot
-- travel to selected manual hotspot
-- stay at selected manual hotspot
-- downstream travel/stays after reorder if any
+Different-city direction pivot:
 
-Example expectation:
+If selected hotspot is `DESTINATION_CITY`:
 
-- `Start`
-- `Refreshment`
-- `Travel to Meenakshi`
-- `Stay at Meenakshi`
-- `Travel to Gandhi`
-- `Stay at Gandhi`
+- selected hotspot becomes pivot
+- after selected hotspot, keep `DESTINATION_CITY` survivors first
+- `SOURCE_CITY` rows after selected hotspot are backtracking blockers and must be removed or repositioned if policy allows
+- `UNKNOWN` rows can be tried after same-side survivors but before opposite-side blockers only if route remains feasible
 
-## Current Backend Direction
+If selected hotspot is `SOURCE_CITY`:
 
-The backend implementation should favor:
+- reverse the same logic
+- after selected source-side hotspot, destination-side rows before completing source flow may be repositioned or removed if they cause backtracking
 
-- anchor-preserving exact-fit attempts
-- downstream reorder strategies
-- operating-window-aware waiting
-- progressive non-manual removal
-- final `cannot fit` only after protected-manual-only blockage remains
+Same-city route:
+
+Do not apply source/destination pruning.
+Use exact-anchor attempt, local shuffle or reorder, matrix, operating hours, and allowed removals.
+
+Opening-hours rescue:
+
+Do not return `SELECTED_HOTSPOT_CLOSED_AT_ATTEMPTED_TIME` as final if allowed blockers remain.
+If selected APJ is closed at first attempted time, try removing or reordering earlier blockers to make APJ earlier.
+Only after all removals fail can final `CANNOT_FIT` be returned.
+
+Fake success forbidden:
+
+Do not return `canConfirm=true` when:
+
+- APJ exists somewhere later but not at or near selected Fit Here target
+- User clicked after Meenakshi but APJ appears after Thirumalai, Ramanatha, or Agni
+- User clicked after Ramanatha but APJ appears after Agni
+- `APJ -> Thirumalai -> Hotel` in Madurai -> Rameshwaram
+- Any destination-side APJ timeline goes back to source-side Madurai hotspot after APJ
+- `selectedHotspotPreserved=true` is set only because APJ appears somewhere late
+
+Response consistency:
+
+If APJ is rescued but clicked anchor is not preserved:
+
+- `canConfirm=true`
+- `selectedHotspotPreserved=true`
+- `selectedAnchorPreserved=false`
+- `resultType` should be a success or rescue type, not `CANNOT_FIT`
+- `timeline` must show the rescued valid timeline
+- `removedHotspots` and `authoritativeRemovedHotspotIds` should show removed blockers with reasons
+
+If APJ truly cannot fit:
+
+- `resultType=CANNOT_FIT`
+- `canConfirm=false`
+- `selectedHotspotPreserved=false`
+- `selectedAnchorPreserved=false`
+- `authoritativeTimelineSource=EXACT_ANCHOR_NO_VALID_RESULT` or a better final failure source
+- `proposedTimeline=[]`
+- `finalizedTimeline=[]`
+- `removedHotspots=[]`
+- `authoritativeRemovedHotspotIds=[]`
+
+Never return:
+
+- `selectedAnchorPreserved=true` with `EXACT_ANCHOR_NO_VALID_RESULT`
+- non-empty timeline with `EXACT_ANCHOR_NO_VALID_RESULT`
+- `CANNOT_FIT` while allowed non-manual blockers remain untried
+- success just because APJ exists somewhere later in route
+- failure just because literal clicked anchor could not be preserved
+
+## Frontend meaning
+
+`ManualFitHerePreviewDialog.tsx` must:
+
+- trust backend final `canConfirm`
+- disable confirm when `canConfirm=false`
+- not show success when final `resultType=CANNOT_FIT`
+- show rescued timeline when `canConfirm=true` even if `selectedAnchorPreserved=false`
+- show removed or repositioned hotspots with clear user-facing reasons
+- distinguish:
+  1. exact clicked anchor not preserved, but selected APJ rescued
+  2. selected APJ truly cannot fit
+- do not hide timeline only because exact-anchor mismatch metadata exists if `canConfirm=true`
+
+## Validation checklist
+
+- Exact-anchor preview uses the selected-hotspot-first rescue path.
+- The clicked anchor is tried before rescue.
+- APJ is treated as the pivot on different-city Madurai -> Rameshwaram routes.
+- Backtracking blockers after APJ are removed or repositioned if policy allows.
+- Operating-hours waiting is allowed for early arrivals.
+- A hotspot visited after closing is removed.
+- Final `CANNOT_FIT` only happens after all allowed rescue attempts fail.
+- Successful rescue can keep `canConfirm=true` even when the clicked anchor is not preserved.
+
+## Validation commands
+
+Backend:
+
+```bash
+cd api.dvi.travel
+npm run build
+FIT_TOKEN="PASTE_TOKEN" FIT_PLAN_ID=9706 node scripts/debug-fit-here-dvi2026071.js
+```
+
+Frontend:
+
+```bash
+cd dvi_frontend
+npm run build
+```
+
+Playwright if a focused regression spec is added:
+
+```bash
+npx playwright test <spec-path> --project=chromium --headed
+```
