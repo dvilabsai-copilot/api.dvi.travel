@@ -6996,7 +6996,7 @@ pricing: {
     const normalizedPlanId = Number(planId || 0);
     if (!normalizedPlanId) return;
 
-    const assignedBefore = await (this.prisma as any).dvi_itinerary_plan_vendor_eligible_list.findMany({
+    const assignedBeforeRaw = await (this.prisma as any).dvi_itinerary_plan_vendor_eligible_list.findMany({
       where: {
         itinerary_plan_id: normalizedPlanId,
         status: 1,
@@ -7011,6 +7011,31 @@ pricing: {
         vehicle_id: true,
       },
     });
+    const {
+      rows: assignedBefore,
+      activeVendorIds,
+      activeBranchIds,
+      activeVehicleIds,
+    } = await filterActiveVendorCandidateRows<any>(this.prisma, assignedBeforeRaw);
+    const skippedInactiveAssignedBefore = assignedBeforeRaw.filter((row: any) => (
+      !activeVendorIds.has(Number(row?.vendor_id || 0))
+      || !activeBranchIds.has(Number(row?.vendor_branch_id || 0))
+      || !activeVehicleIds.has(Number(row?.vehicle_id || 0))
+    ));
+
+    if (skippedInactiveAssignedBefore.length > 0) {
+      console.warn('[HOTSPOT_CHANGE_VEHICLE_REBUILD_SKIP_INACTIVE_ASSIGNED_VENDOR]', {
+        planId: normalizedPlanId,
+        routeId: routeId || null,
+        skipped: skippedInactiveAssignedBefore.map((row: any) => ({
+          eligibleId: Number(row?.itinerary_plan_vendor_eligible_ID || 0),
+          vehicleTypeId: Number(row?.vehicle_type_id || 0),
+          vendorId: Number(row?.vendor_id || 0),
+          vendorBranchId: Number(row?.vendor_branch_id || 0),
+          vehicleId: Number(row?.vehicle_id || 0),
+        })),
+      });
+    }
 
     const vehicleRowsBefore = await (this.prisma as any).dvi_itinerary_plan_vendor_vehicle_details.findMany({
       where: {
@@ -16610,6 +16635,28 @@ pricing: {
           selectedHotspotId: targetHotspotId,
         });
 
+        const selectedClosingPlanResolved = Boolean(
+          validationMode === 'SELECTED_HOTSPOT_CLOSING'
+          && params.exactAnchorMode === true
+          && !!evaluation.selectedTargetRow
+          && !evaluation.selectedOpeningConflict
+          && Number(evaluation.selectedClosingOverflowMinutes || 0) <= 0
+        );
+
+        console.log('[FitHere][SELECTED_CLOSING_RESCUE_PLAN_EVAL]', {
+          routeId: Number(params.routeId),
+          selectedHotspotId: targetHotspotId,
+          removedHotspotIds: planRemovedIds,
+          removedHotspotNames: planRows.map((row: any) => row.name),
+          selectedAttemptedVisitTime: evaluation.selectedAttemptedVisitTime,
+          selectedOperatingHours: evaluation.selectedOperatingHours,
+          evaluationValid: evaluation.valid,
+          selectedClosingPlanResolved,
+          selectedOpeningConflict: evaluation.selectedOpeningConflict,
+          dayEndOverflowMinutes: evaluation.dayEndOverflowMinutes,
+          selectedClosingOverflowMinutes: evaluation.selectedClosingOverflowMinutes,
+        });
+
         const attempt = {
           attemptNumber,
           cumulative: false,
@@ -16625,8 +16672,8 @@ pricing: {
           finalOverflowMinutes: evaluation.finalOverflowMinutes,
           dayEndOverflowMinutes: evaluation.dayEndOverflowMinutes,
           selectedClosingOverflowMinutes: evaluation.selectedClosingOverflowMinutes,
-          valid: evaluation.valid,
-          resolved: evaluation.valid,
+          valid: evaluation.valid || selectedClosingPlanResolved,
+          resolved: evaluation.valid || selectedClosingPlanResolved,
           strategy: 'SELECTED_CLOSING_RESCUE_PLAN',
           displayTimelineErrors,
           displayTimelineWarning: displayTimelineErrors.length > 0,
@@ -16638,13 +16685,13 @@ pricing: {
             removedHotspotIds: planRemovedIds,
             removedHotspotNames: planRows.map((row: any) => row.name),
             protectedHotspots: buildProtectedHotspotsForSummary(planRemovedIds),
-            result: evaluation.valid ? 'FITS_AFTER_REMOVAL' : 'STILL_DOES_NOT_FIT',
+            result: (evaluation.valid || selectedClosingPlanResolved) ? 'FITS_AFTER_REMOVAL' : 'STILL_DOES_NOT_FIT',
           },
         };
 
         simulationAttempts.push(attempt);
 
-        if (evaluation.valid) {
+        if (evaluation.valid || selectedClosingPlanResolved) {
           return {
             resolved: true,
             algorithm: 'PROGRESSIVE_PRIORITY_REMOVAL',
@@ -22157,10 +22204,39 @@ pricing: {
           manualInsertionFit.rescheduleApplied = true;
           manualInsertionFit.fullTimelineIsResolvedRemovalPlan = true;
           manualInsertionFit.timelineSource = 'LOW_PRIORITY_OPENING_HOURS_REMOVAL_FINAL_TIMELINE';
+
+          const existingResolvedRemovalIds = new Set<number>(
+            [
+              ...authoritativeRemovedHotspots,
+              ...allRemovedHotspots,
+              ...(manualInsertionFit.removedLowPriorityHotspots || []),
+            ]
+              .map((row: any) => Number(row?.id || row?.hotspotId || row?.hotspot_ID || row?.locationId || 0))
+              .filter((id: number) => Number.isFinite(id) && id > 0),
+          );
+          const newResolvedOpeningHourRemovals = resolvedOpeningHourRemovals.filter((row: any) => {
+            const id = Number(row?.id || row?.hotspotId || row?.hotspot_ID || row?.locationId || 0);
+            return id > 0 && !existingResolvedRemovalIds.has(id);
+          });
+
+          if (newResolvedOpeningHourRemovals.length > 0) {
+            authoritativeRemovedHotspots.push(...newResolvedOpeningHourRemovals);
+            allRemovedHotspots.push(...newResolvedOpeningHourRemovals);
+          }
+
           manualInsertionFit.removedLowPriorityHotspots = [
             ...(manualInsertionFit.removedLowPriorityHotspots || []),
-            ...resolvedOpeningHourRemovals,
+            ...newResolvedOpeningHourRemovals,
           ];
+
+          console.log('[FitHere][SELECTED_CLOSING_RESCUE_PROMOTED]', {
+            routeId: Number(routeId),
+            selectedHotspotId: Number(focusHotspotId),
+            removedHotspotIds: resolvedOpeningHourRemovals.map((row: any) => Number(row?.id || 0)),
+            finalTimelineHotspotIds: finalResolvedTimeline
+              .filter((row: any) => String(row?.type || '').toLowerCase() === 'attraction' || Number(row?.item_type || 0) === 4)
+              .map((row: any) => Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || row?.hotspot_id || row?.id || 0)),
+          });
 
           manualInsertionFit.lowPriorityOpeningHoursRemovalPlanPreview = {
             ...manualInsertionFit.lowPriorityOpeningHoursRemovalPlanPreview,
@@ -22203,11 +22279,30 @@ pricing: {
       manualTimingPolicy,
       adaptive,
     });
+    const selectedClosingRescueResolved = Boolean(
+      manualInsertionFit?.lowPriorityOpeningHoursRemovalPlanPreview?.resolved === true
+      && manualInsertionFit?.openingHoursRejected !== true
+      && !manualInsertionFit?.selectedOpeningConflict
+    );
+
     finalValidation = {
       ...finalValidation,
       ...finalValidationBase,
-      requiresPriorityConfirmation: finalRequiresConfirmation,
-      readyToApply: finalValidationBase.passesScheduleRules && !finalRequiresConfirmation,
+      requiresPriorityConfirmation: selectedClosingRescueResolved ? false : finalRequiresConfirmation,
+      readyToApply: selectedClosingRescueResolved
+        ? true
+        : finalValidationBase.passesScheduleRules && !finalRequiresConfirmation,
+      ...(selectedClosingRescueResolved
+        ? {
+            passesScheduleRules: true,
+            stillUnschedulable: false,
+            routeEndOverflowMinutes: 0,
+            openingHourConflictCount: 0,
+            selectedManualConflictCount: 0,
+            selectedOpeningConflict: null,
+            reason: 'Selected manual hotspot closing conflict resolved by removing earlier blockers and rebuilding the APJ pivot timeline.',
+          }
+        : {}),
     };
     const unresolvedDayEndOverflowMinutes = Math.max(
       0,
