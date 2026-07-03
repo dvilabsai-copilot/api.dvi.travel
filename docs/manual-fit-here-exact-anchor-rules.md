@@ -169,6 +169,17 @@ drop_p4_non_priority
 
 They may be returned only as clearly labelled suggestions.
 
+Exact-anchor attempt evaluation must validate the clicked gap itself, not just presence of the selected hotspot somewhere in the rebuilt route.
+
+Invalid:
+
+```txt
+clicked: After Tirumalai
+rebuilt: Tirumalai -> Ramanatha -> APJ
+```
+
+because the selected hotspot did not stay in the clicked gap.
+
 ## Confirm Safety Rules
 
 Confirm must use the removal policy saved in the preview cache.
@@ -191,6 +202,47 @@ allowP3Removal = entry.allowP3Removal === true
 allowP1P2Removal = entry.allowP1P2Removal === true
 allowTopPriorityRemoval = entry.allowP1P2Removal === true
 ```
+
+## Saved Travel Calculation Parity Rules
+
+Manual Fit Here preview must use the same travel-calculation rules as the saved itinerary builder.
+
+Do not use preview-only placeholder math such as:
+
+- gap between adjacent displayed timestamps
+- hardcoded city-speed fallback when a saved-rule calculation is available
+- hotel-name text matching as the travel endpoint source of truth
+
+Travel legs affected by manual insertion must be rebuilt with the backend saved-itinerary calculation path:
+
+1. previous kept stop -> inserted hotspot
+2. inserted hotspot -> next kept hotspot
+3. last kept hotspot -> end-of-day hotel/check-in leg
+4. hotel/start-of-day -> first kept hotspot when the edited sequence changes the first active stop
+
+The same backend rules must be reused for:
+
+- source and destination coordinates
+- route-vs-local travel classification
+- km-per-hour / speed assumptions
+- buffer time inclusion rules
+- stored-location fallback behavior when direct coordinates are unavailable
+
+For hotel/check-in travel, preview must follow the saved itinerary convention used by the main timeline builder:
+
+- compute the route using the authoritative route destination endpoint used during save
+- use the selected hotel name only as the display label when needed
+- do not switch to arbitrary hotel coordinates if that would break saved-route parity
+
+If the saved itinerary builder would produce a `travel to hotel` row, preview must also produce that row before check-in.
+
+Preview must not generate impossible artifacts such as:
+
+- missing travel-to-hotel row before check-in
+- multi-hundred or multi-thousand kilometer local hotel legs
+- overnight hotel-travel durations caused by stale or mismatched preview timing
+
+When preview and saved itinerary differ, the saved-itinerary calculation path is authoritative.
 
 ## Required Verification Cases
 

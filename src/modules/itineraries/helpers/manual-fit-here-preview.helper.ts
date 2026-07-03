@@ -186,10 +186,21 @@ export async function buildManualFitPreviewEnvelopeImpl(this: any, params: any) 
   const removedHotspotsRaw = Array.isArray(resolution?.removedHotspots)
     ? resolution.removedHotspots
     : [];
-  const dayEndPlan = params.previewResult?.manualInsertionFit?.lowPriorityRemovalPlanPreview || null;
-  const openingHoursPlan = params.previewResult?.manualInsertionFit?.lowPriorityOpeningHoursRemovalPlanPreview || null;
-  const resolvedLowPriorityRemovedHotspots = Array.isArray(params.previewResult?.manualInsertionFit?.removedLowPriorityHotspots)
-    ? params.previewResult.manualInsertionFit.removedLowPriorityHotspots
+  const selectedAnchor = params.selectedAnchor || null;
+  const manualInsertionFit =
+    selectedAnchor?.exactSelectedGap === true && params.previewResult?.manualInsertionFit
+      ? this.normalizeExactAnchorManualInsertionFit({
+          manualInsertionFit: params.previewResult.manualInsertionFit,
+          anchorIntent: selectedAnchor?.anchorIntent,
+          afterHotspotId: selectedAnchor?.afterHotspotId ?? null,
+          beforeHotspotId: selectedAnchor?.beforeHotspotId ?? null,
+          anchorLabel: params.anchorLabel || selectedAnchor?.anchorLabel || null,
+        })
+      : (params.previewResult?.manualInsertionFit || resolution?.manualInsertionFit || null);
+  const dayEndPlan = manualInsertionFit?.lowPriorityRemovalPlanPreview || null;
+  const openingHoursPlan = manualInsertionFit?.lowPriorityOpeningHoursRemovalPlanPreview || null;
+  const resolvedLowPriorityRemovedHotspots = Array.isArray(manualInsertionFit?.removedLowPriorityHotspots)
+    ? manualInsertionFit.removedLowPriorityHotspots
     : [];
 
   const plannedSequentialRemovals = [
@@ -325,16 +336,16 @@ export async function buildManualFitPreviewEnvelopeImpl(this: any, params: any) 
   const selectedOpeningConflict =
     validation?.selectedOpeningConflict ||
     resolution?.validation?.selectedOpeningConflict ||
-    params.previewResult?.manualInsertionFit?.selectedOpeningConflict ||
+    manualInsertionFit?.selectedOpeningConflict ||
     null;
   const hasSelectedOpeningConflict =
     !!selectedOpeningConflict ||
     (
       !readyToApply &&
-      String(params.previewResult?.manualInsertionFit?.previewBlockReason || '').toUpperCase() === 'SELECTED_HOTSPOT_CLOSED_AT_ATTEMPTED_TIME'
+      String(manualInsertionFit?.previewBlockReason || '').toUpperCase() === 'SELECTED_HOTSPOT_CLOSED_AT_ATTEMPTED_TIME'
     );
 
-  if (hasSelectedOpeningConflict) {
+  if (hasSelectedOpeningConflict && !readyToApply) {
     resultType = 'SELECTED_HOTSPOT_CLOSED_AT_ATTEMPTED_TIME';
     canConfirm = false;
   } else if (hasPriorityConflict) {
@@ -359,15 +370,124 @@ export async function buildManualFitPreviewEnvelopeImpl(this: any, params: any) 
     : (Array.isArray(params.previewResult?.fullTimeline)
       ? params.previewResult.fullTimeline
       : []);
+  const exactOptimizerAttempts = Array.isArray(resolution?.manualOptimizer?.attempts)
+    ? resolution.manualOptimizer.attempts
+    : [];
+  const proposedTimelinePreservesAnchor =
+    selectedAnchor
+      ? this.manualFitTimelinePreservesSelectedAnchor({
+          timeline: proposedTimelineBase,
+          selectedHotspotId: params.selectedHotspotId,
+          afterHotspotId: selectedAnchor?.afterHotspotId ?? null,
+          beforeHotspotId: selectedAnchor?.beforeHotspotId ?? null,
+          anchorIntent: selectedAnchor?.anchorIntent,
+        })
+      : true;
+  const exactAnchorAttempt = selectedAnchor
+    ? (
+        exactOptimizerAttempts.find((attempt: any) => (
+          String(attempt?.strategyKey || '').trim().toLowerCase() === 'exact_anchor_sequential_rebuild'
+          && Array.isArray(attempt?.previewTimeline)
+          && this.manualFitTimelinePreservesSelectedAnchor({
+            timeline: attempt.previewTimeline,
+            selectedHotspotId: params.selectedHotspotId,
+            afterHotspotId: selectedAnchor?.afterHotspotId ?? null,
+            beforeHotspotId: selectedAnchor?.beforeHotspotId ?? null,
+            anchorIntent: selectedAnchor?.anchorIntent,
+          })
+        ))
+        || exactOptimizerAttempts.find((attempt: any) => (
+          String(attempt?.strategyKey || '').trim().toLowerCase().startsWith('exact_anchor_')
+          && Array.isArray(attempt?.previewTimeline)
+          && this.manualFitTimelinePreservesSelectedAnchor({
+            timeline: attempt.previewTimeline,
+            selectedHotspotId: params.selectedHotspotId,
+            afterHotspotId: selectedAnchor?.afterHotspotId ?? null,
+            beforeHotspotId: selectedAnchor?.beforeHotspotId ?? null,
+            anchorIntent: selectedAnchor?.anchorIntent,
+          })
+        ))
+      )
+    : null;
+  const timelineBaseForEnvelope =
+    !proposedTimelinePreservesAnchor
+    && Array.isArray(exactAnchorAttempt?.previewTimeline)
+    && exactAnchorAttempt.previewTimeline.length > 0
+      ? exactAnchorAttempt.previewTimeline
+      : proposedTimelineBase;
   const proposedTimelineRaw = await this.enrichManualFitPreviewTimelineWithOperatingHours(
     params.planId,
     params.routeId,
-    proposedTimelineBase,
+    timelineBaseForEnvelope,
   );
-  const finalizedTimeline = this.buildManualFitFinalizedPreviewTimeline(
+  let finalizedTimeline = this.buildManualFitFinalizedPreviewTimeline(
     proposedTimelineRaw,
     removedHotspots,
   );
+  const selectedHotspotIdNum = Number(params.selectedHotspotId || 0);
+  const finalizedAttractionRows = (Array.isArray(finalizedTimeline) ? finalizedTimeline : []).filter((row: any) => (
+    String(row?.type || '').toLowerCase() === 'attraction'
+    || Number(row?.item_type || 0) === 4
+  ));
+  const finalizedTravelRows = (Array.isArray(finalizedTimeline) ? finalizedTimeline : []).filter((row: any) => (
+    String(row?.type || '').toLowerCase() === 'travel'
+    || Number(row?.item_type || 0) === 3
+    || Number(row?.item_type || 0) === 5
+  ));
+  const selectedExistsInFinalizedTimeline = finalizedAttractionRows.some((row: any) => (
+    Number(row?.hotspotId || row?.hotspot_ID || row?.locationId || row?.hotspot_id || 0) === selectedHotspotIdNum
+  ));
+  const likelyMissingTravelLegs =
+    selectedAnchor?.exactSelectedGap === true
+    && selectedExistsInFinalizedTimeline
+    && finalizedTravelRows.length === 0
+    && finalizedAttractionRows.length <= 1;
+
+  if (likelyMissingTravelLegs) {
+    try {
+      const baselineTimeline = await this.getRouteTimelineForScoring(
+        this.prisma,
+        Number(params.planId),
+        Number(params.routeId),
+      );
+      const rebuiltExactTimeline = await this.buildExactAnchorSequentialTimelineAfterRemoval(
+        this.prisma,
+        baselineTimeline,
+        {
+          removedHotspotIds: removedHotspots
+            .map((row: any) => this.getManualFitRemovalHotspotId(row))
+            .filter((id: number) => Number.isFinite(id) && id > 0),
+          targetHotspotId: selectedHotspotIdNum,
+          routeId: Number(params.routeId),
+          planId: Number(params.planId),
+          anchorIntent: selectedAnchor?.anchorIntent,
+          afterHotspotId: selectedAnchor?.afterHotspotId,
+          beforeHotspotId: selectedAnchor?.beforeHotspotId,
+        },
+      );
+
+      const enrichedRebuiltExactTimeline = await this.enrichManualFitPreviewTimelineWithOperatingHours(
+        params.planId,
+        params.routeId,
+        rebuiltExactTimeline,
+      );
+      const rebuiltFinalizedTimeline = this.buildManualFitFinalizedPreviewTimeline(
+        enrichedRebuiltExactTimeline,
+        removedHotspots,
+      );
+
+      if (Array.isArray(rebuiltFinalizedTimeline) && rebuiltFinalizedTimeline.length > finalizedTimeline.length) {
+        finalizedTimeline = rebuiltFinalizedTimeline;
+      }
+    } catch (error) {
+      console.warn('[FitHere][preview_envelope_rebuild_failed]', {
+        planId: Number(params.planId),
+        routeId: Number(params.routeId),
+        selectedHotspotId: selectedHotspotIdNum,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
   const finalizedSelectedHotspotIds = new Set<number>(
     (finalizedTimeline || [])
       .filter((row: any) => String(row?.type || '').toLowerCase() === 'attraction')
@@ -437,8 +557,8 @@ export async function buildManualFitPreviewEnvelopeImpl(this: any, params: any) 
     removedHotspots,
     shiftedHotspots: Array.isArray(resolution?.shiftedHotspots) ? resolution.shiftedHotspots : [],
     affectedPriorityHotspots,
-    suggestedAlternativePositions: Array.isArray(params.previewResult?.manualInsertionFit?.allSlotResults)
-      ? params.previewResult.manualInsertionFit.allSlotResults
+    suggestedAlternativePositions: Array.isArray(manualInsertionFit?.allSlotResults)
+      ? manualInsertionFit.allSlotResults
           .filter((slot: any) => slot?.selectedAsBest === true || slot?.routePossible === true)
           .slice(0, 3)
           .map((slot: any) => ({
@@ -449,12 +569,12 @@ export async function buildManualFitPreviewEnvelopeImpl(this: any, params: any) 
           }))
       : [],
     anchorLabel: params.anchorLabel,
-    manualInsertionFit: params.previewResult?.manualInsertionFit || null,
+    manualInsertionFit,
     resolution: {
       ...(resolution || {}),
-      manualInsertionFit: params.previewResult?.manualInsertionFit || resolution?.manualInsertionFit || null,
+      manualInsertionFit,
       lowPriorityOpeningHoursRemovalPlanPreview:
-        params.previewResult?.manualInsertionFit?.lowPriorityOpeningHoursRemovalPlanPreview ||
+        manualInsertionFit?.lowPriorityOpeningHoursRemovalPlanPreview ||
         resolution?.lowPriorityOpeningHoursRemovalPlanPreview ||
         null,
       removedOptionalHotspots: safeRemovedOptional,
@@ -557,7 +677,13 @@ export function manualFitTimelinePreservesSelectedAnchorImpl(this: any, params: 
   const getRowHotspotId = (row: any): number =>
     Number(row?.hotspotId || row?.hotspot_ID || row?.id || row?.locationId || row?.hotspot_id || 0);
 
-  const selectedIndex = timeline.findIndex((row: any) => {
+  const attractionRows = timeline.filter((row: any) => {
+    const type = String(row?.type || '').toLowerCase();
+    const itemType = Number(row?.item_type || 0);
+    return type === 'attraction' || itemType === 4;
+  });
+
+  const selectedIndex = attractionRows.findIndex((row: any) => {
     const rowId = getRowHotspotId(row);
     return (
       rowId === selectedId ||
@@ -570,21 +696,24 @@ export function manualFitTimelinePreservesSelectedAnchorImpl(this: any, params: 
   if (selectedIndex < 0) return false;
 
   if (params.anchorIntent === 'AFTER_START') {
+    if (selectedIndex !== 0) return false;
+
     if (beforeId > 0) {
-      const beforeIndex = timeline.findIndex((row: any) => getRowHotspotId(row) === beforeId);
-      return beforeIndex < 0 || selectedIndex < beforeIndex;
+      const beforeIndex = attractionRows.findIndex((row: any) => getRowHotspotId(row) === beforeId);
+      return beforeIndex < 0 || beforeIndex === selectedIndex + 1;
     }
 
-    return selectedIndex >= 0;
+    return true;
   }
 
   if (params.anchorIntent === 'AFTER_ATTRACTION') {
-    const afterIndex = timeline.findIndex((row: any) => getRowHotspotId(row) === afterId);
-    if (afterIndex < 0 || selectedIndex <= afterIndex) return false;
+    const afterIndex = attractionRows.findIndex((row: any) => getRowHotspotId(row) === afterId);
+    if (afterIndex < 0) return false;
+    if (selectedIndex !== afterIndex + 1) return false;
 
     if (beforeId > 0) {
-      const beforeIndex = timeline.findIndex((row: any) => getRowHotspotId(row) === beforeId);
-      if (beforeIndex >= 0 && selectedIndex >= beforeIndex) {
+      const beforeIndex = attractionRows.findIndex((row: any) => getRowHotspotId(row) === beforeId);
+      if (beforeIndex >= 0 && beforeIndex <= selectedIndex) {
         return false;
       }
     }
