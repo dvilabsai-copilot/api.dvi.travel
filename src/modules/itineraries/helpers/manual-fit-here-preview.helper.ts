@@ -1283,6 +1283,8 @@ export function buildManualFitChangesRequiredDisplayImpl(this: any, params: any)
         workPriority,
         workPriorityLabel: workPriority ? `Priority ${workPriority}` : 'Priority not set',
         reason: row?.reason || row?.message || null,
+        removalReasonCode: row?.removalReasonCode || null,
+        fitFailureExplanation: row?.fitFailureExplanation || null,
       };
     })
     .filter((row: any) => {

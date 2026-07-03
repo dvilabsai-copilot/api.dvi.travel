@@ -10,6 +10,7 @@ export async function resolveManualFitHereAnchorImpl(
   this: any,
   routeId: number,
   anchor: any,
+  selectedHotspotId?: number,
 ): Promise<any> {
   const anchorIntentRaw = String(anchor?.anchorIntent || '').trim().toUpperCase();
 
@@ -33,25 +34,58 @@ export async function resolveManualFitHereAnchorImpl(
     },
   });
 
+  const hotspotIds = routeHotspots
+    .map((row: any) => Number(row?.hotspot_ID || 0))
+    .filter((id: number) => Number.isFinite(id) && id > 0);
+  const hotspotMasters = hotspotIds.length > 0
+    ? await this.prisma.dvi_hotspot_place.findMany({
+        where: {
+          hotspot_ID: { in: hotspotIds },
+          deleted: 0,
+        },
+        select: {
+          hotspot_ID: true,
+          hotspot_name: true,
+        },
+      })
+    : [];
+  const hotspotNameById = new Map<number, string>(
+    hotspotMasters.map((row: any) => [Number(row?.hotspot_ID || 0), String(row?.hotspot_name || '').trim()]),
+  );
+
   const rows = routeHotspots.map((row: any, index: number) => ({
     index,
     routeHotspotId: Number(row?.route_hotspot_ID || 0),
     hotspotId: Number(row?.hotspot_ID || 0),
     hotspotOrder: Number(row?.hotspot_order || index + 1),
+    hotspotName: hotspotNameById.get(Number(row?.hotspot_ID || 0)) || null,
   }));
 
   const findByRouteHotspotId = (value: any) => rows.find((row) => row.routeHotspotId === Number(value || 0));
   const findByHotspotId = (value: any) => rows.find((row) => row.hotspotId === Number(value || 0));
+  const normalizeLabel = (value: any): string =>
+    String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, ' ');
+  const findByLabel = (value: any) => {
+    const label = normalizeLabel(value);
+    if (!label) return null;
+    return rows.find((row) => normalizeLabel(row.hotspotName).includes(label)) || null;
+  };
 
   const afterRow =
     findByRouteHotspotId(anchor?.afterRouteHotspotId) ||
     findByRouteHotspotId(anchor?.afterRowId) ||
-    findByHotspotId(anchor?.afterHotspotId);
+    findByHotspotId(anchor?.afterHotspotId) ||
+    findByLabel(anchor?.anchorFrom) ||
+    findByLabel(anchor?.anchorLabel);
 
   const beforeRow =
     findByRouteHotspotId(anchor?.beforeRouteHotspotId) ||
     findByRouteHotspotId(anchor?.beforeRowId) ||
-    findByHotspotId(anchor?.beforeHotspotId);
+    findByHotspotId(anchor?.beforeHotspotId) ||
+    findByLabel(anchor?.anchorTo);
 
   let anchorIndex = Number.isFinite(Number(anchor?.anchorIndex))
     ? Number(anchor.anchorIndex)
@@ -68,11 +102,31 @@ export async function resolveManualFitHereAnchorImpl(
   }
 
   if (anchorIntent === 'AFTER_ATTRACTION') {
-    if (!afterRow) {
+    let resolvedAfterRow = afterRow;
+    if (!resolvedAfterRow && Number.isFinite(Number(selectedHotspotId || 0)) && Number(selectedHotspotId || 0) > 0) {
+      const selectedRow = findByHotspotId(selectedHotspotId);
+      if (selectedRow && selectedRow.index > 0) {
+        resolvedAfterRow = rows[selectedRow.index - 1] || rows[0] || null;
+      }
+    }
+    if (!resolvedAfterRow) {
+      resolvedAfterRow = rows[Math.max(0, Math.min(anchorIndex, Math.max(0, rows.length - 1)))] || rows[0] || null;
+    }
+    if (!resolvedAfterRow) {
       throw new BadRequestException('Invalid Fit Here anchor: attraction anchor was not found on this route.');
     }
 
-    anchorIndex = Number(afterRow.index);
+    anchorIndex = Number(resolvedAfterRow.index);
+    if (!afterRow) {
+      console.warn('[FitHere][anchor_fallback_to_live_route_gap]', {
+        routeId: Number(routeId),
+        selectedHotspotId: Number(selectedHotspotId || 0),
+        anchorIntent,
+        requestedAfterHotspotId: Number(anchor?.afterHotspotId || 0),
+        requestedAfterRouteHotspotId: Number(anchor?.afterRouteHotspotId || 0),
+        resolvedAfterHotspotId: Number(resolvedAfterRow?.hotspotId || 0),
+      });
+    }
   }
 
   anchorIndex = Math.max(0, Math.min(anchorIndex, rows.length));
@@ -129,7 +183,7 @@ export async function previewManualHotspotFitHereImpl(
 
   await this.purgeExpiredManualFitAttempts();
 
-  const resolvedAnchor = await this.resolveManualFitHereAnchor(Number(data.routeId), data.anchor || {});
+  const resolvedAnchor = await this.resolveManualFitHereAnchor(Number(data.routeId), data.anchor || {}, Number(data.selectedHotspotId || 0));
   const exactAnchorPreferredSlot =
     resolvedAnchor.exactSelectedGap === true
       ? {
@@ -527,6 +581,25 @@ export async function previewManualHotspotFitHereImpl(
         });
 
   (response as any).selectedAnchorPreserved = normalizedSelectedAnchorPreserved;
+  cacheEntry.canConfirm = (response as any).canConfirm === true;
+  cacheEntry.requiresTimingRiskConfirmation = (response as any).requiresTimingRiskConfirmation === true;
+  cacheEntry.requiresPriorityRemovalConfirmation = (response as any).requiresPriorityRemovalConfirmation === true;
+  cacheEntry.selectedAnchorPreserved = (response as any).selectedAnchorPreserved === true;
+  cacheEntry.selectedHotspotPreserved = (response as any).selectedHotspotPreserved === true;
+  cacheEntry.selectedOpeningConflict = (response as any).selectedOpeningConflict || null;
+  cacheEntry.resultType = String((response as any).resultType || '').trim() || null;
+  cacheEntry.acceptedReason = (response as any).acceptedReason || null;
+  cacheEntry.rejectedReasons = Array.isArray((response as any).rejectedReasons)
+    ? [...(response as any).rejectedReasons]
+    : [];
+  cacheEntry.authoritativeTimelineSource = String((response as any).authoritativeTimelineSource || cacheEntry.authoritativeTimelineSource || '').trim() || null;
+  cacheEntry.proposedTimelineSnapshot = Array.isArray((response as any).proposedTimeline)
+    ? (response as any).proposedTimeline
+    : cacheEntry.proposedTimelineSnapshot;
+  cacheEntry.proposedTimelineFingerprint = String((response as any).proposedTimelineFingerprint || cacheEntry.proposedTimelineFingerprint || '').trim();
+  cacheEntry.removedHotspotsSnapshot = Array.isArray((response as any).removedHotspots)
+    ? (response as any).removedHotspots
+    : cacheEntry.removedHotspotsSnapshot;
 
   await this.saveManualFitAttemptEntry(cacheEntry);
 
@@ -1105,6 +1178,7 @@ export async function confirmManualHotspotFitHereImpl(
   const manualHotspotTxTimeoutMs = 180000;
   const applyRollbackError = new Error('__CONFIRM_FIT_HERE_ROLLBACK__');
   let applyResult: any;
+  let applyAlreadyExists = false;
   let rollbackReason = 'CONFIRM_FAILED';
   const confirmStartedAt = Date.now();
   console.log('[FitHere][confirm_start]', {
@@ -1135,11 +1209,14 @@ export async function confirmManualHotspotFitHereImpl(
         durationMs: Date.now() - confirmStartedAt,
         success: applyResult?.success,
         inserted: applyResult?.inserted,
+        alreadyExists: applyResult?.alreadyExists === true,
         routeTimelineCount: Array.isArray(applyResult?.routeTimeline) ? applyResult.routeTimeline.length : null,
         fullTimelineCount: Array.isArray(applyResult?.fullTimeline) ? applyResult.fullTimeline.length : null,
       });
 
-      if (applyResult?.success !== true || applyResult?.inserted !== true) {
+      applyAlreadyExists = String(applyResult?.code || '') === 'MANUAL_HOTSPOT_ALREADY_EXISTS_IN_ROUTE';
+
+      if (applyResult?.success !== true || (applyResult?.inserted !== true && !applyAlreadyExists)) {
         rollbackReason = 'APPLY_RESULT_REJECTED';
         throw applyRollbackError;
       }
@@ -1154,6 +1231,7 @@ export async function confirmManualHotspotFitHereImpl(
 
       if (
         !skipStrictFingerprintForClosedConflict &&
+        !applyAlreadyExists &&
         persistedFingerprint !== entry.proposedTimelineFingerprint
       ) {
         console.warn('[FitHere][confirm_fingerprint_mismatch]', {
@@ -1174,7 +1252,17 @@ export async function confirmManualHotspotFitHereImpl(
     }
   }
 
-  if (!applyResult || applyResult?.success !== true || applyResult?.inserted !== true) {
+  const effectiveApplyResult = applyAlreadyExists
+    ? {
+        ...applyResult,
+        success: true,
+        inserted: true,
+        alreadyExists: true,
+        idempotent: true,
+      }
+    : applyResult;
+
+  if (!effectiveApplyResult || effectiveApplyResult?.success !== true || effectiveApplyResult?.inserted !== true) {
     throw new ConflictException({
       success: false,
       inserted: false,
@@ -1192,9 +1280,102 @@ export async function confirmManualHotspotFitHereImpl(
     });
   }
 
-  const confirmedTimeline = Array.isArray(applyResult?.routeTimeline)
-    ? applyResult.routeTimeline
-    : (Array.isArray(applyResult?.fullTimeline) ? applyResult.fullTimeline : []);
+  let confirmedTimeline = Array.isArray(effectiveApplyResult?.routeTimeline)
+    ? effectiveApplyResult.routeTimeline
+    : (Array.isArray(effectiveApplyResult?.fullTimeline) ? effectiveApplyResult.fullTimeline : []);
+  if (confirmedTimeline.length === 0) {
+    confirmedTimeline = await this.getRouteTimelineForScoring(this.prisma, Number(planId), Number(entry.routeId));
+  }
+  const confirmedTimelineDisplay = confirmedTimeline.map((row: any, index: number, rows: any[]) => {
+    const rowType = String(row?.type || '').toLowerCase();
+    const itemType = Number(row?.item_type || 0);
+    const isTravelRow = rowType === 'travel' || itemType === 3 || itemType === 5;
+    if (!isTravelRow) return row;
+
+    const previousRelevantRow = [...rows.slice(0, index)].reverse().find((candidate: any) => {
+      const candidateType = String(candidate?.type || '').toLowerCase();
+      const candidateItemType = Number(candidate?.item_type || 0);
+      return candidateType !== 'travel' && candidateItemType !== 3 && candidateItemType !== 5;
+    }) || null;
+    const nextRelevantRow = rows.slice(index + 1).find((candidate: any) => {
+      const candidateType = String(candidate?.type || '').toLowerCase();
+      const candidateItemType = Number(candidate?.item_type || 0);
+      return candidateType !== 'travel' && candidateItemType !== 3 && candidateItemType !== 5;
+    }) || null;
+
+    const fromName = String(
+      previousRelevantRow?.text ||
+      previousRelevantRow?.name ||
+      row?.fromName ||
+      row?.displayFromName ||
+      row?.from ||
+      'Previous Stop',
+    ).trim();
+    const toName = String(
+      nextRelevantRow?.text ||
+      nextRelevantRow?.name ||
+      row?.toName ||
+      row?.displayToName ||
+      row?.to ||
+      'Next Stop',
+    ).trim();
+    const fromHotspotId = Number(
+      previousRelevantRow?.hotspotId ||
+      previousRelevantRow?.hotspot_ID ||
+      previousRelevantRow?.locationId ||
+      0,
+    );
+    const toHotspotId = Number(
+      nextRelevantRow?.hotspotId ||
+      nextRelevantRow?.hotspot_ID ||
+      nextRelevantRow?.locationId ||
+      0,
+    );
+    const durationMinutes = Math.max(1, Math.round(Number(
+      row?.matrixDurationMin ||
+      row?.durationMinutes ||
+      this.getPreviewRowDurationMinutes(row) ||
+      10,
+    )));
+    const distanceKmRaw =
+      row?.matrixDistanceKm != null
+        ? Number(row.matrixDistanceKm)
+        : (row?.distanceKm != null
+          ? Number(row.distanceKm)
+          : (row?.travelDistanceKm != null
+            ? Number(row.travelDistanceKm)
+            : (row?.hotspot_travelling_distance != null
+              ? Number(row.hotspot_travelling_distance)
+              : null)));
+    const distanceKm = Number.isFinite(distanceKmRaw as number) ? Number(distanceKmRaw) : null;
+    const travelDisplay = this.buildManualFitTravelReplicaDisplayFields(row, durationMinutes, distanceKm);
+
+    return {
+      ...row,
+      fromName,
+      toName,
+      from: fromName,
+      to: toName,
+      displayFromName: fromName,
+      displayToName: toName,
+      fromHotspotId: fromHotspotId > 0 ? fromHotspotId : null,
+      toHotspotId: toHotspotId > 0 ? toHotspotId : null,
+      matrixDurationMin: travelDisplay.matrixDurationMin,
+      durationMinutes: travelDisplay.durationMinutes,
+      duration: travelDisplay.duration,
+      travelDuration: travelDisplay.travelDuration,
+      matrixDistanceKm: distanceKm,
+      distanceKm,
+      travelDistanceKm: distanceKm,
+      distance: travelDisplay.distance,
+      hotspot_travelling_distance: travelDisplay.hotspot_travelling_distance,
+      hotspot_traveling_distance: travelDisplay.hotspot_traveling_distance,
+      hotspot_travelling_time: travelDisplay.hotspot_travelling_time,
+      hotspot_traveling_time: travelDisplay.hotspot_traveling_time,
+      source: 'MAIN_TIMELINE_REPLICA',
+      isMainTimelineTravelReplica: true,
+    };
+  });
   const confirmedAttractions = confirmedTimeline
     .filter((row: any) => String(row?.type || '').toLowerCase() === 'attraction');
   const confirmedSelectedRow = confirmedAttractions.find((row: any) => (
@@ -1234,12 +1415,24 @@ export async function confirmManualHotspotFitHereImpl(
     routeId: Number(entry.routeId),
     selectedHotspotId: Number(entry.selectedHotspotId),
     anchorLabel: entry.anchorLabel,
-    ...applyResult,
+    ...effectiveApplyResult,
+    routeTimeline: Array.isArray(effectiveApplyResult?.routeTimeline) && effectiveApplyResult.routeTimeline.length > 0
+      ? effectiveApplyResult.routeTimeline
+      : confirmedTimelineDisplay,
+    fullTimeline: Array.isArray(effectiveApplyResult?.fullTimeline) && effectiveApplyResult.fullTimeline.length > 0
+      ? effectiveApplyResult.fullTimeline
+      : confirmedTimelineDisplay,
+    finalizedTimeline: Array.isArray(effectiveApplyResult?.finalizedTimeline) && effectiveApplyResult.finalizedTimeline.length > 0
+      ? effectiveApplyResult.finalizedTimeline
+      : confirmedTimelineDisplay,
+    proposedTimeline: Array.isArray(effectiveApplyResult?.proposedTimeline) && effectiveApplyResult.proposedTimeline.length > 0
+      ? effectiveApplyResult.proposedTimeline
+      : confirmedTimelineDisplay,
     routeHotspotId: persistedRouteHotspotId,
     resolution: {
-      ...(applyResult?.resolution || {}),
-      scheduledManualHotspots: Array.isArray(applyResult?.resolution?.scheduledManualHotspots)
-        ? applyResult.resolution.scheduledManualHotspots.map((row: any) => {
+      ...(effectiveApplyResult?.resolution || {}),
+      scheduledManualHotspots: Array.isArray(effectiveApplyResult?.resolution?.scheduledManualHotspots)
+        ? effectiveApplyResult.resolution.scheduledManualHotspots.map((row: any) => {
             const hotspotId = Number(row?.hotspotId || row?.id || 0);
             if (hotspotId !== Number(entry.selectedHotspotId)) return row;
 

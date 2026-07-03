@@ -12810,8 +12810,9 @@ pricing: {
   private async resolveManualFitHereAnchor(
     routeId: number,
     anchor: any,
+    selectedHotspotId?: number,
   ): Promise<ResolvedManualFitHereAnchor> {
-    return resolveManualFitHereAnchorImpl.call(this, routeId, anchor);
+    return resolveManualFitHereAnchorImpl.call(this, routeId, anchor, selectedHotspotId);
   }
 
   private buildManualFitAttemptLog(previewResult: any): FitHereAttemptLogItem[] {
@@ -14491,6 +14492,7 @@ pricing: {
     const rebuilt: any[] = [];
     let cursor = firstStartMinutes;
     let previousAttraction: any | null = null;
+    const authoritativeTravelReplicaMap = this.buildManualFitMainTimelineTravelReplicaMap(ordered);
 
     const hotelRows = keptRows.filter((row: any) => isHotelLikeRow(row));
     const firstAttractionRow = scheduledAttractions[0] || null;
@@ -14535,8 +14537,22 @@ pricing: {
         const toId = getHotspotId(currentAttraction);
         if (toId > 0 && currentAttraction === firstAttractionRow) {
           const sourceLeg = await this.resolveSourceToHotspotLeg(tx, Number(params.routeId), toId);
+          const initialTravelReplica =
+            (fallbackInitialTravel && !isHotelLikeRow(fallbackInitialTravel) ? fallbackInitialTravel : null)
+            || this.findManualFitMainTimelineTravelReplica(authoritativeTravelReplicaMap, {
+              toHotspotId: toId,
+              toName: getName(currentAttraction),
+            });
           const initialDistanceKm = this.chooseReliableTravelDistanceKm(
-            sourceLeg.distanceKm != null ? Number(sourceLeg.distanceKm) : null,
+            initialTravelReplica
+              ? this.parseManualFitTravelReplicaDistanceKm(
+                  initialTravelReplica?.matrixDistanceKm ??
+                  initialTravelReplica?.distanceKm ??
+                  initialTravelReplica?.travelDistanceKm ??
+                  initialTravelReplica?.hotspot_travelling_distance ??
+                  initialTravelReplica?.distance,
+                )
+              : (sourceLeg.distanceKm != null ? Number(sourceLeg.distanceKm) : null),
             fallbackInitialTravel?.matrixDistanceKm != null
               ? Number(fallbackInitialTravel.matrixDistanceKm)
               : (fallbackInitialTravel?.distanceKm != null ? Number(fallbackInitialTravel.distanceKm) : null),
@@ -14545,25 +14561,45 @@ pricing: {
             1,
             Math.round(
               Number(
-                fallbackInitialTravel?.matrixDurationMin
+                this.getManualFitTravelReplicaDurationMinutes(initialTravelReplica)
+                || fallbackInitialTravel?.matrixDurationMin
                 || this.getPreviewRowDurationMinutes(fallbackInitialTravel)
                 || sourceLeg.durationMin
                 || 10,
               ),
             ),
           );
+          const initialTravelDisplay = this.buildManualFitTravelReplicaDisplayFields(
+            initialTravelReplica,
+            initialTravelMinutes,
+            initialDistanceKm,
+          );
           const toLabel = getName(currentAttraction);
           const fromLabel = String(
             sourceLeg.sourceName
+            || initialTravelReplica?.fromName
+            || initialTravelReplica?.from
             || fallbackInitialTravel?.fromName
             || fallbackInitialTravel?.from
             || 'Route Start',
           ).trim();
 
+          console.log('[FitHere][MAIN_TIMELINE_TRAVEL_REPLICA]', {
+            routeId: Number(params.routeId),
+            fromHotspotId: null,
+            toHotspotId: toId,
+            fromName: fromLabel,
+            toName: toLabel,
+            source: initialTravelReplica ? 'MAIN_TIMELINE_REPLICA' : 'SOURCE_ENDPOINT_FALLBACK',
+            durationMin: initialTravelMinutes,
+            distanceKm: initialDistanceKm,
+            originalTimeRange: initialTravelReplica?.timeRange || fallbackInitialTravel?.timeRange || null,
+          });
+
           rebuilt.push({
-            ...(fallbackInitialTravel || {}),
+            ...(initialTravelReplica || fallbackInitialTravel || {}),
             type: 'travel',
-            item_type: Number(fallbackInitialTravel?.item_type || 3),
+            item_type: Number(initialTravelReplica?.item_type || fallbackInitialTravel?.item_type || 3),
             text: `Travel to ${toLabel}`,
             name: `Travel to ${toLabel}`,
             fromName: fromLabel,
@@ -14574,17 +14610,23 @@ pricing: {
             displayToName: toLabel,
             fromHotspotId: undefined,
             toHotspotId: toId,
-            matrixDurationMin: initialTravelMinutes,
-            duration: `${initialTravelMinutes} min`,
+            durationMinutes: initialTravelDisplay.durationMinutes,
+            matrixDurationMin: initialTravelDisplay.matrixDurationMin,
+            duration: initialTravelDisplay.duration,
+            travelDuration: initialTravelDisplay.travelDuration,
             matrixDistanceKm: initialDistanceKm,
             distanceKm: initialDistanceKm,
             travelDistanceKm: initialDistanceKm,
-            distance:
-              initialDistanceKm != null ? `${Number(initialDistanceKm).toFixed(1)} km` : (fallbackInitialTravel?.distance || null),
+            distance: initialTravelDisplay.distance,
+            hotspot_travelling_distance: initialTravelDisplay.hotspot_travelling_distance,
+            hotspot_traveling_distance: initialTravelDisplay.hotspot_traveling_distance,
+            hotspot_travelling_time: initialTravelDisplay.hotspot_travelling_time,
+            hotspot_traveling_time: initialTravelDisplay.hotspot_traveling_time,
             timeRange: this.minutesRangeToFitPreviewLabel(cursor, cursor + initialTravelMinutes),
             isMatrixReconnectedTravel: true,
             isEstimatedTravel:
-              fallbackInitialTravel?.matrixDurationMin == null
+              initialTravelReplica == null
+              && fallbackInitialTravel?.matrixDurationMin == null
               && this.getPreviewRowDurationMinutes(fallbackInitialTravel) == null
               && sourceLeg.durationMin == null,
             id: undefined,
@@ -14599,24 +14641,90 @@ pricing: {
       } else {
         const fromId = getHotspotId(previousAttraction);
         const toId = getHotspotId(currentAttraction);
-        const leg = await this.getCachedRouteMatrixLeg(tx, fromId, toId);
+        const fromLabel = getName(previousAttraction);
+        const toLabel = getName(currentAttraction);
+        const fromLabelKey = fromLabel.trim().toLowerCase();
+        const toLabelKey = toLabel.trim().toLowerCase();
+
+        const fallbackPairTravel = [...ordered, ...keptRows].find((row: any) => {
+          if (!isTravelRow(row) || isHotelLikeRow(row)) return false;
+
+          const rowFromId = Number(row?.fromHotspotId || row?.from_hotspot_id || 0);
+          const rowToId = Number(row?.toHotspotId || row?.to_hotspot_id || 0);
+          if (rowFromId > 0 && rowToId > 0) {
+            return rowFromId === fromId && rowToId === toId;
+          }
+
+          const rowFromLabel = String(row?.fromName || row?.from || row?.displayFromName || '').trim().toLowerCase();
+          const rowToLabel = String(row?.toName || row?.to || row?.displayToName || row?.text || row?.name || '').trim().toLowerCase();
+          return !!fromLabelKey && !!toLabelKey && rowFromLabel.includes(fromLabelKey) && rowToLabel.includes(toLabelKey);
+        }) || null;
+
+        const mainTimelineTravelReplica =
+          this.findManualFitMainTimelineTravelReplica(authoritativeTravelReplicaMap, {
+            fromHotspotId: fromId,
+            toHotspotId: toId,
+            fromName: fromLabel,
+            toName: toLabel,
+          })
+          || fallbackPairTravel;
+        const leg = mainTimelineTravelReplica ? null : await this.getCachedRouteMatrixLeg(tx, fromId, toId);
+        const fallbackTravelMinutes = Number(
+          this.getManualFitTravelReplicaDurationMinutes(mainTimelineTravelReplica)
+          || fallbackPairTravel?.matrixDurationMin
+          || this.getPreviewRowDurationMinutes(fallbackPairTravel)
+          || fallbackPairTravel?.durationMinutes
+          || 0,
+        );
         const travelMinutes = Math.max(
           1,
           Math.round(
             Number(
-              leg.durationMin
-              ?? this.estimateDurationFromDistance(leg.distanceKm)
-              ?? 10,
+              fallbackTravelMinutes
+              || leg?.durationMin
+              || this.estimateDurationFromDistance(leg?.distanceKm)
+              || 10,
             ),
           ),
         );
+        const pairDistanceKm = this.chooseReliableTravelDistanceKm(
+          mainTimelineTravelReplica
+            ? this.parseManualFitTravelReplicaDistanceKm(
+                mainTimelineTravelReplica?.matrixDistanceKm ??
+                mainTimelineTravelReplica?.distanceKm ??
+                mainTimelineTravelReplica?.travelDistanceKm ??
+                mainTimelineTravelReplica?.hotspot_travelling_distance ??
+                mainTimelineTravelReplica?.distance,
+              )
+            : (
+                fallbackPairTravel?.matrixDistanceKm != null
+                  ? Number(fallbackPairTravel.matrixDistanceKm)
+                  : (fallbackPairTravel?.distanceKm != null ? Number(fallbackPairTravel.distanceKm) : null)
+              ),
+          leg?.distanceKm != null ? Number(leg.distanceKm) : null,
+        );
+        const pairTravelDisplay = this.buildManualFitTravelReplicaDisplayFields(
+          mainTimelineTravelReplica,
+          travelMinutes,
+          pairDistanceKm,
+        );
 
-        const fromLabel = getName(previousAttraction);
-        const toLabel = getName(currentAttraction);
+        console.log('[FitHere][MAIN_TIMELINE_TRAVEL_REPLICA]', {
+          routeId: Number(params.routeId),
+          fromHotspotId: fromId,
+          toHotspotId: toId,
+          fromName: fromLabel,
+          toName: toLabel,
+          source: mainTimelineTravelReplica ? 'MAIN_TIMELINE_REPLICA' : 'MATRIX_FALLBACK',
+          durationMin: travelMinutes,
+          distanceKm: pairDistanceKm,
+          originalTimeRange: mainTimelineTravelReplica?.timeRange || fallbackPairTravel?.timeRange || null,
+        });
 
         rebuilt.push({
+          ...(mainTimelineTravelReplica || fallbackPairTravel || {}),
           type: 'travel',
-          item_type: 3,
+          item_type: Number(mainTimelineTravelReplica?.item_type || fallbackPairTravel?.item_type || 3),
           text: `Travel to ${toLabel}`,
           name: `Travel to ${toLabel}`,
           fromName: fromLabel,
@@ -14627,16 +14735,21 @@ pricing: {
           displayToName: toLabel,
           fromHotspotId: fromId,
           toHotspotId: toId,
-          matrixDurationMin: travelMinutes,
-          duration: `${travelMinutes} min`,
-          matrixDistanceKm: this.chooseReliableTravelDistanceKm(leg.distanceKm != null ? Number(leg.distanceKm) : null, null),
-          distanceKm: this.chooseReliableTravelDistanceKm(leg.distanceKm != null ? Number(leg.distanceKm) : null, null),
-          travelDistanceKm: this.chooseReliableTravelDistanceKm(leg.distanceKm != null ? Number(leg.distanceKm) : null, null),
-          distance: this.chooseReliableTravelDistanceKm(leg.distanceKm != null ? Number(leg.distanceKm) : null, null) != null
-            ? `${Number(this.chooseReliableTravelDistanceKm(leg.distanceKm != null ? Number(leg.distanceKm) : null, null)).toFixed(1)} km`
-            : null,
+          durationMinutes: pairTravelDisplay.durationMinutes,
+          matrixDurationMin: pairTravelDisplay.matrixDurationMin,
+          duration: pairTravelDisplay.duration,
+          travelDuration: pairTravelDisplay.travelDuration,
+          matrixDistanceKm: pairDistanceKm,
+          distanceKm: pairDistanceKm,
+          travelDistanceKm: pairDistanceKm,
+          distance: pairTravelDisplay.distance,
+          hotspot_travelling_distance: pairTravelDisplay.hotspot_travelling_distance,
+          hotspot_traveling_distance: pairTravelDisplay.hotspot_traveling_distance,
+          hotspot_travelling_time: pairTravelDisplay.hotspot_travelling_time,
+          hotspot_traveling_time: pairTravelDisplay.hotspot_traveling_time,
           timeRange: this.minutesRangeToFitPreviewLabel(cursor, cursor + travelMinutes),
           isMatrixReconnectedTravel: true,
+          isMainTimelineTravelReplica: !!mainTimelineTravelReplica,
         });
 
         cursor += travelMinutes;
@@ -14856,13 +14969,21 @@ pricing: {
       }
     }
 
+    const sourceRows = Array.isArray(rows) ? rows : [];
+    const sourceHasHotelRow = sourceRows.some((row: any) => isHotelRow(row));
     const hotelIndex = rows.findIndex((row: any) => isHotelRow(row));
-    if (hotelIndex < 0) return 'Resolved timeline has no hotel/check-in row.';
-    const hasRowsAfterHotel = rows.slice(hotelIndex + 1).some((row: any) => {
-      const type = String(row?.type || '').toLowerCase();
-      return type !== '';
-    });
-    if (hasRowsAfterHotel) return 'Hotel/check-in row is not last in resolved timeline.';
+
+    if (sourceHasHotelRow && hotelIndex < 0) {
+      return 'Resolved timeline has no hotel/check-in row.';
+    }
+
+    if (hotelIndex >= 0) {
+      const hasRowsAfterHotel = rows.slice(hotelIndex + 1).some((row: any) => {
+        const type = String(row?.type || '').toLowerCase();
+        return type !== '';
+      });
+      if (hasRowsAfterHotel) return 'Hotel/check-in row is not last in resolved timeline.';
+    }
 
     const finalEnd = rows.reduce((max: number, row: any) => {
       const end = this.parseSegmentEndMinutes(row);
@@ -16114,12 +16235,12 @@ pricing: {
       })
       .sort((a: any, b: any) => {
         if (validationMode === 'SELECTED_HOTSPOT_CLOSING' && params.exactAnchorMode === true) {
+          const directionDiff = removalDirectionRank(a) - removalDirectionRank(b);
+          if (directionDiff !== 0) return directionDiff;
+
           if (a.timelineIndex !== b.timelineIndex) {
             return b.timelineIndex - a.timelineIndex;
           }
-
-          const directionDiff = removalDirectionRank(a) - removalDirectionRank(b);
-          if (directionDiff !== 0) return directionDiff;
 
           if (a.priority !== b.priority) return b.priority - a.priority;
           return a.id - b.id;
@@ -16134,7 +16255,8 @@ pricing: {
         return a.id - b.id;
       });
 
-    if (params.exactAnchorMode === true && candidateRows.length === 0) {
+    if (params.exactAnchorMode === true && (candidateRows.length === 0 || validationMode === 'SELECTED_HOTSPOT_CLOSING')) {
+      const existingTimelineCandidateRows = [...candidateRows];
       const activeIds = Array.from(activeRouteHotspotIds.values()).filter((id: number) => id > 0);
       const hotspotMasters = activeIds.length > 0
         ? await (tx as any).dvi_hotspot_place.findMany({
@@ -16204,9 +16326,9 @@ pricing: {
         })
         .sort((a: any, b: any) => {
           if (validationMode === 'SELECTED_HOTSPOT_CLOSING' && params.exactAnchorMode === true) {
-            if (a.routeOrder !== b.routeOrder) return b.routeOrder - a.routeOrder;
             const directionDiff = removalDirectionRank(a) - removalDirectionRank(b);
             if (directionDiff !== 0) return directionDiff;
+            if (a.routeOrder !== b.routeOrder) return b.routeOrder - a.routeOrder;
             if (a.priority !== b.priority) return b.priority - a.priority;
             return a.id - b.id;
           }
@@ -16217,6 +16339,10 @@ pricing: {
           if (a.routeOrder !== b.routeOrder) return a.routeOrder - b.routeOrder;
           return a.id - b.id;
         });
+
+      if (candidateRows.length === 0 && existingTimelineCandidateRows.length > 0) {
+        candidateRows = existingTimelineCandidateRows;
+      }
     }
     const candidateAudit = sourceTimeline
       .map((row: any, rowIndex: number) => {
@@ -16469,6 +16595,330 @@ pricing: {
       );
     };
 
+    const candidateById = new Map<number, any>(
+      candidateRows
+        .map((row: any) => [Number(row?.id || 0), row] as const)
+        .filter(([id]) => Number.isFinite(id) && id > 0),
+    );
+
+    const buildSelectedClosingExactRescuePlans = async () => {
+      if (!(validationMode === 'SELECTED_HOTSPOT_CLOSING' && params.exactAnchorMode === true)) {
+        return [] as any[];
+      }
+
+      const selectedHotspotName = String(
+        sourceTimeline.find((row: any) => (
+          isAttractionLikeRow(row) && getRowHotspotId(row) === targetHotspotId
+        ))?.name ||
+        sourceTimeline.find((row: any) => (
+          isAttractionLikeRow(row) && getRowHotspotId(row) === targetHotspotId
+        ))?.text ||
+        `Hotspot #${targetHotspotId}`,
+      ).trim();
+
+      const persistedRouteRowsForRescue = await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
+        where: {
+          itinerary_plan_ID: Number(params.planId),
+          itinerary_route_ID: Number(params.routeId),
+          item_type: 4,
+          deleted: 0,
+          status: 1,
+        },
+        select: {
+          route_hotspot_ID: true,
+          hotspot_ID: true,
+          hotspot_order: true,
+          hotspot_plan_own_way: true,
+        },
+        orderBy: [{ hotspot_order: 'asc' }, { route_hotspot_ID: 'asc' }],
+      });
+
+      const persistedRescueHotspotIds = Array.from(new Set(
+        persistedRouteRowsForRescue
+          .map((row: any) => Number(row?.hotspot_ID || 0))
+          .filter((id: number) => Number.isFinite(id) && id > 0),
+      ));
+      const persistedRescueMasters = persistedRescueHotspotIds.length > 0
+        ? await (tx as any).dvi_hotspot_place.findMany({
+            where: {
+              hotspot_ID: { in: persistedRescueHotspotIds },
+              deleted: 0,
+            },
+            select: {
+              hotspot_ID: true,
+              hotspot_name: true,
+              hotspot_priority: true,
+            },
+          })
+        : [];
+      const persistedRescueMasterById = new Map<number, any>(
+        persistedRescueMasters.map((row: any) => [Number(row?.hotspot_ID || 0), row]),
+      );
+
+      const orderedRouteAttractions = persistedRouteRowsForRescue
+        .map((row: any, rowIndex: number) => {
+          const hotspotId = Number(row?.hotspot_ID || 0);
+          if (!(hotspotId > 0) || hotspotId === targetHotspotId) return null;
+          if (Number(row?.hotspot_plan_own_way || 0) === 1) return null;
+
+          const candidate = candidateById.get(hotspotId) || null;
+          const master = persistedRescueMasterById.get(hotspotId) || null;
+          const normalizedPriority = this.normalizeHotspotPriority(
+            Number(candidate?.priority || master?.hotspot_priority || 9999),
+          );
+          const priority =
+            normalizedPriority >= this.MANUAL_HOTSPOT_EFFECTIVE_PRIORITY || normalizedPriority === 9999
+              ? 4
+              : normalizedPriority;
+
+          return {
+            id: hotspotId,
+            hotspotId,
+            name: String(
+              candidate?.name ||
+              master?.hotspot_name ||
+              `Hotspot #${hotspotId}`,
+            ).trim(),
+            routeOrder: Number(row?.hotspot_order || rowIndex + 1),
+            priority,
+            estimatedMinutes: Number(candidate?.estimatedMinutes || 0),
+            candidate,
+            row,
+            cityContext: getRemovalCityContext(hotspotId, candidate?.row || row),
+          };
+        })
+        .filter(Boolean)
+        .sort((a: any, b: any) => Number(a?.routeOrder || 0) - Number(b?.routeOrder || 0));
+
+      if (orderedRouteAttractions.length === 0) {
+        return [] as any[];
+      }
+
+      const selectedStub = {
+        hotspotId: targetHotspotId,
+        name: selectedHotspotName || `Hotspot #${targetHotspotId}`,
+        routeOrder: 0,
+      };
+
+      const anchorIntentUpper = String(params.anchorIntent || '').trim().toUpperCase();
+      const clickedAnchorHotspotId = Number(params.afterHotspotId || 0);
+      const beforeAnchorHotspotId = Number(params.beforeHotspotId || 0);
+      const sourceTimelineExactArray = sourceTimeline
+        .filter((row: any) => isAttractionLikeRow(row))
+        .map((row: any, rowIndex: number) => {
+          const hotspotId = getRowHotspotId(row);
+          if (!(hotspotId > 0)) return null;
+          if (manualRouteHotspotIds.has(hotspotId) && hotspotId !== targetHotspotId) return null;
+
+          return {
+            id: hotspotId,
+            hotspotId,
+            name: String(row?.name || row?.text || row?.hotspot_name || `Hotspot #${hotspotId}`).trim(),
+            routeOrder: Number(
+              row?.hotspot_order ||
+              row?.hotspotOrder ||
+              activeRouteOrderByHotspotId.get(hotspotId) ||
+              rowIndex + 1,
+            ),
+            priority: Number(candidateById.get(hotspotId)?.priority || 0) || null,
+            estimatedMinutes: Number(candidateById.get(hotspotId)?.estimatedMinutes || 0),
+            candidate: candidateById.get(hotspotId) || null,
+            row,
+            cityContext: getRemovalCityContext(hotspotId, row),
+          };
+        })
+        .filter(Boolean)
+        .sort((a: any, b: any) => Number(a?.routeOrder || 0) - Number(b?.routeOrder || 0));
+
+      const exactArray = (() => {
+        const sourceRouteArray =
+          sourceTimelineExactArray.length > 0
+            ? sourceTimelineExactArray
+            : [...orderedRouteAttractions];
+        if (sourceRouteArray.length === 0) return [] as any[];
+
+        if (anchorIntentUpper === 'AFTER_START') {
+          return [selectedStub, ...sourceRouteArray];
+        }
+
+        if (clickedAnchorHotspotId > 0) {
+          const afterIndex = sourceRouteArray.findIndex((row: any) => Number(row?.hotspotId || 0) === clickedAnchorHotspotId);
+          if (afterIndex >= 0) {
+            return [
+              ...sourceRouteArray.slice(0, afterIndex + 1),
+              selectedStub,
+              ...sourceRouteArray.slice(afterIndex + 1),
+            ];
+          }
+        }
+
+        if (beforeAnchorHotspotId > 0) {
+          const beforeIndex = sourceRouteArray.findIndex((row: any) => Number(row?.hotspotId || 0) === beforeAnchorHotspotId);
+          if (beforeIndex >= 0) {
+            return [
+              ...sourceRouteArray.slice(0, beforeIndex),
+              selectedStub,
+              ...sourceRouteArray.slice(beforeIndex),
+            ];
+          }
+        }
+
+        return [selectedStub, ...sourceRouteArray];
+      })();
+
+      const selectedIndex = exactArray.findIndex((row: any) => Number(row?.hotspotId || 0) === targetHotspotId);
+      if (selectedIndex < 0) {
+        return [] as any[];
+      }
+
+      const beforeSelectedRows = exactArray
+        .slice(0, selectedIndex)
+        .filter((row: any) => Number(row?.hotspotId || 0) > 0);
+      const afterSelectedRows = exactArray
+        .slice(selectedIndex + 1)
+        .filter((row: any) => Number(row?.hotspotId || 0) > 0);
+      const rescueRowById = new Map<number, any>(
+        (sourceTimelineExactArray.length > 0 ? sourceTimelineExactArray : orderedRouteAttractions)
+          .map((row: any) => [Number(row?.hotspotId || 0), row] as const),
+      );
+      const isRescuePriorityAllowed = (priority: number): boolean => {
+        if (priority === 3) return params.allowP3Removal === true;
+        if (priority === 2) return params.allowP2Removal === true;
+        if (priority === 1) return params.allowP1Removal === true;
+        return [1, 2, 3, 4].includes(Number(priority || 0));
+      };
+      const removableBeforeSelectedRows = beforeSelectedRows.filter((row: any) => {
+        const rescueRow = rescueRowById.get(Number(row?.hotspotId || 0));
+        return !!rescueRow && isRescuePriorityAllowed(Number(rescueRow?.priority || 0));
+      });
+      const orderedBeforeSelectedDesc = [...removableBeforeSelectedRows]
+        .sort((a: any, b: any) => Number(b?.routeOrder || 0) - Number(a?.routeOrder || 0));
+      const anchorRow = clickedAnchorHotspotId > 0
+        ? removableBeforeSelectedRows.find((row: any) => Number(row?.hotspotId || 0) === clickedAnchorHotspotId) || null
+        : null;
+      const nonAnchorBeforeSelectedDesc = orderedBeforeSelectedDesc.filter((row: any) => Number(row?.hotspotId || 0) !== clickedAnchorHotspotId);
+      const sourceSideBeforeSelectedDesc = nonAnchorBeforeSelectedDesc.filter((row: any) => row?.cityContext === 'SOURCE_CITY');
+      const otherBeforeSelectedDesc = nonAnchorBeforeSelectedDesc.filter((row: any) => row?.cityContext !== 'SOURCE_CITY');
+      const preferredNonAnchorBlockers = [...sourceSideBeforeSelectedDesc, ...otherBeforeSelectedDesc];
+      const preserveClickedAnchorFirst = Boolean(anchorRow && afterSelectedRows.length > 0);
+      const explicitRescuePlans: any[] = [];
+      const seenPlanKeys = new Set<string>();
+
+      const pushPlan = (label: string, removedIdsInput: Array<number | null | undefined>) => {
+        const removedIds = Array.from(new Set(
+          removedIdsInput
+            .map((id: any) => Number(id || 0))
+            .filter((id: number) => {
+              if (!Number.isFinite(id) || id <= 0) return false;
+              const rescueRow = rescueRowById.get(id);
+              return !!rescueRow && isRescuePriorityAllowed(Number(rescueRow?.priority || 0));
+            }),
+        ));
+        if (removedIds.length === 0) return;
+
+        const planKey = removedIds.join(',');
+        if (seenPlanKeys.has(planKey)) return;
+        seenPlanKeys.add(planKey);
+
+        const planRows = removedIds
+          .map((hotspotId: number) => rescueRowById.get(hotspotId))
+          .filter(Boolean);
+        const planArray = exactArray.filter((row: any) => (
+          Number(row?.hotspotId || 0) === targetHotspotId ||
+          !removedIds.includes(Number(row?.hotspotId || 0))
+        ));
+
+        explicitRescuePlans.push({
+          label,
+          removedIds,
+          rows: planRows,
+          exactArrayHotspotIds: exactArray.map((row: any) => Number(row?.hotspotId || 0)),
+          exactArrayHotspotNames: exactArray.map((row: any) => String(row?.name || '').trim()),
+          arrayHotspotIds: planArray.map((row: any) => Number(row?.hotspotId || 0)),
+          arrayHotspotNames: planArray.map((row: any) => String(row?.name || '').trim()),
+        });
+      };
+
+      if (preserveClickedAnchorFirst) {
+        const firstPreferredNonAnchor = preferredNonAnchorBlockers[0] || null;
+        const remainingEarlierBlockers = orderedBeforeSelectedDesc.filter((row: any) => (
+          Number(row?.hotspotId || 0) !== Number(firstPreferredNonAnchor?.hotspotId || 0) &&
+          Number(row?.hotspotId || 0) !== Number(anchorRow?.hotspotId || 0)
+        ));
+
+        pushPlan('REMOVE_PRE_ANCHOR_BLOCKER_FIRST', [firstPreferredNonAnchor?.hotspotId]);
+        pushPlan('REMOVE_CLICKED_ANCHOR', [anchorRow?.hotspotId]);
+        pushPlan('REMOVE_PRE_ANCHOR_AND_CLICKED_ANCHOR', [
+          firstPreferredNonAnchor?.hotspotId,
+          anchorRow?.hotspotId,
+        ]);
+
+        if ((params.allowP1Removal === true || params.allowP2Removal === true) && remainingEarlierBlockers.length > 0) {
+          pushPlan('REMOVE_EARLIER_BLOCKERS_AND_CLICKED_ANCHOR', [
+            firstPreferredNonAnchor?.hotspotId,
+            anchorRow?.hotspotId,
+            ...remainingEarlierBlockers.map((row: any) => Number(row?.hotspotId || 0)),
+          ]);
+        }
+      } else {
+        const primarySingles = [
+          anchorRow,
+          ...orderedBeforeSelectedDesc.filter((row: any) => Number(row?.hotspotId || 0) !== Number(anchorRow?.hotspotId || 0)),
+        ].filter(Boolean);
+
+        primarySingles.slice(0, 3).forEach((row: any, index: number) => {
+          pushPlan(`REMOVE_NEAREST_BLOCKER_${index + 1}`, [row?.hotspotId]);
+        });
+
+        const pairCandidates = primarySingles.slice(0, 3);
+        for (let left = 0; left < pairCandidates.length; left += 1) {
+          for (let right = left + 1; right < pairCandidates.length; right += 1) {
+            pushPlan(`REMOVE_BLOCKER_PAIR_${left + 1}_${right + 1}`, [
+              pairCandidates[left]?.hotspotId,
+              pairCandidates[right]?.hotspotId,
+            ]);
+          }
+        }
+
+        if (pairCandidates.length > 2) {
+          pushPlan('REMOVE_PRIMARY_BLOCKER_CLUSTER', pairCandidates.map((row: any) => row?.hotspotId));
+        }
+
+        if ((params.allowP1Removal === true || params.allowP2Removal === true) && orderedBeforeSelectedDesc.length > pairCandidates.length) {
+          pushPlan('REMOVE_FULL_BLOCKER_CHAIN', orderedBeforeSelectedDesc.map((row: any) => row?.hotspotId));
+        }
+      }
+
+      console.log('[FitHere][APJ_SELECTED_CLOSING_EXPLICIT_RESCUE_ARRAYS]', {
+        routeId: Number(params.routeId),
+        selectedHotspotId: targetHotspotId,
+        clickedAnchorHotspotId: clickedAnchorHotspotId || null,
+        exactArray: {
+          hotspotIds: exactArray.map((row: any) => Number(row?.hotspotId || 0)),
+          hotspotNames: exactArray.map((row: any) => String(row?.name || '').trim()),
+        },
+        rescueArrays: explicitRescuePlans.map((plan: any) => ({
+          rescueLabel: plan.label,
+          removedHotspotIds: plan.removedIds,
+          removedHotspotNames: (plan.rows || []).map((row: any) => row?.name),
+          hotspotIds: plan.arrayHotspotIds,
+          hotspotNames: plan.arrayHotspotNames,
+        })),
+      });
+
+      return explicitRescuePlans;
+    };
+
+    const selectedHotspotLabel = String(
+      sourceTimeline.find((row: any) => (
+        isAttractionLikeRow(row) && getRowHotspotId(row) === targetHotspotId
+      ))?.name ||
+      sourceTimeline.find((row: any) => (
+        isAttractionLikeRow(row) && getRowHotspotId(row) === targetHotspotId
+      ))?.text ||
+      `Hotspot #${targetHotspotId}`,
+    ).trim();
+
     const toRemovedRows = (rows: any[]) => rows.map((row: any) => ({
       id: row.id,
       name: row.name,
@@ -16476,7 +16926,7 @@ pricing: {
       estimatedMinutes: row.estimatedMinutes,
       reason:
         validationMode === 'SELECTED_HOTSPOT_CLOSING'
-          ? `${row.name} removed because selected manual hotspot must fit before operating-hours closing.`
+          ? `${row.name} removed because selected manual hotspot ${selectedHotspotLabel} must fit before operating-hours closing.`
           : this.buildProgressiveRemovalReason(validationMode, row.priority),
       removalReasonCode:
         validationMode === 'SELECTED_HOTSPOT_CLOSING'
@@ -16575,33 +17025,43 @@ pricing: {
     }
 
     if (validationMode === 'SELECTED_HOTSPOT_CLOSING' && params.exactAnchorMode === true && candidateRows.length > 0) {
-      const boundedClosingCandidates = candidateRows.slice(0, 6);
-      const rescuePlans: any[] = [];
+      let rescuePlans: any[] = await buildSelectedClosingExactRescuePlans();
 
-      for (let mask = 1; mask < (1 << boundedClosingCandidates.length); mask += 1) {
-        const rows = boundedClosingCandidates.filter((_: any, index: number) => (mask & (1 << index)) > 0);
-        const removedIds = rows.map((row: any) => Number(row.id || 0)).filter((id: number) => id > 0);
-        if (removedIds.length === 0) continue;
+      if (rescuePlans.length === 0) {
+        const boundedClosingCandidates = candidateRows.slice(0, 6);
 
-        rescuePlans.push({
-          rows,
-          removedIds,
-          maxTimelineIndex: Math.max(...rows.map((row: any) => Number(row.timelineIndex || 0))),
-          directionScore: rows.reduce((sum: number, row: any) => sum + removalDirectionRank(row), 0),
-          priorityScore: rows.reduce((sum: number, row: any) => sum + Number(row.priority || 0), 0),
+        for (let mask = 1; mask < (1 << boundedClosingCandidates.length); mask += 1) {
+          const rows = boundedClosingCandidates.filter((_: any, index: number) => (mask & (1 << index)) > 0);
+          const removedIds = rows.map((row: any) => Number(row.id || 0)).filter((id: number) => id > 0);
+          if (removedIds.length === 0) continue;
+
+          rescuePlans.push({
+            label: `BITMASK_RESCUE_${mask}`,
+            rows,
+            removedIds,
+            maxTimelineIndex: Math.max(...rows.map((row: any) => Number(row.timelineIndex || 0))),
+            directionScore: rows.reduce((sum: number, row: any) => sum + removalDirectionRank(row), 0),
+            priorityScore: rows.reduce((sum: number, row: any) => sum + Number(row.priority || 0), 0),
+          });
+        }
+
+        rescuePlans.sort((a: any, b: any) => {
+          if (a.rows.length !== b.rows.length) return a.rows.length - b.rows.length;
+          if (a.directionScore !== b.directionScore) return a.directionScore - b.directionScore;
+          if (a.maxTimelineIndex !== b.maxTimelineIndex) return b.maxTimelineIndex - a.maxTimelineIndex;
+          if (a.priorityScore !== b.priorityScore) return b.priorityScore - a.priorityScore;
+          return a.removedIds.join(',').localeCompare(b.removedIds.join(','));
         });
       }
 
-      rescuePlans.sort((a: any, b: any) => {
-        if (a.rows.length !== b.rows.length) return a.rows.length - b.rows.length;
-        if (a.maxTimelineIndex !== b.maxTimelineIndex) return b.maxTimelineIndex - a.maxTimelineIndex;
-        if (a.directionScore !== b.directionScore) return a.directionScore - b.directionScore;
-        if (a.priorityScore !== b.priorityScore) return b.priorityScore - a.priorityScore;
-        return a.removedIds.join(',').localeCompare(b.removedIds.join(','));
-      });
-
       for (const plan of rescuePlans) {
-        const planRows: any[] = Array.isArray(plan.rows) ? plan.rows : [];
+        const planRows: any[] = (
+          Array.isArray(plan.rows) && plan.rows.length > 0
+            ? plan.rows
+            : (Array.isArray(plan.removedIds)
+                ? plan.removedIds.map((id: any) => candidateById.get(Number(id || 0))).filter(Boolean)
+                : [])
+        );
         const planRemovedIds: number[] = Array.from(new Set<number>(
           (Array.isArray(plan.removedIds) ? plan.removedIds : [])
             .map((id: any) => Number(id || 0))
@@ -16646,10 +17106,12 @@ pricing: {
         console.log('[FitHere][SELECTED_CLOSING_RESCUE_PLAN_EVAL]', {
           routeId: Number(params.routeId),
           selectedHotspotId: targetHotspotId,
+          rescueLabel: String(plan?.label || '').trim() || null,
           removedHotspotIds: planRemovedIds,
           removedHotspotNames: planRows.map((row: any) => row.name),
           selectedAttemptedVisitTime: evaluation.selectedAttemptedVisitTime,
           selectedOperatingHours: evaluation.selectedOperatingHours,
+          apjFits: evaluation.valid || selectedClosingPlanResolved,
           evaluationValid: evaluation.valid,
           selectedClosingPlanResolved,
           selectedOpeningConflict: evaluation.selectedOpeningConflict,
@@ -16665,6 +17127,7 @@ pricing: {
           removedHotspotNames: planRows.map((row: any) => row.name),
           removedCount: planRemovedIds.length,
           priorities: planRows.map((row: any) => row.priority),
+          rescueLabel: String(plan?.label || '').trim() || null,
           selectedAttemptedVisitTime: evaluation.selectedAttemptedVisitTime,
           selectedOperatingHours: evaluation.selectedOperatingHours,
           selectedOpeningConflict: evaluation.selectedOpeningConflict,
@@ -22091,7 +22554,10 @@ pricing: {
     const shouldRunSelectedClosingResolver =
       manualInsertionFit?.requiresMatrixBuild !== true &&
       !!selectedClosingResolverSlot &&
-      selectedClosingResolverSlot?.routePossible !== false &&
+      (
+        options?.exactAnchorMode === true ||
+        selectedClosingResolverSlot?.routePossible !== false
+      ) &&
       (
         selectedClosingOverflow.hasClosingOverflow === true ||
         (!!fallbackSelectedOpeningConflict && fallbackOverflowMinutes > 0)
@@ -22193,7 +22659,41 @@ pricing: {
           selectedHotspotIds: requestedHotspotIds,
         });
 
-        if (selectedAfterRescue.hasClosingOverflow !== true) {
+        const selectedClosingResolverAccepted = Boolean(
+          openingHoursRemovalPlan?.resolved === true
+          && (openingHoursRemovalPlan?.simulationAttempts || []).some((attempt: any) =>
+            attempt?.strategy === 'SELECTED_CLOSING_RESCUE_PLAN'
+            && attempt?.resolved === true
+            && !attempt?.selectedOpeningConflict
+            && Number(attempt?.selectedClosingOverflowMinutes || 0) <= 0,
+          )
+        );
+
+        if (selectedClosingResolverAccepted && selectedAfterRescue.hasClosingOverflow === true) {
+          console.warn('[FitHere][SELECTED_CLOSING_RESCUE_ACCEPTED_WITH_STALE_OVERFLOW]', {
+            routeId: Number(routeId),
+            selectedHotspotId: Number(focusHotspotId),
+            selectedAfterRescue,
+          });
+
+          finalResolvedTimeline = finalResolvedTimeline.map((row: any) => {
+            const isSelectedAttraction =
+              (String(row?.type || '').toLowerCase() === 'attraction' || Number(row?.item_type || 0) === 4)
+              && requestedHotspotIds.includes(Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || row?.hotspot_id || row?.id || 0));
+
+            if (!isSelectedAttraction) return row;
+
+            return {
+              ...row,
+              isConflict: false,
+              conflictReason: null,
+              selectedOpeningConflict: null,
+              openingHoursRejected: false,
+            };
+          });
+        }
+
+        if (selectedAfterRescue.hasClosingOverflow !== true || selectedClosingResolverAccepted) {
           adjustedPreviewTimeline = finalResolvedTimeline;
 
           manualInsertionFit.openingHoursRejected = false;
@@ -22249,10 +22749,13 @@ pricing: {
             ...finalValidation,
             passesScheduleRules: true,
             readyToApply: true,
+            requiresPriorityConfirmation: false,
             stillUnschedulable: false,
             routeEndOverflowMinutes: 0,
+            openingHourConflictCount: 0,
+            selectedManualConflictCount: 0,
             selectedOpeningConflict: null,
-            reason: 'Opening-hours overflow resolved by checking Non-manual / Priority 4 -> Priority 3 -> Priority 2 -> Priority 1 removals.',
+            reason: 'Selected manual hotspot closing conflict resolved by removing earlier blockers and rebuilding the APJ pivot timeline.',
           };
         }
       }
@@ -22265,11 +22768,104 @@ pricing: {
 
     adjustedPreviewTimeline = selectedOperatingValidation.timeline;
 
-    if (selectedOperatingValidation.selectedOpeningConflict) {
+    const resolvedSelectedClosingAttempt = (manualInsertionFit?.lowPriorityOpeningHoursRemovalPlanPreview?.simulationAttempts || [])
+      .find((attempt: any) =>
+        attempt?.strategy === 'SELECTED_CLOSING_RESCUE_PLAN'
+        && attempt?.resolved === true
+        && !attempt?.selectedOpeningConflict
+        && Number(attempt?.selectedClosingOverflowMinutes || 0) <= 0,
+      );
+
+    if (selectedOperatingValidation.selectedOpeningConflict && resolvedSelectedClosingAttempt) {
+      const rescuedTimelineCandidate =
+        (Array.isArray(resolvedSelectedClosingAttempt?.previewTimelineDisplay) && resolvedSelectedClosingAttempt.previewTimelineDisplay.length > 0
+          ? resolvedSelectedClosingAttempt.previewTimelineDisplay
+          : null)
+        || (Array.isArray(resolvedSelectedClosingAttempt?.displayTimeline) && resolvedSelectedClosingAttempt.displayTimeline.length > 0
+          ? resolvedSelectedClosingAttempt.displayTimeline
+          : null)
+        || (Array.isArray(resolvedSelectedClosingAttempt?.previewTimeline) && resolvedSelectedClosingAttempt.previewTimeline.length > 0
+          ? resolvedSelectedClosingAttempt.previewTimeline
+          : null)
+        || (Array.isArray(resolvedSelectedClosingAttempt?.computedTimelineDebug) && resolvedSelectedClosingAttempt.computedTimelineDebug.length > 0
+          ? resolvedSelectedClosingAttempt.computedTimelineDebug
+          : []);
+
+      if (rescuedTimelineCandidate.length > 0) {
+        adjustedPreviewTimeline = rescuedTimelineCandidate.map((row: any) => {
+          const isSelectedAttraction =
+            (String(row?.type || '').toLowerCase() === 'attraction' || Number(row?.item_type || 0) === 4)
+            && requestedHotspotIds.includes(Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || row?.hotspot_id || row?.id || 0));
+
+          return isSelectedAttraction
+            ? { ...row, isConflict: false, conflictReason: null, selectedOpeningConflict: null, openingHoursRejected: false }
+            : row;
+        });
+
+        const plannedRemovals = Array.isArray(manualInsertionFit?.lowPriorityOpeningHoursRemovalPlanPreview?.plannedRemovals)
+          ? manualInsertionFit.lowPriorityOpeningHoursRemovalPlanPreview.plannedRemovals
+          : [];
+        const existingRemovalIds = new Set(
+          [...authoritativeRemovedHotspots, ...allRemovedHotspots]
+            .map((row: any) => Number(row?.id || row?.hotspotId || row?.hotspot_ID || row?.locationId || 0))
+            .filter((id: number) => Number.isFinite(id) && id > 0),
+        );
+        const newPlannedRemovals = plannedRemovals.filter((row: any) => {
+          const id = Number(row?.id || row?.hotspotId || row?.hotspot_ID || row?.locationId || 0);
+          return id > 0 && !existingRemovalIds.has(id);
+        });
+
+        if (newPlannedRemovals.length > 0) {
+          authoritativeRemovedHotspots.push(...newPlannedRemovals);
+          allRemovedHotspots.push(...newPlannedRemovals);
+        }
+
+        selectedOperatingValidation = {
+          ...selectedOperatingValidation,
+          timeline: adjustedPreviewTimeline,
+          selectedOpeningConflict: null,
+        };
+        manualInsertionFit.selectedOpeningConflict = null;
+        manualInsertionFit.canApply = true;
+        manualInsertionFit.openingHoursRejected = false;
+        manualInsertionFit.previewBlockReason = null;
+        manualInsertionFit.rescheduleApplied = true;
+        manualInsertionFit.overflowResolved = true;
+        manualInsertionFit.fullTimelineIsResolvedRemovalPlan = true;
+        manualInsertionFit.timelineSource = 'SELECTED_CLOSING_RESCUE_LATE_PROMOTION';
+
+        console.warn('[FitHere][SELECTED_CLOSING_RESCUE_LATE_PROMOTION]', {
+          routeId: Number(routeId),
+          selectedHotspotId: Number(focusHotspotId),
+          removedHotspotIds: plannedRemovals.map((row: any) => Number(row?.id || row?.hotspotId || row?.hotspot_ID || row?.locationId || 0)),
+          finalTimelineHotspotIds: adjustedPreviewTimeline
+            .filter((row: any) => String(row?.type || '').toLowerCase() === 'attraction' || Number(row?.item_type || 0) === 4)
+            .map((row: any) => Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || row?.hotspot_id || row?.id || 0)),
+          rescuedTimelineLength: adjustedPreviewTimeline.length,
+        });
+      }
+    }
+
+    if (manualInsertionFit?.lowPriorityOpeningHoursRemovalPlanPreview?.resolved === true) {
+      selectedOperatingValidation = {
+        ...selectedOperatingValidation,
+        selectedOpeningConflict: null,
+        timeline: adjustedPreviewTimeline,
+      };
+      manualInsertionFit.selectedOpeningConflict = null;
+      manualInsertionFit.canApply = true;
+      manualInsertionFit.openingHoursRejected = false;
+      manualInsertionFit.previewBlockReason = null;
+    } else if (selectedOperatingValidation.selectedOpeningConflict) {
       manualInsertionFit.selectedOpeningConflict = selectedOperatingValidation.selectedOpeningConflict;
       manualInsertionFit.canApply = false;
       manualInsertionFit.openingHoursRejected = true;
       manualInsertionFit.previewBlockReason = 'SELECTED_HOTSPOT_CLOSED_AT_ATTEMPTED_TIME';
+    } else {
+      manualInsertionFit.selectedOpeningConflict = null;
+      manualInsertionFit.openingHoursRejected = false;
+      manualInsertionFit.previewBlockReason = null;
+      manualInsertionFit.canApply = true;
     }
 
     finalValidationBase = this.buildManualHotspotValidation({
@@ -22829,7 +23425,7 @@ pricing: {
 
   private parsePreviewStartMinutes(timeRange: any): number {
     const raw = String(timeRange || '').trim();
-    const startPart = raw.split('-')[0]?.trim() || raw;
+    const startPart = this.normalizePreviewTimeText(raw.split('-')[0]?.trim() || raw);
     const match = startPart.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
     if (!match) return Number.MAX_SAFE_INTEGER;
 
@@ -22847,17 +23443,19 @@ pricing: {
       return { start: null, end: null };
     }
 
-    const startPart = raw.split('-')[0]?.trim() || '';
-    const endPart = raw.split('-')[1]?.trim() || '';
+    const startPart = this.normalizePreviewTimeText(raw.split('-')[0]?.trim() || '');
+    const endPart = this.normalizePreviewTimeText(raw.split('-')[1]?.trim() || '');
     const startMin = this.parsePreviewTimeToMinutes(startPart);
     const endMin = this.parsePreviewTimeToMinutes(endPart);
     if (startMin === null || endMin === null) {
       return { start: null, end: null };
     }
 
+    const normalizedEndMin = endMin < startMin ? endMin + (24 * 60) : endMin;
+
     return {
       start: this.minutesToUtcTimeDate(startMin),
-      end: this.minutesToUtcTimeDate(endMin),
+      end: this.minutesToUtcTimeDate(normalizedEndMin),
     };
   }
 
@@ -22881,12 +23479,26 @@ pricing: {
       }
 
       const parsed = this.parsePreviewTimeRangeToUtcDates(rawRange);
-      if (!parsed.start || !parsed.end) {
+      const recoveredFromDbTimes =
+        !parsed.start || !parsed.end
+          ? {
+              start: this.parseSegmentStartMinutes(row),
+              end: this.parseSegmentEndMinutes(row),
+            }
+          : null;
+      const effectiveParsed = recoveredFromDbTimes && recoveredFromDbTimes.start != null && recoveredFromDbTimes.end != null
+        ? {
+            start: this.minutesToUtcTimeDate(recoveredFromDbTimes.start),
+            end: this.minutesToUtcTimeDate(recoveredFromDbTimes.end),
+          }
+        : parsed;
+
+      if (!effectiveParsed.start || !effectiveParsed.end) {
         issues.push({ index, issue: 'travel row has unparsable timeRange' });
         continue;
       }
 
-      const parsedDurationMin = Math.round((parsed.end.getTime() - parsed.start.getTime()) / 60000);
+      const parsedDurationMin = Math.round((effectiveParsed.end.getTime() - effectiveParsed.start.getTime()) / 60000);
       if (!Number.isFinite(parsedDurationMin) || parsedDurationMin <= 0) {
         issues.push({ index, issue: 'travel row has non-positive duration' });
         continue;
@@ -23072,7 +23684,7 @@ pricing: {
   }
 
   private parsePreviewTimeToMinutes(value: any): number | null {
-    const raw = String(value || '').trim();
+    const raw = this.normalizePreviewTimeText(value);
     if (!raw) return null;
     const twelveHourMatch = raw.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
     if (twelveHourMatch) {
@@ -23091,6 +23703,15 @@ pricing: {
     if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
     if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
     return (hour * 60) + minute;
+  }
+
+  private normalizePreviewTimeText(value: any): string {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+
+    return raw
+      .replace(/\s*\+\d+d$/i, '')
+      .trim();
   }
 
   private formatManualDurationMinutes(minutes: number): string {
@@ -23562,6 +24183,8 @@ pricing: {
       workPriority: number | null;
       workPriorityLabel: string;
       reason?: string | null;
+      removalReasonCode?: string | null;
+      fitFailureExplanation?: string | null;
     }>;
     noRemovalText: string;
   } {
@@ -24915,6 +25538,274 @@ pricing: {
     const text = String(row?.text || row?.name || '').trim();
     const match = text.match(/check-?in\s+(?:to|at)\s+(.+)/i);
     return String(match?.[1] || '').trim();
+  }
+
+  private normalizeManualFitTravelReplicaLabel(value: unknown): string {
+    return String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/^travel(?:ling)?\s+to\s+/i, '')
+      .replace(/^travel(?:ling)?\s+from\s+/i, '')
+      .replace(/\s+/g, ' ');
+  }
+
+  private parseManualFitTravelReplicaDistanceKm(value: unknown): number | null {
+    if (value == null) return null;
+
+    const numeric = Number(value);
+    if (Number.isFinite(numeric) && numeric > 0) {
+      return numeric;
+    }
+
+    const raw = String(value || '').trim();
+    if (!raw) return null;
+
+    const match = raw.match(/(\d+(?:\.\d+)?)/);
+    if (!match) return null;
+
+    const parsed = Number(match[1]);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  }
+
+  private getManualFitTravelReplicaDurationMinutes(row: any): number | null {
+    const direct = Number(
+      row?.matrixDurationMin ||
+      row?.durationMinutes ||
+      row?.duration_minutes ||
+      row?.travelDurationMinutes ||
+      0,
+    );
+    if (Number.isFinite(direct) && direct > 0) {
+      return Math.max(1, Math.round(direct));
+    }
+
+    const previewMinutes = Number(this.getPreviewRowDurationMinutes(row) || 0);
+    if (Number.isFinite(previewMinutes) && previewMinutes > 0) {
+      return Math.max(1, Math.round(previewMinutes));
+    }
+
+    const startMinutes = this.parseSegmentStartMinutes(row);
+    const endMinutes = this.parseSegmentEndMinutes(row);
+    if (startMinutes !== null && endMinutes !== null && endMinutes > startMinutes) {
+      return Math.max(1, endMinutes - startMinutes);
+    }
+
+    return null;
+  }
+
+  private buildManualFitMainTimelineTravelReplicaMap(timeline: any[]): Map<string, any> {
+    const rows = Array.isArray(timeline) ? timeline : [];
+    const map = new Map<string, any>();
+
+    const isAttractionRow = (row: any): boolean => {
+      const type = String(row?.type || '').toLowerCase();
+      return type === 'attraction' || Number(row?.item_type || 0) === 4;
+    };
+
+    const isTravelRow = (row: any): boolean => {
+      const type = String(row?.type || '').toLowerCase();
+      return type === 'travel' || Number(row?.item_type || 0) === 3 || Number(row?.item_type || 0) === 5;
+    };
+
+    const getHotspotId = (row: any): number =>
+      Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || row?.hotspot_id || 0);
+
+    const getLabel = (row: any): string =>
+      String(row?.text || row?.name || row?.title || row?.hotspot_name || '').trim();
+
+    const addKey = (key: string, row: any) => {
+      if (!key || map.has(key)) return;
+      map.set(key, row);
+    };
+
+    for (let index = 0; index < rows.length; index += 1) {
+      const row = rows[index];
+      if (!isTravelRow(row)) continue;
+
+      const explicitFromId = Number(row?.fromHotspotId || row?.from_hotspot_id || 0);
+      const explicitToId = Number(row?.toHotspotId || row?.to_hotspot_id || 0);
+      const explicitFromLabel = String(row?.fromName || row?.from || row?.displayFromName || '').trim();
+      const explicitToLabel = String(row?.toName || row?.to || row?.displayToName || '').trim();
+
+      let previousAttraction: any | null = null;
+      for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+        if (isAttractionRow(rows[cursor])) {
+          previousAttraction = rows[cursor];
+          break;
+        }
+      }
+
+      let nextAttraction: any | null = null;
+      for (let cursor = index + 1; cursor < rows.length; cursor += 1) {
+        if (isAttractionRow(rows[cursor])) {
+          nextAttraction = rows[cursor];
+          break;
+        }
+      }
+
+      const sequenceFromId = getHotspotId(previousAttraction);
+      const sequenceToId = getHotspotId(nextAttraction);
+      const sequenceFromLabel = getLabel(previousAttraction);
+      const sequenceToLabel = getLabel(nextAttraction);
+
+      const fromLabel = explicitFromLabel || sequenceFromLabel;
+      const toLabel = explicitToLabel || sequenceToLabel;
+      const normalizedFromLabel = this.normalizeManualFitTravelReplicaLabel(fromLabel);
+      const normalizedToLabel = this.normalizeManualFitTravelReplicaLabel(toLabel);
+
+      if (explicitFromId > 0 && explicitToId > 0) {
+        addKey(`id:${explicitFromId}->${explicitToId}`, row);
+      }
+      if (sequenceFromId > 0 && sequenceToId > 0) {
+        addKey(`id:${sequenceFromId}->${sequenceToId}`, row);
+      }
+      if (normalizedFromLabel && normalizedToLabel) {
+        addKey(`label:${normalizedFromLabel}->${normalizedToLabel}`, row);
+      }
+      if (explicitToId > 0) {
+        addKey(`to:${explicitToId}`, row);
+      }
+      if (sequenceToId > 0) {
+        addKey(`to:${sequenceToId}`, row);
+      }
+    }
+
+    return map;
+  }
+
+  private findManualFitMainTimelineTravelReplica(
+    replicaMap: Map<string, any>,
+    params: {
+      fromHotspotId?: number | null;
+      toHotspotId?: number | null;
+      fromName?: string | null;
+      toName?: string | null;
+    },
+  ): any | null {
+    const keys: string[] = [];
+    const fromHotspotId = Number(params.fromHotspotId || 0);
+    const toHotspotId = Number(params.toHotspotId || 0);
+    const fromName = this.normalizeManualFitTravelReplicaLabel(params.fromName);
+    const toName = this.normalizeManualFitTravelReplicaLabel(params.toName);
+
+    if (fromHotspotId > 0 && toHotspotId > 0) {
+      keys.push(`id:${fromHotspotId}->${toHotspotId}`);
+    }
+    if (fromName && toName) {
+      keys.push(`label:${fromName}->${toName}`);
+    }
+    if (toHotspotId > 0 && fromHotspotId <= 0 && !fromName) {
+      keys.push(`to:${toHotspotId}`);
+    }
+
+    for (const key of keys) {
+      const row = replicaMap.get(key);
+      if (row) return row;
+    }
+
+    return null;
+  }
+
+  private buildManualFitTravelReplicaDisplayFields(
+    sourceRow: any,
+    durationMin: number,
+    distanceKm: number | null,
+  ): {
+    duration: string;
+    travelDuration: string;
+    durationMinutes: number;
+    matrixDurationMin: number;
+    distance: string | null;
+    hotspot_travelling_distance: string | null;
+    hotspot_traveling_distance: string | null;
+    hotspot_travelling_time: string | null;
+    hotspot_traveling_time: string | null;
+  } {
+    const parseDurationCandidateMinutes = (value: any): number | null => {
+      const raw = String(value || '').trim();
+      if (!raw) return null;
+
+      const hmsMatch = raw.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+      if (hmsMatch) {
+        const hours = Number(hmsMatch[1] || 0);
+        const minutes = Number(hmsMatch[2] || 0);
+        if (Number.isFinite(hours) && Number.isFinite(minutes)) {
+          return (hours * 60) + minutes;
+        }
+      }
+
+      const durationMatch = raw.match(/^(?:(\d+)\s*Hours?)?\s*(?:(\d+)\s*Min(?:ute)?s?)?$/i);
+      if (durationMatch && (durationMatch[1] || durationMatch[2])) {
+        const hours = Number(durationMatch[1] || 0);
+        const minutes = Number(durationMatch[2] || 0);
+        if (Number.isFinite(hours) && Number.isFinite(minutes)) {
+          return (hours * 60) + minutes;
+        }
+      }
+
+      const isoDate = new Date(raw);
+      if (!Number.isNaN(isoDate.getTime()) && /^\d{4}-\d{2}-\d{2}T/.test(raw)) {
+        return (isoDate.getUTCHours() * 60) + isoDate.getUTCMinutes();
+      }
+
+      const localDateLabelMatch = raw.match(/\b(\d{1,2}):(\d{2})(?::(\d{2}))?\b/);
+      if (
+        localDateLabelMatch &&
+        /(?:sun|mon|tue|wed|thu|fri|sat)\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i.test(raw)
+      ) {
+        const hours = Number(localDateLabelMatch[1] || 0);
+        const minutes = Number(localDateLabelMatch[2] || 0);
+        if (Number.isFinite(hours) && Number.isFinite(minutes)) {
+          return (hours * 60) + minutes;
+        }
+      }
+
+      return null;
+    };
+
+    const durationCandidates = [
+      sourceRow?.duration,
+      sourceRow?.travelDuration,
+      sourceRow?.hotspot_travelling_time,
+      sourceRow?.hotspot_traveling_time,
+    ];
+    const durationText = durationCandidates
+      .map((value: any) => {
+        const raw = String(value || '').trim();
+        if (!raw) return '';
+
+        const parsedMinutes = parseDurationCandidateMinutes(raw);
+        if (parsedMinutes === null) return '';
+        if (Math.abs(parsedMinutes - durationMin) > 1) return '';
+
+        return this.formatPreviewTravelDuration(parsedMinutes);
+      })
+      .find((value) => String(value || '').trim().length > 0) || this.formatPreviewTravelDuration(durationMin);
+
+    const distanceCandidates = [
+      sourceRow?.distance,
+      sourceRow?.hotspot_travelling_distance,
+      sourceRow?.hotspot_traveling_distance,
+    ];
+    const distanceText = distanceCandidates
+      .map((value: any) => String(value || '').trim())
+      .find((value) => value.length > 0 && value !== '--') || (distanceKm != null ? `${Number(distanceKm).toFixed(2)} KM` : '');
+
+    const hotspotDistanceText = distanceCandidates
+      .map((value: any) => String(value || '').trim())
+      .find((value) => value.length > 0 && value !== '--') || (distanceKm != null ? Number(distanceKm).toFixed(2) : '');
+
+    return {
+      duration: durationText,
+      travelDuration: durationText,
+      durationMinutes: durationMin,
+      matrixDurationMin: durationMin,
+      distance: distanceText || null,
+      hotspot_travelling_distance: hotspotDistanceText || null,
+      hotspot_traveling_distance: hotspotDistanceText || null,
+      hotspot_travelling_time: durationText,
+      hotspot_traveling_time: durationText,
+    };
   }
 
   private async ensurePreviewTimelineHasComputedHotelTravel(
