@@ -15926,6 +15926,21 @@ pricing: {
       return isAttractionLikeRow(row) && getRowHotspotId(row) === targetHotspotId;
     });
 
+    const activeRouteOrderByHotspotId = new Map<number, number>(
+      (activeRouteRows || [])
+        .map((row: any, rowIndex: number) => [
+          Number(row?.hotspot_ID || 0),
+          Number(row?.hotspot_order || rowIndex + 1),
+        ])
+        .filter(([hotspotId]: any) => Number.isFinite(Number(hotspotId)) && Number(hotspotId) > 0) as any,
+    );
+    const anchorBlockerMaxRouteOrder =
+      validationMode === 'SELECTED_HOTSPOT_CLOSING' &&
+      params.exactAnchorMode === true &&
+      Number(params.afterHotspotId || 0) > 0
+        ? Number(activeRouteOrderByHotspotId.get(Number(params.afterHotspotId || 0)) || 0)
+        : 0;
+
     const routeRowForRemovalDirection = params.exactAnchorMode === true
       ? await (tx as any).dvi_itinerary_route_details.findFirst({
           where: {
@@ -16030,8 +16045,7 @@ pricing: {
         if (
           validationMode === 'SELECTED_HOTSPOT_CLOSING' &&
           targetTimelineIndex >= 0 &&
-          rowIndex >= targetTimelineIndex &&
-          params.exactAnchorMode !== true
+          rowIndex >= targetTimelineIndex
         ) {
           return false;
         }
@@ -16074,6 +16088,18 @@ pricing: {
         };
       })
       .sort((a: any, b: any) => {
+        if (validationMode === 'SELECTED_HOTSPOT_CLOSING' && params.exactAnchorMode === true) {
+          if (a.timelineIndex !== b.timelineIndex) {
+            return b.timelineIndex - a.timelineIndex;
+          }
+
+          const directionDiff = removalDirectionRank(a) - removalDirectionRank(b);
+          if (directionDiff !== 0) return directionDiff;
+
+          if (a.priority !== b.priority) return b.priority - a.priority;
+          return a.id - b.id;
+        }
+
         if (a.priority !== b.priority) return b.priority - a.priority;
         const directionDiff = removalDirectionRank(a) - removalDirectionRank(b);
         if (directionDiff !== 0) return directionDiff;
@@ -16138,12 +16164,28 @@ pricing: {
           if (!hotspotId) return false;
           if (protectedHotspotIds.has(hotspotId)) return false;
           if (manualRouteHotspotIds.has(hotspotId)) return false;
+          if (
+            validationMode === 'SELECTED_HOTSPOT_CLOSING' &&
+            params.exactAnchorMode === true &&
+            anchorBlockerMaxRouteOrder > 0 &&
+            Number(row?.routeOrder || 0) > anchorBlockerMaxRouteOrder
+          ) {
+            return false;
+          }
           if (row.priority === 3 && params.allowP3Removal !== true) return false;
           if (row.priority === 2 && params.allowP2Removal !== true) return false;
           if (row.priority === 1 && params.allowP1Removal !== true) return false;
           return [1, 2, 3, 4].includes(Number(row.priority || 0));
         })
         .sort((a: any, b: any) => {
+          if (validationMode === 'SELECTED_HOTSPOT_CLOSING' && params.exactAnchorMode === true) {
+            if (a.routeOrder !== b.routeOrder) return b.routeOrder - a.routeOrder;
+            const directionDiff = removalDirectionRank(a) - removalDirectionRank(b);
+            if (directionDiff !== 0) return directionDiff;
+            if (a.priority !== b.priority) return b.priority - a.priority;
+            return a.id - b.id;
+          }
+
           if (a.priority !== b.priority) return b.priority - a.priority;
           const directionDiff = removalDirectionRank(a) - removalDirectionRank(b);
           if (directionDiff !== 0) return directionDiff;
@@ -16165,7 +16207,6 @@ pricing: {
           validationMode === 'SELECTED_HOTSPOT_CLOSING'
           && targetTimelineIndex >= 0
           && rowIndex >= targetTimelineIndex
-          && params.exactAnchorMode !== true
         );
         const allowedByPriority =
           (priority === 4 || priority === 3 ? params.allowP3Removal === true : true) &&
@@ -16197,6 +16238,23 @@ pricing: {
         };
       })
       .filter((row: any) => row.hotspotId > 0);
+
+    if (validationMode === 'SELECTED_HOTSPOT_CLOSING') {
+      console.log('[FitHere][APJ_SELECTED_CLOSING_RESCUE_CANDIDATES]', {
+        routeId: Number(params.routeId),
+        selectedHotspotId,
+        targetHotspotId,
+        targetTimelineIndex,
+        exactAnchorMode: params.exactAnchorMode === true,
+        candidates: candidateRows.map((row: any) => ({
+          id: row.id,
+          name: row.name,
+          priority: row.priority,
+          timelineIndex: row.timelineIndex,
+          directionRank: removalDirectionRank(row),
+        })),
+      });
+    }
 
     const simulationAttempts: any[] = [];
     const rejectedAttempts: any[] = [];
@@ -16391,7 +16449,10 @@ pricing: {
       name: row.name,
       priority: row.priority,
       estimatedMinutes: row.estimatedMinutes,
-      reason: this.buildProgressiveRemovalReason(validationMode, row.priority),
+      reason:
+        validationMode === 'SELECTED_HOTSPOT_CLOSING'
+          ? `${row.name} removed because selected manual hotspot must fit before operating-hours closing.`
+          : this.buildProgressiveRemovalReason(validationMode, row.priority),
       removalReasonCode:
         validationMode === 'SELECTED_HOTSPOT_CLOSING'
           ? 'SELECTED_HOTSPOT_CLOSING_RESCUE'
@@ -16485,6 +16546,122 @@ pricing: {
           candidateAudit,
           message: this.buildProgressiveRemovalSuccessMessage(validationMode, selectedRemovedRows),
         };
+      }
+    }
+
+    if (validationMode === 'SELECTED_HOTSPOT_CLOSING' && params.exactAnchorMode === true && candidateRows.length > 0) {
+      const boundedClosingCandidates = candidateRows.slice(0, 6);
+      const rescuePlans: any[] = [];
+
+      for (let mask = 1; mask < (1 << boundedClosingCandidates.length); mask += 1) {
+        const rows = boundedClosingCandidates.filter((_: any, index: number) => (mask & (1 << index)) > 0);
+        const removedIds = rows.map((row: any) => Number(row.id || 0)).filter((id: number) => id > 0);
+        if (removedIds.length === 0) continue;
+
+        rescuePlans.push({
+          rows,
+          removedIds,
+          maxTimelineIndex: Math.max(...rows.map((row: any) => Number(row.timelineIndex || 0))),
+          directionScore: rows.reduce((sum: number, row: any) => sum + removalDirectionRank(row), 0),
+          priorityScore: rows.reduce((sum: number, row: any) => sum + Number(row.priority || 0), 0),
+        });
+      }
+
+      rescuePlans.sort((a: any, b: any) => {
+        if (a.rows.length !== b.rows.length) return a.rows.length - b.rows.length;
+        if (a.maxTimelineIndex !== b.maxTimelineIndex) return b.maxTimelineIndex - a.maxTimelineIndex;
+        if (a.directionScore !== b.directionScore) return a.directionScore - b.directionScore;
+        if (a.priorityScore !== b.priorityScore) return b.priorityScore - a.priorityScore;
+        return a.removedIds.join(',').localeCompare(b.removedIds.join(','));
+      });
+
+      for (const plan of rescuePlans) {
+        const planRows: any[] = Array.isArray(plan.rows) ? plan.rows : [];
+        const planRemovedIds: number[] = Array.from(new Set<number>(
+          (Array.isArray(plan.removedIds) ? plan.removedIds : [])
+            .map((id: any) => Number(id || 0))
+            .filter((id: number) => Number.isFinite(id) && id > 0),
+        ));
+        let planTimeline = await rebuildAfterRemoval(planRemovedIds);
+        const evaluation = await evaluateTimeline(planTimeline);
+        planTimeline = evaluation.evaluatedTimeline;
+
+        const attemptNumber = simulationAttempts.length + 1;
+        const selectedWindow = getAttemptSelectedWindow(planTimeline);
+        const attemptComputedTimeline = this.buildManualFitAttemptTimelineSnapshot(planTimeline, {
+          removedHotspotIds: planRemovedIds,
+          selectedHotspotId: targetHotspotId,
+        });
+        const attemptDisplayTimeline = this.buildManualFitAttemptComputedDisplayTimelineSnapshot(
+          sourceTimeline,
+          planTimeline,
+          {
+            removedHotspotIds: planRemovedIds,
+            selectedHotspotId: targetHotspotId,
+            selectedConflict:
+              selectedWindow?.selectedOpeningConflict ||
+              evaluation?.selectedOpeningConflict ||
+              null,
+            protectedHotspotIds: protectedHotspotIdsForDisplay,
+          },
+        );
+        const displayTimelineErrors = this.validateManualFitAttemptDisplayTimeline(attemptDisplayTimeline, {
+          removedHotspotIds: planRemovedIds,
+          selectedHotspotId: targetHotspotId,
+        });
+
+        const attempt = {
+          attemptNumber,
+          cumulative: false,
+          validationMode,
+          removedHotspotIds: planRemovedIds,
+          removedHotspotNames: planRows.map((row: any) => row.name),
+          removedCount: planRemovedIds.length,
+          priorities: planRows.map((row: any) => row.priority),
+          selectedAttemptedVisitTime: evaluation.selectedAttemptedVisitTime,
+          selectedOperatingHours: evaluation.selectedOperatingHours,
+          selectedOpeningConflict: evaluation.selectedOpeningConflict,
+          finalArrivalTime: evaluation.finalArrivalTime,
+          finalOverflowMinutes: evaluation.finalOverflowMinutes,
+          dayEndOverflowMinutes: evaluation.dayEndOverflowMinutes,
+          selectedClosingOverflowMinutes: evaluation.selectedClosingOverflowMinutes,
+          valid: evaluation.valid,
+          resolved: evaluation.valid,
+          strategy: 'SELECTED_CLOSING_RESCUE_PLAN',
+          displayTimelineErrors,
+          displayTimelineWarning: displayTimelineErrors.length > 0,
+          previewTimelineDisplay: attemptDisplayTimeline,
+          displayTimeline: attemptDisplayTimeline,
+          previewTimeline: attemptDisplayTimeline,
+          computedTimelineDebug: attemptComputedTimeline,
+          removalSummary: {
+            removedHotspotIds: planRemovedIds,
+            removedHotspotNames: planRows.map((row: any) => row.name),
+            protectedHotspots: buildProtectedHotspotsForSummary(planRemovedIds),
+            result: evaluation.valid ? 'FITS_AFTER_REMOVAL' : 'STILL_DOES_NOT_FIT',
+          },
+        };
+
+        simulationAttempts.push(attempt);
+
+        if (evaluation.valid) {
+          return {
+            resolved: true,
+            algorithm: 'PROGRESSIVE_PRIORITY_REMOVAL',
+            validationMode,
+            removedHotspots: toRemovedRows(planRows),
+            candidateHotspots: candidateRows,
+            finalTimeline: planTimeline,
+            finalOverflowMinutes: 0,
+            finalArrivalTime: evaluation.finalArrivalTime,
+            simulationAttempts,
+            rejectedAttempts,
+            candidateAudit,
+            message: this.buildProgressiveRemovalSuccessMessage(validationMode, planRows),
+          };
+        }
+
+        rejectedAttempts.push(attempt);
       }
     }
 
