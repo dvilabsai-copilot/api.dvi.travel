@@ -21,8 +21,59 @@ type SubRow = {
 export class AgentService {
   constructor(private readonly prisma: PrismaService) {}
 
+   private buildAgentCompanyLocationDisplayName(agent: any, cityName?: string | null): string {
+    const companyName = String(agent?.company_name || '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    const fallbackName = String(agent?.agent_name || '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    const location = String(cityName || '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    const baseName = companyName || fallbackName || 'Agent';
+
+    return location ? `${baseName} - ${location}` : baseName;
+  }
+
+  private async getAgentCompanyNameMap(agentIds: number[]) {
+    if (!agentIds.length) return new Map<number, string>();
+
+    const placeholders = agentIds.map(() => '?').join(',');
+
+    const rows = await this.prisma.$queryRawUnsafe<
+      Array<{ agent_id: number; company_name: string | null }>
+    >(
+      `
+        SELECT agent_id, company_name
+        FROM dvi_agent_configuration
+        WHERE deleted = 0
+          AND status = 1
+          AND agent_id IN (${placeholders})
+      `,
+      ...agentIds,
+    );
+
+    const map = new Map<number, string>();
+
+    for (const row of rows) {
+      const companyName = String(row.company_name || '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      if (companyName && !map.has(Number(row.agent_id))) {
+        map.set(Number(row.agent_id), companyName);
+      }
+    }
+
+    return map;
+  }
+
   /** ---------- Helpers: user & geo label maps ---------- */
-  private async getUsersMapByAgentIds(agentIds: number[]) {
+   private async getUsersMapByAgentIds(agentIds: number[]) {
     if (agentIds.length === 0) return new Map<number, any>();
     const users = await this.prisma.dvi_users.findMany({
       where: { deleted: 0, agent_id: { in: agentIds } },
@@ -34,6 +85,38 @@ export class AgentService {
       if (k == null) continue;
       if (!map.has(k)) map.set(k, u);
     }
+    return map;
+  }
+
+  private async getCompanyNameMapByAgentIds(agentIds: number[]) {
+    if (agentIds.length === 0) return new Map<number, string>();
+
+    const rows = await this.prisma.$queryRawUnsafe<
+      Array<{ agent_id: number; company_name: string | null }>
+    >(
+      `
+        SELECT agent_id, company_name
+        FROM dvi_agent_configuration
+        WHERE deleted = 0
+          AND agent_id IN (${agentIds.map(() => '?').join(',')})
+        ORDER BY agent_config_id DESC
+      `,
+      ...agentIds,
+    );
+
+    const map = new Map<number, string>();
+
+    for (const row of rows) {
+      const agentId = Number(row.agent_id || 0);
+      const companyName = String(row.company_name || '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      if (agentId > 0 && companyName && !map.has(agentId)) {
+        map.set(agentId, companyName);
+      }
+    }
+
     return map;
   }
 
@@ -138,8 +221,12 @@ export class AgentService {
       this.prisma.dvi_agent.count({ where }),
     ]);
 
-    const agentIds = rows.map((r) => r.agent_ID);
-    const usersMap = await this.getUsersMapByAgentIds(agentIds);
+       const agentIds = rows.map((r) => r.agent_ID);
+
+    const [usersMap, companyNameMap] = await Promise.all([
+      this.getUsersMapByAgentIds(agentIds),
+      this.getCompanyNameMapByAgentIds(agentIds),
+    ]);
 
     const countryIds = rows.map((r) => r.agent_country ?? 0).filter(Boolean) as number[];
     const stateIds = rows.map((r) => r.agent_state ?? 0).filter(Boolean) as number[];
@@ -151,19 +238,40 @@ export class AgentService {
       cityIds,
     });
 
-    // legacy list uses your mapper -> we do NOT inject subscription here to avoid breaking UI
-    const data = rows.map((a, idx) =>
-      mapAgentToListRow(
+      // legacy list uses your mapper, but agent dropdown/table name should show name with city
+    const data = rows.map((a, idx) => {
+           const cityLabel = a.agent_city ? cityMap.get(a.agent_city) ?? null : null;
+      const companyName = companyNameMap.get(a.agent_ID) ?? null;
+      const displayName = this.buildAgentCompanyLocationDisplayName(
         {
           ...a,
+          company_name: companyName,
+        },
+        cityLabel,
+      );
+
+      const mapped = mapAgentToListRow(
+        {
+          ...a,
+          agent_name: displayName,
+          agent_lastname: null,
           user: usersMap.get(a.agent_ID) ?? null,
           country_label: a.agent_country ? countryMap.get(a.agent_country) ?? null : null,
           state_label: a.agent_state ? stateMap.get(a.agent_state) ?? null : null,
-          city_label: a.agent_city ? cityMap.get(a.agent_city) ?? null : null,
+          city_label: cityLabel,
         },
         skip + idx,
-      ),
-    );
+      );
+
+      return {
+        ...mapped,
+        id: a.agent_ID,
+        name: displayName,
+        agent_name: displayName,
+        agent_lastname: null,
+        city_label: cityLabel,
+      };
+    });
 
     if (isDT) {
       return {
@@ -218,7 +326,7 @@ export class AgentService {
     const agentIds = rows.map((r) => r.agent_ID);
 
     // Batch helpers
-    const [usersMap, geoMaps, subsMap] = await Promise.all([
+      const [usersMap, geoMaps, subsMap, companyNameMap] = await Promise.all([
       this.getUsersMapByAgentIds(agentIds),
       this.getGeoNameMaps({
         countryIds: rows.map((r) => r.agent_country ?? 0).filter(Boolean) as number[],
@@ -226,6 +334,7 @@ export class AgentService {
         cityIds: rows.map((r) => r.agent_city ?? 0).filter(Boolean) as number[],
       }),
       this.getLatestSubscriptionTitleMap(agentIds),
+      this.getCompanyNameMapByAgentIds(agentIds),
     ]);
 
     const { countryMap, stateMap, cityMap } = geoMaps;
@@ -235,10 +344,20 @@ export class AgentService {
       const user = usersMap.get(a.agent_ID) ?? null;
       const login_enabled = !!(user && user.userapproved === 1 && user.userbanned === 0);
 
+              const cityLabel = a.agent_city ? cityMap.get(a.agent_city) ?? null : null;
+      const companyName = companyNameMap.get(a.agent_ID) ?? null;
+      const displayName = this.buildAgentCompanyLocationDisplayName(
+        {
+          ...a,
+          company_name: companyName,
+        },
+        cityLabel,
+      );
+
       const obj: AgentPreviewDto = {
         agent_ID: a.agent_ID,
-        agent_name: a.agent_name ?? null,
-        agent_lastname: a.agent_lastname ?? null,
+        agent_name: displayName,
+        agent_lastname: null,
         agent_email_id: a.agent_email_id ?? null,
         agent_primary_mobile_number: a.agent_primary_mobile_number ?? null,
         agent_alternative_mobile_number: a.agent_alternative_mobile_number ?? null,
@@ -253,7 +372,7 @@ export class AgentService {
 
         country_label: a.agent_country ? countryMap.get(a.agent_country) ?? null : null,
         state_label: a.agent_state ? stateMap.get(a.agent_state) ?? null : null,
-        city_label: a.agent_city ? cityMap.get(a.agent_city) ?? null : null,
+        city_label: cityLabel,
 
         // Latest title, fallback "Free" to mirror your single-agent preview
         subscription_title: subsMap.get(a.agent_ID) ?? 'Free',
@@ -732,17 +851,36 @@ private async addWallet(
         agent_ID: true,
         agent_name: true,
         agent_lastname: true,
+        agent_city: true,
       },
       orderBy: { agent_ID: 'desc' },
     });
 
-    return agents.map((a) => ({
-      id: a.agent_ID,
-      name: [a.agent_name ?? '', a.agent_lastname ?? '']
-        .join(' ')
-        .replace(/\s+/g, ' ')
-        .trim(),
-    }));
+    const { cityMap } = await this.getGeoNameMaps({
+      countryIds: [],
+      stateIds: [],
+      cityIds: agents.map((a) => a.agent_city ?? 0).filter(Boolean) as number[],
+    });
+
+     const companyNameMap = await this.getCompanyNameMapByAgentIds(
+      agents.map((a) => a.agent_ID),
+    );
+
+    return agents.map((a) => {
+      const cityLabel = a.agent_city ? cityMap.get(a.agent_city) ?? null : null;
+      const companyName = companyNameMap.get(a.agent_ID) ?? null;
+
+      return {
+        id: a.agent_ID,
+        name: this.buildAgentCompanyLocationDisplayName(
+          {
+            ...a,
+            company_name: companyName,
+          },
+          cityLabel,
+        ),
+      };
+    });
   }
 
   /** ---------- MUTATIONS ---------- */
