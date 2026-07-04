@@ -81,6 +81,8 @@ export type ManualHotspotMatrixBuildOptions = {
 };
 
 const DEFAULT_OSRM_BASE_URL = 'https://router.project-osrm.org/route/v1/driving';
+const shouldLogVerboseTiming = (): boolean =>
+  String(process.env.FIT_HERE_VERBOSE_TIMING || '').trim() === '1';
 
 function toFinitePositive(value: any, fallback: number): number {
   const n = Number(value);
@@ -365,6 +367,7 @@ async function fetchRouteCityEndpoints(params: {
     return { sourceEndpoint: null, destinationEndpoint: null };
   }
 
+  const storedLocationStartedAt = Date.now();
   const storedLocation = await prisma.dvi_stored_locations.findFirst({
     where: {
       location_ID: BigInt(locationId),
@@ -381,6 +384,16 @@ async function fetchRouteCityEndpoints(params: {
       destination_location_longitude: true,
     },
   });
+  if (shouldLogVerboseTiming()) {
+    console.log('[StoredLocations][timing]', {
+      caller: 'manual-hotspot-matrix-builder.resolveRouteCityEndpoints',
+      planId: Number(params.planId),
+      routeId: Number(routeId),
+      locationId: String(locationId),
+      elapsedMs: Date.now() - storedLocationStartedAt,
+      found: !!storedLocation,
+    });
+  }
 
   if (!storedLocation) {
     return { sourceEndpoint: null, destinationEndpoint: null };
@@ -433,6 +446,7 @@ async function fetchHotspotMeta(prisma: PrismaService, ids: number[]): Promise<M
   const uniqueIds = Array.from(new Set(ids.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)));
   if (uniqueIds.length === 0) return new Map<number, HotspotMeta>();
 
+  const startedAt = Date.now();
   const rows = await prisma.dvi_hotspot_place.findMany({
     where: { hotspot_ID: { in: uniqueIds }, deleted: 0 },
     select: {
@@ -443,6 +457,15 @@ async function fetchHotspotMeta(prisma: PrismaService, ids: number[]): Promise<M
       hotspot_longitude: true,
     },
   });
+  if (shouldLogVerboseTiming()) {
+    console.log('[HotspotPlace][timing]', {
+      caller: 'manual-hotspot-matrix-builder.fetchHotspotMeta',
+      hotspotIdCount: uniqueIds.length,
+      elapsedMs: Date.now() - startedAt,
+      found: rows.length > 0,
+      count: rows.length,
+    });
+  }
 
   const map = new Map<number, HotspotMeta>();
   for (const row of rows) {

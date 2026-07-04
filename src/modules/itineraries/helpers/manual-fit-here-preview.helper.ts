@@ -325,6 +325,9 @@ export async function buildManualFitPreviewEnvelopeImpl(this: any, params: any) 
       const priority = Number(row?.priority || row?.hotspot_priority || row?.rawPriority || 0);
       return priority >= 3 || priority === 0;
     });
+  const hasRemovalChanges =
+    removedHotspots.length > 0 ||
+    safeSequentialRemovals.length > 0;
 
   const requiresTimingRiskConfirmation =
     resolution?.requiresTimingRiskConfirmation === true
@@ -351,7 +354,7 @@ export async function buildManualFitPreviewEnvelopeImpl(this: any, params: any) 
   } else if (hasPriorityConflict) {
     resultType = 'PRIORITY_CONFLICT';
     canConfirm = false;
-  } else if (readyToApply && (hasOptionalRemoval || requiresPriorityRemovalConfirmation || requiresTimingRiskConfirmation)) {
+  } else if (readyToApply && (hasOptionalRemoval || hasRemovalChanges || requiresPriorityRemovalConfirmation || requiresTimingRiskConfirmation)) {
     resultType = 'FITS_WITH_OPTIONAL_REMOVAL';
     canConfirm = true;
   } else if (readyToApply) {

@@ -301,6 +301,13 @@ type ManualFitAttemptCacheEntry = {
   };
   sourceFingerprint: string;
   proposedTimelineFingerprint: string;
+  selectedAnchorPreserved?: boolean;
+  selectedHotspotPreserved?: boolean;
+  selectedOpeningConflict?: any | null;
+  resultType?: string | null;
+  acceptedReason?: string | null;
+  rejectedReasons?: string[];
+  authoritativeTimelineSource?: string | null;
   expiresAt: string;
 };
 
@@ -414,6 +421,7 @@ export class ItinerariesService {
     coordinates: [number, number][];
     cachedAt: number;
   }>();
+  private readonly exactAnchorSequentialTimelineCache = new Map<string, any[]>();
 
   private readonly MANUAL_HOTSPOT_EFFECTIVE_PRIORITY = 4;
   private readonly PROTECTED_AUTO_PRIORITY_MAX = 2;
@@ -12727,6 +12735,58 @@ pricing: {
     return this.hashManualFitValue(normalized);
   }
 
+  private cloneTimelineRowsForPreview(timeline: any[]): any[] {
+    return (Array.isArray(timeline) ? timeline : []).map((row: any) => (
+      row && typeof row === 'object'
+        ? { ...row }
+        : row
+    ));
+  }
+
+  private buildExactAnchorSequentialTimelineCacheKey(
+    timeline: any[],
+    params: {
+      removedHotspotIds: number[];
+      targetHotspotId: number;
+      routeId: number;
+      planId: number;
+      anchorIntent?: 'AFTER_START' | 'AFTER_ATTRACTION';
+      afterHotspotId?: number;
+      beforeHotspotId?: number;
+    },
+  ): string {
+    return this.hashManualFitValue({
+      routeId: Number(params.routeId || 0),
+      planId: Number(params.planId || 0),
+      targetHotspotId: Number(params.targetHotspotId || 0),
+      anchorIntent: String(params.anchorIntent || ''),
+      afterHotspotId: Number(params.afterHotspotId || 0),
+      beforeHotspotId: Number(params.beforeHotspotId || 0),
+      removedHotspotIds: (params.removedHotspotIds || [])
+        .map((id: any) => Number(id || 0))
+        .filter((id: number) => Number.isFinite(id) && id > 0)
+        .sort((a: number, b: number) => a - b),
+      timelineFingerprint: this.buildManualFitTimelineFingerprint(timeline),
+    });
+  }
+
+  private rememberExactAnchorSequentialTimeline(cacheKey: string, timeline: any[]): void {
+    const normalizedKey = String(cacheKey || '').trim();
+    if (!normalizedKey) return;
+
+    this.exactAnchorSequentialTimelineCache.set(
+      normalizedKey,
+      this.cloneTimelineRowsForPreview(timeline),
+    );
+
+    const maxEntries = 200;
+    while (this.exactAnchorSequentialTimelineCache.size > maxEntries) {
+      const oldestKey = this.exactAnchorSequentialTimelineCache.keys().next().value;
+      if (!oldestKey) break;
+      this.exactAnchorSequentialTimelineCache.delete(oldestKey);
+    }
+  }
+
   private buildStableManualFitSourceSnapshot(snapshot: {
     hotspotRows?: any[];
     activityRows?: any[];
@@ -14091,6 +14151,11 @@ pricing: {
     },
   ): Promise<any[]> {
     const ordered = Array.isArray(timeline) ? timeline : [];
+    const cacheKey = this.buildExactAnchorSequentialTimelineCacheKey(ordered, params);
+    const cachedTimeline = this.exactAnchorSequentialTimelineCache.get(cacheKey);
+    if (Array.isArray(cachedTimeline) && cachedTimeline.length > 0) {
+      return this.cloneTimelineRowsForPreview(cachedTimeline);
+    }
 
     const removedSet = new Set(
       (params.removedHotspotIds || [])
@@ -14864,6 +14929,7 @@ pricing: {
     );
 
     const normalized = this.normalizeTravelLabelsToNextStop(enriched);
+    this.rememberExactAnchorSequentialTimeline(cacheKey, normalized);
     console.log('[FitHere][APJ_PIVOT_REBUILT_TIMELINE]', {
       routeId: Number(params.routeId),
       selectedHotspotId: Number(params.targetHotspotId || 0),
@@ -14879,7 +14945,7 @@ pricing: {
       })),
     });
 
-    return normalized;
+    return this.cloneTimelineRowsForPreview(normalized);
   }
 
   private validateResolvedLowPriorityTimeline(
@@ -17708,7 +17774,7 @@ pricing: {
     let adjustedTimeline = params.trustedPreviewConfirmation === true
       && Array.isArray(params.trustedPreviewTimeline)
       && params.trustedPreviewTimeline.length > 0
-        ? JSON.parse(JSON.stringify(params.trustedPreviewTimeline))
+        ? this.cloneTimelineRowsForPreview(params.trustedPreviewTimeline)
         : null;
     adjustedTimeline = adjustedTimeline
       || await this.buildMatrixRescheduledPreviewTimeline({

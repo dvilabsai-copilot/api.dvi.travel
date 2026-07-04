@@ -42,6 +42,8 @@
     "debug:fit-preview": "tsx scripts/debug-fit-preview-source.ts",
     "debug:fit-preview:apj": "tsx scripts/check-fit-preview-apj-op-time.ts",
     "debug:fit-confirm": "tsx scripts/debug-fit-confirm.ts",
+    "debug:fit-confirm:rescue": "tsx scripts/debug-fit-confirm-rescue.ts",
+    "debug:fit-here:replay": "tsx scripts/debug-fit-here-preview-confirm-replay.ts",
     "test:matrix": "tsx scripts/test-matrix-autobuild.ts",
     "test:available-hotspots-anchor": "tsx scripts/test-available-hotspots-anchor.local.ts",
     "sync:tbo:missing-city": "node scripts/sync-missing-tbo-hotels-by-city.js",
