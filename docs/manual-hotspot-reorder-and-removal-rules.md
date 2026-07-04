@@ -449,6 +449,155 @@ Never return:
 - success just because APJ exists somewhere later in route
 - failure just because literal clicked anchor could not be preserved
 
+## Current enforced backend guardrails
+
+These are not just desired rules.
+These are the guardrails now enforced by the current backend code.
+
+### 1. Route-scoped preview isolation
+
+Manual Fit Here preview for a route must simulate only that route.
+
+When preview is requested for route `R`:
+
+- keep only active hotspot rows that belong to route `R`
+- allow manual placeholders that also belong to route `R`
+- do not pull hotspot rows from sibling routes of the same itinerary
+- do not rebuild the day using other route rows just because they exist elsewhere in the plan
+
+Practical meaning:
+
+- If day 2 currently has only `Alagar Koyil` and `Pamban Bridge`, then preview for that day must start from that visible day-2 hotspot set.
+- Adding APJ must not suddenly import `Ramanatha Swami Temple`, `Agni Teertham`, or any hotspot that belongs to another route or another day unless the user explicitly added it on this same route.
+
+Implementation note:
+
+- Preview mode now applies a route-scoped hotspot filter.
+- Current logging rule:
+  - `SCOPED_PREVIEW_ROUTE_HOTSPOT_FILTER`
+
+### 2. Visible timeline only for exact-anchor rescue
+
+Exact-anchor rescue must be based on the visible route timeline that the user clicked.
+
+Do not silently widen the rescue candidate array by re-reading extra persisted route attractions from the database when those rows are not part of the source preview timeline.
+
+Allowed:
+
+- build rescue candidates from the exact timeline array the user is previewing
+- preserve current route rows
+- add the selected manual hotspot
+- remove allowed blockers from that same route-scoped array
+
+Forbidden:
+
+- rehydrating missing attractions from DB and mixing them back into preview rescue
+- using hidden persisted rows to manufacture a different day plan than the one user clicked
+- showing a preview timeline with hotspots the user never saw in that day
+
+This is the main rule that prevents false previews like:
+
+```text
+Visible day: Alagar -> Pamban
+Preview result: Ramanatha -> Pamban -> APJ -> Agni -> Hotel
+```
+
+That output is invalid because the preview stopped simulating the clicked day and started rebuilding from external DB rows.
+
+### 3. Stale exact-anchor requests must fail fast
+
+Fit Here anchor payload is valid only while the backend route still matches the clicked UI timeline.
+
+If the user clicked an anchor using old route-hotspot IDs or an old adjacency gap, preview must not silently "best effort" another location.
+
+Return conflict instead.
+
+Current conflict contract:
+
+- HTTP `409`
+- code: `MANUAL_FIT_HERE_ANCHOR_STALE`
+
+Current stale reasons include:
+
+- `afterRouteHotspotId` no longer active on this route
+- `beforeRouteHotspotId` no longer active on this route
+- `afterHotspotId` or `beforeHotspotId` no longer active on this route
+- requested `after -> before` gap is no longer adjacent on the active route
+- `AFTER_START` request points to a first hotspot that no longer matches the current route start
+
+Response should include:
+
+- `reasons`
+- `currentRouteHotspots`
+
+Why this matters:
+
+- stale requests previously fell through to generic fallback logic
+- that created fake success, wrong removals, or wrong "cannot fit" decisions on a route the user was no longer actually previewing
+
+### 4. Selected-hotspot closing conflict is a real block
+
+If the selected hotspot is closed at the attempted visit time, preview must report that final state as a blocking result unless another rescue candidate truly makes it fit earlier.
+
+Do not mark preview confirmable merely because some internal payload looked "ready to apply."
+
+Current enforced result type:
+
+- `SELECTED_HOTSPOT_CLOSED_AT_ATTEMPTED_TIME`
+
+Meaning:
+
+- if selected hotspot still lands outside operating hours in the chosen candidate
+- confirm must remain disabled
+- UI must not show "Can Fit Directly"
+
+### 5. Exact-anchor fallback is allowed only when source exact timeline is empty
+
+For exact-anchor validation, falling back to active-route DB candidates is now heavily restricted.
+
+Allowed fallback:
+
+- exact-anchor mode
+- candidate array is empty
+- source exact timeline has zero attraction rows
+
+Not allowed fallback:
+
+- exact-anchor mode with a non-empty source timeline
+- selected-hotspot closing validation where the clicked timeline already contains route attractions
+
+Reason:
+
+- if the user already clicked a real visible day timeline, exact rescue must stay rooted in that visible array
+- otherwise confirm preview stops representing what the user clicked
+
+### 6. Different-city selected-pivot rescue may defer clicked anchor, but only inside the same route-scoped array
+
+For different-city routes, the selected hotspot can still win over the clicked anchor when needed for directional correctness or closing-time rescue.
+
+That part remains valid.
+
+But the rescue is bounded by two hard rules:
+
+- do not import foreign/sibling-day hotspots
+- do not preserve a fake clicked anchor by moving the selected hotspot to an unrelated later position
+
+So the current mental model is:
+
+```text
+Take the clicked route's visible hotspot array
++ selected manual hotspot
+- allowed blockers
+-> rebuild
+```
+
+Not:
+
+```text
+Take whole itinerary memory
+-> search anywhere for a success-looking path
+```
+
 ## Frontend meaning
 
 `ManualFitHerePreviewDialog.tsx` must:
@@ -471,8 +620,138 @@ Never return:
 - Backtracking blockers after APJ are removed or repositioned if policy allows.
 - Operating-hours waiting is allowed for early arrivals.
 - A hotspot visited after closing is removed.
+- Preview uses only the clicked route's hotspot set plus same-route manual placeholders.
+- Preview does not import sibling-route or other-day hotspots.
+- Stale anchor payloads return `409 MANUAL_FIT_HERE_ANCHOR_STALE`.
+- Exact-anchor rescue does not silently widen from DB when the source route timeline is already populated.
+- `SELECTED_HOTSPOT_CLOSED_AT_ATTEMPTED_TIME` cannot be surfaced as confirmable success.
 - Final `CANNOT_FIT` only happens after all allowed rescue attempts fail.
 - Successful rescue can keep `canConfirm=true` even when the clicked anchor is not preserved.
+
+## Debugging checklist for future regressions
+
+When preview looks wrong, check in this order:
+
+1. Is the clicked anchor stale?
+   - Compare payload `afterRouteHotspotId` and `beforeRouteHotspotId` with current active route rows.
+2. Did preview import hotspots from another day or sibling route?
+   - If yes, route-scoped preview isolation is broken.
+3. Did exact-anchor rescue widen from DB even though the clicked route already had visible attractions?
+   - If yes, visible-timeline-only rule is broken.
+4. Did preview show `Can Fit` while the selected hotspot is still outside operating hours?
+   - If yes, selected-hotspot closing guard is broken.
+5. Did rescue remove blockers from the same route in allowed order?
+   - If no, rescue ordering or route scoping is broken.
+
+Expected debugging evidence:
+
+- active route hotspot IDs
+- clicked payload route-hotspot IDs
+- selected hotspot attempted time
+- selected hotspot operating hours
+- removed hotspot IDs with reasons
+- final preview hotspot IDs in order
+
+## Real payload examples
+
+These examples are included so future debugging can compare actual behavior against known fixed cases.
+
+### Example 1: route-scoped preview must not import sibling-day hotspots
+
+Plan:
+
+- `planId=9823`
+- `routeId=8175`
+- selected hotspot: `41` = `APJ Abdul Kalam National Memorial`
+
+Clicked anchor:
+
+```json
+{
+  "routeId": 8175,
+  "selectedHotspotId": 41,
+  "anchor": {
+    "anchorType": "BETWEEN_ROWS",
+    "anchorIntent": "AFTER_ATTRACTION",
+    "anchorIndex": 6,
+    "anchorFrom": "Pamban Bridge",
+    "anchorTo": "Travel to Hotel",
+    "anchorLabel": "After Pamban Bridge",
+    "anchorTimeRange": "05:15 PM - 05:30 PM",
+    "afterRowType": "attraction",
+    "beforeRowType": "travel",
+    "afterHotspotId": 40,
+    "afterRouteHotspotId": 147208,
+    "beforeHotspotId": null,
+    "beforeRouteHotspotId": null
+  },
+  "allowP3Removal": true,
+  "allowP1P2Removal": true
+}
+```
+
+Ground truth active hotspot set for route `8175`:
+
+- `28` = `Alagar Koyil & Palamuthircholai Murugan Temple`
+- `40` = `Pamban Bridge`
+
+Wrong historical preview:
+
+```text
+Ramanatha -> Pamban -> APJ -> Agni -> Hotel
+```
+
+Why wrong:
+
+- `Ramanatha` and `Agni` were not part of active route `8175`
+- preview leaked hotspots from sibling route/day state
+
+Correct rule now:
+
+- preview for route `8175` may only rebuild from the current route set
+- after APJ insertion, allowed output must stay bounded to:
+  - current route hotspots
+  - selected manual hotspot
+  - allowed removals from that same route
+
+### Example 2: stale anchor payload must return conflict, not fake success
+
+Plan:
+
+- `planId=9823`
+- `routeId=8171`
+
+If frontend sends an old `afterRouteHotspotId` / `beforeRouteHotspotId` pair that is no longer active or no longer adjacent on route `8171`, backend must not silently remap the click.
+
+Correct behavior now:
+
+```text
+HTTP 409
+code: MANUAL_FIT_HERE_ANCHOR_STALE
+```
+
+Response must explain:
+
+- which route-hotspot IDs are stale
+- whether the requested gap is no longer adjacent
+- what the current active route hotspots are
+
+### Example 3: selected hotspot closing conflict must stay blocked
+
+If preview still lands the selected hotspot outside operating hours, backend must return:
+
+```text
+resultType = SELECTED_HOTSPOT_CLOSED_AT_ATTEMPTED_TIME
+canConfirm = false
+```
+
+It must not show:
+
+```text
+Can Fit Directly
+```
+
+just because an internal candidate was otherwise marked ready.
 
 ## Validation commands
 

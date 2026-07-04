@@ -348,7 +348,7 @@ export async function buildManualFitPreviewEnvelopeImpl(this: any, params: any) 
       String(manualInsertionFit?.previewBlockReason || '').toUpperCase() === 'SELECTED_HOTSPOT_CLOSED_AT_ATTEMPTED_TIME'
     );
 
-  if (hasSelectedOpeningConflict && !readyToApply) {
+  if (hasSelectedOpeningConflict) {
     resultType = 'SELECTED_HOTSPOT_CLOSED_AT_ATTEMPTED_TIME';
     canConfirm = false;
   } else if (hasPriorityConflict) {

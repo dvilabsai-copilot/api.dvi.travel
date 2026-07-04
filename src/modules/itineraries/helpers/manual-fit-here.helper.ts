@@ -74,17 +74,33 @@ export async function resolveManualFitHereAnchorImpl(
     return rows.find((row) => normalizeLabel(row.hotspotName).includes(label)) || null;
   };
 
+  const requestedAfterRouteHotspotId = Number(anchor?.afterRouteHotspotId || anchor?.afterRowId || 0);
+  const requestedAfterHotspotId = Number(anchor?.afterHotspotId || 0);
+  const requestedBeforeRouteHotspotId = Number(anchor?.beforeRouteHotspotId || anchor?.beforeRowId || 0);
+  const requestedBeforeHotspotId = Number(anchor?.beforeHotspotId || 0);
+
+  const exactAfterRowByRouteHotspotId = requestedAfterRouteHotspotId > 0
+    ? findByRouteHotspotId(requestedAfterRouteHotspotId)
+    : null;
+  const exactAfterRowByHotspotId = requestedAfterHotspotId > 0
+    ? findByHotspotId(requestedAfterHotspotId)
+    : null;
+  const exactBeforeRowByRouteHotspotId = requestedBeforeRouteHotspotId > 0
+    ? findByRouteHotspotId(requestedBeforeRouteHotspotId)
+    : null;
+  const exactBeforeRowByHotspotId = requestedBeforeHotspotId > 0
+    ? findByHotspotId(requestedBeforeHotspotId)
+    : null;
+
   const afterRow =
-    findByRouteHotspotId(anchor?.afterRouteHotspotId) ||
-    findByRouteHotspotId(anchor?.afterRowId) ||
-    findByHotspotId(anchor?.afterHotspotId) ||
+    exactAfterRowByRouteHotspotId ||
+    exactAfterRowByHotspotId ||
     findByLabel(anchor?.anchorFrom) ||
     findByLabel(anchor?.anchorLabel);
 
   const beforeRow =
-    findByRouteHotspotId(anchor?.beforeRouteHotspotId) ||
-    findByRouteHotspotId(anchor?.beforeRowId) ||
-    findByHotspotId(anchor?.beforeHotspotId) ||
+    exactBeforeRowByRouteHotspotId ||
+    exactBeforeRowByHotspotId ||
     findByLabel(anchor?.anchorTo);
 
   let anchorIndex = Number.isFinite(Number(anchor?.anchorIndex))
@@ -92,6 +108,39 @@ export async function resolveManualFitHereAnchorImpl(
     : 0;
 
   let resolvedBeforeRow = beforeRow;
+  const staleRequestedAnchorReasons: string[] = [];
+
+  if (
+    anchorIntent === 'AFTER_ATTRACTION'
+    && requestedAfterRouteHotspotId > 0
+    && !exactAfterRowByRouteHotspotId
+  ) {
+    staleRequestedAnchorReasons.push(
+      `afterRouteHotspotId ${requestedAfterRouteHotspotId} is no longer active on route ${Number(routeId)}.`,
+    );
+  }
+
+  if (
+    anchorIntent === 'AFTER_ATTRACTION'
+    && requestedAfterHotspotId > 0
+    && !exactAfterRowByHotspotId
+  ) {
+    staleRequestedAnchorReasons.push(
+      `afterHotspotId ${requestedAfterHotspotId} is no longer active on route ${Number(routeId)}.`,
+    );
+  }
+
+  if (requestedBeforeRouteHotspotId > 0 && !exactBeforeRowByRouteHotspotId) {
+    staleRequestedAnchorReasons.push(
+      `beforeRouteHotspotId ${requestedBeforeRouteHotspotId} is no longer active on route ${Number(routeId)}.`,
+    );
+  }
+
+  if (requestedBeforeHotspotId > 0 && !exactBeforeRowByHotspotId) {
+    staleRequestedAnchorReasons.push(
+      `beforeHotspotId ${requestedBeforeHotspotId} is no longer active on route ${Number(routeId)}.`,
+    );
+  }
 
   if (anchorIntent === 'AFTER_START') {
     anchorIndex = 0;
@@ -99,6 +148,26 @@ export async function resolveManualFitHereAnchorImpl(
     // This keeps the exact anchor pinned to the route's first hotspot instead
     // of letting downstream slot matching drift toward hotel/destination gaps.
     resolvedBeforeRow = rows[0] || null;
+
+    if (
+      requestedBeforeRouteHotspotId > 0
+      && resolvedBeforeRow
+      && Number(resolvedBeforeRow.routeHotspotId || 0) !== requestedBeforeRouteHotspotId
+    ) {
+      staleRequestedAnchorReasons.push(
+        `The route's first active row is route hotspot ${Number(resolvedBeforeRow.routeHotspotId || 0)}, not requested beforeRouteHotspotId ${requestedBeforeRouteHotspotId}.`,
+      );
+    }
+
+    if (
+      requestedBeforeHotspotId > 0
+      && resolvedBeforeRow
+      && Number(resolvedBeforeRow.hotspotId || 0) !== requestedBeforeHotspotId
+    ) {
+      staleRequestedAnchorReasons.push(
+        `The route's first active hotspot is ${Number(resolvedBeforeRow.hotspotId || 0)}, not requested beforeHotspotId ${requestedBeforeHotspotId}.`,
+      );
+    }
   }
 
   if (anchorIntent === 'AFTER_ATTRACTION') {
@@ -127,6 +196,24 @@ export async function resolveManualFitHereAnchorImpl(
         resolvedAfterHotspotId: Number(resolvedAfterRow?.hotspotId || 0),
       });
     }
+
+    if (
+      exactAfterRowByRouteHotspotId
+      && exactBeforeRowByRouteHotspotId
+      && Number(exactBeforeRowByRouteHotspotId.index) !== Number(exactAfterRowByRouteHotspotId.index) + 1
+    ) {
+      staleRequestedAnchorReasons.push(
+        `Requested route hotspot gap ${requestedAfterRouteHotspotId} -> ${requestedBeforeRouteHotspotId} is no longer adjacent on the active route.`,
+      );
+    } else if (
+      exactAfterRowByHotspotId
+      && exactBeforeRowByHotspotId
+      && Number(exactBeforeRowByHotspotId.index) !== Number(exactAfterRowByHotspotId.index) + 1
+    ) {
+      staleRequestedAnchorReasons.push(
+        `Requested hotspot gap ${requestedAfterHotspotId} -> ${requestedBeforeHotspotId} is no longer adjacent on the active route.`,
+      );
+    }
   }
 
   anchorIndex = Math.max(0, Math.min(anchorIndex, rows.length));
@@ -151,6 +238,15 @@ export async function resolveManualFitHereAnchorImpl(
     beforeRouteHotspotId: resolvedBeforeRow?.routeHotspotId ?? null,
     beforeHotspotId: resolvedBeforeRow?.hotspotId ?? null,
     exactSelectedGap: true,
+    staleRequestedAnchor: staleRequestedAnchorReasons.length > 0,
+    staleRequestedAnchorReasons,
+    currentRouteHotspots: rows.map((row) => ({
+      index: Number(row.index),
+      routeHotspotId: Number(row.routeHotspotId || 0),
+      hotspotId: Number(row.hotspotId || 0),
+      hotspotOrder: Number(row.hotspotOrder || 0),
+      hotspotName: row.hotspotName || null,
+    })),
   };
 }
 
@@ -184,6 +280,22 @@ export async function previewManualHotspotFitHereImpl(
   await this.purgeExpiredManualFitAttempts();
 
   const resolvedAnchor = await this.resolveManualFitHereAnchor(Number(data.routeId), data.anchor || {}, Number(data.selectedHotspotId || 0));
+  if (resolvedAnchor?.staleRequestedAnchor === true) {
+    throw new ConflictException({
+      success: false,
+      code: 'MANUAL_FIT_HERE_ANCHOR_STALE',
+      message: 'The selected Fit Here position is stale because the active backend route no longer matches the clicked UI timeline. Refresh the itinerary and try again.',
+      planId: Number(planId),
+      routeId: Number(data.routeId),
+      selectedHotspotId: Number(data.selectedHotspotId || 0),
+      reasons: Array.isArray(resolvedAnchor?.staleRequestedAnchorReasons)
+        ? resolvedAnchor.staleRequestedAnchorReasons
+        : [],
+      currentRouteHotspots: Array.isArray(resolvedAnchor?.currentRouteHotspots)
+        ? resolvedAnchor.currentRouteHotspots
+        : [],
+    });
+  }
   const exactAnchorPreferredSlot =
     resolvedAnchor.exactSelectedGap === true
       ? {

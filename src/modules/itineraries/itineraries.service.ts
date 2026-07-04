@@ -14148,6 +14148,7 @@ pricing: {
       anchorIntent?: 'AFTER_START' | 'AFTER_ATTRACTION';
       afterHotspotId?: number;
       beforeHotspotId?: number;
+      allowSelectedClosingAnchorBypass?: boolean;
     },
   ): Promise<any[]> {
     const ordered = Array.isArray(timeline) ? timeline : [];
@@ -14277,78 +14278,15 @@ pricing: {
         .filter((id: number) => Number.isFinite(id) && id > 0),
     ));
 
-    const persistedMasters = persistedHotspotIds.length > 0
-      ? await (tx as any).dvi_hotspot_place.findMany({
-          where: { hotspot_ID: { in: persistedHotspotIds }, deleted: 0 },
-          select: {
-            hotspot_ID: true,
-            hotspot_name: true,
-            hotspot_duration: true,
-            hotspot_priority: true,
-            hotspot_location: true,
-            hotspot_to_location: true,
-          },
-        })
-      : [];
-    const persistedMasterById = new Map<number, any>(
-      persistedMasters.map((row: any) => [Number(row?.hotspot_ID || 0), row]),
-    );
-
-    const persistedMissingAttractions = (persistedRouteAttractions || [])
-      .filter((row: any) => {
-        const hotspotId = Number(row?.hotspot_ID || 0);
-        return hotspotId > 0 && !existingOriginalAttractionIds.has(hotspotId) && !removedSet.has(hotspotId);
-      })
-      .map((row: any) => {
-        const hotspotId = Number(row?.hotspot_ID || 0);
-        const master = persistedMasterById.get(hotspotId) || {};
-        const start = row?.hotspot_start_time ? new Date(row.hotspot_start_time) : null;
-        const end = row?.hotspot_end_time ? new Date(row.hotspot_end_time) : null;
-        const durationMinutes = this.getHotspotDurationMinutes(master, row);
-        return {
-          type: 'attraction',
-          item_type: 4,
-          id: undefined,
-          locationId: hotspotId,
-          hotspot_ID: hotspotId,
-          hotspotId,
-          hotspot_id: hotspotId,
-          routeHotspotId: Number(row?.route_hotspot_ID || 0),
-          route_hotspot_ID: Number(row?.route_hotspot_ID || 0),
-          hotspotOrder: Number(row?.hotspot_order || 0),
-          hotspot_order: Number(row?.hotspot_order || 0),
-          text: String(master?.hotspot_name || `Hotspot #${hotspotId}`).trim(),
-          name: String(master?.hotspot_name || `Hotspot #${hotspotId}`).trim(),
-          hotspot_name: String(master?.hotspot_name || `Hotspot #${hotspotId}`).trim(),
-          hotspot_priority: Number(master?.hotspot_priority || 9999),
-          priority: Number(master?.hotspot_priority || 9999),
-          hotspot_location: master?.hotspot_location || '',
-          hotspot_to_location: master?.hotspot_to_location || '',
-          hotspot_plan_own_way: Number(row?.hotspot_plan_own_way || 0),
-          isManual: Number(row?.hotspot_plan_own_way || 0) === 1,
-          durationMinutes,
-          duration: `${durationMinutes} min`,
-          hotspot_start_time: row?.hotspot_start_time || null,
-          hotspot_end_time: row?.hotspot_end_time || null,
-          timeRange: start && end && Number.isFinite(start.getTime()) && Number.isFinite(end.getTime())
-            ? `${this.formatTime(start as any)} - ${this.formatTime(end as any)}`
-            : null,
-        };
-      });
-
-    if (persistedMissingAttractions.length > 0) {
-      originalAttractions = [...originalAttractions, ...persistedMissingAttractions]
-        .sort((a: any, b: any) => attractionSortKey(a, originalAttractions.indexOf(a)) - attractionSortKey(b, originalAttractions.indexOf(b)));
-
-      console.log('[FitHere][APJ_PIVOT_ARRAY_SOURCE]', {
-        routeId: Number(params.routeId),
-        selectedHotspotId: Number(params.targetHotspotId || 0),
-        fromTimelineIds: Array.from(existingOriginalAttractionIds),
-        fromDbIds: persistedHotspotIds,
-        addedFromDbIds: persistedMissingAttractions.map((row: any) => getHotspotId(row)),
-        finalIds: originalAttractions.map((row: any) => getHotspotId(row)),
-      });
-    }
+    console.log('[FitHere][APJ_PIVOT_ARRAY_SOURCE]', {
+      routeId: Number(params.routeId),
+      selectedHotspotId: Number(params.targetHotspotId || 0),
+      source: 'VISIBLE_TIMELINE_ONLY',
+      fromTimelineIds: Array.from(existingOriginalAttractionIds),
+      fromDbIds: persistedHotspotIds,
+      addedFromDbIds: [],
+      finalIds: originalAttractions.map((row: any) => getHotspotId(row)),
+    });
 
     let selectedAttractionRow =
       originalAttractions.find((row: any) => getHotspotId(row) === Number(params.targetHotspotId || 0))
@@ -14500,8 +14438,67 @@ pricing: {
         return attractionSortKey(a, originalAttractions.indexOf(a)) - attractionSortKey(b, originalAttractions.indexOf(b));
       });
 
+    const oppositeCityContext =
+      selectedCityContext === 'DESTINATION_CITY'
+        ? 'SOURCE_CITY'
+        : (
+            selectedCityContext === 'SOURCE_CITY'
+              ? 'DESTINATION_CITY'
+              : 'UNKNOWN'
+          );
+
     const pruneDirectionalBacktrackingAfterPivot = (rows: any[]): any[] => {
       return orderDirectionalSurvivors(rows);
+    };
+
+    const stabilizePrefixRowsBeforeDirectionalPivot = (rows: any[]): { keptPrefixRows: any[]; deferredRows: any[] } => {
+      if (sameCityRoute || !['SOURCE_CITY', 'DESTINATION_CITY'].includes(selectedCityContext)) {
+        return {
+          keptPrefixRows: [...rows],
+          deferredRows: [],
+        };
+      }
+
+      const keptPrefixRows: any[] = [];
+      const deferredRows: any[] = [];
+      const rowContexts = rows.map((row: any) => getAttractionCityContext(row));
+
+      for (let index = 0; index < rows.length; index += 1) {
+        const row = rows[index];
+        const hotspotId = getHotspotId(row);
+        const rowContext = rowContexts[index];
+        const shouldBypassClickedAnchorForClosing =
+          params.allowSelectedClosingAnchorBypass === true
+          && hotspotId > 0
+          && hotspotId === anchorAfterHotspotId
+          && rowContext === selectedCityContext;
+        const hasLaterOppositeSideRow = rowContexts.slice(index + 1).some((candidate: any) => candidate === oppositeCityContext);
+
+        if (shouldBypassClickedAnchorForClosing || (rowContext === selectedCityContext && hasLaterOppositeSideRow)) {
+          deferredRows.push(row);
+          console.log('[FitHere][APJ_PIVOT_PREFIX_REORDER]', {
+            routeId: Number(params.routeId),
+            selectedHotspotId: Number(params.targetHotspotId || 0),
+            hotspotId,
+            name: getName(row),
+            cityContext: rowContext,
+            decision: shouldBypassClickedAnchorForClosing
+              ? 'DEFER_CLICKED_ANCHOR_AFTER_SELECTED_PIVOT'
+              : 'DEFER_BEFORE_SELECTED_PIVOT',
+            reason: shouldBypassClickedAnchorForClosing
+              ? `${getName(row)} was moved after the selected hotspot so the selected manual hotspot can fit before closing time.`
+              : `${getName(row)} was moved after the selected pivot to avoid a cross-city bounce before the selected hotspot.`,
+          });
+          continue;
+        }
+
+        keptPrefixRows.push(row);
+      }
+
+      return {
+        keptPrefixRows,
+        deferredRows,
+      };
     };
 
     const scheduledAttractions = (() => {
@@ -14523,7 +14520,12 @@ pricing: {
         if (afterIndex >= 0) {
           const prefixRows = survivingAttractions.slice(0, afterIndex + 1);
           const downstreamRows = survivingAttractions.slice(afterIndex + 1);
-          return [...prefixRows, selectedAttractionRow, ...pruneDirectionalBacktrackingAfterPivot(downstreamRows)];
+          const { keptPrefixRows, deferredRows } = stabilizePrefixRowsBeforeDirectionalPivot(prefixRows);
+          return [
+            ...keptPrefixRows,
+            selectedAttractionRow,
+            ...pruneDirectionalBacktrackingAfterPivot([...deferredRows, ...downstreamRows]),
+          ];
         }
 
         if (anchorBeforeHotspotId > 0) {
@@ -14531,7 +14533,12 @@ pricing: {
           if (beforeIndex >= 0) {
             const prefixRows = survivingAttractions.slice(0, beforeIndex);
             const downstreamRows = survivingAttractions.slice(beforeIndex);
-            return [...prefixRows, selectedAttractionRow, ...pruneDirectionalBacktrackingAfterPivot(downstreamRows)];
+            const { keptPrefixRows, deferredRows } = stabilizePrefixRowsBeforeDirectionalPivot(prefixRows);
+            return [
+              ...keptPrefixRows,
+              selectedAttractionRow,
+              ...pruneDirectionalBacktrackingAfterPivot([...deferredRows, ...downstreamRows]),
+            ];
           }
         }
       }
@@ -16321,7 +16328,12 @@ pricing: {
         return a.id - b.id;
       });
 
-    if (params.exactAnchorMode === true && (candidateRows.length === 0 || validationMode === 'SELECTED_HOTSPOT_CLOSING')) {
+    const shouldUseActiveRouteFallbackCandidates =
+      params.exactAnchorMode === true
+      && candidateRows.length === 0
+      && sourceTimelineAttractionCount === 0;
+
+    if (shouldUseActiveRouteFallbackCandidates) {
       const existingTimelineCandidateRows = [...candidateRows];
       const activeIds = Array.from(activeRouteHotspotIds.values()).filter((id: number) => id > 0);
       const hotspotMasters = activeIds.length > 0
@@ -16648,6 +16660,7 @@ pricing: {
           anchorIntent: params.anchorIntent,
           afterHotspotId: params.afterHotspotId,
           beforeHotspotId: params.beforeHotspotId,
+          allowSelectedClosingAnchorBypass: validationMode === 'SELECTED_HOTSPOT_CLOSING',
         });
       }
 
@@ -16681,84 +16694,6 @@ pricing: {
         ))?.text ||
         `Hotspot #${targetHotspotId}`,
       ).trim();
-
-      const persistedRouteRowsForRescue = await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
-        where: {
-          itinerary_plan_ID: Number(params.planId),
-          itinerary_route_ID: Number(params.routeId),
-          item_type: 4,
-          deleted: 0,
-          status: 1,
-        },
-        select: {
-          route_hotspot_ID: true,
-          hotspot_ID: true,
-          hotspot_order: true,
-          hotspot_plan_own_way: true,
-        },
-        orderBy: [{ hotspot_order: 'asc' }, { route_hotspot_ID: 'asc' }],
-      });
-
-      const persistedRescueHotspotIds = Array.from(new Set(
-        persistedRouteRowsForRescue
-          .map((row: any) => Number(row?.hotspot_ID || 0))
-          .filter((id: number) => Number.isFinite(id) && id > 0),
-      ));
-      const persistedRescueMasters = persistedRescueHotspotIds.length > 0
-        ? await (tx as any).dvi_hotspot_place.findMany({
-            where: {
-              hotspot_ID: { in: persistedRescueHotspotIds },
-              deleted: 0,
-            },
-            select: {
-              hotspot_ID: true,
-              hotspot_name: true,
-              hotspot_priority: true,
-            },
-          })
-        : [];
-      const persistedRescueMasterById = new Map<number, any>(
-        persistedRescueMasters.map((row: any) => [Number(row?.hotspot_ID || 0), row]),
-      );
-
-      const orderedRouteAttractions = persistedRouteRowsForRescue
-        .map((row: any, rowIndex: number) => {
-          const hotspotId = Number(row?.hotspot_ID || 0);
-          if (!(hotspotId > 0) || hotspotId === targetHotspotId) return null;
-          if (Number(row?.hotspot_plan_own_way || 0) === 1) return null;
-
-          const candidate = candidateById.get(hotspotId) || null;
-          const master = persistedRescueMasterById.get(hotspotId) || null;
-          const normalizedPriority = this.normalizeHotspotPriority(
-            Number(candidate?.priority || master?.hotspot_priority || 9999),
-          );
-          const priority =
-            normalizedPriority >= this.MANUAL_HOTSPOT_EFFECTIVE_PRIORITY || normalizedPriority === 9999
-              ? 4
-              : normalizedPriority;
-
-          return {
-            id: hotspotId,
-            hotspotId,
-            name: String(
-              candidate?.name ||
-              master?.hotspot_name ||
-              `Hotspot #${hotspotId}`,
-            ).trim(),
-            routeOrder: Number(row?.hotspot_order || rowIndex + 1),
-            priority,
-            estimatedMinutes: Number(candidate?.estimatedMinutes || 0),
-            candidate,
-            row,
-            cityContext: getRemovalCityContext(hotspotId, candidate?.row || row),
-          };
-        })
-        .filter(Boolean)
-        .sort((a: any, b: any) => Number(a?.routeOrder || 0) - Number(b?.routeOrder || 0));
-
-      if (orderedRouteAttractions.length === 0) {
-        return [] as any[];
-      }
 
       const selectedStub = {
         hotspotId: targetHotspotId,
@@ -16796,11 +16731,12 @@ pricing: {
         .filter(Boolean)
         .sort((a: any, b: any) => Number(a?.routeOrder || 0) - Number(b?.routeOrder || 0));
 
+      if (sourceTimelineExactArray.length === 0) {
+        return [] as any[];
+      }
+
       const exactArray = (() => {
-        const sourceRouteArray =
-          sourceTimelineExactArray.length > 0
-            ? sourceTimelineExactArray
-            : [...orderedRouteAttractions];
+        const sourceRouteArray = sourceTimelineExactArray;
         if (sourceRouteArray.length === 0) return [] as any[];
 
         if (anchorIntentUpper === 'AFTER_START') {
@@ -16844,7 +16780,7 @@ pricing: {
         .slice(selectedIndex + 1)
         .filter((row: any) => Number(row?.hotspotId || 0) > 0);
       const rescueRowById = new Map<number, any>(
-        (sourceTimelineExactArray.length > 0 ? sourceTimelineExactArray : orderedRouteAttractions)
+        sourceTimelineExactArray
           .map((row: any) => [Number(row?.hotspotId || 0), row] as const),
       );
       const isRescuePriorityAllowed = (priority: number): boolean => {
@@ -16866,7 +16802,11 @@ pricing: {
       const sourceSideBeforeSelectedDesc = nonAnchorBeforeSelectedDesc.filter((row: any) => row?.cityContext === 'SOURCE_CITY');
       const otherBeforeSelectedDesc = nonAnchorBeforeSelectedDesc.filter((row: any) => row?.cityContext !== 'SOURCE_CITY');
       const preferredNonAnchorBlockers = [...sourceSideBeforeSelectedDesc, ...otherBeforeSelectedDesc];
-      const preserveClickedAnchorFirst = Boolean(anchorRow && afterSelectedRows.length > 0);
+      const deferClickedAnchorRemoval =
+        Boolean(anchorRow)
+        && String(anchorRow?.cityContext || '') === String(selectedRemovalCityContext || '')
+        && ['SOURCE_CITY', 'DESTINATION_CITY'].includes(String(selectedRemovalCityContext || ''));
+      const preserveClickedAnchorFirst = Boolean(anchorRow && afterSelectedRows.length > 0 && !deferClickedAnchorRemoval);
       const explicitRescuePlans: any[] = [];
       const seenPlanKeys = new Set<string>();
 
@@ -16927,10 +16867,18 @@ pricing: {
           ]);
         }
       } else {
-        const primarySingles = [
-          anchorRow,
-          ...orderedBeforeSelectedDesc.filter((row: any) => Number(row?.hotspotId || 0) !== Number(anchorRow?.hotspotId || 0)),
-        ].filter(Boolean);
+        const anchorExcludedRows = orderedBeforeSelectedDesc.filter((row: any) => (
+          Number(row?.hotspotId || 0) !== Number(anchorRow?.hotspotId || 0)
+        ));
+        const primarySingles = deferClickedAnchorRemoval
+          ? [
+              ...anchorExcludedRows,
+              anchorRow,
+            ].filter(Boolean)
+          : [
+              anchorRow,
+              ...anchorExcludedRows,
+            ].filter(Boolean);
 
         primarySingles.slice(0, 3).forEach((row: any, index: number) => {
           pushPlan(`REMOVE_NEAREST_BLOCKER_${index + 1}`, [row?.hotspotId]);
