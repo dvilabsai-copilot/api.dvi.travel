@@ -797,6 +797,103 @@ export class VendorsService {
     return null;
   }
 
+  private nextSoftDeleteValue(deletedValues: Array<number | null | undefined>): number {
+    return Math.max(1, ...deletedValues.map((value) => Number(value ?? 0))) + 1;
+  }
+
+  private async getActiveOutstationKmsLimitIds(
+    vendorId: number,
+    kmsLimitIds: number[],
+    client: any = this.prisma,
+  ): Promise<Set<number>> {
+    if (!kmsLimitIds.length) return new Set<number>();
+
+    const rows = await client.dvi_kms_limit.findMany({
+      where: {
+        vendor_id: vendorId,
+        kms_limit_id: { in: kmsLimitIds },
+        deleted: 0,
+        status: 1,
+      },
+      select: { kms_limit_id: true },
+    });
+
+    return new Set(rows.map((row: { kms_limit_id: number }) => row.kms_limit_id));
+  }
+
+  private async getActiveLocalTimeLimitIds(
+    vendorId: number,
+    timeLimitIds: number[],
+    client: any = this.prisma,
+  ): Promise<Set<number>> {
+    if (!timeLimitIds.length) return new Set<number>();
+
+    const rows = await client.dvi_time_limit.findMany({
+      where: {
+        vendor_id: vendorId,
+        time_limit_id: { in: timeLimitIds },
+        deleted: 0,
+        status: 1,
+      },
+      select: { time_limit_id: true },
+    });
+
+    return new Set(rows.map((row: { time_limit_id: number }) => row.time_limit_id));
+  }
+
+  private async softDeleteOutstationPricebooksForKmsLimit(
+    vendorId: number,
+    kmsLimitId: number,
+    client: any = this.prisma,
+    now: Date = new Date(),
+  ): Promise<number> {
+    const activePricebooks = await client.dvi_vehicle_outstation_price_book.findMany({
+      where: {
+        vendor_id: vendorId,
+        kms_limit_id: kmsLimitId,
+        deleted: 0,
+      },
+      select: {
+        vehicle_outstation_price_book_id: true,
+        vendor_id: true,
+        vendor_branch_id: true,
+        vehicle_type_id: true,
+        kms_limit_id: true,
+        year: true,
+        month: true,
+      },
+    });
+
+    let deletedCount = 0;
+    for (const pricebook of activePricebooks) {
+      const siblingRows = await client.dvi_vehicle_outstation_price_book.findMany({
+        where: {
+          vendor_id: pricebook.vendor_id,
+          vendor_branch_id: pricebook.vendor_branch_id,
+          vehicle_type_id: pricebook.vehicle_type_id,
+          kms_limit_id: pricebook.kms_limit_id,
+          year: pricebook.year,
+          month: pricebook.month,
+        },
+        select: { deleted: true },
+      });
+
+      const nextDeletedValue = this.nextSoftDeleteValue(siblingRows.map((row: { deleted: number }) => row.deleted));
+
+      await client.dvi_vehicle_outstation_price_book.update({
+        where: { vehicle_outstation_price_book_id: pricebook.vehicle_outstation_price_book_id },
+        data: {
+          deleted: nextDeletedValue,
+          status: 0,
+          updatedon: now,
+        },
+      });
+      deletedCount += 1;
+    }
+
+    return deletedCount;
+  }
+
   private normalizeLocalTimeLimitSignature(
     hours: number | null,
     kmLimit: number | null,
@@ -1728,9 +1825,26 @@ async updateVendorVehicle(vehicleId: number, data: any): Promise<any> {
       where: { time_limit_id: timeLimitId, vendor_id: vendorId, deleted: 0 },
     });
     if (!row) throw new NotFoundException(`Local KM limit ${timeLimitId} not found for vendor ${vendorId}`);
-    await this.prisma.dvi_time_limit.update({
-      where: { time_limit_id: timeLimitId },
-      data: { deleted: 1 },
+
+    const now = new Date();
+    await this.prisma.$transaction(async (tx) => {
+      await tx.dvi_vehicle_local_pricebook.updateMany({
+        where: {
+          vendor_id: vendorId,
+          time_limit_id: timeLimitId,
+          deleted: 0,
+        },
+        data: {
+          deleted: 1,
+          status: 0,
+          updatedon: now,
+        },
+      });
+
+      await tx.dvi_time_limit.update({
+        where: { time_limit_id: timeLimitId },
+        data: { deleted: 1, status: 0, updatedon: now },
+      });
     });
   }
 
@@ -1739,9 +1853,14 @@ async updateVendorVehicle(vehicleId: number, data: any): Promise<any> {
       where: { kms_limit_id: kmsLimitId, vendor_id: vendorId, deleted: 0 },
     });
     if (!row) throw new NotFoundException(`Outstation KM limit ${kmsLimitId} not found for vendor ${vendorId}`);
-    await this.prisma.dvi_kms_limit.update({
-      where: { kms_limit_id: kmsLimitId },
-      data: { deleted: 1 },
+
+    const now = new Date();
+    await this.prisma.$transaction(async (tx) => {
+      await this.softDeleteOutstationPricebooksForKmsLimit(vendorId, kmsLimitId, tx, now);
+      await tx.dvi_kms_limit.update({
+        where: { kms_limit_id: kmsLimitId },
+        data: { deleted: 1, status: 0, updatedon: now },
+      });
     });
   }
 
@@ -1856,9 +1975,16 @@ async updateVendorVehicle(vehicleId: number, data: any): Promise<any> {
   // --- Step 5: Pricebook (dvi_vehicle_local_pricebook, dvi_vehicle_outstation_price_book) ---
 
   async getVendorLocalPricebook(vendorId: number): Promise<any[]> {
-    return this.prisma.dvi_vehicle_local_pricebook.findMany({
+    const rows = await this.prisma.dvi_vehicle_local_pricebook.findMany({
       where: { vendor_id: vendorId, deleted: 0 },
     });
+
+    const activeTimeLimitIds = await this.getActiveLocalTimeLimitIds(
+      vendorId,
+      [...new Set(rows.map((row) => row.time_limit_id))],
+    );
+
+    return rows.filter((row) => activeTimeLimitIds.has(row.time_limit_id));
   }
 
   async getVendorLocalPricebookPreview(
@@ -2162,7 +2288,13 @@ async updateVendorVehicle(vehicleId: number, data: any): Promise<any> {
       },
     });
 
-    const vvTypeIds = [...new Set(entries.map((e) => e.vehicle_type_id))];
+    const activeKmsLimitIds = await this.getActiveOutstationKmsLimitIds(
+      vendorId,
+      [...new Set(entries.map((entry) => entry.kms_limit_id))],
+    );
+    const activeEntries = entries.filter((entry) => activeKmsLimitIds.has(entry.kms_limit_id));
+
+    const vvTypeIds = [...new Set(activeEntries.map((e) => e.vehicle_type_id))];
     const vendorTypes = vvTypeIds.length
       ? await this.prisma.dvi_vendor_vehicle_types.findMany({
           where: { vendor_vehicle_type_ID: { in: vvTypeIds } },
@@ -2180,22 +2312,22 @@ async updateVendorVehicle(vehicleId: number, data: any): Promise<any> {
       : [];
     const baseTypeTitleMap = new Map(baseTypes.map((b) => [b.vehicle_type_id, b.vehicle_type_title ?? '']));
 
-    const kmsLimitIds = [...new Set(entries.map((e) => e.kms_limit_id))];
+    const kmsLimitIds = [...new Set(activeEntries.map((e) => e.kms_limit_id))];
     const kmsLimits = kmsLimitIds.length
       ? await this.prisma.dvi_kms_limit.findMany({
-          where: { kms_limit_id: { in: kmsLimitIds } },
+          where: { kms_limit_id: { in: kmsLimitIds }, vendor_id: vendorId, deleted: 0, status: 1 },
           select: { kms_limit_id: true, kms_limit_title: true },
         })
       : [];
     const kmsLimitTitleMap = new Map(kmsLimits.map((k) => [k.kms_limit_id, k.kms_limit_title ?? '']));
 
     const recordMap = new Map<string, any>();
-    for (const e of entries) {
+    for (const e of activeEntries) {
       recordMap.set(`${e.vehicle_type_id}|${e.kms_limit_id}|${e.year}|${e.month}`, e);
     }
 
     const rowKeySet = new Set<string>();
-    for (const e of entries) rowKeySet.add(`${e.vehicle_type_id}|${e.kms_limit_id}`);
+    for (const e of activeEntries) rowKeySet.add(`${e.vehicle_type_id}|${e.kms_limit_id}`);
 
     const rows = Array.from(rowKeySet).map((key) => {
       const [vehicleTypeIdRaw, kmsLimitIdRaw] = key.split('|');
@@ -2524,9 +2656,16 @@ async updateVendorVehicle(vehicleId: number, data: any): Promise<any> {
   }
 
   async getVendorOutstationPricebook(vendorId: number): Promise<any[]> {
-    return this.prisma.dvi_vehicle_outstation_price_book.findMany({
+    const rows = await this.prisma.dvi_vehicle_outstation_price_book.findMany({
       where: { vendor_id: vendorId, deleted: 0 },
     });
+
+    const activeKmsLimitIds = await this.getActiveOutstationKmsLimitIds(
+      vendorId,
+      [...new Set(rows.map((row) => row.kms_limit_id))],
+    );
+
+    return rows.filter((row) => activeKmsLimitIds.has(row.kms_limit_id));
   }
 
   private async saveVendorOutstationPricebookBulk(vendorId: number, data: any): Promise<any> {
