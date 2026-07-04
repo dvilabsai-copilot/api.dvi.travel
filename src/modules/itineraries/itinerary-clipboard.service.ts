@@ -131,10 +131,22 @@ export class ItineraryClipboardService {
     return cleaned.length ? cleaned : [1];
   }
 
-  private buildSummaryTable(plan: any): string {
+   private buildSummaryTable(plan: any): string {
     const totalAdult = Number(plan.total_adult || 0);
     const totalChildren = Number(plan.total_children || 0);
     const totalInfants = Number(plan.total_infants || 0);
+
+    const rawTravellingPax = Number(
+      plan.travelling_pax ??
+        plan.total_travelling_pax ??
+        plan.total_adults_travelling ??
+        totalAdult,
+    );
+
+    const travellingPax =
+      Number.isFinite(rawTravellingPax) && rawTravellingPax > 0
+        ? rawTravellingPax
+        : totalAdult;
 
     const entryTicketRequired = Number(plan.entry_ticket_required || 0) === 1 ? 'Yes' : 'No';
     const nights = Number(plan.no_of_nights || 0);
@@ -176,9 +188,10 @@ export class ItineraryClipboardService {
             <span style="color:#afafaf; font-weight:500; display:block;">Nationality</span>
             <span style="color:#302c6e; font-weight:700; display:block;">${this.escapeHtml(String(plan.nationality || ''))}</span>
           </td>
-          <td width="25%" style="text-align:center; padding:3px; border:1px solid #b1b1b1;">
-            <span style="color:#afafaf; font-weight:500; display:block;">Total Pax</span>
-            <span style="color:#302c6e; font-weight:700; display:block;">${totalAdult} Adult, ${totalChildren} Children, ${totalInfants} Infant</span>
+                   <td width="25%" style="text-align:center; padding:3px; border:1px solid #b1b1b1;">
+            <span style="color:#afafaf; font-weight:500; display:block;">Travelling Pax</span>
+            <span style="color:#302c6e; font-weight:700; display:block;">${travellingPax} Adults Travelling</span>
+            <span style="color:#6c6c6c; font-weight:500; display:block;">Room Pax: ${totalAdult} Adult, ${totalChildren} Children, ${totalInfants} Infant</span>
           </td>
           <td width="25%" style="text-align:center; padding:3px; border:1px solid #b1b1b1;">
             <span style="color:#afafaf; font-weight:500; display:block;">Room Count</span>
