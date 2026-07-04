@@ -446,7 +446,7 @@ private async getOsrmRouteDistanceKm(
   }
 
   try {
-    const osrmBaseUrl = String(process.env.OSRM_BASE_URL || 'http://localhost:5000/route/v1/driving').trim();
+    const osrmBaseUrl = String(process.env.OSRM_BASE_URL || 'https://router.project-osrm.org/route/v1/driving').trim();
     const url = `${osrmBaseUrl}/${fromLng},${fromLat};${toLng},${toLat}?overview=false&alternatives=false&steps=false`;
     const response = await fetch(url, { method: 'GET' });
     if (!response.ok) return null;

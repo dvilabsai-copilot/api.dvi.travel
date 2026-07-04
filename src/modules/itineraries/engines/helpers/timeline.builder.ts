@@ -2689,6 +2689,49 @@ export class TimelineBuilder {
       // For other days, use multi-pass scheduling to fill gaps with deferred hotspots
       
       const manualPlacementByRoute = options?.manualPlacementByRoute || {};
+      const scopedPreviewAllowedHotspotIds = new Set<number>();
+      if (options?.scopeToRouteId && Array.isArray(existingHotspots) && existingHotspots.length > 0) {
+        for (const row of (existingHotspots || []) as any[]) {
+          if (Number((row as any)?.itinerary_route_ID || 0) !== Number(route.itinerary_route_ID || 0)) continue;
+          if (Number((row as any)?.item_type || 0) !== 4) continue;
+
+          const hotspotId = Number((row as any)?.hotspot_ID || 0);
+          if (!(hotspotId > 0)) continue;
+
+          const isActiveRouteRow = Number((row as any)?.deleted || 0) === 0;
+          const isManualPlaceholder = Number((row as any)?.hotspot_plan_own_way || 0) === 1;
+          if (isActiveRouteRow || isManualPlaceholder) {
+            scopedPreviewAllowedHotspotIds.add(hotspotId);
+          }
+        }
+      }
+
+      if (options?.scopeToRouteId && scopedPreviewAllowedHotspotIds.size > 0) {
+        const beforeScopedPreviewFilterCount = selectedHotspots.length;
+        selectedHotspots = selectedHotspots.filter((hotspot: any) => {
+          const hotspotId = Number((hotspot as any)?.hotspot_ID || 0);
+          return hotspotId > 0 && scopedPreviewAllowedHotspotIds.has(hotspotId);
+        });
+
+        if (selectedHotspots.length !== beforeScopedPreviewFilterCount) {
+          this.logBookingRule({
+            rule: 'SCOPED_PREVIEW_ROUTE_HOTSPOT_FILTER',
+            quoteId:
+              (plan as any).quote_id ??
+              (plan as any).quoteId ??
+              (plan as any).quote_ID ??
+              null,
+            planId,
+            routeId: route.itinerary_route_ID,
+            beforeCount: beforeScopedPreviewFilterCount,
+            afterCount: selectedHotspots.length,
+            allowedHotspotIds: Array.from(scopedPreviewAllowedHotspotIds.values()),
+            reason:
+              'Route-scoped manual preview must preserve only the current route hotspot set plus selected manual placeholders; sibling-route auto hotspots are not allowed to leak into this day.',
+          });
+        }
+      }
+
       const existingRouteOrderByHotspotId = new Map<number, number>();
       for (const row of (existingHotspots || []) as any[]) {
         if (Number((row as any)?.itinerary_route_ID || 0) !== Number(route.itinerary_route_ID || 0)) continue;

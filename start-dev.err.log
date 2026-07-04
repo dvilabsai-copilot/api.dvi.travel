@@ -1,0 +1,799 @@
+(node:31148) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+⚠️ [FALLBACK] Could not find hotspot 898 in persisted data
+[FitHere][exact_anchor_drift] {
+  routeId: 8155,
+  selectedHotspotId: 898,
+  anchorIntent: 'AFTER_ATTRACTION',
+  afterHotspotId: 222,
+  beforeHotspotId: undefined
+}
+[FitHere][APJ_PIVOT_DECISION] {
+  routeId: 8155,
+  hotspotId: 222,
+  name: 'Attukad Waterfalls',
+  cityContext: 'SOURCE_CITY',
+  decision: 'REMOVE_OPERATING_HOURS_AFTER_PIVOT',
+  reason: 'Attukad Waterfalls removed because arrival/visit crossed operating hours.',
+  attemptedVisitTime: '1:06 PM - 1:36 PM',
+  operatingHours: '08:00 - 05:00'
+}
+[FitHere][APJ_PIVOT_DECISION] {
+  routeId: 8155,
+  hotspotId: 222,
+  name: 'Attukad Waterfalls',
+  cityContext: 'SOURCE_CITY',
+  decision: 'REMOVE_OPERATING_HOURS_AFTER_PIVOT',
+  reason: 'Attukad Waterfalls removed because arrival/visit crossed operating hours.',
+  attemptedVisitTime: '9:31 AM - 10:01 AM',
+  operatingHours: '08:00 - 05:00'
+}
+(node:36384) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 36384  - [39m04/07/2026, 1:34:28 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +9ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:37124) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 37124  - [39m04/07/2026, 2:32:47 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +9ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:34308) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 34308  - [39m04/07/2026, 2:33:11 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +9ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:36632) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 36632  - [39m04/07/2026, 2:43:19 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +11ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:29588) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 29588  - [39m04/07/2026, 2:43:54 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +9ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:29904) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 29904  - [39m04/07/2026, 2:46:51 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +9ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:36200) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 36200  - [39m04/07/2026, 6:42:07 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +12ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:18148) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 18148  - [39m04/07/2026, 6:43:07 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +10ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:17772) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 17772  - [39m04/07/2026, 6:51:05 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +12ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:4768) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 4768  - [39m04/07/2026, 7:14:44 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +12ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:11312) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 11312  - [39m04/07/2026, 8:02:44 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +12ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:31268) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 31268  - [39m04/07/2026, 8:04:10 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +9ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:3092) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 3092  - [39m04/07/2026, 8:53:31 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +11ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:28716) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 28716  - [39m04/07/2026, 9:14:43 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +13ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:12364) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 12364  - [39m04/07/2026, 9:16:47 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +11ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:32640) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 32640  - [39m04/07/2026, 9:17:44 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +14ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:33800) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 33800  - [39m04/07/2026, 9:22:52 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +14ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:37048) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 37048  - [39m04/07/2026, 9:24:34 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +15ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:38752) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 38752  - [39m04/07/2026, 9:26:37 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +10ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:38616) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 38616  - [39m04/07/2026, 9:26:55 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +13ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:27492) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 27492  - [39m04/07/2026, 10:24:12 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +8ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:5660) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 5660  - [39m04/07/2026, 10:41:47 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +11ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:31332) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 31332  - [39m04/07/2026, 10:45:30 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +11ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+.0:4006[39m[38;5;3m +10ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:22296) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 22296  - [39m04/07/2026, 10:41:47 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +10ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:21956) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+⚠️ [FALLBACK] Could not find hotspot 9 in persisted data
+[FitHere][exact_anchor_drift] {
+  routeId: 8158,
+  selectedHotspotId: 9,
+  anchorIntent: 'AFTER_START',
+  afterHotspotId: undefined,
+  beforeHotspotId: 6
+}
+[FitHere][anchor_fallback_to_live_route_gap] {
+  routeId: 8158,
+  selectedHotspotId: 9,
+  anchorIntent: 'AFTER_ATTRACTION',
+  requestedAfterHotspotId: 4,
+  requestedAfterRouteHotspotId: 133378,
+  resolvedAfterHotspotId: 6
+}
+[FitHere][anchor_fallback_to_live_route_gap] {
+  routeId: 8158,
+  selectedHotspotId: 9,
+  anchorIntent: 'AFTER_ATTRACTION',
+  requestedAfterHotspotId: 11,
+  requestedAfterRouteHotspotId: 133381,
+  resolvedAfterHotspotId: 6
+}
+[FitHere][anchor_fallback_to_live_route_gap] {
+  routeId: 8158,
+  selectedHotspotId: 9,
+  anchorIntent: 'AFTER_ATTRACTION',
+  requestedAfterHotspotId: 5,
+  requestedAfterRouteHotspotId: 133385,
+  resolvedAfterHotspotId: 6
+}
+[FitHere][anchor_fallback_to_live_route_gap] {
+  routeId: 8158,
+  selectedHotspotId: 9,
+  anchorIntent: 'AFTER_ATTRACTION',
+  requestedAfterHotspotId: 292,
+  requestedAfterRouteHotspotId: 133389,
+  resolvedAfterHotspotId: 6
+}
+[FitHere][anchor_fallback_to_live_route_gap] {
+  routeId: 8158,
+  selectedHotspotId: 9,
+  anchorIntent: 'AFTER_ATTRACTION',
+  requestedAfterHotspotId: 8,
+  requestedAfterRouteHotspotId: 133393,
+  resolvedAfterHotspotId: 6
+}
+[FitHere][anchor_fallback_to_live_route_gap] {
+  routeId: 8158,
+  selectedHotspotId: 9,
+  anchorIntent: 'AFTER_ATTRACTION',
+  requestedAfterHotspotId: 746,
+  requestedAfterRouteHotspotId: 133397,
+  resolvedAfterHotspotId: 6
+}
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 8123, hotspotId: 28 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 8123, hotspotId: 28 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 8123, hotspotId: 28 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 8123, hotspotId: 28 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 8123, hotspotId: 28 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 8123, hotspotId: 28 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 8123, hotspotId: 28 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 8123, hotspotId: 28 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 8123, hotspotId: 28 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 8123, hotspotId: 28 }
+⚠️ [FALLBACK] Could not find hotspot 41 in persisted data
+[MatrixPreviewInvariant] {
+  errors: [ 'selected hotspot is not immediately before C_TO_B travel' ]
+}
+[FitHere][destination_side_preview_pre_closing_repair] {
+  routeId: 8124,
+  selectedHotspotId: 41,
+  beforeLength: 6,
+  afterLength: 13,
+  currentKeepsSelected: true,
+  repairedKeepsSelected: true,
+  rebuiltKeepsSelected: true
+}
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 8123, hotspotId: 28 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 8123, hotspotId: 28 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 8123, hotspotId: 28 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 8123, hotspotId: 28 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 8123, hotspotId: 28 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 8123, hotspotId: 28 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 8123, hotspotId: 28 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 8123, hotspotId: 28 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 8123, hotspotId: 28 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 8123, hotspotId: 28 }
+⚠️ [FALLBACK] Could not find hotspot 41 in persisted data
+[MatrixPreviewInvariant] {
+  errors: [ 'selected hotspot is not immediately before C_TO_B travel' ]
+}
+[FitHere][destination_side_preview_pre_closing_repair] {
+  routeId: 8124,
+  selectedHotspotId: 41,
+  beforeLength: 6,
+  afterLength: 13,
+  currentKeepsSelected: true,
+  repairedKeepsSelected: true,
+  rebuiltKeepsSelected: true
+}
+[FitHere][APJ_PIVOT_DECISION] {
+  routeId: 8124,
+  hotspotId: 36,
+  name: 'Agni Teertham',
+  cityContext: 'DESTINATION_CITY',
+  decision: 'REMOVE_OPERATING_HOURS_AFTER_PIVOT',
+  reason: 'Agni Teertham removed because arrival/visit crossed operating hours.',
+  attemptedVisitTime: '9:52 PM - 10:22 PM',
+  operatingHours: '06:00 - 19:00'
+}
+[FitHere][APJ_PIVOT_DECISION] {
+  routeId: 8124,
+  hotspotId: 36,
+  name: 'Agni Teertham',
+  cityContext: 'DESTINATION_CITY',
+  decision: 'REMOVE_OPERATING_HOURS_AFTER_PIVOT',
+  reason: 'Agni Teertham removed because arrival/visit crossed operating hours.',
+  attemptedVisitTime: '9:52 PM - 10:22 PM',
+  operatingHours: '06:00 - 19:00'
+}
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 8123, hotspotId: 28 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 8123, hotspotId: 28 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 8123, hotspotId: 28 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 8123, hotspotId: 28 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 8123, hotspotId: 28 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 8123, hotspotId: 28 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 8123, hotspotId: 28 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 8123, hotspotId: 28 }
+⚠️ [FALLBACK] Could not find hotspot 41 in persisted data
+[MatrixPreviewInvariant] {
+  errors: [ 'selected hotspot is not immediately before C_TO_B travel' ]
+}
+[MatrixPreviewInvariant] {
+  errors: [ 'selected hotspot is not immediately before C_TO_B travel' ]
+}
+[FitHere][exact_anchor_drift] {
+  routeId: 8124,
+  selectedHotspotId: 41,
+  anchorIntent: 'AFTER_ATTRACTION',
+  afterHotspotId: 40,
+  beforeHotspotId: undefined
+}
+[FitHere][destination_side_preview_pre_closing_repair] {
+  routeId: 8124,
+  selectedHotspotId: 41,
+  beforeLength: 6,
+  afterLength: 13,
+  currentKeepsSelected: true,
+  repairedKeepsSelected: true,
+  rebuiltKeepsSelected: true
+}
+ behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 34912  - [39m04/07/2026, 10:24:12 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +11ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:19260) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 19260  - [39m04/07/2026, 10:41:47 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +10ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:8656) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 8656  - [39m04/07/2026, 10:45:30 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +10ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+ [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +10ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:26072) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 26072  - [39m04/07/2026, 9:26:55 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +10ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:37884) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 37884  - [39m04/07/2026, 10:24:12 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +11ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:3112) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 3112  - [39m04/07/2026, 10:41:46 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +11ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:35632) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 35632  - [39m04/07/2026, 10:45:25 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +10ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+ueues:90:21)
+(node:37260) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `no(node:9928) [DEP0169] DeprecationWarning: `url.parse()` behavior is[31m[Nest] 37260  - [39m04/07/2026, 9:16:47 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +14ms[39m
+Error: listen EADDRINUSE: address already [31m[Nest] 9928  - [39m04/07/2026, 9:16:47 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +10ms[39m
+Error: listen EADDRINUSE: address a(node:36300) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 36300  - [39m04/07/2026, 9:17:44 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +10ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:8016) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `n(node:37068) [DEP0169] DeprecationWarning: `url.parse()` behavior is[31m[Nest] 8016  - [39m04/07/2026, 9:22:51 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +14ms[39m
+Error: listen EADDRINUSE: address already i[31m[Nest] 37068  - [39m04/07/2026, 9:22:52 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +11ms[39m
+Error: listen EADDRINUSE: address(node:16864) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `no(node:31304) [DEP0169] DeprecationWarning: `url.parse()` behavior i[31m[Nest] 16864  - [39m04/07/2026, 9:24:34 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +11ms[39m
+Error: listen EADDRINUSE: address already i[31m[Nest] 31304  - [39m04/07/2026, 9:24:34 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +9ms[39m
+Error: listen EADDRINUSE: address (node:24376) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `n(node:32308) [DEP0169] DeprecationWarning: `url.parse()` behavior is[31m[Nest] 24376  - [39m04/07/2026, 9:26:37 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +10ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:inError: listen EADDRINUSE: address (node:38216) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `n(node:37104) [DEP0169] DeprecationWarning: `url.parse()` behavior is[31m[Nest] 38216  - [39m04/07/2026, 9:26:55 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +10ms[39m
+Error: listen EADDRINUSE: address already [31m[Nest] 37104  - [39m04/07/2026, 9:26:55 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +12ms[39m
+Error: listen EADDRINUSE: address (node:32584) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `n(node:11692) [DEP0169] DeprecationWarning: `url.parse()` behavior is[31m[Nest] 32584  - [39m04/07/2026, 10:24:12 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +10ms[39m
+Error: listen EADDRINUSE: address already[31m[Nest] 11692  - [39m04/07/2026, 10:24:12 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +8ms[39m
+Error: listen EADDRINUSE: address a(node:29544) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 29544  - [39m04/07/2026, 10:41:46 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +11ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:34332) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `(node:37872) [DEP0169] DeprecationWarning: `url.parse()` behavior is [31m[Nest] 34332  - [39m04/07/2026, 10:45:30 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +10ms[39m
+Error: listen EADDRINUSE: address alread[31m[Nest] 37872  - [39m04/07/2026, 10:45:30 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +11ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+ejections (node:internal/process/task_queues:90:21)
+(node:32252) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 32252  - [39m04/07/2026, 10:41:49 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +7ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:31732) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 31732  - [39m04/07/2026, 10:45:30 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +10ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+HotspotId: 133385,
+  resolvedAfterHotspotId: 6
+}
+[FitHere][anchor_fallback_to_live_route_gap] {
+  routeId: 8158,
+  selectedHotspotId: 7,
+  anchorIntent: 'AFTER_ATTRACTION',
+  requestedAfterHotspotId: 292,
+  requestedAfterRouteHotspotId: 133389,
+  resolvedAfterHotspotId: 6
+}
+[FitHere][anchor_fallback_to_live_route_gap] {
+  routeId: 8158,
+  selectedHotspotId: 7,
+  anchorIntent: 'AFTER_ATTRACTION',
+  requestedAfterHotspotId: 8,
+  requestedAfterRouteHotspotId: 133393,
+  resolvedAfterHotspotId: 6
+}
+[FitHere][anchor_fallback_to_live_route_gap] {
+  routeId: 8158,
+  selectedHotspotId: 7,
+  anchorIntent: 'AFTER_ATTRACTION',
+  requestedAfterHotspotId: 746,
+  requestedAfterRouteHotspotId: 133397,
+  resolvedAfterHotspotId: 6
+}
+[FitHere][exact_anchor_drift] {
+  routeId: 8158,
+  selectedHotspotId: 7,
+  anchorIntent: 'AFTER_START',
+  afterHotspotId: undefined,
+  beforeHotspotId: 6
+}
+[FitHere][anchor_fallback_to_live_route_gap] {
+  routeId: 8158,
+  selectedHotspotId: 7,
+  anchorIntent: 'AFTER_ATTRACTION',
+  requestedAfterHotspotId: 4,
+  requestedAfterRouteHotspotId: 133378,
+  resolvedAfterHotspotId: 6
+}
+[FitHere][anchor_fallback_to_live_route_gap] {
+  routeId: 8158,
+  selectedHotspotId: 7,
+  anchorIntent: 'AFTER_ATTRACTION',
+  requestedAfterHotspotId: 11,
+  requestedAfterRouteHotspotId: 133381,
+  resolvedAfterHotspotId: 6
+}
+[FitHere][anchor_fallback_to_live_route_gap] {
+  routeId: 8158,
+  selectedHotspotId: 7,
+  anchorIntent: 'AFTER_ATTRACTION',
+  requestedAfterHotspotId: 5,
+  requestedAfterRouteHotspotId: 133385,
+  resolvedAfterHotspotId: 6
+}
+[FitHere][anchor_fallback_to_live_route_gap] {
+  routeId: 8158,
+  selectedHotspotId: 7,
+  anchorIntent: 'AFTER_ATTRACTION',
+  requestedAfterHotspotId: 292,
+  requestedAfterRouteHotspotId: 133389,
+  resolvedAfterHotspotId: 6
+}
+[FitHere][anchor_fallback_to_live_route_gap] {
+  routeId: 8158,
+  selectedHotspotId: 7,
+  anchorIntent: 'AFTER_ATTRACTION',
+  requestedAfterHotspotId: 8,
+  requestedAfterRouteHotspotId: 133393,
+  resolvedAfterHotspotId: 6
+}
+[FitHere][anchor_fallback_to_live_route_gap] {
+  routeId: 8158,
+  selectedHotspotId: 7,
+  anchorIntent: 'AFTER_ATTRACTION',
+  requestedAfterHotspotId: 746,
+  requestedAfterRouteHotspotId: 133397,
+  resolvedAfterHotspotId: 6
+}
+(node:37692) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+(node:30552) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 30552  - [39m04/07/2026, 10:45:30 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +10ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+ts found for route, cannot inject manual hotspot { routeId: 7948, hotspotId: 294 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 7948, hotspotId: 294 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 7948, hotspotId: 294 }
+⚠️ [FALLBACK] Could not find hotspot 319 in persisted data
+[MatrixPreviewInvariant] {
+  errors: [ 'selected hotspot is not immediately before C_TO_B travel' ]
+}
+[FitHere][exact_anchor_drift] {
+  routeId: 7949,
+  selectedHotspotId: 319,
+  anchorIntent: 'AFTER_ATTRACTION',
+  afterHotspotId: 458,
+  beforeHotspotId: 699
+}
+(node:36016) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 7948, hotspotId: 294 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 7948, hotspotId: 294 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 7948, hotspotId: 294 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 7948, hotspotId: 294 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 7948, hotspotId: 294 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 7948, hotspotId: 294 }
+⚠️ [FALLBACK] Could not find hotspot 319 in persisted data
+[MatrixPreviewInvariant] {
+  errors: [ 'selected hotspot is not immediately before C_TO_B travel' ]
+}
+[FitHere][exact_anchor_drift] {
+  routeId: 7949,
+  selectedHotspotId: 319,
+  anchorIntent: 'AFTER_ATTRACTION',
+  afterHotspotId: 458,
+  beforeHotspotId: 699
+}
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 7948, hotspotId: 294 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 7948, hotspotId: 294 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 7948, hotspotId: 294 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 7948, hotspotId: 294 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 7948, hotspotId: 294 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 7948, hotspotId: 294 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 7948, hotspotId: 294 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 7948, hotspotId: 294 }
+⚠️ [FALLBACK] Could not find hotspot 319 in persisted data
+[MatrixPreviewInvariant] {
+  errors: [
+    'duplicate consecutive travel rows targeting same destination at index 9/10',
+    'selected hotspot is not immediately before C_TO_B travel'
+  ]
+}
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 7948, hotspotId: 294 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 7948, hotspotId: 294 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 7948, hotspotId: 294 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 7948, hotspotId: 294 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 7948, hotspotId: 294 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 7948, hotspotId: 294 }
+⚠️ [FALLBACK] Could not find hotspot 319 in persisted data
+[MatrixPreviewInvariant] {
+  errors: [ 'selected hotspot is not immediately before C_TO_B travel' ]
+}
+[FitHere][exact_anchor_drift] {
+  routeId: 7949,
+  selectedHotspotId: 319,
+  anchorIntent: 'AFTER_ATTRACTION',
+  afterHotspotId: 458,
+  beforeHotspotId: 699
+}
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 7948, hotspotId: 294 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 7948, hotspotId: 294 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 7948, hotspotId: 294 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 7948, hotspotId: 294 }
+⚠️ [FALLBACK] Could not find hotspot 319 in persisted data
+[MatrixPreviewInvariant] {
+  errors: [ 'selected hotspot is not immediately before C_TO_B travel' ]
+}
+[FitHere][APJ_PIVOT_DECISION] {
+  routeId: 7949,
+  hotspotId: 698,
+  name: 'Om Sri Skandasramam',
+  cityContext: 'SOURCE_CITY',
+  decision: 'REMOVE_OPERATING_HOURS_AFTER_PIVOT',
+  reason: 'Om Sri Skandasramam removed because arrival/visit crossed operating hours.',
+  attemptedVisitTime: '7:53 PM - 8:53 PM',
+  operatingHours: '07:00 - 12:00, 16:00 - 20:00'
+}
+[FitHere][APJ_PIVOT_DECISION] {
+  routeId: 7949,
+  hotspotId: 700,
+  name: 'Sri Ramanasramam',
+  cityContext: 'SOURCE_CITY',
+  decision: 'REMOVE_OPERATING_HOURS_AFTER_PIVOT',
+  reason: 'Sri Ramanasramam removed because arrival/visit crossed operating hours.',
+  attemptedVisitTime: '8:01 PM - 9:01 PM',
+  operatingHours: '05:00 - 11:00, 14:00 - 20:30'
+}
+[FitHere][APJ_PIVOT_DECISION] {
+  routeId: 7949,
+  hotspotId: 624,
+  name: 'Thillai Nataraja Temple',
+  cityContext: 'DESTINATION_CITY',
+  decision: 'REMOVE_OPERATING_HOURS_AFTER_PIVOT',
+  reason: 'Thillai Nataraja Temple removed because arrival/visit crossed operating hours.',
+  attemptedVisitTime: '10:08 PM - 11:08 PM',
+  operatingHours: '06:00 - 12:00, 17:00 - 22:00'
+}
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 7948, hotspotId: 294 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 7948, hotspotId: 294 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 7948, hotspotId: 294 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 7948, hotspotId: 294 }
+⚠️ [FALLBACK] Could not find hotspot 319 in persisted data
+[MatrixPreviewInvariant] {
+  errors: [ 'selected hotspot is not immediately before C_TO_B travel' ]
+}
+[FitHere][APJ_PIVOT_DECISION] {
+  routeId: 7949,
+  hotspotId: 700,
+  name: 'Sri Ramanasramam',
+  cityContext: 'SOURCE_CITY',
+  decision: 'REMOVE_OPERATING_HOURS_AFTER_PIVOT',
+  reason: 'Sri Ramanasramam removed because arrival/visit crossed operating hours.',
+  attemptedVisitTime: '8:01 PM - 9:01 PM',
+  operatingHours: '05:00 - 11:00, 14:00 - 20:30'
+}
+[FitHere][APJ_PIVOT_DECISION] {
+  routeId: 7949,
+  hotspotId: 624,
+  name: 'Thillai Nataraja Temple',
+  cityContext: 'DESTINATION_CITY',
+  decision: 'REMOVE_OPERATING_HOURS_AFTER_PIVOT',
+  reason: 'Thillai Nataraja Temple removed because arrival/visit crossed operating hours.',
+  attemptedVisitTime: '10:08 PM - 11:08 PM',
+  operatingHours: '06:00 - 12:00, 17:00 - 22:00'
+}
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 7948, hotspotId: 294 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 7948, hotspotId: 294 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 7948, hotspotId: 294 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 7948, hotspotId: 294 }
+⚠️ [FALLBACK] Could not find hotspot 319 in persisted data
+[MatrixPreviewInvariant] {
+  errors: [
+    'duplicate consecutive travel rows targeting same destination at index 7/8',
+    'selected hotspot is not immediately before C_TO_B travel'
+  ]
+}
+[FitHere][APJ_PIVOT_DECISION] {
+  routeId: 7949,
+  hotspotId: 624,
+  name: 'Thillai Nataraja Temple',
+  cityContext: 'DESTINATION_CITY',
+  decision: 'REMOVE_OPERATING_HOURS_AFTER_PIVOT',
+  reason: 'Thillai Nataraja Temple removed because arrival/visit crossed operating hours.',
+  attemptedVisitTime: '10:27 PM - 11:27 PM',
+  operatingHours: '06:00 - 12:00, 17:00 - 22:00'
+}
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 7948, hotspotId: 294 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 7948, hotspotId: 294 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 7948, hotspotId: 294 }
+[ManualHotspot] No auto hotspots found for route, cannot inject manual hotspot { routeId: 7948, hotspotId: 294 }
+⚠️ [FALLBACK] Could not find hotspot 319 in persisted data
+[MatrixPreviewInvariant] {
+  errors: [ 'selected hotspot is not immediately before C_TO_B travel' ]
+}
+[FitHere][exact_anchor_drift] {
+  routeId: 7949,
+  selectedHotspotId: 319,
+  anchorIntent: 'AFTER_ATTRACTION',
+  afterHotspotId: 624,
+  beforeHotspotId: undefined
+}
+(node:32752) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 32752  - [39m04/07/2026, 6:51:05 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +9ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:36608) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 36608  - [39m04/07/2026, 7:14:44 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +9ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:37924) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 37924  - [39m04/07/2026, 8:02:44 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +10ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
+(node:37768) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[31m[Nest] 37768  - [39m04/07/2026, 8:04:10 pm [31m  ERROR[39m [38;5;3m[NestApplication] [39m[31mError: listen EADDRINUSE: address already in use 0.0.0.0:4006[39m[38;5;3m +11ms[39m
+Error: listen EADDRINUSE: address already in use 0.0.0.0:4006
+    at Server.setupListenHandle [as _listen2] (node:net:1948:16)
+    at listenInCluster (node:net:2005:12)
+    at node:net:2214:7
+    at processTicksAndRejections (node:internal/process/task_queues:90:21)
