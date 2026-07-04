@@ -14191,6 +14191,28 @@ pricing: {
 
     const getName = (row: any): string =>
       String(row?.text || row?.name || row?.title || row?.hotspot_name || row?.to || 'Stop').trim();
+    const isSourceLikeInitialTravelReplica = (row: any): boolean => {
+      if (!row) return false;
+
+      const fromHotspotId = Number(row?.fromHotspotId || row?.from_hotspot_id || 0);
+      if (fromHotspotId > 0) return false;
+
+      const fromLabel = String(
+        row?.fromName ||
+        row?.from ||
+        row?.displayFromName ||
+        row?.sourceName ||
+        '',
+      ).trim().toLowerCase();
+
+      return (
+        fromLabel.length === 0 ||
+        fromLabel.includes('hotel') ||
+        fromLabel.includes('route start') ||
+        fromLabel.includes('start your day') ||
+        fromLabel.includes('source')
+      );
+    };
 
     const getDurationMinutes = (row: any, fallback: number): number => {
       const duration = Number(
@@ -14570,6 +14592,7 @@ pricing: {
     const firstAttractionRow = scheduledAttractions[0] || null;
     const fallbackInitialTravel = keptRows.find((row: any) => {
       if (!isTravelRow(row) || isHotelLikeRow(row)) return false;
+      if (!isSourceLikeInitialTravelReplica(row)) return false;
       const toHotspotId = Number(row?.toHotspotId || 0);
       const toName = String(row?.toName || row?.text || row?.name || '').trim().toLowerCase();
       const targetName = String(firstAttractionRow?.text || firstAttractionRow?.name || '').trim().toLowerCase();
@@ -14578,7 +14601,7 @@ pricing: {
         (targetHotspotId > 0 && toHotspotId === targetHotspotId)
         || (!!targetName && toName.includes(targetName))
       );
-    }) || keptRows.find((row: any) => isTravelRow(row) && !isHotelLikeRow(row)) || null;
+    }) || null;
 
     const leadingStaticRows = keptRows.filter((row: any) => {
       if (isHotelLikeRow(row)) return false;
@@ -14609,12 +14632,15 @@ pricing: {
         const toId = getHotspotId(currentAttraction);
         if (toId > 0 && currentAttraction === firstAttractionRow) {
           const sourceLeg = await this.resolveSourceToHotspotLeg(tx, Number(params.routeId), toId);
-          const initialTravelReplica =
-            (fallbackInitialTravel && !isHotelLikeRow(fallbackInitialTravel) ? fallbackInitialTravel : null)
-            || this.findManualFitMainTimelineTravelReplica(authoritativeTravelReplicaMap, {
+          const initialTravelReplicaCandidate =
+            this.findManualFitMainTimelineTravelReplica(authoritativeTravelReplicaMap, {
               toHotspotId: toId,
               toName: getName(currentAttraction),
-            });
+            })
+            || (fallbackInitialTravel && !isHotelLikeRow(fallbackInitialTravel) ? fallbackInitialTravel : null);
+          const initialTravelReplica = isSourceLikeInitialTravelReplica(initialTravelReplicaCandidate)
+            ? initialTravelReplicaCandidate
+            : null;
           const initialDistanceKm = this.chooseReliableTravelDistanceKm(
             initialTravelReplica
               ? this.parseManualFitTravelReplicaDistanceKm(
@@ -16700,6 +16726,18 @@ pricing: {
         name: selectedHotspotName || `Hotspot #${targetHotspotId}`,
         routeOrder: 0,
       };
+      const toSelectedClosingRescuePriority = (priorityInput: any): number | null => {
+        const rawPriority = Number(priorityInput || 0);
+        const normalizedPriority = this.normalizeHotspotPriority(rawPriority);
+
+        if (normalizedPriority === 9999 || normalizedPriority >= this.MANUAL_HOTSPOT_EFFECTIVE_PRIORITY) {
+          return 4;
+        }
+
+        return [1, 2, 3, 4].includes(Number(normalizedPriority || 0))
+          ? Number(normalizedPriority || 0)
+          : null;
+      };
 
       const anchorIntentUpper = String(params.anchorIntent || '').trim().toUpperCase();
       const clickedAnchorHotspotId = Number(params.afterHotspotId || 0);
@@ -16721,7 +16759,8 @@ pricing: {
               activeRouteOrderByHotspotId.get(hotspotId) ||
               rowIndex + 1,
             ),
-            priority: Number(candidateById.get(hotspotId)?.priority || 0) || null,
+            priority: toSelectedClosingRescuePriority(candidateById.get(hotspotId)?.priority || 0),
+            rawPriority: Number(candidateById.get(hotspotId)?.priority || 0) || null,
             estimatedMinutes: Number(candidateById.get(hotspotId)?.estimatedMinutes || 0),
             candidate: candidateById.get(hotspotId) || null,
             row,
@@ -22564,6 +22603,256 @@ pricing: {
       timelineInsertionFit?.bestSlot ||
       timelineInsertionFit?.requestedSlot ||
       null;
+    const directClickedAnchorRescueHotspotId =
+      options?.exactAnchorMode === true &&
+      String(options?.anchorIntent || '').toUpperCase() === 'AFTER_ATTRACTION'
+        ? Number(options?.afterHotspotId || 0)
+        : 0;
+    const selectedClosingHotspotMasterById = new Map<number, any>(
+      (hotspotMasters || [])
+        .map((row: any) => [Number(row?.hotspot_ID || 0), row] as const)
+        .filter((entry: readonly [number, any]) => entry[0] > 0),
+    );
+    const tryDirectClickedAnchorClosingRescue = async (): Promise<boolean> => {
+      if (!(directClickedAnchorRescueHotspotId > 0)) return false;
+
+      const attractionRows = adjustedPreviewTimeline.filter((row: any) => {
+        const rowType = String(row?.type || '').toLowerCase();
+        return rowType === 'attraction' || Number(row?.item_type || 0) === 4;
+      });
+      const selectedAttractionIndex = attractionRows.findIndex((row: any) => (
+        Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || row?.hotspot_id || row?.id || 0) === Number(focusHotspotId)
+      ));
+      if (selectedAttractionIndex <= 0) return false;
+
+      const toRescuePriority = (row: any, candidate: any): number | null => {
+        const normalized = this.normalizeHotspotPriority(
+          Number(
+            candidate?.priority ||
+            candidate?.hotspot_priority ||
+            row?.priority ||
+            row?.hotspot_priority ||
+            row?.rawPriority ||
+            9999,
+          ),
+        );
+        const mapped =
+          normalized >= this.MANUAL_HOTSPOT_EFFECTIVE_PRIORITY || normalized === 9999
+            ? 4
+            : normalized === this.CONFIRMATION_REQUIRED_PRIORITY
+              ? 3
+              : ([1, 2].includes(normalized) ? normalized : null);
+
+        if (mapped === 4) return 4;
+        if (mapped === 3) return options?.allowP3Removal === true ? 3 : null;
+        if (mapped === 2 || mapped === 1) {
+          return options?.allowP1P2Removal === true || options?.allowTopPriorityRemoval === true
+            ? mapped
+            : null;
+        }
+        return null;
+      };
+
+      const beforeSelectedRows = attractionRows
+        .slice(0, selectedAttractionIndex)
+        .filter((row: any) => {
+          const hotspotId = Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || row?.hotspot_id || row?.id || 0);
+          return hotspotId > 0 && hotspotId !== Number(focusHotspotId);
+        })
+        .map((row: any) => {
+          const hotspotId = Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || row?.hotspot_id || row?.id || 0);
+          const candidate = selectedClosingHotspotMasterById.get(hotspotId) || null;
+
+          return {
+            row,
+            candidate,
+            hotspotId,
+            priority: toRescuePriority(row, candidate),
+          };
+        })
+        .filter((entry: any) => entry.priority !== null);
+
+      const orderedBeforeSelected = [...beforeSelectedRows].reverse();
+      if (orderedBeforeSelected.length === 0) return false;
+
+      const rescuePlans: number[][] = [];
+      for (let index = 0; index < orderedBeforeSelected.length; index += 1) {
+        rescuePlans.push([orderedBeforeSelected[index].hotspotId]);
+      }
+      for (let size = 2; size <= orderedBeforeSelected.length; size += 1) {
+        rescuePlans.push(orderedBeforeSelected.slice(0, size).map((entry: any) => Number(entry.hotspotId)));
+      }
+
+      const selectedHotspotLabel = String(
+        (hotspotMasters || []).find((row: any) => Number(row?.hotspot_ID || 0) === Number(focusHotspotId))?.hotspot_name
+        || manualInsertionFit?.selectedHotspotName
+        || 'the selected manual hotspot',
+      ).trim();
+      for (const removedHotspotIds of rescuePlans) {
+        const directRescueTimeline = await this.buildExactAnchorSequentialTimelineAfterRemoval(tx, adjustedPreviewTimeline, {
+          removedHotspotIds,
+          targetHotspotId: Number(focusHotspotId),
+          routeId: Number(routeId),
+          planId: Number(planId),
+          anchorIntent: options?.anchorIntent,
+          afterHotspotId: options?.afterHotspotId,
+          beforeHotspotId: options?.beforeHotspotId,
+          allowSelectedClosingAnchorBypass: true,
+        });
+
+        if (!Array.isArray(directRescueTimeline) || directRescueTimeline.length === 0) {
+          continue;
+        }
+
+        const enrichedTimeline = await this.enrichManualFitPreviewTimelineWithOperatingHours(
+          Number(planId),
+          Number(routeId),
+          directRescueTimeline,
+        );
+        const selectedAfterDirectRescue = this.getSelectedManualClosingOverflow({
+          timeline: enrichedTimeline,
+          selectedHotspotIds: requestedHotspotIds,
+        });
+        const selectedOperatingAfterDirectRescue = this.markSelectedManualOperatingHourConflicts(
+          enrichedTimeline,
+          requestedHotspotIds,
+        );
+        const directRescueOverflowMinutes = Math.max(
+          0,
+          Number(
+            this.calculateRouteEndOverflowMinutes(
+              selectedOperatingAfterDirectRescue.timeline,
+              route,
+              manualTimingPolicy.endTime,
+            ) || 0,
+          ),
+        );
+
+        if (
+          selectedAfterDirectRescue.hasClosingOverflow === true ||
+          selectedOperatingAfterDirectRescue.selectedOpeningConflict ||
+          directRescueOverflowMinutes > 0
+        ) {
+          continue;
+        }
+
+        const directRescueRemovals = removedHotspotIds.map((removedId: number) => {
+          const matchedEntry = beforeSelectedRows.find((entry: any) => Number(entry.hotspotId) === Number(removedId));
+          const matchedRow = matchedEntry?.row || {};
+          const matchedCandidate = matchedEntry?.candidate || {};
+          const removedName = String(
+            matchedCandidate?.name ||
+            matchedCandidate?.hotspot_name ||
+            matchedRow?.name ||
+            matchedRow?.text ||
+            matchedRow?.hotspot_name ||
+            `Hotspot #${removedId}`,
+          ).trim();
+
+          return {
+            id: Number(removedId),
+            name: removedName,
+            priority: Number(matchedEntry?.priority || 4),
+            rawPriority: this.normalizeHotspotPriority(
+              Number(
+                matchedCandidate?.priority ||
+                matchedCandidate?.hotspot_priority ||
+                matchedRow?.priority ||
+                matchedRow?.hotspot_priority ||
+                matchedRow?.rawPriority ||
+                9999,
+              ),
+            ),
+            estimatedMinutes: Number(
+              matchedCandidate?.estimatedMinutes ||
+              matchedRow?.durationMinutes ||
+              matchedRow?.duration_minutes ||
+              matchedRow?.visitDurationMinutes ||
+              this.getPreviewRowDurationMinutes(matchedRow) ||
+              0,
+            ),
+            reason: `${removedName} removed because selected manual hotspot ${selectedHotspotLabel} must fit before operating-hours closing.`,
+            removalReasonCode: 'SELECTED_HOTSPOT_CLOSING_RESCUE',
+            requiresAcknowledgement: true,
+          };
+        });
+
+        adjustedPreviewTimeline = selectedOperatingAfterDirectRescue.timeline;
+        authoritativeRemovedHotspots.push(...directRescueRemovals);
+        allRemovedHotspots.push(...directRescueRemovals);
+        manualInsertionFit.removedLowPriorityHotspots = [
+          ...(manualInsertionFit.removedLowPriorityHotspots || []),
+          ...directRescueRemovals,
+        ];
+        manualInsertionFit.lowPriorityOpeningHoursRemovalPlanPreview = {
+          resolved: true,
+          algorithm: 'DIRECT_CLICKED_ANCHOR_CLOSING_RESCUE',
+          originalOverflowMinutes: selectedClosingOverflowMinutesForResolver,
+          overflowMinutes: selectedClosingOverflowMinutesForResolver,
+          finalOverflowMinutes: 0,
+          plannedRemovals: directRescueRemovals,
+          candidates: [],
+          candidateAudit: [],
+          simulationAttempts: [
+            {
+              strategy: 'DIRECT_CLICKED_ANCHOR_CLOSING_RESCUE',
+              removedHotspotIds,
+              removedHotspotNames: directRescueRemovals.map((row: any) => row.name),
+              selectedAttemptedVisitTime: null,
+              selectedOperatingHours: null,
+              selectedOpeningConflict: null,
+              selectedClosingOverflowMinutes: 0,
+              resolved: true,
+            },
+          ],
+          rejectedAttempts: [],
+          message: `${directRescueRemovals.map((row: any) => row.name).join(', ')} removed so the selected manual hotspot can fit before closing time.`,
+          selectedClosingConflict: selectedClosingConflictForResolver,
+        };
+        manualInsertionFit.openingHoursRejected = false;
+        manualInsertionFit.selectedOpeningConflict = null;
+        manualInsertionFit.previewBlockReason = null;
+        manualInsertionFit.canApply = true;
+        manualInsertionFit.overflowResolved = true;
+        manualInsertionFit.rescheduleApplied = true;
+        manualInsertionFit.fullTimelineIsResolvedRemovalPlan = true;
+        manualInsertionFit.timelineSource = 'DIRECT_CLICKED_ANCHOR_CLOSING_RESCUE';
+
+        finalValidation = {
+          ...finalValidation,
+          passesScheduleRules: true,
+          readyToApply: true,
+          requiresPriorityConfirmation: false,
+          stillUnschedulable: false,
+          routeEndOverflowMinutes: 0,
+          openingHourConflictCount: 0,
+          selectedManualConflictCount: 0,
+          selectedOpeningConflict: null,
+          reason: `${directRescueRemovals.map((row: any) => row.name).join(', ')} removed so the selected manual hotspot can fit before closing time.`,
+        };
+
+        console.log('[FitHere][DIRECT_CLICKED_ANCHOR_CLOSING_RESCUE_PROMOTED]', {
+          routeId: Number(routeId),
+          selectedHotspotId: Number(focusHotspotId),
+          removedHotspotIds,
+          finalTimelineHotspotIds: adjustedPreviewTimeline
+            .filter((row: any) => String(row?.type || '').toLowerCase() === 'attraction' || Number(row?.item_type || 0) === 4)
+            .map((row: any) => Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || row?.hotspot_id || row?.id || 0)),
+        });
+
+        return true;
+      }
+
+      return false;
+    };
+
+    const shouldTryDirectClickedAnchorClosingRescue =
+      directClickedAnchorRescueHotspotId > 0 &&
+      (
+        selectedClosingOverflow.hasClosingOverflow === true ||
+        (!!fallbackSelectedOpeningConflict && fallbackOverflowMinutes > 0)
+      ) &&
+      selectedLatestAllowedEndMinutesForResolver > 0;
 
     const shouldRunSelectedClosingResolver =
       manualInsertionFit?.requiresMatrixBuild !== true &&
@@ -22578,7 +22867,12 @@ pricing: {
       ) &&
       selectedLatestAllowedEndMinutesForResolver > 0;
 
-    if (shouldRunSelectedClosingResolver) {
+    const directClickedAnchorClosingRescueApplied =
+      shouldTryDirectClickedAnchorClosingRescue
+        ? await tryDirectClickedAnchorClosingRescue()
+        : false;
+
+    if (shouldRunSelectedClosingResolver && !directClickedAnchorClosingRescueApplied) {
       const focusMaster = (hotspotMasters || []).find(
         (row: any) => Number(row?.hotspot_ID || 0) === Number(focusHotspotId),
       );

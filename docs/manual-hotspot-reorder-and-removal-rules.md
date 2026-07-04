@@ -551,6 +551,76 @@ Meaning:
 - confirm must remain disabled
 - UI must not show "Can Fit Directly"
 
+### 4A. Exact-anchor selected-closing rescue removes upstream blockers first
+
+When the selected hotspot is closed only because earlier same-route attractions push it too late, exact-anchor preview must try a direct upstream-blocker rescue before returning a final closing block.
+
+Current enforced behavior:
+
+- stay inside the clicked route-scoped attraction array
+- inspect attractions before the selected hotspot
+- try removing the nearest eligible blocker first
+- then try larger cumulative upstream removal sets if one removal is not enough
+- after each removal set, rebuild the selected hotspot and all downstream rows
+- accept the first candidate where:
+  - selected hotspot fits inside operating hours
+  - route end still fits
+  - no selected-opening conflict remains
+
+This is the current fix for cases like:
+
+```text
+Echo Point -> Munnar
+Mattupetty -> Munnar
+```
+
+where `Munnar` is selected and reaches its `08:00 AM - 10:00 AM` operating-hours window too late unless earlier blockers are removed.
+
+Expected result shape:
+
+- `resultType = FITS_WITH_OPTIONAL_REMOVAL`
+- `canConfirm = true`
+- `selectedOpeningConflict = null`
+- removed blockers are listed with reason:
+  - `<blocker> removed because selected manual hotspot <selected> must fit before operating-hours closing.`
+
+### 4B. Rebuild downstream after rescue, do not keep stale first-leg travel
+
+Once an upstream blocker is removed for selected-closing rescue, preview must not keep a stale first travel leg that still points to the removed hotspot.
+
+Example of forbidden stale carry-over:
+
+```text
+Travel to Echo Point
+Echo Point
+Travel to Munnar
+Munnar
+```
+
+after `Echo Point` was already removed.
+
+Current enforced behavior:
+
+- when the selected hotspot becomes the first attraction after rescue
+- only reuse a source-like initial travel replica if it really starts from hotel / route start
+- otherwise recalculate the source-to-selected travel leg
+
+### 4C. Current code does not yet perform deferred reinsertion of removed blockers
+
+After selected-closing rescue succeeds, current backend behavior is:
+
+- keep the selected hotspot fixed at the rescued earlier time
+- rebuild the downstream route
+- keep removed blockers removed
+
+Current backend does **not** yet do a second-pass "reinsert removed blocker later if a valid downstream gap exists" search.
+
+So for now:
+
+- do not expect `Echo Point` to be automatically re-added later in the same preview
+- do not document later reinsertion as current behavior
+- if later reinsertion is implemented in the future, update this section and the exact-anchor rules document together
+
 ### 5. Exact-anchor fallback is allowed only when source exact timeline is empty
 
 For exact-anchor validation, falling back to active-route DB candidates is now heavily restricted.
@@ -752,6 +822,92 @@ Can Fit Directly
 ```
 
 just because an internal candidate was otherwise marked ready.
+
+### Example 4: route 8154 Munnar rescue after Echo Point
+
+Plan:
+
+- `planId=9825`
+- `routeId=8154`
+- selected hotspot: `898` = `Munnar`
+
+Clicked anchor:
+
+```json
+{
+  "routeId": 8154,
+  "selectedHotspotId": 898,
+  "anchor": {
+    "anchorType": "BETWEEN_ROWS",
+    "anchorIntent": "AFTER_ATTRACTION",
+    "anchorIndex": 3,
+    "anchorFrom": "Echo Point",
+    "anchorTo": "Mattupetty Dam and Lake",
+    "anchorLabel": "After Echo Point",
+    "anchorTimeRange": "09:46 AM - 10:31 AM",
+    "afterRowType": "attraction",
+    "beforeRowType": "hotspot",
+    "afterHotspotId": 483,
+    "afterRouteHotspotId": 128357,
+    "beforeHotspotId": 223,
+    "beforeRouteHotspotId": 128363
+  },
+  "allowP3Removal": true,
+  "allowP1P2Removal": true
+}
+```
+
+Verified fixed response shape:
+
+- `resultType = FITS_WITH_OPTIONAL_REMOVAL`
+- `canConfirm = true`
+- `selectedOpeningConflict = null`
+- removed hotspot: `483 = Echo Point`
+- selected hotspot `Munnar` moves earlier and no longer remains after `Echo Point`
+
+### Example 5: route 8154 Munnar rescue after Mattupetty
+
+Plan:
+
+- `planId=9825`
+- `routeId=8154`
+- selected hotspot: `898` = `Munnar`
+
+Clicked anchor:
+
+```json
+{
+  "routeId": 8154,
+  "selectedHotspotId": 898,
+  "anchor": {
+    "anchorType": "BETWEEN_ROWS",
+    "anchorIntent": "AFTER_ATTRACTION",
+    "anchorIndex": 5,
+    "anchorFrom": "Mattupetty Dam and Lake",
+    "anchorTo": "Munnar Rose Garden",
+    "anchorLabel": "After Mattupetty Dam and Lake",
+    "anchorTimeRange": "11:01 AM - 12:01 PM",
+    "afterRowType": "attraction",
+    "beforeRowType": "hotspot",
+    "afterHotspotId": 223,
+    "afterRouteHotspotId": 128363,
+    "beforeHotspotId": 220,
+    "beforeRouteHotspotId": 128368
+  },
+  "allowP3Removal": true,
+  "allowP1P2Removal": true
+}
+```
+
+Verified fixed response shape:
+
+- `resultType = FITS_WITH_OPTIONAL_REMOVAL`
+- `canConfirm = true`
+- `selectedOpeningConflict = null`
+- removed hotspots:
+  - `223 = Mattupetty Dam and Lake`
+  - `483 = Echo Point`
+- selected hotspot `Munnar` moves earlier and no longer remains after those blockers
 
 ## Validation commands
 

@@ -510,7 +510,12 @@ export async function previewManualHotspotFitHereImpl(
   if (
     resolvedAnchor.exactSelectedGap === true &&
     (response as any).canConfirm !== true &&
-    selectedHotspotPreservedInPreview === true
+    selectedHotspotPreservedInPreview === true &&
+    !(
+      (response as any).selectedOpeningConflict ||
+      String((response as any).resultType || '').toUpperCase() === 'SELECTED_HOTSPOT_CLOSED_AT_ATTEMPTED_TIME' ||
+      String((response as any).manualInsertionFit?.previewBlockReason || '').toUpperCase() === 'SELECTED_HOTSPOT_CLOSED_AT_ATTEMPTED_TIME'
+    )
   ) {
     (response as any).resultType = Array.isArray((response as any).removedHotspots) && (response as any).removedHotspots.length > 0
       ? 'FITS_WITH_OPTIONAL_REMOVAL'
@@ -653,7 +658,12 @@ export async function previewManualHotspotFitHereImpl(
   if (
     resolvedAnchor.exactSelectedGap === true &&
     selectedHotspotPreservedInPreview === true &&
-    (response as any).canConfirm !== true
+    (response as any).canConfirm !== true &&
+    !(
+      (response as any).selectedOpeningConflict ||
+      String((response as any).resultType || '').toUpperCase() === 'SELECTED_HOTSPOT_CLOSED_AT_ATTEMPTED_TIME' ||
+      String((response as any).manualInsertionFit?.previewBlockReason || '').toUpperCase() === 'SELECTED_HOTSPOT_CLOSED_AT_ATTEMPTED_TIME'
+    )
   ) {
     (response as any).canConfirm = true;
     (response as any).resultType = Array.isArray((response as any).removedHotspots) && (response as any).removedHotspots.length > 0

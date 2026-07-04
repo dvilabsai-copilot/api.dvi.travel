@@ -119,6 +119,25 @@ If selected hotspot is still outside operating hours in the final candidate:
 
 This remains true even if other internal preview metadata looked ready.
 
+If selected hotspot is closed only because earlier same-route blockers pushed it too late, exact-anchor rescue must try upstream blocker removal first before keeping this final blocked state.
+
+Current enforced rescue flow:
+
+1. stay inside the clicked route-scoped attraction array
+2. identify attractions before the selected hotspot
+3. try nearest eligible blocker removal first
+4. then try cumulative upstream blocker removals if needed
+5. rebuild the selected hotspot and downstream sequence after each attempt
+6. accept the first candidate that clears:
+   - selected hotspot operating-hours conflict
+   - route-end overflow
+   - selected-opening conflict metadata
+
+Current non-goal:
+
+- removed blockers are not yet reinserted later in a second-pass gap search
+- rescue currently prefers a stable selected-hotspot fit over deferred re-add attempts
+
 ## Debugging playbook
 
 When a user says "preview is wrong", check these in order:
@@ -169,3 +188,33 @@ Correct preview shape:
 - some combination of `28`, `40`, `41`
 - plus travel/hotel rows derived from that same route
 - minus allowed removals if needed
+
+### Case C: route 8154 exact-anchor selected-closing rescue for Munnar
+
+Ground truth:
+
+- selected hotspot `898 = Munnar`
+- operating hours `08:00 AM - 10:00 AM`
+
+Historical wrong result:
+
+- preview still showed `Echo Point` or `Mattupetty Dam and Lake` before `Munnar`
+- selected hotspot reached at `11:17 AM` or `12:17 PM`
+- backend returned a final selected-closing block even though earlier blockers were removable
+
+Correct behavior now:
+
+- direct exact-anchor rescue removes eligible upstream blockers from the same clicked route
+- selected hotspot is rebuilt earlier
+- first travel leg is recalculated if the removed blocker used to be the first visible stop
+- response becomes confirmable only if selected hotspot is now within operating hours
+
+Verified fixed examples:
+
+- `After Echo Point`:
+  - remove `Echo Point`
+  - `Munnar` moves to morning fit
+- `After Mattupetty Dam and Lake`:
+  - remove `Mattupetty Dam and Lake`
+  - remove `Echo Point`
+  - `Munnar` moves to morning fit
