@@ -411,9 +411,21 @@ export class PlanEngineService {
     const tripEnd = this.parseDate(plan.trip_end_date);
     const pickup = this.parseDate(plan.pick_up_date_and_time);
 
-        const totalAdult = Number(plan.adult_count ?? 0);
+      const totalAdult = Number(plan.adult_count ?? 0);
     const totalChildren = Number(plan.child_count ?? 0);
     const totalInfants = Number(plan.infant_count ?? 0);
+
+    const requestedTravellingPax = Number(
+      (plan as any).travelling_pax ??
+        (plan as any).total_travelling_pax ??
+        (plan as any).total_adults_travelling ??
+        totalAdult
+    );
+
+    const travellingPax =
+      Number.isFinite(requestedTravellingPax) && requestedTravellingPax > 0
+        ? requestedTravellingPax
+        : totalAdult;
 
     this.assertChildExtraBedOccupancyRule(travellers || []);
 
@@ -483,8 +495,9 @@ export class PlanEngineService {
       no_of_nights: Number(plan.no_of_nights ?? 0),
       no_of_days: Number(plan.no_of_days ?? 0),
 
-      // Totals
+           // Totals
       total_adult: totalAdult,
+      travelling_pax: travellingPax,
       total_children: totalChildren,
       total_infants: totalInfants,
       nationality: Number((plan as any).nationality ?? 0),

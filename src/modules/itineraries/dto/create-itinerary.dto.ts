@@ -115,6 +115,37 @@ export class CreatePlanDto {
   @ApiProperty({ example: 0 }) @IsInt() child_count!: number;
   @ApiProperty({ example: 0 }) @IsInt() infant_count!: number;
 
+  @ApiProperty({
+    example: 6,
+    required: false,
+    description:
+      'Total adults travelling. Used for itinerary display, clipboard, and vehicle selection. Falls back to adult_count if not sent.',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  travelling_pax?: number;
+
+  @ApiProperty({
+    example: 6,
+    required: false,
+    description: 'Alias for travelling_pax from frontend payload.',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  total_travelling_pax?: number;
+
+  @ApiProperty({
+    example: 6,
+    required: false,
+    description: 'Alias for travelling_pax from frontend payload.',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  total_adults_travelling?: number;
+
   @ApiProperty({ example: '' })
   @IsString()
   special_instructions!: string;

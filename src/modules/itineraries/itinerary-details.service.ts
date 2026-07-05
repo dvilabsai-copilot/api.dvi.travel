@@ -311,9 +311,17 @@ export interface ItineraryDetailsResponseDto {
   extraBed: number;
   childWithBed: number;
   childWithoutBed: number;
-  adults: number;
+   adults: number;
   children: number;
   infants: number;
+
+  travellingPax?: number;
+  travelling_pax?: number;
+  totalTravellingPax?: number;
+  total_travelling_pax?: number;
+  totalAdultsTravelling?: number;
+  total_adults_travelling?: number;
+
  overallCost: string;
 meal_plan_code?: string | null;
 
@@ -5340,6 +5348,22 @@ const specialInstructions = String(
     ""
 ).trim();
 
+const rawTravellingPax = Number(
+  (plan as any).travelling_pax ??
+    (plan as any).total_travelling_pax ??
+    (plan as any).total_adults_travelling ??
+    (confirmedPlan as any)?.travelling_pax ??
+    (confirmedPlan as any)?.total_travelling_pax ??
+    (confirmedPlan as any)?.total_adults_travelling ??
+    plan.total_adult ??
+    0,
+);
+
+const travellingAdultCount =
+  Number.isFinite(rawTravellingPax) && rawTravellingPax > 0
+    ? rawTravellingPax
+    : Number(plan.total_adult ?? 0);
+
 const response: ItineraryDetailsResponseDto = {
   quoteId: plan.itinerary_quote_ID ?? '',
       planId: plan.itinerary_plan_ID,
@@ -5356,12 +5380,20 @@ const response: ItineraryDetailsResponseDto = {
       dayCount: Number((plan as any).no_of_days || days.length || 0),
       nightCount: Number((plan as any).no_of_nights || 0),
       roomCount,
-      extraBed: plan.total_extra_bed ?? 0,
+          extraBed: plan.total_extra_bed ?? 0,
       childWithBed: plan.total_child_with_bed ?? 0,
       childWithoutBed: plan.total_child_without_bed ?? 0,
       adults: plan.total_adult ?? 0,
       children: plan.total_children ?? 0,
       infants: plan.total_infants ?? 0,
+
+      travellingPax: travellingAdultCount,
+      travelling_pax: travellingAdultCount,
+      totalTravellingPax: travellingAdultCount,
+      total_travelling_pax: travellingAdultCount,
+      totalAdultsTravelling: travellingAdultCount,
+      total_adults_travelling: travellingAdultCount,
+
     overallCost: netPayable.toFixed(2), // Use calculated net payable
 meal_plan_code: (plan as any).meal_plan_code ?? null,
 

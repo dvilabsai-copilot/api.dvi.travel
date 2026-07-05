@@ -421,7 +421,21 @@ export class ItineraryDropdownsService {
     dto: EligibleVehicleTypesDto,
   ): Promise<EligibleVehicleTypesResponseDto> {
     try {
-      console.log('[getEligibleVehicleTypes] Raw DTO:', JSON.stringify(dto));
+           console.log('[getEligibleVehicleTypes] Raw DTO:', JSON.stringify(dto));
+
+      const rawTravellingPax = Number(
+        (dto as any).travellingPax ??
+          (dto as any).travelling_pax ??
+          (dto as any).totalAdultsTravelling ??
+          0,
+      );
+
+      const travellingPax =
+        Number.isFinite(rawTravellingPax) && rawTravellingPax > 0
+          ? rawTravellingPax
+          : 0;
+
+      console.log('[getEligibleVehicleTypes] Travelling Pax:', travellingPax);
       
       // 1. Merge and unique locations
       const allLocations = [
@@ -558,8 +572,8 @@ export class ItineraryDropdownsService {
 
       console.log('[getEligibleVehicleTypes] Query returned:', distinctVehicleTypes.length, 'vehicle types');
 
-      // 4. Map to response format
-      const vehicleTypes = (
+         // 4. Map to response format
+      const allVehicleTypes = (
         distinctVehicleTypes as Array<{
           vehicle_type_id: number;
           vehicle_type_title: string;
@@ -567,21 +581,44 @@ export class ItineraryDropdownsService {
         }>
       )
         .map((vt) => {
-          const capacity = vt.occupancy ?? this.extractSeatCapacity(vt.vehicle_type_title);
+          const capacity =
+            Number(vt.occupancy ?? 0) > 0
+              ? Number(vt.occupancy)
+              : this.extractSeatCapacity(vt.vehicle_type_title);
+
           return {
             id: String(vt.vehicle_type_id),
             label: vt.vehicle_type_title || '',
-            capacity, // for sorting reference
+            capacity,
           };
         })
-        // Sort by capacity ascending (primary), then by label
+        .filter((vt) => vt.id && vt.label);
+
+      const paxMatchedVehicleTypes =
+        travellingPax > 0
+          ? allVehicleTypes.filter((vt) => Number(vt.capacity || 0) >= travellingPax)
+          : allVehicleTypes;
+
+      const vehicleTypesWithCapacity =
+        travellingPax > 0 && paxMatchedVehicleTypes.length > 0
+          ? paxMatchedVehicleTypes
+          : allVehicleTypes;
+
+      const vehicleTypes = vehicleTypesWithCapacity
         .sort((a, b) => {
           if (a.capacity !== b.capacity) {
             return a.capacity - b.capacity;
           }
           return a.label.localeCompare(b.label);
         })
-        .map(({ id, label }) => ({ id, label })); // remove capacity from response
+        .map(({ id, label }) => ({ id, label }));
+
+      console.log('[getEligibleVehicleTypes] Pax filtered vehicleTypes:', {
+        travellingPax,
+        beforeFilter: allVehicleTypes.length,
+        afterFilter: vehicleTypes.length,
+        returnedIds: vehicleTypes.map((v) => v.id),
+      });
 
       console.log('[getEligibleVehicleTypes] Returning vehicleTypes:', vehicleTypes.length, 'items');
 
@@ -642,10 +679,17 @@ export class ItineraryDropdownsService {
               },
             } as any,
           );
+          const allowedVehicleTypeIds = new Set(
+            vehicleTypes.map((vehicleType) => String(vehicleType.id)),
+          );
 
           selectedVehicleIds = selectedVehicles
             .map((v) => String(v.vehicle_type_id))
-            .filter(isNonEmptyString);
+            .filter((id) => isNonEmptyString(id) && allowedVehicleTypeIds.has(id));
+
+          if (selectedVehicleIds.length === 0 && vehicleTypes.length > 0) {
+            selectedVehicleIds = [String(vehicleTypes[0].id)];
+          }
 
           console.log('[getEligibleVehicleTypes] Selected vehicle IDs:', selectedVehicleIds);
         }

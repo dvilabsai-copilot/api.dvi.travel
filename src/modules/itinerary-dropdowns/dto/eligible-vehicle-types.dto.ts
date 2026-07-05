@@ -16,6 +16,31 @@ export class EligibleVehicleTypesDto {
   itineraryPlanId?: string | number;
 
   /**
+   * Travelling Pax / Total Adults Travelling.
+   * Used to filter eligible vehicle types by seating capacity.
+   */
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  travellingPax?: number | null;
+
+  /**
+   * Alias from frontend / backend payload.
+   */
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  travelling_pax?: number | null;
+
+  /**
+   * Alias from frontend / backend payload.
+   */
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  totalAdultsTravelling?: number | null;
+
+  /**
    * Source locations (e.g., ["Chennai Domestic Airport"])
    * Array of location names
    */
