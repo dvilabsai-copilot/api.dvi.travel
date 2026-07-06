@@ -45,6 +45,36 @@ export class ExportPricebookService {
     return Array.from({ length: 31 }, (_, i) => `day_${i + 1}`);
   }
 
+  private async getActiveTimeLimitIds(timeLimitIds: number[]): Promise<Set<number>> {
+    if (!timeLimitIds.length) return new Set<number>();
+
+    const rows = await this.prisma.dvi_time_limit.findMany({
+      where: {
+        time_limit_id: { in: timeLimitIds },
+        deleted: 0,
+        status: 1,
+      },
+      select: { time_limit_id: true },
+    });
+
+    return new Set(rows.map((row) => row.time_limit_id));
+  }
+
+  private async getActiveKmsLimitIds(kmsLimitIds: number[]): Promise<Set<number>> {
+    if (!kmsLimitIds.length) return new Set<number>();
+
+    const rows = await this.prisma.dvi_kms_limit.findMany({
+      where: {
+        kms_limit_id: { in: kmsLimitIds },
+        deleted: 0,
+        status: 1,
+      },
+      select: { kms_limit_id: true },
+    });
+
+    return new Set(rows.map((row) => row.kms_limit_id));
+  }
+
   private monthLong(date: Date) {
     return date.toLocaleString('en-US', { month: 'long' }); // must match legacy DB month strings
   }
@@ -152,6 +182,12 @@ export class ExportPricebookService {
       }),
     ]);
 
+    const activeLocalTimeLimitIds = await this.getActiveTimeLimitIds([...new Set(local.map((row) => row.time_limit_id))]);
+    const activeOutstationKmsLimitIds = await this.getActiveKmsLimitIds([...new Set(outstation.map((row) => row.kms_limit_id))]);
+
+    const filteredLocal = local.filter((row) => activeLocalTimeLimitIds.has(row.time_limit_id));
+    const filteredOutstation = outstation.filter((row) => activeOutstationKmsLimitIds.has(row.kms_limit_id));
+
     // Lookup maps
     const vendorIds = new Set<number>();
     const branchIds = new Set<number>();
@@ -159,13 +195,13 @@ export class ExportPricebookService {
     const timeLimitIds = new Set<number>();
     const kmsLimitIds = new Set<number>();
 
-    for (const r of local) {
+    for (const r of filteredLocal) {
       vendorIds.add(r.vendor_id);
       branchIds.add(r.vendor_branch_id);
       vendorVehicleTypeIds.add(r.vehicle_type_id);
       timeLimitIds.add(r.time_limit_id);
     }
-    for (const r of outstation) {
+    for (const r of filteredOutstation) {
       vendorIds.add(r.vendor_id);
       branchIds.add(r.vendor_branch_id);
       vendorVehicleTypeIds.add(r.vehicle_type_id);
@@ -190,11 +226,11 @@ export class ExportPricebookService {
           select: { vehicle_type_id: true, vehicle_type_title: true },
         }),
         this.prisma.dvi_time_limit.findMany({
-          where: { time_limit_id: { in: [...timeLimitIds] } },
+          where: { time_limit_id: { in: [...timeLimitIds] }, deleted: 0, status: 1 },
           select: { time_limit_id: true, time_limit_title: true },
         }),
         this.prisma.dvi_kms_limit.findMany({
-          where: { kms_limit_id: { in: [...kmsLimitIds] } },
+          where: { kms_limit_id: { in: [...kmsLimitIds] }, deleted: 0, status: 1 },
           select: { kms_limit_id: true, kms_limit_title: true },
         }),
       ]);
@@ -219,7 +255,7 @@ export class ExportPricebookService {
     const dayKeys = this.dayKeys31();
 
     const rows = [
-      ...local.map((r) => {
+      ...filteredLocal.map((r) => {
         const vehicleTypeId = vvtToVehicleTypeId.get(r.vehicle_type_id) ?? 0;
         return {
           vendorName: vendorMap.get(r.vendor_id) ?? '',
@@ -233,7 +269,7 @@ export class ExportPricebookService {
           days: dayKeys.map((k) => (r as AnyRow)[k] ?? 0),
         };
       }),
-      ...outstation.map((r) => {
+      ...filteredOutstation.map((r) => {
         const vehicleTypeId = vvtToVehicleTypeId.get(r.vehicle_type_id) ?? 0;
         return {
           vendorName: vendorMap.get(r.vendor_id) ?? '',
