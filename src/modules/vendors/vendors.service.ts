@@ -531,84 +531,89 @@ export class VendorsService {
     };
   }
 
-  private async syncVendorUserAccount(
-    vendorId: number,
-    data: any,
-    client: any = this.prisma,
-    options: { isCreate?: boolean } = {},
-  ): Promise<void> {
-    const { username, email, roleId, plainPassword } = this.getVendorUserPayload(data);
+ private async syncVendorUserAccount(
+  vendorId: number,
+  data: any,
+  client: any = this.prisma,
+  options: { isCreate?: boolean } = {},
+): Promise<void> {
+  const { username, email, roleId, plainPassword } = this.getVendorUserPayload(data);
 
-    if (options.isCreate) {
-      if (!username) {
-        throw new BadRequestException('vendor_username is required');
-      }
+  const hasUserData =
+    username !== '' || email !== '' || roleId > 0 || plainPassword !== '';
 
-      if (!email) {
-        throw new BadRequestException('vendor_email is required');
-      }
+  if (!hasUserData) return;
 
-      if (!roleId) {
-        throw new BadRequestException('role_id is required');
-      }
+  const existingUser = await client.dvi_users.findFirst({
+    where: {
+      vendor_id: BigInt(vendorId),
+      deleted: 0,
+    },
+    select: {
+      userID: true,
+    },
+  });
 
-      if (!plainPassword) {
-        throw new BadRequestException('vendor_password is required');
-      }
-    }
+  const hasCompleteLoginData =
+    username !== '' && email !== '' && roleId > 0 && plainPassword !== '';
 
-    const hasUserData =
-      username !== '' || email !== '' || roleId > 0 || plainPassword !== '';
+  if (!existingUser && !hasCompleteLoginData) {
+    return;
+  }
 
-    if (!hasUserData) return;
+  const userData: any = {
+    userapproved: 1,
+    status: 1,
+    userbanned: 0,
+  };
 
-    const existingUser = await client.dvi_users.findFirst({
+  if (username !== '') {
+    userData.username = username;
+  }
+
+  if (email !== '') {
+    userData.useremail = email;
+  }
+
+  if (roleId > 0) {
+    userData.roleID = roleId;
+  }
+
+  if (plainPassword !== '') {
+    userData.password = await bcrypt.hash(plainPassword, 10);
+    userData.usertoken = this.md5(plainPassword);
+  }
+
+  if (existingUser) {
+    await client.dvi_users.update({
       where: {
-        vendor_id: BigInt(vendorId),
-        deleted: 0,
+        userID: existingUser.userID,
       },
-      select: {
-        userID: true,
-      },
+      data: userData,
     });
+    return;
+  }
 
-    const userData: any = {
-      username: username || email || null,
-      useremail: email || null,
+  await client.dvi_users.create({
+    data: {
+      vendor_id: BigInt(vendorId),
+      guide_id: 0,
+      staff_id: 0,
+      agent_id: 0,
+      createdby: BigInt(0),
+      createdon: new Date(),
+      deleted: 0,
+      username,
+      useremail: email,
       roleID: roleId,
+      password: await bcrypt.hash(plainPassword, 10),
+      usertoken: this.md5(plainPassword),
       userapproved: 1,
       status: 1,
       userbanned: 0,
-    };
-
-    if (plainPassword !== '') {
-      userData.password = await bcrypt.hash(plainPassword, 10);
-      userData.usertoken = this.md5(plainPassword);
-    }
-
-    if (existingUser) {
-      await client.dvi_users.update({
-        where: {
-          userID: existingUser.userID,
-        },
-        data: userData,
-      });
-      return;
-    }
-
-    await client.dvi_users.create({
-      data: {
-        vendor_id: BigInt(vendorId),
-        guide_id: 0,
-        staff_id: 0,
-        agent_id: 0,
-        createdby: BigInt(0),
-        createdon: new Date(),
-        deleted: 0,
-        ...userData,
-      },
-    });
-  }
+    },
+  });
+}
 
   private mapVendorBasicPayload(data: any): Record<string, any> {
     return {
@@ -638,7 +643,12 @@ export class VendorsService {
         ) ?? 0,
       vendor_address: data.vendor_address ?? data.address ?? null,
       vendor_company_name:
-        data.vendor_company_name ?? data.invoice_company_name ?? data.invoiceCompanyName ?? null,
+  data.vendor_company_name ??
+  data.invoice_company_name ??
+  data.invoiceCompanyName ??
+  data.vendor_name ??
+  data.vendorName ??
+  null,
       invoice_gstin_number: data.invoice_gstin_number ?? data.invoice_gstin ?? data.invoiceGstin ?? null,
       invoice_pan_number: data.invoice_pan_number ?? data.invoice_pan ?? data.invoicePan ?? null,
       invoice_pincode: data.invoice_pincode ?? data.invoicePincode ?? null,
@@ -1028,10 +1038,14 @@ export class VendorsService {
    *    e.g. vendor_name, vendor_code, vendor_primary_mobile_number, vendor_email, etc.
    *  - The frontend should send the same fields the PHP form was posting.
    */
-  async createVendorBasicInfo(data: any): Promise<any> {
-    const mapped = this.mapVendorBasicPayload(data);
+async createVendorBasicInfo(data: any): Promise<any> {
+  const mapped = this.mapVendorBasicPayload(data);
 
-    if (!mapped.vendor_code || String(mapped.vendor_code).trim() === '') {
+  if (!String(mapped.vendor_name ?? '').trim()) {
+    throw new BadRequestException('vendor_name is required');
+  }
+
+  if (!mapped.vendor_code || String(mapped.vendor_code).trim() === '') {
       mapped.vendor_code = this.generatePhpStyleVendorCode(data);
     }
 
