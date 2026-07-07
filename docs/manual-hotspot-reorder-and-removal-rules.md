@@ -11,6 +11,55 @@ If it fails because of cross-city direction, backtracking, route end, or operati
 Continue rescue.
 Return `CANNOT_FIT` only when the selected manual hotspot cannot fit after all allowed non-manual removal and reorder attempts are exhausted.
 
+## Preview and confirm contract
+
+If preview says `canConfirm=true`, the finalized preview timeline is the thing we intend to save.
+
+That means confirm is not allowed to run a second independent fit decision and contradict preview when the route has not changed.
+
+Required behavior:
+
+- preview must store the finalized timeline snapshot plus a fingerprint of that snapshot
+- confirm must compare the live route fingerprint with the preview source fingerprint
+- if the source fingerprint is unchanged and the stored preview snapshot is still valid, confirm must trust preview
+- confirm must not re-fail with:
+  - `MANUAL_INSERT_NO_LOW_PRIORITY_REMOVAL_AVAILABLE`
+  - `MANUAL_INSERT_EXCEEDS_DAY_END`
+- the only acceptable confirm rejection after `canConfirm=true` is:
+  - route changed after preview, so request is stale
+  - stored preview snapshot is missing or corrupted
+
+Corrupted preview guard:
+
+- if `canConfirm=true` but stored finalized preview snapshot is missing, malformed, or fingerprint-mismatched, backend must reject with a dedicated corruption-style error
+- do not silently recompute a different plan and pretend it is the same preview
+
+## Route-scoped simulation rule
+
+Manual Fit Here preview must simulate the clicked route only.
+
+Allowed:
+
+- active hotspot rows from the clicked route
+- travel and hotel legs derived from the clicked route
+- the selected manual hotspot being inserted
+- allowed same-route removals and reorders
+
+Forbidden:
+
+- importing attractions from another day of the same itinerary
+- importing sibling-route hotspots because they look directionally convenient
+- rebuilding from hidden fallback rows that were not part of the clicked route source array
+
+This prevents wrong previews such as:
+
+```text
+Day 2 clicked route: Alagar Koyil -> Pamban Bridge
+Preview result: Ramanatha -> Pamban -> APJ -> Agni -> Hotel
+```
+
+That is invalid because `Ramanatha` and `Agni` were not part of the clicked route scope.
+
 ## Plain-English APJ selected-pivot rule
 
 APJ is the selected manual hotspot, so APJ must win.
@@ -117,6 +166,28 @@ For every kept survivor:
   - selected hotspot cannot fit unless this blocker is removed
 - Do not remove simply because arrival is early. Waiting is allowed.
 - Do not keep a hotspot visited after closing.
+
+Selected-hotspot rule:
+
+- `SELECTED_HOTSPOT_CLOSED_AT_ATTEMPTED_TIME` is allowed as a final preview state only after all allowed same-route rescue removals have already been tried
+- do not stop at the first closed attempted time if upstream blockers are still removable
+- if upstream blocker removal makes the selected hotspot fit inside operating hours, selected hotspot wins
+
+## Removal disclosure rule
+
+Preview removal messaging must match the finalized preview timeline.
+
+If finalized preview dropped route hotspots to make confirmation possible:
+
+- those hotspots must appear in `removedHotspots`
+- those hotspots must appear in `changesRequiredDisplay.removedItems`
+- result type must be `FITS_WITH_OPTIONAL_REMOVAL`, not `FITS_DIRECTLY`
+
+Do not show:
+
+- `No hotspot removed`
+
+when finalized preview actually removed attractions from the route.
 
 ## Destination-side APJ examples for Madurai -> Rameshwaram
 
@@ -417,6 +488,114 @@ Do not return `canConfirm=true` when:
 - `APJ -> Thirumalai -> Hotel` in Madurai -> Rameshwaram
 - Any destination-side APJ timeline goes back to source-side Madurai hotspot after APJ
 - `selectedHotspotPreserved=true` is set only because APJ appears somewhere late
+
+## Exact-anchor stale rule
+
+The backend must reject stale clicked gaps instead of silently drifting to another gap.
+
+Return:
+
+- HTTP `409`
+- code `MANUAL_FIT_HERE_ANCHOR_STALE`
+
+Examples of stale conditions:
+
+- requested `afterRouteHotspotId` no longer exists on the active route
+- requested `beforeRouteHotspotId` no longer exists on the active route
+- requested adjacency no longer matches the active route
+- `AFTER_START` still points to an old first attraction
+
+## Verified examples
+
+### Example A: confirm must trust preview
+
+Observed live behavior after fix:
+
+- preview `canConfirm=true`
+- route fingerprint unchanged
+- confirm returns `201`
+- confirm does not re-fail with day-end or low-priority-removal errors
+
+Verified cases:
+
+- plan `9825`, route `8154`, selected hotspot `898`, anchor `After Echo Point`
+- plan `9822`, route `8119`, before-first-attraction confirm flow
+- plan `9824`, route `8140`, before-first-attraction confirm flow
+
+### Example B: Munnar selected-closing rescue
+
+Clicked route:
+
+```text
+Echo Point -> Mattupetty Dam and Lake -> ...
+```
+
+Selected manual hotspot:
+
+```text
+Munnar
+```
+
+Wrong historical behavior:
+
+- preview kept `Echo Point` before `Munnar`
+- `Munnar` was attempted after its `10:00 AM` close
+- backend stopped with selected-closed result too early
+
+Correct behavior:
+
+- remove eligible upstream blocker from the clicked route
+- rebuild from route start if needed
+- move `Munnar` earlier
+- return confirmable result only if `Munnar` is now inside operating hours
+
+Verified fixed case:
+
+- plan `9825`, route `8154`, selected hotspot `898`, anchor `After Echo Point`
+- removal: `Echo Point`
+- confirm succeeded with `201`
+
+### Example C: stale anchor after route changed
+
+If preview was captured before an earlier confirm changed the route:
+
+- the old clicked gap is no longer authoritative
+- backend must return `MANUAL_FIT_HERE_ANCHOR_STALE`
+
+This is the correct outcome, not a regression.
+
+## Verification workflow
+
+Reusable regression script:
+
+```bash
+npm run verify:manual-fit:sweep
+```
+
+Full preview-plus-confirm sweep:
+
+```bash
+npm run verify:manual-fit:sweep:confirm
+```
+
+Useful options:
+
+```bash
+npm run verify:manual-fit:sweep:confirm -- --planIds=9822,9824 --json=true
+```
+
+Script guarantees:
+
+- replays known manual-fit regression payloads
+- sweeps recent or specified plans day by day
+- picks a live available manual hotspot candidate for each route
+- runs preview
+- optionally runs confirm
+- reports preview `409`, stale-anchor cases, selected-closed cases, and confirm `409`
+
+Important note:
+
+- `--confirm=true` mutates live itinerary data because it saves the manual hotspot into the route
 
 Response consistency:
 

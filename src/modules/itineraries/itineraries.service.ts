@@ -12524,27 +12524,51 @@ pricing: {
     const manualHotspotTxTimeoutMs = 180000;
     const previewRollbackError = new Error('__PREVIEW_MANUAL_HOTSPOT_BATCH_ROLLBACK__');
     let previewResult: any;
+    let lastError: any = null;
+    const maxPreviewAttempts = 3;
 
-    try {
-      await this.prisma.$transaction(async (tx) => {
-        previewResult = await this.runManualHotspotBatchWithinTransaction(
-          tx,
-          Number(planId),
-          Number(routeId),
-          hotspotIds,
-          1,
-          {
-            ...options,
-            previewOnly: options?.previewOnly !== false,
-          },
-        );
+    for (let attempt = 1; attempt <= maxPreviewAttempts; attempt += 1) {
+      try {
+        await this.prisma.$transaction(async (tx) => {
+          previewResult = await this.runManualHotspotBatchWithinTransaction(
+            tx,
+            Number(planId),
+            Number(routeId),
+            hotspotIds,
+            1,
+            {
+              ...options,
+              previewOnly: options?.previewOnly !== false,
+            },
+          );
 
-        throw previewRollbackError;
-      }, { timeout: manualHotspotTxTimeoutMs });
-    } catch (error: any) {
-      if (error !== previewRollbackError) {
-        throw error;
+          throw previewRollbackError;
+        }, { timeout: manualHotspotTxTimeoutMs });
+      } catch (error: any) {
+        if (error === previewRollbackError) {
+          lastError = null;
+          break;
+        }
+
+        if (!this.isRetryableManualPreviewTransactionError(error) || attempt >= maxPreviewAttempts) {
+          throw error;
+        }
+
+        lastError = error;
+        console.warn('[ManualFit][preview_tx_retry]', {
+          planId: Number(planId),
+          routeId: Number(routeId),
+          hotspotIds: this.normalizeManualHotspotIds(hotspotIds),
+          attempt,
+          maxPreviewAttempts,
+          message: String(error?.message || ''),
+        });
+        await new Promise((resolve) => setTimeout(resolve, attempt * 100));
       }
+    }
+
+    if (lastError) {
+      throw lastError;
     }
 
     const previewIsolationRecovered = await this.restoreManualPreviewRouteState(previewStateSnapshot);
@@ -12942,6 +12966,8 @@ pricing: {
       forceConflictPreferredTimesByHotspotId: Record<number, { start: Date; end: Date }>;
       trustedPreviewConfirmation?: boolean;
       trustedPreviewTimeline?: any[] | null;
+      sourceFingerprintChanged?: boolean;
+      enforceTrustedPreviewConfirmation?: boolean;
     },
   ) {
     return applyManualFitAttemptWithinTransactionImpl.call(this, tx, params);
@@ -15210,8 +15236,20 @@ pricing: {
     afterHotspotId?: number | null;
     beforeHotspotId?: number | null;
     anchorIntent?: ManualFitHereAnchorIntent;
+    allowBoundaryRescuePlacement?: boolean;
   }): boolean {
     return manualFitTimelinePreservesSelectedAnchorImpl.call(this, params);
+  }
+
+  private isRetryableManualPreviewTransactionError(error: any): boolean {
+    const code = String(error?.code || '').trim().toUpperCase();
+    const message = String(error?.message || '').toLowerCase();
+
+    return (
+      code === 'P2034'
+      || message.includes('write conflict')
+      || message.includes('deadlock')
+    );
   }
 
   private normalizeExactAnchorManualInsertionFit(params: {
@@ -15787,6 +15825,32 @@ pricing: {
     return `${priorityLabel} hotspot removed after sequential check to keep the route within day end.`;
   }
 
+  private buildSelectedClosingRemovalReason(params: {
+    removedName: string;
+    selectedHotspotLabel: string;
+    attemptedVisitTime?: string | null;
+    operatingHours?: string | null;
+    overflowMinutes?: number | null;
+  }): string {
+    const removedName = String(params.removedName || 'This hotspot').trim();
+    const selectedHotspotLabel = String(
+      params.selectedHotspotLabel || 'the selected manual hotspot',
+    ).trim();
+    const attemptedVisitTime = String(params.attemptedVisitTime || '').trim() || null;
+    const operatingHours = String(params.operatingHours || '').trim() || null;
+    const overflowMinutes = Math.max(0, Number(params.overflowMinutes || 0));
+
+    if (attemptedVisitTime && operatingHours) {
+      const overflowText =
+        overflowMinutes > 0
+          ? ` It would miss the allowed operating window by ${this.formatMinutesHuman(overflowMinutes)}.`
+          : '';
+      return `${removedName} removed because keeping it would push selected manual hotspot ${selectedHotspotLabel} to attempted visit time ${attemptedVisitTime}, outside operating hours ${operatingHours}.${overflowText}`;
+    }
+
+    return `${removedName} removed because keeping it would prevent selected manual hotspot ${selectedHotspotLabel} from fitting within operating hours.`;
+  }
+
   private buildProgressiveRemovalSuccessMessage(
     validationMode: 'DAY_END' | 'SELECTED_HOTSPOT_CLOSING',
     removedRows: Array<{ priority?: number; name?: string }>,
@@ -16147,6 +16211,18 @@ pricing: {
     );
 
     const targetHotspotId = Number(params.targetHotspotId || selectedHotspotId);
+    const selectedHotspotMaster = targetHotspotId > 0
+      ? await (tx as any).dvi_hotspot_place.findFirst({
+          where: {
+            hotspot_ID: targetHotspotId,
+            deleted: 0,
+          },
+          select: {
+            hotspot_name: true,
+          },
+        })
+      : null;
+    const selectedHotspotMasterName = String(selectedHotspotMaster?.hotspot_name || '').trim() || null;
     const protectedHotspotIds = new Set(
       [selectedHotspotId, targetHotspotId]
         .map((id) => Number(id || 0))
@@ -16233,6 +16309,8 @@ pricing: {
             hotspot_name: true,
             hotspot_location: true,
             hotspot_to_location: true,
+            hotspot_priority: true,
+            hotspot_duration: true,
           },
         })
       : [];
@@ -16268,7 +16346,17 @@ pricing: {
     };
 
     const getCandidateRemovalPriority = (row: any): number => {
-      const normalized = this.getEffectivePriorityForManualInsertion(row);
+      const hotspotId = getRowHotspotId(row);
+      const master = removalDirectionMasterById.get(hotspotId) || null;
+      const normalized = this.normalizeHotspotPriority(
+        Number(
+          row?.priority ||
+          row?.hotspot_priority ||
+          row?.rawPriority ||
+          master?.hotspot_priority ||
+          9999,
+        ),
+      );
 
       if (normalized >= this.MANUAL_HOTSPOT_EFFECTIVE_PRIORITY || normalized === 9999) return 4;
       if (normalized === this.CONFIRMATION_REQUIRED_PRIORITY) return 3;
@@ -16313,19 +16401,22 @@ pricing: {
         return [1, 2, 3, 4].includes(priority);
       })
       .map(({ row, rowIndex }: any) => {
+        const hotspotId = getRowHotspotId(row);
+        const master = removalDirectionMasterById.get(hotspotId) || null;
         const priority = getCandidateRemovalPriority(row);
         return {
           row,
           timelineIndex: rowIndex,
           routeOrder: Number(row?.hotspot_order || row?.order || rowIndex),
-          id: getRowHotspotId(row),
-          name: String(row?.name || row?.text || row?.hotspot_name || `Hotspot #${getRowHotspotId(row)}`),
+          id: hotspotId,
+          name: String(row?.name || row?.text || row?.hotspot_name || master?.hotspot_name || `Hotspot #${hotspotId}`),
           priority,
           estimatedMinutes: Number(
             row?.durationMinutes ||
             row?.duration_minutes ||
             row?.visitDurationMinutes ||
             row?.hotspot_duration_minutes ||
+            this.getHotspotDurationMinutes(master, row) ||
             this.getPreviewRowDurationMinutes(row) ||
             0,
           ),
@@ -16700,6 +16791,47 @@ pricing: {
       );
     };
 
+    let selectedClosingRemovalReasonContext: {
+      selectedAttemptedVisitTime: string | null;
+      selectedOperatingHours: string | null;
+      selectedClosingOverflowMinutes: number;
+    } | null = null;
+
+    if (validationMode === 'SELECTED_HOTSPOT_CLOSING') {
+      let reasonTimeline = sourceTimeline;
+      const sourceContainsTarget = sourceTimeline.some((row: any) => (
+        isAttractionLikeRow(row) && getRowHotspotId(row) === targetHotspotId
+      ));
+
+      if (!sourceContainsTarget) {
+        const baselineExactTimeline = await this.buildExactAnchorSequentialTimelineAfterRemoval(tx, sourceTimeline, {
+          removedHotspotIds: [],
+          targetHotspotId,
+          routeId: Number(params.routeId),
+          planId: Number(params.planId),
+          anchorIntent: params.anchorIntent,
+          afterHotspotId: params.afterHotspotId,
+          beforeHotspotId: params.beforeHotspotId,
+          allowSelectedClosingAnchorBypass: false,
+        });
+
+        if (Array.isArray(baselineExactTimeline) && baselineExactTimeline.length > 0) {
+          reasonTimeline = baselineExactTimeline;
+        }
+      }
+
+      const baselineReasonEvaluation = await evaluateTimeline(reasonTimeline);
+      if (baselineReasonEvaluation?.selectedAttemptedVisitTime || baselineReasonEvaluation?.selectedOperatingHours) {
+        selectedClosingRemovalReasonContext = {
+          selectedAttemptedVisitTime: baselineReasonEvaluation.selectedAttemptedVisitTime || null,
+          selectedOperatingHours: baselineReasonEvaluation.selectedOperatingHours || null,
+          selectedClosingOverflowMinutes: Number(
+            baselineReasonEvaluation.selectedClosingOverflowMinutes || 0,
+          ),
+        };
+      }
+    }
+
     const candidateById = new Map<number, any>(
       candidateRows
         .map((row: any) => [Number(row?.id || 0), row] as const)
@@ -16718,6 +16850,7 @@ pricing: {
         sourceTimeline.find((row: any) => (
           isAttractionLikeRow(row) && getRowHotspotId(row) === targetHotspotId
         ))?.text ||
+        selectedHotspotMasterName ||
         `Hotspot #${targetHotspotId}`,
       ).trim();
 
@@ -16969,24 +17102,47 @@ pricing: {
       sourceTimeline.find((row: any) => (
         isAttractionLikeRow(row) && getRowHotspotId(row) === targetHotspotId
       ))?.text ||
+      selectedHotspotMasterName ||
       `Hotspot #${targetHotspotId}`,
     ).trim();
 
-    const toRemovedRows = (rows: any[]) => rows.map((row: any) => ({
-      id: row.id,
-      name: row.name,
-      priority: row.priority,
-      estimatedMinutes: row.estimatedMinutes,
-      reason:
+    const toRemovedRows = (
+      rows: any[],
+      context?: {
+        selectedAttemptedVisitTime?: string | null;
+        selectedOperatingHours?: string | null;
+        selectedClosingOverflowMinutes?: number | null;
+      },
+    ) => rows.map((row: any) => {
+      const selectedClosingReasonContext =
         validationMode === 'SELECTED_HOTSPOT_CLOSING'
-          ? `${row.name} removed because selected manual hotspot ${selectedHotspotLabel} must fit before operating-hours closing.`
-          : this.buildProgressiveRemovalReason(validationMode, row.priority),
-      removalReasonCode:
+          ? (selectedClosingRemovalReasonContext || context || null)
+          : null;
+      const reason =
         validationMode === 'SELECTED_HOTSPOT_CLOSING'
-          ? 'SELECTED_HOTSPOT_CLOSING_RESCUE'
-          : 'DAY_END_RESCUE',
-      requiresAcknowledgement: true,
-    }));
+          ? this.buildSelectedClosingRemovalReason({
+              removedName: String(row?.name || `Hotspot #${row?.id || ''}`),
+              selectedHotspotLabel,
+              attemptedVisitTime: selectedClosingReasonContext?.selectedAttemptedVisitTime || null,
+              operatingHours: selectedClosingReasonContext?.selectedOperatingHours || null,
+              overflowMinutes: selectedClosingReasonContext?.selectedClosingOverflowMinutes || 0,
+            })
+          : this.buildProgressiveRemovalReason(validationMode, row.priority);
+
+      return {
+        id: row.id,
+        name: row.name,
+        priority: row.priority,
+        estimatedMinutes: row.estimatedMinutes,
+        reason,
+        fitFailureExplanation: reason,
+        removalReasonCode:
+          validationMode === 'SELECTED_HOTSPOT_CLOSING'
+            ? 'SELECTED_HOTSPOT_CLOSING_RESCUE'
+            : 'DAY_END_RESCUE',
+        requiresAcknowledgement: true,
+      };
+    });
 
     const preselectedRemovalIds = Array.isArray(params.preselectedRemovalHotspotIds)
       ? params.preselectedRemovalHotspotIds.map(Number).filter((id) => id > 0)
@@ -17064,7 +17220,7 @@ pricing: {
           resolved: true,
           algorithm: 'PROGRESSIVE_PRIORITY_REMOVAL',
           validationMode,
-          removedHotspots: toRemovedRows(selectedRemovedRows),
+          removedHotspots: toRemovedRows(selectedRemovedRows, evaluation),
           candidateHotspots: candidateRows,
           finalTimeline: evaluation.evaluatedTimeline,
           finalOverflowMinutes: 0,
@@ -17212,7 +17368,7 @@ pricing: {
             resolved: true,
             algorithm: 'PROGRESSIVE_PRIORITY_REMOVAL',
             validationMode,
-            removedHotspots: toRemovedRows(planRows),
+            removedHotspots: toRemovedRows(planRows, evaluation),
             candidateHotspots: candidateRows,
             finalTimeline: planTimeline,
             finalOverflowMinutes: 0,
@@ -17316,7 +17472,7 @@ pricing: {
             resolved: true,
             algorithm: 'PROGRESSIVE_PRIORITY_REMOVAL',
             validationMode,
-            removedHotspots: toRemovedRows(nextRemovedRows),
+            removedHotspots: toRemovedRows(nextRemovedRows, evaluation),
             candidateHotspots: candidateRows,
             finalTimeline: nextTimeline,
             finalOverflowMinutes: 0,
@@ -17373,6 +17529,8 @@ pricing: {
       };
       trustedPreviewConfirmation?: boolean;
       trustedPreviewTimeline?: any[] | null;
+      trustedPreviewTimelineFingerprint?: string | null;
+      enforceTrustedPreviewConfirmation?: boolean;
       allowP3Removal?: boolean;
       allowP1P2Removal?: boolean;
       allowTopPriorityRemoval?: boolean;
@@ -17905,6 +18063,14 @@ pricing: {
       options: params,
       selectedMaster,
     });
+    const trustedPreviewTimelineFingerprint = String(params?.trustedPreviewTimelineFingerprint || '').trim();
+    const canTrustStablePreviewForDayEnd =
+      params?.trustedPreviewConfirmation === true
+      && params?.enforceTrustedPreviewConfirmation === true
+      && Array.isArray(params?.trustedPreviewTimeline)
+      && params.trustedPreviewTimeline.length > 0
+      && trustedPreviewTimelineFingerprint.length > 0
+      && this.buildManualFitTimelineFingerprint(adjustedTimeline || []) === trustedPreviewTimelineFingerprint;
 
     const overflowMinutes = this.calculateRouteEndOverflowMinutes(
       adjustedTimeline || [],
@@ -17912,6 +18078,15 @@ pricing: {
       manualTimingPolicy?.endTime,
     );
     if (overflowMinutes > 0) {
+      if (canTrustStablePreviewForDayEnd) {
+        console.warn('[FitHere][confirm_trusted_preview_day_end_bypass]', {
+          planId: Number(planId),
+          routeId: Number(routeId),
+          selectedHotspotId,
+          overflowMinutes,
+          trustedPreviewTimelineFingerprint,
+        });
+      } else {
       const dayEndMinutes = routeEndMinutesApply;
       const preselectedRemovalHotspotIds = Array.isArray(manualInsertionFit?.lowPriorityRemovalPlanPreview?.plannedRemovals)
         ? manualInsertionFit.lowPriorityRemovalPlanPreview.plannedRemovals
@@ -17987,6 +18162,7 @@ pricing: {
         for (const removedId of removedIds) {
           await this.addRouteHotspotToExcludedList(tx, Number(routeId), Number(removedId));
         }
+      }
       }
     }
 
@@ -18987,7 +19163,21 @@ pricing: {
     selectedHotspotId: number;
     hotspotMasters: any[];
   }): any[] {
-    const baselineRows = Array.isArray(params.baselineTimeline) ? [...params.baselineTimeline] : [];
+    const baselineRows = Array.isArray(params.baselineTimeline)
+      ? params.baselineTimeline
+          .map((row: any, index: number) => ({ row: { ...row }, index }))
+          .sort((a: any, b: any) => {
+            const aStart = this.parseSegmentStartMinutes(a.row);
+            const bStart = this.parseSegmentStartMinutes(b.row);
+
+            if (aStart === null && bStart === null) return Number(a.index) - Number(b.index);
+            if (aStart === null) return 1;
+            if (bStart === null) return -1;
+            if (aStart !== bStart) return aStart - bStart;
+            return Number(a.index) - Number(b.index);
+          })
+          .map((entry: any) => entry.row)
+      : [];
     const manualInsertionFit = params.manualInsertionFit || null;
     const selectedHotspotId = Number(params.selectedHotspotId || 0);
     const hotspotMasters = Array.isArray(params.hotspotMasters) ? params.hotspotMasters : [];
@@ -19800,6 +19990,65 @@ pricing: {
       previewOrder: index,
       matrixPreviewOrder: index,
     }));
+  }
+
+  private isManualPreviewTimelineWrapped(timeline: any[]): boolean {
+    if (!Array.isArray(timeline) || timeline.length === 0) return false;
+
+    const isRefreshmentRow = (row: any): boolean => {
+      const type = String(row?.type || '').toLowerCase();
+      const itemType = Number(row?.item_type || 0);
+      const text = String(row?.text || row?.name || '').toLowerCase();
+      return type === 'refreshment' || itemType === 1 || text.includes('refreshment / buffer');
+    };
+
+    const isCheckinRow = (row: any): boolean => {
+      const type = String(row?.type || '').toLowerCase();
+      const itemType = Number(row?.item_type || 0);
+      const text = String(row?.text || row?.name || '').toLowerCase();
+      return type === 'hotel' || type === 'checkin' || itemType === 6 || text.includes('check-in at');
+    };
+
+    const isMeaningfulAfterTerminal = (row: any): boolean => {
+      const type = String(row?.type || '').toLowerCase();
+      const itemType = Number(row?.item_type || 0);
+      return (
+        type === 'refreshment'
+        || type === 'travel'
+        || type === 'attraction'
+        || type === 'waiting'
+        || itemType === 1
+        || itemType === 3
+        || itemType === 4
+        || itemType === 5
+        || itemType === 7
+      );
+    };
+
+    let refreshmentCount = 0;
+    let firstCheckinIndex = -1;
+    let checkinCount = 0;
+
+    for (let index = 0; index < timeline.length; index += 1) {
+      const row = timeline[index];
+      if (isRefreshmentRow(row)) {
+        refreshmentCount += 1;
+        if (refreshmentCount > 1) return true;
+      }
+
+      if (isCheckinRow(row)) {
+        checkinCount += 1;
+        if (checkinCount > 1) return true;
+        if (firstCheckinIndex < 0) firstCheckinIndex = index;
+        continue;
+      }
+
+      if (firstCheckinIndex >= 0 && index > firstCheckinIndex && isMeaningfulAfterTerminal(row)) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   private repairMatrixPreviewTimelineTimeRanges(timeline: any[]): any[] {
@@ -20970,6 +21219,9 @@ pricing: {
       forceConflictPreferredTimesByHotspotId?: Record<number, { start: Date; end: Date }>;
       exactAnchorMode?: boolean;
       trustedPreviewConfirmation?: boolean;
+      trustedPreviewTimeline?: any[] | null;
+      trustedPreviewTimelineFingerprint?: string | null;
+      enforceTrustedPreviewConfirmation?: boolean;
       manualTimingPolicy?: ManualHotspotTimingPolicy;
       sourceInsertionMode?: boolean;
       sourceMaxCandidateIndex?: number;
@@ -21254,38 +21506,16 @@ pricing: {
     );
 
     if (destinationSlotNotFound && options?.previewOnly === true) {
-      return {
-        success: false,
-        inserted: false,
-        selectedIncluded: false,
-        code: 'DESTINATION_SLOT_NOT_FOUND',
-        message: 'No valid destination-side insertion slot was found after destination is reached.',
+      console.warn('[ManualDestinationInsert] destination_slot_not_found_continuing_preview_rescue', {
         planId: Number(planId),
         routeId: Number(routeId),
-        hotspotId: Number(preFocusHotspotId),
-        hotspotIds: requestedHotspotIds,
-        manualTimingPolicy,
-        fullTimeline: baselineTimelineForMatrix,
-        routeTimeline: baselineTimelineForMatrix,
-        manualInsertionFit: {
-          ...(manualInsertionFit || {}),
-          manualTimingPolicy,
-        },
-        validation: {
-          passesScheduleRules: false,
-          readyToApply: false,
-          requiresPriorityConfirmation: false,
-          stillUnschedulable: true,
-          routeEndOverflowMinutes: 0,
-          manualTimingPolicy,
-          openingHourConflictCount: 0,
-          selectedManualConflictCount: 0,
-          scheduledSelectedManualCount: 0,
-          unscheduledManualCount: requestedHotspotIds.length,
-          requiresMatrixBuild: false,
-          reason: 'DESTINATION_SLOT_NOT_FOUND',
-        },
-      };
+        selectedHotspotId: Number(preFocusHotspotId),
+        exactAnchorMode: options?.exactAnchorMode === true,
+      });
+      manualInsertionFit.previewBlockReason = null;
+      manualInsertionFit.requiresMatrixBuild = false;
+      manualInsertionFit.canBuildMatrix = false;
+      manualInsertionFit.code = 'MANUAL_HOTSPOT_DESTINATION_INSERT_PREVIEW_READY';
     }
 
     if (requiresMatrixBuild) {
@@ -21524,13 +21754,17 @@ pricing: {
         routeId: Number(routeId),
         selectedHotspotIds: requestedHotspotIds,
         userId: Number(userId || 1),
-      manualInsertionFit,
-      manualTimingPolicy,
-      matrixPreferredSlot: options?.matrixPreferredSlot,
-      allowP1P2Removal: options?.allowP1P2Removal === true,
-      allowTopPriorityRemoval: options?.allowTopPriorityRemoval === true,
-    });
-  }
+        manualInsertionFit,
+        manualTimingPolicy,
+        matrixPreferredSlot: options?.matrixPreferredSlot,
+        trustedPreviewConfirmation: options?.trustedPreviewConfirmation === true,
+        trustedPreviewTimeline: options?.trustedPreviewTimeline || null,
+        trustedPreviewTimelineFingerprint: String(options?.trustedPreviewTimelineFingerprint || '').trim() || null,
+        enforceTrustedPreviewConfirmation: options?.enforceTrustedPreviewConfirmation === true,
+        allowP1P2Removal: options?.allowP1P2Removal === true,
+        allowTopPriorityRemoval: options?.allowTopPriorityRemoval === true,
+      });
+    }
 
     const preparedByHotspotId = new Map<number, { alreadyExisted: boolean }>();
     for (const hotspotId of requestedHotspotIds) {
@@ -21905,6 +22139,15 @@ pricing: {
         beforeHotspotId: options?.beforeHotspotId,
       });
 
+      if (this.isManualPreviewTimelineWrapped(destinationBaselineRebuilt)) {
+        console.warn('[FitHere][destination_side_rebuild_rejected_wrapped_timeline]', {
+          routeId: Number(routeId),
+          selectedHotspotId: Number(focusHotspotId),
+          rebuiltLength: Array.isArray(destinationBaselineRebuilt) ? destinationBaselineRebuilt.length : 0,
+        });
+        destinationBaselineRebuilt = [];
+      }
+
       if (destinationBaselineRebuilt.length === 0) {
         destinationBaselineRebuilt = this.rebuildDestinationSidePreviewFromBaseline({
           baselineTimeline: baselineTimelineForMatrix,
@@ -21971,6 +22214,7 @@ pricing: {
         afterHotspotId: options?.afterHotspotId,
         beforeHotspotId: options?.beforeHotspotId,
         anchorIntent: options?.anchorIntent,
+        allowBoundaryRescuePlacement: true,
       }) !== true
     ) {
       console.warn('[FitHere][exact_anchor_drift]', {
@@ -22010,12 +22254,16 @@ pricing: {
           || 0,
         ),
       );
+      const exactAnchorRescueSourceTimeline =
+        Array.isArray(baselineTimelineForMatrix) && baselineTimelineForMatrix.length > 0
+          ? baselineTimelineForMatrix
+          : adjustedPreviewTimeline;
       const exactAnchorRemovalPlan = await this.resolveProgressivePriorityRemovalForManualFitInTx(tx, {
         planId: Number(planId),
         routeId: Number(routeId),
         selectedHotspotId: Number(focusHotspotId),
         selectedManualPriority,
-        currentTimeline: adjustedPreviewTimeline,
+        currentTimeline: exactAnchorRescueSourceTimeline,
         dayEndMinutes,
         overflowMinutes: exactAnchorOverflowMinutes,
         validationMode: 'SELECTED_HOTSPOT_CLOSING',
@@ -22037,6 +22285,29 @@ pricing: {
         sameRouteExactAnchorRemovals.length > 0
           ? sameRouteExactAnchorRemovals
           : ((exactAnchorRemovalPlan.removedHotspots || []).filter((row: any) => this.getManualFitRemovalHotspotId(row) > 0));
+      const sameRouteExactAnchorCandidates = await this.filterPlannedRemovalsToSameRouteInTx(
+        tx,
+        Number(planId),
+        Number(routeId),
+        exactAnchorRemovalPlan.candidateHotspots || [],
+      );
+      const exhaustiveExactAnchorCandidateRemovals = (() => {
+        const fallbackCandidates = (exactAnchorRemovalPlan.candidateHotspots || []).filter((row: any) => (
+          this.getManualFitRemovalHotspotId(row) > 0
+        ));
+        const merged = sameRouteExactAnchorCandidates.length > 0
+          ? sameRouteExactAnchorCandidates
+          : fallbackCandidates;
+        const byHotspotId = new Map<number, any>();
+
+        for (const row of merged) {
+          const hotspotId = this.getManualFitRemovalHotspotId(row);
+          if (!(hotspotId > 0) || byHotspotId.has(hotspotId)) continue;
+          byHotspotId.set(hotspotId, row);
+        }
+
+        return Array.from(byHotspotId.values());
+      })();
 
       manualInsertionFit.lowPriorityRemovalPlanPreview = {
         resolved: exactAnchorRemovalPlan.resolved,
@@ -22060,12 +22331,96 @@ pricing: {
           afterHotspotId: options?.afterHotspotId,
           beforeHotspotId: options?.beforeHotspotId,
           anchorIntent: options?.anchorIntent,
+          allowBoundaryRescuePlacement: true,
         })
       ) {
         adjustedPreviewTimeline = exactAnchorRemovalPlan.finalTimeline;
         manualInsertionFit.removedLowPriorityHotspots = resolvedExactAnchorRemovals;
         manualInsertionFit.rescheduleApplied = true;
         manualInsertionFit.dayOverflowMinutes = 0;
+        console.warn('[FitHere][exact_anchor_boundary_rescue_applied]', {
+          routeId: Number(routeId),
+          selectedHotspotId: Number(focusHotspotId),
+          removedHotspotIds: resolvedExactAnchorRemovals
+            .map((row: any) => Number(row?.id || row?.hotspotId || row?.hotspot_ID || row?.locationId || 0))
+            .filter((id: number) => id > 0),
+          afterHotspotId: Number(options?.afterHotspotId || 0) || null,
+          beforeHotspotId: Number(options?.beforeHotspotId || 0) || null,
+        });
+      } else {
+      const exhaustiveExactAnchorRemovalIds = exhaustiveExactAnchorCandidateRemovals
+        .map((row: any) => Number(row?.id || row?.hotspotId || row?.hotspot_ID || row?.locationId || 0))
+        .filter((id: number) => Number.isFinite(id) && id > 0);
+      const exhaustiveExactAnchorTimeline = exhaustiveExactAnchorRemovalIds.length > 0
+        ? await this.buildExactAnchorSequentialTimelineAfterRemoval(tx, exactAnchorRescueSourceTimeline, {
+            removedHotspotIds: exhaustiveExactAnchorRemovalIds,
+            targetHotspotId: Number(focusHotspotId),
+            routeId: Number(routeId),
+            planId: Number(planId),
+            anchorIntent: options?.anchorIntent,
+            afterHotspotId: options?.afterHotspotId,
+            beforeHotspotId: options?.beforeHotspotId,
+            allowSelectedClosingAnchorBypass: true,
+          })
+        : [];
+      const selectedHotspotRescuedByExhaustiveRemoval = exhaustiveExactAnchorTimeline.some((row: any) => (
+        Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || row?.hotspot_id || 0) === Number(focusHotspotId)
+        && (String(row?.type || '').toLowerCase() === 'attraction' || Number(row?.item_type || 0) === 4)
+      ));
+      const exhaustiveRemovalStillPreservesClickedAnchor =
+        selectedHotspotRescuedByExhaustiveRemoval &&
+        this.manualFitTimelinePreservesSelectedAnchor({
+          timeline: exhaustiveExactAnchorTimeline,
+          selectedHotspotId: focusHotspotId,
+          afterHotspotId: options?.afterHotspotId,
+          beforeHotspotId: options?.beforeHotspotId,
+          anchorIntent: options?.anchorIntent,
+          allowBoundaryRescuePlacement: true,
+        });
+
+      if (selectedHotspotRescuedByExhaustiveRemoval) {
+        const exhaustiveExactAnchorRemovalRows = exhaustiveExactAnchorCandidateRemovals.map((row: any) => {
+          const hotspotId = this.getManualFitRemovalHotspotId(row);
+          const priority = Number(row?.priority || row?.hotspot_priority || row?.rawPriority || 4) || 4;
+          const removedName = String(row?.name || row?.hotspot_name || row?.text || `Hotspot #${hotspotId}`).trim();
+          const reason = exhaustiveRemovalStillPreservesClickedAnchor
+            ? `Removed because this optional/lower-priority hotspot conflicts with the selected manual hotspot insertion at the chosen position.`
+            : `Removed because keeping it would stop the selected manual hotspot from being rescued near the clicked Fit Here position.`;
+
+          return {
+            ...row,
+            id: hotspotId,
+            hotspotId,
+            name: removedName,
+            priority,
+            reason,
+            fitFailureExplanation: reason,
+            removalReasonCode: 'EXACT_ANCHOR_RESCUE_REMOVAL',
+            requiresAcknowledgement: true,
+          };
+        });
+
+        adjustedPreviewTimeline = exhaustiveExactAnchorTimeline;
+        manualInsertionFit.removedLowPriorityHotspots = exhaustiveExactAnchorRemovalRows;
+        manualInsertionFit.rescheduleApplied = true;
+        manualInsertionFit.dayOverflowMinutes = 0;
+        manualInsertionFit.selectedHotspotPreserved = true;
+        manualInsertionFit.exactAnchorDrift = exhaustiveRemovalStillPreservesClickedAnchor !== true;
+        manualInsertionFit.lowPriorityRemovalPlanPreview = {
+          ...manualInsertionFit.lowPriorityRemovalPlanPreview,
+          resolved: true,
+          plannedRemovals: exhaustiveExactAnchorRemovalRows,
+          finalOverflowMinutes: 0,
+          message: exhaustiveRemovalStillPreservesClickedAnchor
+            ? 'Selected manual hotspot was rescued by exhausting same-route non-manual hotspot removals.'
+            : 'Selected manual hotspot was rescued only after exhausting same-route non-manual hotspot removals, so the clicked anchor moved.',
+        };
+        console.warn('[FitHere][exact_anchor_exhaustive_same_route_rescue_applied]', {
+          routeId: Number(routeId),
+          selectedHotspotId: Number(focusHotspotId),
+          removedHotspotIds: exhaustiveExactAnchorRemovalIds,
+          anchorPreserved: exhaustiveRemovalStillPreservesClickedAnchor === true,
+        });
       } else {
       const exactAnchorExhaustedMessage =
         Array.isArray(exactAnchorRemovalPlan.candidateHotspots) && exactAnchorRemovalPlan.candidateHotspots.length > 0
@@ -22108,6 +22463,7 @@ pricing: {
       manualInsertionFit.dayOverflowMinutes = 0;
       manualInsertionFit.selectedHotspotPreserved = selectedHotspotStillPresent;
       manualInsertionFit.exactAnchorDrift = true;
+      }
       }
     }
 
@@ -22445,6 +22801,15 @@ pricing: {
         beforeHotspotId: options?.beforeHotspotId,
       });
 
+      if (this.isManualPreviewTimelineWrapped(destinationBaselineRebuilt)) {
+        console.warn('[FitHere][destination_side_rebuild_rejected_wrapped_timeline]', {
+          routeId: Number(routeId),
+          selectedHotspotId: Number(focusHotspotId),
+          rebuiltLength: Array.isArray(destinationBaselineRebuilt) ? destinationBaselineRebuilt.length : 0,
+        });
+        destinationBaselineRebuilt = [];
+      }
+
       if (destinationBaselineRebuilt.length === 0) {
         destinationBaselineRebuilt = this.rebuildDestinationSidePreviewFromBaseline({
           baselineTimeline: baselineTimelineForMatrix,
@@ -22623,6 +22988,17 @@ pricing: {
       const selectedAttractionIndex = attractionRows.findIndex((row: any) => (
         Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || row?.hotspot_id || row?.id || 0) === Number(focusHotspotId)
       ));
+      console.log('[FitHere][DIRECT_CLOSING_RESCUE_PRECHECK]', {
+        routeId: Number(routeId),
+        selectedHotspotId: Number(focusHotspotId),
+        selectedAttractionIndex,
+        attractionRows: attractionRows.map((row: any) => ({
+          hotspotId: Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || row?.hotspot_id || row?.id || 0),
+          text: String(row?.text || row?.name || ''),
+          timeRange: String(row?.timeRange || ''),
+          priority: Number(row?.priority || row?.hotspot_priority || row?.rawPriority || 0),
+        })),
+      });
       if (selectedAttractionIndex <= 0) return false;
 
       const toRescuePriority = (row: any, candidate: any): number | null => {
@@ -22673,6 +23049,31 @@ pricing: {
         .filter((entry: any) => entry.priority !== null);
 
       const orderedBeforeSelected = [...beforeSelectedRows].reverse();
+      console.log('[FitHere][DIRECT_CLOSING_RESCUE_INPUT]', {
+        routeId: Number(routeId),
+        selectedHotspotId: Number(focusHotspotId),
+        directClickedAnchorRescueHotspotId,
+        selectedAttractionIndex,
+        beforeSelectedRows: beforeSelectedRows.map((entry: any) => ({
+          hotspotId: entry.hotspotId,
+          name: String(
+            entry?.candidate?.name ||
+            entry?.candidate?.hotspot_name ||
+            entry?.row?.name ||
+            entry?.row?.text ||
+            '',
+          ).trim(),
+          priority: entry.priority,
+          rawPriority: Number(
+            entry?.candidate?.priority ||
+            entry?.candidate?.hotspot_priority ||
+            entry?.row?.priority ||
+            entry?.row?.hotspot_priority ||
+            entry?.row?.rawPriority ||
+            0,
+          ),
+        })),
+      });
       if (orderedBeforeSelected.length === 0) return false;
 
       const rescuePlans: number[][] = [];
@@ -22682,6 +23083,11 @@ pricing: {
       for (let size = 2; size <= orderedBeforeSelected.length; size += 1) {
         rescuePlans.push(orderedBeforeSelected.slice(0, size).map((entry: any) => Number(entry.hotspotId)));
       }
+      console.log('[FitHere][DIRECT_CLOSING_RESCUE_PLANS]', {
+        routeId: Number(routeId),
+        selectedHotspotId: Number(focusHotspotId),
+        rescuePlans,
+      });
 
       const selectedHotspotLabel = String(
         (hotspotMasters || []).find((row: any) => Number(row?.hotspot_ID || 0) === Number(focusHotspotId))?.hotspot_name
@@ -22689,6 +23095,11 @@ pricing: {
         || 'the selected manual hotspot',
       ).trim();
       for (const removedHotspotIds of rescuePlans) {
+        console.log('[FitHere][DIRECT_CLOSING_RESCUE_TRY]', {
+          routeId: Number(routeId),
+          selectedHotspotId: Number(focusHotspotId),
+          removedHotspotIds,
+        });
         const directRescueTimeline = await this.buildExactAnchorSequentialTimelineAfterRemoval(tx, adjustedPreviewTimeline, {
           removedHotspotIds,
           targetHotspotId: Number(focusHotspotId),
@@ -22701,6 +23112,11 @@ pricing: {
         });
 
         if (!Array.isArray(directRescueTimeline) || directRescueTimeline.length === 0) {
+          console.log('[FitHere][DIRECT_CLOSING_RESCUE_EMPTY_TIMELINE]', {
+            routeId: Number(routeId),
+            selectedHotspotId: Number(focusHotspotId),
+            removedHotspotIds,
+          });
           continue;
         }
 
@@ -22733,6 +23149,21 @@ pricing: {
           selectedOperatingAfterDirectRescue.selectedOpeningConflict ||
           directRescueOverflowMinutes > 0
         ) {
+          console.log('[FitHere][DIRECT_CLOSING_RESCUE_REJECTED]', {
+            routeId: Number(routeId),
+            selectedHotspotId: Number(focusHotspotId),
+            removedHotspotIds,
+            selectedClosingOverflow: selectedAfterDirectRescue,
+            selectedOpeningConflict: selectedOperatingAfterDirectRescue.selectedOpeningConflict || null,
+            directRescueOverflowMinutes,
+            attractionOrder: selectedOperatingAfterDirectRescue.timeline
+              .filter((row: any) => String(row?.type || '').toLowerCase() === 'attraction' || Number(row?.item_type || 0) === 4)
+              .map((row: any) => ({
+                hotspotId: Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || row?.hotspot_id || row?.id || 0),
+                text: String(row?.text || row?.name || ''),
+                timeRange: String(row?.timeRange || ''),
+              })),
+          });
           continue;
         }
 
@@ -22748,6 +23179,20 @@ pricing: {
             matchedRow?.hotspot_name ||
             `Hotspot #${removedId}`,
           ).trim();
+
+          const reason = this.buildSelectedClosingRemovalReason({
+            removedName,
+            selectedHotspotLabel,
+            attemptedVisitTime:
+              selectedClosingConflictForResolver?.attemptedVisitTime ||
+              selectedClosingConflictForResolver?.visitTime ||
+              null,
+            operatingHours:
+              selectedClosingConflictForResolver?.operatingHours ||
+              selectedClosingConflictForResolver?.timings ||
+              null,
+            overflowMinutes: selectedClosingOverflowMinutesForResolver,
+          });
 
           return {
             id: Number(removedId),
@@ -22771,7 +23216,8 @@ pricing: {
               this.getPreviewRowDurationMinutes(matchedRow) ||
               0,
             ),
-            reason: `${removedName} removed because selected manual hotspot ${selectedHotspotLabel} must fit before operating-hours closing.`,
+            reason,
+            fitFailureExplanation: reason,
             removalReasonCode: 'SELECTED_HOTSPOT_CLOSING_RESCUE',
             requiresAcknowledgement: true,
           };
@@ -22853,6 +23299,18 @@ pricing: {
         (!!fallbackSelectedOpeningConflict && fallbackOverflowMinutes > 0)
       ) &&
       selectedLatestAllowedEndMinutesForResolver > 0;
+    console.log('[FitHere][DIRECT_CLOSING_RESCUE_GATE]', {
+      routeId: Number(routeId),
+      selectedHotspotId: Number(focusHotspotId),
+      exactAnchorMode: options?.exactAnchorMode === true,
+      anchorIntent: String(options?.anchorIntent || ''),
+      directClickedAnchorRescueHotspotId,
+      selectedClosingOverflow,
+      fallbackSelectedOpeningConflict: fallbackSelectedOpeningConflict || null,
+      fallbackOverflowMinutes,
+      selectedLatestAllowedEndMinutesForResolver,
+      shouldTryDirectClickedAnchorClosingRescue,
+    });
 
     const shouldRunSelectedClosingResolver =
       manualInsertionFit?.requiresMatrixBuild !== true &&
@@ -24433,7 +24891,7 @@ pricing: {
       hasProvenTimingReason,
       removalStage: params.removalStage,
       removalReasonCode,
-      reason,
+      reason: fitFailureExplanation || reason,
       fitFailureExplanation,
     };
   }
@@ -25141,6 +25599,42 @@ pricing: {
     if (matchesDestination) return 'DESTINATION_CITY';
     if (matchesSource) return 'SOURCE_CITY';
     return 'UNKNOWN';
+  }
+
+  private classifyManualRouteAttractionCityContext(route: any, hotspot: any): ManualHotspotCityContext {
+    const sourceRaw = String(route?.location_name || route?.source_location || '').trim();
+    const destinationRaw = String(route?.next_visiting_location || route?.destination_location || '').trim();
+    const hotspotLocation = String(hotspot?.hotspot_location || hotspot?.locationMap || '').trim();
+    const hotspotName = String(hotspot?.hotspot_name || hotspot?.name || '').trim();
+
+    const sourceKey = this.deriveLooseCityKey(sourceRaw);
+    const destinationKey = this.deriveLooseCityKey(destinationRaw);
+    const sourceNorm = normalizeCityName(sourceRaw);
+    const destinationNorm = normalizeCityName(destinationRaw);
+    const locationNorm = this.normalizeLocationText(hotspotLocation);
+    const nameNorm = this.normalizeLocationText(hotspotName);
+    const locationCityNorm = normalizeCityName(hotspotLocation);
+    const nameCityNorm = normalizeCityName(hotspotName);
+
+    const matchesSource = (
+      (!!sourceKey && (locationNorm.includes(sourceKey) || nameNorm.includes(sourceKey)))
+      || (!!sourceNorm && (locationCityNorm === sourceNorm || nameCityNorm === sourceNorm))
+    );
+    const matchesDestination = (
+      (!!destinationKey && (locationNorm.includes(destinationKey) || nameNorm.includes(destinationKey)))
+      || (!!destinationNorm && (locationCityNorm === destinationNorm || nameCityNorm === destinationNorm))
+    );
+
+    const sameCityRoute = (
+      (!!sourceNorm && !!destinationNorm && sourceNorm === destinationNorm)
+      || (!!sourceKey && !!destinationKey && sourceKey === destinationKey)
+    );
+
+    if (sameCityRoute && matchesSource && matchesDestination) return 'SOURCE_CITY';
+    if (matchesDestination && !matchesSource) return 'DESTINATION_CITY';
+    if (matchesSource && !matchesDestination) return 'SOURCE_CITY';
+
+    return this.classifyManualHotspotCityContext(route, hotspot);
   }
 
   private parseRouteCoordinates(raw: unknown): [number, number][] {
@@ -27831,7 +28325,7 @@ pricing: {
     const attractionCityContexts = routeAttractions.map((row: any, index: number) => {
       const rowId = Number(row?.hotspot_ID || 0);
       const rowMaster = masterById.get(rowId);
-      const rowContext = this.classifyManualHotspotCityContext(routeCityContext, {
+      const rowContext = this.classifyManualRouteAttractionCityContext(routeCityContext, {
         hotspot_location: rowMaster?.hotspot_location,
         hotspot_to_location: rowMaster?.hotspot_to_location,
         hotspot_name: rowMaster?.hotspot_name || nameById.get(rowId),
@@ -27850,6 +28344,9 @@ pricing: {
     const lastDestinationAttraction = destinationRows.length > 0 ? destinationRows[destinationRows.length - 1] : null;
     const destinationMinPairIndex = destinationInsertionMode
       ? Math.max(0, Number(firstDestinationAttraction?.index ?? routeAttractions.length))
+      : 0;
+    const destinationBoundaryPairIndex = destinationInsertionMode
+      ? Math.max(0, destinationMinPairIndex - 1)
       : 0;
     destinationMinCandidateIndex = destinationInsertionMode
       ? Math.max(0, Number(firstDestinationAttraction?.index ?? routeAttractions.length))
@@ -27904,7 +28401,7 @@ pricing: {
     const slotPairs: Array<{ slotIndex: number; fromId: number; toId: number; fromName: string; toName: string }> = [];
     let nextSlotIndex = 0;
     for (let i = 0; i < routeAttractions.length - 1; i++) {
-      if (destinationInsertionMode && i < destinationMinPairIndex) {
+      if (destinationInsertionMode && i < destinationBoundaryPairIndex) {
         continue;
       }
       const fromId = Number(routeAttractions[i].hotspot_ID);
@@ -28321,6 +28818,46 @@ pricing: {
       matrixBySlot.set(`${toId}_${fromId}`, row);
     }
 
+    if (
+      destinationInsertionMode
+      && destinationMinPairIndex > 0
+      && candidateMaster
+      && destinationMinPairIndex < routeAttractions.length
+    ) {
+      const boundaryFromId = Number(routeAttractions[destinationMinPairIndex - 1]?.hotspot_ID || 0);
+      const boundaryToId = Number(routeAttractions[destinationMinPairIndex]?.hotspot_ID || 0);
+      const boundaryKey = `${boundaryFromId}_${boundaryToId}`;
+
+      if (boundaryFromId > 0 && boundaryToId > 0 && !matrixBySlot.has(boundaryKey)) {
+        const boundaryMx = await this.ensureRouteBetweenMapRow(
+          tx,
+          boundaryFromId,
+          boundaryToId,
+          Number(candidateHotspotId),
+        );
+
+        if (boundaryMx) {
+          matrixRows.push(boundaryMx);
+          matrixBySlot.set(`${boundaryFromId}_${boundaryToId}`, boundaryMx);
+          matrixBySlot.set(`${boundaryToId}_${boundaryFromId}`, boundaryMx);
+          console.log('[ManualDestinationInsert] boundary_matrix_fallback_added', {
+            routeId: Number(routeId),
+            selectedHotspotId: Number(candidateHotspotId),
+            fromHotspotId: boundaryFromId,
+            toHotspotId: boundaryToId,
+            routeFitType: String(boundaryMx?.route_fit_type || ''),
+          });
+        } else {
+          console.warn('[ManualDestinationInsert] boundary_matrix_fallback_missing', {
+            routeId: Number(routeId),
+            selectedHotspotId: Number(candidateHotspotId),
+            fromHotspotId: boundaryFromId,
+            toHotspotId: boundaryToId,
+          });
+        }
+      }
+    }
+
     const baselineRows = Array.isArray(baselineTimeline) ? baselineTimeline : [];
     const baselineRowsById = new Map<number, any>();
     for (const row of baselineRows) {
@@ -28368,7 +28905,7 @@ pricing: {
     };
 
     // 5. Build allSlotResults
-    const allSlotResults: any[] = slotPairs.map((slot) => {
+    let allSlotResults: any[] = slotPairs.map((slot) => {
       const key = `${slot.fromId}_${slot.toId}`;
       const mx = matrixBySlot.get(key);
       const routeFitType = String(mx?.route_fit_type || 'UNKNOWN');
@@ -28465,6 +29002,112 @@ pricing: {
         finalDecisionReason: displayMeta.finalDecisionReason,
       };
     });
+
+    if (
+      destinationInsertionMode
+      && allSlotResults.every((slot) => String(slot?.routeFitType || '').toUpperCase() === 'UNKNOWN')
+      && destinationMinPairIndex > 0
+      && destinationMinPairIndex < routeAttractions.length
+    ) {
+      const boundaryFromId = Number(routeAttractions[destinationMinPairIndex - 1]?.hotspot_ID || 0);
+      const boundaryToId = Number(routeAttractions[destinationMinPairIndex]?.hotspot_ID || 0);
+
+      if (boundaryFromId > 0 && boundaryToId > 0) {
+        const boundaryFromName = nameById.get(boundaryFromId) || `Hotspot #${boundaryFromId}`;
+        const boundaryToName = nameById.get(boundaryToId) || `Hotspot #${boundaryToId}`;
+        const directLeg = await this.getCachedRouteMatrixLeg(tx, boundaryFromId, boundaryToId);
+        const acLeg = await this.getCachedRouteMatrixLeg(tx, boundaryFromId, Number(candidateHotspotId));
+        const cbLeg = await this.getCachedRouteMatrixLeg(tx, Number(candidateHotspotId), boundaryToId);
+
+        const directKm =
+          directLeg?.distanceKm
+          ?? this.distanceBetweenHotspots(masterById, boundaryFromId, boundaryToId)
+          ?? null;
+        const acDistanceKm =
+          acLeg?.distanceKm
+          ?? this.distanceBetweenHotspots(
+            new Map<number, any>([...masterById, [Number(candidateHotspotId), candidateMaster]]),
+            boundaryFromId,
+            Number(candidateHotspotId),
+          )
+          ?? null;
+        const cbDistanceKm =
+          cbLeg?.distanceKm
+          ?? this.distanceBetweenHotspots(
+            new Map<number, any>([...masterById, [Number(candidateHotspotId), candidateMaster]]),
+            Number(candidateHotspotId),
+            boundaryToId,
+          )
+          ?? null;
+        const insertedRouteDistanceKm =
+          directKm != null && acDistanceKm != null && cbDistanceKm != null
+            ? Number(acDistanceKm) + Number(cbDistanceKm)
+            : null;
+        const roadDetourKm =
+          insertedRouteDistanceKm != null && directKm != null
+            ? Number(insertedRouteDistanceKm) - Number(directKm)
+            : null;
+
+        let routeFitType = 'UNKNOWN';
+        if (roadDetourKm != null) {
+          routeFitType =
+            roadDetourKm <= 2
+              ? 'ON_ROUTE'
+              : roadDetourKm <= 10
+                ? 'MINOR_DETOUR'
+                : 'OFF_ROUTE';
+        }
+
+        const timingEval = evaluateTimingFit(boundaryFromId, boundaryToId);
+        const destinationBoundarySlot = {
+          slotIndex: allSlotResults.length,
+          fromHotspotId: boundaryFromId,
+          fromName: boundaryFromName,
+          toHotspotId: boundaryToId,
+          toName: boundaryToName,
+          routeFitType,
+          label: this.routeFitLabel(routeFitType),
+          displayLabel: this.routeFitLabel(routeFitType),
+          shortLabel: this.routeFitLabel(routeFitType),
+          roadDetourKm,
+          isZeroExtraDetour: roadDetourKm != null ? Number(roadDetourKm) <= 0.5 : false,
+          distanceComparisonNote: null,
+          roadDetourRatio:
+            insertedRouteDistanceKm != null && directKm != null && Number(directKm) > 0
+              ? (Number(insertedRouteDistanceKm) - Number(directKm)) / Number(directKm)
+              : null,
+          insertedRouteDistanceKm,
+          abOsrmDistanceKm: directKm,
+          acOsrmDistanceKm: acDistanceKm,
+          cbOsrmDistanceKm: cbDistanceKm,
+          candidateDistanceFromAbRouteMeters: null,
+          destinationDistanceFromAcRouteMeters: null,
+          routePossible: this.isFeasibleFitType(routeFitType),
+          timingPossible: timingEval.timingPossible,
+          prioritySafe: true,
+          selectedAsBest: false,
+          attempted: true,
+          source: 'DESTINATION_ENTRY_BOUNDARY',
+          routeDecisionReason: 'Destination-city manual hotspot is evaluated on the transition into the destination before the first destination-side attraction.',
+          timingDecisionReason: timingEval.timingDecisionReason,
+          priorityDecisionReason: null,
+          finalDecisionReason:
+            routeFitType === 'UNKNOWN'
+              ? 'Not selected: destination-entry boundary slot could not be evaluated.'
+              : 'Selected: destination-entry boundary slot before the first destination-side attraction.',
+        };
+
+        allSlotResults.push(destinationBoundarySlot);
+        console.log('[ManualDestinationInsert] synthetic_destination_entry_slot_added', {
+          routeId: Number(routeId),
+          selectedHotspotId: Number(candidateHotspotId),
+          fromHotspotId: boundaryFromId,
+          toHotspotId: boundaryToId,
+          routeFitType,
+          roadDetourKm,
+        });
+      }
+    }
 
     const hasFeasibleNormalMatrixSlot = allSlotResults.some((slot) =>
       this.isFeasibleFitType(String(slot?.routeFitType || '').toUpperCase()),
@@ -36271,3 +36914,5 @@ pricing: {
 
 
 }
+
+

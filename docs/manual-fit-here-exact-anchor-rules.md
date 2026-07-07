@@ -110,6 +110,25 @@ Preview must not be confirmable when:
 - result depends on leaked hotspots from other routes
 - exact anchor was stale and backend silently mapped to another gap
 
+## Confirm trust-preview rule
+
+If preview returned `canConfirm=true`, confirm must trust that stored finalized preview timeline when both are true:
+
+- preview source fingerprint is unchanged
+- stored finalized preview snapshot is still internally valid
+
+Confirm must not recompute the day and fail with:
+
+- `MANUAL_INSERT_NO_LOW_PRIORITY_REMOVAL_AVAILABLE`
+- `MANUAL_INSERT_EXCEEDS_DAY_END`
+
+unless the stored preview snapshot itself is corrupted or missing.
+
+If preview source changed after preview:
+
+- reject as stale
+- do not silently save into a different gap
+
 ## Selected hotspot closing rule
 
 If selected hotspot is still outside operating hours in the final candidate:
@@ -218,3 +237,43 @@ Verified fixed examples:
   - remove `Mattupetty Dam and Lake`
   - remove `Echo Point`
   - `Munnar` moves to morning fit
+
+### Case D: preview-confirm mismatch on confirmable routes
+
+Historical bug:
+
+- preview showed confirmable finalized timeline
+- confirm reran fit logic
+- confirm failed with route-end or removal-plan errors
+
+Correct behavior now:
+
+- confirm reuses trusted finalized preview snapshot
+- confirm succeeds when route fingerprint is unchanged
+
+Live replays that passed:
+
+- plan `9825`, route `8154`, selected hotspot `898`, anchor `After Echo Point`
+- plan `9822`, route `8119`, before-first-attraction sweep
+- plan `9824`, route `8140`, before-first-attraction sweep
+
+## Regression script
+
+Preview-only:
+
+```bash
+npm run verify:manual-fit:sweep
+```
+
+Preview-plus-confirm:
+
+```bash
+npm run verify:manual-fit:sweep:confirm
+```
+
+This script intentionally records:
+
+- stale-anchor `409`
+- selected-closed preview outcomes
+- confirm `409`
+- confirm success rate for `canConfirm=true`

@@ -1865,11 +1865,16 @@ async updateVendorVehicle(vehicleId: number, data: any): Promise<any> {
   }
 
   async getVendorVehicleExtraCosts(vendorId: number): Promise<any[]> {
-    const [branches, vehicles] = await Promise.all([
+    const [branches, vendorTypes, vehicles] = await Promise.all([
       this.prisma.dvi_vendor_branches.findMany({
         where: { vendor_id: vendorId, deleted: 0, status: 1 },
         select: { vendor_branch_id: true, vendor_branch_name: true },
         orderBy: { vendor_branch_id: 'asc' },
+      }),
+      this.prisma.dvi_vendor_vehicle_types.findMany({
+        where: { vendor_id: vendorId, deleted: 0, status: 1 },
+        select: { vendor_vehicle_type_ID: true, vehicle_type_id: true },
+        orderBy: { vendor_vehicle_type_ID: 'asc' },
       }),
       this.prisma.dvi_vehicle.findMany({
         where: { vendor_id: vendorId, deleted: 0, status: 1 },
@@ -1886,10 +1891,22 @@ async updateVendorVehicle(vehicleId: number, data: any): Promise<any> {
       }),
     ]);
 
+    const activeVendorTypeByBaseType = new Map<number, number>();
+    for (const row of vendorTypes) {
+      if (!activeVendorTypeByBaseType.has(row.vehicle_type_id)) {
+        activeVendorTypeByBaseType.set(row.vehicle_type_id, row.vendor_vehicle_type_ID);
+      }
+    }
+
+    const activeBaseTypeIds = new Set(
+      [...activeVendorTypeByBaseType.keys()].map((id) => Number(id)),
+    );
+
     const grouped = new Map<string, any>();
     for (const v of vehicles) {
       const typeId = this.toNumberOrNull(v.vehicle_type_id);
       if (!typeId) continue;
+      if (!activeBaseTypeIds.has(typeId)) continue;
       const key = `${v.vendor_branch_id}:${typeId}`;
       if (!grouped.has(key)) {
         grouped.set(key, {

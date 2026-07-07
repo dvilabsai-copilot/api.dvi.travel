@@ -221,7 +221,7 @@ export async function buildManualFitPreviewEnvelopeImpl(this: any, params: any) 
     ...resolvedLowPriorityRemovedHotspots,
     ...plannedSequentialRemovals,
   ];
-  const removedHotspots = this.sanitizeUserFacingManualFitRemovals(unsafeMergedRemovalRows, {
+  let removedHotspots = this.sanitizeUserFacingManualFitRemovals(unsafeMergedRemovalRows, {
     routeId: params.routeId,
     selectedHotspotId: params.selectedHotspotId,
     activeRemovalEvidence: params.activeRemovalEvidence,
@@ -268,8 +268,8 @@ export async function buildManualFitPreviewEnvelopeImpl(this: any, params: any) 
     )) === index;
   });
   const timingRisk = resolution?.timingRisk || params.previewResult?.timingRisk || null;
-  const removedPrioritySummary = this.buildRemovedPrioritySummary(removedHotspots);
-  const changesRequiredDisplay = this.buildManualFitChangesRequiredDisplay({
+  let removedPrioritySummary = this.buildRemovedPrioritySummary(removedHotspots);
+  let changesRequiredDisplay = this.buildManualFitChangesRequiredDisplay({
     removedHotspots,
     affectedPriorityHotspots,
     removedPrioritySummary,
@@ -336,12 +336,12 @@ export async function buildManualFitPreviewEnvelopeImpl(this: any, params: any) 
   const requiresPriorityRemovalConfirmation =
     removedPrioritySummary.requiresPriorityRemovalConfirmation === true;
   const allowClosedHotspotForceConflict = true;
-  const selectedOpeningConflict =
+  let selectedOpeningConflict =
     validation?.selectedOpeningConflict ||
     resolution?.validation?.selectedOpeningConflict ||
     manualInsertionFit?.selectedOpeningConflict ||
     null;
-  const hasSelectedOpeningConflict =
+  let hasSelectedOpeningConflict =
     !!selectedOpeningConflict ||
     (
       !readyToApply &&
@@ -376,6 +376,75 @@ export async function buildManualFitPreviewEnvelopeImpl(this: any, params: any) 
   const exactOptimizerAttempts = Array.isArray(resolution?.manualOptimizer?.attempts)
     ? resolution.manualOptimizer.attempts
     : [];
+  const exactResolvedAttemptTimeline = (() => {
+    if (selectedAnchor?.exactSelectedGap !== true) return [] as any[];
+
+    const pickAttemptTimeline = (attempt: any): any[] => {
+      if (Array.isArray(attempt?.previewTimelineDisplay) && attempt.previewTimelineDisplay.length > 0) {
+        return attempt.previewTimelineDisplay;
+      }
+      if (Array.isArray(attempt?.displayTimeline) && attempt.displayTimeline.length > 0) {
+        return attempt.displayTimeline;
+      }
+      if (Array.isArray(attempt?.previewTimeline) && attempt.previewTimeline.length > 0) {
+        return attempt.previewTimeline;
+      }
+      if (Array.isArray(attempt?.computedTimelineDebug) && attempt.computedTimelineDebug.length > 0) {
+        return attempt.computedTimelineDebug;
+      }
+      return [];
+    };
+
+    const planCandidates = [
+      manualInsertionFit?.lowPriorityOpeningHoursRemovalPlanPreview,
+      manualInsertionFit?.lowPriorityRemovalPlanPreview,
+    ].filter((plan: any) => plan?.resolved === true);
+
+    for (const plan of planCandidates) {
+      const planRemovalIds = new Set<number>(
+        (Array.isArray(plan?.plannedRemovals) ? plan.plannedRemovals : [])
+          .map((row: any) => Number(row?.id || row?.hotspotId || row?.hotspot_ID || row?.locationId || 0))
+          .filter((id: number) => Number.isFinite(id) && id > 0),
+      );
+      const attempts = Array.isArray(plan?.simulationAttempts) ? plan.simulationAttempts : [];
+
+      const resolvedAttempt =
+        attempts.find((attempt: any) => {
+          const removedIds = new Set<number>(
+            (Array.isArray(attempt?.removedHotspotIds) ? attempt.removedHotspotIds : [])
+              .map((id: any) => Number(id || 0))
+              .filter((id: number) => Number.isFinite(id) && id > 0),
+          );
+          const sameRemovalSet =
+            planRemovalIds.size === 0 ||
+            (
+              removedIds.size === planRemovalIds.size &&
+              Array.from(planRemovalIds).every((id: number) => removedIds.has(id))
+            );
+
+          return (
+            sameRemovalSet &&
+            attempt?.resolved === true &&
+            !attempt?.selectedOpeningConflict &&
+            Number(attempt?.selectedClosingOverflowMinutes || 0) <= 0 &&
+            pickAttemptTimeline(attempt).length > 0
+          );
+        })
+        || attempts.find((attempt: any) => (
+          attempt?.resolved === true &&
+          !attempt?.selectedOpeningConflict &&
+          Number(attempt?.selectedClosingOverflowMinutes || 0) <= 0 &&
+          pickAttemptTimeline(attempt).length > 0
+        ));
+
+      const resolvedTimeline = pickAttemptTimeline(resolvedAttempt);
+      if (resolvedTimeline.length > 0) {
+        return resolvedTimeline;
+      }
+    }
+
+    return [] as any[];
+  })();
   const proposedTimelinePreservesAnchor =
     selectedAnchor
       ? this.manualFitTimelinePreservesSelectedAnchor({
@@ -413,7 +482,10 @@ export async function buildManualFitPreviewEnvelopeImpl(this: any, params: any) 
       )
     : null;
   const timelineBaseForEnvelope =
-    !proposedTimelinePreservesAnchor
+    Array.isArray(exactResolvedAttemptTimeline)
+    && exactResolvedAttemptTimeline.length > 0
+      ? exactResolvedAttemptTimeline
+      : !proposedTimelinePreservesAnchor
     && Array.isArray(exactAnchorAttempt?.previewTimeline)
     && exactAnchorAttempt.previewTimeline.length > 0
       ? exactAnchorAttempt.previewTimeline
@@ -490,6 +562,114 @@ export async function buildManualFitPreviewEnvelopeImpl(this: any, params: any) 
         error: error instanceof Error ? error.message : String(error),
       });
     }
+  }
+
+  try {
+    const finalizedAttractionIds = new Set<number>(
+      (Array.isArray(finalizedTimeline) ? finalizedTimeline : [])
+        .filter((row: any) => (
+          String(row?.type || '').toLowerCase() === 'attraction'
+          || Number(row?.item_type || 0) === 4
+        ))
+        .map((row: any) => Number(row?.hotspotId || row?.hotspot_ID || row?.locationId || row?.hotspot_id || 0))
+        .filter((id: number) => Number.isFinite(id) && id > 0),
+    );
+
+    const baselineAttractionRows = await this.prisma.dvi_itinerary_route_hotspot_details.findMany({
+      where: {
+        itinerary_plan_ID: Number(params.planId),
+        itinerary_route_ID: Number(params.routeId),
+        item_type: 4,
+        deleted: 0,
+        status: 1,
+      },
+      orderBy: [{ hotspot_order: 'asc' }, { route_hotspot_ID: 'asc' }],
+      select: {
+        hotspot_ID: true,
+        hotspot_plan_own_way: true,
+      },
+    });
+
+    const inferredRemovedIds = Array.from(new Set(
+      (baselineAttractionRows || [])
+        .filter((row: any) => Number(row?.hotspot_plan_own_way || 0) !== 1)
+        .map((row: any) => Number(row?.hotspot_ID || 0))
+        .filter((id: number) => Number.isFinite(id) && id > 0 && id !== selectedHotspotIdNum && !finalizedAttractionIds.has(id)),
+    ));
+
+    if (inferredRemovedIds.length > 0) {
+      const existingRemovedIds = new Set<number>(
+        removedHotspots
+          .map((row: any) => this.getManualFitRemovalHotspotId(row))
+          .filter((id: number) => Number.isFinite(id) && id > 0),
+      );
+      const missingRemovedIds = inferredRemovedIds.filter((id: number) => !existingRemovedIds.has(id));
+
+      if (missingRemovedIds.length > 0) {
+        const masters = await this.prisma.dvi_hotspot_place.findMany({
+          where: {
+            hotspot_ID: { in: missingRemovedIds },
+            deleted: 0,
+          },
+          select: {
+            hotspot_ID: true,
+            hotspot_name: true,
+            hotspot_priority: true,
+          },
+        });
+        const masterById = new Map<number, any>(
+          (masters || []).map((row: any) => [Number(row?.hotspot_ID || 0), row]),
+        );
+
+        removedHotspots = [
+          ...removedHotspots,
+          ...missingRemovedIds.map((hotspotId: number) => {
+            const master = masterById.get(hotspotId);
+            return {
+              id: hotspotId,
+              hotspotId,
+              name: String(master?.hotspot_name || `Hotspot #${hotspotId}`),
+              priority: Number(master?.hotspot_priority || 0) || 0,
+              reason: 'Removed from the original route in the finalized sequence.',
+              removalReasonCode: 'FINALIZED_TIMELINE_DIFF_REMOVAL',
+            };
+          }),
+        ];
+
+        removedPrioritySummary = this.buildRemovedPrioritySummary(removedHotspots);
+        changesRequiredDisplay = this.buildManualFitChangesRequiredDisplay({
+          removedHotspots,
+          affectedPriorityHotspots,
+          removedPrioritySummary,
+        });
+
+        if (readyToApply && resultType === 'FITS_DIRECTLY') {
+          resultType = 'FITS_WITH_OPTIONAL_REMOVAL';
+          canConfirm = true;
+        }
+      }
+    }
+  } catch (error) {
+    console.warn('[FitHere][preview_removed_diff_inference_failed]', {
+      planId: Number(params.planId),
+      routeId: Number(params.routeId),
+      selectedHotspotId: selectedHotspotIdNum,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  const finalizedSelectedValidation = this.markSelectedManualOperatingHourConflicts(
+    finalizedTimeline,
+    [selectedHotspotIdNum],
+  );
+  finalizedTimeline = Array.isArray(finalizedSelectedValidation?.timeline)
+    ? finalizedSelectedValidation.timeline
+    : finalizedTimeline;
+  if (finalizedSelectedValidation?.selectedOpeningConflict) {
+    selectedOpeningConflict = finalizedSelectedValidation.selectedOpeningConflict;
+    hasSelectedOpeningConflict = true;
+    resultType = 'SELECTED_HOTSPOT_CLOSED_AT_ATTEMPTED_TIME';
+    canConfirm = false;
   }
   const finalizedSelectedHotspotIds = new Set<number>(
     (finalizedTimeline || [])
@@ -674,6 +854,7 @@ export function manualFitTimelinePreservesSelectedAnchorImpl(this: any, params: 
   const selectedId = Number(params.selectedHotspotId || 0);
   const afterId = Number(params.afterHotspotId || 0);
   const beforeId = Number(params.beforeHotspotId || 0);
+  const allowBoundaryRescuePlacement = params?.allowBoundaryRescuePlacement === true;
 
   if (!selectedId) return false;
 
@@ -711,7 +892,18 @@ export function manualFitTimelinePreservesSelectedAnchorImpl(this: any, params: 
 
   if (params.anchorIntent === 'AFTER_ATTRACTION') {
     const afterIndex = attractionRows.findIndex((row: any) => getRowHotspotId(row) === afterId);
-    if (afterIndex < 0) return false;
+    if (afterIndex < 0) {
+      if (!allowBoundaryRescuePlacement) return false;
+
+      if (beforeId > 0) {
+        const beforeIndex = attractionRows.findIndex((row: any) => getRowHotspotId(row) === beforeId);
+        if (beforeIndex < 0) return false;
+        return selectedIndex === beforeIndex - 1;
+      }
+
+      return selectedIndex === attractionRows.length - 1;
+    }
+
     if (selectedIndex !== afterIndex + 1) return false;
 
     if (beforeId > 0) {
@@ -1311,3 +1503,5 @@ export function buildManualFitChangesRequiredDisplayImpl(this: any, params: any)
     noRemovalText: 'No hotspot removed',
   };
 }
+
+
