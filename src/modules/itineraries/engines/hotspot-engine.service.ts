@@ -1495,6 +1495,7 @@ export class HotspotEngineService {
         anchorType?: 'after_travel';
         anchorIndex?: number;
       };
+      includeConnectedNextDayInPreview?: boolean;
     },
   ): Promise<any> {
     console.log(`\n🔍 PREVIEW-ADD: planId=${planId}, routeId=${routeId}, hotspotId=${hotspotId}`);
@@ -1530,6 +1531,7 @@ export class HotspotEngineService {
     // 2) Check if there's a next route that connects to this one
     let nextRoute = null;
     let shouldIncludeNextDay = false;
+    const includeConnectedNextDayInPreview = options?.includeConnectedNextDayInPreview === true;
 
     const currentDestination = (currentRoute.next_visiting_location || "").split("|")[0].trim();
     
@@ -1548,7 +1550,7 @@ export class HotspotEngineService {
 
     const currentRouteIndex = allRoutes.findIndex((r: any) => r.itinerary_route_ID === routeId);
     
-    if (currentRouteIndex !== -1 && currentRouteIndex + 1 < allRoutes.length) {
+    if (includeConnectedNextDayInPreview && currentRouteIndex !== -1 && currentRouteIndex + 1 < allRoutes.length) {
       const potentialNextRoute = allRoutes[currentRouteIndex + 1];
       const nextSource = (potentialNextRoute.location_name || "").split("|")[0].trim();
       const isDirectToNext = Number(potentialNextRoute.direct_to_next_visiting_place || 0) === 1;

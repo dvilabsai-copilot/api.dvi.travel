@@ -6,6 +6,49 @@ import {
 } from "@nestjs/common";
 import { randomUUID } from "crypto";
 
+function resolveTrustedPreviewConfirmState(this: any, entry: any, options?: {
+  sourceFingerprintChanged?: boolean;
+}) {
+  const trustedPreviewTimeline = Array.isArray(entry?.proposedTimelineSnapshot)
+    && entry.proposedTimelineSnapshot.length > 0
+      ? entry.proposedTimelineSnapshot
+      : null;
+  const trustedPreviewTimelineFingerprint = String(entry?.proposedTimelineFingerprint || '').trim();
+  const trustedPreviewFingerprintMatches =
+    Array.isArray(trustedPreviewTimeline)
+    && trustedPreviewTimeline.length > 0
+    && trustedPreviewTimelineFingerprint.length > 0
+    && this.buildManualFitTimelineFingerprint(trustedPreviewTimeline) === trustedPreviewTimelineFingerprint;
+  const trustedPreviewSelectedPresent =
+    Array.isArray(trustedPreviewTimeline)
+    && trustedPreviewTimeline.some((row: any) => (
+      (
+        String(row?.type || '').toLowerCase() === 'attraction'
+        || Number(row?.item_type || 0) === 4
+      )
+      && Number(row?.hotspotId || row?.hotspot_ID || row?.locationId || row?.hotspot_id || 0) === Number(entry?.selectedHotspotId || 0)
+    ));
+  const trustedPreviewSnapshotValid =
+    entry?.canConfirm === true
+    && Array.isArray(trustedPreviewTimeline)
+    && trustedPreviewTimeline.length > 0
+    && trustedPreviewFingerprintMatches
+    && trustedPreviewSelectedPresent;
+
+  const enforceTrustedPreviewConfirmation =
+    trustedPreviewSnapshotValid
+    && options?.sourceFingerprintChanged !== true;
+
+  return {
+    trustedPreviewTimeline,
+    trustedPreviewTimelineFingerprint,
+    trustedPreviewFingerprintMatches,
+    trustedPreviewSelectedPresent,
+    trustedPreviewSnapshotValid,
+    enforceTrustedPreviewConfirmation,
+  };
+}
+
 export async function resolveManualFitHereAnchorImpl(
   this: any,
   routeId: number,
@@ -406,6 +449,13 @@ export async function previewManualHotspotFitHereImpl(
   (response as any).selectedHotspotPreserved = selectedHotspotPreservedInPreview;
 
   const normalizeCannotFitExactAnchorResponse = (rejectedMessage: string, exactAnchorMismatch: any | null) => {
+    const preservedProposedTimeline = Array.isArray((response as any).proposedTimeline)
+      ? (response as any).proposedTimeline
+      : [];
+    const preservedFinalizedTimeline = Array.isArray((response as any).finalizedTimeline)
+      ? (response as any).finalizedTimeline
+      : [];
+    const hasPreservedTimeline = preservedFinalizedTimeline.length > 0 || preservedProposedTimeline.length > 0;
     const failedRescueDisplay = {
       hasRemovals: false,
       title: 'Rescue attempts checked',
@@ -426,10 +476,14 @@ export async function previewManualHotspotFitHereImpl(
     (response as any).removedHotspots = [];
     (response as any).affectedPriorityHotspots = [];
     (response as any).requiresRemovalAcknowledgementHotspotIds = [];
-    (response as any).proposedTimeline = [];
-    (response as any).finalizedTimeline = [];
-    (response as any).authoritativeTimelineSource = 'EXACT_ANCHOR_NO_VALID_RESULT';
-    (response as any).proposedTimelineFingerprint = this.buildManualFitTimelineFingerprint([]);
+    (response as any).proposedTimeline = preservedProposedTimeline;
+    (response as any).finalizedTimeline = preservedFinalizedTimeline;
+    (response as any).authoritativeTimelineSource = hasPreservedTimeline
+      ? 'EXACT_ANCHOR_NON_CONFIRMABLE_RESCUE'
+      : 'EXACT_ANCHOR_NO_VALID_RESULT';
+    (response as any).proposedTimelineFingerprint = this.buildManualFitTimelineFingerprint(
+      preservedFinalizedTimeline.length > 0 ? preservedFinalizedTimeline : preservedProposedTimeline,
+    );
     (response as any).exactAnchorMismatch = exactAnchorMismatch;
     (response as any).selectedAnchorPreserved = false;
 
@@ -464,9 +518,17 @@ export async function previewManualHotspotFitHereImpl(
 
   if (resolvedAnchor.exactSelectedGap === true && selectedAnchorPreserved !== true) {
     const anchorMismatchMessage = String(
-      resolvedAnchor.anchorIntent === 'AFTER_START'
-        ? 'The selected hotspot was rescued, but it could not stay before the first attraction.'
-        : `The selected hotspot was rescued, but it could not stay immediately after ${resolvedAnchor.anchorFrom || 'the selected attraction'}.`,
+      selectedHotspotPreservedInPreview === true
+        ? (
+            resolvedAnchor.anchorIntent === 'AFTER_START'
+              ? 'The selected hotspot was rescued, but it could not stay before the first attraction.'
+              : `The selected hotspot was rescued, but it could not stay immediately after ${resolvedAnchor.anchorFrom || 'the selected attraction'}.`
+          )
+        : (
+            resolvedAnchor.anchorIntent === 'AFTER_START'
+              ? 'No valid selected-hotspot-preserving rescue was found before the first attraction.'
+              : `No valid selected-hotspot-preserving rescue was found immediately after ${resolvedAnchor.anchorFrom || 'the selected attraction'}.`
+          ),
     ).trim();
     (response as any).selectedAnchorPreserved = false;
     (response as any).exactAnchorMismatch = {
@@ -510,7 +572,12 @@ export async function previewManualHotspotFitHereImpl(
   if (
     resolvedAnchor.exactSelectedGap === true &&
     (response as any).canConfirm !== true &&
-    selectedHotspotPreservedInPreview === true
+    selectedHotspotPreservedInPreview === true &&
+    !(
+      (response as any).selectedOpeningConflict ||
+      String((response as any).resultType || '').toUpperCase() === 'SELECTED_HOTSPOT_CLOSED_AT_ATTEMPTED_TIME' ||
+      String((response as any).manualInsertionFit?.previewBlockReason || '').toUpperCase() === 'SELECTED_HOTSPOT_CLOSED_AT_ATTEMPTED_TIME'
+    )
   ) {
     (response as any).resultType = Array.isArray((response as any).removedHotspots) && (response as any).removedHotspots.length > 0
       ? 'FITS_WITH_OPTIONAL_REMOVAL'
@@ -623,6 +690,9 @@ export async function previewManualHotspotFitHereImpl(
     (response as any).canConfirm !== true &&
     (response as any).selectedHotspotPreserved !== true
   ) {
+    const hasExistingTimeline =
+      (Array.isArray((response as any).finalizedTimeline) && (response as any).finalizedTimeline.length > 0)
+      || (Array.isArray((response as any).proposedTimeline) && (response as any).proposedTimeline.length > 0);
     const failedRescueDisplay = {
       hasRemovals: false,
       title: 'Rescue attempts checked',
@@ -636,10 +706,12 @@ export async function previewManualHotspotFitHereImpl(
     (response as any).removedHotspots = [];
     (response as any).affectedPriorityHotspots = [];
     (response as any).requiresRemovalAcknowledgementHotspotIds = [];
-    (response as any).proposedTimeline = [];
-    (response as any).finalizedTimeline = [];
-    (response as any).authoritativeTimelineSource = 'EXACT_ANCHOR_NO_VALID_RESULT';
-    (response as any).proposedTimelineFingerprint = this.buildManualFitTimelineFingerprint([]);
+    if (!hasExistingTimeline) {
+      (response as any).proposedTimeline = [];
+      (response as any).finalizedTimeline = [];
+      (response as any).authoritativeTimelineSource = 'EXACT_ANCHOR_NO_VALID_RESULT';
+      (response as any).proposedTimelineFingerprint = this.buildManualFitTimelineFingerprint([]);
+    }
     (response as any).selectedAnchorPreserved = false;
     (response as any).selectedHotspotPreserved = false;
 
@@ -653,7 +725,12 @@ export async function previewManualHotspotFitHereImpl(
   if (
     resolvedAnchor.exactSelectedGap === true &&
     selectedHotspotPreservedInPreview === true &&
-    (response as any).canConfirm !== true
+    (response as any).canConfirm !== true &&
+    !(
+      (response as any).selectedOpeningConflict ||
+      String((response as any).resultType || '').toUpperCase() === 'SELECTED_HOTSPOT_CLOSED_AT_ATTEMPTED_TIME' ||
+      String((response as any).manualInsertionFit?.previewBlockReason || '').toUpperCase() === 'SELECTED_HOTSPOT_CLOSED_AT_ATTEMPTED_TIME'
+    )
   ) {
     (response as any).canConfirm = true;
     (response as any).resultType = Array.isArray((response as any).removedHotspots) && (response as any).removedHotspots.length > 0
@@ -1006,6 +1083,9 @@ export async function applyManualFitAttemptWithinTransactionImpl(
   params: any,
 ) {
   const entry = params.entry;
+  const trustedPreviewState = resolveTrustedPreviewConfirmState.call(this, entry, {
+    sourceFingerprintChanged: params?.sourceFingerprintChanged === true,
+  });
   const snapshotRouteFitType = String(
     entry?.manualInsertionFitSnapshot?.chosenSlot?.routeFitType
     || entry?.manualInsertionFitSnapshot?.bestSlot?.routeFitType
@@ -1070,11 +1150,17 @@ export async function applyManualFitAttemptWithinTransactionImpl(
         selectedHotspotIds: [Number(entry.selectedHotspotId)],
         userId: Number(params.userId || 1),
         manualInsertionFit: cachedExactFit,
+        manualTimingPolicy:
+          entry?.manualInsertionFitSnapshot?.manualTimingPolicy
+          || entry?.manualTimingPolicy
+          || null,
         matrixPreferredSlot: entry.matrixPreferredSlot || undefined,
         trustedPreviewConfirmation: params.trustedPreviewConfirmation === true,
         trustedPreviewTimeline: params.trustedPreviewConfirmation === true
           ? entry.proposedTimelineSnapshot || null
           : null,
+        trustedPreviewTimelineFingerprint: trustedPreviewState.trustedPreviewTimelineFingerprint || null,
+        enforceTrustedPreviewConfirmation: trustedPreviewState.enforceTrustedPreviewConfirmation === true,
         skipPostApplyAssertions: true,
       })
     : await this.runManualHotspotBatchWithinTransaction(
@@ -1097,6 +1183,9 @@ export async function applyManualFitAttemptWithinTransactionImpl(
           matrixPreferredSlot: entry.matrixPreferredSlot || undefined,
           exactAnchorMode: entry.exactSelectedGap === true,
           trustedPreviewConfirmation: params.trustedPreviewConfirmation === true,
+          enforceTrustedPreviewConfirmation: trustedPreviewState.enforceTrustedPreviewConfirmation === true,
+          trustedPreviewTimeline: trustedPreviewState.trustedPreviewTimeline,
+          trustedPreviewTimelineFingerprint: trustedPreviewState.trustedPreviewTimelineFingerprint || null,
           previewOnly: false,
           forceConflictInsertion: params.canForceClosedHotspotConflict,
           forceConflictPreferredTimesByHotspotId: params.forceConflictPreferredTimesByHotspotId,
@@ -1111,6 +1200,9 @@ export async function preflightManualFitAttemptConfirmationImpl(
 ): Promise<any> {
   const rollbackError = new Error('__MANUAL_FIT_CONFIRM_PREFLIGHT_ROLLBACK__');
   const manualHotspotTxTimeoutMs = 180000;
+  const trustedPreviewState = resolveTrustedPreviewConfirmState.call(this, entry, {
+    sourceFingerprintChanged: false,
+  });
 
   try {
     await this.prisma.$transaction(async (tx: any) => {
@@ -1121,6 +1213,11 @@ export async function preflightManualFitAttemptConfirmationImpl(
         canForceClosedHotspotConflict: false,
         forceConflictPreferredTimesByHotspotId: {},
         trustedPreviewConfirmation: true,
+        trustedPreviewTimeline: Array.isArray(entry?.proposedTimelineSnapshot) && entry.proposedTimelineSnapshot.length > 0
+          ? entry.proposedTimelineSnapshot
+          : null,
+        sourceFingerprintChanged: false,
+        enforceTrustedPreviewConfirmation: trustedPreviewState.enforceTrustedPreviewConfirmation === true,
       });
 
       if (applyResult?.success !== true || applyResult?.inserted !== true) {
@@ -1276,11 +1373,27 @@ export async function confirmManualHotspotFitHereImpl(
 
   const currentFingerprint = await this.buildManualFitSourceFingerprint(Number(planId), Number(entry.routeId));
   const sourceFingerprintChanged = currentFingerprint !== entry.sourceFingerprint;
+  const trustedPreviewState = resolveTrustedPreviewConfirmState.call(this, entry, {
+    sourceFingerprintChanged,
+  });
   if (sourceFingerprintChanged) {
     console.warn('[FitHere][confirm_source_fingerprint_changed]', {
       attemptId: entry.attemptId,
       planId: Number(planId),
       routeId: Number(entry.routeId),
+    });
+  }
+
+  if (
+    entry.canConfirm === true
+    && sourceFingerprintChanged !== true
+    && trustedPreviewState.trustedPreviewSnapshotValid !== true
+  ) {
+    throw new ConflictException({
+      success: false,
+      inserted: false,
+      code: 'FIT_HERE_INVALID_TRUSTED_PREVIEW',
+      message: 'This confirmable Fit Here preview is missing or has a corrupted finalized timeline snapshot. Please preview again before confirming.',
     });
   }
 
@@ -1315,6 +1428,13 @@ export async function confirmManualHotspotFitHereImpl(
         canForceClosedHotspotConflict,
         forceConflictPreferredTimesByHotspotId,
         trustedPreviewConfirmation: entry.canConfirm === true,
+        trustedPreviewTimeline: entry.canConfirm === true
+          && Array.isArray(entry.proposedTimelineSnapshot)
+          && entry.proposedTimelineSnapshot.length > 0
+            ? entry.proposedTimelineSnapshot
+            : null,
+        sourceFingerprintChanged,
+        enforceTrustedPreviewConfirmation: trustedPreviewState.enforceTrustedPreviewConfirmation === true,
       });
       console.log('[FitHere][confirm_apply_result]', {
         attemptId: entry.attemptId,

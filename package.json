@@ -44,6 +44,8 @@
     "debug:fit-confirm": "tsx scripts/debug-fit-confirm.ts",
     "debug:fit-confirm:rescue": "tsx scripts/debug-fit-confirm-rescue.ts",
     "debug:fit-here:replay": "tsx scripts/debug-fit-here-preview-confirm-replay.ts",
+    "verify:manual-fit:sweep": "tsx scripts/verify-manual-fit-here-sweep.ts",
+    "verify:manual-fit:sweep:confirm": "tsx scripts/verify-manual-fit-here-sweep.ts --confirm=true",
     "test:matrix": "tsx scripts/test-matrix-autobuild.ts",
     "test:available-hotspots-anchor": "tsx scripts/test-available-hotspots-anchor.local.ts",
     "sync:tbo:missing-city": "node scripts/sync-missing-tbo-hotels-by-city.js",

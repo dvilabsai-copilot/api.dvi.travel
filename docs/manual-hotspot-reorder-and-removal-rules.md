@@ -11,6 +11,55 @@ If it fails because of cross-city direction, backtracking, route end, or operati
 Continue rescue.
 Return `CANNOT_FIT` only when the selected manual hotspot cannot fit after all allowed non-manual removal and reorder attempts are exhausted.
 
+## Preview and confirm contract
+
+If preview says `canConfirm=true`, the finalized preview timeline is the thing we intend to save.
+
+That means confirm is not allowed to run a second independent fit decision and contradict preview when the route has not changed.
+
+Required behavior:
+
+- preview must store the finalized timeline snapshot plus a fingerprint of that snapshot
+- confirm must compare the live route fingerprint with the preview source fingerprint
+- if the source fingerprint is unchanged and the stored preview snapshot is still valid, confirm must trust preview
+- confirm must not re-fail with:
+  - `MANUAL_INSERT_NO_LOW_PRIORITY_REMOVAL_AVAILABLE`
+  - `MANUAL_INSERT_EXCEEDS_DAY_END`
+- the only acceptable confirm rejection after `canConfirm=true` is:
+  - route changed after preview, so request is stale
+  - stored preview snapshot is missing or corrupted
+
+Corrupted preview guard:
+
+- if `canConfirm=true` but stored finalized preview snapshot is missing, malformed, or fingerprint-mismatched, backend must reject with a dedicated corruption-style error
+- do not silently recompute a different plan and pretend it is the same preview
+
+## Route-scoped simulation rule
+
+Manual Fit Here preview must simulate the clicked route only.
+
+Allowed:
+
+- active hotspot rows from the clicked route
+- travel and hotel legs derived from the clicked route
+- the selected manual hotspot being inserted
+- allowed same-route removals and reorders
+
+Forbidden:
+
+- importing attractions from another day of the same itinerary
+- importing sibling-route hotspots because they look directionally convenient
+- rebuilding from hidden fallback rows that were not part of the clicked route source array
+
+This prevents wrong previews such as:
+
+```text
+Day 2 clicked route: Alagar Koyil -> Pamban Bridge
+Preview result: Ramanatha -> Pamban -> APJ -> Agni -> Hotel
+```
+
+That is invalid because `Ramanatha` and `Agni` were not part of the clicked route scope.
+
 ## Plain-English APJ selected-pivot rule
 
 APJ is the selected manual hotspot, so APJ must win.
@@ -117,6 +166,28 @@ For every kept survivor:
   - selected hotspot cannot fit unless this blocker is removed
 - Do not remove simply because arrival is early. Waiting is allowed.
 - Do not keep a hotspot visited after closing.
+
+Selected-hotspot rule:
+
+- `SELECTED_HOTSPOT_CLOSED_AT_ATTEMPTED_TIME` is allowed as a final preview state only after all allowed same-route rescue removals have already been tried
+- do not stop at the first closed attempted time if upstream blockers are still removable
+- if upstream blocker removal makes the selected hotspot fit inside operating hours, selected hotspot wins
+
+## Removal disclosure rule
+
+Preview removal messaging must match the finalized preview timeline.
+
+If finalized preview dropped route hotspots to make confirmation possible:
+
+- those hotspots must appear in `removedHotspots`
+- those hotspots must appear in `changesRequiredDisplay.removedItems`
+- result type must be `FITS_WITH_OPTIONAL_REMOVAL`, not `FITS_DIRECTLY`
+
+Do not show:
+
+- `No hotspot removed`
+
+when finalized preview actually removed attractions from the route.
 
 ## Destination-side APJ examples for Madurai -> Rameshwaram
 
@@ -418,6 +489,114 @@ Do not return `canConfirm=true` when:
 - Any destination-side APJ timeline goes back to source-side Madurai hotspot after APJ
 - `selectedHotspotPreserved=true` is set only because APJ appears somewhere late
 
+## Exact-anchor stale rule
+
+The backend must reject stale clicked gaps instead of silently drifting to another gap.
+
+Return:
+
+- HTTP `409`
+- code `MANUAL_FIT_HERE_ANCHOR_STALE`
+
+Examples of stale conditions:
+
+- requested `afterRouteHotspotId` no longer exists on the active route
+- requested `beforeRouteHotspotId` no longer exists on the active route
+- requested adjacency no longer matches the active route
+- `AFTER_START` still points to an old first attraction
+
+## Verified examples
+
+### Example A: confirm must trust preview
+
+Observed live behavior after fix:
+
+- preview `canConfirm=true`
+- route fingerprint unchanged
+- confirm returns `201`
+- confirm does not re-fail with day-end or low-priority-removal errors
+
+Verified cases:
+
+- plan `9825`, route `8154`, selected hotspot `898`, anchor `After Echo Point`
+- plan `9822`, route `8119`, before-first-attraction confirm flow
+- plan `9824`, route `8140`, before-first-attraction confirm flow
+
+### Example B: Munnar selected-closing rescue
+
+Clicked route:
+
+```text
+Echo Point -> Mattupetty Dam and Lake -> ...
+```
+
+Selected manual hotspot:
+
+```text
+Munnar
+```
+
+Wrong historical behavior:
+
+- preview kept `Echo Point` before `Munnar`
+- `Munnar` was attempted after its `10:00 AM` close
+- backend stopped with selected-closed result too early
+
+Correct behavior:
+
+- remove eligible upstream blocker from the clicked route
+- rebuild from route start if needed
+- move `Munnar` earlier
+- return confirmable result only if `Munnar` is now inside operating hours
+
+Verified fixed case:
+
+- plan `9825`, route `8154`, selected hotspot `898`, anchor `After Echo Point`
+- removal: `Echo Point`
+- confirm succeeded with `201`
+
+### Example C: stale anchor after route changed
+
+If preview was captured before an earlier confirm changed the route:
+
+- the old clicked gap is no longer authoritative
+- backend must return `MANUAL_FIT_HERE_ANCHOR_STALE`
+
+This is the correct outcome, not a regression.
+
+## Verification workflow
+
+Reusable regression script:
+
+```bash
+npm run verify:manual-fit:sweep
+```
+
+Full preview-plus-confirm sweep:
+
+```bash
+npm run verify:manual-fit:sweep:confirm
+```
+
+Useful options:
+
+```bash
+npm run verify:manual-fit:sweep:confirm -- --planIds=9822,9824 --json=true
+```
+
+Script guarantees:
+
+- replays known manual-fit regression payloads
+- sweeps recent or specified plans day by day
+- picks a live available manual hotspot candidate for each route
+- runs preview
+- optionally runs confirm
+- reports preview `409`, stale-anchor cases, selected-closed cases, and confirm `409`
+
+Important note:
+
+- `--confirm=true` mutates live itinerary data because it saves the manual hotspot into the route
+
 Response consistency:
 
 If APJ is rescued but clicked anchor is not preserved:
@@ -550,6 +729,76 @@ Meaning:
 - if selected hotspot still lands outside operating hours in the chosen candidate
 - confirm must remain disabled
 - UI must not show "Can Fit Directly"
+
+### 4A. Exact-anchor selected-closing rescue removes upstream blockers first
+
+When the selected hotspot is closed only because earlier same-route attractions push it too late, exact-anchor preview must try a direct upstream-blocker rescue before returning a final closing block.
+
+Current enforced behavior:
+
+- stay inside the clicked route-scoped attraction array
+- inspect attractions before the selected hotspot
+- try removing the nearest eligible blocker first
+- then try larger cumulative upstream removal sets if one removal is not enough
+- after each removal set, rebuild the selected hotspot and all downstream rows
+- accept the first candidate where:
+  - selected hotspot fits inside operating hours
+  - route end still fits
+  - no selected-opening conflict remains
+
+This is the current fix for cases like:
+
+```text
+Echo Point -> Munnar
+Mattupetty -> Munnar
+```
+
+where `Munnar` is selected and reaches its `08:00 AM - 10:00 AM` operating-hours window too late unless earlier blockers are removed.
+
+Expected result shape:
+
+- `resultType = FITS_WITH_OPTIONAL_REMOVAL`
+- `canConfirm = true`
+- `selectedOpeningConflict = null`
+- removed blockers are listed with reason:
+  - `<blocker> removed because selected manual hotspot <selected> must fit before operating-hours closing.`
+
+### 4B. Rebuild downstream after rescue, do not keep stale first-leg travel
+
+Once an upstream blocker is removed for selected-closing rescue, preview must not keep a stale first travel leg that still points to the removed hotspot.
+
+Example of forbidden stale carry-over:
+
+```text
+Travel to Echo Point
+Echo Point
+Travel to Munnar
+Munnar
+```
+
+after `Echo Point` was already removed.
+
+Current enforced behavior:
+
+- when the selected hotspot becomes the first attraction after rescue
+- only reuse a source-like initial travel replica if it really starts from hotel / route start
+- otherwise recalculate the source-to-selected travel leg
+
+### 4C. Current code does not yet perform deferred reinsertion of removed blockers
+
+After selected-closing rescue succeeds, current backend behavior is:
+
+- keep the selected hotspot fixed at the rescued earlier time
+- rebuild the downstream route
+- keep removed blockers removed
+
+Current backend does **not** yet do a second-pass "reinsert removed blocker later if a valid downstream gap exists" search.
+
+So for now:
+
+- do not expect `Echo Point` to be automatically re-added later in the same preview
+- do not document later reinsertion as current behavior
+- if later reinsertion is implemented in the future, update this section and the exact-anchor rules document together
 
 ### 5. Exact-anchor fallback is allowed only when source exact timeline is empty
 
@@ -752,6 +1001,92 @@ Can Fit Directly
 ```
 
 just because an internal candidate was otherwise marked ready.
+
+### Example 4: route 8154 Munnar rescue after Echo Point
+
+Plan:
+
+- `planId=9825`
+- `routeId=8154`
+- selected hotspot: `898` = `Munnar`
+
+Clicked anchor:
+
+```json
+{
+  "routeId": 8154,
+  "selectedHotspotId": 898,
+  "anchor": {
+    "anchorType": "BETWEEN_ROWS",
+    "anchorIntent": "AFTER_ATTRACTION",
+    "anchorIndex": 3,
+    "anchorFrom": "Echo Point",
+    "anchorTo": "Mattupetty Dam and Lake",
+    "anchorLabel": "After Echo Point",
+    "anchorTimeRange": "09:46 AM - 10:31 AM",
+    "afterRowType": "attraction",
+    "beforeRowType": "hotspot",
+    "afterHotspotId": 483,
+    "afterRouteHotspotId": 128357,
+    "beforeHotspotId": 223,
+    "beforeRouteHotspotId": 128363
+  },
+  "allowP3Removal": true,
+  "allowP1P2Removal": true
+}
+```
+
+Verified fixed response shape:
+
+- `resultType = FITS_WITH_OPTIONAL_REMOVAL`
+- `canConfirm = true`
+- `selectedOpeningConflict = null`
+- removed hotspot: `483 = Echo Point`
+- selected hotspot `Munnar` moves earlier and no longer remains after `Echo Point`
+
+### Example 5: route 8154 Munnar rescue after Mattupetty
+
+Plan:
+
+- `planId=9825`
+- `routeId=8154`
+- selected hotspot: `898` = `Munnar`
+
+Clicked anchor:
+
+```json
+{
+  "routeId": 8154,
+  "selectedHotspotId": 898,
+  "anchor": {
+    "anchorType": "BETWEEN_ROWS",
+    "anchorIntent": "AFTER_ATTRACTION",
+    "anchorIndex": 5,
+    "anchorFrom": "Mattupetty Dam and Lake",
+    "anchorTo": "Munnar Rose Garden",
+    "anchorLabel": "After Mattupetty Dam and Lake",
+    "anchorTimeRange": "11:01 AM - 12:01 PM",
+    "afterRowType": "attraction",
+    "beforeRowType": "hotspot",
+    "afterHotspotId": 223,
+    "afterRouteHotspotId": 128363,
+    "beforeHotspotId": 220,
+    "beforeRouteHotspotId": 128368
+  },
+  "allowP3Removal": true,
+  "allowP1P2Removal": true
+}
+```
+
+Verified fixed response shape:
+
+- `resultType = FITS_WITH_OPTIONAL_REMOVAL`
+- `canConfirm = true`
+- `selectedOpeningConflict = null`
+- removed hotspots:
+  - `223 = Mattupetty Dam and Lake`
+  - `483 = Echo Point`
+- selected hotspot `Munnar` moves earlier and no longer remains after those blockers
 
 ## Validation commands
 
