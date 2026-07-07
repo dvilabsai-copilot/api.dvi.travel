@@ -19,6 +19,7 @@
     "seed:staah:test": "ts-node seed-staah-test-data.ts",
     "cert:tbo": "tsx verification-e2e/tbo-certification/run-tbo-certification.ts",
     "cert:staah": "node verification-e2e/staah-certification/run-staah-certification.js",
+    "cert:staah:live": "set STAAH_CERT_MODE=live&& node verification-e2e/staah-certification/run-staah-certification.js",
     "verify:hotspot-parity": "tsx verification-e2e/hotspot-engine-parity/run-hotspot-engine-parity.ts",
     "verify:vehicle-build": "node scripts/verify-itinerary-vehicle-build.js",
     "test:api": "node scripts/test-api-endpoints.js",
