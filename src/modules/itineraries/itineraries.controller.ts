@@ -1203,7 +1203,7 @@ async getAvailableActivities(
     return this.svc.getPlanForEdit(id);
   }
 
-  @Get('export/:id')
+    @Get('export/:id')
   @Public()
   @ApiOperation({ summary: 'Export itinerary to Excel' })
   @ApiParam({ name: 'id', example: 14, description: 'Itinerary Plan ID' })
@@ -1211,7 +1211,7 @@ async getAvailableActivities(
     @Param('id', ParseIntPipe) id: number,
     @Res() res: Response,
   ) {
-    const workbook = await this.exportService.exportItineraryToExcel(id);
+    const { workbook, fileName } = await this.exportService.exportItineraryToExcel(id);
 
     res.setHeader(
       'Content-Type',
@@ -1219,7 +1219,7 @@ async getAvailableActivities(
     );
     res.setHeader(
       'Content-Disposition',
-      `attachment; filename="ITINERARY-DVI${id}.xlsx"`,
+      `attachment; filename="${fileName}"; filename*=UTF-8''${encodeURIComponent(fileName)}`,
     );
 
     await workbook.xlsx.write(res);
