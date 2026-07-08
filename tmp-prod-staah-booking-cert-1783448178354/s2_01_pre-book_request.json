@@ -1,0 +1,10 @@
+{
+  "propertyid": "STAAHTESTHOTELPROD",
+  "apikey": "4db-c9d-aa2e7-d43a-6ab-a197f-b37e5a6",
+  "room_id": "DELUXEROOM",
+  "rate_id": "CPPLAN",
+  "action": "ARR_info",
+  "from_date": "2026-08-10",
+  "to_date": "2026-08-10",
+  "version": "2"
+}

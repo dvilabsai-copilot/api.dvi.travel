@@ -1,0 +1,13 @@
+{
+  "label": "03_city_list",
+  "method": "POST",
+  "url": "http://affiliate.travelboutiqueonline.com/TBOHolidays_HotelAPI/CityList",
+  "headers": {
+    "Authorization": "Basic SVhNRDExMjphcGktMTEjTSRuZXc=",
+    "Content-Type": "application/json",
+    "Accept": "application/json"
+  },
+  "body": {
+    "CountryCode": "IN"
+  }
+}

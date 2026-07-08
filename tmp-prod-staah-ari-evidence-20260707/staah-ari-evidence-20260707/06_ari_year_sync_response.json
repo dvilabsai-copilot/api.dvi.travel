@@ -1,0 +1,6954 @@
+{
+  "status": 200,
+  "headers": {
+    "Date": "Tue, 07 Jul 2026 18:24:33 GMT",
+    "Content-Type": "application/json; charset=utf-8",
+    "Transfer-Encoding": "chunked",
+    "Connection": "close",
+    "Server": "Apache"
+  },
+  "body": {
+    "currency": "AED",
+    "data": [
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-10-01",
+        "inventory": "13",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-10-02",
+        "inventory": "14",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-10-03",
+        "inventory": "15",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-10-04",
+        "inventory": "16",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-10-05",
+        "inventory": "10",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-10-06",
+        "inventory": "11",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-10-07",
+        "inventory": "12",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-10-08",
+        "inventory": "13",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-10-09",
+        "inventory": "14",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-10-10",
+        "inventory": "14",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-10-11",
+        "inventory": "15",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-10-12",
+        "inventory": "10",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-10-13",
+        "inventory": "11",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-10-14",
+        "inventory": "12",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-10-15",
+        "inventory": "13",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-10-16",
+        "inventory": "14",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-10-17",
+        "inventory": "15",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-10-18",
+        "inventory": "16",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-10-19",
+        "inventory": "10",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-10-20",
+        "inventory": "11",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-10-21",
+        "inventory": "12",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-10-22",
+        "inventory": "13",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-10-23",
+        "inventory": "14",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-10-24",
+        "inventory": "15",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-10-25",
+        "inventory": "16",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-10-26",
+        "inventory": "10",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-10-27",
+        "inventory": "11",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-10-28",
+        "inventory": "12",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-10-29",
+        "inventory": "13",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-10-30",
+        "inventory": "14",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-10-31",
+        "inventory": "15",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-11-01",
+        "inventory": "16",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-11-02",
+        "inventory": "10",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-11-03",
+        "inventory": "11",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-11-04",
+        "inventory": "12",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-11-05",
+        "inventory": "13",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-11-06",
+        "inventory": "14",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-11-07",
+        "inventory": "15",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-11-08",
+        "inventory": "16",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-11-09",
+        "inventory": "10",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-11-10",
+        "inventory": "11",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-11-11",
+        "inventory": "12",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-11-12",
+        "inventory": "13",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-11-13",
+        "inventory": "14",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-11-14",
+        "inventory": "15",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-11-15",
+        "inventory": "16",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-11-16",
+        "inventory": "10",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-11-17",
+        "inventory": "11",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-11-18",
+        "inventory": "12",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-11-19",
+        "inventory": "13",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-11-20",
+        "inventory": "14",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-11-21",
+        "inventory": "15",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-11-22",
+        "inventory": "16",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-11-23",
+        "inventory": "10",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-11-24",
+        "inventory": "11",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-11-25",
+        "inventory": "12",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-11-26",
+        "inventory": "13",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-11-27",
+        "inventory": "14",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-11-28",
+        "inventory": "15",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-11-29",
+        "inventory": "16",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-11-30",
+        "inventory": "9",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-12-01",
+        "inventory": "5",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-12-02",
+        "inventory": "6",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-12-03",
+        "inventory": "13",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-12-04",
+        "inventory": "14",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-12-05",
+        "inventory": "15",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-12-06",
+        "inventory": "16",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-12-07",
+        "inventory": "10",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-12-08",
+        "inventory": "11",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-12-09",
+        "inventory": "12",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-12-10",
+        "inventory": "13",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-12-11",
+        "inventory": "14",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-12-12",
+        "inventory": "15",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-12-13",
+        "inventory": "16",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-12-14",
+        "inventory": "10",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-12-15",
+        "inventory": "11",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-12-16",
+        "inventory": "12",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-12-17",
+        "inventory": "13",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-12-18",
+        "inventory": "14",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-12-19",
+        "inventory": "15",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-12-20",
+        "inventory": "16",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-12-21",
+        "inventory": "10",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-12-22",
+        "inventory": "11",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-12-23",
+        "inventory": "12",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-12-24",
+        "inventory": "13",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-12-25",
+        "inventory": "14",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-12-26",
+        "inventory": "15",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-12-27",
+        "inventory": "16",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-12-28",
+        "inventory": "10",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-12-29",
+        "inventory": "11",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-12-30",
+        "inventory": "12",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-12-31",
+        "inventory": "13",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-07-07",
+        "inventory": "11",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-07-08",
+        "inventory": "10",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-07-09",
+        "inventory": "9",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-07-10",
+        "inventory": "7",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-07-11",
+        "inventory": "14",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-07-12",
+        "inventory": "16",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-07-13",
+        "inventory": "10",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-07-14",
+        "inventory": "10",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-07-15",
+        "inventory": "12",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-07-16",
+        "inventory": "13",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-07-17",
+        "inventory": "14",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-07-18",
+        "inventory": "15",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-07-19",
+        "inventory": "16",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-07-20",
+        "inventory": "7",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-07-21",
+        "inventory": "11",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-07-22",
+        "inventory": "11",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-07-23",
+        "inventory": "13",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-07-24",
+        "inventory": "14",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-07-25",
+        "inventory": "15",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-07-26",
+        "inventory": "16",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-07-27",
+        "inventory": "10",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-07-28",
+        "inventory": "11",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-07-29",
+        "inventory": "8",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-07-30",
+        "inventory": "12",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-07-31",
+        "inventory": "13",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-08-01",
+        "inventory": "11",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-08-02",
+        "inventory": "15",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-08-03",
+        "inventory": "10",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-08-04",
+        "inventory": "11",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-08-05",
+        "inventory": "11",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-08-06",
+        "inventory": "12",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-08-07",
+        "inventory": "14",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-08-08",
+        "inventory": "15",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-08-09",
+        "inventory": "14",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-08-10",
+        "inventory": "7",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-08-11",
+        "inventory": "11",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-08-12",
+        "inventory": "12",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-08-13",
+        "inventory": "13",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-08-14",
+        "inventory": "14",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-08-15",
+        "inventory": "13",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-08-16",
+        "inventory": "12",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-08-17",
+        "inventory": "6",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-08-18",
+        "inventory": "10",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-08-19",
+        "inventory": "12",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-08-20",
+        "inventory": "13",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-08-21",
+        "inventory": "14",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-08-22",
+        "inventory": "15",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-08-23",
+        "inventory": "16",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-08-24",
+        "inventory": "10",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-08-25",
+        "inventory": "11",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-08-26",
+        "inventory": "12",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-08-27",
+        "inventory": "12",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-08-28",
+        "inventory": "14",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-08-29",
+        "inventory": "15",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-08-30",
+        "inventory": "16",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-08-31",
+        "inventory": "10",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-09-01",
+        "inventory": "10",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-09-02",
+        "inventory": "11",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-09-03",
+        "inventory": "13",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-09-04",
+        "inventory": "14",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-09-05",
+        "inventory": "15",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-09-06",
+        "inventory": "14",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-09-07",
+        "inventory": "8",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-09-08",
+        "inventory": "9",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-09-09",
+        "inventory": "10",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-09-10",
+        "inventory": "11",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-09-11",
+        "inventory": "12",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-09-12",
+        "inventory": "15",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-09-13",
+        "inventory": "16",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-09-14",
+        "inventory": "10",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-09-15",
+        "inventory": "11",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-09-16",
+        "inventory": "12",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-09-17",
+        "inventory": "13",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-09-18",
+        "inventory": "14",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-09-19",
+        "inventory": "15",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-09-20",
+        "inventory": "16",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-09-21",
+        "inventory": "10",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-09-22",
+        "inventory": "11",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-09-23",
+        "inventory": "12",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-09-24",
+        "inventory": "13",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-09-25",
+        "inventory": "14",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-09-26",
+        "inventory": "15",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-09-27",
+        "inventory": "16",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-09-28",
+        "inventory": "9",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-09-29",
+        "inventory": "10",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-09-30",
+        "inventory": "12",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-01-01",
+        "inventory": "14",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-01-02",
+        "inventory": "15",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-01-03",
+        "inventory": "16",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-01-04",
+        "inventory": "10",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-01-05",
+        "inventory": "11",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-01-06",
+        "inventory": "12",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-01-07",
+        "inventory": "13",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-01-08",
+        "inventory": "14",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-01-09",
+        "inventory": "15",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-01-10",
+        "inventory": "16",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-01-11",
+        "inventory": "10",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-01-12",
+        "inventory": "10",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-01-13",
+        "inventory": "11",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-01-14",
+        "inventory": "13",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-01-15",
+        "inventory": "14",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-01-16",
+        "inventory": "15",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-01-17",
+        "inventory": "16",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-01-18",
+        "inventory": "4",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-01-19",
+        "inventory": "2",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-01-20",
+        "inventory": "9",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-01-21",
+        "inventory": "12",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-01-22",
+        "inventory": "12",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-01-23",
+        "inventory": "14",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-01-24",
+        "inventory": "14",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-01-25",
+        "inventory": "7",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-01-26",
+        "inventory": "10",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-01-27",
+        "inventory": "12",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-01-28",
+        "inventory": "13",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-01-29",
+        "inventory": "14",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-01-30",
+        "inventory": "15",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-01-31",
+        "inventory": "16",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-02-01",
+        "inventory": "10",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-02-02",
+        "inventory": "11",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-02-03",
+        "inventory": "12",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-02-04",
+        "inventory": "13",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-02-05",
+        "inventory": "14",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-02-06",
+        "inventory": "15",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-02-07",
+        "inventory": "16",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-02-08",
+        "inventory": "10",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-02-09",
+        "inventory": "11",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-02-10",
+        "inventory": "12",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-02-11",
+        "inventory": "13",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-02-12",
+        "inventory": "14",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-02-13",
+        "inventory": "15",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-02-14",
+        "inventory": "15",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-02-15",
+        "inventory": "9",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-02-16",
+        "inventory": "11",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-02-17",
+        "inventory": "12",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-02-18",
+        "inventory": "13",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-02-19",
+        "inventory": "14",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-02-20",
+        "inventory": "15",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-02-21",
+        "inventory": "16",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-02-22",
+        "inventory": "10",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-02-23",
+        "inventory": "11",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-02-24",
+        "inventory": "12",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-02-25",
+        "inventory": "13",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-02-26",
+        "inventory": "14",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-02-27",
+        "inventory": "15",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-02-28",
+        "inventory": "16",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-03-01",
+        "inventory": "10",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-03-02",
+        "inventory": "11",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-03-03",
+        "inventory": "12",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-03-04",
+        "inventory": "13",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-03-05",
+        "inventory": "14",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-03-06",
+        "inventory": "15",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-03-07",
+        "inventory": "16",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-03-08",
+        "inventory": "10",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-03-09",
+        "inventory": "11",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-03-10",
+        "inventory": "12",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-03-11",
+        "inventory": "13",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-03-12",
+        "inventory": "14",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-03-13",
+        "inventory": "15",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-03-14",
+        "inventory": "16",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-03-15",
+        "inventory": "10",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-03-16",
+        "inventory": "10",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-03-17",
+        "inventory": "11",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-03-18",
+        "inventory": "13",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-03-19",
+        "inventory": "14",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-03-20",
+        "inventory": "15",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-03-21",
+        "inventory": "16",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-03-22",
+        "inventory": "10",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-03-23",
+        "inventory": "11",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-03-24",
+        "inventory": "12",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-03-25",
+        "inventory": "13",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-03-26",
+        "inventory": "14",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-03-27",
+        "inventory": "15",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-03-28",
+        "inventory": "16",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-03-29",
+        "inventory": "10",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-03-30",
+        "inventory": "11",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-03-31",
+        "inventory": "12",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-04-01",
+        "inventory": "13",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-04-02",
+        "inventory": "14",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-04-03",
+        "inventory": "15",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-04-04",
+        "inventory": "16",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-04-05",
+        "inventory": "10",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-04-06",
+        "inventory": "11",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-04-07",
+        "inventory": "12",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-04-08",
+        "inventory": "13",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-04-09",
+        "inventory": "14",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-04-10",
+        "inventory": "15",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-04-11",
+        "inventory": "16",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-04-12",
+        "inventory": "10",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-04-13",
+        "inventory": "11",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-04-14",
+        "inventory": "12",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-04-15",
+        "inventory": "13",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-04-16",
+        "inventory": "14",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-04-17",
+        "inventory": "15",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-04-18",
+        "inventory": "16",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-04-19",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-04-20",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-04-21",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-04-22",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-04-23",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-04-24",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-04-25",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-04-26",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-04-27",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-04-28",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-04-29",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-04-30",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-05-01",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-05-02",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-05-03",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-05-04",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-05-05",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-05-06",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-05-07",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-05-08",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-05-09",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-05-10",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-05-11",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-05-12",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-05-13",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-05-14",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-05-15",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-05-16",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-05-17",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-05-18",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-05-19",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-05-20",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-05-21",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-05-22",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-05-23",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-05-24",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-05-25",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-05-26",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-05-27",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-05-28",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-05-29",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-05-30",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-05-31",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-06-01",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-06-02",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-06-03",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-06-04",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-06-05",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-06-06",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-06-07",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-06-08",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-06-09",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-06-10",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-06-11",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-06-12",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-06-13",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-06-14",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-06-15",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-06-16",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-06-17",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-06-18",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-06-19",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-06-20",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-06-21",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-06-22",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-06-23",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-06-24",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-06-25",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-06-26",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-06-27",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-06-28",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-06-29",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-06-30",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-07-01",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-07-02",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-07-03",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-07-04",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-07-05",
+        "inventory": "0",
+        "stopsell": "Y"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "120",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "120",
+            "person2": "120",
+            "person3": "520",
+            "person4": "920",
+            "person5": "1320"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2027-07-06",
+        "inventory": "0",
+        "stopsell": "Y"
+      }
+    ],
+    "propertyid": "STAAHTESTHOTELPROD",
+    "rate_id": "CPPLAN",
+    "room_id": "DELUXEROOM",
+    "trackingId": "258E61FE-3DBC-438D-8EC6-C1F393E6C432"
+  }
+}

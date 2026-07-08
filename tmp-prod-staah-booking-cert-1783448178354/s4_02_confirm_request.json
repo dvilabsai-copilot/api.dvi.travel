@@ -1,0 +1,89 @@
+{
+  "propertyid": "STAAHTESTHOTELPROD",
+  "apikey": "4db-c9d-aa2e7-d43a-6ab-a197f-b37e5a6",
+  "action": "reservation_info",
+  "version": "2",
+  "reservations": {
+    "reservation": [
+      {
+        "reservation_datetime": "2026-07-07T23:46:30",
+        "propertyname": "STAAH TEST",
+        "reservation_id": "DVI-CERT-S4-1783448178360",
+        "payment_required": "15",
+        "payment_type": "Hotel Collect",
+        "commissionamount": "0.00",
+        "discountamount": "0.00",
+        "deposit": "0.00",
+        "totalamountaftertax": "2660.00",
+        "totaltax": "260.00",
+        "currencycode": "INR",
+        "status": "Confirm",
+        "customer": {
+          "address": "Ring Road",
+          "city": "Surat",
+          "country": "India",
+          "email": "rk@staah.com",
+          "salutation": "Mr.",
+          "first_name": "Test",
+          "last_name": "Test",
+          "remarks": "Please Provide Wine Upon Checking and Do not Disturb",
+          "telephone": "+91 97734 84053",
+          "zip": "395004"
+        },
+        "paymentcarddetail": {
+          "CardHolderName": "Test STAAH",
+          "CardType": "MC",
+          "ExpireDate": "07/28",
+          "CardNumber": "4111111111111111",
+          "cvv": "123"
+        },
+        "room": [
+          {
+            "arrival_date": "2026-10-05",
+            "departure_date": "2026-10-06",
+            "room_id": "DELUXEROOM",
+            "room_name": "Studio",
+            "price": [
+              {
+                "date": "2026-10-05",
+                "rate_id": "CPPLAN",
+                "rate_name": "Test MK",
+                "amountaftertax": "2300.00",
+                "extraGuests": {
+                  "extraAdult": "1",
+                  "extraChild": "0",
+                  "extraAdultRate": "100",
+                  "extraChildRate": "0"
+                }
+              }
+            ],
+            "salutation": "Mr.",
+            "first_name": "Test",
+            "last_name": "Test",
+            "taxes": [
+              {
+                "name": "service charge",
+                "value": "260.00"
+              }
+            ],
+            "amountaftertax": "2660.00",
+            "remarks": "No Smoking",
+            "GuestCount": [
+              {
+                "AgeQualifyingCode": "10",
+                "Count": "4"
+              }
+            ]
+          }
+        ],
+        "POS": "TEST",
+        "extraData": [
+          {
+            "name": "Key",
+            "value": "Value of key"
+          }
+        ]
+      }
+    ]
+  }
+}

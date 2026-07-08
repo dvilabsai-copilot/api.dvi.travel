@@ -1,0 +1,50 @@
+{
+  "status": 200,
+  "body": {
+    "currency": "AED",
+    "data": [
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-07-15",
+        "inventory": "12",
+        "stopsell": "N"
+      },
+      {
+        "amountAfterTax": {
+          "Rate": "800",
+          "extraadult": "400",
+          "extrachild": "150",
+          "obp": {
+            "person1": "800",
+            "person2": "800",
+            "person3": "1200",
+            "person4": "1600",
+            "person5": "2000"
+          }
+        },
+        "cta": "N",
+        "ctd": "N",
+        "date": "2026-07-16",
+        "inventory": "13",
+        "stopsell": "N"
+      }
+    ],
+    "propertyid": "STAAHTESTHOTELPROD",
+    "rate_id": "CPPLAN",
+    "room_id": "DELUXEROOM",
+    "trackingId": "DD824BA3-4ABE-46C9-8EAF-64E59F561541"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "label": "06_prebook",
+  "method": "POST",
+  "url": "https://affiliate.travelboutiqueonline.com/HotelAPI/PreBook",
+  "headers": {
+    "Authorization": "Basic SVhNRDExMjphcGktMTEjTSRuZXc=",
+    "Content-Type": "application/json",
+    "Accept": "application/json"
+  },
+  "body": {
+    "BookingCode": "1011647!TB!2!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!",
+    "PaymentMode": "Limit",
+    "GuestNationality": "IN",
+    "NoOfRooms": 1
+  }
+}

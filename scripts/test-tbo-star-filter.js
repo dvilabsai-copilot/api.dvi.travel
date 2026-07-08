@@ -4,17 +4,17 @@ const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
 
-const SHARED_API_URL = 'https://sharedapi.tektravels.com';
-const SEARCH_API_URL = 'https://affiliate.tektravels.com/HotelAPI';
+const SHARED_API_URL = process.env.TBO_SHARED_API_URL || 'https://api.travelboutiqueonline.com/SharedAPI';
+const SEARCH_API_URL = process.env.TBO_SEARCH_API_URL || 'https://affiliate.travelboutiqueonline.com/HotelAPI';
 
 const authPayload = {
-  ClientId: process.env.TBO_CLIENT_ID || 'ApiIntegrationNew',
-  UserName: process.env.TBO_USERNAME || 'Doview',
-  Password: process.env.TBO_PASSWORD || 'Doview@12345',
-  EndUserIp: process.env.TBO_END_USER_IP || '192.168.1.1',
+  ClientId: process.env.TBO_CLIENT_ID || 'tboprod',
+  UserName: process.env.TBO_USERNAME || 'IXMD112',
+  Password: process.env.TBO_PASSWORD || 'api-11#M$new',
+  EndUserIp: process.env.TBO_END_USER_IP || '134.209.145.185',
 };
 
-const basicAuth = `Basic ${Buffer.from('TBOApi:TBOApi@123').toString('base64')}`;
+const basicAuth = `Basic ${Buffer.from(`${process.env.TBO_STATIC_USERNAME || process.env.TBO_USERNAME || 'IXMD112'}:${process.env.TBO_STATIC_PASSWORD || process.env.TBO_PASSWORD || 'api-11#M$new'}`).toString('base64')}`;
 
 async function authenticate() {
   const response = await axios.post(

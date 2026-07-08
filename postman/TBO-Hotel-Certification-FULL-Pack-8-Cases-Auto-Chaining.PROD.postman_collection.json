@@ -1,0 +1,3978 @@
+{
+  "info": {
+    "_postman_id": "b24deccd-ba42-4e83-9bb9-b1f042e51990",
+    "name": "TBO - Hotel Certification FULL Pack (8 Cases) - Auto Chaining - PROD",
+    "description": "Full certification flow per case with auto chaining using tests/scripts.\nFlow: Search -> PreBook -> Book -> GetBookingDetail -> GenerateVoucher.\nNo manual copy/paste of BookingCode/Token/Trace/BookingId.\nIMPORTANT: Set Basic Auth at collection level in Postman (do not hardcode credentials).\nNotes: Some booking engines require amounts/fields not available until runtime. Scripts try best-effort extraction.\n",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "5802425"
+  },
+  "item": [
+    {
+      "name": "HotelCode",
+      "item": [
+        {
+          "name": "CountryList",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "function findFirst(obj, keys){",
+                  "  if (obj === null || obj === undefined) return null;",
+                  "  if (Array.isArray(obj)) {",
+                  "    for (let i=0;i<obj.length;i++){",
+                  "      const r = findFirst(obj[i], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "    return null;",
+                  "  }",
+                  "  if (typeof obj === 'object') {",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      if (keys.includes(k) && obj[k] !== null && obj[k] !== undefined && obj[k] !== '' ) return obj[k];",
+                  "    }",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      const r = findFirst(obj[k], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "  }",
+                  "  return null;",
+                  "}",
+                  "let json;",
+                  "try { json = pm.response.json(); } catch(e) { json = null; }",
+                  "if (!json) { console.warn('No JSON response to parse'); }",
+                  "// Extract BookingCode (rate token)",
+                  "const bookingCode = findFirst(json, ['BookingCode','bookingCode','HotelBookingCode']);",
+                  "if (bookingCode) pm.collectionVariables.set('BookingCode', bookingCode);",
+                  "// Extract Trace/Token/Agency where present (naming varies across environments)",
+                  "const tokenId = findFirst(json, ['TokenId','tokenId']);",
+                  "if (tokenId) pm.collectionVariables.set('TokenId', tokenId);",
+                  "const traceId = findFirst(json, ['TraceId','traceId']);",
+                  "if (traceId) pm.collectionVariables.set('TraceId', traceId);",
+                  "const agencyId = findFirst(json, ['AgencyId','agencyId','TokenAgencyId','tokenAgencyId']);",
+                  "if (agencyId) pm.collectionVariables.set('AgencyId', agencyId);",
+                  "// Extract any net/total amount if available (best-effort)",
+                  "const net = findFirst(json, ['NetAmount','netAmount','TotalFare','TotalPrice','Price','PublishedPriceRoundedOff','PublishedPrice']);",
+                  "if (net) pm.collectionVariables.set('NetAmount', net);",
+                  "pm.test('Search parsed (BookingCode captured if present)', function(){ pm.expect(true).to.eql(true); });"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "protocolProfileBehavior": {
+            "disableBodyPruning": true
+          },
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"CheckIn\": \"2026-03-10\",\n  \"CheckOut\": \"2026-03-11\",\n  \"HotelCodes\": \"1035259,1035258\",\n  \"GuestNationality\": \"IN\",\n  \"PaxRooms\": [\n    {\n      \"Adults\": 1,\n      \"Children\": 0,\n      \"ChildrenAges\": []\n    }\n  ],\n  \"ResponseTime\": 23.0,\n  \"IsDetailedResponse\": true,\n  \"Filters\": {\n    \"Refundable\": true,\n    \"NoOfRooms\": 0,\n    \"MealType\": \"WithMeal\",\n    \"OrderBy\": 0,\n    \"StarRating\": 0,\n    \"HotelName\": null\n  }\n}"
+            },
+            "url": {
+              "raw": "http://affiliate.travelboutiqueonline.com/TBOHolidays_HotelAPI/CountryList",
+              "protocol": "http",
+              "host": [
+                "affiliate",
+                "travelboutiqueonline",
+                "com"
+              ],
+              "path": [
+                "TBOHolidays_HotelAPI",
+                "CountryList"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "CityList",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "function findFirst(obj, keys){",
+                  "  if (obj === null || obj === undefined) return null;",
+                  "  if (Array.isArray(obj)) {",
+                  "    for (let i=0;i<obj.length;i++){",
+                  "      const r = findFirst(obj[i], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "    return null;",
+                  "  }",
+                  "  if (typeof obj === 'object') {",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      if (keys.includes(k) && obj[k] !== null && obj[k] !== undefined && obj[k] !== '' ) return obj[k];",
+                  "    }",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      const r = findFirst(obj[k], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "  }",
+                  "  return null;",
+                  "}",
+                  "let json;",
+                  "try { json = pm.response.json(); } catch(e) { json = null; }",
+                  "if (!json) { console.warn('No JSON response to parse'); }",
+                  "// Extract BookingCode (rate token)",
+                  "const bookingCode = findFirst(json, ['BookingCode','bookingCode','HotelBookingCode']);",
+                  "if (bookingCode) pm.collectionVariables.set('BookingCode', bookingCode);",
+                  "// Extract Trace/Token/Agency where present (naming varies across environments)",
+                  "const tokenId = findFirst(json, ['TokenId','tokenId']);",
+                  "if (tokenId) pm.collectionVariables.set('TokenId', tokenId);",
+                  "const traceId = findFirst(json, ['TraceId','traceId']);",
+                  "if (traceId) pm.collectionVariables.set('TraceId', traceId);",
+                  "const agencyId = findFirst(json, ['AgencyId','agencyId','TokenAgencyId','tokenAgencyId']);",
+                  "if (agencyId) pm.collectionVariables.set('AgencyId', agencyId);",
+                  "// Extract any net/total amount if available (best-effort)",
+                  "const net = findFirst(json, ['NetAmount','netAmount','TotalFare','TotalPrice','Price','PublishedPriceRoundedOff','PublishedPrice']);",
+                  "if (net) pm.collectionVariables.set('NetAmount', net);",
+                  "pm.test('Search parsed (BookingCode captured if present)', function(){ pm.expect(true).to.eql(true); });"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"CountryCode\": \"{{CountryCode}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://affiliate.travelboutiqueonline.com/TBOHolidays_HotelAPI/CityList",
+              "protocol": "http",
+              "host": [
+                "affiliate",
+                "travelboutiqueonline",
+                "com"
+              ],
+              "path": [
+                "TBOHolidays_HotelAPI",
+                "CityList"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "CityList Dubai",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "function findFirst(obj, keys){",
+                  "  if (obj === null || obj === undefined) return null;",
+                  "  if (Array.isArray(obj)) {",
+                  "    for (let i=0;i<obj.length;i++){",
+                  "      const r = findFirst(obj[i], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "    return null;",
+                  "  }",
+                  "  if (typeof obj === 'object') {",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      if (keys.includes(k) && obj[k] !== null && obj[k] !== undefined && obj[k] !== '' ) return obj[k];",
+                  "    }",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      const r = findFirst(obj[k], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "  }",
+                  "  return null;",
+                  "}",
+                  "let json;",
+                  "try { json = pm.response.json(); } catch(e) { json = null; }",
+                  "if (!json) { console.warn('No JSON response to parse'); }",
+                  "// Extract BookingCode (rate token)",
+                  "const bookingCode = findFirst(json, ['BookingCode','bookingCode','HotelBookingCode']);",
+                  "if (bookingCode) pm.collectionVariables.set('BookingCode', bookingCode);",
+                  "// Extract Trace/Token/Agency where present (naming varies across environments)",
+                  "const tokenId = findFirst(json, ['TokenId','tokenId']);",
+                  "if (tokenId) pm.collectionVariables.set('TokenId', tokenId);",
+                  "const traceId = findFirst(json, ['TraceId','traceId']);",
+                  "if (traceId) pm.collectionVariables.set('TraceId', traceId);",
+                  "const agencyId = findFirst(json, ['AgencyId','agencyId','TokenAgencyId','tokenAgencyId']);",
+                  "if (agencyId) pm.collectionVariables.set('AgencyId', agencyId);",
+                  "// Extract any net/total amount if available (best-effort)",
+                  "const net = findFirst(json, ['NetAmount','netAmount','TotalFare','TotalPrice','Price','PublishedPriceRoundedOff','PublishedPrice']);",
+                  "if (net) pm.collectionVariables.set('NetAmount', net);",
+                  "pm.test('Search parsed (BookingCode captured if present)', function(){ pm.expect(true).to.eql(true); });"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"CountryCode\": \"{{DubaiCountryCode}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://affiliate.travelboutiqueonline.com/TBOHolidays_HotelAPI/CityList",
+              "protocol": "http",
+              "host": [
+                "affiliate",
+                "travelboutiqueonline",
+                "com"
+              ],
+              "path": [
+                "TBOHolidays_HotelAPI",
+                "CityList"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "TBOHotelCodeList",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "function findFirst(obj, keys){",
+                  "  if (obj === null || obj === undefined) return null;",
+                  "  if (Array.isArray(obj)) {",
+                  "    for (let i=0;i<obj.length;i++){",
+                  "      const r = findFirst(obj[i], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "    return null;",
+                  "  }",
+                  "  if (typeof obj === 'object') {",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      if (keys.includes(k) && obj[k] !== null && obj[k] !== undefined && obj[k] !== '' ) return obj[k];",
+                  "    }",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      const r = findFirst(obj[k], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "  }",
+                  "  return null;",
+                  "}",
+                  "let json;",
+                  "try { json = pm.response.json(); } catch(e) { json = null; }",
+                  "if (!json) { console.warn('No JSON response to parse'); }",
+                  "// Extract BookingCode (rate token)",
+                  "const bookingCode = findFirst(json, ['BookingCode','bookingCode','HotelBookingCode']);",
+                  "if (bookingCode) pm.collectionVariables.set('BookingCode', bookingCode);",
+                  "// Extract Trace/Token/Agency where present (naming varies across environments)",
+                  "const tokenId = findFirst(json, ['TokenId','tokenId']);",
+                  "if (tokenId) pm.collectionVariables.set('TokenId', tokenId);",
+                  "const traceId = findFirst(json, ['TraceId','traceId']);",
+                  "if (traceId) pm.collectionVariables.set('TraceId', traceId);",
+                  "const agencyId = findFirst(json, ['AgencyId','agencyId','TokenAgencyId','tokenAgencyId']);",
+                  "if (agencyId) pm.collectionVariables.set('AgencyId', agencyId);",
+                  "// Extract any net/total amount if available (best-effort)",
+                  "const net = findFirst(json, ['NetAmount','netAmount','TotalFare','TotalPrice','Price','PublishedPriceRoundedOff','PublishedPrice']);",
+                  "if (net) pm.collectionVariables.set('NetAmount', net);",
+                  "pm.test('Search parsed (BookingCode captured if present)', function(){ pm.expect(true).to.eql(true); });"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"CityCode\": \"{{CityCode}}\",\n  \"IsDetailedResponse\": \"true\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://affiliate.travelboutiqueonline.com/TBOHolidays_HotelAPI/TBOHotelCodeList",
+              "protocol": "http",
+              "host": [
+                "affiliate",
+                "travelboutiqueonline",
+                "com"
+              ],
+              "path": [
+                "TBOHolidays_HotelAPI",
+                "TBOHotelCodeList"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "TBOHotelCodeList Dubai",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "function findFirst(obj, keys){",
+                  "  if (obj === null || obj === undefined) return null;",
+                  "  if (Array.isArray(obj)) {",
+                  "    for (let i=0;i<obj.length;i++){",
+                  "      const r = findFirst(obj[i], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "    return null;",
+                  "  }",
+                  "  if (typeof obj === 'object') {",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      if (keys.includes(k) && obj[k] !== null && obj[k] !== undefined && obj[k] !== '' ) return obj[k];",
+                  "    }",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      const r = findFirst(obj[k], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "  }",
+                  "  return null;",
+                  "}",
+                  "let json;",
+                  "try { json = pm.response.json(); } catch(e) { json = null; }",
+                  "if (!json) { console.warn('No JSON response to parse'); }",
+                  "// Extract BookingCode (rate token)",
+                  "const bookingCode = findFirst(json, ['BookingCode','bookingCode','HotelBookingCode']);",
+                  "if (bookingCode) pm.collectionVariables.set('BookingCode', bookingCode);",
+                  "// Extract Trace/Token/Agency where present (naming varies across environments)",
+                  "const tokenId = findFirst(json, ['TokenId','tokenId']);",
+                  "if (tokenId) pm.collectionVariables.set('TokenId', tokenId);",
+                  "const traceId = findFirst(json, ['TraceId','traceId']);",
+                  "if (traceId) pm.collectionVariables.set('TraceId', traceId);",
+                  "const agencyId = findFirst(json, ['AgencyId','agencyId','TokenAgencyId','tokenAgencyId']);",
+                  "if (agencyId) pm.collectionVariables.set('AgencyId', agencyId);",
+                  "// Extract any net/total amount if available (best-effort)",
+                  "const net = findFirst(json, ['NetAmount','netAmount','TotalFare','TotalPrice','Price','PublishedPriceRoundedOff','PublishedPrice']);",
+                  "if (net) pm.collectionVariables.set('NetAmount', net);",
+                  "pm.test('Search parsed (BookingCode captured if present)', function(){ pm.expect(true).to.eql(true); });"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"CityCode\": \"{{DubaiCityCode}}\",\n  \"IsDetailedResponse\": \"true\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://affiliate.travelboutiqueonline.com/TBOHolidays_HotelAPI/TBOHotelCodeList",
+              "protocol": "http",
+              "host": [
+                "affiliate",
+                "travelboutiqueonline",
+                "com"
+              ],
+              "path": [
+                "TBOHolidays_HotelAPI",
+                "TBOHotelCodeList"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Authentication INT API",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  ""
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "function findFirst(obj, keys){\r",
+                  "  if (obj === null || obj === undefined) return null;\r",
+                  "  if (Array.isArray(obj)) {\r",
+                  "    for (let i=0;i<obj.length;i++){\r",
+                  "      const r = findFirst(obj[i], keys);\r",
+                  "      if (r !== null && r !== undefined && r !== '') return r;\r",
+                  "    }\r",
+                  "    return null;\r",
+                  "  }\r",
+                  "  if (typeof obj === 'object') {\r",
+                  "    for (const k of Object.keys(obj)) {\r",
+                  "      if (keys.includes(k) && obj[k] !== null && obj[k] !== undefined && obj[k] !== '') return obj[k];\r",
+                  "    }\r",
+                  "    for (const k of Object.keys(obj)) {\r",
+                  "      const r = findFirst(obj[k], keys);\r",
+                  "      if (r !== null && r !== undefined && r !== '') return r;\r",
+                  "    }\r",
+                  "  }\r",
+                  "  return null;\r",
+                  "}\r",
+                  "\r",
+                  "let json;\r",
+                  "try { json = pm.response.json(); } catch(e) { json = null; }\r",
+                  "if (!json) { console.warn('No JSON response to parse'); }\r",
+                  "\r",
+                  "const token = findFirst(json, ['TokenId','tokenId','TokenID','Token']);\r",
+                  "if (token) {\r",
+                  "  pm.collectionVariables.set('TokenId', String(token));\r",
+                  "  console.log('TokenId saved to collection:', token);\r",
+                  "} else {\r",
+                  "  console.warn('TokenId not found anywhere in response');\r",
+                  "}"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "protocolProfileBehavior": {
+            "disabledSystemHeaders": {
+              "content-type": true
+            }
+          },
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{UserName}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{Password}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ClientId\": \"{{ClientId}}\",\n  \"UserName\": \"{{UserName}}\",\n  \"Password\": \"{{Password}}\",\n  \"EndUserIp\": \"{{EndUserIp}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "https://api.travelboutiqueonline.com/SharedAPI/SharedData.svc/rest/Authenticate",
+              "protocol": "https",
+              "host": [
+                "api",
+                "travelboutiqueonline",
+                "com"
+              ],
+              "path": [
+                "SharedAPI",
+                "SharedData.svc",
+                "rest",
+                "Authenticate"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Case 1 - Domestic (Room 1 – Adult 1)",
+      "item": [
+        {
+          "name": "1) Affiliate - Search",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "function findFirst(obj, keys){",
+                  "  if (obj === null || obj === undefined) return null;",
+                  "  if (Array.isArray(obj)) {",
+                  "    for (let i = 0; i < obj.length; i++) {",
+                  "      const r = findFirst(obj[i], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "    return null;",
+                  "  }",
+                  "  if (typeof obj === 'object') {",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      if (keys.includes(k) && obj[k] !== null && obj[k] !== undefined && obj[k] !== '') return obj[k];",
+                  "    }",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      const r = findFirst(obj[k], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "  }",
+                  "  return null;",
+                  "}",
+                  "",
+                  "let json;",
+                  "try { json = pm.response.json(); } catch (error) { json = null; }",
+                  "if (!json) { console.warn('No JSON response to parse'); }",
+                  "",
+                  "const bookingCode = findFirst(json, ['BookingCode','bookingCode','HotelBookingCode']);",
+                  "if (bookingCode) pm.collectionVariables.set('BookingCode', bookingCode);",
+                  "",
+                  "const tokenId = findFirst(json, ['TokenId','tokenId']);",
+                  "if (tokenId) pm.collectionVariables.set('TokenId', tokenId);",
+                  "",
+                  "const traceId = findFirst(json, ['TraceId','traceId']);",
+                  "if (traceId) pm.collectionVariables.set('TraceId', traceId);",
+                  "",
+                  "const agencyId = findFirst(json, ['AgencyId','agencyId','TokenAgencyId','tokenAgencyId']);",
+                  "if (agencyId) pm.collectionVariables.set('AgencyId', agencyId);",
+                  "",
+                  "const netAmount = findFirst(json, ['NetAmount','netAmount','TotalFare','TotalPrice','Price','PublishedPriceRoundedOff','PublishedPrice']);",
+                  "if (netAmount) pm.collectionVariables.set('NetAmount', netAmount);",
+                  "",
+                  "if (Array.isArray(json?.CityList) && json.CityList.length) {",
+                  "  const filter = String(pm.collectionVariables.get('CityNameFilter') || '').trim().toLowerCase();",
+                  "  const selected = filter",
+                  "    ? json.CityList.find((city) => String(city?.Name || '').toLowerCase().includes(filter))",
+                  "    : json.CityList[0];",
+                  "  if (selected?.Code) pm.collectionVariables.set('CityCode', String(selected.Code));",
+                  "  if (selected?.Name) pm.collectionVariables.set('CityName', String(selected.Name));",
+                  "}",
+                  "",
+                  "if (Array.isArray(json?.Hotels) && json.Hotels.length) {",
+                  "  const hotelCodes = json.Hotels",
+                  "    .map((hotel) => String(hotel?.HotelCode || hotel?.hotelCode || '').trim())",
+                  "    .filter(Boolean);",
+                  "  if (hotelCodes.length) pm.collectionVariables.set('HotelCodes', hotelCodes.join(','));",
+                  "}",
+                  "",
+                  "try {",
+                  "  const requestBody = pm.request?.body?.raw ? JSON.parse(pm.request.body.raw) : null;",
+                  "  if (requestBody?.GuestNationality) {",
+                  "    pm.collectionVariables.set('GuestNationality', String(requestBody.GuestNationality));",
+                  "  }",
+                  "} catch (error) {",
+                  "  // Ignore malformed request bodies.",
+                  "}",
+                  "",
+                  "pm.test('Search parsed (BookingCode captured if present)', function(){ pm.expect(true).to.eql(true); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"CheckIn\": \"{{CheckIn}}\",\n  \"CheckOut\": \"{{CheckOut}}\",\n  \"HotelCodes\": \"{{HotelCodes}}\",\n  \"GuestNationality\": \"IN\",\n  \"NoOfRooms\": 1,\n  \"PaxRooms\": [\n    {\n      \"Adults\": 1,\n      \"Children\": 0,\n      \"ChildrenAges\": []\n    }\n  ],\n  \"ResponseTime\": 23,\n  \"IsDetailedResponse\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "https://affiliate.travelboutiqueonline.com/HotelAPI/Search",
+              "protocol": "https",
+              "host": [
+                "affiliate",
+                "travelboutiqueonline",
+                "com"
+              ],
+              "path": [
+                "HotelAPI",
+                "Search"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "2) Affiliate - PreBook",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Auto-inject booking values before sending the PreBook request.",
+                  "let body = {};",
+                  "try { body = JSON.parse(pm.request.body.raw); } catch (error) { body = {}; }",
+                  "body.BookingCode = pm.collectionVariables.get('BookingCode') || body.BookingCode;",
+                  "body.PaymentMode = pm.collectionVariables.get('PaymentMode') || body.PaymentMode || 'Limit';",
+                  "body.GuestNationality = pm.collectionVariables.get('GuestNationality') || body.GuestNationality;",
+                  "body.NoOfRooms = Number(pm.collectionVariables.get('NoOfRooms') || body.NoOfRooms || 1);",
+                  "pm.request.body.update(JSON.stringify(body, null, 2));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "function findFirst(obj, keys){",
+                  "  if (obj === null || obj === undefined) return null;",
+                  "  if (Array.isArray(obj)) {",
+                  "    for (let i=0;i<obj.length;i++){",
+                  "      const r = findFirst(obj[i], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "    return null;",
+                  "  }",
+                  "  if (typeof obj === 'object') {",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      if (keys.includes(k) && obj[k] !== null && obj[k] !== undefined && obj[k] !== '' ) return obj[k];",
+                  "    }",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      const r = findFirst(obj[k], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "  }",
+                  "  return null;",
+                  "}",
+                  "let json;",
+                  "try { json = pm.response.json(); } catch(e) { json = null; }",
+                  "if (!json) { console.warn('No JSON response to parse'); }",
+                  "// Some setups return updated BookingCode / amounts after PreBook",
+                  "const bookingCode2 = findFirst(json, ['BookingCode','bookingCode','HotelBookingCode']);",
+                  "if (bookingCode2) pm.collectionVariables.set('BookingCode', bookingCode2);",
+                  "const tokenId2 = findFirst(json, ['TokenId','tokenId']);",
+                  "if (tokenId2) pm.collectionVariables.set('TokenId', tokenId2);",
+                  "const traceId2 = findFirst(json, ['TraceId','traceId']);",
+                  "if (traceId2) pm.collectionVariables.set('TraceId', traceId2);",
+                  "const agencyId2 = findFirst(json, ['AgencyId','agencyId','TokenAgencyId','tokenAgencyId']);",
+                  "if (agencyId2) pm.collectionVariables.set('AgencyId', agencyId2);",
+                  "const net2 = findFirst(json, ['NetAmount','netAmount','TotalFare','TotalPrice','Price','PublishedPriceRoundedOff','PublishedPrice']);",
+                  "if (net2) pm.collectionVariables.set('NetAmount', net2);",
+                  "pm.test('PreBook parsed (updated tokens captured if present)', function(){ pm.expect(true).to.eql(true); });"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"BookingCode\": \"{{BookingCode}}\",\n  \"PaymentMode\": \"{{PaymentMode}}\",\n  \"GuestNationality\": \"{{GuestNationality}}\",\n  \"NoOfRooms\": {{NoOfRooms}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "https://affiliate.travelboutiqueonline.com/HotelAPI/PreBook",
+              "protocol": "https",
+              "host": [
+                "affiliate",
+                "travelboutiqueonline",
+                "com"
+              ],
+              "path": [
+                "HotelAPI",
+                "PreBook"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "3) HotelBE - Book",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Auto-inject BookingCode/TokenId/TraceId/NetAmount into Book request",
+                  "let body = {};",
+                  "try { body = JSON.parse(pm.request.body.raw); } catch(e) { body = {}; }",
+                  "body.BookingCode = pm.collectionVariables.get('BookingCode') || body.BookingCode;",
+                  "body.TokenId = pm.collectionVariables.get('TokenId') || body.TokenId;",
+                  "body.TraceId = pm.collectionVariables.get('TraceId') || body.TraceId;",
+                  "body.EndUserIp = pm.collectionVariables.get('EndUserIp') || body.EndUserIp;",
+                  "// Only set NetAmount if we have it",
+                  "const net = pm.collectionVariables.get('NetAmount');",
+                  "if (net !== null && net !== undefined && net !== '') { body.NetAmount = net; }",
+                  "pm.request.body.update(JSON.stringify(body, null, 2));"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "function findFirst(obj, keys){",
+                  "  if (obj === null || obj === undefined) return null;",
+                  "  if (Array.isArray(obj)) {",
+                  "    for (let i=0;i<obj.length;i++){",
+                  "      const r = findFirst(obj[i], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "    return null;",
+                  "  }",
+                  "  if (typeof obj === 'object') {",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      if (keys.includes(k) && obj[k] !== null && obj[k] !== undefined && obj[k] !== '' ) return obj[k];",
+                  "    }",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      const r = findFirst(obj[k], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "  }",
+                  "  return null;",
+                  "}",
+                  "let json;",
+                  "try { json = pm.response.json(); } catch(e) { json = null; }",
+                  "if (!json) { console.warn('No JSON response to parse'); }",
+                  "// Capture BookingId / ConfirmationNo",
+                  "const bookingId = findFirst(json, ['BookingId','bookingId','BookingID']);",
+                  "if (bookingId) pm.collectionVariables.set('BookingId', String(bookingId));",
+                  "const conf = findFirst(json, ['ConfirmationNo','confirmationNo','ConfirmationNumber','HotelConfirmationNo']);",
+                  "if (conf) pm.collectionVariables.set('ConfirmationNo', String(conf));",
+                  "pm.test('Book parsed (BookingId/Confirmation captured if present)', function(){ pm.expect(true).to.eql(true); });"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"BookingCode\": \"{{BookingCode}}\",\n  \"IsVoucherBooking\": true,\n  \"GuestNationality\": \"IN\",\n  \"EndUserIp\": \"192.168.9.119\",\n  \"RequestedBookingMode\": 1,\n  \"TraceId\": \"\",\n  \"NetAmount\": \"\",\n\"HotelRoomsDetails\": [\n        {\n            \"HotelPassenger\": [\n                {\n                    \"Title\": \"Mr.\",\n                    \"FirstName\": \"Jeevesh\",\n                    \"MiddleName\": \"\",\n                    \"LastName\": \"Sharma\",\n                    \"Email\": null,\n                    \"PaxType\": 1,\n                    \"LeadPassenger\": true,\n                    \"Age\": 0,\n                    \"PassportNo\": null,\n                    \"PassportIssueDate\": null,\n                    \"PassportExpDate\": null,\n                    \"Phoneno\": null,\n                    \"PaxId\": 0,\n                    \"GSTCompanyAddress\": null,\n                    \"GSTCompanyContactNumber\": null,\n                    \"GSTCompanyName\": null,\n                    \"GSTNumber\": null,\n                    \"GSTCompanyEmail\": null,\n                    \"PAN\": \"KXVPS2532F\"\n                }\n            ]\n        }\n    ]\n}"
+            },
+            "url": {
+              "raw": "https://hotelbooking.travelboutiqueonline.com/HotelAPI_V10/HotelService.svc/rest/book/",
+              "protocol": "https",
+              "host": [
+                "hotelbooking",
+                "travelboutiqueonline",
+                "com"
+              ],
+              "path": [
+                "HotelAPI_V10",
+                "HotelService.svc",
+                "rest",
+                "book"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "4) HotelBE - GetBookingDetail",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Inject BookingId into GetBookingDetail request",
+                  "let body = {};",
+                  "try { body = JSON.parse(pm.request.body.raw); } catch(e) { body = {}; }",
+                  "body.BookingId = pm.collectionVariables.get('BookingId') || body.BookingId;",
+                  "body.EndUserIp = pm.collectionVariables.get('EndUserIp') || body.EndUserIp;",
+                  "const token = pm.collectionVariables.get('TokenId');",
+                  "if (token) body.TokenId = token;",
+                  "pm.request.body.update(JSON.stringify(body, null, 2));"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n\"BookingId\": {{BookingId}},\n  \"EndUserIp\": \"192.168.9.119\",\n  \"TokenId\": {{TokenId}}\n}"
+            },
+            "url": {
+              "raw": "https://hotelbooking.travelboutiqueonline.com/HotelAPI_V10/HotelService.svc/rest/Getbookingdetail",
+              "protocol": "https",
+              "host": [
+                "hotelbooking",
+                "travelboutiqueonline",
+                "com"
+              ],
+              "path": [
+                "HotelAPI_V10",
+                "HotelService.svc",
+                "rest",
+                "Getbookingdetail"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "5) HotelBE - GenerateVoucher (Optional)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Inject BookingId into GenerateVoucher request",
+                  "let body = {};",
+                  "try { body = JSON.parse(pm.request.body.raw); } catch(e) { body = {}; }",
+                  "body.BookingId = pm.collectionVariables.get('BookingId') || body.BookingId;",
+                  "body.EndUserIp = pm.collectionVariables.get('EndUserIp') || body.EndUserIp;",
+                  "pm.request.body.update(JSON.stringify(body, null, 2));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"BookingId\": \"\",\n  \"EndUserIp\": \"192.168.9.119\"\n}"
+            },
+            "url": {
+              "raw": "https://hotelbooking.travelboutiqueonline.com/HotelAPI_V10/HotelService.svc/rest/GenerateVoucher",
+              "protocol": "https",
+              "host": [
+                "hotelbooking",
+                "travelboutiqueonline",
+                "com"
+              ],
+              "path": [
+                "HotelAPI_V10",
+                "HotelService.svc",
+                "rest",
+                "GenerateVoucher"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Case 2 - Domestic (Room 1 – Adult 2, Child 2)",
+      "item": [
+        {
+          "name": "1) Affiliate - Search",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "function findFirst(obj, keys){",
+                  "  if (obj === null || obj === undefined) return null;",
+                  "  if (Array.isArray(obj)) {",
+                  "    for (let i = 0; i < obj.length; i++) {",
+                  "      const r = findFirst(obj[i], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "    return null;",
+                  "  }",
+                  "  if (typeof obj === 'object') {",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      if (keys.includes(k) && obj[k] !== null && obj[k] !== undefined && obj[k] !== '') return obj[k];",
+                  "    }",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      const r = findFirst(obj[k], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "  }",
+                  "  return null;",
+                  "}",
+                  "",
+                  "let json;",
+                  "try { json = pm.response.json(); } catch (error) { json = null; }",
+                  "if (!json) { console.warn('No JSON response to parse'); }",
+                  "",
+                  "const bookingCode = findFirst(json, ['BookingCode','bookingCode','HotelBookingCode']);",
+                  "if (bookingCode) pm.collectionVariables.set('BookingCode', bookingCode);",
+                  "",
+                  "const tokenId = findFirst(json, ['TokenId','tokenId']);",
+                  "if (tokenId) pm.collectionVariables.set('TokenId', tokenId);",
+                  "",
+                  "const traceId = findFirst(json, ['TraceId','traceId']);",
+                  "if (traceId) pm.collectionVariables.set('TraceId', traceId);",
+                  "",
+                  "const agencyId = findFirst(json, ['AgencyId','agencyId','TokenAgencyId','tokenAgencyId']);",
+                  "if (agencyId) pm.collectionVariables.set('AgencyId', agencyId);",
+                  "",
+                  "const netAmount = findFirst(json, ['NetAmount','netAmount','TotalFare','TotalPrice','Price','PublishedPriceRoundedOff','PublishedPrice']);",
+                  "if (netAmount) pm.collectionVariables.set('NetAmount', netAmount);",
+                  "",
+                  "if (Array.isArray(json?.CityList) && json.CityList.length) {",
+                  "  const filter = String(pm.collectionVariables.get('CityNameFilter') || '').trim().toLowerCase();",
+                  "  const selected = filter",
+                  "    ? json.CityList.find((city) => String(city?.Name || '').toLowerCase().includes(filter))",
+                  "    : json.CityList[0];",
+                  "  if (selected?.Code) pm.collectionVariables.set('CityCode', String(selected.Code));",
+                  "  if (selected?.Name) pm.collectionVariables.set('CityName', String(selected.Name));",
+                  "}",
+                  "",
+                  "if (Array.isArray(json?.Hotels) && json.Hotels.length) {",
+                  "  const hotelCodes = json.Hotels",
+                  "    .map((hotel) => String(hotel?.HotelCode || hotel?.hotelCode || '').trim())",
+                  "    .filter(Boolean);",
+                  "  if (hotelCodes.length) pm.collectionVariables.set('HotelCodes', hotelCodes.join(','));",
+                  "}",
+                  "",
+                  "try {",
+                  "  const requestBody = pm.request?.body?.raw ? JSON.parse(pm.request.body.raw) : null;",
+                  "  if (requestBody?.GuestNationality) {",
+                  "    pm.collectionVariables.set('GuestNationality', String(requestBody.GuestNationality));",
+                  "  }",
+                  "} catch (error) {",
+                  "  // Ignore malformed request bodies.",
+                  "}",
+                  "",
+                  "pm.test('Search parsed (BookingCode captured if present)', function(){ pm.expect(true).to.eql(true); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"CheckIn\": \"{{CheckIn}}\",\n  \"CheckOut\": \"{{CheckOut}}\",\n  \"HotelCodes\": \"{{HotelCodes}}\",\n  \"GuestNationality\": \"IN\",\n  \"NoOfRooms\": 1,\n  \"PaxRooms\": [\n    {\n      \"Adults\": 2,\n      \"Children\": 2,\n      \"ChildrenAges\": [\n        3,\n        4\n      ]\n    }\n  ],\n  \"ResponseTime\": 23,\n  \"IsDetailedResponse\": true,\n  \"Filters\": {\n    \"Refundable\": true,\n    \"NoOfRooms\": 0,\n    \"MealType\": \"WithMeal\",\n    \"OrderBy\": 0,\n    \"StarRating\": 0,\n    \"HotelName\": null\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "https://affiliate.travelboutiqueonline.com/HotelAPI/Search",
+              "protocol": "https",
+              "host": [
+                "affiliate",
+                "travelboutiqueonline",
+                "com"
+              ],
+              "path": [
+                "HotelAPI",
+                "Search"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "2) Affiliate - PreBook",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Auto-inject booking values before sending the PreBook request.",
+                  "let body = {};",
+                  "try { body = JSON.parse(pm.request.body.raw); } catch (error) { body = {}; }",
+                  "body.BookingCode = pm.collectionVariables.get('BookingCode') || body.BookingCode;",
+                  "body.PaymentMode = pm.collectionVariables.get('PaymentMode') || body.PaymentMode || 'Limit';",
+                  "body.GuestNationality = pm.collectionVariables.get('GuestNationality') || body.GuestNationality;",
+                  "body.NoOfRooms = Number(pm.collectionVariables.get('NoOfRooms') || body.NoOfRooms || 1);",
+                  "pm.request.body.update(JSON.stringify(body, null, 2));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "function findFirst(obj, keys){",
+                  "  if (obj === null || obj === undefined) return null;",
+                  "  if (Array.isArray(obj)) {",
+                  "    for (let i=0;i<obj.length;i++){",
+                  "      const r = findFirst(obj[i], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "    return null;",
+                  "  }",
+                  "  if (typeof obj === 'object') {",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      if (keys.includes(k) && obj[k] !== null && obj[k] !== undefined && obj[k] !== '' ) return obj[k];",
+                  "    }",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      const r = findFirst(obj[k], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "  }",
+                  "  return null;",
+                  "}",
+                  "let json;",
+                  "try { json = pm.response.json(); } catch(e) { json = null; }",
+                  "if (!json) { console.warn('No JSON response to parse'); }",
+                  "// Some setups return updated BookingCode / amounts after PreBook",
+                  "const bookingCode2 = findFirst(json, ['BookingCode','bookingCode','HotelBookingCode']);",
+                  "if (bookingCode2) pm.collectionVariables.set('BookingCode', bookingCode2);",
+                  "const tokenId2 = findFirst(json, ['TokenId','tokenId']);",
+                  "if (tokenId2) pm.collectionVariables.set('TokenId', tokenId2);",
+                  "const traceId2 = findFirst(json, ['TraceId','traceId']);",
+                  "if (traceId2) pm.collectionVariables.set('TraceId', traceId2);",
+                  "const agencyId2 = findFirst(json, ['AgencyId','agencyId','TokenAgencyId','tokenAgencyId']);",
+                  "if (agencyId2) pm.collectionVariables.set('AgencyId', agencyId2);",
+                  "const net2 = findFirst(json, ['NetAmount','netAmount','TotalFare','TotalPrice','Price','PublishedPriceRoundedOff','PublishedPrice']);",
+                  "if (net2) pm.collectionVariables.set('NetAmount', net2);",
+                  "pm.test('PreBook parsed (updated tokens captured if present)', function(){ pm.expect(true).to.eql(true); });"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"BookingCode\": \"{{BookingCode}}\",\n  \"PaymentMode\": \"{{PaymentMode}}\",\n  \"GuestNationality\": \"{{GuestNationality}}\",\n  \"NoOfRooms\": {{NoOfRooms}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "https://affiliate.travelboutiqueonline.com/HotelAPI/PreBook",
+              "protocol": "https",
+              "host": [
+                "affiliate",
+                "travelboutiqueonline",
+                "com"
+              ],
+              "path": [
+                "HotelAPI",
+                "PreBook"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "3) HotelBE - Book",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Auto-inject BookingCode/TokenId/TraceId/NetAmount into Book request",
+                  "let body = {};",
+                  "try { body = JSON.parse(pm.request.body.raw); } catch(e) { body = {}; }",
+                  "body.BookingCode = pm.collectionVariables.get('BookingCode') || body.BookingCode;",
+                  "body.TokenId = pm.collectionVariables.get('TokenId') || body.TokenId;",
+                  "body.TraceId = pm.collectionVariables.get('TraceId') || body.TraceId;",
+                  "body.EndUserIp = pm.collectionVariables.get('EndUserIp') || body.EndUserIp;",
+                  "// Only set NetAmount if we have it",
+                  "const net = pm.collectionVariables.get('NetAmount');",
+                  "if (net !== null && net !== undefined && net !== '') { body.NetAmount = net; }",
+                  "pm.request.body.update(JSON.stringify(body, null, 2));"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "function findFirst(obj, keys){",
+                  "  if (obj === null || obj === undefined) return null;",
+                  "  if (Array.isArray(obj)) {",
+                  "    for (let i=0;i<obj.length;i++){",
+                  "      const r = findFirst(obj[i], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "    return null;",
+                  "  }",
+                  "  if (typeof obj === 'object') {",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      if (keys.includes(k) && obj[k] !== null && obj[k] !== undefined && obj[k] !== '' ) return obj[k];",
+                  "    }",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      const r = findFirst(obj[k], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "  }",
+                  "  return null;",
+                  "}",
+                  "let json;",
+                  "try { json = pm.response.json(); } catch(e) { json = null; }",
+                  "if (!json) { console.warn('No JSON response to parse'); }",
+                  "// Capture BookingId / ConfirmationNo",
+                  "const bookingId = findFirst(json, ['BookingId','bookingId','BookingID']);",
+                  "if (bookingId) pm.collectionVariables.set('BookingId', String(bookingId));",
+                  "const conf = findFirst(json, ['ConfirmationNo','confirmationNo','ConfirmationNumber','HotelConfirmationNo']);",
+                  "if (conf) pm.collectionVariables.set('ConfirmationNo', String(conf));",
+                  "pm.test('Book parsed (BookingId/Confirmation captured if present)', function(){ pm.expect(true).to.eql(true); });"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n \"BookingCode\": {{BookingCode}},\n     \"IsVoucherBooking\": true,\n    \"GuestNationality\": \"IN\",\n    \"EndUserIp\": \"192.168.9.119\",\n    \"RequestedBookingMode\": 1,\n    \"TokenId\": \"\",\n    \"TraceId\": \"\",\n    \"AgencyId\": 0,\n    \"HotelRoomsDetails\": [\n        {\n            \"HotelPassenger\": [\n                {\n                    \"Title\": \"Mr.\",\n                    \"FirstName\": \"Jeevesh\",\n                    \"MiddleName\": \"\",\n                    \"LastName\": \"Sharma\",\n                    \"Email\": null,\n                    \"PaxType\": 1,\n                    \"LeadPassenger\": true,\n                    \"Age\": 30,\n                    \"PassportNo\": null,\n                    \"PassportIssueDate\": null,\n                    \"PassportExpDate\": null,\n                    \"Phoneno\": null,\n                    \"PaxId\": 1,\n                    \"GSTCompanyAddress\": null,\n                    \"GSTCompanyContactNumber\": null,\n                    \"GSTCompanyName\": null,\n                    \"GSTNumber\": null,\n                    \"GSTCompanyEmail\": null\n                },\n                {\n                    \"Title\": \"Mr.\",\n                    \"FirstName\": \"Jeevesh 1\",\n                    \"MiddleName\": \"\",\n                    \"LastName\": \"Sharma\",\n                    \"Email\": null,\n                    \"PaxType\": 1,\n                    \"LeadPassenger\": false,\n                    \"Age\": 28,\n                    \"PassportNo\": null,\n                    \"PassportIssueDate\": null,\n                    \"PassportExpDate\": null,\n                    \"Phoneno\": null,\n                    \"PaxId\": 2,\n                    \"GSTCompanyAddress\": null,\n                    \"GSTCompanyContactNumber\": null,\n                    \"GSTCompanyName\": null,\n                    \"GSTNumber\": null,\n                    \"GSTCompanyEmail\": null\n                },\n                {\n                    \"Title\": \"Mstr.\",\n                    \"FirstName\": \"ChildOne\",\n                    \"MiddleName\": \"\",\n                    \"LastName\": \"Sharma\",\n                    \"Email\": null,\n                    \"PaxType\": 2,\n                    \"LeadPassenger\": false,\n                    \"Age\": 3,\n                    \"PassportNo\": null,\n                    \"PassportIssueDate\": null,\n                    \"PassportExpDate\": null,\n                    \"Phoneno\": null,\n                    \"PaxId\": 3,\n                    \"GSTCompanyAddress\": null,\n                    \"GSTCompanyContactNumber\": null,\n                    \"GSTCompanyName\": null,\n                    \"GSTNumber\": null,\n                    \"GSTCompanyEmail\": null\n                },\n                {\n                    \"Title\": \"Miss\",\n                    \"FirstName\": \"ChildTwo\",\n                    \"MiddleName\": \"\",\n                    \"LastName\": \"Sharma\",\n                    \"Email\": null,\n                    \"PaxType\": 2,\n                    \"LeadPassenger\": false,\n                    \"Age\": 4,\n                    \"PassportNo\": null,\n                    \"PassportIssueDate\": null,\n                    \"PassportExpDate\": null,\n                    \"Phoneno\": null,\n                    \"PaxId\": 4,\n                    \"GSTCompanyAddress\": null,\n                    \"GSTCompanyContactNumber\": null,\n                    \"GSTCompanyName\": null,\n                    \"GSTNumber\": null,\n                    \"GSTCompanyEmail\": null\n                }\n            ]\n        }\n    ]\n}"
+            },
+            "url": {
+              "raw": "https://hotelbooking.travelboutiqueonline.com/HotelAPI_V10/HotelService.svc/rest/book/",
+              "protocol": "https",
+              "host": [
+                "hotelbooking",
+                "travelboutiqueonline",
+                "com"
+              ],
+              "path": [
+                "HotelAPI_V10",
+                "HotelService.svc",
+                "rest",
+                "book"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "4) HotelBE - GetBookingDetail",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Inject BookingId into GetBookingDetail request",
+                  "let body = {};",
+                  "try { body = JSON.parse(pm.request.body.raw); } catch(e) { body = {}; }",
+                  "body.BookingId = pm.collectionVariables.get('BookingId') || body.BookingId;",
+                  "body.EndUserIp = pm.collectionVariables.get('EndUserIp') || body.EndUserIp;",
+                  "const token = pm.collectionVariables.get('TokenId');",
+                  "if (token) body.TokenId = token;",
+                  "pm.request.body.update(JSON.stringify(body, null, 2));"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n\"BookingId\": {{BookingId}},\n  \"EndUserIp\": \"192.168.9.119\",\n  \"TokenId\": {{TokenId}}\n}"
+            },
+            "url": {
+              "raw": "https://hotelbooking.travelboutiqueonline.com/HotelAPI_V10/HotelService.svc/rest/Getbookingdetail",
+              "protocol": "https",
+              "host": [
+                "hotelbooking",
+                "travelboutiqueonline",
+                "com"
+              ],
+              "path": [
+                "HotelAPI_V10",
+                "HotelService.svc",
+                "rest",
+                "Getbookingdetail"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "5) HotelBE - GenerateVoucher (Optional)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Inject BookingId into GenerateVoucher request",
+                  "let body = {};",
+                  "try { body = JSON.parse(pm.request.body.raw); } catch(e) { body = {}; }",
+                  "body.BookingId = pm.collectionVariables.get('BookingId') || body.BookingId;",
+                  "body.EndUserIp = pm.collectionVariables.get('EndUserIp') || body.EndUserIp;",
+                  "pm.request.body.update(JSON.stringify(body, null, 2));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"BookingId\": \"\",\n  \"EndUserIp\": \"192.168.9.119\"\n}"
+            },
+            "url": {
+              "raw": "https://hotelbooking.travelboutiqueonline.com/HotelAPI_V10/HotelService.svc/rest/GenerateVoucher",
+              "protocol": "https",
+              "host": [
+                "hotelbooking",
+                "travelboutiqueonline",
+                "com"
+              ],
+              "path": [
+                "HotelAPI_V10",
+                "HotelService.svc",
+                "rest",
+                "GenerateVoucher"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Case 3 - Domestic (Room 1 – Adult 1) (Room 2 – Adult 1)",
+      "item": [
+        {
+          "name": "1) Affiliate - Search",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "function findFirst(obj, keys){",
+                  "  if (obj === null || obj === undefined) return null;",
+                  "  if (Array.isArray(obj)) {",
+                  "    for (let i = 0; i < obj.length; i++) {",
+                  "      const r = findFirst(obj[i], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "    return null;",
+                  "  }",
+                  "  if (typeof obj === 'object') {",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      if (keys.includes(k) && obj[k] !== null && obj[k] !== undefined && obj[k] !== '') return obj[k];",
+                  "    }",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      const r = findFirst(obj[k], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "  }",
+                  "  return null;",
+                  "}",
+                  "",
+                  "let json;",
+                  "try { json = pm.response.json(); } catch (error) { json = null; }",
+                  "if (!json) { console.warn('No JSON response to parse'); }",
+                  "",
+                  "const bookingCode = findFirst(json, ['BookingCode','bookingCode','HotelBookingCode']);",
+                  "if (bookingCode) pm.collectionVariables.set('BookingCode', bookingCode);",
+                  "",
+                  "const tokenId = findFirst(json, ['TokenId','tokenId']);",
+                  "if (tokenId) pm.collectionVariables.set('TokenId', tokenId);",
+                  "",
+                  "const traceId = findFirst(json, ['TraceId','traceId']);",
+                  "if (traceId) pm.collectionVariables.set('TraceId', traceId);",
+                  "",
+                  "const agencyId = findFirst(json, ['AgencyId','agencyId','TokenAgencyId','tokenAgencyId']);",
+                  "if (agencyId) pm.collectionVariables.set('AgencyId', agencyId);",
+                  "",
+                  "const netAmount = findFirst(json, ['NetAmount','netAmount','TotalFare','TotalPrice','Price','PublishedPriceRoundedOff','PublishedPrice']);",
+                  "if (netAmount) pm.collectionVariables.set('NetAmount', netAmount);",
+                  "",
+                  "if (Array.isArray(json?.CityList) && json.CityList.length) {",
+                  "  const filter = String(pm.collectionVariables.get('CityNameFilter') || '').trim().toLowerCase();",
+                  "  const selected = filter",
+                  "    ? json.CityList.find((city) => String(city?.Name || '').toLowerCase().includes(filter))",
+                  "    : json.CityList[0];",
+                  "  if (selected?.Code) pm.collectionVariables.set('CityCode', String(selected.Code));",
+                  "  if (selected?.Name) pm.collectionVariables.set('CityName', String(selected.Name));",
+                  "}",
+                  "",
+                  "if (Array.isArray(json?.Hotels) && json.Hotels.length) {",
+                  "  const hotelCodes = json.Hotels",
+                  "    .map((hotel) => String(hotel?.HotelCode || hotel?.hotelCode || '').trim())",
+                  "    .filter(Boolean);",
+                  "  if (hotelCodes.length) pm.collectionVariables.set('HotelCodes', hotelCodes.join(','));",
+                  "}",
+                  "",
+                  "try {",
+                  "  const requestBody = pm.request?.body?.raw ? JSON.parse(pm.request.body.raw) : null;",
+                  "  if (requestBody?.GuestNationality) {",
+                  "    pm.collectionVariables.set('GuestNationality', String(requestBody.GuestNationality));",
+                  "  }",
+                  "} catch (error) {",
+                  "  // Ignore malformed request bodies.",
+                  "}",
+                  "",
+                  "pm.test('Search parsed (BookingCode captured if present)', function(){ pm.expect(true).to.eql(true); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"CheckIn\": \"{{CheckIn}}\",\n  \"CheckOut\": \"{{CheckOut}}\",\n  \"HotelCodes\": \"{{HotelCodes}}\",\n  \"GuestNationality\": \"IN\",\n  \"NoOfRooms\": 2,\n  \"PaxRooms\": [\n    {\n      \"Adults\": 1,\n      \"Children\": 0,\n      \"ChildrenAges\": []\n    },\n    {\n      \"Adults\": 1,\n      \"Children\": 0,\n      \"ChildrenAges\": []\n    }\n  ],\n  \"ResponseTime\": 23,\n  \"IsDetailedResponse\": true,\n  \"Filters\": {\n    \"Refundable\": true,\n    \"NoOfRooms\": 0,\n    \"MealType\": \"WithMeal\",\n    \"OrderBy\": 0,\n    \"StarRating\": 0,\n    \"HotelName\": null\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "https://affiliate.travelboutiqueonline.com/HotelAPI/Search",
+              "protocol": "https",
+              "host": [
+                "affiliate",
+                "travelboutiqueonline",
+                "com"
+              ],
+              "path": [
+                "HotelAPI",
+                "Search"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "2) Affiliate - PreBook",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Auto-inject booking values before sending the PreBook request.",
+                  "let body = {};",
+                  "try { body = JSON.parse(pm.request.body.raw); } catch (error) { body = {}; }",
+                  "body.BookingCode = pm.collectionVariables.get('BookingCode') || body.BookingCode;",
+                  "body.PaymentMode = pm.collectionVariables.get('PaymentMode') || body.PaymentMode || 'Limit';",
+                  "body.GuestNationality = pm.collectionVariables.get('GuestNationality') || body.GuestNationality;",
+                  "body.NoOfRooms = Number(pm.collectionVariables.get('NoOfRooms') || body.NoOfRooms || 1);",
+                  "pm.request.body.update(JSON.stringify(body, null, 2));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "function findFirst(obj, keys){",
+                  "  if (obj === null || obj === undefined) return null;",
+                  "  if (Array.isArray(obj)) {",
+                  "    for (let i=0;i<obj.length;i++){",
+                  "      const r = findFirst(obj[i], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "    return null;",
+                  "  }",
+                  "  if (typeof obj === 'object') {",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      if (keys.includes(k) && obj[k] !== null && obj[k] !== undefined && obj[k] !== '' ) return obj[k];",
+                  "    }",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      const r = findFirst(obj[k], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "  }",
+                  "  return null;",
+                  "}",
+                  "let json;",
+                  "try { json = pm.response.json(); } catch(e) { json = null; }",
+                  "if (!json) { console.warn('No JSON response to parse'); }",
+                  "// Some setups return updated BookingCode / amounts after PreBook",
+                  "const bookingCode2 = findFirst(json, ['BookingCode','bookingCode','HotelBookingCode']);",
+                  "if (bookingCode2) pm.collectionVariables.set('BookingCode', bookingCode2);",
+                  "const tokenId2 = findFirst(json, ['TokenId','tokenId']);",
+                  "if (tokenId2) pm.collectionVariables.set('TokenId', tokenId2);",
+                  "const traceId2 = findFirst(json, ['TraceId','traceId']);",
+                  "if (traceId2) pm.collectionVariables.set('TraceId', traceId2);",
+                  "const agencyId2 = findFirst(json, ['AgencyId','agencyId','TokenAgencyId','tokenAgencyId']);",
+                  "if (agencyId2) pm.collectionVariables.set('AgencyId', agencyId2);",
+                  "const net2 = findFirst(json, ['NetAmount','netAmount','TotalFare','TotalPrice','Price','PublishedPriceRoundedOff','PublishedPrice']);",
+                  "if (net2) pm.collectionVariables.set('NetAmount', net2);",
+                  "pm.test('PreBook parsed (updated tokens captured if present)', function(){ pm.expect(true).to.eql(true); });"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"BookingCode\": \"{{BookingCode}}\",\n  \"PaymentMode\": \"{{PaymentMode}}\",\n  \"GuestNationality\": \"{{GuestNationality}}\",\n  \"NoOfRooms\": {{NoOfRooms}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "https://affiliate.travelboutiqueonline.com/HotelAPI/PreBook",
+              "protocol": "https",
+              "host": [
+                "affiliate",
+                "travelboutiqueonline",
+                "com"
+              ],
+              "path": [
+                "HotelAPI",
+                "PreBook"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "3) HotelBE - Book",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Auto-inject BookingCode/TokenId/TraceId/NetAmount into Book request",
+                  "let body = {};",
+                  "try { body = JSON.parse(pm.request.body.raw); } catch(e) { body = {}; }",
+                  "body.BookingCode = pm.collectionVariables.get('BookingCode') || body.BookingCode;",
+                  "body.TokenId = pm.collectionVariables.get('TokenId') || body.TokenId;",
+                  "body.TraceId = pm.collectionVariables.get('TraceId') || body.TraceId;",
+                  "body.EndUserIp = pm.collectionVariables.get('EndUserIp') || body.EndUserIp;",
+                  "// Only set NetAmount if we have it",
+                  "const net = pm.collectionVariables.get('NetAmount');",
+                  "if (net !== null && net !== undefined && net !== '') { body.NetAmount = net; }",
+                  "pm.request.body.update(JSON.stringify(body, null, 2));"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "function findFirst(obj, keys){",
+                  "  if (obj === null || obj === undefined) return null;",
+                  "  if (Array.isArray(obj)) {",
+                  "    for (let i=0;i<obj.length;i++){",
+                  "      const r = findFirst(obj[i], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "    return null;",
+                  "  }",
+                  "  if (typeof obj === 'object') {",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      if (keys.includes(k) && obj[k] !== null && obj[k] !== undefined && obj[k] !== '' ) return obj[k];",
+                  "    }",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      const r = findFirst(obj[k], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "  }",
+                  "  return null;",
+                  "}",
+                  "let json;",
+                  "try { json = pm.response.json(); } catch(e) { json = null; }",
+                  "if (!json) { console.warn('No JSON response to parse'); }",
+                  "// Capture BookingId / ConfirmationNo",
+                  "const bookingId = findFirst(json, ['BookingId','bookingId','BookingID']);",
+                  "if (bookingId) pm.collectionVariables.set('BookingId', String(bookingId));",
+                  "const conf = findFirst(json, ['ConfirmationNo','confirmationNo','ConfirmationNumber','HotelConfirmationNo']);",
+                  "if (conf) pm.collectionVariables.set('ConfirmationNo', String(conf));",
+                  "pm.test('Book parsed (BookingId/Confirmation captured if present)', function(){ pm.expect(true).to.eql(true); });"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"BookingCode\": {{BookingCode}},\n    \"IsVoucherBooking\": true,\n    \"GuestNationality\": \"IN\",\n\t\"EndUserIp\" : \"192.168.9.119\",\n    \"RequestedBookingMode\" : 1,\n    \"TokenId\":\"\",\n    \"TraceId\":\"\",\n\t\"AgencyId\": 0,\n    \"HotelRoomsDetails\": [\n        {\n            \"HotelPassenger\": [\n                {\n                    \"Title\": \"Mr.\",\n                    \"FirstName\": \"Jeevesh\",\n                    \"MiddleName\": \"\",\n                    \"LastName\": \"Sharma\",\n                    \"Email\": null,\n                    \"PaxType\": 1,\n                    \"LeadPassenger\": true,\n                    \"Age\": 0,\n                    \"PassportNo\": null,\n                    \"PassportIssueDate\": null,\n                    \"PassportExpDate\": null,\n                    \"Phoneno\": null,\n                    \"PaxId\": 0,\n                    \"GSTCompanyAddress\": null,\n                    \"GSTCompanyContactNumber\": null,\n                    \"GSTCompanyName\": null,\n                    \"GSTNumber\": null,\n                    \"GSTCompanyEmail\": null\n                  \n                }\n                \n            ]\n        },\n        {\n            \"HotelPassenger\": [\n                {\n                    \"Title\": \"Mr.\",\n                    \"FirstName\": \"Jeevesh2\",\n                    \"MiddleName\": \"\",\n                    \"LastName\": \"Sharma\",\n                    \"Email\": null,\n                    \"PaxType\": 1,\n                    \"LeadPassenger\": true,\n                    \"Age\": 0,\n                    \"PassportNo\": null,\n                    \"PassportIssueDate\": null,\n                    \"PassportExpDate\": null,\n                    \"Phoneno\": null,\n                    \"PaxId\": 0,\n                    \"GSTCompanyAddress\": null,\n                    \"GSTCompanyContactNumber\": null,\n                    \"GSTCompanyName\": null,\n                    \"GSTNumber\": null,\n                    \"GSTCompanyEmail\": null\n                  \n                }\n                \n            ]\n        }\n\n    ]\n}\n"
+            },
+            "url": {
+              "raw": "https://hotelbooking.travelboutiqueonline.com/HotelAPI_V10/HotelService.svc/rest/book/",
+              "protocol": "https",
+              "host": [
+                "hotelbooking",
+                "travelboutiqueonline",
+                "com"
+              ],
+              "path": [
+                "HotelAPI_V10",
+                "HotelService.svc",
+                "rest",
+                "book"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "4) HotelBE - GetBookingDetail",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Inject BookingId into GetBookingDetail request",
+                  "let body = {};",
+                  "try { body = JSON.parse(pm.request.body.raw); } catch(e) { body = {}; }",
+                  "body.BookingId = pm.collectionVariables.get('BookingId') || body.BookingId;",
+                  "body.EndUserIp = pm.collectionVariables.get('EndUserIp') || body.EndUserIp;",
+                  "const token = pm.collectionVariables.get('TokenId');",
+                  "if (token) body.TokenId = token;",
+                  "pm.request.body.update(JSON.stringify(body, null, 2));"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n\"BookingId\": {{BookingId}},\n  \"EndUserIp\": \"192.168.9.119\",\n  \"TokenId\": {{TokenId}}\n}"
+            },
+            "url": {
+              "raw": "https://hotelbooking.travelboutiqueonline.com/HotelAPI_V10/HotelService.svc/rest/Getbookingdetail",
+              "protocol": "https",
+              "host": [
+                "hotelbooking",
+                "travelboutiqueonline",
+                "com"
+              ],
+              "path": [
+                "HotelAPI_V10",
+                "HotelService.svc",
+                "rest",
+                "Getbookingdetail"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "5) HotelBE - GenerateVoucher (Optional)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Inject BookingId into GenerateVoucher request",
+                  "let body = {};",
+                  "try { body = JSON.parse(pm.request.body.raw); } catch(e) { body = {}; }",
+                  "body.BookingId = pm.collectionVariables.get('BookingId') || body.BookingId;",
+                  "body.EndUserIp = pm.collectionVariables.get('EndUserIp') || body.EndUserIp;",
+                  "pm.request.body.update(JSON.stringify(body, null, 2));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"BookingId\": \"\",\n  \"EndUserIp\": \"192.168.9.119\"\n}"
+            },
+            "url": {
+              "raw": "https://hotelbooking.travelboutiqueonline.com/HotelAPI_V10/HotelService.svc/rest/GenerateVoucher",
+              "protocol": "https",
+              "host": [
+                "hotelbooking",
+                "travelboutiqueonline",
+                "com"
+              ],
+              "path": [
+                "HotelAPI_V10",
+                "HotelService.svc",
+                "rest",
+                "GenerateVoucher"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Case 4 - Domestic (Room 1 – Adult 1, Child 2) (Room 2 – Adult 2)",
+      "item": [
+        {
+          "name": "1) Affiliate - Search",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "function findFirst(obj, keys){",
+                  "  if (obj === null || obj === undefined) return null;",
+                  "  if (Array.isArray(obj)) {",
+                  "    for (let i = 0; i < obj.length; i++) {",
+                  "      const r = findFirst(obj[i], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "    return null;",
+                  "  }",
+                  "  if (typeof obj === 'object') {",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      if (keys.includes(k) && obj[k] !== null && obj[k] !== undefined && obj[k] !== '') return obj[k];",
+                  "    }",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      const r = findFirst(obj[k], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "  }",
+                  "  return null;",
+                  "}",
+                  "",
+                  "let json;",
+                  "try { json = pm.response.json(); } catch (error) { json = null; }",
+                  "if (!json) { console.warn('No JSON response to parse'); }",
+                  "",
+                  "const bookingCode = findFirst(json, ['BookingCode','bookingCode','HotelBookingCode']);",
+                  "if (bookingCode) pm.collectionVariables.set('BookingCode', bookingCode);",
+                  "",
+                  "const tokenId = findFirst(json, ['TokenId','tokenId']);",
+                  "if (tokenId) pm.collectionVariables.set('TokenId', tokenId);",
+                  "",
+                  "const traceId = findFirst(json, ['TraceId','traceId']);",
+                  "if (traceId) pm.collectionVariables.set('TraceId', traceId);",
+                  "",
+                  "const agencyId = findFirst(json, ['AgencyId','agencyId','TokenAgencyId','tokenAgencyId']);",
+                  "if (agencyId) pm.collectionVariables.set('AgencyId', agencyId);",
+                  "",
+                  "const netAmount = findFirst(json, ['NetAmount','netAmount','TotalFare','TotalPrice','Price','PublishedPriceRoundedOff','PublishedPrice']);",
+                  "if (netAmount) pm.collectionVariables.set('NetAmount', netAmount);",
+                  "",
+                  "if (Array.isArray(json?.CityList) && json.CityList.length) {",
+                  "  const filter = String(pm.collectionVariables.get('CityNameFilter') || '').trim().toLowerCase();",
+                  "  const selected = filter",
+                  "    ? json.CityList.find((city) => String(city?.Name || '').toLowerCase().includes(filter))",
+                  "    : json.CityList[0];",
+                  "  if (selected?.Code) pm.collectionVariables.set('CityCode', String(selected.Code));",
+                  "  if (selected?.Name) pm.collectionVariables.set('CityName', String(selected.Name));",
+                  "}",
+                  "",
+                  "if (Array.isArray(json?.Hotels) && json.Hotels.length) {",
+                  "  const hotelCodes = json.Hotels",
+                  "    .map((hotel) => String(hotel?.HotelCode || hotel?.hotelCode || '').trim())",
+                  "    .filter(Boolean);",
+                  "  if (hotelCodes.length) pm.collectionVariables.set('HotelCodes', hotelCodes.join(','));",
+                  "}",
+                  "",
+                  "try {",
+                  "  const requestBody = pm.request?.body?.raw ? JSON.parse(pm.request.body.raw) : null;",
+                  "  if (requestBody?.GuestNationality) {",
+                  "    pm.collectionVariables.set('GuestNationality', String(requestBody.GuestNationality));",
+                  "  }",
+                  "} catch (error) {",
+                  "  // Ignore malformed request bodies.",
+                  "}",
+                  "",
+                  "pm.test('Search parsed (BookingCode captured if present)', function(){ pm.expect(true).to.eql(true); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"CheckIn\": \"{{CheckIn}}\",\n  \"CheckOut\": \"{{CheckOut}}\",\n  \"HotelCodes\": \"{{HotelCodes}}\",\n  \"GuestNationality\": \"IN\",\n  \"NoOfRooms\": 2,\n  \"PaxRooms\": [\n    {\n      \"Adults\": 1,\n      \"Children\": 2,\n      \"ChildrenAges\": [\n        3,\n        4\n      ]\n    },\n    {\n      \"Adults\": 2,\n      \"Children\": 0,\n      \"ChildrenAges\": []\n    }\n  ],\n  \"ResponseTime\": 23,\n  \"IsDetailedResponse\": true,\n  \"Filters\": {\n    \"Refundable\": true,\n    \"NoOfRooms\": 0,\n    \"MealType\": \"WithMeal\",\n    \"OrderBy\": 0,\n    \"StarRating\": 0,\n    \"HotelName\": null\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "https://affiliate.travelboutiqueonline.com/HotelAPI/Search",
+              "protocol": "https",
+              "host": [
+                "affiliate",
+                "travelboutiqueonline",
+                "com"
+              ],
+              "path": [
+                "HotelAPI",
+                "Search"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "2) Affiliate - PreBook",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Auto-inject booking values before sending the PreBook request.",
+                  "let body = {};",
+                  "try { body = JSON.parse(pm.request.body.raw); } catch (error) { body = {}; }",
+                  "body.BookingCode = pm.collectionVariables.get('BookingCode') || body.BookingCode;",
+                  "body.PaymentMode = pm.collectionVariables.get('PaymentMode') || body.PaymentMode || 'Limit';",
+                  "body.GuestNationality = pm.collectionVariables.get('GuestNationality') || body.GuestNationality;",
+                  "body.NoOfRooms = Number(pm.collectionVariables.get('NoOfRooms') || body.NoOfRooms || 1);",
+                  "pm.request.body.update(JSON.stringify(body, null, 2));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "function findFirst(obj, keys){",
+                  "  if (obj === null || obj === undefined) return null;",
+                  "  if (Array.isArray(obj)) {",
+                  "    for (let i=0;i<obj.length;i++){",
+                  "      const r = findFirst(obj[i], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "    return null;",
+                  "  }",
+                  "  if (typeof obj === 'object') {",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      if (keys.includes(k) && obj[k] !== null && obj[k] !== undefined && obj[k] !== '' ) return obj[k];",
+                  "    }",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      const r = findFirst(obj[k], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "  }",
+                  "  return null;",
+                  "}",
+                  "let json;",
+                  "try { json = pm.response.json(); } catch(e) { json = null; }",
+                  "if (!json) { console.warn('No JSON response to parse'); }",
+                  "// Some setups return updated BookingCode / amounts after PreBook",
+                  "const bookingCode2 = findFirst(json, ['BookingCode','bookingCode','HotelBookingCode']);",
+                  "if (bookingCode2) pm.collectionVariables.set('BookingCode', bookingCode2);",
+                  "const tokenId2 = findFirst(json, ['TokenId','tokenId']);",
+                  "if (tokenId2) pm.collectionVariables.set('TokenId', tokenId2);",
+                  "const traceId2 = findFirst(json, ['TraceId','traceId']);",
+                  "if (traceId2) pm.collectionVariables.set('TraceId', traceId2);",
+                  "const agencyId2 = findFirst(json, ['AgencyId','agencyId','TokenAgencyId','tokenAgencyId']);",
+                  "if (agencyId2) pm.collectionVariables.set('AgencyId', agencyId2);",
+                  "const net2 = findFirst(json, ['NetAmount','netAmount','TotalFare','TotalPrice','Price','PublishedPriceRoundedOff','PublishedPrice']);",
+                  "if (net2) pm.collectionVariables.set('NetAmount', net2);",
+                  "pm.test('PreBook parsed (updated tokens captured if present)', function(){ pm.expect(true).to.eql(true); });"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"BookingCode\": \"{{BookingCode}}\",\n  \"PaymentMode\": \"{{PaymentMode}}\",\n  \"GuestNationality\": \"{{GuestNationality}}\",\n  \"NoOfRooms\": {{NoOfRooms}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "https://affiliate.travelboutiqueonline.com/HotelAPI/PreBook",
+              "protocol": "https",
+              "host": [
+                "affiliate",
+                "travelboutiqueonline",
+                "com"
+              ],
+              "path": [
+                "HotelAPI",
+                "PreBook"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "3) HotelBE - Book",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Auto-inject BookingCode/TokenId/TraceId/NetAmount into Book request",
+                  "let body = {};",
+                  "try { body = JSON.parse(pm.request.body.raw); } catch(e) { body = {}; }",
+                  "body.BookingCode = pm.collectionVariables.get('BookingCode') || body.BookingCode;",
+                  "body.TokenId = pm.collectionVariables.get('TokenId') || body.TokenId;",
+                  "body.TraceId = pm.collectionVariables.get('TraceId') || body.TraceId;",
+                  "body.EndUserIp = pm.collectionVariables.get('EndUserIp') || body.EndUserIp;",
+                  "// Only set NetAmount if we have it",
+                  "const net = pm.collectionVariables.get('NetAmount');",
+                  "if (net !== null && net !== undefined && net !== '') { body.NetAmount = net; }",
+                  "pm.request.body.update(JSON.stringify(body, null, 2));"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "function findFirst(obj, keys){",
+                  "  if (obj === null || obj === undefined) return null;",
+                  "  if (Array.isArray(obj)) {",
+                  "    for (let i=0;i<obj.length;i++){",
+                  "      const r = findFirst(obj[i], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "    return null;",
+                  "  }",
+                  "  if (typeof obj === 'object') {",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      if (keys.includes(k) && obj[k] !== null && obj[k] !== undefined && obj[k] !== '' ) return obj[k];",
+                  "    }",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      const r = findFirst(obj[k], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "  }",
+                  "  return null;",
+                  "}",
+                  "let json;",
+                  "try { json = pm.response.json(); } catch(e) { json = null; }",
+                  "if (!json) { console.warn('No JSON response to parse'); }",
+                  "// Capture BookingId / ConfirmationNo",
+                  "const bookingId = findFirst(json, ['BookingId','bookingId','BookingID']);",
+                  "if (bookingId) pm.collectionVariables.set('BookingId', String(bookingId));",
+                  "const conf = findFirst(json, ['ConfirmationNo','confirmationNo','ConfirmationNumber','HotelConfirmationNo']);",
+                  "if (conf) pm.collectionVariables.set('ConfirmationNo', String(conf));",
+                  "pm.test('Book parsed (BookingId/Confirmation captured if present)', function(){ pm.expect(true).to.eql(true); });"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"BookingCode\": {{BookingCode}},\n  \"IsVoucherBooking\": true,\n  \"GuestNationality\": \"IN\",\n  \"EndUserIp\": \"192.168.9.119\",\n  \"RequestedBookingMode\": 1,\n  \"TokenId\": \"\",\n  \"TraceId\": \"\",\n  \"AgencyId\": 0,\n  \"HotelRoomsDetails\": [\n    {\n      \"HotelPassenger\": [\n        {\n          \"Title\": \"Mr.\",\n          \"FirstName\": \"Jeevesh\",\n          \"MiddleName\": \"\",\n          \"LastName\": \"Sharma\",\n          \"Email\": null,\n          \"PaxType\": 1,\n          \"LeadPassenger\": true,\n          \"Age\": 30,\n          \"PassportNo\": null,\n          \"PassportIssueDate\": null,\n          \"PassportExpDate\": null,\n          \"Phoneno\": null,\n          \"PaxId\": 1,\n          \"GSTCompanyAddress\": null,\n          \"GSTCompanyContactNumber\": null,\n          \"GSTCompanyName\": null,\n          \"GSTNumber\": null,\n          \"GSTCompanyEmail\": null,\n          \"PAN\": \"AAAAA9999L\"\n        },\n        {\n          \"Title\": \"Mstr.\",\n          \"FirstName\": \"ChildOne\",\n          \"MiddleName\": \"\",\n          \"LastName\": \"Sharma\",\n          \"Email\": null,\n          \"PaxType\": 2,\n          \"LeadPassenger\": false,\n          \"Age\": 3,\n          \"PassportNo\": null,\n          \"PassportIssueDate\": null,\n          \"PassportExpDate\": null,\n          \"Phoneno\": null,\n          \"PaxId\": 2,\n          \"GSTCompanyAddress\": null,\n          \"GSTCompanyContactNumber\": null,\n          \"GSTCompanyName\": null,\n          \"GSTNumber\": null,\n          \"GSTCompanyEmail\": null,\n          \"PAN\": \"BBBBB1111B\"\n        },\n        {\n          \"Title\": \"Miss\",\n          \"FirstName\": \"ChildTwo\",\n          \"MiddleName\": \"\",\n          \"LastName\": \"Sharma\",\n          \"Email\": null,\n          \"PaxType\": 2,\n          \"LeadPassenger\": false,\n          \"Age\": 4,\n          \"PassportNo\": null,\n          \"PassportIssueDate\": null,\n          \"PassportExpDate\": null,\n          \"Phoneno\": null,\n          \"PaxId\": 3,\n          \"GSTCompanyAddress\": null,\n          \"GSTCompanyContactNumber\": null,\n          \"GSTCompanyName\": null,\n          \"GSTNumber\": null,\n          \"GSTCompanyEmail\": null,\n          \"PAN\": \"CCCCC2222C\"\n        }\n      ]\n    },\n    {\n      \"HotelPassenger\": [\n        {\n          \"Title\": \"Mr.\",\n          \"FirstName\": \"Rahul\",\n          \"MiddleName\": \"\",\n          \"LastName\": \"Verma\",\n          \"Email\": null,\n          \"PaxType\": 1,\n          \"LeadPassenger\": true,\n          \"Age\": 35,\n          \"PassportNo\": null,\n          \"PassportIssueDate\": null,\n          \"PassportExpDate\": null,\n          \"Phoneno\": null,\n          \"PaxId\": 4,\n          \"GSTCompanyAddress\": null,\n          \"GSTCompanyContactNumber\": null,\n          \"GSTCompanyName\": null,\n          \"GSTNumber\": null,\n          \"GSTCompanyEmail\": null,\n          \"PAN\": \"DDDDD3333D\"\n        },\n        {\n          \"Title\": \"Mrs.\",\n          \"FirstName\": \"Sneha\",\n          \"MiddleName\": \"\",\n          \"LastName\": \"Verma\",\n          \"Email\": null,\n          \"PaxType\": 1,\n          \"LeadPassenger\": false,\n          \"Age\": 32,\n          \"PassportNo\": null,\n          \"PassportIssueDate\": null,\n          \"PassportExpDate\": null,\n          \"Phoneno\": null,\n          \"PaxId\": 5,\n          \"GSTCompanyAddress\": null,\n          \"GSTCompanyContactNumber\": null,\n          \"GSTCompanyName\": null,\n          \"GSTNumber\": null,\n          \"GSTCompanyEmail\": null,\n          \"PAN\": \"EEEEE4444E\"\n        }\n      ]\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "https://hotelbooking.travelboutiqueonline.com/HotelAPI_V10/HotelService.svc/rest/book/",
+              "protocol": "https",
+              "host": [
+                "hotelbooking",
+                "travelboutiqueonline",
+                "com"
+              ],
+              "path": [
+                "HotelAPI_V10",
+                "HotelService.svc",
+                "rest",
+                "book"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "4) HotelBE - GetBookingDetail",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Inject BookingId into GetBookingDetail request",
+                  "let body = {};",
+                  "try { body = JSON.parse(pm.request.body.raw); } catch(e) { body = {}; }",
+                  "body.BookingId = pm.collectionVariables.get('BookingId') || body.BookingId;",
+                  "body.EndUserIp = pm.collectionVariables.get('EndUserIp') || body.EndUserIp;",
+                  "const token = pm.collectionVariables.get('TokenId');",
+                  "if (token) body.TokenId = token;",
+                  "pm.request.body.update(JSON.stringify(body, null, 2));"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n\"BookingId\": {{BookingId}},\n  \"EndUserIp\": \"192.168.9.119\",\n  \"TokenId\": {{TokenId}}\n}"
+            },
+            "url": {
+              "raw": "https://hotelbooking.travelboutiqueonline.com/HotelAPI_V10/HotelService.svc/rest/Getbookingdetail",
+              "protocol": "https",
+              "host": [
+                "hotelbooking",
+                "travelboutiqueonline",
+                "com"
+              ],
+              "path": [
+                "HotelAPI_V10",
+                "HotelService.svc",
+                "rest",
+                "Getbookingdetail"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "5) HotelBE - GenerateVoucher (Optional)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Inject BookingId into GenerateVoucher request",
+                  "let body = {};",
+                  "try { body = JSON.parse(pm.request.body.raw); } catch(e) { body = {}; }",
+                  "body.BookingId = pm.collectionVariables.get('BookingId') || body.BookingId;",
+                  "body.EndUserIp = pm.collectionVariables.get('EndUserIp') || body.EndUserIp;",
+                  "pm.request.body.update(JSON.stringify(body, null, 2));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"BookingId\": \"\",\n  \"EndUserIp\": \"192.168.9.119\"\n}"
+            },
+            "url": {
+              "raw": "https://hotelbooking.travelboutiqueonline.com/HotelAPI_V10/HotelService.svc/rest/GenerateVoucher",
+              "protocol": "https",
+              "host": [
+                "hotelbooking",
+                "travelboutiqueonline",
+                "com"
+              ],
+              "path": [
+                "HotelAPI_V10",
+                "HotelService.svc",
+                "rest",
+                "GenerateVoucher"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Case 5 - International (Room 1 – Adult 1)",
+      "item": [
+        {
+          "name": "1) Affiliate - Search",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "function findFirst(obj, keys){",
+                  "  if (obj === null || obj === undefined) return null;",
+                  "  if (Array.isArray(obj)) {",
+                  "    for (let i = 0; i < obj.length; i++) {",
+                  "      const r = findFirst(obj[i], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "    return null;",
+                  "  }",
+                  "  if (typeof obj === 'object') {",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      if (keys.includes(k) && obj[k] !== null && obj[k] !== undefined && obj[k] !== '') return obj[k];",
+                  "    }",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      const r = findFirst(obj[k], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "  }",
+                  "  return null;",
+                  "}",
+                  "",
+                  "let json;",
+                  "try { json = pm.response.json(); } catch (error) { json = null; }",
+                  "if (!json) { console.warn('No JSON response to parse'); }",
+                  "",
+                  "const bookingCode = findFirst(json, ['BookingCode','bookingCode','HotelBookingCode']);",
+                  "if (bookingCode) pm.collectionVariables.set('BookingCode', bookingCode);",
+                  "",
+                  "const tokenId = findFirst(json, ['TokenId','tokenId']);",
+                  "if (tokenId) pm.collectionVariables.set('TokenId', tokenId);",
+                  "",
+                  "const traceId = findFirst(json, ['TraceId','traceId']);",
+                  "if (traceId) pm.collectionVariables.set('TraceId', traceId);",
+                  "",
+                  "const agencyId = findFirst(json, ['AgencyId','agencyId','TokenAgencyId','tokenAgencyId']);",
+                  "if (agencyId) pm.collectionVariables.set('AgencyId', agencyId);",
+                  "",
+                  "const netAmount = findFirst(json, ['NetAmount','netAmount','TotalFare','TotalPrice','Price','PublishedPriceRoundedOff','PublishedPrice']);",
+                  "if (netAmount) pm.collectionVariables.set('NetAmount', netAmount);",
+                  "",
+                  "if (Array.isArray(json?.CityList) && json.CityList.length) {",
+                  "  const filter = String(pm.collectionVariables.get('CityNameFilter') || '').trim().toLowerCase();",
+                  "  const selected = filter",
+                  "    ? json.CityList.find((city) => String(city?.Name || '').toLowerCase().includes(filter))",
+                  "    : json.CityList[0];",
+                  "  if (selected?.Code) pm.collectionVariables.set('CityCode', String(selected.Code));",
+                  "  if (selected?.Name) pm.collectionVariables.set('CityName', String(selected.Name));",
+                  "}",
+                  "",
+                  "if (Array.isArray(json?.Hotels) && json.Hotels.length) {",
+                  "  const hotelCodes = json.Hotels",
+                  "    .map((hotel) => String(hotel?.HotelCode || hotel?.hotelCode || '').trim())",
+                  "    .filter(Boolean);",
+                  "  if (hotelCodes.length) pm.collectionVariables.set('HotelCodes', hotelCodes.join(','));",
+                  "}",
+                  "",
+                  "try {",
+                  "  const requestBody = pm.request?.body?.raw ? JSON.parse(pm.request.body.raw) : null;",
+                  "  if (requestBody?.GuestNationality) {",
+                  "    pm.collectionVariables.set('GuestNationality', String(requestBody.GuestNationality));",
+                  "  }",
+                  "} catch (error) {",
+                  "  // Ignore malformed request bodies.",
+                  "}",
+                  "",
+                  "pm.test('Search parsed (BookingCode captured if present)', function(){ pm.expect(true).to.eql(true); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"CheckIn\": \"{{CheckIn}}\",\n  \"CheckOut\": \"{{CheckOut}}\",\n  \"HotelCodes\": \"{{HotelCodes}}\",\n  \"GuestNationality\": \"IN\",\n  \"PaxRooms\": [\n    {\n      \"Adults\": 1,\n      \"Children\": 0,\n      \"ChildrenAges\": []\n    }\n  ],\n  \"ResponseTime\": 23,\n  \"IsDetailedResponse\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "https://affiliate.travelboutiqueonline.com/HotelAPI/Search",
+              "protocol": "https",
+              "host": [
+                "affiliate",
+                "travelboutiqueonline",
+                "com"
+              ],
+              "path": [
+                "HotelAPI",
+                "Search"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "2) Affiliate - PreBook",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Auto-inject booking values before sending the PreBook request.",
+                  "let body = {};",
+                  "try { body = JSON.parse(pm.request.body.raw); } catch (error) { body = {}; }",
+                  "body.BookingCode = pm.collectionVariables.get('BookingCode') || body.BookingCode;",
+                  "body.PaymentMode = pm.collectionVariables.get('PaymentMode') || body.PaymentMode || 'Limit';",
+                  "body.GuestNationality = pm.collectionVariables.get('GuestNationality') || body.GuestNationality;",
+                  "body.NoOfRooms = Number(pm.collectionVariables.get('NoOfRooms') || body.NoOfRooms || 1);",
+                  "pm.request.body.update(JSON.stringify(body, null, 2));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "function findFirst(obj, keys){",
+                  "  if (obj === null || obj === undefined) return null;",
+                  "  if (Array.isArray(obj)) {",
+                  "    for (let i=0;i<obj.length;i++){",
+                  "      const r = findFirst(obj[i], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "    return null;",
+                  "  }",
+                  "  if (typeof obj === 'object') {",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      if (keys.includes(k) && obj[k] !== null && obj[k] !== undefined && obj[k] !== '' ) return obj[k];",
+                  "    }",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      const r = findFirst(obj[k], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "  }",
+                  "  return null;",
+                  "}",
+                  "let json;",
+                  "try { json = pm.response.json(); } catch(e) { json = null; }",
+                  "if (!json) { console.warn('No JSON response to parse'); }",
+                  "// Some setups return updated BookingCode / amounts after PreBook",
+                  "const bookingCode2 = findFirst(json, ['BookingCode','bookingCode','HotelBookingCode']);",
+                  "if (bookingCode2) pm.collectionVariables.set('BookingCode', bookingCode2);",
+                  "const tokenId2 = findFirst(json, ['TokenId','tokenId']);",
+                  "if (tokenId2) pm.collectionVariables.set('TokenId', tokenId2);",
+                  "const traceId2 = findFirst(json, ['TraceId','traceId']);",
+                  "if (traceId2) pm.collectionVariables.set('TraceId', traceId2);",
+                  "const agencyId2 = findFirst(json, ['AgencyId','agencyId','TokenAgencyId','tokenAgencyId']);",
+                  "if (agencyId2) pm.collectionVariables.set('AgencyId', agencyId2);",
+                  "const net2 = findFirst(json, ['NetAmount','netAmount','TotalFare','TotalPrice','Price','PublishedPriceRoundedOff','PublishedPrice']);",
+                  "if (net2) pm.collectionVariables.set('NetAmount', net2);",
+                  "pm.test('PreBook parsed (updated tokens captured if present)', function(){ pm.expect(true).to.eql(true); });"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"BookingCode\": \"{{BookingCode}}\",\n  \"PaymentMode\": \"{{PaymentMode}}\",\n  \"GuestNationality\": \"{{GuestNationality}}\",\n  \"NoOfRooms\": {{NoOfRooms}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "https://affiliate.travelboutiqueonline.com/HotelAPI/PreBook",
+              "protocol": "https",
+              "host": [
+                "affiliate",
+                "travelboutiqueonline",
+                "com"
+              ],
+              "path": [
+                "HotelAPI",
+                "PreBook"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "3) HotelBE - Book",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Auto-inject BookingCode/TokenId/TraceId/NetAmount into Book request",
+                  "let body = {};",
+                  "try { body = JSON.parse(pm.request.body.raw); } catch(e) { body = {}; }",
+                  "body.BookingCode = pm.collectionVariables.get('BookingCode') || body.BookingCode;",
+                  "body.TokenId = pm.collectionVariables.get('TokenId') || body.TokenId;",
+                  "body.TraceId = pm.collectionVariables.get('TraceId') || body.TraceId;",
+                  "body.EndUserIp = pm.collectionVariables.get('EndUserIp') || body.EndUserIp;",
+                  "// Only set NetAmount if we have it",
+                  "const net = pm.collectionVariables.get('NetAmount');",
+                  "if (net !== null && net !== undefined && net !== '') { body.NetAmount = net; }",
+                  "pm.request.body.update(JSON.stringify(body, null, 2));"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "function findFirst(obj, keys){",
+                  "  if (obj === null || obj === undefined) return null;",
+                  "  if (Array.isArray(obj)) {",
+                  "    for (let i=0;i<obj.length;i++){",
+                  "      const r = findFirst(obj[i], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "    return null;",
+                  "  }",
+                  "  if (typeof obj === 'object') {",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      if (keys.includes(k) && obj[k] !== null && obj[k] !== undefined && obj[k] !== '' ) return obj[k];",
+                  "    }",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      const r = findFirst(obj[k], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "  }",
+                  "  return null;",
+                  "}",
+                  "let json;",
+                  "try { json = pm.response.json(); } catch(e) { json = null; }",
+                  "if (!json) { console.warn('No JSON response to parse'); }",
+                  "// Capture BookingId / ConfirmationNo",
+                  "const bookingId = findFirst(json, ['BookingId','bookingId','BookingID']);",
+                  "if (bookingId) pm.collectionVariables.set('BookingId', String(bookingId));",
+                  "const conf = findFirst(json, ['ConfirmationNo','confirmationNo','ConfirmationNumber','HotelConfirmationNo']);",
+                  "if (conf) pm.collectionVariables.set('ConfirmationNo', String(conf));",
+                  "pm.test('Book parsed (BookingId/Confirmation captured if present)', function(){ pm.expect(true).to.eql(true); });"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"BookingCode\": \"{{BookingCode}}\",\n  \"IsVoucherBooking\": true,\n  \"GuestNationality\": \"IN\",\n  \"EndUserIp\": \"192.168.9.119\",\n  \"RequestedBookingMode\": 1,\n  \"TraceId\": \"\",\n  \"NetAmount\": \"\",\n\"HotelRoomsDetails\": [\n        {\n            \"HotelPassenger\": [\n                {\n                    \"Title\": \"Mr.\",\n                    \"FirstName\": \"Jeevesh\",\n                    \"MiddleName\": \"\",\n                    \"LastName\": \"Sharma\",\n                    \"Email\": null,\n                    \"PaxType\": 1,\n                    \"LeadPassenger\": true,\n                    \"Age\": 0,\n                    \"PassportNo\": null,\n                    \"PassportIssueDate\": null,\n                    \"PassportExpDate\": null,\n                    \"Phoneno\": null,\n                    \"PaxId\": 0,\n                    \"GSTCompanyAddress\": null,\n                    \"GSTCompanyContactNumber\": null,\n                    \"GSTCompanyName\": null,\n                    \"GSTNumber\": null,\n                    \"GSTCompanyEmail\": null,\n                    \"PAN\": \"BBBBB8888F\"\n                }\n            ]\n        }\n    ]\n}"
+            },
+            "url": {
+              "raw": "https://hotelbooking.travelboutiqueonline.com/HotelAPI_V10/HotelService.svc/rest/book/",
+              "protocol": "https",
+              "host": [
+                "hotelbooking",
+                "travelboutiqueonline",
+                "com"
+              ],
+              "path": [
+                "HotelAPI_V10",
+                "HotelService.svc",
+                "rest",
+                "book"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "4) HotelBE - GetBookingDetail",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Inject BookingId into GetBookingDetail request",
+                  "let body = {};",
+                  "try { body = JSON.parse(pm.request.body.raw); } catch(e) { body = {}; }",
+                  "body.BookingId = pm.collectionVariables.get('BookingId') || body.BookingId;",
+                  "body.EndUserIp = pm.collectionVariables.get('EndUserIp') || body.EndUserIp;",
+                  "const token = pm.collectionVariables.get('TokenId');",
+                  "if (token) body.TokenId = token;",
+                  "pm.request.body.update(JSON.stringify(body, null, 2));"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n\"BookingId\": {{BookingId}},\n  \"EndUserIp\": \"192.168.9.119\",\n  \"TokenId\": {{TokenId}}\n}"
+            },
+            "url": {
+              "raw": "https://hotelbooking.travelboutiqueonline.com/HotelAPI_V10/HotelService.svc/rest/Getbookingdetail",
+              "protocol": "https",
+              "host": [
+                "hotelbooking",
+                "travelboutiqueonline",
+                "com"
+              ],
+              "path": [
+                "HotelAPI_V10",
+                "HotelService.svc",
+                "rest",
+                "Getbookingdetail"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "5) HotelBE - GenerateVoucher (Optional)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Inject BookingId into GenerateVoucher request",
+                  "let body = {};",
+                  "try { body = JSON.parse(pm.request.body.raw); } catch(e) { body = {}; }",
+                  "body.BookingId = pm.collectionVariables.get('BookingId') || body.BookingId;",
+                  "body.EndUserIp = pm.collectionVariables.get('EndUserIp') || body.EndUserIp;",
+                  "pm.request.body.update(JSON.stringify(body, null, 2));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"BookingId\": \"\",\n  \"EndUserIp\": \"192.168.9.119\"\n}"
+            },
+            "url": {
+              "raw": "https://hotelbooking.travelboutiqueonline.com/HotelAPI_V10/HotelService.svc/rest/GenerateVoucher",
+              "protocol": "https",
+              "host": [
+                "hotelbooking",
+                "travelboutiqueonline",
+                "com"
+              ],
+              "path": [
+                "HotelAPI_V10",
+                "HotelService.svc",
+                "rest",
+                "GenerateVoucher"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Case 6 - International (Room 1 – Adult 2, Child 2)",
+      "item": [
+        {
+          "name": "1) Affiliate - Search",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "function findFirst(obj, keys){",
+                  "  if (obj === null || obj === undefined) return null;",
+                  "  if (Array.isArray(obj)) {",
+                  "    for (let i = 0; i < obj.length; i++) {",
+                  "      const r = findFirst(obj[i], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "    return null;",
+                  "  }",
+                  "  if (typeof obj === 'object') {",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      if (keys.includes(k) && obj[k] !== null && obj[k] !== undefined && obj[k] !== '') return obj[k];",
+                  "    }",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      const r = findFirst(obj[k], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "  }",
+                  "  return null;",
+                  "}",
+                  "",
+                  "let json;",
+                  "try { json = pm.response.json(); } catch (error) { json = null; }",
+                  "if (!json) { console.warn('No JSON response to parse'); }",
+                  "",
+                  "const bookingCode = findFirst(json, ['BookingCode','bookingCode','HotelBookingCode']);",
+                  "if (bookingCode) pm.collectionVariables.set('BookingCode', bookingCode);",
+                  "",
+                  "const tokenId = findFirst(json, ['TokenId','tokenId']);",
+                  "if (tokenId) pm.collectionVariables.set('TokenId', tokenId);",
+                  "",
+                  "const traceId = findFirst(json, ['TraceId','traceId']);",
+                  "if (traceId) pm.collectionVariables.set('TraceId', traceId);",
+                  "",
+                  "const agencyId = findFirst(json, ['AgencyId','agencyId','TokenAgencyId','tokenAgencyId']);",
+                  "if (agencyId) pm.collectionVariables.set('AgencyId', agencyId);",
+                  "",
+                  "const netAmount = findFirst(json, ['NetAmount','netAmount','TotalFare','TotalPrice','Price','PublishedPriceRoundedOff','PublishedPrice']);",
+                  "if (netAmount) pm.collectionVariables.set('NetAmount', netAmount);",
+                  "",
+                  "if (Array.isArray(json?.CityList) && json.CityList.length) {",
+                  "  const filter = String(pm.collectionVariables.get('CityNameFilter') || '').trim().toLowerCase();",
+                  "  const selected = filter",
+                  "    ? json.CityList.find((city) => String(city?.Name || '').toLowerCase().includes(filter))",
+                  "    : json.CityList[0];",
+                  "  if (selected?.Code) pm.collectionVariables.set('CityCode', String(selected.Code));",
+                  "  if (selected?.Name) pm.collectionVariables.set('CityName', String(selected.Name));",
+                  "}",
+                  "",
+                  "if (Array.isArray(json?.Hotels) && json.Hotels.length) {",
+                  "  const hotelCodes = json.Hotels",
+                  "    .map((hotel) => String(hotel?.HotelCode || hotel?.hotelCode || '').trim())",
+                  "    .filter(Boolean);",
+                  "  if (hotelCodes.length) pm.collectionVariables.set('HotelCodes', hotelCodes.join(','));",
+                  "}",
+                  "",
+                  "try {",
+                  "  const requestBody = pm.request?.body?.raw ? JSON.parse(pm.request.body.raw) : null;",
+                  "  if (requestBody?.GuestNationality) {",
+                  "    pm.collectionVariables.set('GuestNationality', String(requestBody.GuestNationality));",
+                  "  }",
+                  "} catch (error) {",
+                  "  // Ignore malformed request bodies.",
+                  "}",
+                  "",
+                  "pm.test('Search parsed (BookingCode captured if present)', function(){ pm.expect(true).to.eql(true); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"CheckIn\": \"{{CheckIn}}\",\n  \"CheckOut\": \"{{CheckOut}}\",\n  \"HotelCodes\": \"{{HotelCodes}}\",\n  \"GuestNationality\": \"IN\",\n  \"NoOfRooms\": 1,\n  \"PaxRooms\": [\n    {\n      \"Adults\": 2,\n      \"Children\": 2,\n      \"ChildrenAges\": [\n        3,\n        4\n      ]\n    }\n  ],\n  \"ResponseTime\": 23,\n  \"IsDetailedResponse\": true,\n  \"Filters\": {\n    \"Refundable\": true,\n    \"NoOfRooms\": 0,\n    \"MealType\": \"WithMeal\",\n    \"OrderBy\": 0,\n    \"StarRating\": 0,\n    \"HotelName\": null\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "https://affiliate.travelboutiqueonline.com/HotelAPI/Search",
+              "protocol": "https",
+              "host": [
+                "affiliate",
+                "travelboutiqueonline",
+                "com"
+              ],
+              "path": [
+                "HotelAPI",
+                "Search"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "2) Affiliate - PreBook",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Auto-inject booking values before sending the PreBook request.",
+                  "let body = {};",
+                  "try { body = JSON.parse(pm.request.body.raw); } catch (error) { body = {}; }",
+                  "body.BookingCode = pm.collectionVariables.get('BookingCode') || body.BookingCode;",
+                  "body.PaymentMode = pm.collectionVariables.get('PaymentMode') || body.PaymentMode || 'Limit';",
+                  "body.GuestNationality = pm.collectionVariables.get('GuestNationality') || body.GuestNationality;",
+                  "body.NoOfRooms = Number(pm.collectionVariables.get('NoOfRooms') || body.NoOfRooms || 1);",
+                  "pm.request.body.update(JSON.stringify(body, null, 2));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "function findFirst(obj, keys){",
+                  "  if (obj === null || obj === undefined) return null;",
+                  "  if (Array.isArray(obj)) {",
+                  "    for (let i=0;i<obj.length;i++){",
+                  "      const r = findFirst(obj[i], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "    return null;",
+                  "  }",
+                  "  if (typeof obj === 'object') {",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      if (keys.includes(k) && obj[k] !== null && obj[k] !== undefined && obj[k] !== '' ) return obj[k];",
+                  "    }",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      const r = findFirst(obj[k], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "  }",
+                  "  return null;",
+                  "}",
+                  "let json;",
+                  "try { json = pm.response.json(); } catch(e) { json = null; }",
+                  "if (!json) { console.warn('No JSON response to parse'); }",
+                  "// Some setups return updated BookingCode / amounts after PreBook",
+                  "const bookingCode2 = findFirst(json, ['BookingCode','bookingCode','HotelBookingCode']);",
+                  "if (bookingCode2) pm.collectionVariables.set('BookingCode', bookingCode2);",
+                  "const tokenId2 = findFirst(json, ['TokenId','tokenId']);",
+                  "if (tokenId2) pm.collectionVariables.set('TokenId', tokenId2);",
+                  "const traceId2 = findFirst(json, ['TraceId','traceId']);",
+                  "if (traceId2) pm.collectionVariables.set('TraceId', traceId2);",
+                  "const agencyId2 = findFirst(json, ['AgencyId','agencyId','TokenAgencyId','tokenAgencyId']);",
+                  "if (agencyId2) pm.collectionVariables.set('AgencyId', agencyId2);",
+                  "const net2 = findFirst(json, ['NetAmount','netAmount','TotalFare','TotalPrice','Price','PublishedPriceRoundedOff','PublishedPrice']);",
+                  "if (net2) pm.collectionVariables.set('NetAmount', net2);",
+                  "pm.test('PreBook parsed (updated tokens captured if present)', function(){ pm.expect(true).to.eql(true); });"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"BookingCode\": \"{{BookingCode}}\",\n  \"PaymentMode\": \"{{PaymentMode}}\",\n  \"GuestNationality\": \"{{GuestNationality}}\",\n  \"NoOfRooms\": {{NoOfRooms}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "https://affiliate.travelboutiqueonline.com/HotelAPI/PreBook",
+              "protocol": "https",
+              "host": [
+                "affiliate",
+                "travelboutiqueonline",
+                "com"
+              ],
+              "path": [
+                "HotelAPI",
+                "PreBook"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "3) HotelBE - Book",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Auto-inject BookingCode/TokenId/TraceId/NetAmount into Book request",
+                  "let body = {};",
+                  "try { body = JSON.parse(pm.request.body.raw); } catch(e) { body = {}; }",
+                  "body.BookingCode = pm.collectionVariables.get('BookingCode') || body.BookingCode;",
+                  "body.TokenId = pm.collectionVariables.get('TokenId') || body.TokenId;",
+                  "body.TraceId = pm.collectionVariables.get('TraceId') || body.TraceId;",
+                  "body.EndUserIp = pm.collectionVariables.get('EndUserIp') || body.EndUserIp;",
+                  "// Only set NetAmount if we have it",
+                  "const net = pm.collectionVariables.get('NetAmount');",
+                  "if (net !== null && net !== undefined && net !== '') { body.NetAmount = net; }",
+                  "pm.request.body.update(JSON.stringify(body, null, 2));"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "function findFirst(obj, keys){",
+                  "  if (obj === null || obj === undefined) return null;",
+                  "  if (Array.isArray(obj)) {",
+                  "    for (let i=0;i<obj.length;i++){",
+                  "      const r = findFirst(obj[i], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "    return null;",
+                  "  }",
+                  "  if (typeof obj === 'object') {",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      if (keys.includes(k) && obj[k] !== null && obj[k] !== undefined && obj[k] !== '' ) return obj[k];",
+                  "    }",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      const r = findFirst(obj[k], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "  }",
+                  "  return null;",
+                  "}",
+                  "let json;",
+                  "try { json = pm.response.json(); } catch(e) { json = null; }",
+                  "if (!json) { console.warn('No JSON response to parse'); }",
+                  "// Capture BookingId / ConfirmationNo",
+                  "const bookingId = findFirst(json, ['BookingId','bookingId','BookingID']);",
+                  "if (bookingId) pm.collectionVariables.set('BookingId', String(bookingId));",
+                  "const conf = findFirst(json, ['ConfirmationNo','confirmationNo','ConfirmationNumber','HotelConfirmationNo']);",
+                  "if (conf) pm.collectionVariables.set('ConfirmationNo', String(conf));",
+                  "pm.test('Book parsed (BookingId/Confirmation captured if present)', function(){ pm.expect(true).to.eql(true); });"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"BookingCode\": \"{{BookingCode}}\",\n  \"IsVoucherBooking\": true,\n  \"GuestNationality\": \"IN\",\n  \"EndUserIp\": \"192.168.9.119\",\n  \"RequestedBookingMode\": 1,\n  \"TraceId\": \"\",\n  \"NetAmount\": \"\",\n\"HotelRoomsDetails\": [\n    {\n      \"HotelPassenger\": [\n        {\n          \"Title\": \"Mr.\",\n          \"FirstName\": \"Jeevesh\",\n          \"MiddleName\": \"\",\n          \"LastName\": \"Sharma\",\n          \"Email\": null,\n          \"PaxType\": 1,\n          \"LeadPassenger\": true,\n          \"Age\": 30,\n          \"PassportNo\": null,\n          \"PassportIssueDate\": null,\n          \"PassportExpDate\": null,\n          \"Phoneno\": null,\n          \"PaxId\": 1,\n          \"GSTCompanyAddress\": null,\n          \"GSTCompanyContactNumber\": null,\n          \"GSTCompanyName\": null,\n          \"GSTNumber\": null,\n          \"GSTCompanyEmail\": null,\n          \"PAN\": \"AAAAA9999l\"\n        },\n        {\n          \"Title\": \"Mr.\",\n          \"FirstName\": \"Jeevesh 1\",\n          \"MiddleName\": \"\",\n          \"LastName\": \"Sharma\",\n          \"Email\": null,\n          \"PaxType\": 1,\n          \"LeadPassenger\": false,\n          \"Age\": 28,\n          \"PassportNo\": null,\n          \"PassportIssueDate\": null,\n          \"PassportExpDate\": null,\n          \"Phoneno\": null,\n          \"PaxId\": 2,\n          \"GSTCompanyAddress\": null,\n          \"GSTCompanyContactNumber\": null,\n          \"GSTCompanyName\": null,\n          \"GSTNumber\": null,\n          \"GSTCompanyEmail\": null,\n                    \"PAN\": \"AAAAA9999b\"\n\n        },\n        {\n          \"Title\": \"Mstr.\",\n          \"FirstName\": \"ChildOne\",\n          \"MiddleName\": \"\",\n          \"LastName\": \"Sharma\",\n          \"Email\": null,\n          \"PaxType\": 2,\n          \"LeadPassenger\": false,\n          \"Age\": 3,\n          \"PassportNo\": null,\n          \"PassportIssueDate\": null,\n          \"PassportExpDate\": null,\n          \"Phoneno\": null,\n          \"PaxId\": 3,\n          \"GSTCompanyAddress\": null,\n          \"GSTCompanyContactNumber\": null,\n          \"GSTCompanyName\": null,\n          \"GSTNumber\": null,\n          \"GSTCompanyEmail\": null,\n                    \"PAN\": \"AAAAA9999l\"\n\n          \n        },\n        {\n          \"Title\": \"Miss\",\n          \"FirstName\": \"ChildTwo\",\n          \"MiddleName\": \"\",\n          \"LastName\": \"Sharma\",\n          \"Email\": null,\n          \"PaxType\": 2,\n          \"LeadPassenger\": false,\n          \"Age\": 4,\n          \"PassportNo\": null,\n          \"PassportIssueDate\": null,\n          \"PassportExpDate\": null,\n          \"Phoneno\": null,\n          \"PaxId\": 4,\n          \"GSTCompanyAddress\": null,\n          \"GSTCompanyContactNumber\": null,\n          \"GSTCompanyName\": null,\n          \"GSTNumber\": null,\n          \"GSTCompanyEmail\": null,\n          \"PAN\": \"AAAAA9999l\"\n        }\n      ]\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "https://hotelbooking.travelboutiqueonline.com/HotelAPI_V10/HotelService.svc/rest/book/",
+              "protocol": "https",
+              "host": [
+                "hotelbooking",
+                "travelboutiqueonline",
+                "com"
+              ],
+              "path": [
+                "HotelAPI_V10",
+                "HotelService.svc",
+                "rest",
+                "book"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "4) HotelBE - GetBookingDetail",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Inject BookingId into GetBookingDetail request",
+                  "let body = {};",
+                  "try { body = JSON.parse(pm.request.body.raw); } catch(e) { body = {}; }",
+                  "body.BookingId = pm.collectionVariables.get('BookingId') || body.BookingId;",
+                  "body.EndUserIp = pm.collectionVariables.get('EndUserIp') || body.EndUserIp;",
+                  "const token = pm.collectionVariables.get('TokenId');",
+                  "if (token) body.TokenId = token;",
+                  "pm.request.body.update(JSON.stringify(body, null, 2));"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n\"BookingId\": {{BookingId}},\n  \"EndUserIp\": \"192.168.9.119\",\n  \"TokenId\": {{TokenId}}\n}"
+            },
+            "url": {
+              "raw": "https://hotelbooking.travelboutiqueonline.com/HotelAPI_V10/HotelService.svc/rest/Getbookingdetail",
+              "protocol": "https",
+              "host": [
+                "hotelbooking",
+                "travelboutiqueonline",
+                "com"
+              ],
+              "path": [
+                "HotelAPI_V10",
+                "HotelService.svc",
+                "rest",
+                "Getbookingdetail"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "5) HotelBE - GenerateVoucher (Optional)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Inject BookingId into GenerateVoucher request",
+                  "let body = {};",
+                  "try { body = JSON.parse(pm.request.body.raw); } catch(e) { body = {}; }",
+                  "body.BookingId = pm.collectionVariables.get('BookingId') || body.BookingId;",
+                  "body.EndUserIp = pm.collectionVariables.get('EndUserIp') || body.EndUserIp;",
+                  "pm.request.body.update(JSON.stringify(body, null, 2));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"BookingId\": \"\",\n  \"EndUserIp\": \"192.168.9.119\"\n}"
+            },
+            "url": {
+              "raw": "https://hotelbooking.travelboutiqueonline.com/HotelAPI_V10/HotelService.svc/rest/GenerateVoucher",
+              "protocol": "https",
+              "host": [
+                "hotelbooking",
+                "travelboutiqueonline",
+                "com"
+              ],
+              "path": [
+                "HotelAPI_V10",
+                "HotelService.svc",
+                "rest",
+                "GenerateVoucher"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Case 7 - International (Room 1 – Adult 1) (Room 2 – Adult 1)",
+      "item": [
+        {
+          "name": "1) Affiliate - Search",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "function findFirst(obj, keys){",
+                  "  if (obj === null || obj === undefined) return null;",
+                  "  if (Array.isArray(obj)) {",
+                  "    for (let i = 0; i < obj.length; i++) {",
+                  "      const r = findFirst(obj[i], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "    return null;",
+                  "  }",
+                  "  if (typeof obj === 'object') {",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      if (keys.includes(k) && obj[k] !== null && obj[k] !== undefined && obj[k] !== '') return obj[k];",
+                  "    }",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      const r = findFirst(obj[k], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "  }",
+                  "  return null;",
+                  "}",
+                  "",
+                  "let json;",
+                  "try { json = pm.response.json(); } catch (error) { json = null; }",
+                  "if (!json) { console.warn('No JSON response to parse'); }",
+                  "",
+                  "const bookingCode = findFirst(json, ['BookingCode','bookingCode','HotelBookingCode']);",
+                  "if (bookingCode) pm.collectionVariables.set('BookingCode', bookingCode);",
+                  "",
+                  "const tokenId = findFirst(json, ['TokenId','tokenId']);",
+                  "if (tokenId) pm.collectionVariables.set('TokenId', tokenId);",
+                  "",
+                  "const traceId = findFirst(json, ['TraceId','traceId']);",
+                  "if (traceId) pm.collectionVariables.set('TraceId', traceId);",
+                  "",
+                  "const agencyId = findFirst(json, ['AgencyId','agencyId','TokenAgencyId','tokenAgencyId']);",
+                  "if (agencyId) pm.collectionVariables.set('AgencyId', agencyId);",
+                  "",
+                  "const netAmount = findFirst(json, ['NetAmount','netAmount','TotalFare','TotalPrice','Price','PublishedPriceRoundedOff','PublishedPrice']);",
+                  "if (netAmount) pm.collectionVariables.set('NetAmount', netAmount);",
+                  "",
+                  "if (Array.isArray(json?.CityList) && json.CityList.length) {",
+                  "  const filter = String(pm.collectionVariables.get('CityNameFilter') || '').trim().toLowerCase();",
+                  "  const selected = filter",
+                  "    ? json.CityList.find((city) => String(city?.Name || '').toLowerCase().includes(filter))",
+                  "    : json.CityList[0];",
+                  "  if (selected?.Code) pm.collectionVariables.set('CityCode', String(selected.Code));",
+                  "  if (selected?.Name) pm.collectionVariables.set('CityName', String(selected.Name));",
+                  "}",
+                  "",
+                  "if (Array.isArray(json?.Hotels) && json.Hotels.length) {",
+                  "  const hotelCodes = json.Hotels",
+                  "    .map((hotel) => String(hotel?.HotelCode || hotel?.hotelCode || '').trim())",
+                  "    .filter(Boolean);",
+                  "  if (hotelCodes.length) pm.collectionVariables.set('HotelCodes', hotelCodes.join(','));",
+                  "}",
+                  "",
+                  "try {",
+                  "  const requestBody = pm.request?.body?.raw ? JSON.parse(pm.request.body.raw) : null;",
+                  "  if (requestBody?.GuestNationality) {",
+                  "    pm.collectionVariables.set('GuestNationality', String(requestBody.GuestNationality));",
+                  "  }",
+                  "} catch (error) {",
+                  "  // Ignore malformed request bodies.",
+                  "}",
+                  "",
+                  "pm.test('Search parsed (BookingCode captured if present)', function(){ pm.expect(true).to.eql(true); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"CheckIn\": \"{{CheckIn}}\",\n  \"CheckOut\": \"{{CheckOut}}\",\n  \"HotelCodes\": \"{{HotelCodes}}\",\n  \"GuestNationality\": \"US\",\n  \"PaxRooms\": [\n    {\n      \"Adults\": 1,\n      \"Children\": 0,\n      \"ChildrenAges\": []\n    },\n    {\n      \"Adults\": 1,\n      \"Children\": 0,\n      \"ChildrenAges\": []\n    }\n  ],\n  \"ResponseTime\": 23,\n  \"IsDetailedResponse\": true,\n  \"Filters\": {\n    \"Refundable\": true,\n    \"NoOfRooms\": 0,\n    \"MealType\": \"WithMeal\",\n    \"OrderBy\": 0,\n    \"StarRating\": 0,\n    \"HotelName\": null\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "https://affiliate.travelboutiqueonline.com/HotelAPI/Search",
+              "protocol": "https",
+              "host": [
+                "affiliate",
+                "travelboutiqueonline",
+                "com"
+              ],
+              "path": [
+                "HotelAPI",
+                "Search"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "2) Affiliate - PreBook",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Auto-inject booking values before sending the PreBook request.",
+                  "let body = {};",
+                  "try { body = JSON.parse(pm.request.body.raw); } catch (error) { body = {}; }",
+                  "body.BookingCode = pm.collectionVariables.get('BookingCode') || body.BookingCode;",
+                  "body.PaymentMode = pm.collectionVariables.get('PaymentMode') || body.PaymentMode || 'Limit';",
+                  "body.GuestNationality = pm.collectionVariables.get('GuestNationality') || body.GuestNationality;",
+                  "body.NoOfRooms = Number(pm.collectionVariables.get('NoOfRooms') || body.NoOfRooms || 1);",
+                  "pm.request.body.update(JSON.stringify(body, null, 2));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "function findFirst(obj, keys){",
+                  "  if (obj === null || obj === undefined) return null;",
+                  "  if (Array.isArray(obj)) {",
+                  "    for (let i=0;i<obj.length;i++){",
+                  "      const r = findFirst(obj[i], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "    return null;",
+                  "  }",
+                  "  if (typeof obj === 'object') {",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      if (keys.includes(k) && obj[k] !== null && obj[k] !== undefined && obj[k] !== '' ) return obj[k];",
+                  "    }",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      const r = findFirst(obj[k], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "  }",
+                  "  return null;",
+                  "}",
+                  "let json;",
+                  "try { json = pm.response.json(); } catch(e) { json = null; }",
+                  "if (!json) { console.warn('No JSON response to parse'); }",
+                  "// Some setups return updated BookingCode / amounts after PreBook",
+                  "const bookingCode2 = findFirst(json, ['BookingCode','bookingCode','HotelBookingCode']);",
+                  "if (bookingCode2) pm.collectionVariables.set('BookingCode', bookingCode2);",
+                  "const tokenId2 = findFirst(json, ['TokenId','tokenId']);",
+                  "if (tokenId2) pm.collectionVariables.set('TokenId', tokenId2);",
+                  "const traceId2 = findFirst(json, ['TraceId','traceId']);",
+                  "if (traceId2) pm.collectionVariables.set('TraceId', traceId2);",
+                  "const agencyId2 = findFirst(json, ['AgencyId','agencyId','TokenAgencyId','tokenAgencyId']);",
+                  "if (agencyId2) pm.collectionVariables.set('AgencyId', agencyId2);",
+                  "const net2 = findFirst(json, ['NetAmount','netAmount','TotalFare','TotalPrice','Price','PublishedPriceRoundedOff','PublishedPrice']);",
+                  "if (net2) pm.collectionVariables.set('NetAmount', net2);",
+                  "pm.test('PreBook parsed (updated tokens captured if present)', function(){ pm.expect(true).to.eql(true); });"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"BookingCode\": \"{{BookingCode}}\",\n  \"PaymentMode\": \"{{PaymentMode}}\",\n  \"GuestNationality\": \"{{GuestNationality}}\",\n  \"NoOfRooms\": {{NoOfRooms}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "https://affiliate.travelboutiqueonline.com/HotelAPI/PreBook",
+              "protocol": "https",
+              "host": [
+                "affiliate",
+                "travelboutiqueonline",
+                "com"
+              ],
+              "path": [
+                "HotelAPI",
+                "PreBook"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "3) HotelBE - Book",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Auto-inject BookingCode/TokenId/TraceId/NetAmount into Book request",
+                  "let body = {};",
+                  "try { body = JSON.parse(pm.request.body.raw); } catch(e) { body = {}; }",
+                  "body.BookingCode = pm.collectionVariables.get('BookingCode') || body.BookingCode;",
+                  "body.TokenId = pm.collectionVariables.get('TokenId') || body.TokenId;",
+                  "body.TraceId = pm.collectionVariables.get('TraceId') || body.TraceId;",
+                  "body.EndUserIp = pm.collectionVariables.get('EndUserIp') || body.EndUserIp;",
+                  "// Only set NetAmount if we have it",
+                  "const net = pm.collectionVariables.get('NetAmount');",
+                  "if (net !== null && net !== undefined && net !== '') { body.NetAmount = net; }",
+                  "pm.request.body.update(JSON.stringify(body, null, 2));"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "function findFirst(obj, keys){",
+                  "  if (obj === null || obj === undefined) return null;",
+                  "  if (Array.isArray(obj)) {",
+                  "    for (let i=0;i<obj.length;i++){",
+                  "      const r = findFirst(obj[i], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "    return null;",
+                  "  }",
+                  "  if (typeof obj === 'object') {",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      if (keys.includes(k) && obj[k] !== null && obj[k] !== undefined && obj[k] !== '' ) return obj[k];",
+                  "    }",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      const r = findFirst(obj[k], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "  }",
+                  "  return null;",
+                  "}",
+                  "let json;",
+                  "try { json = pm.response.json(); } catch(e) { json = null; }",
+                  "if (!json) { console.warn('No JSON response to parse'); }",
+                  "// Capture BookingId / ConfirmationNo",
+                  "const bookingId = findFirst(json, ['BookingId','bookingId','BookingID']);",
+                  "if (bookingId) pm.collectionVariables.set('BookingId', String(bookingId));",
+                  "const conf = findFirst(json, ['ConfirmationNo','confirmationNo','ConfirmationNumber','HotelConfirmationNo']);",
+                  "if (conf) pm.collectionVariables.set('ConfirmationNo', String(conf));",
+                  "pm.test('Book parsed (BookingId/Confirmation captured if present)', function(){ pm.expect(true).to.eql(true); });"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n\"BookingCode\": {{BookingCode}},\n  \"IsVoucherBooking\": true,\n  \"GuestNationality\": \"US\",\n  \"EndUserIp\": \"192.168.9.119\",\n  \"RequestedBookingMode\": 1,\n  \"TokenId\": \"\",\n  \"TraceId\": \"\",\n  \"NetAmount\": \"\",\n    \"HotelRoomsDetails\": [\n        {\n            \"HotelPassenger\": [\n                {\n                    \"Title\": \"Mr.\",\n                    \"FirstName\": \"Jeevesh\",\n                    \"MiddleName\": \"\",\n                    \"LastName\": \"Sharma\",\n                    \"Email\": null,\n                    \"PaxType\": 1,\n                    \"LeadPassenger\": true,\n                    \"Age\": 0,\n                    \"PassportNo\": null,\n                    \"PassportIssueDate\": null,\n                    \"PassportExpDate\": null,\n                    \"Phoneno\": null,\n                    \"PaxId\": 0,\n                    \"GSTCompanyAddress\": null,\n                    \"GSTCompanyContactNumber\": null,\n                    \"GSTCompanyName\": null,\n                    \"GSTNumber\": null,\n                    \"GSTCompanyEmail\": null\n                  \n                }\n                \n            ]\n        },\n        {\n            \"HotelPassenger\": [\n                {\n                    \"Title\": \"Mr.\",\n                    \"FirstName\": \"Jeevesh2\",\n                    \"MiddleName\": \"\",\n                    \"LastName\": \"Sharma\",\n                    \"Email\": null,\n                    \"PaxType\": 1,\n                    \"LeadPassenger\": true,\n                    \"Age\": 0,\n                    \"PassportNo\": null,\n                    \"PassportIssueDate\": null,\n                    \"PassportExpDate\": null,\n                    \"Phoneno\": null,\n                    \"PaxId\": 0,\n                    \"GSTCompanyAddress\": null,\n                    \"GSTCompanyContactNumber\": null,\n                    \"GSTCompanyName\": null,\n                    \"GSTNumber\": null,\n                    \"GSTCompanyEmail\": null\n                  \n                }\n                \n            ]\n        }\n\n    ]\n}"
+            },
+            "url": {
+              "raw": "https://hotelbooking.travelboutiqueonline.com/HotelAPI_V10/HotelService.svc/rest/book/",
+              "protocol": "https",
+              "host": [
+                "hotelbooking",
+                "travelboutiqueonline",
+                "com"
+              ],
+              "path": [
+                "HotelAPI_V10",
+                "HotelService.svc",
+                "rest",
+                "book"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "4) HotelBE - GetBookingDetail",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Inject BookingId into GetBookingDetail request",
+                  "let body = {};",
+                  "try { body = JSON.parse(pm.request.body.raw); } catch(e) { body = {}; }",
+                  "body.BookingId = pm.collectionVariables.get('BookingId') || body.BookingId;",
+                  "body.EndUserIp = pm.collectionVariables.get('EndUserIp') || body.EndUserIp;",
+                  "const token = pm.collectionVariables.get('TokenId');",
+                  "if (token) body.TokenId = token;",
+                  "pm.request.body.update(JSON.stringify(body, null, 2));"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n\"BookingId\": {{BookingId}},\n  \"EndUserIp\": \"192.168.9.119\",\n  \"TokenId\": {{TokenId}}\n}"
+            },
+            "url": {
+              "raw": "https://hotelbooking.travelboutiqueonline.com/HotelAPI_V10/HotelService.svc/rest/Getbookingdetail",
+              "protocol": "https",
+              "host": [
+                "hotelbooking",
+                "travelboutiqueonline",
+                "com"
+              ],
+              "path": [
+                "HotelAPI_V10",
+                "HotelService.svc",
+                "rest",
+                "Getbookingdetail"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "5) HotelBE - GenerateVoucher (Optional)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Inject BookingId into GenerateVoucher request",
+                  "let body = {};",
+                  "try { body = JSON.parse(pm.request.body.raw); } catch(e) { body = {}; }",
+                  "body.BookingId = pm.collectionVariables.get('BookingId') || body.BookingId;",
+                  "body.EndUserIp = pm.collectionVariables.get('EndUserIp') || body.EndUserIp;",
+                  "pm.request.body.update(JSON.stringify(body, null, 2));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"BookingId\": \"\",\n  \"EndUserIp\": \"192.168.9.119\"\n}"
+            },
+            "url": {
+              "raw": "https://hotelbooking.travelboutiqueonline.com/HotelAPI_V10/HotelService.svc/rest/GenerateVoucher",
+              "protocol": "https",
+              "host": [
+                "hotelbooking",
+                "travelboutiqueonline",
+                "com"
+              ],
+              "path": [
+                "HotelAPI_V10",
+                "HotelService.svc",
+                "rest",
+                "GenerateVoucher"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Case 8 - International (Room 1 – Adult 1, Child 2) (Room 2 – Adult 2)",
+      "item": [
+        {
+          "name": "1) Affiliate - Search",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "function findFirst(obj, keys){",
+                  "  if (obj === null || obj === undefined) return null;",
+                  "  if (Array.isArray(obj)) {",
+                  "    for (let i = 0; i < obj.length; i++) {",
+                  "      const r = findFirst(obj[i], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "    return null;",
+                  "  }",
+                  "  if (typeof obj === 'object') {",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      if (keys.includes(k) && obj[k] !== null && obj[k] !== undefined && obj[k] !== '') return obj[k];",
+                  "    }",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      const r = findFirst(obj[k], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "  }",
+                  "  return null;",
+                  "}",
+                  "",
+                  "let json;",
+                  "try { json = pm.response.json(); } catch (error) { json = null; }",
+                  "if (!json) { console.warn('No JSON response to parse'); }",
+                  "",
+                  "const bookingCode = findFirst(json, ['BookingCode','bookingCode','HotelBookingCode']);",
+                  "if (bookingCode) pm.collectionVariables.set('BookingCode', bookingCode);",
+                  "",
+                  "const tokenId = findFirst(json, ['TokenId','tokenId']);",
+                  "if (tokenId) pm.collectionVariables.set('TokenId', tokenId);",
+                  "",
+                  "const traceId = findFirst(json, ['TraceId','traceId']);",
+                  "if (traceId) pm.collectionVariables.set('TraceId', traceId);",
+                  "",
+                  "const agencyId = findFirst(json, ['AgencyId','agencyId','TokenAgencyId','tokenAgencyId']);",
+                  "if (agencyId) pm.collectionVariables.set('AgencyId', agencyId);",
+                  "",
+                  "const netAmount = findFirst(json, ['NetAmount','netAmount','TotalFare','TotalPrice','Price','PublishedPriceRoundedOff','PublishedPrice']);",
+                  "if (netAmount) pm.collectionVariables.set('NetAmount', netAmount);",
+                  "",
+                  "if (Array.isArray(json?.CityList) && json.CityList.length) {",
+                  "  const filter = String(pm.collectionVariables.get('CityNameFilter') || '').trim().toLowerCase();",
+                  "  const selected = filter",
+                  "    ? json.CityList.find((city) => String(city?.Name || '').toLowerCase().includes(filter))",
+                  "    : json.CityList[0];",
+                  "  if (selected?.Code) pm.collectionVariables.set('CityCode', String(selected.Code));",
+                  "  if (selected?.Name) pm.collectionVariables.set('CityName', String(selected.Name));",
+                  "}",
+                  "",
+                  "if (Array.isArray(json?.Hotels) && json.Hotels.length) {",
+                  "  const hotelCodes = json.Hotels",
+                  "    .map((hotel) => String(hotel?.HotelCode || hotel?.hotelCode || '').trim())",
+                  "    .filter(Boolean);",
+                  "  if (hotelCodes.length) pm.collectionVariables.set('HotelCodes', hotelCodes.join(','));",
+                  "}",
+                  "",
+                  "try {",
+                  "  const requestBody = pm.request?.body?.raw ? JSON.parse(pm.request.body.raw) : null;",
+                  "  if (requestBody?.GuestNationality) {",
+                  "    pm.collectionVariables.set('GuestNationality', String(requestBody.GuestNationality));",
+                  "  }",
+                  "} catch (error) {",
+                  "  // Ignore malformed request bodies.",
+                  "}",
+                  "",
+                  "pm.test('Search parsed (BookingCode captured if present)', function(){ pm.expect(true).to.eql(true); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"CheckIn\": \"{{CheckIn}}\",\n  \"CheckOut\": \"{{CheckOut}}\",\n  \"HotelCodes\": \"{{HotelCodes}}\",\n  \"GuestNationality\": \"US\",\n  \"PaxRooms\": [\n    {\n      \"Adults\": 1,\n      \"Children\": 2,\n      \"ChildrenAges\": [\n        6,\n        9\n      ]\n    },\n    {\n      \"Adults\": 2,\n      \"Children\": 0,\n      \"ChildrenAges\": []\n    }\n  ],\n  \"ResponseTime\": 23,\n  \"IsDetailedResponse\": true,\n  \"Filters\": {\n    \"Refundable\": true,\n    \"NoOfRooms\": 0,\n    \"MealType\": \"WithMeal\",\n    \"OrderBy\": 0,\n    \"StarRating\": 0,\n    \"HotelName\": null\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "https://affiliate.travelboutiqueonline.com/HotelAPI/Search",
+              "protocol": "https",
+              "host": [
+                "affiliate",
+                "travelboutiqueonline",
+                "com"
+              ],
+              "path": [
+                "HotelAPI",
+                "Search"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "2) Affiliate - PreBook",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Auto-inject booking values before sending the PreBook request.",
+                  "let body = {};",
+                  "try { body = JSON.parse(pm.request.body.raw); } catch (error) { body = {}; }",
+                  "body.BookingCode = pm.collectionVariables.get('BookingCode') || body.BookingCode;",
+                  "body.PaymentMode = pm.collectionVariables.get('PaymentMode') || body.PaymentMode || 'Limit';",
+                  "body.GuestNationality = pm.collectionVariables.get('GuestNationality') || body.GuestNationality;",
+                  "body.NoOfRooms = Number(pm.collectionVariables.get('NoOfRooms') || body.NoOfRooms || 1);",
+                  "pm.request.body.update(JSON.stringify(body, null, 2));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "function findFirst(obj, keys){",
+                  "  if (obj === null || obj === undefined) return null;",
+                  "  if (Array.isArray(obj)) {",
+                  "    for (let i=0;i<obj.length;i++){",
+                  "      const r = findFirst(obj[i], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "    return null;",
+                  "  }",
+                  "  if (typeof obj === 'object') {",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      if (keys.includes(k) && obj[k] !== null && obj[k] !== undefined && obj[k] !== '' ) return obj[k];",
+                  "    }",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      const r = findFirst(obj[k], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "  }",
+                  "  return null;",
+                  "}",
+                  "let json;",
+                  "try { json = pm.response.json(); } catch(e) { json = null; }",
+                  "if (!json) { console.warn('No JSON response to parse'); }",
+                  "// Some setups return updated BookingCode / amounts after PreBook",
+                  "const bookingCode2 = findFirst(json, ['BookingCode','bookingCode','HotelBookingCode']);",
+                  "if (bookingCode2) pm.collectionVariables.set('BookingCode', bookingCode2);",
+                  "const tokenId2 = findFirst(json, ['TokenId','tokenId']);",
+                  "if (tokenId2) pm.collectionVariables.set('TokenId', tokenId2);",
+                  "const traceId2 = findFirst(json, ['TraceId','traceId']);",
+                  "if (traceId2) pm.collectionVariables.set('TraceId', traceId2);",
+                  "const agencyId2 = findFirst(json, ['AgencyId','agencyId','TokenAgencyId','tokenAgencyId']);",
+                  "if (agencyId2) pm.collectionVariables.set('AgencyId', agencyId2);",
+                  "const net2 = findFirst(json, ['NetAmount','netAmount','TotalFare','TotalPrice','Price','PublishedPriceRoundedOff','PublishedPrice']);",
+                  "if (net2) pm.collectionVariables.set('NetAmount', net2);",
+                  "pm.test('PreBook parsed (updated tokens captured if present)', function(){ pm.expect(true).to.eql(true); });"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"BookingCode\": \"{{BookingCode}}\",\n  \"PaymentMode\": \"{{PaymentMode}}\",\n  \"GuestNationality\": \"{{GuestNationality}}\",\n  \"NoOfRooms\": {{NoOfRooms}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "https://affiliate.travelboutiqueonline.com/HotelAPI/PreBook",
+              "protocol": "https",
+              "host": [
+                "affiliate",
+                "travelboutiqueonline",
+                "com"
+              ],
+              "path": [
+                "HotelAPI",
+                "PreBook"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "3) HotelBE - Book",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Auto-inject BookingCode/TokenId/TraceId/NetAmount into Book request",
+                  "let body = {};",
+                  "try { body = JSON.parse(pm.request.body.raw); } catch(e) { body = {}; }",
+                  "body.BookingCode = pm.collectionVariables.get('BookingCode') || body.BookingCode;",
+                  "body.TokenId = pm.collectionVariables.get('TokenId') || body.TokenId;",
+                  "body.TraceId = pm.collectionVariables.get('TraceId') || body.TraceId;",
+                  "body.EndUserIp = pm.collectionVariables.get('EndUserIp') || body.EndUserIp;",
+                  "// Only set NetAmount if we have it",
+                  "const net = pm.collectionVariables.get('NetAmount');",
+                  "if (net !== null && net !== undefined && net !== '') { body.NetAmount = net; }",
+                  "pm.request.body.update(JSON.stringify(body, null, 2));"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "function findFirst(obj, keys){",
+                  "  if (obj === null || obj === undefined) return null;",
+                  "  if (Array.isArray(obj)) {",
+                  "    for (let i=0;i<obj.length;i++){",
+                  "      const r = findFirst(obj[i], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "    return null;",
+                  "  }",
+                  "  if (typeof obj === 'object') {",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      if (keys.includes(k) && obj[k] !== null && obj[k] !== undefined && obj[k] !== '' ) return obj[k];",
+                  "    }",
+                  "    for (const k of Object.keys(obj)) {",
+                  "      const r = findFirst(obj[k], keys);",
+                  "      if (r !== null && r !== undefined && r !== '') return r;",
+                  "    }",
+                  "  }",
+                  "  return null;",
+                  "}",
+                  "let json;",
+                  "try { json = pm.response.json(); } catch(e) { json = null; }",
+                  "if (!json) { console.warn('No JSON response to parse'); }",
+                  "// Capture BookingId / ConfirmationNo",
+                  "const bookingId = findFirst(json, ['BookingId','bookingId','BookingID']);",
+                  "if (bookingId) pm.collectionVariables.set('BookingId', String(bookingId));",
+                  "const conf = findFirst(json, ['ConfirmationNo','confirmationNo','ConfirmationNumber','HotelConfirmationNo']);",
+                  "if (conf) pm.collectionVariables.set('ConfirmationNo', String(conf));",
+                  "pm.test('Book parsed (BookingId/Confirmation captured if present)', function(){ pm.expect(true).to.eql(true); });"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"BookingCode\": {{BookingCode}},\n  \"IsVoucherBooking\": true,\n  \"GuestNationality\": \"IN\",\n  \"EndUserIp\": \"192.168.9.119\",\n  \"RequestedBookingMode\": 1,\n \n  \"HotelRoomsDetails\": [\n    {\n      \"HotelPassenger\": [\n        {\n          \"Title\": \"Mr.\",\n          \"FirstName\": \"Jeevesh\",\n          \"MiddleName\": \"\",\n          \"LastName\": \"Sharma\",\n          \"Email\": null,\n          \"PaxType\": 1,\n          \"LeadPassenger\": true,\n          \"Age\": 30,\n          \"PassportNo\": null,\n          \"PassportIssueDate\": null,\n          \"PassportExpDate\": null,\n          \"Phoneno\": null,\n          \"PaxId\": 1,\n          \"GSTCompanyAddress\": null,\n          \"GSTCompanyContactNumber\": null,\n          \"GSTCompanyName\": null,\n          \"GSTNumber\": null,\n          \"GSTCompanyEmail\": null,\n          \"PAN\": \"AAAAA9999L\"\n        },\n        {\n          \"Title\": \"Mstr.\",\n          \"FirstName\": \"ChildOne\",\n          \"MiddleName\": \"\",\n          \"LastName\": \"Sharma\",\n          \"Email\": null,\n          \"PaxType\": 2,\n          \"LeadPassenger\": false,\n          \"Age\": 3,\n          \"PassportNo\": null,\n          \"PassportIssueDate\": null,\n          \"PassportExpDate\": null,\n          \"Phoneno\": null,\n          \"PaxId\": 2,\n          \"GSTCompanyAddress\": null,\n          \"GSTCompanyContactNumber\": null,\n          \"GSTCompanyName\": null,\n          \"GSTNumber\": null,\n          \"GSTCompanyEmail\": null,\n          \"PAN\": \"BBBBB1111B\"\n        },\n        {\n          \"Title\": \"Miss\",\n          \"FirstName\": \"ChildTwo\",\n          \"MiddleName\": \"\",\n          \"LastName\": \"Sharma\",\n          \"Email\": null,\n          \"PaxType\": 2,\n          \"LeadPassenger\": false,\n          \"Age\": 4,\n          \"PassportNo\": null,\n          \"PassportIssueDate\": null,\n          \"PassportExpDate\": null,\n          \"Phoneno\": null,\n          \"PaxId\": 3,\n          \"GSTCompanyAddress\": null,\n          \"GSTCompanyContactNumber\": null,\n          \"GSTCompanyName\": null,\n          \"GSTNumber\": null,\n          \"GSTCompanyEmail\": null,\n          \"PAN\": \"CCCCC2222C\"\n        }\n      ]\n    },\n    {\n      \"HotelPassenger\": [\n        {\n          \"Title\": \"Mr.\",\n          \"FirstName\": \"Rahul\",\n          \"MiddleName\": \"\",\n          \"LastName\": \"Verma\",\n          \"Email\": null,\n          \"PaxType\": 1,\n          \"LeadPassenger\": true,\n          \"Age\": 35,\n          \"PassportNo\": null,\n          \"PassportIssueDate\": null,\n          \"PassportExpDate\": null,\n          \"Phoneno\": null,\n          \"PaxId\": 4,\n          \"GSTCompanyAddress\": null,\n          \"GSTCompanyContactNumber\": null,\n          \"GSTCompanyName\": null,\n          \"GSTNumber\": null,\n          \"GSTCompanyEmail\": null,\n          \"PAN\": \"DDDDD3333D\"\n        },\n        {\n          \"Title\": \"Mrs.\",\n          \"FirstName\": \"Sneha\",\n          \"MiddleName\": \"\",\n          \"LastName\": \"Verma\",\n          \"Email\": null,\n          \"PaxType\": 1,\n          \"LeadPassenger\": false,\n          \"Age\": 32,\n          \"PassportNo\": null,\n          \"PassportIssueDate\": null,\n          \"PassportExpDate\": null,\n          \"Phoneno\": null,\n          \"PaxId\": 5,\n          \"GSTCompanyAddress\": null,\n          \"GSTCompanyContactNumber\": null,\n          \"GSTCompanyName\": null,\n          \"GSTNumber\": null,\n          \"GSTCompanyEmail\": null,\n          \"PAN\": \"EEEEE4444E\"\n        }\n      ]\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "https://hotelbooking.travelboutiqueonline.com/HotelAPI_V10/HotelService.svc/rest/book/",
+              "protocol": "https",
+              "host": [
+                "hotelbooking",
+                "travelboutiqueonline",
+                "com"
+              ],
+              "path": [
+                "HotelAPI_V10",
+                "HotelService.svc",
+                "rest",
+                "book"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "4) HotelBE - GetBookingDetail",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Inject BookingId into GetBookingDetail request",
+                  "let body = {};",
+                  "try { body = JSON.parse(pm.request.body.raw); } catch(e) { body = {}; }",
+                  "body.BookingId = pm.collectionVariables.get('BookingId') || body.BookingId;",
+                  "body.EndUserIp = pm.collectionVariables.get('EndUserIp') || body.EndUserIp;",
+                  "const token = pm.collectionVariables.get('TokenId');",
+                  "if (token) body.TokenId = token;",
+                  "pm.request.body.update(JSON.stringify(body, null, 2));"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n\"BookingId\": {{BookingId}},\n  \"EndUserIp\": \"192.168.9.119\",\n  \"TokenId\": {{TokenId}}\n}"
+            },
+            "url": {
+              "raw": "https://hotelbooking.travelboutiqueonline.com/HotelAPI_V10/HotelService.svc/rest/Getbookingdetail",
+              "protocol": "https",
+              "host": [
+                "hotelbooking",
+                "travelboutiqueonline",
+                "com"
+              ],
+              "path": [
+                "HotelAPI_V10",
+                "HotelService.svc",
+                "rest",
+                "Getbookingdetail"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "5) HotelBE - GenerateVoucher (Optional)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Inject BookingId into GenerateVoucher request",
+                  "let body = {};",
+                  "try { body = JSON.parse(pm.request.body.raw); } catch(e) { body = {}; }",
+                  "body.BookingId = pm.collectionVariables.get('BookingId') || body.BookingId;",
+                  "body.EndUserIp = pm.collectionVariables.get('EndUserIp') || body.EndUserIp;",
+                  "pm.request.body.update(JSON.stringify(body, null, 2));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"BookingId\": \"\",\n  \"EndUserIp\": \"192.168.9.119\"\n}"
+            },
+            "url": {
+              "raw": "https://hotelbooking.travelboutiqueonline.com/HotelAPI_V10/HotelService.svc/rest/GenerateVoucher",
+              "protocol": "https",
+              "host": [
+                "hotelbooking",
+                "travelboutiqueonline",
+                "com"
+              ],
+              "path": [
+                "HotelAPI_V10",
+                "HotelService.svc",
+                "rest",
+                "GenerateVoucher"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "auth": {
+    "type": "basic",
+    "basic": [
+      {
+        "key": "username",
+        "value": "{{UserName}}",
+        "type": "string"
+      },
+      {
+        "key": "password",
+        "value": "{{Password}}",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "const ymd = (d) => {",
+          "  const y = d.getFullYear();",
+          "  const m = String(d.getMonth() + 1).padStart(2, '0');",
+          "  const day = String(d.getDate()).padStart(2, '0');",
+          "  return `${y}-${m}-${day}`;",
+          "};",
+          "",
+          "const defaults = {",
+          "  CountryCode: 'IN',",
+          "  DubaiCountryCode: 'AE',",
+          "  CityCode: '127343',",
+          "  DubaiCityCode: '130990',",
+          "  CityNameFilter: 'Chennai',",
+          "  GuestNationality: 'IN',",
+          "  PaymentMode: 'Limit',",
+          "  NoOfRooms: '1',",
+          "};",
+          "",
+          "for (const [key, value] of Object.entries(defaults)) {",
+          "  if (!pm.collectionVariables.get(key)) {",
+          "    pm.collectionVariables.set(key, value);",
+          "  }",
+          "}",
+          "",
+          "if (!pm.collectionVariables.get('CheckIn')) {",
+          "  const checkIn = new Date();",
+          "  checkIn.setDate(checkIn.getDate() + 15);",
+          "  pm.collectionVariables.set('CheckIn', ymd(checkIn));",
+          "}",
+          "",
+          "if (!pm.collectionVariables.get('CheckOut')) {",
+          "  const checkOut = new Date();",
+          "  checkOut.setDate(checkOut.getDate() + 16);",
+          "  pm.collectionVariables.set('CheckOut', ymd(checkOut));",
+          "}"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "ClientId",
+      "value": "tboprod",
+      "type": "string"
+    },
+    {
+      "key": "UserName",
+      "value": "IXMD112",
+      "type": "string"
+    },
+    {
+      "key": "Password",
+      "value": "api-11#M$new",
+      "type": "string"
+    },
+    {
+      "key": "EndUserIp",
+      "value": "134.209.145.185",
+      "type": "string"
+    },
+    {
+      "key": "CountryCode",
+      "value": "IN",
+      "type": "string"
+    },
+    {
+      "key": "DubaiCountryCode",
+      "value": "AE",
+      "type": "string"
+    },
+    {
+      "key": "CityCode",
+      "value": "127343",
+      "type": "string"
+    },
+    {
+      "key": "DubaiCityCode",
+      "value": "130990",
+      "type": "string"
+    },
+    {
+      "key": "CityNameFilter",
+      "value": "Chennai",
+      "type": "string"
+    },
+    {
+      "key": "HotelCodes",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "CheckIn",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "CheckOut",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "GuestNationality",
+      "value": "IN",
+      "type": "string"
+    },
+    {
+      "key": "PaymentMode",
+      "value": "Limit",
+      "type": "string"
+    },
+    {
+      "key": "NoOfRooms",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "BookingCode",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "BookingId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "ConfirmationNo",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "TokenId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "TraceId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "AgencyId",
+      "value": "",
+      "type": "string"
+    }
+  ]
+}

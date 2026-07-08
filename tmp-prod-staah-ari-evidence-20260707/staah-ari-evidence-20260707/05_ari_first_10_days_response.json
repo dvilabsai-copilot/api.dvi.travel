@@ -1,0 +1,15 @@
+{
+  "status": 400,
+  "headers": {
+    "Date": "Tue, 07 Jul 2026 18:24:32 GMT",
+    "Content-Type": "application/json; charset=utf-8",
+    "Transfer-Encoding": "chunked",
+    "Connection": "close",
+    "Server": "Apache"
+  },
+  "body": {
+    "error_desc": "FromDate : 2026-06-01 cannot be the past date",
+    "status": "Fail",
+    "trackingId": "258E61FE-3DBC-438D-8EC6-C1F393E6C432"
+  }
+}

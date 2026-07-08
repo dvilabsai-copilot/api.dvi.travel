@@ -1,0 +1,138 @@
+{
+  "propertyid": "STAAHTESTHOTELPROD",
+  "apikey": "4db-c9d-aa2e7-d43a-6ab-a197f-b37e5a6",
+  "action": "reservation_info",
+  "version": "2",
+  "reservations": {
+    "reservation": [
+      {
+        "reservation_datetime": "2026-07-07T23:46:33",
+        "propertyname": "STAAH TEST",
+        "reservation_id": "DVI-CERT-S5-1783448178360",
+        "payment_required": "15",
+        "payment_type": "Hotel Collect",
+        "commissionamount": "0.00",
+        "discountamount": "0.00",
+        "deposit": "0.00",
+        "totalamountaftertax": "2530.00",
+        "totaltax": "230.00",
+        "currencycode": "INR",
+        "status": "Confirm",
+        "customer": {
+          "address": "Ring Road",
+          "city": "Surat",
+          "country": "India",
+          "email": "rk@staah.com",
+          "salutation": "Mr.",
+          "first_name": "Test",
+          "last_name": "Test",
+          "remarks": "Please Provide Wine Upon Checking and Do not Disturb",
+          "telephone": "+91 97734 84053",
+          "zip": "395004"
+        },
+        "paymentcarddetail": {
+          "CardHolderName": "Test STAAH",
+          "CardType": "MC",
+          "ExpireDate": "07/28",
+          "CardNumber": "4111111111111111",
+          "cvv": "123"
+        },
+        "room": [
+          {
+            "arrival_date": "2026-07-15",
+            "departure_date": "2026-07-16",
+            "room_id": "DELUXEROOM",
+            "room_name": "Studio",
+            "price": [
+              {
+                "date": "2026-07-15",
+                "rate_id": "CPPLAN",
+                "rate_name": "Test MK",
+                "amountaftertax": "1100.00",
+                "extraGuests": {
+                  "extraAdult": "0",
+                  "extraChild": "1",
+                  "extraAdultRate": "0",
+                  "extraChildRate": "100"
+                }
+              }
+            ],
+            "salutation": "Mr.",
+            "first_name": "Test",
+            "last_name": "Test",
+            "taxes": [
+              {
+                "name": "service charge",
+                "value": "120.00"
+              }
+            ],
+            "amountaftertax": "1320.00",
+            "remarks": "Room 1: child with extra bed",
+            "GuestCount": [
+              {
+                "AgeQualifyingCode": "10",
+                "Count": "2"
+              },
+              {
+                "AgeQualifyingCode": "8",
+                "Count": "1"
+              }
+            ]
+          },
+          {
+            "arrival_date": "2026-07-15",
+            "departure_date": "2026-07-16",
+            "room_id": "DELUXEROOM",
+            "room_name": "Studio",
+            "price": [
+              {
+                "date": "2026-07-15",
+                "rate_id": "CPPLAN",
+                "rate_name": "Test MK",
+                "amountaftertax": "1100.00",
+                "extraGuests": {
+                  "extraAdult": "0",
+                  "extraChild": "0",
+                  "extraAdultRate": "0",
+                  "extraChildRate": "0"
+                }
+              }
+            ],
+            "salutation": "Mr.",
+            "first_name": "Test",
+            "last_name": "Test",
+            "taxes": [
+              {
+                "name": "service charge",
+                "value": "110.00"
+              }
+            ],
+            "amountaftertax": "1210.00",
+            "remarks": "Room 2: child without extra bed and infant",
+            "GuestCount": [
+              {
+                "AgeQualifyingCode": "10",
+                "Count": "2"
+              },
+              {
+                "AgeQualifyingCode": "8",
+                "Count": "1"
+              },
+              {
+                "AgeQualifyingCode": "7",
+                "Count": "1"
+              }
+            ]
+          }
+        ],
+        "POS": "TEST",
+        "extraData": [
+          {
+            "name": "Key",
+            "value": "Value of key"
+          }
+        ]
+      }
+    ]
+  }
+}

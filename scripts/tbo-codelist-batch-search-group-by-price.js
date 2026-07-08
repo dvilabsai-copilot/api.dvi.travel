@@ -20,7 +20,7 @@
  *   CHILDREN=0
  *   BATCH_SIZE=100
  *   CONCURRENCY=5
- *   TBO_STATIC_USERNAME=TBOStaticAPITest
+ *   TBO_STATIC_USERNAME=IXMD112
  *   TBO_STATIC_PASSWORD=...
  *   TBO_API_USERNAME=...
  *   TBO_API_PASSWORD=...
@@ -32,13 +32,13 @@ const axios = require('axios');
 
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
-const STATIC_BASE = process.env.TBO_STATIC_BASE_URL || 'http://api.tbotechnology.in/TBOHolidays_HotelAPI';
-const SEARCH_URL = process.env.TBO_SEARCH_URL || 'https://affiliate.tektravels.com/HotelAPI/Search';
+const STATIC_BASE = process.env.TBO_STATIC_BASE_URL || 'http://affiliate.travelboutiqueonline.com/TBOHolidays_HotelAPI';
+const SEARCH_URL = process.env.TBO_SEARCH_URL || 'https://affiliate.travelboutiqueonline.com/HotelAPI/Search';
 
-const STATIC_USERNAME = process.env.TBO_STATIC_USERNAME || 'TBOStaticAPITest';
-const STATIC_PASSWORD = process.env.TBO_STATIC_PASSWORD || process.env.TBO_STATIC_API_PASSWORD || '';
-const API_USERNAME = process.env.TBO_API_USERNAME || process.env.TBO_USERNAME || '';
-const API_PASSWORD = process.env.TBO_API_PASSWORD || process.env.TBO_PASSWORD || '';
+const STATIC_USERNAME = process.env.TBO_STATIC_USERNAME || 'IXMD112';
+const STATIC_PASSWORD = process.env.TBO_STATIC_PASSWORD || process.env.TBO_STATIC_API_PASSWORD || process.env.TBO_PASSWORD || 'api-11#M$new';
+const API_USERNAME = process.env.TBO_API_USERNAME || process.env.TBO_USERNAME || 'IXMD112';
+const API_PASSWORD = process.env.TBO_API_PASSWORD || process.env.TBO_PASSWORD || 'api-11#M$new';
 
 const CITY_CODE = String(process.env.CITY_CODE || '127067');
 const SEARCH_CITY_CODE = String(process.env.SEARCH_CITY_CODE || CITY_CODE);

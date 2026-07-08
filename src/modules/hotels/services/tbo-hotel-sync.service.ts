@@ -12,10 +12,10 @@ export class TboHotelSyncService {
   private tokenExpiry: Date | null = null;
 
   // TBO API Endpoints
-  private readonly SHARED_API_URL = 'https://sharedapi.tektravels.com';
-  private readonly USERNAME = 'TBOApi';
-  private readonly PASSWORD = 'TBOApi@123';
-  private readonly CLIENT_ID = 'ApiIntegrationNew';
+  private readonly SHARED_API_URL = process.env.TBO_SHARED_API_URL || 'https://api.travelboutiqueonline.com/SharedAPI';
+  private readonly USERNAME = process.env.TBO_USERNAME || 'IXMD112';
+  private readonly PASSWORD = process.env.TBO_PASSWORD || 'api-11#M$new';
+  private readonly CLIENT_ID = process.env.TBO_CLIENT_ID || 'tboprod';
 
   // TBO Cities we want to sync
   private readonly TBO_CITIES = [
@@ -124,7 +124,7 @@ export class TboHotelSyncService {
         ClientId: this.CLIENT_ID,
         UserName: this.USERNAME,
         Password: this.PASSWORD,
-        EndUserIp: '192.168.1.1',
+        EndUserIp: process.env.TBO_END_USER_IP || '134.209.145.185',
       };
 
       const response = await this.http.post(
