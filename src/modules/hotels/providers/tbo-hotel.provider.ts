@@ -27,18 +27,18 @@ export class TBOHotelProvider implements IHotelProvider {
   private static readonly MAX_CHILDREN_PER_ROOM = 4;
 
   // Production API Endpoints from Postman Collection
-  private readonly SEARCH_API_URL = 'https://affiliate.tektravels.com/HotelAPI';
-  private readonly BOOKING_API_URL = 'https://hotelbe.tektravels.com';
-  private readonly SHARED_API_URL = 'https://sharedapi.tektravels.com';
-  private readonly TBO_STATIC_API_URL = 'http://api.tbotechnology.in/TBOHolidays_HotelAPI';
-  private readonly TBO_STATIC_USERNAME = process.env.TBO_STATIC_USERNAME || 'TBOStaticAPITest';
-  private readonly TBO_STATIC_PASSWORD = process.env.TBO_STATIC_PASSWORD || 'Tbo@11530818';
-  private readonly SEARCH_USERNAME = process.env.TBO_SEARCH_USERNAME || process.env.TBO_API_USERNAME || process.env.TBO_USERNAME || 'Doview';
-  private readonly SEARCH_PASSWORD = process.env.TBO_SEARCH_PASSWORD || process.env.TBO_API_PASSWORD || process.env.TBO_PASSWORD || 'Doview@12345';
+  private readonly SEARCH_API_URL = process.env.TBO_SEARCH_API_URL || 'https://affiliate.travelboutiqueonline.com/HotelAPI';
+  private readonly BOOKING_API_URL = process.env.TBO_BOOKING_API_URL || 'https://hotelbooking.travelboutiqueonline.com/HotelAPI_V10';
+  private readonly SHARED_API_URL = process.env.TBO_AUTH_BASE_URL || 'https://api.travelboutiqueonline.com/SharedAPI';
+  private readonly TBO_STATIC_API_URL = process.env.TBO_STATIC_API_URL || 'http://affiliate.travelboutiqueonline.com/TBOHolidays_HotelAPI';
+  private readonly TBO_STATIC_USERNAME = process.env.TBO_STATIC_USERNAME || process.env.TBO_USERNAME || 'IXMD112';
+  private readonly TBO_STATIC_PASSWORD = process.env.TBO_STATIC_PASSWORD || process.env.TBO_PASSWORD || 'api-11#M$new';
+  private readonly SEARCH_USERNAME = process.env.TBO_SEARCH_USERNAME || process.env.TBO_API_USERNAME || process.env.TBO_USERNAME || 'IXMD112';
+  private readonly SEARCH_PASSWORD = process.env.TBO_SEARCH_PASSWORD || process.env.TBO_API_PASSWORD || process.env.TBO_PASSWORD || 'api-11#M$new';
   
   // Real Production Credentials (From Postman - Verified Working)
-  private readonly USERNAME = process.env.TBO_API_USERNAME || process.env.TBO_USERNAME || 'Doview';
-  private readonly PASSWORD = process.env.TBO_API_PASSWORD || process.env.TBO_PASSWORD || 'Doview@12345';
+  private readonly USERNAME = process.env.TBO_API_USERNAME || process.env.TBO_USERNAME || 'IXMD112';
+  private readonly PASSWORD = process.env.TBO_API_PASSWORD || process.env.TBO_PASSWORD || 'api-11#M$new';
   
   private logger = new Logger(TBOHotelProvider.name);
   private readonly verboseHotelLookupLogs =
@@ -87,10 +87,10 @@ export class TBOHotelProvider implements IHotelProvider {
       this.logger.log(`      - Username: ${this.USERNAME}`);
 
       const authRequest = {
-        ClientId: process.env.TBO_CLIENT_ID || 'ApiIntegrationNew',
+        ClientId: process.env.TBO_CLIENT_ID || 'tboprod',
         UserName: this.USERNAME,
         Password: this.PASSWORD,
-        EndUserIp: process.env.TBO_END_USER_IP || '192.168.1.1',
+        EndUserIp: process.env.TBO_END_USER_IP || '134.209.145.185',
       };
 
       const authStartTime = Date.now();
@@ -922,7 +922,7 @@ export class TBOHotelProvider implements IHotelProvider {
 
       // Step 6: Call Book API
       const bookResponse = await this.http
-        .post(`${this.BOOKING_API_URL}/hotelservice.svc/rest/Book`, bookRequest, {
+        .post(`${this.BOOKING_API_URL}/HotelService.svc/rest/Book`, bookRequest, {
           timeout: 30000,
           headers: {
             'Content-Type': 'application/json',
@@ -990,7 +990,7 @@ export class TBOHotelProvider implements IHotelProvider {
       // Step 3: Call GetBookingDetail API
       const response = await this.http
         .post(
-          `${this.BOOKING_API_URL}/hotelservice.svc/rest/Getbookingdetail`,
+          `${this.BOOKING_API_URL}/HotelService.svc/rest/Getbookingdetail`,
           request,
           {
             timeout: 30000,
@@ -1046,7 +1046,7 @@ export class TBOHotelProvider implements IHotelProvider {
         RequestType: 4, // 4 = HotelCancel
         Remarks: reason,
         BookingId: parseInt(confirmationRef), // Must be Integer from Book Response
-        EndUserIp: process.env.TBO_END_USER_IP || '192.168.1.1',
+        EndUserIp: process.env.TBO_END_USER_IP || '134.209.145.185',
         TokenId: tokenId,
       };
 
@@ -1055,7 +1055,7 @@ export class TBOHotelProvider implements IHotelProvider {
       // Step 3: Call SendChangeRequest API
       const response = await this.http
         .post(
-          `${this.BOOKING_API_URL}/hotelservice.svc/rest/SendChangeRequest`,
+          `${this.BOOKING_API_URL}/HotelService.svc/rest/SendChangeRequest`,
           request,
           {
             timeout: 30000,

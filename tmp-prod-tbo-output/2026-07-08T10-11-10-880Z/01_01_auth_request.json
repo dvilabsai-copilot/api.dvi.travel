@@ -1,0 +1,15 @@
+{
+  "label": "01_auth",
+  "method": "POST",
+  "url": "https://api.travelboutiqueonline.com/SharedAPI/SharedData.svc/rest/Authenticate",
+  "headers": {
+    "Content-Type": "application/json",
+    "Accept": "application/json"
+  },
+  "body": {
+    "ClientId": "tboprod",
+    "UserName": "IXMD112",
+    "Password": "api-11#M$new",
+    "EndUserIp": "134.209.145.185"
+  }
+}

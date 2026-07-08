@@ -9353,7 +9353,7 @@ pricing: {
   async processConfirmationWithTboBookings(
     baseResult: any,
     dto: ConfirmQuotationDto,
-    endUserIp: string = '192.168.1.1',
+    endUserIp: string = process.env.TBO_END_USER_IP || '134.209.145.185',
   ) {
     const userId = 1; // TODO: Get from authenticated user
     const mergedHotelBookings = this.pruneHotelBookingsCoveredByMultiNight(
@@ -9488,7 +9488,7 @@ pricing: {
           baseResult.confirmed_itinerary_plan_ID,
           baseResult.itinerary_plan_ID,
           selections,
-          endUserIp || dto.endUserIp || '192.168.1.1',
+          endUserIp || dto.endUserIp || process.env.TBO_END_USER_IP || '134.209.145.185',
           userId,
           Number(dto.hotel_group_type) || 1, // Pass the group_type
         );

@@ -9,8 +9,8 @@ import { PrismaService } from '../../../prisma.service';
  * Follows the pattern from PHP codebase (config/config.php)
  * 
  * Authentication:
- * - Username: TBOStaticAPITest
- * - Password: Tbo@11530818
+ * - Username: IXMD112
+ * - Password: api-11#M$new
  * 
  * Endpoints:
  * - TBOHotelCodeList: http://api.tbotechnology.in/TBOHolidays_HotelAPI/TBOHotelCodeList
@@ -20,9 +20,9 @@ export class TboApiSyncService {
   private logger = new Logger(TboApiSyncService.name);
   
   // TBO API credentials (from config/config.php)
-  private readonly TBO_API_AUTH_USERNAME = 'TBOStaticAPITest';
-  private readonly TBO_API_AUTH_PASSWORD = 'Tbo@11530818';
-  private readonly TBO_MASTER_API_BASE = 'http://api.tbotechnology.in/TBOHolidays_HotelAPI';
+  private readonly TBO_API_AUTH_USERNAME = process.env.TBO_STATIC_USERNAME || 'IXMD112';
+  private readonly TBO_API_AUTH_PASSWORD = process.env.TBO_STATIC_PASSWORD || 'api-11#M$new';
+  private readonly TBO_MASTER_API_BASE = process.env.TBO_STATIC_API_URL || 'http://affiliate.travelboutiqueonline.com/TBOHolidays_HotelAPI';
   
   private http: AxiosInstance;
 

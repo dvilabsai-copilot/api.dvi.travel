@@ -1,0 +1,37 @@
+{
+  "label": "01_auth",
+  "status": 200,
+  "statusText": "OK",
+  "headers": {
+    "access-control-allow-origin": "*",
+    "cache-control": "private",
+    "connection": "keep-alive",
+    "content-encoding": "gzip",
+    "content-length": "403",
+    "content-type": "application/json; charset=utf-8",
+    "date": "Wed, 08 Jul 2026 10:11:11 GMT",
+    "server": "Microsoft-IIS/10.0",
+    "vary": "Accept-Encoding",
+    "x-aspnet-version": "4.0.30319",
+    "x-powered-by": "ASP.NET"
+  },
+  "bodyText": "{\"Status\":1,\"TokenId\":\"6d2e7f46-a0f3-4bd7-87ab-b6cfbdffab1c\",\"Error\":{\"ErrorCode\":0,\"ErrorMessage\":\"\"},\"Member\":{\"FirstName\":\"SRINIVASA RAO\",\"LastName\":\"VEMURI\",\"Email\":\"vsr@dvi.co.in\",\"MemberId\":45854,\"AgencyId\":42002,\"LoginName\":\"IXMD112\",\"LoginDetails\":\"Login Success at#@ 08\\/07\\/2026 02:52:13 #@ IPAddress: 172.16.3.93\",\"isPrimaryAgent\":false}}",
+  "bodyJson": {
+    "Status": 1,
+    "TokenId": "6d2e7f46-a0f3-4bd7-87ab-b6cfbdffab1c",
+    "Error": {
+      "ErrorCode": 0,
+      "ErrorMessage": ""
+    },
+    "Member": {
+      "FirstName": "SRINIVASA RAO",
+      "LastName": "VEMURI",
+      "Email": "vsr@dvi.co.in",
+      "MemberId": 45854,
+      "AgencyId": 42002,
+      "LoginName": "IXMD112",
+      "LoginDetails": "Login Success at#@ 08/07/2026 02:52:13 #@ IPAddress: 172.16.3.93",
+      "isPrimaryAgent": false
+    }
+  }
+}

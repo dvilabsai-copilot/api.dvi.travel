@@ -1,0 +1,10 @@
+{
+  "label": "02_country_list",
+  "method": "GET",
+  "url": "http://affiliate.travelboutiqueonline.com/TBOHolidays_HotelAPI/CountryList",
+  "headers": {
+    "Authorization": "Basic SVhNRDExMjphcGktMTEjTSRuZXc=",
+    "Content-Type": "application/json",
+    "Accept": "application/json"
+  }
+}

@@ -20,9 +20,9 @@ export class TboHotelDataSyncService {
   private http: AxiosInstance = axios;
 
   // From PHP config: dvi_project_api/config/config.php
-  private readonly TBO_MASTER_API = 'https://affiliate.tektravels.com/HotelAPI';
-  private readonly TBO_API_AUTH_UN = 'TBOStaticAPITest';
-  private readonly TBO_API_AUTH_PWD = 'Tbo@11530818';
+  private readonly TBO_MASTER_API = process.env.TBO_SEARCH_API_URL || 'https://affiliate.travelboutiqueonline.com/HotelAPI';
+  private readonly TBO_API_AUTH_UN = process.env.TBO_STATIC_USERNAME || 'IXMD112';
+  private readonly TBO_API_AUTH_PWD = process.env.TBO_STATIC_PASSWORD || 'api-11#M$new';
 
   private readonly CITIES_TO_SYNC = [
     { code: '8', name: 'Chennai' },

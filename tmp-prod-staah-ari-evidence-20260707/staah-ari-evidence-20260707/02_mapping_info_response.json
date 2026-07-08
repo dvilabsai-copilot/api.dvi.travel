@@ -1,0 +1,244 @@
+{
+  "status": 200,
+  "body": {
+    "roomtypes": [
+      {
+        "bedding": [
+          {
+            "bed_type": "2 Queens",
+            "beds": "1"
+          },
+          {
+            "bed_type": "1 Double and 2 Singles",
+            "beds": "1"
+          },
+          {
+            "bed_type": "1 Queen",
+            "beds": "1"
+          }
+        ],
+        "description": "Spacious double room with modern furnishings. Neutral color to gives a sense of calms and peace. Test Room",
+        "facilities": [
+          {
+            "amenitytype": "Laundry Facilities",
+            "amenities": [
+              "Dryer"
+            ]
+          },
+          {
+            "amenitytype": "General Amenities",
+            "amenities": [
+              "Alarm Clock"
+            ]
+          },
+          {
+            "amenities": [
+              "Shower",
+              "Private Bathroom"
+            ],
+            "amenitytype": "Bathroom Features"
+          },
+          {
+            "amenitytype": "Kitchen Features",
+            "amenities": [
+              "Refrigerator - Bar Size"
+            ]
+          },
+          {
+            "amenitytype": "Entertainment",
+            "amenities": [
+              "TV"
+            ]
+          },
+          {
+            "amenities": [
+              "FREE WiFi"
+            ],
+            "amenitytype": "Internet"
+          },
+          {
+            "amenitytype": "Climate control",
+            "amenities": [
+              "Air purifier"
+            ]
+          }
+        ],
+        "room_id": "166436",
+        "room_images": [
+          {
+            "url": "https://homesweb.staah.net/imagelibrary/1694423752_8024_large_0_46119_sQea9sOwx0_3.png",
+            "name": "Bed1",
+            "priority": "1"
+          },
+          {
+            "url": "https://homesweb.staah.net/imagelibrary/1694423753_8024_large_1_46119_sBnMrA9VYI_8_hk.jpg",
+            "priority": "2",
+            "name": "Bed2"
+          }
+        ],
+        "roomname": "Standard",
+        "roomtype": "Apartment",
+        "roomsize": "1000:SqF",
+        "roomtype_view": "City view",
+        "no_of_child": "1",
+        "dormitory": "",
+        "total_room": "100",
+        "max_guest": "5",
+        "rackrate": "120",
+        "max_adult": "3",
+        "OTA_room_id": "DELUXEROOM",
+        "default_inventory": "0"
+      },
+      {
+        "room_images": [
+          {
+            "name": "Superior First",
+            "priority": "1",
+            "url": "https://homesweb.staah.net/imagelibrary/1694423761_8024_large_0_46120_tFxMDEmhIF_6_hk.jpg"
+          },
+          {
+            "name": "Superior Second",
+            "priority": "2",
+            "url": "https://homesweb.staah.net/imagelibrary/1694423762_8024_large_1_46120_WJohMm1uKO_5_hk.jpg"
+          }
+        ],
+        "facilities": [
+          {
+            "amenities": [
+              "In-room Safe Deposit Box",
+              "Spa Pool / Hot Tub",
+              "Towels/Linen at Surcharge"
+            ],
+            "amenitytype": "Room Features & Facilities"
+          },
+          {
+            "amenitytype": "Laundry Facilities",
+            "amenities": [
+              "Dryer",
+              "Washing machine"
+            ]
+          },
+          {
+            "amenitytype": "General Amenities",
+            "amenities": [
+              "Alarm Clock",
+              "Phone"
+            ]
+          },
+          {
+            "amenities": [
+              "Wireless / WiFi"
+            ],
+            "amenitytype": "Internet"
+          },
+          {
+            "amenities": [
+              "Bathtub",
+              "Shower",
+              "Shower Over Bath"
+            ],
+            "amenitytype": "Bathroom Features"
+          },
+          {
+            "amenities": [
+              "Air-conditioning",
+              "Air purifier"
+            ],
+            "amenitytype": "Climate control"
+          },
+          {
+            "amenities": [
+              "Full Kitchen"
+            ],
+            "amenitytype": "Kitchen Features"
+          },
+          {
+            "amenities": [
+              "CD Player",
+              "DVD Player",
+              "Netflix",
+              "Sky TV 50+channels"
+            ],
+            "amenitytype": "Entertainment"
+          }
+        ],
+        "room_id": "166439",
+        "description": "Elegant room with garden view. You will feel a sense of peace sitting in your balcony overlooking the well tended garden. Comfortable double bed with luxurious linen. ",
+        "bedding": [],
+        "roomsize": "1200:SqF",
+        "roomname": "Superior",
+        "roomtype": "Suite",
+        "no_of_child": "1",
+        "roomtype_view": "Garden view",
+        "total_room": "50",
+        "max_guest": "3",
+        "dormitory": "",
+        "rackrate": "1600",
+        "OTA_room_id": "SUITEROOM",
+        "max_adult": "3",
+        "default_inventory": "15"
+      }
+    ],
+    "rateplans": [
+      {
+        "nightType": "R",
+        "default_maximum_stay": "99",
+        "description": "Best Available Rate - good value. Treat yourself !\\nTest Rateplan3 h",
+        "smart_price_flag": "",
+        "extra_child_rate": "150",
+        "applicable_guest": "2",
+        "cancelpolicy_id": "",
+        "mealplan": "Room only",
+        "cancellation_policy": "",
+        "ignore_tax_flag": "",
+        "default_minimum_night": "1",
+        "rate_id": "3289788",
+        "ratename": "Deluxe Room - Continental Plan",
+        "validity": [],
+        "fees": {
+          "Cleaning_fees": "0"
+        },
+        "OTA_rate_id": "CPPLAN",
+        "extra_adult_rate": "400"
+      },
+      {
+        "extra_adult_rate": "299",
+        "OTA_rate_id": "MAPPLAN",
+        "fees": {
+          "Cleaning_fees": "0"
+        },
+        "validity": [],
+        "rate_id": "3289794",
+        "ratename": "Suite Room - Modified American Plan",
+        "default_minimum_night": "1",
+        "cancellation_policy": "",
+        "mealplan": "All inclusive",
+        "ignore_tax_flag": "",
+        "cancelpolicy_id": "",
+        "applicable_guest": "3",
+        "extra_child_rate": "199",
+        "smart_price_flag": "",
+        "description": "Home away from home. Wake up to a luxurious buffet breakfast",
+        "default_maximum_stay": "99",
+        "nightType": "R"
+      }
+    ],
+    "room_rate_mapping": [
+      {
+        "OTA_room_id": "DELUXEROOM",
+        "rate_id": "3289788",
+        "mapping_name": "Deluxe Room - Continental Plan",
+        "OTA_rate_id": "CPPLAN",
+        "room_id": "166436"
+      },
+      {
+        "mapping_name": "Suite Room - Modified American Plan",
+        "rate_id": "3289794",
+        "OTA_room_id": "SUITEROOM",
+        "room_id": "166439",
+        "OTA_rate_id": "MAPPLAN"
+      }
+    ],
+    "trackingId": "1D082B6D-84A6-4703-8080-DB6EE9368D1F"
+  }
+}

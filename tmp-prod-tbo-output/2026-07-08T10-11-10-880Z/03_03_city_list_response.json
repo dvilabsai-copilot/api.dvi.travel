@@ -1,0 +1,4378 @@
+{
+  "label": "03_city_list",
+  "status": 200,
+  "statusText": "OK",
+  "headers": {
+    "connection": "keep-alive",
+    "content-encoding": "gzip",
+    "content-length": "12425",
+    "content-type": "application/json",
+    "date": "Wed, 08 Jul 2026 10:11:12 GMT",
+    "vary": "Accept-Encoding"
+  },
+  "bodyText": "{\"Status\":{\"Code\":200,\"Description\":\"Success\"},\"CityList\":[{\"Code\":\"268880\",\"Name\":\"Abohar,   Punjab\"},{\"Code\":\"105141\",\"Name\":\"Abu Road,   Rajasthan\"},{\"Code\":\"293586\",\"Name\":\"Adimaly,   Kerala\"},{\"Code\":\"102138\",\"Name\":\"Adoor,   kerala\"},{\"Code\":\"418085\",\"Name\":\"Advalpal,   North Goa\"},{\"Code\":\"101615\",\"Name\":\"Adyar,   Tamil Nadu\"},{\"Code\":\"100667\",\"Name\":\"Agartala,   Tripura\"},{\"Code\":\"100578\",\"Name\":\"Agatti,   Lakshadweep\"},{\"Code\":\"394603\",\"Name\":\"Agonda\"},{\"Code\":\"100589\",\"Name\":\"Agra,   Uttar Pradesh\"},{\"Code\":\"100263\",\"Name\":\"Ahmedabad,   Gujarat\"},{\"Code\":\"100363\",\"Name\":\"Ahmednagar,   Maharashtra\"},{\"Code\":\"100797\",\"Name\":\"Ahmedpur Mandvi,   Gujarat\"},{\"Code\":\"260619\",\"Name\":\"Ahwa,   Gujarat\"},{\"Code\":\"100273\",\"Name\":\"Aizawl,   Mizoram\"},{\"Code\":\"100686\",\"Name\":\"Ajabgarh,   Rajasthan\"},{\"Code\":\"100804\",\"Name\":\"Ajmer,   Rajasthan\"},{\"Code\":\"100689\",\"Name\":\"Akola,   Maharashtra\"},{\"Code\":\"285346\",\"Name\":\"Alchi\"},{\"Code\":\"101625\",\"Name\":\"Alibaug,   Maharashtra\"},{\"Code\":\"100420\",\"Name\":\"Aligarh,   Uttar Pradesh\"},{\"Code\":\"148835\",\"Name\":\"Alipurduar,   West Bengal\"},{\"Code\":\"161104\",\"Name\":\"Alkapuri,   Gujarat\"},{\"Code\":\"109524\",\"Name\":\"Alleppey/Alappuzha,   Kerala\"},{\"Code\":\"100203\",\"Name\":\"Almora,   Uttarakhand\"},{\"Code\":\"151339\",\"Name\":\"Along,   Arunachal Pradesh\"},{\"Code\":\"101349\",\"Name\":\"Alto Porvorim,   Goa\"},{\"Code\":\"109093\",\"Name\":\"Alwar,   Rajasthan\"},{\"Code\":\"418099\",\"Name\":\"Amalapuram,   Andhra Pradesh\"},{\"Code\":\"305707\",\"Name\":\"Ambaji,   Gujarat\"},{\"Code\":\"100881\",\"Name\":\"Ambala,   Haryana\"},{\"Code\":\"384408\",\"Name\":\"Ambalapuzha\"},{\"Code\":\"272122\",\"Name\":\"Ambikapur,   Chhattisgarh\"},{\"Code\":\"294443\",\"Name\":\"Amboli,   Maharashtra\"},{\"Code\":\"105159\",\"Name\":\"Amer,   Rajasthan\"},{\"Code\":\"101128\",\"Name\":\"Amravati,   Maharashtra\"},{\"Code\":\"299784\",\"Name\":\"Amreli,   Gujarat\"},{\"Code\":\"101129\",\"Name\":\"Amritsar,   Punjab\"},{\"Code\":\"252072\",\"Name\":\"Anachal,   Kerala\"},{\"Code\":\"109446\",\"Name\":\"Anand,   Gujarat\"},{\"Code\":\"308358\",\"Name\":\"Anandpur Sahib,   Punjab\"},{\"Code\":\"105160\",\"Name\":\"Anandpur,   Punjab\"},{\"Code\":\"203031\",\"Name\":\"Anantapur,   Andhra Pradesh\"},{\"Code\":\"153814\",\"Name\":\"Andaman and Nicobar Islands\"},{\"Code\":\"102166\",\"Name\":\"Angul,   Odisha\"},{\"Code\":\"160388\",\"Name\":\"Anjar,   Gujarat\"},{\"Code\":\"101146\",\"Name\":\"Anjuna,   Goa\"},{\"Code\":\"101147\",\"Name\":\"Ankleshwar,   Gujarat\"},{\"Code\":\"417883\",\"Name\":\"Annavaram,   Andhra Pradesh\"},{\"Code\":\"361147\",\"Name\":\"Araku Valley,   Andhra Pradesh\"},{\"Code\":\"104724\",\"Name\":\"Arambol,   Goa\"},{\"Code\":\"109167\",\"Name\":\"Arcot,   Tamil Nadu\"},{\"Code\":\"109973\",\"Name\":\"Aronda,   Maharashtra \"},{\"Code\":\"161026\",\"Name\":\"Arookutty,   Kerala\"},{\"Code\":\"109872\",\"Name\":\"Arpora,   Goa\"},{\"Code\":\"294336\",\"Name\":\"Arrah,   Bihar\"},{\"Code\":\"101068\",\"Name\":\"Arrosim Beach,   Goa\"},{\"Code\":\"110211\",\"Name\":\"Asansol,   West Bengal\"},{\"Code\":\"151836\",\"Name\":\"Ashtamudi,   Kerala\"},{\"Code\":\"404579\",\"Name\":\"Ashvem,   Goa\"},{\"Code\":\"150412\",\"Name\":\"Athirapally,   Kerala\"},{\"Code\":\"105178\",\"Name\":\"Athirapilly,   Kerala\"},{\"Code\":\"110248\",\"Name\":\"Auli,   Uttarakhand\"},{\"Code\":\"110349\",\"Name\":\"Aurangabad,   Maharashtra\"},{\"Code\":\"109665\",\"Name\":\"Auroville,   Tamil Nadu\"},{\"Code\":\"110358\",\"Name\":\"Ayodhya,   Uttar Pradesh\"},{\"Code\":\"302986\",\"Name\":\"Azamgarh,   Uttar Pradesh\"},{\"Code\":\"110041\",\"Name\":\"B. R. Hills,   Mizoram\"},{\"Code\":\"111073\",\"Name\":\"Badami,   Karnataka\"},{\"Code\":\"150171\",\"Name\":\"Baddi,   Himachal Pradesh\"},{\"Code\":\"109814\",\"Name\":\"Badrinath,   Uttarakhand\"},{\"Code\":\"110640\",\"Name\":\"Baga,   Goa\"},{\"Code\":\"300972\",\"Name\":\"Bagalkot,   Karnataka\"},{\"Code\":\"294442\",\"Name\":\"Bagar,   Rajasthan\"},{\"Code\":\"150697\",\"Name\":\"Bagdogra,   WEST BENGAL\"},{\"Code\":\"261684\",\"Name\":\"Bagru,   Rajasthan\"},{\"Code\":\"295633\",\"Name\":\"Bahadurgarh,   Haryana\"},{\"Code\":\"291124\",\"Name\":\"Bahraich,   Uttar Pradesh\"},{\"Code\":\"151842\",\"Name\":\"Baiguney,   Sikkim\"},{\"Code\":\"101485\",\"Name\":\"Baindur,   Karnataka\"},{\"Code\":\"110659\",\"Name\":\"Bakkhali,   West Bengal\"},{\"Code\":\"148857\",\"Name\":\"Balaghat,   Madhya Pradesh\"},{\"Code\":\"105188\",\"Name\":\"Balangir,   Odisha\"},{\"Code\":\"111097\",\"Name\":\"Balasinore,   Gujrat\"},{\"Code\":\"295632\",\"Name\":\"Balasore,   Odisha\"},{\"Code\":\"418290\",\"Name\":\"Balichauki,   Himachal Pradesh\"},{\"Code\":\"110483\",\"Name\":\"Ballari,   Karnataka\"},{\"Code\":\"301775\",\"Name\":\"Ballia,   Uttar Pradesh\"},{\"Code\":\"293098\",\"Name\":\"Ballygunge,   West Bengal\"},{\"Code\":\"110977\",\"Name\":\"Balrampur,   Uttar Pradesh\"},{\"Code\":\"150951\",\"Name\":\"Balurghat,   West Bengal\"},{\"Code\":\"111121\",\"Name\":\"Bandhavgarh-Nationalpark,   Madhya Pradesh\"},{\"Code\":\"110851\",\"Name\":\"Bandipur,   Tamil Nadu\"},{\"Code\":\"110853\",\"Name\":\"Bangaram Island,   Lakshadweep\"},{\"Code\":\"294440\",\"Name\":\"Banjar\"},{\"Code\":\"418092\",\"Name\":\"Banswara,   Rajasthan\"},{\"Code\":\"417517\",\"Name\":\"Bapatla\"},{\"Code\":\"110855\",\"Name\":\"Baramati,   Maharashtra\"},{\"Code\":\"274840\",\"Name\":\"Barasat\"},{\"Code\":\"110425\",\"Name\":\"Baratang Island,   Andaman \\u0026 Nicobar\"},{\"Code\":\"105028\",\"Name\":\"Barauni,   Bihar\"},{\"Code\":\"110789\",\"Name\":\"Barbil,   Odisha\"},{\"Code\":\"110512\",\"Name\":\"Bardez,   Goa\"},{\"Code\":\"111009\",\"Name\":\"Bareilly,   Uttar Pradesh\"},{\"Code\":\"298690\",\"Name\":\"Barkot,   Uttarakhand\"},{\"Code\":\"111142\",\"Name\":\"Barmer,   Rajasthan\"},{\"Code\":\"307085\",\"Name\":\"Barnala,   Punjab\"},{\"Code\":\"417419\",\"Name\":\"Barsana,   Uttar Pradesh\"},{\"Code\":\"111028\",\"Name\":\"Basara,   Telangana\"},{\"Code\":\"160986\",\"Name\":\"Basti,   Uttar Pradesh\"},{\"Code\":\"370731\",\"Name\":\"Bayad,   Gujarat\"},{\"Code\":\"102213\",\"Name\":\"Beawar,   Rajasthan\"},{\"Code\":\"161013\",\"Name\":\"Becharaji,   Gujarat\"},{\"Code\":\"234393\",\"Name\":\"Begun,   Rajasthan\"},{\"Code\":\"307801\",\"Name\":\"Begusarai,   Bihar\"},{\"Code\":\"110564\",\"Name\":\"Behror,   Rajasthan\"},{\"Code\":\"110566\",\"Name\":\"Bekal,   Kerala\"},{\"Code\":\"111427\",\"Name\":\"Belagavi,   Karnataka\"},{\"Code\":\"417940\",\"Name\":\"Belmonte Mezzagno\"},{\"Code\":\"371106\",\"Name\":\"Belparao,   Uttarakhand\"},{\"Code\":\"111440\",\"Name\":\"Belur \\u0026 Halebid,   Karnataka\"},{\"Code\":\"150242\",\"Name\":\"Benaulim,   Goa\"},{\"Code\":\"111124\",\"Name\":\"Bengaluru/Bangalore,   Karnataka\"},{\"Code\":\"161009\",\"Name\":\"Bera,   Rajasthan\"},{\"Code\":\"110618\",\"Name\":\"Betalbatim Beach,   Goa\"},{\"Code\":\"111749\",\"Name\":\"Betul,   Madhya Pradesh\"},{\"Code\":\"161003\",\"Name\":\"Bhabua,   Bihar\"},{\"Code\":\"108056\",\"Name\":\"Bhagalpur,   Bihar\"},{\"Code\":\"151811\",\"Name\":\"Bhalukpong,   Arunachal Pradesh\"},{\"Code\":\"418087\",\"Name\":\"Bhamdeli,   Maharashtra\"},{\"Code\":\"111694\",\"Name\":\"Bhandardara,   Maharashtra \"},{\"Code\":\"111484\",\"Name\":\"Bharatpur,   Rajasthan\"},{\"Code\":\"105046\",\"Name\":\"Bharmour,   Himachal Pradesh\"},{\"Code\":\"111195\",\"Name\":\"Bharuch,   Gujarat\"},{\"Code\":\"111292\",\"Name\":\"Bhatinda,   Punjab\"},{\"Code\":\"111485\",\"Name\":\"Bhavnagar,   Gujarat\"},{\"Code\":\"101318\",\"Name\":\"Bhayandar,   Maharashtra \"},{\"Code\":\"144227\",\"Name\":\"Bheeramballi,   Karnataka\"},{\"Code\":\"105400\",\"Name\":\"Bhilai,   Chhattisgarh\"},{\"Code\":\"105648\",\"Name\":\"Bhilwara,   Rajasthan\"},{\"Code\":\"418210\",\"Name\":\"Bhim Tal\"},{\"Code\":\"111196\",\"Name\":\"Bhimtal,   Uttarakhand\"},{\"Code\":\"109000\",\"Name\":\"Bhiwadi,   Rajasthan\"},{\"Code\":\"144229\",\"Name\":\"Bhiwandi,   Maharashtra\"},{\"Code\":\"154216\",\"Name\":\"Bhiwani district,   Haryana\"},{\"Code\":\"111486\",\"Name\":\"Bhogapuram,   Andhra Pradesh\"},{\"Code\":\"111932\",\"Name\":\"Bhopal,   Madhya Pradesh\"},{\"Code\":\"105649\",\"Name\":\"Bhowali,   Uttarakhand \"},{\"Code\":\"343154\",\"Name\":\"Bhubaneshwar (BBI-Biju Patnaik),   Bhubaneshwar\"},{\"Code\":\"111558\",\"Name\":\"Bhubaneswar,   Odisha\"},{\"Code\":\"144230\",\"Name\":\"Bhuj,   Gujarat\"},{\"Code\":\"108057\",\"Name\":\"Bhuntar,   Himachal Pradesh\"},{\"Code\":\"161001\",\"Name\":\"Bihar Shariff,   Bihar\"},{\"Code\":\"105736\",\"Name\":\"Bijainagar,   Rajasthan\"},{\"Code\":\"111499\",\"Name\":\"Bijaipur,   Rajasthan\"},{\"Code\":\"417015\",\"Name\":\"Bijanbari,   West Bengal\"},{\"Code\":\"154059\",\"Name\":\"Bijnor District\"},{\"Code\":\"144247\",\"Name\":\"Bikaner,   Rajasthan\"},{\"Code\":\"111574\",\"Name\":\"Bilaspur,   Chhattisgarh\"},{\"Code\":\"111212\",\"Name\":\"Binsar,   Uttarakhand\"},{\"Code\":\"267778\",\"Name\":\"Bir,   Himachal Pradesh\"},{\"Code\":\"280430\",\"Name\":\"Bisalpur,   Rajasthan\"},{\"Code\":\"111216\",\"Name\":\"Bishangarh,   Rajasthan\"},{\"Code\":\"418286\",\"Name\":\"Biswanath Chariali,   Assam\"},{\"Code\":\"112643\",\"Name\":\"Bodhgaya,   Bihar\"},{\"Code\":\"112649\",\"Name\":\"Bogmallo,   Goa\"},{\"Code\":\"263258\",\"Name\":\"Boisar,   Maharashtra\"},{\"Code\":\"112228\",\"Name\":\"Bokaro,   Jharkhand\"},{\"Code\":\"111364\",\"Name\":\"Bokkapuram,   Tamil Nadu\"},{\"Code\":\"111264\",\"Name\":\"Bomdila,   Arunachal Pradesh\"},{\"Code\":\"356153\",\"Name\":\"Bommaraspet,   Telangana\"},{\"Code\":\"151843\",\"Name\":\"Bongaigaon,   Assam\"},{\"Code\":\"418287\",\"Name\":\"Brahmagiri,   Odisha\"},{\"Code\":\"112272\",\"Name\":\"Brahmapur,   Odisha\"},{\"Code\":\"346602\",\"Name\":\"Bulandshahr,   Uttar Pradesh\"},{\"Code\":\"293567\",\"Name\":\"Buldana,   Maharashtra\"},{\"Code\":\"113081\",\"Name\":\"Bundi,   Rajasthan\"},{\"Code\":\"160993\",\"Name\":\"Burdwan,   West Bengal\"},{\"Code\":\"148834\",\"Name\":\"Burhanpur,   Madhya Pradesh\"},{\"Code\":\"148870\",\"Name\":\"CHILLING,   Jammu and Kashmir\"},{\"Code\":\"112868\",\"Name\":\"Calangute,   Goa\"},{\"Code\":\"113160\",\"Name\":\"Canacona,   Goa\"},{\"Code\":\"144510\",\"Name\":\"Candolim Beach,   Goa\"},{\"Code\":\"105699\",\"Name\":\"Candolim,   Goa\"},{\"Code\":\"113347\",\"Name\":\"Cansaulim Beach,   Goa\"},{\"Code\":\"150965\",\"Name\":\"Car Nicobar,   Andaman \\u0026 Nicobar\"},{\"Code\":\"112913\",\"Name\":\"Caranzalem,   Goa\"},{\"Code\":\"113566\",\"Name\":\"Cauvery,   Karnataka\"},{\"Code\":\"114566\",\"Name\":\"Cavelossim,   Goa\"},{\"Code\":\"418288\",\"Name\":\"Chadyara\"},{\"Code\":\"113675\",\"Name\":\"Chail,   Himachal Pradesh\"},{\"Code\":\"114601\",\"Name\":\"Chakan,   Maharashtra\"},{\"Code\":\"150284\",\"Name\":\"Chalakudy,   Kerala\"},{\"Code\":\"417515\",\"Name\":\"Challakere\"},{\"Code\":\"114703\",\"Name\":\"Chamba,   Uttarakhand\"},{\"Code\":\"114936\",\"Name\":\"Chamoli,   Uttarakhand\"},{\"Code\":\"105721\",\"Name\":\"Champakulam,   Kerala\"},{\"Code\":\"114107\",\"Name\":\"Chandigarh,   Chandigarh\"},{\"Code\":\"102259\",\"Name\":\"Chandipur,   Odisha\"},{\"Code\":\"417335\",\"Name\":\"Chandrapur district,   Maharashtra\"},{\"Code\":\"105246\",\"Name\":\"Chandrapur,   Maharashtra \"},{\"Code\":\"113683\",\"Name\":\"Changanassery,   Kerala\"},{\"Code\":\"105247\",\"Name\":\"Changodar,   Gujarat\"},{\"Code\":\"417528\",\"Name\":\"Chapra\"},{\"Code\":\"114117\",\"Name\":\"Charholi Budruk,   Maharashtra\"},{\"Code\":\"417037\",\"Name\":\"Chatra,   Jharkhand\"},{\"Code\":\"114960\",\"Name\":\"Chaukori,   Uttarakhand\"},{\"Code\":\"364172\",\"Name\":\"Chavakkad\"},{\"Code\":\"379314\",\"Name\":\"Chengalpattu\"},{\"Code\":\"127343\",\"Name\":\"Chennai,   Tamil Nadu\"},{\"Code\":\"106208\",\"Name\":\"Cherai Beach,   Kerala\"},{\"Code\":\"114523\",\"Name\":\"Cherai,   Kerala\"},{\"Code\":\"161025\",\"Name\":\"Cherrapunji,   Meghalaya\"},{\"Code\":\"160465\",\"Name\":\"Chhatarpur\"},{\"Code\":\"108141\",\"Name\":\"Chhindwara,   Madhya Pradesh\"},{\"Code\":\"114977\",\"Name\":\"Chhota Udaipur,   Gujrat\"},{\"Code\":\"114793\",\"Name\":\"Chidambaram,   Tamil Nadu\"},{\"Code\":\"379302\",\"Name\":\"Chikkaballapur,   Karnataka\"},{\"Code\":\"114986\",\"Name\":\"Chikkamagaluru,   Karnataka\"},{\"Code\":\"114987\",\"Name\":\"Chikmaglur,   Karnataka\"},{\"Code\":\"256989\",\"Name\":\"Chimur\"},{\"Code\":\"114357\",\"Name\":\"Chinakakani,   Andhra Pradesh\"},{\"Code\":\"114660\",\"Name\":\"Chinnakanal,   Kerala\"},{\"Code\":\"114801\",\"Name\":\"Chintpuri,   Himachal Pradesh\"},{\"Code\":\"114272\",\"Name\":\"Chiplun,   Maharashtra\"},{\"Code\":\"274833\",\"Name\":\"Chirawa,   Rajasthan\"},{\"Code\":\"153978\",\"Name\":\"Chitradurga District\"},{\"Code\":\"225402\",\"Name\":\"Chitradurga,   Karnataka\"},{\"Code\":\"114803\",\"Name\":\"Chitrakoot,   Madhya Pradesh\"},{\"Code\":\"114804\",\"Name\":\"Chittaurgarh,   Rajasthan\"},{\"Code\":\"114758\",\"Name\":\"Choglamsar,   Jammu And Kashmir\"},{\"Code\":\"160626\",\"Name\":\"Chomu\"},{\"Code\":\"161024\",\"Name\":\"Chopta\"},{\"Code\":\"114811\",\"Name\":\"Chorao Island,   Goa\"},{\"Code\":\"286831\",\"Name\":\"Chottanikkara\"},{\"Code\":\"114817\",\"Name\":\"Chowara,   Kerala\"},{\"Code\":\"114823\",\"Name\":\"Chundale,   Kerala\"},{\"Code\":\"114554\",\"Name\":\"Churu,   Rajasthan\"},{\"Code\":\"144735\",\"Name\":\"Coimbatore,   Tamil Nadu\"},{\"Code\":\"115840\",\"Name\":\"Colva,   Goa\"},{\"Code\":\"301104\",\"Name\":\"Cooch Behar,   West Bengal\"},{\"Code\":\"102287\",\"Name\":\"Coochbehar,   West Bengal\"},{\"Code\":\"115864\",\"Name\":\"Coonoor,   Tamil Nadu\"},{\"Code\":\"115400\",\"Name\":\"Coorg,   Karnataka\"},{\"Code\":\"305701\",\"Name\":\"Courtallam,   Tamil Nadu\"},{\"Code\":\"115526\",\"Name\":\"Covelong,   Tamil Nadu\"},{\"Code\":\"116021\",\"Name\":\"Cuttack,   Orissa\"},{\"Code\":\"148900\",\"Name\":\"DEEPYOKMA,   Jammu and Kashmir\"},{\"Code\":\"104936\",\"Name\":\"Dadahu,   Himachal Pradesh\"},{\"Code\":\"238716\",\"Name\":\"Dahegam,   Gujarat\"},{\"Code\":\"115176\",\"Name\":\"Dahej,   Gujarat\"},{\"Code\":\"154007\",\"Name\":\"Dakshina Kannada District,   Karnataka\"},{\"Code\":\"116613\",\"Name\":\"Dalhousie,   Himachal Pradesh\"},{\"Code\":\"116035\",\"Name\":\"Daman,   Daman and Diu\"},{\"Code\":\"116039\",\"Name\":\"Dandeli,   Karnataka\"},{\"Code\":\"116624\",\"Name\":\"Dankuni,   West Bengal\"},{\"Code\":\"115634\",\"Name\":\"Dapoli,   Maharashtra\"},{\"Code\":\"105998\",\"Name\":\"Darbhanga,   Bihar\"},{\"Code\":\"116264\",\"Name\":\"Darjeeling,   West Bengal\"},{\"Code\":\"402770\",\"Name\":\"Dasada,   Gujarat\"},{\"Code\":\"101849\",\"Name\":\"Daund,   Maharashtra \"},{\"Code\":\"144874\",\"Name\":\"Dausa,   Rajasthan\"},{\"Code\":\"280566\",\"Name\":\"Davanagere,   Karnataka\"},{\"Code\":\"116164\",\"Name\":\"Dehradun,   Uttarakhand\"},{\"Code\":\"418069\",\"Name\":\"Delhi NCR\"},{\"Code\":\"116074\",\"Name\":\"Deogarh,   Rajasthan\"},{\"Code\":\"105482\",\"Name\":\"Deoghar,   Jharkhand\"},{\"Code\":\"301589\",\"Name\":\"Dera Bassi,   Punjab\"},{\"Code\":\"117352\",\"Name\":\"Devikulam,   Kerala\"},{\"Code\":\"106255\",\"Name\":\"Devprayag,   Uttarakhand\"},{\"Code\":\"310619\",\"Name\":\"Dewas,   Madhya Pradesh\"},{\"Code\":\"104946\",\"Name\":\"Dhanachuli,   Uttarakhand\"},{\"Code\":\"106006\",\"Name\":\"Dhanaulti,   Uttarakhand \"},{\"Code\":\"150731\",\"Name\":\"Dhanbad,   Jharkhand\"},{\"Code\":\"154074\",\"Name\":\"Dhar District,   Madhya Pradesh\"},{\"Code\":\"102310\",\"Name\":\"Dharampur,   Himachal Pradesh\"},{\"Code\":\"115880\",\"Name\":\"Dharamshala,   HIMACHAL PRADESH\"},{\"Code\":\"302737\",\"Name\":\"Dhari,   Gujarat\"},{\"Code\":\"144913\",\"Name\":\"Dharmapuri,   Tamil Nadu\"},{\"Code\":\"418200\",\"Name\":\"Dharmavaram,   Andhra Pradesh\"},{\"Code\":\"285250\",\"Name\":\"Dharwad,   Karnataka\"},{\"Code\":\"105779\",\"Name\":\"Dhela,   Uttarakhand\"},{\"Code\":\"116338\",\"Name\":\"Dhikuli,   Uttarakhand \"},{\"Code\":\"245095\",\"Name\":\"Dholavira,   Gujarat\"},{\"Code\":\"115881\",\"Name\":\"Dholpur,   Rajasthan\"},{\"Code\":\"116087\",\"Name\":\"Dhule,   Maharashtra\"},{\"Code\":\"115884\",\"Name\":\"Dibrugarh,   Assam\"},{\"Code\":\"115894\",\"Name\":\"Digha,   West Bengal\"},{\"Code\":\"115896\",\"Name\":\"Dimapur,   Nagaland\"},{\"Code\":\"160727\",\"Name\":\"Dindi,   Andhra Pradesh\"},{\"Code\":\"106010\",\"Name\":\"Dindigul,   tamil Nadu\"},{\"Code\":\"151439\",\"Name\":\"Dirang,   Arunachal Pradesh\"},{\"Code\":\"294438\",\"Name\":\"Dispur\"},{\"Code\":\"115899\",\"Name\":\"Diuu\"},{\"Code\":\"295356\",\"Name\":\"Diveagar\"},{\"Code\":\"408733\",\"Name\":\"Doddaballapura,   Karnataka\"},{\"Code\":\"144950\",\"Name\":\"Dooars,   West Bengal\"},{\"Code\":\"286699\",\"Name\":\"Duliajan,   Assam\"},{\"Code\":\"116460\",\"Name\":\"Dundlod,   Rajasthan\"},{\"Code\":\"144996\",\"Name\":\"Dungarpur,   Rajasthan\"},{\"Code\":\"117048\",\"Name\":\"Durg,   Chhattisgarh\"},{\"Code\":\"115958\",\"Name\":\"Durgapur,   West Bengal\"},{\"Code\":\"227756\",\"Name\":\"Dwarahat Village,   Uttarakhand\"},{\"Code\":\"108863\",\"Name\":\"Dwarka,   Gujarat\"},{\"Code\":\"117110\",\"Name\":\"Edava,   Kerala\"},{\"Code\":\"417865\",\"Name\":\"Eluru,   Andhra Pradesh\"},{\"Code\":\"145110\",\"Name\":\"Ernakulam,   Kerala\"},{\"Code\":\"333373\",\"Name\":\"Erode,   Tamil Nadu\"},{\"Code\":\"153847\",\"Name\":\"Etah District\"},{\"Code\":\"418090\",\"Name\":\"Etawah,   Kanpur\"},{\"Code\":\"418108\",\"Name\":\"Faisalabad,   Punjab\"},{\"Code\":\"118129\",\"Name\":\"Faridabad,   Haryana\"},{\"Code\":\"297864\",\"Name\":\"Faridkot,   Punjab\"},{\"Code\":\"102458\",\"Name\":\"Fatehabad,   Haryana \"},{\"Code\":\"118805\",\"Name\":\"Fatehgarh,   Uttar Pradesh\"},{\"Code\":\"117771\",\"Name\":\"Fatehpur Sikri,   Uttar Pradesh\"},{\"Code\":\"404366\",\"Name\":\"Firozabad,   Uttar Pradesh\"},{\"Code\":\"370828\",\"Name\":\"Fort Kochi\"},{\"Code\":\"305606\",\"Name\":\"Gachibowli,   Telangana\"},{\"Code\":\"402273\",\"Name\":\"Gadag-Betageri,   Karnataka\"},{\"Code\":\"418270\",\"Name\":\"Gandhi Sagar,   Madhya Pradesh\"},{\"Code\":\"117993\",\"Name\":\"Gandhidham,   Gujarat\"},{\"Code\":\"119071\",\"Name\":\"Gandhinagar,   Gujarat\"},{\"Code\":\"160995\",\"Name\":\"Gandipet,   Telangana\"},{\"Code\":\"101509\",\"Name\":\"Gangavathi,   Karnataka\"},{\"Code\":\"119613\",\"Name\":\"Gangotri,   Uttarakhand\"},{\"Code\":\"119221\",\"Name\":\"Gangtok,   Sikkim\"},{\"Code\":\"119222\",\"Name\":\"Ganpatipule,   Maharashtra\"},{\"Code\":\"200705\",\"Name\":\"Garhmukteshwar,   Uttar Pradesh\"},{\"Code\":\"119358\",\"Name\":\"Gaya,   Bihar\"},{\"Code\":\"160390\",\"Name\":\"Geyzing,   Sikkim\"},{\"Code\":\"295489\",\"Name\":\"Ghanerao\"},{\"Code\":\"118973\",\"Name\":\"Ghaziabad,   Uttar Pradesh\"},{\"Code\":\"106106\",\"Name\":\"Giridih,   Jharkhand\"},{\"Code\":\"118719\",\"Name\":\"Glenburn,   West Bengal\"},{\"Code\":\"108256\",\"Name\":\"Goa Velha,   Goa\"},{\"Code\":\"119805\",\"Name\":\"Goa,   Goa\"},{\"Code\":\"261602\",\"Name\":\"Godhra,   Gujarat\"},{\"Code\":\"118733\",\"Name\":\"Gokarna,   Karnataka\"},{\"Code\":\"417924\",\"Name\":\"Gokul,   Mathura\"},{\"Code\":\"251229\",\"Name\":\"Gomti Nagar,   Uttar Pradesh\"},{\"Code\":\"417511\",\"Name\":\"Gondal,   Gujarat\"},{\"Code\":\"382623\",\"Name\":\"Gondia,   Maharashtra\"},{\"Code\":\"262960\",\"Name\":\"Gopalganj,   Bihar\"},{\"Code\":\"120368\",\"Name\":\"Gopalpur on Sea,   Odisha\"},{\"Code\":\"256969\",\"Name\":\"Gorai,   Maharashtra\"},{\"Code\":\"120371\",\"Name\":\"Gorakhpur,   Uttar Pradesh\"},{\"Code\":\"102486\",\"Name\":\"Gosaba,   West Bengal\"},{\"Code\":\"108265\",\"Name\":\"Govardhan,   Uttar Pradesh\"},{\"Code\":\"145430\",\"Name\":\"Greater Noida,   Uttar Pradesh\"},{\"Code\":\"102499\",\"Name\":\"Gudalur,   Tamil Nadu\"},{\"Code\":\"105832\",\"Name\":\"Guirim,   Goa\"},{\"Code\":\"153893\",\"Name\":\"Gujarat,   Gujarat\"},{\"Code\":\"119924\",\"Name\":\"Gulmarg,   Jammu and Kashmir\"},{\"Code\":\"280781\",\"Name\":\"Gummidipundi,   Tamil Nadu\"},{\"Code\":\"150594\",\"Name\":\"Guna,   Madhya Pradesh\"},{\"Code\":\"106131\",\"Name\":\"Guntur,   Andhra Pradesh\"},{\"Code\":\"300176\",\"Name\":\"Guptkashi,   Uttarakhand\"},{\"Code\":\"301389\",\"Name\":\"Gurdaspur\"},{\"Code\":\"119513\",\"Name\":\"Gurugram/Gurgaon,   Haryana\"},{\"Code\":\"119517\",\"Name\":\"Guruvayur,   Kerala\"},{\"Code\":\"121139\",\"Name\":\"Guwahati,   Assam\"},{\"Code\":\"120439\",\"Name\":\"Gwalior,   Madhya Pradesh\"},{\"Code\":\"418139\",\"Name\":\"HANAMKONDA,   TELANGANA\"},{\"Code\":\"161000\",\"Name\":\"Hajipur,   Bihar\"},{\"Code\":\"120588\",\"Name\":\"Haldwani,   Uttarakhand\"},{\"Code\":\"244092\",\"Name\":\"Halol,   Gujarat\"},{\"Code\":\"418289\",\"Name\":\"Halvad,   Gujrat\"},{\"Code\":\"121175\",\"Name\":\"Hampi,   Karnataka\"},{\"Code\":\"119961\",\"Name\":\"Hansi,   Haryana\"},{\"Code\":\"120206\",\"Name\":\"Hanumangarh,   Rajasthan\"},{\"Code\":\"121186\",\"Name\":\"Haridwar,   Uttarakhand\"},{\"Code\":\"257027\",\"Name\":\"Hasanganj,   Uttar Pradesh\"},{\"Code\":\"120871\",\"Name\":\"Hassan,   Karnataka\"},{\"Code\":\"417919\",\"Name\":\"Hatgad,   Maharashtra\"},{\"Code\":\"119978\",\"Name\":\"Havelock Island,   Andaman \\u0026 Nicobar\"},{\"Code\":\"102512\",\"Name\":\"Hebbal,   Karnataka\"},{\"Code\":\"148892\",\"Name\":\"Hemis Skupachan,   Jammu and Kashmir\"},{\"Code\":\"121355\",\"Name\":\"Hinjawadi,   Maharashtra \"},{\"Code\":\"105850\",\"Name\":\"Hisar,   Haryana \"},{\"Code\":\"145660\",\"Name\":\"Hooghly,   West Bengal\"},{\"Code\":\"121396\",\"Name\":\"Hosapete,   Karnataka\"},{\"Code\":\"153950\",\"Name\":\"Hoshangabad District\"},{\"Code\":\"121557\",\"Name\":\"Hoshiarpur,   Punjab\"},{\"Code\":\"355946\",\"Name\":\"Hoskote\"},{\"Code\":\"121290\",\"Name\":\"Hosur,   KARNATAKA\"},{\"Code\":\"145687\",\"Name\":\"Howrah,   West Bengal\"},{\"Code\":\"150235\",\"Name\":\"Hubballi,   Karnataka\"},{\"Code\":\"338277\",\"Name\":\"Hubli (HBX),   Hubli\"},{\"Code\":\"121570\",\"Name\":\"Hudikeri,   Karnataka\"},{\"Code\":\"393866\",\"Name\":\"Hunder\"},{\"Code\":\"355802\",\"Name\":\"Hunsur,   Karnataka\"},{\"Code\":\"145710\",\"Name\":\"Hyderabad,   Telangana\"},{\"Code\":\"334064\",\"Name\":\"IMT Manesar,   Haryana\"},{\"Code\":\"102531\",\"Name\":\"Ichalkaranji,   Maharashtra\"},{\"Code\":\"154222\",\"Name\":\"Idukki District\"},{\"Code\":\"121984\",\"Name\":\"Igatpuri,   Maharashtra\"},{\"Code\":\"122108\",\"Name\":\"Imphal,   Manipur\"},{\"Code\":\"121726\",\"Name\":\"Indore,   Madhya Pradesh\"},{\"Code\":\"122732\",\"Name\":\"Itanagar,   Arunachal Pradesh\"},{\"Code\":\"121509\",\"Name\":\"Jabalpur,   Madhya Pradesh\"},{\"Code\":\"150469\",\"Name\":\"Jagdalpur,   Chhattisgarh\"},{\"Code\":\"122175\",\"Name\":\"Jaipur,   Rajasthan\"},{\"Code\":\"122326\",\"Name\":\"Jaisalmer,   Rajasthan\"},{\"Code\":\"268917\",\"Name\":\"Jajapur\"},{\"Code\":\"122327\",\"Name\":\"Jalandhar,   Punjab\"},{\"Code\":\"160994\",\"Name\":\"Jaldapara,   West Bengal\"},{\"Code\":\"122177\",\"Name\":\"Jalgaon,   Maharashtra\"},{\"Code\":\"103931\",\"Name\":\"Jalna,   Maharashtra\"},{\"Code\":\"123420\",\"Name\":\"Jalore,   Rajasthan\"},{\"Code\":\"122328\",\"Name\":\"Jalpaiguri,   West Bengal\"},{\"Code\":\"418313\",\"Name\":\"Jamb,   Maharashtra\"},{\"Code\":\"105614\",\"Name\":\"Jambulne,   Maharashtra\"},{\"Code\":\"121783\",\"Name\":\"Jammu,   Jammu and Kashmir\"},{\"Code\":\"122329\",\"Name\":\"Jamnagar,   Gujarat\"},{\"Code\":\"123422\",\"Name\":\"Jamshedpur,   Jharkhand\"},{\"Code\":\"280676\",\"Name\":\"Jamui,   Bihar\"},{\"Code\":\"251261\",\"Name\":\"Jangipur,   West Bengal\"},{\"Code\":\"161002\",\"Name\":\"Jaunpur,   Uttar Pradesh\"},{\"Code\":\"161021\",\"Name\":\"Jawai,   Rajasthan\"},{\"Code\":\"301375\",\"Name\":\"Jawhar,   Maharashtra\"},{\"Code\":\"262890\",\"Name\":\"Jejuri,   Maharashtra\"},{\"Code\":\"122763\",\"Name\":\"Jeypore,   Odisha\"},{\"Code\":\"105885\",\"Name\":\"Jhadol,   Rajasthan\"},{\"Code\":\"122199\",\"Name\":\"Jhansi,   Uttar Pradesh\"},{\"Code\":\"295101\",\"Name\":\"Jharsuguda,   Odisha\"},{\"Code\":\"148844\",\"Name\":\"Jhunjhunu,   Rajasthan\"},{\"Code\":\"257230\",\"Name\":\"Jibhi,   Himachal Pradesh\"},{\"Code\":\"115501\",\"Name\":\"Jim Corbett National Park,   Uttarakhand\"},{\"Code\":\"123445\",\"Name\":\"Jispa,   Himachal Pradesh\"},{\"Code\":\"145836\",\"Name\":\"Jodhpur,   Rajasthan\"},{\"Code\":\"418291\",\"Name\":\"Joida,   Karnataka\"},{\"Code\":\"122215\",\"Name\":\"Jorhat,   Assam\"},{\"Code\":\"160632\",\"Name\":\"Joshimath\"},{\"Code\":\"105627\",\"Name\":\"Junagadh,   Gujarat\"},{\"Code\":\"122370\",\"Name\":\"Junagarh,   Gujrat\"},{\"Code\":\"123469\",\"Name\":\"Jwalamukhi,   Himachal Pradesh\"},{\"Code\":\"151859\",\"Name\":\"KATPADI,   TAMIL NADU\"},{\"Code\":\"150397\",\"Name\":\"Kadapa,   Andhra Pradesh\"},{\"Code\":\"355405\",\"Name\":\"Kadi,   Gujarat\"},{\"Code\":\"145856\",\"Name\":\"Kadmat Island,   Lakshadweep\"},{\"Code\":\"151112\",\"Name\":\"Kailashahar,   Tripura\"},{\"Code\":\"123476\",\"Name\":\"Kakinada,   Andhra Pradesh\"},{\"Code\":\"104092\",\"Name\":\"Kalady,   Kerala\"},{\"Code\":\"269264\",\"Name\":\"Kalamassery\"},{\"Code\":\"122388\",\"Name\":\"Kaliel,   Tamil Nadu\"},{\"Code\":\"122511\",\"Name\":\"Kalimpong,   West Bengal\"},{\"Code\":\"293190\",\"Name\":\"Kallakurichi,   Tamil Nadu\"},{\"Code\":\"368724\",\"Name\":\"Kalol,   Gujarat\"},{\"Code\":\"105633\",\"Name\":\"Kalpatta,   Kerala\"},{\"Code\":\"121837\",\"Name\":\"Kalpetta,   Kerala\"},{\"Code\":\"145872\",\"Name\":\"Kalyan,   Maharashtra\"},{\"Code\":\"297886\",\"Name\":\"Kalyani,   West Bengal\"},{\"Code\":\"151198\",\"Name\":\"Kamalpur,   Tripura\"},{\"Code\":\"121841\",\"Name\":\"Kamba,   Gujrat\"},{\"Code\":\"306364\",\"Name\":\"Kamshet,   Maharashtra\"},{\"Code\":\"122406\",\"Name\":\"Kanadukathan,   Tamil Nadu\"},{\"Code\":\"338739\",\"Name\":\"Kanatal\"},{\"Code\":\"122824\",\"Name\":\"Kanchipuram,   Tamil Nadu\"},{\"Code\":\"122253\",\"Name\":\"Kandaghat,   Himachal Pradesh\"},{\"Code\":\"151469\",\"Name\":\"Kandla,   Gujarat\"},{\"Code\":\"153910\",\"Name\":\"Kangra District\"},{\"Code\":\"122826\",\"Name\":\"Kangra Valley,   Himachal Pradesh\"},{\"Code\":\"351426\",\"Name\":\"Kangra,   Himachal Pradesh\"},{\"Code\":\"122931\",\"Name\":\"Kanha,   Madhya Pradesh\"},{\"Code\":\"299954\",\"Name\":\"Kankavli,   Maharashtra\"},{\"Code\":\"417856\",\"Name\":\"Kannauj,   Uttar Pradesh\"},{\"Code\":\"122256\",\"Name\":\"Kanniyakumari,   Tamil Nadu\"},{\"Code\":\"153898\",\"Name\":\"Kannur District\"},{\"Code\":\"122522\",\"Name\":\"Kannur,   Kerala\"},{\"Code\":\"122932\",\"Name\":\"Kanpur,   Uttar Pradesh\"},{\"Code\":\"151841\",\"Name\":\"Kantal,   Uttarakhand\"},{\"Code\":\"295352\",\"Name\":\"Kanthalloor,   Kerala\"},{\"Code\":\"370728\",\"Name\":\"Kanthi,   West Bengal\"},{\"Code\":\"123084\",\"Name\":\"Kanyakumari,   Tamil Nadu\"},{\"Code\":\"122525\",\"Name\":\"Kappad,   Kerala\"},{\"Code\":\"300642\",\"Name\":\"Kapurthala\"},{\"Code\":\"123503\",\"Name\":\"Karad,   Maharashtra\"},{\"Code\":\"123204\",\"Name\":\"Karaikudi,   Tamil Nadu\"},{\"Code\":\"153890\",\"Name\":\"Karauli District\"},{\"Code\":\"148869\",\"Name\":\"Karauli,   Rajasthan\"},{\"Code\":\"122938\",\"Name\":\"Kargil,   Jammu and Kashmir\"},{\"Code\":\"103950\",\"Name\":\"Karimnagar,   Telangana\"},{\"Code\":\"160750\",\"Name\":\"Karjat City\"},{\"Code\":\"122275\",\"Name\":\"Karnal,   Haryana\"},{\"Code\":\"123217\",\"Name\":\"Karur,   Tamil Nadu\"},{\"Code\":\"123098\",\"Name\":\"Karwar,   Karnataka\"},{\"Code\":\"123218\",\"Name\":\"Kasarde,   Maharashtra\"},{\"Code\":\"122848\",\"Name\":\"Kasargod,   Kerala\"},{\"Code\":\"122950\",\"Name\":\"Kasauli,   Himachal Pradesh\"},{\"Code\":\"417942\",\"Name\":\"Kasganj,   Uttar Pradesh\"},{\"Code\":\"123518\",\"Name\":\"Kashid,   Maharashtra\"},{\"Code\":\"123519\",\"Name\":\"Kashipur,   Uttarakhand\"},{\"Code\":\"102540\",\"Name\":\"Kasol,   Himachal Pradesh\"},{\"Code\":\"123108\",\"Name\":\"Kathgodam,   Uttarakhand \"},{\"Code\":\"108361\",\"Name\":\"Katihar,   Bihar\"},{\"Code\":\"124184\",\"Name\":\"Katra,   Jammu and Kashmir\"},{\"Code\":\"123227\",\"Name\":\"Kausani,   Uttarakhand\"},{\"Code\":\"123527\",\"Name\":\"Kaziranga,   Assam\"},{\"Code\":\"123231\",\"Name\":\"Kedarnath,   Uttarakhand\"},{\"Code\":\"295098\",\"Name\":\"Kelambakkam\"},{\"Code\":\"122978\",\"Name\":\"Kerala,   Kerala\"},{\"Code\":\"150615\",\"Name\":\"Keshod,   Gujarat\"},{\"Code\":\"161022\",\"Name\":\"Kevadia,   Gujarat\"},{\"Code\":\"123258\",\"Name\":\"Khajjiar,   Himachal Pradesh\"},{\"Code\":\"122580\",\"Name\":\"Khajuraho,   Madhya Pradesh\"},{\"Code\":\"123259\",\"Name\":\"Khandala,   Maharashtra\"},{\"Code\":\"102545\",\"Name\":\"Khandela,   Rajasthan\"},{\"Code\":\"106186\",\"Name\":\"Khandwa,   Madhya Pradesh\"},{\"Code\":\"280867\",\"Name\":\"Kharagpur,   West Bengal\"},{\"Code\":\"205200\",\"Name\":\"Kharar,   Punjab\"},{\"Code\":\"293579\",\"Name\":\"Khargone,   Madhya Pradesh\"},{\"Code\":\"101671\",\"Name\":\"Khas Nagrota,   Himachal Pradesh\"},{\"Code\":\"256700\",\"Name\":\"Khatu,   Rajasthan\"},{\"Code\":\"160988\",\"Name\":\"Khawasa,   Madhya Pradesh\"},{\"Code\":\"153813\",\"Name\":\"Kheri District,   Uttar Pradesh\"},{\"Code\":\"122998\",\"Name\":\"Khilchipur,   Madhya Pradesh\"},{\"Code\":\"123676\",\"Name\":\"Khimsar,   Rajasthan\"},{\"Code\":\"404666\",\"Name\":\"Khiyansaria,   Rajasthan\"},{\"Code\":\"295097\",\"Name\":\"Khopoli,   Maharashtra\"},{\"Code\":\"151837\",\"Name\":\"Kidanganad,   Kerala\"},{\"Code\":\"108369\",\"Name\":\"Kihim,   Maharashtra\"},{\"Code\":\"417524\",\"Name\":\"Kishanganj,   Bihar\"},{\"Code\":\"148902\",\"Name\":\"Kishangarh,   Rajasthan\"},{\"Code\":\"101204\",\"Name\":\"Kochi,   Kerala\"},{\"Code\":\"154023\",\"Name\":\"Kodagu,   Karnataka\"},{\"Code\":\"123608\",\"Name\":\"Kodaikanal,   Tamil Nadu\"},{\"Code\":\"300919\",\"Name\":\"Koderma\"},{\"Code\":\"418314\",\"Name\":\"Kodinar,   Gujarat\"},{\"Code\":\"352597\",\"Name\":\"Kodungallur,   Kerala\"},{\"Code\":\"304539\",\"Name\":\"Kolad,   Maharashtra\"},{\"Code\":\"161007\",\"Name\":\"Kolaghat,   West Bengal\"},{\"Code\":\"123875\",\"Name\":\"Kolhapur,   Maharashtra\"},{\"Code\":\"262894\",\"Name\":\"Koliyaak,   Gujarat\"},{\"Code\":\"113128\",\"Name\":\"Kolkata/Calcutta,   West Bengal\"},{\"Code\":\"123877\",\"Name\":\"Kollam,   Kerala\"},{\"Code\":\"123879\",\"Name\":\"Konark,   Odisha\"},{\"Code\":\"103877\",\"Name\":\"Kondotty,   Kerala\"},{\"Code\":\"241214\",\"Name\":\"Koppal,   Karnataka\"},{\"Code\":\"286380\",\"Name\":\"Korba,   Chhattisgarh\"},{\"Code\":\"124966\",\"Name\":\"Kota,   Rajasthan\"},{\"Code\":\"396075\",\"Name\":\"Kotabagh,   Uttarakhand\"},{\"Code\":\"123312\",\"Name\":\"Kotagiri,   Tamil Nadu\"},{\"Code\":\"260573\",\"Name\":\"Kotda Sangani,   Gujarat\"},{\"Code\":\"418091\",\"Name\":\"Kotdwar,   Uttarakhand\"},{\"Code\":\"124008\",\"Name\":\"Kothamangalam,   Kerala\"},{\"Code\":\"101696\",\"Name\":\"Koti,   Telangana\"},{\"Code\":\"235964\",\"Name\":\"Kotkhai,   Himachal Pradesh\"},{\"Code\":\"123314\",\"Name\":\"Kotputli,   Rajasthan\"},{\"Code\":\"123891\",\"Name\":\"Kottayam,   Kerala\"},{\"Code\":\"101967\",\"Name\":\"Kottivakkam,   Tamil Nadu\"},{\"Code\":\"123897\",\"Name\":\"Kovalam,   Kerala\"},{\"Code\":\"144475\",\"Name\":\"Kozhikode,   Kerala\"},{\"Code\":\"123334\",\"Name\":\"Krishnagiri,   Tamil Nadu\"},{\"Code\":\"123914\",\"Name\":\"Kuchaman,   Rajasthan\"},{\"Code\":\"103727\",\"Name\":\"Kudal,   Goa\"},{\"Code\":\"124997\",\"Name\":\"Kudasan,   Gujrat\"},{\"Code\":\"371051\",\"Name\":\"Kufri\"},{\"Code\":\"146047\",\"Name\":\"Kullu,   HIMACHAL PRADESH\"},{\"Code\":\"123344\",\"Name\":\"Kumarakom,   Kerala\"},{\"Code\":\"125002\",\"Name\":\"Kumbakonam,   Tamil Nadu\"},{\"Code\":\"123774\",\"Name\":\"Kumbhalgarh,   Rajasthan\"},{\"Code\":\"402772\",\"Name\":\"Kumharsain,   Himachal Pradesh\"},{\"Code\":\"146051\",\"Name\":\"Kumily,   Kerala\"},{\"Code\":\"103888\",\"Name\":\"Kundapur,   Karnataka\"},{\"Code\":\"103728\",\"Name\":\"Kurnool,   Andhra Pradesh\"},{\"Code\":\"159580\",\"Name\":\"Kurseong,   West Bengal\"},{\"Code\":\"151844\",\"Name\":\"Kurukshetra,   Haryana\"},{\"Code\":\"105541\",\"Name\":\"Kuruppanthara,   Kerala\"},{\"Code\":\"124044\",\"Name\":\"Kushalnagar,   Karnataka\"},{\"Code\":\"124045\",\"Name\":\"Kushinagar,   Uttar Pradesh\"},{\"Code\":\"122798\",\"Name\":\"Kutch,   Gujrat\"},{\"Code\":\"148896\",\"Name\":\"LINGSHED,   Jammu and Kashmir\"},{\"Code\":\"244233\",\"Name\":\"Lachen,   Sikkim\"},{\"Code\":\"262996\",\"Name\":\"Lachhmangarh,   Rajasthan\"},{\"Code\":\"146091\",\"Name\":\"Lachung,   Sikkim\"},{\"Code\":\"150363\",\"Name\":\"Ladakh,   Ladakh\"},{\"Code\":\"146104\",\"Name\":\"Lahaul and Spiti,   Himachal Pradesh\"},{\"Code\":\"161005\",\"Name\":\"Lakhimpur,   Uttar Pradesh\"},{\"Code\":\"124514\",\"Name\":\"Lakkidi,   Kerala\"},{\"Code\":\"153914\",\"Name\":\"Lakshadweep\"},{\"Code\":\"103751\",\"Name\":\"Lansdowne,   Uttarakhand\"},{\"Code\":\"148903\",\"Name\":\"Lataguri,   West Bengal\"},{\"Code\":\"125485\",\"Name\":\"Latur,   Maharashtra\"},{\"Code\":\"146184\",\"Name\":\"Lava,   Maharashtra\"},{\"Code\":\"125144\",\"Name\":\"Leh,   Jammu and Kashmir\"},{\"Code\":\"126630\",\"Name\":\"Lonavala,   Maharashtra\"},{\"Code\":\"126666\",\"Name\":\"Lucknow,   Uttar Pradesh\"},{\"Code\":\"125928\",\"Name\":\"Ludhiana,   Punjab\"},{\"Code\":\"125651\",\"Name\":\"Luni,   Rajasthan\"},{\"Code\":\"418211\",\"Name\":\"Madambakkam,   Tamil Nadu\"},{\"Code\":\"418067\",\"Name\":\"Madgaon\"},{\"Code\":\"243580\",\"Name\":\"Madhapur,   Telangana\"},{\"Code\":\"160999\",\"Name\":\"Madhubani,   Bihar\"},{\"Code\":\"104313\",\"Name\":\"Madikeri,   Karnataka\"},{\"Code\":\"127067\",\"Name\":\"Madurai,   Tamil Nadu\"},{\"Code\":\"125684\",\"Name\":\"Mahabaleshwar,   Maharashtra\"},{\"Code\":\"126117\",\"Name\":\"Mahabalipuram,   TAMIL NADU\"},{\"Code\":\"103781\",\"Name\":\"Mahad,   Maharashtra\"},{\"Code\":\"104316\",\"Name\":\"Mahansar,   Rajasthan\"},{\"Code\":\"417923\",\"Name\":\"Maharajganj\"},{\"Code\":\"126265\",\"Name\":\"Maheshwar,   Madhya Pradesh\"},{\"Code\":\"371686\",\"Name\":\"Mahipalpur,   National Capital Territory of Delhi\"},{\"Code\":\"104318\",\"Name\":\"Majorda,   Goa\"},{\"Code\":\"146447\",\"Name\":\"Malappuram,   Kerala\"},{\"Code\":\"102599\",\"Name\":\"Malayattoor,   kerala\"},{\"Code\":\"150632\",\"Name\":\"Malda,   West Bengal\"},{\"Code\":\"417300\",\"Name\":\"Malout,   Punjab\"},{\"Code\":\"127105\",\"Name\":\"Malpura,   Rajasthan\"},{\"Code\":\"126958\",\"Name\":\"Malvan,   Maharashtra\"},{\"Code\":\"126139\",\"Name\":\"Mamallapuram,   Tamil Nadu\"},{\"Code\":\"126388\",\"Name\":\"Manali,   Himachal pradesh\"},{\"Code\":\"375619\",\"Name\":\"Mandarmani,   West Bengal\"},{\"Code\":\"104156\",\"Name\":\"Mandarmoni,   West Bengal\"},{\"Code\":\"263259\",\"Name\":\"Mandav\"},{\"Code\":\"126802\",\"Name\":\"Mandawa,   Rajasthan\"},{\"Code\":\"146462\",\"Name\":\"Mandi,   Himachal Pradesh\"},{\"Code\":\"160389\",\"Name\":\"Mandla,   Madhya Pradesh\"},{\"Code\":\"104482\",\"Name\":\"Mandrem,   Goa\"},{\"Code\":\"418123\",\"Name\":\"Mangalore,   Karnataka\"},{\"Code\":\"126805\",\"Name\":\"Mangaluru,   Karnataka\"},{\"Code\":\"104157\",\"Name\":\"Manipal,   Karnataka\"},{\"Code\":\"126810\",\"Name\":\"Manmad,   Maharashtra\"},{\"Code\":\"104323\",\"Name\":\"Mapusa,   Goa\"},{\"Code\":\"146481\",\"Name\":\"Maradu,   Kerala\"},{\"Code\":\"146484\",\"Name\":\"Marari Beach,   Kerala\"},{\"Code\":\"126817\",\"Name\":\"Mararikulam,   KERALA\"},{\"Code\":\"336934\",\"Name\":\"Marchula,   Uttarakhand\"},{\"Code\":\"106481\",\"Name\":\"Margao,   Goa\"},{\"Code\":\"299743\",\"Name\":\"Marmagao,   Goa\"},{\"Code\":\"146533\",\"Name\":\"Mashobra,   Himachal Pradesh\"},{\"Code\":\"146545\",\"Name\":\"Matheran,   Maharashtra\"},{\"Code\":\"127857\",\"Name\":\"Mathura,   Uttar Pradesh\"},{\"Code\":\"418308\",\"Name\":\"Mavalli,   Karnataka\"},{\"Code\":\"418261\",\"Name\":\"Mavli,   Rajasthan\"},{\"Code\":\"126911\",\"Name\":\"Mayiladuthurai,   Tamil Nadu\"},{\"Code\":\"104040\",\"Name\":\"McLeod Ganj,   Himachal Pradesh\"},{\"Code\":\"146575\",\"Name\":\"Meerut,   Uttar Pradesh\"},{\"Code\":\"151812\",\"Name\":\"Mehsana,   Gujarat\"},{\"Code\":\"161036\",\"Name\":\"Melaghar,   Tripura\"},{\"Code\":\"295351\",\"Name\":\"Mendarda\"},{\"Code\":\"104345\",\"Name\":\"Meppadi,   Kerala\"},{\"Code\":\"128829\",\"Name\":\"Mettupalayam,   Tamil Nadu\"},{\"Code\":\"300324\",\"Name\":\"Mhow,   Madhya Pradesh\"},{\"Code\":\"150356\",\"Name\":\"Midnapur,   West Bengal\"},{\"Code\":\"106510\",\"Name\":\"Mirik,   West Bengal\"},{\"Code\":\"151864\",\"Name\":\"Mirzapur,   Uttar Pradesh\"},{\"Code\":\"128914\",\"Name\":\"Mobor Beach,   Goa\"},{\"Code\":\"370782\",\"Name\":\"Modasa,   Gujarat\"},{\"Code\":\"299281\",\"Name\":\"Moga\"},{\"Code\":\"106514\",\"Name\":\"Mohali,   Punjab\"},{\"Code\":\"418284\",\"Name\":\"Mohan Chatti,   Uttarakhand\"},{\"Code\":\"102819\",\"Name\":\"Mohan,   Uttar Pradesh\"},{\"Code\":\"103825\",\"Name\":\"Mohania,   Bihar\"},{\"Code\":\"364153\",\"Name\":\"Mohanlalganj,   Uttar Pradesh\"},{\"Code\":\"101894\",\"Name\":\"Mollem,   Goa\"},{\"Code\":\"129615\",\"Name\":\"Moradabad,   Uttar Pradesh\"},{\"Code\":\"102834\",\"Name\":\"Morbi,   Gujarat\"},{\"Code\":\"129044\",\"Name\":\"Morjim,   Goa\"},{\"Code\":\"146752\",\"Name\":\"Mount Abu,   Rajasthan\"},{\"Code\":\"151863\",\"Name\":\"Mughalsarai,   Uttar Pradesh\"},{\"Code\":\"129690\",\"Name\":\"Mukkam,   Kerala\"},{\"Code\":\"129415\",\"Name\":\"Mukteshwar,   Uttarakhand\"},{\"Code\":\"301296\",\"Name\":\"Muktsar,   Punjab\"},{\"Code\":\"146768\",\"Name\":\"Mukundgarh,   Rajasthan\"},{\"Code\":\"161046\",\"Name\":\"Mukutmanipur,   West Bengal\"},{\"Code\":\"129695\",\"Name\":\"Mullor\"},{\"Code\":\"237563\",\"Name\":\"Mulshi,   Maharashtra\"},{\"Code\":\"144306\",\"Name\":\"Mumbai/Bombay,   Maharashtra\"},{\"Code\":\"381757\",\"Name\":\"Mundra,   Gujarat\"},{\"Code\":\"128573\",\"Name\":\"Munnar,   Kerala\"},{\"Code\":\"146776\",\"Name\":\"Munsiyari,   Uttarakhand\"},{\"Code\":\"128030\",\"Name\":\"Murbad,   Maharashtra\"},{\"Code\":\"129104\",\"Name\":\"Murinjapuzha,   Kerala\"},{\"Code\":\"295707\",\"Name\":\"Murthal,   Haryana\"},{\"Code\":\"129434\",\"Name\":\"Murud,   Maharashtra\"},{\"Code\":\"130341\",\"Name\":\"Mussoorie,   Uttarakhand\"},{\"Code\":\"150392\",\"Name\":\"Muzaffarnagar,   Uttar Pradesh\"},{\"Code\":\"151536\",\"Name\":\"Muzaffarpur,   Bihar\"},{\"Code\":\"343378\",\"Name\":\"Mysore (MYQ),   Mysore\"},{\"Code\":\"128698\",\"Name\":\"Mysuru,   Karnataka\"},{\"Code\":\"160877\",\"Name\":\"NAIMISHARANYA,   UTTAR PRADESH\"},{\"Code\":\"150357\",\"Name\":\"NYERAK,   Jammu Kashmir\"},{\"Code\":\"417527\",\"Name\":\"Nabadwip\"},{\"Code\":\"153797\",\"Name\":\"Nadia District,   West Bengal\"},{\"Code\":\"104506\",\"Name\":\"Nadiad,   Gujarat\"},{\"Code\":\"130352\",\"Name\":\"Nadukani,   Kerala\"},{\"Code\":\"274813\",\"Name\":\"Nagaon,   Assam\"},{\"Code\":\"129447\",\"Name\":\"Nagapattinam,   Tamil Nadu\"},{\"Code\":\"160628\",\"Name\":\"Nagaur,   Rajasthan\"},{\"Code\":\"104260\",\"Name\":\"Naggar,   Himachal Pradesh\"},{\"Code\":\"129723\",\"Name\":\"Nagpur,   Maharashtra\"},{\"Code\":\"338761\",\"Name\":\"Nahan,   Himachal Pradesh\"},{\"Code\":\"130354\",\"Name\":\"Nahar Magra,   Rajasthan\"},{\"Code\":\"129726\",\"Name\":\"Nainital,   Uttarakhand\"},{\"Code\":\"130357\",\"Name\":\"Nakinda,   Maharashtra\"},{\"Code\":\"129257\",\"Name\":\"Nalagarh,   Himachal Pradesh\"},{\"Code\":\"151833\",\"Name\":\"Naldehra,   Himachal\"},{\"Code\":\"130105\",\"Name\":\"Nalkeri,   Karnataka\"},{\"Code\":\"104509\",\"Name\":\"Namakkal,   Tamil Nadu\"},{\"Code\":\"130358\",\"Name\":\"Namchi,   Sikkim\"},{\"Code\":\"129732\",\"Name\":\"Nanded,   Maharashtra\"},{\"Code\":\"299841\",\"Name\":\"Nandurbar,   Maharashtra\"},{\"Code\":\"160634\",\"Name\":\"Narendranagar,   Uttarakhand\"},{\"Code\":\"102033\",\"Name\":\"Narkanda,   Himachal Pradesh\"},{\"Code\":\"129163\",\"Name\":\"Narlai,   Rajasthan\"},{\"Code\":\"418060\",\"Name\":\"Narmadapuram,   Madhya Pradesh\"},{\"Code\":\"146814\",\"Name\":\"Nashik,   Maharashtra\"},{\"Code\":\"151845\",\"Name\":\"Nathdwara,   Rajasthan\"},{\"Code\":\"146820\",\"Name\":\"Nattika,   Kerala\"},{\"Code\":\"418107\",\"Name\":\"Navapur,   nandurbar\"},{\"Code\":\"128734\",\"Name\":\"Navi Mumbai,   Maharashtra\"},{\"Code\":\"300782\",\"Name\":\"Navsari,   Gujarat\"},{\"Code\":\"146825\",\"Name\":\"Nawalgarh,   Rajasthan\"},{\"Code\":\"151846\",\"Name\":\"Nawanshahar,   Punjab\"},{\"Code\":\"154145\",\"Name\":\"Nawanshahr,   Punjab\"},{\"Code\":\"150203\",\"Name\":\"Nedumbassery,   Kerala\"},{\"Code\":\"129816\",\"Name\":\"Neeleshwar,   Kerala\"},{\"Code\":\"130137\",\"Name\":\"Neemrana,   RAJASTHAN\"},{\"Code\":\"235963\",\"Name\":\"Neemuch,   Madhya Pradesh\"},{\"Code\":\"129189\",\"Name\":\"Neil Island,   Andaman \\u0026 Nicobar\"},{\"Code\":\"358240\",\"Name\":\"Nelamangala,   Karnataka\"},{\"Code\":\"129289\",\"Name\":\"Nellore,   Andhra Pradesh\"},{\"Code\":\"129827\",\"Name\":\"Nerul,   Maharashtra\"},{\"Code\":\"417022\",\"Name\":\"Netrang,   Gujarat\"},{\"Code\":\"130443\",\"Name\":\"New Delhi / Delhi,   DELHI\"},{\"Code\":\"287941\",\"Name\":\"New Digha,   West Bengal\"},{\"Code\":\"150649\",\"Name\":\"Neyveli,   Tamil Nadu\"},{\"Code\":\"346564\",\"Name\":\"Nilambur,   Kerala\"},{\"Code\":\"104531\",\"Name\":\"Nilgiri,   Tamil Nadu\"},{\"Code\":\"129477\",\"Name\":\"Nimaj,   Rajasthan\"},{\"Code\":\"130205\",\"Name\":\"Noida,   UTTAR PRADESH\"},{\"Code\":\"153921\",\"Name\":\"North Goa,   Goa\"},{\"Code\":\"150162\",\"Name\":\"North Lakhimpur,   Assam\"},{\"Code\":\"106556\",\"Name\":\"North Paravur,   Kerala\"},{\"Code\":\"153975\",\"Name\":\"North Sikkim,   Sikkim\"},{\"Code\":\"392562\",\"Name\":\"Nubra Valley,   Ladakh\"},{\"Code\":\"131276\",\"Name\":\"Omkareshwar,   Madhya Pradesh\"},{\"Code\":\"130990\",\"Name\":\"Ooty,   Tamil Nadu\"},{\"Code\":\"130252\",\"Name\":\"Orchha,   Madhya Pradesh\"},{\"Code\":\"130799\",\"Name\":\"Orissa,   Odisha\"},{\"Code\":\"132015\",\"Name\":\"Pachmarhi,   Madhya Pradesh\"},{\"Code\":\"130852\",\"Name\":\"Padappai,   Tamil Nadu\"},{\"Code\":\"131375\",\"Name\":\"Pahalgam,   Jammu and Kashmir\"},{\"Code\":\"131721\",\"Name\":\"Pakhal,   Telangana\"},{\"Code\":\"153808\",\"Name\":\"Palakkad District\"},{\"Code\":\"132025\",\"Name\":\"Palakkad,   Kerala\"},{\"Code\":\"147070\",\"Name\":\"Palampur,   Himachal Pradesh\"},{\"Code\":\"130749\",\"Name\":\"Palani,   Tamil Nadu\"},{\"Code\":\"130316\",\"Name\":\"Palanpur,   Gujrat\"},{\"Code\":\"292291\",\"Name\":\"Palghar\"},{\"Code\":\"147075\",\"Name\":\"Pali,   Rajasthan\"},{\"Code\":\"294433\",\"Name\":\"Palia Kalan,   Uttar Pradesh\"},{\"Code\":\"362198\",\"Name\":\"Palolem,   Goa\"},{\"Code\":\"241457\",\"Name\":\"Palwal,   Haryana\"},{\"Code\":\"131398\",\"Name\":\"Panaji,   Goa\"},{\"Code\":\"131394\",\"Name\":\"Panchgani,   Maharashtra\"},{\"Code\":\"131002\",\"Name\":\"Panchkula,   Haryana\"},{\"Code\":\"261909\",\"Name\":\"Pandharpur,   Maharashtra\"},{\"Code\":\"147083\",\"Name\":\"Pandikkad,   Kerala\"},{\"Code\":\"106580\",\"Name\":\"Pangong Tso Lake,   Jammu And Kashmir\"},{\"Code\":\"298741\",\"Name\":\"Panhala,   Maharashtra\"},{\"Code\":\"147088\",\"Name\":\"Panipat,   Haryana\"},{\"Code\":\"131437\",\"Name\":\"Panna,   Madhya Pradesh\"},{\"Code\":\"150800\",\"Name\":\"Pantnagar,   Uttarakhand\"},{\"Code\":\"131544\",\"Name\":\"Panvel,   Maharashtra \"},{\"Code\":\"353074\",\"Name\":\"Paradeep,   Odisha\"},{\"Code\":\"131406\",\"Name\":\"Paragpur,   Himachal Pradesh\"},{\"Code\":\"418061\",\"Name\":\"Paralakhemundi,   Odisha\"},{\"Code\":\"131552\",\"Name\":\"Paravur,   Kerala\"},{\"Code\":\"151861\",\"Name\":\"Parbhani,   Maharashtra\"},{\"Code\":\"132055\",\"Name\":\"Parra,   Goa\"},{\"Code\":\"147106\",\"Name\":\"Parwanoo,   Himachal Pradesh\"},{\"Code\":\"315734\",\"Name\":\"Patan,   Gujarat\"},{\"Code\":\"106662\",\"Name\":\"Pateri,   Bihar\"},{\"Code\":\"131027\",\"Name\":\"Pathanamthitta,   Kerala\"},{\"Code\":\"132705\",\"Name\":\"Pathankot,   Punjab\"},{\"Code\":\"267587\",\"Name\":\"Pathara,   Odisha\"},{\"Code\":\"106663\",\"Name\":\"Patiala,   Punjab\"},{\"Code\":\"132429\",\"Name\":\"Patna,   Bihar\"},{\"Code\":\"418068\",\"Name\":\"Patnem\"},{\"Code\":\"131028\",\"Name\":\"Patnitop,   Jammu and Kashmir\"},{\"Code\":\"153916\",\"Name\":\"Pauri Garhwal\"},{\"Code\":\"161105\",\"Name\":\"Peermade,   Kerala\"},{\"Code\":\"147140\",\"Name\":\"Pelling,   Sikkim\"},{\"Code\":\"132724\",\"Name\":\"Pench Nationalpark,   Madhya Pradesh\"},{\"Code\":\"132089\",\"Name\":\"Pench,   Madhya Pradesh\"},{\"Code\":\"102750\",\"Name\":\"Perambalur,   Tamil Nadu\"},{\"Code\":\"157867\",\"Name\":\"Perintalmanna,   Kerala\"},{\"Code\":\"103270\",\"Name\":\"Perinthalmanna,   Kerala\"},{\"Code\":\"132133\",\"Name\":\"Periyar,   Kerala\"},{\"Code\":\"131597\",\"Name\":\"Pernem,   Goa\"},{\"Code\":\"132753\",\"Name\":\"Phagwara,   Punjab\"},{\"Code\":\"131523\",\"Name\":\"Phalodi,   Rajasthan\"},{\"Code\":\"106676\",\"Name\":\"Phaltan,   Maharashtra \"},{\"Code\":\"418283\",\"Name\":\"Pilibhit\"},{\"Code\":\"133418\",\"Name\":\"Pimpri-Chinchwad,   Maharashtra\"},{\"Code\":\"132183\",\"Name\":\"Pinjore,   Haryana\"},{\"Code\":\"232476\",\"Name\":\"Pithampur,   Madhya Pradesh\"},{\"Code\":\"295095\",\"Name\":\"Pithoragarh,   Uttarakhand\"},{\"Code\":\"133214\",\"Name\":\"Pokhran,   Rajasthan\"},{\"Code\":\"132282\",\"Name\":\"Pollachi,   Tamil Nadu\"},{\"Code\":\"132292\",\"Name\":\"Ponmudi,   Kerala\"},{\"Code\":\"133497\",\"Name\":\"Poovar,   Kerala\"},{\"Code\":\"133551\",\"Name\":\"Porbandar,   Gujarat\"},{\"Code\":\"133556\",\"Name\":\"Port Blair,   Andaman And Nicobar\"},{\"Code\":\"151840\",\"Name\":\"Pragpur,   Himachal Pradesh\"},{\"Code\":\"100307\",\"Name\":\"Prayagraj (Formally-Allahabad),   Uttar Pradesh\"},{\"Code\":\"280675\",\"Name\":\"Proddatur,   Andhra Pradesh\"},{\"Code\":\"132561\",\"Name\":\"Puducherry/Pondicherry,   Tamil Nadu\"},{\"Code\":\"106703\",\"Name\":\"Pudukkotai,   Tamil Nadu\"},{\"Code\":\"394717\",\"Name\":\"Pudukkottai,   Tamil Nadu\"},{\"Code\":\"134170\",\"Name\":\"Pulamanthole,   Kerala\"},{\"Code\":\"133133\",\"Name\":\"Pune,   Maharashtra\"},{\"Code\":\"147410\",\"Name\":\"Purakkad,   Kerala\"},{\"Code\":\"275226\",\"Name\":\"Purasaiwakkam,   Tamil Nadu\"},{\"Code\":\"153873\",\"Name\":\"Purba Medinipur District,   West Bengal\"},{\"Code\":\"132593\",\"Name\":\"Puri,   Orissa\"},{\"Code\":\"293576\",\"Name\":\"Purnia,   Bihar\"},{\"Code\":\"306303\",\"Name\":\"Purulia,   West Bengal\"},{\"Code\":\"134001\",\"Name\":\"Pushkar,   Rajasthan\"},{\"Code\":\"134178\",\"Name\":\"Puttaparthi,   Andhra Pradesh\"},{\"Code\":\"254863\",\"Name\":\"Raebareli,   Uttar Pradesh\"},{\"Code\":\"202897\",\"Name\":\"Raichur,   Karnataka\"},{\"Code\":\"147442\",\"Name\":\"Raigad,   Maharashtra\"},{\"Code\":\"237311\",\"Name\":\"Raigarh,   Chhattisgarh\"},{\"Code\":\"296510\",\"Name\":\"Raipur\"},{\"Code\":\"133672\",\"Name\":\"Raipur,   Rajasthan\"},{\"Code\":\"134040\",\"Name\":\"Rajahmahendravaram,   Andhra Pradesh\"},{\"Code\":\"343447\",\"Name\":\"Rajahmundry (RJA),   Rajahmundry\"},{\"Code\":\"102941\",\"Name\":\"Rajakkad,   Kerala\"},{\"Code\":\"102942\",\"Name\":\"Rajapalayam,   Tamil Nadu\"},{\"Code\":\"134041\",\"Name\":\"Rajgarh,   Himachal Pradesh\"},{\"Code\":\"133175\",\"Name\":\"Rajgir,   Bihar\"},{\"Code\":\"134211\",\"Name\":\"Rajkot,   Gujarat\"},{\"Code\":\"298575\",\"Name\":\"Rajnandgaon\"},{\"Code\":\"304525\",\"Name\":\"Rajpipla\"},{\"Code\":\"153963\",\"Name\":\"Rajsamand\"},{\"Code\":\"151654\",\"Name\":\"Ramagundam,   Telangana\"},{\"Code\":\"133177\",\"Name\":\"Ramakkalmedu,   Kerala\"},{\"Code\":\"404831\",\"Name\":\"Ramanathapuram,   Tamil Nadu\"},{\"Code\":\"134213\",\"Name\":\"Ramathra Fort,   Rajasthan\"},{\"Code\":\"133179\",\"Name\":\"Rameshwaram,   Tamil Nadu\"},{\"Code\":\"151860\",\"Name\":\"Rameswaram,   TAMIL NADU\"},{\"Code\":\"132621\",\"Name\":\"Ramgarh,   Uttarakhand\"},{\"Code\":\"134214\",\"Name\":\"Ramnagar,   Uttarakhand\"},{\"Code\":\"133676\",\"Name\":\"Ranakpur,   Rajasthan\"},{\"Code\":\"133760\",\"Name\":\"Ranchi,   Jharkhand\"},{\"Code\":\"133838\",\"Name\":\"Ranikhet,   Uttarakhand\"},{\"Code\":\"134224\",\"Name\":\"Ranthambore Nationalpark,   Rajasthan\"},{\"Code\":\"102675\",\"Name\":\"Ratlam,   Madhya Pradesh\"},{\"Code\":\"133687\",\"Name\":\"Ratnagiri,   Maharashtra\"},{\"Code\":\"133295\",\"Name\":\"Ravangla,   Sikkim\"},{\"Code\":\"295703\",\"Name\":\"Razole,   Andhra Pradesh\"},{\"Code\":\"102683\",\"Name\":\"Renigunta,   Andhra Pradesh\"},{\"Code\":\"150930\",\"Name\":\"Rewa,   Madhya Pradesh\"},{\"Code\":\"147501\",\"Name\":\"Rewari,   Delhi National Territory\"},{\"Code\":\"102954\",\"Name\":\"Rinchenpong,   Sikkim\"},{\"Code\":\"134932\",\"Name\":\"Rishikesh,   Uttarakhand\"},{\"Code\":\"147554\",\"Name\":\"Rohet,   Rajasthan\"},{\"Code\":\"103217\",\"Name\":\"Rohetgarh,   Rajasthan\"},{\"Code\":\"134058\",\"Name\":\"Rohtak,   Haryana\"},{\"Code\":\"150180\",\"Name\":\"Roorkee,   Uttarakhand\"},{\"Code\":\"134643\",\"Name\":\"Rourkela,   Orissa\"},{\"Code\":\"135778\",\"Name\":\"Rudraprayag,   Uttarakhand\"},{\"Code\":\"150359\",\"Name\":\"Rudrapur,   Uttarakhand\"},{\"Code\":\"245434\",\"Name\":\"Rupnagar,   Punjab\"},{\"Code\":\"150936\",\"Name\":\"Rupsi,   Assam\"},{\"Code\":\"148898\",\"Name\":\"SHINGRAK,   Jammu and Kashmir\"},{\"Code\":\"267858\",\"Name\":\"Sagar,   Madhya Pradesh\"},{\"Code\":\"272583\",\"Name\":\"Sagara,   Karnataka\"},{\"Code\":\"103325\",\"Name\":\"Saharanpur,   Uttar Pradesh\"},{\"Code\":\"147607\",\"Name\":\"Sahibzada Ajit Singh Nagar,   Punjab\"},{\"Code\":\"394732\",\"Name\":\"Sakleshpur,   Karnataka\"},{\"Code\":\"103491\",\"Name\":\"Salasar,   Rajasthan\"},{\"Code\":\"154057\",\"Name\":\"Salcete,   Goa\"},{\"Code\":\"135916\",\"Name\":\"Salem,   Tamil Nadu\"},{\"Code\":\"135694\",\"Name\":\"Saligao,   Goa\"},{\"Code\":\"418309\",\"Name\":\"Salt,   Uttarakhand\"},{\"Code\":\"272466\",\"Name\":\"Samastipur,   Bihar\"},{\"Code\":\"103344\",\"Name\":\"Samayapuram,   Tamil Nadu\"},{\"Code\":\"103345\",\"Name\":\"Sambalpur,   Odisha\"},{\"Code\":\"103346\",\"Name\":\"Samode,   Rajasthan\"},{\"Code\":\"106770\",\"Name\":\"Sanand,   Gujarat\"},{\"Code\":\"135522\",\"Name\":\"Sanchi,   Madhya Pradesh\"},{\"Code\":\"417319\",\"Name\":\"Sanchore,   Rajasthan\"},{\"Code\":\"202708\",\"Name\":\"Sangla,   Himachal Pradesh\"},{\"Code\":\"136501\",\"Name\":\"Sangli,   Maharashtra\"},{\"Code\":\"394926\",\"Name\":\"Saputara\"},{\"Code\":\"418088\",\"Name\":\"Sarahan ,   Himachal Pradesh\"},{\"Code\":\"205218\",\"Name\":\"Sarchu,   Sarchu\"},{\"Code\":\"136093\",\"Name\":\"Sardargarh,   Rajasthan\"},{\"Code\":\"135586\",\"Name\":\"Sariska National Park,   Rajasthan\"},{\"Code\":\"136555\",\"Name\":\"Sasan Gir,   Gujarat\"},{\"Code\":\"261894\",\"Name\":\"Sasaram\"},{\"Code\":\"136409\",\"Name\":\"Satara,   Maharashtra\"},{\"Code\":\"147780\",\"Name\":\"Satna,   Madhya Pradesh\"},{\"Code\":\"148897\",\"Name\":\"Satpura,   Madhya Pradesh\"},{\"Code\":\"151847\",\"Name\":\"Sattal,   Uttarakhand\"},{\"Code\":\"136656\",\"Name\":\"Sawai Madhopur,   Rajasthan\"},{\"Code\":\"136748\",\"Name\":\"Secunderabad,   Telangana\"},{\"Code\":\"136766\",\"Name\":\"Seoni,   Madhya Pradesh\"},{\"Code\":\"222992\",\"Name\":\"Seraikela,   Jharkhand\"},{\"Code\":\"150360\",\"Name\":\"Shahpur,   Haryana\"},{\"Code\":\"137380\",\"Name\":\"Shahpura,   Rajasthan\"},{\"Code\":\"136285\",\"Name\":\"Shamirpet,   Telangana\"},{\"Code\":\"107371\",\"Name\":\"Shamshabad,   Telangana\"},{\"Code\":\"137568\",\"Name\":\"Shantiniketan,   West Bengal\"},{\"Code\":\"268822\",\"Name\":\"Shegaon,   Maharashtra\"},{\"Code\":\"138670\",\"Name\":\"Shillong,   Meghalaya\"},{\"Code\":\"138673\",\"Name\":\"Shimla,   Himachal Pradesh\"},{\"Code\":\"154080\",\"Name\":\"Shimoga district\"},{\"Code\":\"418089\",\"Name\":\"Shinganahalli,   Karnataka\"},{\"Code\":\"137316\",\"Name\":\"Shirdi,   Maharashtra\"},{\"Code\":\"147891\",\"Name\":\"Shivamogga,   Karnataka\"},{\"Code\":\"137750\",\"Name\":\"Shivpuri,   Madhya Pradesh\"},{\"Code\":\"106639\",\"Name\":\"Sholayur,   Kerala\"},{\"Code\":\"290462\",\"Name\":\"Shri Satya Sai Pandurang Kshetra,   Maharashtra\"},{\"Code\":\"293099\",\"Name\":\"Shrirampur,   West Bengal\"},{\"Code\":\"292279\",\"Name\":\"Shrivardhan,   Maharashtra\"},{\"Code\":\"137404\",\"Name\":\"Siana,   Rajasthan\"},{\"Code\":\"136312\",\"Name\":\"Sikar,   Rajasthan\"},{\"Code\":\"153976\",\"Name\":\"Sikkim\"},{\"Code\":\"150361\",\"Name\":\"Silchar,   Assam\"},{\"Code\":\"147912\",\"Name\":\"Siliguri,   West Bengal\"},{\"Code\":\"147914\",\"Name\":\"Silvassa,   Dadra and Nagar Have\"},{\"Code\":\"137470\",\"Name\":\"Sindhudi,   Gujarat\"},{\"Code\":\"153859\",\"Name\":\"Sindhudurg\"},{\"Code\":\"106649\",\"Name\":\"Singrauli,   Madhya Pradesh\"},{\"Code\":\"138010\",\"Name\":\"Siolim,   Goa\"},{\"Code\":\"106650\",\"Name\":\"Sirkazhi,   Tamil Nadu\"},{\"Code\":\"154070\",\"Name\":\"Sirmaur District\"},{\"Code\":\"103180\",\"Name\":\"Sirsa,   Haryana \"},{\"Code\":\"107226\",\"Name\":\"Sitalakhet,   Uttarakhand \"},{\"Code\":\"293199\",\"Name\":\"Sitapur,   Uttar Pradesh\"},{\"Code\":\"106898\",\"Name\":\"Sitlakhet,   Uttarakhand \"},{\"Code\":\"106651\",\"Name\":\"Skara,   Maharashtra \"},{\"Code\":\"302824\",\"Name\":\"Sohagpur\"},{\"Code\":\"154112\",\"Name\":\"Solan District\"},{\"Code\":\"138127\",\"Name\":\"Solan,   Himachal Pradesh\"},{\"Code\":\"138128\",\"Name\":\"Solapur,   Maharashtra\"},{\"Code\":\"138049\",\"Name\":\"Somnath,   Gujarat\"},{\"Code\":\"138484\",\"Name\":\"Sonamarg,   Jammu And Kashmir\"},{\"Code\":\"151848\",\"Name\":\"Sonipat,   Haryana\"},{\"Code\":\"281849\",\"Name\":\"Sosan\"},{\"Code\":\"154101\",\"Name\":\"South 24 Parganas\"},{\"Code\":\"153958\",\"Name\":\"South Goa\"},{\"Code\":\"376717\",\"Name\":\"Spangmik,   Ladakh\"},{\"Code\":\"138523\",\"Name\":\"Sravasti,   Uttar Pradesh\"},{\"Code\":\"107250\",\"Name\":\"Sri Ganganagar,   Rajasthan\"},{\"Code\":\"341544\",\"Name\":\"Sri Sathya Sai Museum,   Andhra Pradesh\"},{\"Code\":\"315958\",\"Name\":\"Sri Sathya Sai University,   Andhra Pradesh\"},{\"Code\":\"137118\",\"Name\":\"Srikakulam,   Andhra Pradesh\"},{\"Code\":\"299949\",\"Name\":\"Srikalahasti\"},{\"Code\":\"139456\",\"Name\":\"Srinagar,   Jammu and Kashmir\"},{\"Code\":\"103198\",\"Name\":\"Srinagar, Uttarakhand,   Uttarakhand\"},{\"Code\":\"417859\",\"Name\":\"Sringeri or Shringeri,   Karnataka\"},{\"Code\":\"138370\",\"Name\":\"Sriperumbudur,   Tamil Nadu\"},{\"Code\":\"108572\",\"Name\":\"Stok,   Jammu And Kashmir\"},{\"Code\":\"107078\",\"Name\":\"Sultan Bathery,   Kerala\"},{\"Code\":\"151849\",\"Name\":\"Sultanpur,   Uttar Pradesh\"},{\"Code\":\"263253\",\"Name\":\"Sumerpur\"},{\"Code\":\"286488\",\"Name\":\"Sundarnagar,   Himachal Pradesh\"},{\"Code\":\"140235\",\"Name\":\"Sunderban,   West Bengal\"},{\"Code\":\"107275\",\"Name\":\"Sungal,   Jammu Kashmir\"},{\"Code\":\"151866\",\"Name\":\"Surajgarh,   Rajasthan\"},{\"Code\":\"139526\",\"Name\":\"Surat,   Gujarat\"},{\"Code\":\"107754\",\"Name\":\"Suratgarh,   Rajasthan\"},{\"Code\":\"305699\",\"Name\":\"Surendranagar,   Gujarat\"},{\"Code\":\"150287\",\"Name\":\"TIB BAGO,   Jammu and Kashmir\"},{\"Code\":\"151834\",\"Name\":\"Taboda,   Maharashtra\"},{\"Code\":\"418205\",\"Name\":\"Tadipatri,   Andhra Pradesh\"},{\"Code\":\"151850\",\"Name\":\"Tadoba,   Maharashtra\"},{\"Code\":\"251033\",\"Name\":\"Tajpur,   West Bengal\"},{\"Code\":\"161006\",\"Name\":\"Taki,   West Bengal\"},{\"Code\":\"139669\",\"Name\":\"Tala,   Maharashtra\"},{\"Code\":\"273102\",\"Name\":\"Talala,   Gujarat\"},{\"Code\":\"139974\",\"Name\":\"Tarangambadi,   Tamil Nadu\"},{\"Code\":\"150362\",\"Name\":\"Tarapith,   West Bengal\"},{\"Code\":\"139699\",\"Name\":\"Tawang,   Arunachal Pradesh\"},{\"Code\":\"160633\",\"Name\":\"Tehri,   Uttarakhand\"},{\"Code\":\"139069\",\"Name\":\"Tezpur,   Assam\"},{\"Code\":\"106383\",\"Name\":\"Thakurdwara,   Uttar Pradesh\"},{\"Code\":\"139071\",\"Name\":\"Thalassery,   Kerala\"},{\"Code\":\"140020\",\"Name\":\"Thane,   Maharashtra\"},{\"Code\":\"300755\",\"Name\":\"Thanesar\"},{\"Code\":\"139605\",\"Name\":\"Thanjavur,   Tamil Nadu\"},{\"Code\":\"138628\",\"Name\":\"Thanneermukkom,   Kerala\"},{\"Code\":\"139609\",\"Name\":\"Thekkady,   Kerala\"},{\"Code\":\"139744\",\"Name\":\"Theni,   Tamil Nadu\"},{\"Code\":\"299948\",\"Name\":\"Theog\"},{\"Code\":\"140415\",\"Name\":\"Thiksey,   Jammu And Kashmir\"},{\"Code\":\"302786\",\"Name\":\"Thirukkadaiyur,   Tamil Nadu\"},{\"Code\":\"338807\",\"Name\":\"Thirumayam,   Tamil Nadu\"},{\"Code\":\"148901\",\"Name\":\"Thiruvananthapuram,   Kerala\"},{\"Code\":\"106955\",\"Name\":\"Thodupuzha,   Kerala\"},{\"Code\":\"141231\",\"Name\":\"Thoothukudi,   Tamil Nadu\"},{\"Code\":\"140032\",\"Name\":\"Thrissur,   Kerala\"},{\"Code\":\"106958\",\"Name\":\"Thumkunta,   Telangana\"},{\"Code\":\"333310\",\"Name\":\"Tindivanam,   Tamil Nadu\"},{\"Code\":\"107782\",\"Name\":\"Tinsukia,   Assam\"},{\"Code\":\"105896\",\"Name\":\"Tiracol,   Tiracol\"},{\"Code\":\"364173\",\"Name\":\"Tirthalli,   Karnataka\"},{\"Code\":\"399762\",\"Name\":\"Tiruchendur\"},{\"Code\":\"148240\",\"Name\":\"Tiruchirappalli,   Tamil Nadu\"},{\"Code\":\"418285\",\"Name\":\"Tirukalukundram\"},{\"Code\":\"281412\",\"Name\":\"Tirunelveli District\"},{\"Code\":\"140310\",\"Name\":\"Tirunelveli,   Tamil Nadu\"},{\"Code\":\"140311\",\"Name\":\"Tirupati,   Andhra Pradesh\"},{\"Code\":\"141054\",\"Name\":\"Tiruppur,   Tamil Nadu\"},{\"Code\":\"106394\",\"Name\":\"Tiruttani,   Tamil Nadu\"},{\"Code\":\"139315\",\"Name\":\"Tiruvannamalai,   Tamil Nadu\"},{\"Code\":\"106963\",\"Name\":\"Titwala,   Maharashtra\"},{\"Code\":\"379060\",\"Name\":\"Toranagallu,   Karnataka\"},{\"Code\":\"280875\",\"Name\":\"Tosh,   Himachal Pradesh\"},{\"Code\":\"106849\",\"Name\":\"Trimbak,   Maharashtra \"},{\"Code\":\"139820\",\"Name\":\"Trivandrum,   Kerala\"},{\"Code\":\"106856\",\"Name\":\"Tura,   Meghalaya\"},{\"Code\":\"141528\",\"Name\":\"Turia,   West Bengal\"},{\"Code\":\"140098\",\"Name\":\"Uchiyarda,   Rajasthan\"},{\"Code\":\"140522\",\"Name\":\"Udaipur,   Rajasthan\"},{\"Code\":\"377670\",\"Name\":\"Udumalaipettai,   Tamil Nadu\"},{\"Code\":\"148363\",\"Name\":\"Udupi,   Karnataka\"},{\"Code\":\"140701\",\"Name\":\"Ujjain,   Madhya Pradesh\"},{\"Code\":\"157929\",\"Name\":\"Ukhimath,   Uttarakhand\"},{\"Code\":\"299947\",\"Name\":\"Ulhasnagar,   Maharashtra\"},{\"Code\":\"141832\",\"Name\":\"Umaria,   Madhya Pradesh\"},{\"Code\":\"141097\",\"Name\":\"Una,   Himachal Pradesh\"},{\"Code\":\"148374\",\"Name\":\"Unchagaon,   Uttar Pradesh\"},{\"Code\":\"286704\",\"Name\":\"Unjha,   Gujarat\"},{\"Code\":\"300441\",\"Name\":\"Unnao,   Uttar Pradesh\"},{\"Code\":\"107938\",\"Name\":\"Uruli Kanchan,   Maharashtra\"},{\"Code\":\"141578\",\"Name\":\"Utorda Beach,   Goa\"},{\"Code\":\"385613\",\"Name\":\"Uttan,   Maharashtra\"},{\"Code\":\"154207\",\"Name\":\"Uttara Kannada District\"},{\"Code\":\"140143\",\"Name\":\"Uttarkashi,   Uttarakhand\"},{\"Code\":\"417516\",\"Name\":\"Vadakara\"},{\"Code\":\"141587\",\"Name\":\"Vadodara,   Gujarat\"},{\"Code\":\"148406\",\"Name\":\"Vagamon,   Kerala\"},{\"Code\":\"148407\",\"Name\":\"Vagator,   Goa\"},{\"Code\":\"107944\",\"Name\":\"Vaikom,   Kerala\"},{\"Code\":\"107210\",\"Name\":\"Vajrahalli,   Karnataka\"},{\"Code\":\"140593\",\"Name\":\"Vallikunnam,   Kerala\"},{\"Code\":\"160640\",\"Name\":\"Valparai,   Tamil Nadu\"},{\"Code\":\"238713\",\"Name\":\"Valsad,   Gujarat\"},{\"Code\":\"141615\",\"Name\":\"Vandanmedu,   Kerala\"},{\"Code\":\"141147\",\"Name\":\"Vapi,   Gujarat\"},{\"Code\":\"141618\",\"Name\":\"Varanasi,   Uttar Pradesh\"},{\"Code\":\"141450\",\"Name\":\"Varca Beach,   Goa\"},{\"Code\":\"200830\",\"Name\":\"Varca,   Goa\"},{\"Code\":\"141976\",\"Name\":\"Varkala,   Kerala\"},{\"Code\":\"141980\",\"Name\":\"Vasai,   Maharashtra \"},{\"Code\":\"107855\",\"Name\":\"Vasco da Gama,   Goa\"},{\"Code\":\"148446\",\"Name\":\"Vayalar,   Kerala\"},{\"Code\":\"257036\",\"Name\":\"Vayittiri\"},{\"Code\":\"141630\",\"Name\":\"Vazhoor,   Kerala\"},{\"Code\":\"148450\",\"Name\":\"Velankanni,   Tamil Nadu\"},{\"Code\":\"148459\",\"Name\":\"Vellore,   Tamil Nadu\"},{\"Code\":\"142295\",\"Name\":\"Velsao Beach,   Goa\"},{\"Code\":\"142563\",\"Name\":\"Veraval,   Gujarat\"},{\"Code\":\"107957\",\"Name\":\"Verem,   Goa\"},{\"Code\":\"111949\",\"Name\":\"Vijayapura/Bijapur,   Karnataka\"},{\"Code\":\"148500\",\"Name\":\"Vijayawada,   Andhra Pradesh\"},{\"Code\":\"417561\",\"Name\":\"Vikasnagar,   Uttarakhand\"},{\"Code\":\"333311\",\"Name\":\"Viluppuram,   Tamil Nadu\"},{\"Code\":\"361372\",\"Name\":\"Virajpet,   Karnataka\"},{\"Code\":\"300808\",\"Name\":\"Virar\"},{\"Code\":\"409965\",\"Name\":\"Virudhunagar,   Tamil Nadu\"},{\"Code\":\"142198\",\"Name\":\"Vizag/Visakhapatnam,   Andhra Pradesh\"},{\"Code\":\"141371\",\"Name\":\"Vizhinjam,   Kerala\"},{\"Code\":\"107391\",\"Name\":\"Vizianagaram,   Andhra Pradesh\"},{\"Code\":\"141391\",\"Name\":\"Vrindavan,   Uttar Pradesh\"},{\"Code\":\"151612\",\"Name\":\"Vythiri,   Kerala\"},{\"Code\":\"107703\",\"Name\":\"Wakad,   Maharashtra\"},{\"Code\":\"107887\",\"Name\":\"Wandoor\"},{\"Code\":\"141960\",\"Name\":\"Wankaner,   Gujrat\"},{\"Code\":\"151614\",\"Name\":\"Warangal,   Telangana\"},{\"Code\":\"148630\",\"Name\":\"Wayanad,   Kerala\"},{\"Code\":\"153886\",\"Name\":\"West Godavari District\"},{\"Code\":\"143481\",\"Name\":\"Wuste Thar,   Rajasthan\"},{\"Code\":\"417522\",\"Name\":\"Yamuna Nagar\"},{\"Code\":\"143798\",\"Name\":\"Yavatmal,   Maharashtra\"},{\"Code\":\"148767\",\"Name\":\"Yelagiri,   Tamil Nadu\"},{\"Code\":\"348599\",\"Name\":\"Yelahanka,   Karnataka\"},{\"Code\":\"143329\",\"Name\":\"Yercaud,   Tamil Nadu\"},{\"Code\":\"150396\",\"Name\":\"Yuksom,   Sikkim\"},{\"Code\":\"150387\",\"Name\":\"ZARIBAGO,   Jammu and Kashmir\"},{\"Code\":\"150248\",\"Name\":\"Zirakpur,   Punjab\"},{\"Code\":\"275027\",\"Name\":\"Ziro,   Arunachal Pradesh\"}]}",
+  "bodyJson": {
+    "Status": {
+      "Code": 200,
+      "Description": "Success"
+    },
+    "CityList": [
+      {
+        "Code": "268880",
+        "Name": "Abohar,   Punjab"
+      },
+      {
+        "Code": "105141",
+        "Name": "Abu Road,   Rajasthan"
+      },
+      {
+        "Code": "293586",
+        "Name": "Adimaly,   Kerala"
+      },
+      {
+        "Code": "102138",
+        "Name": "Adoor,   kerala"
+      },
+      {
+        "Code": "418085",
+        "Name": "Advalpal,   North Goa"
+      },
+      {
+        "Code": "101615",
+        "Name": "Adyar,   Tamil Nadu"
+      },
+      {
+        "Code": "100667",
+        "Name": "Agartala,   Tripura"
+      },
+      {
+        "Code": "100578",
+        "Name": "Agatti,   Lakshadweep"
+      },
+      {
+        "Code": "394603",
+        "Name": "Agonda"
+      },
+      {
+        "Code": "100589",
+        "Name": "Agra,   Uttar Pradesh"
+      },
+      {
+        "Code": "100263",
+        "Name": "Ahmedabad,   Gujarat"
+      },
+      {
+        "Code": "100363",
+        "Name": "Ahmednagar,   Maharashtra"
+      },
+      {
+        "Code": "100797",
+        "Name": "Ahmedpur Mandvi,   Gujarat"
+      },
+      {
+        "Code": "260619",
+        "Name": "Ahwa,   Gujarat"
+      },
+      {
+        "Code": "100273",
+        "Name": "Aizawl,   Mizoram"
+      },
+      {
+        "Code": "100686",
+        "Name": "Ajabgarh,   Rajasthan"
+      },
+      {
+        "Code": "100804",
+        "Name": "Ajmer,   Rajasthan"
+      },
+      {
+        "Code": "100689",
+        "Name": "Akola,   Maharashtra"
+      },
+      {
+        "Code": "285346",
+        "Name": "Alchi"
+      },
+      {
+        "Code": "101625",
+        "Name": "Alibaug,   Maharashtra"
+      },
+      {
+        "Code": "100420",
+        "Name": "Aligarh,   Uttar Pradesh"
+      },
+      {
+        "Code": "148835",
+        "Name": "Alipurduar,   West Bengal"
+      },
+      {
+        "Code": "161104",
+        "Name": "Alkapuri,   Gujarat"
+      },
+      {
+        "Code": "109524",
+        "Name": "Alleppey/Alappuzha,   Kerala"
+      },
+      {
+        "Code": "100203",
+        "Name": "Almora,   Uttarakhand"
+      },
+      {
+        "Code": "151339",
+        "Name": "Along,   Arunachal Pradesh"
+      },
+      {
+        "Code": "101349",
+        "Name": "Alto Porvorim,   Goa"
+      },
+      {
+        "Code": "109093",
+        "Name": "Alwar,   Rajasthan"
+      },
+      {
+        "Code": "418099",
+        "Name": "Amalapuram,   Andhra Pradesh"
+      },
+      {
+        "Code": "305707",
+        "Name": "Ambaji,   Gujarat"
+      },
+      {
+        "Code": "100881",
+        "Name": "Ambala,   Haryana"
+      },
+      {
+        "Code": "384408",
+        "Name": "Ambalapuzha"
+      },
+      {
+        "Code": "272122",
+        "Name": "Ambikapur,   Chhattisgarh"
+      },
+      {
+        "Code": "294443",
+        "Name": "Amboli,   Maharashtra"
+      },
+      {
+        "Code": "105159",
+        "Name": "Amer,   Rajasthan"
+      },
+      {
+        "Code": "101128",
+        "Name": "Amravati,   Maharashtra"
+      },
+      {
+        "Code": "299784",
+        "Name": "Amreli,   Gujarat"
+      },
+      {
+        "Code": "101129",
+        "Name": "Amritsar,   Punjab"
+      },
+      {
+        "Code": "252072",
+        "Name": "Anachal,   Kerala"
+      },
+      {
+        "Code": "109446",
+        "Name": "Anand,   Gujarat"
+      },
+      {
+        "Code": "308358",
+        "Name": "Anandpur Sahib,   Punjab"
+      },
+      {
+        "Code": "105160",
+        "Name": "Anandpur,   Punjab"
+      },
+      {
+        "Code": "203031",
+        "Name": "Anantapur,   Andhra Pradesh"
+      },
+      {
+        "Code": "153814",
+        "Name": "Andaman and Nicobar Islands"
+      },
+      {
+        "Code": "102166",
+        "Name": "Angul,   Odisha"
+      },
+      {
+        "Code": "160388",
+        "Name": "Anjar,   Gujarat"
+      },
+      {
+        "Code": "101146",
+        "Name": "Anjuna,   Goa"
+      },
+      {
+        "Code": "101147",
+        "Name": "Ankleshwar,   Gujarat"
+      },
+      {
+        "Code": "417883",
+        "Name": "Annavaram,   Andhra Pradesh"
+      },
+      {
+        "Code": "361147",
+        "Name": "Araku Valley,   Andhra Pradesh"
+      },
+      {
+        "Code": "104724",
+        "Name": "Arambol,   Goa"
+      },
+      {
+        "Code": "109167",
+        "Name": "Arcot,   Tamil Nadu"
+      },
+      {
+        "Code": "109973",
+        "Name": "Aronda,   Maharashtra "
+      },
+      {
+        "Code": "161026",
+        "Name": "Arookutty,   Kerala"
+      },
+      {
+        "Code": "109872",
+        "Name": "Arpora,   Goa"
+      },
+      {
+        "Code": "294336",
+        "Name": "Arrah,   Bihar"
+      },
+      {
+        "Code": "101068",
+        "Name": "Arrosim Beach,   Goa"
+      },
+      {
+        "Code": "110211",
+        "Name": "Asansol,   West Bengal"
+      },
+      {
+        "Code": "151836",
+        "Name": "Ashtamudi,   Kerala"
+      },
+      {
+        "Code": "404579",
+        "Name": "Ashvem,   Goa"
+      },
+      {
+        "Code": "150412",
+        "Name": "Athirapally,   Kerala"
+      },
+      {
+        "Code": "105178",
+        "Name": "Athirapilly,   Kerala"
+      },
+      {
+        "Code": "110248",
+        "Name": "Auli,   Uttarakhand"
+      },
+      {
+        "Code": "110349",
+        "Name": "Aurangabad,   Maharashtra"
+      },
+      {
+        "Code": "109665",
+        "Name": "Auroville,   Tamil Nadu"
+      },
+      {
+        "Code": "110358",
+        "Name": "Ayodhya,   Uttar Pradesh"
+      },
+      {
+        "Code": "302986",
+        "Name": "Azamgarh,   Uttar Pradesh"
+      },
+      {
+        "Code": "110041",
+        "Name": "B. R. Hills,   Mizoram"
+      },
+      {
+        "Code": "111073",
+        "Name": "Badami,   Karnataka"
+      },
+      {
+        "Code": "150171",
+        "Name": "Baddi,   Himachal Pradesh"
+      },
+      {
+        "Code": "109814",
+        "Name": "Badrinath,   Uttarakhand"
+      },
+      {
+        "Code": "110640",
+        "Name": "Baga,   Goa"
+      },
+      {
+        "Code": "300972",
+        "Name": "Bagalkot,   Karnataka"
+      },
+      {
+        "Code": "294442",
+        "Name": "Bagar,   Rajasthan"
+      },
+      {
+        "Code": "150697",
+        "Name": "Bagdogra,   WEST BENGAL"
+      },
+      {
+        "Code": "261684",
+        "Name": "Bagru,   Rajasthan"
+      },
+      {
+        "Code": "295633",
+        "Name": "Bahadurgarh,   Haryana"
+      },
+      {
+        "Code": "291124",
+        "Name": "Bahraich,   Uttar Pradesh"
+      },
+      {
+        "Code": "151842",
+        "Name": "Baiguney,   Sikkim"
+      },
+      {
+        "Code": "101485",
+        "Name": "Baindur,   Karnataka"
+      },
+      {
+        "Code": "110659",
+        "Name": "Bakkhali,   West Bengal"
+      },
+      {
+        "Code": "148857",
+        "Name": "Balaghat,   Madhya Pradesh"
+      },
+      {
+        "Code": "105188",
+        "Name": "Balangir,   Odisha"
+      },
+      {
+        "Code": "111097",
+        "Name": "Balasinore,   Gujrat"
+      },
+      {
+        "Code": "295632",
+        "Name": "Balasore,   Odisha"
+      },
+      {
+        "Code": "418290",
+        "Name": "Balichauki,   Himachal Pradesh"
+      },
+      {
+        "Code": "110483",
+        "Name": "Ballari,   Karnataka"
+      },
+      {
+        "Code": "301775",
+        "Name": "Ballia,   Uttar Pradesh"
+      },
+      {
+        "Code": "293098",
+        "Name": "Ballygunge,   West Bengal"
+      },
+      {
+        "Code": "110977",
+        "Name": "Balrampur,   Uttar Pradesh"
+      },
+      {
+        "Code": "150951",
+        "Name": "Balurghat,   West Bengal"
+      },
+      {
+        "Code": "111121",
+        "Name": "Bandhavgarh-Nationalpark,   Madhya Pradesh"
+      },
+      {
+        "Code": "110851",
+        "Name": "Bandipur,   Tamil Nadu"
+      },
+      {
+        "Code": "110853",
+        "Name": "Bangaram Island,   Lakshadweep"
+      },
+      {
+        "Code": "294440",
+        "Name": "Banjar"
+      },
+      {
+        "Code": "418092",
+        "Name": "Banswara,   Rajasthan"
+      },
+      {
+        "Code": "417517",
+        "Name": "Bapatla"
+      },
+      {
+        "Code": "110855",
+        "Name": "Baramati,   Maharashtra"
+      },
+      {
+        "Code": "274840",
+        "Name": "Barasat"
+      },
+      {
+        "Code": "110425",
+        "Name": "Baratang Island,   Andaman & Nicobar"
+      },
+      {
+        "Code": "105028",
+        "Name": "Barauni,   Bihar"
+      },
+      {
+        "Code": "110789",
+        "Name": "Barbil,   Odisha"
+      },
+      {
+        "Code": "110512",
+        "Name": "Bardez,   Goa"
+      },
+      {
+        "Code": "111009",
+        "Name": "Bareilly,   Uttar Pradesh"
+      },
+      {
+        "Code": "298690",
+        "Name": "Barkot,   Uttarakhand"
+      },
+      {
+        "Code": "111142",
+        "Name": "Barmer,   Rajasthan"
+      },
+      {
+        "Code": "307085",
+        "Name": "Barnala,   Punjab"
+      },
+      {
+        "Code": "417419",
+        "Name": "Barsana,   Uttar Pradesh"
+      },
+      {
+        "Code": "111028",
+        "Name": "Basara,   Telangana"
+      },
+      {
+        "Code": "160986",
+        "Name": "Basti,   Uttar Pradesh"
+      },
+      {
+        "Code": "370731",
+        "Name": "Bayad,   Gujarat"
+      },
+      {
+        "Code": "102213",
+        "Name": "Beawar,   Rajasthan"
+      },
+      {
+        "Code": "161013",
+        "Name": "Becharaji,   Gujarat"
+      },
+      {
+        "Code": "234393",
+        "Name": "Begun,   Rajasthan"
+      },
+      {
+        "Code": "307801",
+        "Name": "Begusarai,   Bihar"
+      },
+      {
+        "Code": "110564",
+        "Name": "Behror,   Rajasthan"
+      },
+      {
+        "Code": "110566",
+        "Name": "Bekal,   Kerala"
+      },
+      {
+        "Code": "111427",
+        "Name": "Belagavi,   Karnataka"
+      },
+      {
+        "Code": "417940",
+        "Name": "Belmonte Mezzagno"
+      },
+      {
+        "Code": "371106",
+        "Name": "Belparao,   Uttarakhand"
+      },
+      {
+        "Code": "111440",
+        "Name": "Belur & Halebid,   Karnataka"
+      },
+      {
+        "Code": "150242",
+        "Name": "Benaulim,   Goa"
+      },
+      {
+        "Code": "111124",
+        "Name": "Bengaluru/Bangalore,   Karnataka"
+      },
+      {
+        "Code": "161009",
+        "Name": "Bera,   Rajasthan"
+      },
+      {
+        "Code": "110618",
+        "Name": "Betalbatim Beach,   Goa"
+      },
+      {
+        "Code": "111749",
+        "Name": "Betul,   Madhya Pradesh"
+      },
+      {
+        "Code": "161003",
+        "Name": "Bhabua,   Bihar"
+      },
+      {
+        "Code": "108056",
+        "Name": "Bhagalpur,   Bihar"
+      },
+      {
+        "Code": "151811",
+        "Name": "Bhalukpong,   Arunachal Pradesh"
+      },
+      {
+        "Code": "418087",
+        "Name": "Bhamdeli,   Maharashtra"
+      },
+      {
+        "Code": "111694",
+        "Name": "Bhandardara,   Maharashtra "
+      },
+      {
+        "Code": "111484",
+        "Name": "Bharatpur,   Rajasthan"
+      },
+      {
+        "Code": "105046",
+        "Name": "Bharmour,   Himachal Pradesh"
+      },
+      {
+        "Code": "111195",
+        "Name": "Bharuch,   Gujarat"
+      },
+      {
+        "Code": "111292",
+        "Name": "Bhatinda,   Punjab"
+      },
+      {
+        "Code": "111485",
+        "Name": "Bhavnagar,   Gujarat"
+      },
+      {
+        "Code": "101318",
+        "Name": "Bhayandar,   Maharashtra "
+      },
+      {
+        "Code": "144227",
+        "Name": "Bheeramballi,   Karnataka"
+      },
+      {
+        "Code": "105400",
+        "Name": "Bhilai,   Chhattisgarh"
+      },
+      {
+        "Code": "105648",
+        "Name": "Bhilwara,   Rajasthan"
+      },
+      {
+        "Code": "418210",
+        "Name": "Bhim Tal"
+      },
+      {
+        "Code": "111196",
+        "Name": "Bhimtal,   Uttarakhand"
+      },
+      {
+        "Code": "109000",
+        "Name": "Bhiwadi,   Rajasthan"
+      },
+      {
+        "Code": "144229",
+        "Name": "Bhiwandi,   Maharashtra"
+      },
+      {
+        "Code": "154216",
+        "Name": "Bhiwani district,   Haryana"
+      },
+      {
+        "Code": "111486",
+        "Name": "Bhogapuram,   Andhra Pradesh"
+      },
+      {
+        "Code": "111932",
+        "Name": "Bhopal,   Madhya Pradesh"
+      },
+      {
+        "Code": "105649",
+        "Name": "Bhowali,   Uttarakhand "
+      },
+      {
+        "Code": "343154",
+        "Name": "Bhubaneshwar (BBI-Biju Patnaik),   Bhubaneshwar"
+      },
+      {
+        "Code": "111558",
+        "Name": "Bhubaneswar,   Odisha"
+      },
+      {
+        "Code": "144230",
+        "Name": "Bhuj,   Gujarat"
+      },
+      {
+        "Code": "108057",
+        "Name": "Bhuntar,   Himachal Pradesh"
+      },
+      {
+        "Code": "161001",
+        "Name": "Bihar Shariff,   Bihar"
+      },
+      {
+        "Code": "105736",
+        "Name": "Bijainagar,   Rajasthan"
+      },
+      {
+        "Code": "111499",
+        "Name": "Bijaipur,   Rajasthan"
+      },
+      {
+        "Code": "417015",
+        "Name": "Bijanbari,   West Bengal"
+      },
+      {
+        "Code": "154059",
+        "Name": "Bijnor District"
+      },
+      {
+        "Code": "144247",
+        "Name": "Bikaner,   Rajasthan"
+      },
+      {
+        "Code": "111574",
+        "Name": "Bilaspur,   Chhattisgarh"
+      },
+      {
+        "Code": "111212",
+        "Name": "Binsar,   Uttarakhand"
+      },
+      {
+        "Code": "267778",
+        "Name": "Bir,   Himachal Pradesh"
+      },
+      {
+        "Code": "280430",
+        "Name": "Bisalpur,   Rajasthan"
+      },
+      {
+        "Code": "111216",
+        "Name": "Bishangarh,   Rajasthan"
+      },
+      {
+        "Code": "418286",
+        "Name": "Biswanath Chariali,   Assam"
+      },
+      {
+        "Code": "112643",
+        "Name": "Bodhgaya,   Bihar"
+      },
+      {
+        "Code": "112649",
+        "Name": "Bogmallo,   Goa"
+      },
+      {
+        "Code": "263258",
+        "Name": "Boisar,   Maharashtra"
+      },
+      {
+        "Code": "112228",
+        "Name": "Bokaro,   Jharkhand"
+      },
+      {
+        "Code": "111364",
+        "Name": "Bokkapuram,   Tamil Nadu"
+      },
+      {
+        "Code": "111264",
+        "Name": "Bomdila,   Arunachal Pradesh"
+      },
+      {
+        "Code": "356153",
+        "Name": "Bommaraspet,   Telangana"
+      },
+      {
+        "Code": "151843",
+        "Name": "Bongaigaon,   Assam"
+      },
+      {
+        "Code": "418287",
+        "Name": "Brahmagiri,   Odisha"
+      },
+      {
+        "Code": "112272",
+        "Name": "Brahmapur,   Odisha"
+      },
+      {
+        "Code": "346602",
+        "Name": "Bulandshahr,   Uttar Pradesh"
+      },
+      {
+        "Code": "293567",
+        "Name": "Buldana,   Maharashtra"
+      },
+      {
+        "Code": "113081",
+        "Name": "Bundi,   Rajasthan"
+      },
+      {
+        "Code": "160993",
+        "Name": "Burdwan,   West Bengal"
+      },
+      {
+        "Code": "148834",
+        "Name": "Burhanpur,   Madhya Pradesh"
+      },
+      {
+        "Code": "148870",
+        "Name": "CHILLING,   Jammu and Kashmir"
+      },
+      {
+        "Code": "112868",
+        "Name": "Calangute,   Goa"
+      },
+      {
+        "Code": "113160",
+        "Name": "Canacona,   Goa"
+      },
+      {
+        "Code": "144510",
+        "Name": "Candolim Beach,   Goa"
+      },
+      {
+        "Code": "105699",
+        "Name": "Candolim,   Goa"
+      },
+      {
+        "Code": "113347",
+        "Name": "Cansaulim Beach,   Goa"
+      },
+      {
+        "Code": "150965",
+        "Name": "Car Nicobar,   Andaman & Nicobar"
+      },
+      {
+        "Code": "112913",
+        "Name": "Caranzalem,   Goa"
+      },
+      {
+        "Code": "113566",
+        "Name": "Cauvery,   Karnataka"
+      },
+      {
+        "Code": "114566",
+        "Name": "Cavelossim,   Goa"
+      },
+      {
+        "Code": "418288",
+        "Name": "Chadyara"
+      },
+      {
+        "Code": "113675",
+        "Name": "Chail,   Himachal Pradesh"
+      },
+      {
+        "Code": "114601",
+        "Name": "Chakan,   Maharashtra"
+      },
+      {
+        "Code": "150284",
+        "Name": "Chalakudy,   Kerala"
+      },
+      {
+        "Code": "417515",
+        "Name": "Challakere"
+      },
+      {
+        "Code": "114703",
+        "Name": "Chamba,   Uttarakhand"
+      },
+      {
+        "Code": "114936",
+        "Name": "Chamoli,   Uttarakhand"
+      },
+      {
+        "Code": "105721",
+        "Name": "Champakulam,   Kerala"
+      },
+      {
+        "Code": "114107",
+        "Name": "Chandigarh,   Chandigarh"
+      },
+      {
+        "Code": "102259",
+        "Name": "Chandipur,   Odisha"
+      },
+      {
+        "Code": "417335",
+        "Name": "Chandrapur district,   Maharashtra"
+      },
+      {
+        "Code": "105246",
+        "Name": "Chandrapur,   Maharashtra "
+      },
+      {
+        "Code": "113683",
+        "Name": "Changanassery,   Kerala"
+      },
+      {
+        "Code": "105247",
+        "Name": "Changodar,   Gujarat"
+      },
+      {
+        "Code": "417528",
+        "Name": "Chapra"
+      },
+      {
+        "Code": "114117",
+        "Name": "Charholi Budruk,   Maharashtra"
+      },
+      {
+        "Code": "417037",
+        "Name": "Chatra,   Jharkhand"
+      },
+      {
+        "Code": "114960",
+        "Name": "Chaukori,   Uttarakhand"
+      },
+      {
+        "Code": "364172",
+        "Name": "Chavakkad"
+      },
+      {
+        "Code": "379314",
+        "Name": "Chengalpattu"
+      },
+      {
+        "Code": "127343",
+        "Name": "Chennai,   Tamil Nadu"
+      },
+      {
+        "Code": "106208",
+        "Name": "Cherai Beach,   Kerala"
+      },
+      {
+        "Code": "114523",
+        "Name": "Cherai,   Kerala"
+      },
+      {
+        "Code": "161025",
+        "Name": "Cherrapunji,   Meghalaya"
+      },
+      {
+        "Code": "160465",
+        "Name": "Chhatarpur"
+      },
+      {
+        "Code": "108141",
+        "Name": "Chhindwara,   Madhya Pradesh"
+      },
+      {
+        "Code": "114977",
+        "Name": "Chhota Udaipur,   Gujrat"
+      },
+      {
+        "Code": "114793",
+        "Name": "Chidambaram,   Tamil Nadu"
+      },
+      {
+        "Code": "379302",
+        "Name": "Chikkaballapur,   Karnataka"
+      },
+      {
+        "Code": "114986",
+        "Name": "Chikkamagaluru,   Karnataka"
+      },
+      {
+        "Code": "114987",
+        "Name": "Chikmaglur,   Karnataka"
+      },
+      {
+        "Code": "256989",
+        "Name": "Chimur"
+      },
+      {
+        "Code": "114357",
+        "Name": "Chinakakani,   Andhra Pradesh"
+      },
+      {
+        "Code": "114660",
+        "Name": "Chinnakanal,   Kerala"
+      },
+      {
+        "Code": "114801",
+        "Name": "Chintpuri,   Himachal Pradesh"
+      },
+      {
+        "Code": "114272",
+        "Name": "Chiplun,   Maharashtra"
+      },
+      {
+        "Code": "274833",
+        "Name": "Chirawa,   Rajasthan"
+      },
+      {
+        "Code": "153978",
+        "Name": "Chitradurga District"
+      },
+      {
+        "Code": "225402",
+        "Name": "Chitradurga,   Karnataka"
+      },
+      {
+        "Code": "114803",
+        "Name": "Chitrakoot,   Madhya Pradesh"
+      },
+      {
+        "Code": "114804",
+        "Name": "Chittaurgarh,   Rajasthan"
+      },
+      {
+        "Code": "114758",
+        "Name": "Choglamsar,   Jammu And Kashmir"
+      },
+      {
+        "Code": "160626",
+        "Name": "Chomu"
+      },
+      {
+        "Code": "161024",
+        "Name": "Chopta"
+      },
+      {
+        "Code": "114811",
+        "Name": "Chorao Island,   Goa"
+      },
+      {
+        "Code": "286831",
+        "Name": "Chottanikkara"
+      },
+      {
+        "Code": "114817",
+        "Name": "Chowara,   Kerala"
+      },
+      {
+        "Code": "114823",
+        "Name": "Chundale,   Kerala"
+      },
+      {
+        "Code": "114554",
+        "Name": "Churu,   Rajasthan"
+      },
+      {
+        "Code": "144735",
+        "Name": "Coimbatore,   Tamil Nadu"
+      },
+      {
+        "Code": "115840",
+        "Name": "Colva,   Goa"
+      },
+      {
+        "Code": "301104",
+        "Name": "Cooch Behar,   West Bengal"
+      },
+      {
+        "Code": "102287",
+        "Name": "Coochbehar,   West Bengal"
+      },
+      {
+        "Code": "115864",
+        "Name": "Coonoor,   Tamil Nadu"
+      },
+      {
+        "Code": "115400",
+        "Name": "Coorg,   Karnataka"
+      },
+      {
+        "Code": "305701",
+        "Name": "Courtallam,   Tamil Nadu"
+      },
+      {
+        "Code": "115526",
+        "Name": "Covelong,   Tamil Nadu"
+      },
+      {
+        "Code": "116021",
+        "Name": "Cuttack,   Orissa"
+      },
+      {
+        "Code": "148900",
+        "Name": "DEEPYOKMA,   Jammu and Kashmir"
+      },
+      {
+        "Code": "104936",
+        "Name": "Dadahu,   Himachal Pradesh"
+      },
+      {
+        "Code": "238716",
+        "Name": "Dahegam,   Gujarat"
+      },
+      {
+        "Code": "115176",
+        "Name": "Dahej,   Gujarat"
+      },
+      {
+        "Code": "154007",
+        "Name": "Dakshina Kannada District,   Karnataka"
+      },
+      {
+        "Code": "116613",
+        "Name": "Dalhousie,   Himachal Pradesh"
+      },
+      {
+        "Code": "116035",
+        "Name": "Daman,   Daman and Diu"
+      },
+      {
+        "Code": "116039",
+        "Name": "Dandeli,   Karnataka"
+      },
+      {
+        "Code": "116624",
+        "Name": "Dankuni,   West Bengal"
+      },
+      {
+        "Code": "115634",
+        "Name": "Dapoli,   Maharashtra"
+      },
+      {
+        "Code": "105998",
+        "Name": "Darbhanga,   Bihar"
+      },
+      {
+        "Code": "116264",
+        "Name": "Darjeeling,   West Bengal"
+      },
+      {
+        "Code": "402770",
+        "Name": "Dasada,   Gujarat"
+      },
+      {
+        "Code": "101849",
+        "Name": "Daund,   Maharashtra "
+      },
+      {
+        "Code": "144874",
+        "Name": "Dausa,   Rajasthan"
+      },
+      {
+        "Code": "280566",
+        "Name": "Davanagere,   Karnataka"
+      },
+      {
+        "Code": "116164",
+        "Name": "Dehradun,   Uttarakhand"
+      },
+      {
+        "Code": "418069",
+        "Name": "Delhi NCR"
+      },
+      {
+        "Code": "116074",
+        "Name": "Deogarh,   Rajasthan"
+      },
+      {
+        "Code": "105482",
+        "Name": "Deoghar,   Jharkhand"
+      },
+      {
+        "Code": "301589",
+        "Name": "Dera Bassi,   Punjab"
+      },
+      {
+        "Code": "117352",
+        "Name": "Devikulam,   Kerala"
+      },
+      {
+        "Code": "106255",
+        "Name": "Devprayag,   Uttarakhand"
+      },
+      {
+        "Code": "310619",
+        "Name": "Dewas,   Madhya Pradesh"
+      },
+      {
+        "Code": "104946",
+        "Name": "Dhanachuli,   Uttarakhand"
+      },
+      {
+        "Code": "106006",
+        "Name": "Dhanaulti,   Uttarakhand "
+      },
+      {
+        "Code": "150731",
+        "Name": "Dhanbad,   Jharkhand"
+      },
+      {
+        "Code": "154074",
+        "Name": "Dhar District,   Madhya Pradesh"
+      },
+      {
+        "Code": "102310",
+        "Name": "Dharampur,   Himachal Pradesh"
+      },
+      {
+        "Code": "115880",
+        "Name": "Dharamshala,   HIMACHAL PRADESH"
+      },
+      {
+        "Code": "302737",
+        "Name": "Dhari,   Gujarat"
+      },
+      {
+        "Code": "144913",
+        "Name": "Dharmapuri,   Tamil Nadu"
+      },
+      {
+        "Code": "418200",
+        "Name": "Dharmavaram,   Andhra Pradesh"
+      },
+      {
+        "Code": "285250",
+        "Name": "Dharwad,   Karnataka"
+      },
+      {
+        "Code": "105779",
+        "Name": "Dhela,   Uttarakhand"
+      },
+      {
+        "Code": "116338",
+        "Name": "Dhikuli,   Uttarakhand "
+      },
+      {
+        "Code": "245095",
+        "Name": "Dholavira,   Gujarat"
+      },
+      {
+        "Code": "115881",
+        "Name": "Dholpur,   Rajasthan"
+      },
+      {
+        "Code": "116087",
+        "Name": "Dhule,   Maharashtra"
+      },
+      {
+        "Code": "115884",
+        "Name": "Dibrugarh,   Assam"
+      },
+      {
+        "Code": "115894",
+        "Name": "Digha,   West Bengal"
+      },
+      {
+        "Code": "115896",
+        "Name": "Dimapur,   Nagaland"
+      },
+      {
+        "Code": "160727",
+        "Name": "Dindi,   Andhra Pradesh"
+      },
+      {
+        "Code": "106010",
+        "Name": "Dindigul,   tamil Nadu"
+      },
+      {
+        "Code": "151439",
+        "Name": "Dirang,   Arunachal Pradesh"
+      },
+      {
+        "Code": "294438",
+        "Name": "Dispur"
+      },
+      {
+        "Code": "115899",
+        "Name": "Diuu"
+      },
+      {
+        "Code": "295356",
+        "Name": "Diveagar"
+      },
+      {
+        "Code": "408733",
+        "Name": "Doddaballapura,   Karnataka"
+      },
+      {
+        "Code": "144950",
+        "Name": "Dooars,   West Bengal"
+      },
+      {
+        "Code": "286699",
+        "Name": "Duliajan,   Assam"
+      },
+      {
+        "Code": "116460",
+        "Name": "Dundlod,   Rajasthan"
+      },
+      {
+        "Code": "144996",
+        "Name": "Dungarpur,   Rajasthan"
+      },
+      {
+        "Code": "117048",
+        "Name": "Durg,   Chhattisgarh"
+      },
+      {
+        "Code": "115958",
+        "Name": "Durgapur,   West Bengal"
+      },
+      {
+        "Code": "227756",
+        "Name": "Dwarahat Village,   Uttarakhand"
+      },
+      {
+        "Code": "108863",
+        "Name": "Dwarka,   Gujarat"
+      },
+      {
+        "Code": "117110",
+        "Name": "Edava,   Kerala"
+      },
+      {
+        "Code": "417865",
+        "Name": "Eluru,   Andhra Pradesh"
+      },
+      {
+        "Code": "145110",
+        "Name": "Ernakulam,   Kerala"
+      },
+      {
+        "Code": "333373",
+        "Name": "Erode,   Tamil Nadu"
+      },
+      {
+        "Code": "153847",
+        "Name": "Etah District"
+      },
+      {
+        "Code": "418090",
+        "Name": "Etawah,   Kanpur"
+      },
+      {
+        "Code": "418108",
+        "Name": "Faisalabad,   Punjab"
+      },
+      {
+        "Code": "118129",
+        "Name": "Faridabad,   Haryana"
+      },
+      {
+        "Code": "297864",
+        "Name": "Faridkot,   Punjab"
+      },
+      {
+        "Code": "102458",
+        "Name": "Fatehabad,   Haryana "
+      },
+      {
+        "Code": "118805",
+        "Name": "Fatehgarh,   Uttar Pradesh"
+      },
+      {
+        "Code": "117771",
+        "Name": "Fatehpur Sikri,   Uttar Pradesh"
+      },
+      {
+        "Code": "404366",
+        "Name": "Firozabad,   Uttar Pradesh"
+      },
+      {
+        "Code": "370828",
+        "Name": "Fort Kochi"
+      },
+      {
+        "Code": "305606",
+        "Name": "Gachibowli,   Telangana"
+      },
+      {
+        "Code": "402273",
+        "Name": "Gadag-Betageri,   Karnataka"
+      },
+      {
+        "Code": "418270",
+        "Name": "Gandhi Sagar,   Madhya Pradesh"
+      },
+      {
+        "Code": "117993",
+        "Name": "Gandhidham,   Gujarat"
+      },
+      {
+        "Code": "119071",
+        "Name": "Gandhinagar,   Gujarat"
+      },
+      {
+        "Code": "160995",
+        "Name": "Gandipet,   Telangana"
+      },
+      {
+        "Code": "101509",
+        "Name": "Gangavathi,   Karnataka"
+      },
+      {
+        "Code": "119613",
+        "Name": "Gangotri,   Uttarakhand"
+      },
+      {
+        "Code": "119221",
+        "Name": "Gangtok,   Sikkim"
+      },
+      {
+        "Code": "119222",
+        "Name": "Ganpatipule,   Maharashtra"
+      },
+      {
+        "Code": "200705",
+        "Name": "Garhmukteshwar,   Uttar Pradesh"
+      },
+      {
+        "Code": "119358",
+        "Name": "Gaya,   Bihar"
+      },
+      {
+        "Code": "160390",
+        "Name": "Geyzing,   Sikkim"
+      },
+      {
+        "Code": "295489",
+        "Name": "Ghanerao"
+      },
+      {
+        "Code": "118973",
+        "Name": "Ghaziabad,   Uttar Pradesh"
+      },
+      {
+        "Code": "106106",
+        "Name": "Giridih,   Jharkhand"
+      },
+      {
+        "Code": "118719",
+        "Name": "Glenburn,   West Bengal"
+      },
+      {
+        "Code": "108256",
+        "Name": "Goa Velha,   Goa"
+      },
+      {
+        "Code": "119805",
+        "Name": "Goa,   Goa"
+      },
+      {
+        "Code": "261602",
+        "Name": "Godhra,   Gujarat"
+      },
+      {
+        "Code": "118733",
+        "Name": "Gokarna,   Karnataka"
+      },
+      {
+        "Code": "417924",
+        "Name": "Gokul,   Mathura"
+      },
+      {
+        "Code": "251229",
+        "Name": "Gomti Nagar,   Uttar Pradesh"
+      },
+      {
+        "Code": "417511",
+        "Name": "Gondal,   Gujarat"
+      },
+      {
+        "Code": "382623",
+        "Name": "Gondia,   Maharashtra"
+      },
+      {
+        "Code": "262960",
+        "Name": "Gopalganj,   Bihar"
+      },
+      {
+        "Code": "120368",
+        "Name": "Gopalpur on Sea,   Odisha"
+      },
+      {
+        "Code": "256969",
+        "Name": "Gorai,   Maharashtra"
+      },
+      {
+        "Code": "120371",
+        "Name": "Gorakhpur,   Uttar Pradesh"
+      },
+      {
+        "Code": "102486",
+        "Name": "Gosaba,   West Bengal"
+      },
+      {
+        "Code": "108265",
+        "Name": "Govardhan,   Uttar Pradesh"
+      },
+      {
+        "Code": "145430",
+        "Name": "Greater Noida,   Uttar Pradesh"
+      },
+      {
+        "Code": "102499",
+        "Name": "Gudalur,   Tamil Nadu"
+      },
+      {
+        "Code": "105832",
+        "Name": "Guirim,   Goa"
+      },
+      {
+        "Code": "153893",
+        "Name": "Gujarat,   Gujarat"
+      },
+      {
+        "Code": "119924",
+        "Name": "Gulmarg,   Jammu and Kashmir"
+      },
+      {
+        "Code": "280781",
+        "Name": "Gummidipundi,   Tamil Nadu"
+      },
+      {
+        "Code": "150594",
+        "Name": "Guna,   Madhya Pradesh"
+      },
+      {
+        "Code": "106131",
+        "Name": "Guntur,   Andhra Pradesh"
+      },
+      {
+        "Code": "300176",
+        "Name": "Guptkashi,   Uttarakhand"
+      },
+      {
+        "Code": "301389",
+        "Name": "Gurdaspur"
+      },
+      {
+        "Code": "119513",
+        "Name": "Gurugram/Gurgaon,   Haryana"
+      },
+      {
+        "Code": "119517",
+        "Name": "Guruvayur,   Kerala"
+      },
+      {
+        "Code": "121139",
+        "Name": "Guwahati,   Assam"
+      },
+      {
+        "Code": "120439",
+        "Name": "Gwalior,   Madhya Pradesh"
+      },
+      {
+        "Code": "418139",
+        "Name": "HANAMKONDA,   TELANGANA"
+      },
+      {
+        "Code": "161000",
+        "Name": "Hajipur,   Bihar"
+      },
+      {
+        "Code": "120588",
+        "Name": "Haldwani,   Uttarakhand"
+      },
+      {
+        "Code": "244092",
+        "Name": "Halol,   Gujarat"
+      },
+      {
+        "Code": "418289",
+        "Name": "Halvad,   Gujrat"
+      },
+      {
+        "Code": "121175",
+        "Name": "Hampi,   Karnataka"
+      },
+      {
+        "Code": "119961",
+        "Name": "Hansi,   Haryana"
+      },
+      {
+        "Code": "120206",
+        "Name": "Hanumangarh,   Rajasthan"
+      },
+      {
+        "Code": "121186",
+        "Name": "Haridwar,   Uttarakhand"
+      },
+      {
+        "Code": "257027",
+        "Name": "Hasanganj,   Uttar Pradesh"
+      },
+      {
+        "Code": "120871",
+        "Name": "Hassan,   Karnataka"
+      },
+      {
+        "Code": "417919",
+        "Name": "Hatgad,   Maharashtra"
+      },
+      {
+        "Code": "119978",
+        "Name": "Havelock Island,   Andaman & Nicobar"
+      },
+      {
+        "Code": "102512",
+        "Name": "Hebbal,   Karnataka"
+      },
+      {
+        "Code": "148892",
+        "Name": "Hemis Skupachan,   Jammu and Kashmir"
+      },
+      {
+        "Code": "121355",
+        "Name": "Hinjawadi,   Maharashtra "
+      },
+      {
+        "Code": "105850",
+        "Name": "Hisar,   Haryana "
+      },
+      {
+        "Code": "145660",
+        "Name": "Hooghly,   West Bengal"
+      },
+      {
+        "Code": "121396",
+        "Name": "Hosapete,   Karnataka"
+      },
+      {
+        "Code": "153950",
+        "Name": "Hoshangabad District"
+      },
+      {
+        "Code": "121557",
+        "Name": "Hoshiarpur,   Punjab"
+      },
+      {
+        "Code": "355946",
+        "Name": "Hoskote"
+      },
+      {
+        "Code": "121290",
+        "Name": "Hosur,   KARNATAKA"
+      },
+      {
+        "Code": "145687",
+        "Name": "Howrah,   West Bengal"
+      },
+      {
+        "Code": "150235",
+        "Name": "Hubballi,   Karnataka"
+      },
+      {
+        "Code": "338277",
+        "Name": "Hubli (HBX),   Hubli"
+      },
+      {
+        "Code": "121570",
+        "Name": "Hudikeri,   Karnataka"
+      },
+      {
+        "Code": "393866",
+        "Name": "Hunder"
+      },
+      {
+        "Code": "355802",
+        "Name": "Hunsur,   Karnataka"
+      },
+      {
+        "Code": "145710",
+        "Name": "Hyderabad,   Telangana"
+      },
+      {
+        "Code": "334064",
+        "Name": "IMT Manesar,   Haryana"
+      },
+      {
+        "Code": "102531",
+        "Name": "Ichalkaranji,   Maharashtra"
+      },
+      {
+        "Code": "154222",
+        "Name": "Idukki District"
+      },
+      {
+        "Code": "121984",
+        "Name": "Igatpuri,   Maharashtra"
+      },
+      {
+        "Code": "122108",
+        "Name": "Imphal,   Manipur"
+      },
+      {
+        "Code": "121726",
+        "Name": "Indore,   Madhya Pradesh"
+      },
+      {
+        "Code": "122732",
+        "Name": "Itanagar,   Arunachal Pradesh"
+      },
+      {
+        "Code": "121509",
+        "Name": "Jabalpur,   Madhya Pradesh"
+      },
+      {
+        "Code": "150469",
+        "Name": "Jagdalpur,   Chhattisgarh"
+      },
+      {
+        "Code": "122175",
+        "Name": "Jaipur,   Rajasthan"
+      },
+      {
+        "Code": "122326",
+        "Name": "Jaisalmer,   Rajasthan"
+      },
+      {
+        "Code": "268917",
+        "Name": "Jajapur"
+      },
+      {
+        "Code": "122327",
+        "Name": "Jalandhar,   Punjab"
+      },
+      {
+        "Code": "160994",
+        "Name": "Jaldapara,   West Bengal"
+      },
+      {
+        "Code": "122177",
+        "Name": "Jalgaon,   Maharashtra"
+      },
+      {
+        "Code": "103931",
+        "Name": "Jalna,   Maharashtra"
+      },
+      {
+        "Code": "123420",
+        "Name": "Jalore,   Rajasthan"
+      },
+      {
+        "Code": "122328",
+        "Name": "Jalpaiguri,   West Bengal"
+      },
+      {
+        "Code": "418313",
+        "Name": "Jamb,   Maharashtra"
+      },
+      {
+        "Code": "105614",
+        "Name": "Jambulne,   Maharashtra"
+      },
+      {
+        "Code": "121783",
+        "Name": "Jammu,   Jammu and Kashmir"
+      },
+      {
+        "Code": "122329",
+        "Name": "Jamnagar,   Gujarat"
+      },
+      {
+        "Code": "123422",
+        "Name": "Jamshedpur,   Jharkhand"
+      },
+      {
+        "Code": "280676",
+        "Name": "Jamui,   Bihar"
+      },
+      {
+        "Code": "251261",
+        "Name": "Jangipur,   West Bengal"
+      },
+      {
+        "Code": "161002",
+        "Name": "Jaunpur,   Uttar Pradesh"
+      },
+      {
+        "Code": "161021",
+        "Name": "Jawai,   Rajasthan"
+      },
+      {
+        "Code": "301375",
+        "Name": "Jawhar,   Maharashtra"
+      },
+      {
+        "Code": "262890",
+        "Name": "Jejuri,   Maharashtra"
+      },
+      {
+        "Code": "122763",
+        "Name": "Jeypore,   Odisha"
+      },
+      {
+        "Code": "105885",
+        "Name": "Jhadol,   Rajasthan"
+      },
+      {
+        "Code": "122199",
+        "Name": "Jhansi,   Uttar Pradesh"
+      },
+      {
+        "Code": "295101",
+        "Name": "Jharsuguda,   Odisha"
+      },
+      {
+        "Code": "148844",
+        "Name": "Jhunjhunu,   Rajasthan"
+      },
+      {
+        "Code": "257230",
+        "Name": "Jibhi,   Himachal Pradesh"
+      },
+      {
+        "Code": "115501",
+        "Name": "Jim Corbett National Park,   Uttarakhand"
+      },
+      {
+        "Code": "123445",
+        "Name": "Jispa,   Himachal Pradesh"
+      },
+      {
+        "Code": "145836",
+        "Name": "Jodhpur,   Rajasthan"
+      },
+      {
+        "Code": "418291",
+        "Name": "Joida,   Karnataka"
+      },
+      {
+        "Code": "122215",
+        "Name": "Jorhat,   Assam"
+      },
+      {
+        "Code": "160632",
+        "Name": "Joshimath"
+      },
+      {
+        "Code": "105627",
+        "Name": "Junagadh,   Gujarat"
+      },
+      {
+        "Code": "122370",
+        "Name": "Junagarh,   Gujrat"
+      },
+      {
+        "Code": "123469",
+        "Name": "Jwalamukhi,   Himachal Pradesh"
+      },
+      {
+        "Code": "151859",
+        "Name": "KATPADI,   TAMIL NADU"
+      },
+      {
+        "Code": "150397",
+        "Name": "Kadapa,   Andhra Pradesh"
+      },
+      {
+        "Code": "355405",
+        "Name": "Kadi,   Gujarat"
+      },
+      {
+        "Code": "145856",
+        "Name": "Kadmat Island,   Lakshadweep"
+      },
+      {
+        "Code": "151112",
+        "Name": "Kailashahar,   Tripura"
+      },
+      {
+        "Code": "123476",
+        "Name": "Kakinada,   Andhra Pradesh"
+      },
+      {
+        "Code": "104092",
+        "Name": "Kalady,   Kerala"
+      },
+      {
+        "Code": "269264",
+        "Name": "Kalamassery"
+      },
+      {
+        "Code": "122388",
+        "Name": "Kaliel,   Tamil Nadu"
+      },
+      {
+        "Code": "122511",
+        "Name": "Kalimpong,   West Bengal"
+      },
+      {
+        "Code": "293190",
+        "Name": "Kallakurichi,   Tamil Nadu"
+      },
+      {
+        "Code": "368724",
+        "Name": "Kalol,   Gujarat"
+      },
+      {
+        "Code": "105633",
+        "Name": "Kalpatta,   Kerala"
+      },
+      {
+        "Code": "121837",
+        "Name": "Kalpetta,   Kerala"
+      },
+      {
+        "Code": "145872",
+        "Name": "Kalyan,   Maharashtra"
+      },
+      {
+        "Code": "297886",
+        "Name": "Kalyani,   West Bengal"
+      },
+      {
+        "Code": "151198",
+        "Name": "Kamalpur,   Tripura"
+      },
+      {
+        "Code": "121841",
+        "Name": "Kamba,   Gujrat"
+      },
+      {
+        "Code": "306364",
+        "Name": "Kamshet,   Maharashtra"
+      },
+      {
+        "Code": "122406",
+        "Name": "Kanadukathan,   Tamil Nadu"
+      },
+      {
+        "Code": "338739",
+        "Name": "Kanatal"
+      },
+      {
+        "Code": "122824",
+        "Name": "Kanchipuram,   Tamil Nadu"
+      },
+      {
+        "Code": "122253",
+        "Name": "Kandaghat,   Himachal Pradesh"
+      },
+      {
+        "Code": "151469",
+        "Name": "Kandla,   Gujarat"
+      },
+      {
+        "Code": "153910",
+        "Name": "Kangra District"
+      },
+      {
+        "Code": "122826",
+        "Name": "Kangra Valley,   Himachal Pradesh"
+      },
+      {
+        "Code": "351426",
+        "Name": "Kangra,   Himachal Pradesh"
+      },
+      {
+        "Code": "122931",
+        "Name": "Kanha,   Madhya Pradesh"
+      },
+      {
+        "Code": "299954",
+        "Name": "Kankavli,   Maharashtra"
+      },
+      {
+        "Code": "417856",
+        "Name": "Kannauj,   Uttar Pradesh"
+      },
+      {
+        "Code": "122256",
+        "Name": "Kanniyakumari,   Tamil Nadu"
+      },
+      {
+        "Code": "153898",
+        "Name": "Kannur District"
+      },
+      {
+        "Code": "122522",
+        "Name": "Kannur,   Kerala"
+      },
+      {
+        "Code": "122932",
+        "Name": "Kanpur,   Uttar Pradesh"
+      },
+      {
+        "Code": "151841",
+        "Name": "Kantal,   Uttarakhand"
+      },
+      {
+        "Code": "295352",
+        "Name": "Kanthalloor,   Kerala"
+      },
+      {
+        "Code": "370728",
+        "Name": "Kanthi,   West Bengal"
+      },
+      {
+        "Code": "123084",
+        "Name": "Kanyakumari,   Tamil Nadu"
+      },
+      {
+        "Code": "122525",
+        "Name": "Kappad,   Kerala"
+      },
+      {
+        "Code": "300642",
+        "Name": "Kapurthala"
+      },
+      {
+        "Code": "123503",
+        "Name": "Karad,   Maharashtra"
+      },
+      {
+        "Code": "123204",
+        "Name": "Karaikudi,   Tamil Nadu"
+      },
+      {
+        "Code": "153890",
+        "Name": "Karauli District"
+      },
+      {
+        "Code": "148869",
+        "Name": "Karauli,   Rajasthan"
+      },
+      {
+        "Code": "122938",
+        "Name": "Kargil,   Jammu and Kashmir"
+      },
+      {
+        "Code": "103950",
+        "Name": "Karimnagar,   Telangana"
+      },
+      {
+        "Code": "160750",
+        "Name": "Karjat City"
+      },
+      {
+        "Code": "122275",
+        "Name": "Karnal,   Haryana"
+      },
+      {
+        "Code": "123217",
+        "Name": "Karur,   Tamil Nadu"
+      },
+      {
+        "Code": "123098",
+        "Name": "Karwar,   Karnataka"
+      },
+      {
+        "Code": "123218",
+        "Name": "Kasarde,   Maharashtra"
+      },
+      {
+        "Code": "122848",
+        "Name": "Kasargod,   Kerala"
+      },
+      {
+        "Code": "122950",
+        "Name": "Kasauli,   Himachal Pradesh"
+      },
+      {
+        "Code": "417942",
+        "Name": "Kasganj,   Uttar Pradesh"
+      },
+      {
+        "Code": "123518",
+        "Name": "Kashid,   Maharashtra"
+      },
+      {
+        "Code": "123519",
+        "Name": "Kashipur,   Uttarakhand"
+      },
+      {
+        "Code": "102540",
+        "Name": "Kasol,   Himachal Pradesh"
+      },
+      {
+        "Code": "123108",
+        "Name": "Kathgodam,   Uttarakhand "
+      },
+      {
+        "Code": "108361",
+        "Name": "Katihar,   Bihar"
+      },
+      {
+        "Code": "124184",
+        "Name": "Katra,   Jammu and Kashmir"
+      },
+      {
+        "Code": "123227",
+        "Name": "Kausani,   Uttarakhand"
+      },
+      {
+        "Code": "123527",
+        "Name": "Kaziranga,   Assam"
+      },
+      {
+        "Code": "123231",
+        "Name": "Kedarnath,   Uttarakhand"
+      },
+      {
+        "Code": "295098",
+        "Name": "Kelambakkam"
+      },
+      {
+        "Code": "122978",
+        "Name": "Kerala,   Kerala"
+      },
+      {
+        "Code": "150615",
+        "Name": "Keshod,   Gujarat"
+      },
+      {
+        "Code": "161022",
+        "Name": "Kevadia,   Gujarat"
+      },
+      {
+        "Code": "123258",
+        "Name": "Khajjiar,   Himachal Pradesh"
+      },
+      {
+        "Code": "122580",
+        "Name": "Khajuraho,   Madhya Pradesh"
+      },
+      {
+        "Code": "123259",
+        "Name": "Khandala,   Maharashtra"
+      },
+      {
+        "Code": "102545",
+        "Name": "Khandela,   Rajasthan"
+      },
+      {
+        "Code": "106186",
+        "Name": "Khandwa,   Madhya Pradesh"
+      },
+      {
+        "Code": "280867",
+        "Name": "Kharagpur,   West Bengal"
+      },
+      {
+        "Code": "205200",
+        "Name": "Kharar,   Punjab"
+      },
+      {
+        "Code": "293579",
+        "Name": "Khargone,   Madhya Pradesh"
+      },
+      {
+        "Code": "101671",
+        "Name": "Khas Nagrota,   Himachal Pradesh"
+      },
+      {
+        "Code": "256700",
+        "Name": "Khatu,   Rajasthan"
+      },
+      {
+        "Code": "160988",
+        "Name": "Khawasa,   Madhya Pradesh"
+      },
+      {
+        "Code": "153813",
+        "Name": "Kheri District,   Uttar Pradesh"
+      },
+      {
+        "Code": "122998",
+        "Name": "Khilchipur,   Madhya Pradesh"
+      },
+      {
+        "Code": "123676",
+        "Name": "Khimsar,   Rajasthan"
+      },
+      {
+        "Code": "404666",
+        "Name": "Khiyansaria,   Rajasthan"
+      },
+      {
+        "Code": "295097",
+        "Name": "Khopoli,   Maharashtra"
+      },
+      {
+        "Code": "151837",
+        "Name": "Kidanganad,   Kerala"
+      },
+      {
+        "Code": "108369",
+        "Name": "Kihim,   Maharashtra"
+      },
+      {
+        "Code": "417524",
+        "Name": "Kishanganj,   Bihar"
+      },
+      {
+        "Code": "148902",
+        "Name": "Kishangarh,   Rajasthan"
+      },
+      {
+        "Code": "101204",
+        "Name": "Kochi,   Kerala"
+      },
+      {
+        "Code": "154023",
+        "Name": "Kodagu,   Karnataka"
+      },
+      {
+        "Code": "123608",
+        "Name": "Kodaikanal,   Tamil Nadu"
+      },
+      {
+        "Code": "300919",
+        "Name": "Koderma"
+      },
+      {
+        "Code": "418314",
+        "Name": "Kodinar,   Gujarat"
+      },
+      {
+        "Code": "352597",
+        "Name": "Kodungallur,   Kerala"
+      },
+      {
+        "Code": "304539",
+        "Name": "Kolad,   Maharashtra"
+      },
+      {
+        "Code": "161007",
+        "Name": "Kolaghat,   West Bengal"
+      },
+      {
+        "Code": "123875",
+        "Name": "Kolhapur,   Maharashtra"
+      },
+      {
+        "Code": "262894",
+        "Name": "Koliyaak,   Gujarat"
+      },
+      {
+        "Code": "113128",
+        "Name": "Kolkata/Calcutta,   West Bengal"
+      },
+      {
+        "Code": "123877",
+        "Name": "Kollam,   Kerala"
+      },
+      {
+        "Code": "123879",
+        "Name": "Konark,   Odisha"
+      },
+      {
+        "Code": "103877",
+        "Name": "Kondotty,   Kerala"
+      },
+      {
+        "Code": "241214",
+        "Name": "Koppal,   Karnataka"
+      },
+      {
+        "Code": "286380",
+        "Name": "Korba,   Chhattisgarh"
+      },
+      {
+        "Code": "124966",
+        "Name": "Kota,   Rajasthan"
+      },
+      {
+        "Code": "396075",
+        "Name": "Kotabagh,   Uttarakhand"
+      },
+      {
+        "Code": "123312",
+        "Name": "Kotagiri,   Tamil Nadu"
+      },
+      {
+        "Code": "260573",
+        "Name": "Kotda Sangani,   Gujarat"
+      },
+      {
+        "Code": "418091",
+        "Name": "Kotdwar,   Uttarakhand"
+      },
+      {
+        "Code": "124008",
+        "Name": "Kothamangalam,   Kerala"
+      },
+      {
+        "Code": "101696",
+        "Name": "Koti,   Telangana"
+      },
+      {
+        "Code": "235964",
+        "Name": "Kotkhai,   Himachal Pradesh"
+      },
+      {
+        "Code": "123314",
+        "Name": "Kotputli,   Rajasthan"
+      },
+      {
+        "Code": "123891",
+        "Name": "Kottayam,   Kerala"
+      },
+      {
+        "Code": "101967",
+        "Name": "Kottivakkam,   Tamil Nadu"
+      },
+      {
+        "Code": "123897",
+        "Name": "Kovalam,   Kerala"
+      },
+      {
+        "Code": "144475",
+        "Name": "Kozhikode,   Kerala"
+      },
+      {
+        "Code": "123334",
+        "Name": "Krishnagiri,   Tamil Nadu"
+      },
+      {
+        "Code": "123914",
+        "Name": "Kuchaman,   Rajasthan"
+      },
+      {
+        "Code": "103727",
+        "Name": "Kudal,   Goa"
+      },
+      {
+        "Code": "124997",
+        "Name": "Kudasan,   Gujrat"
+      },
+      {
+        "Code": "371051",
+        "Name": "Kufri"
+      },
+      {
+        "Code": "146047",
+        "Name": "Kullu,   HIMACHAL PRADESH"
+      },
+      {
+        "Code": "123344",
+        "Name": "Kumarakom,   Kerala"
+      },
+      {
+        "Code": "125002",
+        "Name": "Kumbakonam,   Tamil Nadu"
+      },
+      {
+        "Code": "123774",
+        "Name": "Kumbhalgarh,   Rajasthan"
+      },
+      {
+        "Code": "402772",
+        "Name": "Kumharsain,   Himachal Pradesh"
+      },
+      {
+        "Code": "146051",
+        "Name": "Kumily,   Kerala"
+      },
+      {
+        "Code": "103888",
+        "Name": "Kundapur,   Karnataka"
+      },
+      {
+        "Code": "103728",
+        "Name": "Kurnool,   Andhra Pradesh"
+      },
+      {
+        "Code": "159580",
+        "Name": "Kurseong,   West Bengal"
+      },
+      {
+        "Code": "151844",
+        "Name": "Kurukshetra,   Haryana"
+      },
+      {
+        "Code": "105541",
+        "Name": "Kuruppanthara,   Kerala"
+      },
+      {
+        "Code": "124044",
+        "Name": "Kushalnagar,   Karnataka"
+      },
+      {
+        "Code": "124045",
+        "Name": "Kushinagar,   Uttar Pradesh"
+      },
+      {
+        "Code": "122798",
+        "Name": "Kutch,   Gujrat"
+      },
+      {
+        "Code": "148896",
+        "Name": "LINGSHED,   Jammu and Kashmir"
+      },
+      {
+        "Code": "244233",
+        "Name": "Lachen,   Sikkim"
+      },
+      {
+        "Code": "262996",
+        "Name": "Lachhmangarh,   Rajasthan"
+      },
+      {
+        "Code": "146091",
+        "Name": "Lachung,   Sikkim"
+      },
+      {
+        "Code": "150363",
+        "Name": "Ladakh,   Ladakh"
+      },
+      {
+        "Code": "146104",
+        "Name": "Lahaul and Spiti,   Himachal Pradesh"
+      },
+      {
+        "Code": "161005",
+        "Name": "Lakhimpur,   Uttar Pradesh"
+      },
+      {
+        "Code": "124514",
+        "Name": "Lakkidi,   Kerala"
+      },
+      {
+        "Code": "153914",
+        "Name": "Lakshadweep"
+      },
+      {
+        "Code": "103751",
+        "Name": "Lansdowne,   Uttarakhand"
+      },
+      {
+        "Code": "148903",
+        "Name": "Lataguri,   West Bengal"
+      },
+      {
+        "Code": "125485",
+        "Name": "Latur,   Maharashtra"
+      },
+      {
+        "Code": "146184",
+        "Name": "Lava,   Maharashtra"
+      },
+      {
+        "Code": "125144",
+        "Name": "Leh,   Jammu and Kashmir"
+      },
+      {
+        "Code": "126630",
+        "Name": "Lonavala,   Maharashtra"
+      },
+      {
+        "Code": "126666",
+        "Name": "Lucknow,   Uttar Pradesh"
+      },
+      {
+        "Code": "125928",
+        "Name": "Ludhiana,   Punjab"
+      },
+      {
+        "Code": "125651",
+        "Name": "Luni,   Rajasthan"
+      },
+      {
+        "Code": "418211",
+        "Name": "Madambakkam,   Tamil Nadu"
+      },
+      {
+        "Code": "418067",
+        "Name": "Madgaon"
+      },
+      {
+        "Code": "243580",
+        "Name": "Madhapur,   Telangana"
+      },
+      {
+        "Code": "160999",
+        "Name": "Madhubani,   Bihar"
+      },
+      {
+        "Code": "104313",
+        "Name": "Madikeri,   Karnataka"
+      },
+      {
+        "Code": "127067",
+        "Name": "Madurai,   Tamil Nadu"
+      },
+      {
+        "Code": "125684",
+        "Name": "Mahabaleshwar,   Maharashtra"
+      },
+      {
+        "Code": "126117",
+        "Name": "Mahabalipuram,   TAMIL NADU"
+      },
+      {
+        "Code": "103781",
+        "Name": "Mahad,   Maharashtra"
+      },
+      {
+        "Code": "104316",
+        "Name": "Mahansar,   Rajasthan"
+      },
+      {
+        "Code": "417923",
+        "Name": "Maharajganj"
+      },
+      {
+        "Code": "126265",
+        "Name": "Maheshwar,   Madhya Pradesh"
+      },
+      {
+        "Code": "371686",
+        "Name": "Mahipalpur,   National Capital Territory of Delhi"
+      },
+      {
+        "Code": "104318",
+        "Name": "Majorda,   Goa"
+      },
+      {
+        "Code": "146447",
+        "Name": "Malappuram,   Kerala"
+      },
+      {
+        "Code": "102599",
+        "Name": "Malayattoor,   kerala"
+      },
+      {
+        "Code": "150632",
+        "Name": "Malda,   West Bengal"
+      },
+      {
+        "Code": "417300",
+        "Name": "Malout,   Punjab"
+      },
+      {
+        "Code": "127105",
+        "Name": "Malpura,   Rajasthan"
+      },
+      {
+        "Code": "126958",
+        "Name": "Malvan,   Maharashtra"
+      },
+      {
+        "Code": "126139",
+        "Name": "Mamallapuram,   Tamil Nadu"
+      },
+      {
+        "Code": "126388",
+        "Name": "Manali,   Himachal pradesh"
+      },
+      {
+        "Code": "375619",
+        "Name": "Mandarmani,   West Bengal"
+      },
+      {
+        "Code": "104156",
+        "Name": "Mandarmoni,   West Bengal"
+      },
+      {
+        "Code": "263259",
+        "Name": "Mandav"
+      },
+      {
+        "Code": "126802",
+        "Name": "Mandawa,   Rajasthan"
+      },
+      {
+        "Code": "146462",
+        "Name": "Mandi,   Himachal Pradesh"
+      },
+      {
+        "Code": "160389",
+        "Name": "Mandla,   Madhya Pradesh"
+      },
+      {
+        "Code": "104482",
+        "Name": "Mandrem,   Goa"
+      },
+      {
+        "Code": "418123",
+        "Name": "Mangalore,   Karnataka"
+      },
+      {
+        "Code": "126805",
+        "Name": "Mangaluru,   Karnataka"
+      },
+      {
+        "Code": "104157",
+        "Name": "Manipal,   Karnataka"
+      },
+      {
+        "Code": "126810",
+        "Name": "Manmad,   Maharashtra"
+      },
+      {
+        "Code": "104323",
+        "Name": "Mapusa,   Goa"
+      },
+      {
+        "Code": "146481",
+        "Name": "Maradu,   Kerala"
+      },
+      {
+        "Code": "146484",
+        "Name": "Marari Beach,   Kerala"
+      },
+      {
+        "Code": "126817",
+        "Name": "Mararikulam,   KERALA"
+      },
+      {
+        "Code": "336934",
+        "Name": "Marchula,   Uttarakhand"
+      },
+      {
+        "Code": "106481",
+        "Name": "Margao,   Goa"
+      },
+      {
+        "Code": "299743",
+        "Name": "Marmagao,   Goa"
+      },
+      {
+        "Code": "146533",
+        "Name": "Mashobra,   Himachal Pradesh"
+      },
+      {
+        "Code": "146545",
+        "Name": "Matheran,   Maharashtra"
+      },
+      {
+        "Code": "127857",
+        "Name": "Mathura,   Uttar Pradesh"
+      },
+      {
+        "Code": "418308",
+        "Name": "Mavalli,   Karnataka"
+      },
+      {
+        "Code": "418261",
+        "Name": "Mavli,   Rajasthan"
+      },
+      {
+        "Code": "126911",
+        "Name": "Mayiladuthurai,   Tamil Nadu"
+      },
+      {
+        "Code": "104040",
+        "Name": "McLeod Ganj,   Himachal Pradesh"
+      },
+      {
+        "Code": "146575",
+        "Name": "Meerut,   Uttar Pradesh"
+      },
+      {
+        "Code": "151812",
+        "Name": "Mehsana,   Gujarat"
+      },
+      {
+        "Code": "161036",
+        "Name": "Melaghar,   Tripura"
+      },
+      {
+        "Code": "295351",
+        "Name": "Mendarda"
+      },
+      {
+        "Code": "104345",
+        "Name": "Meppadi,   Kerala"
+      },
+      {
+        "Code": "128829",
+        "Name": "Mettupalayam,   Tamil Nadu"
+      },
+      {
+        "Code": "300324",
+        "Name": "Mhow,   Madhya Pradesh"
+      },
+      {
+        "Code": "150356",
+        "Name": "Midnapur,   West Bengal"
+      },
+      {
+        "Code": "106510",
+        "Name": "Mirik,   West Bengal"
+      },
+      {
+        "Code": "151864",
+        "Name": "Mirzapur,   Uttar Pradesh"
+      },
+      {
+        "Code": "128914",
+        "Name": "Mobor Beach,   Goa"
+      },
+      {
+        "Code": "370782",
+        "Name": "Modasa,   Gujarat"
+      },
+      {
+        "Code": "299281",
+        "Name": "Moga"
+      },
+      {
+        "Code": "106514",
+        "Name": "Mohali,   Punjab"
+      },
+      {
+        "Code": "418284",
+        "Name": "Mohan Chatti,   Uttarakhand"
+      },
+      {
+        "Code": "102819",
+        "Name": "Mohan,   Uttar Pradesh"
+      },
+      {
+        "Code": "103825",
+        "Name": "Mohania,   Bihar"
+      },
+      {
+        "Code": "364153",
+        "Name": "Mohanlalganj,   Uttar Pradesh"
+      },
+      {
+        "Code": "101894",
+        "Name": "Mollem,   Goa"
+      },
+      {
+        "Code": "129615",
+        "Name": "Moradabad,   Uttar Pradesh"
+      },
+      {
+        "Code": "102834",
+        "Name": "Morbi,   Gujarat"
+      },
+      {
+        "Code": "129044",
+        "Name": "Morjim,   Goa"
+      },
+      {
+        "Code": "146752",
+        "Name": "Mount Abu,   Rajasthan"
+      },
+      {
+        "Code": "151863",
+        "Name": "Mughalsarai,   Uttar Pradesh"
+      },
+      {
+        "Code": "129690",
+        "Name": "Mukkam,   Kerala"
+      },
+      {
+        "Code": "129415",
+        "Name": "Mukteshwar,   Uttarakhand"
+      },
+      {
+        "Code": "301296",
+        "Name": "Muktsar,   Punjab"
+      },
+      {
+        "Code": "146768",
+        "Name": "Mukundgarh,   Rajasthan"
+      },
+      {
+        "Code": "161046",
+        "Name": "Mukutmanipur,   West Bengal"
+      },
+      {
+        "Code": "129695",
+        "Name": "Mullor"
+      },
+      {
+        "Code": "237563",
+        "Name": "Mulshi,   Maharashtra"
+      },
+      {
+        "Code": "144306",
+        "Name": "Mumbai/Bombay,   Maharashtra"
+      },
+      {
+        "Code": "381757",
+        "Name": "Mundra,   Gujarat"
+      },
+      {
+        "Code": "128573",
+        "Name": "Munnar,   Kerala"
+      },
+      {
+        "Code": "146776",
+        "Name": "Munsiyari,   Uttarakhand"
+      },
+      {
+        "Code": "128030",
+        "Name": "Murbad,   Maharashtra"
+      },
+      {
+        "Code": "129104",
+        "Name": "Murinjapuzha,   Kerala"
+      },
+      {
+        "Code": "295707",
+        "Name": "Murthal,   Haryana"
+      },
+      {
+        "Code": "129434",
+        "Name": "Murud,   Maharashtra"
+      },
+      {
+        "Code": "130341",
+        "Name": "Mussoorie,   Uttarakhand"
+      },
+      {
+        "Code": "150392",
+        "Name": "Muzaffarnagar,   Uttar Pradesh"
+      },
+      {
+        "Code": "151536",
+        "Name": "Muzaffarpur,   Bihar"
+      },
+      {
+        "Code": "343378",
+        "Name": "Mysore (MYQ),   Mysore"
+      },
+      {
+        "Code": "128698",
+        "Name": "Mysuru,   Karnataka"
+      },
+      {
+        "Code": "160877",
+        "Name": "NAIMISHARANYA,   UTTAR PRADESH"
+      },
+      {
+        "Code": "150357",
+        "Name": "NYERAK,   Jammu Kashmir"
+      },
+      {
+        "Code": "417527",
+        "Name": "Nabadwip"
+      },
+      {
+        "Code": "153797",
+        "Name": "Nadia District,   West Bengal"
+      },
+      {
+        "Code": "104506",
+        "Name": "Nadiad,   Gujarat"
+      },
+      {
+        "Code": "130352",
+        "Name": "Nadukani,   Kerala"
+      },
+      {
+        "Code": "274813",
+        "Name": "Nagaon,   Assam"
+      },
+      {
+        "Code": "129447",
+        "Name": "Nagapattinam,   Tamil Nadu"
+      },
+      {
+        "Code": "160628",
+        "Name": "Nagaur,   Rajasthan"
+      },
+      {
+        "Code": "104260",
+        "Name": "Naggar,   Himachal Pradesh"
+      },
+      {
+        "Code": "129723",
+        "Name": "Nagpur,   Maharashtra"
+      },
+      {
+        "Code": "338761",
+        "Name": "Nahan,   Himachal Pradesh"
+      },
+      {
+        "Code": "130354",
+        "Name": "Nahar Magra,   Rajasthan"
+      },
+      {
+        "Code": "129726",
+        "Name": "Nainital,   Uttarakhand"
+      },
+      {
+        "Code": "130357",
+        "Name": "Nakinda,   Maharashtra"
+      },
+      {
+        "Code": "129257",
+        "Name": "Nalagarh,   Himachal Pradesh"
+      },
+      {
+        "Code": "151833",
+        "Name": "Naldehra,   Himachal"
+      },
+      {
+        "Code": "130105",
+        "Name": "Nalkeri,   Karnataka"
+      },
+      {
+        "Code": "104509",
+        "Name": "Namakkal,   Tamil Nadu"
+      },
+      {
+        "Code": "130358",
+        "Name": "Namchi,   Sikkim"
+      },
+      {
+        "Code": "129732",
+        "Name": "Nanded,   Maharashtra"
+      },
+      {
+        "Code": "299841",
+        "Name": "Nandurbar,   Maharashtra"
+      },
+      {
+        "Code": "160634",
+        "Name": "Narendranagar,   Uttarakhand"
+      },
+      {
+        "Code": "102033",
+        "Name": "Narkanda,   Himachal Pradesh"
+      },
+      {
+        "Code": "129163",
+        "Name": "Narlai,   Rajasthan"
+      },
+      {
+        "Code": "418060",
+        "Name": "Narmadapuram,   Madhya Pradesh"
+      },
+      {
+        "Code": "146814",
+        "Name": "Nashik,   Maharashtra"
+      },
+      {
+        "Code": "151845",
+        "Name": "Nathdwara,   Rajasthan"
+      },
+      {
+        "Code": "146820",
+        "Name": "Nattika,   Kerala"
+      },
+      {
+        "Code": "418107",
+        "Name": "Navapur,   nandurbar"
+      },
+      {
+        "Code": "128734",
+        "Name": "Navi Mumbai,   Maharashtra"
+      },
+      {
+        "Code": "300782",
+        "Name": "Navsari,   Gujarat"
+      },
+      {
+        "Code": "146825",
+        "Name": "Nawalgarh,   Rajasthan"
+      },
+      {
+        "Code": "151846",
+        "Name": "Nawanshahar,   Punjab"
+      },
+      {
+        "Code": "154145",
+        "Name": "Nawanshahr,   Punjab"
+      },
+      {
+        "Code": "150203",
+        "Name": "Nedumbassery,   Kerala"
+      },
+      {
+        "Code": "129816",
+        "Name": "Neeleshwar,   Kerala"
+      },
+      {
+        "Code": "130137",
+        "Name": "Neemrana,   RAJASTHAN"
+      },
+      {
+        "Code": "235963",
+        "Name": "Neemuch,   Madhya Pradesh"
+      },
+      {
+        "Code": "129189",
+        "Name": "Neil Island,   Andaman & Nicobar"
+      },
+      {
+        "Code": "358240",
+        "Name": "Nelamangala,   Karnataka"
+      },
+      {
+        "Code": "129289",
+        "Name": "Nellore,   Andhra Pradesh"
+      },
+      {
+        "Code": "129827",
+        "Name": "Nerul,   Maharashtra"
+      },
+      {
+        "Code": "417022",
+        "Name": "Netrang,   Gujarat"
+      },
+      {
+        "Code": "130443",
+        "Name": "New Delhi / Delhi,   DELHI"
+      },
+      {
+        "Code": "287941",
+        "Name": "New Digha,   West Bengal"
+      },
+      {
+        "Code": "150649",
+        "Name": "Neyveli,   Tamil Nadu"
+      },
+      {
+        "Code": "346564",
+        "Name": "Nilambur,   Kerala"
+      },
+      {
+        "Code": "104531",
+        "Name": "Nilgiri,   Tamil Nadu"
+      },
+      {
+        "Code": "129477",
+        "Name": "Nimaj,   Rajasthan"
+      },
+      {
+        "Code": "130205",
+        "Name": "Noida,   UTTAR PRADESH"
+      },
+      {
+        "Code": "153921",
+        "Name": "North Goa,   Goa"
+      },
+      {
+        "Code": "150162",
+        "Name": "North Lakhimpur,   Assam"
+      },
+      {
+        "Code": "106556",
+        "Name": "North Paravur,   Kerala"
+      },
+      {
+        "Code": "153975",
+        "Name": "North Sikkim,   Sikkim"
+      },
+      {
+        "Code": "392562",
+        "Name": "Nubra Valley,   Ladakh"
+      },
+      {
+        "Code": "131276",
+        "Name": "Omkareshwar,   Madhya Pradesh"
+      },
+      {
+        "Code": "130990",
+        "Name": "Ooty,   Tamil Nadu"
+      },
+      {
+        "Code": "130252",
+        "Name": "Orchha,   Madhya Pradesh"
+      },
+      {
+        "Code": "130799",
+        "Name": "Orissa,   Odisha"
+      },
+      {
+        "Code": "132015",
+        "Name": "Pachmarhi,   Madhya Pradesh"
+      },
+      {
+        "Code": "130852",
+        "Name": "Padappai,   Tamil Nadu"
+      },
+      {
+        "Code": "131375",
+        "Name": "Pahalgam,   Jammu and Kashmir"
+      },
+      {
+        "Code": "131721",
+        "Name": "Pakhal,   Telangana"
+      },
+      {
+        "Code": "153808",
+        "Name": "Palakkad District"
+      },
+      {
+        "Code": "132025",
+        "Name": "Palakkad,   Kerala"
+      },
+      {
+        "Code": "147070",
+        "Name": "Palampur,   Himachal Pradesh"
+      },
+      {
+        "Code": "130749",
+        "Name": "Palani,   Tamil Nadu"
+      },
+      {
+        "Code": "130316",
+        "Name": "Palanpur,   Gujrat"
+      },
+      {
+        "Code": "292291",
+        "Name": "Palghar"
+      },
+      {
+        "Code": "147075",
+        "Name": "Pali,   Rajasthan"
+      },
+      {
+        "Code": "294433",
+        "Name": "Palia Kalan,   Uttar Pradesh"
+      },
+      {
+        "Code": "362198",
+        "Name": "Palolem,   Goa"
+      },
+      {
+        "Code": "241457",
+        "Name": "Palwal,   Haryana"
+      },
+      {
+        "Code": "131398",
+        "Name": "Panaji,   Goa"
+      },
+      {
+        "Code": "131394",
+        "Name": "Panchgani,   Maharashtra"
+      },
+      {
+        "Code": "131002",
+        "Name": "Panchkula,   Haryana"
+      },
+      {
+        "Code": "261909",
+        "Name": "Pandharpur,   Maharashtra"
+      },
+      {
+        "Code": "147083",
+        "Name": "Pandikkad,   Kerala"
+      },
+      {
+        "Code": "106580",
+        "Name": "Pangong Tso Lake,   Jammu And Kashmir"
+      },
+      {
+        "Code": "298741",
+        "Name": "Panhala,   Maharashtra"
+      },
+      {
+        "Code": "147088",
+        "Name": "Panipat,   Haryana"
+      },
+      {
+        "Code": "131437",
+        "Name": "Panna,   Madhya Pradesh"
+      },
+      {
+        "Code": "150800",
+        "Name": "Pantnagar,   Uttarakhand"
+      },
+      {
+        "Code": "131544",
+        "Name": "Panvel,   Maharashtra "
+      },
+      {
+        "Code": "353074",
+        "Name": "Paradeep,   Odisha"
+      },
+      {
+        "Code": "131406",
+        "Name": "Paragpur,   Himachal Pradesh"
+      },
+      {
+        "Code": "418061",
+        "Name": "Paralakhemundi,   Odisha"
+      },
+      {
+        "Code": "131552",
+        "Name": "Paravur,   Kerala"
+      },
+      {
+        "Code": "151861",
+        "Name": "Parbhani,   Maharashtra"
+      },
+      {
+        "Code": "132055",
+        "Name": "Parra,   Goa"
+      },
+      {
+        "Code": "147106",
+        "Name": "Parwanoo,   Himachal Pradesh"
+      },
+      {
+        "Code": "315734",
+        "Name": "Patan,   Gujarat"
+      },
+      {
+        "Code": "106662",
+        "Name": "Pateri,   Bihar"
+      },
+      {
+        "Code": "131027",
+        "Name": "Pathanamthitta,   Kerala"
+      },
+      {
+        "Code": "132705",
+        "Name": "Pathankot,   Punjab"
+      },
+      {
+        "Code": "267587",
+        "Name": "Pathara,   Odisha"
+      },
+      {
+        "Code": "106663",
+        "Name": "Patiala,   Punjab"
+      },
+      {
+        "Code": "132429",
+        "Name": "Patna,   Bihar"
+      },
+      {
+        "Code": "418068",
+        "Name": "Patnem"
+      },
+      {
+        "Code": "131028",
+        "Name": "Patnitop,   Jammu and Kashmir"
+      },
+      {
+        "Code": "153916",
+        "Name": "Pauri Garhwal"
+      },
+      {
+        "Code": "161105",
+        "Name": "Peermade,   Kerala"
+      },
+      {
+        "Code": "147140",
+        "Name": "Pelling,   Sikkim"
+      },
+      {
+        "Code": "132724",
+        "Name": "Pench Nationalpark,   Madhya Pradesh"
+      },
+      {
+        "Code": "132089",
+        "Name": "Pench,   Madhya Pradesh"
+      },
+      {
+        "Code": "102750",
+        "Name": "Perambalur,   Tamil Nadu"
+      },
+      {
+        "Code": "157867",
+        "Name": "Perintalmanna,   Kerala"
+      },
+      {
+        "Code": "103270",
+        "Name": "Perinthalmanna,   Kerala"
+      },
+      {
+        "Code": "132133",
+        "Name": "Periyar,   Kerala"
+      },
+      {
+        "Code": "131597",
+        "Name": "Pernem,   Goa"
+      },
+      {
+        "Code": "132753",
+        "Name": "Phagwara,   Punjab"
+      },
+      {
+        "Code": "131523",
+        "Name": "Phalodi,   Rajasthan"
+      },
+      {
+        "Code": "106676",
+        "Name": "Phaltan,   Maharashtra "
+      },
+      {
+        "Code": "418283",
+        "Name": "Pilibhit"
+      },
+      {
+        "Code": "133418",
+        "Name": "Pimpri-Chinchwad,   Maharashtra"
+      },
+      {
+        "Code": "132183",
+        "Name": "Pinjore,   Haryana"
+      },
+      {
+        "Code": "232476",
+        "Name": "Pithampur,   Madhya Pradesh"
+      },
+      {
+        "Code": "295095",
+        "Name": "Pithoragarh,   Uttarakhand"
+      },
+      {
+        "Code": "133214",
+        "Name": "Pokhran,   Rajasthan"
+      },
+      {
+        "Code": "132282",
+        "Name": "Pollachi,   Tamil Nadu"
+      },
+      {
+        "Code": "132292",
+        "Name": "Ponmudi,   Kerala"
+      },
+      {
+        "Code": "133497",
+        "Name": "Poovar,   Kerala"
+      },
+      {
+        "Code": "133551",
+        "Name": "Porbandar,   Gujarat"
+      },
+      {
+        "Code": "133556",
+        "Name": "Port Blair,   Andaman And Nicobar"
+      },
+      {
+        "Code": "151840",
+        "Name": "Pragpur,   Himachal Pradesh"
+      },
+      {
+        "Code": "100307",
+        "Name": "Prayagraj (Formally-Allahabad),   Uttar Pradesh"
+      },
+      {
+        "Code": "280675",
+        "Name": "Proddatur,   Andhra Pradesh"
+      },
+      {
+        "Code": "132561",
+        "Name": "Puducherry/Pondicherry,   Tamil Nadu"
+      },
+      {
+        "Code": "106703",
+        "Name": "Pudukkotai,   Tamil Nadu"
+      },
+      {
+        "Code": "394717",
+        "Name": "Pudukkottai,   Tamil Nadu"
+      },
+      {
+        "Code": "134170",
+        "Name": "Pulamanthole,   Kerala"
+      },
+      {
+        "Code": "133133",
+        "Name": "Pune,   Maharashtra"
+      },
+      {
+        "Code": "147410",
+        "Name": "Purakkad,   Kerala"
+      },
+      {
+        "Code": "275226",
+        "Name": "Purasaiwakkam,   Tamil Nadu"
+      },
+      {
+        "Code": "153873",
+        "Name": "Purba Medinipur District,   West Bengal"
+      },
+      {
+        "Code": "132593",
+        "Name": "Puri,   Orissa"
+      },
+      {
+        "Code": "293576",
+        "Name": "Purnia,   Bihar"
+      },
+      {
+        "Code": "306303",
+        "Name": "Purulia,   West Bengal"
+      },
+      {
+        "Code": "134001",
+        "Name": "Pushkar,   Rajasthan"
+      },
+      {
+        "Code": "134178",
+        "Name": "Puttaparthi,   Andhra Pradesh"
+      },
+      {
+        "Code": "254863",
+        "Name": "Raebareli,   Uttar Pradesh"
+      },
+      {
+        "Code": "202897",
+        "Name": "Raichur,   Karnataka"
+      },
+      {
+        "Code": "147442",
+        "Name": "Raigad,   Maharashtra"
+      },
+      {
+        "Code": "237311",
+        "Name": "Raigarh,   Chhattisgarh"
+      },
+      {
+        "Code": "296510",
+        "Name": "Raipur"
+      },
+      {
+        "Code": "133672",
+        "Name": "Raipur,   Rajasthan"
+      },
+      {
+        "Code": "134040",
+        "Name": "Rajahmahendravaram,   Andhra Pradesh"
+      },
+      {
+        "Code": "343447",
+        "Name": "Rajahmundry (RJA),   Rajahmundry"
+      },
+      {
+        "Code": "102941",
+        "Name": "Rajakkad,   Kerala"
+      },
+      {
+        "Code": "102942",
+        "Name": "Rajapalayam,   Tamil Nadu"
+      },
+      {
+        "Code": "134041",
+        "Name": "Rajgarh,   Himachal Pradesh"
+      },
+      {
+        "Code": "133175",
+        "Name": "Rajgir,   Bihar"
+      },
+      {
+        "Code": "134211",
+        "Name": "Rajkot,   Gujarat"
+      },
+      {
+        "Code": "298575",
+        "Name": "Rajnandgaon"
+      },
+      {
+        "Code": "304525",
+        "Name": "Rajpipla"
+      },
+      {
+        "Code": "153963",
+        "Name": "Rajsamand"
+      },
+      {
+        "Code": "151654",
+        "Name": "Ramagundam,   Telangana"
+      },
+      {
+        "Code": "133177",
+        "Name": "Ramakkalmedu,   Kerala"
+      },
+      {
+        "Code": "404831",
+        "Name": "Ramanathapuram,   Tamil Nadu"
+      },
+      {
+        "Code": "134213",
+        "Name": "Ramathra Fort,   Rajasthan"
+      },
+      {
+        "Code": "133179",
+        "Name": "Rameshwaram,   Tamil Nadu"
+      },
+      {
+        "Code": "151860",
+        "Name": "Rameswaram,   TAMIL NADU"
+      },
+      {
+        "Code": "132621",
+        "Name": "Ramgarh,   Uttarakhand"
+      },
+      {
+        "Code": "134214",
+        "Name": "Ramnagar,   Uttarakhand"
+      },
+      {
+        "Code": "133676",
+        "Name": "Ranakpur,   Rajasthan"
+      },
+      {
+        "Code": "133760",
+        "Name": "Ranchi,   Jharkhand"
+      },
+      {
+        "Code": "133838",
+        "Name": "Ranikhet,   Uttarakhand"
+      },
+      {
+        "Code": "134224",
+        "Name": "Ranthambore Nationalpark,   Rajasthan"
+      },
+      {
+        "Code": "102675",
+        "Name": "Ratlam,   Madhya Pradesh"
+      },
+      {
+        "Code": "133687",
+        "Name": "Ratnagiri,   Maharashtra"
+      },
+      {
+        "Code": "133295",
+        "Name": "Ravangla,   Sikkim"
+      },
+      {
+        "Code": "295703",
+        "Name": "Razole,   Andhra Pradesh"
+      },
+      {
+        "Code": "102683",
+        "Name": "Renigunta,   Andhra Pradesh"
+      },
+      {
+        "Code": "150930",
+        "Name": "Rewa,   Madhya Pradesh"
+      },
+      {
+        "Code": "147501",
+        "Name": "Rewari,   Delhi National Territory"
+      },
+      {
+        "Code": "102954",
+        "Name": "Rinchenpong,   Sikkim"
+      },
+      {
+        "Code": "134932",
+        "Name": "Rishikesh,   Uttarakhand"
+      },
+      {
+        "Code": "147554",
+        "Name": "Rohet,   Rajasthan"
+      },
+      {
+        "Code": "103217",
+        "Name": "Rohetgarh,   Rajasthan"
+      },
+      {
+        "Code": "134058",
+        "Name": "Rohtak,   Haryana"
+      },
+      {
+        "Code": "150180",
+        "Name": "Roorkee,   Uttarakhand"
+      },
+      {
+        "Code": "134643",
+        "Name": "Rourkela,   Orissa"
+      },
+      {
+        "Code": "135778",
+        "Name": "Rudraprayag,   Uttarakhand"
+      },
+      {
+        "Code": "150359",
+        "Name": "Rudrapur,   Uttarakhand"
+      },
+      {
+        "Code": "245434",
+        "Name": "Rupnagar,   Punjab"
+      },
+      {
+        "Code": "150936",
+        "Name": "Rupsi,   Assam"
+      },
+      {
+        "Code": "148898",
+        "Name": "SHINGRAK,   Jammu and Kashmir"
+      },
+      {
+        "Code": "267858",
+        "Name": "Sagar,   Madhya Pradesh"
+      },
+      {
+        "Code": "272583",
+        "Name": "Sagara,   Karnataka"
+      },
+      {
+        "Code": "103325",
+        "Name": "Saharanpur,   Uttar Pradesh"
+      },
+      {
+        "Code": "147607",
+        "Name": "Sahibzada Ajit Singh Nagar,   Punjab"
+      },
+      {
+        "Code": "394732",
+        "Name": "Sakleshpur,   Karnataka"
+      },
+      {
+        "Code": "103491",
+        "Name": "Salasar,   Rajasthan"
+      },
+      {
+        "Code": "154057",
+        "Name": "Salcete,   Goa"
+      },
+      {
+        "Code": "135916",
+        "Name": "Salem,   Tamil Nadu"
+      },
+      {
+        "Code": "135694",
+        "Name": "Saligao,   Goa"
+      },
+      {
+        "Code": "418309",
+        "Name": "Salt,   Uttarakhand"
+      },
+      {
+        "Code": "272466",
+        "Name": "Samastipur,   Bihar"
+      },
+      {
+        "Code": "103344",
+        "Name": "Samayapuram,   Tamil Nadu"
+      },
+      {
+        "Code": "103345",
+        "Name": "Sambalpur,   Odisha"
+      },
+      {
+        "Code": "103346",
+        "Name": "Samode,   Rajasthan"
+      },
+      {
+        "Code": "106770",
+        "Name": "Sanand,   Gujarat"
+      },
+      {
+        "Code": "135522",
+        "Name": "Sanchi,   Madhya Pradesh"
+      },
+      {
+        "Code": "417319",
+        "Name": "Sanchore,   Rajasthan"
+      },
+      {
+        "Code": "202708",
+        "Name": "Sangla,   Himachal Pradesh"
+      },
+      {
+        "Code": "136501",
+        "Name": "Sangli,   Maharashtra"
+      },
+      {
+        "Code": "394926",
+        "Name": "Saputara"
+      },
+      {
+        "Code": "418088",
+        "Name": "Sarahan ,   Himachal Pradesh"
+      },
+      {
+        "Code": "205218",
+        "Name": "Sarchu,   Sarchu"
+      },
+      {
+        "Code": "136093",
+        "Name": "Sardargarh,   Rajasthan"
+      },
+      {
+        "Code": "135586",
+        "Name": "Sariska National Park,   Rajasthan"
+      },
+      {
+        "Code": "136555",
+        "Name": "Sasan Gir,   Gujarat"
+      },
+      {
+        "Code": "261894",
+        "Name": "Sasaram"
+      },
+      {
+        "Code": "136409",
+        "Name": "Satara,   Maharashtra"
+      },
+      {
+        "Code": "147780",
+        "Name": "Satna,   Madhya Pradesh"
+      },
+      {
+        "Code": "148897",
+        "Name": "Satpura,   Madhya Pradesh"
+      },
+      {
+        "Code": "151847",
+        "Name": "Sattal,   Uttarakhand"
+      },
+      {
+        "Code": "136656",
+        "Name": "Sawai Madhopur,   Rajasthan"
+      },
+      {
+        "Code": "136748",
+        "Name": "Secunderabad,   Telangana"
+      },
+      {
+        "Code": "136766",
+        "Name": "Seoni,   Madhya Pradesh"
+      },
+      {
+        "Code": "222992",
+        "Name": "Seraikela,   Jharkhand"
+      },
+      {
+        "Code": "150360",
+        "Name": "Shahpur,   Haryana"
+      },
+      {
+        "Code": "137380",
+        "Name": "Shahpura,   Rajasthan"
+      },
+      {
+        "Code": "136285",
+        "Name": "Shamirpet,   Telangana"
+      },
+      {
+        "Code": "107371",
+        "Name": "Shamshabad,   Telangana"
+      },
+      {
+        "Code": "137568",
+        "Name": "Shantiniketan,   West Bengal"
+      },
+      {
+        "Code": "268822",
+        "Name": "Shegaon,   Maharashtra"
+      },
+      {
+        "Code": "138670",
+        "Name": "Shillong,   Meghalaya"
+      },
+      {
+        "Code": "138673",
+        "Name": "Shimla,   Himachal Pradesh"
+      },
+      {
+        "Code": "154080",
+        "Name": "Shimoga district"
+      },
+      {
+        "Code": "418089",
+        "Name": "Shinganahalli,   Karnataka"
+      },
+      {
+        "Code": "137316",
+        "Name": "Shirdi,   Maharashtra"
+      },
+      {
+        "Code": "147891",
+        "Name": "Shivamogga,   Karnataka"
+      },
+      {
+        "Code": "137750",
+        "Name": "Shivpuri,   Madhya Pradesh"
+      },
+      {
+        "Code": "106639",
+        "Name": "Sholayur,   Kerala"
+      },
+      {
+        "Code": "290462",
+        "Name": "Shri Satya Sai Pandurang Kshetra,   Maharashtra"
+      },
+      {
+        "Code": "293099",
+        "Name": "Shrirampur,   West Bengal"
+      },
+      {
+        "Code": "292279",
+        "Name": "Shrivardhan,   Maharashtra"
+      },
+      {
+        "Code": "137404",
+        "Name": "Siana,   Rajasthan"
+      },
+      {
+        "Code": "136312",
+        "Name": "Sikar,   Rajasthan"
+      },
+      {
+        "Code": "153976",
+        "Name": "Sikkim"
+      },
+      {
+        "Code": "150361",
+        "Name": "Silchar,   Assam"
+      },
+      {
+        "Code": "147912",
+        "Name": "Siliguri,   West Bengal"
+      },
+      {
+        "Code": "147914",
+        "Name": "Silvassa,   Dadra and Nagar Have"
+      },
+      {
+        "Code": "137470",
+        "Name": "Sindhudi,   Gujarat"
+      },
+      {
+        "Code": "153859",
+        "Name": "Sindhudurg"
+      },
+      {
+        "Code": "106649",
+        "Name": "Singrauli,   Madhya Pradesh"
+      },
+      {
+        "Code": "138010",
+        "Name": "Siolim,   Goa"
+      },
+      {
+        "Code": "106650",
+        "Name": "Sirkazhi,   Tamil Nadu"
+      },
+      {
+        "Code": "154070",
+        "Name": "Sirmaur District"
+      },
+      {
+        "Code": "103180",
+        "Name": "Sirsa,   Haryana "
+      },
+      {
+        "Code": "107226",
+        "Name": "Sitalakhet,   Uttarakhand "
+      },
+      {
+        "Code": "293199",
+        "Name": "Sitapur,   Uttar Pradesh"
+      },
+      {
+        "Code": "106898",
+        "Name": "Sitlakhet,   Uttarakhand "
+      },
+      {
+        "Code": "106651",
+        "Name": "Skara,   Maharashtra "
+      },
+      {
+        "Code": "302824",
+        "Name": "Sohagpur"
+      },
+      {
+        "Code": "154112",
+        "Name": "Solan District"
+      },
+      {
+        "Code": "138127",
+        "Name": "Solan,   Himachal Pradesh"
+      },
+      {
+        "Code": "138128",
+        "Name": "Solapur,   Maharashtra"
+      },
+      {
+        "Code": "138049",
+        "Name": "Somnath,   Gujarat"
+      },
+      {
+        "Code": "138484",
+        "Name": "Sonamarg,   Jammu And Kashmir"
+      },
+      {
+        "Code": "151848",
+        "Name": "Sonipat,   Haryana"
+      },
+      {
+        "Code": "281849",
+        "Name": "Sosan"
+      },
+      {
+        "Code": "154101",
+        "Name": "South 24 Parganas"
+      },
+      {
+        "Code": "153958",
+        "Name": "South Goa"
+      },
+      {
+        "Code": "376717",
+        "Name": "Spangmik,   Ladakh"
+      },
+      {
+        "Code": "138523",
+        "Name": "Sravasti,   Uttar Pradesh"
+      },
+      {
+        "Code": "107250",
+        "Name": "Sri Ganganagar,   Rajasthan"
+      },
+      {
+        "Code": "341544",
+        "Name": "Sri Sathya Sai Museum,   Andhra Pradesh"
+      },
+      {
+        "Code": "315958",
+        "Name": "Sri Sathya Sai University,   Andhra Pradesh"
+      },
+      {
+        "Code": "137118",
+        "Name": "Srikakulam,   Andhra Pradesh"
+      },
+      {
+        "Code": "299949",
+        "Name": "Srikalahasti"
+      },
+      {
+        "Code": "139456",
+        "Name": "Srinagar,   Jammu and Kashmir"
+      },
+      {
+        "Code": "103198",
+        "Name": "Srinagar, Uttarakhand,   Uttarakhand"
+      },
+      {
+        "Code": "417859",
+        "Name": "Sringeri or Shringeri,   Karnataka"
+      },
+      {
+        "Code": "138370",
+        "Name": "Sriperumbudur,   Tamil Nadu"
+      },
+      {
+        "Code": "108572",
+        "Name": "Stok,   Jammu And Kashmir"
+      },
+      {
+        "Code": "107078",
+        "Name": "Sultan Bathery,   Kerala"
+      },
+      {
+        "Code": "151849",
+        "Name": "Sultanpur,   Uttar Pradesh"
+      },
+      {
+        "Code": "263253",
+        "Name": "Sumerpur"
+      },
+      {
+        "Code": "286488",
+        "Name": "Sundarnagar,   Himachal Pradesh"
+      },
+      {
+        "Code": "140235",
+        "Name": "Sunderban,   West Bengal"
+      },
+      {
+        "Code": "107275",
+        "Name": "Sungal,   Jammu Kashmir"
+      },
+      {
+        "Code": "151866",
+        "Name": "Surajgarh,   Rajasthan"
+      },
+      {
+        "Code": "139526",
+        "Name": "Surat,   Gujarat"
+      },
+      {
+        "Code": "107754",
+        "Name": "Suratgarh,   Rajasthan"
+      },
+      {
+        "Code": "305699",
+        "Name": "Surendranagar,   Gujarat"
+      },
+      {
+        "Code": "150287",
+        "Name": "TIB BAGO,   Jammu and Kashmir"
+      },
+      {
+        "Code": "151834",
+        "Name": "Taboda,   Maharashtra"
+      },
+      {
+        "Code": "418205",
+        "Name": "Tadipatri,   Andhra Pradesh"
+      },
+      {
+        "Code": "151850",
+        "Name": "Tadoba,   Maharashtra"
+      },
+      {
+        "Code": "251033",
+        "Name": "Tajpur,   West Bengal"
+      },
+      {
+        "Code": "161006",
+        "Name": "Taki,   West Bengal"
+      },
+      {
+        "Code": "139669",
+        "Name": "Tala,   Maharashtra"
+      },
+      {
+        "Code": "273102",
+        "Name": "Talala,   Gujarat"
+      },
+      {
+        "Code": "139974",
+        "Name": "Tarangambadi,   Tamil Nadu"
+      },
+      {
+        "Code": "150362",
+        "Name": "Tarapith,   West Bengal"
+      },
+      {
+        "Code": "139699",
+        "Name": "Tawang,   Arunachal Pradesh"
+      },
+      {
+        "Code": "160633",
+        "Name": "Tehri,   Uttarakhand"
+      },
+      {
+        "Code": "139069",
+        "Name": "Tezpur,   Assam"
+      },
+      {
+        "Code": "106383",
+        "Name": "Thakurdwara,   Uttar Pradesh"
+      },
+      {
+        "Code": "139071",
+        "Name": "Thalassery,   Kerala"
+      },
+      {
+        "Code": "140020",
+        "Name": "Thane,   Maharashtra"
+      },
+      {
+        "Code": "300755",
+        "Name": "Thanesar"
+      },
+      {
+        "Code": "139605",
+        "Name": "Thanjavur,   Tamil Nadu"
+      },
+      {
+        "Code": "138628",
+        "Name": "Thanneermukkom,   Kerala"
+      },
+      {
+        "Code": "139609",
+        "Name": "Thekkady,   Kerala"
+      },
+      {
+        "Code": "139744",
+        "Name": "Theni,   Tamil Nadu"
+      },
+      {
+        "Code": "299948",
+        "Name": "Theog"
+      },
+      {
+        "Code": "140415",
+        "Name": "Thiksey,   Jammu And Kashmir"
+      },
+      {
+        "Code": "302786",
+        "Name": "Thirukkadaiyur,   Tamil Nadu"
+      },
+      {
+        "Code": "338807",
+        "Name": "Thirumayam,   Tamil Nadu"
+      },
+      {
+        "Code": "148901",
+        "Name": "Thiruvananthapuram,   Kerala"
+      },
+      {
+        "Code": "106955",
+        "Name": "Thodupuzha,   Kerala"
+      },
+      {
+        "Code": "141231",
+        "Name": "Thoothukudi,   Tamil Nadu"
+      },
+      {
+        "Code": "140032",
+        "Name": "Thrissur,   Kerala"
+      },
+      {
+        "Code": "106958",
+        "Name": "Thumkunta,   Telangana"
+      },
+      {
+        "Code": "333310",
+        "Name": "Tindivanam,   Tamil Nadu"
+      },
+      {
+        "Code": "107782",
+        "Name": "Tinsukia,   Assam"
+      },
+      {
+        "Code": "105896",
+        "Name": "Tiracol,   Tiracol"
+      },
+      {
+        "Code": "364173",
+        "Name": "Tirthalli,   Karnataka"
+      },
+      {
+        "Code": "399762",
+        "Name": "Tiruchendur"
+      },
+      {
+        "Code": "148240",
+        "Name": "Tiruchirappalli,   Tamil Nadu"
+      },
+      {
+        "Code": "418285",
+        "Name": "Tirukalukundram"
+      },
+      {
+        "Code": "281412",
+        "Name": "Tirunelveli District"
+      },
+      {
+        "Code": "140310",
+        "Name": "Tirunelveli,   Tamil Nadu"
+      },
+      {
+        "Code": "140311",
+        "Name": "Tirupati,   Andhra Pradesh"
+      },
+      {
+        "Code": "141054",
+        "Name": "Tiruppur,   Tamil Nadu"
+      },
+      {
+        "Code": "106394",
+        "Name": "Tiruttani,   Tamil Nadu"
+      },
+      {
+        "Code": "139315",
+        "Name": "Tiruvannamalai,   Tamil Nadu"
+      },
+      {
+        "Code": "106963",
+        "Name": "Titwala,   Maharashtra"
+      },
+      {
+        "Code": "379060",
+        "Name": "Toranagallu,   Karnataka"
+      },
+      {
+        "Code": "280875",
+        "Name": "Tosh,   Himachal Pradesh"
+      },
+      {
+        "Code": "106849",
+        "Name": "Trimbak,   Maharashtra "
+      },
+      {
+        "Code": "139820",
+        "Name": "Trivandrum,   Kerala"
+      },
+      {
+        "Code": "106856",
+        "Name": "Tura,   Meghalaya"
+      },
+      {
+        "Code": "141528",
+        "Name": "Turia,   West Bengal"
+      },
+      {
+        "Code": "140098",
+        "Name": "Uchiyarda,   Rajasthan"
+      },
+      {
+        "Code": "140522",
+        "Name": "Udaipur,   Rajasthan"
+      },
+      {
+        "Code": "377670",
+        "Name": "Udumalaipettai,   Tamil Nadu"
+      },
+      {
+        "Code": "148363",
+        "Name": "Udupi,   Karnataka"
+      },
+      {
+        "Code": "140701",
+        "Name": "Ujjain,   Madhya Pradesh"
+      },
+      {
+        "Code": "157929",
+        "Name": "Ukhimath,   Uttarakhand"
+      },
+      {
+        "Code": "299947",
+        "Name": "Ulhasnagar,   Maharashtra"
+      },
+      {
+        "Code": "141832",
+        "Name": "Umaria,   Madhya Pradesh"
+      },
+      {
+        "Code": "141097",
+        "Name": "Una,   Himachal Pradesh"
+      },
+      {
+        "Code": "148374",
+        "Name": "Unchagaon,   Uttar Pradesh"
+      },
+      {
+        "Code": "286704",
+        "Name": "Unjha,   Gujarat"
+      },
+      {
+        "Code": "300441",
+        "Name": "Unnao,   Uttar Pradesh"
+      },
+      {
+        "Code": "107938",
+        "Name": "Uruli Kanchan,   Maharashtra"
+      },
+      {
+        "Code": "141578",
+        "Name": "Utorda Beach,   Goa"
+      },
+      {
+        "Code": "385613",
+        "Name": "Uttan,   Maharashtra"
+      },
+      {
+        "Code": "154207",
+        "Name": "Uttara Kannada District"
+      },
+      {
+        "Code": "140143",
+        "Name": "Uttarkashi,   Uttarakhand"
+      },
+      {
+        "Code": "417516",
+        "Name": "Vadakara"
+      },
+      {
+        "Code": "141587",
+        "Name": "Vadodara,   Gujarat"
+      },
+      {
+        "Code": "148406",
+        "Name": "Vagamon,   Kerala"
+      },
+      {
+        "Code": "148407",
+        "Name": "Vagator,   Goa"
+      },
+      {
+        "Code": "107944",
+        "Name": "Vaikom,   Kerala"
+      },
+      {
+        "Code": "107210",
+        "Name": "Vajrahalli,   Karnataka"
+      },
+      {
+        "Code": "140593",
+        "Name": "Vallikunnam,   Kerala"
+      },
+      {
+        "Code": "160640",
+        "Name": "Valparai,   Tamil Nadu"
+      },
+      {
+        "Code": "238713",
+        "Name": "Valsad,   Gujarat"
+      },
+      {
+        "Code": "141615",
+        "Name": "Vandanmedu,   Kerala"
+      },
+      {
+        "Code": "141147",
+        "Name": "Vapi,   Gujarat"
+      },
+      {
+        "Code": "141618",
+        "Name": "Varanasi,   Uttar Pradesh"
+      },
+      {
+        "Code": "141450",
+        "Name": "Varca Beach,   Goa"
+      },
+      {
+        "Code": "200830",
+        "Name": "Varca,   Goa"
+      },
+      {
+        "Code": "141976",
+        "Name": "Varkala,   Kerala"
+      },
+      {
+        "Code": "141980",
+        "Name": "Vasai,   Maharashtra "
+      },
+      {
+        "Code": "107855",
+        "Name": "Vasco da Gama,   Goa"
+      },
+      {
+        "Code": "148446",
+        "Name": "Vayalar,   Kerala"
+      },
+      {
+        "Code": "257036",
+        "Name": "Vayittiri"
+      },
+      {
+        "Code": "141630",
+        "Name": "Vazhoor,   Kerala"
+      },
+      {
+        "Code": "148450",
+        "Name": "Velankanni,   Tamil Nadu"
+      },
+      {
+        "Code": "148459",
+        "Name": "Vellore,   Tamil Nadu"
+      },
+      {
+        "Code": "142295",
+        "Name": "Velsao Beach,   Goa"
+      },
+      {
+        "Code": "142563",
+        "Name": "Veraval,   Gujarat"
+      },
+      {
+        "Code": "107957",
+        "Name": "Verem,   Goa"
+      },
+      {
+        "Code": "111949",
+        "Name": "Vijayapura/Bijapur,   Karnataka"
+      },
+      {
+        "Code": "148500",
+        "Name": "Vijayawada,   Andhra Pradesh"
+      },
+      {
+        "Code": "417561",
+        "Name": "Vikasnagar,   Uttarakhand"
+      },
+      {
+        "Code": "333311",
+        "Name": "Viluppuram,   Tamil Nadu"
+      },
+      {
+        "Code": "361372",
+        "Name": "Virajpet,   Karnataka"
+      },
+      {
+        "Code": "300808",
+        "Name": "Virar"
+      },
+      {
+        "Code": "409965",
+        "Name": "Virudhunagar,   Tamil Nadu"
+      },
+      {
+        "Code": "142198",
+        "Name": "Vizag/Visakhapatnam,   Andhra Pradesh"
+      },
+      {
+        "Code": "141371",
+        "Name": "Vizhinjam,   Kerala"
+      },
+      {
+        "Code": "107391",
+        "Name": "Vizianagaram,   Andhra Pradesh"
+      },
+      {
+        "Code": "141391",
+        "Name": "Vrindavan,   Uttar Pradesh"
+      },
+      {
+        "Code": "151612",
+        "Name": "Vythiri,   Kerala"
+      },
+      {
+        "Code": "107703",
+        "Name": "Wakad,   Maharashtra"
+      },
+      {
+        "Code": "107887",
+        "Name": "Wandoor"
+      },
+      {
+        "Code": "141960",
+        "Name": "Wankaner,   Gujrat"
+      },
+      {
+        "Code": "151614",
+        "Name": "Warangal,   Telangana"
+      },
+      {
+        "Code": "148630",
+        "Name": "Wayanad,   Kerala"
+      },
+      {
+        "Code": "153886",
+        "Name": "West Godavari District"
+      },
+      {
+        "Code": "143481",
+        "Name": "Wuste Thar,   Rajasthan"
+      },
+      {
+        "Code": "417522",
+        "Name": "Yamuna Nagar"
+      },
+      {
+        "Code": "143798",
+        "Name": "Yavatmal,   Maharashtra"
+      },
+      {
+        "Code": "148767",
+        "Name": "Yelagiri,   Tamil Nadu"
+      },
+      {
+        "Code": "348599",
+        "Name": "Yelahanka,   Karnataka"
+      },
+      {
+        "Code": "143329",
+        "Name": "Yercaud,   Tamil Nadu"
+      },
+      {
+        "Code": "150396",
+        "Name": "Yuksom,   Sikkim"
+      },
+      {
+        "Code": "150387",
+        "Name": "ZARIBAGO,   Jammu and Kashmir"
+      },
+      {
+        "Code": "150248",
+        "Name": "Zirakpur,   Punjab"
+      },
+      {
+        "Code": "275027",
+        "Name": "Ziro,   Arunachal Pradesh"
+      }
+    ]
+  }
+}

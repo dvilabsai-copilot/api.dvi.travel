@@ -17,13 +17,13 @@ import { PrismaService } from '../../../prisma.service';
 @Injectable()
 export class TboHotelMasterSyncService implements OnModuleInit, OnModuleDestroy {
   private logger = new Logger(TboHotelMasterSyncService.name);
-  private readonly SHARED_API_URL = 'https://sharedapi.tektravels.com';
-  private readonly TBO_MASTER_API_BASE = 'http://api.tbotechnology.in/TBOHolidays_HotelAPI';
-  private readonly CITY_LIST_API_URL = 'http://api.tbotechnology.in/TBOHolidays_HotelAPI/CityList';
-  private readonly TBO_STATIC_USERNAME = process.env.TBO_STATIC_USERNAME || 'TBOStaticAPITest';
-  private readonly TBO_STATIC_PASSWORD = process.env.TBO_STATIC_PASSWORD || 'Tbo@11530818';
-  private readonly USERNAME = process.env.TBO_USERNAME || 'Doview';
-  private readonly PASSWORD = process.env.TBO_PASSWORD || 'Doview@12345';
+  private readonly SHARED_API_URL = process.env.TBO_SHARED_API_URL || 'https://api.travelboutiqueonline.com/SharedAPI';
+  private readonly TBO_MASTER_API_BASE = process.env.TBO_STATIC_API_URL || 'http://affiliate.travelboutiqueonline.com/TBOHolidays_HotelAPI';
+  private readonly CITY_LIST_API_URL = process.env.TBO_CITY_LIST_URL || 'http://affiliate.travelboutiqueonline.com/TBOHolidays_HotelAPI/CityList';
+  private readonly TBO_STATIC_USERNAME = process.env.TBO_STATIC_USERNAME || 'IXMD112';
+  private readonly TBO_STATIC_PASSWORD = process.env.TBO_STATIC_PASSWORD || 'api-11#M$new';
+  private readonly USERNAME = process.env.TBO_USERNAME || 'IXMD112';
+  private readonly PASSWORD = process.env.TBO_PASSWORD || 'api-11#M$new';
   private http: AxiosInstance = axios;
   private tokenId: string | null = null;
   private syncTimer: NodeJS.Timeout | null = null;
@@ -99,10 +99,10 @@ export class TboHotelMasterSyncService implements OnModuleInit, OnModuleDestroy 
 
     try {
       const authRequest = {
-        ClientId: process.env.TBO_CLIENT_ID || 'ApiIntegrationNew',
+        ClientId: process.env.TBO_CLIENT_ID || 'tboprod',
         UserName: this.USERNAME,
         Password: this.PASSWORD,
-        EndUserIp: process.env.TBO_END_USER_IP || '192.168.1.1',
+        EndUserIp: process.env.TBO_END_USER_IP || '134.209.145.185',
       };
 
       const response = await this.http.post(

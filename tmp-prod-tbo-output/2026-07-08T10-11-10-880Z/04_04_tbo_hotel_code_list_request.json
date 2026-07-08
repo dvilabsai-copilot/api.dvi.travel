@@ -1,0 +1,14 @@
+{
+  "label": "04_tbo_hotel_code_list",
+  "method": "POST",
+  "url": "http://affiliate.travelboutiqueonline.com/TBOHolidays_HotelAPI/TBOHotelCodeList",
+  "headers": {
+    "Authorization": "Basic SVhNRDExMjphcGktMTEjTSRuZXc=",
+    "Content-Type": "application/json",
+    "Accept": "application/json"
+  },
+  "body": {
+    "CityCode": "127343",
+    "IsDetailedResponse": "true"
+  }
+}

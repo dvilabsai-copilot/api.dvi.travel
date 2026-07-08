@@ -1,0 +1,25 @@
+{
+  "status": 200,
+  "body": {
+    "checkintime": "01:00 pm",
+    "checkouttime": "10:00 am",
+    "child_age": "5",
+    "contactinfo": {
+      "addressline": "Lincoln House, 78 Bhulabhai Desai Road",
+      "city": "Mumbai",
+      "country": "India",
+      "email": "uday@staah.com",
+      "fax": "",
+      "latitude": "18.97656",
+      "location": "Mumbai",
+      "longitude": "72.80889",
+      "state": "Maharashtra",
+      "telephone": "+91 999887776",
+      "zip": "400%2B026"
+    },
+    "currency": "AED",
+    "infant_age": "0",
+    "propertyname": "Test STAAH Property for Channel Connect' API - Production",
+    "trackingId": "ACCCF520-D426-4C43-810D-090FA1A19131"
+  }
+}

@@ -92,18 +92,18 @@ const SUPPLEMENT_CODES = [
   '1267547',
 ];
 
-const SHARED_API_URL = process.env.TBO_SHARED_API_URL || 'https://sharedapi.tektravels.com/SharedData.svc/rest/Authenticate';
-const SEARCH_API_URL = process.env.TBO_SEARCH_API_URL || 'https://affiliate.tektravels.com/HotelAPI/Search';
-const PREBOOK_API_URL = process.env.TBO_PREBOOK_API_URL || 'https://affiliate.tektravels.com/HotelAPI/PreBook';
-const BOOK_API_URL = process.env.TBO_BOOK_API_URL || 'https://hotelbe.tektravels.com/hotelservice.svc/rest/book';
-const DETAIL_API_URL = process.env.TBO_DETAIL_API_URL || 'https://hotelbe.tektravels.com/hotelservice.svc/rest/Getbookingdetail';
-const VOUCHER_API_URL = process.env.TBO_VOUCHER_API_URL || 'https://hotelbe.tektravels.com/hotelservice.svc/rest/GenerateVoucher';
-const CANCEL_API_URL = process.env.TBO_CANCEL_API_URL || 'https://hotelbe.tektravels.com/hotelservice.svc/rest/SendChangeRequest';
+const SHARED_API_URL = process.env.TBO_SHARED_API_URL || 'https://api.travelboutiqueonline.com/SharedAPI/SharedData.svc/rest/Authenticate';
+const SEARCH_API_URL = process.env.TBO_SEARCH_API_URL || 'https://affiliate.travelboutiqueonline.com/HotelAPI/Search';
+const PREBOOK_API_URL = process.env.TBO_PREBOOK_API_URL || 'https://affiliate.travelboutiqueonline.com/HotelAPI/PreBook';
+const BOOK_API_URL = process.env.TBO_BOOK_API_URL || 'https://hotelbooking.travelboutiqueonline.com/HotelAPI_V10/HotelService.svc/rest/book';
+const DETAIL_API_URL = process.env.TBO_DETAIL_API_URL || 'https://hotelbooking.travelboutiqueonline.com/HotelAPI_V10/HotelService.svc/rest/Getbookingdetail';
+const VOUCHER_API_URL = process.env.TBO_VOUCHER_API_URL || 'https://hotelbooking.travelboutiqueonline.com/HotelAPI_V10/HotelService.svc/rest/GenerateVoucher';
+const CANCEL_API_URL = process.env.TBO_CANCEL_API_URL || 'https://hotelbooking.travelboutiqueonline.com/HotelAPI_V10/HotelService.svc/rest/SendChangeRequest';
 
-const TBO_USERNAME = process.env.TBO_API_USERNAME || process.env.TBO_USERNAME || 'Doview';
-const TBO_PASSWORD = process.env.TBO_API_PASSWORD || process.env.TBO_PASSWORD || 'Doview@12345';
-const TBO_CLIENT_ID = process.env.TBO_CLIENT_ID || 'ApiIntegrationNew';
-const END_USER_IP = process.env.CERT_END_USER_IP || process.env.TBO_END_USER_IP || '192.168.1.1';
+const TBO_USERNAME = process.env.TBO_API_USERNAME || process.env.TBO_USERNAME || 'IXMD112';
+const TBO_PASSWORD = process.env.TBO_API_PASSWORD || process.env.TBO_PASSWORD || 'api-11#M$new';
+const TBO_CLIENT_ID = process.env.TBO_CLIENT_ID || 'tboprod';
+const END_USER_IP = process.env.CERT_END_USER_IP || process.env.TBO_END_USER_IP || '134.209.145.185';
 const HTTP_TIMEOUT_MS = Number(process.env.CERT_HTTP_TIMEOUT_MS || 180000);
 
 function ensureDir(dirPath: string) {

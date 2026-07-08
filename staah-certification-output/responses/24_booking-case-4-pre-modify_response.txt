@@ -1,2 +1,0 @@
-Response Status: BLOCKED
-Blocked: Blocked: the repo does not contain a verified request contract, reusable local caller, or captured booking identifiers/session flow for the external STAAH booking-side API. Local custom reservation adapter routes are intentionally excluded from certification-safe claims.

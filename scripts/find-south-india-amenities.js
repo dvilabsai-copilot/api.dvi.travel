@@ -16,13 +16,15 @@ require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') }
 
 const axios = require('axios');
 
-const STATIC_BASE = 'http://api.tbotechnology.in/TBOHolidays_HotelAPI';
-const SEARCH_URL = 'https://affiliate.tektravels.com/HotelAPI/Search';
-const PREBOOK_URL = 'https://affiliate.tektravels.com/HotelAPI/PreBook';
+const STATIC_BASE = process.env.TBO_STATIC_BASE_URL || 'http://affiliate.travelboutiqueonline.com/TBOHolidays_HotelAPI';
+const SEARCH_URL = process.env.TBO_SEARCH_URL || 'https://affiliate.travelboutiqueonline.com/HotelAPI/Search';
+const PREBOOK_URL = process.env.TBO_PREBOOK_URL || 'https://affiliate.travelboutiqueonline.com/HotelAPI/PreBook';
 
-const STATIC_BASIC = `Basic ${Buffer.from('TBOStaticAPITest:Tbo@11530818').toString('base64')}`;
-const AFFILIATE_USER = process.env.TBO_API_USERNAME || process.env.TBO_USERNAME || 'Doview';
-const AFFILIATE_PASS = process.env.TBO_API_PASSWORD || process.env.TBO_PASSWORD || 'Doview@12345';
+const STATIC_USER = process.env.TBO_STATIC_USERNAME || process.env.TBO_USERNAME || 'IXMD112';
+const STATIC_PASS = process.env.TBO_STATIC_PASSWORD || process.env.TBO_PASSWORD || 'api-11#M$new';
+const STATIC_BASIC = `Basic ${Buffer.from(`${STATIC_USER}:${STATIC_PASS}`).toString('base64')}`;
+const AFFILIATE_USER = process.env.TBO_API_USERNAME || process.env.TBO_USERNAME || 'IXMD112';
+const AFFILIATE_PASS = process.env.TBO_API_PASSWORD || process.env.TBO_PASSWORD || 'api-11#M$new';
 const AFFILIATE_BASIC = `Basic ${Buffer.from(`${AFFILIATE_USER}:${AFFILIATE_PASS}`).toString('base64')}`;
 
 const TARGET_CITY_KEYWORDS = ['chennai', 'kochi', 'pondicherry', 'puducherry'];

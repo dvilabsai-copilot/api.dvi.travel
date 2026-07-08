@@ -12,8 +12,8 @@ import { PrismaService } from '../../../prisma.service';
 @Injectable()
 export class TboSoapSyncService {
   private logger = new Logger(TboSoapSyncService.name);
-  private readonly USERNAME = process.env.TBO_USERNAME || 'Doview';
-  private readonly PASSWORD = process.env.TBO_PASSWORD || 'Doview@12345';
+  private readonly USERNAME = process.env.TBO_USERNAME || 'IXMD112';
+  private readonly PASSWORD = process.env.TBO_PASSWORD || 'api-11#M$new';
   private http: AxiosInstance = axios;
 
   // TBO City Code → DVI City Name mapping (real TBO codes from API)

@@ -27,12 +27,13 @@ function parseArgs(argv) {
 }
 
 function getStaticAuth() {
-  const username = process.env.TBO_STATIC_USERNAME || 'TBOStaticAPITest';
+  const username = process.env.TBO_STATIC_USERNAME || 'IXMD112';
   const password =
     process.env.TBO_STATIC_PASSWORD ||
     process.env.TBO_STATIC_API_PASSWORD ||
     process.env.TBO_STATIC_PASS ||
-    '';
+    process.env.TBO_PASSWORD ||
+    'api-11#M$new';
 
   if (!password) {
     throw new Error(
@@ -56,7 +57,7 @@ function parseStarRating(starValue) {
 }
 
 async function fetchHotelCodeList(cityCode) {
-  const baseUrl = process.env.TBO_STATIC_BASE_URL || 'http://api.tbotechnology.in/TBOHolidays_HotelAPI';
+  const baseUrl = process.env.TBO_STATIC_BASE_URL || 'http://affiliate.travelboutiqueonline.com/TBOHolidays_HotelAPI';
   const response = await axios.post(
     `${baseUrl}/TBOHotelCodeList`,
     {

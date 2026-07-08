@@ -1,0 +1,26 @@
+{
+  "label": "05_search",
+  "method": "POST",
+  "url": "https://affiliate.travelboutiqueonline.com/HotelAPI/Search",
+  "headers": {
+    "Authorization": "Basic SVhNRDExMjphcGktMTEjTSRuZXc=",
+    "Content-Type": "application/json",
+    "Accept": "application/json"
+  },
+  "body": {
+    "CheckIn": "2026-07-23",
+    "CheckOut": "2026-07-24",
+    "HotelCodes": "1011647,1016054",
+    "GuestNationality": "IN",
+    "NoOfRooms": 1,
+    "PaxRooms": [
+      {
+        "Adults": 1,
+        "Children": 0,
+        "ChildrenAges": []
+      }
+    ],
+    "ResponseTime": 23,
+    "IsDetailedResponse": true
+  }
+}

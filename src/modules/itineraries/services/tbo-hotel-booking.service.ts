@@ -151,12 +151,12 @@ export class TboHotelBookingService {
   private tokenExpiry: Date | null = null;
   private readonly authTokenTtlMs = 10 * 60 * 1000;
 
-  private readonly TBO_USERNAME = process.env.TBO_API_USERNAME || process.env.TBO_USERNAME || 'Doview';
-  private readonly TBO_PASSWORD = process.env.TBO_API_PASSWORD || process.env.TBO_PASSWORD || 'Doview@12345';
-  private readonly TBO_CLIENT_ID = process.env.TBO_CLIENT_ID || 'ApiIntegrationNew';
-  private readonly AUTH_URL = 'https://sharedapi.tektravels.com/SharedData.svc/rest/Authenticate';
-  private readonly PREBOOK_URL = 'https://affiliate.tektravels.com/HotelAPI/PreBook';
-  private readonly BOOK_URL = 'https://hotelbe.tektravels.com/hotelservice.svc/rest/book';
+  private readonly TBO_USERNAME = process.env.TBO_API_USERNAME || process.env.TBO_USERNAME || 'IXMD112';
+  private readonly TBO_PASSWORD = process.env.TBO_API_PASSWORD || process.env.TBO_PASSWORD || 'api-11#M$new';
+  private readonly TBO_CLIENT_ID = process.env.TBO_CLIENT_ID || 'tboprod';
+  private readonly AUTH_URL = process.env.TBO_AUTH_URL || 'https://api.travelboutiqueonline.com/SharedAPI/SharedData.svc/rest/Authenticate';
+  private readonly PREBOOK_URL = process.env.TBO_PREBOOK_URL || 'https://affiliate.travelboutiqueonline.com/HotelAPI/PreBook';
+  private readonly BOOK_URL = process.env.TBO_BOOK_URL || 'https://hotelbooking.travelboutiqueonline.com/HotelAPI_V10/HotelService.svc/rest/book';
   private readonly USE_MOCK_TBO = process.env.TBO_USE_MOCK === 'true' || false;
 
   constructor(
@@ -311,7 +311,7 @@ export class TboHotelBookingService {
   async bookHotel(
     preBookResponse: PreBookResponse,
     selection: TboHotelSelection,
-    endUserIp: string = '192.168.1.1',
+    endUserIp: string = process.env.TBO_END_USER_IP || '134.209.145.185',
   ): Promise<BookResponse> {
     try {
       this.validateSelection(selection);

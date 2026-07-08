@@ -1,0 +1,1485 @@
+{
+  "label": "05_search",
+  "status": 200,
+  "statusText": "OK",
+  "headers": {
+    "connection": "keep-alive",
+    "content-encoding": "gzip",
+    "content-length": "1961",
+    "content-type": "application/json",
+    "date": "Wed, 08 Jul 2026 10:11:15 GMT",
+    "sessionid": "59a45c31-7ab5-11f1-93ff-3603d97837fd",
+    "vary": "Accept-Encoding"
+  },
+  "bodyText": "{\"Status\":{\"Code\":200,\"Description\":\"Successful\"},\"HotelResult\":[{\"HotelCode\":\"1011647\",\"Currency\":\"INR\",\"Rooms\":[{\"Name\":[\"Club Double Room\"],\"BookingCode\":\"1011647!TB!2!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!\",\"Inclusion\":\"Room Only\",\"DayRates\":[[{\"BasePrice\":4666.96}]],\"TotalFare\":4965.35,\"TotalTax\":298.39,\"CancelPolicies\":[{\"FromDate\":\"07-07-2026 00:00:00\",\"ChargeType\":\"Fixed\",\"CancellationCharge\":0},{\"FromDate\":\"22-07-2026 00:00:00\",\"ChargeType\":\"Fixed\",\"CancellationCharge\":4943.62}],\"MealType\":\"Room_Only\",\"IsRefundable\":true,\"WithTransfers\":false},{\"Name\":[\"Executive Double or Twin Room\"],\"BookingCode\":\"1011647!TB!4!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!\",\"Inclusion\":\"Room Only\",\"DayRates\":[[{\"BasePrice\":4666.96}]],\"TotalFare\":4965.35,\"TotalTax\":298.39,\"CancelPolicies\":[{\"FromDate\":\"07-07-2026 00:00:00\",\"ChargeType\":\"Fixed\",\"CancellationCharge\":0},{\"FromDate\":\"22-07-2026 00:00:00\",\"ChargeType\":\"Fixed\",\"CancellationCharge\":4943.62}],\"MealType\":\"Room_Only\",\"IsRefundable\":true,\"WithTransfers\":false},{\"Name\":[\"Executive Double or Twin Room\"],\"BookingCode\":\"1011647!TB!1!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!\",\"Inclusion\":\"Breakfast\",\"DayRates\":[[{\"BasePrice\":4734.59}]],\"TotalFare\":5037.3,\"TotalTax\":302.71,\"CancelPolicies\":[{\"FromDate\":\"07-07-2026 00:00:00\",\"ChargeType\":\"Percentage\",\"CancellationCharge\":100}],\"MealType\":\"BreakFast\",\"IsRefundable\":false,\"WithTransfers\":false},{\"Name\":[\"Club Double Room\"],\"BookingCode\":\"1011647!TB!3!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!\",\"Inclusion\":\"Breakfast\",\"DayRates\":[[{\"BasePrice\":4734.59}]],\"TotalFare\":5037.3,\"TotalTax\":302.71,\"CancelPolicies\":[{\"FromDate\":\"07-07-2026 00:00:00\",\"ChargeType\":\"Percentage\",\"CancellationCharge\":100}],\"MealType\":\"BreakFast\",\"IsRefundable\":false,\"WithTransfers\":false},{\"Name\":[\"Executive Room,1 Double Bed,NonSmoking\"],\"BookingCode\":\"1011647!TB!5!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!\",\"Inclusion\":\"Breakfast buffet,Free self parking\",\"DayRates\":[[{\"BasePrice\":5265.1}]],\"TotalFare\":5548.6,\"TotalTax\":283.5,\"RoomPromotion\":[\"Private sale\"],\"CancelPolicies\":[{\"FromDate\":\"07-07-2026 00:00:00\",\"ChargeType\":\"Fixed\",\"CancellationCharge\":0},{\"FromDate\":\"22-07-2026 00:00:00\",\"ChargeType\":\"Percentage\",\"CancellationCharge\":100}],\"MealType\":\"BreakFast\",\"IsRefundable\":true,\"WithTransfers\":false,\"BeddingGroup\":\"Bedding type is not guaranteed and it will be allocated by hotel based on availability\"},{\"Name\":[\"Club Room, 1 King Bed,NonSmoking\"],\"BookingCode\":\"1011647!TB!6!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!\",\"Inclusion\":\"Breakfast buffet,Free breakfast,Free self parking\",\"DayRates\":[[{\"BasePrice\":5717.67}]],\"TotalFare\":6032.67,\"TotalTax\":315,\"RoomPromotion\":[\"Private sale\"],\"CancelPolicies\":[{\"FromDate\":\"07-07-2026 00:00:00\",\"ChargeType\":\"Fixed\",\"CancellationCharge\":0},{\"FromDate\":\"22-07-2026 00:00:00\",\"ChargeType\":\"Percentage\",\"CancellationCharge\":100}],\"MealType\":\"BreakFast\",\"IsRefundable\":true,\"WithTransfers\":false}]},{\"HotelCode\":\"1016054\",\"Currency\":\"INR\",\"Rooms\":[{\"Name\":[\"Room, 1 King Bed,NonSmoking\"],\"BookingCode\":\"1016054!TB!11!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!\",\"Inclusion\":\"Free self parking\",\"DayRates\":[[{\"BasePrice\":14044.26}]],\"TotalFare\":16678.74,\"TotalTax\":2634.48,\"CancelPolicies\":[{\"FromDate\":\"07-07-2026 00:00:00\",\"ChargeType\":\"Fixed\",\"CancellationCharge\":0},{\"FromDate\":\"20-07-2026 00:00:00\",\"ChargeType\":\"Percentage\",\"CancellationCharge\":100}],\"MealType\":\"Room_Only\",\"IsRefundable\":true,\"WithTransfers\":false},{\"Name\":[\"Room, 2 Twin Beds,NonSmoking\"],\"BookingCode\":\"1016054!TB!1!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!\",\"Inclusion\":\"Free self parking\",\"DayRates\":[[{\"BasePrice\":14044.26}]],\"TotalFare\":16678.74,\"TotalTax\":2634.48,\"CancelPolicies\":[{\"FromDate\":\"07-07-2026 00:00:00\",\"ChargeType\":\"Fixed\",\"CancellationCharge\":0},{\"FromDate\":\"20-07-2026 00:00:00\",\"ChargeType\":\"Percentage\",\"CancellationCharge\":100}],\"MealType\":\"Room_Only\",\"IsRefundable\":true,\"WithTransfers\":false},{\"Name\":[\"Room, 1 King Bed\"],\"BookingCode\":\"1016054!TB!25!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!\",\"Inclusion\":\"Free high-speed internet, Free self parking, Room Only\",\"DayRates\":[[{\"BasePrice\":14419.7}]],\"TotalFare\":17131,\"TotalTax\":2711.31,\"CancelPolicies\":[{\"FromDate\":\"07-07-2026 00:00:00\",\"ChargeType\":\"Fixed\",\"CancellationCharge\":0},{\"FromDate\":\"21-07-2026 00:00:00\",\"ChargeType\":\"Fixed\",\"CancellationCharge\":17052.22}],\"MealType\":\"Room_Only\",\"IsRefundable\":true,\"WithTransfers\":false},{\"Name\":[\"Room, 2 Twin Beds\"],\"BookingCode\":\"1016054!TB!34!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!\",\"Inclusion\":\"Free high-speed internet, Free self parking, Room Only\",\"DayRates\":[[{\"BasePrice\":14419.7}]],\"TotalFare\":17131,\"TotalTax\":2711.31,\"CancelPolicies\":[{\"FromDate\":\"07-07-2026 00:00:00\",\"ChargeType\":\"Fixed\",\"CancellationCharge\":0},{\"FromDate\":\"21-07-2026 00:00:00\",\"ChargeType\":\"Fixed\",\"CancellationCharge\":17052.22}],\"MealType\":\"Room_Only\",\"IsRefundable\":true,\"WithTransfers\":false},{\"Name\":[\"Room, 2 Twin Beds,NonSmoking\"],\"BookingCode\":\"1016054!TB!3!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!\",\"Inclusion\":\"Breakfast buffet,Free self parking\",\"DayRates\":[[{\"BasePrice\":14853.62}]],\"TotalFare\":17690.76,\"TotalTax\":2837.14,\"CancelPolicies\":[{\"FromDate\":\"07-07-2026 00:00:00\",\"ChargeType\":\"Fixed\",\"CancellationCharge\":0},{\"FromDate\":\"20-07-2026 00:00:00\",\"ChargeType\":\"Percentage\",\"CancellationCharge\":100}],\"MealType\":\"BreakFast\",\"IsRefundable\":true,\"WithTransfers\":false},{\"Name\":[\"Room, 1 King Bed,NonSmoking\"],\"BookingCode\":\"1016054!TB!41!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!\",\"Inclusion\":\"Breakfast buffet,Free self parking\",\"DayRates\":[[{\"BasePrice\":14853.62}]],\"TotalFare\":17690.76,\"TotalTax\":2837.14,\"CancelPolicies\":[{\"FromDate\":\"07-07-2026 00:00:00\",\"ChargeType\":\"Fixed\",\"CancellationCharge\":0},{\"FromDate\":\"20-07-2026 00:00:00\",\"ChargeType\":\"Percentage\",\"CancellationCharge\":100}],\"MealType\":\"BreakFast\",\"IsRefundable\":true,\"WithTransfers\":false},{\"Name\":[\"Room, 2 Twin Beds\"],\"BookingCode\":\"1016054!TB!32!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!\",\"Inclusion\":\"Free high-speed internet, Free self parking, Breakfast\",\"DayRates\":[[{\"BasePrice\":15237.75}]],\"TotalFare\":18157.4,\"TotalTax\":2919.64,\"CancelPolicies\":[{\"FromDate\":\"07-07-2026 00:00:00\",\"ChargeType\":\"Percentage\",\"CancellationCharge\":100}],\"MealType\":\"BreakFast\",\"IsRefundable\":false,\"WithTransfers\":false},{\"Name\":[\"Room, 1 King Bed\"],\"BookingCode\":\"1016054!TB!4!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!\",\"Inclusion\":\"Free high-speed internet, Free self parking, Breakfast\",\"DayRates\":[[{\"BasePrice\":15237.75}]],\"TotalFare\":18157.4,\"TotalTax\":2919.64,\"CancelPolicies\":[{\"FromDate\":\"07-07-2026 00:00:00\",\"ChargeType\":\"Percentage\",\"CancellationCharge\":100}],\"MealType\":\"BreakFast\",\"IsRefundable\":false,\"WithTransfers\":false},{\"Name\":[\"Double room King bed\"],\"BookingCode\":\"1016054!TB!40!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!\",\"Inclusion\":\"Room Only\",\"DayRates\":[[{\"BasePrice\":18160.48}]],\"TotalFare\":18286.21,\"TotalTax\":125.73,\"CancelPolicies\":[{\"FromDate\":\"07-07-2026 00:00:00\",\"ChargeType\":\"Fixed\",\"CancellationCharge\":0},{\"FromDate\":\"20-07-2026 00:00:00\",\"ChargeType\":\"Percentage\",\"CancellationCharge\":100}],\"MealType\":\"Room_Only\",\"IsRefundable\":true,\"WithTransfers\":false},{\"Name\":[\"Twin room - De Luxe\"],\"BookingCode\":\"1016054!TB!42!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!\",\"Inclusion\":\"Room Only\",\"DayRates\":[[{\"BasePrice\":18699.2}]],\"TotalFare\":18828.66,\"TotalTax\":129.46,\"CancelPolicies\":[{\"FromDate\":\"07-07-2026 00:00:00\",\"ChargeType\":\"Fixed\",\"CancellationCharge\":0},{\"FromDate\":\"20-07-2026 00:00:00\",\"ChargeType\":\"Percentage\",\"CancellationCharge\":100}],\"MealType\":\"Room_Only\",\"IsRefundable\":true,\"WithTransfers\":false},{\"Name\":[\"Twin room\"],\"BookingCode\":\"1016054!TB!28!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!\",\"Inclusion\":\"Breakfast\",\"DayRates\":[[{\"BasePrice\":19106.88}]],\"TotalFare\":19239.16,\"TotalTax\":132.28,\"CancelPolicies\":[{\"FromDate\":\"07-07-2026 00:00:00\",\"ChargeType\":\"Fixed\",\"CancellationCharge\":0},{\"FromDate\":\"20-07-2026 00:00:00\",\"ChargeType\":\"Percentage\",\"CancellationCharge\":100}],\"MealType\":\"BreakFast\",\"IsRefundable\":true,\"WithTransfers\":false},{\"Name\":[\"Double room King bed\"],\"BookingCode\":\"1016054!TB!8!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!\",\"Inclusion\":\"Breakfast\",\"DayRates\":[[{\"BasePrice\":19107.92}]],\"TotalFare\":19240.21,\"TotalTax\":132.29,\"CancelPolicies\":[{\"FromDate\":\"07-07-2026 00:00:00\",\"ChargeType\":\"Fixed\",\"CancellationCharge\":0},{\"FromDate\":\"20-07-2026 00:00:00\",\"ChargeType\":\"Percentage\",\"CancellationCharge\":100}],\"MealType\":\"BreakFast\",\"IsRefundable\":true,\"WithTransfers\":false},{\"Name\":[\"Room, 1 King Bed,NonSmoking\"],\"BookingCode\":\"1016054!TB!7!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!\",\"Inclusion\":\"Free dinner,Breakfast buffet,Free self parking\",\"DayRates\":[[{\"BasePrice\":16246.15}]],\"TotalFare\":19349.27,\"TotalTax\":3103.12,\"CancelPolicies\":[{\"FromDate\":\"07-07-2026 00:00:00\",\"ChargeType\":\"Fixed\",\"CancellationCharge\":0},{\"FromDate\":\"20-07-2026 00:00:00\",\"ChargeType\":\"Percentage\",\"CancellationCharge\":100}],\"MealType\":\"Half_Board\",\"IsRefundable\":true,\"WithTransfers\":false},{\"Name\":[\"Room, 1 King Bed\"],\"BookingCode\":\"1016054!TB!19!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!\",\"Inclusion\":\"Free high-speed internet, Free self parking, Breakfast and Dinner\",\"DayRates\":[[{\"BasePrice\":16666.29}]],\"TotalFare\":19859.66,\"TotalTax\":3193.37,\"CancelPolicies\":[{\"FromDate\":\"07-07-2026 00:00:00\",\"ChargeType\":\"Percentage\",\"CancellationCharge\":100}],\"MealType\":\"Room_Only\",\"IsRefundable\":false,\"WithTransfers\":false},{\"Name\":[\"Twin room - De Luxe\"],\"BookingCode\":\"1016054!TB!26!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!\",\"Inclusion\":\"Breakfast\",\"DayRates\":[[{\"BasePrice\":19942}]],\"TotalFare\":20080.06,\"TotalTax\":138.06,\"CancelPolicies\":[{\"FromDate\":\"07-07-2026 00:00:00\",\"ChargeType\":\"Fixed\",\"CancellationCharge\":0},{\"FromDate\":\"20-07-2026 00:00:00\",\"ChargeType\":\"Percentage\",\"CancellationCharge\":100}],\"MealType\":\"BreakFast\",\"IsRefundable\":true,\"WithTransfers\":false},{\"Name\":[\"Double room King bed\"],\"BookingCode\":\"1016054!TB!12!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!\",\"Inclusion\":\"Half Board\",\"DayRates\":[[{\"BasePrice\":21814}]],\"TotalFare\":21965.02,\"TotalTax\":151.02,\"CancelPolicies\":[{\"FromDate\":\"07-07-2026 00:00:00\",\"ChargeType\":\"Fixed\",\"CancellationCharge\":0},{\"FromDate\":\"20-07-2026 00:00:00\",\"ChargeType\":\"Percentage\",\"CancellationCharge\":100}],\"MealType\":\"Half_Board\",\"IsRefundable\":true,\"WithTransfers\":false},{\"Name\":[\"Executive Room, 1 King Bed,NonSmoking\"],\"BookingCode\":\"1016054!TB!17!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!\",\"Inclusion\":\"Free self parking\",\"DayRates\":[[{\"BasePrice\":20130.1}]],\"TotalFare\":23906.19,\"TotalTax\":3776.09,\"CancelPolicies\":[{\"FromDate\":\"07-07-2026 00:00:00\",\"ChargeType\":\"Fixed\",\"CancellationCharge\":0},{\"FromDate\":\"20-07-2026 00:00:00\",\"ChargeType\":\"Percentage\",\"CancellationCharge\":100}],\"MealType\":\"Room_Only\",\"IsRefundable\":true,\"WithTransfers\":false},{\"Name\":[\"Executive Room, 2 Twin Beds,NonSmoking\"],\"BookingCode\":\"1016054!TB!16!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!\",\"Inclusion\":\"Free self parking\",\"DayRates\":[[{\"BasePrice\":20130.1}]],\"TotalFare\":23906.19,\"TotalTax\":3776.09,\"CancelPolicies\":[{\"FromDate\":\"07-07-2026 00:00:00\",\"ChargeType\":\"Fixed\",\"CancellationCharge\":0},{\"FromDate\":\"20-07-2026 00:00:00\",\"ChargeType\":\"Percentage\",\"CancellationCharge\":100}],\"MealType\":\"Room_Only\",\"IsRefundable\":true,\"WithTransfers\":false},{\"Name\":[\"Executive Room, 2 Twin Beds\"],\"BookingCode\":\"1016054!TB!2!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!\",\"Inclusion\":\"Free high-speed internet, Free self parking, Room Only\",\"DayRates\":[[{\"BasePrice\":20668.22}]],\"TotalFare\":24554.43,\"TotalTax\":3886.2,\"CancelPolicies\":[{\"FromDate\":\"07-07-2026 00:00:00\",\"ChargeType\":\"Fixed\",\"CancellationCharge\":0},{\"FromDate\":\"21-07-2026 00:00:00\",\"ChargeType\":\"Fixed\",\"CancellationCharge\":24440.97}],\"MealType\":\"Room_Only\",\"IsRefundable\":true,\"WithTransfers\":false},{\"Name\":[\"Executive Room, 1 King Bed\"],\"BookingCode\":\"1016054!TB!18!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!\",\"Inclusion\":\"Free high-speed internet, Free self parking, Room Only\",\"DayRates\":[[{\"BasePrice\":20668.22}]],\"TotalFare\":24554.43,\"TotalTax\":3886.2,\"CancelPolicies\":[{\"FromDate\":\"07-07-2026 00:00:00\",\"ChargeType\":\"Fixed\",\"CancellationCharge\":0},{\"FromDate\":\"21-07-2026 00:00:00\",\"ChargeType\":\"Fixed\",\"CancellationCharge\":24440.97}],\"MealType\":\"Room_Only\",\"IsRefundable\":true,\"WithTransfers\":false},{\"Name\":[\"Executive Room, 1 King Bed,NonSmoking\"],\"BookingCode\":\"1016054!TB!39!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!\",\"Inclusion\":\"Breakfast buffet,Free self parking\",\"DayRates\":[[{\"BasePrice\":20887.9}]],\"TotalFare\":24877.62,\"TotalTax\":3989.72,\"CancelPolicies\":[{\"FromDate\":\"07-07-2026 00:00:00\",\"ChargeType\":\"Fixed\",\"CancellationCharge\":0},{\"FromDate\":\"20-07-2026 00:00:00\",\"ChargeType\":\"Percentage\",\"CancellationCharge\":100}],\"MealType\":\"BreakFast\",\"IsRefundable\":true,\"WithTransfers\":false},{\"Name\":[\"Executive Room, 2 Twin Beds,NonSmoking\"],\"BookingCode\":\"1016054!TB!14!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!\",\"Inclusion\":\"Breakfast buffet,Free self parking\",\"DayRates\":[[{\"BasePrice\":20887.9}]],\"TotalFare\":24877.62,\"TotalTax\":3989.72,\"CancelPolicies\":[{\"FromDate\":\"07-07-2026 00:00:00\",\"ChargeType\":\"Fixed\",\"CancellationCharge\":0},{\"FromDate\":\"20-07-2026 00:00:00\",\"ChargeType\":\"Percentage\",\"CancellationCharge\":100}],\"MealType\":\"BreakFast\",\"IsRefundable\":true,\"WithTransfers\":false},{\"Name\":[\"Executive Room, 2 Twin Beds\"],\"BookingCode\":\"1016054!TB!24!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!\",\"Inclusion\":\"Free high-speed internet, Free self parking, Breakfast\",\"DayRates\":[[{\"BasePrice\":21428.09}]],\"TotalFare\":25533.84,\"TotalTax\":4105.75,\"CancelPolicies\":[{\"FromDate\":\"07-07-2026 00:00:00\",\"ChargeType\":\"Percentage\",\"CancellationCharge\":100}],\"MealType\":\"BreakFast\",\"IsRefundable\":false,\"WithTransfers\":false},{\"Name\":[\"Executive Room, 1 King Bed\"],\"BookingCode\":\"1016054!TB!13!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!\",\"Inclusion\":\"Free high-speed internet, Free self parking, Breakfast\",\"DayRates\":[[{\"BasePrice\":21428.09}]],\"TotalFare\":25533.84,\"TotalTax\":4105.75,\"CancelPolicies\":[{\"FromDate\":\"07-07-2026 00:00:00\",\"ChargeType\":\"Percentage\",\"CancellationCharge\":100}],\"MealType\":\"BreakFast\",\"IsRefundable\":false,\"WithTransfers\":false},{\"Name\":[\"Executive Studio Suite, 1 King Bed,NonSmoking\"],\"BookingCode\":\"1016054!TB!10!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!\",\"Inclusion\":\"Free self parking\",\"DayRates\":[[{\"BasePrice\":22470.82}]],\"TotalFare\":26685.98,\"TotalTax\":4215.17,\"CancelPolicies\":[{\"FromDate\":\"07-07-2026 00:00:00\",\"ChargeType\":\"Fixed\",\"CancellationCharge\":0},{\"FromDate\":\"20-07-2026 00:00:00\",\"ChargeType\":\"Percentage\",\"CancellationCharge\":100}],\"MealType\":\"Room_Only\",\"IsRefundable\":true,\"WithTransfers\":false},{\"Name\":[\"Double room King bed - Executive - Lounge Access\"],\"BookingCode\":\"1016054!TB!37!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!\",\"Inclusion\":\"Room Only\",\"DayRates\":[[{\"BasePrice\":26798.72}]],\"TotalFare\":26984.25,\"TotalTax\":185.53,\"CancelPolicies\":[{\"FromDate\":\"07-07-2026 00:00:00\",\"ChargeType\":\"Fixed\",\"CancellationCharge\":0},{\"FromDate\":\"20-07-2026 00:00:00\",\"ChargeType\":\"Percentage\",\"CancellationCharge\":100}],\"MealType\":\"Room_Only\",\"IsRefundable\":true,\"WithTransfers\":false},{\"Name\":[\"Twin room - Executive - Lounge access\"],\"BookingCode\":\"1016054!TB!23!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!\",\"Inclusion\":\"Room Only\",\"DayRates\":[[{\"BasePrice\":26798.72}]],\"TotalFare\":26984.25,\"TotalTax\":185.53,\"CancelPolicies\":[{\"FromDate\":\"07-07-2026 00:00:00\",\"ChargeType\":\"Fixed\",\"CancellationCharge\":0},{\"FromDate\":\"20-07-2026 00:00:00\",\"ChargeType\":\"Percentage\",\"CancellationCharge\":100}],\"MealType\":\"Room_Only\",\"IsRefundable\":true,\"WithTransfers\":false},{\"Name\":[\"Executive Studio Suite, 1 King Bed\"],\"BookingCode\":\"1016054!TB!29!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!\",\"Inclusion\":\"Free high-speed internet, Free self parking, Room Only\",\"DayRates\":[[{\"BasePrice\":23071.52}]],\"TotalFare\":27409.6,\"TotalTax\":4338.08,\"CancelPolicies\":[{\"FromDate\":\"07-07-2026 00:00:00\",\"ChargeType\":\"Fixed\",\"CancellationCharge\":0},{\"FromDate\":\"21-07-2026 00:00:00\",\"ChargeType\":\"Fixed\",\"CancellationCharge\":27283.34}],\"MealType\":\"Room_Only\",\"IsRefundable\":true,\"WithTransfers\":false},{\"Name\":[\"Executive Studio Suite, 1 King Bed,NonSmoking\"],\"BookingCode\":\"1016054!TB!5!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!\",\"Inclusion\":\"Breakfast buffet,Free self parking\",\"DayRates\":[[{\"BasePrice\":23208.78}]],\"TotalFare\":27641.81,\"TotalTax\":4433.03,\"CancelPolicies\":[{\"FromDate\":\"07-07-2026 00:00:00\",\"ChargeType\":\"Fixed\",\"CancellationCharge\":0},{\"FromDate\":\"20-07-2026 00:00:00\",\"ChargeType\":\"Percentage\",\"CancellationCharge\":100}],\"MealType\":\"BreakFast\",\"IsRefundable\":true,\"WithTransfers\":false},{\"Name\":[\"Twin room - Executive - Lounge access\"],\"BookingCode\":\"1016054!TB!33!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!\",\"Inclusion\":\"Breakfast\",\"DayRates\":[[{\"BasePrice\":28057.12}]],\"TotalFare\":28251.36,\"TotalTax\":194.24,\"CancelPolicies\":[{\"FromDate\":\"07-07-2026 00:00:00\",\"ChargeType\":\"Fixed\",\"CancellationCharge\":0},{\"FromDate\":\"20-07-2026 00:00:00\",\"ChargeType\":\"Percentage\",\"CancellationCharge\":100}],\"MealType\":\"BreakFast\",\"IsRefundable\":true,\"WithTransfers\":false},{\"Name\":[\"Double room King bed - Executive - Lounge Access\"],\"BookingCode\":\"1016054!TB!35!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!\",\"Inclusion\":\"Breakfast\",\"DayRates\":[[{\"BasePrice\":28057.12}]],\"TotalFare\":28251.36,\"TotalTax\":194.24,\"CancelPolicies\":[{\"FromDate\":\"07-07-2026 00:00:00\",\"ChargeType\":\"Fixed\",\"CancellationCharge\":0},{\"FromDate\":\"20-07-2026 00:00:00\",\"ChargeType\":\"Percentage\",\"CancellationCharge\":100}],\"MealType\":\"BreakFast\",\"IsRefundable\":true,\"WithTransfers\":false},{\"Name\":[\"Executive Studio Suite, 1 King Bed\"],\"BookingCode\":\"1016054!TB!27!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!\",\"Inclusion\":\"Free high-speed internet, Free self parking, Breakfast\",\"DayRates\":[[{\"BasePrice\":23808.97}]],\"TotalFare\":28370.93,\"TotalTax\":4561.96,\"CancelPolicies\":[{\"FromDate\":\"07-07-2026 00:00:00\",\"ChargeType\":\"Percentage\",\"CancellationCharge\":100}],\"MealType\":\"BreakFast\",\"IsRefundable\":false,\"WithTransfers\":false},{\"Name\":[\"Studio - Suite - King bed - Executive - Lounge access\"],\"BookingCode\":\"1016054!TB!36!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!\",\"Inclusion\":\"Room Only\",\"DayRates\":[[{\"BasePrice\":29912.48}]],\"TotalFare\":30119.57,\"TotalTax\":207.09,\"CancelPolicies\":[{\"FromDate\":\"07-07-2026 00:00:00\",\"ChargeType\":\"Fixed\",\"CancellationCharge\":0},{\"FromDate\":\"20-07-2026 00:00:00\",\"ChargeType\":\"Percentage\",\"CancellationCharge\":100}],\"MealType\":\"Room_Only\",\"IsRefundable\":true,\"WithTransfers\":false},{\"Name\":[\"Executive Suite, 1 King Bed,NonSmoking\"],\"BookingCode\":\"1016054!TB!22!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!\",\"Inclusion\":\"Free self parking\",\"DayRates\":[[{\"BasePrice\":26215.95}]],\"TotalFare\":31133.65,\"TotalTax\":4917.7,\"CancelPolicies\":[{\"FromDate\":\"07-07-2026 00:00:00\",\"ChargeType\":\"Fixed\",\"CancellationCharge\":0},{\"FromDate\":\"20-07-2026 00:00:00\",\"ChargeType\":\"Percentage\",\"CancellationCharge\":100}],\"MealType\":\"Room_Only\",\"IsRefundable\":true,\"WithTransfers\":false},{\"Name\":[\"Studio - Suite - King bed - Executive - Lounge access\"],\"BookingCode\":\"1016054!TB!9!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!\",\"Inclusion\":\"Breakfast\",\"DayRates\":[[{\"BasePrice\":31170.88}]],\"TotalFare\":31386.68,\"TotalTax\":215.8,\"CancelPolicies\":[{\"FromDate\":\"07-07-2026 00:00:00\",\"ChargeType\":\"Fixed\",\"CancellationCharge\":0},{\"FromDate\":\"20-07-2026 00:00:00\",\"ChargeType\":\"Percentage\",\"CancellationCharge\":100}],\"MealType\":\"BreakFast\",\"IsRefundable\":true,\"WithTransfers\":false},{\"Name\":[\"Executive Suite, 1 King Bed\"],\"BookingCode\":\"1016054!TB!38!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!\",\"Inclusion\":\"Free high-speed internet, Free self parking, Room Only\",\"DayRates\":[[{\"BasePrice\":26916.77}]],\"TotalFare\":31977.87,\"TotalTax\":5061.1,\"CancelPolicies\":[{\"FromDate\":\"07-07-2026 00:00:00\",\"ChargeType\":\"Fixed\",\"CancellationCharge\":0},{\"FromDate\":\"21-07-2026 00:00:00\",\"ChargeType\":\"Fixed\",\"CancellationCharge\":31830.74}],\"MealType\":\"Room_Only\",\"IsRefundable\":true,\"WithTransfers\":false},{\"Name\":[\"Executive Suite, 1 King Bed,NonSmoking\"],\"BookingCode\":\"1016054!TB!6!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!\",\"Inclusion\":\"Breakfast buffet,Free self parking\",\"DayRates\":[[{\"BasePrice\":26922.18}]],\"TotalFare\":32064.49,\"TotalTax\":5142.31,\"CancelPolicies\":[{\"FromDate\":\"07-07-2026 00:00:00\",\"ChargeType\":\"Fixed\",\"CancellationCharge\":0},{\"FromDate\":\"20-07-2026 00:00:00\",\"ChargeType\":\"Percentage\",\"CancellationCharge\":100}],\"MealType\":\"BreakFast\",\"IsRefundable\":true,\"WithTransfers\":false},{\"Name\":[\"Executive Suite, 1 King Bed\"],\"BookingCode\":\"1016054!TB!30!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!\",\"Inclusion\":\"Free high-speed internet, Free self parking, Breakfast\",\"DayRates\":[[{\"BasePrice\":27618.43}]],\"TotalFare\":32910.29,\"TotalTax\":5291.86,\"CancelPolicies\":[{\"FromDate\":\"07-07-2026 00:00:00\",\"ChargeType\":\"Percentage\",\"CancellationCharge\":100}],\"MealType\":\"BreakFast\",\"IsRefundable\":false,\"WithTransfers\":false},{\"Name\":[\"Suite - Executive - King bed - Business - Lounge Access\"],\"BookingCode\":\"1016054!TB!20!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!\",\"Inclusion\":\"Room Only\",\"DayRates\":[[{\"BasePrice\":34897.2}]],\"TotalFare\":35138.8,\"TotalTax\":241.6,\"CancelPolicies\":[{\"FromDate\":\"07-07-2026 00:00:00\",\"ChargeType\":\"Fixed\",\"CancellationCharge\":0},{\"FromDate\":\"20-07-2026 00:00:00\",\"ChargeType\":\"Percentage\",\"CancellationCharge\":100}],\"MealType\":\"Room_Only\",\"IsRefundable\":true,\"WithTransfers\":false},{\"Name\":[\"Suite - Executive - King bed - Business - Lounge Access\"],\"BookingCode\":\"1016054!TB!31!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!\",\"Inclusion\":\"Breakfast\",\"DayRates\":[[{\"BasePrice\":36155.6}]],\"TotalFare\":36405.91,\"TotalTax\":250.31,\"CancelPolicies\":[{\"FromDate\":\"07-07-2026 00:00:00\",\"ChargeType\":\"Fixed\",\"CancellationCharge\":0},{\"FromDate\":\"20-07-2026 00:00:00\",\"ChargeType\":\"Percentage\",\"CancellationCharge\":100}],\"MealType\":\"BreakFast\",\"IsRefundable\":true,\"WithTransfers\":false},{\"Name\":[\"Presidential Suite - King bed - Executive - Lounge Access\"],\"BookingCode\":\"1016054!TB!21!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!\",\"Inclusion\":\"Room Only\",\"DayRates\":[[{\"BasePrice\":47368.88}]],\"TotalFare\":47696.82,\"TotalTax\":327.94,\"CancelPolicies\":[{\"FromDate\":\"07-07-2026 00:00:00\",\"ChargeType\":\"Fixed\",\"CancellationCharge\":0},{\"FromDate\":\"20-07-2026 00:00:00\",\"ChargeType\":\"Percentage\",\"CancellationCharge\":100}],\"MealType\":\"Room_Only\",\"IsRefundable\":true,\"WithTransfers\":false},{\"Name\":[\"Presidential Suite - King bed - Executive - Lounge Access\"],\"BookingCode\":\"1016054!TB!15!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!\",\"Inclusion\":\"Breakfast\",\"DayRates\":[[{\"BasePrice\":48611.68}]],\"TotalFare\":48948.22,\"TotalTax\":336.54,\"CancelPolicies\":[{\"FromDate\":\"07-07-2026 00:00:00\",\"ChargeType\":\"Fixed\",\"CancellationCharge\":0},{\"FromDate\":\"20-07-2026 00:00:00\",\"ChargeType\":\"Percentage\",\"CancellationCharge\":100}],\"MealType\":\"BreakFast\",\"IsRefundable\":true,\"WithTransfers\":false}]}]}",
+  "bodyJson": {
+    "Status": {
+      "Code": 200,
+      "Description": "Successful"
+    },
+    "HotelResult": [
+      {
+        "HotelCode": "1011647",
+        "Currency": "INR",
+        "Rooms": [
+          {
+            "Name": [
+              "Club Double Room"
+            ],
+            "BookingCode": "1011647!TB!2!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!",
+            "Inclusion": "Room Only",
+            "DayRates": [
+              [
+                {
+                  "BasePrice": 4666.96
+                }
+              ]
+            ],
+            "TotalFare": 4965.35,
+            "TotalTax": 298.39,
+            "CancelPolicies": [
+              {
+                "FromDate": "07-07-2026 00:00:00",
+                "ChargeType": "Fixed",
+                "CancellationCharge": 0
+              },
+              {
+                "FromDate": "22-07-2026 00:00:00",
+                "ChargeType": "Fixed",
+                "CancellationCharge": 4943.62
+              }
+            ],
+            "MealType": "Room_Only",
+            "IsRefundable": true,
+            "WithTransfers": false
+          },
+          {
+            "Name": [
+              "Executive Double or Twin Room"
+            ],
+            "BookingCode": "1011647!TB!4!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!",
+            "Inclusion": "Room Only",
+            "DayRates": [
+              [
+                {
+                  "BasePrice": 4666.96
+                }
+              ]
+            ],
+            "TotalFare": 4965.35,
+            "TotalTax": 298.39,
+            "CancelPolicies": [
+              {
+                "FromDate": "07-07-2026 00:00:00",
+                "ChargeType": "Fixed",
+                "CancellationCharge": 0
+              },
+              {
+                "FromDate": "22-07-2026 00:00:00",
+                "ChargeType": "Fixed",
+                "CancellationCharge": 4943.62
+              }
+            ],
+            "MealType": "Room_Only",
+            "IsRefundable": true,
+            "WithTransfers": false
+          },
+          {
+            "Name": [
+              "Executive Double or Twin Room"
+            ],
+            "BookingCode": "1011647!TB!1!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!",
+            "Inclusion": "Breakfast",
+            "DayRates": [
+              [
+                {
+                  "BasePrice": 4734.59
+                }
+              ]
+            ],
+            "TotalFare": 5037.3,
+            "TotalTax": 302.71,
+            "CancelPolicies": [
+              {
+                "FromDate": "07-07-2026 00:00:00",
+                "ChargeType": "Percentage",
+                "CancellationCharge": 100
+              }
+            ],
+            "MealType": "BreakFast",
+            "IsRefundable": false,
+            "WithTransfers": false
+          },
+          {
+            "Name": [
+              "Club Double Room"
+            ],
+            "BookingCode": "1011647!TB!3!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!",
+            "Inclusion": "Breakfast",
+            "DayRates": [
+              [
+                {
+                  "BasePrice": 4734.59
+                }
+              ]
+            ],
+            "TotalFare": 5037.3,
+            "TotalTax": 302.71,
+            "CancelPolicies": [
+              {
+                "FromDate": "07-07-2026 00:00:00",
+                "ChargeType": "Percentage",
+                "CancellationCharge": 100
+              }
+            ],
+            "MealType": "BreakFast",
+            "IsRefundable": false,
+            "WithTransfers": false
+          },
+          {
+            "Name": [
+              "Executive Room,1 Double Bed,NonSmoking"
+            ],
+            "BookingCode": "1011647!TB!5!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!",
+            "Inclusion": "Breakfast buffet,Free self parking",
+            "DayRates": [
+              [
+                {
+                  "BasePrice": 5265.1
+                }
+              ]
+            ],
+            "TotalFare": 5548.6,
+            "TotalTax": 283.5,
+            "RoomPromotion": [
+              "Private sale"
+            ],
+            "CancelPolicies": [
+              {
+                "FromDate": "07-07-2026 00:00:00",
+                "ChargeType": "Fixed",
+                "CancellationCharge": 0
+              },
+              {
+                "FromDate": "22-07-2026 00:00:00",
+                "ChargeType": "Percentage",
+                "CancellationCharge": 100
+              }
+            ],
+            "MealType": "BreakFast",
+            "IsRefundable": true,
+            "WithTransfers": false,
+            "BeddingGroup": "Bedding type is not guaranteed and it will be allocated by hotel based on availability"
+          },
+          {
+            "Name": [
+              "Club Room, 1 King Bed,NonSmoking"
+            ],
+            "BookingCode": "1011647!TB!6!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!",
+            "Inclusion": "Breakfast buffet,Free breakfast,Free self parking",
+            "DayRates": [
+              [
+                {
+                  "BasePrice": 5717.67
+                }
+              ]
+            ],
+            "TotalFare": 6032.67,
+            "TotalTax": 315,
+            "RoomPromotion": [
+              "Private sale"
+            ],
+            "CancelPolicies": [
+              {
+                "FromDate": "07-07-2026 00:00:00",
+                "ChargeType": "Fixed",
+                "CancellationCharge": 0
+              },
+              {
+                "FromDate": "22-07-2026 00:00:00",
+                "ChargeType": "Percentage",
+                "CancellationCharge": 100
+              }
+            ],
+            "MealType": "BreakFast",
+            "IsRefundable": true,
+            "WithTransfers": false
+          }
+        ]
+      },
+      {
+        "HotelCode": "1016054",
+        "Currency": "INR",
+        "Rooms": [
+          {
+            "Name": [
+              "Room, 1 King Bed,NonSmoking"
+            ],
+            "BookingCode": "1016054!TB!11!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!",
+            "Inclusion": "Free self parking",
+            "DayRates": [
+              [
+                {
+                  "BasePrice": 14044.26
+                }
+              ]
+            ],
+            "TotalFare": 16678.74,
+            "TotalTax": 2634.48,
+            "CancelPolicies": [
+              {
+                "FromDate": "07-07-2026 00:00:00",
+                "ChargeType": "Fixed",
+                "CancellationCharge": 0
+              },
+              {
+                "FromDate": "20-07-2026 00:00:00",
+                "ChargeType": "Percentage",
+                "CancellationCharge": 100
+              }
+            ],
+            "MealType": "Room_Only",
+            "IsRefundable": true,
+            "WithTransfers": false
+          },
+          {
+            "Name": [
+              "Room, 2 Twin Beds,NonSmoking"
+            ],
+            "BookingCode": "1016054!TB!1!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!",
+            "Inclusion": "Free self parking",
+            "DayRates": [
+              [
+                {
+                  "BasePrice": 14044.26
+                }
+              ]
+            ],
+            "TotalFare": 16678.74,
+            "TotalTax": 2634.48,
+            "CancelPolicies": [
+              {
+                "FromDate": "07-07-2026 00:00:00",
+                "ChargeType": "Fixed",
+                "CancellationCharge": 0
+              },
+              {
+                "FromDate": "20-07-2026 00:00:00",
+                "ChargeType": "Percentage",
+                "CancellationCharge": 100
+              }
+            ],
+            "MealType": "Room_Only",
+            "IsRefundable": true,
+            "WithTransfers": false
+          },
+          {
+            "Name": [
+              "Room, 1 King Bed"
+            ],
+            "BookingCode": "1016054!TB!25!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!",
+            "Inclusion": "Free high-speed internet, Free self parking, Room Only",
+            "DayRates": [
+              [
+                {
+                  "BasePrice": 14419.7
+                }
+              ]
+            ],
+            "TotalFare": 17131,
+            "TotalTax": 2711.31,
+            "CancelPolicies": [
+              {
+                "FromDate": "07-07-2026 00:00:00",
+                "ChargeType": "Fixed",
+                "CancellationCharge": 0
+              },
+              {
+                "FromDate": "21-07-2026 00:00:00",
+                "ChargeType": "Fixed",
+                "CancellationCharge": 17052.22
+              }
+            ],
+            "MealType": "Room_Only",
+            "IsRefundable": true,
+            "WithTransfers": false
+          },
+          {
+            "Name": [
+              "Room, 2 Twin Beds"
+            ],
+            "BookingCode": "1016054!TB!34!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!",
+            "Inclusion": "Free high-speed internet, Free self parking, Room Only",
+            "DayRates": [
+              [
+                {
+                  "BasePrice": 14419.7
+                }
+              ]
+            ],
+            "TotalFare": 17131,
+            "TotalTax": 2711.31,
+            "CancelPolicies": [
+              {
+                "FromDate": "07-07-2026 00:00:00",
+                "ChargeType": "Fixed",
+                "CancellationCharge": 0
+              },
+              {
+                "FromDate": "21-07-2026 00:00:00",
+                "ChargeType": "Fixed",
+                "CancellationCharge": 17052.22
+              }
+            ],
+            "MealType": "Room_Only",
+            "IsRefundable": true,
+            "WithTransfers": false
+          },
+          {
+            "Name": [
+              "Room, 2 Twin Beds,NonSmoking"
+            ],
+            "BookingCode": "1016054!TB!3!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!",
+            "Inclusion": "Breakfast buffet,Free self parking",
+            "DayRates": [
+              [
+                {
+                  "BasePrice": 14853.62
+                }
+              ]
+            ],
+            "TotalFare": 17690.76,
+            "TotalTax": 2837.14,
+            "CancelPolicies": [
+              {
+                "FromDate": "07-07-2026 00:00:00",
+                "ChargeType": "Fixed",
+                "CancellationCharge": 0
+              },
+              {
+                "FromDate": "20-07-2026 00:00:00",
+                "ChargeType": "Percentage",
+                "CancellationCharge": 100
+              }
+            ],
+            "MealType": "BreakFast",
+            "IsRefundable": true,
+            "WithTransfers": false
+          },
+          {
+            "Name": [
+              "Room, 1 King Bed,NonSmoking"
+            ],
+            "BookingCode": "1016054!TB!41!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!",
+            "Inclusion": "Breakfast buffet,Free self parking",
+            "DayRates": [
+              [
+                {
+                  "BasePrice": 14853.62
+                }
+              ]
+            ],
+            "TotalFare": 17690.76,
+            "TotalTax": 2837.14,
+            "CancelPolicies": [
+              {
+                "FromDate": "07-07-2026 00:00:00",
+                "ChargeType": "Fixed",
+                "CancellationCharge": 0
+              },
+              {
+                "FromDate": "20-07-2026 00:00:00",
+                "ChargeType": "Percentage",
+                "CancellationCharge": 100
+              }
+            ],
+            "MealType": "BreakFast",
+            "IsRefundable": true,
+            "WithTransfers": false
+          },
+          {
+            "Name": [
+              "Room, 2 Twin Beds"
+            ],
+            "BookingCode": "1016054!TB!32!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!",
+            "Inclusion": "Free high-speed internet, Free self parking, Breakfast",
+            "DayRates": [
+              [
+                {
+                  "BasePrice": 15237.75
+                }
+              ]
+            ],
+            "TotalFare": 18157.4,
+            "TotalTax": 2919.64,
+            "CancelPolicies": [
+              {
+                "FromDate": "07-07-2026 00:00:00",
+                "ChargeType": "Percentage",
+                "CancellationCharge": 100
+              }
+            ],
+            "MealType": "BreakFast",
+            "IsRefundable": false,
+            "WithTransfers": false
+          },
+          {
+            "Name": [
+              "Room, 1 King Bed"
+            ],
+            "BookingCode": "1016054!TB!4!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!",
+            "Inclusion": "Free high-speed internet, Free self parking, Breakfast",
+            "DayRates": [
+              [
+                {
+                  "BasePrice": 15237.75
+                }
+              ]
+            ],
+            "TotalFare": 18157.4,
+            "TotalTax": 2919.64,
+            "CancelPolicies": [
+              {
+                "FromDate": "07-07-2026 00:00:00",
+                "ChargeType": "Percentage",
+                "CancellationCharge": 100
+              }
+            ],
+            "MealType": "BreakFast",
+            "IsRefundable": false,
+            "WithTransfers": false
+          },
+          {
+            "Name": [
+              "Double room King bed"
+            ],
+            "BookingCode": "1016054!TB!40!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!",
+            "Inclusion": "Room Only",
+            "DayRates": [
+              [
+                {
+                  "BasePrice": 18160.48
+                }
+              ]
+            ],
+            "TotalFare": 18286.21,
+            "TotalTax": 125.73,
+            "CancelPolicies": [
+              {
+                "FromDate": "07-07-2026 00:00:00",
+                "ChargeType": "Fixed",
+                "CancellationCharge": 0
+              },
+              {
+                "FromDate": "20-07-2026 00:00:00",
+                "ChargeType": "Percentage",
+                "CancellationCharge": 100
+              }
+            ],
+            "MealType": "Room_Only",
+            "IsRefundable": true,
+            "WithTransfers": false
+          },
+          {
+            "Name": [
+              "Twin room - De Luxe"
+            ],
+            "BookingCode": "1016054!TB!42!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!",
+            "Inclusion": "Room Only",
+            "DayRates": [
+              [
+                {
+                  "BasePrice": 18699.2
+                }
+              ]
+            ],
+            "TotalFare": 18828.66,
+            "TotalTax": 129.46,
+            "CancelPolicies": [
+              {
+                "FromDate": "07-07-2026 00:00:00",
+                "ChargeType": "Fixed",
+                "CancellationCharge": 0
+              },
+              {
+                "FromDate": "20-07-2026 00:00:00",
+                "ChargeType": "Percentage",
+                "CancellationCharge": 100
+              }
+            ],
+            "MealType": "Room_Only",
+            "IsRefundable": true,
+            "WithTransfers": false
+          },
+          {
+            "Name": [
+              "Twin room"
+            ],
+            "BookingCode": "1016054!TB!28!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!",
+            "Inclusion": "Breakfast",
+            "DayRates": [
+              [
+                {
+                  "BasePrice": 19106.88
+                }
+              ]
+            ],
+            "TotalFare": 19239.16,
+            "TotalTax": 132.28,
+            "CancelPolicies": [
+              {
+                "FromDate": "07-07-2026 00:00:00",
+                "ChargeType": "Fixed",
+                "CancellationCharge": 0
+              },
+              {
+                "FromDate": "20-07-2026 00:00:00",
+                "ChargeType": "Percentage",
+                "CancellationCharge": 100
+              }
+            ],
+            "MealType": "BreakFast",
+            "IsRefundable": true,
+            "WithTransfers": false
+          },
+          {
+            "Name": [
+              "Double room King bed"
+            ],
+            "BookingCode": "1016054!TB!8!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!",
+            "Inclusion": "Breakfast",
+            "DayRates": [
+              [
+                {
+                  "BasePrice": 19107.92
+                }
+              ]
+            ],
+            "TotalFare": 19240.21,
+            "TotalTax": 132.29,
+            "CancelPolicies": [
+              {
+                "FromDate": "07-07-2026 00:00:00",
+                "ChargeType": "Fixed",
+                "CancellationCharge": 0
+              },
+              {
+                "FromDate": "20-07-2026 00:00:00",
+                "ChargeType": "Percentage",
+                "CancellationCharge": 100
+              }
+            ],
+            "MealType": "BreakFast",
+            "IsRefundable": true,
+            "WithTransfers": false
+          },
+          {
+            "Name": [
+              "Room, 1 King Bed,NonSmoking"
+            ],
+            "BookingCode": "1016054!TB!7!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!",
+            "Inclusion": "Free dinner,Breakfast buffet,Free self parking",
+            "DayRates": [
+              [
+                {
+                  "BasePrice": 16246.15
+                }
+              ]
+            ],
+            "TotalFare": 19349.27,
+            "TotalTax": 3103.12,
+            "CancelPolicies": [
+              {
+                "FromDate": "07-07-2026 00:00:00",
+                "ChargeType": "Fixed",
+                "CancellationCharge": 0
+              },
+              {
+                "FromDate": "20-07-2026 00:00:00",
+                "ChargeType": "Percentage",
+                "CancellationCharge": 100
+              }
+            ],
+            "MealType": "Half_Board",
+            "IsRefundable": true,
+            "WithTransfers": false
+          },
+          {
+            "Name": [
+              "Room, 1 King Bed"
+            ],
+            "BookingCode": "1016054!TB!19!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!",
+            "Inclusion": "Free high-speed internet, Free self parking, Breakfast and Dinner",
+            "DayRates": [
+              [
+                {
+                  "BasePrice": 16666.29
+                }
+              ]
+            ],
+            "TotalFare": 19859.66,
+            "TotalTax": 3193.37,
+            "CancelPolicies": [
+              {
+                "FromDate": "07-07-2026 00:00:00",
+                "ChargeType": "Percentage",
+                "CancellationCharge": 100
+              }
+            ],
+            "MealType": "Room_Only",
+            "IsRefundable": false,
+            "WithTransfers": false
+          },
+          {
+            "Name": [
+              "Twin room - De Luxe"
+            ],
+            "BookingCode": "1016054!TB!26!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!",
+            "Inclusion": "Breakfast",
+            "DayRates": [
+              [
+                {
+                  "BasePrice": 19942
+                }
+              ]
+            ],
+            "TotalFare": 20080.06,
+            "TotalTax": 138.06,
+            "CancelPolicies": [
+              {
+                "FromDate": "07-07-2026 00:00:00",
+                "ChargeType": "Fixed",
+                "CancellationCharge": 0
+              },
+              {
+                "FromDate": "20-07-2026 00:00:00",
+                "ChargeType": "Percentage",
+                "CancellationCharge": 100
+              }
+            ],
+            "MealType": "BreakFast",
+            "IsRefundable": true,
+            "WithTransfers": false
+          },
+          {
+            "Name": [
+              "Double room King bed"
+            ],
+            "BookingCode": "1016054!TB!12!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!",
+            "Inclusion": "Half Board",
+            "DayRates": [
+              [
+                {
+                  "BasePrice": 21814
+                }
+              ]
+            ],
+            "TotalFare": 21965.02,
+            "TotalTax": 151.02,
+            "CancelPolicies": [
+              {
+                "FromDate": "07-07-2026 00:00:00",
+                "ChargeType": "Fixed",
+                "CancellationCharge": 0
+              },
+              {
+                "FromDate": "20-07-2026 00:00:00",
+                "ChargeType": "Percentage",
+                "CancellationCharge": 100
+              }
+            ],
+            "MealType": "Half_Board",
+            "IsRefundable": true,
+            "WithTransfers": false
+          },
+          {
+            "Name": [
+              "Executive Room, 1 King Bed,NonSmoking"
+            ],
+            "BookingCode": "1016054!TB!17!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!",
+            "Inclusion": "Free self parking",
+            "DayRates": [
+              [
+                {
+                  "BasePrice": 20130.1
+                }
+              ]
+            ],
+            "TotalFare": 23906.19,
+            "TotalTax": 3776.09,
+            "CancelPolicies": [
+              {
+                "FromDate": "07-07-2026 00:00:00",
+                "ChargeType": "Fixed",
+                "CancellationCharge": 0
+              },
+              {
+                "FromDate": "20-07-2026 00:00:00",
+                "ChargeType": "Percentage",
+                "CancellationCharge": 100
+              }
+            ],
+            "MealType": "Room_Only",
+            "IsRefundable": true,
+            "WithTransfers": false
+          },
+          {
+            "Name": [
+              "Executive Room, 2 Twin Beds,NonSmoking"
+            ],
+            "BookingCode": "1016054!TB!16!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!",
+            "Inclusion": "Free self parking",
+            "DayRates": [
+              [
+                {
+                  "BasePrice": 20130.1
+                }
+              ]
+            ],
+            "TotalFare": 23906.19,
+            "TotalTax": 3776.09,
+            "CancelPolicies": [
+              {
+                "FromDate": "07-07-2026 00:00:00",
+                "ChargeType": "Fixed",
+                "CancellationCharge": 0
+              },
+              {
+                "FromDate": "20-07-2026 00:00:00",
+                "ChargeType": "Percentage",
+                "CancellationCharge": 100
+              }
+            ],
+            "MealType": "Room_Only",
+            "IsRefundable": true,
+            "WithTransfers": false
+          },
+          {
+            "Name": [
+              "Executive Room, 2 Twin Beds"
+            ],
+            "BookingCode": "1016054!TB!2!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!",
+            "Inclusion": "Free high-speed internet, Free self parking, Room Only",
+            "DayRates": [
+              [
+                {
+                  "BasePrice": 20668.22
+                }
+              ]
+            ],
+            "TotalFare": 24554.43,
+            "TotalTax": 3886.2,
+            "CancelPolicies": [
+              {
+                "FromDate": "07-07-2026 00:00:00",
+                "ChargeType": "Fixed",
+                "CancellationCharge": 0
+              },
+              {
+                "FromDate": "21-07-2026 00:00:00",
+                "ChargeType": "Fixed",
+                "CancellationCharge": 24440.97
+              }
+            ],
+            "MealType": "Room_Only",
+            "IsRefundable": true,
+            "WithTransfers": false
+          },
+          {
+            "Name": [
+              "Executive Room, 1 King Bed"
+            ],
+            "BookingCode": "1016054!TB!18!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!",
+            "Inclusion": "Free high-speed internet, Free self parking, Room Only",
+            "DayRates": [
+              [
+                {
+                  "BasePrice": 20668.22
+                }
+              ]
+            ],
+            "TotalFare": 24554.43,
+            "TotalTax": 3886.2,
+            "CancelPolicies": [
+              {
+                "FromDate": "07-07-2026 00:00:00",
+                "ChargeType": "Fixed",
+                "CancellationCharge": 0
+              },
+              {
+                "FromDate": "21-07-2026 00:00:00",
+                "ChargeType": "Fixed",
+                "CancellationCharge": 24440.97
+              }
+            ],
+            "MealType": "Room_Only",
+            "IsRefundable": true,
+            "WithTransfers": false
+          },
+          {
+            "Name": [
+              "Executive Room, 1 King Bed,NonSmoking"
+            ],
+            "BookingCode": "1016054!TB!39!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!",
+            "Inclusion": "Breakfast buffet,Free self parking",
+            "DayRates": [
+              [
+                {
+                  "BasePrice": 20887.9
+                }
+              ]
+            ],
+            "TotalFare": 24877.62,
+            "TotalTax": 3989.72,
+            "CancelPolicies": [
+              {
+                "FromDate": "07-07-2026 00:00:00",
+                "ChargeType": "Fixed",
+                "CancellationCharge": 0
+              },
+              {
+                "FromDate": "20-07-2026 00:00:00",
+                "ChargeType": "Percentage",
+                "CancellationCharge": 100
+              }
+            ],
+            "MealType": "BreakFast",
+            "IsRefundable": true,
+            "WithTransfers": false
+          },
+          {
+            "Name": [
+              "Executive Room, 2 Twin Beds,NonSmoking"
+            ],
+            "BookingCode": "1016054!TB!14!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!",
+            "Inclusion": "Breakfast buffet,Free self parking",
+            "DayRates": [
+              [
+                {
+                  "BasePrice": 20887.9
+                }
+              ]
+            ],
+            "TotalFare": 24877.62,
+            "TotalTax": 3989.72,
+            "CancelPolicies": [
+              {
+                "FromDate": "07-07-2026 00:00:00",
+                "ChargeType": "Fixed",
+                "CancellationCharge": 0
+              },
+              {
+                "FromDate": "20-07-2026 00:00:00",
+                "ChargeType": "Percentage",
+                "CancellationCharge": 100
+              }
+            ],
+            "MealType": "BreakFast",
+            "IsRefundable": true,
+            "WithTransfers": false
+          },
+          {
+            "Name": [
+              "Executive Room, 2 Twin Beds"
+            ],
+            "BookingCode": "1016054!TB!24!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!",
+            "Inclusion": "Free high-speed internet, Free self parking, Breakfast",
+            "DayRates": [
+              [
+                {
+                  "BasePrice": 21428.09
+                }
+              ]
+            ],
+            "TotalFare": 25533.84,
+            "TotalTax": 4105.75,
+            "CancelPolicies": [
+              {
+                "FromDate": "07-07-2026 00:00:00",
+                "ChargeType": "Percentage",
+                "CancellationCharge": 100
+              }
+            ],
+            "MealType": "BreakFast",
+            "IsRefundable": false,
+            "WithTransfers": false
+          },
+          {
+            "Name": [
+              "Executive Room, 1 King Bed"
+            ],
+            "BookingCode": "1016054!TB!13!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!",
+            "Inclusion": "Free high-speed internet, Free self parking, Breakfast",
+            "DayRates": [
+              [
+                {
+                  "BasePrice": 21428.09
+                }
+              ]
+            ],
+            "TotalFare": 25533.84,
+            "TotalTax": 4105.75,
+            "CancelPolicies": [
+              {
+                "FromDate": "07-07-2026 00:00:00",
+                "ChargeType": "Percentage",
+                "CancellationCharge": 100
+              }
+            ],
+            "MealType": "BreakFast",
+            "IsRefundable": false,
+            "WithTransfers": false
+          },
+          {
+            "Name": [
+              "Executive Studio Suite, 1 King Bed,NonSmoking"
+            ],
+            "BookingCode": "1016054!TB!10!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!",
+            "Inclusion": "Free self parking",
+            "DayRates": [
+              [
+                {
+                  "BasePrice": 22470.82
+                }
+              ]
+            ],
+            "TotalFare": 26685.98,
+            "TotalTax": 4215.17,
+            "CancelPolicies": [
+              {
+                "FromDate": "07-07-2026 00:00:00",
+                "ChargeType": "Fixed",
+                "CancellationCharge": 0
+              },
+              {
+                "FromDate": "20-07-2026 00:00:00",
+                "ChargeType": "Percentage",
+                "CancellationCharge": 100
+              }
+            ],
+            "MealType": "Room_Only",
+            "IsRefundable": true,
+            "WithTransfers": false
+          },
+          {
+            "Name": [
+              "Double room King bed - Executive - Lounge Access"
+            ],
+            "BookingCode": "1016054!TB!37!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!",
+            "Inclusion": "Room Only",
+            "DayRates": [
+              [
+                {
+                  "BasePrice": 26798.72
+                }
+              ]
+            ],
+            "TotalFare": 26984.25,
+            "TotalTax": 185.53,
+            "CancelPolicies": [
+              {
+                "FromDate": "07-07-2026 00:00:00",
+                "ChargeType": "Fixed",
+                "CancellationCharge": 0
+              },
+              {
+                "FromDate": "20-07-2026 00:00:00",
+                "ChargeType": "Percentage",
+                "CancellationCharge": 100
+              }
+            ],
+            "MealType": "Room_Only",
+            "IsRefundable": true,
+            "WithTransfers": false
+          },
+          {
+            "Name": [
+              "Twin room - Executive - Lounge access"
+            ],
+            "BookingCode": "1016054!TB!23!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!",
+            "Inclusion": "Room Only",
+            "DayRates": [
+              [
+                {
+                  "BasePrice": 26798.72
+                }
+              ]
+            ],
+            "TotalFare": 26984.25,
+            "TotalTax": 185.53,
+            "CancelPolicies": [
+              {
+                "FromDate": "07-07-2026 00:00:00",
+                "ChargeType": "Fixed",
+                "CancellationCharge": 0
+              },
+              {
+                "FromDate": "20-07-2026 00:00:00",
+                "ChargeType": "Percentage",
+                "CancellationCharge": 100
+              }
+            ],
+            "MealType": "Room_Only",
+            "IsRefundable": true,
+            "WithTransfers": false
+          },
+          {
+            "Name": [
+              "Executive Studio Suite, 1 King Bed"
+            ],
+            "BookingCode": "1016054!TB!29!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!",
+            "Inclusion": "Free high-speed internet, Free self parking, Room Only",
+            "DayRates": [
+              [
+                {
+                  "BasePrice": 23071.52
+                }
+              ]
+            ],
+            "TotalFare": 27409.6,
+            "TotalTax": 4338.08,
+            "CancelPolicies": [
+              {
+                "FromDate": "07-07-2026 00:00:00",
+                "ChargeType": "Fixed",
+                "CancellationCharge": 0
+              },
+              {
+                "FromDate": "21-07-2026 00:00:00",
+                "ChargeType": "Fixed",
+                "CancellationCharge": 27283.34
+              }
+            ],
+            "MealType": "Room_Only",
+            "IsRefundable": true,
+            "WithTransfers": false
+          },
+          {
+            "Name": [
+              "Executive Studio Suite, 1 King Bed,NonSmoking"
+            ],
+            "BookingCode": "1016054!TB!5!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!",
+            "Inclusion": "Breakfast buffet,Free self parking",
+            "DayRates": [
+              [
+                {
+                  "BasePrice": 23208.78
+                }
+              ]
+            ],
+            "TotalFare": 27641.81,
+            "TotalTax": 4433.03,
+            "CancelPolicies": [
+              {
+                "FromDate": "07-07-2026 00:00:00",
+                "ChargeType": "Fixed",
+                "CancellationCharge": 0
+              },
+              {
+                "FromDate": "20-07-2026 00:00:00",
+                "ChargeType": "Percentage",
+                "CancellationCharge": 100
+              }
+            ],
+            "MealType": "BreakFast",
+            "IsRefundable": true,
+            "WithTransfers": false
+          },
+          {
+            "Name": [
+              "Twin room - Executive - Lounge access"
+            ],
+            "BookingCode": "1016054!TB!33!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!",
+            "Inclusion": "Breakfast",
+            "DayRates": [
+              [
+                {
+                  "BasePrice": 28057.12
+                }
+              ]
+            ],
+            "TotalFare": 28251.36,
+            "TotalTax": 194.24,
+            "CancelPolicies": [
+              {
+                "FromDate": "07-07-2026 00:00:00",
+                "ChargeType": "Fixed",
+                "CancellationCharge": 0
+              },
+              {
+                "FromDate": "20-07-2026 00:00:00",
+                "ChargeType": "Percentage",
+                "CancellationCharge": 100
+              }
+            ],
+            "MealType": "BreakFast",
+            "IsRefundable": true,
+            "WithTransfers": false
+          },
+          {
+            "Name": [
+              "Double room King bed - Executive - Lounge Access"
+            ],
+            "BookingCode": "1016054!TB!35!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!",
+            "Inclusion": "Breakfast",
+            "DayRates": [
+              [
+                {
+                  "BasePrice": 28057.12
+                }
+              ]
+            ],
+            "TotalFare": 28251.36,
+            "TotalTax": 194.24,
+            "CancelPolicies": [
+              {
+                "FromDate": "07-07-2026 00:00:00",
+                "ChargeType": "Fixed",
+                "CancellationCharge": 0
+              },
+              {
+                "FromDate": "20-07-2026 00:00:00",
+                "ChargeType": "Percentage",
+                "CancellationCharge": 100
+              }
+            ],
+            "MealType": "BreakFast",
+            "IsRefundable": true,
+            "WithTransfers": false
+          },
+          {
+            "Name": [
+              "Executive Studio Suite, 1 King Bed"
+            ],
+            "BookingCode": "1016054!TB!27!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!",
+            "Inclusion": "Free high-speed internet, Free self parking, Breakfast",
+            "DayRates": [
+              [
+                {
+                  "BasePrice": 23808.97
+                }
+              ]
+            ],
+            "TotalFare": 28370.93,
+            "TotalTax": 4561.96,
+            "CancelPolicies": [
+              {
+                "FromDate": "07-07-2026 00:00:00",
+                "ChargeType": "Percentage",
+                "CancellationCharge": 100
+              }
+            ],
+            "MealType": "BreakFast",
+            "IsRefundable": false,
+            "WithTransfers": false
+          },
+          {
+            "Name": [
+              "Studio - Suite - King bed - Executive - Lounge access"
+            ],
+            "BookingCode": "1016054!TB!36!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!",
+            "Inclusion": "Room Only",
+            "DayRates": [
+              [
+                {
+                  "BasePrice": 29912.48
+                }
+              ]
+            ],
+            "TotalFare": 30119.57,
+            "TotalTax": 207.09,
+            "CancelPolicies": [
+              {
+                "FromDate": "07-07-2026 00:00:00",
+                "ChargeType": "Fixed",
+                "CancellationCharge": 0
+              },
+              {
+                "FromDate": "20-07-2026 00:00:00",
+                "ChargeType": "Percentage",
+                "CancellationCharge": 100
+              }
+            ],
+            "MealType": "Room_Only",
+            "IsRefundable": true,
+            "WithTransfers": false
+          },
+          {
+            "Name": [
+              "Executive Suite, 1 King Bed,NonSmoking"
+            ],
+            "BookingCode": "1016054!TB!22!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!",
+            "Inclusion": "Free self parking",
+            "DayRates": [
+              [
+                {
+                  "BasePrice": 26215.95
+                }
+              ]
+            ],
+            "TotalFare": 31133.65,
+            "TotalTax": 4917.7,
+            "CancelPolicies": [
+              {
+                "FromDate": "07-07-2026 00:00:00",
+                "ChargeType": "Fixed",
+                "CancellationCharge": 0
+              },
+              {
+                "FromDate": "20-07-2026 00:00:00",
+                "ChargeType": "Percentage",
+                "CancellationCharge": 100
+              }
+            ],
+            "MealType": "Room_Only",
+            "IsRefundable": true,
+            "WithTransfers": false
+          },
+          {
+            "Name": [
+              "Studio - Suite - King bed - Executive - Lounge access"
+            ],
+            "BookingCode": "1016054!TB!9!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!",
+            "Inclusion": "Breakfast",
+            "DayRates": [
+              [
+                {
+                  "BasePrice": 31170.88
+                }
+              ]
+            ],
+            "TotalFare": 31386.68,
+            "TotalTax": 215.8,
+            "CancelPolicies": [
+              {
+                "FromDate": "07-07-2026 00:00:00",
+                "ChargeType": "Fixed",
+                "CancellationCharge": 0
+              },
+              {
+                "FromDate": "20-07-2026 00:00:00",
+                "ChargeType": "Percentage",
+                "CancellationCharge": 100
+              }
+            ],
+            "MealType": "BreakFast",
+            "IsRefundable": true,
+            "WithTransfers": false
+          },
+          {
+            "Name": [
+              "Executive Suite, 1 King Bed"
+            ],
+            "BookingCode": "1016054!TB!38!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!",
+            "Inclusion": "Free high-speed internet, Free self parking, Room Only",
+            "DayRates": [
+              [
+                {
+                  "BasePrice": 26916.77
+                }
+              ]
+            ],
+            "TotalFare": 31977.87,
+            "TotalTax": 5061.1,
+            "CancelPolicies": [
+              {
+                "FromDate": "07-07-2026 00:00:00",
+                "ChargeType": "Fixed",
+                "CancellationCharge": 0
+              },
+              {
+                "FromDate": "21-07-2026 00:00:00",
+                "ChargeType": "Fixed",
+                "CancellationCharge": 31830.74
+              }
+            ],
+            "MealType": "Room_Only",
+            "IsRefundable": true,
+            "WithTransfers": false
+          },
+          {
+            "Name": [
+              "Executive Suite, 1 King Bed,NonSmoking"
+            ],
+            "BookingCode": "1016054!TB!6!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!",
+            "Inclusion": "Breakfast buffet,Free self parking",
+            "DayRates": [
+              [
+                {
+                  "BasePrice": 26922.18
+                }
+              ]
+            ],
+            "TotalFare": 32064.49,
+            "TotalTax": 5142.31,
+            "CancelPolicies": [
+              {
+                "FromDate": "07-07-2026 00:00:00",
+                "ChargeType": "Fixed",
+                "CancellationCharge": 0
+              },
+              {
+                "FromDate": "20-07-2026 00:00:00",
+                "ChargeType": "Percentage",
+                "CancellationCharge": 100
+              }
+            ],
+            "MealType": "BreakFast",
+            "IsRefundable": true,
+            "WithTransfers": false
+          },
+          {
+            "Name": [
+              "Executive Suite, 1 King Bed"
+            ],
+            "BookingCode": "1016054!TB!30!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!",
+            "Inclusion": "Free high-speed internet, Free self parking, Breakfast",
+            "DayRates": [
+              [
+                {
+                  "BasePrice": 27618.43
+                }
+              ]
+            ],
+            "TotalFare": 32910.29,
+            "TotalTax": 5291.86,
+            "CancelPolicies": [
+              {
+                "FromDate": "07-07-2026 00:00:00",
+                "ChargeType": "Percentage",
+                "CancellationCharge": 100
+              }
+            ],
+            "MealType": "BreakFast",
+            "IsRefundable": false,
+            "WithTransfers": false
+          },
+          {
+            "Name": [
+              "Suite - Executive - King bed - Business - Lounge Access"
+            ],
+            "BookingCode": "1016054!TB!20!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!",
+            "Inclusion": "Room Only",
+            "DayRates": [
+              [
+                {
+                  "BasePrice": 34897.2
+                }
+              ]
+            ],
+            "TotalFare": 35138.8,
+            "TotalTax": 241.6,
+            "CancelPolicies": [
+              {
+                "FromDate": "07-07-2026 00:00:00",
+                "ChargeType": "Fixed",
+                "CancellationCharge": 0
+              },
+              {
+                "FromDate": "20-07-2026 00:00:00",
+                "ChargeType": "Percentage",
+                "CancellationCharge": 100
+              }
+            ],
+            "MealType": "Room_Only",
+            "IsRefundable": true,
+            "WithTransfers": false
+          },
+          {
+            "Name": [
+              "Suite - Executive - King bed - Business - Lounge Access"
+            ],
+            "BookingCode": "1016054!TB!31!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!",
+            "Inclusion": "Breakfast",
+            "DayRates": [
+              [
+                {
+                  "BasePrice": 36155.6
+                }
+              ]
+            ],
+            "TotalFare": 36405.91,
+            "TotalTax": 250.31,
+            "CancelPolicies": [
+              {
+                "FromDate": "07-07-2026 00:00:00",
+                "ChargeType": "Fixed",
+                "CancellationCharge": 0
+              },
+              {
+                "FromDate": "20-07-2026 00:00:00",
+                "ChargeType": "Percentage",
+                "CancellationCharge": 100
+              }
+            ],
+            "MealType": "BreakFast",
+            "IsRefundable": true,
+            "WithTransfers": false
+          },
+          {
+            "Name": [
+              "Presidential Suite - King bed - Executive - Lounge Access"
+            ],
+            "BookingCode": "1016054!TB!21!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!",
+            "Inclusion": "Room Only",
+            "DayRates": [
+              [
+                {
+                  "BasePrice": 47368.88
+                }
+              ]
+            ],
+            "TotalFare": 47696.82,
+            "TotalTax": 327.94,
+            "CancelPolicies": [
+              {
+                "FromDate": "07-07-2026 00:00:00",
+                "ChargeType": "Fixed",
+                "CancellationCharge": 0
+              },
+              {
+                "FromDate": "20-07-2026 00:00:00",
+                "ChargeType": "Percentage",
+                "CancellationCharge": 100
+              }
+            ],
+            "MealType": "Room_Only",
+            "IsRefundable": true,
+            "WithTransfers": false
+          },
+          {
+            "Name": [
+              "Presidential Suite - King bed - Executive - Lounge Access"
+            ],
+            "BookingCode": "1016054!TB!15!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!",
+            "Inclusion": "Breakfast",
+            "DayRates": [
+              [
+                {
+                  "BasePrice": 48611.68
+                }
+              ]
+            ],
+            "TotalFare": 48948.22,
+            "TotalTax": 336.54,
+            "CancelPolicies": [
+              {
+                "FromDate": "07-07-2026 00:00:00",
+                "ChargeType": "Fixed",
+                "CancellationCharge": 0
+              },
+              {
+                "FromDate": "20-07-2026 00:00:00",
+                "ChargeType": "Percentage",
+                "CancellationCharge": 100
+              }
+            ],
+            "MealType": "BreakFast",
+            "IsRefundable": true,
+            "WithTransfers": false
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,69 @@
+{
+  "generatedAt": "2026-07-08T10:11:20.104Z",
+  "runDir": "tmp-prod-tbo-output/2026-07-08T10-11-10-880Z",
+  "config": {
+    "authUrl": "https://api.travelboutiqueonline.com/SharedAPI/SharedData.svc/rest/Authenticate",
+    "hotelBaseUrl": "https://affiliate.travelboutiqueonline.com/HotelAPI",
+    "codeBaseUrl": "http://affiliate.travelboutiqueonline.com/TBOHolidays_HotelAPI",
+    "authClientId": "tboprod",
+    "authUserName": "IXMD112",
+    "authEndUserIp": "134.209.145.185",
+    "hotelUserName": "IXMD112",
+    "hotelEndUserIp": "134.209.145.185",
+    "countryCode": "IN",
+    "cityCode": "127343",
+    "checkIn": "2026-07-23",
+    "checkOut": "2026-07-24",
+    "guestNationality": "IN",
+    "paymentMode": "Limit",
+    "noOfRooms": 1
+  },
+  "steps": [
+    {
+      "step": "auth",
+      "status": "ok",
+      "statusCode": 200,
+      "bodyStatus": 1,
+      "tokenId": "6d2e7f46-a0f3-4bd7-87ab-b6cfbdffab1c"
+    },
+    {
+      "step": "country_list",
+      "status": "ok",
+      "statusCode": 200,
+      "bodyStatus": 200,
+      "countryCount": 249
+    },
+    {
+      "step": "city_list",
+      "status": "ok",
+      "statusCode": 200,
+      "bodyStatus": 200,
+      "cityCount": 1089,
+      "selectedCityCode": "127343",
+      "selectedCityName": "Chennai,   Tamil Nadu"
+    },
+    {
+      "step": "hotel_code_list",
+      "status": "ok",
+      "statusCode": 200,
+      "bodyStatus": 200,
+      "hotelCount": 1493,
+      "hotelCodes": "1011647,1016054"
+    },
+    {
+      "step": "search",
+      "status": "ok",
+      "statusCode": 200,
+      "bodyStatus": 200,
+      "hotelResultCount": 2,
+      "bookingCode": "1011647!TB!2!TB!59a45c31-7ab5-11f1-93ff-3603d97837fd!TB!N!TB!AFF!"
+    },
+    {
+      "step": "prebook",
+      "status": "insufficient_balance",
+      "statusCode": 200,
+      "bodyStatus": 300,
+      "description": "Insufficient Balance."
+    }
+  ]
+}
