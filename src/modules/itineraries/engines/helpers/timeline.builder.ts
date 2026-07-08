@@ -87,6 +87,7 @@ interface SelectedHotspot {
   hotspot_name?: string;
   hotspot_location?: string;
   hotspot_to_location?: string;
+  hotspot_type?: string;
 }
 
 type DayTimeSlot = 'MORNING' | 'EVENING';
@@ -142,6 +143,7 @@ interface CandidateFeasibilityInput {
   hotspotLocationName: string;
   hotspotDuration: string;
   hotspotCoords: { lat: number; lon: number };
+  hotspotType?: string;
   timingMap: Map<number, Map<number, any[]>>;
   plan: PlanHeader;
   destinationCity: string;
@@ -188,6 +190,7 @@ const LARGE_WAIT_DEFER_THRESHOLD_SECONDS = 90 * 60;
 const MIN_DESTINATION_HOTSPOTS_FOR_RESERVATION = 4;
 const MAX_SCHEDULER_OPTIMIZATION_CYCLES = 4;
 const MAX_MUST_VISIT_REPAIR_ATTEMPTS = 2;
+const NO_WAIT_HOTSPOT_TYPES = new Set<string>(['restaurant', 'shopping_mall']);
 
 export class TimelineBuilder {
   private currentQuoteId: string | null = null;
@@ -575,6 +578,11 @@ export class TimelineBuilder {
       bucket === 'source_hotspot' ||
       bucket === 'source_fallback'
     );
+  }
+
+  private shouldSkipWaitForOpening(hotspotType?: string | null): boolean {
+    const normalizedType = String(hotspotType || '').trim().toLowerCase();
+    return NO_WAIT_HOTSPOT_TYPES.has(normalizedType);
   }
 
   private getNextSlotStart(currentSlot: DayTimeSlot): string | null {
@@ -1381,6 +1389,7 @@ export class TimelineBuilder {
         hotspot_name: h.hotspot_name,
         hotspot_location: h.hotspot_location,
         hotspot_to_location: h.hotspot_to_location,
+        hotspot_type: h.hotspot_type,
         hotspot_priority: h.hotspot_priority,
         hotspot_latitude: h.hotspot_latitude,
         hotspot_longitude: h.hotspot_longitude,
@@ -3545,6 +3554,7 @@ export class TimelineBuilder {
 
           const hotspotLocationName = hotspotData.hotspot_location as string || currentLocationName;
           const hotspotDuration = hotspotData.hotspot_duration || '01:00:00';
+          const hotspotType = String(hotspotData.hotspot_type || hotspotData.hotspotType || '').trim().toLowerCase();
           const destCoords = {
             lat: Number(hotspotData.hotspot_latitude ?? 0),
             lon: Number(hotspotData.hotspot_longitude ?? 0),
@@ -3677,8 +3687,13 @@ export class TimelineBuilder {
             absoluteVisitEndSeconds,
           );
 
-          // If hotspot opens later today, wait and schedule in the opening window.
-          if (!operatingCheck.canVisitNow && operatingCheck.nextWindowStart) {
+          // If hotspot opens later today, wait and schedule in the opening window only
+          // for wait-friendly hotspot types.
+          if (
+            !operatingCheck.canVisitNow &&
+            operatingCheck.nextWindowStart &&
+            !this.shouldSkipWaitForOpening(hotspotType)
+          ) {
             let nextWindowStartSeconds = timeToSeconds(operatingCheck.nextWindowStart);
             while (nextWindowStartSeconds < absoluteVisitStartSeconds) {
               nextWindowStartSeconds += 86400;
@@ -3720,16 +3735,18 @@ export class TimelineBuilder {
               openingTime: timingSummary.openingTime,
               closingTime: timingSummary.closingTime,
               visitTime: `${timeAfterTravel} - ${timeAfterSightseeing}`,
-              isOpenAtVisitTime: false,
-              selected: false,
-              rejectedReasons: [
-                operatingCheck.isClosedForDay
-                  ? 'Rejected: closed on this day'
-                  : (
-                    operatingCheck.nextWindowStart
-                      ? `Rejected: outside operating hours and wait window does not fit (next opens at ${operatingCheck.nextWindowStart})`
-                      : 'Rejected: outside operating hours'
-                  ),
+                isOpenAtVisitTime: false,
+                selected: false,
+                rejectedReasons: [
+                  operatingCheck.isClosedForDay
+                    ? 'Rejected: closed on this day'
+                    : (
+                        this.shouldSkipWaitForOpening(hotspotType)
+                          ? `Rejected: wait-to-open disabled for hotspot type ${hotspotType || 'unknown'}`
+                          : operatingCheck.nextWindowStart
+                            ? `Rejected: outside operating hours and wait window does not fit (next opens at ${operatingCheck.nextWindowStart})`
+                            : 'Rejected: outside operating hours'
+                      ),
               ],
             });
             continue;
@@ -5750,6 +5767,7 @@ export class TimelineBuilder {
         // PHP parity: preserve full hotspot_location string for travel-type semantics.
         const hotspotLocationName = hotspotData.hotspot_location as string || currentLocationName;
         const hotspotDuration = hotspotData.hotspot_duration || '01:00:00';
+        const hotspotType = String(hotspotData.hotspot_type || hotspotData.hotspotType || '').trim().toLowerCase();
         const destCoords = {
           lat: Number(hotspotData.hotspot_latitude ?? 0),
           lon: Number(hotspotData.hotspot_longitude ?? 0),
@@ -5793,6 +5811,7 @@ export class TimelineBuilder {
           lastRouteArrivalDeadlineSeconds,
           allowWaitUntilOpen: true,
           rejectIfOutsideOperatingWindow: true,
+          hotspotType,
         });
 
         if (!sharedFeasibility.feasible) {
@@ -6611,6 +6630,7 @@ export class TimelineBuilder {
 
           const hotspotLocationName = (hotspotData.hotspot_location as string) || currentLocationName;
           const hotspotDuration = hotspotData.hotspot_duration || '01:00:00';
+          const hotspotType = String(hotspotData.hotspot_type || hotspotData.hotspotType || '').trim().toLowerCase();
           const destCoords = {
             lat: Number(hotspotData.hotspot_latitude ?? 0),
             lon: Number(hotspotData.hotspot_longitude ?? 0),
@@ -6637,6 +6657,7 @@ export class TimelineBuilder {
             lastRouteArrivalDeadlineSeconds,
             allowWaitUntilOpen: true,
             rejectIfOutsideOperatingWindow: true,
+            hotspotType,
           });
 
           if (!sharedCycle4Feasibility.feasible) {
@@ -7167,6 +7188,7 @@ export class TimelineBuilder {
 
           const hotspotLocationName = (hotspotData.hotspot_location as string) || currentLocationName;
           const hotspotDuration = hotspotData.hotspot_duration || '01:00:00';
+          const hotspotType = String(hotspotData.hotspot_type || hotspotData.hotspotType || '').trim().toLowerCase();
           const destCoords = {
             lat: Number(hotspotData.hotspot_latitude ?? 0),
             lon: Number(hotspotData.hotspot_longitude ?? 0),
@@ -7195,6 +7217,7 @@ export class TimelineBuilder {
             lastRouteArrivalDeadlineSeconds,
             allowWaitUntilOpen: true,
             rejectIfOutsideOperatingWindow: false, // Very permissive for manual
+            hotspotType,
           });
 
           let canInsert = sharedManualFeasibility.feasible;
@@ -7294,6 +7317,7 @@ export class TimelineBuilder {
                 lastRouteArrivalDeadlineSeconds,
                 allowWaitUntilOpen: true,
                 rejectIfOutsideOperatingWindow: false,
+                hotspotType,
               });
 
               if (reevaluatedManualFeasibility.feasible) {
@@ -7826,6 +7850,7 @@ export class TimelineBuilder {
             );
 
             const hotspotDuration = String(hotspotData.hotspot_duration || '01:00:00');
+            const hotspotType = String(hotspotData.hotspot_type || hotspotData.hotspotType || '').trim().toLowerCase();
 
             const hotspotCoords = {
               lat: Number(hotspotData.hotspot_latitude ?? 0),
@@ -7893,7 +7918,11 @@ export class TimelineBuilder {
               visitEndSeconds,
             );
 
-            if (!operatingCheck.canVisitNow && operatingCheck.nextWindowStart) {
+            if (
+              !operatingCheck.canVisitNow &&
+              operatingCheck.nextWindowStart &&
+              !this.shouldSkipWaitForOpening(hotspotType)
+            ) {
               let nextWindowStartSeconds = timeToSeconds(operatingCheck.nextWindowStart);
               while (nextWindowStartSeconds < visitStartSeconds) {
                 nextWindowStartSeconds += 86400;
@@ -7941,7 +7970,11 @@ export class TimelineBuilder {
                 rejectedReasons: [
                   operatingCheck.isClosedForDay
                     ? 'Rejected: last_route_empty_day_rescue closed on this day'
-                    : 'Rejected: last_route_empty_day_rescue outside operating hours',
+                    : (
+                        this.shouldSkipWaitForOpening(hotspotType)
+                          ? `Rejected: wait-to-open disabled for hotspot type ${hotspotType || 'unknown'}`
+                          : 'Rejected: last_route_empty_day_rescue outside operating hours'
+                      ),
                 ],
               });
               continue;
@@ -9428,6 +9461,8 @@ export class TimelineBuilder {
             h.hotspot_location ||
             '',
         ),
+        hotspot_type: String(h.hotspot_type || ''),
+        hotspotType: String(h.hotspot_type || ''),
         __route_chain_from_index: Number(h.__route_chain_from_index ?? -1),
         __route_chain_to_index: Number(h.__route_chain_to_index ?? -1),
         __route_movement_order: Number(h.__route_movement_order ?? 999999),
@@ -9936,6 +9971,7 @@ export class TimelineBuilder {
     const travelDurationSeconds = timeToSeconds(travelTimeToHotspot);
     const currentTimeSeconds = this.toAbsoluteSecondsForRoute(input.currentTime, input.routeStartSeconds);
     const hotspotDurationSeconds = timeToSeconds(input.hotspotDuration || '01:00:00');
+    const hotspotType = String(input.hotspotType || '').trim().toLowerCase();
 
     let startSeconds = currentTimeSeconds + travelDurationSeconds;
     let endSeconds = startSeconds + hotspotDurationSeconds;
@@ -9950,7 +9986,12 @@ export class TimelineBuilder {
       endSeconds,
     );
 
-    if (!operatingHoursCheck.canVisitNow && input.allowWaitUntilOpen && operatingHoursCheck.nextWindowStart) {
+    if (
+      !operatingHoursCheck.canVisitNow &&
+      input.allowWaitUntilOpen &&
+      operatingHoursCheck.nextWindowStart &&
+      !this.shouldSkipWaitForOpening(hotspotType)
+    ) {
       let nextWindowStartSeconds = timeToSeconds(operatingHoursCheck.nextWindowStart);
       while (nextWindowStartSeconds < startSeconds) {
         nextWindowStartSeconds += 86400;
