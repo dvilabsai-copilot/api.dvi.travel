@@ -29,7 +29,10 @@ export class TBOHotelProvider implements IHotelProvider {
   // Production API Endpoints from Postman Collection
   private readonly SEARCH_API_URL = process.env.TBO_SEARCH_API_URL || 'https://affiliate.travelboutiqueonline.com/HotelAPI';
   private readonly BOOKING_API_URL = process.env.TBO_BOOKING_API_URL || 'https://hotelbooking.travelboutiqueonline.com/HotelAPI_V10';
-  private readonly SHARED_API_URL = process.env.TBO_AUTH_BASE_URL || 'https://api.travelboutiqueonline.com/SharedAPI';
+  private readonly SHARED_API_URL =
+    process.env.TBO_SHARED_API_URL ||
+    process.env.TBO_AUTH_BASE_URL ||
+    'https://api.travelboutiqueonline.com/SharedAPI';
   private readonly TBO_STATIC_API_URL = process.env.TBO_STATIC_API_URL || 'http://affiliate.travelboutiqueonline.com/TBOHolidays_HotelAPI';
   private readonly TBO_STATIC_USERNAME = process.env.TBO_STATIC_USERNAME || process.env.TBO_USERNAME || 'IXMD112';
   private readonly TBO_STATIC_PASSWORD = process.env.TBO_STATIC_PASSWORD || process.env.TBO_PASSWORD || 'api-11#M$new';
