@@ -3,11 +3,10 @@ import { Response } from 'express';
 import PDFDocument from 'pdfkit';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as QRCode from 'qrcode';
 import { ItinerariesService } from './itineraries.service';
 import { PrismaService } from '../../prisma.service';
 import { TransportVoucherDetails } from './dto/transport-voucher-details.dto';
-import { renderTransportVoucherHtml } from './templates/transport-voucher.template';
+import { renderInvoicePdfKit } from './templates/invoice-pdfkit.template';
 
 @Injectable()
 export class ItineraryPdfService {
@@ -257,133 +256,14 @@ export class ItineraryPdfService {
     const invoiceNo = data?.meta?.invoiceNo || `invoice-${itineraryPlanId}`;
     const safeName = this.sanitizeFileName(`${type}-${invoiceNo}.pdf`);
     const doc = this.createPdfResponse(res, safeName);
-    const logoPath = this.resolveLogoPath(data?.company?.logoUrl);
-
-    if (logoPath) {
-      try {
-        doc.image(logoPath, 40, 36, { fit: [110, 48] });
-      } catch {
-        // Ignore image rendering failures and keep PDF generation successful.
-      }
-    }
-
-    doc.fillColor('#3F3654').font('Helvetica-Bold').fontSize(18).text(
-      type === 'tax' ? 'Tax Invoice' : 'Proforma Invoice',
-      40,
-      40,
-      { align: 'right' },
+    renderInvoicePdfKit(
+      doc,
+      data,
+      type,
+      {
+        logoDataUri: this.fileToDataUri(this.resolveLogoPath(data?.company?.logoUrl)),
+      },
     );
-    doc.font('Helvetica-Bold').fontSize(16).text(data?.company?.name || 'DVI', 40, 92);
-    doc.font('Helvetica').fontSize(10).fillColor('#5A5268').text(
-      [data?.company?.address, data?.company?.pincode ? `- ${data.company.pincode}` : ''].filter(Boolean).join(' '),
-      40,
-      112,
-      { width: 300 },
-    );
-
-    this.drawLabelValue(doc, 360, 92, 'Invoice No', String(data?.meta?.invoiceNo || '--'), 180);
-    this.drawLabelValue(doc, 360, 126, 'Dated', this.formatDate(data?.meta?.invoiceDate), 180);
-    this.drawLabelValue(doc, 360, 160, 'Travel Expert', String(data?.meta?.travelExpertName || '--'), 180);
-    this.drawRule(doc, 202);
-
-    doc.y = 216;
-    doc.font('Helvetica-Bold').fontSize(12).fillColor('#8A6AB0').text('Buyer Details', 40, doc.y);
-    doc.font('Helvetica-Bold').fontSize(13).fillColor('#2F2A36').text(data?.buyer?.companyName || '--', 40, doc.y + 18);
-    doc.font('Helvetica').fontSize(10).fillColor('#5A5268').text(data?.buyer?.address || '--', 40, doc.y + 38, { width: 245 });
-    doc.text(`GSTIN/UIN: ${data?.buyer?.gstNo || '--'}`, 40, doc.y + 72);
-    doc.text(`State: ${data?.buyer?.gstStateName || '--'}`, 40, doc.y + 88);
-    doc.text(`PAN: ${data?.buyer?.panNo || '--'}`, 40, doc.y + 104);
-
-    doc.font('Helvetica-Bold').fontSize(12).fillColor('#8A6AB0').text('Guest Details', 320, 216);
-    doc.font('Helvetica-Bold').fontSize(13).fillColor('#2F2A36').text(data?.guest?.name || '--', 320, 234);
-    doc.font('Helvetica').fontSize(10).fillColor('#5A5268').text(`Contact: ${data?.guest?.contactNo || '--'}`, 320, 256);
-    doc.text(`Arrival: ${data?.guest?.arrivalPlace || '--'}`, 320, 272);
-    doc.text(this.formatDateTime(data?.guest?.arrivalDateTime), 320, 288);
-    doc.text(`Departure: ${data?.guest?.departurePlace || '--'}`, 320, 304);
-    doc.text(this.formatDateTime(data?.guest?.departureDateTime), 320, 320);
-
-    this.drawRule(doc, 348);
-
-    const tableTop = 362;
-    const col1 = 40;
-    const col2 = 82;
-    const col3 = 380;
-    const col4 = 455;
-
-    doc.rect(40, tableTop, doc.page.width - 80, 24).fillAndStroke('#FAF6FF', '#E7DFF0');
-    doc.fillColor('#3F3654').font('Helvetica-Bold').fontSize(10);
-    doc.text('SI No.', col1 + 6, tableTop + 7);
-    doc.text('Particulars', col2 + 6, tableTop + 7);
-    doc.text('HSN/SAC', col3 + 6, tableTop + 7);
-    doc.text('Amount', col4 + 6, tableTop + 7, { width: 80, align: 'right' });
-
-    let y = tableTop + 28;
-    const lineItems = Array.isArray(data?.lineItems) ? data.lineItems : [];
-    for (const item of lineItems) {
-      const notes = Array.isArray(item?.notes) ? item.notes.map((note: any) => String(note?.label || '')).filter(Boolean) : [];
-      const itemText = [String(item?.title || '--'), ...notes].join('\n');
-      const rowHeight = Math.max(
-        doc.heightOfString(itemText, { width: 285 }),
-        16,
-      ) + 12;
-
-      this.addPageIfNeeded(doc, rowHeight + 60);
-      if (doc.y > y) {
-        y = doc.y;
-      }
-
-      doc.rect(40, y, doc.page.width - 80, rowHeight).strokeColor('#EFE6F8').stroke();
-      doc.font('Helvetica').fontSize(10).fillColor('#2F2A36');
-      doc.text(String(item?.serialNo || ''), col1 + 6, y + 6, { width: 28 });
-      doc.text(itemText, col2 + 6, y + 6, { width: 285 });
-      doc.text(String(item?.hsnSac || '--'), col3 + 6, y + 6, { width: 65 });
-      doc.text(this.normalizeCurrency(item?.amount), col4 + 6, y + 6, { width: 74, align: 'right' });
-      y += rowHeight;
-      doc.y = y;
-    }
-
-    if (Number(data?.totals?.couponDiscount || 0) > 0) {
-      this.addPageIfNeeded(doc, 40);
-      doc.rect(40, y, doc.page.width - 80, 24).strokeColor('#EFE6F8').stroke();
-      doc.font('Helvetica-Bold').fontSize(10).fillColor('#7A6A8D');
-      doc.text('Coupon Discount', 40, y + 7, { width: 430, align: 'right' });
-      doc.text(this.normalizeCurrency(data?.totals?.couponDiscount), col4 + 6, y + 7, { width: 74, align: 'right' });
-      y += 24;
-    }
-
-    doc.rect(40, y, doc.page.width - 80, 28).fillAndStroke('#FFF8EC', '#E7D9C4');
-    doc.font('Helvetica-Bold').fontSize(11).fillColor('#3F3654');
-    doc.text('Total Amount', 40, y + 8, { width: 430, align: 'right' });
-    doc.text(this.normalizeCurrency(data?.totals?.totalAmount), col4 + 6, y + 8, { width: 74, align: 'right' });
-    y += 44;
-
-    this.addPageIfNeeded(doc, 180);
-    doc.font('Helvetica-Bold').fontSize(11).fillColor('#3F3654').text('Amount Chargeable (in words)', 40, y);
-    doc.font('Helvetica').fontSize(10).fillColor('#5A5268').text(
-      String(data?.totals?.amountInWords || data?.totals?.amountInWordsText || this.amountToWords(data?.totals?.totalAmount)),
-      40,
-      y + 16,
-      { width: 500 },
-    );
-
-    y += 60;
-    doc.font('Helvetica-Bold').fontSize(11).fillColor('#3F3654').text('Bank Details', 40, y);
-    doc.font('Helvetica').fontSize(10).fillColor('#5A5268');
-    doc.text(`Account Name: ${data?.company?.bank?.accountName || '--'}`, 40, y + 16);
-    doc.text(`Account Number: ${data?.company?.bank?.accountNo || '--'}`, 40, y + 32);
-    doc.text(`Bank Name: ${data?.company?.bank?.bankName || '--'}`, 40, y + 48);
-    doc.text(`Branch & IFSC: ${[data?.company?.bank?.branchName, data?.company?.bank?.ifscCode].filter(Boolean).join(', ') || '--'}`, 40, y + 64, {
-      width: 280,
-    });
-
-    doc.font('Helvetica-Bold').fontSize(11).fillColor('#3F3654').text('Declaration', 330, y);
-    doc.font('Helvetica').fontSize(10).fillColor('#5A5268').text(String(data?.declaration || '--'), 330, y + 16, {
-      width: 210,
-    });
-
-    doc.font('Helvetica').fontSize(10).fillColor('#5A5268').text(`for ${data?.company?.name || 'DVI'}`, 350, doc.page.height - 92);
-    doc.font('Helvetica-Bold').fontSize(11).fillColor('#3F3654').text('Authorized Signatory', 350, doc.page.height - 54);
-
     doc.end();
   }
 
@@ -399,16 +279,9 @@ export class ItineraryPdfService {
     const data = await this.itinerariesService.getTransportVoucherDetails(itineraryPlanId);
     const safeVoucherNo = data?.voucher?.voucherNo || String(itineraryPlanId);
     const safeName = this.sanitizeFileName(`transport-voucher-${safeVoucherNo}.pdf`);
-    const html = renderTransportVoucherHtml(
-      data,
-      await this.buildTransportVoucherAssets(data, itineraryPlanId),
-    );
-    const pdfBuffer = await this.renderHtmlToPdfBuffer(html);
-
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="${safeName}"`);
-    res.setHeader('Content-Length', pdfBuffer.length);
-    res.end(pdfBuffer);
+    const doc = this.createPdfResponse(res, safeName);
+    this.drawTransportVoucherPdf(doc, data);
+    doc.end();
   }
 
   private fileToDataUri(filePath?: string | null): string | null {
@@ -479,133 +352,6 @@ export class ItineraryPdfService {
     }
 
     return null;
-  }
-
-  private async buildTransportVoucherQrDataUri(
-    data: TransportVoucherDetails,
-    itineraryPlanId: number,
-  ): Promise<string | null> {
-    const baseUrl = String(process.env.BASE_URL || '').replace(/\/+$/, '');
-    const assistanceUrl = baseUrl
-      ? `${baseUrl}/api/v1/itineraries/${itineraryPlanId}/vehicle-voucher-pdf`
-      : '';
-    const qrPayload = [
-      `Transport Voucher: ${data.voucher.voucherNo || itineraryPlanId}`,
-      `Date: ${data.voucher.date || '--'}`,
-      `Guest: ${data.guest.name || '--'}`,
-      `Trip: ${data.voucher.title || 'Trip'}`,
-      assistanceUrl ? `Link: ${assistanceUrl}` : '',
-      data.footer.emergencyPhone ? `Support: ${data.footer.emergencyPhone}` : '',
-      data.company.website ? `Web: ${data.company.website}` : '',
-    ]
-      .filter(Boolean)
-      .join('\n');
-
-    try {
-      return await QRCode.toDataURL(qrPayload, {
-        errorCorrectionLevel: 'M',
-        margin: 1,
-        width: 220,
-        color: {
-          dark: '#111111',
-          light: '#FFFFFF',
-        },
-      });
-    } catch {
-      return null;
-    }
-  }
-
-  private async buildTransportVoucherAssets(
-    data: TransportVoucherDetails,
-    itineraryPlanId: number,
-  ): Promise<{
-    logoDataUri?: string | null;
-    vehicleImageDataUri?: string | null;
-    qrDataUri?: string | null;
-  }> {
-    const logoPath = this.resolveLogoPath(data.company.logoPath || '');
-    const vehicleImagePath =
-      this.resolveLogoPath(data.vehicle.imagePath || '')
-      || this.resolveTransportDefaultVehicleImage(data.vehicle.type);
-
-    return {
-      logoDataUri: this.fileToDataUri(logoPath),
-      vehicleImageDataUri: this.fileToDataUri(vehicleImagePath),
-      qrDataUri: await this.buildTransportVoucherQrDataUri(data, itineraryPlanId),
-    };
-  }
-
-  private resolveChromiumExecutablePath(): string | undefined {
-    const candidates = [
-      process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH,
-      process.env.CHROME_BIN,
-      process.env.CHROMIUM_PATH,
-      '/usr/bin/google-chrome',
-      '/usr/bin/google-chrome-stable',
-      '/usr/bin/chromium',
-      '/usr/bin/chromium-browser',
-    ].filter(Boolean) as string[];
-
-    return candidates.find((candidate) => {
-      try {
-        return fs.existsSync(candidate);
-      } catch {
-        return false;
-      }
-    });
-  }
-
-  private async renderHtmlToPdfBuffer(html: string): Promise<Buffer> {
-    const { chromium } = await import('playwright');
-
-    const executablePath = this.resolveChromiumExecutablePath();
-
-    const browser = await chromium.launch({
-      headless: true,
-      executablePath,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--no-zygote',
-      ],
-    });
-
-    try {
-      const page = await browser.newPage({
-        viewport: { width: 1240, height: 1754 },
-        deviceScaleFactor: 1,
-      });
-
-      await page.emulateMedia({ media: 'print' });
-
-      await page.setContent(html, {
-        waitUntil: 'load',
-        timeout: 60000,
-      });
-
-      await page
-        .waitForLoadState('networkidle', {
-          timeout: 15000,
-        })
-        .catch(() => undefined);
-
-      return await page.pdf({
-        format: 'A4',
-        printBackground: true,
-        margin: {
-          top: '0mm',
-          right: '0mm',
-          bottom: '0mm',
-          left: '0mm',
-        },
-        preferCSSPageSize: true,
-      });
-    } finally {
-      await browser.close().catch(() => undefined);
-    }
   }
 
   private drawTransportVoucherPdfCompact(doc: PDFKit.PDFDocument, data: TransportVoucherDetails): void {
