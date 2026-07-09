@@ -3,10 +3,12 @@ import { Response } from 'express';
 import PDFDocument from 'pdfkit';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as QRCode from 'qrcode';
 import { ItinerariesService } from './itineraries.service';
 import { PrismaService } from '../../prisma.service';
 import { TransportVoucherDetails } from './dto/transport-voucher-details.dto';
 import { renderInvoicePdfKit } from './templates/invoice-pdfkit.template';
+import { renderTransportVoucherHtml } from './templates/transport-voucher.template';
 
 @Injectable()
 export class ItineraryPdfService {
@@ -279,9 +281,16 @@ export class ItineraryPdfService {
     const data = await this.itinerariesService.getTransportVoucherDetails(itineraryPlanId);
     const safeVoucherNo = data?.voucher?.voucherNo || String(itineraryPlanId);
     const safeName = this.sanitizeFileName(`transport-voucher-${safeVoucherNo}.pdf`);
-    const doc = this.createPdfResponse(res, safeName);
-    this.drawTransportVoucherPdf(doc, data);
-    doc.end();
+    const html = renderTransportVoucherHtml(
+      data,
+      await this.buildTransportVoucherAssets(data, itineraryPlanId),
+    );
+    const pdfBuffer = await this.renderHtmlToPdfBuffer(html);
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeName}"`);
+    res.setHeader('Content-Length', pdfBuffer.length);
+    res.end(pdfBuffer);
   }
 
   private fileToDataUri(filePath?: string | null): string | null {
@@ -305,6 +314,110 @@ export class ItineraryPdfService {
     }
 
     return `data:${mimeType};base64,${fs.readFileSync(filePath).toString('base64')}`;
+  }
+
+  private async buildTransportVoucherQrDataUri(
+    data: TransportVoucherDetails,
+    itineraryPlanId: number,
+  ): Promise<string | null> {
+    const baseUrl = String(process.env.BASE_URL || '').replace(/\/+$/, '');
+    const assistanceUrl = baseUrl
+      ? `${baseUrl}/api/v1/itineraries/${itineraryPlanId}/vehicle-voucher-pdf`
+      : '';
+    const qrPayload = [
+      `Transport Voucher: ${data.voucher.voucherNo || itineraryPlanId}`,
+      `Date: ${data.voucher.date || '--'}`,
+      `Guest: ${data.guest.name || '--'}`,
+      `Trip: ${data.voucher.title || 'Trip'}`,
+      assistanceUrl ? `Link: ${assistanceUrl}` : '',
+      data.footer.emergencyPhone ? `Support: ${data.footer.emergencyPhone}` : '',
+      data.company.website ? `Web: ${data.company.website}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    try {
+      return await QRCode.toDataURL(qrPayload, {
+        errorCorrectionLevel: 'M',
+        margin: 1,
+        width: 220,
+        color: {
+          dark: '#111111',
+          light: '#FFFFFF',
+        },
+      });
+    } catch {
+      return null;
+    }
+  }
+
+  private async buildTransportVoucherAssets(
+    data: TransportVoucherDetails,
+    itineraryPlanId: number,
+  ): Promise<{
+    logoDataUri?: string | null;
+    vehicleImageDataUri?: string | null;
+    qrDataUri?: string | null;
+  }> {
+    const logoPath = this.resolveLogoPath(data.company.logoPath || '');
+    const vehicleImagePath =
+      this.resolveLogoPath(data.vehicle.imagePath || '')
+      || this.resolveTransportDefaultVehicleImage(data.vehicle.type);
+
+    return {
+      logoDataUri: this.fileToDataUri(logoPath),
+      vehicleImageDataUri: this.fileToDataUri(vehicleImagePath),
+      qrDataUri: await this.buildTransportVoucherQrDataUri(data, itineraryPlanId),
+    };
+  }
+
+  private async renderHtmlToPdfBuffer(html: string): Promise<Buffer> {
+    const { chromium } = await import('playwright');
+
+    const browser = await chromium.launch({
+      headless: true,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--no-zygote',
+      ],
+    });
+
+    try {
+      const page = await browser.newPage({
+        viewport: { width: 1240, height: 1754 },
+        deviceScaleFactor: 1,
+      });
+
+      await page.emulateMedia({ media: 'print' });
+
+      await page.setContent(html, {
+        waitUntil: 'load',
+        timeout: 60000,
+      });
+
+      await page
+        .waitForLoadState('networkidle', {
+          timeout: 15000,
+        })
+        .catch(() => undefined);
+
+      return await page.pdf({
+        format: 'A4',
+        printBackground: true,
+        margin: {
+          top: '0mm',
+          right: '0mm',
+          bottom: '0mm',
+          left: '0mm',
+        },
+        preferCSSPageSize: true,
+      });
+    } finally {
+      await browser.close().catch(() => undefined);
+    }
   }
 
   private resolveTransportDefaultVehicleImage(vehicleType?: string | null): string | null {
