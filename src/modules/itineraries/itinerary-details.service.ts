@@ -5581,14 +5581,9 @@ days,
     if (filter_agent_id > 0) where.agent_id = filter_agent_id;
     if (filter_staff_id > 0) where.staff_id = filter_staff_id;
 
-    const totalRecords =
-      await this.prisma.dvi_itinerary_plan_details.count({ where });
-
-    const plans = await this.prisma.dvi_itinerary_plan_details.findMany({
+    const allPlans = await this.prisma.dvi_itinerary_plan_details.findMany({
       where,
       orderBy: { itinerary_plan_ID: 'desc' },
-      skip: start,
-      take: limit,
       select: {
         itinerary_plan_ID: true,
         arrival_location: true,
@@ -5615,10 +5610,10 @@ days,
       } as any,
     });
 
-    const planIds = plans
+    const planIds = allPlans
       .map((p: any) => Number(p.itinerary_plan_ID))
       .filter((n) => n > 0);
-    const createdByUserIds = plans
+    const createdByUserIds = allPlans
       .map((p: any) => Number(p.createdby))
       .filter((n) => n > 0);
 
@@ -5685,6 +5680,10 @@ days,
       agentMap.set(Number(ag.agent_ID), String(ag.agent_name ?? ''));
 
     let counter = start;
+
+    const unconfirmedPlans = allPlans.filter((p: any) => !confirmedMap.has(Number(p.itinerary_plan_ID)));
+    const totalRecords = unconfirmedPlans.length;
+    const plans = unconfirmedPlans.slice(start, start + limit);
 
     const data = (plans ?? []).map((p: any) => {
       counter++;

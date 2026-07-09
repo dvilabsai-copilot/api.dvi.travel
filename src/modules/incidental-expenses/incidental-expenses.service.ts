@@ -35,6 +35,34 @@ export class IncidentalExpensesService {
     }
   }
 
+  private formatDateOnly(value?: Date | string | null): string {
+    if (!value) return '--';
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return '--';
+    return date.toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    });
+  }
+
+  private formatDateTime(value?: Date | string | null): string {
+    if (!value) return '--';
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return '--';
+    const datePart = date.toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    });
+    const timePart = date.toLocaleTimeString('en-IN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    });
+    return `${datePart} ${timePart}`;
+  }
+
   private async resolveHistoryItemName(row: any): Promise<string> {
     const componentType = Number(row?.component_type || 0);
 
@@ -42,102 +70,39 @@ export class IncidentalExpensesService {
       const guideAssignment = await this.prisma.dvi_confirmed_itinerary_route_guide_details.findUnique({
         where: { confirmed_route_guide_ID: Number(row?.confirmed_route_guide_ID || 0) },
       });
-      const [guide, route] = await Promise.all([
-        guideAssignment?.guide_id
-          ? this.prisma.dvi_guide_details.findUnique({
-              where: { guide_id: Number(guideAssignment.guide_id) },
-              select: { guide_name: true },
-            })
-          : Promise.resolve(null),
-        guideAssignment?.itinerary_route_ID
-          ? this.prisma.dvi_confirmed_itinerary_route_details.findFirst({
-              where: {
-                itinerary_plan_ID: Number(row?.itinerary_plan_id || 0),
-                itinerary_route_ID: Number(guideAssignment.itinerary_route_ID),
-              },
-              select: { itinerary_route_date: true, location_name: true, next_visiting_location: true },
-            })
-          : Promise.resolve(null),
-      ]);
-
-      const routeDate = route?.itinerary_route_date
-        ? new Date(route.itinerary_route_date).toLocaleDateString('en-IN', {
-            day: '2-digit',
-            month: 'short',
-            year: 'numeric',
+      const guide = guideAssignment?.guide_id
+        ? await this.prisma.dvi_guide_details.findUnique({
+            where: { guide_id: Number(guideAssignment.guide_id) },
+            select: { guide_name: true },
           })
-        : '';
-      return [guide?.guide_name || 'Guide', this.routeLabel(route), routeDate]
-        .filter(Boolean)
-        .join(' | ');
+        : null;
+      return guide?.guide_name || 'Guide';
     }
 
     if (componentType === 2) {
       const hotspotAssignment = await this.prisma.dvi_confirmed_itinerary_route_hotspot_details.findUnique({
         where: { confirmed_route_hotspot_ID: Number(row?.confirmed_route_hotspot_ID || 0) },
       });
-      const [hotspot, route] = await Promise.all([
-        hotspotAssignment?.hotspot_ID
-          ? this.prisma.dvi_hotspot_place.findUnique({
-              where: { hotspot_ID: Number(hotspotAssignment.hotspot_ID) },
-              select: { hotspot_name: true },
-            })
-          : Promise.resolve(null),
-        hotspotAssignment?.itinerary_route_ID
-          ? this.prisma.dvi_confirmed_itinerary_route_details.findFirst({
-              where: {
-                itinerary_plan_ID: Number(row?.itinerary_plan_id || 0),
-                itinerary_route_ID: Number(hotspotAssignment.itinerary_route_ID),
-              },
-              select: { itinerary_route_date: true, location_name: true, next_visiting_location: true },
-            })
-          : Promise.resolve(null),
-      ]);
-
-      const routeDate = route?.itinerary_route_date
-        ? new Date(route.itinerary_route_date).toLocaleDateString('en-IN', {
-            day: '2-digit',
-            month: 'short',
-            year: 'numeric',
+      const hotspot = hotspotAssignment?.hotspot_ID
+        ? await this.prisma.dvi_hotspot_place.findUnique({
+            where: { hotspot_ID: Number(hotspotAssignment.hotspot_ID) },
+            select: { hotspot_name: true },
           })
-        : '';
-      return [hotspot?.hotspot_name || 'Hotspot', this.routeLabel(route), routeDate]
-        .filter(Boolean)
-        .join(' | ');
+        : null;
+      return hotspot?.hotspot_name || 'Hotspot';
     }
 
     if (componentType === 3) {
       const activityAssignment = await this.prisma.dvi_confirmed_itinerary_route_activity_details.findUnique({
         where: { confirmed_route_activity_ID: Number(row?.confirmed_route_activity_ID || 0) },
       });
-      const [activity, route] = await Promise.all([
-        activityAssignment?.activity_ID
-          ? this.prisma.dvi_activity.findUnique({
-              where: { activity_id: Number(activityAssignment.activity_ID) },
-              select: { activity_title: true },
-            })
-          : Promise.resolve(null),
-        activityAssignment?.itinerary_route_ID
-          ? this.prisma.dvi_confirmed_itinerary_route_details.findFirst({
-              where: {
-                itinerary_plan_ID: Number(row?.itinerary_plan_id || 0),
-                itinerary_route_ID: Number(activityAssignment.itinerary_route_ID),
-              },
-              select: { itinerary_route_date: true, location_name: true, next_visiting_location: true },
-            })
-          : Promise.resolve(null),
-      ]);
-
-      const routeDate = route?.itinerary_route_date
-        ? new Date(route.itinerary_route_date).toLocaleDateString('en-IN', {
-            day: '2-digit',
-            month: 'short',
-            year: 'numeric',
+      const activity = activityAssignment?.activity_ID
+        ? await this.prisma.dvi_activity.findUnique({
+            where: { activity_id: Number(activityAssignment.activity_ID) },
+            select: { activity_title: true },
           })
-        : '';
-      return [activity?.activity_title || 'Activity', this.routeLabel(route), routeDate]
-        .filter(Boolean)
-        .join(' | ');
+        : null;
+      return activity?.activity_title || 'Activity';
     }
 
     if (componentType === 4) {
@@ -155,16 +120,7 @@ export class IncidentalExpensesService {
             select: { hotel_name: true },
           })
         : null;
-      const routeDate = hotelAssignment?.itinerary_route_date
-        ? new Date(hotelAssignment.itinerary_route_date).toLocaleDateString('en-IN', {
-            day: '2-digit',
-            month: 'short',
-            year: 'numeric',
-          })
-        : '';
-      return [hotel?.hotel_name || 'Hotel', hotelAssignment?.itinerary_route_location || '', routeDate]
-        .filter(Boolean)
-        .join(' | ');
+      return hotel?.hotel_name || 'Hotel';
     }
 
     if (componentType === 5) {
@@ -172,36 +128,85 @@ export class IncidentalExpensesService {
         where: { confirmed_itinerary_plan_vendor_eligible_ID: Number(row?.confirmed_itinerary_plan_vendor_eligible_ID || 0) },
         select: {
           vendor_id: true,
-          vehicle_type_id: true,
-          vehicle_orign: true,
         },
       });
 
-      const [vendor, vehicleType] = await Promise.all([
-        vendorAssignment?.vendor_id
-          ? this.prisma.dvi_vendor_details.findUnique({
-              where: { vendor_id: Number(vendorAssignment.vendor_id) },
-              select: { vendor_name: true },
-            })
-          : Promise.resolve(null),
-        vendorAssignment?.vehicle_type_id
-          ? this.prisma.dvi_vehicle_type.findUnique({
-              where: { vehicle_type_id: Number(vendorAssignment.vehicle_type_id) },
-              select: { vehicle_type_title: true },
-            })
-          : Promise.resolve(null),
-      ]);
+      const vendor = vendorAssignment?.vendor_id
+        ? await this.prisma.dvi_vendor_details.findUnique({
+            where: { vendor_id: Number(vendorAssignment.vendor_id) },
+            select: { vendor_name: true },
+          })
+        : null;
 
-      return [
-        vendor?.vendor_name || 'Vendor',
-        vehicleType?.vehicle_type_title || '',
-        String(vendorAssignment?.vehicle_orign || '').trim(),
-      ]
-        .filter(Boolean)
-        .join(' | ');
+      return vendor?.vendor_name || 'Vendor';
     }
 
-    return 'Unknown Item';
+    return 'Unknown';
+  }
+
+  private async resolveHistoryRouteDate(row: any): Promise<string> {
+    const componentType = Number(row?.component_type || 0);
+
+    if (componentType === 1) {
+      const guideAssignment = await this.prisma.dvi_confirmed_itinerary_route_guide_details.findUnique({
+        where: { confirmed_route_guide_ID: Number(row?.confirmed_route_guide_ID || 0) },
+        select: { itinerary_route_ID: true },
+      });
+      if (!guideAssignment?.itinerary_route_ID) return '--';
+
+      const route = await this.prisma.dvi_confirmed_itinerary_route_details.findFirst({
+        where: {
+          itinerary_plan_ID: Number(row?.itinerary_plan_id || 0),
+          itinerary_route_ID: Number(guideAssignment.itinerary_route_ID),
+        },
+        select: { itinerary_route_date: true },
+      });
+      return this.formatDateOnly(route?.itinerary_route_date);
+    }
+
+    if (componentType === 2) {
+      const hotspotAssignment = await this.prisma.dvi_confirmed_itinerary_route_hotspot_details.findUnique({
+        where: { confirmed_route_hotspot_ID: Number(row?.confirmed_route_hotspot_ID || 0) },
+        select: { itinerary_route_ID: true },
+      });
+      if (!hotspotAssignment?.itinerary_route_ID) return '--';
+
+      const route = await this.prisma.dvi_confirmed_itinerary_route_details.findFirst({
+        where: {
+          itinerary_plan_ID: Number(row?.itinerary_plan_id || 0),
+          itinerary_route_ID: Number(hotspotAssignment.itinerary_route_ID),
+        },
+        select: { itinerary_route_date: true },
+      });
+      return this.formatDateOnly(route?.itinerary_route_date);
+    }
+
+    if (componentType === 3) {
+      const activityAssignment = await this.prisma.dvi_confirmed_itinerary_route_activity_details.findUnique({
+        where: { confirmed_route_activity_ID: Number(row?.confirmed_route_activity_ID || 0) },
+        select: { itinerary_route_ID: true },
+      });
+      if (!activityAssignment?.itinerary_route_ID) return '--';
+
+      const route = await this.prisma.dvi_confirmed_itinerary_route_details.findFirst({
+        where: {
+          itinerary_plan_ID: Number(row?.itinerary_plan_id || 0),
+          itinerary_route_ID: Number(activityAssignment.itinerary_route_ID),
+        },
+        select: { itinerary_route_date: true },
+      });
+      return this.formatDateOnly(route?.itinerary_route_date);
+    }
+
+    if (componentType === 4) {
+      const hotelAssignment = await this.prisma.dvi_confirmed_itinerary_plan_hotel_details.findUnique({
+        where: { confirmed_itinerary_plan_hotel_details_ID: Number(row?.confirmed_itinerary_plan_hotel_details_ID || 0) },
+        select: { itinerary_route_date: true },
+      });
+      return this.formatDateOnly(hotelAssignment?.itinerary_route_date);
+    }
+
+    return '--';
   }
 
   async getAvailableComponents(itineraryPlanId: number) {
@@ -598,7 +603,12 @@ export class IncidentalExpensesService {
         return {
           ...row,
           component_type_label: this.componentTypeLabel(Number(row.component_type || 0)),
+          component_name: await this.resolveHistoryItemName(row),
+          route_date: await this.resolveHistoryRouteDate(row),
+          payment_date: this.formatDateTime(row.createdon),
           item_name: await this.resolveHistoryItemName(row),
+          amount: Number(row.incidental_amount || 0),
+          incidental_amount: Number(row.incidental_amount || 0),
           total_amount: Number(main?.total_amount || 0),
           total_payed: Number(main?.total_payed || 0),
           total_balance: Number(main?.total_balance || 0),
