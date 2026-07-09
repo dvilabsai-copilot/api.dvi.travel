@@ -405,6 +405,23 @@ export class AgentService {
   async getById(id: number): Promise<AgentPreviewDto> {
     const a = await this.prisma.dvi_agent.findFirst({
       where: { agent_ID: id, deleted: 0 },
+      select: {
+        agent_ID: true,
+        agent_name: true,
+        agent_lastname: true,
+        agent_email_id: true,
+        agent_primary_mobile_number: true,
+        agent_alternative_mobile_number: true,
+        agent_country: true,
+        agent_state: true,
+        agent_city: true,
+        agent_gst_number: true,
+        agent_gst_attachment: true,
+        subscription_plan_id: true,
+        travel_expert_id: true,
+        total_cash_wallet: true,
+        total_coupon_wallet: true,
+      },
     });
     if (!a) throw new NotFoundException('Agent not found');
 
@@ -422,6 +439,78 @@ export class AgentService {
 
     const latestTitle = await this.getLatestSubscriptionTitle(a.agent_ID);
 
+    const resolveCashWalletBalanceFromHistory = async (): Promise<number> => {
+      const cashRows = await this.prisma.dvi_cash_wallet.findMany({
+        where: {
+          agent_id: id,
+          deleted: 0,
+        },
+        select: {
+          transaction_amount: true,
+          transaction_type: true,
+        },
+      });
+
+      return cashRows.reduce((sum, row) => {
+        const amount = Number(row.transaction_amount || 0);
+        const rawType = String(row.transaction_type ?? '').trim().toLowerCase();
+        const numericType = Number(row.transaction_type ?? 0);
+        const isDebit = rawType === 'debit' || numericType === 2;
+        const isCredit = rawType === 'credit' || numericType === 1 || numericType === 0;
+
+        if (isDebit) {
+          return sum - Math.abs(amount);
+        }
+
+        if (isCredit) {
+          return sum + Math.abs(amount);
+        }
+
+        return sum + amount;
+      }, 0);
+    };
+
+    const resolveCouponWalletBalanceFromHistory = async (): Promise<number> => {
+      const couponRows = await this.prisma.dvi_coupon_wallet.findMany({
+        where: {
+          agent_id: id,
+          deleted: 0,
+        },
+        select: {
+          transaction_amount: true,
+          transaction_type: true,
+        },
+      });
+
+      return couponRows.reduce((sum, row) => {
+        const amount = Number(row.transaction_amount || 0);
+        const rawType = String(row.transaction_type ?? '').trim().toLowerCase();
+        const numericType = Number(row.transaction_type ?? 0);
+        const isDebit = rawType === 'debit' || numericType === 2;
+        const isCredit = rawType === 'credit' || numericType === 1 || numericType === 0;
+
+        if (isDebit) {
+          return sum - Math.abs(amount);
+        }
+
+        if (isCredit) {
+          return sum + Math.abs(amount);
+        }
+
+        return sum + amount;
+      }, 0);
+    };
+
+    const totalCashWallet =
+      Number(a.total_cash_wallet ?? 0) > 0
+        ? Number(a.total_cash_wallet ?? 0)
+        : await resolveCashWalletBalanceFromHistory();
+
+    const totalCouponWallet =
+      Number(a.total_coupon_wallet ?? 0) > 0
+        ? Number(a.total_coupon_wallet ?? 0)
+        : await resolveCouponWalletBalanceFromHistory();
+
     const dto: AgentPreviewDto = {
       agent_ID: a.agent_ID,
       agent_name: a.agent_name ?? null,
@@ -437,6 +526,8 @@ export class AgentService {
       subscription_plan_id: a.subscription_plan_id ?? null,
       travel_expert_id: a.travel_expert_id ?? null,
       login_enabled,
+      total_cash_wallet: totalCashWallet,
+      total_coupon_wallet: totalCouponWallet,
 
       country_label: a.agent_country ? countryMap.get(a.agent_country) ?? null : null,
       state_label: a.agent_state ? stateMap.get(a.agent_state) ?? null : null,
@@ -817,21 +908,34 @@ private async addWallet(
   addValue(agentCol, agentId);
   addValue(amountCol, input.amount);
   addValue(remarkCol, input.remark);
-  addValue(typeCol, 'Credit');
+  addValue(typeCol, 1);
   addValue(deletedCol, 0);
   addValue(statusCol, 1);
   addNow(createdCol);
   addNow(updatedCol);
 
-  await this.prisma.$executeRawUnsafe(
-    `
-      INSERT INTO ${this.quoteIdent(tableName)}
-        (${insertCols.join(', ')})
-      VALUES
-        (${placeholders.join(', ')})
-    `,
-    ...params,
-  );
+  await this.prisma.$transaction(async (tx) => {
+    await tx.$executeRawUnsafe(
+      `
+        INSERT INTO ${this.quoteIdent(tableName)}
+          (${insertCols.join(', ')})
+        VALUES
+          (${placeholders.join(', ')})
+      `,
+      ...params,
+    );
+
+    const walletField = type === 'cash' ? 'total_cash_wallet' : 'total_coupon_wallet';
+
+    await tx.dvi_agent.update({
+      where: { agent_ID: agentId },
+      data: {
+        [walletField]: {
+          increment: input.amount,
+        },
+      } as any,
+    });
+  });
 
   return {
     ok: true,

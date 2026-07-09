@@ -13,6 +13,8 @@ export type AgentPreviewDto = {
   subscription_plan_id: number | null;
   travel_expert_id: number | null;
   login_enabled: boolean;
+  total_cash_wallet?: number | null;
+  total_coupon_wallet?: number | null;
   country_label?: string | null;
   state_label?: string | null;
   city_label?: string | null;

@@ -2,6 +2,7 @@
 // FILE: src/itineraries/itineraries.service.ts
 
 import { Injectable, BadRequestException, NotFoundException, ConflictException, InternalServerErrorException } from "@nestjs/common";
+import { Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma.service";
 import {
   CreateItineraryDto,
@@ -7203,20 +7204,54 @@ pricing: {
       throw new BadRequestException('Itinerary plan not found');
     }
 
-    // Get agent details
-    const agent = await this.prisma.dvi_agent.findUnique({
-      where: { agent_ID: plan.agent_id },
-      select: {
-        agent_name: true,
-        total_cash_wallet: true,
-      },
-    });
+    // Get agent details plus company/city labels used by the dropdown.
+    const [agent, agentConfig] = await Promise.all([
+      this.prisma.dvi_agent.findUnique({
+        where: { agent_ID: plan.agent_id },
+        select: {
+          agent_name: true,
+          agent_lastname: true,
+          agent_city: true,
+          total_cash_wallet: true,
+        },
+      }),
+      this.prisma.dvi_agent_configuration.findFirst({
+        where: {
+          agent_id: plan.agent_id,
+          deleted: 0,
+          status: 1,
+        },
+        select: {
+          company_name: true,
+        },
+      }),
+    ]);
 
     if (!agent) {
       throw new BadRequestException('Agent not found');
     }
 
-    const walletBalance = Number(agent.total_cash_wallet || 0);
+    const city = agent.agent_city
+      ? await this.prisma.dvi_cities.findUnique({
+          where: { id: agent.agent_city },
+          select: { name: true },
+        })
+      : null;
+
+    const companyName = String(agentConfig?.company_name || '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const rawAgentName = `${String(agent.agent_name || '').trim()} ${String(agent.agent_lastname || '').trim()}`.trim()
+      || String(agent.agent_name || '').trim()
+      || 'Agent';
+    const cityName = String(city?.name || '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const displayNameBase = companyName || rawAgentName;
+    const agentDisplayName = cityName ? `${displayNameBase} - ${cityName}` : displayNameBase;
+
+    const walletInfo = await this.getAgentWalletBalance(plan.agent_id);
+    const walletBalance = Number(walletInfo.balance || 0);
     const formattedBalance = walletBalance.toLocaleString('en-IN', {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
@@ -7224,7 +7259,8 @@ pricing: {
 
     return {
       quotation_no: plan.itinerary_quote_ID || '',
-      agent_name: agent.agent_name,
+      agent_name: rawAgentName,
+      agent_display_name: agentDisplayName,
       agent_id: plan.agent_id,
       wallet_balance: formattedBalance,
       balance_sufficient: walletBalance > 0,
@@ -7234,16 +7270,15 @@ pricing: {
   async checkWalletBalance(agentId: number) {
     const agent = await this.prisma.dvi_agent.findUnique({
       where: { agent_ID: agentId },
-      select: {
-        total_cash_wallet: true,
-      },
+      select: { agent_ID: true },
     });
 
     if (!agent) {
       throw new BadRequestException('Agent not found');
     }
 
-    const balance = Number(agent.total_cash_wallet || 0);
+    const walletInfo = await this.getAgentWalletBalance(agentId);
+    const balance = Number(walletInfo.balance || 0);
     const formattedBalance = `₹ ${balance.toLocaleString('en-IN', {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
@@ -7259,10 +7294,51 @@ pricing: {
   async getAgentWalletBalance(agentId: number) {
     const agent = await this.prisma.dvi_agent.findUnique({
       where: { agent_ID: agentId },
-      select: { total_cash_wallet: true },
+      select: {
+        agent_ID: true,
+        total_cash_wallet: true,
+      },
     });
 
-    return { balance: Number(agent?.total_cash_wallet || 0) };
+    if (!agent) {
+      return { balance: 0 };
+    }
+
+    const storedBalance = Number(agent.total_cash_wallet ?? 0);
+    if (storedBalance > 0) {
+      return { balance: storedBalance };
+    }
+
+    const cashRows = await this.prisma.dvi_cash_wallet.findMany({
+      where: {
+        agent_id: agentId,
+        deleted: 0,
+      },
+      select: {
+        transaction_amount: true,
+        transaction_type: true,
+      },
+    });
+
+    const balance = cashRows.reduce((sum, row) => {
+      const amount = Number(row.transaction_amount || 0);
+      const rawType = String(row.transaction_type ?? '').trim().toLowerCase();
+      const numericType = Number(row.transaction_type ?? 0);
+      const isDebit = rawType === 'debit' || numericType === 2;
+      const isCredit = rawType === 'credit' || numericType === 1 || numericType === 0;
+
+      if (isDebit) {
+        return sum - Math.abs(amount);
+      }
+
+      if (isCredit) {
+        return sum + Math.abs(amount);
+      }
+
+      return sum + amount;
+    }, 0);
+
+    return { balance };
   }
 
   async confirmQuotation(dto: ConfirmQuotationDto) {
@@ -7461,6 +7537,16 @@ pricing: {
       // A. Deduct wallet only when there are no provider bookings to run.
       // For hotel-booking flow this is deferred until all providers succeed.
       if (!hasHotelBookings) {
+        const currentAgentWallet = await tx.dvi_agent.findUnique({
+          where: { agent_ID: dto.agent },
+          select: {
+            total_cash_wallet: true,
+          },
+        });
+        const storedCashBalance = Number(currentAgentWallet?.total_cash_wallet ?? 0);
+        const resolvedCashBalance = storedCashBalance > 0 ? storedCashBalance : Number(walletInfo.balance || 0);
+        const nextCashBalance = resolvedCashBalance - Number(cost.netPayable || 0);
+
         await tx.dvi_cash_wallet.create({
           data: {
             agent_id: dto.agent,
@@ -7479,9 +7565,7 @@ pricing: {
         await tx.dvi_agent.update({
           where: { agent_ID: dto.agent },
           data: {
-            total_cash_wallet: {
-              decrement: cost.netPayable,
-            },
+            total_cash_wallet: new Prisma.Decimal(nextCashBalance),
           },
         });
       }
@@ -8678,6 +8762,7 @@ pricing: {
     const details = await this.itineraryDetails.getItineraryDetails(plan.itinerary_quote_ID);
     const cost = details.costBreakdown;
     const debitAmount = Number(cost?.netPayable || 0);
+    const walletInfo = await this.getAgentWalletBalance(dto.agent);
 
     await this.prisma.$transaction(async (tx) => {
       const existingDebit = await tx.dvi_cash_wallet.findFirst({
@@ -8689,6 +8774,16 @@ pricing: {
       });
 
       if (!existingDebit) {
+        const currentAgentWallet = await tx.dvi_agent.findUnique({
+          where: { agent_ID: dto.agent },
+          select: {
+            total_cash_wallet: true,
+          },
+        });
+        const storedCashBalance = Number(currentAgentWallet?.total_cash_wallet ?? 0);
+        const resolvedCashBalance = storedCashBalance > 0 ? storedCashBalance : Number(walletInfo.balance || 0);
+        const nextCashBalance = resolvedCashBalance - Number(debitAmount || 0);
+
         await tx.dvi_cash_wallet.create({
           data: {
             agent_id: dto.agent,
@@ -8707,7 +8802,7 @@ pricing: {
         await tx.dvi_agent.update({
           where: { agent_ID: dto.agent },
           data: {
-            total_cash_wallet: { decrement: debitAmount },
+            total_cash_wallet: new Prisma.Decimal(nextCashBalance),
           },
         });
       }
