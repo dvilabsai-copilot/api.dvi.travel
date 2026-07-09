@@ -1636,6 +1636,7 @@ async getAvailableActivities(
 
   @Get(':id/invoice-data')
   @ApiOperation({ summary: 'Get invoice data for a confirmed itinerary' })
+  @Public()
   async getInvoiceData(@Param('id', ParseIntPipe) id: number) {
     return this.svc.getInvoiceData(id);
   }
@@ -1643,6 +1644,7 @@ async getAvailableActivities(
   @Get(':id/invoice-pdf')
   @ApiOperation({ summary: 'Download tax or proforma invoice PDF for a confirmed itinerary' })
   @ApiQuery({ name: 'type', required: false, enum: ['tax', 'proforma'] })
+  @Public()
   async downloadInvoicePdf(
     @Param('id', ParseIntPipe) id: number,
     @Query('type') type: 'tax' | 'proforma' = 'tax',

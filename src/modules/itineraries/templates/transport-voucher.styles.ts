@@ -34,7 +34,7 @@ export const TRANSPORT_VOUCHER_STYLES = `
     background: #fff;
     overflow: hidden;
     display: grid;
-    grid-template-rows: 36mm 18mm 58mm 48mm 80mm 36mm 6mm;
+    grid-template-rows: 36mm 17mm 56mm 46mm 77mm 34mm 5mm;
     row-gap: 0.45mm;
   }
 
@@ -102,10 +102,11 @@ export const TRANSPORT_VOUCHER_STYLES = `
   }
 
   .brand-title {
-    font-size: 25px;
-    line-height: 1;
+    font-size: 22px;
+    line-height: 0.98;
     font-weight: 900;
     color: var(--primary-dark);
+    white-space: nowrap;
   }
 
   .brand-tagline {
@@ -122,19 +123,20 @@ export const TRANSPORT_VOUCHER_STYLES = `
   .voucher-title {
     background: var(--primary);
     color: #fff;
-    font-size: 15px;
+    font-size: 13px;
     line-height: 1;
     font-weight: 800;
-    padding: 3mm 4mm;
+    padding: 2.8mm 4mm;
     border-radius: 1.5mm;
     text-align: center;
     margin-bottom: 3mm;
+    white-space: nowrap;
   }
 
   .meta-row {
     display: grid;
     grid-template-columns: 22mm 1fr;
-    font-size: 8.5px;
+    font-size: 8px;
     margin-bottom: 1.5mm;
     color: var(--primary-dark);
     column-gap: 2mm;
@@ -152,7 +154,7 @@ export const TRANSPORT_VOUCHER_STYLES = `
   .qr-box {
     border: 1px solid var(--border);
     border-radius: 2mm;
-    height: 24mm;
+    height: 26mm;
     text-align: center;
     font-size: 7px;
     padding: 1mm;
@@ -163,8 +165,8 @@ export const TRANSPORT_VOUCHER_STYLES = `
   }
 
   .qr-image {
-    width: 20mm;
-    height: 20mm;
+    width: 19mm;
+    height: 19mm;
     margin: 0 auto 1mm;
     object-fit: contain;
   }
@@ -193,8 +195,8 @@ export const TRANSPORT_VOUCHER_STYLES = `
     grid-column: 1 / 4;
     margin-top: 1.5mm;
     display: flex;
-    gap: 7mm;
-    font-size: 8.2px;
+    gap: 5.5mm;
+    font-size: 7.8px;
     font-weight: 700;
     color: var(--primary-dark);
     flex-wrap: wrap;
@@ -206,7 +208,7 @@ export const TRANSPORT_VOUCHER_STYLES = `
 
   .trust-strip {
     margin-top: 0;
-    height: 18mm;
+    height: 17mm;
     min-height: 0;
     border: 1px solid var(--border);
     border-radius: 2mm;
@@ -248,7 +250,7 @@ export const TRANSPORT_VOUCHER_STYLES = `
   }
 
   .trust-copy {
-    font-size: 7px;
+    font-size: 6.8px;
     line-height: 1.2;
     color: var(--muted);
   }
@@ -259,7 +261,7 @@ export const TRANSPORT_VOUCHER_STYLES = `
   }
 
   .trip-title {
-    font-size: 13px;
+    font-size: 12.5px;
     font-weight: 800;
     color: var(--primary-dark);
     line-height: 1.1;
@@ -267,13 +269,13 @@ export const TRANSPORT_VOUCHER_STYLES = `
 
   .trip-range {
     margin-top: 1.5mm;
-    font-size: 8px;
+    font-size: 7.6px;
     font-weight: 600;
     color: var(--primary);
   }
 
   .info-grid {
-    height: 58mm;
+    height: 56mm;
     min-height: 0;
     display: grid;
     grid-template-columns: 1.15fr 1fr 0.9fr;
@@ -285,7 +287,7 @@ export const TRANSPORT_VOUCHER_STYLES = `
   }
 
   .info-card {
-    padding: 3.4mm 4mm;
+    padding: 3mm 3.8mm;
     border-right: 1px solid var(--border);
   }
 
@@ -294,19 +296,19 @@ export const TRANSPORT_VOUCHER_STYLES = `
   }
 
   .section-heading {
-    font-size: 11px;
+    font-size: 10.6px;
     font-weight: 800;
     color: var(--primary);
-    margin-bottom: 2.4mm;
+    margin-bottom: 2mm;
   }
 
   .detail-row {
     display: grid;
     grid-template-columns: 32mm 3mm 1fr;
     gap: 1mm;
-    font-size: 8px;
-    line-height: 1.18;
-    margin-bottom: 2.4mm;
+    font-size: 7.6px;
+    line-height: 1.15;
+    margin-bottom: 2mm;
   }
 
   .detail-label {
@@ -331,18 +333,18 @@ export const TRANSPORT_VOUCHER_STYLES = `
 
   .flight-stack {
     display: grid;
-    gap: 2.2mm;
+    gap: 1.8mm;
   }
 
   .flight-box {
     border: 1px solid var(--border);
     border-radius: 2mm;
-    padding: 2.6mm 3mm;
+    padding: 2.2mm 2.8mm;
     background: var(--soft);
   }
 
   .flight-title {
-    font-size: 7.5px;
+    font-size: 7.2px;
     font-weight: 800;
     color: var(--primary-dark);
     margin-bottom: 1.2mm;
@@ -350,7 +352,7 @@ export const TRANSPORT_VOUCHER_STYLES = `
   }
 
   .flight-line {
-    font-size: 7.2px;
+    font-size: 7px;
     line-height: 1.2;
     color: var(--primary-dark);
     margin-bottom: 0.8mm;
@@ -365,7 +367,7 @@ export const TRANSPORT_VOUCHER_STYLES = `
   }
 
   .vehicle-section {
-    height: 48mm;
+    height: 46mm;
     min-height: 0;
     border: 1px solid var(--border);
     border-radius: 3mm;
@@ -375,32 +377,32 @@ export const TRANSPORT_VOUCHER_STYLES = `
   }
 
   .vehicle-heading {
-    margin-bottom: 2.5mm;
+    margin-bottom: 2.1mm;
   }
 
   .vehicle-list {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 3mm;
+    gap: 2.4mm;
   }
 
   .vehicle-row {
     border: 1px solid var(--border);
     border-radius: 2mm;
-    padding: 2mm;
+    padding: 1.8mm;
     display: grid;
     grid-template-columns: 28mm 1fr;
-    gap: 2mm;
-    min-height: 31mm;
+    gap: 1.8mm;
+    min-height: 29mm;
     background: #fff;
   }
 
   .vehicle-row .vehicle-image-panel {
-    height: 25mm;
+    height: 23mm;
   }
 
   .vehicle-image-panel {
-    height: 24mm;
+    height: 23mm;
     border: 1px solid var(--border);
     border-radius: 2.5mm;
     overflow: hidden;
@@ -473,28 +475,28 @@ export const TRANSPORT_VOUCHER_STYLES = `
   }
 
   .vehicle-name {
-    font-size: 9px;
+    font-size: 8.5px;
     font-weight: 900;
     color: var(--primary-dark);
     margin-bottom: 1.5mm;
   }
 
   .vehicle-mini-line {
-    font-size: 6.8px;
-    line-height: 1.25;
-    margin-bottom: 0.8mm;
+    font-size: 6.4px;
+    line-height: 1.2;
+    margin-bottom: 0.7mm;
     color: var(--primary-dark);
   }
 
   .vehicle-extra-note {
-    margin-top: 1.3mm;
-    font-size: 6.8px;
+    margin-top: 1mm;
+    font-size: 6.4px;
     font-weight: 700;
     color: var(--muted);
   }
 
   .itinerary-section {
-    height: 80mm;
+    height: 77mm;
     min-height: 0;
     overflow: hidden;
     position: relative;
@@ -502,15 +504,15 @@ export const TRANSPORT_VOUCHER_STYLES = `
   }
 
   .itinerary-title {
-    height: 6mm;
-    font-size: 12px;
+    height: 5.5mm;
+    font-size: 11.4px;
     font-weight: 800;
     color: var(--primary);
     margin: 0;
   }
 
   .itinerary-table-wrap {
-    height: 74mm;
+    height: 71.5mm;
     overflow: hidden;
   }
 
@@ -525,34 +527,34 @@ export const TRANSPORT_VOUCHER_STYLES = `
   }
 
   .itinerary-table thead {
-    height: 8mm;
+    height: 7.2mm;
   }
 
   .itinerary-table tbody tr {
-    height: 13.2mm;
+    height: 12.2mm;
   }
 
   .itinerary-table th {
     background: var(--primary);
     color: #fff;
-    font-size: 7.4px;
+    font-size: 7px;
     font-weight: 800;
-    padding: 1.5mm 1mm;
+    padding: 1.2mm 1mm;
     border: 1px solid var(--border);
   }
 
   .itinerary-table td {
-    font-size: 7.1px;
-    line-height: 1.2;
-    padding: 1.3mm 1mm;
+    font-size: 6.8px;
+    line-height: 1.15;
+    padding: 1mm 1mm;
     border: 1px solid var(--border);
     vertical-align: top;
     overflow: hidden;
   }
 
   .day-badge {
-    width: 11mm;
-    height: 10mm;
+    width: 10mm;
+    height: 9mm;
     background: var(--primary);
     color: #fff;
     border-radius: 1.6mm;
@@ -565,28 +567,28 @@ export const TRANSPORT_VOUCHER_STYLES = `
   }
 
   .day-label {
-    font-size: 5px;
+    font-size: 4.6px;
     line-height: 1;
   }
 
   .day-number {
-    font-size: 7px;
+    font-size: 6.4px;
     line-height: 1;
   }
 
   .date-cell strong {
     display: block;
-    font-size: 7.6px;
-    margin-bottom: 0.6mm;
+    font-size: 7px;
+    margin-bottom: 0.45mm;
   }
 
   .date-cell span {
-    font-size: 6.8px;
+    font-size: 6.4px;
     color: var(--muted);
   }
 
   .route-text {
-    max-height: 11mm;
+    max-height: 10mm;
     overflow: hidden;
     word-break: break-word;
   }
@@ -597,7 +599,7 @@ export const TRANSPORT_VOUCHER_STYLES = `
   }
 
   .footer-grid {
-    height: 36mm;
+    height: 34mm;
     min-height: 0;
     display: grid;
     grid-template-columns: 1fr 1fr 1fr;
@@ -612,16 +614,16 @@ export const TRANSPORT_VOUCHER_STYLES = `
   .footer-card {
     border: 1px solid var(--border);
     border-radius: 2.5mm;
-    padding: 3mm;
+    padding: 2.5mm;
     overflow: hidden;
     background: #fff;
     box-shadow: 0 2px 6px rgba(53, 21, 214, 0.04);
   }
 
   .footer-title {
-    font-size: 10px;
+    font-size: 9.5px;
     font-weight: 800;
-    margin-bottom: 2mm;
+    margin-bottom: 1.6mm;
     color: var(--primary);
   }
 
@@ -631,9 +633,9 @@ export const TRANSPORT_VOUCHER_STYLES = `
   }
 
   .footer-list li {
-    font-size: 6.9px;
-    line-height: 1.25;
-    margin-bottom: 1.2mm;
+    font-size: 6.6px;
+    line-height: 1.18;
+    margin-bottom: 1mm;
     color: var(--primary-dark);
   }
 
@@ -662,7 +664,7 @@ export const TRANSPORT_VOUCHER_STYLES = `
   }
 
   .thank-you {
-    height: 6mm;
+    height: 5mm;
     min-height: 0;
     border: 1px solid var(--border);
     border-radius: 2mm;
@@ -671,7 +673,7 @@ export const TRANSPORT_VOUCHER_STYLES = `
     align-items: center;
     justify-content: center;
     text-align: center;
-    font-size: 7.4px;
+    font-size: 7px;
     font-style: italic;
     color: var(--primary-dark);
     position: static !important;
