@@ -47,6 +47,9 @@ export class VehicleAvailabilityCellDto {
   @ApiProperty({ required: false, nullable: true })
   driverId!: number | null;
 
+  @ApiProperty({ required: false, nullable: true })
+  driverAssignmentId!: number | null;
+
   @ApiProperty({ type: [VehicleAvailabilityRouteSegmentDto] })
   routeSegments!: VehicleAvailabilityRouteSegmentDto[];
 

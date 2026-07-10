@@ -51,6 +51,7 @@ function resolveDmSpeedometerDir(): string {
   return dest;
 }
 import { DailyMomentTrackerService } from './daily-moment-tracker.service';
+import { Public } from '../../auth/public.decorator';
 import {
   ListDailyMomentQueryDto,
   UpsertDailyMomentChargeDto,
@@ -78,12 +79,25 @@ export class DailyMomentTrackerController {
     return this.service.listDailyMoments(query);
   }
 
-  // ─── Day View ────────────────────────────────────────────────────────────────
-  @Get('day-view/:planId')
-  @ApiOperation({ summary: 'Full multi-day accordion data for a plan' })
-  async getDayView(@Param('planId', ParseIntPipe) planId: number) {
-    return this.service.getDayView(planId);
-  }
+   // ─── Day View ────────────────────────────────────────────────────────────────
+@Get('driver-assignment/:driverAssignmentId')
+@Public()
+@ApiOperation({
+  summary: 'Resolve driver assignment ID to itinerary plan ID for share link',
+})
+async getDriverAssignmentShareDetails(
+  @Param('driverAssignmentId', ParseIntPipe)
+  driverAssignmentId: number,
+) {
+  return this.service.getDriverAssignmentShareDetails(driverAssignmentId);
+}
+
+@Get('day-view/:planId')
+@Public()
+@ApiOperation({ summary: 'Full multi-day accordion data for a plan' })
+async getDayView(@Param('planId', ParseIntPipe) planId: number) {
+  return this.service.getDayView(planId);
+}
 
   // ─── Charges ─────────────────────────────────────────────────────────────────
   @Get('charges')
