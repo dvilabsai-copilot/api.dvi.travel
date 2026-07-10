@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import * as XLSX from 'xlsx';
 import { PrismaService } from '../../../prisma.service';
+import { resolveCityRecordByName } from '../../itineraries/utils/city-normalization.util';
 
 export interface ImportOptions {
   createMissingCities: boolean;
@@ -89,6 +90,24 @@ export class HobseHotelCsvImportService {
 
   private normalizeCityKey(value: any): string {
     return this.normalizeCityName(value).replace(/[^a-z0-9]/g, '');
+  }
+
+  private async resolveStoredCityValue(cityName?: string | null): Promise<{ cityId: string | null; cityName: string | null }> {
+    const raw = this.normalize(cityName);
+    if (!raw) {
+      return { cityId: null, cityName: null };
+    }
+
+    if (/^\d+$/.test(raw)) {
+      return { cityId: raw, cityName: raw };
+    }
+
+    const record = await resolveCityRecordByName(this.prisma, raw);
+    if (record?.id) {
+      return { cityId: String(record.id), cityName: record.name || raw };
+    }
+
+    return { cityId: null, cityName: raw };
   }
 
   private getRowValue(row: Record<string, any>, keys: string[]): string {
@@ -239,6 +258,7 @@ export class HobseHotelCsvImportService {
       const hotelName = this.getRowValue(row, ['Hotel Name', 'HotelName', 'hotel_name']);
       const hotelCity = this.getRowValue(row, ['City Name', 'CityName', 'city_name', 'city']);
       const hotelAddress = this.getRowValue(row, ['Address', 'address', 'Hotel Address', 'hotel_address']);
+      const city = await this.resolveStoredCityValue(hotelCity);
 
       if (!hotelCode || !hotelName || !hotelCity) {
         summary.skipped += 1;
@@ -254,9 +274,13 @@ export class HobseHotelCsvImportService {
         if (!existing) {
           existing = await this.prisma.dvi_hotel.findFirst({
             where: {
-              hotel_name: hotelName,
-              hotel_city: hotelCity,
-              OR: [{ deleted: false }, { deleted: null }],
+              AND: [
+                { hotel_name: hotelName },
+                city.cityId
+                  ? ({ OR: [{ hotel_city: city.cityId }, { hotel_city: hotelCity }] } as any)
+                  : ({ hotel_city: hotelCity } as any),
+                { OR: [{ deleted: false }, { deleted: null }] },
+              ],
             } as any,
             select: { hotel_id: true },
           });
@@ -279,7 +303,7 @@ export class HobseHotelCsvImportService {
         const hotelData: any = {
           hotel_code: hotelCode,
           hotel_name: hotelName,
-          hotel_city: hotelCity,
+          hotel_city: city.cityId ?? hotelCity,
           hotel_address: hotelAddress || null,
           hotel_category: hotelCategoryToSet,
           status: 1,

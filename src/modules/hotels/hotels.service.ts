@@ -12,6 +12,10 @@ import { CreatePriceBookDto } from './dto/create-pricebook.dto';
 import { CreateReviewDto } from './dto/create-review.dto';
 import * as fs from 'fs';
 import * as path from 'path';
+import {
+  resolveCityNameById,
+  resolveCityRecordByName,
+} from '../itineraries/utils/city-normalization.util';
 
 const PRICEBOOK_OCCUPANCY_KEYS = [
   'SINGLE',
@@ -162,7 +166,27 @@ export class HotelsService {
   }
 
   /** Map UI/legacy payload → actual dvi_hotel columns; strip unknown/invalid */
-  private mapHotelDto(dto: any) {
+  private async resolveStoredCityValue(v: any): Promise<{ cityId: string | null; cityName: string | null }> {
+    const raw = this.toStr(v);
+    if (!raw) {
+      return { cityId: null, cityName: null };
+    }
+
+    if (this.isPositiveIntegerString(raw)) {
+      const name = await resolveCityNameById(this.prisma, Number(raw));
+      return { cityId: raw, cityName: name || raw };
+    }
+
+    const record = await resolveCityRecordByName(this.prisma, raw);
+    if (record?.id) {
+      return { cityId: String(record.id), cityName: record.name || raw };
+    }
+
+    return { cityId: null, cityName: raw };
+  }
+
+  private async mapHotelDto(dto: any) {
+    const city = await this.resolveStoredCityValue(dto.hotel_city);
     const mapped: any = {
       hotel_name: this.toStr(dto.hotel_name),
       hotel_place: this.toStr(dto.hotel_place),
@@ -170,7 +194,7 @@ export class HotelsService {
       hotel_email: this.toStr(dto.hotel_email ?? dto.hotel_email_id),
       hotel_country: this.toStr(dto.hotel_country),
       hotel_state: this.toStr(dto.hotel_state),
-      hotel_city: this.toStr(dto.hotel_city),
+      hotel_city: city.cityId ?? city.cityName ?? undefined,
       hotel_pincode: this.toStr(dto.hotel_pincode ?? dto.hotel_postal_code),
       hotel_code: this.toStr(dto.hotel_code),
       resavenue_hotel_code: this.toStr(dto.resavenue_hotel_code),
@@ -344,10 +368,18 @@ export class HotelsService {
     }
 
     if (q.hotel_state) AND.push({ hotel_state: q.hotel_state } as any);
-    if (q.hotel_city) AND.push({ hotel_city: q.hotel_city } as any);
+    if (q.hotel_city) {
+      const resolvedCity = await this.resolveStoredCityValue(q.hotel_city);
+      AND.push(
+        resolvedCity.cityId
+          ? ({ hotel_city: resolvedCity.cityId } as any)
+          : ({ hotel_city: q.hotel_city } as any),
+      );
+    }
 
     const term = (q.search ?? '').toString().trim();
     if (term) {
+      const cityCandidate = await resolveCityRecordByName(this.prisma, term);
       AND.push({
         OR: [
           { hotel_name: { contains: term } as any },
@@ -358,6 +390,7 @@ export class HotelsService {
           { hotel_place: { contains: term } as any },
           { hotel_city: { contains: term } as any },
           { hotel_state: { contains: term } as any },
+          ...(cityCandidate?.id ? [{ hotel_city: String(cityCandidate.id) } as any] : []),
         ],
       } as any);
     }
@@ -892,10 +925,14 @@ export class HotelsService {
       orderBy: { hotel_city: 'asc' },
     });
 
-    return groups
-      .map((g) => g.hotel_city)
-      .filter((c) => !!c && c.trim().length > 0)
-      .map((name) => ({ name }));
+    const names = await Promise.all(
+      groups
+        .map((g) => String(g.hotel_city ?? '').trim())
+        .filter((c) => !!c && c.length > 0)
+        .map((value) => this.resolveStoredCityValue(value).then((resolved) => resolved.cityName || value)),
+    );
+
+    return Array.from(new Set(names.filter((name) => !!name && String(name).trim().length > 0))).map((name) => ({ name }));
   }
 
   // -------- dynamic filters ----------
@@ -925,10 +962,14 @@ export class HotelsService {
       orderBy: { hotel_city: 'asc' },
     });
 
-    return groups
-      .map((g) => g.hotel_city)
-      .filter((c) => !!c && c.trim().length > 0)
-      .map((name) => ({ name }));
+    const names = await Promise.all(
+      groups
+        .map((g) => String(g.hotel_city ?? '').trim())
+        .filter((c) => !!c && c.length > 0)
+        .map((value) => this.resolveStoredCityValue(value).then((resolved) => resolved.cityName || value)),
+    );
+
+    return Array.from(new Set(names.filter((name) => !!name && String(name).trim().length > 0))).map((name) => ({ name }));
   }
   // -----------------------------------
   // Simple static meal types meta: 1 = Breakfast, 2 = Lunch, 3 = Dinner
@@ -992,7 +1033,7 @@ export class HotelsService {
   }
 
   async create(dto: CreateHotelDto) {
-    const data = this.mapHotelDto(dto);
+    const data = await this.mapHotelDto(dto);
     // Apply defaults BEFORE validation so required field checks pass
     if ((data as any).deleted === undefined) (data as any).deleted = false;
     if ((data as any).status === undefined) (data as any).status = 1;
@@ -1016,7 +1057,7 @@ export class HotelsService {
     const id = Number(hotel_id);
     if (!Number.isFinite(id) || id <= 0) throw new Error('Invalid hotel_id');
 
-    const incoming = this.mapHotelDto(dto);
+    const incoming = await this.mapHotelDto(dto);
     if (this.isBasicInfoAttempt(dto as any)) {
       const current = await this.prisma.dvi_hotel.findUnique({
         where: { hotel_id: id },
@@ -1074,11 +1115,19 @@ export class HotelsService {
   // =====================================================================================
 
   async generateCode(city: string | number) {
-    const cityKey = String(city ?? '').trim();
-    const prefix = cityKey ? cityKey.replace(/[^A-Za-z]/g, '').slice(0, 3).toUpperCase() : 'CTY';
+    const resolved = await this.resolveStoredCityValue(city);
+    const cityKey = String(resolved.cityId ?? city ?? '').trim();
+    const cityName = String(resolved.cityName ?? '').trim();
+    const lookupKey = cityKey || cityName;
+    const prefixSource = cityName || lookupKey;
+    const prefix = prefixSource ? prefixSource.replace(/[^A-Za-z]/g, '').slice(0, 3).toUpperCase() : 'CTY';
 
     const count = await this.prisma.dvi_hotel.count({
-      where: cityKey ? ({ hotel_city: { contains: cityKey } } as any) : ({} as any),
+      where: lookupKey
+        ? resolved.cityId
+          ? ({ hotel_city: resolved.cityId } as any)
+          : ({ hotel_city: { contains: lookupKey } } as any)
+        : ({} as any),
     });
 
     const code = `${prefix}-${(count + 1).toString().padStart(4, '0')}`;

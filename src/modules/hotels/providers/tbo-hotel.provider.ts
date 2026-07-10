@@ -18,6 +18,7 @@ import {
   inferCanonicalHotelRatePlanCodeFromMealText,
   getNormalizedMealPlanLabelFromMealText,
 } from '../hotel-rate-plans';
+import { resolveCityRecordByName } from '../../itineraries/utils/city-normalization.util';
 
 @Injectable()
 export class TBOHotelProvider implements IHotelProvider {
@@ -624,6 +625,24 @@ export class TBOHotelProvider implements IHotelProvider {
     return Number.isFinite(parsed) ? parsed : 0;
   }
 
+  private async resolveStoredCityValue(cityName?: string | null): Promise<{ cityId: string | null; cityName: string | null }> {
+    const raw = String(cityName ?? '').trim();
+    if (!raw) {
+      return { cityId: null, cityName: null };
+    }
+
+    if (/^\d+$/.test(raw)) {
+      return { cityId: raw, cityName: raw };
+    }
+
+    const record = await resolveCityRecordByName(this.prisma, raw);
+    if (record?.id) {
+      return { cityId: String(record.id), cityName: record.name || raw };
+    }
+
+    return { cityId: null, cityName: raw };
+  }
+
   private async fetchHotelsFromStaticApi(tboCityCode: string): Promise<any[]> {
     try {
       const basicAuth = Buffer.from(`${this.TBO_STATIC_USERNAME}:${this.TBO_STATIC_PASSWORD}`).toString('base64');
@@ -760,6 +779,7 @@ export class TBOHotelProvider implements IHotelProvider {
       const hotelName = String(hotel?.HotelName || hotel?.hotelName || '').trim() || null;
       const hotelAddress = String(hotel?.Address || hotel?.hotelAddress || '').trim() || null;
       const cityName = String(hotel?.CityName || hotel?.cityName || '').trim() || null;
+      const city = await this.resolveStoredCityValue(cityName);
       const rating = this.parseStaticStarRating(hotel?.HotelRating || hotel?.hotelRating);
       const latitude = String(hotel?.Latitude || '').trim() || null;
       const longitude = String(hotel?.Longitude || '').trim() || null;
@@ -800,7 +820,7 @@ export class TBOHotelProvider implements IHotelProvider {
           data: {
             hotel_name: hotelName,
             hotel_address: hotelAddress,
-            hotel_city: cityName,
+            hotel_city: city.cityId ?? cityName,
             hotel_country: countryName,
             hotel_latitude: latitude,
             hotel_longitude: longitude,
@@ -817,7 +837,7 @@ export class TBOHotelProvider implements IHotelProvider {
             tbo_hotel_code: hotelCode,
             tbo_city_code: tboCityCode,
             hotel_country: countryName,
-            hotel_city: cityName,
+            hotel_city: city.cityId ?? cityName,
             hotel_address: hotelAddress,
             hotel_latitude: latitude,
             hotel_longitude: longitude,
