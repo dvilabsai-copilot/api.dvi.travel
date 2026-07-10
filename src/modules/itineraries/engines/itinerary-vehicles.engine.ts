@@ -2164,12 +2164,21 @@ export class ItineraryVehiclesEngine {
             (route_count === 1 || route_count === total_routes) &&
             hasRealTravelForDisplay;
 
+          // Preserve all outstation day rows, including hotel-stay days with 0 km.
+          // PHP keeps these rows in the itinerary timeline, and dropping them
+          // causes vendor day counts to shrink incorrectly on transportation + hotel trips.
           const isOutstationRowWithoutRate =
-            Number(result.travel_type || 0) === 2 &&
-            hasRealTravelForDisplay;
+            Number(result.travel_type || 0) === 2;
+
+          const routeLocationName = String((routeData as any)?.location_name || '').trim().toLowerCase();
+          const routeNextLocationName = String((routeData as any)?.next_visiting_location || '').trim().toLowerCase();
+          const isLocalHotelStayRoute =
+            Number(result.travel_type || 0) === 1 &&
+            routeLocationName.length > 0 &&
+            routeLocationName === routeNextLocationName;
 
           const shouldPreserveZeroCostRoute =
-            isEdgeLocalTransferRoute || isOutstationRowWithoutRate;
+            isEdgeLocalTransferRoute || isOutstationRowWithoutRate || isLocalHotelStayRoute;
 
           // Preserve visible travel rows even when rate setup is missing.
           // We want the UI to show "Rates not available", not silently remove the day.
