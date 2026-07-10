@@ -295,9 +295,33 @@ export interface CostBreakdownDto {
 export interface ItineraryDetailsResponseDto {
   quoteId: string;
   planId: number;
+  routeFamilyBaseQuoteId?: string | null;
+  routeVariantIndex?: number | null;
+  routeOptions?: Array<{
+    quoteId: string;
+    label: string;
+    planId: number;
+    routeIndex: number;
+  }>;
+  siblingRoutes?: Array<{
+    quoteId: string;
+    label: string;
+    planId: number;
+    routeIndex: number;
+  }>;
+  suggestedRoutes?: Array<{
+    quoteId: string;
+    label: string;
+    planId: number;
+    routeIndex: number;
+  }>;
   itineraryPreference?: number;
   itineraryType?: number;
   guideForItinerary?: number;
+  preferred_hotel_category?: string | number[] | null;
+  preferredHotelCategory?: string | number[] | null;
+  hotel_facilities?: string[] | string | null;
+  hotelFacilities?: string[] | string | null;
   isConfirmed?: boolean;
   confirmed_itinerary_plan_ID?: number; // ID needed for /confirmed/:id endpoint
   special_instructions?: string | null;
@@ -361,6 +385,115 @@ export class ItineraryDetailsService {
   constructor(
     private readonly prisma: PrismaService,
   ) {}
+
+  private parseRouteFamilyQuote(quoteId: string | undefined | null): {
+    baseQuoteId: string;
+    routeVariantIndex: number | null;
+  } | null {
+    const raw = String(quoteId || '').trim();
+    if (!raw) return null;
+
+    const match = raw.match(/^(.*)-R(\d+)$/i);
+    if (!match) {
+      return {
+        baseQuoteId: raw,
+        routeVariantIndex: null,
+      };
+    }
+
+    const baseQuoteId = String(match[1] || '').trim();
+    const routeVariantIndex = Number.parseInt(String(match[2] || ''), 10);
+
+    if (!baseQuoteId || !Number.isFinite(routeVariantIndex) || routeVariantIndex <= 0) {
+      return {
+        baseQuoteId: raw,
+        routeVariantIndex: null,
+      };
+    }
+
+    return {
+      baseQuoteId,
+      routeVariantIndex,
+    };
+  }
+
+  private async buildSiblingRouteOptions(quoteId: string): Promise<Array<{
+    quoteId: string;
+    label: string;
+    planId: number;
+    routeIndex: number;
+  }>> {
+    const parsed = this.parseRouteFamilyQuote(quoteId);
+    const baseQuoteId = String(parsed?.baseQuoteId || '').trim();
+    const currentRouteVariantIndex = Number(parsed?.routeVariantIndex || 0);
+    if (!baseQuoteId || currentRouteVariantIndex <= 0) return [];
+
+    const familyRows = await this.prisma.dvi_itinerary_plan_details.findMany({
+      where: {
+        deleted: 0,
+        itinerary_quote_ID: { startsWith: `${baseQuoteId}-R` },
+      },
+      select: {
+        itinerary_plan_ID: true,
+        itinerary_quote_ID: true,
+        createdon: true,
+      },
+      orderBy: [
+        { createdon: 'asc' },
+        { itinerary_plan_ID: 'asc' },
+      ],
+    });
+
+    if (familyRows.length <= 1) {
+      return [];
+    }
+
+    const rowsWithIndex = familyRows
+      .map((row) => {
+        const rowQuoteId = String(row.itinerary_quote_ID || '').trim();
+        if (!rowQuoteId) return null;
+
+        const rowParsed = this.parseRouteFamilyQuote(rowQuoteId);
+        return {
+          planId: Number(row.itinerary_plan_ID || 0),
+          quoteId: rowQuoteId,
+          routeIndex: rowParsed?.routeVariantIndex ?? 0,
+          createdon: row.createdon ?? null,
+        };
+      })
+      .filter((row): row is {
+        planId: number;
+        quoteId: string;
+        routeIndex: number;
+        createdon: Date | null;
+      } => Boolean(row?.planId && row?.quoteId));
+
+    const hasExplicitVariantIndexes = rowsWithIndex.some((row) => row.routeIndex > 0);
+    const sortedRows = rowsWithIndex.sort((a, b) => {
+      const aSortIndex = a.routeIndex > 0 ? a.routeIndex : Number.MAX_SAFE_INTEGER;
+      const bSortIndex = b.routeIndex > 0 ? b.routeIndex : Number.MAX_SAFE_INTEGER;
+      if (aSortIndex !== bSortIndex) return aSortIndex - bSortIndex;
+
+      const aCreated = a.createdon ? new Date(a.createdon).getTime() : 0;
+      const bCreated = b.createdon ? new Date(b.createdon).getTime() : 0;
+      if (aCreated !== bCreated) return aCreated - bCreated;
+
+      return a.planId - b.planId;
+    });
+
+    return sortedRows.map((row, index) => {
+      const routeIndex = hasExplicitVariantIndexes
+        ? (row.routeIndex > 0 ? row.routeIndex : index + 1)
+        : index + 1;
+
+      return {
+        quoteId: row.quoteId,
+        label: `Route ${routeIndex}`,
+        planId: row.planId,
+        routeIndex,
+      };
+    });
+  }
 
   private logItineraryApiTiming(params: {
     api: 'itinerary_details' | 'itinerary_details_by_id';
@@ -1212,6 +1345,10 @@ private getFoodPreferenceLabel(value: unknown): string | null {
       throw new NotFoundException('Itinerary not found');
     }
     const planId = plan.itinerary_plan_ID;
+    const parsedRouteFamilyQuote = this.parseRouteFamilyQuote(plan.itinerary_quote_ID);
+    const siblingRouteOptions = await this.buildSiblingRouteOptions(
+      String(plan.itinerary_quote_ID || ''),
+    );
     const itineraryPreference = Number((plan as any).itinerary_preference || 0);
     const isVehicleOnly = itineraryPreference === 2;
     const proofQuoteEnabled = false;
@@ -5340,12 +5477,29 @@ const specialInstructions = String(
     ""
 ).trim();
 
+const rawItineraryPreference = Number((plan as any).itinerary_preference || 0);
+const hasHotelRows = Array.isArray(hotelRows) && hotelRows.some((row: any) => Number(row?.deleted || 0) === 0);
+const hasVehicleRows = Array.isArray(vehicles) && vehicles.length > 0;
+const normalizedItineraryPreference =
+  parsedRouteFamilyQuote?.baseQuoteId && hasHotelRows && hasVehicleRows
+    ? 3
+    : rawItineraryPreference;
+
 const response: ItineraryDetailsResponseDto = {
   quoteId: plan.itinerary_quote_ID ?? '',
       planId: plan.itinerary_plan_ID,
-      itineraryPreference: Number((plan as any).itinerary_preference || 0),
+      routeFamilyBaseQuoteId: parsedRouteFamilyQuote?.baseQuoteId ?? null,
+      routeVariantIndex: parsedRouteFamilyQuote?.routeVariantIndex ?? null,
+      routeOptions: siblingRouteOptions,
+      siblingRoutes: siblingRouteOptions,
+      suggestedRoutes: siblingRouteOptions,
+      itineraryPreference: normalizedItineraryPreference,
       itineraryType: Number((plan as any).itinerary_type || 0),
       guideForItinerary: Number((plan as any).guide_for_itinerary || 0),
+      preferred_hotel_category: (plan as any).preferred_hotel_category ?? null,
+      preferredHotelCategory: (plan as any).preferred_hotel_category ?? null,
+      hotel_facilities: (plan as any).hotel_facilities ?? null,
+      hotelFacilities: (plan as any).hotel_facilities ?? null,
       isConfirmed: !!confirmedPlan,
       confirmed_itinerary_plan_ID: confirmedPlan?.confirmed_itinerary_plan_ID,
       special_instructions: specialInstructions,

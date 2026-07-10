@@ -118,6 +118,38 @@ export class CreatePlanDto {
   @ApiProperty({ example: '' })
   @IsString()
   special_instructions!: string;
+
+  @ApiProperty({
+    example: 'DVI20260710',
+    required: false,
+    description:
+      'Optional base quote for a suggested-route family. Backend will persist variants as ${base}-R{index}.',
+  })
+  @IsOptional()
+  @IsString()
+  route_family_base_quote_id?: string;
+
+  @ApiProperty({
+    example: 1,
+    required: false,
+    description:
+      'Optional 1-based route family variant index for suggested-route creates.',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  route_variant_index?: number;
+
+  @ApiProperty({
+    example: 3,
+    required: false,
+    description:
+      'Optional total number of suggested route variants created in the same family.',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  route_variant_count?: number;
 }
 
 export class CreateRouteDto {

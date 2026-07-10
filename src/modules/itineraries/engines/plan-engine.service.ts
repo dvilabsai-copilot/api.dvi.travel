@@ -366,6 +366,73 @@ export class PlanEngineService {
     }
   }
 
+  private parseRouteFamilyQuote(quoteId: string | undefined | null): {
+    baseQuoteId: string;
+    routeVariantIndex: number | null;
+  } | null {
+    const raw = String(quoteId || '').trim();
+    if (!raw) return null;
+
+    const match = raw.match(/^(.*)-R(\d+)$/i);
+    if (!match) {
+      return {
+        baseQuoteId: raw,
+        routeVariantIndex: null,
+      };
+    }
+
+    const baseQuoteId = String(match[1] || '').trim();
+    const routeVariantIndex = Number.parseInt(String(match[2] || ''), 10);
+
+    if (!baseQuoteId || !Number.isFinite(routeVariantIndex) || routeVariantIndex <= 0) {
+      return {
+        baseQuoteId: raw,
+        routeVariantIndex: null,
+      };
+    }
+
+    return {
+      baseQuoteId,
+      routeVariantIndex,
+    };
+  }
+
+  private normalizeRouteFamilyBaseQuoteId(value: string | undefined | null): string {
+    const parsed = this.parseRouteFamilyQuote(value);
+    return String(parsed?.baseQuoteId || '').trim();
+  }
+
+  private async syncRouteFamilyHeaderFields(
+    tx: Tx,
+    baseQuoteId: string,
+    headerData: Record<string, any>,
+  ): Promise<void> {
+    const normalizedBaseQuoteId = String(baseQuoteId || '').trim();
+    if (!normalizedBaseQuoteId) return;
+
+    const familyPrefix = `${normalizedBaseQuoteId}-R`;
+    const syncData = {
+      ...headerData,
+      updatedon: headerData.updatedon ?? new Date(),
+    };
+    delete (syncData as any).itinerary_quote_ID;
+    delete (syncData as any).itinerary_plan_id;
+
+    await (tx as any).dvi_itinerary_plan_details.updateMany({
+      where: {
+        itinerary_quote_ID: {
+          startsWith: familyPrefix,
+        },
+        deleted: 0,
+      },
+      data: syncData,
+    });
+  }
+
+  private buildRouteFamilyVariantQuoteId(baseQuoteId: string, routeVariantIndex: number): string {
+    return `${baseQuoteId}-R${routeVariantIndex}`;
+  }
+
   private async getActiveQuoteOwners(
     tx: Tx,
     quoteId: string,
@@ -521,6 +588,14 @@ export class PlanEngineService {
     };
 
     const existingId = Number(plan.itinerary_plan_id ?? 0);
+    const requestedRouteVariantIndex = Number((plan as any).route_variant_index ?? 0);
+    const normalizedRouteVariantIndex =
+      Number.isInteger(requestedRouteVariantIndex) && requestedRouteVariantIndex > 0
+        ? requestedRouteVariantIndex
+        : 0;
+    const normalizedRouteFamilyBaseQuoteId = this.normalizeRouteFamilyBaseQuoteId(
+      (plan as any).route_family_base_quote_id,
+    );
 
     if (existingId > 0) {
       const existingPlan = await (tx as any).dvi_itinerary_plan_details.findUnique({
@@ -564,10 +639,44 @@ export class PlanEngineService {
         },
       });
 
+      const familyBaseQuoteId = this.normalizeRouteFamilyBaseQuoteId(safeQuoteId) || normalizedRouteFamilyBaseQuoteId;
+      if (familyBaseQuoteId) {
+        await this.syncRouteFamilyHeaderFields(tx, familyBaseQuoteId, {
+          ...baseData,
+          updatedon: now,
+        });
+      }
+
       return existingId;
     }
 
-    const itinerary_quote_ID = await this.buildSafeQuoteId(tx, now);
+    let itinerary_quote_ID: string;
+    if (normalizedRouteVariantIndex > 0) {
+      const baseQuoteId =
+        normalizedRouteFamilyBaseQuoteId || await this.buildSafeQuoteId(tx, now);
+      itinerary_quote_ID = this.buildRouteFamilyVariantQuoteId(
+        baseQuoteId,
+        normalizedRouteVariantIndex,
+      );
+
+      const existingVariant = await (tx as any).dvi_itinerary_plan_details.findFirst({
+        where: {
+          itinerary_quote_ID,
+          deleted: 0,
+        },
+        select: {
+          itinerary_plan_ID: true,
+        },
+      });
+
+      if (existingVariant) {
+        throw new BadRequestException(
+          `Suggested route variant quote already exists: ${itinerary_quote_ID}`,
+        );
+      }
+    } else {
+      itinerary_quote_ID = await this.buildSafeQuoteId(tx, now);
+    }
 
     const createdRow = await (tx as any).dvi_itinerary_plan_details.create({
       data: {
@@ -582,6 +691,14 @@ export class PlanEngineService {
         itinerary_plan_ID: true,
       },
     });
+
+    const familyBaseQuoteId = this.normalizeRouteFamilyBaseQuoteId(itinerary_quote_ID) || normalizedRouteFamilyBaseQuoteId;
+    if (familyBaseQuoteId) {
+      await this.syncRouteFamilyHeaderFields(tx, familyBaseQuoteId, {
+        ...baseData,
+        updatedon: now,
+      });
+    }
 
     return Number(createdRow.itinerary_plan_ID);
   }
