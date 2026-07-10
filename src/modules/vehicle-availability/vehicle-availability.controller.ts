@@ -65,8 +65,19 @@ export class VehicleAvailabilityController {
   // Vendor-specific vehicle types (Selectize in PHP: __ajax_get_vendor_vehicle_types.php)
   @Get('vendor-vehicle-types')
   @ApiOperation({ summary: 'Vendor-specific vehicle types (GET ?vendorId=...)' })
-  async vendorVehicleTypes(@Query('vendorId') vendorId?: string) {
-    return this.service.listVendorVehicleTypes(vendorId ? Number(vendorId) : null);
+  async vendorVehicleTypes(
+    @Query('vendorId') vendorId?: string,
+    @Query('vendorIds') vendorIds?: string | string[],
+  ) {
+    const normalizedVendorIds = Array.isArray(vendorIds)
+      ? vendorIds.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)
+      : vendorIds
+        ? [Number(vendorIds)].filter((id) => Number.isFinite(id) && id > 0)
+        : [];
+    return this.service.listVendorVehicleTypes(
+      vendorId ? Number(vendorId) : null,
+      normalizedVendorIds.length > 0 ? normalizedVendorIds : null,
+    );
   }
 
   // Vehicles by vendor + vendor_vehicle_type (Assign modal vehicle dropdown)
