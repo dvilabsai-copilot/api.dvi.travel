@@ -448,6 +448,37 @@ export class ItinerariesService {
     return now;
   }
 
+  private parseRouteFamilyQuote(quoteId: string | undefined | null): {
+    baseQuoteId: string;
+    routeVariantIndex: number | null;
+  } | null {
+    const raw = String(quoteId || '').trim();
+    if (!raw) return null;
+
+    const match = raw.match(/^(.*)-R(\d+)$/i);
+    if (!match) {
+      return {
+        baseQuoteId: raw,
+        routeVariantIndex: null,
+      };
+    }
+
+    const baseQuoteId = String(match[1] || '').trim();
+    const routeVariantIndex = Number.parseInt(String(match[2] || ''), 10);
+
+    if (!baseQuoteId || !Number.isFinite(routeVariantIndex) || routeVariantIndex <= 0) {
+      return {
+        baseQuoteId: raw,
+        routeVariantIndex: null,
+      };
+    }
+
+    return {
+      baseQuoteId,
+      routeVariantIndex,
+    };
+  }
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly planEngine: PlanEngineService,
@@ -3225,8 +3256,12 @@ const guideSlotCsv = guideSlots.join(',');
 
     console.log('[PERF] TOTAL createPlan:', Date.now() - perfStart, 'ms');
 
+    const parsedRouteFamilyQuote = this.parseRouteFamilyQuote(String(result?.quoteId || ''));
+
     return {
       ...result,
+      routeFamilyBaseQuoteId: parsedRouteFamilyQuote?.baseQuoteId ?? null,
+      routeVariantIndex: parsedRouteFamilyQuote?.routeVariantIndex ?? null,
       vehicleBuildStatus: shouldBuildVehicles ? 'PROCESSING' : undefined,
     };
     } catch (error: any) {

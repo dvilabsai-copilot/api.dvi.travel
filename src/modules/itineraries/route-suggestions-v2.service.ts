@@ -264,7 +264,10 @@ export class RouteSuggestionsV2Service {
         const startDate = new Date(year, month - 1, day);
         console.log(`[getDefaultRouteSuggestions] Calculated startDate: ${startDate.toString()}`);
 
-        for (let i = 0; i < adjustedDays; i++) {
+        // Stored route rows are saved by night/stay count, but the create-itinerary
+        // form renders travel segments by day. For a 4N/5D round-trip we therefore
+        // need 5 rows: airport -> stop1 ... last stop -> departure.
+        for (let i = 0; i < noOfRouteDays; i++) {
           const currentDate = new Date(startDate);
           currentDate.setDate(currentDate.getDate() + i);
 
@@ -280,7 +283,7 @@ export class RouteSuggestionsV2Service {
 
           const nextLocation =
             routeDetails[i]?.route_location_name ||
-            (i === adjustedDays - 1 ? departureLocation : '');
+            (i === noOfRouteDays - 1 ? departureLocation : '');
 
           days.push({
             dayNo: i + 1,
@@ -295,7 +298,7 @@ export class RouteSuggestionsV2Service {
         routes.push({
           routeId: route.stored_route_ID,
           routeName: route.route_name,
-          noOfDays: adjustedDays,
+          noOfDays: noOfRouteDays,
           days,
         });
       }
