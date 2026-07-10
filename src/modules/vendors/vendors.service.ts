@@ -1075,18 +1075,70 @@ async createVendorBasicInfo(data: any): Promise<any> {
    * Update an existing vendor basic record (edit form save).
    */
   async updateVendorBasicInfo(vendorId: number, data: any): Promise<any> {
-    // Ensure vendor exists (and not deleted)
-    await this.getVendorDetail(vendorId);
+    const existing = await this.prisma.dvi_vendor_details.findFirst({
+      where: {
+        vendor_id: vendorId,
+        deleted: 0,
+      },
+    });
+
+    if (!existing) {
+      throw new NotFoundException(`Vendor ${vendorId} not found`);
+    }
 
     const mapped = this.mapVendorBasicPayload(data);
+    const hasOwn = (...keys: string[]) =>
+      keys.some((key) => Object.prototype.hasOwnProperty.call(data ?? {}, key));
+    const pick = (field: keyof typeof mapped, aliases: string[]) =>
+      hasOwn(...aliases) ? mapped[field] : (existing as any)[field];
 
-    const hasVendorCodeInPayload =
-      data.vendor_code !== undefined ||
-      data.vendorCode !== undefined;
-
-    if (!hasVendorCodeInPayload) {
-      delete mapped.vendor_code;
-    }
+    const updateData = {
+      vendor_name: pick('vendor_name', ['vendor_name', 'vendorName']),
+      vendor_code: pick('vendor_code', ['vendor_code', 'vendorCode']),
+      vendor_email: pick('vendor_email', ['vendor_email', 'email']),
+      vendor_primary_mobile_number: pick('vendor_primary_mobile_number', [
+        'vendor_primary_mobile_number',
+        'primaryMobile',
+      ]),
+      vendor_alternative_mobile_number: pick('vendor_alternative_mobile_number', [
+        'vendor_alternative_mobile_number',
+        'altMobile',
+      ]),
+      vendor_country: pick('vendor_country', ['vendor_country', 'vendor_country_id', 'countryId']),
+      vendor_state: pick('vendor_state', ['vendor_state', 'vendor_state_id', 'stateId']),
+      vendor_city: pick('vendor_city', ['vendor_city', 'vendor_city_id', 'cityId']),
+      vendor_pincode: pick('vendor_pincode', ['vendor_pincode', 'pincode']),
+      vendor_othernumber: pick('vendor_othernumber', ['vendor_othernumber', 'vendor_other_number', 'otherNumber']),
+      vendor_margin: pick('vendor_margin', ['vendor_margin', 'vendor_margin_percent', 'marginPercent']),
+      vendor_margin_gst_type: pick('vendor_margin_gst_type', ['vendor_margin_gst_type', 'marginGstType']),
+      vendor_margin_gst_percentage: pick('vendor_margin_gst_percentage', [
+        'vendor_margin_gst_percentage',
+        'vendor_margin_gst_percent',
+        'marginGstPercent',
+      ]),
+      vendor_address: pick('vendor_address', ['vendor_address', 'address']),
+      vendor_company_name: pick('vendor_company_name', [
+        'vendor_company_name',
+        'invoice_company_name',
+        'invoiceCompanyName',
+        'vendor_name',
+        'vendorName',
+      ]),
+      invoice_gstin_number: pick('invoice_gstin_number', [
+        'invoice_gstin_number',
+        'invoice_gstin',
+        'invoiceGstin',
+      ]),
+      invoice_pan_number: pick('invoice_pan_number', ['invoice_pan_number', 'invoice_pan', 'invoicePan']),
+      invoice_pincode: pick('invoice_pincode', ['invoice_pincode', 'invoicePincode']),
+      invoice_mobile_number: pick('invoice_mobile_number', [
+        'invoice_mobile_number',
+        'invoice_contact_no',
+        'invoiceContactNo',
+      ]),
+      invoice_email: pick('invoice_email', ['invoice_email', 'invoiceEmail']),
+      invoice_address: pick('invoice_address', ['invoice_address', 'invoiceAddress']),
+    };
 
     await this.prisma.$transaction(async (tx) => {
       await tx.dvi_vendor_details.update({
@@ -1094,7 +1146,7 @@ async createVendorBasicInfo(data: any): Promise<any> {
           vendor_id: vendorId,
         },
         data: {
-          ...mapped,
+          ...updateData,
           updatedon: new Date(),
         },
       });
@@ -1623,15 +1675,55 @@ async createVendorBasicInfo(data: any): Promise<any> {
 
     if (!existing) return;
 
-    await this.prisma.dvi_vendor_vehicle_types.update({
-      where: {
-        vendor_vehicle_type_ID: rowId,
-      },
-      data: {
-        deleted: 1,
-        status: 0,
-        updatedon: new Date(),
-      },
+    await this.prisma.$transaction(async (tx) => {
+      // Vendor vehicle type cost rows act as the parent for local/outstation
+      // pricing limits. Remove the children first so we do not leave orphan rows
+      // behind when the parent is hidden from the UI.
+      await tx.dvi_vehicle_local_pricebook.deleteMany({
+        where: {
+          vendor_id: vendorId,
+          vehicle_type_id: rowId,
+        },
+      });
+
+      await tx.dvi_vehicle_outstation_price_book.deleteMany({
+        where: {
+          vendor_id: vendorId,
+          vehicle_type_id: rowId,
+        },
+      });
+
+      await tx.dvi_time_limit.deleteMany({
+        where: {
+          vendor_id: vendorId,
+          vendor_vehicle_type_id: rowId,
+        },
+      });
+
+      await tx.dvi_kms_limit.deleteMany({
+        where: {
+          vendor_id: vendorId,
+          vendor_vehicle_type_id: rowId,
+        },
+      });
+
+      await tx.dvi_permit_cost.deleteMany({
+        where: {
+          vendor_id: vendorId,
+          vehicle_type_id: rowId,
+        },
+      });
+
+      await tx.dvi_vendor_vehicle_types.update({
+        where: {
+          vendor_vehicle_type_ID: rowId,
+        },
+        data: {
+          deleted: 1,
+          status: 0,
+          updatedon: new Date(),
+        },
+      });
     });
   }
 
