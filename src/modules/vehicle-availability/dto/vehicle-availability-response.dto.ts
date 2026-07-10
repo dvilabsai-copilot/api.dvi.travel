@@ -49,6 +49,30 @@ export class VehicleAvailabilityCellDto {
 
   @ApiProperty({ type: [VehicleAvailabilityRouteSegmentDto] })
   routeSegments!: VehicleAvailabilityRouteSegmentDto[];
+
+  @ApiProperty({ required: false, nullable: true })
+  customerName!: string | null;
+
+  @ApiProperty({ required: false, nullable: true })
+  customerContactNo!: string | null;
+
+  @ApiProperty({ required: false, nullable: true })
+  customerLabel!: string | null;
+
+  @ApiProperty({ required: false, nullable: true })
+  hotelName!: string | null;
+
+  @ApiProperty({ required: false, nullable: true })
+  tripStartLabel!: string | null;
+
+  @ApiProperty({ required: false, nullable: true })
+  tripEndLabel!: string | null;
+
+  @ApiProperty({ required: false, nullable: true })
+  tripStartTime!: string | null;
+
+  @ApiProperty({ required: false, nullable: true })
+  tripEndTime!: string | null;
 }
 
 export class VehicleAvailabilityRowDto {

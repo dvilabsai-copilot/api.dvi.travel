@@ -57,12 +57,63 @@ export class VehicleAvailabilityService {
     return new Date();
   }
 
+  private normalizeNumberArray(value: number | number[] | null | undefined): number[] {
+    if (value === undefined || value === null) return [];
+    const items = Array.isArray(value) ? value : [value];
+    return items
+      .map((item) => Number(item))
+      .filter((item) => Number.isFinite(item) && item > 0);
+  }
+
+  private normalizeStringArray(value: string | string[] | null | undefined): string[] {
+    if (value === undefined || value === null) return [];
+    const items = Array.isArray(value) ? value : [value];
+    return items
+      .map((item) => String(item).trim())
+      .filter((item) => item.length > 0);
+  }
+
+  private formatDateLabel(input: Date | string | null | undefined): string {
+    if (!input) return '';
+    const date = input instanceof Date ? input : new Date(input);
+    if (Number.isNaN(date.getTime())) return '';
+    return new Intl.DateTimeFormat('en-GB', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    }).format(date);
+  }
+
+  private formatTimeLabel(input: Date | string | null | undefined): string {
+    if (!input) return '';
+    const date = input instanceof Date ? input : new Date(input);
+    if (Number.isNaN(date.getTime())) return '';
+    return new Intl.DateTimeFormat('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    }).format(date);
+  }
+
   // ===========================================================================
   // CORE AVAILABILITY
   // ===========================================================================
   async getVehicleAvailabilityChart(query: VehicleAvailabilityQueryDto): Promise<VehicleAvailabilityResponseDto> {
-    const { vendorId, vehicleTypeId, agentId } = query;
-    const locationLabel = query.locationLabel ?? query.locationId;
+    const vendorIds = this.normalizeNumberArray(query.vendorIds);
+    const vehicleTypeIds = this.normalizeNumberArray(query.vehicleTypeIds);
+    const agentIds = this.normalizeNumberArray(query.agentIds);
+    const locationLabels = [
+      ...this.normalizeStringArray(query.locationLabels),
+      ...this.normalizeStringArray(query.locationLabel),
+      ...this.normalizeStringArray(query.locationId),
+    ];
+
+    const vendorId = Number(query.vendorId ?? 0) > 0 ? Number(query.vendorId) : 0;
+    const vehicleTypeId = Number(query.vehicleTypeId ?? 0) > 0 ? Number(query.vehicleTypeId) : 0;
+    const agentId = Number(query.agentId ?? 0) > 0 ? Number(query.agentId) : 0;
+    const activeVendorIds = vendorIds.length > 0 ? vendorIds : vendorId > 0 ? [vendorId] : [];
+    const activeVehicleTypeIds = vehicleTypeIds.length > 0 ? vehicleTypeIds : vehicleTypeId > 0 ? [vehicleTypeId] : [];
+    const activeAgentIds = agentIds.length > 0 ? agentIds : agentId > 0 ? [agentId] : [];
 
     const { dateFrom, dateTo } = (() => {
       if (query.dateFrom && query.dateTo) return { dateFrom: query.dateFrom, dateTo: query.dateTo };
@@ -79,7 +130,7 @@ export class VehicleAvailabilityService {
         status: 1,
         deleted: 0,
         itinerary_preference: { in: [2, 3] },
-        ...(agentId ? { agent_id: agentId } : {}),
+        ...(activeAgentIds.length > 0 ? { agent_id: { in: activeAgentIds } } : {}),
         OR: [
           { trip_start_date_and_time: { gte: rangeFrom, lte: rangeTo } },
           { trip_end_date_and_time: { gte: rangeFrom, lte: rangeTo } },
@@ -109,13 +160,13 @@ export class VehicleAvailabilityService {
     }
 
     // Optional location filter parity (PHP uses route location_name/next_visiting_location)
-    if (locationLabel?.trim()) {
-      const needle = locationLabel.trim().toLowerCase();
+    if (locationLabels.length > 0) {
+      const needles = new Set(locationLabels.map((label) => label.trim().toLowerCase()));
       const matched = new Set<number>();
       for (const r of routes as any[]) {
         const a = String(r.location_name ?? '').trim().toLowerCase();
         const b = String(r.next_visiting_location ?? '').trim().toLowerCase();
-        if (a === needle || b === needle) {
+        if (needles.has(a) || needles.has(b)) {
           matched.add(Number(r.itinerary_plan_ID));
         }
       }
@@ -123,19 +174,158 @@ export class VehicleAvailabilityService {
       if (filteredItineraryIds.length === 0) return { dates, rows: [] };
     }
 
+    const customerRows = await this.prisma.dvi_confirmed_itinerary_customer_details.findMany({
+      where: {
+        itinerary_plan_ID: { in: filteredItineraryIds },
+        primary_customer: 1,
+        status: 1,
+        deleted: 0,
+      },
+      select: {
+        itinerary_plan_ID: true,
+        customer_salutation: true,
+        customer_name: true,
+        primary_contact_no: true,
+      },
+    });
+    const customerByItinerary = new Map<number, { customerName: string; customerContactNo: string; customerLabel: string }>();
+    for (const customer of customerRows as any[]) {
+      const salutation = String(customer.customer_salutation ?? '').trim();
+      const name = String(customer.customer_name ?? '').trim();
+      const contact = String(customer.primary_contact_no ?? '').trim();
+      const customerLabel = [salutation, name].filter(Boolean).join(' ').trim();
+      customerByItinerary.set(Number(customer.itinerary_plan_ID), {
+        customerName: customerLabel || name || '',
+        customerContactNo: contact,
+        customerLabel: contact ? `${customerLabel || name || 'Guest'} | ${contact}` : customerLabel || name || '',
+      });
+    }
+
+    const hotelPlanRows = await this.prisma.dvi_confirmed_itinerary_plan_hotel_details.findMany({
+      where: {
+        itinerary_plan_id: { in: filteredItineraryIds },
+        status: 1,
+        deleted: 0,
+      },
+      select: {
+        itinerary_plan_id: true,
+        itinerary_route_date: true,
+        hotel_id: true,
+      },
+    });
+    const hotelIds = Array.from(
+      new Set(
+        (hotelPlanRows as any[])
+          .map((row) => Number(row.hotel_id ?? 0))
+          .filter((id) => id > 0),
+      ),
+    );
+    const hotelRows = hotelIds.length
+      ? await this.prisma.dvi_hotel.findMany({
+          where: { hotel_id: { in: hotelIds } },
+          select: { hotel_id: true, hotel_name: true },
+        })
+      : [];
+    const hotelNameById = new Map<number, string>();
+    for (const hotel of hotelRows as any[]) {
+      hotelNameById.set(Number(hotel.hotel_id), String(hotel.hotel_name ?? ''));
+    }
+    const hotelNameByItineraryDay = new Map<string, string>();
+    for (const row of hotelPlanRows as any[]) {
+      const itineraryDay = this.toYmd(
+        row.itinerary_route_date instanceof Date
+          ? (row.itinerary_route_date as Date)
+          : new Date(row.itinerary_route_date),
+      );
+      const hotelName = hotelNameById.get(Number(row.hotel_id ?? 0)) ?? '';
+      if (!hotelName) continue;
+      const key = `${Number(row.itinerary_plan_id)}-${itineraryDay}`;
+      if (!hotelNameByItineraryDay.has(key)) {
+        hotelNameByItineraryDay.set(key, hotelName);
+      }
+    }
+
+    type ItineraryVendorTypeLink = { itinerary_plan_id: number; vendor_id: number; vehicle_type_id: number };
+
+    const vendorVehicleTypeRowsForLookup = await this.prisma.dvi_vendor_vehicle_types.findMany({
+      where: {
+        status: 1,
+        deleted: { in: [0, 1] },
+        ...(activeVendorIds.length > 0 ? { vendor_id: { in: activeVendorIds } } : {}),
+      },
+      select: { vendor_vehicle_type_ID: true, vendor_id: true, vehicle_type_id: true },
+      orderBy: { vendor_vehicle_type_ID: 'asc' },
+    });
+
+    const vendorVehicleTypeIdSet = new Set<number>();
+    const masterTypeIdToVendorVehicleTypeIdsByVendor = new Map<string, number[]>();
+
+    for (const row of vendorVehicleTypeRowsForLookup as any[]) {
+      const vendorVehicleTypeId = Number(row.vendor_vehicle_type_ID ?? 0);
+      const vendorId = Number(row.vendor_id ?? 0);
+      const masterTypeId = Number(row.vehicle_type_id ?? 0);
+
+      if (vendorVehicleTypeId > 0) {
+        vendorVehicleTypeIdSet.add(vendorVehicleTypeId);
+      }
+
+      if (vendorId > 0 && masterTypeId > 0 && vendorVehicleTypeId > 0) {
+        const mapKey = `${vendorId}-${masterTypeId}`;
+        if (!masterTypeIdToVendorVehicleTypeIdsByVendor.has(mapKey)) {
+          masterTypeIdToVendorVehicleTypeIdsByVendor.set(mapKey, []);
+        }
+        masterTypeIdToVendorVehicleTypeIdsByVendor.get(mapKey)!.push(vendorVehicleTypeId);
+      }
+    }
+
+    const resolveVendorVehicleTypeId = (vendorId: number, rawVehicleTypeId: number): number => {
+      if (vendorVehicleTypeIdSet.has(rawVehicleTypeId)) {
+        return rawVehicleTypeId;
+      }
+
+      const mappedVendorVehicleTypeIds = masterTypeIdToVendorVehicleTypeIdsByVendor.get(`${vendorId}-${rawVehicleTypeId}`) || [];
+      return mappedVendorVehicleTypeIds[0] ?? rawVehicleTypeId;
+    };
+
+    const expandVehicleTypeFilterIds = (requestedIds: number[]): number[] => {
+      if (requestedIds.length === 0) return [];
+
+      const normalized = new Set<number>();
+      for (const rawId of requestedIds) {
+        const numericRawId = Number(rawId);
+        if (!Number.isFinite(numericRawId) || numericRawId <= 0) continue;
+
+        if (vendorVehicleTypeIdSet.has(numericRawId)) {
+          normalized.add(numericRawId);
+          continue;
+        }
+
+        for (const row of vendorVehicleTypeRowsForLookup as any[]) {
+          if (Number(row.vehicle_type_id ?? 0) === numericRawId) {
+            const vendorVehicleTypeId = Number(row.vendor_vehicle_type_ID ?? 0);
+            if (vendorVehicleTypeId > 0) {
+              normalized.add(vendorVehicleTypeId);
+            }
+          }
+        }
+      }
+
+      return Array.from(normalized);
+    };
+
+    const expandedVehicleTypeFilterIds = expandVehicleTypeFilterIds(activeVehicleTypeIds);
+
     // VEHICLES
     const vehicles = await this.prisma.dvi_vehicle.findMany({
       where: {
         status: 1,
         deleted: 0,
-        ...(vendorId ? { vendor_id: vendorId } : {}),
-        ...(vehicleTypeId ? { vehicle_type_id: vehicleTypeId } : {}),
+        ...(activeVendorIds.length > 0 ? { vendor_id: { in: activeVendorIds } } : {}),
+        ...(expandedVehicleTypeFilterIds.length > 0 ? { vehicle_type_id: { in: expandedVehicleTypeFilterIds } } : {}),
       },
       orderBy: [{ vendor_id: 'asc' }, { vehicle_type_id: 'asc' }, { vehicle_id: 'asc' }],
     });
     if (vehicles.length === 0) return { dates, rows: [] };
-
-    type ItineraryVendorTypeLink = { itinerary_plan_id: number; vendor_id: number; vehicle_type_id: number };
 
     // Primary PHP source: vouchers
     const voucherLinksRaw = await this.prisma.dvi_confirmed_itinerary_plan_vehicle_voucher_details.findMany({
@@ -144,8 +334,8 @@ export class VehicleAvailabilityService {
         deleted: 0,
         vehicle_booking_status: 4,
         itinerary_plan_id: { in: filteredItineraryIds },
-        ...(vendorId ? { vendor_id: vendorId } : {}),
-        ...(vehicleTypeId ? { vehicle_type_id: vehicleTypeId } : {}),
+        ...(activeVendorIds.length > 0 ? { vendor_id: { in: activeVendorIds } } : {}),
+        ...(expandedVehicleTypeFilterIds.length > 0 ? { vehicle_type_id: { in: expandedVehicleTypeFilterIds } } : {}),
       },
       select: {
         itinerary_plan_id: true,
@@ -159,7 +349,7 @@ export class VehicleAvailabilityService {
     let itineraryVendorTypeLinks: ItineraryVendorTypeLink[] = (voucherLinksRaw as any[]).map((v) => ({
       itinerary_plan_id: Number(v.itinerary_plan_id),
       vendor_id: Number(v.vendor_id),
-      vehicle_type_id: Number(v.vehicle_type_id),
+      vehicle_type_id: resolveVendorVehicleTypeId(Number(v.vendor_id), Number(v.vehicle_type_id)),
     }));
 
     if (itineraryVendorTypeLinks.length === 0) {
@@ -168,7 +358,7 @@ export class VehicleAvailabilityService {
           status: 1,
           deleted: 0,
           itinerary_plan_id: { in: filteredItineraryIds },
-          ...(vendorId ? { vendor_id: vendorId } : {}),
+          ...(activeVendorIds.length > 0 ? { vendor_id: { in: activeVendorIds } } : {}),
         },
         select: {
           itinerary_plan_id: true,
@@ -186,11 +376,14 @@ export class VehicleAvailabilityService {
           return {
             itinerary_plan_id: Number(r.itinerary_plan_id),
             vendor_id: Number(r.vendor_id),
-            vehicle_type_id: vendorVehicleTypeId > 0 ? vendorVehicleTypeId : fallbackVehicleTypeId,
+            vehicle_type_id:
+              vendorVehicleTypeId > 0
+                ? resolveVendorVehicleTypeId(Number(r.vendor_id), vendorVehicleTypeId)
+                : resolveVendorVehicleTypeId(Number(r.vendor_id), fallbackVehicleTypeId),
           };
         })
         .filter((r) => r.vehicle_type_id > 0)
-        .filter((r) => (!vehicleTypeId ? true : r.vehicle_type_id === vehicleTypeId));
+        .filter((r) => (!expandedVehicleTypeFilterIds.length ? true : expandedVehicleTypeFilterIds.includes(r.vehicle_type_id)));
     }
 
     if (itineraryVendorTypeLinks.length === 0) return { dates, rows: [] };
@@ -247,41 +440,39 @@ export class VehicleAvailabilityService {
     }
 
     // LABELS
-    const vendorIds = Array.from(new Set(vehicles.map((v: any) => v.vendor_id as number)));
-    const vendorVehicleTypeIds = Array.from(
-      new Set(
-        vehicles
-          .map((v: any) => Number(v.vehicle_type_id ?? 0))
-          .filter((n) => Number.isFinite(n) && n > 0),
-      ),
-    );
+    const vendorIdsForLabels = Array.from(new Set(vehicles.map((v: any) => v.vendor_id as number)));
 
-    const [vendorRows, vendorVehicleTypeRows] = await Promise.all([
+    const [vendorRows, vehicleTypeRows] = await Promise.all([
       this.prisma.dvi_vendor_details.findMany({
-        where: { vendor_id: { in: vendorIds } },
+        where: { vendor_id: { in: vendorIdsForLabels } },
         select: { vendor_id: true, vendor_name: true },
       }),
-      this.prisma.dvi_vendor_vehicle_types.findMany({
-        where: { vendor_vehicle_type_ID: { in: vendorVehicleTypeIds }, deleted: { in: [0, 1] } },
-        select: { vendor_vehicle_type_ID: true, vehicle_type_id: true },
+      this.prisma.dvi_vehicle_type.findMany({
+        where: {
+          vehicle_type_id: {
+            in: Array.from(
+              new Set(
+                (vendorVehicleTypeRowsForLookup as any[])
+                  .map((row) => Number(row.vehicle_type_id ?? 0))
+                  .filter((n) => Number.isFinite(n) && n > 0),
+              ),
+            ),
+          },
+          deleted: { in: [0, 1] },
+        },
+        select: { vehicle_type_id: true, vehicle_type_title: true },
       }),
     ]);
-
-    const vehicleTypeIds = Array.from(new Set(vendorVehicleTypeRows.map((r: any) => r.vehicle_type_id as number)));
-    const vehicleTypeRows = await this.prisma.dvi_vehicle_type.findMany({
-      where: { vehicle_type_id: { in: vehicleTypeIds }, deleted: { in: [0, 1] } },
-      select: { vehicle_type_id: true, vehicle_type_title: true },
-    });
 
     const vendorNameById = new Map<number, string>();
     for (const v of vendorRows as any[]) vendorNameById.set(v.vendor_id, v.vendor_name ?? '');
     const vehicleTypeTitleById = new Map<number, string>();
     for (const vt of vehicleTypeRows as any[]) vehicleTypeTitleById.set(vt.vehicle_type_id, vt.vehicle_type_title ?? '');
     const vendorVehicleTypeIdToTitle = new Map<number, string>();
-    for (const row of vendorVehicleTypeRows as any[]) {
+    for (const row of vendorVehicleTypeRowsForLookup as any[]) {
       vendorVehicleTypeIdToTitle.set(
-        row.vendor_vehicle_type_ID as number,
-        vehicleTypeTitleById.get(row.vehicle_type_id) ?? '',
+        Number(row.vendor_vehicle_type_ID ?? 0),
+        vehicleTypeTitleById.get(Number(row.vehicle_type_id ?? 0)) ?? '',
       );
     }
 
@@ -331,6 +522,13 @@ export class VehicleAvailabilityService {
             nextVisitingLocation: r.next_visiting_location ?? '',
           }));
 
+          const customer = customerByItinerary.get(itId);
+          const hotelName = hotelNameByItineraryDay.get(`${itId}-${day}`) ?? '';
+          const tripStartLabel = this.formatDateLabel(startDate);
+          const tripEndLabel = this.formatDateLabel(endDate);
+          const tripStartTime = this.formatTimeLabel(startDate);
+          const tripEndTime = this.formatTimeLabel(endDate);
+
           const assignmentKey = `${itId}-${vehicleIdKey}`;
           const driverAssignment = driverByItineraryAndVehicle.get(assignmentKey);
           const hasDriver = !!driverAssignment;
@@ -350,6 +548,14 @@ export class VehicleAvailabilityService {
             hasDriver,
             driverId,
             routeSegments,
+            customerName: customer?.customerName ?? '',
+            customerContactNo: customer?.customerContactNo ?? '',
+            customerLabel: customer?.customerLabel ?? '',
+            hotelName,
+            tripStartLabel,
+            tripEndLabel,
+            tripStartTime,
+            tripEndTime,
           };
           break;
         }
@@ -369,6 +575,14 @@ export class VehicleAvailabilityService {
             hasDriver: false,
             driverId: null,
             routeSegments: [],
+            customerName: '',
+            customerContactNo: '',
+            customerLabel: '',
+            hotelName: '',
+            tripStartLabel: '',
+            tripEndLabel: '',
+            tripStartTime: '',
+            tripEndTime: '',
           };
         }
         cells.push(cell);
@@ -416,10 +630,20 @@ export class VehicleAvailabilityService {
     }));
   }
 
-  async listVendorVehicleTypes(vendorId: number | null) {
-    if (!vendorId) return [];
+  async listVendorVehicleTypes(vendorId: number | null, vendorIds?: number[] | null) {
+    const resolvedVendorIds = Array.isArray(vendorIds) && vendorIds.length > 0
+      ? vendorIds.filter((id) => Number.isFinite(Number(id)) && Number(id) > 0)
+      : vendorId
+        ? [vendorId]
+        : [];
+
+    if (resolvedVendorIds.length === 0) return [];
     const mappings = await this.prisma.dvi_vendor_vehicle_types.findMany({
-      where: { vendor_id: vendorId, status: { in: [0, 1] }, deleted: { in: [0, 1] } },
+      where: {
+        vendor_id: { in: resolvedVendorIds },
+        status: { in: [0, 1] },
+        deleted: { in: [0, 1] },
+      },
       select: { vendor_vehicle_type_ID: true, vendor_id: true, vehicle_type_id: true },
       orderBy: { vendor_vehicle_type_ID: 'asc' },
     });
@@ -600,10 +824,72 @@ export class VehicleAvailabilityService {
   async listAgents() {
     const agents = await this.prisma.dvi_agent.findMany({
       where: { deleted: { in: [0] } },
-      select: { agent_ID: true, agent_name: true },
+      select: {
+        agent_ID: true,
+        agent_name: true,
+        agent_lastname: true,
+        agent_city: true,
+      },
       orderBy: { agent_name: 'asc' },
     });
-    return agents.map((a: any) => ({ id: a.agent_ID, label: a.agent_name ?? '' }));
+
+    const agentIds = agents.map((agent: any) => Number(agent.agent_ID ?? 0)).filter((id) => id > 0);
+    const cityIds = Array.from(new Set(agents.map((agent: any) => Number(agent.agent_city ?? 0)).filter((id) => id > 0)));
+
+    const [companyRows, cityRows] = await Promise.all([
+      agentIds.length
+        ? this.prisma.dvi_agent_configuration.findMany({
+            where: {
+              agent_id: { in: agentIds },
+              status: 1,
+              deleted: 0,
+            },
+            select: {
+              agent_id: true,
+              company_name: true,
+              agent_config_id: true,
+            },
+            orderBy: { agent_config_id: 'desc' },
+          })
+        : Promise.resolve([] as any[]),
+      cityIds.length
+        ? this.prisma.dvi_cities.findMany({
+            where: { id: { in: cityIds } },
+            select: { id: true, name: true },
+          })
+        : Promise.resolve([] as any[]),
+    ]);
+
+    const companyNameByAgentId = new Map<number, string>();
+    for (const row of companyRows as any[]) {
+      const agentId = Number(row.agent_id ?? 0);
+      const companyName = String(row.company_name ?? '').replace(/\s+/g, ' ').trim();
+      if (agentId > 0 && companyName && !companyNameByAgentId.has(agentId)) {
+        companyNameByAgentId.set(agentId, companyName);
+      }
+    }
+
+    const cityNameById = new Map<number, string>();
+    for (const row of cityRows as any[]) {
+      cityNameById.set(Number(row.id ?? 0), String(row.name ?? '').replace(/\s+/g, ' ').trim());
+    }
+
+    const buildAgentLabel = (agent: any): string => {
+      const companyName = companyNameByAgentId.get(Number(agent.agent_ID ?? 0)) ?? '';
+      const rawAgentName = [agent.agent_name, agent.agent_lastname]
+        .map((part) => String(part ?? '').trim())
+        .filter(Boolean)
+        .join(' ')
+        .trim();
+      const fallbackName = rawAgentName || String(agent.agent_name ?? '').trim();
+      const cityName = cityNameById.get(Number(agent.agent_city ?? 0)) ?? '';
+      const baseName = companyName || fallbackName || 'Agent';
+      return cityName && !baseName.toLowerCase().includes(cityName.toLowerCase())
+        ? `${baseName} - ${cityName}`
+        : baseName;
+    };
+
+    return agents.map((a: any) => ({ id: a.agent_ID, label: buildAgentLabel(a) }));
   }
 
   /**
