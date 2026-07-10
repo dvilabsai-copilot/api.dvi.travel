@@ -28,9 +28,43 @@ export class DailyMomentTrackerService {
   private readonly legacyPhpDbName =
     process.env.LEGACY_PHP_DB_NAME?.trim() || 'dvi_travels';
 
-  constructor(private readonly prisma: PrismaService) {}
+   constructor(private readonly prisma: PrismaService) {}
 
   // ========= PUBLIC API METHODS =========
+
+  async getDriverAssignmentShareDetails(driverAssignmentId: number) {
+    if (!driverAssignmentId) {
+      throw new BadRequestException('driverAssignmentId is required');
+    }
+
+    const assignment =
+      await this.prisma.dvi_confirmed_itinerary_vendor_driver_assigned.findFirst({
+        where: {
+          driver_assigned_ID: driverAssignmentId,
+          status: 1,
+          deleted: 0,
+        },
+        select: {
+          driver_assigned_ID: true,
+          itinerary_plan_id: true,
+          driver_id: true,
+          vehicle_id: true,
+          vendor_id: true,
+        },
+      });
+
+    if (!assignment) {
+      throw new BadRequestException('Driver assignment not found');
+    }
+
+    return {
+      driverAssignmentId: assignment.driver_assigned_ID,
+      itineraryPlanId: assignment.itinerary_plan_id,
+      driverId: assignment.driver_id,
+      vehicleId: assignment.vehicle_id,
+      vendorId: assignment.vendor_id,
+    };
+  }
 
   async listDailyMoments(
     query: ListDailyMomentQueryDto,

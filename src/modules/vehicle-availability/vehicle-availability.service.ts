@@ -529,25 +529,33 @@ export class VehicleAvailabilityService {
           const tripStartTime = this.formatTimeLabel(startDate);
           const tripEndTime = this.formatTimeLabel(endDate);
 
-          const assignmentKey = `${itId}-${vehicleIdKey}`;
-          const driverAssignment = driverByItineraryAndVehicle.get(assignmentKey);
-          const hasDriver = !!driverAssignment;
-          const driverId = hasDriver ? (driverAssignment.driver_id as number) : null;
+        const assignmentKey = `${itId}-${vehicleIdKey}`;
+const driverAssignment = driverByItineraryAndVehicle.get(assignmentKey);
+const hasDriver = !!driverAssignment;
 
-          cell = {
-            date: day,
-            itineraryPlanId: itId,
-            itineraryQuoteId: it.itinerary_quote_ID ?? null,
-            isWithinTrip: true,
-            isStart: day === startYmd,
-            isEnd: day === endYmd,
-            isInBetween: !(day === startYmd) && !(day === endYmd),
-            isToday: day === todayYmd,
-            isVehicleAssigned,
-            assignedVehicleId: isVehicleAssigned ? vehicleIdKey : null,
-            hasDriver,
-            driverId,
-            routeSegments,
+const driverId = hasDriver
+  ? Number(driverAssignment.driver_id ?? 0) || null
+  : null;
+
+const driverAssignmentId = hasDriver
+  ? Number(driverAssignment.driver_assigned_ID ?? 0) || null
+  : null;
+
+cell = {
+  date: day,
+  itineraryPlanId: itId,
+  itineraryQuoteId: it.itinerary_quote_ID ?? null,
+  isWithinTrip: true,
+  isStart: day === startYmd,
+  isEnd: day === endYmd,
+  isInBetween: !(day === startYmd) && !(day === endYmd),
+  isToday: day === todayYmd,
+  isVehicleAssigned,
+  assignedVehicleId: isVehicleAssigned ? vehicleIdKey : null,
+  hasDriver,
+  driverId,
+  driverAssignmentId,
+  routeSegments,
             customerName: customer?.customerName ?? '',
             customerContactNo: customer?.customerContactNo ?? '',
             customerLabel: customer?.customerLabel ?? '',
@@ -570,11 +578,12 @@ export class VehicleAvailabilityService {
             isEnd: false,
             isInBetween: false,
             isToday: day === todayYmd,
-            isVehicleAssigned: false,
-            assignedVehicleId: null,
-            hasDriver: false,
-            driverId: null,
-            routeSegments: [],
+          isVehicleAssigned: false,
+assignedVehicleId: null,
+hasDriver: false,
+driverId: null,
+driverAssignmentId: null,
+routeSegments: [],
             customerName: '',
             customerContactNo: '',
             customerLabel: '',
