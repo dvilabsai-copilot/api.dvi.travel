@@ -1878,18 +1878,36 @@ async updateVendorVehicle(vehicleId: number, data: any): Promise<any> {
     throw new NotFoundException(`Vehicle ${vehicleId} not found`);
   }
 
-  const mapped = this.mapVendorVehiclePayload(data);
-  const { vehicle_origin: _vehicleOrigin, ...persistedMapped } = mapped as any;
-  const resolution = await this.resolveVehicleLocationIdFromBranch({
-    vendorId: Number(existingVehicle.vendor_id ?? 0),
-    vendorBranchId:
-      Number(mapped.vendor_branch_id ?? 0) ||
-      Number(existingVehicle.vendor_branch_id ?? 0),
-    requestedVehicleLocationId:
-      mapped.vehicle_location_id ||
-      Number(existingVehicle.vehicle_location_id ?? 0),
-    requestedVehicleOrigin: mapped.vehicle_origin,
-  });
+const mapped = this.mapVendorVehiclePayload(data);
+const { vehicle_origin: _vehicleOrigin, ...persistedMapped } = mapped as any;
+
+const requestedVehicleOrigin = String(
+  data.vehicle_origin ??
+    data.vehicle_orign ??
+    data.origin ??
+    '',
+).trim();
+
+const hasNewVehicleOrigin = requestedVehicleOrigin !== '';
+
+const requestedVehicleLocationId = hasNewVehicleOrigin
+  ? 0
+  : (
+      this.toNumberOrNull(data.vehicle_location_id) ??
+      Number(existingVehicle.vehicle_location_id ?? 0)
+    );
+
+const resolution = await this.resolveVehicleLocationIdFromBranch({
+  vendorId: Number(existingVehicle.vendor_id ?? 0),
+
+  vendorBranchId:
+    Number(mapped.vendor_branch_id ?? 0) ||
+    Number(existingVehicle.vendor_branch_id ?? 0),
+
+  requestedVehicleLocationId,
+
+  requestedVehicleOrigin,
+});
 
   const updateData: any = {
     ...persistedMapped,
