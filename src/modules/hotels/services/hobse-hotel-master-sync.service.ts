@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import axios, { AxiosInstance } from 'axios';
 import FormData from 'form-data';
 import { PrismaService } from '../../../prisma.service';
+import { resolveCityRecordByName } from '../../itineraries/utils/city-normalization.util';
 
 type HobseHotelRow = {
   hotelId: string;
@@ -59,6 +60,24 @@ export class HobseHotelMasterSyncService {
     return Number.isFinite(n) ? n : 0;
   }
 
+  private async resolveStoredCityValue(cityName?: string | null): Promise<{ cityId: string | null; cityName: string | null }> {
+    const raw = String(cityName ?? '').trim();
+    if (!raw) {
+      return { cityId: null, cityName: null };
+    }
+
+    if (/^\d+$/.test(raw)) {
+      return { cityId: raw, cityName: raw };
+    }
+
+    const record = await resolveCityRecordByName(this.prisma, raw);
+    if (record?.id) {
+      return { cityId: String(record.id), cityName: record.name || raw };
+    }
+
+    return { cityId: null, cityName: raw };
+  }
+
   private async fetchHotelList(): Promise<HobseHotelRow[]> {
     const payload = this.buildParams('htl/GetHotelList', {});
 
@@ -108,6 +127,7 @@ export class HobseHotelMasterSyncService {
       const hotelId = (h.hotelId || '').trim();
       const hotelName = (h.hotelName || '').trim();
       const cityName = (h.cityName || '').trim();
+      const city = await this.resolveStoredCityValue(cityName);
 
       if (!hotelId || !hotelName || !cityName) {
         skipped++;
@@ -116,9 +136,13 @@ export class HobseHotelMasterSyncService {
 
       const existing = await this.prisma.dvi_hotel.findFirst({
         where: {
-          hotel_name: hotelName,
-          hotel_city: cityName,
-          OR: [{ deleted: false }, { deleted: null }],
+          AND: [
+            { hotel_name: hotelName },
+            city.cityId
+              ? ({ OR: [{ hotel_city: city.cityId }, { hotel_city: cityName }] } as any)
+              : ({ hotel_city: cityName } as any),
+            { OR: [{ deleted: false }, { deleted: null }] },
+          ],
         },
         select: {
           hotel_id: true,
@@ -135,6 +159,7 @@ export class HobseHotelMasterSyncService {
             hotel_address: h.address?.trim() || null,
             hotel_state: h.stateName?.trim() || null,
             hotel_country: h.countryName?.trim() || null,
+            hotel_city: city.cityId ?? cityName,
             hotel_category: category,
             status: 1,
           },
@@ -144,7 +169,7 @@ export class HobseHotelMasterSyncService {
         await this.prisma.dvi_hotel.create({
           data: {
             hotel_name: hotelName,
-            hotel_city: cityName,
+            hotel_city: city.cityId ?? cityName,
             hotel_state: h.stateName?.trim() || null,
             hotel_country: h.countryName?.trim() || null,
             hotel_address: h.address?.trim() || null,

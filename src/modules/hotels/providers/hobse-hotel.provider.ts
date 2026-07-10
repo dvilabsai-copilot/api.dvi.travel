@@ -5,6 +5,8 @@ import {
   Logger,
 } from '@nestjs/common';
 import axios, { AxiosInstance } from 'axios';
+import * as fs from 'fs';
+import * as path from 'path';
 import { PrismaService } from '../../../prisma.service';
 import {
   IHotelProvider,
@@ -47,6 +49,7 @@ interface HobseEnvelope<T = any> {
 export class HobseHotelProvider implements IHotelProvider {
   private readonly logger = new Logger(HobseHotelProvider.name);
   private http: AxiosInstance = axios;
+  private readonly logFile = path.join(process.cwd(), 'hobse-hotel-provider.log');
 
   private readonly BASE_URL =
     (process.env.HOBSE_BASE_URL || 'https://api.hobse.com/v1')
@@ -65,6 +68,15 @@ export class HobseHotelProvider implements IHotelProvider {
   private readonly CHANNEL_NAME = process.env.HOBSE_CHANNEL_NAME || 'DVI';
 
   constructor(private readonly prisma: PrismaService) {}
+
+  private fileLog(message: string) {
+    const timestamp = new Date().toISOString();
+    try {
+      fs.appendFileSync(this.logFile, `[${timestamp}] ${message}\n`);
+    } catch {
+      // Ignore file write failures; console logging still works.
+    }
+  }
 
   getName(): string {
     return 'HOBSE';
@@ -104,6 +116,7 @@ export class HobseHotelProvider implements IHotelProvider {
       form.append('params', JSON.stringify(paramsEnvelope));
 
       this.logger.debug(`📤 HOBSE POST ${url}`);
+      this.fileLog(`HOBSE_POST ${url} | params=${JSON.stringify(paramsEnvelope)}`);
       this.logger.log(`🔍 HOBSE ${method} - Full Params JSON:`);
       this.logger.log(JSON.stringify(paramsEnvelope, null, 2));
 
@@ -118,6 +131,7 @@ export class HobseHotelProvider implements IHotelProvider {
       // Log the status code
       if (resp.status !== 200) {
         this.logger.warn(`⚠️  HOBSE ${method} HTTP Status: ${resp.status}`);
+        this.fileLog(`HOBSE_WARN ${method} HTTP_STATUS=${resp.status}`);
       }
 
       // Try to extract error info from response body
@@ -132,6 +146,9 @@ export class HobseHotelProvider implements IHotelProvider {
         this.logger.warn(`⚠️  HOBSE ${method} Response: ${errorMessage}`);
         this.logger.warn(`   Status: ${JSON.stringify(responseData?.hobse?.response?.status)}`);
         this.logger.warn(`   Errors: ${JSON.stringify(responseData?.hobse?.response?.errors)}`);
+        this.fileLog(
+          `HOBSE_WARN ${method} RESPONSE_ERROR status=${JSON.stringify(responseData?.hobse?.response?.status)} errors=${JSON.stringify(responseData?.hobse?.response?.errors)}`,
+        );
         
         // Write full response to file for debugging
         const fs = require('fs');
@@ -143,13 +160,16 @@ export class HobseHotelProvider implements IHotelProvider {
         const debugPath = path.join(debugDir, `hobse_${method}_response_${Date.now()}.json`);
         fs.writeFileSync(debugPath, JSON.stringify(responseData, null, 2));
         this.logger.warn(`   Full Response saved to ${debugPath}`);
+        this.fileLog(`HOBSE_DEBUG_SAVED ${method} path=${debugPath}`);
         
         throw new Error(errorMessage);
       }
 
+      this.fileLog(`HOBSE_OK ${method} status=${resp.status}`);
       return responseData;
     } catch (e: any) {
       this.logger.error(`❌ HOBSE API failed: ${e?.message}`);
+      this.fileLog(`HOBSE_ERROR ${method} message=${e?.message || e}`);
       throw new InternalServerErrorException(`HOBSE API failed: ${e?.message}`);
     }
   }
@@ -226,6 +246,7 @@ export class HobseHotelProvider implements IHotelProvider {
   async search(criteria: HotelSearchCriteria, _preferences?: HotelPreferences): Promise<HotelSearchResult[]> {
     try {
       this.logger.log(`\n   📡 HOBSE SEARCH: cityCode=${criteria.cityCode}, ${criteria.checkInDate}→${criteria.checkOutDate}`);
+      this.fileLog(`SEARCH_START cityCode=${criteria.cityCode} checkIn=${criteria.checkInDate} checkOut=${criteria.checkOutDate}`);
 
       // Convert cityCode to string for database lookup (Prisma expects string)
       const cityCodeAsString = String(criteria.cityCode);
@@ -244,10 +265,11 @@ export class HobseHotelProvider implements IHotelProvider {
         select: { name: true, hobse_city_code: true },
       });
 
-      if (!cityRow?.hobse_city_code || !cityRow?.name) {
-        this.logger.warn(`   ⚠️  No HOBSE mapping for cityCode: ${criteria.cityCode}`);
-        return [];
-      }
+        if (!cityRow?.hobse_city_code || !cityRow?.name) {
+          this.logger.warn(`   ⚠️  No HOBSE mapping for cityCode: ${criteria.cityCode}`);
+          this.fileLog(`SEARCH_NO_MAPPING cityCode=${criteria.cityCode}`);
+          return [];
+        }
 
       // Get full hotel list (empty parameters - API returns all hotels)
       const listResp = await this.postForm('GetHotelList', {});
@@ -259,6 +281,7 @@ export class HobseHotelProvider implements IHotelProvider {
 
       if (cityHotels.length === 0) {
         this.logger.warn(`   📭 No HOBSE hotels found for city: ${cityRow.name}`);
+        this.fileLog(`SEARCH_NO_HOTELS city=${cityRow.name}`);
         return [];
       }
 
@@ -289,9 +312,11 @@ export class HobseHotelProvider implements IHotelProvider {
       }
 
       this.logger.log(`   ✅ HOBSE: returning ${results.length}/${cityHotels.length} hotels with tariffs`);
+      this.fileLog(`SEARCH_DONE city=${cityRow.name} results=${results.length}/${cityHotels.length}`);
       return results;
     } catch (error: any) {
       this.logger.error(`   ❌ HOBSE search error: ${error?.message || error}`);
+      this.fileLog(`SEARCH_ERROR message=${error?.message || error}`);
       return [];
     }
   }
