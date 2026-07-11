@@ -7,6 +7,273 @@ Evidence baseline:
 - Main timeline case study: `DVI2026042 / PLAN_ID=48`. [Verified from DB/script output]
 - Direct ON live replay case study: `DVI20260594 / PLAN_ID=410`. [Verified from live replay]
 
+## End-to-End Itinerary Generation Flow
+
+This section is the quickest way for a new coding agent to understand how a saved itinerary becomes the final timeline shown on the details page. It focuses on the real runtime ownership of each step, not just the ideal architecture. [Verified from code] [Inference]
+
+### The short version
+
+```text
+frontend save/update
+-> plan DTO reaches NestJS
+-> plan + route rows are written
+-> route_start_time / route_end_time are decided
+-> arrival hotel policy decides hotel-first vs sightseeing-first
+-> timeline builder materializes item_type rows into dvi_itinerary_route_hotspot_details
+-> itinerary details API reads those persisted rows
+-> frontend renders days[].startTime plus days[].segments[]
+```
+
+### 1. Frontend save entry point
+
+Primary frontend file:
+- `dvi_frontend/src/pages/CreateItinerary/CreateItinerary.tsx`
+
+Primary frontend service:
+- `dvi_frontend/src/services/itinerary.ts`
+
+Save flow:
+- create/update uses `POST /api/v1/itineraries/?type=itineary_basic_info` or the update equivalent. [Verified from code]
+- the payload sends:
+  - `plan.trip_start_date`
+  - `plan.trip_end_date`
+  - `plan.pick_up_date_and_time`
+  - route list
+  - traveller list
+  - vehicle selection
+- for the basic itinerary form, `pick_up_date_and_time` is built from the same wall-clock date/time as the trip start. [Verified from code]
+
+Important implication:
+- if the user starts Day 1 at `10:00 AM`, that value must survive all later backend steps as the Day 1 route start, unless a business rule intentionally overrides it. [Inference]
+
+### 2. Plan parsing and wall-clock time ownership
+
+Primary backend files:
+- `api.dvi.travel/src/modules/itineraries/engines/plan-engine.service.ts`
+- `api.dvi.travel/src/modules/itineraries/engines/route-engine.service.ts`
+
+Key rule:
+- itinerary generation must treat incoming date/time fields as wall-clock values, not as UTC-shifted transport values. [Verified from code]
+
+Why this matters:
+- `2026-07-12T10:00:00+05:30` must remain a `10:00` business-time start for Day 1.
+- if any step converts that into environment-local UTC logic too early, route start can drift. [Inference]
+
+### 3. Route generation owns the route day envelope
+
+Primary backend file:
+- `api.dvi.travel/src/modules/itineraries/engines/route-engine.service.ts`
+
+What this step writes:
+- `dvi_itinerary_route_details`
+
+Important fields:
+- `route_start_time`
+- `route_end_time`
+- `itinerary_route_date`
+- `location_id`
+- `no_of_km`
+
+Practical ownership:
+- `route_start_time` and `route_end_time` are the official day envelope for each route/day.
+- Day 1 should normally use the saved trip start / pickup time.
+- middle days usually default to `08:00:00 -> 20:00:00`.
+- last day may be constrained by departure logic and buffers. [Verified from code] [Inference]
+
+Debug rule:
+- if `days[].startTime` in the details API is wrong, inspect `dvi_itinerary_route_details` first.
+- if `days[].startTime` is correct but visible timeline rows are wrong, the bug is usually in persisted hotspot rows, not in the route row. [Verified from live debug]
+
+### 4. Arrival policy decides Day 1 hotel-first vs sightseeing-first
+
+Primary backend file:
+- `api.dvi.travel/src/modules/itineraries/services/arrival-hotel-policy.service.ts`
+
+Primary endpoint:
+- `POST /api/v1/itineraries/hotel-arrival-policy`
+
+What it decides:
+- arrival window classification such as:
+  - `EARLY_01_TO_0759`
+  - `MORNING_09_TO_1259`
+- whether the user should:
+  - go to hotel first
+  - do sightseeing first and defer hotel check-in to end of day
+- whether previous-day billing confirmation is required for very early arrivals. [Verified from code and live API]
+
+Important distinction:
+- `deferHotelToEndOfDay = true` does not automatically mean "force Day 1 to start at 08:00 AM".
+- only specific early-arrival flows should apply the legacy `08:00 AM -> 09:00 AM` starter buffer. [Verified from root cause analysis]
+
+### 5. Timeline builder materializes persisted day rows
+
+Primary backend file:
+- `api.dvi.travel/src/modules/itineraries/engines/helpers/timeline.builder.ts`
+
+This is the most important file for itinerary behavior.
+
+What it does:
+- chooses hotspots for each route/day
+- applies carry-forward and same-city continuation logic
+- applies hotel-first / hotel-last flow rules
+- computes travel segments, durations, breaks, and terminal rows
+- writes in-memory rows that later persist to:
+  - `dvi_itinerary_route_hotspot_details`
+
+The details page does not invent the timeline from scratch.
+It mostly reads these persisted rows back later. [Verified from code]
+
+Important item types in `dvi_itinerary_route_hotspot_details`:
+- `item_type = 1`: start/refreshment row
+- `item_type = 3`: travel row
+- `item_type = 4`: attraction/hotspot visit row
+- `item_type = 5`: travel-to-hotel or terminal-style travel row
+- `item_type = 6`: hotel check-in row
+- `item_type = 7`: return/drop-style terminal row in some flows
+
+Practical debugging rule:
+- if the UI shows `08:00 AM - 09:00 AM` as "Start your Journey", check whether the persisted `item_type = 1` row still says `08:00 -> 09:00`.
+- do not assume the frontend created that value. [Verified from live API and DB debug]
+
+### 6. Rebuild flows regenerate persisted hotspot rows
+
+Primary backend files:
+- `api.dvi.travel/src/modules/itineraries/itineraries.service.ts`
+- `api.dvi.travel/src/modules/itineraries/engines/hotspot-engine.service.ts`
+
+Primary frontend service helpers:
+- `ItineraryService.rebuildRoute(planId, routeId)`
+- `ItineraryService.rebuildRouteHotspots(planId, routeId)`
+
+What rebuild means in practice:
+- route rebuild/hotspot rebuild does not just refresh UI state
+- it regenerates the persisted item-type rows for that route/day
+
+Critical operational rule:
+- if `route_start_time` was fixed after initial generation, old hotspot rows may still carry stale times.
+- in that case, the details API can return:
+  - correct `days[].startTime` from `route_start_time`
+  - stale `days[].segments[0].timeRange` from old `item_type = 1` data
+- the fix is a route rebuild, not just a page refresh. [Verified from live debug of `PLAN_ID=9871`]
+
+### 7. Itinerary details API reads persisted route rows
+
+Primary backend file:
+- `api.dvi.travel/src/modules/itineraries/itinerary-details.service.ts`
+
+Primary endpoint:
+- `GET /api/v1/itineraries/details/:quoteId`
+
+Important response ownership:
+- `days[].startTime` comes from `route.route_start_time`
+- `days[].endTime` comes from `route.route_end_time`
+- visible timeline `segments[]` come from `dvi_itinerary_route_hotspot_details`
+
+This split is the source of many "UI mismatch" investigations.
+
+Example:
+- route row says Day 1 starts at `10:00 AM`
+- persisted `item_type = 1` row still says `08:00 AM - 09:00 AM`
+- API returns both values
+- frontend shows both values
+- user reports that the timeline starts at `8 AM`
+
+That is a backend data-generation mismatch, not a React formatting bug. [Verified from live API and DB debug]
+
+### 8. Frontend itinerary details page is mostly a renderer
+
+Primary frontend file:
+- `dvi_frontend/src/pages/ItineraryDetails.tsx`
+
+What the page does:
+- fetches `GET /itineraries/details/:quoteId`
+- renders `days[].startTime` and `days[].endTime` in the day header
+- renders `days[].segments[]` in sequence
+- applies some post-processing for hotel display, but it does not regenerate the day timeline from raw route fields. [Verified from code]
+
+Practical rule:
+- if the API response already contains the wrong segment times, the page will faithfully show them.
+
+### 9. The most common debugging path
+
+When a user says "Day 1 starts at 10 AM but the timeline starts at 8 AM", debug in this order:
+
+1. Check the plan row:
+   - `trip_start_date_and_time`
+   - `pick_up_date_and_time`
+2. Check the route row:
+   - `dvi_itinerary_route_details.route_start_time`
+   - `route_end_time`
+3. Check the arrival policy result:
+   - was this truly an early-arrival flow, or just a same-day sightseeing-first arrival?
+4. Check persisted timeline rows:
+   - `dvi_itinerary_route_hotspot_details`
+   - especially `item_type = 1` and the first `item_type = 3`
+5. Check the details API payload:
+   - compare `days[].startTime` with `days[].segments[0].timeRange`
+6. Only after that inspect the frontend renderer.
+
+### 10. July 2026 root cause example: Day 1 at 10 AM still showing 8 AM
+
+Case:
+- quote `DVI20260798`
+- plan `9871`
+- trip start `2026-07-12 10:00 AM`
+
+Observed state:
+- plan and route saved `10:00 AM` correctly
+- details API returned `days[0].startTime = 10:00 AM`
+- but persisted timeline rows still had:
+  - `item_type = 1`: `08:00 AM -> 09:00 AM`
+  - first travel row: `09:00 AM -> 10:01 AM`
+
+Real root cause:
+- Day 1 same-day sightseeing-first flow (`MORNING_09_TO_1259`, hotel deferred to end of day) was incorrectly reusing the old early-arrival forced buffer logic in `timeline.builder.ts`.
+- that logic should only force `08:00 -> 09:00` for true early-arrival same-day deferred flows, not for a `10:00 AM` arrival. [Verified from code and live API]
+
+Takeaway:
+- when fixing this class of bug, update the generation logic first, then rebuild the affected route so persisted hotspot rows match the saved route envelope.
+
+### 10A. July 2026 root cause example: Last day shows generic return instead of airport transfer
+
+Case:
+- quote `DVI20260798`
+- plan `9871`
+- Day 3 route: `Hyderabad, Telangana, India -> Hyderabad, Rajiv Gandhi International Airport`
+
+Observed state:
+- persisted Day 3 row existed as `item_type = 7`
+- generated travel was `09:00 AM -> 10:29 AM`
+- route envelope for Day 3 was `08:00 AM -> 08:00 AM`
+- details API suppressed the drop-off row because it exceeded `route_end_time`
+- frontend then received only:
+  - `start`
+  - fallback `return`
+
+Real root cause:
+- the last route was still getting the sightseeing-style default `08:00 AM` start and the builder's hidden 1-hour common buffer
+- for a tight departure-transfer day, that made the final airport leg start too late
+- `itinerary-details.service.ts` correctly suppressed the overrun `item_type = 7` row, which made the response look like "return to origin" instead of "travel to airport" [Verified from code and live DB/API debug]
+
+Fix direction:
+- derive an earlier last-route `route_start_time` when the default `08:00 AM` start would make the final terminal transfer impossible after accounting for:
+  - departure buffer
+  - master travel time for the last route pair
+  - the builder's hidden common buffer
+- after code changes, rebuild the affected route so the persisted `item_type = 7` row is regenerated within the route envelope.
+
+### 11. File map for the next coding agent
+
+If you only have five minutes, open these files in this order:
+
+1. `api.dvi.travel/src/modules/itineraries/engines/helpers/timeline.builder.ts`
+2. `api.dvi.travel/src/modules/itineraries/engines/route-engine.service.ts`
+3. `api.dvi.travel/src/modules/itineraries/services/arrival-hotel-policy.service.ts`
+4. `api.dvi.travel/src/modules/itineraries/itinerary-details.service.ts`
+5. `dvi_frontend/src/pages/ItineraryDetails.tsx`
+
+That file order matches the real direction of control for itinerary generation and display. [Inference]
+
 ## Latest Regression Fix Notes: Top10 Carry-Forward and Travel Segment Stability
 
 ### Why this section exists

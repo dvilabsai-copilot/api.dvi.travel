@@ -1795,6 +1795,17 @@ export class TimelineBuilder {
         (arrivalPolicyWantsHotelDeferredToEnd ||
           isEarlyArrivalAwaitingDecisionSameDayFlow);
 
+      const isEarlyArrivalResolvedSameDayDeferredFlow =
+        !!evaluatedArrivalPolicy &&
+        evaluatedArrivalPolicy.arrivalWindow === ArrivalWindow.EARLY_01_TO_0759 &&
+        evaluatedArrivalPolicy.resolutionStatus ===
+          PolicyResolutionStatus.RESOLVED &&
+        evaluatedArrivalPolicy.hotelFlowAction ===
+          HotelFlowAction.DIRECT_SIGHTSEEING &&
+        evaluatedArrivalPolicy.deferHotelToEndOfDay === true &&
+        evaluatedArrivalPolicy.goToHotelImmediately !== true &&
+        evaluatedArrivalPolicy.hotelSearchMode === HotelSearchMode.SAME_DAY;
+
       const arrivalPolicyAllowsHotelFirst =
         !evaluatedArrivalPolicy ||
         evaluatedArrivalPolicy.hotelFlowAction ===
@@ -1802,8 +1813,15 @@ export class TimelineBuilder {
         evaluatedArrivalPolicy.goToHotelImmediately === true ||
         evaluatedArrivalPolicy.deferHotelToEndOfDay !== true;
 
+      // Only true early-arrival deferred-hotel flows should force the legacy
+      // 08:00 AM -> 09:00 AM Day 1 buffer. Later arrivals (for example 10 AM)
+      // still may defer hotel check-in, but they must retain the saved route start.
       const enforceStrictDay1EarlyArrivalDeferredFlow =
-        suppressHotelInsertionUntilEndOfDay;
+        isFirstRoute &&
+        (
+          isEarlyArrivalResolvedSameDayDeferredFlow ||
+          isEarlyArrivalAwaitingDecisionSameDayFlow
+        );
       const firstSightseeingMovementTime =
         enforceStrictDay1EarlyArrivalDeferredFlow ? '09:00:00' : null;
 
@@ -1936,6 +1954,11 @@ export class TimelineBuilder {
       let forceNoSightseeingOnThisRoute =
         !!hotelInfoForRoute?.isHouseboat;
 
+      const wrappedLastRouteArrivalDeadlineSeconds = wrapToDay(lastRouteArrivalDeadlineSeconds);
+      const isTransferOnlyLastRouteByReportDeadline =
+        isLastRoute &&
+        wrappedLastRouteArrivalDeadlineSeconds <= 12 * 3600;
+
       // Final transfer routes (airport/station) are allowed to include sightseeing.
       // The effective route_end_time already represents the latest allowable sightseeing cutoff
       // after subtracting departure buffer and travel-to-terminal duration.
@@ -1962,6 +1985,18 @@ export class TimelineBuilder {
             message: 'Late arrival (5PM or later) - skipping Day 1 sightseeing, direct hotel check-in',
           });
         }
+      }
+
+      if (isTransferOnlyLastRouteByReportDeadline) {
+        forceNoSightseeingOnThisRoute = true;
+        this.logTimeline('[TIMELINE] LAST_ROUTE_REPORT_CUTOFF_SKIP_SIGHTSEEING', {
+          quoteId: this.currentQuoteId,
+          routeId: route.itinerary_route_ID,
+          routeStartTime,
+          routeEndTime,
+          wrappedLastRouteArrivalDeadline: secondsToTime(wrappedLastRouteArrivalDeadlineSeconds),
+          message: 'Last-route airport report deadline is 12:00 PM or earlier - transfer only, no sightseeing.',
+        });
       }
 
       if (!!hotelInfoForRoute?.isHouseboat) {
@@ -2066,19 +2101,21 @@ export class TimelineBuilder {
         }
       } else if (isLastRoute) {
         // PHP BEHAVIOR: Last route doesn't create refreshment ROW but still advances time
-        const globalSettings = await (tx as any).dvi_global_settings?.findFirst({
-          where: { status: 1, deleted: 0 },
-          select: { itinerary_common_buffer_time: true },
-        });
-        
-        const bufferTime = globalSettings?.itinerary_common_buffer_time
-          ? (globalSettings.itinerary_common_buffer_time instanceof Date
-            ? `${String(globalSettings.itinerary_common_buffer_time.getUTCHours()).padStart(2, '0')}:${String(globalSettings.itinerary_common_buffer_time.getUTCMinutes()).padStart(2, '0')}:${String(globalSettings.itinerary_common_buffer_time.getUTCSeconds()).padStart(2, '0')}`
-            : String(globalSettings.itinerary_common_buffer_time))
-          : '01:00:00';
-        
-        const bufferSeconds = timeToSeconds(bufferTime);
-        currentTime = addSeconds(currentTime, bufferSeconds);
+        if (!isTransferOnlyLastRouteByReportDeadline) {
+          const globalSettings = await (tx as any).dvi_global_settings?.findFirst({
+            where: { status: 1, deleted: 0 },
+            select: { itinerary_common_buffer_time: true },
+          });
+          
+          const bufferTime = globalSettings?.itinerary_common_buffer_time
+            ? (globalSettings.itinerary_common_buffer_time instanceof Date
+              ? `${String(globalSettings.itinerary_common_buffer_time.getUTCHours()).padStart(2, '0')}:${String(globalSettings.itinerary_common_buffer_time.getUTCMinutes()).padStart(2, '0')}:${String(globalSettings.itinerary_common_buffer_time.getUTCSeconds()).padStart(2, '0')}`  
+              : String(globalSettings.itinerary_common_buffer_time))
+            : '01:00:00';
+          
+          const bufferSeconds = timeToSeconds(bufferTime);
+          currentTime = addSeconds(currentTime, bufferSeconds);
+        }
       }
 
       // Day-1 same-city distance rule:

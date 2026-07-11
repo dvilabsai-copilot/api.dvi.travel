@@ -618,7 +618,6 @@ private normalizeKmValue(value: unknown): string {
     const { tripStartTimeHms, tripEndTimeHms } = this.extractTripTimes(plan);
     const bufferSec = this.getDepartureBufferSeconds(departureType);
     const tripEndSec = this.parseHmsToSeconds(tripEndTimeHms);
-
     const baseDate = this.getTripStartDateOnly(plan);
 
     // PHP deletes/rebuilds all routes for this plan.
@@ -682,9 +681,21 @@ const finalKm = pairChanged
       if (r.route_start_time) {
         startHms = r.route_start_time;
       } else if (isLast) {
-        // Last route still gets the timeline builder's 1-hour pre-sightseeing buffer,
-        // so keep route start at 08:00 to make sightseeing begin at 09:00.
-        startHms = "08:00:00";
+        // Default last-route sightseeing starts at 08:00, but tight departure
+        // routes need an earlier envelope so the final terminal transfer can fit.
+        const defaultLastRouteStartSec = 8 * 3600;
+        const latestTerminalArrivalSec = Math.max(0, tripEndSec - bufferSec);
+        const transferLeadSec = Math.max(0, Number(travelSeconds || 0));
+        const derivedLastRouteStartSec = Math.max(
+          0,
+          latestTerminalArrivalSec - transferLeadSec,
+        );
+
+        startHms = this.secondsToHms(
+          derivedLastRouteStartSec < defaultLastRouteStartSec
+            ? derivedLastRouteStartSec
+            : defaultLastRouteStartSec,
+        );
       } else if (totalRoutes === 1 || (isFirst && sourceName === arrivalLocation)) {
         // First leg matching arrival location → trip_start_time (IST wall-clock)
         startHms = tripStartTimeHms;

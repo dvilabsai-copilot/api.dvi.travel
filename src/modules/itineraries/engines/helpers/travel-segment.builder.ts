@@ -127,9 +127,15 @@ export class TravelSegmentBuilder {
       };
     }
 
-    // PHP parity: sightseeing travel segments (item_type=3) use travel time only.
-    // Do not add road/common buffer for hotspot-to-hotspot timeline progression.
-    const effectiveBufferTime = item_type === 3 ? "00:00:00" : distanceResult.bufferTime;
+    // PHP parity:
+    // - sightseeing travel segments (item_type=3) use travel time only
+    // - final return/drop rows (item_type=7) are already anchored against the
+    //   last-route arrival deadline, so adding the road/common buffer again
+    //   would double-count it and can push the airport segment beyond route_end_time
+    const effectiveBufferTime =
+      item_type === 3 || item_type === 7
+        ? "00:00:00"
+        : distanceResult.bufferTime;
     const totalSegmentTime = secondsToTime(
       timeToSeconds(distanceResult.travelTime) +
         timeToSeconds(effectiveBufferTime),
