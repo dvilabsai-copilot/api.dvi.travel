@@ -5222,6 +5222,7 @@ model dvi_vehicle {
   vendor_id               Int       @default(0)
   vendor_branch_id        Int       @default(0)
   vehicle_location_id     Int       @default(0)
+  vehicle_origin          String?   @db.VarChar(255)
   vehicle_type_id         Int?
   registration_number     String?   @db.VarChar(50)
   registration_date       DateTime? @db.Date
