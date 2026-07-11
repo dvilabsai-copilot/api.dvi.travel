@@ -1,4 +1,32 @@
 
+## July 2026 Rule Update
+
+- Verified on: `2026-07-12`
+- Scope: timeline/scheduler behavior clarified during live rebuild work on `DVI20260798`
+
+### Current Global Rules
+
+- `hotspot_priority = 0` means optional auto filler, not a protected stop.
+- When multiple `priority 0` candidates are feasible for the same slot, the nearer feasible candidate should win before generic filler-score fallback.
+- `priority 0` auto hotspots should not create wait-to-open gaps just to use a later shift.
+- Manual hotspots and stronger-priority hotspots may still wait for a later opening window if the route remains valid.
+- Same-day split timing windows must be treated as separate valid visit windows.
+- Scenario explanations should report slot-level reasons, not only day-level cumulative reasons.
+
+### Timing Explanation Format
+
+- A hotspot with two same-day windows should now be described like:
+  - `07:00 AM -> 12:00 PM; 02:00 PM -> 08:00 PM`
+- Rejection reasons should now prefer concrete timing text such as:
+  - attempted visit window
+  - operating windows that did not match
+  - whether a nearer feasible `priority 0` hotspot won the tie-break
+
+### Important Note For Older Blocks
+
+- Older scenario snapshots further down in this file may show pre-fix behavior.
+- If an older block shows `priority 0` waiting gaps, stale split-window output, or generic tie text, treat it as historical debugging evidence rather than current intended behavior.
+
 ## DVI20260798 - Latest Verified Live Rebuild
 
 - Quote ID: `DVI20260798`

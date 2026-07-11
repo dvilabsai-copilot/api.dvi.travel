@@ -235,6 +235,28 @@ Verified live rebuild note:
 - the rebuilt `Macca Masjid -> Charminar` hop persisted as a short local leg rather than a large city-level transfer
 - this is the expected shape when both hotspot coordinates are available and the local-hop calculation path is used
 
+### 6D. Priority-0 auto hotspots are distance-led and must not wait for a later shift
+
+Selection rule:
+- `hotspot_priority = 0` means optional auto filler; it does not mean "always reject"
+- when multiple priority-0 auto hotspots are feasible from the current timeline position, the nearer hotspot wins before the generic filler score is used
+- if distance is tied, the normal deterministic filler score and stable hotspot ID ordering remain the fallback
+- a priority-0 auto hotspot must not consume a waiting gap only to reach a later operating-hours shift
+- if it is closed in the active window and would require waiting for a later shift, it is rejected for that slot with the attempted time and available operating windows recorded
+- manual hotspots and stronger-priority auto hotspots may wait for a later valid operating window when the route envelope permits it
+
+Split-hours rule:
+- operating hours are evaluated as separate same-day windows, not as one continuous range
+- for example, `07:00 AM -> 12:00 PM; 02:00 PM -> 08:00 PM` allows a visit in either window
+- the visit must fit completely inside one window; crossing the lunch gap is not valid
+
+Scenario/debug rule:
+- rejection explanations must be per candidate and per attempted slot, not only cumulative per day
+- each selected hotspot should record its own visit slot, operating-hours windows, and any nearer feasible priority-0 competitors considered before it
+- rejected candidates should include the actual reason, such as `attempted time 12:35 PM -> 01:35 PM does not fit any operating window` or `wait-to-open disabled for priority 0 hotspot`
+
+This logic is part of the normal timeline builder used by both basic and optimized itinerary requests. It is not controlled by a request flag.
+
 ### 7. Itinerary details API reads persisted route rows
 
 Primary backend file:

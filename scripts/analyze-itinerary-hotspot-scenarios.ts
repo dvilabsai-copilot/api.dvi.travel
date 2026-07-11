@@ -80,6 +80,7 @@ type CandidateRecord = {
   toLocation: string;
   cityBoundaries: string;
   sourceDistanceKm: number | null;
+  durationSeconds: number;
 };
 
 type ScenarioState = {
@@ -217,6 +218,15 @@ function toSeconds(value: Date | null | undefined): number {
   return value.getUTCHours() * 3600 + value.getUTCMinutes() * 60 + value.getUTCSeconds();
 }
 
+function secondsToClock(value: number): string {
+  const normalized = ((Math.floor(value) % 86400) + 86400) % 86400;
+  const hours = Math.floor(normalized / 3600);
+  const minutes = Math.floor((normalized % 3600) / 60);
+  const ampm = hours >= 12 ? "PM" : "AM";
+  const displayHour = hours % 12 || 12;
+  return `${String(displayHour).padStart(2, "0")}:${String(minutes).padStart(2, "0")} ${ampm}`;
+}
+
 function formatDuration(start: Date | null | undefined, end: Date | null | undefined): string {
   if (!start || !end) return "N/A";
   const delta = Math.max(0, toSeconds(end) - toSeconds(start));
@@ -275,24 +285,156 @@ function describeTiming(
   const phpDow = getPhpDow(routeDate);
   if (phpDow == null) return "operating hours unavailable";
 
-  const match = timingRows.find(
+  const matches = timingRows.filter(
     (row) => Number(row.hotspot_ID) === hotspotId && Number(row.hotspot_timing_day ?? -1) === phpDow,
   );
 
-  if (!match) return "no timing row found for route day";
-  if (Number(match.hotspot_closed || 0) === 1) return "marked closed on route day";
-  if (Number(match.hotspot_open_all_time || 0) === 1) return "open all day";
-  return `${formatClock(match.hotspot_start_time)} -> ${formatClock(match.hotspot_end_time)}`;
+  if (!matches.length) return "no timing row found for route day";
+  if (matches.some((row) => Number(row.hotspot_open_all_time || 0) === 1)) return "open all day";
+
+  const openWindows = matches
+    .filter((row) => Number(row.hotspot_closed || 0) !== 1)
+    .map((row) => `${formatClock(row.hotspot_start_time)} -> ${formatClock(row.hotspot_end_time)}`);
+
+  if (!openWindows.length) return "marked closed on route day";
+  return openWindows.join("; ");
 }
 
 function compareCandidates(a: CandidateRecord, b: CandidateRecord): number {
   if (a.effectivePriority !== b.effectivePriority) {
     return a.effectivePriority - b.effectivePriority;
   }
+  if (a.rawPriority === 0 && b.rawPriority === 0 && a.sourceDistanceKm != null && b.sourceDistanceKm != null && a.sourceDistanceKm !== b.sourceDistanceKm) {
+    return a.sourceDistanceKm - b.sourceDistanceKm;
+  }
   if (a.sourceDistanceKm != null && b.sourceDistanceKm != null && a.sourceDistanceKm !== b.sourceDistanceKm) {
     return a.sourceDistanceKm - b.sourceDistanceKm;
   }
   return a.hotspotId - b.hotspotId;
+}
+
+function getTimingRowsForDay(
+  timingRows: TimingRow[],
+  hotspotId: number,
+  routeDate: Date | null | undefined,
+): TimingRow[] {
+  const phpDow = getPhpDow(routeDate);
+  if (phpDow == null) return [];
+  return timingRows.filter(
+    (row) => Number(row.hotspot_ID) === hotspotId && Number(row.hotspot_timing_day ?? -1) === phpDow,
+  );
+}
+
+function describeAttemptedTimingConflict(
+  timingRows: TimingRow[],
+  hotspotId: number,
+  routeDate: Date | null | undefined,
+  attemptedStartSeconds: number,
+  attemptedEndSeconds: number,
+): {
+  status: "no_row" | "closed" | "outside_window" | "matched";
+  message: string;
+} {
+  const dayRows = getTimingRowsForDay(timingRows, hotspotId, routeDate);
+  const attemptedWindow = `${secondsToClock(attemptedStartSeconds)} -> ${secondsToClock(attemptedEndSeconds)}`;
+
+  if (!dayRows.length) {
+    return {
+      status: "no_row",
+      message: `attempted visit ${attemptedWindow}, but there is no operating-hours row for this hotspot on the route day`,
+    };
+  }
+
+  if (dayRows.some((row) => Number(row.hotspot_open_all_time || 0) === 1)) {
+    return {
+      status: "matched",
+      message: `attempted visit ${attemptedWindow}, and the hotspot is open all day`,
+    };
+  }
+
+  const openRows = dayRows.filter((row) => Number(row.hotspot_closed || 0) !== 1);
+  if (!openRows.length) {
+    return {
+      status: "closed",
+      message: `attempted visit ${attemptedWindow}, but the hotspot is marked closed on the route day`,
+    };
+  }
+
+  for (const timingRow of openRows) {
+    const openingSeconds = toSeconds(timingRow.hotspot_start_time);
+    const closingSeconds = toSeconds(timingRow.hotspot_end_time);
+    if (attemptedStartSeconds >= openingSeconds && attemptedEndSeconds <= closingSeconds) {
+      return {
+        status: "matched",
+        message: `attempted visit ${attemptedWindow}, and operating hours ${formatClock(timingRow.hotspot_start_time)} -> ${formatClock(timingRow.hotspot_end_time)} do match`,
+      };
+    }
+  }
+
+  return {
+    status: "outside_window",
+    message: `attempted visit ${attemptedWindow}, but operating hours are ${openRows
+      .map((row) => `${formatClock(row.hotspot_start_time)} -> ${formatClock(row.hotspot_end_time)}`)
+      .join("; ")}`,
+  };
+}
+
+function buildAttemptedSlotReason(params: {
+  candidate: CandidateRecord;
+  selectedAttractions: RouteHotspotRow[];
+  routeRows: RouteHotspotRow[];
+  timingRows: TimingRow[];
+  routeDate: Date | null;
+  candidateData: ReturnType<typeof buildCandidateMap>;
+}): string | null {
+  const { candidate, selectedAttractions, routeRows, timingRows, routeDate, candidateData } = params;
+  if (selectedAttractions.length === 0) return null;
+
+  const samePrioritySelected = selectedAttractions.filter((row) => {
+    const selectedCandidate = candidateData.candidateMap.get(Number(row.hotspot_ID || 0));
+    return selectedCandidate && selectedCandidate.rawPriority === candidate.rawPriority;
+  });
+  const comparableRows = samePrioritySelected.length > 0 ? samePrioritySelected : selectedAttractions;
+
+  for (const selectedRow of comparableRows) {
+    const selectedCandidate = candidateData.candidateMap.get(Number(selectedRow.hotspot_ID || 0));
+    if (!selectedCandidate) continue;
+    const travelRow = routeRows.find(
+      (row) =>
+        Number(row.item_type || 0) === 3 &&
+        Number(row.hotspot_order || 0) === Math.max(0, Number(selectedRow.hotspot_order || 0) - 1),
+    );
+    const attemptedStartSeconds = travelRow?.hotspot_end_time
+      ? toSeconds(travelRow.hotspot_end_time)
+      : toSeconds(selectedRow.hotspot_start_time);
+    const attemptedEndSeconds = attemptedStartSeconds + Math.max(300, Number(candidate.durationSeconds || 0));
+    const timingAttempt = describeAttemptedTimingConflict(
+      timingRows,
+      candidate.hotspotId,
+      routeDate,
+      attemptedStartSeconds,
+      attemptedEndSeconds,
+    );
+
+    if (timingAttempt.status !== "matched") {
+      return `${timingAttempt.message}, so it could not take the slot that went to ${selectedCandidate.name}`;
+    }
+
+    const selectedDistance = selectedCandidate.sourceDistanceKm;
+    const candidateDistance = candidate.sourceDistanceKm;
+    if (
+      candidate.rawPriority === 0 &&
+      candidateDistance != null &&
+      selectedDistance != null &&
+      candidateDistance > selectedDistance
+    ) {
+      return `${timingAttempt.message}, but ${selectedCandidate.name} won the priority-0 distance tie-break (${selectedDistance.toFixed(1)} km vs ${candidateDistance.toFixed(1)} km from route source)`;
+    }
+
+    return `${timingAttempt.message}, but ${selectedCandidate.name} was persisted first by the route-fit scorer for that slot`;
+  }
+
+  return null;
 }
 
 function uniqueCandidates(ids: number[], candidates: Map<number, CandidateRecord>): CandidateRecord[] {
@@ -562,6 +704,7 @@ function buildCandidateMap(
   viaNames: string[],
   allHotspots: HotspotMaster[],
   storedLocation: any | null,
+  previouslySelectedAutoIds: Set<number> = new Set<number>(),
 ): {
   candidateMap: Map<number, CandidateRecord>;
   mergedCandidates: CandidateRecord[];
@@ -571,6 +714,7 @@ function buildCandidateMap(
   viaCandidates: CandidateRecord[];
   boundaryCandidates: CandidateRecord[];
   manualCandidates: CandidateRecord[];
+  earlierDayAutoCandidates: CandidateRecord[];
 } {
   const sourceCity = String(route.location_name || "").split("|")[0].trim();
   const destinationCity = String(route.next_visiting_location || "").split("|")[0].trim();
@@ -613,6 +757,7 @@ function buildCandidateMap(
       toLocation: String(hotspot.hotspot_to_location || hotspot.hotspot_location || ""),
       cityBoundaries: String(hotspot.city_boundaries || ""),
       sourceDistanceKm,
+      durationSeconds: Math.max(300, toSeconds(hotspot.hotspot_duration)),
     };
 
     candidateMap.set(hotspotId, created);
@@ -674,6 +819,13 @@ function buildCandidateMap(
     }
   }
 
+  const earlierDayAutoCandidates = [...candidateMap.values()].filter((candidate) =>
+    previouslySelectedAutoIds.has(candidate.hotspotId),
+  );
+  for (const candidate of earlierDayAutoCandidates) {
+    candidateMap.delete(candidate.hotspotId);
+  }
+
   const sourceCandidates = [...candidateMap.values()].filter((candidate) => candidate.sourceMatch).sort(compareCandidates);
   const destinationCandidates = [...candidateMap.values()].filter((candidate) => candidate.destinationMatch).sort(compareCandidates);
   const viaCandidates = [...candidateMap.values()].filter((candidate) => candidate.viaMatches.length > 0).sort(compareCandidates);
@@ -712,6 +864,7 @@ function buildCandidateMap(
     viaCandidates,
     boundaryCandidates,
     manualCandidates,
+    earlierDayAutoCandidates,
   };
 }
 
@@ -724,6 +877,10 @@ function buildAttractionExplanation(params: {
   totalRoutes: number;
   routeDate: Date | null;
   timingRows: TimingRow[];
+  routeRows: RouteHotspotRow[];
+  selectedAttractions: RouteHotspotRow[];
+  selectedIndex: number;
+  candidateData: ReturnType<typeof buildCandidateMap>;
 }): string[] {
   const {
     candidate,
@@ -734,6 +891,10 @@ function buildAttractionExplanation(params: {
     totalRoutes,
     routeDate,
     timingRows,
+    routeRows,
+    selectedAttractions,
+    selectedIndex,
+    candidateData,
   } = params;
 
   const lines: string[] = [];
@@ -763,6 +924,81 @@ function buildAttractionExplanation(params: {
   }
 
   lines.push(`operating-hours evidence for route day: ${describeTiming(timingRows, candidate.hotspotId, routeDate)}`);
+
+  const attemptedStartSeconds = travelRow?.hotspot_end_time
+    ? toSeconds(travelRow.hotspot_end_time)
+    : toSeconds(attractionRow.hotspot_start_time);
+  const attemptedEndSeconds = attemptedStartSeconds + Math.max(300, Number(candidate.durationSeconds || 0));
+  const earlierSelectedIds = new Set<number>(
+    selectedAttractions
+      .slice(0, selectedIndex)
+      .map((row) => Number(row.hotspot_ID || 0))
+      .filter((id) => id > 0),
+  );
+  const samePriorityCandidates = candidateData.mergedCandidates.filter((item) => {
+    if (item.hotspotId === candidate.hotspotId) return false;
+    if (item.rawPriority !== candidate.rawPriority) return false;
+    if (earlierSelectedIds.has(item.hotspotId)) return false;
+    return true;
+  });
+  const feasibleSamePriority = samePriorityCandidates
+    .map((item) => ({
+      candidate: item,
+      attempt: describeAttemptedTimingConflict(
+        timingRows,
+        item.hotspotId,
+        routeDate,
+        attemptedStartSeconds,
+        attemptedEndSeconds,
+      ),
+    }))
+    .filter((entry) => entry.attempt.status === "matched");
+  const rejectedSamePriority = samePriorityCandidates
+    .map((item) => ({
+      candidate: item,
+      attempt: describeAttemptedTimingConflict(
+        timingRows,
+        item.hotspotId,
+        routeDate,
+        attemptedStartSeconds,
+        attemptedEndSeconds,
+      ),
+    }))
+    .filter((entry) => entry.attempt.status !== "matched")
+    .slice(0, 2);
+
+  if (candidate.rawPriority === 0) {
+    const nearerFeasible = feasibleSamePriority
+      .filter((entry) => {
+        return (
+          entry.candidate.sourceDistanceKm != null &&
+          candidate.sourceDistanceKm != null &&
+          entry.candidate.sourceDistanceKm < candidate.sourceDistanceKm
+        );
+      })
+      .sort((a, b) => (a.candidate.sourceDistanceKm ?? 9999) - (b.candidate.sourceDistanceKm ?? 9999));
+
+    if (nearerFeasible.length === 0) {
+      lines.push(
+        `for its own slot (${secondsToClock(attemptedStartSeconds)} -> ${secondsToClock(attemptedEndSeconds)}), it was the nearest priority-0 candidate whose timing matched among the still-available candidates`,
+      );
+    } else {
+      lines.push(
+        `for its own slot (${secondsToClock(attemptedStartSeconds)} -> ${secondsToClock(attemptedEndSeconds)}), nearer route-source priority-0 candidates such as ${nearerFeasible
+          .slice(0, 2)
+          .map((entry) => `${entry.candidate.name} (${(entry.candidate.sourceDistanceKm ?? 0).toFixed(1)} km)`)
+          .join(", ")} also matched timing; this source-distance comparison is diagnostic only, while the persisted order remains the final route-fit result`,
+      );
+    }
+
+    if (rejectedSamePriority.length > 0) {
+      lines.push(
+        `nearby slot rejections: ${rejectedSamePriority
+          .map((entry) => `${entry.candidate.name} (${entry.attempt.message})`)
+          .join("; ")}`,
+      );
+    }
+  }
 
   if (candidate.rawPriority === 0) {
     lines.push("because it is optional, its exact order against other priority-0 hotspots depends on schedule fit and travel sequence, not on priority alone");
@@ -915,6 +1151,7 @@ function buildHumanReadableDayStory(params: {
 function buildNearMissReason(params: {
   candidate: CandidateRecord;
   selectedAttractions: RouteHotspotRow[];
+  routeRows: RouteHotspotRow[];
   timingRows: TimingRow[];
   routeDate: Date | null;
   route: RouteRow;
@@ -925,6 +1162,7 @@ function buildNearMissReason(params: {
   const {
     candidate,
     selectedAttractions,
+    routeRows,
     timingRows,
     routeDate,
     route,
@@ -962,8 +1200,18 @@ function buildNearMissReason(params: {
   }
 
   if (candidate.rawPriority === bestSelectedPriority) {
+    const attemptedSlotReason = buildAttemptedSlotReason({
+      candidate,
+      selectedAttractions,
+      routeRows,
+      timingRows,
+      routeDate,
+      candidateData,
+    });
+    if (attemptedSlotReason) return attemptedSlotReason;
+
     const tiedNames = bestSelectedCandidates.slice(0, 3).map((item) => item.name).join(", ");
-    return `tied on priority with persisted hotspot(s) ${tiedNames}, so the final choice came down to schedule-fit tie-breaking rather than priority`;
+    return `tied on priority with persisted hotspot(s) ${tiedNames}, but the day-level route-fit scorer kept those items ahead of this hotspot`;
   }
 
   if (candidate.sourceDistanceKm != null) {
@@ -1127,8 +1375,29 @@ export async function buildScenarioMarkdown(
       String(row.itinerary_via_location_name || "").split("|")[0].trim(),
     ).filter(Boolean);
     const storedLocation = storedLocationById.get(Number(route.location_id || 0)) || null;
+    const previouslySelectedAutoIds = new Set<number>();
+    for (const earlierRoute of routes.slice(0, routeIndex)) {
+      const earlierRows = rowsByRoute.get(Number(earlierRoute.itinerary_route_ID || 0)) || [];
+      for (const earlierRow of earlierRows) {
+        const hotspotId = Number(earlierRow.hotspot_ID || 0);
+        if (
+          Number(earlierRow.item_type || 0) === 4 &&
+          hotspotId > 0 &&
+          Number(earlierRow.hotspot_plan_own_way || 0) !== 1
+        ) {
+          previouslySelectedAutoIds.add(hotspotId);
+        }
+      }
+    }
 
-    const candidateData = buildCandidateMap(route, perRouteRows, viaNames, allHotspots, storedLocation);
+    const candidateData = buildCandidateMap(
+      route,
+      perRouteRows,
+      viaNames,
+      allHotspots,
+      storedLocation,
+      previouslySelectedAutoIds,
+    );
     const selectedAttractions = perRouteRows.filter((row) => Number(row.item_type || 0) === 4);
     const travelByHotspotId = new Map<number, RouteHotspotRow>();
     for (const row of perRouteRows) {
@@ -1170,6 +1439,13 @@ export async function buildScenarioMarkdown(
     renderedLines.push(`- Via matches: ${candidateData.viaCandidates.length}`);
     renderedLines.push(`- Boundary matches: ${candidateData.boundaryCandidates.length}`);
     renderedLines.push(`- Manual matches: ${candidateData.manualCandidates.length}`);
+    if (candidateData.earlierDayAutoCandidates.length > 0) {
+      renderedLines.push(
+        `- Earlier-day auto hotspots excluded from this day's candidate comparison: ${candidateData.earlierDayAutoCandidates
+          .map((candidate) => `${candidate.name} (already selected on an earlier day)`)
+          .join(", ")}`,
+      );
+    }
     renderedLines.push(`- Final merged candidate count before schedule fit: ${candidateData.mergedCandidates.length}`);
     renderedLines.push("");
     if (candidateData.sourceTop3.length > 0) {
@@ -1185,12 +1461,19 @@ export async function buildScenarioMarkdown(
     }
 
     if (candidateData.mergedCandidates.length > 0) {
-      renderedLines.push("Top merged candidates before timing fit:");
+      renderedLines.push("Candidate ranking before opening-hours and schedule checks:");
+      renderedLines.push("- Lower numeric priority is stronger. Priority 0 means optional filler, so distance is used as the tie-breaker among feasible priority-0 candidates.");
+      renderedLines.push("- `effective priority 9999` is an internal label for optional priority-0 candidates; it is not a real hotspot priority.");
+      renderedLines.push("- The distance shown here is from the route's starting point. It is not necessarily the driving distance from the previous selected hotspot.");
       candidateData.mergedCandidates.slice(0, 8).forEach((candidate, index) => {
         const distanceText =
           candidate.sourceDistanceKm != null ? `${candidate.sourceDistanceKm.toFixed(1)} km from route source` : "distance unavailable";
+        const priorityText =
+          candidate.rawPriority === 0
+            ? "priority 0 (optional filler)"
+            : `priority ${candidate.rawPriority} (stronger auto hotspot)`;
         renderedLines.push(
-          `${index + 1}. ${candidate.name} | raw priority ${candidate.rawPriority} | effective priority ${candidate.effectivePriority} | buckets: ${candidate.membership.join(", ")} | ${distanceText}`,
+          `${index + 1}. ${candidate.name} | ${priorityText} | matched: ${candidate.membership.join(", ")} | ${distanceText}`,
         );
       });
       renderedLines.push("");
@@ -1231,6 +1514,10 @@ export async function buildScenarioMarkdown(
         totalRoutes: routes.length,
         routeDate,
         timingRows: allTimings,
+        routeRows: perRouteRows,
+        selectedAttractions,
+        selectedIndex: index,
+        candidateData,
       });
 
       renderedLines.push(`${index + 1}. ${candidate?.name || `Hotspot ${hotspotId}`}`);
@@ -1251,6 +1538,7 @@ export async function buildScenarioMarkdown(
         const reason = buildNearMissReason({
           candidate,
           selectedAttractions,
+          routeRows: perRouteRows,
           timingRows: allTimings,
           routeDate,
           route,

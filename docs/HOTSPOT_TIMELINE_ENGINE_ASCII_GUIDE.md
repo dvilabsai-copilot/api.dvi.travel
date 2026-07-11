@@ -256,6 +256,47 @@ For each route:
 
 This section documents the newer timeline rules clarified during July 2026 debugging.
 
+### 0) Latest July 2026 scheduling rules
+
+These are the newest timeline rules verified in the active workspace during the
+`DVI20260798` debugging cycle.
+
+Rules:
+- feasible `priority 0` auto hotspots are distance-led before generic filler score fallback
+- `priority 0` auto hotspots must not consume a wait-to-open gap just to catch a later shift
+- manual and stronger-priority hotspots may still use a later opening window when the route can support it
+- split operating windows on the same day must be treated as separate valid visit windows, not collapsed into a single misleading row
+- scenario/debug explanations should describe timing per selected slot, not only as a day-level summary
+
+ASCII:
+
+[candidate reaches hotspot]
+          |
+          v
+[check active operating window now]
+          |
+     +----+----+
+     |         |
+    yes        no
+     |         |
+     v         v
+[can fit]   [next window exists?]
+               |
+          +----+----+
+          |         |
+         no        yes
+          |         |
+          v         v
+    [reject now]  [priority > 0 or manual?]
+                    |
+               +----+----+
+               |         |
+              no        yes
+               |         |
+               v         v
+   [reject: no wait for   [allow wait if route still fits]
+    optional auto stop]
+
 ### 1) Rebalance is part of normal rebuild
 
 Same-city cross-day hotspot rebalancing is not a special UI-only mode.
@@ -355,6 +396,95 @@ Verified live result for `DVI20260798` after the current rebuild fix:
 - the current verified Day 2 order is `Macca Masjid -> Charminar`
 - this is still considered valid adjacency because the pair remains consecutive with a short local hop
 - the earlier broken overlap and orphan-visit state is no longer present
+
+
+### 3A) Feasible priority-0 fillers are now distance-led
+
+For optional auto hotspots, the preferred winner is the nearest feasible candidate
+for the slot being filled.
+
+This is not "nearest no matter what".
+It means:
+- same priority bucket
+- timing actually matches
+- route-end checks still pass
+- then nearest candidate should win before generic filler-score fallback
+
+ASCII:
+
+[priority 0 candidates for slot]
+            |
+            v
+[remove candidates that do not fit timing]
+            |
+            v
+[remove candidates that break route-end / transfer checks]
+            |
+            v
+[sort by nearest feasible distance]
+            |
+            v
+[only then use generic filler score / stable tie-break]
+
+
+### 3B) Optional auto hotspots must not wait for a later shift
+
+If a `priority 0` auto hotspot arrives before its next valid opening window,
+the engine should reject it instead of creating a long dead waiting block.
+
+Example of the rule:
+- `Birla Mandir` has split timing windows:
+  - `07:00 AM -> 12:00 PM`
+  - `02:00 PM -> 08:00 PM`
+- if an optional auto candidate reaches it at `12:35 PM`,
+  the engine should not hold the timeline idle until `02:00 PM`
+- that hotspot should lose to another feasible `priority 0` option that can be visited without waiting
+
+ASCII:
+
+[optional auto hotspot arrives 12:35 PM]
+                 |
+                 v
+[next open shift starts 02:00 PM]
+                 |
+                 v
+[waiting required = 1h 25m]
+                 |
+                 v
+[reject optional auto hotspot]
+
+But:
+- manual hotspots can still be allowed to wait
+- stronger-priority hotspots can still be allowed to wait if the route remains valid
+
+
+### 3C) Split shifts must be treated as separate windows
+
+Some hotspots have more than one timing row for the same day.
+The engine and the scenario/debug layer must both treat them as multiple usable windows.
+
+Correct representation example:
+- `Birla Mandir`
+  - `07:00 AM -> 12:00 PM`
+  - `02:00 PM -> 08:00 PM`
+
+Incorrect representation:
+- only showing the first row and pretending the hotspot is closed for the afternoon
+
+ASCII:
+
+[same-day timing rows]
+     |
+     +--> 07:00 - 12:00
+     |
+     +--> 02:00 - 08:00
+     |
+     v
+[visit may fit either valid window]
+
+Rule:
+- a candidate is valid if its full visit fits inside any one same-day operating window
+- scenario/debug output should print all same-day windows, joined in order
 
 
 ### 4) No persisted visit row should lose its inbound travel leg
