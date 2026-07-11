@@ -2045,6 +2045,15 @@ for (const row of vehicleKmRows) {
       const hasAttractions = routeHotspots.some(
         (rh) => Number((rh as any).item_type ?? 0) === 4,
       );
+      const destinationLocationName = String(
+        location?.destination_location ??
+        route.next_visiting_location ??
+        plan.departure_location ??
+        '',
+      ).trim();
+      const isTerminalDepartureDay =
+        /(airport|air\s*port|railway|rail\s*way|station|bus\s*stand|bus\s*station|terminal|terminus|junction|stn)\b/i
+          .test(destinationLocationName);
       const isLateArrivalDay1 = index === 0 && (() => {
         const planStartTime = (plan as any).trip_start_date_and_time;
         if (planStartTime instanceof Date) {
@@ -2073,7 +2082,11 @@ for (const row of vehicleKmRows) {
           const routeStartText = this.formatTime(route.route_start_time as any);
           const firstTimelineStartText = this.formatTime((routeHotspots[0] as any)?.hotspot_start_time ?? null);
 
-          if (routeStartText && firstTimelineStartText) {
+          if (routeStartText && isTerminalDepartureDay && !hasAttractions) {
+            // Transfer-only departure days should show the exact transfer start,
+            // not a borrowed start from stale or unrelated timeline rows.
+            startTimeRange = routeStartText;
+          } else if (routeStartText && firstTimelineStartText) {
             const orderedStartRange = this.orderedTimeRange(routeStartText, firstTimelineStartText);
             startTimeRange = orderedStartRange ?? `${routeStartText} - ${firstTimelineStartText}`;
           } else if (routeStartText) {
@@ -3151,18 +3164,45 @@ for (const row of vehicleKmRows) {
 
       // RETURN block at the end of the day (only if no item_type 6 or 7 exists)
       const hasReturnOrDropOff = emittedTerminalSegment;
-
+      const dayStartTimeText = this.formatTime(route.route_start_time as any);
       const dayEndTimeText = this.formatTime(route.route_end_time as any);
+      const terminalDestinationName = String(
+        route.next_visiting_location ??
+        plan.departure_location ??
+        'Departure Point',
+      ).trim();
+      const isTerminalDeparture =
+        /(airport|air\s*port|railway|rail\s*way|station|bus\s*stand|bus\s*station|terminal|terminus|junction|stn)\b/i
+          .test(terminalDestinationName);
 
       if (!hasReturnOrDropOff) {
+        if (isTerminalDeparture) {
+          segments.push({
+            type: 'travel' as const,
+            from: previousStopName,
+            to: terminalDestinationName,
+            timeRange:
+              dayStartTimeText && dayEndTimeText
+                ? `${dayStartTimeText} -> ${dayEndTimeText}`
+                : dayEndTimeText || dayStartTimeText || '',
+            distance: this.formatTravelDistance(Number(route.no_of_km ?? 0) || null),
+            duration:
+              dayStartTimeText && dayEndTimeText
+                ? this.formatDurationFromDisplayRange(dayStartTimeText, dayEndTimeText) ??
+                  this.formatDuration('00:00:00')
+                : this.formatDuration('00:00:00'),
+            note: 'Airport transfer',
+            isConflict: false,
+            conflictReason: null,
+          });
+        } else {
           segments.push({
             type: 'return' as const,
             time: dayEndTimeText,
             note: null,
           });
         }
-
-        const dayStartTimeText = this.formatTime(route.route_start_time as any);
+      }
 
 
 

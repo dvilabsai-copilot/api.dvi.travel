@@ -1,0 +1,233 @@
+{
+  "info": {
+    "_postman_id": "b6e2b0d9-5ef6-44e1-8a57-8cb9e3aebd21",
+    "name": "Hotel API Flow - Local DVI + HOBSE",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Import this collection together with the DVI Local environment. It includes the local hotel search endpoint and a direct HOBSE tariff probe for Rameswaram."
+  },
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Logs in to the local backend and stores the JWT in the collection variable token."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "const token = json.accessToken || json.token || (json.data && (json.data.accessToken || json.data.token));",
+                  "pm.test('Login returned token', function () {",
+                  "  pm.expect(token).to.be.a('string').and.not.empty;",
+                  "});",
+                  "if (token) {",
+                  "  pm.collectionVariables.set('token', token);",
+                  "  console.log('Saved token to collection variable token');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Local Backend",
+      "item": [
+        {
+          "name": "Search Hotels - HOBSE only",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cityCode\": \"{{cityCode}}\",\n  \"checkInDate\": \"{{checkInDate}}\",\n  \"checkOutDate\": \"{{checkOutDate}}\",\n  \"roomCount\": {{roomCount}},\n  \"guestCount\": {{guestCount}},\n  \"adultCount\": {{adultCount}},\n  \"childCount\": {{childCount}},\n  \"guestNationality\": \"{{guestNationality}}\",\n  \"providers\": [\"hobse\"]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hotels/search",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "hotels",
+                "search"
+              ]
+            },
+            "description": "Local backend search. In the traced case, the provider path returned 0 hotels because HOBSE timed out in-app."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Direct HOBSE",
+      "item": [
+        {
+          "name": "GetAvailableRoomTariff - Rameswaram",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "params",
+                  "value": "{\n  \"hobse\": {\n    \"version\": \"1.0\",\n    \"datetime\": \"{{hobseDatetime}}\",\n    \"clientToken\": \"{{hobseClientToken}}\",\n    \"accessToken\": \"{{hobseAccessToken}}\",\n    \"productToken\": \"{{hobseProductToken}}\",\n    \"request\": {\n      \"method\": \"htl/GetAvailableRoomTariff\",\n      \"data\": {\n        \"sessionId\": \"DVI-{{$timestamp}}\",\n        \"fromDate\": \"{{checkInDate}}\",\n        \"toDate\": \"{{checkOutDate}}\",\n        \"cityId\": \"{{hobseCityId}}\",\n        \"priceOwnerType\": \"{{hobsePriceOwnerType}}\",\n        \"partnerId\": \"{{hobsePartnerId}}\",\n        \"partnerTypeId\": \"{{hobsePartnerTypeId}}\",\n        \"tariffMode\": \"{{hobseTariffMode}}\",\n        \"roomData\": [\n          {\n            \"adultCount\": \"{{adultCount}}\",\n            \"childCount\": \"{{childCount}}\",\n            \"infantCount\": \"0\"\n          }\n        ],\n        \"hotelFilter\": [\n          {\n            \"hotelId\": \"{{hobseHotelId}}\"\n          }\n        ],\n        \"resultType\": \"json\"\n      }\n    }\n  }\n}",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "https://api.hobse.com/v1/htl/GetAvailableRoomTariff",
+              "protocol": "https",
+              "host": [
+                "api",
+                "hobse",
+                "com"
+              ],
+              "path": [
+                "v1",
+                "htl",
+                "GetAvailableRoomTariff"
+              ]
+            },
+            "description": "Direct upstream HOBSE probe. This returned success=true and totalRecords=1 in the traced test."
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:4006"
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "email",
+      "value": "admin@dvi.co.in"
+    },
+    {
+      "key": "password",
+      "value": "Keerthi@2404ias"
+    },
+    {
+      "key": "cityCode",
+      "value": "Rameswaram"
+    },
+    {
+      "key": "checkInDate",
+      "value": "2026-07-12"
+    },
+    {
+      "key": "checkOutDate",
+      "value": "2026-07-14"
+    },
+    {
+      "key": "roomCount",
+      "value": "1"
+    },
+    {
+      "key": "guestCount",
+      "value": "2"
+    },
+    {
+      "key": "adultCount",
+      "value": "2"
+    },
+    {
+      "key": "childCount",
+      "value": "0"
+    },
+    {
+      "key": "guestNationality",
+      "value": "IN"
+    },
+    {
+      "key": "hobseCityId",
+      "value": "379"
+    },
+    {
+      "key": "hobseHotelId",
+      "value": "fe1d1c893b009365"
+    },
+    {
+      "key": "hobseDatetime",
+      "value": "2026-07-10T14:37:09.810+05:30"
+    },
+    {
+      "key": "hobseClientToken",
+      "value": "C3g8K3b1wray989DVIT37od34r64r"
+    },
+    {
+      "key": "hobseAccessToken",
+      "value": "Ah825fs13pjP984DVIH0016vb1098"
+    },
+    {
+      "key": "hobseProductToken",
+      "value": "PbsDCcxq81gfo00DVIHl148eF0tT"
+    },
+    {
+      "key": "hobsePartnerId",
+      "value": "a14fc9d3a3e31230"
+    },
+    {
+      "key": "hobsePartnerTypeId",
+      "value": "4"
+    },
+    {
+      "key": "hobsePriceOwnerType",
+      "value": "2"
+    },
+    {
+      "key": "hobseTariffMode",
+      "value": "B2B"
+    }
+  ]
+}
