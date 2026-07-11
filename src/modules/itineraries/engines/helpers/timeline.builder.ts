@@ -36,6 +36,8 @@ import {
   HotelSearchMode,
   PolicyResolutionStatus,
 } from '../../services/arrival-hotel-policy.service';
+import type { SameCityAllocationPlan } from '../../services/same-city-cross-day-optimizer.service';
+import { normalizeRouteCityKey } from '../../services/same-city-cross-day-optimizer.shared';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -900,16 +902,12 @@ export class TimelineBuilder {
   }
 
   private getSameCityRouteKey(route: Partial<RouteRow> | null | undefined): string {
-    const sourceKey = this.canonicalCityKey(String((route as any)?.location_name || ''));
-    const destinationKey = this.canonicalCityKey(
-      String((route as any)?.next_visiting_location || ''),
+    return this.canonicalCityKey(
+      normalizeRouteCityKey(
+        String((route as any)?.location_name || ''),
+        String((route as any)?.next_visiting_location || ''),
+      ),
     );
-
-    if (!sourceKey || !destinationKey || sourceKey !== destinationKey) {
-      return '';
-    }
-
-    return sourceKey;
   }
 
   private buildReservedSameCityHotspotIdsByRoute(
@@ -941,13 +939,14 @@ export class TimelineBuilder {
       const routeId = Number((row as any)?.itinerary_route_ID || 0);
       const hotspotId = Number((row as any)?.hotspot_ID || 0);
       if (!routeId || !hotspotId) continue;
+      if (Number((row as any)?.item_type || 0) !== 4) continue;
 
       const cityKey = routeCityKeyById.get(routeId);
       if (!cityKey) continue;
 
-      const isManual = Number((row as any)?.hotspot_plan_own_way || 0) === 1;
-      const shouldReserveForOtherRoutes = scopeToRouteId ? true : isManual;
-      if (!shouldReserveForOtherRoutes) continue;
+      // Full rebuilds should preserve active same-city route ownership so a later day
+      // keeps its already-selected hotspot set instead of an earlier sibling route
+      // re-pulling those visits during candidate selection.
 
       if (!cityReservedIds.has(cityKey)) {
         cityReservedIds.set(cityKey, new Set<number>());
@@ -1274,6 +1273,7 @@ export class TimelineBuilder {
       manualPlacementByRoute?: Record<number, {
         hotspotOrder?: number;
       }>;
+      sameCityAllocationPlan?: SameCityAllocationPlan | null;
       /** When set, only process/rebuild this route instead of the entire plan. */
       scopeToRouteId?: number;
     },
@@ -2735,6 +2735,28 @@ export class TimelineBuilder {
       // For other days, use multi-pass scheduling to fill gaps with deferred hotspots
       
       const manualPlacementByRoute = options?.manualPlacementByRoute || {};
+      const sameCityAllocationPlan = options?.sameCityAllocationPlan || null;
+      const routeDesiredMovableOrder = Array.isArray(
+        sameCityAllocationPlan?.desiredMovableOrderByRoute?.[Number(route.itinerary_route_ID)],
+      )
+        ? (sameCityAllocationPlan?.desiredMovableOrderByRoute?.[Number(route.itinerary_route_ID)] || [])
+            .map((id) => Number(id || 0))
+            .filter((id) => id > 0)
+        : [];
+      const routeDesiredMovableSet = new Set<number>(routeDesiredMovableOrder);
+      const routePreferredAdjacencyPairs = Array.isArray(
+        sameCityAllocationPlan?.preferredAdjacencyPairsByRoute?.[Number(route.itinerary_route_ID)],
+      )
+        ? (sameCityAllocationPlan?.preferredAdjacencyPairsByRoute?.[Number(route.itinerary_route_ID)] || [])
+            .map((pair) => [Number(pair?.[0] || 0), Number(pair?.[1] || 0)] as [number, number])
+            .filter(([anchorId, movedId]) => anchorId > 0 && movedId > 0)
+        : [];
+      const desiredMovableOrderRank = new Map<number, number>();
+      routeDesiredMovableOrder.forEach((hotspotId, index) => {
+        if (!desiredMovableOrderRank.has(hotspotId)) {
+          desiredMovableOrderRank.set(hotspotId, index);
+        }
+      });
       const scopedPreviewAllowedHotspotIds = new Set<number>();
       if (options?.scopeToRouteId && Array.isArray(existingHotspots) && existingHotspots.length > 0) {
         for (const row of (existingHotspots || []) as any[]) {
@@ -2811,6 +2833,47 @@ export class TimelineBuilder {
           const bo = Number((b as any).display_order || Number.MAX_SAFE_INTEGER);
           if (ao !== bo) return ao - bo;
           return Number((a as any).hotspot_ID || 0) - Number((b as any).hotspot_ID || 0);
+        });
+      }
+
+      if (desiredMovableOrderRank.size > 0) {
+        const desiredBaseOrder = 1000;
+        selectedHotspots = [...selectedHotspots]
+          .map((hotspot: any) => {
+            const hotspotId = Number((hotspot as any)?.hotspot_ID || 0);
+            const desiredRank = desiredMovableOrderRank.get(hotspotId);
+            if (desiredRank == null) return hotspot;
+
+            return {
+              ...hotspot,
+              display_order: desiredBaseOrder + desiredRank,
+              __sameCityDesiredOrderRank: desiredRank,
+              __sameCityDesiredMovable: true,
+            };
+          })
+          .sort((a: any, b: any) => {
+            const ar = Number((a as any).__sameCityDesiredOrderRank ?? Number.MAX_SAFE_INTEGER);
+            const br = Number((b as any).__sameCityDesiredOrderRank ?? Number.MAX_SAFE_INTEGER);
+            if (ar !== br) return ar - br;
+
+            const ao = Number((a as any).display_order || Number.MAX_SAFE_INTEGER);
+            const bo = Number((b as any).display_order || Number.MAX_SAFE_INTEGER);
+            if (ao !== bo) return ao - bo;
+
+            return Number((a as any).hotspot_ID || 0) - Number((b as any).hotspot_ID || 0);
+          });
+
+        this.logBookingRule({
+          rule: 'SAME_CITY_DESIRED_MOVABLE_ORDER_APPLIED',
+          quoteId:
+            (plan as any).quote_id ??
+            (plan as any).quoteId ??
+            (plan as any).quote_ID ??
+            null,
+          planId,
+          routeId: route.itinerary_route_ID,
+          desiredMovableOrder: routeDesiredMovableOrder,
+          preferredAdjacencyPairs: routePreferredAdjacencyPairs,
         });
       }
 
@@ -4903,8 +4966,18 @@ export class TimelineBuilder {
           const distanceScore = Number.isFinite(distanceKm) ? Math.max(0, 60 - Math.floor(distanceKm)) : 0;
           const waitScore = Math.max(0, 80 - waitPenaltyMinutes);
           const windowFitScore = Math.min(50, Math.floor(remainingGapSeconds / 900));
+          const desiredRank = desiredMovableOrderRank.get(hotspotId);
+          const desiredMovableScore =
+            desiredRank == null
+              ? 0
+              : Math.max(0, 5000 - (desiredRank * 250));
+          const adjacencyScore = routePreferredAdjacencyPairs.some(([anchorId, movedId]) => {
+            return movedId === hotspotId && routeDesiredMovableSet.has(anchorId);
+          })
+            ? 2000
+            : 0;
 
-          return (priority * 10) + bucketBias + distanceScore + waitScore + windowFitScore;
+          return (priority * 10) + bucketBias + distanceScore + waitScore + windowFitScore + desiredMovableScore + adjacencyScore;
         };
         const getPhaseRank = (bucketRaw: string): number => {
           const bucket = String(bucketRaw || '').toLowerCase();

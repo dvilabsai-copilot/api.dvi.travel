@@ -35,13 +35,16 @@ import { RouteSuggestionsV2Service } from './route-suggestions-v2.service';
 import { ArrivalHotelPolicyService } from './services/arrival-hotel-policy.service';
 import { HotelStayBlockValidationService } from './services/hotel-stay-block-validation.service';
 import { VehicleVoucherEmailNotifierService } from './services/vehicle-voucher-email-notifier.service';
+import { SameCityCrossDayOptimizerService } from './services/same-city-cross-day-optimizer.service';
 import { HotelsModule } from '../hotels/hotels.module';
 import { ItineraryClipboardService } from './itinerary-clipboard.service';
 import { ItineraryPdfService } from './itinerary-pdf.service';
+import { ItineraryScenarioSourceController } from './itinerary-scenario-source.controller';
+import { ItineraryScenarioSourceService } from './itinerary-scenario-source.service';
 
 @Module({
   imports: [HotelsModule],
-  controllers: [ItinerariesController, ResAvenueTestController],
+  controllers: [ItinerariesController, ResAvenueTestController, ItineraryScenarioSourceController],
   providers: [
     // core services
     ItinerariesService,
@@ -57,6 +60,7 @@ import { ItineraryPdfService } from './itinerary-pdf.service';
     HotelVoucherService,
     VehicleVoucherService,
     VehicleVoucherEmailNotifierService,
+    SameCityCrossDayOptimizerService,
 
     // existing engines you already had
     HotelEngineService,
@@ -78,6 +82,7 @@ import { ItineraryPdfService } from './itinerary-pdf.service';
     ArrivalHotelPolicyService,
     HotelStayBlockValidationService,
     ItineraryPdfService,
+    ItineraryScenarioSourceService,
   ],
 })
 export class ItinerariesModule {}
