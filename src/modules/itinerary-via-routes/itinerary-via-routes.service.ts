@@ -6,8 +6,26 @@ import { CheckDistanceLimitDto } from './dto/check-distance-limit.dto';
 import { AddViaRouteDto } from './dto/add-via-route.dto';
 
 type DistanceCheckResponse =
-  | { success: true }
-  | { success: false; errors: { result_error: string } };
+  | {
+      success: true;
+      data: {
+        total_km: number;
+        rounded_total_km: number;
+        limit_km: number | null;
+        within_limit: true;
+      };
+    }
+  | {
+      success: false;
+      code?: string;
+      errors: { result_error: string };
+      data?: {
+        total_km: number;
+        rounded_total_km: number;
+        limit_km: number | null;
+        within_limit: false;
+      };
+    };
 
 type AddViaRouteResponse =
   | { success: true; i_result?: boolean; u_result?: boolean }
@@ -50,155 +68,37 @@ export class ItineraryViaRoutesService {
     return R * c;
   }
 
-  /**
-   * Fetch a stored location's coordinates by its name.
-   * Matches either source_location or destination_location in dvi_stored_locations
-   * and returns the appropriate lat/long.
-   */
-  private normalizeLocationName(value: string | null | undefined): string {
-  return String(value || '')
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, ' ')
-    .replace(/\s*,\s*/g, ', ')
-    .replace(/,\s*india$/i, '');
-}
-
 private toCoords(latValue: any, lonValue: any) {
   if (latValue == null || lonValue == null) return null;
 
   const lat = Number(latValue);
   const lon = Number(lonValue);
 
-  if (Number.isNaN(lat) || Number.isNaN(lon)) return null;
+  if (
+    !Number.isFinite(lat) ||
+    !Number.isFinite(lon) ||
+    lat < -90 ||
+    lat > 90 ||
+    lon < -180 ||
+    lon > 180
+  ) {
+    return null;
+  }
 
   return { lat, lon };
 }
 
-private async getLocationCoordsByName(locationName: string) {
-  const rawName = String(locationName || '').trim();
-  if (!rawName) return null;
+  private parseRequestedViaIds(viaRouteIds: (number | string)[]) {
+    const requestedIds = (viaRouteIds || []).map((value) => {
+      const text = String(value ?? '').trim();
+      if (!/^\d+$/.test(text)) return null;
+      const valueAsBigInt = BigInt(text);
+      if (valueAsBigInt > 9223372036854775807n) return null;
+      return { key: text, value: valueAsBigInt };
+    });
 
-  const shortName = rawName.split(',')[0]?.trim() || rawName;
-  const normalizedInput = this.normalizeLocationName(rawName);
-  const normalizedShort = this.normalizeLocationName(shortName);
-
-  const rows = await this.prisma.dvi_stored_locations.findMany({
-    where: {
-      deleted: 0,
-      status: 1,
-      OR: [
-        { source_location: rawName },
-        { destination_location: rawName },
-        { source_location: shortName },
-        { destination_location: shortName },
-        { source_location: { contains: rawName } },
-        { destination_location: { contains: rawName } },
-        { source_location: { contains: shortName } },
-        { destination_location: { contains: shortName } },
-      ],
-    },
-    select: {
-      source_location: true,
-      source_location_lattitude: true,
-      source_location_longitude: true,
-      destination_location: true,
-      destination_location_lattitude: true,
-      destination_location_longitude: true,
-    },
-    take: 50,
-  });
-
-  for (const row of rows) {
-    const sourceName = this.normalizeLocationName(row.source_location);
-    const destinationName = this.normalizeLocationName(row.destination_location);
-
-    const sourceMatches =
-      sourceName === normalizedInput ||
-      sourceName === normalizedShort ||
-      normalizedInput.includes(sourceName) ||
-      sourceName.includes(normalizedShort);
-
-    if (sourceMatches) {
-      const coords = this.toCoords(
-        row.source_location_lattitude,
-        row.source_location_longitude,
-      );
-
-      if (coords) return coords;
-    }
-
-    const destinationMatches =
-      destinationName === normalizedInput ||
-      destinationName === normalizedShort ||
-      normalizedInput.includes(destinationName) ||
-      destinationName.includes(normalizedShort);
-
-    if (destinationMatches) {
-      const coords = this.toCoords(
-        row.destination_location_lattitude,
-        row.destination_location_longitude,
-      );
-
-      if (coords) return coords;
-    }
-  }
-
-  console.warn('[ViaRoutes] Unable to resolve coordinates for location:', rawName);
-
-  return null;
-}
-  /**
-   * Given via route IDs from dvi_stored_location_via_routes, resolve them to
-   * location names and then fetch their coordinates from dvi_stored_locations.
-   */
-  private async getViaLocationsCoordsByIds(viaRouteIds: (number | string)[]) {
-    if (!viaRouteIds?.length) return [];
-
-    const idsBigInt = viaRouteIds
-      .map((v) => {
-        try {
-          return BigInt(v);
-        } catch {
-          return null;
-        }
-      })
-      .filter((v): v is bigint => v !== null);
-
-    if (!idsBigInt.length) return [];
-
-    const viaRows =
-      await this.prisma.dvi_stored_location_via_routes.findMany({
-        where: {
-          deleted: 0,
-          status: 1,
-          via_route_location_ID: { in: idsBigInt },
-        },
-        select: {
-          via_route_location: true,
-        },
-        orderBy: {
-          via_route_location_ID: 'asc',
-        },
-      });
-
-    const result: { name: string; lat: number; lon: number }[] = [];
-
-    for (const via of viaRows) {
-      if (!via.via_route_location) continue;
-      const coords = await this.getLocationCoordsByName(
-        via.via_route_location,
-      );
-      if (coords) {
-        result.push({
-          name: via.via_route_location,
-          lat: coords.lat,
-          lon: coords.lon,
-        });
-      }
-    }
-
-    return result;
+    if (requestedIds.some((id) => id === null)) return null;
+    return requestedIds as { key: string; value: bigint }[];
   }
 
   private async getItineraryDistanceLimit(): Promise<number | null> {
@@ -223,29 +123,110 @@ private async getLocationCoordsByName(locationName: string) {
   async checkDistanceLimit(
     dto: CheckDistanceLimitDto,
   ): Promise<DistanceCheckResponse> {
-    const { source, destination, via_routes } = dto;
+    const source = String(dto.source || '').trim();
+    const destination = String(dto.destination || '').trim();
+    const requestedViaIds = this.parseRequestedViaIds(dto.via_routes);
 
-    // Resolve source/destination coordinates
-    const sourceCoords = await this.getLocationCoordsByName(source);
-    const destCoords = await this.getLocationCoordsByName(destination);
-
-    if (!sourceCoords || !destCoords) {
+    if (!source || !destination || !requestedViaIds?.length) {
       return {
         success: false,
+        code: 'INVALID_VIA_ROUTE',
+        errors: {
+          result_error: 'One or more selected via routes are invalid for this route.',
+        },
+      };
+    }
+
+    const parentRoute = await this.prisma.dvi_stored_locations.findFirst({
+      where: {
+        source_location: source,
+        destination_location: destination,
+        status: 1,
+        deleted: 0,
+      },
+      orderBy: { location_ID: 'asc' },
+      select: {
+        location_ID: true,
+        source_location_lattitude: true,
+        source_location_longitude: true,
+        destination_location_lattitude: true,
+        destination_location_longitude: true,
+      },
+    });
+
+    const sourceCoords = this.toCoords(
+      parentRoute?.source_location_lattitude,
+      parentRoute?.source_location_longitude,
+    );
+    const destinationCoords = this.toCoords(
+      parentRoute?.destination_location_lattitude,
+      parentRoute?.destination_location_longitude,
+    );
+
+    if (!parentRoute || !sourceCoords || !destinationCoords) {
+      return {
+        success: false,
+        code: 'INVALID_ROUTE',
         errors: {
           result_error: 'Unable to resolve source / destination coordinates',
         },
       };
     }
 
-    // Resolve via-route coordinates in order
-    const viaCoords = await this.getViaLocationsCoordsByIds(via_routes);
+    const viaRows = await this.prisma.dvi_stored_location_via_routes.findMany({
+      where: {
+        via_route_location_ID: {
+          in: requestedViaIds.map((id) => id.value),
+        },
+        location_id: parentRoute.location_ID,
+        status: 1,
+        deleted: 0,
+      },
+      select: {
+        via_route_location_ID: true,
+        via_route_location: true,
+        via_route_location_lattitude: true,
+        via_route_location_longitude: true,
+      },
+    });
+
+    const viaById = new Map(
+      viaRows.map((row) => [row.via_route_location_ID.toString(), row]),
+    );
+    const orderedViaRows = requestedViaIds.map((id) => viaById.get(id.key));
+
+    if (orderedViaRows.some((row) => !row)) {
+      return {
+        success: false,
+        code: 'INVALID_VIA_ROUTE',
+        errors: {
+          result_error: 'One or more selected via routes are invalid for this route.',
+        },
+      };
+    }
+
+    const viaCoords = orderedViaRows.map((row) =>
+      this.toCoords(
+        row!.via_route_location_lattitude,
+        row!.via_route_location_longitude,
+      ),
+    );
+
+    if (viaCoords.some((coords) => !coords)) {
+      return {
+        success: false,
+        code: 'INVALID_VIA_ROUTE',
+        errors: {
+          result_error: 'One or more selected via routes have invalid coordinates.',
+        },
+      };
+    }
 
     let cumulative = 0;
 
     // 1) Source -> first via
     if (viaCoords.length > 0) {
-      const first = viaCoords[0];
+      const first = viaCoords[0]!;
       cumulative += this.haversineDistance(
         sourceCoords.lat,
         sourceCoords.lon,
@@ -256,8 +237,8 @@ private async getLocationCoordsByName(locationName: string) {
 
     // 2) Via[i] -> Via[i+1]
     for (let i = 0; i < viaCoords.length - 1; i++) {
-      const curr = viaCoords[i];
-      const next = viaCoords[i + 1];
+      const curr = viaCoords[i]!;
+      const next = viaCoords[i + 1]!;
       cumulative += this.haversineDistance(
         curr.lat,
         curr.lon,
@@ -268,39 +249,48 @@ private async getLocationCoordsByName(locationName: string) {
 
     // 3) Last via -> destination
     if (viaCoords.length > 0) {
-      const last = viaCoords[viaCoords.length - 1];
+      const last = viaCoords[viaCoords.length - 1]!;
       cumulative += this.haversineDistance(
         last.lat,
         last.lon,
-        destCoords.lat,
-        destCoords.lon,
+        destinationCoords.lat,
+        destinationCoords.lon,
       );
     }
 
-    // Round to match PHP behaviour
-    cumulative = Math.round(cumulative);
+    const rawTotalKm = cumulative;
+    const roundedTotalKm = Math.round(rawTotalKm);
 
     const limit = await this.getItineraryDistanceLimit();
+    const data = {
+      total_km: Number(rawTotalKm.toFixed(2)),
+      rounded_total_km: roundedTotalKm,
+      limit_km: limit,
+    };
+
     if (limit == null) {
       // If no limit is configured, consider it a success.
-      return { success: true };
+      return { success: true, data: { ...data, within_limit: true } };
     }
 
-    if (cumulative < 0) {
+    if (rawTotalKm < 0) {
       return {
         success: false,
         errors: { result_error: 'Unable to Add Via Route !!!' },
+        data: { ...data, within_limit: false },
       };
     }
 
-    if (cumulative > limit) {
+    if (roundedTotalKm > limit) {
       return {
         success: false,
+        code: 'DISTANCE_LIMIT_EXCEEDED',
         errors: { result_error: 'Distance KM Limit Exceeded !!!' },
+        data: { ...data, within_limit: false },
       };
     }
 
-    return { success: true };
+    return { success: true, data: { ...data, within_limit: true } };
   }
 
   // -------------------------------------------------------------------------
