@@ -686,12 +686,13 @@ private getFoodPreferenceLabel(value: unknown): string | null {
     return null;
   }
 
-  const foodTypeMap: Record<string, string> = {
-    '1': 'Veg',
-    '2': 'Non Veg',
-    '3': 'Jain',
-    '4': 'Vegan',
-  };
+const foodTypeMap: Record<string, string> = {
+  "1": "Vegetarian",
+  "2": "Non Vegetarian",
+  "3": "Jain",
+  "4": "Vegan",
+  "5": "Eggetarian",
+};
 
   return foodTypeMap[raw] || raw;
 }
