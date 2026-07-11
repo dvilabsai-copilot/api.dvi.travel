@@ -1763,10 +1763,16 @@ async createVendorBasicInfo(data: any): Promise<any> {
       ]),
     );
 
-    return vehicles.map((vehicle: any) => ({
-      ...vehicle,
-      vehicle_origin: locationLabelById.get(Number(vehicle.vehicle_location_id ?? 0)) ?? '',
-    }));
+ return vehicles.map((vehicle: any) => ({
+  ...vehicle,
+
+  vehicle_origin:
+    String(vehicle.vehicle_origin ?? '').trim() ||
+    locationLabelById.get(
+      Number(vehicle.vehicle_location_id ?? 0),
+    ) ||
+    '',
+}));
   }
 
  private mapVendorVehiclePayload(data: any): Record<string, any> {
@@ -1830,23 +1836,33 @@ async createVendorBasicInfo(data: any): Promise<any> {
 }
 
 async createVendorVehicle(vendorId: number, data: any): Promise<any> {
-  const mapped = this.mapVendorVehiclePayload(data);
-  const { vehicle_origin: _vehicleOrigin, ...persistedMapped } = mapped as any;
-  const resolution = await this.resolveVehicleLocationIdFromBranch({
-    vendorId,
-    vendorBranchId: Number(mapped.vendor_branch_id ?? 0),
-    requestedVehicleLocationId: mapped.vehicle_location_id,
-    requestedVehicleOrigin: mapped.vehicle_origin,
-  });
+ const mapped = this.mapVendorVehiclePayload(data);
 
-  const createData: any = {
-    ...persistedMapped,
-    vehicle_location_id: resolution.vehicleLocationId,
-    vendor_id: vendorId,
-    createdon: new Date(),
-    status: 1,
-    deleted: 0,
-  };
+const requestedVehicleOrigin = String(
+  mapped.vehicle_origin ?? '',
+).trim();
+
+const resolution = await this.resolveVehicleLocationIdFromBranch({
+  vendorId,
+  vendorBranchId: Number(mapped.vendor_branch_id ?? 0),
+  requestedVehicleLocationId: mapped.vehicle_location_id,
+  requestedVehicleOrigin,
+});
+
+const createData: any = {
+  ...mapped,
+
+  // Save exact manually entered text.
+  vehicle_origin: requestedVehicleOrigin,
+
+  // Keep resolved FK when a matching stored location exists.
+  vehicle_location_id: resolution.vehicleLocationId || 0,
+
+  vendor_id: vendorId,
+  createdon: new Date(),
+  status: 1,
+  deleted: 0,
+};
 
   if (!resolution.vehicleLocationId) {
     console.warn('[VEHICLE_LOCATION_ID_UNRESOLVED]', resolution.diagnostics);
@@ -1879,7 +1895,6 @@ async updateVendorVehicle(vehicleId: number, data: any): Promise<any> {
   }
 
 const mapped = this.mapVendorVehiclePayload(data);
-const { vehicle_origin: _vehicleOrigin, ...persistedMapped } = mapped as any;
 
 const requestedVehicleOrigin = String(
   data.vehicle_origin ??
@@ -1910,10 +1925,16 @@ const resolution = await this.resolveVehicleLocationIdFromBranch({
 });
 
   const updateData: any = {
-    ...persistedMapped,
-    vehicle_location_id: resolution.vehicleLocationId,
-    updatedon: new Date(),
-  };
+  ...mapped,
+
+  // Save exactly what the user entered.
+  vehicle_origin: requestedVehicleOrigin,
+
+  // Matching stored location is optional.
+  vehicle_location_id: resolution.vehicleLocationId || 0,
+
+  updatedon: new Date(),
+};
 
   if (!resolution.vehicleLocationId) {
     console.warn('[VEHICLE_LOCATION_ID_UNRESOLVED]', resolution.diagnostics);
