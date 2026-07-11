@@ -146,6 +146,7 @@ interface CandidateFeasibilityInput {
   hotspotDuration: string;
   hotspotCoords: { lat: number; lon: number };
   hotspotType?: string;
+  hotspotPriority?: number;
   timingMap: Map<number, Map<number, any[]>>;
   plan: PlanHeader;
   destinationCity: string;
@@ -585,6 +586,17 @@ export class TimelineBuilder {
   private shouldSkipWaitForOpening(hotspotType?: string | null): boolean {
     const normalizedType = String(hotspotType || '').trim().toLowerCase();
     return NO_WAIT_HOTSPOT_TYPES.has(normalizedType);
+  }
+
+  private shouldAllowWaitUntilOpenForCandidate(
+    hotspotPriority?: number | null,
+    hotspotType?: string | null,
+  ): boolean {
+    const priority = Number(hotspotPriority ?? 0);
+    if (priority <= 0) {
+      return false;
+    }
+    return !this.shouldSkipWaitForOpening(hotspotType);
   }
 
   private getNextSlotStart(currentSlot: DayTimeSlot): string | null {
@@ -3792,7 +3804,7 @@ export class TimelineBuilder {
           if (
             !operatingCheck.canVisitNow &&
             operatingCheck.nextWindowStart &&
-            !this.shouldSkipWaitForOpening(hotspotType)
+            this.shouldAllowWaitUntilOpenForCandidate(Number((sh as any).hotspot_priority ?? 0), hotspotType)
           ) {
             let nextWindowStartSeconds = timeToSeconds(operatingCheck.nextWindowStart);
             while (nextWindowStartSeconds < absoluteVisitStartSeconds) {
@@ -3841,8 +3853,8 @@ export class TimelineBuilder {
                   operatingCheck.isClosedForDay
                     ? 'Rejected: closed on this day'
                     : (
-                        this.shouldSkipWaitForOpening(hotspotType)
-                          ? `Rejected: wait-to-open disabled for hotspot type ${hotspotType || 'unknown'}`
+                        !this.shouldAllowWaitUntilOpenForCandidate(Number((sh as any).hotspot_priority ?? 0), hotspotType)
+                          ? `Rejected: wait-to-open disabled for priority ${Number((sh as any).hotspot_priority ?? 0)} hotspot`
                           : operatingCheck.nextWindowStart
                             ? `Rejected: outside operating hours and wait window does not fit (next opens at ${operatingCheck.nextWindowStart})`
                             : 'Rejected: outside operating hours'
@@ -5163,7 +5175,23 @@ export class TimelineBuilder {
               hs,
               score: scoreFillerHotspot(hs),
             }));
-            scored.sort((a, b) => b.score - a.score);
+            scored.sort((a, b) => {
+              const aPriority = Number((a.hs as any).hotspot_priority ?? 0);
+              const bPriority = Number((b.hs as any).hotspot_priority ?? 0);
+              if (aPriority === 0 && bPriority === 0) {
+                const aDistance = Number((a.hs as any).hotspot_distance ?? Number.POSITIVE_INFINITY);
+                const bDistance = Number((b.hs as any).hotspot_distance ?? Number.POSITIVE_INFINITY);
+                if (aDistance !== bDistance) return aDistance - bDistance;
+              }
+
+              if (b.score !== a.score) return b.score - a.score;
+
+              const aDistance = Number((a.hs as any).hotspot_distance ?? Number.POSITIVE_INFINITY);
+              const bDistance = Number((b.hs as any).hotspot_distance ?? Number.POSITIVE_INFINITY);
+              if (aDistance !== bDistance) return aDistance - bDistance;
+
+              return Number((a.hs as any).hotspot_ID ?? 0) - Number((b.hs as any).hotspot_ID ?? 0);
+            });
 
             const preview = scored.slice(0, 5).map((x) => ({ hotspotId: Number((x.hs as any).hotspot_ID || 0), score: x.score }));
             if (preview.length > 0) {
@@ -5915,11 +5943,12 @@ export class TimelineBuilder {
           hotspotLocationName,
           hotspotDuration,
           hotspotCoords: destCoords,
+          hotspotPriority: Number((sh as any).hotspot_priority ?? 0),
           timingMap,
           plan,
           destinationCity,
           lastRouteArrivalDeadlineSeconds,
-          allowWaitUntilOpen: true,
+          allowWaitUntilOpen: Number((sh as any).hotspot_priority ?? 0) > 0,
           rejectIfOutsideOperatingWindow: true,
           hotspotType,
         });
@@ -6761,11 +6790,12 @@ export class TimelineBuilder {
             hotspotLocationName,
             hotspotDuration,
             hotspotCoords: destCoords,
+            hotspotPriority: Number((sh as any).hotspot_priority ?? 0),
             timingMap,
             plan,
             destinationCity,
             lastRouteArrivalDeadlineSeconds,
-            allowWaitUntilOpen: true,
+            allowWaitUntilOpen: Number((sh as any).hotspot_priority ?? 0) > 0,
             rejectIfOutsideOperatingWindow: true,
             hotspotType,
           });
@@ -7321,6 +7351,7 @@ export class TimelineBuilder {
             hotspotLocationName,
             hotspotDuration,
             hotspotCoords: destCoords,
+            hotspotPriority: Number((hotspotData as any).hotspot_priority ?? 0),
             timingMap,
             plan,
             destinationCity,
@@ -7421,6 +7452,7 @@ export class TimelineBuilder {
                 hotspotLocationName,
                 hotspotDuration,
                 hotspotCoords: destCoords,
+                hotspotPriority: Number((hotspotData as any).hotspot_priority ?? 0),
                 timingMap,
                 plan,
                 destinationCity,
@@ -8031,7 +8063,7 @@ export class TimelineBuilder {
             if (
               !operatingCheck.canVisitNow &&
               operatingCheck.nextWindowStart &&
-              !this.shouldSkipWaitForOpening(hotspotType)
+              this.shouldAllowWaitUntilOpenForCandidate(Number((sh as any).hotspot_priority ?? 0), hotspotType)
             ) {
               let nextWindowStartSeconds = timeToSeconds(operatingCheck.nextWindowStart);
               while (nextWindowStartSeconds < visitStartSeconds) {
@@ -8081,8 +8113,8 @@ export class TimelineBuilder {
                   operatingCheck.isClosedForDay
                     ? 'Rejected: last_route_empty_day_rescue closed on this day'
                     : (
-                        this.shouldSkipWaitForOpening(hotspotType)
-                          ? `Rejected: wait-to-open disabled for hotspot type ${hotspotType || 'unknown'}`
+                        !this.shouldAllowWaitUntilOpenForCandidate(Number((sh as any).hotspot_priority ?? 0), hotspotType)
+                          ? `Rejected: wait-to-open disabled for priority ${Number((sh as any).hotspot_priority ?? 0)} hotspot`
                           : 'Rejected: last_route_empty_day_rescue outside operating hours'
                       ),
                 ],
@@ -10100,7 +10132,7 @@ export class TimelineBuilder {
       !operatingHoursCheck.canVisitNow &&
       input.allowWaitUntilOpen &&
       operatingHoursCheck.nextWindowStart &&
-      !this.shouldSkipWaitForOpening(hotspotType)
+      this.shouldAllowWaitUntilOpenForCandidate(input.hotspotPriority, hotspotType)
     ) {
       let nextWindowStartSeconds = timeToSeconds(operatingHoursCheck.nextWindowStart);
       while (nextWindowStartSeconds < startSeconds) {
