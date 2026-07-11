@@ -41,6 +41,7 @@
     "verify:dvi20260690:explicit-via": "node scripts/verify-dvi20260690-explicit-via.js",
     "verify:suggested-route-family-parity": "node scripts/verify-suggested-route-family-parity.js",
     "verify:legacy-route-options-16": "node scripts/verify-legacy-route-options-16.js",
+    "analyze:itinerary:hotspots": "tsx scripts/analyze-itinerary-hotspot-scenarios.ts",
     "debug:fit-preview": "tsx scripts/debug-fit-preview-source.ts",
     "debug:fit-preview:apj": "tsx scripts/check-fit-preview-apj-op-time.ts",
     "debug:fit-confirm": "tsx scripts/debug-fit-confirm.ts",

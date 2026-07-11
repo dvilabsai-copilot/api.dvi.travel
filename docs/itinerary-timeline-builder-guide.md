@@ -261,6 +261,9 @@ Fix direction:
   - master travel time for the last route pair
   - the builder's hidden common buffer
 - after code changes, rebuild the affected route so the persisted `item_type = 7` row is regenerated within the route envelope.
+- if the last route is terminal-bound (airport, railway, bus stand, station), the details API should surface that transfer as a travel segment to the departure point instead of falling back to a generic "return" label.
+- when the route is transfer-only, hotspots should stay suppressed and the only visible end-of-day movement should be the departure transfer.
+- for transfer-only terminal days, the synthetic `Start Your Day` row should use the route's exact start time instead of borrowing a stale first-timeline anchor that can show `12:00 PM`.
 
 ### 11. File map for the next coding agent
 
@@ -1561,6 +1564,29 @@ Manual hotspot evidence snapshot:
 Activity APIs include available activity lookup, preview, preview across all hotspots, add, smart preview, smart insert, and delete. [Verified from code]
 
 The route map shows request fields such as `planId`, `routeId`, `routeHotspotId`, `hotspotId`, `activityId`, optional gap information, and `allowTopPriorityRemoval`. [Verified from code]
+
+## Quote Scenario Analyzer
+
+For quote-specific hotspot debugging, use:
+
+```bash
+npm run analyze:itinerary:hotspots
+```
+
+Or pass values directly:
+
+```bash
+npm run analyze:itinerary:hotspots -- --quote DVI20260798 --scenario "Scenario 1"
+```
+
+What it writes:
+
+- `docs/itinerary-hotspot-scenarios.md`
+  - appends a scenario section with the quote ID, plan summary, per-day route context, candidate bucket summary, persisted hotspot order, and last-day transfer-only reasoning
+- `docs/.itinerary-hotspot-scenarios.state.json`
+  - remembers the last quote ID and next scenario number for the next interactive run
+
+Use this when the next coding agent needs a quote-by-quote explanation of why hotspots were selected, skipped, or suppressed by the final-day airport cutoff rules.
 
 The exact DB tables and side effects for activity persistence were not deeply proven in the current evidence set. [Needs verification]
 
