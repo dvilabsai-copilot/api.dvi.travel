@@ -15,6 +15,7 @@ import {
   RebuildWarning,
 } from "./helpers/types";
 import { buildRebuildReport } from "./helpers/rebuild-report.helper";
+import type { SameCityAllocationPlan } from "../services/same-city-cross-day-optimizer.service";
 
 type Tx = Prisma.TransactionClient;
 
@@ -46,6 +47,7 @@ export class HotspotEngineService {
         hotspotEndTime?: Date | string | null;
         replacedHotspotId?: number;
       }>;
+      sameCityAllocationPlan?: SameCityAllocationPlan | null;
       /** Scope delete + rebuild to a single route. Used by preview simulations to avoid rebuilding every day. */
       scopeToRouteId?: number;
       /** Skip parking charge rebuild (safe for preview since it rolls back). */
@@ -199,6 +201,7 @@ export class HotspotEngineService {
     const { hotspotRows, parkingRows, routeRejectionSummaryByRoute } =
       await this.timelineBuilder.buildTimelineForPlan(tx, planId, existingHotspots, {
         manualPlacementByRoute,
+        sameCityAllocationPlan: options?.sameCityAllocationPlan || null,
         scopeToRouteId: options?.scopeToRouteId,
       });
 
@@ -288,6 +291,7 @@ export class HotspotEngineService {
       grouped.get(key)!.push(row);
     }
 
+    const keptVisitRowKeys = new Set<string>();
     for (const [key, rows] of grouped.entries()) {
       if (rows.length <= 1) continue;
 
@@ -311,6 +315,10 @@ export class HotspotEngineService {
         keep = rows[0];
       }
 
+      keptVisitRowKeys.add(
+        `${Number((keep as any).itinerary_route_ID || 0)}|${Number((keep as any).hotspot_order || 0)}|${Number((keep as any).hotspot_ID || 0)}`,
+      );
+
       for (const row of rows) {
         if (row === keep) continue;
         droppedAutoConflicts.add(
@@ -320,11 +328,16 @@ export class HotspotEngineService {
     }
 
     const filteredHotspotRows = (hotspotRows as any[]).filter((row) => {
+      const itemType = Number((row as any).item_type || 0);
       const key = `${Number((row as any).itinerary_route_ID || 0)}|${Number((row as any).hotspot_order || 0)}|${Number((row as any).hotspot_ID || 0)}`;
-      if (droppedAutoConflicts.has(key)) return false;
+      if (itemType === 3) {
+        if (droppedAutoConflicts.has(key) && !keptVisitRowKeys.has(key)) return false;
+      } else if (droppedAutoConflicts.has(key)) {
+        return false;
+      }
 
       // Some travel rows may not carry hotspot_ID; drop by route+order fallback.
-      if (Number((row as any).item_type || 0) === 3) {
+      if (itemType === 3) {
         const fallbackKey = `${Number((row as any).itinerary_route_ID || 0)}|${Number((row as any).hotspot_order || 0)}|0`;
         if (droppedAutoConflicts.has(fallbackKey)) return false;
       }
@@ -1174,15 +1187,90 @@ export class HotspotEngineService {
       return aPriority - bPriority;
     });
 
+    // 5.8) REPAIR missing hotspot travel legs before persistence.
+    // Some rebuild paths retain the visit row but lose the paired item_type=3
+    // travel row for the same route/hotspot. Recreate a lightweight travel row
+    // so the persisted timeline always has the companion leg.
+    const travelRepairRows: any[] = [];
+    const travelRepairKeys = new Set<string>();
+    for (const row of sortedRows as any[]) {
+      const itemType = Number(row?.item_type || 0);
+      const routeId = Number(row?.itinerary_route_ID || 0);
+      const hotspotId = Number(row?.hotspot_ID || 0);
+      if (itemType !== 4 || routeId <= 0 || hotspotId <= 0) {
+        travelRepairRows.push(row);
+        continue;
+      }
+
+      const hasTravelRow = (sortedRows as any[]).some(
+        (candidate: any) =>
+          Number(candidate?.itinerary_route_ID || 0) === routeId &&
+          Number(candidate?.item_type || 0) === 3 &&
+          Number(candidate?.hotspot_ID || 0) === hotspotId,
+      );
+      if (hasTravelRow) {
+        travelRepairRows.push(row);
+        continue;
+      }
+
+      const repairKey = `${routeId}|${hotspotId}|${Number(row?.hotspot_order || 0)}`;
+      if (!travelRepairKeys.has(repairKey)) {
+        travelRepairKeys.add(repairKey);
+        const visitStart = row?.hotspot_start_time ? new Date(row.hotspot_start_time) : null;
+        const travelDurationMs = 5 * 60 * 1000;
+        const fallbackStart = visitStart && Number.isFinite(visitStart.getTime())
+          ? new Date(visitStart.getTime() - travelDurationMs)
+          : new Date();
+
+        travelRepairRows.push({
+          ...row,
+          item_type: 3,
+          hotspot_start_time: fallbackStart,
+          hotspot_end_time: visitStart && Number.isFinite(visitStart.getTime())
+            ? new Date(visitStart.getTime())
+            : new Date(fallbackStart.getTime() + travelDurationMs),
+          hotspot_traveling_time: new Date('1970-01-01T00:05:00.000Z'),
+          itinerary_travel_type_buffer_time: new Date('1970-01-01T00:00:00.000Z'),
+          hotspot_travelling_distance: row?.hotspot_travelling_distance || '0.10',
+          hotspot_plan_own_way: Number(row?.hotspot_plan_own_way || 0),
+          is_conflict: Number(row?.is_conflict || 0),
+          conflict_reason: row?.conflict_reason ?? null,
+        });
+
+        console.warn('[HotspotRebuild][travel_leg_repair]', {
+          planId,
+          routeId,
+          hotspotId,
+          hotspotOrder: Number(row?.hotspot_order || 0),
+        });
+      }
+
+      travelRepairRows.push(row);
+    }
+
+    const sortedRowsAfterTravelRepair = [...travelRepairRows].sort((a: any, b: any) => {
+      const aTime = a.hotspot_start_time ? new Date(a.hotspot_start_time).getTime() : 0;
+      const bTime = b.hotspot_start_time ? new Date(b.hotspot_start_time).getTime() : 0;
+
+      if (aTime !== bTime) {
+        return aTime - bTime;
+      }
+
+      const aPriority = itemTypePriority[Number(a.item_type || 0)] ?? 99;
+      const bPriority = itemTypePriority[Number(b.item_type || 0)] ?? 99;
+
+      return aPriority - bPriority;
+    });
+
     console.log('[ManualHotspot][rebuildRouteHotspots] sorted final rows by timestamp', {
       planId,
-      rowCount: sortedRows.length,
+      rowCount: sortedRowsAfterTravelRepair.length,
     });
 
     // 5.9) REASSIGN hotspot_order sequentially after sort (normalize order numbers)
     // Process per-route to ensure correct order per route
     const routeOrdering = new Map<number, number>();
-    for (const row of sortedRows as any[]) {
+    for (const row of sortedRowsAfterTravelRepair as any[]) {
       const routeId = Number(row.itinerary_route_ID || 0);
       const itemType = Number(row.item_type || 0);
       
@@ -1198,12 +1286,12 @@ export class HotspotEngineService {
 
     console.log('[ManualHotspot][rebuildRouteHotspots] reassigned hotspot_order after sort', {
       planId,
-      sortedRowCount: sortedRows.length,
+      sortedRowCount: sortedRowsAfterTravelRepair.length,
       routesProcessed: routeOrdering.size,
     });
 
     // 6) Insert hotspot details (using the final sorted, deduped, normalized rows)
-    const dbHotspotRows = sortedRows.map(row => {
+    const dbHotspotRows = sortedRowsAfterTravelRepair.map(row => {
       const normalizedRow = normalizePersistedTravelDistance(row);
       // Strip out UI-only fields before saving to DB
       const { 
@@ -1303,6 +1391,75 @@ export class HotspotEngineService {
     logPersistence("create_many_result", {
       createdCount: Number(createManyResult?.count || 0),
     });
+
+    // 6.1) Post-persist safety repair:
+    // If a visit row survived rebuild but its paired travel row did not, add a
+    // lightweight travel segment directly against the persisted DB state.
+    const persistedVisitRows = await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
+      where: {
+        itinerary_plan_ID: planId,
+        item_type: 4,
+        deleted: 0,
+        status: 1,
+      },
+      orderBy: [
+        { itinerary_route_ID: "asc" },
+        { hotspot_start_time: "asc" },
+        { route_hotspot_ID: "asc" },
+      ],
+    });
+    const persistedTravelRows = await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
+      where: {
+        itinerary_plan_ID: planId,
+        item_type: 3,
+        deleted: 0,
+        status: 1,
+      },
+      select: {
+        itinerary_route_ID: true,
+        hotspot_ID: true,
+      },
+    });
+    const persistedTravelKeys = new Set(
+      (persistedTravelRows as any[]).map(
+        (row: any) => `${Number(row.itinerary_route_ID || 0)}|${Number(row.hotspot_ID || 0)}`,
+      ),
+    );
+    const missingTravelLegRows = persistedVisitRows
+      .filter((row: any) => {
+        const routeId = Number(row?.itinerary_route_ID || 0);
+        const hotspotId = Number(row?.hotspot_ID || 0);
+        return routeId > 0 && hotspotId > 0 && !persistedTravelKeys.has(`${routeId}|${hotspotId}`);
+      })
+      .map((row: any) => {
+        const visitStart = row?.hotspot_start_time ? new Date(row.hotspot_start_time) : new Date();
+        const travelDurationMs = 5 * 60 * 1000;
+        const syntheticStart = new Date(visitStart.getTime() - travelDurationMs);
+        return {
+          ...row,
+          item_type: 3,
+          hotspot_start_time: syntheticStart,
+          hotspot_end_time: visitStart,
+          hotspot_traveling_time: new Date("1970-01-01T00:05:00.000Z"),
+          itinerary_travel_type_buffer_time: new Date("1970-01-01T00:00:00.000Z"),
+          hotspot_travelling_distance: row?.hotspot_travelling_distance || "0.10",
+          hotspot_order: Number(row?.hotspot_order || 0),
+          is_conflict: 0,
+          conflict_reason: null,
+          updatedon: new Date(),
+        };
+      });
+
+    if (missingTravelLegRows.length > 0) {
+      await (tx as any).dvi_itinerary_route_hotspot_details.createMany({
+        data: missingTravelLegRows,
+      });
+      console.warn("[HotspotRebuild][post_persist_travel_leg_repair]", {
+        planId,
+        repairedCount: missingTravelLegRows.length,
+        repairedHotspotIds: missingTravelLegRows.map((row: any) => Number(row.hotspot_ID || 0)),
+      });
+    }
 
     const postCreatePlanRows = await countActiveRows();
     const postCreatePlanVisitRows = await countActiveRows(4);

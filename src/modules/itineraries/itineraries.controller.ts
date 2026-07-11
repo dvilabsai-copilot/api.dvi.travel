@@ -74,6 +74,7 @@ import { RouteSuggestionsV2Service } from './route-suggestions-v2.service';
 import { ItineraryClipboardService } from './itinerary-clipboard.service';
 import { ItineraryPdfService } from './itinerary-pdf.service';
 import { HotelStayBlockValidationService } from './services/hotel-stay-block-validation.service';
+import { SameCityCrossDayOptimizerService } from './services/same-city-cross-day-optimizer.service';
 
 @ApiTags('Itineraries')
 @ApiBearerAuth()
@@ -102,6 +103,7 @@ export class ItinerariesController {
     private readonly arrivalHotelPolicyService: ArrivalHotelPolicyService,
     private readonly itineraryPdfService: ItineraryPdfService,
     private readonly hotelStayBlockValidationService: HotelStayBlockValidationService,
+    private readonly sameCityCrossDayOptimizerService: SameCityCrossDayOptimizerService,
   ) {}
 
   private parseClipboardGroupTypes(query: Record<string, any>): number[] {
@@ -1934,6 +1936,47 @@ async getAvailableActivities(
       body.previousDayBillingConfirmed,
       userId,
     );
+  }
+
+  @Post(':id/cross-day-optimizer/dry-run')
+  @ApiOperation({ summary: 'Dry-run the same-city cross-day hotspot optimizer' })
+  async dryRunSameCityCrossDayOptimizer(
+    @Param('id', ParseIntPipe) planId: number,
+    @Body()
+    body: {
+      quoteId?: string;
+      maxMoves?: number;
+    },
+  ) {
+    return this.sameCityCrossDayOptimizerService.analyzePlanId(planId, {
+      quoteId: body?.quoteId,
+      dryRun: true,
+      maxMoves: body?.maxMoves,
+    });
+  }
+
+  @Post(':id/cross-day-optimizer/apply')
+  @ApiOperation({ summary: 'Apply the same-city cross-day hotspot optimizer' })
+  async applySameCityCrossDayOptimizer(
+    @Param('id', ParseIntPipe) planId: number,
+    @Body()
+    body: {
+      quoteId?: string;
+      maxMoves?: number;
+    },
+    @Req() req: any,
+  ) {
+    const userId = Number(req.user?.userId ?? 1);
+    const result = await this.sameCityCrossDayOptimizerService.analyzePlanId(planId, {
+      quoteId: body?.quoteId,
+      dryRun: false,
+      maxMoves: body?.maxMoves,
+    });
+
+    return {
+      ...result,
+      requestedByUserId: userId,
+    };
   }
 
   @Post('templates/save')

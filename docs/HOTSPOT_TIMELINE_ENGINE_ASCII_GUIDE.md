@@ -8,10 +8,82 @@ It focuses on:
 - how Day-2 intercity reservation works before destination loopback days
 - how multi-pass scheduling, rejection, retry, and filler insertion work
 - why strict dedup is preserved across the plan
+- how same-city optimizer work must be verified against the active workspace and live development database
 
 Scope note:
 - this guide describes the current runtime architecture and its stable invariants
 - hotspot selection, scheduling, and manual insertion rules are intended to stay global across itineraries
+
+
+## Active Workspace Source Of Truth
+
+All hotspot-timeline debugging and validation must use the currently opened project workspace,
+its active backend/frontend source files, and the configured development database.
+
+Do not treat ZIP archives, extracted snapshots, backup folders, or copied source trees as runtime truth
+unless import tracing proves the running application actually uses them.
+
+ASCII:
+
+[Active VS Code workspace]
+           |
+           v
+[Real backend source + real frontend source]
+           |
+           v
+[Configured local DB + running API]
+           |
+           v
+[Rebuild itinerary through normal flow]
+           |
+           v
+[Read DB rows + details API + rendered UI]
+
+Required investigation order:
+1. inspect active source files
+2. inspect current DB rows
+3. reproduce through the normal save/rebuild flow
+4. verify persisted timeline rows
+5. verify details API response
+6. verify frontend rendering
+
+Rule:
+- do not declare a hotspot-timeline fix complete based only on static code review or archive comparison
+
+
+## Normal Rebuild Ownership
+
+Same-city cross-day rebalance belongs to the normal itinerary rebuild pipeline.
+It is not a special proof-only mode and it must not depend on a quote-specific shortcut.
+
+ASCII:
+
+[Create / Edit / Rebuild request]
+              |
+              v
+[Persist plan + routes + travellers + vehicles]
+              |
+              v
+[Build normal hotspot timeline]
+              |
+              v
+[Apply same-city cross-day optimizer]
+              |
+              v
+[Rebuild affected routes through same timeline engine]
+              |
+              v
+[Persist final travel + visit rows]
+              |
+              v
+[Details API]
+              |
+              v
+[Frontend itinerary page]
+
+Rule:
+- if a browser user clicks submit on the normal itinerary flow, the same-city optimizer result must already be reflected in the rebuilt persisted timeline
+- no UI-only repair is allowed for missing travel rows, stale times, or adjacency defects
 
 
 ## High-Level Pipeline
@@ -180,6 +252,147 @@ For each route:
 - add destination transfer/hotel/checkin rules
 
 
+## Same-City Cross-Day Rebalance And Travel-Leg Integrity
+
+This section documents the newer timeline rules clarified during July 2026 debugging.
+
+### 1) Rebalance is part of normal rebuild
+
+Same-city cross-day hotspot rebalancing is not a special UI-only mode.
+It belongs to normal timeline generation for:
+- create flows
+- update/edit flows
+- standard rebuilds triggered by `type=itineary_basic_info`
+- route-optimized rebuilds, as long as they still rebuild the timeline
+
+ASCII:
+
+[Save / Update request]
+          |
+          v
+[Plan + Route rows persisted]
+          |
+          v
+[Timeline rebuild starts]
+          |
+          v
+[Same-city chain detected?]
+    |                 |
+   no                 yes
+    |                 |
+    v                 v
+[normal build]   [rebalance movable auto hotspots]
+                        |
+                        v
+              [persist final travel + visit rows]
+
+Rule:
+- no special request flag should be required just to enable this behavior for the normal edit/save path
+
+
+### 2) Fixed anchors stay pinned
+
+The optimizer may move movable auto hotspots between consecutive same-city days,
+but it must not freely reshuffle everything.
+
+Pinned first:
+- manual hotspots
+- fixed anchors
+- protected priority hotspots
+- transfer-only terminal protection
+
+Movable after that:
+- optional / filler auto hotspots
+- non-anchor auto hotspots that fit a same-city rebalance
+
+ASCII:
+
+[Day hotspot pool]
+      |
+      v
+[Split into pinned vs movable]
+      |
+      +--> pinned
+      |    - manual
+      |    - fixed anchor
+      |    - protected priority hotspot
+      |    - transfer-only terminal protection
+      |
+      v
+[Only movable set is eligible for cross-day shift]
+
+
+### 3) Near-neighbor hotspots should stay adjacent when moved
+
+When two movable hotspots are effectively neighbors in the same city,
+the preferred outcome is to keep them on the same rebuilt day and beside each other.
+
+July 2026 example:
+- `Charminar`
+- `Macca Masjid`
+
+ASCII:
+
+[Day 1]               [Day 2]
+  Macca                Charminar
+    |                      |
+    +------ same-city -----+
+            near-neighbor
+                 |
+                 v
+     [rebalance to target day together]
+                 |
+                 v
+[Day 2 rebuilt order]
+  ... -> Charminar -> Macca Masjid -> ...
+
+Rule:
+- unrelated fillers should not be inserted between a near-neighbor pair if the rebalance logic is explicitly trying to keep them together
+
+Verified live result for `DVI20260798` after the current rebuild fix:
+- `Macca Masjid` moves off Day 1 and onto Day 2
+- `Macca Masjid` keeps its inbound travel row
+- the current verified Day 2 order is `Macca Masjid -> Charminar`
+- this is still considered valid adjacency because the pair remains consecutive with a short local hop
+- the earlier broken overlap and orphan-visit state is no longer present
+
+
+### 4) No persisted visit row should lose its inbound travel leg
+
+A sightseeing row is not valid on its own.
+If `item_type = 4` exists after rebuild, the matching inbound `item_type = 3` must also exist.
+
+ASCII:
+
+[travel row item_type=3]
+          |
+          v
+[visit row item_type=4]
+
+Valid persisted pair:
+  3 -> 4
+
+Invalid persisted shape:
+  4 only
+
+This rule still applies after:
+- same-day reorder
+- manual insertion
+- same-city cross-day movement
+- final persistence repair
+
+Practical meaning:
+- no hotspot card in the details UI should appear as an orphaned visit because rebuild dropped or forgot the inbound travel row
+
+Verified live result for `DVI20260798`:
+- Day 2 now persists `Hotel -> Macca Masjid -> Charminar`
+- `Macca Masjid` has an inbound travel row `09:00 AM -> 09:30 AM`
+- `Macca Masjid` visit is `09:30 AM -> 09:50 AM`
+- `Macca Masjid -> Charminar` travel is `09:50 AM -> 09:55 AM`
+- `Charminar` visit is `09:55 AM -> 10:55 AM`
+- therefore the rebuilt timeline has both adjacency and travel-leg integrity for this pair
+
+
 ## Manual Hotspot Preview/Apply Flow
 
 Manual hotspot insertion does not bypass the engine.
@@ -227,6 +440,31 @@ Travel rows are not all resolved the same way.
 2. City-to-city travel
 - prefers dvi_stored_locations exact match
 - falls back to coordinates when possible
+
+2A. Short local hotspot-to-hotspot movement
+- when both hotspot coordinates are known, helper should use coordinate distance
+- current local rule uses Haversine base distance with a `1.5x` correction factor
+- current local rule does not add the old common road buffer
+- very short local hops clamp to a minimum travel time of `00:05:00`
+
+ASCII:
+
+[source hotspot coords] + [dest hotspot coords]
+                  |
+                  v
+      [DistanceHelper.fromCoordinates()]
+                  |
+                  v
+    [raw haversine km * 1.5 correction]
+                  |
+                  v
+    [min local travel time = 5 minutes]
+
+Example:
+- `Charminar -> Macca Masjid`
+- raw straight-line distance is only about `0.053 km`
+- current helper result is about `0.079 km` after the `1.5x` correction
+- this pair should therefore behave like a near-adjacent local hop, not like a generic city transfer
 
 3. Last-route return to departure/airport
 - must pass BOTH sourceCoords and destCoords when building item_type = 7

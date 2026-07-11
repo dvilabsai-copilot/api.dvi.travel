@@ -29,6 +29,7 @@ import { HobseHotelBookingService } from "./services/hobse-hotel-booking.service
 import { AxisRoomsBookingPushService } from "./services/axisrooms-booking-push.service";
 import { StaahBookingPushService } from "./services/staah-booking-push.service";
 import { HotelStayBlockValidationService } from "./services/hotel-stay-block-validation.service";
+import { SameCityCrossDayOptimizerService } from "./services/same-city-cross-day-optimizer.service";
 import { ItineraryHotelDetailsTboService } from "./itinerary-hotel-details-tbo.service";
 import { TimelineEnricher } from "./engines/helpers/timeline.enricher";
 import { normalizePassengerTitle } from "../../common/utils/passenger-title.util";
@@ -479,6 +480,23 @@ export class ItinerariesService {
     };
   }
 
+  private async applySameCityCrossDayOptimizerAfterSave(planId: number, quoteId?: string | null): Promise<void> {
+    const result = await this.sameCityCrossDayOptimizerService.analyzePlanId(planId, {
+      quoteId: quoteId || undefined,
+      dryRun: false,
+      maxMoves: 10,
+    });
+
+    console.log('[ItinerariesService][SameCityCrossDayOptimizerAfterSave]', {
+      planId,
+      quoteId: quoteId || null,
+      enabled: result.enabled,
+      applied: result.applied,
+      proposedMoves: result.proposedMoves.length,
+      skippedReason: result.skippedReason,
+    });
+  }
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly planEngine: PlanEngineService,
@@ -499,6 +517,7 @@ export class ItinerariesService {
     private readonly hotelStayBlockValidationService: HotelStayBlockValidationService,
     private readonly hotelDetailsTboService: ItineraryHotelDetailsTboService,
     private readonly supplementNormalizer: SupplementNormalizerService,
+    private readonly sameCityCrossDayOptimizerService: SameCityCrossDayOptimizerService,
   ) {}
 
   private parseCsvNumberList(value: unknown): number[] {
@@ -3236,6 +3255,21 @@ const guideSlotCsv = guideSlots.join(',');
         planId: result.planId,
         quoteId: String(result?.quoteId || ''),
       });
+    }
+
+    if (isFullBasicInfoRebuildType) {
+      createPlanStage = 'post_transaction_cross_day_optimizer';
+      try {
+        await this.applySameCityCrossDayOptimizerAfterSave(
+          result.planId,
+          String(result?.quoteId || ''),
+        );
+      } catch (optimizerError) {
+        console.error('[ItinerariesService] same-city cross-day optimizer failed (continuing createPlan response):', {
+          planId: result.planId,
+          message: String((optimizerError as any)?.message || optimizerError || 'Unknown optimizer error'),
+        });
+      }
     }
 
     // Step 10: Persist a reusable template snapshot for this itinerary shape.
@@ -34363,6 +34397,7 @@ pricing: {
   async rebuildRouteHotspotsForDay(planId: number, routeId: number, userId: number) {
     const normalizedPlanId = Number(planId);
     const normalizedRouteId = Number(routeId);
+    let planQuoteId = "";
 
     const rebuildResult = await this.prisma.$transaction(async (tx) => {
       const route = await (tx as any).dvi_itinerary_route_details.findFirst({
@@ -34374,6 +34409,7 @@ pricing: {
         },
         select: {
           itinerary_route_ID: true,
+          excluded_hotspot_ids: true,
         },
       });
 
@@ -34382,6 +34418,45 @@ pricing: {
           `Route ${normalizedRouteId} does not belong to plan ${normalizedPlanId} or is no longer active`,
         );
       }
+
+      const oldRoutes = await (tx as any).dvi_itinerary_route_details.findMany({
+        where: {
+          itinerary_plan_ID: normalizedPlanId,
+          deleted: 0,
+          status: 1,
+        },
+        select: {
+          itinerary_route_ID: true,
+          itinerary_route_date: true,
+        },
+      });
+      const oldRouteDateMap = new Map(
+        oldRoutes.map((row: any) => [Number(row.itinerary_route_ID || 0), row.itinerary_route_date]),
+      );
+      const oldHotspots = await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
+        where: {
+          itinerary_plan_ID: normalizedPlanId,
+          item_type: 4,
+          deleted: 0,
+          status: 1,
+          hotspot_plan_own_way: { not: 1 },
+        },
+      });
+      const existingHotspotsWithDates = oldHotspots.map((row: any) => ({
+        ...row,
+        route_date: oldRouteDateMap.get(Number(row.itinerary_route_ID || 0)),
+      }));
+
+      const planRow = await (tx as any).dvi_itinerary_plan_details.findFirst({
+        where: {
+          itinerary_plan_ID: normalizedPlanId,
+          deleted: 0,
+        },
+        select: {
+          itinerary_quote_ID: true,
+        },
+      });
+      planQuoteId = String(planRow?.itinerary_quote_ID || "");
 
       const manualHotspotRows = await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
         where: {
@@ -34395,6 +34470,29 @@ pricing: {
           route_hotspot_ID: true,
         },
       });
+
+      const existingExcludedHotspotIds = Array.isArray((route as any)?.excluded_hotspot_ids)
+        ? (route as any).excluded_hotspot_ids
+            .map((id: any) => Number(id))
+            .filter((id: number) => Number.isFinite(id) && id > 0)
+        : [];
+
+      if (manualHotspotRows.length === 0 && existingExcludedHotspotIds.length === 0) {
+        return {
+          success: true,
+          planId: normalizedPlanId,
+          routeId: normalizedRouteId,
+          message: 'Day route is already clean; no rebuild was needed',
+          rebuildSummary: {
+            totalRoutesProcessed: 0,
+            totalHotspotsScheduled: 0,
+            totalParkingRowsScheduled: 0,
+          },
+          warnings: [],
+          routeRejectionSummaryByRoute: {},
+          skipped: true,
+        };
+      }
 
       const manualRouteHotspotIds = manualHotspotRows
         .map((row: any) => Number(row.route_hotspot_ID || 0))
@@ -34459,7 +34557,11 @@ pricing: {
       // was auto-picking Ramanatha/Agni instead of returning to the reset baseline.
       // Rebuild the full plan after clearing this route's manual rows so the target
       // day is recalculated against the same truth the initial itinerary build uses.
-      const rebuildResult = await this.hotspotEngine.rebuildRouteHotspots(tx, normalizedPlanId);
+      const rebuildResult = await this.hotspotEngine.rebuildRouteHotspots(
+        tx,
+        normalizedPlanId,
+        existingHotspotsWithDates,
+      );
 
       const postRouteVisitCount = await (tx as any).dvi_itinerary_route_hotspot_details.count({
         where: {
@@ -34487,13 +34589,16 @@ pricing: {
       };
     }, { timeout: 60000 });
 
-    await this.hotspotEngine.rebuildParkingCharges(normalizedPlanId, Number(userId || 1));
-    await this.forceRebuildVehiclePricingAfterHotspotChange(normalizedPlanId, normalizedRouteId);
+    if (!(rebuildResult as any)?.skipped) {
+      await this.applySameCityCrossDayOptimizerAfterSave(normalizedPlanId, planQuoteId);
+      await this.hotspotEngine.rebuildParkingCharges(normalizedPlanId, Number(userId || 1));
+      await this.forceRebuildVehiclePricingAfterHotspotChange(normalizedPlanId, normalizedRouteId);
+    }
 
     return {
       ...rebuildResult,
-      parkingChargesRebuilt: true,
-      vehiclePricingRebuilt: true,
+      parkingChargesRebuilt: !(rebuildResult as any)?.skipped,
+      vehiclePricingRebuilt: !(rebuildResult as any)?.skipped,
     };
   }
 

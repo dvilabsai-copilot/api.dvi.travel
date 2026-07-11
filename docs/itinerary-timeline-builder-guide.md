@@ -156,6 +156,85 @@ Critical operational rule:
   - stale `days[].segments[0].timeRange` from old `item_type = 1` data
 - the fix is a route rebuild, not just a page refresh. [Verified from live debug of `PLAN_ID=9871`]
 
+### 6A. Same-city cross-day hotspot rebalance is part of normal rebuild
+
+Primary backend files:
+- `api.dvi.travel/src/modules/itineraries/services/same-city-cross-day-optimizer.service.ts`
+- `api.dvi.travel/src/modules/itineraries/engines/hotspot-engine.service.ts`
+- `api.dvi.travel/src/modules/itineraries/engines/helpers/timeline.builder.ts`
+
+Runtime rule:
+- same-city cross-day hotspot rebalancing is timeline-generation behavior, not a separate UI-only mode
+- it must run for normal create/update rebuilds triggered by `type=itineary_basic_info`
+- it must also remain compatible with route-optimized flows such as `type=itineary_basic_info_with_optimized_route`
+- this behavior must not depend on a special request flag introduced only for one screen or one endpoint shape
+
+Implementation rule:
+- `SameCityCrossDayOptimizerService` must build one `sameCityAllocationPlan` and pass it into the normal rebuild path
+- `HotspotEngineService.rebuildRouteHotspots(...)` must forward that plan into `TimelineBuilder.buildTimelineForPlan(...)`
+- `TimelineBuilder` must consume `desiredMovableOrderByRoute` and `preferredAdjacencyPairsByRoute` while scoring filler/movable hotspots on the rebuilt target day
+- this keeps the optimizer decision alive during the actual persistence pass instead of losing it between "analyze" and "rebuild"
+
+Selection rule:
+- the optimizer may move movable auto hotspots between consecutive same-city days
+- fixed anchors must stay pinned on their route
+- manual hotspots must stay pinned unless the user explicitly changes them through manual-edit flows
+- priority hotspots are treated as fixed anchors before optional/filler auto hotspots are considered for movement
+- transfer-only terminal days keep their no-sightseeing protection and must not receive pushed sightseeing just because spare time appears to exist
+
+Adjacency rule:
+- when two movable hotspots are effectively neighbors and belong to the same same-city chain, the preferred outcome is to keep them on the same target day and adjacent in the persisted order
+- the motivating July 2026 example was `Charminar` with `Macca Masjid`; once moved, the pair should sit beside each other in the rebuilt day rather than being separated again by unrelated fillers
+
+Verified live rebuild note:
+- on `2026-07-12`, quote `DVI20260798` was rebuilt through the normal `type=itineary_basic_info` flow and the moved hotspot no longer stayed on Day 1
+- the rebuilt Day 2 persisted order became `Macca Masjid -> Charminar -> ...`
+- the important invariant is that the moved near-neighbor hotspot stayed on the target day and adjacent to its intended cluster, instead of being pulled back apart by unrelated fillers
+
+### 6B. Rebuild persistence must preserve travel-leg integrity
+
+Primary backend files:
+- `api.dvi.travel/src/modules/itineraries/engines/helpers/travel-segment.builder.ts`
+- `api.dvi.travel/src/modules/itineraries/engines/helpers/timeline.builder.ts`
+- `api.dvi.travel/src/modules/itineraries/engines/hotspot-engine.service.ts`
+
+Persistence contract:
+- every persisted sightseeing visit row (`item_type = 4`) must keep a matching inbound travel segment (`item_type = 3`) after rebuild
+- this remains true after reorder, after same-day insertion, and after cross-day movement
+- no hotspot should become an orphaned visit row simply because it was moved beside another hotspot later in the rebuild
+- if a visit row is retained, its inbound travel row must be regenerated and persisted with it
+
+Verified live rebuild note:
+- for the same verified `DVI20260798` rebuild, Day 2 persisted:
+  - `Hotel -> Macca Masjid` travel row
+  - `Macca Masjid` visit row
+  - `Macca Masjid -> Charminar` travel row
+  - `Charminar` visit row
+- this confirms the rebuild did not leave the moved hotspot without its inbound leg
+
+Practical debugging rule:
+- if the UI shows a hotspot card but the travel strip into that hotspot is missing, inspect the persisted `dvi_itinerary_route_hotspot_details` sequence first
+- treat that as a rebuild/persistence contract failure, not as a frontend rendering problem, unless the API payload already contains the missing segment
+
+### 6C. Short local hotspot hops use coordinate distance, not city-level distance
+
+Primary backend file:
+- `api.dvi.travel/src/modules/itineraries/engines/helpers/distance.helper.ts`
+
+Distance rule:
+- when both source and destination hotspot coordinates are known, `DistanceHelper.fromSourceAndDestination()` should resolve the hop from coordinates instead of falling back to a city-to-city stored-location row
+- the current helper uses a Haversine base distance with a `1.5x` correction factor for local road realism
+- local sightseeing hops do not add the old common road buffer
+- very short local hops still clamp to a minimum travel time of `00:05:00`
+
+Implication:
+- extremely close pairs such as `Charminar` and `Macca Masjid` should be treated as near-adjacent local movement, not as a generic city transfer
+- if a rebuilt day separates such a pair, that should come from scheduling/selection logic, not from an inflated city-to-city distance lookup
+
+Verified live rebuild note:
+- the rebuilt `Macca Masjid -> Charminar` hop persisted as a short local leg rather than a large city-level transfer
+- this is the expected shape when both hotspot coordinates are available and the local-hop calculation path is used
+
 ### 7. Itinerary details API reads persisted route rows
 
 Primary backend file:
