@@ -1,5 +1,13 @@
 // add imports
-import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ItineraryViaRoutesService } from './itinerary-via-routes.service';
 import { CheckDistanceLimitDto } from './dto/check-distance-limit.dto';
@@ -21,6 +29,7 @@ export class ItineraryViaRoutesController {
   }
 
   @Post('check-distance-limit')
+  @HttpCode(HttpStatus.OK)
   async checkDistanceLimit(@Body() dto: CheckDistanceLimitDto) {
     return this.itineraryViaRoutesService.checkDistanceLimit(dto);
   }
