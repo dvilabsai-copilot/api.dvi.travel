@@ -558,6 +558,20 @@ Runtime behavior is:
 - unresolved conflicts are not treated as informational only
 - this ensures manual hotspots still obey the same timing/distance/slot rules as normal engine output
 
+Shared solver contract:
+
+- Fit Here and Auto Preview use the same backend rescue/removal engine.
+- The only difference is how anchors are enumerated:
+  - Fit Here evaluates the single clicked anchor gap.
+  - Auto Preview evaluates every valid anchor on the route and ranks the results using the same solver.
+- Do not maintain a separate rule set for the two modes.
+- If a hotspot has multiple same-day operating windows, keep the windows separate and let the solver wait for the next valid window when the route still fits.
+- That wait behavior is allowed for manual or stronger-priority hotspots; priority 0 auto hotspots should not wait across a long closed gap just to catch a later shift.
+
+Example:
+
+- if a hotspot is closed at `1:36 PM` but re-opens at `4:00 PM`, manual Fit Here may wait for the later window instead of failing early, provided the route still fits after the wait
+
 
 ## Travel Distance Source Of Truth
 

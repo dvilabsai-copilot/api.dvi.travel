@@ -6,6 +6,13 @@ Manual Fit Here is not a generic best-fit insertion.
 
 The selected manual hotspot is the primary objective.
 
+Shared solver contract:
+
+- Fit Here and Auto Preview must use the same backend rescue/removal engine.
+- Fit Here evaluates only the clicked anchor gap.
+- Auto Preview enumerates every valid anchor in the current route and feeds each candidate into the same solver.
+- These rules are shared; do not fork a second rule set for the auto path.
+
 The exact clicked anchor is tried first.
 If it fails because of cross-city direction, backtracking, route end, or operating hours, do not immediately return `CANNOT_FIT`.
 Continue rescue.
@@ -166,6 +173,9 @@ For every kept survivor:
   - selected hotspot cannot fit unless this blocker is removed
 - Do not remove simply because arrival is early. Waiting is allowed.
 - Do not keep a hotspot visited after closing.
+- If a hotspot has a later same-day opening window, the solver may wait for that later window when the route still fits.
+- That later-window wait is allowed for manual or stronger-priority insertions.
+- Priority 0 auto hotspots should not wait across a long closed gap just to catch a later shift.
 
 Selected-hotspot rule:
 
