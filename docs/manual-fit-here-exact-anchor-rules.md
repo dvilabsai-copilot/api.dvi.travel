@@ -15,6 +15,13 @@ Use this together with:
 
 - [manual-hotspot-reorder-and-removal-rules.md](C:/wamp64/www/dvi_fullstack/api.dvi.travel/docs/manual-hotspot-reorder-and-removal-rules.md)
 
+## Fit Here vs Auto Preview
+
+- Fit Here evaluates one clicked anchor gap.
+- Auto Preview evaluates every valid anchor in the current route and reuses the same solver.
+- The difference is anchor enumeration, not a different rule set.
+- When the selected hotspot has a later same-day operating window, the solver may wait for that window if the route still fits.
+
 ## Exact anchor means
 
 Exact anchor is the literal UI gap the user clicked.
