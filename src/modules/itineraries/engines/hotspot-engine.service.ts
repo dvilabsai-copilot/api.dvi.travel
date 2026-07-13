@@ -1216,6 +1216,7 @@ export class HotspotEngineService {
       const repairKey = `${routeId}|${hotspotId}|${Number(row?.hotspot_order || 0)}`;
       if (!travelRepairKeys.has(repairKey)) {
         travelRepairKeys.add(repairKey);
+        const { route_hotspot_ID: _routeHotspotId, ...rowWithoutPrimaryKey } = row as any;
         const visitStart = row?.hotspot_start_time ? new Date(row.hotspot_start_time) : null;
         const travelDurationMs = 5 * 60 * 1000;
         const fallbackStart = visitStart && Number.isFinite(visitStart.getTime())
@@ -1223,7 +1224,7 @@ export class HotspotEngineService {
           : new Date();
 
         travelRepairRows.push({
-          ...row,
+          ...rowWithoutPrimaryKey,
           item_type: 3,
           hotspot_start_time: fallbackStart,
           hotspot_end_time: visitStart && Number.isFinite(visitStart.getTime())
@@ -1432,11 +1433,12 @@ export class HotspotEngineService {
         return routeId > 0 && hotspotId > 0 && !persistedTravelKeys.has(`${routeId}|${hotspotId}`);
       })
       .map((row: any) => {
+        const { route_hotspot_ID: _routeHotspotId, ...rowWithoutPrimaryKey } = row as any;
         const visitStart = row?.hotspot_start_time ? new Date(row.hotspot_start_time) : new Date();
         const travelDurationMs = 5 * 60 * 1000;
         const syntheticStart = new Date(visitStart.getTime() - travelDurationMs);
         return {
-          ...row,
+          ...rowWithoutPrimaryKey,
           item_type: 3,
           hotspot_start_time: syntheticStart,
           hotspot_end_time: visitStart,
