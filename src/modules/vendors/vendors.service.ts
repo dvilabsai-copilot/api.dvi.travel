@@ -3347,20 +3347,28 @@ const resolution = await this.resolveVehicleLocationIdFromBranch({
     };
 
     const duplicateLocal = await this.prisma.dvi_time_limit.findFirst({
-      where: {
-        vendor_id: vendorId,
-        vendor_vehicle_type_id: vendorVehicleTypeId,
-        hours_limit: hours,
-        km_limit: km,
-        deleted: 0,
-        ...(timeLimitId ? { NOT: { time_limit_id: timeLimitId } } : {}),
-      },
-      select: { time_limit_id: true },
-    });
+  where: {
+    vendor_id: vendorId,
+    vendor_vehicle_type_id: vendorVehicleTypeId,
+    deleted: 0,
+    ...(timeLimitId
+      ? {
+          time_limit_id: {
+            not: timeLimitId,
+          },
+        }
+      : {}),
+  },
+  select: {
+    time_limit_id: true,
+  },
+});
 
-    if (duplicateLocal) {
-      throw new BadRequestException('Already exist for this vehicle type');
-    }
+if (duplicateLocal) {
+  throw new BadRequestException(
+    'Local KM Limit already exists for this vehicle type',
+  );
+}
 
     if (timeLimitId) {
       return this.prisma.dvi_time_limit.update({
@@ -3369,19 +3377,19 @@ const resolution = await this.resolveVehicleLocationIdFromBranch({
       });
     }
 
-    const existing = await this.prisma.dvi_time_limit.findFirst({
-      where: {
-        vendor_id: vendorId,
-        vendor_vehicle_type_id: vendorVehicleTypeId,
-        hours_limit: hours,
-        km_limit: km,
-        deleted: 0,
-      },
-    });
+    // const existing = await this.prisma.dvi_time_limit.findFirst({
+    //   where: {
+    //     vendor_id: vendorId,
+    //     vendor_vehicle_type_id: vendorVehicleTypeId,
+    //     hours_limit: hours,
+    //     km_limit: km,
+    //     deleted: 0,
+    //   },
+    // });
 
-    if (existing) {
-      throw new BadRequestException('Already exist for this vehicle type');
-    }
+    // if (existing) {
+    //   throw new BadRequestException('Already exist for this vehicle type');
+    // }
 
     return this.prisma.dvi_time_limit.create({
       data: {
