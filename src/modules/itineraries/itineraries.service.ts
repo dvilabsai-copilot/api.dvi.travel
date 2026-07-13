@@ -13397,30 +13397,48 @@ pricing: {
     const manualHotspotTxTimeoutMs = 180000;
     const applyRollbackError = new Error('__APPLY_MANUAL_HOTSPOT_BATCH_ROLLBACK__');
     let applyResult: any;
+    const maxApplyAttempts = 3;
 
-    try {
-      await this.prisma.$transaction(async (tx) => {
-        applyResult = await this.runManualHotspotBatchWithinTransaction(
-          tx,
-          Number(planId),
-          Number(routeId),
-          hotspotIds,
-          Number(userId || 1),
-          {
-            ...options,
-            previewOnly: false,
-          },
-        );
+    for (let attempt = 1; attempt <= maxApplyAttempts; attempt += 1) {
+      try {
+        await this.prisma.$transaction(async (tx) => {
+          applyResult = await this.runManualHotspotBatchWithinTransaction(
+            tx,
+            Number(planId),
+            Number(routeId),
+            hotspotIds,
+            Number(userId || 1),
+            {
+              ...options,
+              previewOnly: false,
+            },
+          );
 
-        // Non-success apply responses should not persist any intermediate rebuild/removal state.
-        if (applyResult?.success !== true || applyResult?.inserted !== true) {
-          throw applyRollbackError;
+          // Non-success apply responses should not persist any intermediate rebuild/removal state.
+          if (applyResult?.success !== true || applyResult?.inserted !== true) {
+            throw applyRollbackError;
+          }
+        }, { timeout: manualHotspotTxTimeoutMs });
+        break;
+      } catch (error: any) {
+        if (error === applyRollbackError) {
+          break;
         }
-      }, { timeout: manualHotspotTxTimeoutMs });
-    } catch (error: any) {
-      if (error !== applyRollbackError) {
-        await this.cleanupStaleManualHotspotRows(Number(planId), Number(routeId), normalizedApplyHotspotIds);
-        throw error;
+
+        if (!this.isRetryableManualPreviewTransactionError(error) || attempt >= maxApplyAttempts) {
+          await this.cleanupStaleManualHotspotRows(Number(planId), Number(routeId), normalizedApplyHotspotIds);
+          throw error;
+        }
+
+        console.warn('[ManualFit][apply_tx_retry]', {
+          planId: Number(planId),
+          routeId: Number(routeId),
+          hotspotIds: normalizedApplyHotspotIds,
+          attempt,
+          maxApplyAttempts,
+          message: String(error?.message || ''),
+        });
+        await new Promise((resolve) => setTimeout(resolve, attempt * 100));
       }
     }
 
@@ -14552,6 +14570,23 @@ pricing: {
         });
       }
     }
+
+    // The exact-anchor rebuild schedules rows before the final display-timeline
+    // enrichment pass. Load the complete same-day operating-window summary now
+    // so split shifts (for example 05:00-08:00, 16:00-19:00) are available to
+    // adjustManualFitVisitStartToOperatingWindow. Without this, a manual
+    // hotspot arriving between shifts is incorrectly marked as closed instead
+    // of waiting for the next valid window.
+    originalAttractions = await this.enrichManualFitPreviewTimelineWithOperatingHours(
+      Number(params.planId),
+      Number(params.routeId),
+      originalAttractions,
+    );
+    // The enrichment returns cloned row objects; refresh the selected-row
+    // reference so the scheduler receives the enriched split-window fields.
+    selectedAttractionRow =
+      originalAttractions.find((row: any) => getHotspotId(row) === Number(params.targetHotspotId || 0))
+      || selectedAttractionRow;
 
     const survivingAttractions = originalAttractions.filter((row: any) => {
       const hotspotId = getHotspotId(row);
@@ -32075,22 +32110,24 @@ pricing: {
             .filter((id: number) => id > 0 && !preferredOrder.includes(id)),
         ];
 
-        let nextOrder = 1;
-        for (const hotspotId of orderedIds) {
-          await (tx as any).dvi_itinerary_route_hotspot_details.updateMany({
-            where: {
-              itinerary_plan_ID: Number(planId),
-              itinerary_route_ID: Number(routeId),
-              hotspot_ID: Number(hotspotId),
-              item_type: 4,
-              deleted: 0,
-            },
-            data: {
-              hotspot_order: nextOrder,
-              updatedon: new Date(),
-            },
-          });
-          nextOrder += 1;
+        if (orderedIds.length > 0) {
+          const orderRows = orderedIds.map((hotspotId, index) => Prisma.sql`
+            SELECT ${Number(hotspotId)} AS hotspot_ID, ${index + 1} AS new_order
+          `);
+
+          await (tx as any).$executeRaw(Prisma.sql`
+            UPDATE dvi_itinerary_route_hotspot_details AS h
+            INNER JOIN (
+              ${Prisma.join(orderRows, ' UNION ALL ')}
+            ) AS ord ON ord.hotspot_ID = h.hotspot_ID
+            SET
+              h.hotspot_order = ord.new_order,
+              h.updatedon = ${new Date()}
+            WHERE h.itinerary_plan_ID = ${Number(planId)}
+              AND h.itinerary_route_ID = ${Number(routeId)}
+              AND h.item_type = 4
+              AND h.deleted = 0
+          `);
         }
       }
     }
@@ -34398,7 +34435,6 @@ pricing: {
     const normalizedPlanId = Number(planId);
     const normalizedRouteId = Number(routeId);
     let planQuoteId = "";
-
     const rebuildResult = await this.prisma.$transaction(async (tx) => {
       const route = await (tx as any).dvi_itinerary_route_details.findFirst({
         where: {
@@ -34587,7 +34623,11 @@ pricing: {
         warnings: rebuildResult.warnings,
         routeRejectionSummaryByRoute: rebuildResult.routeRejectionSummaryByRoute,
       };
-    }, { timeout: 60000 });
+    // A day reset rebuilds the complete plan so cross-day allocation remains
+    // canonical. Its hotspot/timing writes can exceed Prisma's 60s default
+    // on larger plans; keep the transaction alive long enough to finish
+    // instead of surfacing a generic HTTP 500 timeout.
+    }, { timeout: 180000, maxWait: 30000 });
 
     if (!(rebuildResult as any)?.skipped) {
       await this.applySameCityCrossDayOptimizerAfterSave(normalizedPlanId, planQuoteId);

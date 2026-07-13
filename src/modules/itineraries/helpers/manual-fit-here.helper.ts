@@ -913,6 +913,11 @@ export async function previewManualHotspotAutoFitHereImpl(
     removedCount: number;
   }> = [];
   const startedAtMs = Date.now();
+  // Each anchor preview uses a transaction that rebuilds/resequences the same
+  // route rows. Running those transactions in parallel causes MySQL 1213
+  // deadlocks, so keep the route scan serialized. This still evaluates every
+  // anchor; it only controls the order in which the shared route is inspected.
+  const autoPreviewConcurrency = 1;
 
   console.log('[AutoFitHere][start]', {
     planId: Number(planId),
@@ -921,108 +926,125 @@ export async function previewManualHotspotAutoFitHereImpl(
     totalPositions: normalizedAnchors.length,
   });
 
-  for (let index = 0; index < normalizedAnchors.length; index += 1) {
-    const anchor = normalizedAnchors[index];
-    const anchorStartedAtMs = Date.now();
-    const anchorKey = [
-      anchor.anchorIntent,
-      Number(anchor.anchorIndex ?? index),
-      String(anchor.anchorFrom || ''),
-      String(anchor.anchorTo || ''),
-      Number(anchor.afterHotspotId || 0),
-      Number(anchor.beforeHotspotId || 0),
-    ].join(':');
-    const anchorLabel = String(
-      anchor?.anchorLabel ||
-      (anchor?.anchorIntent === 'AFTER_START'
-        ? 'Before first attraction'
-        : `After ${String(anchor?.anchorFrom || 'selected attraction')}`),
-    ).trim();
+  const anchorOutputs: any[] = new Array(normalizedAnchors.length);
+  let nextAnchorIndex = 0;
 
-    console.log('[AutoFitHere][anchor_start]', {
-      index: index + 1,
-      totalPositions: normalizedAnchors.length,
-      anchorKey,
-      anchorLabel,
-      anchorIntent: anchor.anchorIntent,
-      afterHotspotId: Number(anchor.afterHotspotId || 0) || null,
-      beforeHotspotId: Number(anchor.beforeHotspotId || 0) || null,
-    });
+  const runAutoPreviewWorker = async () => {
+    while (true) {
+      const index = nextAnchorIndex;
+      nextAnchorIndex += 1;
+      if (index >= normalizedAnchors.length) return;
 
-    try {
-      const attempt = await previewManualHotspotFitHereImpl.call(this, planId, {
-        routeId: Number(data.routeId),
-        selectedHotspotId: Number(data.selectedHotspotId),
-        anchor,
-        allowP3Removal: data.allowP3Removal === true,
-        allowP1P2Removal: data.allowP1P2Removal === true,
-      });
+      const anchor = normalizedAnchors[index];
+      const anchorStartedAtMs = Date.now();
+      const anchorKey = [
+        anchor.anchorIntent,
+        Number(anchor.anchorIndex ?? index),
+        String(anchor.anchorFrom || ''),
+        String(anchor.anchorTo || ''),
+        Number(anchor.afterHotspotId || 0),
+        Number(anchor.beforeHotspotId || 0),
+      ].join(':');
+      const anchorLabel = String(
+        anchor?.anchorLabel ||
+        (anchor?.anchorIntent === 'AFTER_START'
+          ? 'Before first attraction'
+          : `After ${String(anchor?.anchorFrom || 'selected attraction')}`),
+      ).trim();
 
-      const ranking = scoreManualAutoFitAttempt(attempt);
-      const elapsedMs = Date.now() - anchorStartedAtMs;
-      const removedCount = getManualAutoFitRemovedRows(attempt).length;
-
-      results.push({
-        anchorKey,
-        anchor,
-        attempt,
-        status: 'COMPLETED',
-        score: ranking.score,
-        rankReason: ranking.reason,
-        removedCount,
-      });
-
-      anchorPerformance.push({
-        anchorKey,
-        anchorLabel,
-        elapsedMs,
-        status: 'COMPLETED',
-        canConfirm: attempt?.canConfirm === true,
-        removedCount,
-      });
-
-      console.log('[AutoFitHere][anchor_done]', {
+      console.log('[AutoFitHere][anchor_start]', {
         index: index + 1,
         totalPositions: normalizedAnchors.length,
         anchorKey,
         anchorLabel,
-        elapsedMs,
-        resultType: String(attempt?.resultType || '').toUpperCase() || null,
-        canConfirm: attempt?.canConfirm === true,
-        removedCount,
-        score: ranking.score,
-      });
-    } catch (error: any) {
-      const elapsedMs = Date.now() - anchorStartedAtMs;
-      results.push({
-        anchorKey,
-        anchor,
-        attempt: null,
-        status: 'FAILED',
-        score: 0,
-        rankReason: 'This position could not be previewed.',
-        removedCount: 0,
-        error: error?.message || 'Could not preview this Fit Here position.',
+        anchorIntent: anchor.anchorIntent,
+        afterHotspotId: Number(anchor.afterHotspotId || 0) || null,
+        beforeHotspotId: Number(anchor.beforeHotspotId || 0) || null,
       });
 
-      anchorPerformance.push({
-        anchorKey,
-        anchorLabel,
-        elapsedMs,
-        status: 'FAILED',
-        canConfirm: false,
-        removedCount: 0,
-      });
+      try {
+        const attempt = await previewManualHotspotFitHereImpl.call(this, planId, {
+          routeId: Number(data.routeId),
+          selectedHotspotId: Number(data.selectedHotspotId),
+          anchor,
+          allowP3Removal: data.allowP3Removal === true,
+          allowP1P2Removal: data.allowP1P2Removal === true,
+        });
 
-      console.log('[AutoFitHere][anchor_failed]', {
-        index: index + 1,
-        totalPositions: normalizedAnchors.length,
-        anchorKey,
-        anchorLabel,
-        elapsedMs,
-        error: error?.message || 'Could not preview this Fit Here position.',
-      });
+        const ranking = scoreManualAutoFitAttempt(attempt);
+        const elapsedMs = Date.now() - anchorStartedAtMs;
+        const removedCount = getManualAutoFitRemovedRows(attempt).length;
+
+        anchorOutputs[index] = {
+          anchorKey,
+          anchor,
+          attempt,
+          status: 'COMPLETED',
+          score: ranking.score,
+          rankReason: ranking.reason,
+          removedCount,
+        };
+
+        anchorPerformance.push({
+          anchorKey,
+          anchorLabel,
+          elapsedMs,
+          status: 'COMPLETED',
+          canConfirm: attempt?.canConfirm === true,
+          removedCount,
+        });
+
+        console.log('[AutoFitHere][anchor_done]', {
+          index: index + 1,
+          totalPositions: normalizedAnchors.length,
+          anchorKey,
+          anchorLabel,
+          elapsedMs,
+          resultType: String(attempt?.resultType || '').toUpperCase() || null,
+          canConfirm: attempt?.canConfirm === true,
+          removedCount,
+          score: ranking.score,
+        });
+      } catch (error: any) {
+        const elapsedMs = Date.now() - anchorStartedAtMs;
+        anchorOutputs[index] = {
+          anchorKey,
+          anchor,
+          attempt: null,
+          status: 'FAILED',
+          score: 0,
+          rankReason: 'This position could not be previewed.',
+          removedCount: 0,
+          error: error?.message || 'Could not preview this Fit Here position.',
+        };
+
+        anchorPerformance.push({
+          anchorKey,
+          anchorLabel,
+          elapsedMs,
+          status: 'FAILED',
+          canConfirm: false,
+          removedCount: 0,
+        });
+
+        console.log('[AutoFitHere][anchor_failed]', {
+          index: index + 1,
+          totalPositions: normalizedAnchors.length,
+          anchorKey,
+          anchorLabel,
+          elapsedMs,
+          error: error?.message || 'Could not preview this Fit Here position.',
+        });
+      }
     }
+  };
+
+  await Promise.all(
+    Array.from({ length: Math.min(autoPreviewConcurrency, normalizedAnchors.length) }, () => runAutoPreviewWorker()),
+  );
+
+  for (const row of anchorOutputs) {
+    if (row) results.push(row);
   }
 
   const sortedResults = [...results].sort((a, b) => {
@@ -1266,14 +1288,17 @@ export async function confirmManualHotspotFitHereImpl(
   }
 
   const allowClosedHotspotConflict = payload?.allowClosedHotspotConflict === true;
+  const selectedOpeningConflict =
+    entry.selectedOpeningConflict ||
+    entry.manualInsertionFitSnapshot?.selectedOpeningConflict ||
+    null;
   const canForceClosedHotspotConflict =
     entry.canConfirm !== true &&
     allowClosedHotspotConflict === true &&
-    entry.manualInsertionFitSnapshot?.selectedOpeningConflict;
+    !!selectedOpeningConflict;
   const forceConflictPreferredTimesByHotspotId: Record<number, { start: Date; end: Date }> = {};
 
   if (canForceClosedHotspotConflict) {
-    const selectedOpeningConflict = entry.manualInsertionFitSnapshot?.selectedOpeningConflict || null;
     const attemptedVisitTime = selectedOpeningConflict?.attemptedVisitTime;
     const parsedAttemptedTimes = this.parsePreviewTimeRangeToUtcDates(attemptedVisitTime);
 
@@ -1406,6 +1431,7 @@ export async function confirmManualHotspotFitHereImpl(
   let applyAlreadyExists = false;
   let rollbackReason = 'CONFIRM_FAILED';
   const confirmStartedAt = Date.now();
+  const maxConfirmAttempts = 3;
   console.log('[FitHere][confirm_start]', {
     attemptId: entry.attemptId,
     planId,
@@ -1419,68 +1445,85 @@ export async function confirmManualHotspotFitHereImpl(
     beforeHotspotId: entry.beforeHotspotId,
   });
 
-  try {
-    await this.prisma.$transaction(async (tx: any) => {
-      applyResult = await this.applyManualFitAttemptWithinTransaction(tx, {
-        planId: Number(planId),
-        entry,
-        userId: Number(userId || 1),
-        canForceClosedHotspotConflict,
-        forceConflictPreferredTimesByHotspotId,
-        trustedPreviewConfirmation: entry.canConfirm === true,
-        trustedPreviewTimeline: entry.canConfirm === true
-          && Array.isArray(entry.proposedTimelineSnapshot)
-          && entry.proposedTimelineSnapshot.length > 0
-            ? entry.proposedTimelineSnapshot
-            : null,
-        sourceFingerprintChanged,
-        enforceTrustedPreviewConfirmation: trustedPreviewState.enforceTrustedPreviewConfirmation === true,
-      });
-      console.log('[FitHere][confirm_apply_result]', {
-        attemptId: entry.attemptId,
-        durationMs: Date.now() - confirmStartedAt,
-        success: applyResult?.success,
-        inserted: applyResult?.inserted,
-        alreadyExists: applyResult?.alreadyExists === true,
-        routeTimelineCount: Array.isArray(applyResult?.routeTimeline) ? applyResult.routeTimeline.length : null,
-        fullTimelineCount: Array.isArray(applyResult?.fullTimeline) ? applyResult.fullTimeline.length : null,
-      });
-
-      applyAlreadyExists = String(applyResult?.code || '') === 'MANUAL_HOTSPOT_ALREADY_EXISTS_IN_ROUTE';
-
-      if (applyResult?.success !== true || (applyResult?.inserted !== true && !applyAlreadyExists)) {
-        rollbackReason = 'APPLY_RESULT_REJECTED';
-        throw applyRollbackError;
-      }
-
-      const persistedTimeline = Array.isArray(applyResult?.routeTimeline)
-        ? applyResult.routeTimeline
-        : (Array.isArray(applyResult?.fullTimeline) ? applyResult.fullTimeline : []);
-      const persistedFingerprint = this.buildManualFitTimelineFingerprint(persistedTimeline);
-      const skipStrictFingerprintForClosedConflict =
-        canForceClosedHotspotConflict === true &&
-        applyResult?.forceConflictInsertionApplied === true;
-
-      if (
-        !skipStrictFingerprintForClosedConflict &&
-        !applyAlreadyExists &&
-        persistedFingerprint !== entry.proposedTimelineFingerprint
-      ) {
-        console.warn('[FitHere][confirm_fingerprint_mismatch]', {
-          attemptId: entry.attemptId,
-          expected: entry.proposedTimelineFingerprint,
-          actual: persistedFingerprint,
-          previewTimelineCount: entry.proposedTimelineSnapshot?.length || 0,
-          persistedTimelineCount: persistedTimeline.length,
+  for (let attempt = 1; attempt <= maxConfirmAttempts; attempt += 1) {
+    try {
+      await this.prisma.$transaction(async (tx: any) => {
+        applyResult = await this.applyManualFitAttemptWithinTransaction(tx, {
+          planId: Number(planId),
+          entry,
+          userId: Number(userId || 1),
+          canForceClosedHotspotConflict,
+          forceConflictPreferredTimesByHotspotId,
+          trustedPreviewConfirmation: entry.canConfirm === true,
+          trustedPreviewTimeline: entry.canConfirm === true
+            && Array.isArray(entry.proposedTimelineSnapshot)
+            && entry.proposedTimelineSnapshot.length > 0
+              ? entry.proposedTimelineSnapshot
+              : null,
+          sourceFingerprintChanged,
+          enforceTrustedPreviewConfirmation: trustedPreviewState.enforceTrustedPreviewConfirmation === true,
         });
-        rollbackReason = 'TIMELINE_MISMATCH';
-        throw applyRollbackError;
+        console.log('[FitHere][confirm_apply_result]', {
+          attemptId: entry.attemptId,
+          durationMs: Date.now() - confirmStartedAt,
+          success: applyResult?.success,
+          inserted: applyResult?.inserted,
+          alreadyExists: applyResult?.alreadyExists === true,
+          routeTimelineCount: Array.isArray(applyResult?.routeTimeline) ? applyResult.routeTimeline.length : null,
+          fullTimelineCount: Array.isArray(applyResult?.fullTimeline) ? applyResult.fullTimeline.length : null,
+        });
+
+        applyAlreadyExists = String(applyResult?.code || '') === 'MANUAL_HOTSPOT_ALREADY_EXISTS_IN_ROUTE';
+
+        if (applyResult?.success !== true || (applyResult?.inserted !== true && !applyAlreadyExists)) {
+          rollbackReason = 'APPLY_RESULT_REJECTED';
+          throw applyRollbackError;
+        }
+
+        const persistedTimeline = Array.isArray(applyResult?.routeTimeline)
+          ? applyResult.routeTimeline
+          : (Array.isArray(applyResult?.fullTimeline) ? applyResult.fullTimeline : []);
+        const persistedFingerprint = this.buildManualFitTimelineFingerprint(persistedTimeline);
+        const skipStrictFingerprintForClosedConflict =
+          canForceClosedHotspotConflict === true &&
+          applyResult?.forceConflictInsertionApplied === true;
+
+        if (
+          !skipStrictFingerprintForClosedConflict &&
+          !applyAlreadyExists &&
+          persistedFingerprint !== entry.proposedTimelineFingerprint
+        ) {
+          console.warn('[FitHere][confirm_fingerprint_mismatch]', {
+            attemptId: entry.attemptId,
+            expected: entry.proposedTimelineFingerprint,
+            actual: persistedFingerprint,
+            previewTimelineCount: entry.proposedTimelineSnapshot?.length || 0,
+            persistedTimelineCount: persistedTimeline.length,
+          });
+          rollbackReason = 'TIMELINE_MISMATCH';
+          throw applyRollbackError;
+        }
+      }, { timeout: manualHotspotTxTimeoutMs });
+      break;
+    } catch (error: any) {
+      if (error === applyRollbackError) {
+        break;
       }
-    }, { timeout: manualHotspotTxTimeoutMs });
-  } catch (error: any) {
-    if (error !== applyRollbackError) {
-      await this.cleanupStaleManualHotspotRows(Number(planId), Number(entry.routeId), normalizedHotspotIds);
-      throw error;
+
+      if (!this.isRetryableManualPreviewTransactionError(error) || attempt >= maxConfirmAttempts) {
+        await this.cleanupStaleManualHotspotRows(Number(planId), Number(entry.routeId), normalizedHotspotIds);
+        throw error;
+      }
+
+      console.warn('[FitHere][confirm_tx_retry]', {
+        attemptId: entry.attemptId,
+        planId: Number(planId),
+        routeId: Number(entry.routeId),
+        attempt,
+        maxConfirmAttempts,
+        message: String(error?.message || ''),
+      });
+      await new Promise((resolve) => setTimeout(resolve, attempt * 100));
     }
   }
 
