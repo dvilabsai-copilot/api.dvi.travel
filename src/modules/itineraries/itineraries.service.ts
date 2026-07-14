@@ -66,6 +66,7 @@ import {
 } from "./helpers/manual-fit-here-preview.helper";
 import { createHash, randomUUID } from "crypto";
 import { filterActiveVendorCandidateRows } from "./utils/active-vendor-candidate.util";
+import { getVehicleRateAvailability } from "./utils/vehicle-rate-availability.util";
 
 type ManualInsertionCandidateResult = {
   success: boolean;
@@ -2583,25 +2584,72 @@ const guideSlotCsv = guideSlots.join(',');
         orderBy: { itinerary_plan_vendor_eligible_ID: 'asc' },
       });
 
-      const byVehicleType = new Map<number, Array<{ vendorEligibleId: number; totalAmount: number }>>();
+      const eligibleIds = eligibleRows
+        .map((row: any) => Number(row?.itinerary_plan_vendor_eligible_ID || 0))
+        .filter((id) => id > 0);
+      const vehicleDetailRows = eligibleIds.length
+        ? await this.prisma.$queryRawUnsafe(`
+            SELECT
+              itinerary_plan_vendor_eligible_ID,
+              travel_type,
+              total_pickup_km,
+              total_running_km,
+              total_siteseeing_km,
+              total_drop_km,
+              vehicle_rental_charges
+            FROM dvi_itinerary_plan_vendor_vehicle_details
+            WHERE itinerary_plan_id = ${Number(planId)}
+              AND deleted = 0
+              AND itinerary_plan_vendor_eligible_ID IN (${eligibleIds.join(',')})
+          `) as any[]
+        : [];
+      const detailsByEligibleId = new Map<number, any[]>();
+      for (const detail of vehicleDetailRows) {
+        const eligibleId = Number(detail?.itinerary_plan_vendor_eligible_ID || 0);
+        const rows = detailsByEligibleId.get(eligibleId) || [];
+        rows.push(detail);
+        detailsByEligibleId.set(eligibleId, rows);
+      }
+
+      const byVehicleType = new Map<number, Array<{
+        vendorEligibleId: number;
+        totalAmount: number;
+        rateAvailable: boolean;
+      }>>();
       for (const row of eligibleRows) {
         const vehicleTypeId = Number((row as any)?.vehicle_type_id || 0);
         const vendorEligibleId = Number((row as any)?.itinerary_plan_vendor_eligible_ID || 0);
         const totalAmount = Number((row as any)?.vehicle_grand_total || 0);
         if (!vehicleTypeId || !vendorEligibleId || !Number.isFinite(totalAmount)) continue;
+        const rateAvailable = getVehicleRateAvailability(
+          detailsByEligibleId.get(vendorEligibleId) || [],
+        ).available;
         const list = byVehicleType.get(vehicleTypeId) || [];
-        list.push({ vendorEligibleId, totalAmount });
+        list.push({ vendorEligibleId, totalAmount, rateAvailable });
         byVehicleType.set(vehicleTypeId, list);
       }
 
       for (const [vehicleTypeId, list] of byVehicleType.entries()) {
-        if (!list.length) continue;
-        list.sort((a, b) => {
+        const validRows = list.filter((row) => row.rateAvailable);
+        if (!validRows.length) {
+          await (this.prisma as any).dvi_itinerary_plan_vendor_eligible_list.updateMany({
+            where: {
+              itinerary_plan_id: planId,
+              vehicle_type_id: vehicleTypeId,
+              status: 1,
+              deleted: 0,
+            },
+            data: { itineary_plan_assigned_status: 0 },
+          });
+          continue;
+        }
+
+        validRows.sort((a, b) => {
           if (a.totalAmount !== b.totalAmount) return a.totalAmount - b.totalAmount;
           return a.vendorEligibleId - b.vendorEligibleId;
         });
 
-        const chosen = list[0];
+        const chosen = validRows[0];
         await this.selectVehicleVendor({
           planId,
           vehicleTypeId,
@@ -6856,6 +6904,27 @@ pricing: {
     };
   }
 
+  private async getVehicleRateAvailabilityForEligible(
+    planId: number,
+    vendorEligibleId: number,
+  ) {
+    const detailRows = await this.prisma.$queryRawUnsafe(`
+      SELECT
+        travel_type,
+        total_pickup_km,
+        total_running_km,
+        total_siteseeing_km,
+        total_drop_km,
+        vehicle_rental_charges
+      FROM dvi_itinerary_plan_vendor_vehicle_details
+      WHERE itinerary_plan_id = ${Number(planId)}
+        AND itinerary_plan_vendor_eligible_ID = ${Number(vendorEligibleId)}
+        AND deleted = 0
+    `) as any[];
+
+    return getVehicleRateAvailability(detailRows);
+  }
+
   async selectVehicleVendor(data: {
     planId: number;
     vehicleTypeId: number;
@@ -6878,6 +6947,16 @@ pricing: {
     const { rows: activeSelectedRows } = await filterActiveVendorCandidateRows<any>(this.prisma, [selectedEligible]);
     if (!activeSelectedRows.length) {
       throw new BadRequestException('Selected vendor is no longer active and cannot be assigned');
+    }
+
+    const rateAvailability = await this.getVehicleRateAvailabilityForEligible(
+      Number(data.planId),
+      Number(data.vendorEligibleId),
+    );
+    if (!rateAvailability.available) {
+      throw new BadRequestException(
+        'Selected vendor does not have applicable local or outstation rates for this vehicle type',
+      );
     }
 
     // First, reset all vendors for this vehicle type to unassigned (0)

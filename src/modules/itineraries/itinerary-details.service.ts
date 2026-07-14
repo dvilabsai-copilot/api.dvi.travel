@@ -12,6 +12,10 @@ import { PrismaService } from '../../prisma.service';
 import { LatestItineraryQueryDto } from './dto/latest-itinerary-query.dto';
 import { calculateRouteTollCharges, getEffectiveTimeLimitKm } from './engines/vehicle-calculation.helpers';
 import { filterActiveVendorCandidateRows } from './utils/active-vendor-candidate.util';
+import {
+  buildVehicleRateAvailabilityMessage,
+  getVehicleRateAvailability,
+} from './utils/vehicle-rate-availability.util';
 import { haversineKm } from './utils/distance-utils';
 
 // ---------------------------------------------------------------------------
@@ -176,6 +180,9 @@ export interface ItineraryVehicleRowDto {
   vehicleTypeId?: number;
   vehicleTypeName?: string;
   isAssigned?: boolean;
+  rateAvailable?: boolean;
+  missingRateTypes?: Array<'Local' | 'Outstation'>;
+  rateAvailabilityMessage?: string | null;
   selectedTimeLimitId?: number;
   availableSlabs?: Array<{
     timeLimitId: number;
@@ -377,6 +384,11 @@ days: {
 
   // VEHICLES
   vehicles: ItineraryVehicleRowDto[];
+  vehicleRateAvailability?: Array<{
+    vehicleTypeId: number;
+    vehicleTypeName: string;
+    message: string;
+  }>;
 
   // PACKAGE NOTES + COSTING
   packageIncludes: {
@@ -4346,7 +4358,7 @@ sightseeingDistance,       // local sightseeing separately
     }
 
     // Build vehicles array directly from eligible list (like PHP does)
-    const vehicles: ItineraryVehicleRowDto[] = activeEligibleRows.map((eligible) => {
+    const allVehicles: ItineraryVehicleRowDto[] = activeEligibleRows.map((eligible) => {
       const branchId = (eligible as any).vendor_branch_id ?? 0;
       const branch = branchMap.get(branchId) || null;
       const branchCityName = branch
@@ -4950,6 +4962,15 @@ sightseeingDistance,       // local sightseeing separately
         });
       }
 
+      const rateAvailability = getVehicleRateAvailability(dayWiseDetails);
+      const rateAvailabilityMessage = rateAvailability.available
+        ? null
+        : buildVehicleRateAvailabilityMessage(
+            [String(branch?.vendor_branch_name || branchCityName || origin || '').trim()],
+            vehicleTypeNameMap.get(vehicleTypeId) || 'this vehicle type',
+            rateAvailability.missingRateTypes,
+          );
+
       const vehicleResponseRow = {
         vendorName: branch?.vendor_branch_name ?? null,
         branchName: branch?.vendor_branch_name ?? null,
@@ -4981,6 +5002,9 @@ sightseeingDistance,       // local sightseeing separately
         vehicleTypeId: vehicleTypeId,
         vehicleTypeName: vehicleTypeNameMap.get(vehicleTypeId) || 'Unknown Vehicle Type',
         isAssigned: (eligible as any).itineary_plan_assigned_status === 1,
+        rateAvailable: rateAvailability.available,
+        missingRateTypes: rateAvailability.missingRateTypes,
+        rateAvailabilityMessage,
         selectedTimeLimitId,
         availableSlabs,
         localTrip,
@@ -5063,6 +5087,38 @@ sightseeingDistance,       // local sightseeing separately
       return vehicleResponseRow;
     });
 
+    const vehicleRateAvailability: ItineraryDetailsResponseDto['vehicleRateAvailability'] = [];
+    const vehiclesByTypeForRateAvailability = new Map<number, ItineraryVehicleRowDto[]>();
+    for (const vehicle of allVehicles) {
+      const vehicleTypeId = Number(vehicle?.vehicleTypeId || 0);
+      if (!vehicleTypeId) continue;
+      const rows = vehiclesByTypeForRateAvailability.get(vehicleTypeId) || [];
+      rows.push(vehicle);
+      vehiclesByTypeForRateAvailability.set(vehicleTypeId, rows);
+    }
+
+    for (const [vehicleTypeId, rows] of vehiclesByTypeForRateAvailability.entries()) {
+      const validRows = rows.filter((row) => row.rateAvailable !== false);
+      if (validRows.length > 0) continue;
+
+      const vehicleTypeName = String(rows[0]?.vehicleTypeName || `Vehicle Type ${vehicleTypeId}`);
+      const vendorNames = rows.map((row) => String(row.vendorName || '').trim()).filter(Boolean);
+      const missingRateTypes = Array.from(
+        new Set(rows.flatMap((row) => row.missingRateTypes || [])),
+      ) as Array<'Local' | 'Outstation'>;
+      vehicleRateAvailability.push({
+        vehicleTypeId,
+        vehicleTypeName,
+        message: buildVehicleRateAvailabilityMessage(vendorNames, vehicleTypeName, missingRateTypes),
+      });
+    }
+
+    // Only rate-valid vendors are eligible for display and selection. Keep the
+    // no-rate information above so the UI can show a useful empty-state message.
+    const vehicles: ItineraryVehicleRowDto[] = allVehicles.filter(
+      (vehicle) => vehicle.rateAvailable !== false,
+    );
+
     console.log('[DETAILS_VEHICLE_ROWS]', {
       quoteId,
       planId,
@@ -5072,19 +5128,17 @@ sightseeingDistance,       // local sightseeing separately
       rawVehicleDetailCount: rawVehicleDetailsRows.length,
       dedupedVehicleDetailCount: vehicleDetailsRows.length,
       returnedVehicleCount: vehicles.length,
-      vehicles: eligibleRows.map((eligible: any, index: number) => {
-        const responseRow = vehicles[index] as any;
+      filteredRateUnavailableCount: allVehicles.length - vehicles.length,
+      vehicleRateAvailability,
+      vehicles: allVehicles.map((responseRow: any) => {
         return {
-          vendorEligibleId: Number(eligible?.itinerary_plan_vendor_eligible_ID || 0),
           vehicleId: Number(responseRow?.vehicleId || 0) || null,
           vehicleNumber: String(responseRow?.vehicleNumber || ''),
           vehicleRegistrationStateCode: String(responseRow?.vehicleRegistrationStateCode || ''),
           vehicleRegistrationStateName: String(responseRow?.vehicleRegistrationStateName || ''),
-          vendorId: Number(eligible?.vendor_id || 0),
-          vendorBranchId: Number(eligible?.vendor_branch_id || 0),
-          vendorVehicleTypeId: Number(eligible?.vendor_vehicle_type_id || 0),
-          vehicleTypeId: Number(eligible?.vehicle_type_id || 0),
-          isAssigned: Number(eligible?.itineary_plan_assigned_status || 0) === 1,
+          vendorEligibleId: Number(responseRow?.vendorEligibleId || 0),
+          vehicleTypeId: Number(responseRow?.vehicleTypeId || 0),
+          rateAvailable: responseRow?.rateAvailable !== false,
           totalAmount: Number(responseRow?.totalAmount || 0),
         };
       }),
@@ -5595,9 +5649,10 @@ guestFoodPreference: guestFoodPreference,
 guest_food_preference_name: guestFoodPreference,
 guestFoodPreferenceName: guestFoodPreference,
 
-days,
+      days,
 
       vehicles: visibleVehicles,
+      vehicleRateAvailability,
       packageIncludes: {
         description: '',
         houseBoatNote: '',
