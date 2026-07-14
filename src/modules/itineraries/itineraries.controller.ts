@@ -16,8 +16,9 @@ import {
   Delete,
   Res,
   ParseIntPipe,
-  Logger,
-  BadRequestException,
+Logger,
+BadRequestException,
+ForbiddenException,
 } from '@nestjs/common';
 import {
   ApiBody,
@@ -1205,28 +1206,52 @@ async getAvailableActivities(
     return this.svc.getPlanForEdit(id);
   }
 
-    @Get('export/:id')
-  @Public()
-  @ApiOperation({ summary: 'Export itinerary to Excel' })
-  @ApiParam({ name: 'id', example: 14, description: 'Itinerary Plan ID' })
-  async exportToExcel(
-    @Param('id', ParseIntPipe) id: number,
-    @Res() res: Response,
-  ) {
-    const { workbook, fileName } = await this.exportService.exportItineraryToExcel(id);
+ @Get('export/:id')
+@ApiOperation({ summary: 'Export itinerary to Excel' })
+@ApiParam({ name: 'id', example: 14, description: 'Itinerary Plan ID' })
+async exportToExcel(
+  @Param('id', ParseIntPipe) id: number,
+  @Req() req: any,
+  @Res() res: Response,
+) {
+  const role = Number(req.user?.role ?? req.user?.roleId ?? 0);
+  const staffId = Number(req.user?.staffId ?? req.user?.staff_id ?? 0);
 
-    res.setHeader(
-      'Content-Type',
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    );
-    res.setHeader(
-      'Content-Disposition',
-      `attachment; filename="${fileName}"; filename*=UTF-8''${encodeURIComponent(fileName)}`,
-    );
+  const isAgent = role === 4;
+  const isAccounts = role === 6;
 
-    await workbook.xlsx.write(res);
-    res.end();
+  const isTravelExpert =
+    (role === 3 || role === 8 || staffId > 0) &&
+    !isAgent &&
+    !isAccounts;
+
+  const canDownloadExcel =
+    role === 1 || // Admin
+    isTravelExpert ||
+    isAccounts;
+
+  if (!canDownloadExcel) {
+    throw new ForbiddenException(
+      'Excel export is available only for Admin, Travel Expert, and Accounts users.',
+    );
   }
+
+  const { workbook, fileName } =
+    await this.exportService.exportItineraryToExcel(id);
+
+  res.setHeader(
+    'Content-Type',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  );
+
+  res.setHeader(
+    'Content-Disposition',
+    `attachment; filename="${fileName}"; filename*=UTF-8''${encodeURIComponent(fileName)}`,
+  );
+
+  await workbook.xlsx.write(res);
+  res.end();
+}
 
   @Get('customer-info/:planId')
   @ApiOperation({ summary: 'Get customer info form data for confirm quotation' })
