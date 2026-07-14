@@ -370,7 +370,6 @@ export class ItinerariesController {
   }
 
   @Get('details/:quoteId')
-  @Public()
   @ApiOperation({
     summary: 'Get full itinerary details by Quote ID',
     description:
@@ -394,9 +393,14 @@ export class ItinerariesController {
   async getItineraryDetails(
     @Param('quoteId') quoteId: string,
     @Query('groupType') groupType?: string,
+    @Req() req?: Request,
   ) {
     const groupTypeNum = groupType !== undefined ? Number(groupType) : undefined;
-    return this.detailsService.getItineraryDetails(quoteId, groupTypeNum);
+    return this.detailsService.getItineraryDetails(
+      quoteId,
+      groupTypeNum,
+      (req as any)?.user?.role,
+    );
   }
 
    @Get(':id/guides/availability')
@@ -2120,8 +2124,9 @@ async getAvailableActivities(
   async findOne(
     @Param('id', ParseIntPipe) id: number,
     @Query('groupType') groupType?: string,
+    @Req() req?: Request,
   ) {
     const groupTypeNum = groupType ? Number(groupType) : undefined;
-    return this.detailsService.findOne(id, groupTypeNum);
+    return this.detailsService.findOne(id, groupTypeNum, (req as any)?.user?.role);
   }
 }
