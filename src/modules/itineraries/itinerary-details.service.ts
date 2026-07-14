@@ -5207,6 +5207,11 @@ sightseeingDistance,       // local sightseeing separately
     const selectedVehicleRows = (vehicles as any[]).filter(
       (vehicle: any) => vehicle?.isAssigned === true,
     );
+    const hasRequiredVehicleSelection = !shouldIncludeVehicles || (
+      vehiclesByTypeForSelection.size > 0 &&
+      vehicleRateAvailability.length === 0 &&
+      selectedVehicleRows.length === vehiclesByTypeForSelection.size
+    );
 
     /**
      * KM warning should not sum every eligible vendor row.
@@ -5414,10 +5419,10 @@ sightseeingDistance,       // local sightseeing separately
 
     // 2. Vehicle costs already calculated
     const totalVehicleCost = totalVehicleAmount;
-    const totalVehicleQty = eligibleRows.reduce((sum, e) => {
-      const isAssigned = (e as any).itineary_plan_assigned_status === 1;
-      return sum + (isAssigned ? Number((e as any).total_vehicle_qty || 0) : 0);
-    }, 0);
+    const totalVehicleQty = selectedVehicleRows.reduce(
+      (sum: number, vehicle: any) => sum + Number(vehicle?.totalQty || 0),
+      0,
+    );
 
     // 3. Calculate Guide, Hotspot, and Activity costs
     // For now set to 0, can be calculated from route activities/guides if needed
@@ -5477,7 +5482,7 @@ sightseeingDistance,       // local sightseeing separately
 
     // 5. Get coupon discount and agent margin from plan
     const couponDiscount = 0; // Not currently stored in plan table
-    const agentMargin = Number(plan.agent_margin || 0);
+    const agentMargin = hasRequiredVehicleSelection ? Number(plan.agent_margin || 0) : 0;
 
     // 6. Calculate round off
     const netBeforeRoundOff = totalAmount - couponDiscount + agentMargin;
