@@ -7654,6 +7654,21 @@ pricing: {
 
     // Cost must be calculated only after stale hotel rows are deactivated.
     const details = await this.itineraryDetails.getItineraryDetails(quoteId);
+    const requiresVehicleSelection = [2, 3].includes(Number(plan.itinerary_preference || 0));
+    const selectedVehicleCount = Array.isArray((details as any)?.vehicles)
+      ? (details as any).vehicles.filter((vehicle: any) => vehicle?.isAssigned === true).length
+      : 0;
+    const unavailableVehicleTypes = Array.isArray((details as any)?.vehicleRateAvailability)
+      ? (details as any).vehicleRateAvailability.length
+      : 0;
+    if (
+      requiresVehicleSelection &&
+      (selectedVehicleCount === 0 || unavailableVehicleTypes > 0)
+    ) {
+      throw new BadRequestException(
+        'A vehicle with valid local or outstation rates must be selected before confirming the quotation',
+      );
+    }
     const cost = details.costBreakdown;
 
     // 2. Check wallet balance
