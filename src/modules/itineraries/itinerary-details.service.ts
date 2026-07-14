@@ -1,5 +1,12 @@
 // FILE: src/modules/itineraries/itinerary-details.service.ts
 import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  canViewItineraryCostBreakdown,
+  isAgentRole,
+  redactItineraryCostBreakdown,
+  redactVehicleForAgent,
+  redactVehicleCostBreakdowns,
+} from './utils/itinerary-cost-visibility.util';
 import { Request } from 'express';
 import { PrismaService } from '../../prisma.service';
 import { LatestItineraryQueryDto } from './dto/latest-itinerary-query.dto';
@@ -1332,6 +1339,7 @@ const foodTypeMap: Record<string, string> = {
   async getItineraryDetails(
     quoteId: string,
     groupType?: number,
+    viewerRole?: unknown,
   ): Promise<ItineraryDetailsResponseDto> {
     const apiStartedAt = Date.now();
     let stepStartedAt = apiStartedAt;
@@ -5526,6 +5534,23 @@ const normalizedItineraryPreference =
     ? 3
     : rawItineraryPreference;
 
+// Calls made internally by clipboard/document builders do not carry an HTTP
+// user. Preserve their existing full-detail behavior; authenticated controller
+// calls always pass req.user.role and are filtered by the role policy.
+const canViewCostBreakdown =
+  viewerRole === undefined ? true : canViewItineraryCostBreakdown(viewerRole);
+const vehiclesForAgent = isAgentRole(viewerRole)
+  ? vehicles.filter((vehicle: any) => vehicle?.isAssigned === true)
+  : vehicles;
+const visibleVehicles = canViewCostBreakdown
+  ? vehicles
+  : isAgentRole(viewerRole)
+    ? vehiclesForAgent.map(redactVehicleForAgent)
+    : redactVehicleCostBreakdowns(vehicles);
+const visibleCostBreakdown = canViewCostBreakdown
+  ? costBreakdown
+  : redactItineraryCostBreakdown(costBreakdown);
+
 const response: ItineraryDetailsResponseDto = {
   quoteId: plan.itinerary_quote_ID ?? '',
       planId: plan.itinerary_plan_ID,
@@ -5572,13 +5597,13 @@ guestFoodPreferenceName: guestFoodPreference,
 
 days,
 
-      vehicles,
+      vehicles: visibleVehicles,
       packageIncludes: {
         description: '',
         houseBoatNote: '',
         rateNote: '',
       },
-      costBreakdown,
+      costBreakdown: visibleCostBreakdown,
     };
     stepStartedAt = this.logItineraryApiTiming({
       api: 'itinerary_details',
@@ -5948,7 +5973,7 @@ days,
   }
 
 
-  async findOne(id: number, groupType?: number) {
+  async findOne(id: number, groupType?: number, viewerRole?: unknown) {
     const apiStartedAt = Date.now();
     let stepStartedAt = apiStartedAt;
     const plan = await this.prisma.dvi_itinerary_plan_details.findUnique({
@@ -5966,7 +5991,7 @@ days,
     
     const quoteId = plan.itinerary_quote_ID;
     if (!quoteId) throw new NotFoundException('Quote ID not found for this plan');
-    return this.getItineraryDetails(quoteId, groupType);
+    return this.getItineraryDetails(quoteId, groupType, viewerRole);
   }
 
   async findOneOld(id: number, groupType?: number) {
