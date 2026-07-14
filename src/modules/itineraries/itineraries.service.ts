@@ -408,6 +408,28 @@ const ITINERARY_GUIDE_SLOT_OPTIONS: ItineraryGuideSlotOption[] = [
   { id: 4, label: '6 PM to 9 PM' },
 ];
 
+function parseFilterDate(value?: string): Date | undefined {
+  const raw = String(value ?? '').trim();
+  if (!raw) return undefined;
+
+  const match = raw.match(/^(\d{2})[\/-](\d{2})[\/-](\d{4})$/);
+  const date = match
+    ? new Date(Number(match[3]), Number(match[2]) - 1, Number(match[1]))
+    : new Date(raw);
+
+  return Number.isNaN(date.getTime()) ? undefined : date;
+}
+
+function nextDay(date: Date): Date {
+  const result = new Date(date);
+  result.setDate(result.getDate() + 1);
+  return result;
+}
+
+function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, (character) => `\\${character}`);
+}
+
 @Injectable()
 export class ItinerariesService {
   private readonly previewDistanceHelper = new DistanceHelper();
@@ -11064,13 +11086,20 @@ pricing: {
     const {
       start = 0,
       length = 10,
+      search: requestedSearch,
+      search_value,
       start_date,
       end_date,
       source_location,
       destination_location,
       agent_id,
       staff_id,
+      guide_id,
+      vendor_id,
+      include_cancelled,
     } = query;
+
+    const search = String(requestedSearch ?? search_value ?? '').trim();
 
     const u: any = (req as any).user ?? {};
     const logged_user_level = Number(u.roleID ?? u.roleId ?? u.role ?? 0) || 0;
@@ -11109,13 +11138,6 @@ pricing: {
       if (staff_id) where.staff_id = staff_id;
     }
 
-    if (start_date && end_date) {
-      where.trip_start_date_and_time = {
-        gte: new Date(start_date),
-        lte: new Date(end_date),
-      };
-    }
-
     if (source_location) {
       where.arrival_location = { contains: source_location };
     }
@@ -11124,9 +11146,113 @@ pricing: {
       where.departure_location = { contains: destination_location };
     }
 
+    const startDate = parseFilterDate(start_date);
+    if (startDate) {
+      where.trip_start_date_and_time = {
+        gte: startDate,
+        lt: nextDay(startDate),
+      };
+    }
+
+    const endDate = parseFilterDate(end_date);
+    if (endDate) {
+      where.trip_end_date_and_time = {
+        gte: endDate,
+        lt: nextDay(endDate),
+      };
+    }
+
+    const constrainToPlanIds = (planIds: number[]) => {
+      const existingIds = Array.isArray(where.itinerary_plan_ID?.in)
+        ? where.itinerary_plan_ID.in.map((id: number) => Number(id))
+        : null;
+      const allowedIds = existingIds
+        ? planIds.filter((id) => existingIds.includes(Number(id)))
+        : planIds;
+
+      where.itinerary_plan_ID = {
+        in: allowedIds.length ? allowedIds : [-1],
+      };
+    };
+
+    if (guide_id && guide_id > 0) {
+      const guideRows = await this.prisma.dvi_confirmed_itinerary_route_guide_details.findMany({
+        where: {
+          guide_id,
+          status: 1,
+          deleted: 0,
+        },
+        select: { itinerary_plan_ID: true },
+      });
+      constrainToPlanIds([...new Set(guideRows.map((row) => Number(row.itinerary_plan_ID))) ]);
+    }
+
+    if (vendor_id && vendor_id > 0) {
+      const vendorRows = await this.prisma.dvi_confirmed_itinerary_plan_vendor_eligible_list.findMany({
+        where: {
+          vendor_id,
+          itineary_plan_assigned_status: 1,
+        },
+        select: { itinerary_plan_id: true },
+      });
+      constrainToPlanIds([...new Set(vendorRows.map((row) => Number(row.itinerary_plan_id))) ]);
+    }
+
+    if (include_cancelled) {
+      const cancelledRows = await this.prisma.dvi_cancelled_itineraries.findMany({
+        where: {
+          status: 1,
+          deleted: 0,
+        },
+        select: { itinerary_plan_id: true },
+      });
+      constrainToPlanIds([...new Set(cancelledRows.map((row) => Number(row.itinerary_plan_id))) ]);
+    }
+
+    // Keep the total count on the same access and regular filters, but before
+    // applying the global search. This makes pagination accurate.
+    const unsearchedWhere = { ...where };
+
+    if (search) {
+      const searchPattern = `%${escapeLikePattern(search)}%`;
+      const matchingRows = await this.prisma.$queryRaw<Array<{ itinerary_plan_ID: number }>>(
+        Prisma.sql`
+          SELECT DISTINCT ip.itinerary_plan_ID
+          FROM dvi_itinerary_plan_details ip
+          LEFT JOIN dvi_confirmed_itinerary_plan_details cip
+            ON cip.itinerary_plan_ID = ip.itinerary_plan_ID
+          LEFT JOIN dvi_users du
+            ON du.userID = ip.createdby
+          LEFT JOIN dvi_staff_details s
+            ON s.staff_id = du.staff_id
+          LEFT JOIN dvi_agent a
+            ON a.agent_ID = du.agent_id
+          WHERE ip.quotation_status = 1
+            AND ip.deleted = 0
+            AND (
+              ip.arrival_location LIKE ${searchPattern}
+              OR ip.departure_location LIKE ${searchPattern}
+              OR cip.arrival_location LIKE ${searchPattern}
+              OR cip.departure_location LIKE ${searchPattern}
+              OR s.staff_name LIKE ${searchPattern}
+              OR a.agent_name LIKE ${searchPattern}
+              OR ip.itinerary_quote_ID LIKE ${searchPattern}
+              OR cip.itinerary_quote_ID LIKE ${searchPattern}
+              OR du.username LIKE ${searchPattern}
+            )
+        `,
+      );
+
+      constrainToPlanIds(
+        matchingRows
+          .map((row) => Number(row.itinerary_plan_ID))
+          .filter((id) => id > 0),
+      );
+    }
+
     const [total, filtered, data] = await Promise.all([
       this.prisma.dvi_itinerary_plan_details.count({
-        where: { quotation_status: 1, deleted: 0 },
+        where: unsearchedWhere,
       }),
       this.prisma.dvi_itinerary_plan_details.count({ where }),
       this.prisma.dvi_itinerary_plan_details.findMany({
