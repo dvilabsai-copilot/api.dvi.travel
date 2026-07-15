@@ -118,6 +118,7 @@ An index, Redis cache, or query rewrite may move from candidate to implementatio
 | Itinerary iteration 9 | Vehicle-build status repository/state boundary | `itineraries.service.ts` reduced from 36,843 to 36,603 lines; `ItineraryVehicleBuildStatusService` owns 316 lines | Existing status-table SQL, readiness counts and DB/memory fallback preserved; query count, rows examined, payload and latency remain unmeasured |
 | Itinerary iteration 10 | Vehicle-build orchestration boundary | `itineraries.service.ts` reduced from 36,603 to 36,115 lines; `ItineraryVehicleBuildService` owns 473 lines | Existing build stages, retry/timeout policy and vendor-selection ordering preserved; query count, rows examined, payload and latency remain unmeasured |
 | Itinerary iteration 11 | Plan-save and reusable-template persistence boundary | `itineraries.service.ts` reduced from 36,115 to 35,433 lines; `ItineraryPlanPersistenceService` owns 821 lines | Existing transaction ordering and template reads/writes preserved; query count, rows examined, payload and latency remain unmeasured |
+| Itinerary iteration 12 | Activity add/preview/delete workflow boundary | `itineraries.service.ts` reduced from 35,433 to 34,784 lines; `ItineraryActivityWorkflowService` owns 750 lines | Existing activity reads, timing policy callbacks and transaction ordering preserved; query count, rows examined, payload and latency remain unmeasured |
 
 The iteration-6 and iteration-7 boundaries are measurement seams, not optimization claims. The next safe performance tier should instrument representative itinerary-details, route-rebuild and hotspot-preview requests and attribute calls to `TimelineTravelDataService` and `TimelineCandidateFeasibilityService` before changing query shape or adding a cache.
 
@@ -128,6 +129,8 @@ The iteration-9 vehicle-build status boundary is a measurement seam for status p
 The iteration-10 vehicle-build boundary is a measurement seam for stage duration, transaction wait time, eligible-row volume, vehicle-detail volume and status polling. Do not parallelize stages or cache mutable pricing/availability data without a representative build trace and a proof that transaction ordering and selection semantics remain unchanged.
 
 The iteration-11 plan-persistence boundary is a measurement seam for transaction wait time, route/hotspot child-row volume, post-transaction rebuild duration, template snapshot payload size and template lookup selectivity. Profile representative create, update and template-match requests separately before considering batching, projections or index changes.
+
+The iteration-12 activity boundary is a measurement seam for activity lookup/time-slot calls, per-hotspot duplicate checks, pricing reads, cascade row volume and rebuild duration. Profile add, preview and delete separately; do not batch or cache mutable activity pricing/availability until consistency and invalidation ownership are proven.
 
 ## Next profiling order
 

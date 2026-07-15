@@ -654,3 +654,33 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Query count, rows examined, payload size and endpoint latency remain unmeasured.
 - Commit: `api.dvi.travel` `33d68d7`.
+
+### Cycle 15 â€” Extract itinerary activity workflow
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: add activity, preview activity timing/cascade, delete activity, and all-hotspots activity preview workflows
+- New files: `src/modules/itineraries/services/itinerary-activity-workflow.service.ts`, `test/itinerary-activity-workflow.test.ts`
+- Workflow: activity add/preview/delete endpoints; smart activity preview remains in the next boundary
+
+#### Change
+
+- Moved the contiguous activity workflow behind `ItineraryActivityWorkflowService`.
+- Preserved activity lookup, duplicate checks, pricing delegation, conflict/warning responses, cascade calculations, transaction timeouts, deletion rebuild and preview ordering.
+- Kept existing timing, pricing and impact policies behind explicit callbacks to avoid moving unrelated helper state.
+- Registered the new provider in `ItinerariesModule`.
+
+#### Verification
+
+- Activity workflow boundary tests: PASS, 2/2
+- Combined focused backend suite: PASS, 49/49
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 34,784 lines after the tier; `ItineraryActivityWorkflowService` is 750 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Query count, rows examined, payload size and endpoint latency remain unmeasured.
+- Commit: `api.dvi.travel` `be8dab5`.
