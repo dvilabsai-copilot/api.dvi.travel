@@ -42,6 +42,7 @@ import { ItineraryClipboardService } from './itinerary-clipboard.service';
 import { ItineraryPdfService } from './itinerary-pdf.service';
 import { ItineraryScenarioSourceController } from './itinerary-scenario-source.controller';
 import { ItineraryScenarioSourceService } from './itinerary-scenario-source.service';
+import { ItineraryGuideAssignmentService } from './services/itinerary-guide-assignment.service';
 
 @Module({
   imports: [HotelsModule],
@@ -63,6 +64,7 @@ import { ItineraryScenarioSourceService } from './itinerary-scenario-source.serv
     VehicleVoucherEmailNotifierService,
     SameCityCrossDayOptimizerService,
     ItineraryRouteNormalizationService,
+    ItineraryGuideAssignmentService,
 
     // existing engines you already had
     HotelEngineService,
