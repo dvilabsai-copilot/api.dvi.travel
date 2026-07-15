@@ -40,6 +40,7 @@ import type { SameCityAllocationPlan } from '../../services/same-city-cross-day-
 import { normalizeRouteCityKey } from '../../services/same-city-cross-day-optimizer.shared';
 import { TimelineOperatingHoursService } from './timeline-operating-hours.service';
 import { DayTimeSlot, TimelineSlotPolicyService } from './timeline-slot-policy.service';
+import { TimelineRejectionPolicyService } from './timeline-rejection-policy.service';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -210,17 +211,7 @@ export class TimelineBuilder {
   private readonly distanceHelper = new DistanceHelper();
   private readonly operatingHoursService = new TimelineOperatingHoursService();
   private readonly slotPolicyService = new TimelineSlotPolicyService();
-  private readonly routeRejectionSummaryByRoute = new Map<number, RouteRejectionSummary>();
-  private readonly routeEndBufferMinutes = Math.max(
-    0,
-    Number.parseInt(process.env.HOTSPOT_ROUTE_END_BUFFER_MINUTES || '0', 10) || 0,
-  );
-  private readonly routeEndBufferRouteIds = new Set<number>(
-    String(process.env.HOTSPOT_ROUTE_END_BUFFER_ROUTE_IDS || '')
-      .split(',')
-      .map((value) => Number.parseInt(value.trim(), 10))
-      .filter((value) => Number.isFinite(value) && value > 0),
-  );
+  private readonly rejectionPolicyService = new TimelineRejectionPolicyService();
 
   private normalizeTravelRowDistance(
     row: HotspotDetailRow,
@@ -650,9 +641,9 @@ export class TimelineBuilder {
     selected: boolean;
     rejectedReasons: string[];
   }): void {
-    this.recordHotspotCandidateEvaluation(payload);
+    this.rejectionPolicyService.recordHotspotCandidateEvaluation(payload);
 
-    const rejectionGateBreakdown = this.buildRejectionGateBreakdown(payload.rejectedReasons);
+    const rejectionGateBreakdown = this.rejectionPolicyService.buildRejectionGateBreakdown(payload.rejectedReasons);
 
     const rejectedReason = payload.rejectedReasons.length
       ? payload.rejectedReasons.join('; ')
@@ -683,33 +674,15 @@ export class TimelineBuilder {
   }
 
   private shouldApplyRouteEndBuffer(routeId: number): boolean {
-    if (this.routeEndBufferMinutes <= 0) return false;
-    if (this.routeEndBufferRouteIds.size === 0) return true;
-    return this.routeEndBufferRouteIds.has(routeId);
+    return this.rejectionPolicyService.getRouteEndBufferSeconds(routeId) > 0;
   }
 
   private getRouteEndBufferSeconds(routeId: number): number {
-    if (!this.shouldApplyRouteEndBuffer(routeId)) {
-      return 0;
-    }
-    return this.routeEndBufferMinutes * 60;
+    return this.rejectionPolicyService.getRouteEndBufferSeconds(routeId);
   }
 
   private classifyRejectionReason(reason: string): keyof RouteRejectionSummary {
-    const normalized = String(reason || '').toLowerCase();
-    if (normalized.includes('php_gate_route_end') || normalized.includes('route end')) {
-      return 'routeEnd';
-    }
-    if (normalized.includes('operating hours') || normalized.includes('closed')) {
-      return 'operatingHours';
-    }
-    if (normalized.includes('duplicate')) {
-      return 'duplicate';
-    }
-    if (normalized.includes('no remaining day window')) {
-      return 'noRemainingWindow';
-    }
-    return 'other';
+    return this.rejectionPolicyService.classifyRejectionReason(reason);
   }
 
   private buildRejectionGateBreakdown(rejectedReasons: string[]): {
@@ -720,26 +693,7 @@ export class TimelineBuilder {
     noRemainingWindow: boolean;
     other: boolean;
   } {
-    const normalizedReasons = (Array.isArray(rejectedReasons) ? rejectedReasons : [])
-      .map((reason) => String(reason || '').toLowerCase());
-
-    const hasMatch = (...needles: string[]) =>
-      normalizedReasons.some((reason) => needles.some((needle) => reason.includes(needle)));
-
-    const alreadyUsedOnAnotherRoute = hasMatch('duplicate_plan_scope', 'already used on another route', 'already on another day');
-    const outsideOperatingHours = hasMatch('operating hours', 'outside operating hours', 'closed on this day');
-    const routeEndDeadline = hasMatch('php_gate_route_end', 'route end', 'exceeds route end');
-    const duplicateSuppression = hasMatch('duplicate', 'dedup', 'de-dup');
-    const noRemainingWindow = hasMatch('no remaining day window', 'no remaining window');
-
-    return {
-      alreadyUsedOnAnotherRoute,
-      outsideOperatingHours,
-      routeEndDeadline,
-      duplicateSuppression,
-      noRemainingWindow,
-      other: !alreadyUsedOnAnotherRoute && !outsideOperatingHours && !routeEndDeadline && !duplicateSuppression && !noRemainingWindow,
-    };
+    return this.rejectionPolicyService.buildRejectionGateBreakdown(rejectedReasons);
   }
 
   private recordHotspotCandidateEvaluation(payload: {
@@ -747,40 +701,7 @@ export class TimelineBuilder {
     selected: boolean;
     rejectedReasons: string[];
   }): void {
-    const routeId = Number(payload.routeId || 0);
-    if (!routeId) return;
-
-    const existing = this.routeRejectionSummaryByRoute.get(routeId) || {
-      totalRejectedCandidates: 0,
-      totalSelectedCandidates: 0,
-      routeEnd: 0,
-      operatingHours: 0,
-      duplicate: 0,
-      noRemainingWindow: 0,
-      other: 0,
-    };
-
-    if (payload.selected) {
-      existing.totalSelectedCandidates += 1;
-      this.routeRejectionSummaryByRoute.set(routeId, existing);
-      return;
-    }
-
-    if (!Array.isArray(payload.rejectedReasons) || payload.rejectedReasons.length === 0) {
-      this.routeRejectionSummaryByRoute.set(routeId, existing);
-      return;
-    }
-
-    existing.totalRejectedCandidates += 1;
-    const matchedCategories = new Set<keyof RouteRejectionSummary>();
-    for (const reason of payload.rejectedReasons) {
-      const category = this.classifyRejectionReason(reason);
-      if (matchedCategories.has(category)) continue;
-      matchedCategories.add(category);
-      existing[category] += 1;
-    }
-
-    this.routeRejectionSummaryByRoute.set(routeId, existing);
+    this.rejectionPolicyService.recordHotspotCandidateEvaluation(payload);
   }
 
   /**
@@ -1150,7 +1071,7 @@ export class TimelineBuilder {
     parkingRows: ParkingChargeRow[];
     routeRejectionSummaryByRoute: Record<number, RouteRejectionSummary>;
   }> {
-    this.routeRejectionSummaryByRoute.clear();
+    this.rejectionPolicyService.clear();
 
     const buildStart = Date.now();
     this.logTimeline('[TIMELINE] buildTimelineForPlan started for planId:', planId, existingHotspots ? `with ${existingHotspots.length} pre-loaded hotspots` : '');
@@ -8405,7 +8326,7 @@ export class TimelineBuilder {
       });
     }
 
-    const routeRejectionSummaryByRoute = Object.fromEntries(this.routeRejectionSummaryByRoute.entries());
+    const routeRejectionSummaryByRoute = this.rejectionPolicyService.getSummaryByRoute();
 
     return { hotspotRows, parkingRows, routeRejectionSummaryByRoute };
   }
