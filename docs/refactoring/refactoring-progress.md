@@ -23,6 +23,8 @@
 - Frontend working branch: `codex/itinerary-modernization-20260716`
 - The baseline above remains the original `main` snapshot; current-tier results are appended below and do not overwrite baseline findings.
 
+- Latest retained backend commit: `a5a46e0`
+
 ## Baseline status
 
 - Backend unit/algorithm tests: 13 passed, 1 pre-existing failure (`route-optimizer-normalization`)
@@ -428,6 +430,36 @@
 - No query rewrite, index mutation or Redis dependency was introduced.
 - Candidate travel and operating-hours calls are now attributable to a focused service for later request-level query/timing instrumentation.
 - Commit: `api.dvi.travel` `2bd3a55`.
+
+### Full-decomposition iteration 8 — Extract itinerary guide assignments
+
+#### Scope
+
+- Original facade: `src/modules/itineraries/itineraries.service.ts`
+- Responsibility extracted: guide availability, guide assignment projections/options, guide eligibility, date-wise pricebook resolution, pax buckets and GST policy
+- New files: `src/modules/itineraries/services/itinerary-guide-assignment.service.ts`, `test/itinerary-guide-assignment.test.ts`
+- Module wiring: `ItineraryGuideAssignmentService` is registered by `ItinerariesModule`; the original service remains the compatibility facade
+
+#### Baseline and prioritization
+
+- Target size before tier: 37,224 lines
+- Descending-size target order now active: `itineraries.service.ts` → `itinerary-details.service.ts` → `vendors.service.ts` → `hotels.service.ts` → `activities.service.ts` → `locations.service.ts` → `hotspots.service.ts`
+- Query count/timing: not measured against a representative endpoint; no performance claim is made
+
+#### Verification
+
+- Original facade: 37,224 → 36,843 lines
+- Extracted service: 337 lines
+- Guide characterization tests: PASS, 3/3
+- Combined focused backend suite: PASS, 40/40
+- Backend build: PASS
+
+#### Compatibility and performance evidence
+
+- Existing guide API methods, validation messages, ordering, language/slot mappings, date handling, pricebook filters and GST calculations remain behind the facade.
+- No query shape, index, Redis, route, DTO or response contract changed.
+- Guide Prisma reads are now attributable to a dedicated boundary for later query-count/payload measurement.
+- Commit: `api.dvi.travel` `a5a46e0`.
 
 #### Verification
 

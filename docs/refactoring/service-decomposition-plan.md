@@ -4,7 +4,7 @@ This is an evidence-led plan; no production extraction is retained by the baseli
 
 | Current file | Observed size/calls | Cohesive responsibilities to investigate | Safe extraction order | Main risk |
 |---|---:|---|---|---|
-| `itineraries.service.ts` | 37,413 lines / 607 DB-call matches | create/update persistence; route/rebuild; manual/auto fit; hotel/vehicle/vendor pricing; confirmation/cancellation | pure calculations -> manual preview boundary -> route/rebuild -> pricing -> confirmation | transaction and shared mutable state |
+| `itineraries.service.ts` | 36,843 lines / 613 DB-call matches | create/update persistence; route/rebuild; manual/auto fit; hotel/vehicle/vendor pricing; confirmation/cancellation | guide assignment -> pure calculations -> manual preview boundary -> route/rebuild -> pricing -> confirmation | transaction and shared mutable state |
 | `timeline.builder.ts` | 9,374 lines / 35 DB-call matches | input loading; route processing; hotspot selection; travel legs; operating hours/cutoffs | pure timeline policy tests -> input loader -> policy services | ordering/timing parity |
 | `itinerary-details.service.ts` | 6,108 lines / 63 DB-call matches | data loading; response assembly; hotel details; activity/guide projections | read loaders -> response assembly | response shape and duplicate queries |
 | `vendors.service.ts` | 3,478 lines / 161 DB-call matches | vendor CRUD; vehicles/slabs; local/outstation price books; permits; branches/lookups | lookup/read-only price-book query -> CRUD groups -> writes | shared Prisma model assumptions |
@@ -33,3 +33,5 @@ This is an evidence-led plan; no production extraction is retained by the baseli
 `TimelineTravelDataService` now owns timeline hotspot/hotel location reads, hotel detail enrichment, stored-location coordinate resolution and distance projections. `TimelineBuilder` remains the compatibility facade and receives the existing shared `DistanceHelper` explicitly. Query shape and transaction ownership are unchanged; endpoint-level measurement remains pending.
 
 `TimelineCandidateFeasibilityService` now owns read-only candidate admission and anchor-gap timing checks. It receives explicit policy and distance dependencies, returns the existing rejection reasons, and leaves timeline orchestration and persistence in `TimelineBuilder`.
+
+`ItineraryGuideAssignmentService` now owns guide availability, assignment read projections/options and guide pricebook/GST resolution. `ItinerariesService` remains the compatibility facade, and the new provider is registered by `ItinerariesModule`. Guide writes and confirmation/cancellation transaction workflows remain in the facade until their own evidence-backed tier.
