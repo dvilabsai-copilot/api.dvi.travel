@@ -23,3 +23,5 @@ The generated artifact is evidence about the selected database only. It does not
 ## Current hypotheses (not recommendations)
 
 The oversized itinerary/details/timeline paths are candidates for repeated reads, nested includes and queries inside loops. These are hypotheses from static inspection only and must not be reported as confirmed N+1 defects until measured.
+
+The broader candidate register, including index-addition/removal evidence gates, Redis suitability and invalidation controls, and query-level profiling fields, is maintained in [`performance-candidates.md`](./performance-candidates.md).
