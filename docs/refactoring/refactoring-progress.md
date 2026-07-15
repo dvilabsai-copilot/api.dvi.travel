@@ -863,3 +863,33 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Query count, rows examined, payload size and endpoint latency remain unmeasured.
 - Commit: `api.dvi.travel` `5e35b9d`.
+
+### Cycle 22 — Extract itinerary hotel prebook workflow
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: TBO hotel prebook request/response normalization and fresh booking-code resolution
+- New files: `src/modules/itineraries/services/itinerary-hotel-prebook.service.ts`, `test/itinerary-hotel-prebook.test.ts`
+- Workflow: hotel prebook endpoint
+
+#### Change
+
+- Moved the contiguous hotel prebook workflow and booking-code refresh fallback behind `ItineraryHotelPrebookService`.
+- Preserved supplier-bookable filtering, empty/external-stay responses, TBO prebook selection payload, room/promotions/policies/inclusions extraction, supplement normalization and final-price aggregation.
+- Kept generic normalization and provider filtering behind explicit callbacks and retained TBO/room-details dependencies.
+- Registered the new provider in `ItinerariesModule`.
+
+#### Verification
+
+- Hotel prebook boundary tests: PASS, 2/2
+- Combined focused backend suite: PASS, 64/64
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 29,920 lines after the tier; `ItineraryHotelPrebookService` is 500 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Query count, rows examined, payload size and endpoint latency remain unmeasured.
+- Commit: `api.dvi.travel` `d26ddbd`.
