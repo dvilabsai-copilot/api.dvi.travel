@@ -893,3 +893,33 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Query count, rows examined, payload size and endpoint latency remain unmeasured.
 - Commit: `api.dvi.travel` `d26ddbd`.
+
+### Cycle 23 — Extract hotel booking fulfillment
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: post-confirmation supplier booking dispatch, duplicate-success filtering, provider result aggregation and final financial status updates
+- New files: `src/modules/itineraries/services/itinerary-hotel-booking-fulfillment.service.ts`, `test/itinerary-hotel-booking-fulfillment.test.ts`
+- Workflow: provider hotel booking follow-up after quotation confirmation
+
+#### Change
+
+- Moved the contiguous provider fulfillment workflow behind `ItineraryHotelBookingFulfillmentService`.
+- Preserved provider partitioning, already-confirmed filtering, supplier payload mapping, result aggregation, finalization callbacks and external/self-arranged-only response behavior.
+- Kept provider APIs outside database transactions and retained the existing facade compatibility wrapper.
+- Registered the new provider in `ItinerariesModule`.
+
+#### Verification
+
+- Hotel booking fulfillment boundary tests: PASS, 1/1
+- Combined focused backend suite: PASS, 65/65
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 29,565 lines after the tier; `ItineraryHotelBookingFulfillmentService` is 441 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Provider latency, retry volume, query count, rows examined and payload size remain unmeasured.
+- Commit: `api.dvi.travel` `81c8cd2`.

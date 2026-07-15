@@ -126,6 +126,7 @@ An index, Redis cache, or query rewrite may move from candidate to implementatio
 | Itinerary iteration 17 | Quotation confirmation transaction boundary | `itineraries.service.ts` reduced from 31,955 to 31,061 lines; `ItineraryConfirmationService` owns 980 lines | Existing wallet deduction, confirmation persistence, hotel normalization and transaction ordering preserved; query count, rows examined, payload and latency remain unmeasured |
 | Itinerary iteration 18 | Hotel confirmation support boundary | `itineraries.service.ts` reduced from 31,061 to 30,356 lines; `ItineraryHotelConfirmationSupportService` owns 786 lines | Existing selected-hotel draft writes, financial finalization and provider-success filtering preserved; query count, rows examined, payload and latency remain unmeasured |
 | Itinerary iteration 19 | Hotel prebook and booking-code boundary | `itineraries.service.ts` reduced from 30,356 to 29,920 lines; `ItineraryHotelPrebookService` owns 500 lines | Existing TBO prebook payload handling, room normalization, supplement normalization and fresh booking-code resolution preserved; query count, rows examined, payload and latency remain unmeasured |
+| Itinerary iteration 20 | Hotel booking fulfillment boundary | `itineraries.service.ts` reduced from 29,920 to 29,565 lines; `ItineraryHotelBookingFulfillmentService` owns 441 lines | Existing provider dispatch, duplicate-success filtering, result aggregation and finalization callbacks preserved; provider latency, retry volume and query count remain unmeasured |
 
 The iteration-6 and iteration-7 boundaries are measurement seams, not optimization claims. The next safe performance tier should instrument representative itinerary-details, route-rebuild and hotspot-preview requests and attribute calls to `TimelineTravelDataService` and `TimelineCandidateFeasibilityService` before changing query shape or adding a cache.
 
@@ -152,6 +153,8 @@ The iteration-17 confirmation boundary is a measurement seam for pre-confirmatio
 The iteration-18 support boundary is a measurement seam for selected-hotel draft row churn, multi-night expansion volume, route lookup fan-out, financial finalization transaction wait and provider-confirmation lookup scans. Profile draft synchronization, financial finalization and already-successful filtering independently; only then consider batching or composite indexes, and keep external provider calls out of database transactions.
 
 The iteration-19 prebook boundary is a measurement seam for room-detail cache misses, supplier prebook latency, response payload size, supplement normalization volume and fresh booking-code fallback searches. Measure TBO prebook and room-refresh paths separately; do not cache mutable booking codes or parallelize supplier calls without provider consistency and timeout evidence.
+
+The iteration-20 fulfillment boundary is a measurement seam for per-provider latency, retry/error volume, duplicate-success lookup rows, callback finalization time and aggregate response payload size. Measure TBO, ResAvenue, HOBSE, AxisRooms and STAAH separately; do not parallelize provider calls or change retry/finalization ordering without provider-specific evidence.
 
 ## Next profiling order
 
