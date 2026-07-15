@@ -1011,3 +1011,33 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Query count, rows examined, payload size and listing latency remain unmeasured.
 - Commit: `api.dvi.travel` `b285309`.
+
+### Cycle 27 — Extract itinerary voucher read workflows
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: hotel and transport voucher read projections, labels and formatting
+- New files: `src/modules/itineraries/services/itinerary-voucher-read.service.ts`, `test/itinerary-voucher-read.test.ts`
+- Workflow: hotel and transport voucher endpoints
+
+#### Change
+
+- Moved the contiguous voucher read workflows behind `ItineraryVoucherReadService`.
+- Preserved hotel/room/voucher/cancellation-policy reads, vehicle/vendor/gallery reads, route/hotspot reads, transport-cost queries and date/location/passenger projections.
+- Kept existing formatting policies behind explicit callbacks and retained missing-plan validation.
+- Registered the new provider in `ItinerariesModule`.
+
+#### Verification
+
+- Voucher boundary tests: PASS, 2/2
+- Combined focused backend suite: PASS, 70/70
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 27,228 lines after the tier; `ItineraryVoucherReadService` is 810 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Query count, rows examined, payload size and voucher latency remain unmeasured.
+- Commit: `api.dvi.travel` `bb8d421`.
