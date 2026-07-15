@@ -803,3 +803,33 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Query count, rows examined, payload size and endpoint latency remain unmeasured.
 - Commit: `api.dvi.travel` `b26ce39`.
+
+### Cycle 20 — Extract itinerary confirmation workflow
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: quotation confirmation transaction, supplier-booking normalization and confirmation persistence preparation
+- New files: `src/modules/itineraries/services/itinerary-confirmation.service.ts`, `test/itinerary-confirmation.test.ts`
+- Workflow: quotation confirmation endpoint
+
+#### Change
+
+- Moved the contiguous confirmation transaction and its supplier-stay normalization helpers behind `ItineraryConfirmationService`.
+- Preserved wallet deduction timing, existing-confirmation reuse, hotel restriction validation, confirmation parent/guest/child/infant persistence, draft copy ordering and provisional status behavior for supplier bookings.
+- Kept facade-owned hotel-draft synchronization, wallet/date callbacks and post-confirmation provider booking orchestration behind explicit compatibility adapters.
+- Registered the new provider in `ItinerariesModule`.
+
+#### Verification
+
+- Confirmation boundary tests: PASS, 3/3
+- Combined focused backend suite: PASS, 60/60
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 31,061 lines after the tier; `ItineraryConfirmationService` is 980 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Query count, rows examined, payload size and endpoint latency remain unmeasured.
+- Commit: `api.dvi.travel` `7d63d1c`.
