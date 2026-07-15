@@ -274,6 +274,26 @@
 
 - Index rollback SQL and approval gates are present without speculative production changes.
 
+### Cycle 10 — Bounded API contract smoke
+
+#### Scope
+
+- Existing harness: `scripts/test-api-endpoints.js`
+- Workflows: Swagger docs, authentication, authenticated dashboard read, GraphQL authorization and authenticated dashboard summary
+- Write scope: no itinerary or booking mutation; full endpoint sweep remained disabled
+
+#### Verification
+
+- API smoke: PASS, 5/5
+- Swagger docs: PASS
+- Auth login: PASS, HTTP 201
+- Authenticated REST dashboard: PASS, HTTP 200
+- GraphQL unauthorized and authenticated checks: PASS
+
+#### Result
+
+- A bounded API smoke result now covers the baseline’s REST, GraphQL and Swagger runtime surfaces without claiming full endpoint coverage.
+
 ### Cycle 6 — Itinerary-details utility characterization (frontend)
 
 #### Scope
