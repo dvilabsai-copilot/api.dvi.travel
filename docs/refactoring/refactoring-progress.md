@@ -287,6 +287,28 @@
 - No controller, route, DTO, response, Prisma query, transaction or frontend change.
 - Commit: `api.dvi.travel` `0823c22`.
 
+### Full-decomposition iteration 2 — Extract timeline rejection policy
+
+#### Scope
+
+- Original facade: `src/modules/itineraries/engines/helpers/timeline.builder.ts`
+- Responsibility extracted: route-end buffer policy, rejection categorization, gate breakdown and per-route candidate rejection summaries
+- New files: `src/modules/itineraries/engines/helpers/timeline-rejection-policy.service.ts`, `test/timeline-rejection-policy.test.ts`
+
+#### Verification
+
+- Original facade: 10,254 → 10,175 lines
+- Extracted service: 103 lines
+- Rejection-policy tests: PASS, 3/3
+- Combined backend focused suite: PASS, 29/29
+- Backend build: PASS
+
+#### Compatibility
+
+- `TimelineBuilder` still owns the public build method and returns the same rejection summary shape.
+- No controller, route, DTO, response, Prisma query, transaction or frontend change.
+- Commit: `api.dvi.travel` `f093f89`.
+
 #### Verification
 
 - Read-only database audit: PASS; 182 tables, 2,288 index definitions, Performance Schema enabled
