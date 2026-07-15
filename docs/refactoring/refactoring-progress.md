@@ -982,3 +982,32 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Query count, rows examined, provider latency and transaction wait remain unmeasured.
 - Commit: `api.dvi.travel` `f818293`.
+
+### Cycle 26 — Extract itinerary listing and filter workflows
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: agent/location filters and confirmed, cancelled and accounts itinerary listing reads
+- New files: `src/modules/itineraries/services/itinerary-listing.service.ts`, `test/itinerary-listing.test.ts`
+- Workflow: itinerary listing/filter endpoints
+
+#### Change
+
+- Moved the contiguous listing/filter read workflows behind `ItineraryListingService`.
+- Preserved role scoping, date parsing, guide/vendor constraints, global search, pagination/count behavior and response projections.
+- Registered the new provider in `ItinerariesModule` and retained compatibility wrappers in `ItinerariesService`.
+
+#### Verification
+
+- Listing boundary tests: PASS, 2/2
+- Combined focused backend suite: PASS, 70/70
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 27,963 lines after the tier; `ItineraryListingService` is 615 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Query count, rows examined, payload size and listing latency remain unmeasured.
+- Commit: `api.dvi.travel` `b285309`.

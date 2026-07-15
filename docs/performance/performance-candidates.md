@@ -129,6 +129,7 @@ An index, Redis cache, or query rewrite may move from candidate to implementatio
 | Itinerary iteration 20 | Hotel booking fulfillment boundary | `itineraries.service.ts` reduced from 29,920 to 29,565 lines; `ItineraryHotelBookingFulfillmentService` owns 441 lines | Existing provider dispatch, duplicate-success filtering, result aggregation and finalization callbacks preserved; provider latency, retry volume and query count remain unmeasured |
 | Itinerary iteration 21 | Confirmed-plan copy boundary | `itineraries.service.ts` reduced from 29,565 to 29,089 lines; `ItineraryConfirmedPlanCopyService` owns 504 lines | Existing transaction-scoped child-row copy ordering preserved; copied row counts, transaction wait and payload volume remain unmeasured |
 | Itinerary iteration 22 | Cancellation transaction boundary | `itineraries.service.ts` reduced from 29,089 to 28,519 lines; `ItineraryCancellationService` owns 602 lines | Existing cancellation validation, child cleanup, provider cancellation, audit and notification ordering preserved; query count, rows examined, provider latency and transaction wait remain unmeasured |
+| Itinerary iteration 23 | Itinerary listing/filter read boundary | `itineraries.service.ts` reduced from 28,519 to 27,963 lines; `ItineraryListingService` owns 615 lines | Existing role scoping, date filters, global search, pagination and projections preserved; query count, rows examined, payload size and latency remain unmeasured |
 
 The iteration-6 and iteration-7 boundaries are measurement seams, not optimization claims. The next safe performance tier should instrument representative itinerary-details, route-rebuild and hotspot-preview requests and attribute calls to `TimelineTravelDataService` and `TimelineCandidateFeasibilityService` before changing query shape or adding a cache.
 
@@ -161,6 +162,8 @@ The iteration-20 fulfillment boundary is a measurement seam for per-provider lat
 The iteration-21 confirmed-plan copy boundary is a measurement seam for child-row volume by table, transaction wait/lock time and draft-to-confirmed payload size. Profile copy work by itinerary size before considering bulk inserts or parallel writes; preserve parent/child ordering and transaction atomicity.
 
 The iteration-22 cancellation boundary is a measurement seam for cancellation transaction wait/lock time, child-table row volume, provider cancellation latency and notification dispatch time. Profile already-cancelled, no-provider and provider-cancellation paths separately; do not parallelize cleanup or external cancellation calls without preserving transaction and retry semantics.
+
+The iteration-23 listing boundary is a measurement seam for filter selectivity, global-search raw SQL cost, count/data query duplication, pagination depth and response payload size. Profile confirmed, cancelled and accounts listings separately before considering composite indexes, keyset pagination or projection changes.
 
 ## Next profiling order
 
