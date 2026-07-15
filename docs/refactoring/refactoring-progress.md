@@ -331,6 +331,49 @@
 - No controller, route, DTO, response, Prisma query, transaction or frontend change.
 - Commit: `api.dvi.travel` `c95d4f8`.
 
+### Full-decomposition iteration 4 — Extract timeline anchor policy
+
+#### Scope
+
+- Original facade: `src/modules/itineraries/engines/helpers/timeline.builder.ts`
+- Responsibility extracted: fixed timeline anchors, real-gap intervals, absolute route time conversion, plan timestamp parsing, same-city continuation context and travel-location classification
+- New files: `src/modules/itineraries/engines/helpers/timeline-anchor-policy.service.ts`, `test/timeline-anchor-policy.test.ts`
+
+#### Verification
+
+- Original facade: 9,948 → 9,795 lines
+- Extracted service: 148 lines
+- Anchor-policy tests: PASS, 3/3
+- Combined backend focused suite: PASS, 35/35
+- Backend build: PASS
+
+#### Compatibility
+
+- Timeline scheduling remains in the existing facade; only pure anchor calculations moved.
+- No controller, route, DTO, response, Prisma query, transaction or frontend change.
+- Commit: `api.dvi.travel` `be9e5bc`.
+
+### Full-decomposition iteration 5 — Extract timeline data access
+
+#### Scope
+
+- Original facade: `src/modules/itineraries/engines/helpers/timeline.builder.ts`
+- Responsibility extracted: route-matrix batching, arrival-hotel marker fallback, date-only normalization and inter-city travel-row distance normalization
+- New files: `src/modules/itineraries/engines/helpers/timeline-data-access.service.ts`, `test/timeline-data-access.test.ts`
+
+#### Verification
+
+- Original facade: 9,795 → 9,612 lines
+- Extracted service: 184 lines
+- Combined focused backend suite: PASS, 31/31 in the tier run
+- Backend build: PASS
+
+#### Compatibility
+
+- Existing SQL, Prisma filters, fallback ordering and returned shapes are preserved behind a private service boundary.
+- No index, Redis, controller, route, DTO, response or frontend change.
+- Commit: `api.dvi.travel` `8f35e2f`.
+
 #### Verification
 
 - Read-only database audit: PASS; 182 tables, 2,288 index definitions, Performance Schema enabled
