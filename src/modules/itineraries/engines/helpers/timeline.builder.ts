@@ -28,7 +28,6 @@ import { timeToSeconds, addSeconds, secondsToTime, wrapToDay, normalizeTimeRange
 import { DistanceHelper } from "./distance.helper";
 import { TimeConverter } from "./time-converter";
 import { queueDeferredMustVisitHotspot } from "./deferred-retry.helper";
-import { normalizeCityName as normalizeCityNameShared } from '../../utils/city-normalization.util';
 import {
   evaluateArrivalHotelPolicy,
   ArrivalWindow,
@@ -37,7 +36,7 @@ import {
   PolicyResolutionStatus,
 } from '../../services/arrival-hotel-policy.service';
 import type { SameCityAllocationPlan } from '../../services/same-city-cross-day-optimizer.service';
-import { normalizeRouteCityKey } from '../../services/same-city-cross-day-optimizer.shared';
+import { CarryForwardRouteContext, TimelineRoutePolicyService } from './timeline-route-policy.service';
 import { TimelineOperatingHoursService } from './timeline-operating-hours.service';
 import { DayTimeSlot, TimelineSlotPolicyService } from './timeline-slot-policy.service';
 import { TimelineRejectionPolicyService } from './timeline-rejection-policy.service';
@@ -104,13 +103,6 @@ interface CarryForwardHotspot extends SelectedHotspot {
   carriedFromRouteDestinationCity?: string;
   carriedProtectedSlotStartSeconds?: number;
   carriedProtectedSlotEndSeconds?: number;
-}
-
-interface CarryForwardRouteContext {
-  routeId: number;
-  routeDay: number;
-  sourceCity: string;
-  destinationCity: string;
 }
 
 interface FixedTimelineAnchor {
@@ -212,6 +204,7 @@ export class TimelineBuilder {
   private readonly operatingHoursService = new TimelineOperatingHoursService();
   private readonly slotPolicyService = new TimelineSlotPolicyService();
   private readonly rejectionPolicyService = new TimelineRejectionPolicyService();
+  private readonly routePolicyService = new TimelineRoutePolicyService();
 
   private normalizeTravelRowDistance(
     row: HotspotDetailRow,
@@ -709,7 +702,7 @@ export class TimelineBuilder {
    * Removes airport, railway, station, etc. and normalizes to lowercase
    */
   private normalizeCityName(name: string): string {
-    return normalizeCityNameShared(name);
+    return this.routePolicyService.normalizeCityName(name);
   }
 
   /**
@@ -720,29 +713,15 @@ export class TimelineBuilder {
    * - "Chennai International Airport" -> "chennai"
    */
   private canonicalCityKey(name: string): string {
-    const raw = String(name ?? '').split('|')[0]?.trim() ?? '';
-    if (!raw) return '';
-
-    const beforeComma = raw.split(',')[0]?.trim() ?? '';
-    const normalizedPrimary = this.normalizeCityName(beforeComma);
-    if (normalizedPrimary) return normalizedPrimary;
-
-    return this.normalizeCityName(raw);
+    return this.routePolicyService.canonicalCityKey(name);
   }
 
   private isSameCity(a: string, b: string): boolean {
-    const aa = this.canonicalCityKey(a);
-    const bb = this.canonicalCityKey(b);
-    return !!aa && !!bb && aa === bb;
+    return this.routePolicyService.isSameCity(a, b);
   }
 
   private getSameCityRouteKey(route: Partial<RouteRow> | null | undefined): string {
-    return this.canonicalCityKey(
-      normalizeRouteCityKey(
-        String((route as any)?.location_name || ''),
-        String((route as any)?.next_visiting_location || ''),
-      ),
-    );
+    return this.routePolicyService.getSameCityRouteKey(route);
   }
 
   private buildReservedSameCityHotspotIdsByRoute(
@@ -750,74 +729,7 @@ export class TimelineBuilder {
     existingHotspots: any[] | undefined,
     scopeToRouteId?: number,
   ): Map<number, Set<number>> {
-    const routeCityKeyById = new Map<number, string>();
-    for (const route of routes) {
-      const routeId = Number((route as any)?.itinerary_route_ID || 0);
-      if (!routeId) continue;
-
-      const cityKey = this.getSameCityRouteKey(route);
-      if (!cityKey) continue;
-
-      routeCityKeyById.set(routeId, cityKey);
-    }
-
-    if (routeCityKeyById.size === 0 || !Array.isArray(existingHotspots) || existingHotspots.length === 0) {
-      return new Map<number, Set<number>>();
-    }
-
-    const cityReservedIds = new Map<string, Set<number>>();
-    const routeReservedIds = new Map<number, Set<number>>();
-
-    for (const row of existingHotspots) {
-      if (Number((row as any)?.deleted || 0) !== 0) continue;
-
-      const routeId = Number((row as any)?.itinerary_route_ID || 0);
-      const hotspotId = Number((row as any)?.hotspot_ID || 0);
-      if (!routeId || !hotspotId) continue;
-      if (Number((row as any)?.item_type || 0) !== 4) continue;
-
-      const cityKey = routeCityKeyById.get(routeId);
-      if (!cityKey) continue;
-
-      // Full rebuilds should preserve active same-city route ownership so a later day
-      // keeps its already-selected hotspot set instead of an earlier sibling route
-      // re-pulling those visits during candidate selection.
-
-      if (!cityReservedIds.has(cityKey)) {
-        cityReservedIds.set(cityKey, new Set<number>());
-      }
-      cityReservedIds.get(cityKey)!.add(hotspotId);
-
-      if (!routeReservedIds.has(routeId)) {
-        routeReservedIds.set(routeId, new Set<number>());
-      }
-      routeReservedIds.get(routeId)!.add(hotspotId);
-    }
-
-    const reservedByRoute = new Map<number, Set<number>>();
-    for (const route of routes) {
-      const routeId = Number((route as any)?.itinerary_route_ID || 0);
-      if (!routeId) continue;
-
-      const cityKey = routeCityKeyById.get(routeId);
-      if (!cityKey) continue;
-
-      const cityIds = cityReservedIds.get(cityKey);
-      if (!cityIds || cityIds.size === 0) continue;
-
-      const ownIds = routeReservedIds.get(routeId) || new Set<number>();
-      const reservedIds = new Set<number>();
-      for (const hotspotId of cityIds) {
-        if (ownIds.has(hotspotId)) continue;
-        reservedIds.add(hotspotId);
-      }
-
-      if (reservedIds.size > 0) {
-        reservedByRoute.set(routeId, reservedIds);
-      }
-    }
-
-    return reservedByRoute;
+    return this.routePolicyService.buildReservedSameCityHotspotIdsByRoute(routes, existingHotspots);
   }
 
   // Match a hotspot location token to a route city using normalized city keys.
@@ -827,25 +739,7 @@ export class TimelineBuilder {
     hotspotLocation: string | null | undefined,
     targetCity: string | null | undefined,
   ): boolean {
-    const targetKey = this.canonicalCityKey(String(targetCity || ''));
-    if (!targetKey) return false;
-
-    const parts = String(hotspotLocation || '')
-      .split('|')
-      .flatMap((part) => String(part || '').split(','))
-      .map((p) => this.canonicalCityKey(p))
-      .filter(Boolean);
-
-    if (!parts.length) return false;
-
-    for (const part of parts) {
-      if (part === targetKey) return true;
-      if (part.startsWith(`${targetKey} `)) return true;
-      if (part.includes(` ${targetKey} `)) return true;
-      if (part.endsWith(` ${targetKey}`)) return true;
-    }
-
-    return false;
+    return this.routePolicyService.hotspotLocationMatchesCity(hotspotLocation, targetCity);
   }
 
   private buildRouteLegs(
@@ -853,26 +747,7 @@ export class TimelineBuilder {
     viaLocationNames: string[],
     destinationCity: string | null | undefined,
   ): string[] {
-    const rawLegs = [
-      String(sourceCity || '').trim(),
-      ...(Array.isArray(viaLocationNames) ? viaLocationNames : [])
-        .map((x) => String(x || '').trim())
-        .filter(Boolean),
-      String(destinationCity || '').trim(),
-    ].filter(Boolean);
-
-    const legs: string[] = [];
-
-    for (const leg of rawLegs) {
-      const prev = legs[legs.length - 1];
-      if (prev && this.canonicalCityKey(prev) === this.canonicalCityKey(leg)) {
-        continue;
-      }
-
-      legs.push(leg);
-    }
-
-    return legs;
+    return this.routePolicyService.buildRouteLegs(sourceCity, viaLocationNames, destinationCity);
   }
 
   private routeSpecificHotspotMatchesRouteChain(
@@ -880,25 +755,7 @@ export class TimelineBuilder {
     hotspotToLocation: string | null | undefined,
     routeLegs: string[],
   ): { matches: boolean; fromIndex: number; toIndex: number } {
-    const legs = Array.isArray(routeLegs) ? routeLegs.filter(Boolean) : [];
-
-    if (legs.length < 2) {
-      return { matches: false, fromIndex: -1, toIndex: -1 };
-    }
-
-    for (let toIndex = 1; toIndex < legs.length; toIndex++) {
-      if (!this.hotspotLocationMatchesCity(hotspotToLocation, legs[toIndex])) {
-        continue;
-      }
-
-      for (let fromIndex = toIndex - 1; fromIndex >= 0; fromIndex--) {
-        if (this.hotspotLocationMatchesCity(hotspotLocation, legs[fromIndex])) {
-          return { matches: true, fromIndex, toIndex };
-        }
-      }
-    }
-
-    return { matches: false, fromIndex: -1, toIndex: -1 };
+    return this.routePolicyService.routeSpecificHotspotMatchesRouteChain(hotspotLocation, hotspotToLocation, routeLegs);
   }
 
   private routeMovementOrder(
@@ -906,111 +763,27 @@ export class TimelineBuilder {
     toIndex: number,
     kind: 'en_route' | 'via_stop' | 'via_city' = 'en_route',
   ): number {
-    const safeFrom = Number.isFinite(fromIndex) && fromIndex >= 0 ? fromIndex : 999;
-    const safeTo = Number.isFinite(toIndex) && toIndex >= 0 ? toIndex : safeFrom + 1;
-
-    if (kind === 'en_route') return safeFrom * 100 + 20;
-    if (kind === 'via_stop') return Math.max(0, safeTo - 1) * 100 + 90;
-    return Math.max(0, safeTo - 1) * 100 + 95;
+    return this.routePolicyService.routeMovementOrder(fromIndex, toIndex, kind);
   }
 
   private hotspotNameMatchesLocation(
     hotspot: any,
     locationName: string | null | undefined,
   ): boolean {
-    const targetKey = this.canonicalCityKey(String(locationName || ''));
-    if (!targetKey) return false;
-
-    const candidates = [
-      hotspot?.hotspot_name,
-      hotspot?.hotspot_landmark,
-      hotspot?.hotspot_address,
-      hotspot?.address,
-    ]
-      .map((x) => this.canonicalCityKey(String(x || '')))
-      .filter(Boolean);
-
-    return candidates.some((candidateKey) => {
-      return (
-        candidateKey === targetKey ||
-        candidateKey.includes(targetKey) ||
-        targetKey.includes(candidateKey)
-      );
-    });
+    return this.routePolicyService.hotspotNameMatchesLocation(hotspot, locationName);
   }
 
   private isCarryForwardHotspotCompatibleWithRoute(
     hotspot: Partial<SelectedHotspot> & Record<string, any>,
     routeContext: CarryForwardRouteContext,
   ): { compatible: boolean; reason: string; hotspotLocation: string; hotspotToLocation: string } {
-    const hotspotLocation = String(
-      hotspot.hotspot_location ??
-        hotspot.hotspotLocation ??
-        hotspot.location_name ??
-        '',
-    );
-
-    const hotspotToLocation = String(
-      hotspot.hotspot_to_location ??
-        hotspot.hotspotToLocation ??
-        hotspotLocation ??
-        '',
-    );
-
-    const sourceKey = this.canonicalCityKey(routeContext.sourceCity);
-    const destinationKey = this.canonicalCityKey(routeContext.destinationCity);
-    const sameCityRoute = !!sourceKey && !!destinationKey && sourceKey === destinationKey;
-
-    const sourceMatch = this.hotspotLocationMatchesCity(hotspotLocation, routeContext.sourceCity);
-    const sourceToMatch = this.hotspotLocationMatchesCity(hotspotToLocation, routeContext.sourceCity);
-    const destinationMatch = this.hotspotLocationMatchesCity(hotspotLocation, routeContext.destinationCity);
-    const destinationToMatch = this.hotspotLocationMatchesCity(hotspotToLocation, routeContext.destinationCity);
-
-    if (sameCityRoute) {
-      const compatible = sourceMatch || sourceToMatch || destinationMatch || destinationToMatch;
-
-      return {
-        compatible,
-        reason: compatible ? 'same_city_compatible' : 'same_city_location_mismatch',
-        hotspotLocation,
-        hotspotToLocation,
-      };
-    }
-
-    const compatible = sourceMatch || sourceToMatch || destinationMatch || destinationToMatch;
-
-    return {
-      compatible,
-      reason: compatible ? 'intercity_endpoint_compatible' : 'intercity_location_mismatch',
-      hotspotLocation,
-      hotspotToLocation,
-    };
+    return this.routePolicyService.isCarryForwardHotspotCompatibleWithRoute(hotspot, routeContext);
   }
 
   // Estimate how many hotspots a route can realistically absorb based on the
   // available route window. Used for reservation feasibility checks.
   private estimateRouteHotspotCapacity(route: RouteRow | null | undefined): number {
-    if (!route) return 0;
-
-    const startRaw = typeof (route as any).route_start_time === 'string'
-      ? String((route as any).route_start_time)
-      : '09:00:00';
-    const endRaw = typeof (route as any).route_end_time === 'string'
-      ? String((route as any).route_end_time)
-      : '18:00:00';
-
-    let startSecs = timeToSeconds(startRaw);
-    let endSecs = timeToSeconds(endRaw);
-    if (endSecs < startSecs) endSecs += 86400;
-
-    const availableSecs = Math.max(0, endSecs - startSecs);
-    const routeBufferSecs = 60 * 60;
-    const effectiveSecs = Math.max(0, availableSecs - routeBufferSecs);
-
-    // Heuristic per hotspot block: travel + visit + transition.
-    const avgPerHotspotSecs = 100 * 60;
-    const estimated = Math.floor(effectiveSecs / avgPerHotspotSecs);
-    return Math.max(1, estimated);
+    return this.routePolicyService.estimateRouteHotspotCapacity(route);
   }
 
   /**
