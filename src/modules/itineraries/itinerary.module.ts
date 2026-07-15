@@ -50,6 +50,7 @@ import { ItineraryActivityWorkflowService } from './services/itinerary-activity-
 import { ItinerarySmartActivityService } from './services/itinerary-smart-activity.service';
 import { ItineraryHotspotWorkflowService } from './services/itinerary-hotspot-workflow.service';
 import { ItinerarySelectionWorkflowService } from './services/itinerary-selection-workflow.service';
+import { ItineraryQuoteContextService } from './services/itinerary-quote-context.service';
 
 @Module({
   imports: [HotelsModule],
@@ -79,6 +80,7 @@ import { ItinerarySelectionWorkflowService } from './services/itinerary-selectio
     ItinerarySmartActivityService,
     ItineraryHotspotWorkflowService,
     ItinerarySelectionWorkflowService,
+    ItineraryQuoteContextService,
 
     // existing engines you already had
     HotelEngineService,
