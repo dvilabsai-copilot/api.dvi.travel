@@ -30,6 +30,7 @@ import { AxisRoomsBookingPushService } from "./services/axisrooms-booking-push.s
 import { StaahBookingPushService } from "./services/staah-booking-push.service";
 import { HotelStayBlockValidationService } from "./services/hotel-stay-block-validation.service";
 import { SameCityCrossDayOptimizerService } from "./services/same-city-cross-day-optimizer.service";
+import { ItineraryRouteNormalizationService } from './services/itinerary-route-normalization.service';
 import { ItineraryHotelDetailsTboService } from "./itinerary-hotel-details-tbo.service";
 import { TimelineEnricher } from "./engines/helpers/timeline.enricher";
 import { normalizePassengerTitle } from "../../common/utils/passenger-title.util";
@@ -541,6 +542,7 @@ export class ItinerariesService {
     private readonly hotelDetailsTboService: ItineraryHotelDetailsTboService,
     private readonly supplementNormalizer: SupplementNormalizerService,
     private readonly sameCityCrossDayOptimizerService: SameCityCrossDayOptimizerService,
+    private readonly routeNormalization: ItineraryRouteNormalizationService = new ItineraryRouteNormalizationService(),
   ) {}
 
   private parseCsvNumberList(value: unknown): number[] {
@@ -36255,14 +36257,14 @@ pricing: {
       }
     };
 
-    const context = this.extractRouteOptimizationContext(routes);
+    const context = this.routeNormalization.extractRouteOptimizationContext(routes);
 
     if (!context.start || !context.end) {
       log('[RouteOptimization] ⚠️ Missing start/end location. Returning original route order.');
       return routes;
     }
 
-    if (this.hasBrokenChain(routes)) {
+    if (this.routeNormalization.hasBrokenChain(routes)) {
       log('[RouteOptimization] ⚠️ Broken route chain detected. Returning original route order.');
       return routes;
     }
@@ -36319,215 +36321,13 @@ pricing: {
     return optimizedRoutes;
   }
 
-  private normalizeLocationName(value: string): string {
-    const raw = String(value || '').trim();
-    if (!raw) return '';
-
-    const normalized = normalizeCityName(raw);
-    if (normalized) return normalized;
-
-    return raw
-      .toLowerCase()
-      .replace(/[.,()\-_\/]/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-  }
-
-  private isTerminalAnchorLocation(locationName: string): boolean {
-    const text = String(locationName || '').toLowerCase();
-    return /(airport|air\s*port|railway|station|stn|junction|terminal|bus\s*stand|terminus)/i.test(text);
-  }
-
-  private extractRouteOptimizationContext(routes: any[]): {
-    start: string;
-    end: string;
-    sourceLocations: string[];
-    nextVisitingLocations: string[];
-    rawFullPath: string[];
-    cleanedFullPath: string[];
-    rawMiddleLocations: string[];
-    movableStops: Array<{ name: string; normalizedName: string }>;
-    removedDuplicates: Array<{ name: string; normalizedName: string }>;
-    removedInvalidTerminalNodes: Array<{ name: string; reason: string }>;
-  } {
-    const sourceLocations = routes.map((r) => String(r?.location_name || '').trim());
-    const nextVisitingLocations = routes.map((r) => String(r?.next_visiting_location || '').trim());
-
-    // Build a full path first so we normalize chain artifacts before choosing permutation nodes.
-    const rawFullPath = sourceLocations.length > 0
-      ? [sourceLocations[0], ...nextVisitingLocations]
-      : [];
-    const cleanedFullPath = this.buildCleanOptimizationPath(rawFullPath);
-
-    const start = cleanedFullPath[0] || '';
-    const end = cleanedFullPath[cleanedFullPath.length - 1] || '';
-    const rawMiddleLocations = cleanedFullPath.slice(1, -1);
-
-    const rawStops = this.buildMovableStops(rawMiddleLocations, start, end);
-    const dedupeResult = this.dedupeStops(rawStops);
-
-    return {
-      start,
-      end,
-      sourceLocations,
-      nextVisitingLocations,
-      rawFullPath,
-      cleanedFullPath,
-      rawMiddleLocations,
-      movableStops: dedupeResult.stops,
-      removedDuplicates: dedupeResult.removedDuplicates,
-      removedInvalidTerminalNodes: rawStops.removedInvalidTerminalNodes,
-    };
-  }
-
-  private buildMovableStops(
-    rawMiddleLocations: string[],
-    start: string,
-    end: string,
-  ): {
-    stops: Array<{ name: string; normalizedName: string }>;
-    removedInvalidTerminalNodes: Array<{ name: string; reason: string }>;
-  } {
-    const stops: Array<{ name: string; normalizedName: string }> = [];
-    const removedInvalidTerminalNodes: Array<{ name: string; reason: string }> = [];
-
-    const startNormalized = this.normalizeLocationName(start);
-    const endNormalized = this.normalizeLocationName(end);
-
-    for (let idx = 0; idx < rawMiddleLocations.length; idx++) {
-      const rawName = rawMiddleLocations[idx];
-      const name = String(rawName || '').trim();
-      const normalizedName = this.normalizeLocationName(name);
-
-      if (!name || !normalizedName) {
-        removedInvalidTerminalNodes.push({ name, reason: 'empty-name' });
-        continue;
-      }
-
-      // Anchor nodes must remain fixed; allowing them in permutation creates invalid loops.
-      if (normalizedName === startNormalized || normalizedName === endNormalized) {
-        const preserveFirstTerminalToCityHop =
-          idx === 0 &&
-          normalizedName === startNormalized &&
-          this.isTerminalAnchorLocation(start) &&
-          !this.isTerminalAnchorLocation(name) &&
-          start.trim().toLowerCase() !== name.trim().toLowerCase();
-
-        if (preserveFirstTerminalToCityHop) {
-          stops.push({ name, normalizedName });
-          continue;
-        }
-
-        removedInvalidTerminalNodes.push({ name, reason: 'matches-anchor' });
-        continue;
-      }
-
-      stops.push({ name, normalizedName });
-    }
-
-    return { stops, removedInvalidTerminalNodes };
-  }
-
-  private buildCleanOptimizationPath(rawFullPath: string[]): string[] {
-    const cleaned: string[] = [];
-    const seen = new Set<string>();
-
-    // Duplicate chain artifacts are dangerous because they create fake loops and huge permutation inputs.
-    for (let i = 0; i < rawFullPath.length; i++) {
-      const name = String(rawFullPath[i] || '').trim();
-      const normalizedName = this.normalizeLocationName(name);
-      if (!name || !normalizedName) continue;
-
-      let shouldPreserveTerminalToCityHop = false;
-
-      if (cleaned.length > 0) {
-        const prevNormalized = this.normalizeLocationName(cleaned[cleaned.length - 1]);
-        if (normalizedName === prevNormalized) {
-          const prevName = cleaned[cleaned.length - 1];
-          const isFirstHop = cleaned.length === 1;
-          shouldPreserveTerminalToCityHop =
-            isFirstHop &&
-            this.isTerminalAnchorLocation(prevName) &&
-            !this.isTerminalAnchorLocation(name) &&
-            this.normalizeLocationName(prevName) === this.normalizeLocationName(name) &&
-            prevName.trim().toLowerCase() !== name.trim().toLowerCase();
-
-          if (!shouldPreserveTerminalToCityHop) {
-            continue;
-          }
-        }
-      }
-
-      const isLastNode = i === rawFullPath.length - 1;
-      if (seen.has(normalizedName) && !isLastNode && !shouldPreserveTerminalToCityHop) {
-        continue;
-      }
-
-      cleaned.push(name);
-      seen.add(normalizedName);
-    }
-
-    if (cleaned.length >= 2) {
-      return cleaned;
-    }
-
-    // Fallback to non-empty endpoints when cleaned path collapses too far.
-    const first = rawFullPath.find((p) => this.normalizeLocationName(p));
-    const last = [...rawFullPath].reverse().find((p) => this.normalizeLocationName(p));
-    const fallback: string[] = [];
-    if (first) fallback.push(String(first).trim());
-    if (last && this.normalizeLocationName(last) !== this.normalizeLocationName(first || '')) {
-      fallback.push(String(last).trim());
-    }
-    return fallback;
-  }
-
-  private hasBrokenChain(routes: any[]): boolean {
-    if (!routes || routes.length <= 1) return false;
-
-    for (let i = 0; i < routes.length - 1; i++) {
-      const currentNext = this.normalizeLocationName(String(routes[i]?.next_visiting_location || ''));
-      const nextSource = this.normalizeLocationName(String(routes[i + 1]?.location_name || ''));
-      if (!currentNext || !nextSource || currentNext !== nextSource) {
-        return true;
-      }
-    }
-
-    return false;
-  }
-
-  private dedupeStops(stopsInput: {
-    stops: Array<{ name: string; normalizedName: string }>;
-    removedInvalidTerminalNodes: Array<{ name: string; reason: string }>;
-  }): {
-    stops: Array<{ name: string; normalizedName: string }>;
-    removedDuplicates: Array<{ name: string; normalizedName: string }>;
-  } {
-    const seen = new Set<string>();
-    const stops: Array<{ name: string; normalizedName: string }> = [];
-    const removedDuplicates: Array<{ name: string; normalizedName: string }> = [];
-
-    // Duplicate place names are dangerous in exhaustive search: they produce repeated equivalent permutations.
-    for (const stop of stopsInput.stops) {
-      if (seen.has(stop.normalizedName)) {
-        removedDuplicates.push(stop);
-        continue;
-      }
-
-      seen.add(stop.normalizedName);
-      stops.push(stop);
-    }
-
-    return { stops, removedDuplicates };
-  }
-
   private validateOptimizationInputs(context: {
     start: string;
     end: string;
     movableStops: Array<{ name: string; normalizedName: string }>;
   }): { isValid: boolean; reason?: string } {
-    const startNormalized = this.normalizeLocationName(context.start);
-    const endNormalized = this.normalizeLocationName(context.end);
+    const startNormalized = this.routeNormalization.normalizeLocationName(context.start);
+    const endNormalized = this.routeNormalization.normalizeLocationName(context.end);
 
     if (!startNormalized || !endNormalized) {
       return { isValid: false, reason: 'missing-start-or-end' };
@@ -36642,7 +36442,7 @@ pricing: {
       }
 
       const prev = cleaned[cleaned.length - 1];
-      if (this.normalizeLocationName(prev) === this.normalizeLocationName(name)) {
+      if (this.routeNormalization.normalizeLocationName(prev) === this.routeNormalization.normalizeLocationName(name)) {
         continue;
       }
       cleaned.push(name);

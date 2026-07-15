@@ -139,3 +139,43 @@
 
 - Contract tier retained and committed.
 - Remaining risk: runtime route-precedence coverage still needs an isolated API test; no route definitions were changed in this cycle.
+
+### Cycle 4 — Extract itinerary route normalization policy
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: pure route-chain normalization, terminal-anchor recognition, broken-chain detection and movable-stop deduplication
+- New files: `src/modules/itineraries/services/itinerary-route-normalization.service.ts`, `test/itinerary-route-normalization.test.ts`
+- Endpoint/UI workflow: itinerary save route optimization; existing controller/API shape unchanged
+- Tables: none
+
+#### Baseline
+
+- Original file size: 37,413 lines; static DB-call matches: 607
+- Route normalization characterization: embedded in optimizer test; 14/14 focused backend tests passed before extraction
+- Query count, DB duration and endpoint duration: not applicable to pure policy; distance method remains stubbed in tests
+- Swagger operations: 603
+
+#### Change
+
+- Moved normalization policy methods behind `ItineraryRouteNormalizationService`.
+- Kept `ItinerariesService` as the public compatibility facade and injected the new provider through `ItinerariesModule`.
+- Added direct unit coverage for duplicate movable stops, broken chains and terminal anchors.
+- No query, transaction, DTO, route, response, index or frontend change.
+
+#### Verification
+
+- Normalizer unit tests: PASS, 3/3
+- Combined focused backend suite: PASS, 17/17
+- Backend build: PASS
+- Prisma validation: not rerun after pure extraction; prior checkpoint PASS
+- OpenAPI comparison: not rerun after pure extraction; no controller metadata changed
+- Frontend tests/build: prior checkpoint PASS
+- Playwright: preflight and audit PASS; workflow execution pending configured fixture
+
+#### Result
+
+- Extraction retained.
+- Original facade is smaller and route policy now has a narrow public interface.
+- Remaining risk: constructor still coordinates many unrelated services; future extractions must preserve transaction boundaries and provider behavior.

@@ -21,3 +21,7 @@ This is an evidence-led plan; no production extraction is retained by the baseli
 - Add characterization tests before moving code.
 - Do not optimize a query without before/after counts/timings and a stable test.
 - Do not remove indexes without actual definitions, foreign-key analysis, usage counters and rollback SQL.
+
+## Retained extraction
+
+`ItineraryRouteNormalizationService` now owns route-chain normalization, terminal-anchor recognition, broken-chain detection and duplicate movable-stop filtering. `ItinerariesService` remains the compatibility facade and continues to own distance optimization and route DTO construction. The new service has no Prisma or external-provider dependency and is registered by `ItinerariesModule`.
