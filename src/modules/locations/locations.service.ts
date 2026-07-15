@@ -11,6 +11,7 @@ import {
   BetweenHotspotQueryDto,
   LocationResponseDto,
 } from './dto/location.dto';
+import { LocationGeoPolicyService } from './services/location-geo-policy.service';
 
 type ListQuery = {
   search?: string;
@@ -72,7 +73,10 @@ type LocationScope = {
 @Injectable()
 export class LocationsService {
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly geoPolicy: LocationGeoPolicyService = new LocationGeoPolicyService(),
+  ) {}
 
   clearStoredLocationCache(reason: string) {
     clearStoredLocationLookupCache(reason);
@@ -958,97 +962,30 @@ if (citySeed) {
 }
 
 private parseCoordinatePair(value: unknown): { latitude: number; longitude: number } | null {
-  const text = String(value ?? '').trim();
-  if (!text) return null;
-
-  const match = text.match(/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/);
-  if (!match) return null;
-
-  const latitude = Number(match[1]);
-  const longitude = Number(match[2]);
-
-  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
-    return null;
-  }
-
-  return { latitude, longitude };
+  return this.geoPolicy.parseCoordinatePair(value);
 }
 
 private resolveCoordinateInput(
   latitudeValue: unknown,
   longitudeValue: unknown,
 ): { latitude: number | null; longitude: number | null } {
-  const combinedFromLatitude = this.parseCoordinatePair(latitudeValue);
-  if (combinedFromLatitude) {
-    return {
-      latitude: combinedFromLatitude.latitude,
-      longitude: combinedFromLatitude.longitude,
-    };
-  }
-
-  const combinedFromLongitude = this.parseCoordinatePair(longitudeValue);
-  if (combinedFromLongitude) {
-    return {
-      latitude: combinedFromLongitude.latitude,
-      longitude: combinedFromLongitude.longitude,
-    };
-  }
-
-  return {
-    latitude: this.toCoordinate(latitudeValue),
-    longitude: this.toCoordinate(longitudeValue),
-  };
+  return this.geoPolicy.resolveCoordinateInput(latitudeValue, longitudeValue);
 }
 
 private toCoordinate(value: unknown): number | null {
-  if (value === undefined || value === null || value === '') return null;
-
-  const num = Number(value);
-  if (!Number.isFinite(num)) return null;
-
-  return num;
-}
-
-private toRadians(value: number): number {
-  return (value * Math.PI) / 180;
+  return this.geoPolicy.toCoordinate(value);
 }
 
 private normalizeLocationName(value: unknown): string {
-  return String(value ?? '')
-    .trim()
-    .replace(/\s+/g, ' ');
+  return this.geoPolicy.normalizeLocationName(value);
 }
 
 private uniqueStringsCaseInsensitive(values: Array<string | null | undefined>): string[] {
-  const seen = new Set<string>();
-  const result: string[] = [];
-
-  for (const value of values) {
-    const text = String(value ?? '').trim();
-    if (!text) continue;
-
-    const key = text.toLowerCase();
-    if (seen.has(key)) continue;
-
-    seen.add(key);
-    result.push(text);
-  }
-
-  return result;
+  return this.geoPolicy.uniqueStringsCaseInsensitive(values);
 }
 
 private estimateDurationText(distanceKm: number): string {
-  const averageSpeedKmPerHour = 25;
-  const totalHours = distanceKm / averageSpeedKmPerHour;
-  let hours = Math.floor(totalHours);
-  let mins = Math.round((totalHours - hours) * 60);
-
-  if (mins === 60) {
-    hours += 1;
-    mins = 0;
-  }
-
-  return `${hours} hours ${mins} mins`;
+  return this.geoPolicy.estimateDurationText(distanceKm);
 }
 
 private async getItineraryDistanceLimit(): Promise<number> {
@@ -1553,22 +1490,7 @@ private calculateDistanceKm(
   destLat: number,
   destLng: number,
 ): number {
-  const earthRadiusKm = 6371;
-
-  const dLat = this.toRadians(destLat - sourceLat);
-  const dLng = this.toRadians(destLng - sourceLng);
-
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(this.toRadians(sourceLat)) *
-      Math.cos(this.toRadians(destLat)) *
-      Math.sin(dLng / 2) *
-      Math.sin(dLng / 2);
-
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  const distance = earthRadiusKm * c;
-
-  return Number(distance.toFixed(6));
+  return this.geoPolicy.calculateDistanceKm(sourceLat, sourceLng, destLat, destLng);
 }
 
 async deleteLocationName(location: string) {

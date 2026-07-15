@@ -36,11 +36,18 @@ import { ArrivalHotelPolicyService } from './services/arrival-hotel-policy.servi
 import { HotelStayBlockValidationService } from './services/hotel-stay-block-validation.service';
 import { VehicleVoucherEmailNotifierService } from './services/vehicle-voucher-email-notifier.service';
 import { SameCityCrossDayOptimizerService } from './services/same-city-cross-day-optimizer.service';
+import { ItineraryRouteNormalizationService } from './services/itinerary-route-normalization.service';
 import { HotelsModule } from '../hotels/hotels.module';
 import { ItineraryClipboardService } from './itinerary-clipboard.service';
 import { ItineraryPdfService } from './itinerary-pdf.service';
 import { ItineraryScenarioSourceController } from './itinerary-scenario-source.controller';
 import { ItineraryScenarioSourceService } from './itinerary-scenario-source.service';
+import { ItineraryGuideAssignmentService } from './services/itinerary-guide-assignment.service';
+import { ItineraryVehicleBuildStatusService } from './services/itinerary-vehicle-build-status.service';
+import { ItineraryVehicleBuildService } from './services/itinerary-vehicle-build.service';
+import { ItineraryPlanPersistenceService } from './services/itinerary-plan-persistence.service';
+import { ItineraryActivityWorkflowService } from './services/itinerary-activity-workflow.service';
+import { ItinerarySmartActivityService } from './services/itinerary-smart-activity.service';
 
 @Module({
   imports: [HotelsModule],
@@ -61,6 +68,13 @@ import { ItineraryScenarioSourceService } from './itinerary-scenario-source.serv
     VehicleVoucherService,
     VehicleVoucherEmailNotifierService,
     SameCityCrossDayOptimizerService,
+    ItineraryRouteNormalizationService,
+    ItineraryGuideAssignmentService,
+    ItineraryVehicleBuildStatusService,
+    ItineraryVehicleBuildService,
+    ItineraryPlanPersistenceService,
+    ItineraryActivityWorkflowService,
+    ItinerarySmartActivityService,
 
     // existing engines you already had
     HotelEngineService,

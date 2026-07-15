@@ -13,6 +13,7 @@ import {
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiExtraModels,
   ApiOperation,
   ApiQuery,
   ApiResponse,
@@ -39,6 +40,7 @@ import {
 
 @ApiTags('Locations')
 @ApiBearerAuth()
+@ApiExtraModels(ViaRouteResponseDto, SuggestedRouteResponseDto)
 @Controller('locations')
 export class LocationsController {
   constructor(private readonly svc: LocationsService) {}

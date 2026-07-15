@@ -358,24 +358,23 @@ async deleteVehicleTypeCost(
 
   // --- Step 6: Permit Cost ---
 
-  @Public()
   @Get(':id/permit-costs')
   @ApiOperation({ summary: 'Get vendor permit costs' })
   async getPermitCosts(@Param('id', ParseIntPipe) id: number): Promise<any[]> {
     return this.vendorsService.getVendorPermitCosts(id);
   }
 
-  @Public()
   @Post(':id/permit-costs')
   @ApiOperation({ summary: 'Update vendor permit cost' })
   async updatePermitCost(
     @Param('id', ParseIntPipe) id: number,
     @Body() body: any,
   ): Promise<any> {
-    return this.vendorsService.updateVendorPermitCost(id, body);
+    return Array.isArray(body?.items)
+      ? this.vendorsService.updateVendorPermitCosts(id, body)
+      : this.vendorsService.updateVendorPermitCost(id, body);
   }
 
-  @Public()
   @Delete(':id/permit-costs')
   @ApiOperation({ summary: 'Delete vendor permit cost group by vendor vehicle type and source state' })
   async deletePermitCostGroup(
