@@ -594,3 +594,33 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Query count, rows examined, payload size and endpoint latency remain unmeasured.
 - Commit: `api.dvi.travel` `c1ad1fc`.
+
+### Cycle 13 â€” Extract itinerary vehicle-build orchestration
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: vehicle build stages, timeout handling, permit sync, retry policy, plan vehicle context, background trigger and lowest-cost active vendor selection
+- New files: `src/modules/itineraries/services/itinerary-vehicle-build.service.ts`, `test/itinerary-vehicle-build.test.ts`
+- Workflow: vehicle permit/build endpoints and post-plan-save vehicle builds
+
+#### Change
+
+- Moved vehicle-build orchestration behind `ItineraryVehicleBuildService`.
+- Preserved the existing stage names/timeouts, transaction options, retry messages, active/rate-available vendor filtering, tie-break ordering and background error handling.
+- Kept `ItinerariesService.selectVehicleVendor` as the facade-owned write boundary and connected it through an explicit callback; no circular service dependency was introduced.
+- Registered the new provider in `ItinerariesModule`.
+
+#### Verification
+
+- Vehicle-build boundary tests: PASS, 2/2
+- Combined focused backend suite: PASS, 45/45
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 36,115 lines after the tier; `ItineraryVehicleBuildService` is 473 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Query count, rows examined, payload size and endpoint latency remain unmeasured.
+- Commit: `api.dvi.travel` `4b35e4a`.
