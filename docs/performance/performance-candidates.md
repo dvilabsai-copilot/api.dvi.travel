@@ -135,6 +135,7 @@ An index, Redis cache, or query rewrite may move from candidate to implementatio
 | Itinerary iteration 26 | Manual hotspot preview/Fit Here boundary | `itineraries.service.ts` reduced from 27,086 to 26,618 lines; `ItineraryManualHotspotPreviewService` owns 591 lines | Existing preview transaction rollback, cache/fingerprint behavior and Fit Here entry points preserved; transaction duration, cache hit rate and payload size remain unmeasured |
 | Itinerary iteration 27 | Manual hotspot add/batch mutation boundary | `itineraries.service.ts` reduced from 26,618 to 26,296 lines; `ItineraryManualHotspotMutationService` owns 402 lines | Existing add projection, batch transaction, cleanup, timing and pricing-rebuild callbacks preserved; transaction duration, row churn and retry count remain unmeasured |
 | Itinerary iteration 28 | Manual fit matrix planning boundary | `itineraries.service.ts` reduced from 26,296 to 25,649 lines; `ItineraryManualFitMatrixPlanningService` owns 778 lines | Existing detour anchor inference, matrix gap selection and low-priority-removal timeline ordering preserved; query count, rows examined, route-leg volume, CPU and latency remain unmeasured |
+| Itinerary iteration 29 | Exact-anchor sequential rebuild boundary | `itineraries.service.ts` reduced from 25,649 to 24,815 lines; `ItineraryExactAnchorRebuildService` owns 978 lines | Existing transaction reads, directional ordering, operating-window adjustments, travel replicas and bounded cache behavior preserved; query count, rows examined, rebuild CPU and latency remain unmeasured |
 
 The iteration-6 and iteration-7 boundaries are measurement seams, not optimization claims. The next safe performance tier should instrument representative itinerary-details, route-rebuild and hotspot-preview requests and attribute calls to `TimelineTravelDataService` and `TimelineCandidateFeasibilityService` before changing query shape or adding a cache.
 
@@ -179,6 +180,8 @@ The iteration-26 preview boundary is a measurement seam for preview transaction 
 The iteration-27 mutation boundary is a measurement seam for batch transaction duration, hotspot-row churn, cleanup volume, vehicle-pricing rebuild cost and retry count. Profile single-add and multi-hotspot batch paths separately; do not parallelize writes or cache mutable timeline/pricing state without consistency evidence.
 
 The iteration-28 manual-fit matrix boundary is a measurement seam for active-attraction lookup selectivity, hotspot coordinate rows, route-matrix leg calls, timeline row volume and reconstruction CPU/latency. Profile anchor inference, insertion-gap resolution and low-priority removal separately; only then evaluate composite indexes or Redis for immutable coordinate/matrix data, with freshness and invalidation documented before implementation.
+
+The iteration-29 exact-anchor boundary is a measurement seam for transaction read fan-out, persisted-attraction row volume, direction-master lookup selectivity, route-leg calls, operating-window enrichment, cache hit rate and rebuilt timeline payload size. Profile exact-anchor rebuilds by removal count and route size before changing cache capacity, adding indexes or parallelizing route reads; preserve transaction snapshots and ordering semantics.
 
 ## Next profiling order
 

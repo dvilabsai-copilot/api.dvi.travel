@@ -1159,3 +1159,32 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Active-attraction selectivity, route-leg count, timeline row volume, reconstruction CPU and latency remain unmeasured.
 - Commit: `api.dvi.travel` `d21471b`.
+
+### Cycle 32 - Extract exact-anchor sequential rebuild
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: exact-anchor sequential timeline reconstruction after manual-fit removals
+- New files: `src/modules/itineraries/services/itinerary-exact-anchor-rebuild.service.ts`, `test/itinerary-exact-anchor-rebuild.test.ts`
+- Workflow: Fit Here exact-anchor rebuild and removal rescue
+
+#### Change
+
+- Moved the contiguous exact-anchor rebuild method behind `ItineraryExactAnchorRebuildService`.
+- Preserved persisted route-attraction reads, selected-hotspot synthesis, city-direction ordering, travel-replica reuse, operating-window adjustments, hotel reconnection and bounded timeline caching.
+- Registered the new provider and retained the compatibility facade with explicit transaction and policy callbacks.
+
+#### Verification
+
+- Exact-anchor rebuild boundary test: PASS, 1/1
+- Combined focused backend suite: PASS, 54/54
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 24,815 lines after the tier; `ItineraryExactAnchorRebuildService` is 978 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Transaction read fan-out, route-leg volume, cache hit rate, rebuild CPU and latency remain unmeasured.
+- Commit: `api.dvi.travel` `8761ec9`.
