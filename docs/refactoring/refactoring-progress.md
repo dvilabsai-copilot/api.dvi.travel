@@ -953,3 +953,32 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Copied row counts, transaction wait, lock time and payload size remain unmeasured.
 - Commit: `api.dvi.travel` `f3ed67c`.
+
+### Cycle 25 — Extract itinerary cancellation workflow
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: cancellation validation, transaction persistence, child cleanup, supplier cancellation dispatch, audit logging and notifications
+- New files: `src/modules/itineraries/services/itinerary-cancellation.service.ts`, `test/itinerary-cancellation.test.ts`
+- Workflow: itinerary cancellation endpoint
+
+#### Change
+
+- Moved the contiguous cancellation workflow behind `ItineraryCancellationService`.
+- Preserved required-field and confirmed-plan checks, duplicate cancellation protection, selective child cleanup, cancellation charge/refund calculations, provider cancellation dispatch, audit logging and notifications.
+- Retained the facade compatibility wrapper and registered the new provider in `ItinerariesModule`.
+
+#### Verification
+
+- Cancellation boundary tests: PASS, 2/2
+- Combined focused backend suite: PASS, 68/68
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 28,519 lines after the tier; `ItineraryCancellationService` is 602 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Query count, rows examined, provider latency and transaction wait remain unmeasured.
+- Commit: `api.dvi.travel` `f818293`.
