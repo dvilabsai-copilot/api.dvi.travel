@@ -294,6 +294,33 @@
 
 - A bounded API smoke result now covers the baseline’s REST, GraphQL and Swagger runtime surfaces without claiming full endpoint coverage.
 
+### Cycle 11 — Extract location geo policy
+
+#### Scope
+
+- Original file: `src/modules/locations/locations.service.ts`
+- Extracted responsibility: coordinate parsing, location-name normalization, case-insensitive deduplication, duration text and haversine distance policy
+- New files: `src/modules/locations/services/location-geo-policy.service.ts`, `test/location-geo-policy.test.ts`
+- Endpoint/UI workflow: locations CRUD, autosuggest and route-distance calculations; API contracts unchanged
+- Tables: none directly; existing Prisma reads/writes remain in `LocationsService`
+
+#### Change
+
+- Moved pure geo/name policy behind `LocationGeoPolicyService`.
+- Kept `LocationsService` as the compatibility facade and registered the policy provider in `LocationsModule`.
+- No query, transaction, DTO, route, response, index or frontend change.
+
+#### Verification
+
+- Location geo policy tests: PASS, 3/3
+- Combined focused backend suite: PASS, 23/23
+- Backend build: PASS
+
+#### Result
+
+- The Locations service has a narrow pure-policy seam for future route-distance characterization.
+- Commit: `api.dvi.travel` `7a4966a`.
+
 ### Cycle 6 — Itinerary-details utility characterization (frontend)
 
 #### Scope
