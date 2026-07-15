@@ -1100,3 +1100,32 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Preview transaction duration, rollback cost, cache hit rate and payload size remain unmeasured.
 - Commit: `api.dvi.travel` `b3a8124`.
+
+### Cycle 30 — Extract manual hotspot mutation workflow
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: manual-hotspot add and batch-apply orchestration
+- New files: `src/modules/itineraries/services/itinerary-manual-hotspot-mutation.service.ts`, `test/itinerary-manual-hotspot-mutation.test.ts`
+- Workflow: manual hotspot add and batch apply endpoints
+
+#### Change
+
+- Moved the contiguous add/batch mutation workflow behind `ItineraryManualHotspotMutationService`.
+- Preserved existing add response projection, duplicate detection, batch transaction, stale-row cleanup, timing calculation, retry policy and vehicle-pricing rebuild callbacks.
+- Registered the new provider in `ItinerariesModule` and retained compatibility wrappers.
+
+#### Verification
+
+- Manual mutation boundary test: PASS, 1/1
+- Combined focused backend suite: PASS, 77/77
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 26,296 lines after the tier; `ItineraryManualHotspotMutationService` is 402 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Transaction duration, row churn, pricing-rebuild cost and retry count remain unmeasured.
+- Commit: `api.dvi.travel` `faba32b`.
