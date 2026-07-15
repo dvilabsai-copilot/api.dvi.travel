@@ -48,6 +48,7 @@ import { ItineraryVehicleBuildService } from './services/itinerary-vehicle-build
 import { ItineraryPlanPersistenceService } from './services/itinerary-plan-persistence.service';
 import { ItineraryActivityWorkflowService } from './services/itinerary-activity-workflow.service';
 import { ItinerarySmartActivityService } from './services/itinerary-smart-activity.service';
+import { ItineraryHotspotWorkflowService } from './services/itinerary-hotspot-workflow.service';
 
 @Module({
   imports: [HotelsModule],
@@ -75,6 +76,7 @@ import { ItinerarySmartActivityService } from './services/itinerary-smart-activi
     ItineraryPlanPersistenceService,
     ItineraryActivityWorkflowService,
     ItinerarySmartActivityService,
+    ItineraryHotspotWorkflowService,
 
     // existing engines you already had
     HotelEngineService,
