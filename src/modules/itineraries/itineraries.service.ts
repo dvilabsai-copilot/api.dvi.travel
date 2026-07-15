@@ -36255,23 +36255,34 @@ pricing: {
       }
     };
 
-    const sourceLocations = routes.map((r) => String(r?.location_name || '').trim());
-    const nextVisitingLocations = routes.map((r) => String(r?.next_visiting_location || '').trim());
-    const start = sourceLocations[0] || '';
-    const end = nextVisitingLocations[nextVisitingLocations.length - 1] || '';
+    const context = this.extractRouteOptimizationContext(routes);
 
-    if (!start || !end) {
+    if (!context.start || !context.end) {
       log('[RouteOptimization] ⚠️ Missing start/end location. Returning original route order.');
       return routes;
     }
 
-    // PHP parity: use raw middle chain from next_visiting_location (excluding final end), no normalization/deduping.
-    const middleLocations = nextVisitingLocations.slice(0, -1);
+    if (this.hasBrokenChain(routes)) {
+      log('[RouteOptimization] ⚠️ Broken route chain detected. Returning original route order.');
+      return routes;
+    }
 
-    log(`[RouteOptimization] Start optimization (PHP parity). routeCount=${routes.length}, start=${start}, end=${end}, middleCount=${middleLocations.length}`);
+    // Preserve a valid route whose only removable nodes are repeated terminal anchors.
+    // Duplicate movable stops are still normalized even when only one unique stop remains.
+    if (
+      context.movableStops.length <= 1 &&
+      context.removedDuplicates.length === 0 &&
+      context.removedInvalidTerminalNodes.length > 0
+    ) {
+      log('[RouteOptimization] Skipping optimization. Only terminal-anchor artifacts were found.');
+      return routes;
+    }
 
-    if (middleLocations.length <= 1) {
-      log(`[RouteOptimization] Skipping optimization. movableStopCount=${middleLocations.length}`);
+    const middleLocations = context.movableStops.map((stop) => stop.name);
+    log(`[RouteOptimization] Start optimization (normalized). routeCount=${routes.length}, start=${context.start}, end=${context.end}, middleCount=${middleLocations.length}`);
+
+    if (middleLocations.length === 0) {
+      log('[RouteOptimization] Skipping optimization. No movable stops remain.');
       return routes;
     }
 
@@ -36281,8 +36292,8 @@ pricing: {
     if (routes.length <= exhaustiveSafeLimit) {
       log(`[RouteOptimization] Using exhaustive permutation (PHP parity). candidateCount=${middleLocations.length}`);
       bestRouteLocations = await this.optimizeWith_ExhaustivePermutation(
-        start,
-        end,
+        context.start,
+        context.end,
         middleLocations,
         log,
         logDebug,
@@ -36290,8 +36301,8 @@ pricing: {
     } else {
       log(`[RouteOptimization] Using nearest-neighbor + annealing (PHP parity). candidateCount=${middleLocations.length}`);
       bestRouteLocations = await this.optimizeWith_NearestNeighborAndAnnealing(
-        start,
-        end,
+        context.start,
+        context.end,
         middleLocations,
         logDebug,
       );
@@ -36302,7 +36313,7 @@ pricing: {
       return routes;
     }
 
-    const optimizedRoutes = this.buildOptimizedRouteDtos(routes, bestRouteLocations, log, { phpParity: true });
+    const optimizedRoutes = this.buildOptimizedRouteDtos(routes, bestRouteLocations, log);
     const finalChain = optimizedRoutes.map(r => `${r.location_name}→${r.next_visiting_location}`).join(' | ');
     log(`[RouteOptimization] ✅ Completed. optimizedRouteCount=${optimizedRoutes.length}. chain=${finalChain}`);
     return optimizedRoutes;

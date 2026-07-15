@@ -69,3 +69,39 @@
 
 - Baseline retained and committed.
 - Remaining risks: existing route optimizer test failure, Swagger metadata defects, broad lint debt, missing isolated integration fixture.
+
+### Cycle 2 — Route optimizer normalization wiring
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Responsibility: route-chain normalization, duplicate-stop removal and terminal-anchor protection
+- Endpoint/UI workflow: itinerary save with route optimization; no controller or frontend route changed
+- Tables: none directly; distance lookup remains behind the existing service method
+
+#### Baseline
+
+- Original file size: 37,413 lines
+- Existing focused result: 13 passed / 1 failed
+- Failure: `route-optimizer-normalization.test.ts` expected duplicate/terminal normalization that `optimizeRouteOrder()` did not invoke
+- Query count/timing: not measured; test uses a stubbed distance method
+
+#### Change
+
+- Routed `optimizeRouteOrder()` through its existing `extractRouteOptimizationContext()` helpers.
+- Preserved broken route chains and terminal-anchor-only artifacts in original order.
+- Removed the PHP-parity length guard for normalized output so duplicate movable stops can be removed safely.
+- No API route, DTO, response contract, transaction, query, index or frontend change.
+
+#### Verification
+
+- Route optimizer test: PASS
+- Focused backend suite: 14/14 PASS
+- Backend build: PASS
+- OpenAPI route/contract parity: PASS against baseline
+- OpenAPI quality checks: existing 14 duplicate operation IDs and 2 broken schema references remain
+
+#### Result
+
+- Behaviour characterization now passes for route normalization, duplicate stops, terminal anchors and broken chains.
+- Retained and ready for the next small extraction only after the Swagger findings are either fixed or explicitly bounded.
