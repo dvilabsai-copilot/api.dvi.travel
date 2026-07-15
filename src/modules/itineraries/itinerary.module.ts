@@ -64,6 +64,7 @@ import { ItineraryManualHotspotPreviewService } from './services/itinerary-manua
 import { ItineraryManualHotspotMutationService } from './services/itinerary-manual-hotspot-mutation.service';
 import { ItineraryManualFitMatrixPlanningService } from './services/itinerary-manual-fit-matrix-planning.service';
 import { ItineraryExactAnchorRebuildService } from './services/itinerary-exact-anchor-rebuild.service';
+import { ItineraryLowPriorityRemovalService } from './services/itinerary-low-priority-removal.service';
 
 @Module({
   imports: [HotelsModule],
@@ -107,6 +108,7 @@ import { ItineraryExactAnchorRebuildService } from './services/itinerary-exact-a
     ItineraryManualHotspotMutationService,
     ItineraryManualFitMatrixPlanningService,
     ItineraryExactAnchorRebuildService,
+    ItineraryLowPriorityRemovalService,
 
     // existing engines you already had
     HotelEngineService,
