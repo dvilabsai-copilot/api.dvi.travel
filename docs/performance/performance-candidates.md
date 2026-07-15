@@ -120,6 +120,7 @@ An index, Redis cache, or query rewrite may move from candidate to implementatio
 | Itinerary iteration 11 | Plan-save and reusable-template persistence boundary | `itineraries.service.ts` reduced from 36,115 to 35,433 lines; `ItineraryPlanPersistenceService` owns 821 lines | Existing transaction ordering and template reads/writes preserved; query count, rows examined, payload and latency remain unmeasured |
 | Itinerary iteration 12 | Activity add/preview/delete workflow boundary | `itineraries.service.ts` reduced from 35,433 to 34,784 lines; `ItineraryActivityWorkflowService` owns 750 lines | Existing activity reads, timing policy callbacks and transaction ordering preserved; query count, rows examined, payload and latency remain unmeasured |
 | Itinerary iteration 13 | Smart activity transaction/rebuild boundary | `itineraries.service.ts` reduced from 34,784 to 33,522 lines; `ItinerarySmartActivityService` owns 1,352 lines | Existing smart-preview rollback, movement/rebuild and insertion semantics preserved; query count, rows examined, payload and latency remain unmeasured |
+| Itinerary iteration 14 | Hotspot availability/add/preview workflow boundary | `itineraries.service.ts` reduced from 33,522 to 32,712 lines; `ItineraryHotspotWorkflowService` owns 891 lines | Existing location filtering, ordering/interleaving and manual-preview delegation preserved; query count, rows examined, payload and latency remain unmeasured |
 
 The iteration-6 and iteration-7 boundaries are measurement seams, not optimization claims. The next safe performance tier should instrument representative itinerary-details, route-rebuild and hotspot-preview requests and attribute calls to `TimelineTravelDataService` and `TimelineCandidateFeasibilityService` before changing query shape or adding a cache.
 
@@ -134,6 +135,8 @@ The iteration-11 plan-persistence boundary is a measurement seam for transaction
 The iteration-12 activity boundary is a measurement seam for activity lookup/time-slot calls, per-hotspot duplicate checks, pricing reads, cascade row volume and rebuild duration. Profile add, preview and delete separately; do not batch or cache mutable activity pricing/availability until consistency and invalidation ownership are proven.
 
 The iteration-13 smart-activity boundary is a measurement seam for preview transaction duration, hotspot-row churn, rollback work, priority-removal loops and insertion rebuild cost. Treat preview and apply/insert as separate workloads; do not optimize by parallelizing or caching mutable timeline state before capturing transaction and row-volume evidence.
+
+The iteration-14 hotspot boundary is a measurement seam for route/location reads, hotspot candidate volume, source/destination classification, manual preview calls and add/preview persistence. Profile availability, anchor availability, add and preview separately before considering batching or caching reference data.
 
 ## Next profiling order
 

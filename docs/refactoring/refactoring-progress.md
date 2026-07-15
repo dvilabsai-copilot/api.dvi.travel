@@ -715,3 +715,33 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Query count, rows examined, payload size and endpoint latency remain unmeasured.
 - Commit: `api.dvi.travel` `b0476eb`.
+
+### Cycle 17 — Extract itinerary hotspot workflow
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: route hotspot availability, anchor-aware availability, hotspot add and hotspot preview workflows
+- New files: `src/modules/itineraries/services/itinerary-hotspot-workflow.service.ts`, `test/itinerary-hotspot-workflow.test.ts`
+- Workflow: hotspot availability/add/preview endpoints
+
+#### Change
+
+- Moved the contiguous hotspot workflow behind `ItineraryHotspotWorkflowService`.
+- Preserved route/location filtering, source/destination classification, ordering/interleaving rules, manual hotspot preview delegation, add persistence and preview response behavior.
+- Kept existing shared location/time policy helpers behind explicit callbacks and retained the hotspot engine dependency.
+- Registered the new provider in `ItinerariesModule`.
+
+#### Verification
+
+- Hotspot workflow boundary test: PASS, 1/1
+- Combined focused backend suite: PASS, 51/51
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 32,712 lines after the tier; `ItineraryHotspotWorkflowService` is 891 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Query count, rows examined, payload size and endpoint latency remain unmeasured.
+- Commit: `api.dvi.travel` `cc01da7`.
