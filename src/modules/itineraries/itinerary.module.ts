@@ -43,6 +43,7 @@ import { ItineraryPdfService } from './itinerary-pdf.service';
 import { ItineraryScenarioSourceController } from './itinerary-scenario-source.controller';
 import { ItineraryScenarioSourceService } from './itinerary-scenario-source.service';
 import { ItineraryGuideAssignmentService } from './services/itinerary-guide-assignment.service';
+import { ItineraryVehicleBuildStatusService } from './services/itinerary-vehicle-build-status.service';
 
 @Module({
   imports: [HotelsModule],
@@ -65,6 +66,7 @@ import { ItineraryGuideAssignmentService } from './services/itinerary-guide-assi
     SameCityCrossDayOptimizerService,
     ItineraryRouteNormalizationService,
     ItineraryGuideAssignmentService,
+    ItineraryVehicleBuildStatusService,
 
     // existing engines you already had
     HotelEngineService,
