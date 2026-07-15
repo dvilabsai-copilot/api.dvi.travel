@@ -60,6 +60,7 @@ import { ItineraryCancellationService } from './services/itinerary-cancellation.
 import { ItineraryListingService } from './services/itinerary-listing.service';
 import { ItineraryVoucherReadService } from './services/itinerary-voucher-read.service';
 import { ItineraryManualHotspotMatrixService } from './services/itinerary-manual-hotspot-matrix.service';
+import { ItineraryManualHotspotPreviewService } from './services/itinerary-manual-hotspot-preview.service';
 
 @Module({
   imports: [HotelsModule],
@@ -99,6 +100,7 @@ import { ItineraryManualHotspotMatrixService } from './services/itinerary-manual
     ItineraryListingService,
     ItineraryVoucherReadService,
     ItineraryManualHotspotMatrixService,
+    ItineraryManualHotspotPreviewService,
 
     // existing engines you already had
     HotelEngineService,
