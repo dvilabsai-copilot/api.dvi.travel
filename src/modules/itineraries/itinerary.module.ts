@@ -46,6 +46,7 @@ import { ItineraryGuideAssignmentService } from './services/itinerary-guide-assi
 import { ItineraryVehicleBuildStatusService } from './services/itinerary-vehicle-build-status.service';
 import { ItineraryVehicleBuildService } from './services/itinerary-vehicle-build.service';
 import { ItineraryPlanPersistenceService } from './services/itinerary-plan-persistence.service';
+import { ItineraryActivityWorkflowService } from './services/itinerary-activity-workflow.service';
 
 @Module({
   imports: [HotelsModule],
@@ -71,6 +72,7 @@ import { ItineraryPlanPersistenceService } from './services/itinerary-plan-persi
     ItineraryVehicleBuildStatusService,
     ItineraryVehicleBuildService,
     ItineraryPlanPersistenceService,
+    ItineraryActivityWorkflowService,
 
     // existing engines you already had
     HotelEngineService,
