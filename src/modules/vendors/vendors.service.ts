@@ -1,6 +1,10 @@
 // FILE: src/modules/vendors/vendors.service.ts
 
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { createHash } from 'crypto';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../prisma.service';
@@ -1676,9 +1680,8 @@ async createVendorBasicInfo(data: any): Promise<any> {
     if (!existing) return;
 
     await this.prisma.$transaction(async (tx) => {
-      // Vendor vehicle type cost rows act as the parent for local/outstation
-      // pricing limits. Remove the children first so we do not leave orphan rows
-      // behind when the parent is hidden from the UI.
+      // Rate and limit rows are permanently removed before hiding the vendor
+      // vehicle type so no stale pricebook rows remain for a deleted mapping.
       await tx.dvi_vehicle_local_pricebook.deleteMany({
         where: {
           vendor_id: vendorId,
@@ -1838,6 +1841,19 @@ async createVendorBasicInfo(data: any): Promise<any> {
 async createVendorVehicle(vendorId: number, data: any): Promise<any> {
  const mapped = this.mapVendorVehiclePayload(data);
 
+const canonicalVehicleTypeId = await this.resolveVendorVehicleTypeId(
+  vendorId,
+  data.vehicle_type_id,
+);
+
+if (!canonicalVehicleTypeId) {
+  throw new BadRequestException(
+    'Vehicle type is not configured or active for this vendor',
+  );
+}
+
+mapped.vehicle_type_id = canonicalVehicleTypeId;
+
 const requestedVehicleOrigin = String(
   mapped.vehicle_origin ?? '',
 ).trim();
@@ -1887,6 +1903,7 @@ async updateVendorVehicle(vehicleId: number, data: any): Promise<any> {
       vendor_id: true,
       vendor_branch_id: true,
       vehicle_location_id: true,
+      vehicle_type_id: true,
     },
   });
 
@@ -1895,6 +1912,19 @@ async updateVendorVehicle(vehicleId: number, data: any): Promise<any> {
   }
 
 const mapped = this.mapVendorVehiclePayload(data);
+
+const canonicalVehicleTypeId = await this.resolveVendorVehicleTypeId(
+  Number(existingVehicle.vendor_id ?? 0),
+  data.vehicle_type_id ?? existingVehicle.vehicle_type_id,
+);
+
+if (!canonicalVehicleTypeId) {
+  throw new BadRequestException(
+    'Vehicle type is not configured or active for this vendor',
+  );
+}
+
+mapped.vehicle_type_id = canonicalVehicleTypeId;
 
 const requestedVehicleOrigin = String(
   data.vehicle_origin ??
