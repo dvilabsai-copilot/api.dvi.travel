@@ -44,6 +44,7 @@ import { ItineraryScenarioSourceController } from './itinerary-scenario-source.c
 import { ItineraryScenarioSourceService } from './itinerary-scenario-source.service';
 import { ItineraryGuideAssignmentService } from './services/itinerary-guide-assignment.service';
 import { ItineraryVehicleBuildStatusService } from './services/itinerary-vehicle-build-status.service';
+import { ItineraryVehicleBuildService } from './services/itinerary-vehicle-build.service';
 
 @Module({
   imports: [HotelsModule],
@@ -67,6 +68,7 @@ import { ItineraryVehicleBuildStatusService } from './services/itinerary-vehicle
     ItineraryRouteNormalizationService,
     ItineraryGuideAssignmentService,
     ItineraryVehicleBuildStatusService,
+    ItineraryVehicleBuildService,
 
     // existing engines you already had
     HotelEngineService,
