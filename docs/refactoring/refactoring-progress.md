@@ -1188,3 +1188,32 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Transaction read fan-out, route-leg volume, cache hit rate, rebuild CPU and latency remain unmeasured.
 - Commit: `api.dvi.travel` `8761ec9`.
+
+### Cycle 33 - Extract low-priority removal planning
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: matrix-overflow removal planning, active-route evidence and removal-attempt snapshot helpers
+- New files: `src/modules/itineraries/services/itinerary-low-priority-removal.service.ts`, `test/itinerary-low-priority-removal.test.ts`
+- Workflow: manual-fit overflow resolution and lower-priority removal confirmation
+
+#### Change
+
+- Moved the contiguous low-priority removal boundary behind `ItineraryLowPriorityRemovalService`.
+- Preserved candidate priority ordering, protected manual hotspots, preselected-plan validation, bounded combination search, greedy fallback, route evidence filtering and snapshot helper behavior.
+- Registered the new provider and retained facade adapters for the following progressive-removal workflow.
+
+#### Verification
+
+- Low-priority removal boundary test: PASS, 1/1
+- Combined focused backend suite: PASS, 55/55
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 24,121 lines after the tier; `ItineraryLowPriorityRemovalService` is 819 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Candidate volume, simulation count, transaction duration, snapshot payload size and latency remain unmeasured.
+- Commit: `api.dvi.travel` `ba7eb53`.
