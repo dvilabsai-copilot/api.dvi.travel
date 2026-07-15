@@ -43,6 +43,7 @@ import { DayTimeSlot, TimelineSlotPolicyService } from './timeline-slot-policy.s
 import { TimelineRejectionPolicyService } from './timeline-rejection-policy.service';
 import { ArrivalPolicyDecisionState, TimelineDataAccessService } from './timeline-data-access.service';
 import { TimelineTravelDataService } from './timeline-travel-data.service';
+import { TimelineCandidateFeasibilityService } from './timeline-candidate-feasibility.service';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -188,6 +189,7 @@ export class TimelineBuilder {
   private readonly anchorPolicyService = new TimelineAnchorPolicyService();
   private readonly dataAccessService = new TimelineDataAccessService();
   private readonly travelDataService = new TimelineTravelDataService(this.distanceHelper);
+  private readonly candidateFeasibilityService = new TimelineCandidateFeasibilityService(this.distanceHelper);
 
   constructor() {
     // Logging removed for performance
@@ -9120,135 +9122,7 @@ export class TimelineBuilder {
   private async evaluateCandidateInsertion(
     input: CandidateFeasibilityInput,
   ): Promise<CandidateFeasibilityResult> {
-    const travelTimeToHotspot = await this.calculateTravelTimeWithCoords(
-      input.tx,
-      input.currentLocationName,
-      input.hotspotLocationName,
-      input.currentCoords,
-      input.hotspotCoords,
-    );
-
-    const travelDurationSeconds = timeToSeconds(travelTimeToHotspot);
-    const currentTimeSeconds = this.toAbsoluteSecondsForRoute(input.currentTime, input.routeStartSeconds);
-    const hotspotDurationSeconds = timeToSeconds(input.hotspotDuration || '01:00:00');
-    const hotspotType = String(input.hotspotType || '').trim().toLowerCase();
-
-    let startSeconds = currentTimeSeconds + travelDurationSeconds;
-    let endSeconds = startSeconds + hotspotDurationSeconds;
-    let usedWaitUntilOpen = false;
-    let waitGapSeconds = 0;
-
-    let operatingHoursCheck = this.checkHotspotOperatingHoursFromMap(
-      input.timingMap,
-      input.hotspotId,
-      input.dayOfWeek,
-      startSeconds,
-      endSeconds,
-    );
-
-    if (
-      !operatingHoursCheck.canVisitNow &&
-      input.allowWaitUntilOpen &&
-      operatingHoursCheck.nextWindowStart &&
-      this.shouldAllowWaitUntilOpenForCandidate(input.hotspotPriority, hotspotType)
-    ) {
-      let nextWindowStartSeconds = timeToSeconds(operatingHoursCheck.nextWindowStart);
-      while (nextWindowStartSeconds < startSeconds) {
-        nextWindowStartSeconds += 86400;
-      }
-
-      const waitedEndSeconds = nextWindowStartSeconds + hotspotDurationSeconds;
-      if (waitedEndSeconds <= input.routeEndSeconds) {
-        const waitedCheck = this.checkHotspotOperatingHoursFromMap(
-          input.timingMap,
-          input.hotspotId,
-          input.dayOfWeek,
-          nextWindowStartSeconds,
-          waitedEndSeconds,
-        );
-        if (waitedCheck.canVisitNow) {
-          waitGapSeconds = Math.max(0, nextWindowStartSeconds - startSeconds);
-          startSeconds = nextWindowStartSeconds;
-          endSeconds = waitedEndSeconds;
-          operatingHoursCheck = { canVisitNow: true, nextWindowStart: null, isClosedForDay: false };
-          usedWaitUntilOpen = true;
-        }
-      }
-    }
-
-    if (input.rejectIfOutsideOperatingWindow && (operatingHoursCheck.isClosedForDay || !operatingHoursCheck.canVisitNow)) {
-      return {
-        feasible: false,
-        reason: operatingHoursCheck.isClosedForDay
-          ? 'closed_for_day_at_visit_time'
-          : 'outside_operating_hours_for_visit_window',
-      };
-    }
-
-    if (endSeconds > input.routeEndSeconds) {
-      return {
-        feasible: false,
-        reason: 'visit_overflows_route_end_after_travel_and_duration',
-      };
-    }
-
-    if (!input.isLastRoute) {
-      const projectedArrival = await this.calculateProjectedArrivalToRouteDestination(
-        input.tx,
-        input.route,
-        input.hotspotLocationName,
-        endSeconds,
-        input.hotspotCoords,
-        input.destinationCoords,
-      );
-
-      if (projectedArrival.projectedArrivalSeconds > input.routeEndSeconds) {
-        return {
-          feasible: false,
-          reason: 'route_end_return_check_failed',
-          rejectedByDayEndReturnCheck: true,
-        };
-      }
-    }
-
-    if (input.isLastRoute) {
-      const departureTargetName = String((input.plan.departure_location as string) || input.destinationCity || input.currentLocationName)
-        .split('|')[0]
-        .trim();
-      const candidateCity = input.hotspotLocationName.split('|')[0].trim();
-      const travelToDepartureType = this.getTravelLocationType(candidateCity, departureTargetName);
-      const travelToDeparture = await this.distanceHelper.fromSourceAndDestination(
-        input.tx,
-        candidateCity,
-        departureTargetName,
-        travelToDepartureType,
-        input.hotspotCoords,
-        input.destinationCoords,
-      );
-      const toDepartureSeconds =
-        timeToSeconds(travelToDeparture.travelTime) +
-        timeToSeconds(travelToDeparture.bufferTime);
-
-      const projectedArrivalAtDeparture = endSeconds + toDepartureSeconds;
-      if (projectedArrivalAtDeparture > input.lastRouteArrivalDeadlineSeconds) {
-        return {
-          feasible: false,
-          reason: 'last_route_departure_deadline_failed',
-          rejectedByDayEndReturnCheck: true,
-        };
-      }
-    }
-
-    return {
-      feasible: true,
-      startSeconds,
-      endSeconds,
-      timeAfterTravel: secondsToTime(startSeconds),
-      timeAfterSightseeing: secondsToTime(endSeconds),
-      travelTimeToHotspot,
-      usedWaitUntilOpen,
-      waitGapSeconds,
-    };
+    return this.candidateFeasibilityService.evaluateCandidateInsertion(input);
   }
 
   private async evaluateAnchorGapInsertion(
@@ -9264,85 +9138,19 @@ export class TimelineBuilder {
     candidateEndSeconds: number,
     protectedStrictSlots?: ProtectedStrictSlot[],
   ): Promise<AnchorGapFeasibilityResult> {
-    const anchors = this.buildFixedTimelineAnchors(
+    return this.candidateFeasibilityService.evaluateAnchorGapInsertion(
+      tx,
       hotspotRows,
+      hotspotMap,
       routeId,
       routeStartSeconds,
       routeEndSeconds,
       currentTime,
-    );
-
-    const currentAbsSeconds = this.toAbsoluteSecondsForRoute(currentTime, routeStartSeconds);
-    const nextHotspotAnchor = anchors
-      .filter((a) => a.kind === 'hotspot' && a.startSeconds >= currentAbsSeconds)
-      .sort((a, b) => a.startSeconds - b.startSeconds)[0];
-
-    const nextProtectedSlot = (protectedStrictSlots || [])
-      .filter((slot) => slot.routeId === routeId && slot.startSeconds >= currentAbsSeconds)
-      .sort((a, b) => a.startSeconds - b.startSeconds)[0];
-
-    let nextAnchorHotspotId: number | null = null;
-    let nextAnchorStartSeconds: number | null = null;
-    if (nextHotspotAnchor && nextHotspotAnchor.hotspotId) {
-      nextAnchorHotspotId = nextHotspotAnchor.hotspotId;
-      nextAnchorStartSeconds = nextHotspotAnchor.startSeconds;
-    }
-    if (
-      nextProtectedSlot &&
-      (nextAnchorStartSeconds === null || nextProtectedSlot.startSeconds < nextAnchorStartSeconds)
-    ) {
-      nextAnchorHotspotId = nextProtectedSlot.hotspotId;
-      nextAnchorStartSeconds = nextProtectedSlot.startSeconds;
-    }
-
-    if (!nextAnchorHotspotId || nextAnchorStartSeconds === null) {
-      return { feasible: true };
-    }
-
-    const nextHotspotData = hotspotMap.get(nextAnchorHotspotId);
-    if (!nextHotspotData) {
-      return {
-        feasible: false,
-        reason: 'next_anchor_hotspot_metadata_missing',
-        nextAnchorHotspotId,
-        nextAnchorStartSeconds,
-      };
-    }
-
-    const nextAnchorLocationName = String(nextHotspotData.hotspot_location || '').trim();
-    const nextAnchorCoords = {
-      lat: Number(nextHotspotData.hotspot_latitude ?? 0),
-      lon: Number(nextHotspotData.hotspot_longitude ?? 0),
-    };
-
-    const travelToNextAnchor = await this.calculateTravelTimeWithCoords(
-      tx,
       candidateLocationName,
-      nextAnchorLocationName,
       candidateCoords,
-      nextAnchorCoords,
+      candidateEndSeconds,
+      protectedStrictSlots,
     );
-    const travelToNextAnchorSeconds = timeToSeconds(travelToNextAnchor);
-    const arrivalAtNextAnchorSeconds = candidateEndSeconds + travelToNextAnchorSeconds;
-
-    if (arrivalAtNextAnchorSeconds > nextAnchorStartSeconds) {
-      return {
-        feasible: false,
-        reason: 'next_anchor_timing_broken',
-        nextAnchorHotspotId,
-        nextAnchorStartSeconds,
-        arrivalAtNextAnchorSeconds,
-        travelToNextAnchorSeconds,
-      };
-    }
-
-    return {
-      feasible: true,
-      nextAnchorHotspotId,
-      nextAnchorStartSeconds,
-      arrivalAtNextAnchorSeconds,
-      travelToNextAnchorSeconds,
-    };
   }
 
   private parsePlanDateTime(value: unknown): Date | null {
