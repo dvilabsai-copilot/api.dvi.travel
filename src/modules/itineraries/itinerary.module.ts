@@ -52,6 +52,7 @@ import { ItineraryHotspotWorkflowService } from './services/itinerary-hotspot-wo
 import { ItinerarySelectionWorkflowService } from './services/itinerary-selection-workflow.service';
 import { ItineraryQuoteContextService } from './services/itinerary-quote-context.service';
 import { ItineraryConfirmationService } from './services/itinerary-confirmation.service';
+import { ItineraryHotelConfirmationSupportService } from './services/itinerary-hotel-confirmation-support.service';
 
 @Module({
   imports: [HotelsModule],
@@ -83,6 +84,7 @@ import { ItineraryConfirmationService } from './services/itinerary-confirmation.
     ItinerarySelectionWorkflowService,
     ItineraryQuoteContextService,
     ItineraryConfirmationService,
+    ItineraryHotelConfirmationSupportService,
 
     // existing engines you already had
     HotelEngineService,
