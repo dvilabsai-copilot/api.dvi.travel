@@ -252,6 +252,28 @@
 - Operating-hours behavior is now fully centralized in the narrow policy service; `TimelineBuilder` remains the compatibility facade.
 - Commit: `api.dvi.travel` `baf0722`.
 
+### Cycle 9 — Evidence-gated index migration artifact
+
+#### Scope
+
+- New files: `docs/performance/index-proposals.sql`, `docs/performance/index-analysis.md`
+- Workflow: database change governance only; no application or schema behavior changed
+
+#### Change
+
+- Added explicit no-op UP and DOWN sections, read-only validation SQL, and locking/rollout constraints.
+- Recorded that current evidence is insufficient for an index addition, duplicate removal or missing-index claim.
+- No migration was applied and no index definition was changed.
+
+#### Verification
+
+- Read-only database audit: PASS; 182 tables, 2,288 index definitions, Performance Schema enabled
+- No DDL/DML executed
+
+#### Result
+
+- Index rollback SQL and approval gates are present without speculative production changes.
+
 ### Cycle 6 — Itinerary-details utility characterization (frontend)
 
 #### Scope
