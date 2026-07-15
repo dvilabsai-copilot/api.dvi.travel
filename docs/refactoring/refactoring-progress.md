@@ -1246,3 +1246,32 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Active-row selectivity, route-hotspot row churn, transaction wait, rebuild volume and latency remain unmeasured.
 - Commit: `api.dvi.travel` `62b04ee`.
+
+### Cycle 35 - Extract preview timeline application
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: manual insertion projection, destination-side pruning, pivot backtracking cleanup and baseline preview rebuilding
+- New files: `src/modules/itineraries/services/itinerary-preview-timeline-application.service.ts`, `test/itinerary-preview-timeline-application.test.ts`
+- Workflow: manual-fit preview timeline assembly
+
+#### Change
+
+- Moved the contiguous preview-timeline application helpers behind `ItineraryPreviewTimelineApplicationService`.
+- Preserved matrix split-row handling, destination-side row pruning, city-direction ordering, operating-window timing, duration fallbacks and preview timeline shapes.
+- Registered the new provider and retained facade wrappers with explicit policy callbacks.
+
+#### Verification
+
+- Preview timeline application boundary test: PASS, 1/1
+- Combined focused backend suite: PASS, 57/57
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 22,270 lines after the tier; `ItineraryPreviewTimelineApplicationService` is 655 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Timeline row volume, transformation CPU, payload size, cache effects and latency remain unmeasured.
+- Commit: `api.dvi.travel` `3241ea7`.
