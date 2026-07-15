@@ -226,3 +226,51 @@
 - Playwright inventory/audit: PASS, 96 routes, 2,062 controls, 990 API references, 66 classified routes
 - Frontend lint: pre-existing failure, 1,636 errors and 82 warnings; no lint-only cleanup included
 - Database query/index optimization: not changed; no before/after production measurements claimed
+
+### Cycle 6 — Itinerary-details utility characterization (frontend)
+
+#### Scope
+
+- Repository: `dvi_frontend`
+- New file: `src/test/itinerary-details.utils.test.ts`
+- Workflow: active `/itinerary-details/:id` utility paths for preview resolution, hotspot availability, timeline filtering and Fit Here status mapping
+
+#### Change
+
+- Added four focused pure-function characterization tests.
+- No production component, hook, API call, route or response contract changed.
+
+#### Verification
+
+- Focused utility tests: PASS, 4/4
+- Frontend full unit suite: PASS, 13/13
+- Frontend build: PASS
+
+#### Result
+
+- Frontend test coverage now protects the existing itinerary-details utility seams before further component/hook extraction.
+- Commit: `dvi_frontend` `8fc7342`.
+
+### Cycle 7 — Read-only database evidence baseline
+
+#### Scope
+
+- New script: `scripts/audit-database-performance.ts`
+- New artifact: `docs/performance/database-audit-baseline.json`
+- Workflow: database/schema evidence only; no endpoint or persistence behavior changed
+
+#### Change
+
+- Added a repeatable read-only audit over `information_schema` and available `performance_schema` counters.
+- Added explicit interpretation flags preventing estimated table rows or audit-query timings from being treated as endpoint latency.
+- No DDL, DML, migration, query rewrite or index mutation.
+
+#### Verification
+
+- Read-only audit: PASS against configured local `dvi_main`; 182 tables, 2,288 index definitions, 0 foreign-key relationships, Performance Schema enabled
+- Backend build: PASS
+
+#### Result
+
+- Database optimization remains evidence-gated: no index or query recommendation is retained without a representative endpoint trace and query plan.
+- Commit: `api.dvi.travel` `6594900`.
