@@ -17,6 +17,10 @@ import {
   getVehicleRateAvailability,
 } from './utils/vehicle-rate-availability.util';
 import { haversineKm } from './utils/distance-utils';
+import {
+  buildEntryTicketBreakdown,
+  type EntryTicketBreakdownDto,
+} from './utils/entry-ticket-breakdown.util';
 
 // ---------------------------------------------------------------------------
 // DTOs for Itinerary Details response (shared shape with frontend)
@@ -281,6 +285,7 @@ export interface CostBreakdownDto {
   // Activity/Guide costs
   totalGuideCost?: number;
   totalHotspotCost?: number;
+  entryTicketBreakdown?: EntryTicketBreakdownDto[];
   totalActivityCost?: number;
   kmLimitWarning?: string;
   totalAllowedKm?: number;
@@ -1446,6 +1451,30 @@ for (const row of vehicleKmRows) {
       stepStartedAt,
     });
 
+    const entryTicketCostRows = await this.prisma.dvi_itinerary_route_hotspot_entry_cost_details.findMany({
+      where: { itinerary_plan_id: planId, deleted: 0, status: 1 },
+      select: {
+        route_hotspot_id: true,
+        traveller_type: true,
+        entry_ticket_cost: true,
+      },
+      orderBy: { hotspot_cost_detail_id: 'asc' },
+    });
+    const entryTicketRowsByRouteHotspotId = new Map<number, Array<{
+      traveller_type: number;
+      entry_ticket_cost: number;
+    }>>();
+    for (const row of entryTicketCostRows) {
+      const routeHotspotId = Number(row.route_hotspot_id || 0);
+      if (!routeHotspotId) continue;
+      const rows = entryTicketRowsByRouteHotspotId.get(routeHotspotId) || [];
+      rows.push({
+        traveller_type: Number(row.traveller_type || 0),
+        entry_ticket_cost: Number(row.entry_ticket_cost || 0),
+      });
+      entryTicketRowsByRouteHotspotId.set(routeHotspotId, rows);
+    }
+
     // ------------------------- HOTELS FOR TIMELINE ----------------------
     let timelineHotelRows: any[] = [];
     
@@ -1622,6 +1651,7 @@ for (const row of vehicleKmRows) {
     });
 
     const days: any[] = [];
+    const entryTicketBreakdown: EntryTicketBreakdownDto[] = [];
 
     for (let index = 0; index < routes.length; index++) {
       const route = routes[index];
@@ -2859,6 +2889,21 @@ for (const row of vehicleKmRows) {
                 .join(', ');
             }
           }
+
+          const entryTicket = buildEntryTicketBreakdown({
+            dayNumber: index + 1,
+            date: route.itinerary_route_date,
+            locationId: Number(route.location_id || 0),
+            locationName: master.hotspot_name,
+            routeHotspot: { ...rh, ...master },
+            persistedRows: entryTicketRowsByRouteHotspotId.get(Number(rh.route_hotspot_ID || 0)),
+            adults: Number(plan.total_adult || 0),
+            children: Number(plan.total_children || 0),
+            infants: Number(plan.total_infants || 0),
+            nationality: Number(plan.nationality || 0),
+            entryTicketRequired: Number(plan.entry_ticket_required || 0) === 1,
+          });
+          if (entryTicket) entryTicketBreakdown.push(entryTicket);
 
           segments.push({
             type: 'attraction' as const,
@@ -5447,7 +5492,17 @@ sightseeingDistance,       // local sightseeing separately
     ]);
 
     const totalGuideCost = Number(guideAgg._sum.guide_cost || 0);
-    const totalHotspotCost = Number(hotspotAgg._sum.hotspot_amout || 0);
+    const persistedHotspotCost = Number(hotspotAgg._sum.hotspot_amout || 0);
+    const calculatedEntryTicketCost = entryTicketBreakdown.reduce(
+      (sum, row) => sum + Number(row.total || 0),
+      0,
+    );
+    const totalHotspotCost = Number(
+      (Number(plan.entry_ticket_required || 0) === 1
+        ? calculatedEntryTicketCost
+        : persistedHotspotCost
+      ).toFixed(2),
+    );
     const totalActivityCost = Number(activityAgg._sum.activity_amout || 0);
 
     this.logBookingRule({
@@ -5512,6 +5567,7 @@ sightseeingDistance,       // local sightseeing separately
       // Activity/Guide costs
       totalGuideCost: totalGuideCost > 0 ? totalGuideCost : undefined,
       totalHotspotCost: totalHotspotCost > 0 ? totalHotspotCost : undefined,
+      entryTicketBreakdown: entryTicketBreakdown.length > 0 ? entryTicketBreakdown : undefined,
       totalActivityCost: totalActivityCost > 0 ? totalActivityCost : undefined,
       kmLimitWarning,
       totalAllowedKm:
