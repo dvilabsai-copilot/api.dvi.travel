@@ -564,3 +564,33 @@
 
 - Database optimization remains evidence-gated: no index or query recommendation is retained without a representative endpoint trace and query plan.
 - Commit: `api.dvi.travel` `6594900`.
+
+### Cycle 12 â€” Extract itinerary vehicle-build status boundary
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: vehicle-build run IDs, schedule counters, status-table lifecycle, status counts, derived readiness and DB/memory fallback resolution
+- New files: `src/modules/itineraries/services/itinerary-vehicle-build-status.service.ts`, `test/itinerary-vehicle-build-status.test.ts`
+- Workflow: vehicle build status endpoints and the status reads used by synchronous/background vehicle builds
+
+#### Change
+
+- Moved the vehicle-build status repository/state boundary behind `ItineraryVehicleBuildStatusService`.
+- Kept `ItinerariesService` as the compatibility facade and retained the existing SQL, status fields, readiness rules, error text and run-ID shape.
+- Registered the new provider in `ItinerariesModule`.
+- Manual-fit attempt persistence remains in the facade because it is interleaved with this block but has a separate lifecycle.
+
+#### Verification
+
+- Vehicle-build status characterization tests: PASS, 3/3
+- Combined focused backend suite: PASS, 43/43
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 36,603 lines after the tier (36,843 before this tier); the extracted service is 316 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Query count, rows examined, payload size and endpoint latency remain unmeasured.
+- Commit: `api.dvi.travel` `c1ad1fc`.
