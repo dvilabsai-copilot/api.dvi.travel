@@ -1070,3 +1070,33 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - External routing latency, matrix row volume, failure rate and lock contention remain unmeasured.
 - Commit: `api.dvi.travel` `2bc6f75`.
+
+### Cycle 29 — Extract manual hotspot preview and Fit Here workflow
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: manual-hotspot preview/batch preview, snapshot rollback, preview caches, Fit Here preview/auto-fit and Fit Here confirmation entry points
+- New files: `src/modules/itineraries/services/itinerary-manual-hotspot-preview.service.ts`, `test/itinerary-manual-hotspot-preview.test.ts`
+- Workflow: manual hotspot preview and Fit Here endpoints
+
+#### Change
+
+- Moved the contiguous preview/Fit Here boundary behind `ItineraryManualHotspotPreviewService`.
+- Preserved preview rollback behavior, retry policy callbacks, snapshot restore, exact-anchor cache behavior, timeline fingerprinting and controller-compatible Fit Here entry points.
+- Moved preview cache state into the new service and retained facade adapters for later manual-fit helpers.
+- Registered the new provider in `ItinerariesModule`.
+
+#### Verification
+
+- Manual preview boundary tests: PASS, 2/2
+- Combined focused backend suite: PASS, 76/76
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 26,618 lines after the tier; `ItineraryManualHotspotPreviewService` is 591 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Preview transaction duration, rollback cost, cache hit rate and payload size remain unmeasured.
+- Commit: `api.dvi.travel` `b3a8124`.
