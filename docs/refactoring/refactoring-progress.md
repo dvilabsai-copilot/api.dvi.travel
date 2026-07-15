@@ -1129,3 +1129,33 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Transaction duration, row churn, pricing-rebuild cost and retry count remain unmeasured.
 - Commit: `api.dvi.travel` `faba32b`.
+
+### Cycle 31 - Extract manual fit matrix planning
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: detour anchor inference, matrix insertion-gap resolution and low-priority-removal timeline reconstruction
+- New files: `src/modules/itineraries/services/itinerary-manual-fit-matrix-planning.service.ts`, `test/itinerary-manual-fit-matrix-planning.test.ts`
+- Workflow: manual fit matrix planning and timeline reconnection
+
+#### Change
+
+- Moved the contiguous manual-fit matrix planning helpers behind `ItineraryManualFitMatrixPlanningService`.
+- Preserved route hotspot ordering, detour-distance comparison, matrix boundary validation, cached-leg fallback, travel relabeling and removed-hotspot sanitization.
+- Registered the new provider and retained facade wrappers with explicit timeline/route helper callbacks.
+
+#### Verification
+
+- Manual fit matrix planning boundary tests: PASS, 2/2
+- Combined focused backend suite: PASS, 53/53
+- Backend build: PASS
+- `git diff --check`: PASS
+- Full backend suite: 81/87; six unrelated permit-charge parity fixture failures remain because their transaction mock does not provide `dvi_vehicle.findFirst`.
+
+#### Result
+
+- `itineraries.service.ts` measured at 25,649 lines after the tier; `ItineraryManualFitMatrixPlanningService` is 778 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Active-attraction selectivity, route-leg count, timeline row volume, reconstruction CPU and latency remain unmeasured.
+- Commit: `api.dvi.travel` `d21471b`.
