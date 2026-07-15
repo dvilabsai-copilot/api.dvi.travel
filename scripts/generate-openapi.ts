@@ -6,6 +6,7 @@ import { RequestMethod } from '@nestjs/common';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { AppModule } from '../src/app.module';
+import { ensureUniqueOpenApiOperationIds } from '../src/common/swagger/normalize-openapi';
 
 dotenv.config();
 
@@ -39,7 +40,7 @@ async function main() {
     })
     .build();
 
-  const document = normalize(SwaggerModule.createDocument(app, config));
+  const document = normalize(ensureUniqueOpenApiOperationIds(SwaggerModule.createDocument(app, config)));
   const output = path.resolve(process.cwd(), process.argv[2] || 'docs/testing/openapi-baseline.json');
   fs.mkdirSync(path.dirname(output), { recursive: true });
   fs.writeFileSync(output, `${JSON.stringify(document, null, 2)}\n`, 'utf8');

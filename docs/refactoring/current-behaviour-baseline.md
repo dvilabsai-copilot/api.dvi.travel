@@ -21,7 +21,7 @@ Captured before production refactoring on 2026-07-16.
 | Frontend production build | `npm run build` | PASS | Existing large chunks and dependency warnings |
 | Prisma schema validation | `npx prisma validate` | PASS | MySQL schema parsed successfully |
 | OpenAPI generation | `npm run openapi:generate` | PASS | Configured MySQL connection initialized; 499 paths written |
-| OpenAPI self-comparison | `npm run openapi:compare` | FAIL with existing findings | 603 routes match; 14 duplicate operation IDs and 2 broken schema references |
+| OpenAPI self-comparison before contract repair | `npm run openapi:compare` | FAIL with existing findings | 603 routes match; 14 duplicate operation IDs and 2 broken schema references |
 | Frontend lint | `npm run lint` | FAIL | 1,636 errors and 82 warnings in existing code/assets; no lint-only cleanup included |
 | Backend integration/API tests | not run | BLOCKED/PENDING | Requires an isolated MySQL fixture and safe test credentials |
 | Swagger/OpenAPI baseline | pending first generator run | PENDING | Generator added in `scripts/generate-openapi.ts` |

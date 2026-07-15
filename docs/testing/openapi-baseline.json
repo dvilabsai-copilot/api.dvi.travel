@@ -1731,6 +1731,33 @@
         "properties": {},
         "type": "object"
       },
+      "SuggestedRouteResponseDto": {
+        "properties": {
+          "count": {
+            "type": "string"
+          },
+          "modify": {
+            "type": "string"
+          },
+          "no_of_nights": {
+            "type": "string"
+          },
+          "route_details": {
+            "type": "string"
+          },
+          "routes": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "count",
+          "routes",
+          "no_of_nights",
+          "route_details",
+          "modify"
+        ],
+        "type": "object"
+      },
       "TestBookingDto": {
         "properties": {},
         "type": "object"
@@ -2136,6 +2163,57 @@
       },
       "VendorListItemDto": {
         "properties": {},
+        "type": "object"
+      },
+      "ViaRouteResponseDto": {
+        "properties": {
+          "count": {
+            "type": "string"
+          },
+          "distance_from_source_to_via_route": {
+            "type": "string"
+          },
+          "duration_from_source_to_via_route": {
+            "type": "string"
+          },
+          "location_id": {
+            "type": "number"
+          },
+          "modify": {
+            "type": "string"
+          },
+          "via_route_location": {
+            "type": "string"
+          },
+          "via_route_location_city": {
+            "type": "string"
+          },
+          "via_route_location_ID": {
+            "type": "number"
+          },
+          "via_route_location_lattitude": {
+            "type": "string"
+          },
+          "via_route_location_longitude": {
+            "type": "string"
+          },
+          "via_route_location_state": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "count",
+          "via_route_location_ID",
+          "location_id",
+          "via_route_location",
+          "via_route_location_lattitude",
+          "via_route_location_longitude",
+          "via_route_location_city",
+          "via_route_location_state",
+          "distance_from_source_to_via_route",
+          "duration_from_source_to_via_route",
+          "modify"
+        ],
         "type": "object"
       },
       "YearInfoArrRequestDto": {
@@ -17034,7 +17112,7 @@
     },
     "/api/v1/staah-test/ari": {
       "post": {
-        "operationId": "StaahController_ari",
+        "operationId": "StaahController_ari_post_api_v1_staah_test_ari",
         "parameters": [],
         "requestBody": {
           "content": {
@@ -17055,7 +17133,7 @@
     },
     "/api/v1/staah-test/arrInfo": {
       "post": {
-        "operationId": "StaahController_arrInfo",
+        "operationId": "StaahController_arrInfo_post_api_v1_staah_test_arrInfo",
         "parameters": [],
         "requestBody": {
           "content": {
@@ -17076,7 +17154,7 @@
     },
     "/api/v1/staah-test/cancelReservation": {
       "post": {
-        "operationId": "StaahController_cancelReservation",
+        "operationId": "StaahController_cancelReservation_post_api_v1_staah_test_cancelReservation",
         "parameters": [],
         "requestBody": {
           "content": {
@@ -17097,7 +17175,7 @@
     },
     "/api/v1/staah-test/custom/cancelReservation": {
       "post": {
-        "operationId": "StaahController_cancelReservationCustom",
+        "operationId": "StaahController_cancelReservationCustom_post_api_v1_staah_test_custom_cancelReservation",
         "parameters": [],
         "requestBody": {
           "content": {
@@ -17118,7 +17196,7 @@
     },
     "/api/v1/staah-test/custom/modifyReservation": {
       "post": {
-        "operationId": "StaahController_modifyReservationCustom",
+        "operationId": "StaahController_modifyReservationCustom_post_api_v1_staah_test_custom_modifyReservation",
         "parameters": [],
         "requestBody": {
           "content": {
@@ -17139,7 +17217,7 @@
     },
     "/api/v1/staah-test/inventoryUpdate": {
       "post": {
-        "operationId": "StaahController_inventoryUpdate",
+        "operationId": "StaahController_inventoryUpdate_post_api_v1_staah_test_inventoryUpdate",
         "parameters": [],
         "requestBody": {
           "content": {
@@ -17160,7 +17238,7 @@
     },
     "/api/v1/staah-test/mapping": {
       "post": {
-        "operationId": "StaahController_mapping",
+        "operationId": "StaahController_mapping_post_api_v1_staah_test_mapping",
         "parameters": [],
         "requestBody": {
           "content": {
@@ -17181,7 +17259,7 @@
     },
     "/api/v1/staah-test/modifyReservation": {
       "post": {
-        "operationId": "StaahController_modifyReservation",
+        "operationId": "StaahController_modifyReservation_post_api_v1_staah_test_modifyReservation",
         "parameters": [],
         "requestBody": {
           "content": {
@@ -17202,7 +17280,7 @@
     },
     "/api/v1/staah-test/productInfo": {
       "post": {
-        "operationId": "StaahController_productInfo",
+        "operationId": "StaahController_productInfo_post_api_v1_staah_test_productInfo",
         "parameters": [],
         "requestBody": {
           "content": {
@@ -17223,7 +17301,7 @@
     },
     "/api/v1/staah-test/ratePlanInfo": {
       "post": {
-        "operationId": "StaahController_ratePlanInfo",
+        "operationId": "StaahController_ratePlanInfo_post_api_v1_staah_test_ratePlanInfo",
         "parameters": [],
         "requestBody": {
           "content": {
@@ -17244,7 +17322,7 @@
     },
     "/api/v1/staah-test/rateUpdate": {
       "post": {
-        "operationId": "StaahController_rateUpdate",
+        "operationId": "StaahController_rateUpdate_post_api_v1_staah_test_rateUpdate",
         "parameters": [],
         "requestBody": {
           "content": {
@@ -17265,7 +17343,7 @@
     },
     "/api/v1/staah-test/reservation": {
       "post": {
-        "operationId": "StaahController_reservation",
+        "operationId": "StaahController_reservation_post_api_v1_staah_test_reservation",
         "parameters": [],
         "requestBody": {
           "content": {
@@ -17286,7 +17364,7 @@
     },
     "/api/v1/staah-test/restrictionUpdate": {
       "post": {
-        "operationId": "StaahController_restrictionUpdate",
+        "operationId": "StaahController_restrictionUpdate_post_api_v1_staah_test_restrictionUpdate",
         "parameters": [],
         "requestBody": {
           "content": {
@@ -17307,7 +17385,7 @@
     },
     "/api/v1/staah-test/yearInfoArr": {
       "post": {
-        "operationId": "StaahController_yearInfoArr",
+        "operationId": "StaahController_yearInfoArr_post_api_v1_staah_test_yearInfoArr",
         "parameters": [],
         "requestBody": {
           "content": {

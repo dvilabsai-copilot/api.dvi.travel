@@ -23,7 +23,7 @@
 - API tests: not run
 - Frontend tests: 9 passed across 4 files
 - Swagger generation: passed after explicit GraphQL scalar metadata fix; 499 paths / 603 operations
-- Swagger contract comparison: route parity passed; existing 14 duplicate operation IDs and 2 broken schema references reported
+- Swagger contract comparison: PASS after contract-repair cycle; 603 operations, no drift, duplicate IDs or broken schema references
 - Playwright: not run; environment/fixtures require explicit safe configuration
 - Backend build: passed
 - Frontend build: passed
@@ -105,3 +105,37 @@
 
 - Behaviour characterization now passes for route normalization, duplicate stops, terminal anchors and broken chains.
 - Retained and ready for the next small extraction only after the Swagger findings are either fixed or explicitly bounded.
+
+### Cycle 3 — Swagger/OpenAPI contract repair
+
+#### Scope
+
+- Original files: `src/main.ts`, `src/modules/locations/locations.controller.ts`, GraphQL/dashboard metadata
+- New file: `src/common/swagger/normalize-openapi.ts`
+- Endpoint/UI workflow: all REST documentation; no route handler or frontend API call changed
+- Tables: none
+
+#### Baseline
+
+- OpenAPI generation: 499 paths / 603 operations
+- Existing findings: 14 duplicate operation IDs from the dual-prefix STAAH controller and 2 unregistered location response DTO references
+- Contract drift: 0 when comparing route/method/request/response contracts
+
+#### Change
+
+- Registered `ViaRouteResponseDto` and `SuggestedRouteResponseDto` with the Locations controller.
+- Added deterministic unique operation IDs for duplicate alias operations while preserving the first public operation ID and all HTTP routes.
+- Applied the same normalization to runtime Swagger setup and the baseline generator.
+
+#### Verification
+
+- Backend build: PASS
+- OpenAPI generation: PASS; configured MySQL connection initialized
+- OpenAPI comparison: PASS — 603 routes, no missing/added/changed contracts, no duplicate IDs, no broken refs
+- Prisma validation: PASS
+- Backend focused tests: PASS, 14/14
+
+#### Result
+
+- Contract tier retained and committed.
+- Remaining risk: runtime route-precedence coverage still needs an isolated API test; no route definitions were changed in this cycle.
