@@ -4,8 +4,8 @@ This is an evidence-led plan; no production extraction is retained by the baseli
 
 | Current file | Observed size/calls | Cohesive responsibilities to investigate | Safe extraction order | Main risk |
 |---|---:|---|---|---|
-| `itineraries.service.ts` | 36,843 lines / 613 DB-call matches | create/update persistence; route/rebuild; manual/auto fit; hotel/vehicle/vendor pricing; confirmation/cancellation | guide assignment -> pure calculations -> manual preview boundary -> route/rebuild -> pricing -> confirmation | transaction and shared mutable state |
-| `timeline.builder.ts` | 9,374 lines / 35 DB-call matches | input loading; route processing; hotspot selection; travel legs; operating hours/cutoffs | pure timeline policy tests -> input loader -> policy services | ordering/timing parity |
+| `itineraries.service.ts` | 35,433 lines / 613 DB-call matches | create/update persistence; route/rebuild; manual/auto fit; hotel/vehicle/vendor pricing; confirmation/cancellation | guide assignment -> vehicle status -> vehicle orchestration -> plan persistence -> manual preview boundary -> route/rebuild -> pricing -> confirmation | transaction and shared mutable state |
+| `timeline.builder.ts` | 9,182 lines / 35 DB-call matches | input loading; route processing; hotspot selection; travel legs; operating hours/cutoffs | pure timeline policy tests -> input loader -> policy services | ordering/timing parity |
 | `itinerary-details.service.ts` | 6,108 lines / 63 DB-call matches | data loading; response assembly; hotel details; activity/guide projections | read loaders -> response assembly | response shape and duplicate queries |
 | `vendors.service.ts` | 3,478 lines / 161 DB-call matches | vendor CRUD; vehicles/slabs; local/outstation price books; permits; branches/lookups | lookup/read-only price-book query -> CRUD groups -> writes | shared Prisma model assumptions |
 | `hotels.service.ts` | 2,945 lines / 139 DB-call matches | hotel CRUD; rooms/rate plans; amenities; price books; provider sync | pure normalization -> room/rate-plan reads -> writes -> providers | provider and transaction coupling |
@@ -39,3 +39,5 @@ This is an evidence-led plan; no production extraction is retained by the baseli
 `ItineraryVehicleBuildStatusService` now owns vehicle-build run IDs, in-memory status, status-table lifecycle, readiness counts and DB/memory/derived status resolution. `ItinerariesService` remains the compatibility facade and delegates status lifecycle calls. Vehicle-build orchestration, vendor auto-selection and manual-fit persistence remain separate concerns for subsequent tiers.
 
 `ItineraryVehicleBuildService` now owns vehicle-build orchestration, stage timeout/retry handling, permit sync, plan vehicle context and lowest-cost active vendor selection. `ItinerariesService` remains the compatibility facade and keeps the final `selectVehicleVendor` mutation behind an explicit callback. Transaction ordering, SQL shape and response contracts are unchanged.
+
+`ItineraryPlanPersistenceService` now owns the basic-info create/update transaction and reusable-template persistence. It receives explicit engine dependencies and callbacks for route optimization, same-city optimization and plan-edit reads; `ItinerariesService` remains the compatibility facade. Transaction ordering and response envelopes are unchanged.

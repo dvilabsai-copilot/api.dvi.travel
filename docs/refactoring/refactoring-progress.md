@@ -624,3 +624,33 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Query count, rows examined, payload size and endpoint latency remain unmeasured.
 - Commit: `api.dvi.travel` `4b35e4a`.
+
+### Cycle 14 â€” Extract itinerary plan persistence and reusable templates
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: create/update plan transaction, route/via-route/permit/traveller/hotel/hotspot rebuild sequencing, parking rebuild, post-save vehicle trigger, reusable-template save/lookup/snapshot persistence
+- New files: `src/modules/itineraries/services/itinerary-plan-persistence.service.ts`, `test/itinerary-plan-persistence.test.ts`
+- Workflow: basic itinerary save/update and reusable-template endpoints
+
+#### Change
+
+- Moved the contiguous plan-save/template boundary behind `ItineraryPlanPersistenceService`.
+- Preserved the transaction timeout/max-wait, cleanup ordering, route and permit sequencing, validation/error handling, background vehicle trigger, optimizer/template best-effort handling and response envelope.
+- Kept route optimization, same-city optimization and plan-edit lookup behind explicit callbacks to the existing facade-owned boundaries.
+- Registered the new provider in `ItinerariesModule`.
+
+#### Verification
+
+- Plan-persistence boundary tests: PASS, 2/2
+- Combined focused backend suite: PASS, 47/47
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 35,433 lines after the tier; `ItineraryPlanPersistenceService` is 821 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Query count, rows examined, payload size and endpoint latency remain unmeasured.
+- Commit: `api.dvi.travel` `33d68d7`.

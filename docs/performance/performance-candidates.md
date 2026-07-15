@@ -117,6 +117,7 @@ An index, Redis cache, or query rewrite may move from candidate to implementatio
 | Itinerary iteration 8 | Guide assignment and pricebook boundary | `itineraries.service.ts` reduced from 37,224 to 36,843 lines; `ItineraryGuideAssignmentService` owns 337 lines | Existing guide reads and pricebook filters preserved; query count, rows examined, payload and latency remain unmeasured |
 | Itinerary iteration 9 | Vehicle-build status repository/state boundary | `itineraries.service.ts` reduced from 36,843 to 36,603 lines; `ItineraryVehicleBuildStatusService` owns 316 lines | Existing status-table SQL, readiness counts and DB/memory fallback preserved; query count, rows examined, payload and latency remain unmeasured |
 | Itinerary iteration 10 | Vehicle-build orchestration boundary | `itineraries.service.ts` reduced from 36,603 to 36,115 lines; `ItineraryVehicleBuildService` owns 473 lines | Existing build stages, retry/timeout policy and vendor-selection ordering preserved; query count, rows examined, payload and latency remain unmeasured |
+| Itinerary iteration 11 | Plan-save and reusable-template persistence boundary | `itineraries.service.ts` reduced from 36,115 to 35,433 lines; `ItineraryPlanPersistenceService` owns 821 lines | Existing transaction ordering and template reads/writes preserved; query count, rows examined, payload and latency remain unmeasured |
 
 The iteration-6 and iteration-7 boundaries are measurement seams, not optimization claims. The next safe performance tier should instrument representative itinerary-details, route-rebuild and hotspot-preview requests and attribute calls to `TimelineTravelDataService` and `TimelineCandidateFeasibilityService` before changing query shape or adding a cache.
 
@@ -125,6 +126,8 @@ The iteration-8 guide boundary is also a measurement seam. Guide availability cu
 The iteration-9 vehicle-build status boundary is a measurement seam for status polling and build completion. The status contract intentionally still performs the existing count/read work; any memoization or index proposal must distinguish polling frequency from build execution and verify readiness semantics against fresh rows.
 
 The iteration-10 vehicle-build boundary is a measurement seam for stage duration, transaction wait time, eligible-row volume, vehicle-detail volume and status polling. Do not parallelize stages or cache mutable pricing/availability data without a representative build trace and a proof that transaction ordering and selection semantics remain unchanged.
+
+The iteration-11 plan-persistence boundary is a measurement seam for transaction wait time, route/hotspot child-row volume, post-transaction rebuild duration, template snapshot payload size and template lookup selectivity. Profile representative create, update and template-match requests separately before considering batching, projections or index changes.
 
 ## Next profiling order
 
