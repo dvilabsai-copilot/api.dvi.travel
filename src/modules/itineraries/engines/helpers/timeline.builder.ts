@@ -1167,59 +1167,13 @@ export class TimelineBuilder {
     visitStartSeconds: number,
     visitEndSeconds: number,
   ): { canVisitNow: boolean; nextWindowStart: string | null; isClosedForDay: boolean } {
-    // Get timing records from pre-fetched map (NO DB QUERY)
-    const timingRecords = timingMap.get(hotspotId)?.get(dayOfWeek) || [];
-
-    if (!timingRecords || timingRecords.length === 0) {
-      // Hotspots with no timing configured should not be auto-scheduled.
-      return { canVisitNow: false, nextWindowStart: null, isClosedForDay: true };
-    }
-
-    let nextWindowStart: string | null = null;
-    let hasUsableOpenWindow = false;
-
-    // Check if any timing window allows the full visit (start AND end within same window)
-    for (const timing of timingRecords) {
-      // Skip if hotspot is closed
-      if (Number(timing?.hotspot_closed || 0) === 1) {
-        continue;
-      }
-
-      hasUsableOpenWindow = true;
-      
-      // Open all time = always available
-      if (Number(timing?.hotspot_open_all_time || 0) === 1) {
-        return { canVisitNow: true, nextWindowStart: null, isClosedForDay: false };
-      }
-      
-      // Get operating window times (in absolute seconds)
-      const operatingStart = this.formatTimingTime(timing?.hotspot_start_time) || '00:00:00';
-      const operatingEnd = this.formatTimingTime(timing?.hotspot_end_time) || '23:59:59';
-      
-      const opStartSeconds = timeToSeconds(operatingStart);
-      const opEndSeconds = timeToSeconds(operatingEnd);
-      
-      // ⚠️ CRITICAL: Handle overnight operating windows (e.g., 18:00-08:00)
-      const { isOvernight: opOvernight, absoluteEndSeconds: opAbsoluteEnd } = 
-        normalizeTimeRange(opStartSeconds, opEndSeconds);
-      
-      // ⚠️ CRITICAL: Compare ABSOLUTE visit times against ABSOLUTE operating window
-      // Do NOT wrap times before comparison
-      // PHP Logic: BOTH start and end must fall within the SAME operating window
-      if (visitStartSeconds >= opStartSeconds && visitEndSeconds <= opAbsoluteEnd) {
-        return { canVisitNow: true, nextWindowStart: null, isClosedForDay: false };
-      }
-      
-      // Track next available window that's after current start time
-      if (opStartSeconds > visitStartSeconds) {
-        if (nextWindowStart === null || opStartSeconds < timeToSeconds(nextWindowStart)) {
-          nextWindowStart = operatingStart;
-        }
-      }
-    }
-    
-    // No timing window accommodates the current visit, but return next window if available
-    return { canVisitNow: false, nextWindowStart, isClosedForDay: !hasUsableOpenWindow };
+    return this.operatingHoursService.checkHotspotOperatingHoursFromMap(
+      timingMap,
+      hotspotId,
+      dayOfWeek,
+      visitStartSeconds,
+      visitEndSeconds,
+    );
   }
 
   /**
