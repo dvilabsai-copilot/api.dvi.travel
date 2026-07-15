@@ -774,3 +774,32 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Query count, rows examined, payload size and endpoint latency remain unmeasured.
 - Commit: `api.dvi.travel` `71b3ec5`.
+
+### Cycle 19 — Extract itinerary quote context reads
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: plan edit reads, customer form projection and wallet balance resolution
+- New files: `src/modules/itineraries/services/itinerary-quote-context.service.ts`, `test/itinerary-quote-context.test.ts`
+- Workflow: quote edit, customer form and wallet endpoints
+
+#### Change
+
+- Moved the contiguous quote-context read workflows behind `ItineraryQuoteContextService`.
+- Preserved route/via/vehicle/traveller ordering, agent/city/company display formatting, wallet stored-balance and cash-ledger fallback arithmetic, and validation messages.
+- Registered the new provider in `ItinerariesModule`; confirmation transaction and hotel booking orchestration remain in `ItinerariesService`.
+
+#### Verification
+
+- Quote-context boundary tests: PASS, 3/3
+- Combined focused backend suite: PASS, 57/57
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 31,955 lines after the tier; `ItineraryQuoteContextService` is 232 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Query count, rows examined, payload size and endpoint latency remain unmeasured.
+- Commit: `api.dvi.travel` `b26ce39`.
