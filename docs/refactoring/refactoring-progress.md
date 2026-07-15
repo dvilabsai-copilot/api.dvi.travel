@@ -16,6 +16,13 @@
 - Package manager: npm
 - Test date: 2026-07-16
 
+## Current working state
+
+- Backend working branch: `codex/itinerary-modernization-20260716`
+- Backend current commit: `b331633`
+- Frontend working branch: `codex/itinerary-modernization-20260716`
+- The baseline above remains the original `main` snapshot; current-tier results are appended below and do not overwrite baseline findings.
+
 ## Baseline status
 
 - Backend unit/algorithm tests: 13 passed, 1 pre-existing failure (`route-optimizer-normalization`)
@@ -373,6 +380,30 @@
 - Existing SQL, Prisma filters, fallback ordering and returned shapes are preserved behind a private service boundary.
 - No index, Redis, controller, route, DTO, response or frontend change.
 - Commit: `api.dvi.travel` `8f35e2f`.
+
+### Full-decomposition iteration 6 — Extract timeline travel data
+
+#### Scope
+
+- Original facade: `src/modules/itineraries/engines/helpers/timeline.builder.ts`
+- Responsibility extracted: hotspot and hotel location reads, hotel detail enrichment, stored-location coordinate resolution, pure travel-time calculation and projected arrival-to-destination calculation
+- New files: `src/modules/itineraries/engines/helpers/timeline-travel-data.service.ts`, `test/timeline-travel-data.test.ts`
+- Shared dependency: the existing `DistanceHelper` instance is passed explicitly so global-settings caching and provider behaviour remain unchanged
+
+#### Verification
+
+- Original facade: 9,612 → 9,374 lines
+- Extracted service: 290 lines
+- Focused timeline/policy/backend tests: PASS, 34/34
+- Backend build: PASS
+
+#### Compatibility and performance evidence
+
+- Existing facade method signatures and call sites remain intact.
+- Prisma filters, selected fields, fallback ordering, travel location types and buffer handling were preserved.
+- No query rewrite, index mutation or Redis dependency was introduced.
+- Endpoint query count, rows examined, payload size and latency remain unmeasured; the new boundary makes those reads attributable for a later profiled tier.
+- Commit: `api.dvi.travel` `b331633`.
 
 #### Verification
 

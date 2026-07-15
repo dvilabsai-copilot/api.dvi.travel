@@ -5,7 +5,7 @@ This is an evidence-led plan; no production extraction is retained by the baseli
 | Current file | Observed size/calls | Cohesive responsibilities to investigate | Safe extraction order | Main risk |
 |---|---:|---|---|---|
 | `itineraries.service.ts` | 37,413 lines / 607 DB-call matches | create/update persistence; route/rebuild; manual/auto fit; hotel/vehicle/vendor pricing; confirmation/cancellation | pure calculations -> manual preview boundary -> route/rebuild -> pricing -> confirmation | transaction and shared mutable state |
-| `timeline.builder.ts` | 10,398 lines / 49 DB-call matches | input loading; route processing; hotspot selection; travel legs; operating hours/cutoffs | pure timeline policy tests -> input loader -> policy services | ordering/timing parity |
+| `timeline.builder.ts` | 9,374 lines / 35 DB-call matches | input loading; route processing; hotspot selection; travel legs; operating hours/cutoffs | pure timeline policy tests -> input loader -> policy services | ordering/timing parity |
 | `itinerary-details.service.ts` | 6,108 lines / 63 DB-call matches | data loading; response assembly; hotel details; activity/guide projections | read loaders -> response assembly | response shape and duplicate queries |
 | `vendors.service.ts` | 3,478 lines / 161 DB-call matches | vendor CRUD; vehicles/slabs; local/outstation price books; permits; branches/lookups | lookup/read-only price-book query -> CRUD groups -> writes | shared Prisma model assumptions |
 | `hotels.service.ts` | 2,945 lines / 139 DB-call matches | hotel CRUD; rooms/rate plans; amenities; price books; provider sync | pure normalization -> room/rate-plan reads -> writes -> providers | provider and transaction coupling |
@@ -29,3 +29,5 @@ This is an evidence-led plan; no production extraction is retained by the baseli
 `TimelineOperatingHoursService` now owns timing-value formatting, daily operating-window summaries and closed-day policy checks used by `TimelineBuilder`. `TimelineBuilder` remains the compatibility facade and still owns the broader timeline assembly and hotspot sequencing. The helper has no Prisma or external-provider dependency and is instantiated by the existing manually constructed builder.
 
 `LocationGeoPolicyService` now owns coordinate parsing, location-name normalization, case-insensitive string deduplication, duration text formatting and haversine distance calculation used by `LocationsService`. `LocationsService` remains the Prisma/API compatibility facade and the policy service has no database dependency.
+
+`TimelineTravelDataService` now owns timeline hotspot/hotel location reads, hotel detail enrichment, stored-location coordinate resolution and distance projections. `TimelineBuilder` remains the compatibility facade and receives the existing shared `DistanceHelper` explicitly. Query shape and transaction ownership are unchanged; endpoint-level measurement remains pending.
