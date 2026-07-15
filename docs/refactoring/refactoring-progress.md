@@ -833,3 +833,33 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Query count, rows examined, payload size and endpoint latency remain unmeasured.
 - Commit: `api.dvi.travel` `7d63d1c`.
+
+### Cycle 21 — Extract hotel confirmation support
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: selected-hotel draft synchronization, confirmation financial finalization and already-successful supplier-booking filtering
+- New files: `src/modules/itineraries/services/itinerary-hotel-confirmation-support.service.ts`, `test/itinerary-hotel-confirmation-support.test.ts`
+- Workflow: hotel confirmation support used by confirmation and provider-booking follow-up paths
+
+#### Change
+
+- Moved the contiguous hotel-confirmation support workflows behind `ItineraryHotelConfirmationSupportService`.
+- Preserved multi-night draft expansion, stale-row deactivation, room/amenity synchronization, financial idempotency, provider confirmation lookup and pending-booking filtering.
+- Kept provider normalization/key policies and wallet resolution behind explicit callbacks; external provider API calls remain outside this service.
+- Registered the new provider in `ItinerariesModule`.
+
+#### Verification
+
+- Hotel confirmation support boundary tests: PASS, 2/2
+- Combined focused backend suite: PASS, 62/62
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 30,356 lines after the tier; `ItineraryHotelConfirmationSupportService` is 786 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Query count, rows examined, payload size and endpoint latency remain unmeasured.
+- Commit: `api.dvi.travel` `5e35b9d`.

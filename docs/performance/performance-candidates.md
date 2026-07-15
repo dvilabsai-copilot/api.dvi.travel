@@ -124,6 +124,7 @@ An index, Redis cache, or query rewrite may move from candidate to implementatio
 | Itinerary iteration 15 | Hotel and vehicle selection/rebuild workflow boundary | `itineraries.service.ts` reduced from 32,712 to 32,159 lines; `ItinerarySelectionWorkflowService` owns 604 lines | Existing Haversine hotel search, selection preservation, rate validation, slab rebuild and active-vendor filtering preserved; query count, rows examined, payload and latency remain unmeasured |
 | Itinerary iteration 16 | Quote edit/customer/wallet read boundary | `itineraries.service.ts` reduced from 32,159 to 31,955 lines; `ItineraryQuoteContextService` owns 232 lines | Existing edit projections, agent/city formatting and wallet fallback arithmetic preserved; query count, rows examined, payload and latency remain unmeasured |
 | Itinerary iteration 17 | Quotation confirmation transaction boundary | `itineraries.service.ts` reduced from 31,955 to 31,061 lines; `ItineraryConfirmationService` owns 980 lines | Existing wallet deduction, confirmation persistence, hotel normalization and transaction ordering preserved; query count, rows examined, payload and latency remain unmeasured |
+| Itinerary iteration 18 | Hotel confirmation support boundary | `itineraries.service.ts` reduced from 31,061 to 30,356 lines; `ItineraryHotelConfirmationSupportService` owns 786 lines | Existing selected-hotel draft writes, financial finalization and provider-success filtering preserved; query count, rows examined, payload and latency remain unmeasured |
 
 The iteration-6 and iteration-7 boundaries are measurement seams, not optimization claims. The next safe performance tier should instrument representative itinerary-details, route-rebuild and hotspot-preview requests and attribute calls to `TimelineTravelDataService` and `TimelineCandidateFeasibilityService` before changing query shape or adding a cache.
 
@@ -146,6 +147,8 @@ The iteration-15 selection boundary is a measurement seam for hotel route/locati
 The iteration-16 quote-context boundary is a measurement seam for edit-page route/via fan-out, traveller and vehicle payload size, agent configuration lookup and wallet fallback scans. Profile edit reads and customer/wallet reads separately; consider projections, batching or indexes only after measuring route count, child-row volume and wallet transaction selectivity.
 
 The iteration-17 confirmation boundary is a measurement seam for pre-confirmation reads, wallet fallback scans, hotel draft cleanup row volume, transaction wait/lock time, confirmation child-row inserts and post-transaction copy work. Profile confirmation with no supplier bookings separately from provider-booking confirmation; do not parallelize writes, cache wallet state, or change transaction scope without evidence from both workloads.
+
+The iteration-18 support boundary is a measurement seam for selected-hotel draft row churn, multi-night expansion volume, route lookup fan-out, financial finalization transaction wait and provider-confirmation lookup scans. Profile draft synchronization, financial finalization and already-successful filtering independently; only then consider batching or composite indexes, and keep external provider calls out of database transactions.
 
 ## Next profiling order
 
