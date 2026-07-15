@@ -265,6 +265,28 @@
 - Recorded that current evidence is insufficient for an index addition, duplicate removal or missing-index claim.
 - No migration was applied and no index definition was changed.
 
+### Full-decomposition iteration 1 — Extract timeline slot policy
+
+#### Scope
+
+- Original facade: `src/modules/itineraries/engines/helpers/timeline.builder.ts`
+- Responsibility extracted: morning/evening slot classification, wait-until-open policy, next-slot selection, max-time selection and free-time row construction
+- New files: `src/modules/itineraries/engines/helpers/timeline-slot-policy.service.ts`, `test/timeline-slot-policy.test.ts`
+
+#### Verification
+
+- Original facade: 10,302 → 10,254 lines
+- Extracted service: 79 lines
+- Slot-policy tests: PASS, 3/3
+- Combined backend focused suite: PASS, 26/26
+- Backend build: PASS
+
+#### Compatibility
+
+- `TimelineBuilder` remains the compatibility facade.
+- No controller, route, DTO, response, Prisma query, transaction or frontend change.
+- Commit: `api.dvi.travel` `0823c22`.
+
 #### Verification
 
 - Read-only database audit: PASS; 182 tables, 2,288 index definitions, Performance Schema enabled
