@@ -745,3 +745,32 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Query count, rows examined, payload size and endpoint latency remain unmeasured.
 - Commit: `api.dvi.travel` `cc01da7`.
+
+### Cycle 18 — Extract itinerary selection and pricing workflow
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: hotel discovery/selection, bulk hotel persistence, vehicle-vendor selection, slab selection/auto-selection and vehicle-pricing rebuilds after hotspot changes
+- New files: `src/modules/itineraries/services/itinerary-selection-workflow.service.ts`, `test/itinerary-selection-workflow.test.ts`
+- Workflow: hotel selection and vehicle pricing endpoints plus hotspot-triggered vehicle rebuilds
+
+#### Change
+
+- Moved the contiguous hotel and vehicle selection workflow behind `ItinerarySelectionWorkflowService`.
+- Preserved Haversine hotel candidate filtering, hotel/room upsert behavior, cache invalidation, active-vendor filtering, rate validation, slab overrides, automatic slab re-selection and assignment restoration after rebuild.
+- Registered the new provider in `ItinerariesModule` and retained `ItinerariesService` compatibility wrappers for all controller and internal callers.
+
+#### Verification
+
+- Selection workflow boundary tests: PASS, 3/3
+- Combined focused backend suite: PASS, 54/54
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 32,159 lines after the tier; `ItinerarySelectionWorkflowService` is 604 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Query count, rows examined, payload size and endpoint latency remain unmeasured.
+- Commit: `api.dvi.travel` `71b3ec5`.
