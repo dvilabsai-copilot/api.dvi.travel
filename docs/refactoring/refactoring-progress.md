@@ -684,3 +684,34 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Query count, rows examined, payload size and endpoint latency remain unmeasured.
 - Commit: `api.dvi.travel` `be8dab5`.
+
+### Cycle 16 â€” Extract smart itinerary activity engine
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: smart activity preview/apply-preview, hotspot-gap movement, anchored local rebuild, preview timeline assembly and smart activity insertion
+- New files: `src/modules/itineraries/services/itinerary-smart-activity.service.ts`, `test/itinerary-smart-activity.test.ts`
+- Workflow: smart activity preview and insert endpoints
+
+#### Change
+
+- Moved the tightly coupled smart-activity transaction engine behind `ItinerarySmartActivityService`.
+- Preserved gap validation, priority-removal confirmation, rollback-preview behavior, hotspot ordering, local rebuild/deletion rules, timeline response shape and insertion transaction timeout.
+- Kept time/conflict formatting policies behind explicit callbacks and retained `ItinerariesService.getHotspotDurationMinutes` because other facade workflows still use that helper.
+- Rebuilt the extracted source from bounded committed-source chunks after a verification-time truncation was detected; no corrupted intermediate file was committed.
+- Registered the new provider in `ItinerariesModule`.
+
+#### Verification
+
+- Smart activity boundary tests: PASS, 1/1
+- Combined focused backend suite: PASS, 50/50
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 33,522 lines after the tier; `ItinerarySmartActivityService` is 1,352 lines because it retains a cohesive transaction/rebuild engine.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Query count, rows examined, payload size and endpoint latency remain unmeasured.
+- Commit: `api.dvi.travel` `b0476eb`.
