@@ -19,3 +19,13 @@ Initial static inventory captured from `prisma/schema.prisma` and active source 
 | Hotspots | `HotspotsService`, itinerary engines | location/status/opening hours/priority, route assignments | static scan only |
 
 Actual table sizes, index definitions, foreign-key support, usage counters, query plans and digest timings require the read-only audit against an isolated or explicitly approved database.
+
+## Read-only audit result
+
+Generated on 2026-07-16 from the configured local `dvi_main` database; raw evidence is in `database-audit-baseline.json`.
+
+- Tables returned by `information_schema.TABLES`: 182
+- Index-column definitions returned by `information_schema.STATISTICS`: 2,288
+- Declared foreign-key relationships returned by `information_schema.KEY_COLUMN_USAGE`: 0
+- Performance Schema: enabled; index-I/O counters available
+- No DDL/DML was executed, and no endpoint query count or latency is inferred from this audit
