@@ -38,6 +38,7 @@ import {
 } from '../../services/arrival-hotel-policy.service';
 import type { SameCityAllocationPlan } from '../../services/same-city-cross-day-optimizer.service';
 import { normalizeRouteCityKey } from '../../services/same-city-cross-day-optimizer.shared';
+import { TimelineOperatingHoursService } from './timeline-operating-hours.service';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -210,6 +211,7 @@ export class TimelineBuilder {
   // Make parkingBuilder public so HotspotEngineService can use it for rebuilding parking charges
   public readonly parkingBuilder = new ParkingChargeBuilder();
   private readonly distanceHelper = new DistanceHelper();
+  private readonly operatingHoursService = new TimelineOperatingHoursService();
   private readonly routeRejectionSummaryByRoute = new Map<number, RouteRejectionSummary>();
   private readonly routeEndBufferMinutes = Math.max(
     0,
@@ -438,25 +440,7 @@ export class TimelineBuilder {
   }
 
   private formatTimingTime(value: any): string | null {
-    if (!value) return null;
-    if (typeof value === 'string' && value.trim()) {
-      const trimmed = value.trim();
-      const hhmmss = trimmed.match(/(\d{2}:\d{2}:\d{2})/);
-      if (hhmmss?.[1]) return hhmmss[1];
-
-      const parsed = new Date(trimmed);
-      if (!Number.isNaN(parsed.getTime())) {
-        return `${String(parsed.getUTCHours()).padStart(2, '0')}:${String(parsed.getUTCMinutes()).padStart(2, '0')}:${String(parsed.getUTCSeconds()).padStart(2, '0')}`;
-      }
-      return null;
-    }
-    if (value instanceof Date) {
-      return `${String(value.getUTCHours()).padStart(2, '0')}:${String(value.getUTCMinutes()).padStart(2, '0')}:${String(value.getUTCSeconds()).padStart(2, '0')}`;
-    }
-    if (typeof value === 'object' && typeof value.getUTCHours === 'function') {
-      return `${String(value.getUTCHours()).padStart(2, '0')}:${String(value.getUTCMinutes()).padStart(2, '0')}:${String(value.getUTCSeconds()).padStart(2, '0')}`;
-    }
-    return null;
+    return this.operatingHoursService.formatTimingTime(value);
   }
 
   private getTimingWindowSummary(
@@ -464,33 +448,7 @@ export class TimelineBuilder {
     hotspotId: number,
     dayOfWeek: number,
   ): { openingTime: string | null; closingTime: string | null } {
-    const timingRecords = timingMap.get(hotspotId)?.get(dayOfWeek) || [];
-    if (!timingRecords.length) {
-      return { openingTime: null, closingTime: null };
-    }
-
-    let openingTime: string | null = null;
-    let closingTime: string | null = null;
-
-    for (const timing of timingRecords) {
-      if (Number(timing?.hotspot_closed || 0) === 1) continue;
-      if (Number(timing?.hotspot_open_all_time || 0) === 1) {
-        return { openingTime: '00:00:00', closingTime: '23:59:59' };
-      }
-
-      const start = this.formatTimingTime(timing?.hotspot_start_time);
-      const end = this.formatTimingTime(timing?.hotspot_end_time);
-      if (!start || !end) continue;
-
-      if (!openingTime || timeToSeconds(start) < timeToSeconds(openingTime)) {
-        openingTime = start;
-      }
-      if (!closingTime || timeToSeconds(end) > timeToSeconds(closingTime)) {
-        closingTime = end;
-      }
-    }
-
-    return { openingTime, closingTime };
+    return this.operatingHoursService.getTimingWindowSummary(timingMap, hotspotId, dayOfWeek);
   }
 
   private isHotspotClosedOnDay(
@@ -498,23 +456,14 @@ export class TimelineBuilder {
     hotspotId: number,
     dayOfWeek: number,
   ): boolean {
-    const timingRecords = timingMap.get(hotspotId)?.get(dayOfWeek) || [];
-    if (!timingRecords.length) return false;
-
-    return timingRecords.every((timing) => Number((timing as any)?.hotspot_closed || 0) === 1);
+    return this.operatingHoursService.isHotspotClosedOnDay(timingMap, hotspotId, dayOfWeek);
   }
 
   private isHotspotClosedOnAllDays(
     timingMap: Map<number, Map<number, any[]>>,
     hotspotId: number,
   ): boolean {
-    const dayMap = timingMap.get(hotspotId);
-    if (!dayMap || dayMap.size === 0) return false;
-
-    const allRows = Array.from(dayMap.values()).flat();
-    if (!allRows.length) return false;
-
-    return allRows.every((timing) => Number((timing as any)?.hotspot_closed || 0) === 1);
+    return this.operatingHoursService.isHotspotClosedOnAllDays(timingMap, hotspotId);
   }
 
   private getRouteVisitDaysForClosedFilter(

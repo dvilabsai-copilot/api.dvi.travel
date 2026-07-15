@@ -179,3 +179,50 @@
 - Extraction retained.
 - Original facade is smaller and route policy now has a narrow public interface.
 - Remaining risk: constructor still coordinates many unrelated services; future extractions must preserve transaction boundaries and provider behavior.
+
+### Cycle 5 — Extract timeline operating-hours policy
+
+#### Scope
+
+- Original file: `src/modules/itineraries/engines/helpers/timeline.builder.ts`
+- Extracted responsibility: timing-value formatting, operating-window summaries and closed-day checks
+- New files: `src/modules/itineraries/engines/helpers/timeline-operating-hours.service.ts`, `test/timeline-operating-hours.test.ts`
+- Endpoint/UI workflow: itinerary timeline generation; existing route, response and timing behavior preserved
+- Tables: none
+
+#### Baseline
+
+- Original file size: 10,398 lines; static DB-call matches: 49
+- Operating-hours policy was embedded in the 10k-line timeline builder.
+- Query count, DB duration and endpoint duration: not applicable to this pure policy extraction.
+- Swagger operations: 603
+
+#### Change
+
+- Moved the pure operating-hours formatting and daily policy calculations behind `TimelineOperatingHoursService`.
+- Kept `TimelineBuilder` as the compatibility facade and preserved its existing manual construction path.
+- Added direct coverage for timing summaries, closed-day behavior, missing timing records and overnight windows.
+- No query, transaction, DTO, route, response, index or frontend change.
+
+#### Verification
+
+- Operating-hours unit tests: PASS, 3/3
+- Combined focused backend suite: PASS, 20/20
+- Backend build: PASS
+- Prisma/OpenAPI/frontend checks: covered by the next two-tier checkpoint
+
+#### Result
+
+- Extraction retained.
+- Timeline operating-hours policy now has a narrow, independently testable interface.
+- Remaining risk: timeline ordering and hotspot selection remain in the facade and require characterization before further extraction.
+
+### Current checkpoint evidence
+
+- Backend route-normalization and operating-hours focused suite: PASS, 20/20
+- Frontend unit suite: PASS, 9/9
+- Frontend production build: PASS
+- Playwright smoke: PASS, 7/7
+- Playwright inventory/audit: PASS, 96 routes, 2,062 controls, 990 API references, 66 classified routes
+- Frontend lint: pre-existing failure, 1,636 errors and 82 warnings; no lint-only cleanup included
+- Database query/index optimization: not changed; no before/after production measurements claimed
