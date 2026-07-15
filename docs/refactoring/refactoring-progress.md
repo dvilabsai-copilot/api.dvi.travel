@@ -1217,3 +1217,32 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Candidate volume, simulation count, transaction duration, snapshot payload size and latency remain unmeasured.
 - Commit: `api.dvi.travel` `ba7eb53`.
+
+### Cycle 34 - Extract matrix-safe manual insertion
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: matrix-safe manual-hotspot insertion transaction, route-local persistence and post-apply validation
+- New files: `src/modules/itineraries/services/itinerary-matrix-safe-insertion.service.ts`, `test/itinerary-matrix-safe-insertion.test.ts`
+- Workflow: manual hotspot matrix-safe apply
+
+#### Change
+
+- Moved the contiguous matrix-safe insertion transaction behind `ItineraryMatrixSafeInsertionService`.
+- Preserved active-row checks, single-hotspot validation, matrix/exact-anchor slot gating, timing persistence, removal application, rebuild/enrichment and strict post-apply assertions.
+- Registered the new provider and retained compatibility wrappers with explicit transaction and policy callbacks.
+
+#### Verification
+
+- Matrix-safe insertion boundary test: PASS, 1/1
+- Combined focused backend suite: PASS, 56/56
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 22,867 lines after the tier; `ItineraryMatrixSafeInsertionService` is 1,315 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Active-row selectivity, route-hotspot row churn, transaction wait, rebuild volume and latency remain unmeasured.
+- Commit: `api.dvi.travel` `62b04ee`.
