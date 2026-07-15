@@ -55,6 +55,7 @@ import { ItineraryConfirmationService } from './services/itinerary-confirmation.
 import { ItineraryHotelConfirmationSupportService } from './services/itinerary-hotel-confirmation-support.service';
 import { ItineraryHotelPrebookService } from './services/itinerary-hotel-prebook.service';
 import { ItineraryHotelBookingFulfillmentService } from './services/itinerary-hotel-booking-fulfillment.service';
+import { ItineraryConfirmedPlanCopyService } from './services/itinerary-confirmed-plan-copy.service';
 
 @Module({
   imports: [HotelsModule],
@@ -89,6 +90,7 @@ import { ItineraryHotelBookingFulfillmentService } from './services/itinerary-ho
     ItineraryHotelConfirmationSupportService,
     ItineraryHotelPrebookService,
     ItineraryHotelBookingFulfillmentService,
+    ItineraryConfirmedPlanCopyService,
 
     // existing engines you already had
     HotelEngineService,
