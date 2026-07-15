@@ -58,6 +58,7 @@ import { ItineraryHotelBookingFulfillmentService } from './services/itinerary-ho
 import { ItineraryConfirmedPlanCopyService } from './services/itinerary-confirmed-plan-copy.service';
 import { ItineraryCancellationService } from './services/itinerary-cancellation.service';
 import { ItineraryListingService } from './services/itinerary-listing.service';
+import { ItineraryVoucherReadService } from './services/itinerary-voucher-read.service';
 
 @Module({
   imports: [HotelsModule],
@@ -95,6 +96,7 @@ import { ItineraryListingService } from './services/itinerary-listing.service';
     ItineraryConfirmedPlanCopyService,
     ItineraryCancellationService,
     ItineraryListingService,
+    ItineraryVoucherReadService,
 
     // existing engines you already had
     HotelEngineService,
