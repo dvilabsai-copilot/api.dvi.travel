@@ -127,6 +127,7 @@ An index, Redis cache, or query rewrite may move from candidate to implementatio
 | Itinerary iteration 18 | Hotel confirmation support boundary | `itineraries.service.ts` reduced from 31,061 to 30,356 lines; `ItineraryHotelConfirmationSupportService` owns 786 lines | Existing selected-hotel draft writes, financial finalization and provider-success filtering preserved; query count, rows examined, payload and latency remain unmeasured |
 | Itinerary iteration 19 | Hotel prebook and booking-code boundary | `itineraries.service.ts` reduced from 30,356 to 29,920 lines; `ItineraryHotelPrebookService` owns 500 lines | Existing TBO prebook payload handling, room normalization, supplement normalization and fresh booking-code resolution preserved; query count, rows examined, payload and latency remain unmeasured |
 | Itinerary iteration 20 | Hotel booking fulfillment boundary | `itineraries.service.ts` reduced from 29,920 to 29,565 lines; `ItineraryHotelBookingFulfillmentService` owns 441 lines | Existing provider dispatch, duplicate-success filtering, result aggregation and finalization callbacks preserved; provider latency, retry volume and query count remain unmeasured |
+| Itinerary iteration 21 | Confirmed-plan copy boundary | `itineraries.service.ts` reduced from 29,565 to 29,089 lines; `ItineraryConfirmedPlanCopyService` owns 504 lines | Existing transaction-scoped child-row copy ordering preserved; copied row counts, transaction wait and payload volume remain unmeasured |
 
 The iteration-6 and iteration-7 boundaries are measurement seams, not optimization claims. The next safe performance tier should instrument representative itinerary-details, route-rebuild and hotspot-preview requests and attribute calls to `TimelineTravelDataService` and `TimelineCandidateFeasibilityService` before changing query shape or adding a cache.
 
@@ -155,6 +156,8 @@ The iteration-18 support boundary is a measurement seam for selected-hotel draft
 The iteration-19 prebook boundary is a measurement seam for room-detail cache misses, supplier prebook latency, response payload size, supplement normalization volume and fresh booking-code fallback searches. Measure TBO prebook and room-refresh paths separately; do not cache mutable booking codes or parallelize supplier calls without provider consistency and timeout evidence.
 
 The iteration-20 fulfillment boundary is a measurement seam for per-provider latency, retry/error volume, duplicate-success lookup rows, callback finalization time and aggregate response payload size. Measure TBO, ResAvenue, HOBSE, AxisRooms and STAAH separately; do not parallelize provider calls or change retry/finalization ordering without provider-specific evidence.
+
+The iteration-21 confirmed-plan copy boundary is a measurement seam for child-row volume by table, transaction wait/lock time and draft-to-confirmed payload size. Profile copy work by itinerary size before considering bulk inserts or parallel writes; preserve parent/child ordering and transaction atomicity.
 
 ## Next profiling order
 

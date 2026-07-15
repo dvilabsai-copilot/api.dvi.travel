@@ -923,3 +923,33 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Provider latency, retry volume, query count, rows examined and payload size remain unmeasured.
 - Commit: `api.dvi.travel` `81c8cd2`.
+
+### Cycle 24 — Extract confirmed-plan copy workflow
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: transaction-scoped draft-to-confirmed copying of itinerary child rows
+- New files: `src/modules/itineraries/services/itinerary-confirmed-plan-copy.service.ts`, `test/itinerary-confirmed-plan-copy.test.ts`
+- Workflow: confirmation transaction child-row copy
+
+#### Change
+
+- Moved the contiguous draft-to-confirmed copy workflow behind `ItineraryConfirmedPlanCopyService`.
+- Preserved vehicle, route, via-route, hotel, activity, guide, vendor-eligibility, vehicle-detail and permit-charge copy ordering and optional hotel filtering.
+- Passed the transaction client explicitly and retained the facade compatibility wrapper.
+- Registered the new provider in `ItinerariesModule`.
+
+#### Verification
+
+- Confirmed-plan copy boundary test: PASS, 1/1
+- Combined focused backend suite: PASS, 66/66
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 29,089 lines after the tier; `ItineraryConfirmedPlanCopyService` is 504 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Copied row counts, transaction wait, lock time and payload size remain unmeasured.
+- Commit: `api.dvi.travel` `f3ed67c`.
