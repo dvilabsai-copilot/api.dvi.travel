@@ -3031,7 +3031,7 @@ const resolution = await this.resolveVehicleLocationIdFromBranch({
 
   async getVendorPermitCosts(vendorId: number): Promise<any[]> {
     const rows = await this.prisma.dvi_permit_cost.findMany({
-      where: { vendor_id: vendorId, deleted: 0 },
+      where: { vendor_id: vendorId, status: 1, deleted: 0 },
     });
 
     const vendorTypeIds = [...new Set(rows.map((r) => r.vehicle_type_id).filter((id) => Number(id) > 0))];
@@ -3056,14 +3056,42 @@ const resolution = await this.resolveVehicleLocationIdFromBranch({
   }
 
   async updateVendorPermitCost(vendorId: number, data: any): Promise<any> {
+    const [row] = await this.updateVendorPermitCosts(vendorId, { items: [data] });
+    return row;
+  }
+
+  async updateVendorPermitCosts(vendorId: number, data: any): Promise<any[]> {
+    const items = Array.isArray(data?.items) ? data.items : [data];
+    if (!items.length) {
+      throw new BadRequestException('At least one permit cost row is required');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const rows: any[] = [];
+      for (const item of items) {
+        rows.push(await this.upsertVendorPermitCost(tx, vendorId, item));
+      }
+      return rows;
+    });
+  }
+
+  private async upsertVendorPermitCost(tx: any, vendorId: number, data: any): Promise<any> {
     const permitCostId = this.toNumberOrNull(data.permit_cost_id);
     const sourceStateId = this.toNumberOrNull(data.source_state_id);
     const destinationStateId = this.toNumberOrNull(data.destination_state_id);
-    const permitCost = this.toNumberOrNull(data.permit_cost) ?? 0;
+    const permitCost = this.toNumberOrNull(data.permit_cost);
     const vendorVehicleTypeId = await this.resolveVendorVehicleTypeId(vendorId, data.vehicle_type_id);
 
-    if (!sourceStateId || !destinationStateId || !vendorVehicleTypeId) {
-      throw new NotFoundException('vehicle_type_id, source_state_id and destination_state_id are required');
+    if (!sourceStateId || !destinationStateId || !vendorVehicleTypeId || permitCost === null) {
+      throw new BadRequestException(
+        'vehicle_type_id, source_state_id, destination_state_id and permit_cost are required',
+      );
+    }
+    if (sourceStateId === destinationStateId) {
+      throw new BadRequestException('source_state_id and destination_state_id must be different');
+    }
+    if (permitCost < 0) {
+      throw new BadRequestException('permit_cost cannot be negative');
     }
 
     const mapped = {
@@ -3074,12 +3102,20 @@ const resolution = await this.resolveVehicleLocationIdFromBranch({
     };
 
     if (permitCostId) {
-      return this.prisma.dvi_permit_cost.update({
-        where: { permit_cost_id: permitCostId },
-        data: { ...mapped, updatedon: new Date() },
+      const ownedRow = await tx.dvi_permit_cost.findFirst({
+        where: { permit_cost_id: permitCostId, vendor_id: vendorId, deleted: 0 },
+        select: { permit_cost_id: true },
+      });
+      if (!ownedRow) {
+        throw new NotFoundException('Permit cost row not found for this vendor');
+      }
+
+      return tx.dvi_permit_cost.update({
+        where: { permit_cost_id: ownedRow.permit_cost_id },
+        data: { ...mapped, status: 1, updatedon: new Date() },
       });
     } else {
-      const existing = await this.prisma.dvi_permit_cost.findFirst({
+      const existing = await tx.dvi_permit_cost.findFirst({
         where: {
           vendor_id: vendorId,
           vehicle_type_id: vendorVehicleTypeId,
@@ -3090,13 +3126,13 @@ const resolution = await this.resolveVehicleLocationIdFromBranch({
       });
 
       if (existing) {
-        return this.prisma.dvi_permit_cost.update({
+        return tx.dvi_permit_cost.update({
           where: { permit_cost_id: existing.permit_cost_id },
-          data: { permit_cost: permitCost, updatedon: new Date() },
+          data: { permit_cost: permitCost, status: 1, updatedon: new Date() },
         });
       }
 
-      return this.prisma.dvi_permit_cost.create({
+      return tx.dvi_permit_cost.create({
         data: {
           ...mapped,
           vendor_id: vendorId,
