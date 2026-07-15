@@ -62,6 +62,7 @@ import { ItineraryVoucherReadService } from './services/itinerary-voucher-read.s
 import { ItineraryManualHotspotMatrixService } from './services/itinerary-manual-hotspot-matrix.service';
 import { ItineraryManualHotspotPreviewService } from './services/itinerary-manual-hotspot-preview.service';
 import { ItineraryManualHotspotMutationService } from './services/itinerary-manual-hotspot-mutation.service';
+import { ItineraryManualFitMatrixPlanningService } from './services/itinerary-manual-fit-matrix-planning.service';
 
 @Module({
   imports: [HotelsModule],
@@ -103,6 +104,7 @@ import { ItineraryManualHotspotMutationService } from './services/itinerary-manu
     ItineraryManualHotspotMatrixService,
     ItineraryManualHotspotPreviewService,
     ItineraryManualHotspotMutationService,
+    ItineraryManualFitMatrixPlanningService,
 
     // existing engines you already had
     HotelEngineService,
