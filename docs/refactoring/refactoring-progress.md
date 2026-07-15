@@ -227,6 +227,31 @@
 - Frontend lint: pre-existing failure, 1,636 errors and 82 warnings; no lint-only cleanup included
 - Database query/index optimization: not changed; no before/after production measurements claimed
 
+### Cycle 8 — Complete timeline operating-hours delegation
+
+#### Scope
+
+- Original file: `src/modules/itineraries/engines/helpers/timeline.builder.ts`
+- Responsibility: full visit-window eligibility check, including overnight windows, open-all-time rows and next-window selection
+- Existing extracted file: `src/modules/itineraries/engines/helpers/timeline-operating-hours.service.ts`
+
+#### Change
+
+- Delegated the remaining `checkHotspotOperatingHoursFromMap` implementation to the extracted policy service.
+- Preserved the `TimelineBuilder` method signature and all call sites, so timeline orchestration and wait-until-open behavior remain unchanged.
+- No query, transaction, DTO, route, response, index or frontend change.
+
+#### Verification
+
+- Timeline operating-hours tests: PASS, 3/3
+- Combined focused backend suite: PASS, 20/20
+- Backend build: PASS
+
+#### Result
+
+- Operating-hours behavior is now fully centralized in the narrow policy service; `TimelineBuilder` remains the compatibility facade.
+- Commit: `api.dvi.travel` `baf0722`.
+
 ### Cycle 6 — Itinerary-details utility characterization (frontend)
 
 #### Scope
