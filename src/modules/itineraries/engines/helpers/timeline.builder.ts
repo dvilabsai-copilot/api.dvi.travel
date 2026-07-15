@@ -37,6 +37,7 @@ import {
 } from '../../services/arrival-hotel-policy.service';
 import type { SameCityAllocationPlan } from '../../services/same-city-cross-day-optimizer.service';
 import { CarryForwardRouteContext, TimelineRoutePolicyService } from './timeline-route-policy.service';
+import { FixedTimelineAnchor, RealGapInterval, SameCityContinuationContext, TimelineAnchorPolicyService } from './timeline-anchor-policy.service';
 import { TimelineOperatingHoursService } from './timeline-operating-hours.service';
 import { DayTimeSlot, TimelineSlotPolicyService } from './timeline-slot-policy.service';
 import { TimelineRejectionPolicyService } from './timeline-rejection-policy.service';
@@ -103,24 +104,6 @@ interface CarryForwardHotspot extends SelectedHotspot {
   carriedFromRouteDestinationCity?: string;
   carriedProtectedSlotStartSeconds?: number;
   carriedProtectedSlotEndSeconds?: number;
-}
-
-interface FixedTimelineAnchor {
-  kind: 'route_start' | 'hotspot' | 'route_end';
-  startSeconds: number;
-  endSeconds: number;
-  hotspotId?: number;
-}
-
-interface RealGapInterval {
-  start: number;
-  end: number;
-  durationSeconds: number;
-}
-
-interface SameCityContinuationContext {
-  isSameCityChainContinuation: boolean;
-  previousDayHotspotIds: Set<number>;
 }
 
 interface CandidateFeasibilityInput {
@@ -205,6 +188,7 @@ export class TimelineBuilder {
   private readonly slotPolicyService = new TimelineSlotPolicyService();
   private readonly rejectionPolicyService = new TimelineRejectionPolicyService();
   private readonly routePolicyService = new TimelineRoutePolicyService();
+  private readonly anchorPolicyService = new TimelineAnchorPolicyService();
 
   private normalizeTravelRowDistance(
     row: HotspotDetailRow,
@@ -9356,32 +9340,11 @@ export class TimelineBuilder {
   private hasUsableCoords(
     coords?: { lat: number; lon: number } | null,
   ): coords is { lat: number; lon: number } {
-    if (!coords) return false;
-
-    const lat = Number(coords.lat);
-    const lon = Number(coords.lon);
-
-    return (
-      Number.isFinite(lat) &&
-      Number.isFinite(lon) &&
-      (lat !== 0 || lon !== 0)
-    );
+    return this.anchorPolicyService.hasUsableCoords(coords);
   }
 
   private normalizePlaceLookupKey(value: string | null | undefined): string {
-    return String(value || '')
-      .split('|')[0]
-      .split(',')[0]
-      .replace(/\binternational\b/gi, ' ')
-      .replace(/\bdomestic\b/gi, ' ')
-      .replace(/\bair\s*port\b/gi, ' ')
-      .replace(/\bairport\b/gi, ' ')
-      .replace(/\brailway\b/gi, ' ')
-      .replace(/\bstation\b/gi, ' ')
-      .replace(/\bterminal\b/gi, ' ')
-      .replace(/\s+/g, ' ')
-      .trim()
-      .toLowerCase();
+    return this.anchorPolicyService.normalizePlaceLookupKey(value);
   }
 
   private async resolvePlaceCoords(
@@ -9544,11 +9507,7 @@ export class TimelineBuilder {
   }
 
   private toAbsoluteSecondsForRoute(timeValue: string, routeStartSeconds: number): number {
-    let seconds = timeToSeconds(timeValue);
-    if (seconds < routeStartSeconds) {
-      seconds += 86400;
-    }
-    return seconds;
+    return this.anchorPolicyService.toAbsoluteSecondsForRoute(timeValue, routeStartSeconds);
   }
 
   private buildFixedTimelineAnchors(
@@ -9558,62 +9517,17 @@ export class TimelineBuilder {
     routeEndSeconds: number,
     currentTime: string,
   ): FixedTimelineAnchor[] {
-    const currentAbs = this.toAbsoluteSecondsForRoute(currentTime, routeStartSeconds);
-    const anchors: FixedTimelineAnchor[] = [
-      {
-        kind: 'route_start',
-        startSeconds: Math.max(routeStartSeconds, currentAbs),
-        endSeconds: Math.max(routeStartSeconds, currentAbs),
-      },
-    ];
-
-    const routeVisits = hotspotRows
-      .filter((row) => Number((row as any).itinerary_route_ID || 0) === routeId && Number((row as any).item_type || 0) === 4)
-      .map((row) => {
-        const start = this.toStoredTimeString((row as any).hotspot_start_time) || '00:00:00';
-        const end = this.toStoredTimeString((row as any).hotspot_end_time) || start;
-        const absStart = this.toAbsoluteSecondsForRoute(start, routeStartSeconds);
-        const absEndRaw = this.toAbsoluteSecondsForRoute(end, routeStartSeconds);
-        const absEnd = absEndRaw < absStart ? absEndRaw + 86400 : absEndRaw;
-
-        return {
-          kind: 'hotspot' as const,
-          startSeconds: absStart,
-          endSeconds: absEnd,
-          hotspotId: Number((row as any).hotspot_ID || 0),
-        };
-      })
-      .sort((a, b) => a.startSeconds - b.startSeconds);
-
-    anchors.push(...routeVisits);
-    anchors.push({
-      kind: 'route_end',
-      startSeconds: routeEndSeconds,
-      endSeconds: routeEndSeconds,
-    });
-
-    return anchors;
+    return this.anchorPolicyService.buildFixedTimelineAnchors(
+      hotspotRows,
+      routeId,
+      routeStartSeconds,
+      routeEndSeconds,
+      currentTime,
+    );
   }
 
   private buildRealGapIntervals(anchors: FixedTimelineAnchor[]): RealGapInterval[] {
-    if (!anchors.length) return [];
-
-    const sorted = [...anchors].sort((a, b) => a.startSeconds - b.startSeconds);
-    const gaps: RealGapInterval[] = [];
-
-    for (let i = 0; i < sorted.length - 1; i++) {
-      const current = sorted[i];
-      const next = sorted[i + 1];
-      const gapStart = Math.max(current.endSeconds, current.startSeconds);
-      const gapEnd = Math.max(next.startSeconds, gapStart);
-      const durationSeconds = Math.max(0, gapEnd - gapStart);
-
-      if (durationSeconds > 0) {
-        gaps.push({ start: gapStart, end: gapEnd, durationSeconds });
-      }
-    }
-
-    return gaps;
+    return this.anchorPolicyService.buildRealGapIntervals(anchors);
   }
 
   private buildSameCityContinuationContext(
@@ -9621,32 +9535,7 @@ export class TimelineBuilder {
     previousRoute: RouteRow | undefined,
     hotspotRows: HotspotDetailRow[],
   ): SameCityContinuationContext {
-    const previousDayHotspotIds = new Set<number>();
-    if (!previousRoute) {
-      return { isSameCityChainContinuation: false, previousDayHotspotIds };
-    }
-
-    const currentCityKey = this.canonicalCityKey(String((route as any).location_name || (route as any).next_visiting_location || ''));
-    const prevDestKey = this.canonicalCityKey(String((previousRoute as any).next_visiting_location || ''));
-    const prevSourceKey = this.canonicalCityKey(String((previousRoute as any).location_name || ''));
-    const isSameCityChainContinuation = !!currentCityKey && (currentCityKey === prevDestKey || currentCityKey === prevSourceKey);
-
-    if (isSameCityChainContinuation) {
-      const prevRouteId = Number((previousRoute as any).itinerary_route_ID || 0);
-      for (const row of hotspotRows) {
-        if (Number((row as any).itinerary_route_ID || 0) !== prevRouteId) continue;
-        if (Number((row as any).item_type || 0) !== 4) continue;
-        const hotspotId = Number((row as any).hotspot_ID || 0);
-        if (hotspotId > 0) {
-          previousDayHotspotIds.add(hotspotId);
-        }
-      }
-    }
-
-    return {
-      isSameCityChainContinuation,
-      previousDayHotspotIds,
-    };
+    return this.anchorPolicyService.buildSameCityContinuationContext(route, previousRoute, hotspotRows);
   }
 
   private async evaluateCandidateInsertion(
@@ -9878,46 +9767,15 @@ export class TimelineBuilder {
   }
 
   private parsePlanDateTime(value: unknown): Date | null {
-    if (value instanceof Date) {
-      return Number.isNaN(value.getTime()) ? null : value;
-    }
-    if (typeof value === 'string' && value.trim()) {
-      const parsed = new Date(value);
-      return Number.isNaN(parsed.getTime()) ? null : parsed;
-    }
-    return null;
+    return this.anchorPolicyService.parsePlanDateTime(value);
   }
 
   private extractPlanTimeOfDaySeconds(value: unknown): number | null {
-    if (typeof value === 'string' && value.trim()) {
-      const isoTimeMatch = value.match(/T(\d{2}):(\d{2})(?::(\d{2}))?/);
-      if (isoTimeMatch) {
-        return (
-          Number(isoTimeMatch[1]) * 3600 +
-          Number(isoTimeMatch[2]) * 60 +
-          Number(isoTimeMatch[3] ?? 0)
-        );
-      }
-    }
-
-    const parsed = this.parsePlanDateTime(value);
-    if (!parsed) return null;
-
-    return (
-      parsed.getUTCHours() * 3600 +
-      parsed.getUTCMinutes() * 60 +
-      parsed.getUTCSeconds()
-    );
+    return this.anchorPolicyService.extractPlanTimeOfDaySeconds(value);
   }
 
   private toStoredTimeString(value: unknown): string | null {
-    if (typeof value === 'string' && value.trim()) {
-      return value.trim();
-    }
-    if (value instanceof Date && !Number.isNaN(value.getTime())) {
-      return `${String(value.getUTCHours()).padStart(2, '0')}:${String(value.getUTCMinutes()).padStart(2, '0')}:${String(value.getUTCSeconds()).padStart(2, '0')}`;
-    }
-    return null;
+    return this.anchorPolicyService.toStoredTimeString(value);
   }
 
   /**
@@ -9930,18 +9788,7 @@ export class TimelineBuilder {
     startLocation: string,
     endLocation: string,
   ): 1 | 2 {
-    const startLocations = startLocation.split('|').map((s) => s.trim());
-    const endLocations = endLocation.split('|').map((e) => e.trim());
-
-    // Check if any start location matches any end location
-    for (const start of startLocations) {
-      for (const end of endLocations) {
-        if (start === end) {
-          return 1; // Same location (local)
-        }
-      }
-    }
-    return 2; // Different location (outstation)
+    return this.anchorPolicyService.getTravelLocationType(startLocation, endLocation);
   }
 }
 
