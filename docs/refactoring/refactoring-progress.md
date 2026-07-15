@@ -309,6 +309,28 @@
 - No controller, route, DTO, response, Prisma query, transaction or frontend change.
 - Commit: `api.dvi.travel` `f093f89`.
 
+### Full-decomposition iteration 3 — Extract timeline route policy
+
+#### Scope
+
+- Original facade: `src/modules/itineraries/engines/helpers/timeline.builder.ts`
+- Responsibility extracted: city normalization, same-city keys, route legs, route-chain matching, movement ordering, carry-forward compatibility and route capacity estimation
+- New files: `src/modules/itineraries/engines/helpers/timeline-route-policy.service.ts`, `test/timeline-route-policy.test.ts`
+
+#### Verification
+
+- Original facade: 10,175 → 9,948 lines
+- Extracted service: 190 lines
+- Route-policy tests: PASS, 3/3
+- Combined backend focused suite: PASS, 32/32
+- Backend build: PASS
+
+#### Compatibility
+
+- Existing `TimelineBuilder` method signatures and callers remain intact.
+- No controller, route, DTO, response, Prisma query, transaction or frontend change.
+- Commit: `api.dvi.travel` `c95d4f8`.
+
 #### Verification
 
 - Read-only database audit: PASS; 182 tables, 2,288 index definitions, Performance Schema enabled
