@@ -41,6 +41,7 @@ import { FixedTimelineAnchor, RealGapInterval, SameCityContinuationContext, Time
 import { TimelineOperatingHoursService } from './timeline-operating-hours.service';
 import { DayTimeSlot, TimelineSlotPolicyService } from './timeline-slot-policy.service';
 import { TimelineRejectionPolicyService } from './timeline-rejection-policy.service';
+import { ArrivalPolicyDecisionState, TimelineDataAccessService } from './timeline-data-access.service';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -74,11 +75,6 @@ interface RouteRow {
   location_name: string | null;
   next_visiting_location: string | null;
   location_id: number | null;
-}
-
-interface ArrivalPolicyDecisionState {
-  previousDayBillingDecisionProvided: boolean;
-  previousDayBillingConfirmed: boolean;
 }
 
 // Minimal view of a selected hotspot row.
@@ -189,186 +185,7 @@ export class TimelineBuilder {
   private readonly rejectionPolicyService = new TimelineRejectionPolicyService();
   private readonly routePolicyService = new TimelineRoutePolicyService();
   private readonly anchorPolicyService = new TimelineAnchorPolicyService();
-
-  private normalizeTravelRowDistance(
-    row: HotspotDetailRow,
-    sourceLocationName: string,
-    destinationLocationName: string,
-  ): HotspotDetailRow {
-    const normalizePlace = (value: string) =>
-      String(value || '')
-        .split('|')[0]
-        .replace(/\s+/g, ' ')
-        .trim()
-        .toLowerCase();
-
-    const namesDiffer =
-      normalizePlace(sourceLocationName) !== normalizePlace(destinationLocationName);
-    const distanceKm = Number(row?.hotspot_travelling_distance ?? 0);
-
-    if (
-      Number(row?.item_type || 0) === 3 &&
-      namesDiffer &&
-      Number.isFinite(distanceKm) &&
-      distanceKm <= 0.01
-    ) {
-      return {
-        ...row,
-        hotspot_travelling_distance: null,
-      };
-    }
-
-    return row;
-  }
-
-  private toDateOnly(value: Date): Date {
-    return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()));
-  }
-
-  // Batch-query precomputed between-map rows for many slot pairs.
-  // Returns Map keyed by `${fromId}_${toId}` -> Array<row>
-  private async getBetweenCandidatesForRouteSlots(tx: Tx, slotPairs: Array<{ fromId: number; toId: number }>) {
-    const result = new Map<string, any[]>();
-    if (!Array.isArray(slotPairs) || slotPairs.length === 0) return result;
-
-    const whereClauses: string[] = [];
-    const params: any[] = [];
-    for (const p of slotPairs) {
-      const a = Number(p.fromId || 0);
-      const b = Number(p.toId || 0);
-      if (!a || !b || a === b) continue;
-      // accept either direction on read
-      whereClauses.push(`((from_hotspot_id = ? AND to_hotspot_id = ?) OR (from_hotspot_id = ? AND to_hotspot_id = ?))`);
-      params.push(a, b, b, a);
-    }
-
-    if (whereClauses.length === 0) return result;
-
-    const sql = `
-      SELECT
-        from_hotspot_id,
-        to_hotspot_id,
-        between_hotspot_id,
-        route_fit_type,
-        route_decision_reason,
-        road_detour_km,
-        road_detour_ratio,
-        ab_osrm_distance_km,
-        ac_osrm_distance_km,
-        cb_osrm_distance_km,
-        inserted_route_distance_km,
-        candidate_distance_from_ab_route_meters,
-        destination_distance_from_ac_route_meters
-      FROM hotspot_route_between_map
-      WHERE (${whereClauses.join(' OR ')})
-        AND route_fit_type IN ('ON_ROUTE','MINOR_DETOUR')
-    `;
-
-    try {
-      const rows: any[] = await (tx as any).$queryRawUnsafe(sql, ...params);
-      if (!Array.isArray(rows) || rows.length === 0) return result;
-
-      // Index rows by both canonical and reverse slot keys, but make them available
-      for (const r of rows) {
-        const f = Number(r.from_hotspot_id || 0);
-        const t = Number(r.to_hotspot_id || 0);
-        const between = Number(r.between_hotspot_id || 0);
-        if (!f || !t || !between) continue;
-
-        const exactKey = `${f}_${t}`;
-        const reverseKey = `${t}_${f}`;
-        const rowCopy = { ...r };
-
-        if (!result.has(exactKey)) result.set(exactKey, []);
-        result.get(exactKey)!.push(rowCopy);
-
-        if (!result.has(reverseKey)) result.set(reverseKey, []);
-        result.get(reverseKey)!.push(rowCopy);
-      }
-    } catch (err) {
-      console.error('[getBetweenCandidatesForRouteSlots] query error:', err);
-    }
-
-    return result;
-  }
-
-  private async getBetweenCandidatesForSlot(tx: Tx, fromId: number, toId: number) {
-    const map = await this.getBetweenCandidatesForRouteSlots(tx, [{ fromId, toId }]);
-    return map.get(`${fromId}_${toId}`) || [];
-  }
-
-  private async getArrivalPolicyDecisionStateForRoute(
-    tx: Tx,
-    planId: number,
-    routeId: number,
-    routeDate: Date,
-  ): Promise<ArrivalPolicyDecisionState> {
-    const markerRows = await (tx as any).dvi_itinerary_plan_hotel_details?.findMany({
-      where: {
-        itinerary_plan_id: planId,
-        itinerary_route_id: routeId,
-        hotel_required: 2,
-        hotel_id: 0,
-        deleted: 0,
-        status: 1,
-      },
-      select: {
-        group_type: true,
-        itinerary_route_date: true,
-      },
-    });
-
-    // Source-of-truth: explicit marker rows created by updateRouteTimes() when user clicks YES.
-    // They are persisted as one row per recommendation group (group_type 1..4), so presence
-    // of any active marker row means previous-day billing is confirmed.
-    if (Array.isArray(markerRows) && markerRows.length > 0) {
-      return {
-        previousDayBillingDecisionProvided: true,
-        previousDayBillingConfirmed: true,
-      };
-    }
-
-    // Fallback for legacy rows where marker is absent.
-    const hotelSelection = await (tx as any).dvi_itinerary_plan_hotel_details?.findFirst({
-      where: {
-        itinerary_plan_id: planId,
-        itinerary_route_id: routeId,
-        group_type: 1,
-        deleted: 0,
-        status: 1,
-      },
-      orderBy: {
-        itinerary_plan_hotel_details_ID: 'desc',
-      },
-      select: {
-        itinerary_route_date: true,
-      },
-    });
-
-    if (!hotelSelection?.itinerary_route_date) {
-      return {
-        previousDayBillingDecisionProvided: false,
-        previousDayBillingConfirmed: false,
-      };
-    }
-
-    const selectedHotelDate = this.toDateOnly(new Date(hotelSelection.itinerary_route_date));
-    const normalizedRouteDate = this.toDateOnly(routeDate);
-    const selectedHotelDateMs = selectedHotelDate.getTime();
-    const routeDateMs = normalizedRouteDate.getTime();
-
-    if (selectedHotelDateMs < routeDateMs) {
-      return {
-        previousDayBillingDecisionProvided: true,
-        previousDayBillingConfirmed: true,
-      };
-    }
-
-    return {
-      previousDayBillingDecisionProvided: true,
-      previousDayBillingConfirmed: false,
-    };
-  }
+  private readonly dataAccessService = new TimelineDataAccessService();
 
   constructor() {
     // Logging removed for performance
@@ -1277,8 +1094,8 @@ export class TimelineBuilder {
         this.canonicalCityKey(destinationCity) === normalizedArrivalCity;
 
       const routeDateForPolicy = route.itinerary_route_date
-        ? this.toDateOnly(new Date(route.itinerary_route_date))
-        : this.toDateOnly(new Date(plan.trip_start_date_and_time || plan.trip_start_date));
+        ? this.dataAccessService.toDateOnly(new Date(route.itinerary_route_date))
+        : this.dataAccessService.toDateOnly(new Date(plan.trip_start_date_and_time || plan.trip_start_date));
 
       const tripStartForPolicy =
         plan.trip_start_date_and_time instanceof Date
@@ -1290,12 +1107,12 @@ export class TimelineBuilder {
         : 0;
 
       const arrivalDayForPolicy = tripStartForPolicy
-        ? this.toDateOnly(tripStartForPolicy).getTime() === routeDateForPolicy.getTime()
+        ? this.dataAccessService.toDateOnly(tripStartForPolicy).getTime() === routeDateForPolicy.getTime()
         : false;
 
       const decisionState =
         isFirstRoute
-          ? await this.getArrivalPolicyDecisionStateForRoute(
+          ? await this.dataAccessService.getArrivalPolicyDecisionStateForRoute(
               tx,
               planId,
               route.itinerary_route_ID,
@@ -2842,7 +2659,7 @@ export class TimelineBuilder {
           }
 
           if (slotPairs.length > 0) {
-            const matrixMap = await this.getBetweenCandidatesForRouteSlots(tx, slotPairs);
+            const matrixMap = await this.dataAccessService.getBetweenCandidatesForRouteSlots(tx, slotPairs);
 
             for (const slot of slotPairs) {
               const key = `${slot.fromId}_${slot.toId}`;
@@ -3497,7 +3314,7 @@ export class TimelineBuilder {
           });
 
           hotspotRows.push(
-            this.normalizeTravelRowDistance(
+            this.dataAccessService.normalizeTravelRowDistance(
               travelRow,
               currentLocationName,
               hotspotLocationName,
@@ -3733,7 +3550,7 @@ export class TimelineBuilder {
                   });
                   
                   hotspotRows.push(
-                    this.normalizeTravelRowDistance(
+                    this.dataAccessService.normalizeTravelRowDistance(
                       travelRow,
                       currentLocationName,
                       hotspotLocationName,
@@ -5829,7 +5646,7 @@ export class TimelineBuilder {
           });
 
         hotspotRows.push(
-          this.normalizeTravelRowDistance(
+          this.dataAccessService.normalizeTravelRowDistance(
             travelRow,
             currentLocationName,
             hotspotLocationName,
@@ -6457,7 +6274,7 @@ export class TimelineBuilder {
             });
 
           hotspotRows.push(
-            this.normalizeTravelRowDistance(
+            this.dataAccessService.normalizeTravelRowDistance(
               travelRow,
               currentLocationName,
               hotspotLocationName,
@@ -7047,7 +6864,7 @@ export class TimelineBuilder {
               });
 
             hotspotRows.push(
-              this.normalizeTravelRowDistance(
+              this.dataAccessService.normalizeTravelRowDistance(
                 travelRow,
                 currentLocationName,
                 hotspotLocationName,
@@ -7725,7 +7542,7 @@ export class TimelineBuilder {
               });
 
             hotspotRows.push(
-              this.normalizeTravelRowDistance(
+              this.dataAccessService.normalizeTravelRowDistance(
                 travelRow,
                 currentLocationName,
                 hotspotLocationName,
