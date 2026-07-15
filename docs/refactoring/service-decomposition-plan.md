@@ -31,3 +31,5 @@ This is an evidence-led plan; no production extraction is retained by the baseli
 `LocationGeoPolicyService` now owns coordinate parsing, location-name normalization, case-insensitive string deduplication, duration text formatting and haversine distance calculation used by `LocationsService`. `LocationsService` remains the Prisma/API compatibility facade and the policy service has no database dependency.
 
 `TimelineTravelDataService` now owns timeline hotspot/hotel location reads, hotel detail enrichment, stored-location coordinate resolution and distance projections. `TimelineBuilder` remains the compatibility facade and receives the existing shared `DistanceHelper` explicitly. Query shape and transaction ownership are unchanged; endpoint-level measurement remains pending.
+
+`TimelineCandidateFeasibilityService` now owns read-only candidate admission and anchor-gap timing checks. It receives explicit policy and distance dependencies, returns the existing rejection reasons, and leaves timeline orchestration and persistence in `TimelineBuilder`.

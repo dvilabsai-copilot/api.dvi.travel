@@ -405,6 +405,30 @@
 - Endpoint query count, rows examined, payload size and latency remain unmeasured; the new boundary makes those reads attributable for a later profiled tier.
 - Commit: `api.dvi.travel` `b331633`.
 
+### Full-decomposition iteration 7 — Extract timeline candidate feasibility
+
+#### Scope
+
+- Original facade: `src/modules/itineraries/engines/helpers/timeline.builder.ts`
+- Responsibility extracted: candidate travel admission, operating-hours checks, wait-until-open handling, route-end return checks, last-route departure deadlines and fixed-anchor gap protection
+- New files: `src/modules/itineraries/engines/helpers/timeline-candidate-feasibility.service.ts`, `test/timeline-candidate-feasibility.test.ts`
+- Dependencies: explicit operating-hours, slot, anchor and travel-data policies plus the shared `DistanceHelper`
+
+#### Verification
+
+- Original facade: 9,374 → 9,182 lines
+- Extracted service: 314 lines
+- Focused timeline/policy/backend tests: PASS, 37/37
+- Backend build: PASS
+
+#### Compatibility and performance evidence
+
+- Existing rejection reason strings, deadline semantics, wait handling and result fields are preserved.
+- The builder remains the compatibility facade; no controller, route, DTO, response or persistence contract changed.
+- No query rewrite, index mutation or Redis dependency was introduced.
+- Candidate travel and operating-hours calls are now attributable to a focused service for later request-level query/timing instrumentation.
+- Commit: `api.dvi.travel` `2bd3a55`.
+
 #### Verification
 
 - Read-only database audit: PASS; 182 tables, 2,288 index definitions, Performance Schema enabled

@@ -113,8 +113,9 @@ An index, Redis cache, or query rewrite may move from candidate to implementatio
 | --- | --- | --- | --- |
 | Timeline iterations 1–5 | Slot, rejection, route, anchor and data-access policies | `timeline.builder.ts` reduced from 10,302 to 9,612 lines; focused tests remained green | No query/index/cache change; endpoint measurements not available |
 | Timeline iteration 6 | Travel/location data boundary | `timeline.builder.ts` reduced from 9,612 to 9,374 lines; `TimelineTravelDataService` owns 290 lines | Existing Prisma filters and distance calls preserved; query count, rows examined, payload and latency remain unmeasured |
+| Timeline iteration 7 | Candidate feasibility boundary | `timeline.builder.ts` reduced from 9,374 to 9,182 lines; `TimelineCandidateFeasibilityService` owns 314 lines | Scheduling checks are isolated without query/index/cache changes; endpoint timings and query counts remain unmeasured |
 
-The iteration-6 boundary is a measurement seam, not an optimization claim. The next safe performance tier should instrument representative itinerary-details, route-rebuild and hotspot-preview requests and attribute calls to `TimelineTravelDataService` before changing query shape or adding a cache.
+The iteration-6 and iteration-7 boundaries are measurement seams, not optimization claims. The next safe performance tier should instrument representative itinerary-details, route-rebuild and hotspot-preview requests and attribute calls to `TimelineTravelDataService` and `TimelineCandidateFeasibilityService` before changing query shape or adding a cache.
 
 ## Next profiling order
 
