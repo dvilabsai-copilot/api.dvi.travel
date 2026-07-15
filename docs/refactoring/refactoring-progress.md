@@ -1041,3 +1041,32 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Query count, rows examined, payload size and voucher latency remain unmeasured.
 - Commit: `api.dvi.travel` `bb8d421`.
+
+### Cycle 28 — Extract manual hotspot matrix workflow
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: missing manual-hotspot route-matrix construction and concurrency lock
+- New files: `src/modules/itineraries/services/itinerary-manual-hotspot-matrix.service.ts`, `test/itinerary-manual-hotspot-matrix.test.ts`
+- Workflow: manual hotspot matrix-build endpoint
+
+#### Change
+
+- Moved the matrix-build workflow behind `ItineraryManualHotspotMatrixService`.
+- Preserved positive-ID validation, lock contention response, source/destination city gating, OSRM configuration, helper invocation and result-code semantics.
+- Kept city/location normalization behind explicit callbacks and registered the new provider in `ItinerariesModule`.
+
+#### Verification
+
+- Manual matrix boundary tests: PASS, 2/2
+- Combined focused backend suite: PASS, 74/74
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 27,086 lines after the tier; `ItineraryManualHotspotMatrixService` is 190 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- External routing latency, matrix row volume, failure rate and lock contention remain unmeasured.
+- Commit: `api.dvi.travel` `2bc6f75`.

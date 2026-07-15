@@ -131,6 +131,7 @@ An index, Redis cache, or query rewrite may move from candidate to implementatio
 | Itinerary iteration 22 | Cancellation transaction boundary | `itineraries.service.ts` reduced from 29,089 to 28,519 lines; `ItineraryCancellationService` owns 602 lines | Existing cancellation validation, child cleanup, provider cancellation, audit and notification ordering preserved; query count, rows examined, provider latency and transaction wait remain unmeasured |
 | Itinerary iteration 23 | Itinerary listing/filter read boundary | `itineraries.service.ts` reduced from 28,519 to 27,963 lines; `ItineraryListingService` owns 615 lines | Existing role scoping, date filters, global search, pagination and projections preserved; query count, rows examined, payload size and latency remain unmeasured |
 | Itinerary iteration 24 | Hotel and transport voucher read boundary | `itineraries.service.ts` reduced from 27,963 to 27,228 lines; `ItineraryVoucherReadService` owns 810 lines | Existing voucher child reads, labels, date/location formatting and passenger projections preserved; query count, rows examined, payload size and latency remain unmeasured |
+| Itinerary iteration 25 | Manual hotspot matrix-build boundary | `itineraries.service.ts` reduced from 27,228 to 27,086 lines; `ItineraryManualHotspotMatrixService` owns 190 lines | Existing matrix lock, route/city gating, OSRM options and result codes preserved; external routing latency, matrix row volume and failure rate remain unmeasured |
 
 The iteration-6 and iteration-7 boundaries are measurement seams, not optimization claims. The next safe performance tier should instrument representative itinerary-details, route-rebuild and hotspot-preview requests and attribute calls to `TimelineTravelDataService` and `TimelineCandidateFeasibilityService` before changing query shape or adding a cache.
 
@@ -167,6 +168,8 @@ The iteration-22 cancellation boundary is a measurement seam for cancellation tr
 The iteration-23 listing boundary is a measurement seam for filter selectivity, global-search raw SQL cost, count/data query duplication, pagination depth and response payload size. Profile confirmed, cancelled and accounts listings separately before considering composite indexes, keyset pagination or projection changes.
 
 The iteration-24 voucher boundary is a measurement seam for hotel/vehicle child-row fan-out, route-hotspot reads, vehicle/gallery lookups, raw transport-cost queries and response payload size. Profile hotel and transport voucher generation separately before considering projections, batching or indexes.
+
+The iteration-25 matrix boundary is a measurement seam for OSRM latency, route-pair count, matrix row volume, timeout/failure rate and lock contention. Measure source/destination-side and repeated-build scenarios separately; do not add Redis caching or increase concurrency without validating freshness and provider limits.
 
 ## Next profiling order
 
