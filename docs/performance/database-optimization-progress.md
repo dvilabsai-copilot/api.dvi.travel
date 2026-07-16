@@ -669,3 +669,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - The tier adds no reads and leaves inventory/rate/restriction queries in the existing facade.
 - This is not a measured database performance improvement: candidate cardinality, duplicate/stale-room rates, projection CPU and STAAH latency remain unmeasured.
 - No index addition/removal or Redis action is proposed; future work should capture STAAH candidate and room-map traces before caching derived results.
+
+## Iteration 143 evidence update
+
+- The STAAH candidate-selection extraction preserves rate-plan matching, positive-price handling, restriction decisions, preferred-plan selection and blocked-display flags; no SQL predicate, index, Redis cache or response shape changed.
+- Inventory, rate-plan, rate and restriction reads remain in the existing facade, and the tier adds no database access.
+- This is not a measured database performance improvement: rate-row cardinality, rate-plan comparison cost, preferred/blocked hit rates, selection CPU and STAAH latency remain unmeasured.
+- No index addition/removal or Redis action is proposed; future work should capture STAAH rate/rate-plan/restriction query plans and candidate traces before indexing or caching selection decisions.

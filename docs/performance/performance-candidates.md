@@ -438,6 +438,8 @@ The iteration-141 STAAH room-mapping boundary is a measurement seam for active-r
 
 The iteration-142 STAAH candidate-result boundary is a measurement seam for candidate cardinality, duplicate-key rate, stale-room rejection rate, bookable/restricted ratio, room-title lookup hit rate, result projection CPU and end-to-end STAAH response latency. Capture empty, duplicate, stale-room, bookable, restricted, mixed-provider and large-candidate workloads separately before caching result projections; preserve mutable availability, restriction messages, provider metadata and response ordering. No index addition/removal or Redis cache is justified until provider traces establish the measured winner.
 
+The iteration-143 STAAH candidate-selection boundary is a measurement seam for rate-row cardinality, rate-plan lookup comparisons, positive-price rejection rate, preferred-plan hit rate, restriction-blocked rate, blocked-display rate, selection CPU and end-to-end STAAH response latency. Capture empty, preferred-hit, cheapest-fallback, non-positive-price, restricted-preferred, mixed-validity and large-rate workloads separately before indexing rate-plan predicates or caching decisions; preserve mutable inventory, restriction freshness, selected ordering and display semantics. No index addition/removal or Redis cache is justified until STAAH query plans and provider traces establish the measured winner.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.

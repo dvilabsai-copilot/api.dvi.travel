@@ -4439,3 +4439,31 @@
 - `itinerary-hotel-details-tbo.service.ts` measured at 2,643 lines after the tier; `staah-candidate-result.service.ts` is 83 lines.
 - Candidate cardinality, duplicate rate, stale-room rejection rate, projection CPU and STAAH response latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `d22de00`.
+
+### Cycle 146 - Extract STAAH candidate selection
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itinerary-hotel-details-tbo.service.ts`
+- Extracted responsibility: rate-plan matching, positive-price filtering, restriction decisions and preferred/blocked candidate selection
+- New files: `src/modules/itineraries/services/staah-candidate-selection.service.ts`, `test/staah-candidate-selection.test.ts`
+- Workflow: STAAH candidate decisioning before result projection
+
+#### Change
+
+- Moved STAAH candidate evaluation behind `StaahCandidateSelectionService` while preserving cheapest-valid selection, preferred-plan matching, blocked-candidate display rules, restriction metadata and diagnostic logging.
+- The TBO facade retains Prisma reads, active-room admission, occupancy pricing callbacks, route orchestration and result emission; provider payloads and API DTOs are unchanged.
+- No SQL predicate, index, Redis cache, API route, DTO or response contract changed.
+
+#### Verification
+
+- STAAH candidate-selection characterization tests: PASS, 3/3
+- Itinerary characterization collection: PASS, 195/195
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itinerary-hotel-details-tbo.service.ts` measured at 2,565 lines after the tier; `staah-candidate-selection.service.ts` is 194 lines.
+- Candidate cardinality, preferred-plan hit rate, blocked-display rate, selection CPU and STAAH response latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `e640cd8`.
