@@ -690,3 +690,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Room admission consumes the existing in-memory maps and adds no database access.
 - This is not a measured database performance improvement: exact/normalized match rates, stale-room volume, warning frequency and admission CPU remain unmeasured.
 - No index addition/removal or Redis action is proposed; future work should capture `dvi_hotel_rooms` access plans and room-map traces before changing room-code indexing or caching admissions.
+
+## Iteration 146 evidence update
+
+- The hotel-margin lookup extraction preserves provider-code predicates, master-row indexing and package-total input semantics; no SQL predicate, index, Redis cache or response shape changed.
+- The existing facade still supplies the `dvi_hotel` Prisma adapter, and the tier adds no database access beyond the same margin-master read.
+- This is not a measured database performance improvement: provider-key cardinality, master-row hit rate, query latency and lookup CPU remain unmeasured.
+- No index addition/removal or Redis action is proposed; future work should capture `dvi_hotel` provider-code query plans and margin-map traces before indexing or caching margin lookup results.

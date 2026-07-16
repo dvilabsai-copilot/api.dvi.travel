@@ -444,6 +444,8 @@ The iteration-144 STAAH provider-row boundary is a measurement seam for inventor
 
 The iteration-145 STAAH room-admission boundary is a measurement seam for exact-match rate, normalized-only ambiguity rate, unknown-property rate, stale-room rejection rate, warning deduplication ratio, admission CPU and end-to-end STAAH response latency. Capture exact, normalized-only, ambiguous, unknown-property, repeated-stale and multi-property workloads separately before changing room-code indexes or caching admissions; preserve active-room freshness, exact-code requirements and diagnostic semantics. No index addition/removal or Redis cache is justified until room-map traces and provider query plans establish the measured winner.
 
+The iteration-146 hotel-margin lookup boundary is a measurement seam for unique provider-key cardinality, master-row hit rate, provider-key fan-out, margin lookup query latency, indexing CPU and hotel-tab response latency. Capture empty, single-provider, multi-provider, duplicate-master, missing-master and large-package workloads separately before adding covering indexes or caching margin maps; preserve mutable margin/GST values and provider-key precedence. No index addition/removal or Redis cache is justified until query plans and margin traces establish the measured winner.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.

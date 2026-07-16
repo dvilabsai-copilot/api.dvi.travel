@@ -4523,3 +4523,31 @@
 - `itinerary-hotel-details-tbo.service.ts` measured at 2,544 lines after the tier; `staah-room-admission.service.ts` is 55 lines.
 - Exact/normalized room-match rates, stale-room rejection frequency, warning volume and admission CPU remain unmeasured.
 - Implementation commit: `api.dvi.travel` `e812f2a`.
+
+### Cycle 149 - Extract hotel margin lookup
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itinerary-hotel-details-tbo.service.ts`
+- Extracted responsibility: provider-code collection, master-margin query filters and provider-key indexing for hotel-tab totals
+- New files: `src/modules/itineraries/services/itinerary-hotel-margin-lookup.service.ts`, `test/itinerary-hotel-margin-lookup.test.ts`
+- Workflow: hotel-detail response margin preload
+
+#### Change
+
+- Moved provider-specific hotel margin lookup behind `ItineraryHotelMarginLookupService` while preserving TBO, ResAvenue, HOBSE, AxisRooms and STAAH key coverage and master-row indexing.
+- The response facade retains Prisma query adapters, margin application, package totals and all row projection behavior; provider payloads and API DTOs are unchanged.
+- No SQL predicate, index, Redis cache, API route, DTO or response contract changed.
+
+#### Verification
+
+- Hotel-margin lookup characterization tests: PASS, 2/2
+- Itinerary characterization collection: PASS, 197/197
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itinerary-hotel-details-tbo.service.ts` measured at 2,504 lines after the tier; `itinerary-hotel-margin-lookup.service.ts` is 61 lines.
+- Provider-code cardinality, master-row hit rate, query latency and margin lookup CPU remain unmeasured.
+- Implementation commit: `api.dvi.travel` `8dcccb4`.

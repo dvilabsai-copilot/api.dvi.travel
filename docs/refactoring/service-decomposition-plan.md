@@ -309,3 +309,5 @@ The in-facade legacy route optimizer was removed after verification that `Itiner
 `StaahProviderRowsService` now owns STAAH inventory, rate-plan, rate and restriction row preparation, including active-room filtering and restriction grouping. `ItineraryHotelDetailsTboService` remains the Prisma adapter and owns stale-room logging, route orchestration and candidate/result callbacks. Provider-row query and preparation cost remain pending measurement.
 
 `StaahRoomAdmissionService` now owns exact active-room admission, normalized-only rejection and deduplicated stale-room diagnostics. `ItineraryHotelDetailsTboService` remains the route facade and supplies room mappings, normalizers and logging callbacks. Room-match and admission cost remain pending measurement.
+
+`ItineraryHotelMarginLookupService` now owns provider-code collection, margin-master filter preparation and provider-key indexing for hotel-tab totals. `ItineraryHotelDetailsTboService` remains the response facade and supplies the Prisma master-row loader and margin application callbacks. Margin lookup cost remains pending measurement.
