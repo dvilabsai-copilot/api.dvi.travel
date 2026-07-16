@@ -1362,3 +1362,32 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Raw-query latency, rows examined, matrix volume, OSRM callback volume, fallback frequency, payload size and latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `d52c60f`.
+
+### Cycle 39 - Extract progressive priority-removal planning
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: progressive same-route candidate audit, priority protection, timing evaluation, exact-anchor rescue and ordered simulation attempts
+- New files: `src/modules/itineraries/services/itinerary-progressive-priority-removal.service.ts`, `test/itinerary-progressive-priority-removal.test.ts`
+- Workflow: manual-fit overflow and selected-closing priority-removal planning
+
+#### Change
+
+- Moved the contiguous progressive-removal boundary behind `ItineraryProgressivePriorityRemovalService`.
+- Preserved active-route reads, same-route candidate filtering, priority ordering, exact-anchor direction rules, operating-hours evaluation, snapshot/display validation and final response metadata.
+- Registered the provider and routed batch/matrix-safe callers through the new service with explicit callbacks.
+
+#### Verification
+
+- Progressive priority-removal characterization test: PASS, 1/1
+- Combined focused backend suite: PASS, 63/63
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 15,605 lines after the tier; `ItineraryProgressivePriorityRemovalService` is 1,437 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Candidate volume, simulation CPU, rebuild rows, snapshot payload, transaction duration, rollback rate and latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `d312d7d`.
