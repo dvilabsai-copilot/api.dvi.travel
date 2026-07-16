@@ -32,6 +32,7 @@ import { ItineraryLatestDataTableService } from './services/itinerary-latest-dat
 import { ItineraryDetailsSegmentSanitizerService } from './services/itinerary-details-segment-sanitizer.service';
 import { ItineraryDetailsDestinationResolutionService } from './services/itinerary-details-destination-resolution.service';
 import { ItineraryDetailsSegmentOrderingService } from './services/itinerary-details-segment-ordering.service';
+import { ItineraryDetailsHotelFirstPolicyService } from './services/itinerary-details-hotel-first-policy.service';
 
 // ---------------------------------------------------------------------------
 // DTOs for Itinerary Details response (shared shape with frontend)
@@ -428,6 +429,7 @@ export class ItineraryDetailsService {
   private readonly segmentSanitizerService = new ItineraryDetailsSegmentSanitizerService();
   private readonly destinationResolutionService = new ItineraryDetailsDestinationResolutionService();
   private readonly segmentOrderingService = new ItineraryDetailsSegmentOrderingService();
+  private readonly hotelFirstPolicyService = new ItineraryDetailsHotelFirstPolicyService();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -2510,38 +2512,13 @@ console.log('[FINAL_DISTANCE_DEBUG]', {
 
       // In hotel-first flows, place start before check-in
       // so the sequence reads: travel to hotel -> Start your Journey -> checkin.
-      const getSegmentStartMinutes = (seg: any): number | null => {
-        if (!seg) return null;
-
-        if (seg.type === 'start' || seg.type === 'travel' || seg.type === 'return' || seg.type === 'break') {
-          if (seg.timeRange) {
-            const start = String(seg.timeRange).split(' - ')[0]?.trim();
-            return start ? this.timeToMinutes(start) : null;
-          }
-          return null;
-        }
-
-        if (seg.type === 'attraction') {
-          if (seg.visitTime) {
-            const start = String(seg.visitTime).split(' - ')[0]?.trim();
-            return start ? this.timeToMinutes(start) : null;
-          }
-          return null;
-        }
-
-        if (seg.type === 'checkin') {
-          if (seg.time) {
-            const start = String(seg.time).split(' - ')[0]?.trim();
-            return start ? this.timeToMinutes(start) : null;
-          }
-          return null;
-        }
-
-        return null;
-      };
-
       const routeHotelNameForDay = getRouteHotelName();
-      const routeHotelNameNormalized = normalizeName(routeHotelNameForDay);
+      this.hotelFirstPolicyService.apply({
+        segments,
+        routeHotelName: routeHotelNameForDay,
+        normalizeName,
+        timeToMinutes: (value) => this.timeToMinutes(value),
+      });
 
       // Final response-level sanitizer: prevent excluded hotspots and no-op travels from leaking.
       const excludedIds = new Set<number>(
@@ -2561,44 +2538,6 @@ console.log('[FINAL_DISTANCE_DEBUG]', {
           isSamePlaceLike: (a, b) => this.isSamePlaceLike(a, b),
         });
       segments.splice(0, segments.length, ...sanitizeSegments(segments));
-
-      const refreshedStartIndex = segments.findIndex((seg: any) => seg?.type === 'start');
-      const refreshedCheckinIndex = segments.findIndex((seg: any) => seg?.type === 'checkin');
-
-      const firstHotelDepartureTravel = segments.find((seg: any) => {
-        if (seg?.type !== 'travel') return false;
-        const fromNormalized = normalizeName(seg?.from);
-        const toNormalized = normalizeName(seg?.to);
-
-        return (
-          routeHotelNameNormalized.length > 0 &&
-          fromNormalized === routeHotelNameNormalized &&
-          toNormalized !== routeHotelNameNormalized
-        );
-      });
-
-      const checkinStartMins =
-        refreshedCheckinIndex >= 0 ? getSegmentStartMinutes(segments[refreshedCheckinIndex]) : null;
-      const firstHotelDepartureStartMins = getSegmentStartMinutes(firstHotelDepartureTravel);
-
-      const isHotelFirstFlow =
-        refreshedCheckinIndex >= 0 &&
-        !!firstHotelDepartureTravel &&
-        checkinStartMins !== null &&
-        firstHotelDepartureStartMins !== null &&
-        checkinStartMins <= firstHotelDepartureStartMins;
-
-      if (isHotelFirstFlow && refreshedStartIndex >= 0 && refreshedStartIndex < refreshedCheckinIndex) {
-        const [startSegment] = segments.splice(refreshedStartIndex, 1);
-        const refreshedCheckinIndex = segments.findIndex((seg: any) => seg?.type === 'checkin');
-
-        if (refreshedCheckinIndex >= 0) {
-          // Insert START before CHECKIN
-          segments.splice(refreshedCheckinIndex, 0, startSegment);
-        } else {
-          segments.unshift(startSegment);
-        }
-      }
 
       this.normalizeConfirmedTravelLabelsFromSequence(
         segments,
