@@ -4074,3 +4074,31 @@
 - `itinerary-hotel-details-tbo.service.ts` measured at 3,609 lines after the tier; `itinerary-hotel-price-package.service.ts` is 176 lines.
 - Price-tier cardinality, fallback frequency, grouping CPU and provider-search response latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `9b4a0cd`.
+
+### Cycle 133 - Extract TBO city-code mapping
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itinerary-hotel-details-tbo.service.ts`
+- Extracted responsibility: one-pass destination normalization, city alias resolution, prefix fallback and TBO city-code lookup
+- New files: `src/modules/itineraries/services/itinerary-hotel-city-code.service.ts`, `test/itinerary-hotel-city-code.test.ts`
+- Workflow: provider-search destination preparation
+
+#### Change
+
+- Moved destination-to-TBO-code mapping behind `ItineraryHotelCityCodeService` while preserving one database read, status/id ordering, aliases, exact/prefix precedence, duplicate handling and missing-code warnings.
+- The TBO facade remains the compatibility boundary and supplies the Prisma loader and logging callbacks; provider payloads, search windows and response DTOs are unchanged.
+- No SQL predicate, index, Redis cache, API route, DTO or response contract changed.
+
+#### Verification
+
+- City-code characterization tests: PASS, 2/2
+- Itinerary characterization collection: PASS, 188/188
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itinerary-hotel-details-tbo.service.ts` measured at 3,531 lines after the tier; `itinerary-hotel-city-code.service.ts` is 106 lines.
+- City lookup latency, destination cardinality, alias-hit rate, prefix-fallback rate and provider-search response latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `d9bafae`.

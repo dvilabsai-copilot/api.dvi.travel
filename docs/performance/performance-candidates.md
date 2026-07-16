@@ -412,6 +412,8 @@ The iteration-128 TBO stay-block boundary is a measurement seam for route count,
 
 The iteration-129 TBO price-package boundary is a measurement seam for route count, supplier hotel cardinality, price-tier assignment CPU, one-hotel overlap rate, deterministic fallback frequency, placeholder-row frequency and end-to-end provider-search response latency. Capture single-hotel, two-to-four-hotel, five-plus-hotel, empty-route, provider-failure and margin-bearing workloads separately before memoizing package projections or changing provider batching; preserve quote-scoped freshness, ascending-price assignment, fallback semantics and response ordering. No index addition/removal or Redis cache is justified until provider traces and package distributions establish the measured winner.
 
+The iteration-130 TBO city-code boundary is a measurement seam for unique-destination cardinality, `dvi_cities` query latency, returned-city row count, alias-hit rate, exact/prefix fallback frequency, map-construction CPU and end-to-end provider-search response latency. Capture empty, exact-name, alias, parenthetical, comma-qualified, duplicate-destination, missing-code and large-route workloads separately before adding a city lookup index or caching reference data; preserve status/id ordering, mutable city-code freshness and destination fallback behavior. No index addition/removal or Redis cache is justified until the query plan and provider traces establish the measured winner.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.

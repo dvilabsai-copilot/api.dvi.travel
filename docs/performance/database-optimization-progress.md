@@ -578,3 +578,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - The tier adds no database reads and leaves provider searches and quote-scoped freshness in the existing facade.
 - This is not a measured database performance improvement: supplier hotel cardinality, tier-generation CPU, fallback/placeholder frequency and provider-search response latency remain unmeasured.
 - No index addition/removal or Redis action is proposed; future work should capture provider query plans and package cardinality distributions before memoizing package projections or changing provider batching.
+
+## Iteration 130 evidence update
+
+- The TBO city-code extraction preserves the single `dvi_cities` read, status/id ordering, alias precedence, exact/prefix fallback, duplicate handling and destination-keyed mapping; no SQL predicate, index, Redis cache or response shape changed.
+- The Prisma query remains in the existing facade and the tier only moves normalization/map construction behind a service boundary.
+- This is not a measured database performance improvement: unique-destination cardinality, city query latency, returned-row volume, alias/fallback frequency and provider-search response latency remain unmeasured.
+- No index addition/removal or Redis action is proposed; future work should capture the `dvi_cities` query plan and city-code hit/miss traces before indexing or caching reference data.
