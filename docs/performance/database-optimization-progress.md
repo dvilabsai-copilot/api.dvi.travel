@@ -158,3 +158,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Existing time/duration callbacks, travel-label projection, placeholder repair, duplicate suppression and matrix-order diagnostics remain unchanged; only policy ownership moved.
 - This is not a measured performance improvement: policy CPU, placeholder frequency, duplicate volume, diagnostic frequency and preview latency remain unmeasured.
 - No index or Redis action is proposed; any future optimization must use representative matrix-preview traces and preserve time formatting and ordering contracts.
+
+## Iteration 70 evidence update
+
+- The manual-fit removal-explanation extraction is pure presentation/policy work; it preserves existing removal evidence and response assembly without SQL, index, Redis cache or query-shape changes.
+- Attraction-only attempt enrichment, reason precedence, priority ordering and changes-required response fields remain unchanged; only ownership moved behind a provider with facade callbacks.
+- This is not a measured performance improvement: explanation CPU, removal-row volume, payload size, diagnostic frequency and preview latency remain unmeasured.
+- No index or Redis action is proposed; any future optimization must use representative removal-report traces and preserve evidence precedence and response contracts.

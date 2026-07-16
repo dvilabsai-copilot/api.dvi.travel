@@ -292,6 +292,8 @@ The iteration-68 manual-fit timeline-policy boundary is a measurement seam for v
 
 The iteration-69 matrix-preview timeline-policy boundary is a measurement seam for finalization CPU, placeholder time-range frequency, duration parsing, travel-label normalization, duplicate suppression, invariant-warning frequency and preview response latency. Capture normal, placeholder-heavy, matrix-split, duplicate-row and debug-assertion workloads separately before memoizing timeline state or changing repair order; preserve absolute/12-hour formatting, row ordering, travel labels and debug behavior.
 
+The iteration-70 manual-fit removal-explanation boundary is a measurement seam for attempted-attraction lookup CPU, removal-row volume, operating-hours evidence enrichment, reason-precedence branching, priority-summary assembly, changes-required payload size and preview response latency. Capture no-removal, optional-removal, protected-priority, route-overflow, operating-hours-conflict and attraction-versus-travel-attempt workloads separately before caching display data or changing evidence precedence; preserve reason codes, priority order, safe attempt sources and response fields.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.

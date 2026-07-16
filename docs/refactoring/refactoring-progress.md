@@ -2350,3 +2350,33 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Preview-policy CPU, placeholder-row frequency, duplicate suppression volume and response latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `c0dbb7b`.
+
+### Cycle 73 - Extract manual-fit removal explanations
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: manual-fit removal evidence, explanations and changes-required presentation
+- New files: `src/modules/itineraries/services/itinerary-manual-fit-removal-explanation.service.ts`, `test/itinerary-manual-fit-removal-explanation.test.ts`
+- Workflow: manual-fit preview removal reporting and priority-confirmation response assembly
+
+#### Change
+
+- Moved duration/time display helpers, attempted-attraction enrichment, removal reason construction, priority summaries, authoritative removal selection and changes-required projection behind `ItineraryManualFitRemovalExplanationService`.
+- Preserved reason precedence, operating-hours evidence, route-overflow evidence, priority ordering, attraction-only attempt source and response fields.
+- Registered the service in `ItinerariesModule` and retained all facade callback names.
+
+#### Verification
+
+- Manual-fit removal explanation characterization tests: PASS, 3/3
+- Combined focused backend/timeline suite: PASS, 156/156
+- Backend build: PASS
+- Nest/OpenAPI initialization: PASS, 499 paths
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 9,590 lines after the tier; `ItineraryManualFitRemovalExplanationService` is 518 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Explanation assembly CPU, removal-row volume, diagnostic payload size and preview latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `77b4a39`.
