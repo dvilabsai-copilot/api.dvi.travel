@@ -100,6 +100,7 @@ import { ItineraryManualHotspotScheduleStateService } from './services/itinerary
 import { ItineraryManualHotspotRowTimingService } from './services/itinerary-manual-hotspot-row-timing.service';
 import { ItineraryManualHotspotOverlapService } from './services/itinerary-manual-hotspot-overlap.service';
 import { ItineraryManualHotspotConflictService } from './services/itinerary-manual-hotspot-conflict.service';
+import { ItineraryRouteHotspotRebuildService } from './services/itinerary-route-hotspot-rebuild.service';
 
 @Module({
   imports: [HotelsModule],
@@ -179,6 +180,7 @@ import { ItineraryManualHotspotConflictService } from './services/itinerary-manu
     ItineraryManualHotspotRowTimingService,
     ItineraryManualHotspotOverlapService,
     ItineraryManualHotspotConflictService,
+    ItineraryRouteHotspotRebuildService,
 
     // existing engines you already had
     HotelEngineService,

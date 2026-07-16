@@ -89,6 +89,7 @@ import { ItineraryManualHotspotScheduleStateService } from './services/itinerary
 import { ItineraryManualHotspotRowTimingService } from './services/itinerary-manual-hotspot-row-timing.service';
 import { ItineraryManualHotspotOverlapService } from './services/itinerary-manual-hotspot-overlap.service';
 import { ItineraryManualHotspotConflictService } from './services/itinerary-manual-hotspot-conflict.service';
+import { ItineraryRouteHotspotRebuildService } from './services/itinerary-route-hotspot-rebuild.service';
 import { ItineraryVehicleBuildStatusService } from './services/itinerary-vehicle-build-status.service';
 import { ItineraryVehicleBuildService } from './services/itinerary-vehicle-build.service';
 import { ItineraryPlanPersistenceService } from './services/itinerary-plan-persistence.service';
@@ -683,6 +684,7 @@ export class ItinerariesService {
     private readonly manualHotspotRowTimingService: ItineraryManualHotspotRowTimingService = new ItineraryManualHotspotRowTimingService(),
     private readonly manualHotspotOverlapService: ItineraryManualHotspotOverlapService = new ItineraryManualHotspotOverlapService(),
     private readonly manualHotspotConflictService: ItineraryManualHotspotConflictService = new ItineraryManualHotspotConflictService(),
+    private readonly routeHotspotRebuildService: ItineraryRouteHotspotRebuildService = new ItineraryRouteHotspotRebuildService(prisma, hotspotEngine),
   ) {
     this.manualFitTimelinePolicyService.setCallbacks({
       parseSegmentEndMinutes: (...args) => (this.parseSegmentEndMinutes as any)(...args),
@@ -776,6 +778,10 @@ export class ItinerariesService {
       normalizeManualHotspotIds: (...args) => (this.normalizeManualHotspotIds as any)(...args),
       computeRowDurationMinutes: (...args) => (this.computeRowDurationMinutes as any)(...args),
       minutesToUtcTimeDate: (...args) => (this.minutesToUtcTimeDate as any)(...args),
+    });
+    this.routeHotspotRebuildService.setCallbacks({
+      applySameCityCrossDayOptimizerAfterSave: (...args) => (this.applySameCityCrossDayOptimizerAfterSave as any)(...args),
+      forceRebuildVehiclePricingAfterHotspotChange: (...args) => (this.forceRebuildVehiclePricingAfterHotspotChange as any)(...args),
     });
     this.vehicleBuildService.setVehicleVendorSelector((data) => this.selectVehicleVendor(data));
     this.activityAvailabilityService.setCalculateActivityPlanPricingCallback(
@@ -4416,214 +4422,7 @@ private getGuideSlotLabel(slotId: number): string {
    * Reset one route/day hotspot state (manual adds + exclusions) and rebuild timeline.
    */
   async rebuildRouteHotspotsForDay(planId: number, routeId: number, userId: number) {
-    const normalizedPlanId = Number(planId);
-    const normalizedRouteId = Number(routeId);
-    let planQuoteId = "";
-    const rebuildResult = await this.prisma.$transaction(async (tx) => {
-      const route = await (tx as any).dvi_itinerary_route_details.findFirst({
-        where: {
-          itinerary_route_ID: normalizedRouteId,
-          itinerary_plan_ID: normalizedPlanId,
-          deleted: 0,
-          status: 1,
-        },
-        select: {
-          itinerary_route_ID: true,
-          excluded_hotspot_ids: true,
-        },
-      });
-
-      if (!route) {
-        throw new BadRequestException(
-          `Route ${normalizedRouteId} does not belong to plan ${normalizedPlanId} or is no longer active`,
-        );
-      }
-
-      const oldRoutes = await (tx as any).dvi_itinerary_route_details.findMany({
-        where: {
-          itinerary_plan_ID: normalizedPlanId,
-          deleted: 0,
-          status: 1,
-        },
-        select: {
-          itinerary_route_ID: true,
-          itinerary_route_date: true,
-        },
-      });
-      const oldRouteDateMap = new Map(
-        oldRoutes.map((row: any) => [Number(row.itinerary_route_ID || 0), row.itinerary_route_date]),
-      );
-      const oldHotspots = await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
-        where: {
-          itinerary_plan_ID: normalizedPlanId,
-          item_type: 4,
-          deleted: 0,
-          status: 1,
-          hotspot_plan_own_way: { not: 1 },
-        },
-      });
-      const existingHotspotsWithDates = oldHotspots.map((row: any) => ({
-        ...row,
-        route_date: oldRouteDateMap.get(Number(row.itinerary_route_ID || 0)),
-      }));
-
-      const planRow = await (tx as any).dvi_itinerary_plan_details.findFirst({
-        where: {
-          itinerary_plan_ID: normalizedPlanId,
-          deleted: 0,
-        },
-        select: {
-          itinerary_quote_ID: true,
-        },
-      });
-      planQuoteId = String(planRow?.itinerary_quote_ID || "");
-
-      const manualHotspotRows = await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
-        where: {
-          itinerary_plan_ID: normalizedPlanId,
-          itinerary_route_ID: normalizedRouteId,
-          hotspot_plan_own_way: 1,
-          item_type: 4,
-          deleted: 0,
-        },
-        select: {
-          route_hotspot_ID: true,
-        },
-      });
-
-      const existingExcludedHotspotIds = Array.isArray((route as any)?.excluded_hotspot_ids)
-        ? (route as any).excluded_hotspot_ids
-            .map((id: any) => Number(id))
-            .filter((id: number) => Number.isFinite(id) && id > 0)
-        : [];
-
-      if (manualHotspotRows.length === 0 && existingExcludedHotspotIds.length === 0) {
-        return {
-          success: true,
-          planId: normalizedPlanId,
-          routeId: normalizedRouteId,
-          message: 'Day route is already clean; no rebuild was needed',
-          rebuildSummary: {
-            totalRoutesProcessed: 0,
-            totalHotspotsScheduled: 0,
-            totalParkingRowsScheduled: 0,
-          },
-          warnings: [],
-          routeRejectionSummaryByRoute: {},
-          skipped: true,
-        };
-      }
-
-      const manualRouteHotspotIds = manualHotspotRows
-        .map((row: any) => Number(row.route_hotspot_ID || 0))
-        .filter((id: number) => Number.isFinite(id) && id > 0);
-
-      if (manualRouteHotspotIds.length > 0) {
-        await (tx as any).dvi_itinerary_route_activity_details.updateMany({
-          where: {
-            itinerary_plan_ID: normalizedPlanId,
-            itinerary_route_ID: normalizedRouteId,
-            route_hotspot_ID: { in: manualRouteHotspotIds },
-            deleted: 0,
-          },
-          data: {
-            deleted: 1,
-            status: 0,
-            updatedon: new Date(),
-          },
-        });
-      }
-
-      await (tx as any).dvi_itinerary_route_hotspot_details.updateMany({
-        where: {
-          itinerary_plan_ID: normalizedPlanId,
-          itinerary_route_ID: normalizedRouteId,
-          hotspot_plan_own_way: 1,
-          item_type: 4,
-          deleted: 0,
-        },
-        data: {
-          deleted: 1,
-          status: 0,
-          updatedon: new Date(),
-        },
-      });
-
-      await (tx as any).dvi_itinerary_route_details.update({
-        where: { itinerary_route_ID: normalizedRouteId },
-        data: {
-          excluded_hotspot_ids: [],
-          updatedon: new Date(),
-        },
-      });
-
-      const preRouteVisitCount = await (tx as any).dvi_itinerary_route_hotspot_details.count({
-        where: {
-          itinerary_plan_ID: normalizedPlanId,
-          itinerary_route_ID: normalizedRouteId,
-          item_type: 4,
-          deleted: 0,
-        },
-      });
-      console.log('[RouteRebuild][TRACE] before hotspot-engine rebuild', {
-        planId: normalizedPlanId,
-        routeId: normalizedRouteId,
-        preRouteVisitCount,
-      });
-
-      // Route rebuild must follow the same plan-wide allocation rules as a fresh reset.
-      // A scoped rebuild can drift from the canonical plan state by reusing partial
-      // same-city/context decisions from the current timeline, which is how Day 2
-      // was auto-picking Ramanatha/Agni instead of returning to the reset baseline.
-      // Rebuild the full plan after clearing this route's manual rows so the target
-      // day is recalculated against the same truth the initial itinerary build uses.
-      const rebuildResult = await this.hotspotEngine.rebuildRouteHotspots(
-        tx,
-        normalizedPlanId,
-        existingHotspotsWithDates,
-      );
-
-      const postRouteVisitCount = await (tx as any).dvi_itinerary_route_hotspot_details.count({
-        where: {
-          itinerary_plan_ID: normalizedPlanId,
-          itinerary_route_ID: normalizedRouteId,
-          item_type: 4,
-          deleted: 0,
-        },
-      });
-      console.log('[RouteRebuild][TRACE] after hotspot-engine rebuild', {
-        planId: normalizedPlanId,
-        routeId: normalizedRouteId,
-        postRouteVisitCount,
-        rebuildSummaryScheduledCount: Number(rebuildResult?.rebuildSummary?.totalHotspotsScheduled || 0),
-      });
-
-      return {
-        success: true,
-        planId: normalizedPlanId,
-        routeId: normalizedRouteId,
-        message: 'Day hotspots rebuilt successfully',
-        rebuildSummary: rebuildResult.rebuildSummary,
-        warnings: rebuildResult.warnings,
-        routeRejectionSummaryByRoute: rebuildResult.routeRejectionSummaryByRoute,
-      };
-    // A day reset rebuilds the complete plan so cross-day allocation remains
-    // canonical. Its hotspot/timing writes can exceed Prisma's 60s default
-    // on larger plans; keep the transaction alive long enough to finish
-    // instead of surfacing a generic HTTP 500 timeout.
-    }, { timeout: 180000, maxWait: 30000 });
-
-    if (!(rebuildResult as any)?.skipped) {
-      await this.applySameCityCrossDayOptimizerAfterSave(normalizedPlanId, planQuoteId);
-      await this.hotspotEngine.rebuildParkingCharges(normalizedPlanId, Number(userId || 1));
-      await this.forceRebuildVehiclePricingAfterHotspotChange(normalizedPlanId, normalizedRouteId);
-    }
-
-    return {
-      ...rebuildResult,
-      parkingChargesRebuilt: !(rebuildResult as any)?.skipped,
-      vehiclePricingRebuilt: !(rebuildResult as any)?.skipped,
-    };
+    return this.routeHotspotRebuildService.rebuildRouteHotspotsForDay(planId, routeId, userId);
   }
 
   /** Compatibility facade for route timing persistence and rebuild. */
