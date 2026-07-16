@@ -53,6 +53,7 @@ import { TimelineNonHotelCutoffService } from './timeline-non-hotel-cutoff.servi
 import { TimelineRouteHotspotPlanningService } from './timeline-route-hotspot-planning.service';
 import { TimelineManualPlacementOrderingService } from './timeline-manual-placement-ordering.service';
 import { TimelineDestinationReservationService } from './timeline-destination-reservation.service';
+import { TimelineCarryForwardAttachmentService } from './timeline-carry-forward-attachment.service';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -209,6 +210,7 @@ export class TimelineBuilder {
     (...args) => (this.logBookingRule as any)(...args),
   );
   private readonly destinationReservationService = new TimelineDestinationReservationService();
+  private readonly carryForwardAttachmentService = new TimelineCarryForwardAttachmentService();
   private readonly candidatePolicyService = new TimelineCandidatePolicyService(
     this.operatingHoursService,
     this.slotPolicyService,
@@ -1125,82 +1127,24 @@ export class TimelineBuilder {
 
 
 
-      if (isIntercityMovementFirstTransfer) {
-        const beforeViaSourceCleanupCount = selectedHotspots.length;
 
-        selectedHotspots = selectedHotspots.filter((h: any) => {
-          if ((h as any).isManualSelection) return true;
-
-          const bucket = String(
-            (h as any).matched_bucket ||
-              (h as any).__bucket ||
-              '',
-          ).toLowerCase();
-
-          return bucket !== 'source' && bucket !== 'source_fallback';
-        });
-
-        if (selectedHotspots.length !== beforeViaSourceCleanupCount) {
-          this.logBookingRule({
-            rule: 'SOURCE_BUCKETS_REMOVED_FOR_MOVEMENT_FIRST_TRANSFER',
-            quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
-            planId,
-            routeId: Number(route.itinerary_route_ID || 0),
-            routeDay: Number((route as any).no_of_days || routeIndex || 0),
-            sourceCity,
-            destinationCity,
-            viaLocationNames: currentRouteViaLocationNames,
-            removedCount: beforeViaSourceCleanupCount - selectedHotspots.length,
-            remainingHotspotIds: selectedHotspots.map((h: any) => Number((h as any).hotspot_ID || 0)),
-            reason: 'Explicit via or direct destination route must not show automatic source-city sightseeing before route movement.',
-          });
-        }
-      }
-
-      // IMPORTANT:
-      // Do not run carry-forward route compatibility against all normal candidates.
-      // Normal source/destination/via/en_route/matrix/fallback candidates are already
-      // classified inside fetchSelectedHotspotsForRoute().
-      // Applying carry-forward validation globally can wrongly empty valid intercity routes.
-      // Carry-forward validation must stay only inside:
-      // 1) carry-forward queueing
-      // 2) mergeCarryForwardIntoCandidates()
-
-      const hasOnlySourceFallbackCandidates =
-        Array.isArray(selectedHotspots) &&
-        selectedHotspots.length > 0 &&
-        selectedHotspots.every(
-          (h: any) => String((h as any).matched_bucket || '').toLowerCase() === 'source_fallback',
-        );
-
-      if (!forceNoSightseeingOnThisRoute && carryForwardHotspots.length > 0 && sameCityContinuationContextForRoute.isSameCityChainContinuation) {
-        const carryIds = carryForwardHotspots
-          .map((h) => Number((h as any).hotspot_ID || 0))
-          .filter((id) => id > 0);
-
-        selectedHotspots = this.mergeCarryForwardIntoCandidates(
-          carryForwardHotspots,
-          selectedHotspots,
-          addedHotspotIds,
-          {
-            routeId: Number(route.itinerary_route_ID || 0),
-            routeDay: Number((route as any).no_of_days || routeIndex || 0),
-            sourceCity,
-            destinationCity,
-          },
-        );
-
-        this.logBookingRule({
-          rule: 'STRICT_CARRY_FORWARD_ATTACHED',
-          quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
-          planId,
-          routeId: route.itinerary_route_ID,
-          attachedHotspotIds: carryIds,
-          mergedCandidateCount: selectedHotspots.length,
-          reason: 'Merged carry-forward strict hotspots ahead of normal same-city candidates.',
-        });
-      }
-
+      const carryForwardAttachment = this.carryForwardAttachmentService.apply({
+        route,
+        plan,
+        planId,
+        routeIndex,
+        sourceCity,
+        destinationCity,
+        selectedHotspots,
+        carryForwardHotspots,
+        addedHotspotIds,
+        forceNoSightseeingOnThisRoute,
+        sameCityChainContinuation: sameCityContinuationContextForRoute.isSameCityChainContinuation,
+        mergeCarryForwardIntoCandidates: (...args) => (this.mergeCarryForwardIntoCandidates as any)(...args),
+        logBookingRule: (...args) => (this.logBookingRule as any)(...args),
+      });
+      selectedHotspots = carryForwardAttachment.selectedHotspots;
+      const { hasOnlySourceFallbackCandidates } = carryForwardAttachment;
       this.logTimeline('[TIMELINE] Selected hotspots for route:', selectedHotspots.length);
       // Matrix-assisted auto-build merge (optional, behind feature flag)
       try {
