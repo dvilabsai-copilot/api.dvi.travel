@@ -1565,3 +1565,32 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - OSRM calls, saved-leg hit rate, fallback frequency, map-table row churn, callback CPU, payload size and latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `f7cea8d`.
+
+### Cycle 46 - Extract manual-fit geometry and endpoint policy
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: route-coordinate parsing, route projection, OSRM geometry, selected/destination hotel endpoint resolution and hotspot-to-hotel fallback
+- New files: `src/modules/itineraries/services/itinerary-manual-fit-geometry.service.ts`, `test/itinerary-manual-fit-geometry.test.ts`
+- Workflow: manual-fit route/hotel endpoint and travel-leg resolution
+
+#### Change
+
+- Moved the contiguous manual-fit geometry/endpoint block behind `ItineraryManualFitGeometryService`.
+- Preserved coordinate normalization, projection ratio/distance behavior, selected/destination endpoint precedence, OSRM-first routing and Haversine/duration fallback.
+- Registered explicit city-classification and duration callbacks and retained facade adapters for existing insertion-fit and route-helper callers.
+
+#### Verification
+
+- Manual-fit geometry characterization test: PASS, 1/1
+- Combined focused backend suite: PASS, 70/70
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 12,074 lines after the tier; `ItineraryManualFitGeometryService` is 439 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- OSRM latency/failure rate, endpoint query count, fallback frequency, projection CPU, map-table row churn and latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `f578f07`.
