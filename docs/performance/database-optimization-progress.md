@@ -242,3 +242,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Duplicate exclusion handling, valid-row reuse, positive-duration checks, conflict handling, placeholder timestamps and user attribution remain unchanged; only persistence ownership moved.
 - This is not a measured performance improvement: exclusion write latency, duplicate rate, valid-row reuse rate, stale-row count, placeholder frequency and transaction duration remain unmeasured.
 - No index or Redis action is proposed; any future optimization must compare row-lifecycle traces and lock/write amplification before batching or caching mutable route state.
+
+## Iteration 82 evidence update
+
+- The manual-hotspot schedule-state extraction preserves route-hotspot, route-date and active-timing predicates, weekday conversion, normal/overnight window handling and overlap callbacks; no SQL, index, Redis cache or query shape was changed.
+- Positive-duration filtering, conflict rejection, no-date/no-timing permissive fallback and timing order remain unchanged; only schedule-state ownership moved.
+- This is not a measured performance improvement: schedule-state read latency, timing-row fan-out, weekday selectivity, overnight frequency, overlap-query cost and permissive-fallback frequency remain unmeasured.
+- No index or Redis action is proposed; any future optimization must compare route/date/timing query plans and overlap traces across normal, overnight and fallback workloads while preserving mutable operating-hours freshness.

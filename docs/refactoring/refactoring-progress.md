@@ -2708,3 +2708,32 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Exclusion writes, stale-row frequency, placeholder creation frequency and row-persistence latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `a5ac49c`.
+
+### Cycle 85 - Extract manual-hotspot schedule state
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: manual-row schedule-state lookup and operating-window membership
+- New files: `src/modules/itineraries/services/itinerary-manual-hotspot-schedule-state.service.ts`, `test/itinerary-manual-hotspot-schedule-state.test.ts`
+- Workflow: manual hotspot schedule validation
+
+#### Change
+
+- Moved manual-row schedule-state reads, route-date weekday resolution and normal/overnight operating-window checks behind `ItineraryManualHotspotScheduleStateService`.
+- Preserved route/plan/item/deleted predicates, positive-duration and conflict filtering, timing order, open-window fallback and overlap callback behavior.
+- Registered the service in `ItinerariesModule` and retained facade adapters for duration and overlap policy callbacks.
+
+#### Verification
+
+- Manual-hotspot schedule-state characterization tests: PASS, 2/2
+- Combined focused backend/timeline suite: PASS, 184/184
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 6,389 lines after the tier; `ItineraryManualHotspotScheduleStateService` is 75 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Schedule-state read latency, timing-row fan-out, weekday selectivity, overnight frequency, overlap-query cost and permissive-fallback frequency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `1e13155`.
