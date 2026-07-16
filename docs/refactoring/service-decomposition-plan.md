@@ -311,3 +311,5 @@ The in-facade legacy route optimizer was removed after verification that `Itiner
 `StaahRoomAdmissionService` now owns exact active-room admission, normalized-only rejection and deduplicated stale-room diagnostics. `ItineraryHotelDetailsTboService` remains the route facade and supplies room mappings, normalizers and logging callbacks. Room-match and admission cost remain pending measurement.
 
 `ItineraryHotelMarginLookupService` now owns provider-code collection, margin-master filter preparation and provider-key indexing for hotel-tab totals. `ItineraryHotelDetailsTboService` remains the response facade and supplies the Prisma master-row loader and margin application callbacks. Margin lookup cost remains pending measurement.
+
+`ItineraryHotelBookingDetailLookupService` now owns persisted hotel-detail and voucher-status reads plus response-row lookup maps. `ItineraryHotelDetailsTboService` remains the response facade and supplies plan-scoped Prisma adapters. Detail/voucher lookup cost remains pending measurement.

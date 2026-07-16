@@ -697,3 +697,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - The existing facade still supplies the `dvi_hotel` Prisma adapter, and the tier adds no database access beyond the same margin-master read.
 - This is not a measured database performance improvement: provider-key cardinality, master-row hit rate, query latency and lookup CPU remain unmeasured.
 - No index addition/removal or Redis action is proposed; future work should capture `dvi_hotel` provider-code query plans and margin-map traces before indexing or caching margin lookup results.
+
+## Iteration 147 evidence update
+
+- The hotel booking-detail lookup extraction preserves plan/deleted predicates, voucher detail-ID filtering, route/hotel/group map keys and cancellation flags; no SQL predicate, index, Redis cache or response shape changed.
+- The existing facade still supplies both Prisma query adapters, and the tier adds no database access beyond the same reads.
+- This is not a measured database performance improvement: detail/voucher cardinality, voucher-hit rate, query latency and map construction CPU remain unmeasured.
+- No index addition/removal or Redis action is proposed; future work should capture plan-detail and voucher query plans before indexing or caching response lookup maps.

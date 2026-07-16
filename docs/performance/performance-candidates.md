@@ -446,6 +446,8 @@ The iteration-145 STAAH room-admission boundary is a measurement seam for exact-
 
 The iteration-146 hotel-margin lookup boundary is a measurement seam for unique provider-key cardinality, master-row hit rate, provider-key fan-out, margin lookup query latency, indexing CPU and hotel-tab response latency. Capture empty, single-provider, multi-provider, duplicate-master, missing-master and large-package workloads separately before adding covering indexes or caching margin maps; preserve mutable margin/GST values and provider-key precedence. No index addition/removal or Redis cache is justified until query plans and margin traces establish the measured winner.
 
+The iteration-147 hotel booking-detail lookup boundary is a measurement seam for persisted detail-row cardinality, voucher-row cardinality, voucher-hit rate, duplicate-key rate, lookup latency, map construction CPU and hotel-detail response latency. Capture empty, one-row, duplicate-route/group, voucher-heavy, no-voucher and large-plan workloads separately before adding covering indexes or caching lookup maps; preserve deleted-row freshness, route/hotel/group identity and cancellation status. No index addition/removal or Redis cache is justified until query plans and traces establish the measured winner.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.
