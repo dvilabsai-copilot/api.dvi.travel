@@ -354,6 +354,8 @@ The iteration-99 vendor-pricebook-policy boundary is a measurement seam for kilo
 
 The iteration-100 itinerary-input-normalization boundary is a measurement seam for CSV parsing CPU, date conversion cost, route-family quote parsing frequency, mixed-value normalization cost, duplicate-string suppression, meal-plan inference frequency and manual-hotspot ID projection latency. Capture empty, malformed, duplicate, mixed-object, route-variant and large-input workloads separately before memoizing or changing callback payloads; preserve fallback precedence, date labels, positive-ID filtering and mutable request freshness. No index addition/removal or Redis cache is justified because this tier changes pure facade ownership only.
 
+The iteration-101 itinerary-collaborator-wiring boundary is a measurement seam for constructor initialization time, callback registration count, callback invocation frequency, service dependency fan-out and first-request readiness latency. Capture cold module initialization, manual-fit-heavy, preview-heavy, route-cache-heavy and hotel-confirmation-heavy startup/workloads before consolidating callbacks or changing dependency ownership; preserve callback names, closure binding and mutable service state. No index addition/removal or Redis cache is justified by this wiring-only tier.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.

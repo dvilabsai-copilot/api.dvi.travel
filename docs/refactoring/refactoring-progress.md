@@ -3259,3 +3259,31 @@
 - `itineraries.service.ts` measured at 4,876 lines after the tier; `itinerary-input-normalization.service.ts` is 95 lines.
 - Normalization CPU, callback payload-shaping latency and downstream query impact remain unmeasured.
 - Implementation commit: `api.dvi.travel` `791ae21`.
+
+### Cycle 104 - Extract itinerary collaborator callback wiring
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: constructor-time callback registration across itinerary policy services
+- New files: `src/modules/itineraries/services/itinerary-service-collaborator-wiring.ts`
+- Workflow: facade initialization for manual-fit, preview, route-leg, hotel, activity and timeline policy services
+
+#### Change
+
+- Moved the 491-line callback graph into a dedicated wiring module and invoke it with the same `ItinerariesService` instance.
+- Preserved callback names, closure binding, helper delegation, service ordering and transaction-client ownership.
+- No SQL predicate, index, Redis cache, API route, DTO or response contract changed.
+
+#### Verification
+
+- Itinerary-scoped characterization collection: PASS, 143/143
+- Backend build: PASS
+- Broad characterization collection: 222/228; the six failures are existing `permit-charge-parity` mocks missing `dvi_vehicle.findFirst`, outside this tier’s changed files.
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 4,387 lines after the tier; `itinerary-service-collaborator-wiring.ts` is 505 lines.
+- Callback initialization time, fan-out and downstream service query effects remain unmeasured.
+- Implementation commit: `api.dvi.travel` `040a68c`.

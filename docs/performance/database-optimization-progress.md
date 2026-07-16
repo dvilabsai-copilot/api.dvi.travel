@@ -375,3 +375,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - CSV/date fallback, route-family quote parsing, array/string normalization, meal-plan precedence and manual-hotspot positive-ID filtering remain unchanged.
 - This is not a measured database performance improvement: normalization CPU, callback payload shaping, downstream query selectivity and response latency remain unmeasured.
 - No index or Redis action is proposed; future work should profile the input-to-query boundary before batching or caching mutable itinerary request state.
+
+## Iteration 101 evidence update
+
+- The collaborator-wiring extraction changes only constructor callback ownership; no SQL, index, Redis cache, API route, DTO, transaction boundary or response shape changed.
+- Callback names, service ordering, facade-bound helper dispatch and mutable service instances remain unchanged.
+- This is not a measured database performance improvement: initialization time, callback fan-out, downstream query latency and first-request readiness remain unmeasured.
+- No index or Redis action is proposed; future work should profile dependency initialization and callback invocation traces before changing service boundaries.
