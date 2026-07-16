@@ -73,6 +73,7 @@ import { ItineraryManualInsertionFitService } from './services/itinerary-manual-
 import { ItineraryProgressivePriorityRemovalService } from './services/itinerary-progressive-priority-removal.service';
 import { ItineraryAdaptiveManualHotspotInsertionService } from './services/itinerary-adaptive-manual-hotspot-insertion.service';
 import { ItineraryMatrixRescheduledPreviewService } from './services/itinerary-matrix-rescheduled-preview.service';
+import { ItineraryConfirmedItineraryDetailsService } from './services/itinerary-confirmed-itinerary-details.service';
 
 @Module({
   imports: [HotelsModule],
@@ -125,6 +126,7 @@ import { ItineraryMatrixRescheduledPreviewService } from './services/itinerary-m
     ItineraryProgressivePriorityRemovalService,
     ItineraryAdaptiveManualHotspotInsertionService,
     ItineraryMatrixRescheduledPreviewService,
+    ItineraryConfirmedItineraryDetailsService,
 
     // existing engines you already had
     HotelEngineService,
