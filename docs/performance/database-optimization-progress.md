@@ -116,3 +116,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - The cancellation transaction still owns the same route and itinerary aggregate predicates, status transitions and financial writes; only orchestration ownership moved.
 - This is not a measured performance improvement: lookup latency, backfill frequency, write volume, aggregate fan-out, audit latency and transaction duration remain unmeasured.
 - No index or Redis action is proposed; any future optimization must compare first/partial/full cancellation query plans and preserve rounding, status order and audit semantics.
+
+## Iteration 64 evidence update
+
+- The manual-fit attempt-store extraction preserves the existing table DDL, raw upsert/select/delete statements and in-memory cache; no index, Redis cache or query shape was changed.
+- The facade remains a compatibility adapter for the manual-fit helper, while the service owns the same SQL and cache ordering.
+- This is not a measured performance improvement: table setup, raw query latency, cache-hit rate, serialization cost, payload size and delete latency remain unmeasured.
+- No index or Redis action is proposed; any future optimization must compare first-use/cache-hit/DB-fallback traces and preserve expiry and SQL semantics.

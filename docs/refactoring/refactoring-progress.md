@@ -2175,3 +2175,32 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Cancellation transaction latency, aggregate fan-out, route-full cancellation frequency and refund payload size remain unmeasured.
 - Implementation commit: `api.dvi.travel` `99e5437`.
+
+### Cycle 67 - Extract manual-fit preview attempt storage
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: manual-fit attempt table setup, raw persistence, validation, cache lookup and deletion
+- New files: `src/modules/itineraries/services/itinerary-manual-fit-attempt-store.service.ts`, `test/itinerary-manual-fit-attempt-store.test.ts`
+- Workflow: manual-fit preview/confirmation helper attempt lifecycle
+
+#### Change
+
+- Moved table creation, upsert SQL, in-memory cache, stored-payload validation, DB fallback and deletion behind `ItineraryManualFitAttemptStoreService`.
+- Preserved SQL statements, attempt identity fields, expiry fallback, cache-before-database behavior and parse-failure diagnostics.
+- Kept compatibility wrappers on `ItinerariesService` for the existing manual-fit helper `this` contract.
+
+#### Verification
+
+- Manual-fit attempt-store characterization tests: PASS, 2/2
+- Combined focused backend/timeline suite: PASS, 141/141
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 11,216 lines after the tier; `ItineraryManualFitAttemptStoreService` is 129 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Table-setup frequency, raw query latency, cache-hit rate, payload size and parse-failure frequency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `5bae62f`.

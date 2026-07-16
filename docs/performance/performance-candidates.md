@@ -280,6 +280,8 @@ The iteration-62 confirmed-guide projection boundary is a measurement seam for c
 
 The iteration-63 confirmed guide-slot cancellation boundary is a measurement seam for cancellation validation rate, confirmed-plan/guide/slot lookup latency, lazy slot-cost backfill, cancellation-row write volume, aggregate query fan-out, route-full and itinerary-full status transition frequency, audit-log latency and transaction duration. Capture first cancellation, repeated cancellation, partial-route, route-full and itinerary-full workloads separately before batching aggregates, adding write-path indexes or caching immutable plan state; preserve financial rounding, status ordering and audit semantics.
 
+The iteration-64 manual-fit attempt-store boundary is a measurement seam for table-setup invocation, attempt upsert latency, raw lookup latency, cache-hit/miss rate, payload serialization/deserialization cost, expiry fallback frequency, parse failures and delete latency. Capture first-use, cache-hit, DB-fallback, repeated-save and delete workloads separately before adding a dedicated cache or changing table/index definitions; preserve attempt identity, expiry behavior, SQL contract and helper callback semantics.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.
