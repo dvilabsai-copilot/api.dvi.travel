@@ -83,6 +83,7 @@ import { ItineraryManualFitGeometryService } from './services/itinerary-manual-f
 import { ItineraryManualFitAttemptStoreService } from './services/itinerary-manual-fit-attempt-store.service';
 import { ItineraryManualFitTimelinePolicyService } from './services/itinerary-manual-fit-timeline-policy.service';
 import { ItineraryMatrixPreviewTimelinePolicyService } from './services/itinerary-matrix-preview-timeline-policy.service';
+import { ItineraryManualFitRemovalExplanationService } from './services/itinerary-manual-fit-removal-explanation.service';
 import { ItineraryActivityAvailabilityService } from './services/itinerary-activity-availability.service';
 import { ItineraryInvoiceReadService } from './services/itinerary-invoice-read.service';
 import { ItineraryHotspotDeletionService } from './services/itinerary-hotspot-deletion.service';
@@ -148,6 +149,7 @@ import { ItineraryHotspotDeletionService } from './services/itinerary-hotspot-de
     ItineraryManualFitAttemptStoreService,
     ItineraryManualFitTimelinePolicyService,
     ItineraryMatrixPreviewTimelinePolicyService,
+    ItineraryManualFitRemovalExplanationService,
     ItineraryActivityAvailabilityService,
     ItineraryInvoiceReadService,
     ItineraryHotspotDeletionService,
