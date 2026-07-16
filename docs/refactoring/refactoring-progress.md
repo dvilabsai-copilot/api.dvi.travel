@@ -2704,7 +2704,7 @@
 
 #### Result
 
-- `itineraries.service.ts` measured at 6,479 lines after the tier; `ItineraryManualHotspotRowService` is 101 lines.
+- `itineraries.service.ts` measured at 6,491 lines after the tier; `ItineraryManualHotspotRowService` is 87 lines.
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Exclusion writes, stale-row frequency, placeholder creation frequency and row-persistence latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `a5ac49c`.
