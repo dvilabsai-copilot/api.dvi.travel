@@ -306,6 +306,8 @@ The iteration-75 manual-fit operating-hours boundary is a measurement seam for r
 
 The iteration-76 manual-fit validation boundary is a measurement seam for slot-insight CPU, candidate count, distance-helper calls, detour rejection frequency, validation latency, route-end overflow frequency, operating-hours conflict frequency and relaxed off-route acceptance. Capture empty, single-slot, multi-slot, geographically infeasible, timing-conflict, priority-confirmation and relaxed-route workloads separately before memoizing distance results or changing thresholds; preserve best-slot selection, reason precedence and apply-readiness fields.
 
+The iteration-77 manual-fit schedule-attempt boundary is a measurement seam for timeline scan CPU, distance-helper calls, travel-metric calculation, protected-priority impact volume, exact-anchor overlap checks, attempt comparison CPU and strategy-selection latency. Capture empty, no-manual, exact-anchor, overlap, protected-priority, confirmation-required and ready-to-apply workloads separately before caching metrics or changing comparison precedence; preserve attempt categories, tie-breakers, reasons and readiness fields.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.

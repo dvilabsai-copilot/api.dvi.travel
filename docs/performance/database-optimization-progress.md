@@ -207,3 +207,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Detour thresholds, candidate ordering, conflict reason precedence, relaxed off-route handling and apply-readiness fields remain unchanged; only policy ownership moved.
 - This is not a measured performance improvement: slot-insight CPU, distance-helper call volume, validation latency, conflict frequency, overflow frequency and payload size remain unmeasured.
 - No index or Redis action is proposed; any future optimization must compare candidate-count and distance-call traces while preserving mutable timing freshness and validation precedence.
+
+## Iteration 77 evidence update
+
+- The manual-fit schedule-attempt extraction preserves in-memory timeline scans and existing distance/timing callbacks; no SQL, index, Redis cache or query shape was changed.
+- Travel totals, protected-priority detection, exact-anchor overlap handling, attempt category precedence and tie-breakers remain unchanged; only policy ownership moved.
+- This is not a measured performance improvement: scan CPU, distance-helper calls, attempt volume, comparison latency, overlap frequency and strategy-selection latency remain unmeasured.
+- No index or Redis action is proposed; any future optimization must compare attempt traces and distance-call counts before memoizing candidate metrics while preserving schedule semantics.

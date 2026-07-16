@@ -2558,3 +2558,33 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Slot-insight CPU, validation latency, candidate volume, conflict frequency and route-end overflow frequency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `4742fe8`.
+
+### Cycle 80 - Extract manual-fit schedule-attempt policy
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: travel metrics, protected-priority impact, exact-anchor attempt projection and attempt ordering
+- New files: `src/modules/itineraries/services/itinerary-manual-fit-schedule-attempt.service.ts`, `test/itinerary-manual-fit-schedule-attempt.test.ts`
+- Workflow: manual-fit candidate scoring and strategy selection
+
+#### Change
+
+- Moved timeline travel totals, protected-priority impact reasons, candidate/exact-anchor attempt projection, overlap detection and deterministic attempt comparison behind `ItineraryManualFitScheduleAttemptService`.
+- Preserved distance totals, exact-anchor readiness, overlap rejection, timing safety, confirmation precedence and attempt ordering.
+- Registered the service in `ItinerariesModule` and retained facade callback adapters for existing distance, timeline and explanation policies.
+
+#### Verification
+
+- Manual-fit schedule-attempt characterization tests: PASS, 3/3
+- Combined focused backend/timeline suite: PASS, 175/175
+- Backend build: PASS
+- Nest/OpenAPI initialization: PASS, 499 paths
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 7,228 lines after the tier; `ItineraryManualFitScheduleAttemptService` is 271 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Candidate metric CPU, attempt comparison CPU, candidate volume, overlap frequency and strategy-selection latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `fbbeb3a`.
