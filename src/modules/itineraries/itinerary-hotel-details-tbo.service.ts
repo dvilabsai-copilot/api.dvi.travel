@@ -39,6 +39,7 @@ import { StaahCandidateSelectionService } from './services/staah-candidate-selec
 import { StaahProviderRowsService } from './services/staah-provider-rows.service';
 import { StaahRoomAdmissionService } from './services/staah-room-admission.service';
 import { ItineraryHotelMarginLookupService } from './services/itinerary-hotel-margin-lookup.service';
+import { ItineraryHotelBookingDetailLookupService } from './services/itinerary-hotel-booking-detail-lookup.service';
 
 /**
  * This service generates dynamic hotel packages from TBO API
@@ -170,6 +171,7 @@ export class ItineraryHotelDetailsTboService {
   private readonly staahProviderRowsService = new StaahProviderRowsService();
   private readonly staahRoomAdmissionService = new StaahRoomAdmissionService();
   private readonly hotelMarginLookupService = new ItineraryHotelMarginLookupService();
+  private readonly hotelBookingDetailLookupService = new ItineraryHotelBookingDetailLookupService();
 
   private isTboOnlyFetchEnabled(): boolean {
     const raw = String(process.env.HOTEL_FETCH_TBO_ONLY || '').trim().toLowerCase();
@@ -1692,47 +1694,30 @@ export class ItineraryHotelDetailsTboService {
       };
     });
 
-    // Fetch all hotel details from database to get IDs and voucher status
-    const hotelDetailsInDb = await this.prisma.dvi_itinerary_plan_hotel_details.findMany({
-      where: { itinerary_plan_id: planId, deleted: 0 },
-      select: {
-        itinerary_plan_hotel_details_ID: true,
-        itinerary_route_id: true,
-        hotel_id: true,
-        group_type: true,
-      },
-    });
-
-    // Fetch voucher cancellation statuses
-    const hotelDetailsIds = hotelDetailsInDb.map(h => h.itinerary_plan_hotel_details_ID);
-    const voucherStatuses = hotelDetailsIds.length > 0
-      ? await this.prisma.dvi_confirmed_itinerary_plan_hotel_voucher_details.findMany({
+    const { detailsMap, voucherStatusMap } = await this.hotelBookingDetailLookupService.load({
+      loadDetails: () =>
+        this.prisma.dvi_itinerary_plan_hotel_details.findMany({
+          where: { itinerary_plan_id: planId, deleted: 0 },
+          select: {
+            itinerary_plan_hotel_details_ID: true,
+            itinerary_route_id: true,
+            hotel_id: true,
+            group_type: true,
+          },
+        }),
+      loadVoucherStatuses: (detailIds) =>
+        this.prisma.dvi_confirmed_itinerary_plan_hotel_voucher_details.findMany({
           where: {
             itinerary_plan_id: planId,
-            itinerary_plan_hotel_details_ID: { in: hotelDetailsIds },
+            itinerary_plan_hotel_details_ID: { in: detailIds },
             deleted: 0,
           },
           select: {
             itinerary_plan_hotel_details_ID: true,
             hotel_voucher_cancellation_status: true,
           },
-        })
-      : [];
-
-    // Create maps for quick lookup
-    const detailsMap = new Map(
-      hotelDetailsInDb.map(d => [
-        `${d.itinerary_route_id}-${d.hotel_id}-${d.group_type}`,
-        d.itinerary_plan_hotel_details_ID
-      ])
-    );
-    
-    const voucherStatusMap = new Map(
-      voucherStatuses.map(v => [
-        v.itinerary_plan_hotel_details_ID,
-        v.hotel_voucher_cancellation_status === 1
-      ])
-    );
+        }),
+    });
 
     // Preload route destination coordinates and hotel coordinates for distance calculation.
     const routeLocationIds = Array.from(
