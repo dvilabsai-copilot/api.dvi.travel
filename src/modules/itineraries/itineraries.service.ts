@@ -91,6 +91,7 @@ import { ItineraryManualHotspotOverlapService } from './services/itinerary-manua
 import { ItineraryManualHotspotConflictService } from './services/itinerary-manual-hotspot-conflict.service';
 import { ItineraryRouteHotspotRebuildService } from './services/itinerary-route-hotspot-rebuild.service';
 import { ItineraryHotelCancellationService } from './services/itinerary-hotel-cancellation.service';
+import { ItineraryHotelRoomCategoryService } from './services/itinerary-hotel-room-category.service';
 import { ItineraryVehicleBuildStatusService } from './services/itinerary-vehicle-build-status.service';
 import { ItineraryVehicleBuildService } from './services/itinerary-vehicle-build.service';
 import { ItineraryPlanPersistenceService } from './services/itinerary-plan-persistence.service';
@@ -687,6 +688,7 @@ export class ItinerariesService {
     private readonly manualHotspotConflictService: ItineraryManualHotspotConflictService = new ItineraryManualHotspotConflictService(),
     private readonly routeHotspotRebuildService: ItineraryRouteHotspotRebuildService = new ItineraryRouteHotspotRebuildService(prisma, hotspotEngine),
     private readonly hotelCancellationService: ItineraryHotelCancellationService = new ItineraryHotelCancellationService(prisma),
+    private readonly hotelRoomCategoryService: ItineraryHotelRoomCategoryService = new ItineraryHotelRoomCategoryService(prisma, hotelDetailsTboService),
   ) {
     this.manualFitTimelinePolicyService.setCallbacks({
       parseSegmentEndMinutes: (...args) => (this.parseSegmentEndMinutes as any)(...args),
@@ -4537,116 +4539,9 @@ private getGuideSlotLabel(slotId: number): string {
     hotel_id: number;
     group_type: number;
   }) {
-    // Get itinerary plan details for preferred room count and quote ID
-    const plan = await this.prisma.dvi_itinerary_plan_details.findUnique({
-      where: { itinerary_plan_ID: params.itinerary_plan_id },
-      select: { 
-        preferred_room_count: true,
-        itinerary_quote_ID: true,
-      },
-    });
-
-    if (!plan) {
-      throw new NotFoundException('Itinerary plan not found');
-    }
-
-    // Get route date
-    const route = await this.prisma.dvi_itinerary_route_details.findUnique({
-      where: { itinerary_route_ID: params.itinerary_route_id },
-      select: { itinerary_route_date: true },
-    });
-
-    if (!route) {
-      throw new NotFoundException('Route not found');
-    }
-
-    // Fetch room details from TBO API
-    const tboRoomDetails = await this.hotelDetailsTboService.getHotelRoomDetailsFromTbo(
-      plan.itinerary_quote_ID,
-      params.itinerary_route_id,
-    );
-
-    // Find the specific hotel in TBO results
-    const hotelRoom = tboRoomDetails.rooms.find(
-      (room) => room.hotelId === params.hotel_id && room.groupType === params.group_type
-    );
-
-    if (!hotelRoom) {
-      throw new NotFoundException('Hotel not found in TBO results');
-    }
-
-    // Get available room types from TBO data
-    const availableRoomTypes = hotelRoom.availableRoomTypes || [];
-
-    if (availableRoomTypes.length === 0) {
-      throw new NotFoundException('No room types available for this hotel from TBO');
-    }
-
-    // Get existing room selections from database
-    const existingRooms = await this.prisma.dvi_itinerary_plan_hotel_room_details.findMany({
-      where: {
-        itinerary_plan_id: params.itinerary_plan_id,
-        itinerary_route_id: params.itinerary_route_id,
-        itinerary_route_date: route.itinerary_route_date,
-        hotel_id: params.hotel_id,
-        group_type: params.group_type,
-        deleted: 0,
-      },
-      orderBy: {
-        itinerary_plan_hotel_room_details_ID: 'asc',
-      },
-    });
-
-    const rooms = [];
-
-    if (existingRooms.length > 0) {
-      // Return existing room selections with TBO room types
-      existingRooms.forEach((room, index) => {
-        const selectedRoomType = availableRoomTypes.find(
-          (rt) => rt.roomTypeId === room.room_type_id
-        );
-        rooms.push({
-          room_number: index + 1,
-          itinerary_plan_hotel_room_details_ID: room.itinerary_plan_hotel_room_details_ID,
-          room_type_id: room.room_type_id,
-          room_type_title: selectedRoomType?.roomTypeTitle || room.room_type_id.toString(),
-          room_qty: room.room_qty,
-          available_room_types: availableRoomTypes.map((rt) => ({
-            room_type_id: rt.roomTypeId,
-            room_type_title: rt.roomTypeTitle || '',
-          })),
-        });
-      });
-    } else {
-      // Create empty slots for preferred room count with TBO room types
-      for (let i = 0; i < (plan.preferred_room_count || 1); i++) {
-        rooms.push({
-          room_number: i + 1,
-          room_type_id: null,
-          room_type_title: '',
-          room_qty: 1,
-          available_room_types: availableRoomTypes.map((rt) => ({
-            room_type_id: rt.roomTypeId,
-            room_type_title: rt.roomTypeTitle || '',
-          })),
-        });
-      }
-    }
-
-    return {
-      itinerary_plan_hotel_details_ID: params.itinerary_plan_hotel_details_ID,
-      hotel_id: params.hotel_id,
-      hotel_name: hotelRoom.hotelName || '',
-      preferred_room_count: plan.preferred_room_count || 1,
-      rooms,
-    };
+    return this.hotelRoomCategoryService.getHotelRoomCategories(params);
   }
 
-  /**
-   * Update room category selection
-   * Creates or updates the room selection in dvi_itinerary_plan_hotel_room_details
-   * Room type IDs come from TBO API
-   */
   async updateRoomCategory(params: {
     itinerary_plan_hotel_room_details_ID?: number;
     itinerary_plan_hotel_details_ID: number;
@@ -4661,110 +4556,10 @@ private getGuideSlotLabel(slotId: number): string {
     lunch_meal_plan?: number;
     dinner_meal_plan?: number;
   }) {
-    // Get route date
-    const route = await this.prisma.dvi_itinerary_route_details.findUnique({
-      where: { itinerary_route_ID: params.itinerary_route_id },
-      select: { itinerary_route_date: true },
-    });
-
-    if (!route) {
-      throw new NotFoundException('Route not found');
-    }
-
-    // Get quote ID to fetch TBO data
-    const planDetails = await this.prisma.dvi_itinerary_plan_details.findFirst({
-      where: { 
-        itinerary_plan_ID: params.itinerary_plan_id,
-        deleted: 0,
-      },
-      select: {
-        itinerary_quote_ID: true,
-      },
-    });
-
-    if (!planDetails) {
-      throw new NotFoundException('Itinerary plan details not found');
-    }
-
-    // Fetch room details from TBO to get pricing and room information
-    const tboRoomDetails = await this.hotelDetailsTboService.getHotelRoomDetailsFromTbo(
-      planDetails.itinerary_quote_ID,
-      params.itinerary_route_id,
-    );
-
-    // Find the specific hotel and room type in TBO results
-    const hotelRoom = tboRoomDetails.rooms.find(
-      (room) => room.hotelId === params.hotel_id && room.groupType === params.group_type
-    );
-
-    if (!hotelRoom) {
-      throw new NotFoundException('Hotel not found in TBO results');
-    }
-
-    // Find the selected room type from TBO data
-    const selectedRoomType = hotelRoom.availableRoomTypes?.find(
-      (rt) => rt.roomTypeId === params.room_type_id
-    );
-
-    if (!selectedRoomType) {
-      throw new NotFoundException('Selected room type not available from TBO');
-    }
-
-    // Use TBO pricing data
-    const roomRate = hotelRoom.pricePerNight || 0;
-    const now = new Date();
-
-    // Check if record already exists
-    if (params.itinerary_plan_hotel_room_details_ID) {
-      // Update existing record
-      await this.prisma.dvi_itinerary_plan_hotel_room_details.update({
-        where: {
-          itinerary_plan_hotel_room_details_ID: params.itinerary_plan_hotel_room_details_ID,
-        },
-        data: {
-          room_type_id: params.room_type_id,
-          room_id: params.room_type_id, // Use room_type_id as room_id for TBO rooms
-          room_qty: params.room_qty || 1,
-          room_rate: roomRate,
-          breakfast_required: params.breakfast_meal_plan || params.all_meal_plan || 0,
-          lunch_required: params.lunch_meal_plan || params.all_meal_plan || 0,
-          dinner_required: params.dinner_meal_plan || params.all_meal_plan || 0,
-          updatedon: now,
-        },
-      });
-    } else {
-      // Create new record
-      await this.prisma.dvi_itinerary_plan_hotel_room_details.create({
-        data: {
-          itinerary_plan_hotel_details_id: params.itinerary_plan_hotel_details_ID,
-          group_type: params.group_type,
-          itinerary_plan_id: params.itinerary_plan_id,
-          itinerary_route_id: params.itinerary_route_id,
-          itinerary_route_date: route.itinerary_route_date,
-          hotel_id: params.hotel_id,
-          room_type_id: params.room_type_id,
-          room_id: params.room_type_id, // Use room_type_id as room_id for TBO rooms
-          room_qty: params.room_qty || 1,
-          room_rate: roomRate,
-          gst_type: 0, // TBO handles GST internally
-          gst_percentage: 0,
-          breakfast_required: params.breakfast_meal_plan || params.all_meal_plan || 0,
-          lunch_required: params.lunch_meal_plan || params.all_meal_plan || 0,
-          dinner_required: params.dinner_meal_plan || params.all_meal_plan || 0,
-          createdon: now,
-          updatedon: now,
-          status: 1,
-          deleted: 0,
-        },
-      });
-    }
-
-    return { 
-      success: true, 
-      message: 'Room category updated successfully',
-      roomTypeName: selectedRoomType.roomTypeTitle,
-    };
+    return this.hotelRoomCategoryService.updateRoomCategory(params);
   }
+
+
 
   /**
    * 🚀 ROUTE OPTIMIZATION: Reorder routes using TSP algorithm

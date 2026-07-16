@@ -102,6 +102,7 @@ import { ItineraryManualHotspotOverlapService } from './services/itinerary-manua
 import { ItineraryManualHotspotConflictService } from './services/itinerary-manual-hotspot-conflict.service';
 import { ItineraryRouteHotspotRebuildService } from './services/itinerary-route-hotspot-rebuild.service';
 import { ItineraryHotelCancellationService } from './services/itinerary-hotel-cancellation.service';
+import { ItineraryHotelRoomCategoryService } from './services/itinerary-hotel-room-category.service';
 
 @Module({
   imports: [HotelsModule],
@@ -183,6 +184,7 @@ import { ItineraryHotelCancellationService } from './services/itinerary-hotel-ca
     ItineraryManualHotspotConflictService,
     ItineraryRouteHotspotRebuildService,
     ItineraryHotelCancellationService,
+    ItineraryHotelRoomCategoryService,
 
     // existing engines you already had
     HotelEngineService,
