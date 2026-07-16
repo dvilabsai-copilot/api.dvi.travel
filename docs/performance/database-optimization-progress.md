@@ -235,3 +235,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Timing-window formatting, open-24-hours precedence, manual priority projection, duration fields and classification output remain unchanged; only read projection ownership moved.
 - This is not a measured performance improvement: read latency, timing-row fan-out, selectivity, formatting CPU, candidate count and input-assembly latency remain unmeasured.
 - No index or Redis action is proposed; any future optimization must compare route/master/timing query plans and mutable-hours freshness before batching or caching.
+
+## Iteration 81 evidence update
+
+- The manual-hotspot row extraction preserves exclusion-list reads/writes, manual-row lookup predicates, stale-row updates and placeholder creation; no SQL, index, Redis cache or query shape was changed.
+- Duplicate exclusion handling, valid-row reuse, positive-duration checks, conflict handling, placeholder timestamps and user attribution remain unchanged; only persistence ownership moved.
+- This is not a measured performance improvement: exclusion write latency, duplicate rate, valid-row reuse rate, stale-row count, placeholder frequency and transaction duration remain unmeasured.
+- No index or Redis action is proposed; any future optimization must compare row-lifecycle traces and lock/write amplification before batching or caching mutable route state.

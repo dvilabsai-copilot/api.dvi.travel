@@ -314,6 +314,8 @@ The iteration-79 manual-fit candidate-search boundary is a measurement seam for 
 
 The iteration-80 manual-fit candidate-data boundary is a measurement seam for route-hotspot read latency, master read latency, active timing-row fan-out, timing-window formatting CPU, candidate-row count, priority classification CPU and end-to-end input assembly latency. Capture empty-route, manual-only, mixed-priority, open-24-hours, multi-window and missing-master workloads separately before batching reads or caching timing data; preserve active predicates, timing order, UTC labels and candidate fields.
 
+The iteration-81 manual-hotspot row boundary is a measurement seam for exclusion-list read/write latency, duplicate-membership frequency, valid-row reuse rate, stale-row retirement count, placeholder-create frequency and transaction write latency. Capture add-existing, add-new, remove-present, remove-absent, valid-row-reuse, stale-row and conflict-row workloads separately before batching writes or adding cache state; preserve active/deleted predicates, timestamps and row lifecycle semantics.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.

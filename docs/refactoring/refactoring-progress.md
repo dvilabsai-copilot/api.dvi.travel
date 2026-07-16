@@ -2678,3 +2678,33 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Read fan-out, timing-row selectivity, master lookup latency, candidate-row count and timing-format CPU remain unmeasured.
 - Implementation commit: `api.dvi.travel` `c08143f`.
+
+### Cycle 84 - Extract manual-hotspot row persistence
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: route exclusion-list maintenance and manual row lifecycle persistence
+- New files: `src/modules/itineraries/services/itinerary-manual-hotspot-row.service.ts`, `test/itinerary-manual-hotspot-row.test.ts`
+- Workflow: manual hotspot add/remove preparation
+
+#### Change
+
+- Moved exclusion-list add/remove, valid manual-row reuse, stale active-row retirement and placeholder-row creation behind `ItineraryManualHotspotRowService`.
+- Preserved active/deleted predicates, positive-duration checks, conflict handling, placeholder timestamps, user attribution and response fields.
+- Registered the service in `ItinerariesModule` and retained the facade duration callback.
+
+#### Verification
+
+- Manual-hotspot row characterization tests: PASS, 2/2
+- Combined focused backend/timeline suite before the tier: PASS, 180/180
+- Backend build after the tier: PASS
+- Merged-tree comparison: PASS, `5357bb9` tree identical to `3561c51` before this tier
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 6,479 lines after the tier; `ItineraryManualHotspotRowService` is 101 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Exclusion writes, stale-row frequency, placeholder creation frequency and row-persistence latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `a5ac49c`.
