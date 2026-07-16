@@ -40,6 +40,7 @@ import { StaahProviderRowsService } from './services/staah-provider-rows.service
 import { StaahRoomAdmissionService } from './services/staah-room-admission.service';
 import { ItineraryHotelMarginLookupService } from './services/itinerary-hotel-margin-lookup.service';
 import { ItineraryHotelBookingDetailLookupService } from './services/itinerary-hotel-booking-detail-lookup.service';
+import { ItineraryHotelCoordinateLookupService } from './services/itinerary-hotel-coordinate-lookup.service';
 
 /**
  * This service generates dynamic hotel packages from TBO API
@@ -172,6 +173,7 @@ export class ItineraryHotelDetailsTboService {
   private readonly staahRoomAdmissionService = new StaahRoomAdmissionService();
   private readonly hotelMarginLookupService = new ItineraryHotelMarginLookupService();
   private readonly hotelBookingDetailLookupService = new ItineraryHotelBookingDetailLookupService();
+  private readonly hotelCoordinateLookupService = new ItineraryHotelCoordinateLookupService();
 
   private isTboOnlyFetchEnabled(): boolean {
     const raw = String(process.env.HOTEL_FETCH_TBO_ONLY || '').trim().toLowerCase();
@@ -1719,152 +1721,52 @@ export class ItineraryHotelDetailsTboService {
         }),
     });
 
-    // Preload route destination coordinates and hotel coordinates for distance calculation.
-    const routeLocationIds = Array.from(
-      new Set(
-        routes
-          .map((r: any) => Number((r as any).location_id || 0))
-          .filter((id: number) => id > 0),
-      ),
-    );
-
-    const storedLocations = routeLocationIds.length
-      ? await this.prisma.dvi_stored_locations.findMany({
-          where: { location_ID: { in: routeLocationIds }, deleted: 0 },
-          select: {
-            location_ID: true,
-            destination_location_lattitude: true,
-            destination_location_longitude: true,
-          },
-        })
-      : [];
-
-    const routeDestinationCoordsByLocationId = new Map<number, { lat: number; lon: number }>();
-    for (const loc of storedLocations as any[]) {
-      const lat = Number((loc as any).destination_location_lattitude ?? 0);
-      const lon = Number((loc as any).destination_location_longitude ?? 0);
-      if (Number.isFinite(lat) && Number.isFinite(lon) && lat !== 0 && lon !== 0) {
-        routeDestinationCoordsByLocationId.set(Number((loc as any).location_ID), { lat, lon });
-      }
-    }
-
-    const providerCodeSet = new Set<string>();
-    for (const pkg of packages) {
-      for (const h of pkg.hotels) {
-        const provider = String((h as any).provider || 'tbo').trim().toLowerCase();
-        const code = String((h as any).hotelCode || '').trim();
-        if (!code) continue;
-        providerCodeSet.add(`${provider}|${code}`);
-      }
-    }
-
-    const tboCodes = Array.from(providerCodeSet)
-      .filter((k) => k.startsWith('tbo|'))
-      .map((k) => k.slice(4));
-    const resavenueCodes = Array.from(providerCodeSet)
-      .filter((k) => k.startsWith('resavenue|'))
-      .map((k) => k.slice('resavenue|'.length));
-    const hobseCodes = Array.from(providerCodeSet)
-      .filter((k) => k.startsWith('hobse|'))
-      .map((k) => k.slice(6));
-    const axisroomsCodes = Array.from(providerCodeSet)
-      .filter((k) => k.startsWith('axisrooms|'))
-      .map((k) => k.slice('axisrooms|'.length));
-    const axisroomsHotelIds = axisroomsCodes
-      .map((code) => Number(code))
-      .filter((id) => Number.isFinite(id) && id > 0);
-    const staahHotelIds = Array.from(providerCodeSet)
-      .filter((k) => k.startsWith('staah|'))
-      .map((k) => Number(k.slice('staah|'.length)))
-      .filter((id) => Number.isFinite(id) && id > 0);
-
-    const hotelMasters = providerCodeSet.size
-      ? await this.prisma.dvi_hotel.findMany({
-          where: {
-            OR: [
-              ...(tboCodes.length
-                ? [{ tbo_hotel_code: { in: tboCodes } }]
-                : []),
-              ...(resavenueCodes.length
-                ? [{ resavenue_hotel_code: { in: resavenueCodes } }]
-                : []),
-              ...(hobseCodes.length
-                ? [{ hotel_code: { in: hobseCodes } }]
-                : []),
-              ...(axisroomsHotelIds.length
-                ? [{ hotel_id: { in: axisroomsHotelIds } }]
-                : []),
-              ...(staahHotelIds.length
-                ? [{ hotel_id: { in: staahHotelIds } }]
-                : []),
-            ],
-          },
-          select: {
-            hotel_id: true,
-            tbo_hotel_code: true,
-            resavenue_hotel_code: true,
-            hotel_code: true,
-            hotel_latitude: true,
-            hotel_longitude: true,
-            hotel_margin: true,
-            hotel_margin_gst_type: true,
-            hotel_margin_gst_percentage: true,
-          },
-        })
-      : [];
-
-    const hotelCoordsByProviderCode = new Map<string, { lat: number; lon: number }>();
-    const hotelMasterByProviderCode = new Map<string, any>();
-    for (const hm of hotelMasters as any[]) {
-      const lat = Number((hm as any).hotel_latitude ?? 0);
-      const lon = Number((hm as any).hotel_longitude ?? 0);
-      if (!Number.isFinite(lat) || !Number.isFinite(lon) || lat === 0 || lon === 0) {
-        continue;
-      }
-
-      const tboCode = String((hm as any).tbo_hotel_code || '').trim();
-      const resavenueCode = String((hm as any).resavenue_hotel_code || '').trim();
-      const hobseCode = String((hm as any).hotel_code || '').trim();
-      const hotelId = Number((hm as any).hotel_id || 0);
-
-      if (tboCode) hotelCoordsByProviderCode.set(`tbo|${tboCode}`, { lat, lon });
-      if (resavenueCode) hotelCoordsByProviderCode.set(`resavenue|${resavenueCode}`, { lat, lon });
-      if (hobseCode) hotelCoordsByProviderCode.set(`hobse|${hobseCode}`, { lat, lon });
-      if (hotelId > 0) hotelCoordsByProviderCode.set(`axisrooms|${hotelId}`, { lat, lon });
-      if (hotelId > 0) hotelCoordsByProviderCode.set(`staah|${hotelId}`, { lat, lon });
-
-      if (tboCode) hotelMasterByProviderCode.set(`tbo|${tboCode}`, hm);
-      if (resavenueCode) hotelMasterByProviderCode.set(`resavenue|${resavenueCode}`, hm);
-      if (hobseCode) hotelMasterByProviderCode.set(`hobse|${hobseCode}`, hm);
-      if (hotelId > 0) hotelMasterByProviderCode.set(`axisrooms|${hotelId}`, hm);
-      if (hotelId > 0) hotelMasterByProviderCode.set(`staah|${hotelId}`, hm);
-    }
-
-    // Fallback: TBO static master has wider code coverage than dvi_hotel in many environments.
-    if (tboCodes.length > 0) {
-      const tboMasterRows = await this.prisma.tbo_hotel_master.findMany({
-        where: { tbo_hotel_code: { in: tboCodes } },
-        select: {
-          tbo_hotel_code: true,
-          hotel_latitude: true,
-          hotel_longitude: true,
-        },
+    const { routeDestinationCoordsByLocationId, hotelCoordsByProviderCode } =
+      await this.hotelCoordinateLookupService.load({
+        routes,
+        packages,
+        loadStoredLocations: (locationIds) =>
+          this.prisma.dvi_stored_locations.findMany({
+            where: { location_ID: { in: locationIds }, deleted: 0 },
+            select: {
+              location_ID: true,
+              destination_location_lattitude: true,
+              destination_location_longitude: true,
+            },
+          }),
+        loadHotelMasters: ({ tboCodes, resavenueCodes, hobseCodes, axisroomsHotelIds, staahHotelIds }) =>
+          this.prisma.dvi_hotel.findMany({
+            where: {
+              OR: [
+                ...(tboCodes.length ? [{ tbo_hotel_code: { in: tboCodes } }] : []),
+                ...(resavenueCodes.length ? [{ resavenue_hotel_code: { in: resavenueCodes } }] : []),
+                ...(hobseCodes.length ? [{ hotel_code: { in: hobseCodes } }] : []),
+                ...(axisroomsHotelIds.length ? [{ hotel_id: { in: axisroomsHotelIds } }] : []),
+                ...(staahHotelIds.length ? [{ hotel_id: { in: staahHotelIds } }] : []),
+              ],
+            },
+            select: {
+              hotel_id: true,
+              tbo_hotel_code: true,
+              resavenue_hotel_code: true,
+              hotel_code: true,
+              hotel_latitude: true,
+              hotel_longitude: true,
+              hotel_margin: true,
+              hotel_margin_gst_type: true,
+              hotel_margin_gst_percentage: true,
+            },
+          }),
+        loadTboMasters: (tboCodes) =>
+          this.prisma.tbo_hotel_master.findMany({
+            where: { tbo_hotel_code: { in: tboCodes } },
+            select: {
+              tbo_hotel_code: true,
+              hotel_latitude: true,
+              hotel_longitude: true,
+            },
+          }),
       });
-
-      for (const row of tboMasterRows as any[]) {
-        const code = String((row as any).tbo_hotel_code || '').trim();
-        const lat = Number((row as any).hotel_latitude ?? 0);
-        const lon = Number((row as any).hotel_longitude ?? 0);
-        if (!code || !Number.isFinite(lat) || !Number.isFinite(lon) || lat === 0 || lon === 0) {
-          continue;
-        }
-
-        const key = `tbo|${code}`;
-        if (!hotelCoordsByProviderCode.has(key)) {
-          hotelCoordsByProviderCode.set(key, { lat, lon });
-        }
-      }
-    }
 
     // STAAH confirmed booking override map (latest row per route)
     const confirmedStaahRows = await (this.prisma as any).staah_hotel_booking_confirmation.findMany({
