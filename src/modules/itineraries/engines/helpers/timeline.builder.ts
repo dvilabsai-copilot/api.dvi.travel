@@ -60,6 +60,7 @@ import { TimelineCandidateReorderingService } from './timeline-candidate-reorder
 import { TimelineDay1CandidateGateService } from './timeline-day1-candidate-gate.service';
 import { TimelineDay1CutoffMasterService } from './timeline-day1-cutoff-master.service';
 import { TimelineDay1TravelProjectionService } from './timeline-day1-travel-projection.service';
+import { TimelineInitialRefreshmentService } from './timeline-initial-refreshment.service';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -223,6 +224,7 @@ export class TimelineBuilder {
   private readonly day1CandidateGateService = new TimelineDay1CandidateGateService();
   private readonly day1CutoffMasterService = new TimelineDay1CutoffMasterService();
   private readonly day1TravelProjectionService = new TimelineDay1TravelProjectionService();
+  private readonly initialRefreshmentService = new TimelineInitialRefreshmentService();
   private readonly candidatePolicyService = new TimelineCandidatePolicyService(
     this.operatingHoursService,
     this.slotPolicyService,
@@ -778,72 +780,25 @@ export class TimelineBuilder {
 
       let didHotelFirstCheckin = false;
 
-      // 1) ADD REFRESHMENT BREAK (PHP line 969-993)
-      // PHP adds 1-hour refreshment at route start EXCEPT for last route
-      // Last route starts directly with hotspots (order 2) and skips refreshment ROW
-      // BUT PHP still advances currentTime by buffer amount for last route (without creating row)
-      if (!isLastRoute && !skipInitialRefreshmentForImmediateHotelCheckin) {
-        const globalSettings = await (tx as any).dvi_global_settings?.findFirst({
-          where: { status: 1, deleted: 0 },
-          select: { itinerary_common_buffer_time: true },
-        });
-        
-        const bufferTime = enforceStrictDay1EarlyArrivalDeferredFlow
-          ? '01:00:00'
-          : (globalSettings?.itinerary_common_buffer_time
-            ? (globalSettings.itinerary_common_buffer_time instanceof Date
-              ? `${String(globalSettings.itinerary_common_buffer_time.getUTCHours()).padStart(2, '0')}:${String(globalSettings.itinerary_common_buffer_time.getUTCMinutes()).padStart(2, '0')}:${String(globalSettings.itinerary_common_buffer_time.getUTCSeconds()).padStart(2, '0')}`
-              : String(globalSettings.itinerary_common_buffer_time))
-            : '01:00:00');
-        
-        const bufferSeconds = timeToSeconds(bufferTime);
-        const refreshmentEndTime = enforceStrictDay1EarlyArrivalDeferredFlow && firstSightseeingMovementTime
-          ? firstSightseeingMovementTime
-          : addSeconds(currentTime, bufferSeconds);
-        const refreshmentEndSeconds = timeToSeconds(refreshmentEndTime);
-        
-        // Only add refreshment if it fits within route time
-        if (refreshmentEndSeconds <= routeEndSeconds) {
-          // PHP line 978: refreshment fields - use TimeConverter to match other builders
-          hotspotRows.push({
-            itinerary_plan_ID: planId,
-            itinerary_route_ID: route.itinerary_route_ID,
-            item_type: 1,
-            hotspot_order: order++,
-            hotspot_traveling_time: TimeConverter.toDate(bufferTime),
-            hotspot_start_time: TimeConverter.toDate(currentTime),
-            hotspot_end_time: TimeConverter.toDate(refreshmentEndTime),
-            createdby: createdByUserId,
-            status: 1,
-            deleted: 0,
-          });
-          
-          // Update current time after refreshment
-          currentTime = refreshmentEndTime;
-
-          if (enforceStrictDay1EarlyArrivalDeferredFlow && firstSightseeingMovementTime) {
-            // Hard policy rule: first sightseeing movement must start exactly at 09:00.
-            currentTime = firstSightseeingMovementTime;
-          }
-        }
-      } else if (isLastRoute) {
-        // PHP BEHAVIOR: Last route doesn't create refreshment ROW but still advances time
-        if (!isTransferOnlyLastRouteByReportDeadline) {
-          const globalSettings = await (tx as any).dvi_global_settings?.findFirst({
-            where: { status: 1, deleted: 0 },
-            select: { itinerary_common_buffer_time: true },
-          });
-          
-          const bufferTime = globalSettings?.itinerary_common_buffer_time
-            ? (globalSettings.itinerary_common_buffer_time instanceof Date
-              ? `${String(globalSettings.itinerary_common_buffer_time.getUTCHours()).padStart(2, '0')}:${String(globalSettings.itinerary_common_buffer_time.getUTCMinutes()).padStart(2, '0')}:${String(globalSettings.itinerary_common_buffer_time.getUTCSeconds()).padStart(2, '0')}`  
-              : String(globalSettings.itinerary_common_buffer_time))
-            : '01:00:00';
-          
-          const bufferSeconds = timeToSeconds(bufferTime);
-          currentTime = addSeconds(currentTime, bufferSeconds);
-        }
-      }
+      const initialRefreshment = await this.initialRefreshmentService.apply({
+        tx,
+        planId,
+        route,
+        isLastRoute,
+        skipInitialRefreshmentForImmediateHotelCheckin,
+        enforceStrictDay1EarlyArrivalDeferredFlow,
+        firstSightseeingMovementTime,
+        isTransferOnlyLastRouteByReportDeadline,
+        currentTime,
+        routeEndSeconds,
+        order,
+        createdByUserId,
+        timeToSeconds,
+        addSeconds,
+      });
+      hotspotRows.push(...initialRefreshment.rows);
+      currentTime = initialRefreshment.currentTime;
+      order = initialRefreshment.order;
 
       const hotelFirstInsertion = await this.hotelFirstInsertionService.insert({
         tx,
