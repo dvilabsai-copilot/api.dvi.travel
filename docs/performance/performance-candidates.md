@@ -414,6 +414,8 @@ The iteration-129 TBO price-package boundary is a measurement seam for route cou
 
 The iteration-130 TBO city-code boundary is a measurement seam for unique-destination cardinality, `dvi_cities` query latency, returned-city row count, alias-hit rate, exact/prefix fallback frequency, map-construction CPU and end-to-end provider-search response latency. Capture empty, exact-name, alias, parenthetical, comma-qualified, duplicate-destination, missing-code and large-route workloads separately before adding a city lookup index or caching reference data; preserve status/id ordering, mutable city-code freshness and destination fallback behavior. No index addition/removal or Redis cache is justified until the query plan and provider traces establish the measured winner.
 
+The iteration-131 HOBSE city-code boundary is a measurement seam for unique-destination cardinality, HOBSE city-row count, exact-hit rate, comma-qualified prefix-fallback rate, map-construction CPU and end-to-end HOBSE provider-search response latency. Capture empty, exact-name, comma-qualified, duplicate-destination, missing-code and large-route workloads separately before adding a city lookup index or caching mutable provider mappings; preserve destination-keyed output, city freshness and provider fallback behavior. No index addition/removal or Redis cache is justified until the HOBSE query plan and provider traces establish the measured winner.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.

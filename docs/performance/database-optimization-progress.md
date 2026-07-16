@@ -585,3 +585,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - The Prisma query remains in the existing facade and the tier only moves normalization/map construction behind a service boundary.
 - This is not a measured database performance improvement: unique-destination cardinality, city query latency, returned-row volume, alias/fallback frequency and provider-search response latency remain unmeasured.
 - No index addition/removal or Redis action is proposed; future work should capture the `dvi_cities` query plan and city-code hit/miss traces before indexing or caching reference data.
+
+## Iteration 131 evidence update
+
+- The HOBSE city-code extraction preserves the existing city read, exact lookup, comma-qualified prefix fallback, destination-keyed mapping and missing-code warning; no SQL predicate, index, Redis cache or response shape changed.
+- The Prisma read remains in the TBO facade and the tier only moves HOBSE normalization/map construction behind the shared city-code service.
+- This is not a measured database performance improvement: HOBSE destination cardinality, city-row volume, lookup/fallback frequency and provider-search response latency remain unmeasured.
+- No index addition/removal or Redis action is proposed; future work should capture the HOBSE `dvi_cities` query plan and provider hit/miss traces before indexing or caching mappings.

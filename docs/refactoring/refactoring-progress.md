@@ -4102,3 +4102,31 @@
 - `itinerary-hotel-details-tbo.service.ts` measured at 3,531 lines after the tier; `itinerary-hotel-city-code.service.ts` is 106 lines.
 - City lookup latency, destination cardinality, alias-hit rate, prefix-fallback rate and provider-search response latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `d9bafae`.
+
+### Cycle 134 - Extract HOBSE city-code mapping
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itinerary-hotel-details-tbo.service.ts`
+- Extracted responsibility: HOBSE destination normalization, exact/comma-qualified prefix lookup and missing-code handling
+- Updated files: `src/modules/itineraries/services/itinerary-hotel-city-code.service.ts`, `test/itinerary-hotel-city-code.test.ts`
+- Workflow: HOBSE provider-search destination preparation
+
+#### Change
+
+- Moved HOBSE city-code mapping into the existing `ItineraryHotelCityCodeService` while preserving one city read, exact lookup, comma-qualified prefix fallback, destination-keyed output and warnings.
+- The TBO facade remains the compatibility boundary and supplies the Prisma loader and logging callbacks; HOBSE search payloads and response DTOs are unchanged.
+- No SQL predicate, index, Redis cache, API route, DTO or response contract changed.
+
+#### Verification
+
+- City-code characterization tests: PASS, 3/3
+- Itinerary characterization collection: PASS, 189/189
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itinerary-hotel-details-tbo.service.ts` measured at 3,500 lines after the tier; `itinerary-hotel-city-code.service.ts` is 157 lines.
+- HOBSE city lookup latency, destination cardinality, exact/prefix hit rate and provider-search response latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `fa7a6d6`.
