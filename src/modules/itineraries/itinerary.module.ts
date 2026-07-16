@@ -109,6 +109,7 @@ import { ItineraryTransportFormattingService } from './services/itinerary-transp
 import { ItineraryActivityPricingService } from './services/itinerary-activity-pricing.service';
 import { ItineraryActivityTimingPolicyService } from './services/itinerary-activity-timing-policy.service';
 import { ItineraryDetailsTimelinePresentationService } from './services/itinerary-details-timeline-presentation.service';
+import { ItineraryHotelDetailsCacheService } from './services/itinerary-hotel-details-cache.service';
 
 @Module({
   imports: [HotelsModule],
@@ -197,6 +198,7 @@ import { ItineraryDetailsTimelinePresentationService } from './services/itinerar
     ItineraryActivityPricingService,
     ItineraryActivityTimingPolicyService,
     ItineraryDetailsTimelinePresentationService,
+    ItineraryHotelDetailsCacheService,
 
     // existing engines you already had
     HotelEngineService,

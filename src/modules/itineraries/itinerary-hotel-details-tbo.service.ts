@@ -23,6 +23,7 @@ import {
   calculateStaahOccupancyAmount,
   type StaahPricingPaxInput,
 } from './helpers/staah-occupancy-pricing';
+import { ItineraryHotelDetailsCacheService } from './services/itinerary-hotel-details-cache.service';
 
 /**
  * This service generates dynamic hotel packages from TBO API
@@ -58,10 +59,6 @@ export class ItineraryHotelDetailsTboService {
 
     return { propertyId, roomId, rateId };
   }
-
-  private static readonly HOTEL_DETAILS_CACHE_TTL_MS = 5 * 60 * 1000;
-  private static readonly HOTEL_ROOM_DETAILS_CACHE_TTL_MS = 5 * 60 * 1000;
-  private static readonly MAX_CACHE_ENTRIES = 200;
 
     /**
      * Fetch hotels for all routes, retrying ONCE if any provider/system failure (null) is detected.
@@ -140,18 +137,7 @@ export class ItineraryHotelDetailsTboService {
 
   private static readonly ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
-  // Cache for hotel details endpoint response (key = quoteId)
-  private hotelDetailsCache = new Map<string, {
-    data: ItineraryHotelDetailsResponseDto;
-    timestamp: number;
-  }>();
-  
-  // Cache structure: key = "quoteId:routeId" or "quoteId" (no route filter)
-  // Stores the entire response to avoid re-fetching TBO data
-  private hotelRoomDetailsCache = new Map<string, {
-    data: ItineraryHotelRoomDetailsResponseDto;
-    timestamp: number;
-  }>();
+  private readonly hotelDetailsCacheService = new ItineraryHotelDetailsCacheService();
 
   private isTboOnlyFetchEnabled(): boolean {
     const raw = String(process.env.HOTEL_FETCH_TBO_ONLY || '').trim().toLowerCase();
@@ -3824,31 +3810,11 @@ export class ItineraryHotelDetailsTboService {
    * Generate cache key for hotel room details
    * Format: "quoteId" or "quoteId:routeId" if filtered
    */
-  private getCacheKey(quoteId: string, routeId?: number): string {
-    if (routeId) {
-      return `${quoteId}:${routeId}`;
-    }
-    return quoteId;
-  }
-
   /**
    * Get cached hotel room details if available
    */
   private getCachedRoomDetails(quoteId: string, routeId?: number): ItineraryHotelRoomDetailsResponseDto | null {
-    const cacheKey = this.getCacheKey(quoteId, routeId);
-    const cached = this.hotelRoomDetailsCache.get(cacheKey);
-    
-    if (cached) {
-      if (this.isCacheExpired(cached.timestamp, ItineraryHotelDetailsTboService.HOTEL_ROOM_DETAILS_CACHE_TTL_MS)) {
-        this.hotelRoomDetailsCache.delete(cacheKey);
-        this.logger.debug(`ðŸ’¾ [CACHE EXPIRED] Removed stale room cache for ${cacheKey}`);
-        return null;
-      }
-      this.logger.log(`ðŸ’¾ [CACHE HIT] Using cached data for ${cacheKey}`);
-      return cached.data;
-    }
-    
-    return null;
+    return this.hotelDetailsCacheService.getRoomDetails(quoteId, routeId);
   }
 
   /**
@@ -3859,65 +3825,18 @@ export class ItineraryHotelDetailsTboService {
     data: ItineraryHotelRoomDetailsResponseDto,
     routeId?: number,
   ): void {
-    const cacheKey = this.getCacheKey(quoteId, routeId);
-    this.evictOldestIfNeeded(this.hotelRoomDetailsCache);
-    this.hotelRoomDetailsCache.set(cacheKey, {
-      data,
-      timestamp: Date.now(),
-    });
-    this.logger.log(`ðŸ’¾ [CACHE SET] Cached data for ${cacheKey}`);
+    this.hotelDetailsCacheService.setRoomDetails(quoteId, data, routeId);
   }
 
   private getCachedHotelDetails(quoteId: string): ItineraryHotelDetailsResponseDto | null {
-    const cached = this.hotelDetailsCache.get(quoteId);
-    if (!cached) {
-      return null;
-    }
-
-    if (this.isCacheExpired(cached.timestamp, ItineraryHotelDetailsTboService.HOTEL_DETAILS_CACHE_TTL_MS)) {
-      this.hotelDetailsCache.delete(quoteId);
-      this.logger.debug(`ðŸ’¾ [CACHE EXPIRED] Removed stale hotel details cache for ${quoteId}`);
-      return null;
-    }
-
-    this.logger.log(`ðŸ’¾ [CACHE HIT] Hotel details from cache for ${quoteId}`);
-    return cached.data;
+    return this.hotelDetailsCacheService.getHotelDetails(quoteId);
   }
 
   private setCachedHotelDetails(
     quoteId: string,
     data: ItineraryHotelDetailsResponseDto,
   ): void {
-    this.evictOldestIfNeeded(this.hotelDetailsCache);
-    this.hotelDetailsCache.set(quoteId, {
-      data,
-      timestamp: Date.now(),
-    });
-    this.logger.log(`ðŸ’¾ [CACHE SET] Hotel details cached for ${quoteId}`);
-  }
-
-  private isCacheExpired(timestamp: number, ttlMs: number): boolean {
-    return Date.now() - timestamp > ttlMs;
-  }
-
-  private evictOldestIfNeeded<T extends { timestamp: number }>(cache: Map<string, T>): void {
-    if (cache.size < ItineraryHotelDetailsTboService.MAX_CACHE_ENTRIES) {
-      return;
-    }
-
-    let oldestKey: string | null = null;
-    let oldestTs = Number.MAX_SAFE_INTEGER;
-
-    cache.forEach((value, key) => {
-      if (value.timestamp < oldestTs) {
-        oldestTs = value.timestamp;
-        oldestKey = key;
-      }
-    });
-
-    if (oldestKey) {
-      cache.delete(oldestKey);
-    }
+    this.hotelDetailsCacheService.setHotelDetails(quoteId, data);
   }
 
   /**
@@ -3925,36 +3844,14 @@ export class ItineraryHotelDetailsTboService {
    * Clears both general cache (quoteId) and route-specific caches (quoteId:routeId)
    */
   clearCacheForQuote(quoteId: string): void {
-    const keysToDelete: string[] = [];
-
-    this.hotelDetailsCache.delete(quoteId);
-    
-    for (const key of this.hotelRoomDetailsCache.keys()) {
-      if (key.startsWith(`${quoteId}:`)) { // Matches "quoteId:routeId"
-        keysToDelete.push(key);
-      }
-    }
-    
-    // Also delete the base key
-    keysToDelete.push(quoteId);
-    
-    for (const key of keysToDelete) {
-      this.hotelRoomDetailsCache.delete(key);
-      this.logger.log(`ðŸ—‘ï¸  [CACHE CLEARED] Removed cache for ${key}`);
-    }
+    this.hotelDetailsCacheService.clearForQuote(quoteId);
   }
 
   /**
    * Get current cache size and stats (for debugging)
    */
   getCacheStats(): { size: number; entries: string[] } {
-    const detailEntries = Array.from(this.hotelDetailsCache.keys()).map((k) => `details:${k}`);
-    const roomEntries = Array.from(this.hotelRoomDetailsCache.keys()).map((k) => `rooms:${k}`);
-
-    return {
-      size: this.hotelDetailsCache.size + this.hotelRoomDetailsCache.size,
-      entries: [...detailEntries, ...roomEntries],
-    };
+    return this.hotelDetailsCacheService.getStats();
   }
 }
 
