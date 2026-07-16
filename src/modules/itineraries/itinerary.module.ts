@@ -75,6 +75,7 @@ import { ItineraryAdaptiveManualHotspotInsertionService } from './services/itine
 import { ItineraryMatrixRescheduledPreviewService } from './services/itinerary-matrix-rescheduled-preview.service';
 import { ItineraryConfirmedItineraryDetailsService } from './services/itinerary-confirmed-itinerary-details.service';
 import { ItineraryRouteTimingService } from './services/itinerary-route-timing.service';
+import { ItineraryManualFitTravelReplicaService } from './services/itinerary-manual-fit-travel-replica.service';
 
 @Module({
   imports: [HotelsModule],
@@ -129,6 +130,7 @@ import { ItineraryRouteTimingService } from './services/itinerary-route-timing.s
     ItineraryMatrixRescheduledPreviewService,
     ItineraryConfirmedItineraryDetailsService,
     ItineraryRouteTimingService,
+    ItineraryManualFitTravelReplicaService,
 
     // existing engines you already had
     HotelEngineService,
