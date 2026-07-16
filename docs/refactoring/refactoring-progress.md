@@ -1594,3 +1594,32 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - OSRM latency/failure rate, endpoint query count, fallback frequency, projection CPU, map-table row churn and latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `f578f07`.
+
+### Cycle 47 - Extract timeline candidate and route policy
+
+#### Scope
+
+- Original file: `src/modules/itineraries/engines/helpers/timeline.builder.ts`
+- Extracted responsibility: timing-window adapters, slot decisions, carry-forward ordering/merge, route-chain policy, rejection classification and candidate-evaluation reporting
+- New files: `src/modules/itineraries/engines/helpers/timeline-candidate-policy.service.ts`, `test/timeline-candidate-policy.test.ts`
+- Workflow: timeline candidate prefiltering, scheduling policy and route rejection reporting
+
+#### Change
+
+- Moved the contiguous candidate/timing/route policy block behind `TimelineCandidatePolicyService`.
+- Preserved operating-hours and slot behavior, closed-day visit filtering, carry-forward priority ordering, route-chain matching, route-end buffers and rejection summaries.
+- Registered the new policy service inside `TimelineBuilder` and retained facade adapters for the main orchestrator.
+
+#### Verification
+
+- Timeline candidate-policy characterization test: PASS, 1/1
+- Combined focused backend/timeline suite: PASS, 95/95
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `timeline.builder.ts` measured at 8,826 lines after the tier; `TimelineCandidatePolicyService` is 468 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Candidate volume, policy CPU, trace writes, route rebuild rows and latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `104da30`.
