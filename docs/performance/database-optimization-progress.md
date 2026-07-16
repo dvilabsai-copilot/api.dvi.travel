@@ -347,3 +347,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Provider request construction, response projection and explicit cache invalidation entry points remain unchanged; Redis was not introduced.
 - This is not a measured performance improvement: hit rate, expiry rate, eviction frequency, provider-call reduction and hotel response latency remain unmeasured.
 - No index addition/removal or Redis action is proposed until cache/provider traces justify a measured change.
+
+## Iteration 97 evidence update
+
+- The frontend hotel-list normalization extraction changes only pure presentation ownership; no backend SQL, index, Redis cache, API request or response shape changed.
+- Meal-plan precedence, amount rounding, date locale, inclusion-list parsing, star-category parsing and supplier fallback behavior remain unchanged.
+- This is not a measured database performance improvement: component render time, normalization CPU, bundle contribution and supplier-row projection cost remain unmeasured.
+- No index or Redis action is proposed; future work should profile HotelList render boundaries and bundle composition before memoization or additional UI extraction.

@@ -3151,3 +3151,30 @@
 - No query predicate, index, Redis, DTO, provider or response contract changed.
 - Cache hit rate, eviction frequency, invalidation frequency and provider-call reduction remain unmeasured.
 - Implementation commit: `api.dvi.travel` `8f6a025`.
+
+### Cycle 100 - Extract frontend hotel-list normalization policy
+
+#### Scope
+
+- Original file: `dvi_frontend/src/pages/HotelList.tsx`
+- Extracted responsibility: meal-plan normalization, money/date formatting, supplier inclusion-list cleanup and hotel-star category normalization
+- New files: `dvi_frontend/src/pages/hotel-list-normalization.ts`, `dvi_frontend/src/test/hotel-list-normalization.test.ts`
+- Workflow: HotelList supplier/display projection and room-rate presentation
+
+#### Change
+
+- Moved pure parsing and formatting rules behind a small utility module while retaining the existing component-level `MealPlanCell` and all selection/voucher state ownership in `HotelList`.
+- Preserved meal-plan fallback precedence, amount rounding, locale date formatting, HTML stripping, JSON/list parsing, duplicate removal and current star-category parsing behavior.
+- No API, request, response, state-transition or provider contract changed.
+
+#### Verification
+
+- Hotel-list normalization characterization tests: PASS, 4/4
+- Frontend production build: PASS, 3,677 modules transformed
+- `git diff --check`: PASS (pre-existing generated report warning only)
+
+#### Result
+
+- `HotelList.tsx` measured at 3,586 lines after the tier; `hotel-list-normalization.ts` is 155 lines.
+- Build warnings retained for stale Browserslist data, large chunks, ambiguous Tailwind utility and mixed dynamic/static imports; none are caused by this extraction.
+- Implementation commit: `dvi_frontend` `5841480`.

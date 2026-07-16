@@ -346,6 +346,8 @@ The iteration-95 itinerary-details timeline-presentation boundary is a measureme
 
 The iteration-96 TBO hotel-details cache boundary is a measurement seam for cache hit rate, miss rate, expiry frequency, bounded-eviction frequency, quote invalidation frequency, room/detail key cardinality, provider-call reduction and end-to-end hotel response latency. Capture base-key, route-key, expired, invalidated, high-cardinality and provider-failure workloads separately before changing TTLs or adding Redis; preserve mutable provider freshness and explicit invalidation behavior. No database index addition/removal is justified by this tier, and Redis remains unproposed until in-memory hit/miss and provider-latency traces establish the measured winner.
 
+The iteration-97 frontend hotel-list normalization boundary is a measurement seam for meal-plan parsing CPU, supplier inclusion-list parsing cost, star-category normalization frequency, currency/date formatting CPU, HotelList render time and bundle contribution. Capture raw-code, descriptive-plan, malformed-list, JSON-list, high-inclusion and large-room-rate workloads separately before memoizing values or changing component boundaries; preserve current fallback precedence, locale output and mutable supplier display freshness. No database index addition/removal or Redis cache is justified because this tier is pure frontend presentation ownership with no server query change.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.
