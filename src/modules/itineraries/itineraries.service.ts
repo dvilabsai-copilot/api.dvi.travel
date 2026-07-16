@@ -884,6 +884,8 @@ export class ItinerariesService {
       getOsrmRouteGeometry: (...args) => (this.getOsrmRouteGeometry as any)(...args),
       minutesRangeToTimeString: (...args) => (this.minutesRangeToTimeString as any)(...args),
       parseSegmentEndMinutes: (...args) => (this.parseSegmentEndMinutes as any)(...args),
+      parseSegmentStartMinutes: (...args) => (this.parseSegmentStartMinutes as any)(...args),
+      getPreviewRowDurationMinutes: (...args) => (this.getPreviewRowDurationMinutes as any)(...args),
       resolveRouteSourceEndpoint: (...args) => (this.resolveRouteSourceEndpoint as any)(...args),
       resolveSavedRuleHotspotToRouteHotelLeg: (...args) => (this.resolveSavedRuleHotspotToRouteHotelLeg as any)(...args),
     });
@@ -3176,185 +3178,28 @@ private getGuideSlotLabel(slotId: number): string {
       destinationCity,
     };
   }
-
-  private extractPreviewCheckinHotelName(row: any): string {
-    const explicit = String(
-      row?.hotelName ||
-      row?.toName ||
-      row?.to ||
-      '',
-    ).trim();
-    if (explicit) return explicit;
-
-    const text = String(row?.text || row?.name || '').trim();
-    const match = text.match(/check-?in\s+(?:to|at)\s+(.+)/i);
-    return String(match?.[1] || '').trim();
+  private extractPreviewCheckinHotelName(...args: any[]): string {
+    return (this.manualFitTravelReplicaService.extractPreviewCheckinHotelName as any)(...args);
   }
 
-  private normalizeManualFitTravelReplicaLabel(value: unknown): string {
-    return String(value || '')
-      .trim()
-      .toLowerCase()
-      .replace(/^travel(?:ling)?\s+to\s+/i, '')
-      .replace(/^travel(?:ling)?\s+from\s+/i, '')
-      .replace(/\s+/g, ' ');
+  private normalizeManualFitTravelReplicaLabel(...args: any[]): string {
+    return (this.manualFitTravelReplicaService.normalizeManualFitTravelReplicaLabel as any)(...args);
   }
 
-  private parseManualFitTravelReplicaDistanceKm(value: unknown): number | null {
-    if (value == null) return null;
-
-    const numeric = Number(value);
-    if (Number.isFinite(numeric) && numeric > 0) {
-      return numeric;
-    }
-
-    const raw = String(value || '').trim();
-    if (!raw) return null;
-
-    const match = raw.match(/(\d+(?:\.\d+)?)/);
-    if (!match) return null;
-
-    const parsed = Number(match[1]);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  private parseManualFitTravelReplicaDistanceKm(...args: any[]): number | null {
+    return (this.manualFitTravelReplicaService.parseManualFitTravelReplicaDistanceKm as any)(...args);
   }
 
-  private getManualFitTravelReplicaDurationMinutes(row: any): number | null {
-    const direct = Number(
-      row?.matrixDurationMin ||
-      row?.durationMinutes ||
-      row?.duration_minutes ||
-      row?.travelDurationMinutes ||
-      0,
-    );
-    if (Number.isFinite(direct) && direct > 0) {
-      return Math.max(1, Math.round(direct));
-    }
-
-    const previewMinutes = Number(this.getPreviewRowDurationMinutes(row) || 0);
-    if (Number.isFinite(previewMinutes) && previewMinutes > 0) {
-      return Math.max(1, Math.round(previewMinutes));
-    }
-
-    const startMinutes = this.parseSegmentStartMinutes(row);
-    const endMinutes = this.parseSegmentEndMinutes(row);
-    if (startMinutes !== null && endMinutes !== null && endMinutes > startMinutes) {
-      return Math.max(1, endMinutes - startMinutes);
-    }
-
-    return null;
+  private getManualFitTravelReplicaDurationMinutes(...args: any[]): number | null {
+    return (this.manualFitTravelReplicaService.getManualFitTravelReplicaDurationMinutes as any)(...args);
   }
 
-  private buildManualFitMainTimelineTravelReplicaMap(timeline: any[]): Map<string, any> {
-    const rows = Array.isArray(timeline) ? timeline : [];
-    const map = new Map<string, any>();
-
-    const isAttractionRow = (row: any): boolean => {
-      const type = String(row?.type || '').toLowerCase();
-      return type === 'attraction' || Number(row?.item_type || 0) === 4;
-    };
-
-    const isTravelRow = (row: any): boolean => {
-      const type = String(row?.type || '').toLowerCase();
-      return type === 'travel' || Number(row?.item_type || 0) === 3 || Number(row?.item_type || 0) === 5;
-    };
-
-    const getHotspotId = (row: any): number =>
-      Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || row?.hotspot_id || 0);
-
-    const getLabel = (row: any): string =>
-      String(row?.text || row?.name || row?.title || row?.hotspot_name || '').trim();
-
-    const addKey = (key: string, row: any) => {
-      if (!key || map.has(key)) return;
-      map.set(key, row);
-    };
-
-    for (let index = 0; index < rows.length; index += 1) {
-      const row = rows[index];
-      if (!isTravelRow(row)) continue;
-
-      const explicitFromId = Number(row?.fromHotspotId || row?.from_hotspot_id || 0);
-      const explicitToId = Number(row?.toHotspotId || row?.to_hotspot_id || 0);
-      const explicitFromLabel = String(row?.fromName || row?.from || row?.displayFromName || '').trim();
-      const explicitToLabel = String(row?.toName || row?.to || row?.displayToName || '').trim();
-
-      let previousAttraction: any | null = null;
-      for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
-        if (isAttractionRow(rows[cursor])) {
-          previousAttraction = rows[cursor];
-          break;
-        }
-      }
-
-      let nextAttraction: any | null = null;
-      for (let cursor = index + 1; cursor < rows.length; cursor += 1) {
-        if (isAttractionRow(rows[cursor])) {
-          nextAttraction = rows[cursor];
-          break;
-        }
-      }
-
-      const sequenceFromId = getHotspotId(previousAttraction);
-      const sequenceToId = getHotspotId(nextAttraction);
-      const sequenceFromLabel = getLabel(previousAttraction);
-      const sequenceToLabel = getLabel(nextAttraction);
-
-      const fromLabel = explicitFromLabel || sequenceFromLabel;
-      const toLabel = explicitToLabel || sequenceToLabel;
-      const normalizedFromLabel = this.normalizeManualFitTravelReplicaLabel(fromLabel);
-      const normalizedToLabel = this.normalizeManualFitTravelReplicaLabel(toLabel);
-
-      if (explicitFromId > 0 && explicitToId > 0) {
-        addKey(`id:${explicitFromId}->${explicitToId}`, row);
-      }
-      if (sequenceFromId > 0 && sequenceToId > 0) {
-        addKey(`id:${sequenceFromId}->${sequenceToId}`, row);
-      }
-      if (normalizedFromLabel && normalizedToLabel) {
-        addKey(`label:${normalizedFromLabel}->${normalizedToLabel}`, row);
-      }
-      if (explicitToId > 0) {
-        addKey(`to:${explicitToId}`, row);
-      }
-      if (sequenceToId > 0) {
-        addKey(`to:${sequenceToId}`, row);
-      }
-    }
-
-    return map;
+  private buildManualFitMainTimelineTravelReplicaMap(...args: any[]): Map<string, any> {
+    return (this.manualFitTravelReplicaService.buildManualFitMainTimelineTravelReplicaMap as any)(...args);
   }
 
-  private findManualFitMainTimelineTravelReplica(
-    replicaMap: Map<string, any>,
-    params: {
-      fromHotspotId?: number | null;
-      toHotspotId?: number | null;
-      fromName?: string | null;
-      toName?: string | null;
-    },
-  ): any | null {
-    const keys: string[] = [];
-    const fromHotspotId = Number(params.fromHotspotId || 0);
-    const toHotspotId = Number(params.toHotspotId || 0);
-    const fromName = this.normalizeManualFitTravelReplicaLabel(params.fromName);
-    const toName = this.normalizeManualFitTravelReplicaLabel(params.toName);
-
-    if (fromHotspotId > 0 && toHotspotId > 0) {
-      keys.push(`id:${fromHotspotId}->${toHotspotId}`);
-    }
-    if (fromName && toName) {
-      keys.push(`label:${fromName}->${toName}`);
-    }
-    if (toHotspotId > 0 && fromHotspotId <= 0 && !fromName) {
-      keys.push(`to:${toHotspotId}`);
-    }
-
-    for (const key of keys) {
-      const row = replicaMap.get(key);
-      if (row) return row;
-    }
-
-    return null;
+  private findManualFitMainTimelineTravelReplica(...args: any[]): any {
+    return (this.manualFitTravelReplicaService.findManualFitMainTimelineTravelReplica as any)(...args);
   }
 
   private async resolveRouteSourceEndpoint(...args: any[]) {

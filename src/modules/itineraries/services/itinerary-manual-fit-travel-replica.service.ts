@@ -13,6 +13,18 @@ export class ItineraryManualFitTravelReplicaService {
     this.callbacks = { ...this.callbacks, ...callbacks };
   }
 
+  private getPreviewRowDurationMinutes(row: any): number | null {
+    return this.callbacks.getPreviewRowDurationMinutes?.(row) ?? null;
+  }
+
+  private parseSegmentStartMinutes(segment: any): number | null {
+    return this.callbacks.parseSegmentStartMinutes?.(segment) ?? null;
+  }
+
+  private parseSegmentEndMinutes(segment: any): number | null {
+    return this.callbacks.parseSegmentEndMinutes?.(segment) ?? null;
+  }
+
   public buildManualFitTravelReplicaDisplayFields(
     sourceRow: any,
     durationMin: number,
@@ -513,6 +525,187 @@ export class ItineraryManualFitTravelReplicaService {
     const route = await this.callbacks.getOsrmRouteGeometry(fromLat, fromLng, toLat, toLng);
     const distanceKm = Number(route?.distanceKm);
     return Number.isFinite(distanceKm) && distanceKm >= 0 ? distanceKm : null;
+  }
+
+
+  public extractPreviewCheckinHotelName(row: any): string {
+    const explicit = String(
+      row?.hotelName ||
+      row?.toName ||
+      row?.to ||
+      '',
+    ).trim();
+    if (explicit) return explicit;
+
+    const text = String(row?.text || row?.name || '').trim();
+    const match = text.match(/check-?in\s+(?:to|at)\s+(.+)/i);
+    return String(match?.[1] || '').trim();
+  }
+
+  public normalizeManualFitTravelReplicaLabel(value: unknown): string {
+    return String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/^travel(?:ling)?\s+to\s+/i, '')
+      .replace(/^travel(?:ling)?\s+from\s+/i, '')
+      .replace(/\s+/g, ' ');
+  }
+
+  public parseManualFitTravelReplicaDistanceKm(value: unknown): number | null {
+    if (value == null) return null;
+
+    const numeric = Number(value);
+    if (Number.isFinite(numeric) && numeric > 0) {
+      return numeric;
+    }
+
+    const raw = String(value || '').trim();
+    if (!raw) return null;
+
+    const match = raw.match(/(\d+(?:\.\d+)?)/);
+    if (!match) return null;
+
+    const parsed = Number(match[1]);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  }
+
+  public getManualFitTravelReplicaDurationMinutes(row: any): number | null {
+    const direct = Number(
+      row?.matrixDurationMin ||
+      row?.durationMinutes ||
+      row?.duration_minutes ||
+      row?.travelDurationMinutes ||
+      0,
+    );
+    if (Number.isFinite(direct) && direct > 0) {
+      return Math.max(1, Math.round(direct));
+    }
+
+    const previewMinutes = Number(this.getPreviewRowDurationMinutes(row) || 0);
+    if (Number.isFinite(previewMinutes) && previewMinutes > 0) {
+      return Math.max(1, Math.round(previewMinutes));
+    }
+
+    const startMinutes = this.parseSegmentStartMinutes(row);
+    const endMinutes = this.parseSegmentEndMinutes(row);
+    if (startMinutes !== null && endMinutes !== null && endMinutes > startMinutes) {
+      return Math.max(1, endMinutes - startMinutes);
+    }
+
+    return null;
+  }
+
+  public buildManualFitMainTimelineTravelReplicaMap(timeline: any[]): Map<string, any> {
+    const rows = Array.isArray(timeline) ? timeline : [];
+    const map = new Map<string, any>();
+
+    const isAttractionRow = (row: any): boolean => {
+      const type = String(row?.type || '').toLowerCase();
+      return type === 'attraction' || Number(row?.item_type || 0) === 4;
+    };
+
+    const isTravelRow = (row: any): boolean => {
+      const type = String(row?.type || '').toLowerCase();
+      return type === 'travel' || Number(row?.item_type || 0) === 3 || Number(row?.item_type || 0) === 5;
+    };
+
+    const getHotspotId = (row: any): number =>
+      Number(row?.locationId || row?.hotspot_ID || row?.hotspotId || row?.hotspot_id || 0);
+
+    const getLabel = (row: any): string =>
+      String(row?.text || row?.name || row?.title || row?.hotspot_name || '').trim();
+
+    const addKey = (key: string, row: any) => {
+      if (!key || map.has(key)) return;
+      map.set(key, row);
+    };
+
+    for (let index = 0; index < rows.length; index += 1) {
+      const row = rows[index];
+      if (!isTravelRow(row)) continue;
+
+      const explicitFromId = Number(row?.fromHotspotId || row?.from_hotspot_id || 0);
+      const explicitToId = Number(row?.toHotspotId || row?.to_hotspot_id || 0);
+      const explicitFromLabel = String(row?.fromName || row?.from || row?.displayFromName || '').trim();
+      const explicitToLabel = String(row?.toName || row?.to || row?.displayToName || '').trim();
+
+      let previousAttraction: any | null = null;
+      for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+        if (isAttractionRow(rows[cursor])) {
+          previousAttraction = rows[cursor];
+          break;
+        }
+      }
+
+      let nextAttraction: any | null = null;
+      for (let cursor = index + 1; cursor < rows.length; cursor += 1) {
+        if (isAttractionRow(rows[cursor])) {
+          nextAttraction = rows[cursor];
+          break;
+        }
+      }
+
+      const sequenceFromId = getHotspotId(previousAttraction);
+      const sequenceToId = getHotspotId(nextAttraction);
+      const sequenceFromLabel = getLabel(previousAttraction);
+      const sequenceToLabel = getLabel(nextAttraction);
+
+      const fromLabel = explicitFromLabel || sequenceFromLabel;
+      const toLabel = explicitToLabel || sequenceToLabel;
+      const normalizedFromLabel = this.normalizeManualFitTravelReplicaLabel(fromLabel);
+      const normalizedToLabel = this.normalizeManualFitTravelReplicaLabel(toLabel);
+
+      if (explicitFromId > 0 && explicitToId > 0) {
+        addKey(`id:${explicitFromId}->${explicitToId}`, row);
+      }
+      if (sequenceFromId > 0 && sequenceToId > 0) {
+        addKey(`id:${sequenceFromId}->${sequenceToId}`, row);
+      }
+      if (normalizedFromLabel && normalizedToLabel) {
+        addKey(`label:${normalizedFromLabel}->${normalizedToLabel}`, row);
+      }
+      if (explicitToId > 0) {
+        addKey(`to:${explicitToId}`, row);
+      }
+      if (sequenceToId > 0) {
+        addKey(`to:${sequenceToId}`, row);
+      }
+    }
+
+    return map;
+  }
+
+  public findManualFitMainTimelineTravelReplica(
+    replicaMap: Map<string, any>,
+    params: {
+      fromHotspotId?: number | null;
+      toHotspotId?: number | null;
+      fromName?: string | null;
+      toName?: string | null;
+    },
+  ): any | null {
+    const keys: string[] = [];
+    const fromHotspotId = Number(params.fromHotspotId || 0);
+    const toHotspotId = Number(params.toHotspotId || 0);
+    const fromName = this.normalizeManualFitTravelReplicaLabel(params.fromName);
+    const toName = this.normalizeManualFitTravelReplicaLabel(params.toName);
+
+    if (fromHotspotId > 0 && toHotspotId > 0) {
+      keys.push(`id:${fromHotspotId}->${toHotspotId}`);
+    }
+    if (fromName && toName) {
+      keys.push(`label:${fromName}->${toName}`);
+    }
+    if (toHotspotId > 0 && fromHotspotId <= 0 && !fromName) {
+      keys.push(`to:${toHotspotId}`);
+    }
+
+    for (const key of keys) {
+      const row = replicaMap.get(key);
+      if (row) return row;
+    }
+
+    return null;
   }
 
 }

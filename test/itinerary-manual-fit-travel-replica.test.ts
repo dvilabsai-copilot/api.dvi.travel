@@ -18,3 +18,29 @@ test('manual-fit travel replica preserves duration and distance display fields',
   assert.equal(result.distance, '12.50 KM');
   assert.equal(result.hotspot_travelling_distance, '12.50 KM');
 });
+
+test('normalizes travel-replica labels and parses distance/duration fallbacks', () => {
+  const service = new ItineraryManualFitTravelReplicaService();
+  service.setCallbacks({
+    getPreviewRowDurationMinutes: () => 45,
+    parseSegmentStartMinutes: () => 0,
+    parseSegmentEndMinutes: () => 0,
+  });
+
+  assert.equal(service.normalizeManualFitTravelReplicaLabel(' Travelling to Munnar '), 'munnar');
+  assert.equal(service.parseManualFitTravelReplicaDistanceKm('12.50 KM'), 12.5);
+  assert.equal(service.getManualFitTravelReplicaDurationMinutes({}), 45);
+});
+
+test('indexes main-timeline travel replicas by ids and normalized labels', () => {
+  const service = new ItineraryManualFitTravelReplicaService();
+  const row = { type: 'travel', fromHotspotId: 10, toHotspotId: 20, fromName: 'Kochi', toName: 'Munnar' };
+  const replicaMap = service.buildManualFitMainTimelineTravelReplicaMap([
+    { type: 'attraction', locationId: 10, text: 'Kochi' },
+    row,
+    { type: 'attraction', locationId: 20, text: 'Munnar' },
+  ]);
+
+  assert.equal(service.findManualFitMainTimelineTravelReplica(replicaMap, { fromName: 'Kochi', toName: 'Munnar' }), row);
+  assert.equal(service.findManualFitMainTimelineTravelReplica(replicaMap, { fromHotspotId: 10, toHotspotId: 20 }), row);
+});
