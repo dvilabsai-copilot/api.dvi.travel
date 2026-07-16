@@ -1391,3 +1391,32 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Candidate volume, simulation CPU, rebuild rows, snapshot payload, transaction duration, rollback rate and latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `d312d7d`.
+
+### Cycle 40 - Extract adaptive manual-hotspot set insertion
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: adaptive manual-hotspot set insertion, optimizer sequencing, optional/P3/protected-priority removal and preview simulation
+- New files: `src/modules/itineraries/services/itinerary-adaptive-manual-hotspot-insertion.service.ts`, `test/itinerary-adaptive-manual-hotspot-insertion.test.ts`
+- Workflow: manual-hotspot batch insertion and adaptive Fit Here rescue
+
+#### Change
+
+- Moved the contiguous adaptive insertion boundary behind `ItineraryAdaptiveManualHotspotInsertionService`.
+- Preserved baseline optimizer behavior, removal ordering, exact-anchor handling, preview-only simulation, exclusion writes and confirmation metadata.
+- Registered the provider and routed the batch callback through the new service with explicit facade callbacks.
+
+#### Verification
+
+- Adaptive manual-hotspot insertion characterization test: PASS, 1/1
+- Combined focused backend suite: PASS, 64/64
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 14,833 lines after the tier; `ItineraryAdaptiveManualHotspotInsertionService` is 815 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Candidate volume, optimizer CPU, rebuild rows, excluded-list write volume, transaction duration, rollback rate and latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `c7effd0`.
