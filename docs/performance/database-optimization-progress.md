@@ -550,3 +550,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - The same transaction and travel-data resolver are still used; the tier changes ownership only.
 - This is not a measured database performance improvement: stored-location query latency, location-id coverage, fallback frequency and timeline response latency remain unmeasured.
 - No index addition/removal or Redis action is proposed; future work should capture the `location_ID/deleted/status` query plan and per-build fallback counts before adding an index or coordinate cache.
+
+## Iteration 126 evidence update
+
+- The candidate-preparation extraction preserves collaborator order, callback predicates, reservation reads, carry-forward state, optional matrix reads, logging and candidate metadata; no SQL predicate, index, Redis cache or response shape changed.
+- Existing services still own their transaction/database interactions; this tier only moves orchestration behind a service boundary.
+- This is not a measured database performance improvement: stage latency, candidate cardinality, matrix-read frequency and timeline response latency remain unmeasured.
+- No index addition/removal or Redis action is proposed; future work should capture per-stage query plans and candidate counts before batching reservation/matrix reads or caching mutable candidate state.

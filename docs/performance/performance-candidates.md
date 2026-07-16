@@ -404,6 +404,8 @@ The iteration-124 timeline-initial-refreshment boundary is a measurement seam fo
 
 The iteration-125 timeline-route-coordinate boundary is a measurement seam for stored-location lookup latency, route-row location-id coverage, usable-coordinate hit rate, source/destination fallback frequency, duplicate place-resolution calls and end-to-end timeline response latency. Capture stored-coordinate, missing-row, zero-location-id, route-label-only and large-route workloads separately before adding stored-location indexes or caching place coordinates; preserve transaction freshness, route-field precedence, coordinate fallback order and mutable route state. No index addition/removal or Redis cache is justified until query plans and fallback traces establish the measured winner.
 
+The iteration-126 timeline-candidate-preparation boundary is a measurement seam for stage latency, candidate counts after each stage, destination reservation frequency, carry-forward volume, matrix merge frequency, reorder CPU and end-to-end timeline response latency. Capture manual-only, reservation, carry-forward, matrix-enabled, matrix-disabled, empty and large-candidate workloads separately before batching stage reads or caching candidate projections; preserve transaction freshness, stage order, route reservation semantics, candidate metadata and mutable plan-scope identity. No index addition/removal or Redis cache is justified until stage traces and query plans establish the measured winner.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.

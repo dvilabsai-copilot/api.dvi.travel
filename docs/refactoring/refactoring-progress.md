@@ -3960,3 +3960,32 @@
 - `timeline.builder.ts` measured at 5,934 lines after the tier; `timeline-route-coordinate-resolution.service.ts` is 70 lines.
 - Stored-location lookup latency, fallback hit rate, route-row cardinality and timeline response latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `25bee0e`.
+
+### Cycle 129 - Extract timeline candidate preparation orchestration
+
+#### Scope
+
+- Original file: `src/modules/itineraries/engines/helpers/timeline.builder.ts`
+- Extracted responsibility: manual-placement ordering, destination reservation, carry-forward attachment, matrix merge and candidate reordering
+- New files: `src/modules/itineraries/engines/helpers/timeline-candidate-preparation.service.ts`, `test/timeline-candidate-preparation.test.ts`
+- Workflow: per-route candidate preparation before scheduling passes
+
+#### Change
+
+- Moved the candidate-preparation sequence behind `TimelineCandidatePreparationService` while preserving each existing collaborator and callback boundary.
+- Preserved stage order, candidate metadata, source-fallback flag, logging, route reservation policies and selected-hotspot ordering.
+- No SQL predicate, index, Redis cache, API route, DTO or response contract changed.
+
+#### Verification
+
+- Candidate-preparation characterization tests: PASS, 2/2
+- Timeline characterization collection: PASS, 71/71
+- Itinerary characterization collection: PASS, 182/182
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `timeline.builder.ts` measured at 5,899 lines after the tier; `timeline-candidate-preparation.service.ts` is 139 lines.
+- Candidate-stage latency, matrix merge frequency, reservation filtering, carry-forward volume and timeline response latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `d12b4b5`.
