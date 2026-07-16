@@ -53,3 +53,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Builder-local static Prisma-call ownership remains 11 matches; this tier delegates the existing merge policy and performs no database work.
 - This is not a measured performance improvement: queue size, merge CPU, fallback frequency and rebuild latency remain unmeasured.
 - No index or Redis action is proposed; any future memoization must prove continuation-chain versioning and route/plan scope isolation first.
+
+## Iteration 55 evidence update
+
+- The matrix-autobuild extraction moved the existing active route-hotspot read behind a service but did not change SQL, predicates, ordering, indexes or Redis behavior.
+- Builder-local static Prisma-call ownership decreased from 11 to 10; the extracted service contains the retained route-hotspot `findMany` call.
+- This is not a measured performance improvement: route-attraction rows, between-map duration, rows examined, candidate rejection volume and rebuild latency remain unmeasured.
+- Any index or Redis proposal must first compare flag-off/flag-on traces and query plans for representative slot-pair counts, with the feature flag remaining the rollback control.

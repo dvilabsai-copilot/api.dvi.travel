@@ -1914,3 +1914,33 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Carry-forward invocation rate, queue size, merge de-duplication work, fallback-only frequency and route rebuild latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `c18259b`.
+
+### Cycle 58 - Extract matrix-assisted autobuild
+
+#### Scope
+
+- Original file: `src/modules/itineraries/engines/helpers/timeline.builder.ts`
+- Extracted responsibility: feature-flagged between-hotspot matrix reads, route-fit filtering, matrix scoring, timing admission and candidate merge
+- New files: `src/modules/itineraries/engines/helpers/timeline-matrix-autobuild.service.ts`, `test/timeline-matrix-autobuild.test.ts`
+- Workflow: optional matrix augmentation after carry-forward attachment and before candidate reordering
+
+#### Change
+
+- Moved matrix-assisted autobuild behind `TimelineMatrixAutobuildService`.
+- Preserved feature-flag behavior, route-hotspot ordering read, between-map lookup, corridor ownership checks, excluded/already-planned/duplicate guards, matrix score metadata, route-end/timing gates, logging and candidate append order.
+- Kept candidate reordering, feasibility scheduling, travel rows and persistence in `TimelineBuilder`.
+
+#### Verification
+
+- Matrix autobuild characterization tests: PASS, 2/2
+- Combined focused backend/timeline suite: PASS, 120/120
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `timeline.builder.ts` measured at 6,535 lines after the tier; `TimelineMatrixAutobuildService` is 234 lines.
+- Builder-local static Prisma call matches decreased from 11 to 10; the extracted service retains the existing route-hotspot read and transaction ownership.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Matrix flag frequency, route-attraction row volume, between-map latency, candidate rejection/merge volume, timing-check CPU and route rebuild latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `f52f9d3`.
