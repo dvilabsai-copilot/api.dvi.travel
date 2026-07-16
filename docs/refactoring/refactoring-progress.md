@@ -1449,3 +1449,32 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Callback CPU, route-leg cache hit rate, rebuilt rows, invariant warnings, transaction duration, response size and latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `a2f6f92`.
+
+### Cycle 42 - Extract confirmed-itinerary booked-hotel projection
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: confirmed-plan and original-plan reads, provider booking normalization, hotel/master enrichment, room/meal labels and availability metadata
+- New files: `src/modules/itineraries/services/itinerary-confirmed-itinerary-details.service.ts`, `test/itinerary-confirmed-itinerary-details.test.ts`
+- Workflow: confirmed itinerary details and post-confirmation hotel fulfillment projection
+
+#### Change
+
+- Moved the contiguous confirmed-itinerary details projection behind `ItineraryConfirmedItineraryDetailsService`.
+- Preserved provider precedence, confirmed/original plan validation, booking labels, room and meal mapping, voucher cancellation flags and response envelopes.
+- Registered the Prisma-backed provider and routed hotel-fulfillment reads through the new service with the existing guide-assignment callback.
+
+#### Verification
+
+- Confirmed-itinerary details characterization test: PASS, 1/1
+- Combined focused backend suite: PASS, 66/66
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 13,554 lines after the tier; `ItineraryConfirmedItineraryDetailsService` is 547 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Query count, rows examined, provider payload size, callback CPU, transaction duration and latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `2f0925d`.
