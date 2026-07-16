@@ -42,6 +42,7 @@ import { TimelineOperatingHoursService } from './timeline-operating-hours.servic
 import { DayTimeSlot, TimelineSlotPolicyService } from './timeline-slot-policy.service';
 import { TimelineRejectionPolicyService } from './timeline-rejection-policy.service';
 import { ArrivalPolicyDecisionState, TimelineDataAccessService } from './timeline-data-access.service';
+import { TimelineBuildContextService } from './timeline-build-context.service';
 import { TimelineTravelDataService } from './timeline-travel-data.service';
 import { TimelineCandidateFeasibilityService } from './timeline-candidate-feasibility.service';
 import { TimelineCandidatePolicyService } from './timeline-candidate-policy.service';
@@ -203,6 +204,7 @@ export class TimelineBuilder {
   private readonly routePolicyService = new TimelineRoutePolicyService();
   private readonly anchorPolicyService = new TimelineAnchorPolicyService();
   private readonly dataAccessService = new TimelineDataAccessService();
+  private readonly buildContextService = new TimelineBuildContextService(this.dataAccessService);
   private readonly travelDataService = new TimelineTravelDataService(this.distanceHelper);
   private readonly candidateFeasibilityService = new TimelineCandidateFeasibilityService(this.distanceHelper);
   private readonly day1SourceFallbackService = new TimelineDay1SourceFallbackService();
@@ -275,6 +277,12 @@ export class TimelineBuilder {
       appendProofTrace: (...args) => (this.appendProofTrace as any)(...args),
       getCurrentQuoteId: () => this.currentQuoteId,
       isVerboseTimelineProofLogs: () => this.verboseTimelineProofLogs,
+    });
+    this.buildContextService.setCallbacks({
+      logTimeline: (...args) => (this.logTimeline as any)(...args),
+      logBookingRule: (payload) => this.logBookingRule(payload),
+      isHotspotClosedOnAllDays: (...args) => this.isHotspotClosedOnAllDays(...args),
+      setGlobalSettings: (settings) => this.distanceHelper.setGlobalSettings(settings),
     });
   }
 
@@ -368,13 +376,32 @@ export class TimelineBuilder {
     const buildStart = Date.now();
     this.logTimeline('[TIMELINE] buildTimelineForPlan started for planId:', planId, existingHotspots ? `with ${existingHotspots.length} pre-loaded hotspots` : '');
     
-    let opStart = Date.now();
-    const plan = (await this.dataAccessService.loadPlan(tx, planId)) as PlanHeader | null;
-    this.logTimeline('[TIMELINE] Fetch plan:', Date.now() - opStart, 'ms');
-
-    if (!plan) {
+    const context = await this.buildContextService.load(tx, planId, options?.scopeToRouteId);
+    if (!context) {
       return { hotspotRows: [], parkingRows: [], routeRejectionSummaryByRoute: {} };
     }
+
+    const {
+      plan,
+      routes,
+      scopedRoutes,
+      previousRouteByRouteId,
+      allHotspots,
+      filteredHotspots,
+      hotspotMap,
+      timingMap,
+      permanentlyClosedHotspotIds,
+    } = context as {
+      plan: PlanHeader;
+      routes: RouteRow[];
+      scopedRoutes: RouteRow[];
+      previousRouteByRouteId: Map<number, RouteRow>;
+      allHotspots: any[];
+      filteredHotspots: any[];
+      hotspotMap: Map<number, any>;
+      timingMap: Map<number, Map<number, any[]>>;
+      permanentlyClosedHotspotIds: Set<number>;
+    };
 
     this.currentQuoteId = String(
       (plan as any).quote_id ??
@@ -385,31 +412,6 @@ export class TimelineBuilder {
     );
     if (this.verboseTimelineProofLogs) {
       this.appendProofTrace(`[TRACE_START] planId=${planId} quoteId=${this.currentQuoteId}`);
-    }
-
-    opStart = Date.now();
-    const routes = (await this.dataAccessService.loadRoutes(tx, planId)) as RouteRow[];
-    this.logTimeline('[TIMELINE] Fetch routes:', Date.now() - opStart, 'ms, count:', routes.length);
-
-    if (!routes.length) {
-      return { hotspotRows: [], parkingRows: [], routeRejectionSummaryByRoute: {} };
-    }
-
-    // When scoped to a single route (preview mode), skip all other routes.
-    const scopedRoutes = options?.scopeToRouteId
-      ? routes.filter((r) => r.itinerary_route_ID === options!.scopeToRouteId)
-      : routes;
-
-    const previousRouteByRouteId = new Map<number, RouteRow>();
-    for (let i = 1; i < routes.length; i++) {
-      previousRouteByRouteId.set(
-        Number((routes[i] as any).itinerary_route_ID || 0),
-        routes[i - 1],
-      );
-    }
-
-    if (options?.scopeToRouteId && scopedRoutes.length === 0) {
-      return { hotspotRows: [], parkingRows: [], routeRejectionSummaryByRoute: {} };
     }
 
     const reservedSameCityHotspotIdsByRoute = this.buildReservedSameCityHotspotIdsByRoute(
@@ -435,67 +437,18 @@ export class TimelineBuilder {
     const shouldDeferDay1Sightseeing = isSameArrivalDepartureCity && departureTimeAfter4PM;
 
     // ⚡ PERFORMANCE OPTIMIZATION: Fetch all hotspots ONCE instead of once per route
-    opStart = Date.now();
-    const allHotspots = await this.dataAccessService.loadAllActiveHotspots(tx);
-    this.logTimeline('[TIMELINE] Fetch ALL hotspots ONCE:', Date.now() - opStart, 'ms, count:', allHotspots.length);
+
 
     // ⚡ PERF: Pre-load global settings once so distanceHelper.getBufferTime never hits DB.
     // Without this, every fromSourceAndDestination / fromCoordinates call issues a
     // dvi_global_settings.findFirst query — that is 774+ serial queries just for hotspot scoring.
-    const globalSettingsForBuilder = await (tx as any).dvi_global_settings?.findFirst({
-      where: { status: 1, deleted: 0 },
-    });
-    if (globalSettingsForBuilder) {
-      this.distanceHelper.setGlobalSettings(globalSettingsForBuilder);
-    }
+
 
     // ⚡ Create hotspot lookup map for O(1) access (avoid repeated DB queries)
-    const hotspotMap = new Map();
-    for (const h of allHotspots) {
-      hotspotMap.set(h.hotspot_ID, {
-        hotspot_ID: h.hotspot_ID,
-        hotspot_name: h.hotspot_name,
-        hotspot_location: h.hotspot_location,
-        hotspot_to_location: h.hotspot_to_location,
-        hotspot_type: h.hotspot_type,
-        hotspot_priority: h.hotspot_priority,
-        hotspot_latitude: h.hotspot_latitude,
-        hotspot_longitude: h.hotspot_longitude,
-        hotspot_duration: h.hotspot_duration,
-      });
-    }
-    this.logTimeline('[TIMELINE] Created hotspot lookup map');
+
 
     // ⚡ Batch-fetch ALL timing data for ALL days at once (avoid 42+ individual queries)
-    opStart = Date.now();
-    const allTimings = await this.dataAccessService.loadAllActiveTimings(tx);
-    // Group timings by hotspot_ID and day for O(1) lookup
-    const timingMap = this.dataAccessService.buildTimingMap(allTimings);
-    this.logTimeline('[TIMELINE] Batch-fetched ALL timing data:', Date.now() - opStart, 'ms, records:', allTimings.length);
 
-    const permanentlyClosedHotspotIds = new Set<number>();
-    for (const h of allHotspots) {
-      const hotspotId = Number((h as any).hotspot_ID || 0);
-      if (!hotspotId) continue;
-      if (this.isHotspotClosedOnAllDays(timingMap, hotspotId)) {
-        permanentlyClosedHotspotIds.add(hotspotId);
-      }
-    }
-
-    const filteredHotspots = allHotspots.filter((h) => {
-      const hotspotId = Number((h as any).hotspot_ID || 0);
-      return hotspotId > 0 && !permanentlyClosedHotspotIds.has(hotspotId);
-    });
-
-    this.logBookingRule({
-      rule: 'HOTSPOT_PREFILTER_ALL_DAYS_CLOSED',
-      quoteId: (plan as any).quote_id ?? (plan as any).quoteId ?? (plan as any).quote_ID ?? null,
-      planId,
-      closedHotspotCount: permanentlyClosedHotspotIds.size,
-      closedHotspotSample: Array.from(permanentlyClosedHotspotIds.values()).slice(0, 30),
-      beforeCount: allHotspots.length,
-      afterCount: filteredHotspots.length,
-    });
 
     const hotspotRows: HotspotDetailRow[] = [];
     const parkingRows: ParkingChargeRow[] = [];
