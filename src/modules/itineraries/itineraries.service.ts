@@ -85,6 +85,7 @@ import { ItineraryManualFitCandidateSimulationService } from './services/itinera
 import { ItineraryManualFitCandidateSearchService } from './services/itinerary-manual-fit-candidate-search.service';
 import { ItineraryManualFitCandidateDataService } from './services/itinerary-manual-fit-candidate-data.service';
 import { ItineraryManualHotspotRowService } from './services/itinerary-manual-hotspot-row.service';
+import { ItineraryManualHotspotScheduleStateService } from './services/itinerary-manual-hotspot-schedule-state.service';
 import { ItineraryVehicleBuildStatusService } from './services/itinerary-vehicle-build-status.service';
 import { ItineraryVehicleBuildService } from './services/itinerary-vehicle-build.service';
 import { ItineraryPlanPersistenceService } from './services/itinerary-plan-persistence.service';
@@ -675,6 +676,7 @@ export class ItinerariesService {
     private readonly manualFitCandidateSearchService: ItineraryManualFitCandidateSearchService = new ItineraryManualFitCandidateSearchService(),
     private readonly manualFitCandidateDataService: ItineraryManualFitCandidateDataService = new ItineraryManualFitCandidateDataService(),
     private readonly manualHotspotRowService: ItineraryManualHotspotRowService = new ItineraryManualHotspotRowService(),
+    private readonly manualHotspotScheduleStateService: ItineraryManualHotspotScheduleStateService = new ItineraryManualHotspotScheduleStateService(),
   ) {
     this.manualFitTimelinePolicyService.setCallbacks({
       parseSegmentEndMinutes: (...args) => (this.parseSegmentEndMinutes as any)(...args),
@@ -758,6 +760,11 @@ export class ItinerariesService {
     });
     this.manualHotspotRowService.setCallbacks({
       computeRowDurationMinutes: (...args) => (this.computeRowDurationMinutes as any)(...args),
+    });
+    this.manualHotspotScheduleStateService.setCallbacks({
+      computeRowDurationMinutes: (...args) => (this.computeRowDurationMinutes as any)(...args),
+      hasAnyNonOverlappingManualRow: (...args) => (this.hasAnyNonOverlappingManualRow as any)(...args),
+      manualRowHasNoOverlap: (...args) => (this.manualRowHasNoOverlap as any)(...args),
     });
     this.vehicleBuildService.setVehicleVendorSelector((data) => this.selectVehicleVendor(data));
     this.activityAvailabilityService.setCalculateActivityPlanPricingCallback(
@@ -4214,119 +4221,10 @@ private getGuideSlotLabel(slotId: number): string {
   }
 
 
-  private async isManualHotspotScheduled(
-    tx: any,
-    planId: number,
-    routeId: number,
-    hotspotId: number,
-  ): Promise<boolean> {
-    const rows = await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
-      where: {
-        itinerary_plan_ID: Number(planId),
-        itinerary_route_ID: Number(routeId),
-        hotspot_ID: Number(hotspotId),
-        item_type: 4,
-        hotspot_plan_own_way: 1,
-        deleted: 0,
-      },
-      select: {
-        route_hotspot_ID: true,
-        hotspot_start_time: true,
-        hotspot_end_time: true,
-        is_conflict: true,
-      },
-    });
-
-    if (!Array.isArray(rows) || rows.length === 0) {
-      return false;
-    }
-
-    const scheduledCandidateRows = rows.filter((row: any) => {
-      const hasPositiveDuration = this.computeRowDurationMinutes(row) > 0;
-      const isConflict = Number(row?.is_conflict || 0) === 1;
-      return hasPositiveDuration && !isConflict;
-    });
-
-    if (scheduledCandidateRows.length === 0) {
-      return false;
-    }
-
-    const route = await (tx as any).dvi_itinerary_route_details.findFirst({
-      where: {
-        itinerary_route_ID: Number(routeId),
-        itinerary_plan_ID: Number(planId),
-        deleted: 0,
-      },
-      select: { itinerary_route_date: true },
-    });
-
-    // If route date is unavailable, keep legacy behavior to avoid false negatives.
-    if (!route?.itinerary_route_date) {
-      return this.hasAnyNonOverlappingManualRow(tx, Number(planId), Number(routeId), scheduledCandidateRows);
-    }
-
-    const timingDay = (new Date(route.itinerary_route_date).getDay() + 6) % 7; // Mon=0..Sun=6
-    const timings = await (tx as any).dvi_hotspot_timing.findMany({
-      where: {
-        hotspot_ID: Number(hotspotId),
-        hotspot_timing_day: Number(timingDay),
-        deleted: 0,
-        status: 1,
-      },
-      select: {
-        hotspot_open_all_time: true,
-        hotspot_start_time: true,
-        hotspot_end_time: true,
-      },
-    });
-
-    // No timing definition: preserve previous permissive behavior.
-    if (!Array.isArray(timings) || timings.length === 0) {
-      return this.hasAnyNonOverlappingManualRow(tx, Number(planId), Number(routeId), scheduledCandidateRows);
-    }
-
-    if (timings.some((t: any) => Number(t?.hotspot_open_all_time || 0) === 1)) {
-      return this.hasAnyNonOverlappingManualRow(tx, Number(planId), Number(routeId), scheduledCandidateRows);
-    }
-
-    let hasValidRow = false;
-    for (const row of scheduledCandidateRows) {
-
-      const startSec = this.hmsToSeconds(TimeConverter.toTimeString(row?.hotspot_start_time));
-      const endSec = this.hmsToSeconds(TimeConverter.toTimeString(row?.hotspot_end_time));
-
-      if (!Number.isFinite(startSec) || !Number.isFinite(endSec) || endSec < startSec) {
-        continue;
-      }
-
-      const fitsOperatingHours = timings.some((t: any) => {
-        if (!t?.hotspot_start_time || !t?.hotspot_end_time) return false;
-
-        const opStart = this.hmsToSeconds(TimeConverter.toTimeString(t.hotspot_start_time));
-        const opEnd = this.hmsToSeconds(TimeConverter.toTimeString(t.hotspot_end_time));
-
-        // Overnight window support (e.g., 18:00 -> 02:00)
-        if (opEnd < opStart) {
-          const inToday = startSec >= opStart && endSec >= startSec;
-          const inOvernight = startSec <= opEnd && endSec <= opEnd;
-          return inToday || inOvernight;
-        }
-
-        return startSec >= opStart && endSec <= opEnd;
-      });
-
-      if (!fitsOperatingHours) {
-        continue;
-      }
-
-      if (await this.manualRowHasNoOverlap(tx, Number(planId), Number(routeId), row)) {
-        hasValidRow = true;
-        break;
-      }
-    }
-
-    return hasValidRow;
+  private async isManualHotspotScheduled(...args: any[]): Promise<boolean> {
+    return (this.manualHotspotScheduleStateService.isManualHotspotScheduled as any)(...args);
   }
+
 
   private hmsToSeconds(value: string): number {
     const [h, m, s] = String(value || '00:00:00').split(':').map((p) => Number(p || 0));
