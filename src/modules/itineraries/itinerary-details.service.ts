@@ -31,6 +31,7 @@ import { ItineraryDetailsEntryTicketCostService } from './services/itinerary-det
 import { ItineraryLatestDataTableService } from './services/itinerary-latest-data-table.service';
 import { ItineraryDetailsSegmentSanitizerService } from './services/itinerary-details-segment-sanitizer.service';
 import { ItineraryDetailsDestinationResolutionService } from './services/itinerary-details-destination-resolution.service';
+import { ItineraryDetailsSegmentOrderingService } from './services/itinerary-details-segment-ordering.service';
 
 // ---------------------------------------------------------------------------
 // DTOs for Itinerary Details response (shared shape with frontend)
@@ -426,6 +427,7 @@ export class ItineraryDetailsService {
   private readonly latestDataTableService: ItineraryLatestDataTableService;
   private readonly segmentSanitizerService = new ItineraryDetailsSegmentSanitizerService();
   private readonly destinationResolutionService = new ItineraryDetailsDestinationResolutionService();
+  private readonly segmentOrderingService = new ItineraryDetailsSegmentOrderingService();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -2499,132 +2501,12 @@ console.log('[FINAL_DISTANCE_DEBUG]', {
       // This guarantees: Travel → Attraction → CTA → Travel → Attraction → CTA → …
 
       // Step 1: extract CTAs and remember which non-CTA segment each followed.
-      type CtaEntry = { cta: any; afterSegmentRef: any | null };
-      const ctaEntries: CtaEntry[] = [];
-      const nonCtaSegments: any[] = [];
-
-      for (let i = 0; i < segments.length; i++) {
-        const seg = segments[i];
-        if (seg?.type === 'hotspot' && seg?.anchorType === 'after_travel') {
-          // Find the most recent non-CTA segment before this one.
-          let afterRef: any | null = null;
-          for (let j = i - 1; j >= 0; j--) {
-            if (!(segments[j]?.type === 'hotspot' && segments[j]?.anchorType === 'after_travel')) {
-              afterRef = segments[j];
-              break;
-            }
-          }
-          ctaEntries.push({ cta: seg, afterSegmentRef: afterRef });
-        } else {
-          nonCtaSegments.push(seg);
-        }
-      }
-
-      // Step 2: sort the non-CTA segments by time.
-      const typeOrder: Record<string, number> = {
-        'start': 0,
-        'travel': 1,
-        'attraction': 2,
-        'break': 3,
-        'checkin': 4,
-        'return': 5,
-      };
-
-      const getSegMinutes = (seg: any): number => {
-        let timeStr: string | null = null;
-        if (seg.type === 'start' || seg.type === 'travel' || seg.type === 'return' || seg.type === 'break') {
-          timeStr = seg.timeRange ? String(seg.timeRange).split(' - ')[0] : null;
-        } else if (seg.type === 'attraction') {
-          timeStr = seg.visitTime ? String(seg.visitTime).split(' - ')[0] : null;
-        } else if (seg.type === 'checkin') {
-          timeStr = seg.time ? String(seg.time).split(' - ')[0] : null;
-        }
-        const normalized = timeStr?.split('(')[0]?.trim() || null;
-        if (normalized) {
-          const strict = this.parseDisplayTimeMinutesStrict(normalized);
-          if (strict !== null) return strict;
-        }
-        return 1440;
-      };
-
-      const getSegEndMinutes = (seg: any): number => {
-        let timeStr: string | null = null;
-        if (seg.type === 'start' || seg.type === 'travel' || seg.type === 'return' || seg.type === 'break') {
-          timeStr = seg.timeRange ? String(seg.timeRange).split(' - ')[1] : null;
-        } else if (seg.type === 'attraction') {
-          timeStr = seg.visitTime ? String(seg.visitTime).split(' - ')[1] : null;
-        } else if (seg.type === 'checkin') {
-          timeStr = seg.time ? String(seg.time).split(' - ')[0] : null;
-        }
-
-        const normalized = timeStr?.split('(')[0]?.trim();
-        if (normalized) {
-          const strict = this.parseDisplayTimeMinutesStrict(normalized);
-          if (strict !== null) return strict;
-        }
-        return 1440;
-      };
-
-      nonCtaSegments.sort((a: any, b: any) => {
-        const aStart = getSegMinutes(a);
-        const bStart = getSegMinutes(b);
-        const diff = aStart - bStart;
-        if (diff !== 0) return diff;
-
-        const aEnd = getSegEndMinutes(a);
-        const bEnd = getSegEndMinutes(b);
-        const endDiff = aEnd - bEnd;
-        if (endDiff !== 0) return endDiff;
-
-        // Same-minute tie-break for dirty overlap data:
-        // if travel starts from an attraction location at the exact same minute,
-        // show the attraction first, then departure travel.
-        if (a?.type === 'travel' && b?.type === 'attraction') {
-          const aFrom = normalizeName(a?.from);
-          const aTo = normalizeName(a?.to);
-          const bName = normalizeName(b?.name);
-
-          if (aFrom.length > 0 && bName.length > 0 && aFrom === bName) {
-            return 1;
-          }
-          if (aTo.length > 0 && bName.length > 0 && aTo === bName) {
-            return -1;
-          }
-        }
-
-        if (a?.type === 'attraction' && b?.type === 'travel') {
-          const bFrom = normalizeName(b?.from);
-          const bTo = normalizeName(b?.to);
-          const aName = normalizeName(a?.name);
-
-          if (bFrom.length > 0 && aName.length > 0 && bFrom === aName) {
-            return -1;
-          }
-          if (bTo.length > 0 && aName.length > 0 && bTo === aName) {
-            return 1;
-          }
-        }
-
-        return (typeOrder[a.type] ?? 99) - (typeOrder[b.type] ?? 99);
+      const orderedSegments = this.segmentOrderingService.order(segments, {
+        parseDisplayTimeMinutesStrict: (value) => this.parseDisplayTimeMinutesStrict(value),
+        normalizeName,
       });
-
-      // Step 3: splice each CTA back in right after its reference segment.
-      // Process in reverse anchorIndex order so earlier insertions don't shift later positions.
-      const sortedCtaEntries = [...ctaEntries].reverse();
-      for (const { cta, afterSegmentRef } of sortedCtaEntries) {
-        let insertAt = nonCtaSegments.length; // default: append
-        if (afterSegmentRef !== null) {
-          const refIdx = nonCtaSegments.indexOf(afterSegmentRef);
-          if (refIdx !== -1) {
-            insertAt = refIdx + 1;
-          }
-        }
-        nonCtaSegments.splice(insertAt, 0, cta);
-      }
-
-      // Replace segments in-place with the correctly ordered result.
       segments.length = 0;
-      segments.push(...nonCtaSegments);
+      segments.push(...orderedSegments);
 
       // In hotel-first flows, place start before check-in
       // so the sequence reads: travel to hotel -> Start your Journey -> checkin.
