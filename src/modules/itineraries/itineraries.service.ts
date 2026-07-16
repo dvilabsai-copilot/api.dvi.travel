@@ -80,6 +80,7 @@ import { ItineraryManualFitRoutePolicyService } from './services/itinerary-manua
 import { ItineraryManualFitRouteMatrixPersistenceService } from './services/itinerary-manual-fit-route-matrix-persistence.service';
 import { ItineraryManualFitOperatingHoursService } from './services/itinerary-manual-fit-operating-hours.service';
 import { ItineraryManualFitValidationService } from './services/itinerary-manual-fit-validation.service';
+import { ItineraryManualFitScheduleAttemptService } from './services/itinerary-manual-fit-schedule-attempt.service';
 import { ItineraryVehicleBuildStatusService } from './services/itinerary-vehicle-build-status.service';
 import { ItineraryVehicleBuildService } from './services/itinerary-vehicle-build.service';
 import { ItineraryPlanPersistenceService } from './services/itinerary-plan-persistence.service';
@@ -665,6 +666,7 @@ export class ItinerariesService {
     private readonly manualFitRouteMatrixPersistenceService: ItineraryManualFitRouteMatrixPersistenceService = new ItineraryManualFitRouteMatrixPersistenceService(),
     private readonly manualFitOperatingHoursService: ItineraryManualFitOperatingHoursService = new ItineraryManualFitOperatingHoursService(prisma),
     private readonly manualFitValidationService: ItineraryManualFitValidationService = new ItineraryManualFitValidationService(),
+    private readonly manualFitScheduleAttemptService: ItineraryManualFitScheduleAttemptService = new ItineraryManualFitScheduleAttemptService(),
   ) {
     this.manualFitTimelinePolicyService.setCallbacks({
       parseSegmentEndMinutes: (...args) => (this.parseSegmentEndMinutes as any)(...args),
@@ -698,6 +700,16 @@ export class ItinerariesService {
       distanceBetweenHotspots: (...args) => (this.distanceBetweenHotspots as any)(...args),
       evaluateTimelineRowAgainstOperatingHours: (...args) => (this.evaluateTimelineRowAgainstOperatingHours as any)(...args),
       calculateRouteEndOverflowMinutes: (...args) => (this.calculateRouteEndOverflowMinutes as any)(...args),
+    });
+    this.manualFitScheduleAttemptService.setCallbacks({
+      distanceBetweenHotspots: (...args) => (this.distanceBetweenHotspots as any)(...args),
+      calculateInsertionExtraDistance: (...args) => (this.calculateInsertionExtraDistance as any)(...args),
+      calculateToAndFroPenalty: (...args) => (this.calculateToAndFroPenalty as any)(...args),
+      isAttractionTimelineRow: (...args) => (this.isAttractionTimelineRow as any)(...args),
+      getTimelineRowHotspotId: (...args) => (this.getTimelineRowHotspotId as any)(...args),
+      manualFitTimelinePreservesSelectedAnchor: (...args) => (this.manualFitTimelinePreservesSelectedAnchor as any)(...args),
+      parsePreviewTimeToMinutes: (...args) => (this.parsePreviewTimeToMinutes as any)(...args),
+      explainManualScheduleAttempt: (...args) => (this.explainManualScheduleAttempt as any)(...args),
     });
     this.vehicleBuildService.setVehicleVendorSelector((data) => this.selectVehicleVendor(data));
     this.activityAvailabilityService.setCalculateActivityPlanPricingCallback(
@@ -3210,218 +3222,28 @@ private getGuideSlotLabel(slotId: number): string {
   }
 
 
-  private calculateTravelMetricsFromTimeline(
-    timeline: any[],
-    manualHotspotIdSet: Set<number>,
-    masterMap: Map<number, any>,
-  ): { totalTravelKm: number; extraTravelKm: number; toAndFroPenalty: number } {
-    const attractions = (timeline || [])
-      .filter((row: any) => Number(row?.item_type || 0) === 4)
-      .map((row: any) => ({
-        hotspotId: Number(row?.hotspot_ID || row?.locationId || 0),
-        isManual: Number(row?.hotspot_plan_own_way || 0) === 1 || row?.isManual === true || manualHotspotIdSet.has(Number(row?.hotspot_ID || 0)),
-      }))
-      .filter((row: any) => Number(row.hotspotId) > 0);
-
-    let totalTravelKm = 0;
-    for (let i = 1; i < attractions.length; i += 1) {
-      totalTravelKm += this.distanceBetweenHotspots(masterMap, attractions[i - 1].hotspotId, attractions[i].hotspotId);
-    }
-
-    const extraTravelKm = this.calculateInsertionExtraDistance(attractions, manualHotspotIdSet, masterMap);
-    const toAndFroPenalty = this.calculateToAndFroPenalty(attractions, masterMap);
-    return {
-      totalTravelKm: Number(totalTravelKm.toFixed(2)),
-      extraTravelKm,
-      toAndFroPenalty,
-    };
+  private calculateTravelMetricsFromTimeline(...args: any[]): any {
+    return (this.manualFitScheduleAttemptService.calculateTravelMetricsFromTimeline as any)(...args);
   }
 
-  private detectTopPriorityImpact(
-    baselineTopPriorityByHotspotId: Map<number, { id: number; name: string; priority: number }>,
-    afterCandidates: any,
-  ): Array<{ id: number; name: string; priority: number; reason: string }> {
-    const afterTopPriorityIds = new Set<number>([
-      ...((afterCandidates?.classified?.strictTopPriority || [])
-        .map((row: any) => Number(row?.hotspotId || 0))
-        .filter((id: number) => Number.isFinite(id) && id > 0)),
-      ...((afterCandidates?.classified?.p3ConfirmationCandidates || [])
-        .map((row: any) => Number(row?.hotspotId || 0))
-        .filter((id: number) => Number.isFinite(id) && id > 0)),
-    ]);
-
-    return Array.from(baselineTopPriorityByHotspotId.values())
-      .filter((row) => !afterTopPriorityIds.has(Number(row.id)))
-      .map((row) => ({
-        ...row,
-        reason: Number(row.priority || 0) <= this.PROTECTED_AUTO_PRIORITY_MAX
-          ? `Protected P${row.priority || 0} hotspot would be removed or invalidated by this schedule attempt.`
-          : `Priority ${row.priority || 0} hotspot would need confirmation before removal.`,
-      }));
+  private detectTopPriorityImpact(...args: any[]): any[] {
+    return (this.manualFitScheduleAttemptService.detectTopPriorityImpact as any)(...args);
   }
 
-  private buildManualScheduleAttemptFromCandidate(params: {
-    strategy: ManualCandidateOrder;
-    candidate: ManualInsertionCandidateResult;
-  }): ManualScheduleAttempt {
-    const routeEndOverflowMinutes = Number(params.candidate?.routeEndOverflowMinutes || 0);
-    const openingHourConflictCount = Number(params.candidate?.openingHourConflictCount || 0);
-    const topPriorityAffectedCount = Number(params.candidate?.topPriorityAffected?.length || 0);
-    const readyToApply = params.candidate.success === true && params.candidate.requiresConfirmation !== true;
-    const attempt: ManualScheduleAttempt = {
-      source: 'CANDIDATE_WRAPPER',
-      strategyKey: params.strategy.strategyKey,
-      strategyLabel: params.strategy.strategyLabel,
-      description: params.strategy.description,
-      hotspotOrder: params.strategy.hotspotOrder,
-      candidateIndex: Number(params.candidate?.candidateIndex ?? -1),
-      previewTimeline: Array.isArray(params.candidate?.fullTimeline) ? params.candidate.fullTimeline : [],
-      success: params.candidate.success === true,
-      requiresConfirmation: params.candidate.requiresConfirmation === true,
-      readyToApply,
-      routeEndOverflowMinutes,
-      openingHourConflictCount,
-      topPriorityAffectedCount,
-      removedOptionalCount: Number(params.candidate?.removedOptionalHotspots?.length || 0),
-      removedTopPriorityCount: Number(params.candidate?.removedTopPriorityHotspots?.length || 0),
-      waitingMinutes: Number(params.candidate?.waitingMinutes || 0),
-      extraTravelKm: Number(params.candidate?.extraTravelKm || 0),
-      totalTravelKm: Number(params.candidate?.totalTravelKm || 0),
-      timingSafe: routeEndOverflowMinutes === 0 && openingHourConflictCount === 0,
-      selected: false,
-      summary: null,
-      reason: params.candidate?.reason || null,
-    };
-    attempt.summary = this.explainManualScheduleAttempt(attempt);
-    return attempt;
+  private buildManualScheduleAttemptFromCandidate(...args: any[]): any {
+    return (this.manualFitScheduleAttemptService.buildManualScheduleAttemptFromCandidate as any)(...args);
   }
 
-  private buildExactAnchorSequentialScheduleAttempt(params: {
-    strategy: ManualCandidateOrder;
-    candidate: ManualInsertionCandidateResult;
-  }): ManualScheduleAttempt {
-    const timeline = Array.isArray(params.candidate?.fullTimeline) ? params.candidate.fullTimeline : [];
-    const attractionRows = timeline.filter((row: any) => this.isAttractionTimelineRow(row));
-    const actualOrder = attractionRows
-      .map((row: any) => this.getTimelineRowHotspotId(row))
-      .filter((id: number) => id > 0);
-    const manualHotspotId = Number(
-      params.candidate?.scheduledManualHotspots?.[0]?.id ||
-      (params.strategy.hotspotOrder || [])[0] ||
-      0,
-    );
-    const orderPreserved = manualHotspotId > 0
-      && this.manualFitTimelinePreservesSelectedAnchor({
-        timeline,
-        selectedHotspotId: manualHotspotId,
-        afterHotspotId: Number(params.strategy?.exactAfterHotspotId || 0) || null,
-        beforeHotspotId: Number(params.strategy?.exactBeforeHotspotId || 0) || null,
-        anchorIntent: params.strategy?.exactAnchorIntent || 'AFTER_ATTRACTION',
-      });
-
-    let overlapCount = 0;
-    let previousEnd: number | null = null;
-    for (const row of attractionRows) {
-      const rawRange = String(row?.timeRange || row?.visitTime || '').trim();
-      if (!rawRange.includes('-')) continue;
-      const [startPart, endPart] = rawRange.split('-').map((value: string) => value.trim());
-      const startMin = this.parsePreviewTimeToMinutes(startPart);
-      const endMin = this.parsePreviewTimeToMinutes(endPart);
-      if (startMin === null || endMin === null) continue;
-      if (previousEnd !== null && startMin < previousEnd) {
-        overlapCount += 1;
-      }
-      previousEnd = endMin;
-    }
-
-    const routeEndOverflowMinutes = Number(params.candidate?.routeEndOverflowMinutes || 0);
-    const openingHourConflictCount = Number(params.candidate?.openingHourConflictCount || 0);
-    const topPriorityAffectedCount = Number(params.candidate?.topPriorityAffected?.length || 0);
-    const timingSafe =
-      routeEndOverflowMinutes === 0 &&
-      openingHourConflictCount === 0 &&
-      overlapCount === 0;
-    const readyToApply =
-      params.candidate?.success === true &&
-      params.candidate?.requiresConfirmation !== true &&
-      timingSafe &&
-      orderPreserved;
-
-    const reason = !orderPreserved
-      ? 'Exact-anchor sequential rebuild did not keep the selected manual hotspot in the clicked Fit Here gap.'
-      : overlapCount > 0
-        ? 'Exact-anchor sequential rebuild produced overlapping kept hotspot times.'
-        : params.candidate?.reason || null;
-
-    const attempt: ManualScheduleAttempt = {
-      source: 'REAL_CLUSTER_SIMULATION',
-      strategyKey: params.strategy.strategyKey,
-      strategyLabel: params.strategy.strategyLabel,
-      description: params.strategy.description,
-      hotspotOrder: params.strategy.hotspotOrder,
-      candidateIndex: Number(params.candidate?.candidateIndex ?? -1),
-      previewTimeline: Array.isArray(params.candidate?.fullTimeline) ? params.candidate.fullTimeline : [],
-      success: params.candidate?.success === true && orderPreserved && overlapCount === 0,
-      requiresConfirmation: params.candidate?.requiresConfirmation === true,
-      readyToApply,
-      routeEndOverflowMinutes,
-      openingHourConflictCount,
-      topPriorityAffectedCount,
-      removedOptionalCount: Number(params.candidate?.removedOptionalHotspots?.length || 0),
-      removedTopPriorityCount: Number(params.candidate?.removedTopPriorityHotspots?.length || 0),
-      waitingMinutes: Number(params.candidate?.waitingMinutes || 0),
-      extraTravelKm: Number(params.candidate?.extraTravelKm || 0),
-      totalTravelKm: Number(params.candidate?.totalTravelKm || 0),
-      timingSafe,
-      selected: false,
-      summary: null,
-      reason,
-    };
-    attempt.summary = this.explainManualScheduleAttempt(attempt);
-    return attempt;
+  private buildExactAnchorSequentialScheduleAttempt(...args: any[]): any {
+    return (this.manualFitScheduleAttemptService.buildExactAnchorSequentialScheduleAttempt as any)(...args);
   }
 
-  private async simulateManualClusterOrder(params: {
-    strategy: ManualCandidateOrder;
-    candidate: ManualInsertionCandidateResult;
-  }): Promise<ManualScheduleAttempt> {
-    if (params.strategy?.exactAnchorIntent) {
-      return this.buildExactAnchorSequentialScheduleAttempt(params);
-    }
-
-    return this.buildManualScheduleAttemptFromCandidate(params);
+  private async simulateManualClusterOrder(...args: any[]): Promise<any> {
+    return (this.manualFitScheduleAttemptService.simulateManualClusterOrder as any)(...args);
   }
 
-  private compareManualScheduleAttempts(a: ManualScheduleAttempt, b: ManualScheduleAttempt): number {
-    const category = (attempt: ManualScheduleAttempt): number => {
-      if (attempt.readyToApply && attempt.removedOptionalCount === 0 && attempt.removedTopPriorityCount === 0) return 0;
-      if (attempt.readyToApply) return 1;
-      if (attempt.requiresConfirmation) return 2;
-      if (
-        attempt.timingSafe &&
-        attempt.topPriorityAffectedCount === 0 &&
-        !String(attempt.reason || '').toLowerCase().includes('exact-anchor rebuild failed') &&
-        !String(attempt.reason || '').toLowerCase().includes('did not keep the selected manual hotspot')
-      ) return 3;
-      return 4;
-    };
-
-    const totalRemovedCount = (attempt: ManualScheduleAttempt): number => (
-      Number(attempt.removedOptionalCount || 0) + Number(attempt.removedTopPriorityCount || 0)
-    );
-
-    const ac = category(a);
-    const bc = category(b);
-    if (ac !== bc) return ac - bc;
-    if (totalRemovedCount(a) !== totalRemovedCount(b)) return totalRemovedCount(a) - totalRemovedCount(b);
-    if (a.removedTopPriorityCount !== b.removedTopPriorityCount) return a.removedTopPriorityCount - b.removedTopPriorityCount;
-    if (a.topPriorityAffectedCount !== b.topPriorityAffectedCount) return a.topPriorityAffectedCount - b.topPriorityAffectedCount;
-    if (a.openingHourConflictCount !== b.openingHourConflictCount) return a.openingHourConflictCount - b.openingHourConflictCount;
-    if (a.routeEndOverflowMinutes !== b.routeEndOverflowMinutes) return a.routeEndOverflowMinutes - b.routeEndOverflowMinutes;
-    if (a.waitingMinutes !== b.waitingMinutes) return a.waitingMinutes - b.waitingMinutes;
-    if (a.extraTravelKm !== b.extraTravelKm) return a.extraTravelKm - b.extraTravelKm;
-    if (a.totalTravelKm !== b.totalTravelKm) return a.totalTravelKm - b.totalTravelKm;
-    return a.candidateIndex - b.candidateIndex;
+  private compareManualScheduleAttempts(...args: any[]): number {
+    return (this.manualFitScheduleAttemptService.compareManualScheduleAttempts as any)(...args);
   }
 
   private async simulateManualInsertionAtPosition(
