@@ -39,6 +39,7 @@ import { ItineraryDetailsRegularTravelService } from './services/itinerary-detai
 import { ItineraryDetailsAttractionActivityService } from './services/itinerary-details-attraction-activity.service';
 import { ItineraryDetailsAttractionTimingService } from './services/itinerary-details-attraction-timing.service';
 import { ItineraryDetailsHotelTravelOriginService } from './services/itinerary-details-hotel-travel-origin.service';
+import { ItineraryDetailsHotelTravelTimeService } from './services/itinerary-details-hotel-travel-time.service';
 
 // ---------------------------------------------------------------------------
 // DTOs for Itinerary Details response (shared shape with frontend)
@@ -442,6 +443,7 @@ export class ItineraryDetailsService {
   private readonly attractionActivityService = new ItineraryDetailsAttractionActivityService();
   private readonly attractionTimingService = new ItineraryDetailsAttractionTimingService();
   private readonly hotelTravelOriginService = new ItineraryDetailsHotelTravelOriginService();
+  private readonly hotelTravelTimeService = new ItineraryDetailsHotelTravelTimeService();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -1688,57 +1690,22 @@ for (const row of vehicleKmRows) {
             totalDistanceKm += distanceNum;
           }
 
-          // Handle reversed times in DB  for item_type=5
-          let travelToHotelTimeRange: string | null = null;
-          if (startTimeText && endTimeText) {
-            const startMins = this.timeToMinutes(startTimeText);
-            const endMins = this.timeToMinutes(endTimeText);
-            if (startMins > endMins) {
-              travelToHotelTimeRange = `${endTimeText} - ${startTimeText}`;
-              
-              // FIX #3: Store the actual ARRIVAL time (which is after reversal)
-              hotelArrivalTime = startTimeText;
-              
-              if (proofQuoteEnabled) {
-                console.log('[Item5TimeReversal][PROOF]', {
-                  quoteId,
-                  routeId: route.itinerary_route_ID,
-                  routeHotspotId: rh.route_hotspot_ID,
-                  storageOrder: `${startTimeText} - ${endTimeText}`,
-                  emitOrder: travelToHotelTimeRange,
-                  fromLocation: fromName,
-                  toLocation: toName,
-                  storedHotelArrivalTime: hotelArrivalTime,
-                });
-              }
-              
-              console.log('[TravelMapping][PROOF] item_type=5 reversed time range normalised', {
-                quoteId,
-                routeHotspotId: rh.route_hotspot_ID,
-                from: fromName,
-                to: toName,
-                storedRange: `${startTimeText} - ${endTimeText}`,
-                emittedRange: travelToHotelTimeRange,
-              });
-            } else {
-              travelToHotelTimeRange = `${startTimeText} - ${endTimeText}`;
-              
-              // FIX #3: Store the actual ARRIVAL time
-              hotelArrivalTime = endTimeText;
-            }
-
-            const sameTimeRange = startMins === endMins;
-            if (sameTimeRange) {
-              const derivedRange = this.getTravelTimeRangeWithDuration(startTimeText, endTimeText, travelDuration);
-              if (derivedRange) {
-                travelToHotelTimeRange = derivedRange;
-                const parts = derivedRange.split(' - ');
-                if (parts.length === 2) {
-                  hotelArrivalTime = parts[1].trim();
-                }
-              }
-            }
-          }
+          const hotelTravelTime = this.hotelTravelTimeService.build({
+            startTimeText,
+            endTimeText,
+            travelDuration,
+            quoteId: Number(quoteId || 0),
+            routeId: Number(route.itinerary_route_ID || 0),
+            routeHotspotId: Number(rh.route_hotspot_ID || 0),
+            fromName,
+            toName,
+            proofQuoteEnabled,
+            timeToMinutes: (value) => this.timeToMinutes(value),
+            getTravelTimeRangeWithDuration: (start, end, duration) =>
+              this.getTravelTimeRangeWithDuration(start, end, duration),
+          });
+          const { timeRange: travelToHotelTimeRange } = hotelTravelTime;
+          hotelArrivalTime = hotelTravelTime.hotelArrivalTime;
 
           segments.push({
             type: "travel" as const,
