@@ -529,3 +529,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Distance accumulation and terminal-state mutation remain in the facade, and the tier adds no database reads.
 - This is not a measured database performance improvement: drop-off row volume, suppression frequency, validation CPU and details response latency remain unmeasured.
 - No index addition/removal or Redis action is proposed; future work should capture terminal route-row cardinality and route-end traces before caching or changing terminal projection work.
+
+## Iteration 123 evidence update
+
+- The terminal-return extraction preserves explicit-terminal precedence, destination regex classification, airport-transfer/return selection, day-range formatting and distance/duration fallbacks; no SQL predicate, index, Redis cache or response shape changed.
+- The tier adds no reads and leaves final day assembly in the facade.
+- This is not a measured database performance improvement: fallback frequency, classification CPU, duration formatting cost and details response latency remain unmeasured.
+- No index addition/removal or Redis action is proposed; future work should capture per-route terminal fallback traces before caching terminal projections.

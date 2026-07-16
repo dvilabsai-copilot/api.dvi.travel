@@ -3874,3 +3874,31 @@
 - `itinerary-details.service.ts` measured at 4,204 lines after the tier; `itinerary-details-dropoff.service.ts` is 89 lines.
 - Drop-off suppression frequency, route-end validation cost, terminal fallback frequency and timeline response latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `3dcca46`.
+
+### Cycle 126 - Extract itinerary-details terminal return projection
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itinerary-details.service.ts`
+- Extracted responsibility: end-of-day terminal classification, airport-transfer fallback and ordinary return-segment projection
+- New files: `src/modules/itineraries/services/itinerary-details-terminal-return.service.ts`, `test/itinerary-details-terminal-return.test.ts`
+- Workflow: per-route end-of-day fallback projection
+
+#### Change
+
+- Moved explicit-terminal detection, airport-transfer construction and ordinary return fallback behind `ItineraryDetailsTerminalReturnService`.
+- Preserved terminal-segment precedence, destination classification, day start/end formatting, distance/duration fallbacks and `days` response projection values.
+- No SQL predicate, index, Redis cache, API route, DTO or response contract changed.
+
+#### Verification
+
+- Terminal-return characterization tests: PASS, 3/3
+- Itinerary characterization collection: PASS, 182/182
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itinerary-details.service.ts` measured at 4,179 lines after the tier; `itinerary-details-terminal-return.service.ts` is 76 lines.
+- Terminal fallback frequency, destination classification cost, duration formatting cost and timeline response latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `a07384c`.

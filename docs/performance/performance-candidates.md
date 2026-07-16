@@ -398,6 +398,8 @@ The iteration-121 itinerary-details hotel-check-in boundary is a measurement sea
 
 The iteration-122 itinerary-details drop-off boundary is a measurement seam for drop-off row volume, route-end suppression frequency, departure-destination fallback frequency, terminal segment formatting CPU, proof-log volume and end-to-end timeline response latency. Capture normal, overrun, missing-time, airport, non-airport and large-route workloads separately before caching terminal projections; preserve route-end freshness, distance accumulation, terminal-state mutation, conflict fields and destination labels. No index addition/removal or Redis cache is justified until terminal-row and route-end traces establish the measured winner.
 
+The iteration-123 itinerary-details terminal-return boundary is a measurement seam for fallback-row frequency, terminal-destination regex classification cost, airport-transfer frequency, ordinary-return frequency, day-range duration formatting cost and end-to-end timeline response latency. Capture explicit-terminal, ordinary-hotel, missing-destination, missing-time and multi-day workloads separately before caching terminal projections; preserve emitted-terminal precedence, day start/end freshness, distance/duration labels and final day response fields. No index addition/removal or Redis cache is justified until terminal fallback traces establish the measured winner.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.
