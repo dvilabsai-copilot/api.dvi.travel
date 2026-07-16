@@ -270,3 +270,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Preferred timing precedence, minimum fallback duration, conflict reason, status/deleted fields, timestamps and created-by semantics remain unchanged; only conflict persistence ownership moved.
 - This is not a measured performance improvement: existing-row lookup latency, route-order lookup latency, update/create ratio, fallback frequency, conflict-write volume and transaction duration remain unmeasured.
 - No index or Redis action is proposed; any future optimization must compare conflict lookup/order query plans and write traces before batching or caching mutable route state.
+
+## Iteration 86 evidence update
+
+- The route-hotspot rebuild extraction preserves active-route validation, route/date and existing-hotspot reads, manual activity/row retirement, exclusion clearing, hotspot-engine transaction scope and post-transaction side effects; no SQL, index, Redis cache or query shape was changed.
+- Plan-wide existing-hotspot snapshotting, clean-route skip behavior, transaction timeout/wait settings, parking rebuild and vehicle-pricing refresh remain unchanged; only workflow ownership moved.
+- This is not a measured performance improvement: route/date/hotspot read fan-out, transaction duration, rebuild row volume, skipped-route frequency, parking-charge latency and pricing-refresh latency remain unmeasured.
+- No index or Redis action is proposed; any future optimization must compare route-rebuild query plans and transaction traces before batching or caching mutable itinerary state.

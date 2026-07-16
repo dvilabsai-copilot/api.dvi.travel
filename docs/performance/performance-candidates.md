@@ -324,6 +324,8 @@ The iteration-84 manual-hotspot overlap boundary is a measurement seam for overl
 
 The iteration-85 manual-hotspot conflict-persistence boundary is a measurement seam for existing-row lookup latency, route-time lookup latency, current-order scan volume, update/create ratio, fallback timing frequency, conflict-write volume and transaction duration. Capture existing-row, preferred-time, route-fallback, empty-route and repeated-confirmation workloads separately before proposing an index, write batching or Redis; preserve conflict metadata, timing precedence, timestamps and mutable route state. No index addition/removal or Redis cache is justified by the current evidence because this tier changed ownership only and has no before/after production timings.
 
+The iteration-86 route-hotspot rebuild boundary is a measurement seam for route validation latency, plan-wide route/date/hotspot read fan-out, manual-row and activity retirement volume, rebuild transaction duration, hotspot-engine row volume, clean-route skip frequency, parking-charge latency and vehicle-pricing refresh latency. Capture clean, manual-heavy, exclusion-heavy, multi-route and large-plan rebuilds separately before proposing indexes, batching or Redis; preserve plan-wide allocation, transaction consistency, timeout settings and mutable route state. No index addition/removal or Redis cache is justified by the current evidence because this tier changed ownership only and has no before/after production timings.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.

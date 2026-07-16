@@ -2824,3 +2824,32 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Existing-row lookup latency, route-order lookup latency, conflict-write volume, fallback frequency and transaction duration remain unmeasured.
 - Implementation commit: `api.dvi.travel` `144dd71`.
+
+### Cycle 89 - Extract route-hotspot rebuild workflow
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: manual/exclusion reset transaction and plan-wide route-hotspot rebuild
+- New files: `src/modules/itineraries/services/itinerary-route-hotspot-rebuild.service.ts`, `test/itinerary-route-hotspot-rebuild.test.ts`
+- Workflow: route/day rebuild and manual-hotspot reset
+
+#### Change
+
+- Moved active-route validation, existing-hotspot/date snapshotting, manual activity/row retirement, exclusion clearing and hotspot-engine rebuild behind `ItineraryRouteHotspotRebuildService`.
+- Preserved transaction timeout/wait settings, plan-wide rebuild inputs, skipped clean-route response, parking-charge rebuild, same-city optimization and vehicle-pricing refresh behavior.
+- Registered the service in `ItinerariesModule` and retained facade callbacks for post-rebuild side effects.
+
+#### Verification
+
+- Route-hotspot rebuild characterization tests: PASS, 2/2
+- Combined focused backend/timeline suite: PASS, 192/192
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 5,933 lines after the tier; `ItineraryRouteHotspotRebuildService` is 184 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Route/hotspot read fan-out, transaction duration, rebuild row volume, skipped-route frequency, parking rebuild latency and pricing refresh latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `35973b7`.
