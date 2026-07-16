@@ -45,6 +45,7 @@ import { ArrivalPolicyDecisionState, TimelineDataAccessService } from './timelin
 import { TimelineTravelDataService } from './timeline-travel-data.service';
 import { TimelineCandidateFeasibilityService } from './timeline-candidate-feasibility.service';
 import { TimelineCandidatePolicyService } from './timeline-candidate-policy.service';
+import { TimelineDay1SourceFallbackService } from './timeline-day1-source-fallback.service';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -191,6 +192,7 @@ export class TimelineBuilder {
   private readonly dataAccessService = new TimelineDataAccessService();
   private readonly travelDataService = new TimelineTravelDataService(this.distanceHelper);
   private readonly candidateFeasibilityService = new TimelineCandidateFeasibilityService(this.distanceHelper);
+  private readonly day1SourceFallbackService = new TimelineDay1SourceFallbackService();
   private readonly candidatePolicyService = new TimelineCandidatePolicyService(
     this.operatingHoursService,
     this.slotPolicyService,
@@ -199,6 +201,10 @@ export class TimelineBuilder {
   );
 
   constructor() {
+    this.day1SourceFallbackService.setCallbacks({
+      normalizeCityName: (...args) => (this.normalizeCityName as any)(...args),
+      hotspotLocationMatchesCity: (...args) => (this.hotspotLocationMatchesCity as any)(...args),
+    });
     this.candidatePolicyService.setCallbacks({
       canonicalCityKey: (...args) => (this.canonicalCityKey as any)(...args),
       logBookingRule: (...args) => (this.logBookingRule as any)(...args),
@@ -7559,120 +7565,16 @@ export class TimelineBuilder {
     maxResults: number = 3,
     includeZeroPriority: boolean = false,
   ): Promise<SelectedHotspot[]> {
-    try {
-      const route = (await (tx as any).dvi_itinerary_route_details?.findFirst({
-        where: {
-          itinerary_plan_ID: planId,
-          itinerary_route_ID: routeId,
-          deleted: 0,
-          status: 1,
-        },
-      })) as RouteRow | null;
-
-      if (!route) return [];
-
-      // Get route date for operating hours check
-      const routeDate = route.itinerary_route_date ? new Date(route.itinerary_route_date) : null;
-      const phpDow = routeDate ? ((routeDate.getDay() + 6) % 7) : undefined;
-
-      // Get starting location coordinates
-      let startLat = 0;
-      let startLon = 0;
-      
-      if (route.location_id) {
-        const storedLoc = await (tx as any).dvi_stored_locations?.findFirst({
-          where: { location_ID: BigInt(route.location_id), deleted: 0, status: 1 },
-        });
-        
-        if (storedLoc) {
-          startLat = Number(storedLoc.source_location_lattitude ?? 0);
-          startLon = Number(storedLoc.source_location_longitude ?? 0);
-        }
-      }
-
-      // Fetch all active hotspots
-      const allHotspots = (await (tx as any).dvi_hotspot_place?.findMany({
-        where: includeZeroPriority
-          ? { deleted: 0, status: 1 }
-          : { deleted: 0, status: 1, hotspot_priority: { gt: 0 } },
-      })) || [];
-
-      // Filter to source city only and calculate distances
-      const normalizedSourceCity = this.normalizeCityName(sourceCity);
-      const sourceHotspots: any[] = [];
-
-      for (const h of allHotspots) {
-        const hotspotId = Number(h.hotspot_ID ?? 0);
-        if (hotspotId <= 0) {
-          continue;
-        }
-        if (excludedHotspotIds?.has(hotspotId)) {
-          continue;
-        }
-
-        const hotspotLocation = String(h.hotspot_location || '');
-        const hotspotToLocation = String(h.hotspot_to_location || hotspotLocation || '');
-
-        const sourceMatch =
-          this.hotspotLocationMatchesCity(hotspotLocation, sourceCity) ||
-          this.hotspotLocationMatchesCity(hotspotToLocation, sourceCity) ||
-          this.hotspotLocationMatchesCity(hotspotLocation, normalizedSourceCity) ||
-          this.hotspotLocationMatchesCity(hotspotToLocation, normalizedSourceCity);
-
-        if (!sourceMatch) {
-          continue; // Skip if not in source city
-        }
-
-        // Calculate distance from starting location
-        const hsLat = Number(h.hotspot_latitude ?? 0);
-        const hsLon = Number(h.hotspot_longitude ?? 0);
-        let distance = 0;
-        
-        if (startLat && startLon && hsLat && hsLon) {
-          const earthRadius = 6371;
-          const dLat = ((hsLat - startLat) * Math.PI) / 180;
-          const dLon = ((hsLon - startLon) * Math.PI) / 180;
-          const a =
-            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-            Math.cos((startLat * Math.PI) / 180) *
-              Math.cos((hsLat * Math.PI) / 180) *
-              Math.sin(dLon / 2) *
-              Math.sin(dLon / 2);
-          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-          distance = earthRadius * c * 1.5;
-        }
-
-        sourceHotspots.push({ ...h, hotspot_distance: distance });
-      }
-
-      // Sort by priority asc, then distance asc
-      sourceHotspots.sort((a: any, b: any) => {
-        const aPriority = Number(a.hotspot_priority ?? 0);
-        const bPriority = Number(b.hotspot_priority ?? 0);
-        
-        if (aPriority !== bPriority) {
-          return aPriority - bPriority; // Lower priority first
-        }
-        return a.hotspot_distance - b.hotspot_distance; // Closer first
-      });
-
-      const limit = Number.isFinite(maxResults) && maxResults > 0 ? Math.floor(maxResults) : 3;
-      const topThree = sourceHotspots.slice(0, limit);
-
-      return topThree.map((h: any) => ({
-        hotspot_ID: Number(h.hotspot_ID ?? 0),
-        display_order: Number(h.hotspot_priority ?? 0),
-        hotspot_priority: Number(h.hotspot_priority ?? 0),
-        hotspot_distance: Number(h.hotspot_distance ?? 0) || 0,
-        hotspot_name: String(h.hotspot_name || ''),
-        hotspot_location: String(h.hotspot_location || ''),
-        hotspot_to_location: String(h.hotspot_to_location || h.hotspot_location || ''),
-        matched_bucket: 'source_fallback',
-      }));
-    } catch (err) {
-      console.error("[fetchDay1TopPrioritySourceHotspots] Error:", err);
-      return [];
-    }
+    return (await this.day1SourceFallbackService.fetch(
+      tx,
+      planId,
+      routeId,
+      sourceCity,
+      destinationCity,
+      excludedHotspotIds,
+      maxResults,
+      includeZeroPriority,
+    )) as SelectedHotspot[];
   }
 
   /**
