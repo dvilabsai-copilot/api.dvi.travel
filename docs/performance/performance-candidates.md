@@ -372,6 +372,8 @@ The iteration-108 itinerary-details entry-ticket boundary is a measurement seam 
 
 The iteration-109 latest-itinerary DataTable boundary is a measurement seam for role-scope lookup latency, search fan-out, staff/agent/user selectivity, confirmed-plan exclusion volume, plan-row count, pagination slice CPU, label formatting CPU and end-to-end table response latency. Capture unfiltered, role-scoped, text-search, date-filtered, location-filtered, confirmed-heavy and large-plan workloads separately before proposing composite indexes, batching or Redis; preserve search predicates, role semantics, confirmation freshness, pagination and response labels. No index addition/removal or Redis cache is justified until query plans and endpoint traces establish the measured winner.
 
+The iteration-110 itinerary-details segment-sanitizer boundary is a measurement seam for excluded-hotspot set size, normalized-name matching CPU, attraction/hotspot rejection frequency, generic-hotel no-op frequency, same-place travel rejection frequency and end-to-end timeline projection latency. Capture empty, excluded-ID, excluded-name, generic-hotel, same-place, mixed-valid and large-segment workloads separately before memoizing labels or caching projections; preserve mutable itinerary exclusions, segment freshness and response ordering. No index addition/removal or Redis cache is justified by this pure projection-ownership tier without timeline traces.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.

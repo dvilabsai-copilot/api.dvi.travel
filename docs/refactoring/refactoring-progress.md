@@ -3510,3 +3510,31 @@
 - `itinerary-details.service.ts` measured at 4,975 lines after the tier; `itinerary-latest-data-table.service.ts` is 361 lines.
 - DataTable query latency, search fan-out, hydration row volume and projection serialization cost remain unmeasured.
 - Implementation commit: `api.dvi.travel` `2398e4c`.
+
+### Cycle 113 - Extract itinerary-details segment sanitizer
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itinerary-details.service.ts`
+- Extracted responsibility: excluded-hotspot ID/name filtering, generic-hotel no-op removal and same-place travel suppression
+- New files: `src/modules/itineraries/services/itinerary-details-segment-sanitizer.service.ts`, `test/itinerary-details-segment-sanitizer.test.ts`
+- Workflow: final itinerary-details timeline response sanitization
+
+#### Change
+
+- Moved final segment sanitization behind `ItineraryDetailsSegmentSanitizerService` while retaining the existing facade callbacks and in-place segment replacement.
+- Preserved excluded-ID and normalized-name matching, attraction/hotspot filtering, generic hotel suppression, same-place suppression and unrelated segment retention.
+- No SQL predicate, index, Redis cache, API route, DTO or response contract changed.
+
+#### Verification
+
+- Segment-sanitizer characterization test: PASS, 1/1
+- Itinerary characterization collection: PASS, 159/159
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itinerary-details.service.ts` measured at 4,949 lines after the tier; `itinerary-details-segment-sanitizer.service.ts` is 64 lines.
+- Sanitizer CPU, excluded-row frequency, segment volume and response projection latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `5cefaba`.

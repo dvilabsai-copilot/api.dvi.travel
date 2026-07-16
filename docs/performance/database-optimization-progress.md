@@ -438,3 +438,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Staff/agent/user hydration, username-label precedence and date formatting remain unchanged.
 - This is not a measured database performance improvement: role/search lookup latency, query fan-out, plan-row volume, projection CPU and endpoint latency remain unmeasured.
 - No index addition/removal or Redis action is proposed; future work should capture DataTable query plans and endpoint traces before batching or caching mutable listing data.
+
+## Iteration 110 evidence update
+
+- The segment-sanitizer extraction changes only pure response projection ownership; no SQL, index, Redis cache, predicate, API route or response shape changed.
+- Excluded IDs/names, generic hotel no-op removal, same-place travel suppression and unrelated segment retention remain unchanged.
+- This is not a measured database performance improvement: sanitizer CPU, rejected-row frequency, segment volume and details response latency remain unmeasured.
+- No index or Redis action is proposed; future work should profile timeline projection and exclusion frequency before memoizing or caching mutable itinerary data.
