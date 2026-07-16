@@ -151,3 +151,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - The facade still supplies the existing segment-time callback and all manual-fit services retain their callback names and ordering; only policy ownership moved.
 - This is not a measured performance improvement: policy CPU, row volume, diagnostic frequency, retry frequency, cacheability and preview latency remain unmeasured.
 - No index or Redis action is proposed; any future optimization must be based on representative preview traces and preserve timeline invariants and response metadata.
+
+## Iteration 69 evidence update
+
+- The matrix-preview timeline-policy extraction is pure response/timing policy work; it preserves existing timeline row processing without SQL, index, Redis cache or query-shape changes.
+- Existing time/duration callbacks, travel-label projection, placeholder repair, duplicate suppression and matrix-order diagnostics remain unchanged; only policy ownership moved.
+- This is not a measured performance improvement: policy CPU, placeholder frequency, duplicate volume, diagnostic frequency and preview latency remain unmeasured.
+- No index or Redis action is proposed; any future optimization must use representative matrix-preview traces and preserve time formatting and ordering contracts.

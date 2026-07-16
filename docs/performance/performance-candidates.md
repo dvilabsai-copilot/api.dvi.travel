@@ -290,6 +290,8 @@ The iteration-67 confirmed invoice/pluck-card boundary is a measurement seam for
 
 The iteration-68 manual-fit timeline-policy boundary is a measurement seam for validation CPU, removed-row volume, sanitization/pruning work, invariant diagnostic frequency, retry classification frequency, exact-anchor normalization calls and preview response latency. Capture successful, removed-row, invariant-failure, retryable-transaction and exact-anchor workloads separately before changing validation order, memoizing timeline state or adding cache/index work; preserve removal predicates, preview ordering, diagnostics and anchor metadata.
 
+The iteration-69 matrix-preview timeline-policy boundary is a measurement seam for finalization CPU, placeholder time-range frequency, duration parsing, travel-label normalization, duplicate suppression, invariant-warning frequency and preview response latency. Capture normal, placeholder-heavy, matrix-split, duplicate-row and debug-assertion workloads separately before memoizing timeline state or changing repair order; preserve absolute/12-hour formatting, row ordering, travel labels and debug behavior.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.

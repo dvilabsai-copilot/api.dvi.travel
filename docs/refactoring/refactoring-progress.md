@@ -2321,3 +2321,32 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Timeline-policy CPU, removed-row volume, invariant-log volume and preview response latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `94d0f6c`.
+
+### Cycle 72 - Extract matrix-preview timeline policy
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: matrix-preview timeline finalization, time repair, duration parsing and invariant diagnostics
+- New files: `src/modules/itineraries/services/itinerary-matrix-preview-timeline-policy.service.ts`, `test/itinerary-matrix-preview-timeline-policy.test.ts`
+- Workflow: matrix-assisted manual-fit preview and rescheduling callbacks
+
+#### Change
+
+- Moved travel-label normalization, placeholder time-range repair, preview duration parsing, clock-label formatting, duplicate suppression and matrix-order assertions behind `ItineraryMatrixPreviewTimelinePolicyService`.
+- Preserved existing callback names, absolute/12-hour time formatting, row ordering, travel labels, duplicate fingerprints and debug assertion semantics.
+- Registered the provider in `ItinerariesModule` and retained the facade adapters for all existing consumers.
+
+#### Verification
+
+- Matrix-preview timeline policy characterization tests: PASS, 3/3
+- Combined focused backend/timeline suite: PASS, 153/153
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 9,988 lines after the tier; `ItineraryMatrixPreviewTimelinePolicyService` is 490 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Preview-policy CPU, placeholder-row frequency, duplicate suppression volume and response latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `c0dbb7b`.
