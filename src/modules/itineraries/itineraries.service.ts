@@ -72,6 +72,7 @@ import { ItineraryGuideAssignmentService } from './services/itinerary-guide-assi
 import { ItineraryGuideAssignmentWriteService, SaveGuideAssignmentPayload } from './services/itinerary-guide-assignment-write.service';
 import { ItineraryConfirmedGuideAssignmentService } from './services/itinerary-confirmed-guide-assignment.service';
 import { ItineraryConfirmedGuideCancellationService } from './services/itinerary-confirmed-guide-cancellation.service';
+import { ItineraryManualFitAttemptStoreService } from './services/itinerary-manual-fit-attempt-store.service';
 import { ItineraryVehicleBuildStatusService } from './services/itinerary-vehicle-build-status.service';
 import { ItineraryVehicleBuildService } from './services/itinerary-vehicle-build.service';
 import { ItineraryPlanPersistenceService } from './services/itinerary-plan-persistence.service';
@@ -443,7 +444,6 @@ function escapeLikePattern(value: string): string {
 export class ItinerariesService {
   private readonly previewDistanceHelper = new DistanceHelper();
   private readonly manualHotspotMatrixBuildLocks = new Set<string>();
-  private readonly manualFitAttemptCache = new Map<string, ManualFitAttemptCacheEntry>();
   private manualFitAttemptStoreTableEnsured = false;
   private readonly MANUAL_HOTSPOT_EFFECTIVE_PRIORITY = 4;
   private readonly PROTECTED_AUTO_PRIORITY_MAX = 2;
@@ -641,6 +641,7 @@ export class ItinerariesService {
     private readonly matrixSafeInsertionService: ItineraryMatrixSafeInsertionService = new ItineraryMatrixSafeInsertionService(prisma),
     private readonly previewTimelineApplicationService: ItineraryPreviewTimelineApplicationService = new ItineraryPreviewTimelineApplicationService(prisma),
     private readonly routeLegCacheService: ItineraryRouteLegCacheService = new ItineraryRouteLegCacheService(prisma),
+    private readonly manualFitAttemptStoreService: ItineraryManualFitAttemptStoreService = new ItineraryManualFitAttemptStoreService(prisma),
   ) {
     this.vehicleBuildService.setVehicleVendorSelector((data) => this.selectVehicleVendor(data));
     this.planPersistenceService.setCallbacks({
@@ -718,7 +719,7 @@ export class ItinerariesService {
       normalizeLocationText: (value) => this.normalizeLocationText(value),
     });
     this.manualHotspotPreviewService.setCallbacks({
-      ensureManualFitAttemptStoreTable: (...args) => (this.ensureManualFitAttemptStoreTable as any)(...args),
+      ensureManualFitAttemptStoreTable: (...args) => (this.manualFitAttemptStoreService.ensureTable as any)(...args),
       normalizeManualHotspotIds: (...args) => (this.normalizeManualHotspotIds as any)(...args),
       isRetryableManualPreviewTransactionError: (...args) => (this.isRetryableManualPreviewTransactionError as any)(...args),
       runManualHotspotBatchWithinTransaction: (...args) => (this.manualHotspotBatchService.runManualHotspotBatchWithinTransaction as any)(...args),
@@ -1313,139 +1314,21 @@ private getGuideSlotLabel(slotId: number): string {
   ) {
     return this.confirmedGuideCancellationService.cancelConfirmedGuideSlot(confirmedPlanId, payload, userId);
   }
-  private async ensureManualFitAttemptStoreTable(): Promise<void> {
-    if (this.manualFitAttemptStoreTableEnsured) return;
-
-    await this.prisma.$executeRawUnsafe(`
-      CREATE TABLE IF NOT EXISTS dvi_manual_fit_preview_attempts (
-        id BIGINT NOT NULL AUTO_INCREMENT,
-        attempt_id VARCHAR(64) NOT NULL,
-        itinerary_plan_id INT NOT NULL,
-        itinerary_route_id INT NOT NULL,
-        selected_hotspot_id INT NOT NULL,
-        payload_json LONGTEXT NOT NULL,
-        expires_at DATETIME NOT NULL,
-        created_on DATETIME NOT NULL,
-        updated_on DATETIME NOT NULL,
-        PRIMARY KEY (id),
-        UNIQUE KEY uq_manual_fit_preview_attempt (attempt_id),
-        KEY idx_manual_fit_preview_expires_at (expires_at),
-        KEY idx_manual_fit_preview_plan_route (itinerary_plan_id, itinerary_route_id)
-      )
-    `);
-
-    this.manualFitAttemptStoreTableEnsured = true;
+  private ensureManualFitAttemptStoreTable() {
+    return this.manualFitAttemptStoreService.ensureTable();
   }
 
-  private parseStoredManualFitAttemptEntry(value: any): ManualFitAttemptCacheEntry | null {
-    const parsed = typeof value === 'string'
-      ? JSON.parse(value)
-      : value;
-    if (!parsed || typeof parsed !== 'object') return null;
-
-    const attemptId = String(parsed?.attemptId || '').trim();
-    const planId = Number(parsed?.planId || 0);
-    const routeId = Number(parsed?.routeId || 0);
-    const selectedHotspotId = Number(parsed?.selectedHotspotId || 0);
-    const expiresAt = String(parsed?.expiresAt || '').trim();
-
-    if (!attemptId || !(planId > 0) || !(routeId > 0) || !(selectedHotspotId > 0) || !expiresAt) {
-      return null;
-    }
-
-    return parsed as ManualFitAttemptCacheEntry;
+  private saveManualFitAttemptEntry(entry: any) {
+    return this.manualFitAttemptStoreService.save(entry);
   }
 
-  private async saveManualFitAttemptEntry(entry: ManualFitAttemptCacheEntry): Promise<void> {
-    const attemptId = String(entry?.attemptId || '').trim();
-    if (!attemptId) return;
-
-    await this.ensureManualFitAttemptStoreTable();
-    const now = new Date();
-    const expiresAt = new Date(entry.expiresAt);
-
-    await this.prisma.$executeRawUnsafe(
-      `
-        INSERT INTO dvi_manual_fit_preview_attempts (
-          attempt_id,
-          itinerary_plan_id,
-          itinerary_route_id,
-          selected_hotspot_id,
-          payload_json,
-          expires_at,
-          created_on,
-          updated_on
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ON DUPLICATE KEY UPDATE
-          itinerary_plan_id = VALUES(itinerary_plan_id),
-          itinerary_route_id = VALUES(itinerary_route_id),
-          selected_hotspot_id = VALUES(selected_hotspot_id),
-          payload_json = VALUES(payload_json),
-          expires_at = VALUES(expires_at),
-          updated_on = VALUES(updated_on)
-      `,
-      attemptId,
-      Number(entry.planId || 0),
-      Number(entry.routeId || 0),
-      Number(entry.selectedHotspotId || 0),
-      JSON.stringify(entry),
-      Number.isFinite(expiresAt.getTime()) ? expiresAt : new Date(Date.now() + 10 * 60 * 1000),
-      now,
-      now,
-    );
-
-    this.manualFitAttemptCache.set(attemptId, entry);
+  private loadManualFitAttemptEntry(attemptId: string) {
+    return this.manualFitAttemptStoreService.load(attemptId);
   }
 
-  private async loadManualFitAttemptEntry(attemptId: string): Promise<ManualFitAttemptCacheEntry | null> {
-    const normalizedAttemptId = String(attemptId || '').trim();
-    if (!normalizedAttemptId) return null;
-
-    const cached = this.manualFitAttemptCache.get(normalizedAttemptId);
-    if (cached) {
-      return cached;
-    }
-
-    await this.ensureManualFitAttemptStoreTable();
-    const rows = await this.prisma.$queryRawUnsafe<Array<{ payload_json: string }>>(
-      `
-        SELECT payload_json
-        FROM dvi_manual_fit_preview_attempts
-        WHERE attempt_id = ?
-        LIMIT 1
-      `,
-      normalizedAttemptId,
-    );
-
-    const payloadText = String(rows?.[0]?.payload_json || '').trim();
-    if (!payloadText) return null;
-
-    try {
-      const parsed = this.parseStoredManualFitAttemptEntry(payloadText);
-      if (!parsed) return null;
-      this.manualFitAttemptCache.set(normalizedAttemptId, parsed);
-      return parsed;
-    } catch (error) {
-      console.warn('[FitHere][attempt_store_parse_failed]', {
-        attemptId: normalizedAttemptId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return null;
-    }
+  private deleteManualFitAttemptEntry(attemptId: string) {
+    return this.manualFitAttemptStoreService.delete(attemptId);
   }
-
-  private async deleteManualFitAttemptEntry(attemptId: string): Promise<void> {
-    const normalizedAttemptId = String(attemptId || '').trim();
-    if (!normalizedAttemptId) return;
-
-    this.manualFitAttemptCache.delete(normalizedAttemptId);
-    await this.ensureManualFitAttemptStoreTable();
-    await this.prisma.$executeRawUnsafe(
-      `DELETE FROM dvi_manual_fit_preview_attempts WHERE attempt_id = ?`,
-      normalizedAttemptId,
-    );
-  }
-
   private createVehicleBuildRunId(planId: number): string {
     return this.vehicleBuildStatusService.createBuildRunId(planId);
   }
