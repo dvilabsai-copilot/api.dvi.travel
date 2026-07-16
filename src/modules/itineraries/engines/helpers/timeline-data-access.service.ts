@@ -8,6 +8,14 @@ export interface ArrivalPolicyDecisionState {
   previousDayBillingConfirmed: boolean;
 }
 
+export interface TimelinePlanInputs {
+  plan: any | null;
+  routes: any[];
+  allHotspots: any[];
+  allTimings: any[];
+  timingMap: Map<number, Map<number, any[]>>;
+}
+
 /**
  * Database-facing helpers used by the timeline orchestrator.
  *
@@ -16,6 +24,47 @@ export interface ArrivalPolicyDecisionState {
  * from the scheduling algorithm and later add request-scoped memoization.
  */
 export class TimelineDataAccessService {
+  async loadPlan(tx: Tx, planId: number): Promise<any | null> {
+    return (await (tx as any).dvi_itinerary_plan_details.findFirst({
+      where: { itinerary_plan_ID: planId, deleted: 0 },
+    })) as any | null;
+  }
+
+  async loadRoutes(tx: Tx, planId: number): Promise<any[]> {
+    return (await (tx as any).dvi_itinerary_route_details.findMany({
+      where: { itinerary_plan_ID: planId, deleted: 0, status: 1 },
+      orderBy: [
+        { itinerary_route_date: 'asc' },
+        { itinerary_route_ID: 'asc' },
+      ],
+    })) as any[];
+  }
+
+  async loadAllActiveHotspots(tx: Tx): Promise<any[]> {
+    return ((await (tx as any).dvi_hotspot_place?.findMany({
+      where: { deleted: 0, status: 1 },
+    })) || []) as any[];
+  }
+
+  async loadAllActiveTimings(tx: Tx): Promise<any[]> {
+    return (await (tx as any).dvi_hotspot_timing.findMany({
+      where: { deleted: 0, status: 1 },
+    })) as any[];
+  }
+
+  buildTimingMap(timings: any[]): Map<number, Map<number, any[]>> {
+    const timingMap = new Map<number, Map<number, any[]>>();
+    for (const timing of timings || []) {
+      const hotspotId = Number(timing.hotspot_ID);
+      const day = Number(timing.hotspot_timing_day);
+      if (!timingMap.has(hotspotId)) timingMap.set(hotspotId, new Map());
+      const dayMap = timingMap.get(hotspotId)!;
+      if (!dayMap.has(day)) dayMap.set(day, []);
+      dayMap.get(day)!.push(timing);
+    }
+    return timingMap;
+  }
+
   normalizeTravelRowDistance(
     row: HotspotDetailRow,
     sourceLocationName: string,

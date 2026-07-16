@@ -299,9 +299,7 @@ export class TimelineBuilder {
     this.logTimeline('[TIMELINE] buildTimelineForPlan started for planId:', planId, existingHotspots ? `with ${existingHotspots.length} pre-loaded hotspots` : '');
     
     let opStart = Date.now();
-    const plan = (await (tx as any).dvi_itinerary_plan_details.findFirst({
-      where: { itinerary_plan_ID: planId, deleted: 0 },
-    })) as PlanHeader | null;
+    const plan = (await this.dataAccessService.loadPlan(tx, planId)) as PlanHeader | null;
     this.logTimeline('[TIMELINE] Fetch plan:', Date.now() - opStart, 'ms');
 
     if (!plan) {
@@ -320,13 +318,7 @@ export class TimelineBuilder {
     }
 
     opStart = Date.now();
-    const routes = (await (tx as any).dvi_itinerary_route_details.findMany({
-      where: { itinerary_plan_ID: planId, deleted: 0, status: 1 },
-      orderBy: [
-        { itinerary_route_date: "asc" },
-        { itinerary_route_ID: "asc" },
-      ],
-    })) as RouteRow[];
+    const routes = (await this.dataAccessService.loadRoutes(tx, planId)) as RouteRow[];
     this.logTimeline('[TIMELINE] Fetch routes:', Date.now() - opStart, 'ms, count:', routes.length);
 
     if (!routes.length) {
@@ -374,12 +366,7 @@ export class TimelineBuilder {
 
     // ⚡ PERFORMANCE OPTIMIZATION: Fetch all hotspots ONCE instead of once per route
     opStart = Date.now();
-    const allHotspots = (await (tx as any).dvi_hotspot_place?.findMany({
-      where: {
-        deleted: 0,
-        status: 1,
-      },
-    })) || [];
+    const allHotspots = await this.dataAccessService.loadAllActiveHotspots(tx);
     this.logTimeline('[TIMELINE] Fetch ALL hotspots ONCE:', Date.now() - opStart, 'ms, count:', allHotspots.length);
 
     // ⚡ PERF: Pre-load global settings once so distanceHelper.getBufferTime never hits DB.
@@ -411,28 +398,9 @@ export class TimelineBuilder {
 
     // ⚡ Batch-fetch ALL timing data for ALL days at once (avoid 42+ individual queries)
     opStart = Date.now();
-    const allTimings = await (tx as any).dvi_hotspot_timing.findMany({
-      where: {
-        deleted: 0,
-        status: 1,
-      },
-    });
-    
+    const allTimings = await this.dataAccessService.loadAllActiveTimings(tx);
     // Group timings by hotspot_ID and day for O(1) lookup
-    const timingMap = new Map<number, Map<number, any[]>>();
-    for (const timing of allTimings) {
-      const hotspotId = Number(timing.hotspot_ID);
-      const day = Number(timing.hotspot_timing_day);
-      
-      if (!timingMap.has(hotspotId)) {
-        timingMap.set(hotspotId, new Map());
-      }
-      const dayMap = timingMap.get(hotspotId)!;
-      if (!dayMap.has(day)) {
-        dayMap.set(day, []);
-      }
-      dayMap.get(day)!.push(timing);
-    }
+    const timingMap = this.dataAccessService.buildTimingMap(allTimings);
     this.logTimeline('[TIMELINE] Batch-fetched ALL timing data:', Date.now() - opStart, 'ms, records:', allTimings.length);
 
     const permanentlyClosedHotspotIds = new Set<number>();
