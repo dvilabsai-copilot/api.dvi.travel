@@ -2971,3 +2971,33 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Activity impact read fan-out, downstream row volume, priority-removal frequency, reroute fallback frequency and simulation latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `911c91b`.
+
+### Cycle 94 - Extract transport formatting and flight-detail parsing
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: transport voucher display formatting, location normalization and flight-detail parsing
+- New files: `src/modules/itineraries/services/itinerary-transport-formatting.service.ts`, `test/itinerary-transport-formatting.test.ts`
+- Workflow: transport voucher projection and transport callback formatting
+
+#### Change
+
+- Moved transport date/range formatting, passenger labels, voucher numbers, time/location display normalization, HTML decoding and JSON/raw flight parsing behind `ItineraryTransportFormattingService`.
+- Kept the existing facade method names and injected the facade's `formatTime` callback so time display behavior remains centralized.
+- Preserved fallback labels, date formatting, location normalization, parsing behavior and response fields.
+
+#### Verification
+
+- Transport-formatting characterization tests: PASS, 2/2
+- Combined focused backend/timeline suite: PASS, 202/202
+- Backend build: PASS
+- Nest/OpenAPI initialization: PASS, 499 paths
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 5,195 lines after the tier; `ItineraryTransportFormattingService` is 105 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Formatting CPU, malformed-payload frequency and transport voucher projection latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `7c0c78e`.

@@ -305,3 +305,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Activity-duration fallback, extension calculation, priority warning/removal ordering, route-end decision and rollback marker semantics remain unchanged; concrete DI tokens additionally restore Nest startup without changing runtime contracts.
 - This is not a measured performance improvement: activity/hotspot/route read fan-out, downstream row volume, master lookup latency, priority-removal frequency, reroute fallback frequency and simulation latency remain unmeasured.
 - No index or Redis action is proposed; any future optimization must compare impact query plans and downstream simulation traces before batching or caching mutable route state.
+
+## Iteration 91 evidence update
+
+- The transport-formatting extraction changes only helper ownership and facade delegation; no SQL, index, Redis cache or query shape was changed.
+- Voucher date/range formatting, passenger labels, time/location normalization, HTML decoding, JSON/raw parsing and fallback fields remain unchanged; the facade's existing time-format callback remains the source of transport time labels.
+- This is not a measured performance improvement: formatting CPU, payload size, malformed-payload frequency, fallback frequency and transport voucher projection latency remain unmeasured.
+- No index or Redis action is proposed; any future optimization should compare payload-shape traces and projection CPU before adding memoization or caching mutable voucher data.
