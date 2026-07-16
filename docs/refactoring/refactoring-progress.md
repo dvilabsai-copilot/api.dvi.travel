@@ -2439,3 +2439,32 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Replica-map CPU, key-hit/miss distribution, duration-fallback frequency and response latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `8e0a5b0`.
+
+### Cycle 76 - Consolidate saved-rule travel-leg helpers
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Consolidated responsibility: saved-rule travel-location classification, endpoint projection and travel-leg resolution
+- Existing owner extended: `src/modules/itineraries/services/itinerary-manual-fit-travel-replica.service.ts`
+- Workflow: matrix-preview rescheduling and manual-fit travel replica callbacks
+
+#### Change
+
+- Moved saved-rule location-type classification, HMS conversion, hotspot endpoint projection and source/hotspot/hotel leg resolution into the existing travel-replica service.
+- Preserved route/hotel endpoint predicates, hotspot master projection, distance helper usage, buffer inclusion and travel-leg response fields.
+- Kept facade callback methods as compatibility adapters and retained transaction-scoped reads.
+
+#### Verification
+
+- Saved-rule travel-replica characterization tests: PASS, 5/5
+- Combined focused backend/timeline suite: PASS, 163/163
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 8,896 lines after the tier; `ItineraryManualFitTravelReplicaService` is 998 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Saved-rule endpoint lookup latency, distance-helper latency, fallback frequency and transaction read volume remain unmeasured.
+- Implementation commit: `api.dvi.travel` `0271b24`.

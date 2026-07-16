@@ -179,3 +179,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Replica key precedence, duration fallbacks, distance parsing and check-in label extraction remain unchanged; only ownership moved into the existing travel-replica service.
 - This is not a measured performance improvement: map-build CPU, key hit/miss rates, fallback frequency, payload size and preview latency remain unmeasured.
 - No index or Redis action is proposed; any future optimization must compare representative replica traces and preserve key precedence and display contracts.
+
+## Iteration 73 evidence update
+
+- The saved-rule travel-leg consolidation preserves the existing transaction-scoped hotspot/route/hotel reads and distance-helper calls; no SQL, index, Redis cache or query shape was changed.
+- Travel-location classification, endpoint predicates, buffer inclusion and leg response fields remain unchanged; only ownership moved into the existing travel-replica service.
+- This is not a measured performance improvement: endpoint latency, read fan-out, distance-helper latency, missing-endpoint rate, buffer frequency and transaction volume remain unmeasured.
+- No index or Redis action is proposed; any future optimization must compare leg-specific traces and preserve transaction scope and travel semantics.

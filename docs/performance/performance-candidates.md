@@ -298,6 +298,8 @@ The iteration-71 manual-fit route-policy boundary is a measurement seam for rout
 
 The iteration-72 manual-fit travel-replica boundary is a measurement seam for main-timeline scan CPU, replica-map key count, explicit-id versus sequence-id versus label lookup hit rates, distance/duration fallback frequency, check-in label normalization and end-to-end preview latency. Capture explicit-id, sequence-id, label-only, destination-key, missing-replica and fallback-duration workloads separately before adding memoization or changing key precedence; preserve lookup ordering, duration rules and display fields.
 
+The iteration-73 saved-rule travel-leg boundary is a measurement seam for hotspot endpoint lookup latency, route/hotel endpoint fan-out, distance-helper latency, source/hotspot/hotel leg frequency, buffer inclusion, missing-endpoint rate and transaction read volume. Capture source-to-hotspot, hotspot-to-hotspot, hotspot-to-hotel, missing-master and missing-hotel workloads separately before batching endpoint reads or caching reference data; preserve transaction scope, travel-location classification, buffer rules and response fields.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.
