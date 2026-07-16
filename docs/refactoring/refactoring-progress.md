@@ -3538,3 +3538,31 @@
 - `itinerary-details.service.ts` measured at 4,949 lines after the tier; `itinerary-details-segment-sanitizer.service.ts` is 64 lines.
 - Sanitizer CPU, excluded-row frequency, segment volume and response projection latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `5cefaba`.
+
+### Cycle 114 - Extract itinerary-details destination resolution
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itinerary-details.service.ts`
+- Extracted responsibility: next semantic destination lookup, Hotel-name substitution, via-route fallback and display-label-to-hotspot ID inference
+- New files: `src/modules/itineraries/services/itinerary-details-destination-resolution.service.ts`, `test/itinerary-details-destination-resolution.test.ts`
+- Workflow: travel-row semantic labeling and hotspot ID fallback during itinerary-details projection
+
+#### Change
+
+- Moved next-stop and label-inference policies behind `ItineraryDetailsDestinationResolutionService` while preserving the existing route, location, plan and conflict-row context.
+- Preserved attraction/conflict skipping, hotel-row skipping, via-route handling, destination fallback precedence, exact name matching and partial-name matching.
+- No SQL predicate, index, Redis cache, API route, DTO or response contract changed.
+
+#### Verification
+
+- Destination-resolution characterization tests: PASS, 2/2
+- Itinerary characterization collection: PASS, 161/161
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itinerary-details.service.ts` measured at 4,884 lines after the tier; `itinerary-details-destination-resolution.service.ts` is 73 lines.
+- Destination scan CPU, label-match frequency and timeline response projection latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `cdbb2a7`.

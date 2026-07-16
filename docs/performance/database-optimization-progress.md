@@ -445,3 +445,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Excluded IDs/names, generic hotel no-op removal, same-place travel suppression and unrelated segment retention remain unchanged.
 - This is not a measured database performance improvement: sanitizer CPU, rejected-row frequency, segment volume and details response latency remain unmeasured.
 - No index or Redis action is proposed; future work should profile timeline projection and exclusion frequency before memoizing or caching mutable itinerary data.
+
+## Iteration 111 evidence update
+
+- The destination-resolution extraction changes only pure timeline policy ownership; no SQL, index, Redis cache, predicate, API route or response shape changed.
+- Conflict/attraction/hotel skipping, via-route fallback, Hotel substitution, exact matching and partial matching remain unchanged.
+- This is not a measured database performance improvement: destination scan CPU, master lookup frequency, label-match CPU and details response latency remain unmeasured.
+- No index or Redis action is proposed; future work should profile route timeline scans and hotspot-label match frequency before memoizing or caching mutable itinerary data.

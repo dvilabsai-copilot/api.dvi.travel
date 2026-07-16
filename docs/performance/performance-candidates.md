@@ -374,6 +374,8 @@ The iteration-109 latest-itinerary DataTable boundary is a measurement seam for 
 
 The iteration-110 itinerary-details segment-sanitizer boundary is a measurement seam for excluded-hotspot set size, normalized-name matching CPU, attraction/hotspot rejection frequency, generic-hotel no-op frequency, same-place travel rejection frequency and end-to-end timeline projection latency. Capture empty, excluded-ID, excluded-name, generic-hotel, same-place, mixed-valid and large-segment workloads separately before memoizing labels or caching projections; preserve mutable itinerary exclusions, segment freshness and response ordering. No index addition/removal or Redis cache is justified by this pure projection-ownership tier without timeline traces.
 
+The iteration-111 itinerary-details destination-resolution boundary is a measurement seam for forward-row scan length, attraction/master lookup frequency, conflict-row skip frequency, via-route fallback frequency, Hotel substitution frequency, exact/partial label-match CPU and end-to-end timeline response latency. Capture attraction-only, hotel-heavy, via-route, conflict-row, missing-master, exact-label, partial-label and large-route workloads separately before memoizing destination maps or caching projections; preserve mutable route timing, hotel assignments and response labels. No index addition/removal or Redis cache is justified by this pure policy-ownership tier without route timeline traces.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.
