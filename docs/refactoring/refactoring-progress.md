@@ -3989,3 +3989,32 @@
 - `timeline.builder.ts` measured at 5,899 lines after the tier; `timeline-candidate-preparation.service.ts` is 139 lines.
 - Candidate-stage latency, matrix merge frequency, reservation filtering, carry-forward volume and timeline response latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `d12b4b5`.
+
+### Cycle 130 - Remove duplicate legacy route optimizer from itineraries facade
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Removed responsibility: unreachable in-facade legacy route optimization implementation and duplicate PHP distance/permutation helpers
+- Existing live owner: `src/modules/itineraries/services/itinerary-route-optimization.service.ts`
+- Workflow: route-order optimization delegation
+
+#### Change
+
+- Removed `legacyOptimizeRouteOrder` and its private duplicate optimizer helpers after confirming the production facade delegates through `ItineraryRouteOptimizationService` and no remaining call sites referenced the legacy symbols.
+- Preserved the live optimizer delegation, route normalization service, database-backed distance behavior and public route-order API contract.
+- No SQL predicate, index, Redis cache, API route, DTO or response contract changed.
+
+#### Verification
+
+- Route optimizer characterization collection: PASS, 3/3
+- Itinerary characterization collection: PASS, 182/182
+- Backend build: PASS
+- `git diff --check`: PASS
+- Removed-symbol scan: PASS; no legacy optimizer symbols remain in the facade.
+
+#### Result
+
+- `itineraries.service.ts` measured at 3,884 lines after the tier; 503 duplicate legacy lines were removed.
+- Live route-optimization query latency and distance lookup frequency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `b804eec`.

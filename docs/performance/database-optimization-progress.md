@@ -557,3 +557,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Existing services still own their transaction/database interactions; this tier only moves orchestration behind a service boundary.
 - This is not a measured database performance improvement: stage latency, candidate cardinality, matrix-read frequency and timeline response latency remain unmeasured.
 - No index addition/removal or Redis action is proposed; future work should capture per-stage query plans and candidate counts before batching reservation/matrix reads or caching mutable candidate state.
+
+## Iteration 127 evidence update
+
+- The dead-code removal changes ownership only: the active route optimizer and its exact stored-location distance query remain in `ItineraryRouteOptimizationService`; no SQL predicate, index, Redis cache or response shape changed.
+- The duplicate optimizer had no production call sites, so database query count and transaction freshness for the live path are unchanged.
+- This is not a measured database performance improvement: live optimizer frequency, distance lookup latency, route-count branch distribution and response latency remain unmeasured.
+- No index addition/removal or Redis action is proposed; future work should capture the live optimizer’s `dvi_stored_locations` query plan and lookup cardinality before caching or indexing.

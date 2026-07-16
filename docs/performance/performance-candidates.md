@@ -406,6 +406,8 @@ The iteration-125 timeline-route-coordinate boundary is a measurement seam for s
 
 The iteration-126 timeline-candidate-preparation boundary is a measurement seam for stage latency, candidate counts after each stage, destination reservation frequency, carry-forward volume, matrix merge frequency, reorder CPU and end-to-end timeline response latency. Capture manual-only, reservation, carry-forward, matrix-enabled, matrix-disabled, empty and large-candidate workloads separately before batching stage reads or caching candidate projections; preserve transaction freshness, stage order, route reservation semantics, candidate metadata and mutable plan-scope identity. No index addition/removal or Redis cache is justified until stage traces and query plans establish the measured winner.
 
+The iteration-127 route-optimization ownership boundary is a measurement seam for live optimizer invocation frequency, route-count distribution, stored-location distance lookup latency, exhaustive versus annealing branch frequency and end-to-end route-order response latency. Capture small, large, broken-chain, duplicate-anchor and missing-distance workloads separately before caching distance lookups or changing query predicates; preserve route normalization, exact distance semantics, mutable route ordering and public response fields. No index addition/removal or Redis cache is justified until live optimizer traces and `dvi_stored_locations` plans establish the measured winner.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.
