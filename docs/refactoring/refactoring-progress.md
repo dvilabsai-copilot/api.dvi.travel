@@ -4495,3 +4495,31 @@
 - `itinerary-hotel-details-tbo.service.ts` measured at 2,585 lines after the tier; `staah-provider-rows.service.ts` is 101 lines.
 - Provider-row cardinality, stale-room filtering rate, restriction-group size, query latency and preparation CPU remain unmeasured.
 - Implementation commit: `api.dvi.travel` `3136d9f`.
+
+### Cycle 148 - Extract STAAH room admission
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itinerary-hotel-details-tbo.service.ts`
+- Extracted responsibility: exact active-room admission, normalized-only rejection and deduplicated stale-room diagnostics
+- New files: `src/modules/itineraries/services/staah-room-admission.service.ts`, `test/staah-room-admission.test.ts`
+- Workflow: STAAH provider-row and candidate room filtering
+
+#### Change
+
+- Moved STAAH room-admission policy behind `StaahRoomAdmissionService` while preserving exact-code acceptance, normalized-only rejection, missing-map behavior and warning text/deduplication.
+- The TBO facade retains room-map construction, route context, provider query adapters and candidate/result orchestration; provider payloads and API DTOs are unchanged.
+- No SQL predicate, index, Redis cache, API route, DTO or response contract changed.
+
+#### Verification
+
+- STAAH room-admission characterization tests: PASS, 3/3
+- Itinerary characterization collection: PASS, 195/195
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itinerary-hotel-details-tbo.service.ts` measured at 2,544 lines after the tier; `staah-room-admission.service.ts` is 55 lines.
+- Exact/normalized room-match rates, stale-room rejection frequency, warning volume and admission CPU remain unmeasured.
+- Implementation commit: `api.dvi.travel` `e812f2a`.

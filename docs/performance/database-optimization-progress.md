@@ -683,3 +683,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - The existing facade still supplies all Prisma query adapters, and the tier adds no database access beyond the same reads.
 - This is not a measured database performance improvement: provider-row cardinality, stale-room rejection, restriction-group volume, query latency and preparation CPU remain unmeasured.
 - No index addition/removal or Redis action is proposed; future work should capture STAAH inventory, rate-plan, rate and restriction query plans before indexing or caching provider rows.
+
+## Iteration 145 evidence update
+
+- The STAAH room-admission extraction preserves exact-code matching, normalized-only rejection, missing-property behavior and warning deduplication; no SQL predicate, index, Redis cache or response shape changed.
+- Room admission consumes the existing in-memory maps and adds no database access.
+- This is not a measured database performance improvement: exact/normalized match rates, stale-room volume, warning frequency and admission CPU remain unmeasured.
+- No index addition/removal or Redis action is proposed; future work should capture `dvi_hotel_rooms` access plans and room-map traces before changing room-code indexing or caching admissions.
