@@ -2291,3 +2291,33 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Confirmed-plan/customer/settings fan-out, line-item assembly CPU, payload size and end-to-end latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `8e7228b`.
+
+### Cycle 71 - Extract manual-fit timeline policy
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: low-priority/manual-fit timeline validation and normalization policy
+- New files: `src/modules/itineraries/services/itinerary-manual-fit-timeline-policy.service.ts`, `test/itinerary-manual-fit-timeline-policy.test.ts`
+- Workflow: manual-fit preview and low-priority removal callback boundary
+
+#### Change
+
+- Moved resolved-timeline invariant validation, removed-row sanitization/pruning, retry classification, exact-anchor fit normalization and planned-removal detection behind `ItineraryManualFitTimelinePolicyService`.
+- Preserved facade callback names, removed-row predicates, preview ordering metadata, diagnostic logging, retry semantics and exact-anchor response fields.
+- Registered the new provider in `ItinerariesModule` so Nest runtime construction remains valid.
+
+#### Verification
+
+- Manual-fit timeline policy characterization tests: PASS, 3/3
+- Combined focused backend/timeline suite: PASS, 150/150
+- Backend build: PASS
+- Nest/OpenAPI initialization: PASS, 499 paths
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 10,391 lines after the tier; `ItineraryManualFitTimelinePolicyService` is 313 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Timeline-policy CPU, removed-row volume, invariant-log volume and preview response latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `94d0f6c`.

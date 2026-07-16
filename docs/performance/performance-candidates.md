@@ -288,6 +288,8 @@ The iteration-66 activity-availability boundary is a measurement seam for activi
 
 The iteration-67 confirmed invoice/pluck-card boundary is a measurement seam for confirmed-plan lookup latency, customer/settings lookup fan-out, hotel/vehicle/service child-row volume, GST/line-item assembly CPU, totals calculation, response serialization cost and end-to-end read latency. Capture missing-plan, pluck-card, empty-component, hotel-heavy, vehicle-heavy and multi-service invoice workloads separately before adding covering indexes, batching reads or introducing Redis; preserve financial rounding, line-item ordering, missing-plan validation and response fields.
 
+The iteration-68 manual-fit timeline-policy boundary is a measurement seam for validation CPU, removed-row volume, sanitization/pruning work, invariant diagnostic frequency, retry classification frequency, exact-anchor normalization calls and preview response latency. Capture successful, removed-row, invariant-failure, retryable-transaction and exact-anchor workloads separately before changing validation order, memoizing timeline state or adding cache/index work; preserve removal predicates, preview ordering, diagnostics and anchor metadata.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.

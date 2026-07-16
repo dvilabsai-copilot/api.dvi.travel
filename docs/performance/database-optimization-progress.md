@@ -144,3 +144,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Parallel read ordering, GST state labeling, line-item ordering, financial totals and missing-plan validation remain unchanged; only presentation-read orchestration ownership moved.
 - This is not a measured performance improvement: lookup latency, child-row volume, assembly CPU, payload size, cacheability and end-to-end response latency remain unmeasured.
 - No index or Redis action is proposed; any future optimization must compare pluck-card/invoice query plans and preserve financial and response contracts.
+
+## Iteration 68 evidence update
+
+- The manual-fit timeline-policy extraction is pure orchestration/policy work; it preserves existing timeline validation, removal filtering, retry classification and exact-anchor projection without SQL, index, Redis cache or query-shape changes.
+- The facade still supplies the existing segment-time callback and all manual-fit services retain their callback names and ordering; only policy ownership moved.
+- This is not a measured performance improvement: policy CPU, row volume, diagnostic frequency, retry frequency, cacheability and preview latency remain unmeasured.
+- No index or Redis action is proposed; any future optimization must be based on representative preview traces and preserve timeline invariants and response metadata.
