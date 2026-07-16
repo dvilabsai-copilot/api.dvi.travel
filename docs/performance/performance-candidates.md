@@ -310,6 +310,8 @@ The iteration-77 manual-fit schedule-attempt boundary is a measurement seam for 
 
 The iteration-78 manual-fit candidate-simulation boundary is a measurement seam for rebuild latency, candidate-position query fan-out, route-timeline read latency, exact-anchor recovery frequency, operating-hours enrichment latency, score calculation CPU, unscheduled frequency and preview response latency. Capture normal, exact-anchor-preserved, exact-anchor-recovery, exact-anchor-failure, unscheduled, timing-conflict and priority-confirmation workloads separately before batching reads or caching timeline state; preserve transaction ordering, result fields and failure reasons.
 
+The iteration-79 manual-fit candidate-search boundary is a measurement seam for position-ordering CPU, candidate count, per-position simulation count, route-read latency, slot-insight projection CPU, selected-position rebuild latency, cluster-strategy count and end-to-end search latency. Capture preferred-order, exact-anchor, source-side, destination-side, empty-position and multi-strategy workloads separately before reducing attempts or caching candidates; preserve position precedence, fallback envelopes, selected strategy metadata and rebuild timing.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.

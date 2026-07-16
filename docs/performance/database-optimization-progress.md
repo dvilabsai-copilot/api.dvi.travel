@@ -221,3 +221,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Exact-anchor recovery order, operating-hours enrichment, score inputs, priority confirmation, timing counts and candidate response fields remain unchanged; only orchestration ownership moved.
 - This is not a measured performance improvement: per-position query fan-out, rebuild latency, timeline read latency, enrichment latency, score CPU, unscheduled frequency and preview latency remain unmeasured.
 - No index or Redis action is proposed; any future optimization must compare per-position traces and transaction duration before batching or caching mutable timeline data.
+
+## Iteration 79 evidence update
+
+- The manual-fit candidate-search extraction preserves route lookup, candidate reads, per-position simulation and selected-position rebuild callbacks; no SQL, index, Redis cache or query shape was changed.
+- Preferred/exact/source/destination position precedence, slot insights, fallback envelopes, strategy ordering and optimizer metadata remain unchanged; only orchestration ownership moved.
+- This is not a measured performance improvement: position CPU, candidate count, per-position fan-out, route-read latency, strategy count, rebuild latency and end-to-end search latency remain unmeasured.
+- No index or Redis action is proposed; any future optimization must compare candidate and strategy traces before reducing attempts or caching mutable route state.
