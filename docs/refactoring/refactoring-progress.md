@@ -1623,3 +1623,32 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Candidate volume, policy CPU, trace writes, route rebuild rows and latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `104da30`.
+
+### Cycle 48 - Extract timeline input loading
+
+#### Scope
+
+- Original file: `src/modules/itineraries/engines/helpers/timeline.builder.ts`
+- Extracted responsibility: plan, route, active-hotspot and active-timing reads plus timing-map construction
+- New characterization coverage: `test/timeline-data-access.test.ts`
+- Workflow: timeline build input preload and all-days timing lookup preparation
+
+#### Change
+
+- Moved the read-only input-loading seam behind `TimelineDataAccessService`.
+- Preserved active predicates, route ordering, query order, all-hotspots-once/all-timings-once behavior and O(1) timing-map grouping.
+- Kept global-settings hydration and closed-hotspot policy in the builder because they depend on the builder-owned distance and policy state.
+
+#### Verification
+
+- Timeline data-access characterization test: PASS, 4/4
+- Combined focused backend/timeline suite: PASS, 96/96
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `timeline.builder.ts` measured at 8,794 lines after the tier; `TimelineDataAccessService` is 233 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Query latency, rows examined, timing-map memory, hotspot prefilter volume and end-to-end rebuild latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `9207539`.
