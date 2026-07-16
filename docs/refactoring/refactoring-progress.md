@@ -4242,3 +4242,31 @@
 - `itinerary-hotel-details-tbo.service.ts` measured at 3,141 lines after the tier; `guest-nationality.service.ts` is 72 lines.
 - Country lookup latency, fallback frequency, nationality-resolution CPU and provider-search response latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `74b976f`.
+
+### Cycle 139 - Extract hotel preference filtering
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itinerary-hotel-details-tbo.service.ts`
+- Extracted responsibility: preferred category filtering, meal-plan candidate detection, meal-room alignment and provider-specific filter warnings
+- New files: `src/modules/itineraries/services/itinerary-hotel-preference-filter.service.ts`, `test/itinerary-hotel-preference-filter.test.ts`
+- Workflow: provider result normalization
+
+#### Change
+
+- Moved plan preference filtering behind `ItineraryHotelPreferenceFilterService` while preserving category candidates, unknown-category ResAvenue handling, meal-plan precedence, room ordering, price alignment and filtered-map null behavior.
+- The TBO facade remains the compatibility boundary and adapts logging callbacks; provider payloads, response DTOs and search behavior are unchanged.
+- No SQL predicate, index, Redis cache, API route, DTO or response contract changed.
+
+#### Verification
+
+- Preference-filter characterization tests: PASS, 2/2
+- Itinerary characterization collection: PASS, 193/193
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itinerary-hotel-details-tbo.service.ts` measured at 2,989 lines after the tier; `itinerary-hotel-preference-filter.service.ts` is 127 lines.
+- Provider result cardinality, filter rejection rate, meal-alignment CPU and end-to-end search response latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `c2daa9e`.

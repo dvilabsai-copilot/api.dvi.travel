@@ -424,6 +424,8 @@ The iteration-134 confirmed STAAH override boundary is a measurement seam for co
 
 The iteration-135 guest-nationality boundary is a measurement seam for country lookup latency, nationality-ID cardinality, country-row hit rate, legacy-name fallback frequency, direct-ISO frequency, environment-fallback frequency and end-to-end TBO search preparation latency. Capture active-country, missing-country, legacy-ID, direct-ISO, invalid-value and concurrent-search workloads separately before caching country mappings; preserve country-master freshness, status/deleted predicates and fallback precedence. No index addition/removal or Redis cache is justified until country query plans and search traces establish the measured winner.
 
+The iteration-136 hotel preference boundary is a measurement seam for route hotel cardinality, category rejection rate, meal-plan candidate cardinality, room-alignment frequency, filter CPU and end-to-end provider-search response latency. Capture no-preference, category-only, meal-only, mixed-provider, unknown-category, matching-room, mismatch and large-result workloads separately before memoizing preference projections; preserve provider freshness, room ordering, price alignment and null/failure semantics. No index addition/removal or Redis cache is justified until provider result traces establish the measured winner.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.

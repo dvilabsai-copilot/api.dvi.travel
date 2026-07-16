@@ -620,3 +620,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - The country reads remain in the existing TBO facade and the tier only moves resolution policy behind a service boundary.
 - This is not a measured database performance improvement: country lookup latency, hit/miss rate, fallback frequency, projection CPU and TBO search latency remain unmeasured.
 - No index addition/removal or Redis action is proposed; future work should capture the `dvi_countries` query plan and nationality-source traces before indexing or caching reference data.
+
+## Iteration 136 evidence update
+
+- The preference-filter extraction preserves category/meal predicates, unknown-category exceptions, room alignment, price selection, provider warnings and null-map handling; no SQL predicate, index, Redis cache or response shape changed.
+- The tier adds no database reads and leaves provider result loading in the existing TBO facade.
+- This is not a measured database performance improvement: provider result cardinality, filter CPU, rejection rate, room-alignment frequency and search latency remain unmeasured.
+- No index addition/removal or Redis action is proposed; future work should capture provider result cardinality and preference-hit traces before memoizing filtered results.
