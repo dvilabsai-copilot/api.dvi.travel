@@ -37,6 +37,7 @@ import { StaahRoomMappingService } from './services/staah-room-mapping.service';
 import { StaahCandidateResultService } from './services/staah-candidate-result.service';
 import { StaahCandidateSelectionService } from './services/staah-candidate-selection.service';
 import { StaahProviderRowsService } from './services/staah-provider-rows.service';
+import { StaahRoomAdmissionService } from './services/staah-room-admission.service';
 
 /**
  * This service generates dynamic hotel packages from TBO API
@@ -166,6 +167,7 @@ export class ItineraryHotelDetailsTboService {
   private readonly staahCandidateResultService = new StaahCandidateResultService();
   private readonly staahCandidateSelectionService = new StaahCandidateSelectionService();
   private readonly staahProviderRowsService = new StaahProviderRowsService();
+  private readonly staahRoomAdmissionService = new StaahRoomAdmissionService();
 
   private isTboOnlyFetchEnabled(): boolean {
     const raw = String(process.env.HOTEL_FETCH_TBO_ONLY || '').trim().toLowerCase();
@@ -1421,58 +1423,15 @@ export class ItineraryHotelDetailsTboService {
           (value) => this.normalizeExactRoomCode(value),
           (value) => this.normalizeLooseRoomCode(value),
         );
-        const {
-          roomTitleByHotelAndCode,
-          allowedRoomCodesByPropertyId,
-          allowedLooseRoomCodesByPropertyId,
-          allowedLooseExactCodesByPropertyId,
-          hotelIdByPropertyId,
-        } = roomMappings;
+        const { roomTitleByHotelAndCode, hotelIdByPropertyId } = roomMappings;
 
-        const loggedStaahSkippedRooms = new Set<string>();
-        const isAllowedStaahRoom = (propertyIdValue: unknown, roomIdValue: unknown): boolean => {
-          const propertyId = String(propertyIdValue || '').trim();
-          const roomIdExact = this.normalizeExactRoomCode(roomIdValue);
-          const roomIdLoose = this.normalizeLooseRoomCode(roomIdValue);
-          const logKey = `${propertyId}|${roomIdExact}`;
-          const exactCodes = allowedRoomCodesByPropertyId.get(propertyId);
-          const looseCodes = allowedLooseRoomCodesByPropertyId.get(propertyId);
-          const looseExactCodes = allowedLooseExactCodesByPropertyId.get(propertyId);
-
-          if (!exactCodes || exactCodes.size === 0) {
-            if (!loggedStaahSkippedRooms.has(logKey)) {
-              loggedStaahSkippedRooms.add(logKey);
-              this.logger.warn(
-                `[STAAH STALE ROOM SKIPPED] routeId=${routeId} propertyId=${propertyId} providerRoomId=${roomIdExact}. No active dvi_hotel_rooms.room_ref_code mapping found for hotel/property.`,
-              );
-            }
-            return false;
-          }
-
-          if (exactCodes.has(roomIdExact)) {
-            return true;
-          }
-
-          const looseMatches = looseExactCodes?.get(roomIdLoose);
-          if (looseCodes?.has(roomIdLoose) && looseMatches && looseMatches.size === 1) {
-            if (!loggedStaahSkippedRooms.has(logKey)) {
-              loggedStaahSkippedRooms.add(logKey);
-              this.logger.warn(
-                `[STAAH STALE ROOM SKIPPED] routeId=${routeId} propertyId=${propertyId} providerRoomId=${roomIdExact}. Only normalized match found (${Array.from(looseMatches).join(', ')}); exact active room_ref_code required.`,
-              );
-            }
-            return false;
-          }
-
-          if (!loggedStaahSkippedRooms.has(logKey)) {
-            loggedStaahSkippedRooms.add(logKey);
-            this.logger.warn(
-              `[STAAH STALE ROOM SKIPPED] routeId=${routeId} propertyId=${propertyId} providerRoomId=${roomIdExact}. Not found in active dvi_hotel_rooms.room_ref_code.`,
-            );
-          }
-          return false;
-        };
-
+        const isAllowedStaahRoom = this.staahRoomAdmissionService.create({
+          routeId,
+          mappings: roomMappings,
+          normalizeExact: (value) => this.normalizeExactRoomCode(value),
+          normalizeLoose: (value) => this.normalizeLooseRoomCode(value),
+          warn: (message) => this.logger.warn(message),
+        });
         const providerRows = await this.staahProviderRowsService.load({
           propertyIds,
           checkInDate: dateOnly,
