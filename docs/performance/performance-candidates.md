@@ -430,6 +430,8 @@ The iteration-137 secondary-provider fetch boundary is a measurement seam for HO
 
 The iteration-138 STAAH restriction-policy cleanup is a measurement seam for restriction-message frequency, message-formatting CPU, retry-date suffix frequency and end-to-end STAAH response latency. Capture CTA, CTD, stopsell, minimum-stay, no-retry-date and mixed-restriction workloads separately before memoizing messages; preserve mutable restriction freshness, exact wording and candidate visibility. No index addition/removal or Redis cache is justified until restriction traces establish the measured winner.
 
+The iteration-139 AxisRooms projection boundary is a measurement seam for city-hotel cardinality, available-room cardinality, occupancy-row volume, preferred-rate-plan hit rate, lowest-rate fallback rate, projection CPU and end-to-end AxisRooms search latency. Capture no-room, no-rate, preferred-hit, fallback, multi-rate-plan, amenities-heavy and large-hotel workloads separately before batching occupancy reads or caching local projections; preserve date freshness, rate-plan validity and response ordering. No index addition/removal or Redis cache is justified until occupancy/rate-plan query plans and traces establish the measured winner.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.

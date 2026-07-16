@@ -295,3 +295,5 @@ The in-facade legacy route optimizer was removed after verification that `Itiner
 `ItineraryHotelSecondaryProviderFetchService` now owns HOBSE and ResAvenue route fetch loops, request construction, departure-day suppression and per-route failure recovery. `ItineraryHotelDetailsTboService` remains the orchestration facade and supplies provider callbacks/logging. Secondary-provider latency remains pending measurement.
 
 `StaahRestrictionService` now also owns customer-facing restriction availability-message formatting; obsolete duplicate truthiness/type/date helpers were removed from `ItineraryHotelDetailsTboService`. Restriction wording and provider behavior are unchanged; formatting cost remains pending measurement.
+
+`AxisroomsHotelProjectionService` now owns available occupancy grouping, preferred/fallback rate-plan selection and AxisRooms hotel-result projection. `ItineraryHotelDetailsTboService` remains the provider facade and owns AxisRooms reads, city matching and route orchestration. Occupancy/projection cost remains pending measurement.

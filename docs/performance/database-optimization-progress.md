@@ -641,3 +641,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - The tier removes dead facade helpers and adds no database reads.
 - This is not a measured database performance improvement: restriction-message frequency, formatting CPU and STAAH response latency remain unmeasured.
 - No index addition/removal or Redis action is proposed; future work should capture restriction-row and message traces before caching derived wording.
+
+## Iteration 139 evidence update
+
+- The AxisRooms projection extraction preserves occupancy-rate selection, preferred/fallback rate-plan rules, room validity, amenities/inclusions and response fields; no SQL predicate, index, Redis cache or response shape changed.
+- All AxisRooms reads remain in the existing facade and the tier adds no database access.
+- This is not a measured database performance improvement: occupancy-row volume, preferred/fallback hit rates, projection CPU and AxisRooms latency remain unmeasured.
+- No index addition/removal or Redis action is proposed; future work should capture AxisRooms occupancy, rate-plan, room and amenity query plans before batching or caching local projections.

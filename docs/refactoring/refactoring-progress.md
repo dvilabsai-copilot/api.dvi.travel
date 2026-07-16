@@ -4327,3 +4327,31 @@
 - `itinerary-hotel-details-tbo.service.ts` measured at 2,845 lines after the tier; `staah-restriction.service.ts` is 139 lines.
 - Restriction-message frequency, formatting CPU and end-to-end STAAH response latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `96b7659`.
+
+### Cycle 142 - Extract AxisRooms hotel projection
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itinerary-hotel-details-tbo.service.ts`
+- Extracted responsibility: available-room occupancy grouping, preferred/fallback rate-plan selection and AxisRooms hotel-result projection
+- New files: `src/modules/itineraries/services/axisrooms-hotel-projection.service.ts`, `test/axisrooms-hotel-projection.test.ts`
+- Workflow: AxisRooms provider search
+
+#### Change
+
+- Moved rate-plan selection and local hotel DTO construction behind `AxisroomsHotelProjectionService` while preserving preferred meal-plan candidates, lowest-rate fallback, occupancy extraction, amenities/inclusions, room metadata and search references.
+- The TBO facade retains all AxisRooms database reads, city matching, route iteration and merge behavior; provider payloads and response DTOs are unchanged.
+- No SQL predicate, index, Redis cache, API route, DTO or response contract changed.
+
+#### Verification
+
+- AxisRooms projection characterization tests: PASS, 2/2
+- Itinerary characterization collection: PASS, 195/195
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itinerary-hotel-details-tbo.service.ts` measured at 2,751 lines after the tier; `axisrooms-hotel-projection.service.ts` is 100 lines.
+- Occupancy-row cardinality, rate-plan gate hit rate, projection CPU and AxisRooms response latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `b000adc`.
