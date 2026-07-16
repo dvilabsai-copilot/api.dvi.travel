@@ -34,8 +34,9 @@ test('logs in with a PHP hash and upgrades it to bcrypt', async () => {
   const storedHash = legacyPhpHash(password, 'abcdef123');
   let updateArgs: { where?: unknown; data?: unknown } | undefined;
   const prisma = {
+    $queryRaw: async () => [{ userID: 42n }],
     dvi_users: {
-      findFirst: async () => ({
+      findUnique: async () => ({
         userID: 42n,
         useremail: 'legacy@example.com',
         password: storedHash,
@@ -53,7 +54,8 @@ test('logs in with a PHP hash and upgrades it to bcrypt', async () => {
     },
   };
   const jwt = { signAsync: async () => 'test-token' };
-  const auth = new AuthService(prisma as never, jwt as never);
+  const emailOtp = {};
+  const auth = new AuthService(prisma as never, jwt as never, emailOtp as never);
 
   const user = await auth.validateUser('legacy@example.com', password);
   assert.equal(user.userID, 42n);

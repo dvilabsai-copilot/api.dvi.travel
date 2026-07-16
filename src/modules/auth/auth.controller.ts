@@ -6,6 +6,9 @@ import { Public } from '../../auth/public.decorator';
 import { LoginDto } from './dto/login.dto';
 import { SendEmailLoginOtpDto } from './dto/send-email-login-otp.dto';
 import { VerifyEmailLoginOtpDto } from './dto/verify-email-login-otp.dto';
+import { SendRegistrationEmailOtpDto } from './dto/send-registration-email-otp.dto';
+import { VerifyRegistrationEmailOtpDto } from './dto/verify-registration-email-otp.dto';
+import { RegisterPartnerDto } from './dto/register-partner.dto';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -31,7 +34,31 @@ sendEmailLoginOtp(@Body() body: SendEmailLoginOtpDto) {
 @ApiBody({ type: VerifyEmailLoginOtpDto })
 @Public()
 @Post('email-login/verify-otp')
-verifyEmailLoginOtp(@Body() body: VerifyEmailLoginOtpDto) {
-  return this.auth.verifyEmailLoginOtp(body.email, body.otp);
-}
+  verifyEmailLoginOtp(@Body() body: VerifyEmailLoginOtpDto) {
+    return this.auth.verifyEmailLoginOtp(body.email, body.otp);
+  }
+
+  @ApiOperation({ summary: 'Send email OTP for new partner registration' })
+  @ApiBody({ type: SendRegistrationEmailOtpDto })
+  @Public()
+  @Post('registration/email/send-otp')
+  sendRegistrationEmailOtp(@Body() body: SendRegistrationEmailOtpDto) {
+    return this.auth.sendRegistrationEmailOtp(body.email);
+  }
+
+  @ApiOperation({ summary: 'Verify registration email OTP' })
+  @ApiBody({ type: VerifyRegistrationEmailOtpDto })
+  @Public()
+  @Post('registration/email/verify-otp')
+  verifyRegistrationEmailOtp(@Body() body: VerifyRegistrationEmailOtpDto) {
+    return this.auth.verifyRegistrationEmailOtp(body.email, body.otp);
+  }
+
+  @ApiOperation({ summary: 'Submit a verified new travel partner registration' })
+  @ApiBody({ type: RegisterPartnerDto })
+  @Public()
+  @Post('registration')
+  registerPartner(@Body() body: RegisterPartnerDto) {
+    return this.auth.registerPartner(body);
+  }
 }
