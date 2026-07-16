@@ -35,6 +35,7 @@ import { ItineraryHotelSecondaryProviderFetchService } from './services/itinerar
 import { AxisroomsHotelProjectionService } from './services/axisrooms-hotel-projection.service';
 import { SavedHotelIndicatorService } from './services/saved-hotel-indicator.service';
 import { StaahRoomMappingService } from './services/staah-room-mapping.service';
+import { StaahCandidateResultService } from './services/staah-candidate-result.service';
 
 /**
  * This service generates dynamic hotel packages from TBO API
@@ -161,6 +162,7 @@ export class ItineraryHotelDetailsTboService {
   private readonly axisroomsHotelProjectionService = new AxisroomsHotelProjectionService();
   private readonly savedHotelIndicatorService = new SavedHotelIndicatorService();
   private readonly staahRoomMappingService = new StaahRoomMappingService();
+  private readonly staahCandidateResultService = new StaahCandidateResultService();
 
   private isTboOnlyFetchEnabled(): boolean {
     const raw = String(process.env.HOTEL_FETCH_TBO_ONLY || '').trim().toLowerCase();
@@ -1653,83 +1655,33 @@ export class ItineraryHotelDetailsTboService {
 
           const pushedStaahResultKeys = new Set<string>();
           const pushStaahResult = (
-            candidate: {
-              rate: any;
-              rp: any;
-              price: number;
-              reason?: string;
-              availableAgainFrom?: string | null;
-            },
+            candidate: { rate: any; rp: any; price: number; reason?: string; availableAgainFrom?: string | null },
             isBookable: boolean,
           ) => {
-            const roomId = String((candidate.rate as any).room_id || '');
-            const rateplanId = String((candidate.rate as any).rateplan_id || '');
-            const resultKey = `${roomId}|${rateplanId}|${isBookable ? 'bookable' : 'restricted'}`;
-            if (pushedStaahResultKeys.has(resultKey)) {
-              return;
-            }
-            if (!isAllowedStaahRoom(propertyId, roomId)) {
-              this.logger.warn(
-                `[STAAH STALE ROOM SKIPPED IN RESULT PUSH] routeId=${routeId} propertyId=${propertyId} roomId=${roomId}`,
-              );
-              return;
-            }
-            pushedStaahResultKeys.add(resultKey);
-            const cancellation = String((hotel as any).hotel_cancel_policy || '').trim();
-            const mealPlan =
-              String((candidate.rp as any)?.meal_plan_description || (candidate.rp as any)?.rateplan_name || '-').trim() || '-';
-            const currency = String((candidate.rp as any)?.currency || 'INR').trim() || 'INR';
-            const exactRoomCode = this.normalizeExactRoomCode(roomId);
-            const looseRoomCode = this.normalizeLooseRoomCode(roomId);
-            const hotelIdForProperty = hotelIdByPropertyId.get(propertyId) || hotelId;
-            const roomName =
-              roomTitleByHotelAndCode.get(`${hotelIdForProperty}|${exactRoomCode}`) ||
-              roomTitleByHotelAndCode.get(`${hotelIdForProperty}|${looseRoomCode}`) ||
-              `Room ${roomId}`;
-            results.push({
-              provider: 'staah',
-              hotelCode: String((hotel as any).hotel_id),
-              hotelName: String((hotel as any).hotel_name || ''),
-              cityCode: String((hotel as any).hotel_city || destinationRaw),
-              address: String((hotel as any).hotel_address || ''),
-              rating: Number((hotel as any).hotel_category || 0),
-              facilities: [],
-              amenities: [],
-              inclusions: [],
-              rateConditions: [],
-              cancellationPolicy: cancellation ? [cancellation] : [],
-              images: [],
-              price: Number(candidate.price || 0),
-              currency,
-              roomTypes: [{
-                roomCode: roomId,
-                roomName,
-                bedType: '',
-                capacity: 0,
-                price: Number(candidate.price || 0),
-                cancellationPolicy: cancellation,
-              }],
-              roomType: roomName,
-              mealPlan,
-              hotel_margin: Number((hotel as any).hotel_margin || 0),
-              hotel_margin_gst_type: Number((hotel as any).hotel_margin_gst_type || 0),
-              hotel_margin_gst_percentage: Number((hotel as any).hotel_margin_gst_percentage || 0),
-              searchReference: `STAAH-${propertyId}-${roomId}-${rateplanId}-${dateStamp}`,
-              expiresAt: new Date(Date.now() + 15 * 60 * 1000),
-              isMappedAdminRoom: true,
-              providerRoomId: roomId,
+            const projected = this.staahCandidateResultService.build({
+              candidate,
               isBookable,
-              externalStay: false,
-              availabilityStatus: isBookable ? 'AVAILABLE' : 'NOT_BOOKABLE',
-              availabilityMessage: isBookable
-                ? ''
-                : this.buildStaahRestrictionAvailabilityMessage(
-                    candidate.reason,
-                    candidate.availableAgainFrom,
-                  ),
-              availableAgainFrom: candidate.availableAgainFrom ?? null,
-            } as any);
+              routeId,
+              propertyId,
+              hotel,
+              destination: destinationRaw,
+              dateStamp,
+              hotelIdByPropertyId,
+              roomTitleByHotelAndCode,
+              pushedKeys: pushedStaahResultKeys,
+              callbacks: {
+                isAllowedRoom: (property, room) => isAllowedStaahRoom(property, room),
+                normalizeExactRoom: (value) => this.normalizeExactRoomCode(value),
+                normalizeLooseRoom: (value) => this.normalizeLooseRoomCode(value),
+                buildAvailabilityMessage: (reason, availableAgainFrom) =>
+                  this.buildStaahRestrictionAvailabilityMessage(reason, availableAgainFrom),
+                warn: (message) => this.logger.warn(message),
+              },
+            });
+            if (projected) results.push(projected);
           };
+
+
 
           if (shouldSurfaceBlockedPreferred && blockedCandidate) {
             pushStaahResult(blockedCandidate, false);
