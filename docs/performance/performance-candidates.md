@@ -318,6 +318,8 @@ The iteration-81 manual-hotspot row boundary is a measurement seam for exclusion
 
 The iteration-82 manual-hotspot schedule-state boundary is a measurement seam for route-hotspot lookup latency, route-date selectivity, active timing-row fan-out, weekday mapping CPU, overnight-window frequency, overlap-query latency and permissive-fallback frequency. Capture normal-window, overnight-window, no-timing, no-route-date, conflict-row and multi-row workloads separately before proposing a composite index, batching or Redis; preserve the existing active/deleted predicates, timing order and mutable-hours freshness. No index addition/removal or Redis cache is justified by the current evidence because this tier changed ownership only and has no before/after production timings.
 
+The iteration-83 manual-hotspot row-timing boundary is a measurement seam for stale-row scan volume, active-row reuse rate, duplicate-retirement frequency, update/create ratio, write amplification, lock duration and activation latency. Capture stale-only, reusable-row, duplicate-row, create-new, invalid-window and mixed mutation workloads separately before proposing a composite index, write batching or Redis; preserve active/deleted semantics, timestamps and mutable route state. No index addition/removal or Redis cache is justified by the current evidence because this tier changed ownership only and has no before/after production timings.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.

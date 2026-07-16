@@ -2737,3 +2737,32 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Schedule-state read latency, timing-row fan-out, weekday selectivity, overnight frequency, overlap-query cost and permissive-fallback frequency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `1e13155`.
+
+### Cycle 86 - Extract manual-hotspot row timing
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: stale-row retirement and timed manual-row activation/reuse
+- New files: `src/modules/itineraries/services/itinerary-manual-hotspot-row-timing.service.ts`, `test/itinerary-manual-hotspot-row-timing.test.ts`
+- Workflow: manual hotspot mutation and matrix-safe insertion
+
+#### Change
+
+- Moved stale active-row lookup/retirement and timed manual-row update-or-create behavior behind `ItineraryManualHotspotRowTimingService`.
+- Preserved active-row predicates, positive-duration validation, newest-row reuse, duplicate retirement, timestamp fields, conflict reset and returned row identity.
+- Registered the service in `ItinerariesModule` and retained facade adapters for ID normalization, duration and UTC-duration-date policies.
+
+#### Verification
+
+- Manual-hotspot row-timing characterization tests: PASS, 2/2
+- Combined focused backend/timeline suite: PASS, 186/186
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 6,255 lines after the tier; `ItineraryManualHotspotRowTimingService` is 157 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Stale-row scan volume, duplicate retirement frequency, activation write amplification and row-activation latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `0ca6d50`.

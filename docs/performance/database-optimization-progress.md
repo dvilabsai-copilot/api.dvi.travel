@@ -249,3 +249,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Positive-duration filtering, conflict rejection, no-date/no-timing permissive fallback and timing order remain unchanged; only schedule-state ownership moved.
 - This is not a measured performance improvement: schedule-state read latency, timing-row fan-out, weekday selectivity, overnight frequency, overlap-query cost and permissive-fallback frequency remain unmeasured.
 - No index or Redis action is proposed; any future optimization must compare route/date/timing query plans and overlap traces across normal, overnight and fallback workloads while preserving mutable operating-hours freshness.
+
+## Iteration 83 evidence update
+
+- The manual-hotspot row-timing extraction preserves active-row predicates, positive-duration validation, newest-row ordering, duplicate retirement, update/create fields and transaction client usage; no SQL, index, Redis cache or query shape was changed.
+- Stale-row status/deleted transitions, UTC duration representation, conflict reset, timestamps and returned row identity remain unchanged; only row-timing ownership moved.
+- This is not a measured performance improvement: stale-row scan volume, duplicate frequency, update/create ratio, write amplification, lock duration and activation latency remain unmeasured.
+- No index or Redis action is proposed; any future optimization must compare stale-row and activation traces with lock/write costs before batching or caching mutable route state.
