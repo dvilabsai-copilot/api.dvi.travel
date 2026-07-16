@@ -1797,3 +1797,33 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Cutoff invocation rate, distance-provider latency, travel/buffer data freshness and candidate-window impact remain unmeasured.
 - Implementation commit: `api.dvi.travel` `425567a`.
+
+### Cycle 54 - Extract route-hotspot planning
+
+#### Scope
+
+- Original file: `src/modules/itineraries/engines/helpers/timeline.builder.ts`
+- Extracted responsibility: route-hotspot selection planning, via-route classification, Day-1 fallback selection, destination reservation guards and carry-forward expiry
+- New files: `src/modules/itineraries/engines/helpers/timeline-route-hotspot-planning.service.ts`, `test/timeline-route-hotspot-planning.test.ts`
+- Workflow: route-level policy and selection preparation before closed-day filtering and timeline row assembly
+
+#### Change
+
+- Moved the route-hotspot planning branch behind `TimelineRouteHotspotPlanningService`.
+- Preserved active via-route reads, direct/intercity classification, Day-1 source fallback, deterministic zero-priority ordering, destination reservation diagnostics, same-city carry-forward expiry and returned orchestration flags.
+- Kept closed-day filtering, candidate admission, travel rows, persistence and final timeline assembly in `TimelineBuilder`.
+
+#### Verification
+
+- Route-hotspot planning characterization tests: PASS, 3/3
+- Combined focused backend/timeline suite: PASS, 109/109
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `timeline.builder.ts` measured at 7,172 lines after the tier; `TimelineRouteHotspotPlanningService` is 412 lines.
+- Builder-local Prisma call matches decreased from 12 to 11; the extracted planner retains the existing via-route read and transaction ownership.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Planning invocation rate, via-route query latency, candidate/fallback volume, carry-forward expiry frequency, reservation selectivity and route rebuild latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `005eaef`.

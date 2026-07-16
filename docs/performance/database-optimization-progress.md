@@ -25,3 +25,10 @@ The generated artifact is evidence about the selected database only. It does not
 The oversized itinerary/details/timeline paths are candidates for repeated reads, nested includes and queries inside loops. These are hypotheses from static inspection only and must not be reported as confirmed N+1 defects until measured.
 
 The broader candidate register, including index-addition/removal evidence gates, Redis suitability and invalidation controls, and query-level profiling fields, is maintained in [`performance-candidates.md`](./performance-candidates.md).
+
+## Iteration 51 evidence update
+
+- The route-hotspot planning extraction changed code ownership only; no SQL, index, Redis cache or query shape was changed.
+- The builder-local static Prisma-call count decreased from 12 to 11 because the existing active via-route read now belongs to `TimelineRouteHotspotPlanningService`.
+- This is not a measured performance improvement: query duration, rows examined, fallback volume, cacheability and rebuild latency remain unmeasured.
+- Required next evidence is a representative route-build trace split by local, direct inter-city, via-route, Day-1 fallback and same-city continuation workloads, with query plans captured before any index or cache proposal.

@@ -17,7 +17,7 @@ Redis is a plausible optimization for stable, read-heavy reference data and deri
 | Foreign keys | The audit returned no declared foreign-key relationships. | This may reflect the schema's modelling style or audit scope; it is not evidence that relationships are absent in application logic. |
 | Timeline builder | Static inspection found repeated reads for plan/routes, hotspot places/timings, stored locations, global settings, via routes, persisted route rows, and hotel data. | These are candidates for batching, request memoization, projection, or caching. They are not confirmed N+1 defects until query logging measures them. |
 | Itinerary details | Static inspection found plan, route, hotel, hotspot, activity, staff/agent, vendor, vehicle, permit, and location reads in one service. | The endpoint should be profiled as a query graph, including payload bytes and rows examined. |
-| Verification | Focused backend suite: 35 passing tests; backend build: passing after the latest timeline extraction. | Refactoring safety signal only; no latency claim can be inferred. |
+| Verification | Focused backend suite: 109 passing tests; backend build: passing after the latest timeline extraction. | Refactoring safety signal only; no latency claim can be inferred. |
 
 ## Candidate index additions
 
@@ -157,6 +157,7 @@ An index, Redis cache, or query rewrite may move from candidate to implementatio
 | Timeline iteration 48 | Arrival/hotel decision boundary | `timeline.builder.ts` reduced from 7,826 to 7,563 lines; `TimelineArrivalHotelDecisionService` is 421 lines | Existing arrival policy, hotel distance branch, early/late arrival timing, report cutoff and suppression decisions preserved; policy latency, hotel-coordinate reads, branch volume and rebuild latency remain unmeasured |
 | Timeline iteration 49 | Hotel-first insertion boundary | `timeline.builder.ts` reduced from 7,563 to 7,481 lines; `TimelineHotelFirstInsertionService` is 155 lines | Existing hotel travel/check-in/rest rows, clamp and state updates preserved; invocation rate, builder/provider latency, row volume and rebuild latency remain unmeasured |
 | Timeline iteration 50 | Non-hotel sightseeing cutoff boundary | `timeline.builder.ts` reduced from 7,481 to 7,453 lines; `TimelineNonHotelCutoffService` is 69 lines | Existing route-end, travel/buffer subtraction, direct/final bypass and formatted cutoff behavior preserved; provider latency, cutoff frequency and candidate-window impact remain unmeasured |
+| Timeline iteration 51 | Route-hotspot planning boundary | `timeline.builder.ts` reduced from 7,453 to 7,172 lines; `TimelineRouteHotspotPlanningService` is 412 lines | Existing via-route read, Day-1 fallback, reservation guard, carry-forward expiry and selection ordering preserved; query latency, candidate/fallback volume and rebuild latency remain unmeasured |
 
 The iteration-6 and iteration-7 boundaries are measurement seams, not optimization claims. The next safe performance tier should instrument representative itinerary-details, route-rebuild and hotspot-preview requests and attribute calls to `TimelineTravelDataService` and `TimelineCandidateFeasibilityService` before changing query shape or adding a cache.
 
@@ -245,6 +246,8 @@ The timeline iteration-48 arrival/hotel decision boundary is a measurement seam 
 The timeline iteration-49 hotel-first insertion boundary is a measurement seam for eligible-route frequency, hotel travel/check-in builder latency, coordinate fallback rate, check-in clamp count, rest-row volume and route rebuild latency. Capture early-arrival, 1 PM, distance-qualified and suppressed flows before caching hotel legs or batching row writes; preserve transaction ordering and row metadata.
 
 The timeline iteration-50 cutoff boundary is a measurement seam for cutoff invocation rate, distance-provider latency, travel/buffer row freshness, negative-clamp frequency and candidate-window reduction. Capture local, direct intercity, non-direct intercity and final-route workloads before caching travel results or changing cutoff precedence; preserve route-end and buffer semantics.
+
+The iteration-51 route-hotspot planning boundary is a measurement seam for route-planning invocation rate, via-route query latency and row volume, Day-1 fallback frequency, candidate volume and deterministic sort CPU, carry-forward expiry frequency, destination-reservation selectivity, booking-rule log volume and end-to-end route rebuild latency. Capture local, direct inter-city, via-route, Day-1 fallback and same-city continuation workloads separately before adding indexes, caching route context or changing candidate concurrency; preserve transaction consistency, selection ordering and carry-forward semantics.
 
 ## Next profiling order
 
