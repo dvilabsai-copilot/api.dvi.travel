@@ -294,6 +294,8 @@ The iteration-69 matrix-preview timeline-policy boundary is a measurement seam f
 
 The iteration-70 manual-fit removal-explanation boundary is a measurement seam for attempted-attraction lookup CPU, removal-row volume, operating-hours evidence enrichment, reason-precedence branching, priority-summary assembly, changes-required payload size and preview response latency. Capture no-removal, optional-removal, protected-priority, route-overflow, operating-hours-conflict and attraction-versus-travel-attempt workloads separately before caching display data or changing evidence precedence; preserve reason codes, priority order, safe attempt sources and response fields.
 
+The iteration-71 manual-fit route-policy boundary is a measurement seam for route-fit classification CPU, candidate/slot volume, valid-slot rejection distribution, empty-route scheduler frequency, city-context classification and response latency. Capture on-route, minor-detour, relaxed-manual, empty-route, source-city, destination-city and unknown-context workloads separately before changing fit precedence or memoizing city keys; preserve route-fit labels, eligibility rules, city classification and suggestion metadata.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.

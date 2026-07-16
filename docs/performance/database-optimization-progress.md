@@ -165,3 +165,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Attraction-only attempt enrichment, reason precedence, priority ordering and changes-required response fields remain unchanged; only ownership moved behind a provider with facade callbacks.
 - This is not a measured performance improvement: explanation CPU, removal-row volume, payload size, diagnostic frequency and preview latency remain unmeasured.
 - No index or Redis action is proposed; any future optimization must use representative removal-report traces and preserve evidence precedence and response contracts.
+
+## Iteration 71 evidence update
+
+- The manual-fit route-policy extraction is pure route-fit/city classification work; it preserves existing slot eligibility and response metadata without SQL, index, Redis cache or query-shape changes.
+- Route-fit ranks/labels, relaxed manual timing rules, empty-route eligibility, normalized city keys and source/destination classification remain unchanged; only policy ownership moved.
+- This is not a measured performance improvement: policy CPU, candidate volume, classification frequency, suggestion generation and response latency remain unmeasured.
+- No index or Redis action is proposed; any future optimization must use representative route-fit traces and preserve eligibility precedence and metadata contracts.

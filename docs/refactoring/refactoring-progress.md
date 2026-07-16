@@ -2380,3 +2380,33 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Explanation assembly CPU, removal-row volume, diagnostic payload size and preview latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `77b4a39`.
+
+### Cycle 74 - Extract manual-fit route policy
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: manual insertion route-fit metadata, slot eligibility and city-context policy
+- New files: `src/modules/itineraries/services/itinerary-manual-fit-route-policy.service.ts`, `test/itinerary-manual-fit-route-policy.test.ts`
+- Workflow: manual-fit candidate selection and route-intelligence callbacks
+
+#### Change
+
+- Moved route-fit rank/labels, display metadata, valid matrix-slot checks, empty-route scheduler eligibility, matrix-build suggestions, location normalization and city-context classification behind `ItineraryManualFitRoutePolicyService`.
+- Preserved route-fit precedence, relaxed manual timing rules, source/destination classification, normalized city keys and response metadata.
+- Registered the service in `ItinerariesModule` and retained facade callback names.
+
+#### Verification
+
+- Manual-fit route policy characterization tests: PASS, 3/3
+- Combined focused backend/timeline suite: PASS, 159/159
+- Backend build: PASS
+- Nest/OpenAPI initialization: PASS, 499 paths
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 9,285 lines after the tier; `ItineraryManualFitRoutePolicyService` is 363 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Route-fit policy CPU, candidate volume, city-classification frequency and response latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `befec89`.
