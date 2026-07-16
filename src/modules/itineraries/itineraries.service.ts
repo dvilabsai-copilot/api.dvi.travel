@@ -77,6 +77,7 @@ import { ItineraryVehicleBuildStatusService } from './services/itinerary-vehicle
 import { ItineraryVehicleBuildService } from './services/itinerary-vehicle-build.service';
 import { ItineraryPlanPersistenceService } from './services/itinerary-plan-persistence.service';
 import { ItineraryActivityWorkflowService } from './services/itinerary-activity-workflow.service';
+import { ItineraryActivityAvailabilityService } from './services/itinerary-activity-availability.service';
 import { ItinerarySmartActivityService } from './services/itinerary-smart-activity.service';
 import { ItineraryHotspotWorkflowService } from './services/itinerary-hotspot-workflow.service';
 import { ItineraryHotspotDeletionService } from './services/itinerary-hotspot-deletion.service';
@@ -572,6 +573,7 @@ export class ItinerariesService {
       prisma,
       hotspotEngine,
     ),
+    private readonly activityAvailabilityService: ItineraryActivityAvailabilityService = new ItineraryActivityAvailabilityService(prisma),
     private readonly smartActivityService: ItinerarySmartActivityService = new ItinerarySmartActivityService(prisma),
     private readonly hotspotWorkflowService: ItineraryHotspotWorkflowService = new ItineraryHotspotWorkflowService(
       prisma,
@@ -649,6 +651,9 @@ export class ItinerariesService {
     private readonly manualFitAttemptStoreService: ItineraryManualFitAttemptStoreService = new ItineraryManualFitAttemptStoreService(prisma),
   ) {
     this.vehicleBuildService.setVehicleVendorSelector((data) => this.selectVehicleVendor(data));
+    this.activityAvailabilityService.setCalculateActivityPlanPricingCallback(
+      (params) => this.calculateActivityPlanPricing(params),
+    );
     this.hotspotDeletionService.setForceRebuildVehiclePricingCallback(
       (planId, routeId) => this.forceRebuildVehiclePricingAfterHotspotChange(planId, routeId),
     );
@@ -1325,7 +1330,9 @@ private getGuideSlotLabel(slotId: number): string {
   private ensureManualFitAttemptStoreTable() {
     return this.manualFitAttemptStoreService.ensureTable();
   }
-
+  async getAvailableActivities(hotspotId: number, planId?: number, routeId?: number) {
+    return this.activityAvailabilityService.getAvailableActivities(hotspotId, planId, routeId);
+  }
   private saveManualFitAttemptEntry(entry: any) {
     return this.manualFitAttemptStoreService.save(entry);
   }
@@ -1450,82 +1457,6 @@ private getGuideSlotLabel(slotId: number): string {
   async deleteHotspot(planId: number, routeId: number, hotspotId: number) {
     return this.hotspotDeletionService.deleteHotspot(planId, routeId, hotspotId);
   }
-async getAvailableActivities(hotspotId: number, planId?: number, routeId?: number) {
-  const activities = await (this.prisma as any).dvi_activity.findMany({
-    where: {
-      hotspot_id: hotspotId,
-      deleted: 0,
-      status: 1,
-    },
-    select: {
-      activity_id: true,
-      activity_title: true,
-      activity_description: true,
-      activity_duration: true,
-      max_allowed_person_count: true,
-    },
-    orderBy: { activity_title: 'asc' },
-  });
-
-  const activitiesWithSlots = await Promise.all(
-    activities.map(async (a: any) => {
-      const [timeSlots, pricing] = await Promise.all([
-        (this.prisma as any).dvi_activity_time_slot_details.findMany({
-          where: {
-            activity_id: a.activity_id,
-            deleted: 0,
-            status: 1,
-          },
-          select: {
-            activity_time_slot_ID: true,
-            time_slot_type: true,
-            special_date: true,
-            start_time: true,
-            end_time: true,
-          },
-          orderBy: { start_time: 'asc' },
-        }),
-        this.calculateActivityPlanPricing({
-          planId,
-          routeId,
-          activityId: Number(a.activity_id || 0),
-          hotspotId,
-        }),
-      ]);
-
-      return {
-        id: a.activity_id,
-        title: a.activity_title || '',
-        description: a.activity_description || '',
-        duration: a.activity_duration || null,
-        maxPersons: a.max_allowed_person_count || 0,
-
-        pricingUnitType: pricing.pricingUnitType,
-        priceUnitLabel: pricing.priceUnitLabel,
-        nationalityType: pricing.nationalityType,
-        adultCount: pricing.adults,
-        childCount: pricing.children,
-        costAdult: pricing.adultRate,
-        costChild: pricing.childRate,
-        unitCost: pricing.unitRate,
-        totalAmount: pricing.totalAmount,
-        totalPrice: pricing.totalAmount,
-        priceDate: pricing.priceDate,
-
-        timeSlots: timeSlots.map((ts: any) => ({
-          id: ts.activity_time_slot_ID,
-          type: ts.time_slot_type,
-          specialDate: ts.special_date,
-          startTime: ts.start_time,
-          endTime: ts.end_time,
-        })),
-      };
-    }),
-  );
-
-  return activitiesWithSlots;
-}
-
   async addActivity(data: {
     planId: number;
     routeId: number;
