@@ -1885,3 +1885,32 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Reservation eligibility frequency, next-route candidate volume, fallback/rescue frequency, de-duplication CPU and route rebuild latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `5dd6ee4`.
+
+### Cycle 57 - Extract carry-forward attachment
+
+#### Scope
+
+- Original file: `src/modules/itineraries/engines/helpers/timeline.builder.ts`
+- Extracted responsibility: source-fallback-only classification and same-city carry-forward attachment
+- New files: `src/modules/itineraries/engines/helpers/timeline-carry-forward-attachment.service.ts`, `test/timeline-carry-forward-attachment.test.ts`
+- Workflow: selected-hotspot post-processing immediately before matrix-assisted augmentation
+
+#### Change
+
+- Moved carry-forward attachment and source-fallback classification behind `TimelineCarryForwardAttachmentService`.
+- Preserved sightseeing suppression, same-city continuation gating, merge callback arguments, attached-hotspot diagnostics and the scheduler-facing fallback flag.
+- Kept matrix augmentation, candidate feasibility and timeline row scheduling in `TimelineBuilder`.
+
+#### Verification
+
+- Carry-forward attachment characterization tests: PASS, 3/3
+- Combined focused backend/timeline suite: PASS, 118/118
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `timeline.builder.ts` measured at 6,698 lines after the tier; `TimelineCarryForwardAttachmentService` is 66 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Carry-forward invocation rate, queue size, merge de-duplication work, fallback-only frequency and route rebuild latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `c18259b`.

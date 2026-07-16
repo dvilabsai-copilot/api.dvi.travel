@@ -46,3 +46,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Builder-local static Prisma-call ownership remains 11 matches because the extracted policy delegates candidate reads rather than changing their SQL.
 - This is not a measured performance improvement: next-route candidate latency, rows examined, fallback/rescue volume and rebuild latency remain unmeasured.
 - Required evidence before any index or Redis proposal is a route-build trace with eligible/ineligible reservation branches, candidate counts and query plans captured against the same fixture.
+
+## Iteration 54 evidence update
+
+- The carry-forward attachment extraction is pure in-memory policy code; no SQL, index, Redis cache or query shape was changed.
+- Builder-local static Prisma-call ownership remains 11 matches; this tier delegates the existing merge policy and performs no database work.
+- This is not a measured performance improvement: queue size, merge CPU, fallback frequency and rebuild latency remain unmeasured.
+- No index or Redis action is proposed; any future memoization must prove continuation-chain versioning and route/plan scope isolation first.
