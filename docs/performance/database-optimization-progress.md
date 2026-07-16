@@ -200,3 +200,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Overnight-window handling, opening waits, closing overflow, conflict marking and response fields remain unchanged; only policy ownership moved into a Prisma-backed service.
 - This is not a measured performance improvement: timing-row fan-out, selectivity, parsing CPU, conflict frequency, payload size and preview latency remain unmeasured.
 - No index or Redis action is proposed; any future optimization must compare timing-row query plans across no-timing, single-window, multi-window and overnight workloads while preserving mutable-hours freshness.
+
+## Iteration 76 evidence update
+
+- The manual-fit validation extraction preserves in-memory distance comparisons and operating-hours/route-end callbacks; no SQL, index, Redis cache or query shape was changed.
+- Detour thresholds, candidate ordering, conflict reason precedence, relaxed off-route handling and apply-readiness fields remain unchanged; only policy ownership moved.
+- This is not a measured performance improvement: slot-insight CPU, distance-helper call volume, validation latency, conflict frequency, overflow frequency and payload size remain unmeasured.
+- No index or Redis action is proposed; any future optimization must compare candidate-count and distance-call traces while preserving mutable timing freshness and validation precedence.

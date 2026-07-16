@@ -2528,3 +2528,33 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Timing-row fan-out, operating-hours selectivity, policy CPU, conflict frequency and preview latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `b3ab21e`.
+
+### Cycle 79 - Extract manual-fit validation policy
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: selected manual priority, insertion-slot insights and final schedule validation
+- New files: `src/modules/itineraries/services/itinerary-manual-fit-validation.service.ts`, `test/itinerary-manual-fit-validation.test.ts`
+- Workflow: manual-fit slot presentation and apply-readiness validation
+
+#### Change
+
+- Moved priority fallback, slot distance/feasibility insight assembly and operating-hours/route-end validation behind `ItineraryManualFitValidationService`.
+- Preserved detour thresholds, best-slot selection, operating-hours conflict fields, relaxed off-route handling, priority confirmation and response envelopes.
+- Registered the service in `ItinerariesModule` and retained facade callback adapters for distance, timing evaluation and route-end overflow.
+
+#### Verification
+
+- Manual-fit validation characterization tests: PASS, 3/3
+- Combined focused backend/timeline suite: PASS, 172/172
+- Backend build: PASS
+- Nest/OpenAPI initialization: PASS, 499 paths
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 7,406 lines after the tier; `ItineraryManualFitValidationService` is 265 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Slot-insight CPU, validation latency, candidate volume, conflict frequency and route-end overflow frequency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `4742fe8`.

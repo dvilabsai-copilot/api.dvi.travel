@@ -304,6 +304,8 @@ The iteration-74 route-matrix persistence boundary is a measurement seam for hot
 
 The iteration-75 manual-fit operating-hours boundary is a measurement seam for route-day lookup latency, timing-row fan-out, operating-window parsing CPU, overnight-window frequency, opening-wait frequency, selected-closing overflow, conflict frequency and preview response latency. Capture no-timing, open-24-hours, closed, single-window, multi-window, overnight, opening-wait and closing-conflict workloads separately before batching timing reads, adding timing indexes or caching mutable hours; preserve route-date predicates, window semantics, wait order and conflict fields.
 
+The iteration-76 manual-fit validation boundary is a measurement seam for slot-insight CPU, candidate count, distance-helper calls, detour rejection frequency, validation latency, route-end overflow frequency, operating-hours conflict frequency and relaxed off-route acceptance. Capture empty, single-slot, multi-slot, geographically infeasible, timing-conflict, priority-confirmation and relaxed-route workloads separately before memoizing distance results or changing thresholds; preserve best-slot selection, reason precedence and apply-readiness fields.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.
