@@ -256,3 +256,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Stale-row status/deleted transitions, UTC duration representation, conflict reset, timestamps and returned row identity remain unchanged; only row-timing ownership moved.
 - This is not a measured performance improvement: stale-row scan volume, duplicate frequency, update/create ratio, write amplification, lock duration and activation latency remain unmeasured.
 - No index or Redis action is proposed; any future optimization must compare stale-row and activation traces with lock/write costs before batching or caching mutable route state.
+
+## Iteration 84 evidence update
+
+- The manual-hotspot overlap extraction preserves route/plan/item/deleted predicates, time parsing, invalid-window handling, conflict-row exclusion and half-open overlap comparison; no SQL, index, Redis cache or query shape was changed.
+- Non-overlapping-row short-circuiting and existing transaction-client usage remain unchanged; only overlap-policy ownership moved.
+- This is not a measured performance improvement: overlap query latency, active-row fan-out, conflict-row frequency, candidate short-circuit rate and selection CPU remain unmeasured.
+- No index or Redis action is proposed; any future optimization must compare overlap query plans and row-count traces before batching or caching mutable route state.

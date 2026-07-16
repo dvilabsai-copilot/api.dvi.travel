@@ -2766,3 +2766,32 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Stale-row scan volume, duplicate retirement frequency, activation write amplification and row-activation latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `0ca6d50`.
+
+### Cycle 87 - Extract manual-hotspot overlap policy
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: manual-row overlap evaluation and non-overlapping-row selection
+- New files: `src/modules/itineraries/services/itinerary-manual-hotspot-overlap.service.ts`, `test/itinerary-manual-hotspot-overlap.test.ts`
+- Workflow: manual hotspot scheduling and schedule-state validation
+
+#### Change
+
+- Moved manual-row time parsing, active-row overlap reads, conflict-row exclusion and non-overlapping candidate selection behind `ItineraryManualHotspotOverlapService`.
+- Preserved route/plan/item/deleted predicates, invalid-window behavior, conflict handling, time conversion and half-open overlap semantics.
+- Registered the service in `ItinerariesModule`; schedule-state callbacks now use the extracted overlap policy while the facade methods remain compatibility delegates.
+
+#### Verification
+
+- Manual-hotspot overlap characterization tests: PASS, 2/2
+- Combined focused backend/timeline suite: PASS, 188/188
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 6,210 lines after the tier; `ItineraryManualHotspotOverlapService` is 56 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Overlap query latency, active-row fan-out, conflict-row frequency and selection CPU remain unmeasured.
+- Implementation commit: `api.dvi.travel` `222b197`.
