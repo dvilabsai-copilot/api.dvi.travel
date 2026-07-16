@@ -1536,3 +1536,32 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Transaction duration, lock wait, rebuild rows, marker-row churn, pricing callback CPU and latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `2ed84cb`.
+
+### Cycle 45 - Extract manual-fit travel replica display policy
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: manual-fit travel display normalization, hotel check-in travel insertion, saved-leg fallback, source-to-hotspot resolution and map-table support
+- New files: `src/modules/itineraries/services/itinerary-manual-fit-travel-replica.service.ts`, `test/itinerary-manual-fit-travel-replica.test.ts`
+- Workflow: exact-anchor/manual-fit travel replica preparation
+
+#### Change
+
+- Moved the contiguous manual-fit travel replica boundary behind `ItineraryManualFitTravelReplicaService`.
+- Preserved duration and distance fallback precedence, matrix metadata, OSRM fallback behavior, saved hotel-leg handling and source endpoint resolution.
+- Registered explicit callbacks and retained facade adapters for legacy route-helper callers and exact-anchor reconstruction.
+
+#### Verification
+
+- Manual-fit travel replica characterization test: PASS, 1/1
+- Combined focused backend suite: PASS, 69/69
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 12,459 lines after the tier; `ItineraryManualFitTravelReplicaService` is 518 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- OSRM calls, saved-leg hit rate, fallback frequency, map-table row churn, callback CPU, payload size and latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `f7cea8d`.
