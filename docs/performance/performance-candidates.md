@@ -352,6 +352,8 @@ The iteration-98 vehicle-pricing-policy boundary is a measurement seam for numer
 
 The iteration-99 vendor-pricebook-policy boundary is a measurement seam for kilometre/time-limit title parsing CPU, explicit-value fallback frequency, soft-delete marker scan volume, pricebook row count, limit lookup latency and write amplification. Capture explicit-limit, title-only, malformed-title, duplicate-marker, empty-sibling and repeated-soft-delete workloads separately before caching limit metadata or batching writes; preserve title/value precedence, active predicates and deletion sequencing. No index addition/removal or Redis cache is justified by this pure ownership tier without query-plan and mutation traces.
 
+The iteration-100 itinerary-input-normalization boundary is a measurement seam for CSV parsing CPU, date conversion cost, route-family quote parsing frequency, mixed-value normalization cost, duplicate-string suppression, meal-plan inference frequency and manual-hotspot ID projection latency. Capture empty, malformed, duplicate, mixed-object, route-variant and large-input workloads separately before memoizing or changing callback payloads; preserve fallback precedence, date labels, positive-ID filtering and mutable request freshness. No index addition/removal or Redis cache is justified because this tier changes pure facade ownership only.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.

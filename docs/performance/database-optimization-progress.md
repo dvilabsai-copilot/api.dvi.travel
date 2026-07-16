@@ -368,3 +368,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Explicit limit precedence, title-derived fallback, normalized title preservation and positive soft-delete sequencing remain unchanged.
 - This is not a measured database performance improvement: limit lookup latency, pricebook row counts, sibling-row scan volume and write amplification remain unmeasured.
 - No index or Redis action is proposed; future work should capture vendor pricebook query plans and deletion mutation traces before batching or caching mutable limit state.
+
+## Iteration 100 evidence update
+
+- The itinerary input-normalization extraction changes only pure facade policy ownership; no SQL, index, Redis cache, API route, DTO or response shape changed.
+- CSV/date fallback, route-family quote parsing, array/string normalization, meal-plan precedence and manual-hotspot positive-ID filtering remain unchanged.
+- This is not a measured database performance improvement: normalization CPU, callback payload shaping, downstream query selectivity and response latency remain unmeasured.
+- No index or Redis action is proposed; future work should profile the input-to-query boundary before batching or caching mutable itinerary request state.

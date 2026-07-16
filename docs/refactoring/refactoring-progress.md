@@ -3232,3 +3232,30 @@
 - `vendors.service.ts` measured at 3,469 lines after the tier; `vendor-pricebook-policy.ts` is 47 lines.
 - Pricebook query latency, row volume, normalization CPU and soft-delete write amplification remain unmeasured.
 - Implementation commit: `api.dvi.travel` `c571775`.
+
+### Cycle 103 - Extract itinerary input normalization policy
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: CSV/date normalization, route-family quote parsing, mixed array/string cleanup, meal-plan inference and manual-hotspot ID normalization
+- New files: `src/modules/itineraries/services/itinerary-input-normalization.service.ts`, `test/itinerary-input-normalization.test.ts`
+- Workflow: plan creation, hotel/meal projection, manual-hotspot preview and callback-based service orchestration
+
+#### Change
+
+- Moved pure input/display normalization behind `ItineraryInputNormalizationService` and adapted the existing variadic callback boundaries to preserve their invocation contract.
+- Preserved date output, route-family suffix parsing, duplicate suppression, meal-plan precedence, positive-ID filtering and array fallback behavior.
+- No SQL predicate, index, Redis cache, API route, DTO or response contract changed.
+
+#### Verification
+
+- Itinerary-input normalization characterization tests: PASS, 3/3
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 4,876 lines after the tier; `itinerary-input-normalization.service.ts` is 95 lines.
+- Normalization CPU, callback payload-shaping latency and downstream query impact remain unmeasured.
+- Implementation commit: `api.dvi.travel` `791ae21`.
