@@ -1333,3 +1333,32 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Transaction duration, row churn, matrix/OSRM callback volume, adaptive simulation CPU, rollback frequency, payload size and latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `f2c914d`.
+
+### Cycle 38 - Extract manual insertion-fit workflow
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: manual insertion-fit reads, city-endpoint and single-hotspot slot selection, route-between-map ranking, destination-hotel decisions and timing-aware matrix metadata
+- New files: `src/modules/itineraries/services/itinerary-manual-insertion-fit.service.ts`, `test/itinerary-manual-insertion-fit.test.ts`
+- Workflow: manual-hotspot fit preview and batch slot selection
+
+#### Change
+
+- Moved the contiguous insertion-fit boundary behind `ItineraryManualInsertionFitService`.
+- Preserved route/location/hotspot reads, raw matrix query filters, city-endpoint and destination-side handling, route-fit ranking, timing relaxation and response metadata.
+- Registered the provider and routed the batch workflow through the new service with explicit callbacks.
+
+#### Verification
+
+- Manual insertion-fit characterization test: PASS, 1/1
+- Combined focused backend suite: PASS, 62/62
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 16,987 lines after the tier; `ItineraryManualInsertionFitService` is 2,254 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Raw-query latency, rows examined, matrix volume, OSRM callback volume, fallback frequency, payload size and latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `d52c60f`.
