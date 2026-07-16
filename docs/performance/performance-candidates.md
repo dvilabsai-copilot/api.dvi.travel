@@ -328,6 +328,8 @@ The iteration-86 route-hotspot rebuild boundary is a measurement seam for route 
 
 The iteration-87 hotel-cancellation boundary is a measurement seam for confirmed-plan lookup latency, route/hotel/room read fan-out, hotel and room row volume, audit-table fallback frequency, soft-delete write volume, financial-update latency and transaction duration. Capture missing-plan, empty-hotel, single-hotel, multi-room and refund-bearing cancellation workloads separately before proposing indexes, batching or Redis; preserve financial rounding, soft-delete ordering, audit fallback and mutable confirmed-plan state. No index addition/removal or Redis cache is justified by the current evidence because this tier changed ownership only and has no before/after production timings.
 
+The iteration-88 hotel room-category boundary is a measurement seam for plan/route lookup latency, TBO call latency, available-room-type count, existing-room fan-out, preferred-slot creation frequency, update/create ratio and selection write latency. Capture missing-plan, missing-route, missing-hotel, empty-room-type, existing-room and preferred-slot workloads separately before proposing indexes, batching or Redis; preserve TBO freshness, room-type matching, meal flags and mutable room-selection state. No index addition/removal or Redis cache is justified by the current evidence because this tier changed ownership only and has no before/after production timings.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.

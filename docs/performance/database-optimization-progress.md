@@ -284,3 +284,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Cancellation projection fields, percentage rounding, refund clamp, transaction scope and missing-plan/hotel errors remain unchanged; only cancellation ownership moved.
 - This is not a measured performance improvement: route/hotel/room read fan-out, row volume, audit fallback frequency, soft-delete write volume, transaction duration and refund-accounting latency remain unmeasured.
 - No index or Redis action is proposed; any future optimization must compare cancellation read/write traces and lock duration before batching or caching mutable confirmed-itinerary state.
+
+## Iteration 88 evidence update
+
+- The room-category extraction preserves plan/route reads, TBO room retrieval, hotel/group matching, room-type projection, existing-room predicates and update/create writes; no SQL, index, Redis cache or query shape was changed.
+- Preferred-room slot fallback, room-rate assignment, meal-plan flags, GST defaults, deleted/status fields and response fields remain unchanged; only room-category ownership moved.
+- This is not a measured performance improvement: TBO latency, room-type count, existing-room fan-out, preferred-slot frequency, update/create ratio and selection write latency remain unmeasured.
+- No index or Redis action is proposed; any future optimization must compare TBO and room-row traces before batching or caching mutable room selections.

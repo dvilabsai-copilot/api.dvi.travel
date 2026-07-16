@@ -2882,3 +2882,32 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Cancellation read fan-out, hotel/room row volume, audit-table fallback frequency, transaction duration and refund-accounting latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `4d2a12d`.
+
+### Cycle 91 - Extract hotel room category workflow
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: TBO-backed room-category projection and room-selection update/create
+- New files: `src/modules/itineraries/services/itinerary-hotel-room-category.service.ts`, `test/itinerary-hotel-room-category.test.ts`
+- Workflow: hotel room selection modal and room-category mutation
+
+#### Change
+
+- Moved plan/route lookup, TBO room retrieval, existing-room projection, preferred-slot fallback and room selection persistence behind `ItineraryHotelRoomCategoryService`.
+- Preserved plan/route/hotel/group validation, TBO room-type matching, room-rate assignment, meal-plan flags, GST defaults, response fields and update/create branching.
+- Registered the service in `ItinerariesModule`; facade methods remain public compatibility delegates.
+
+#### Verification
+
+- Hotel room-category characterization tests: PASS, 2/2
+- Combined focused backend/timeline suite: PASS, 196/196
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 5,547 lines after the tier; `ItineraryHotelRoomCategoryService` is 137 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- TBO lookup latency, available-room count, existing-room fan-out, preferred-slot frequency and selection write latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `1a41ca5`.
