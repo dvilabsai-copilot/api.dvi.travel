@@ -30,6 +30,7 @@ import { ItineraryHotelCityCodeService } from './services/itinerary-hotel-city-c
 import { StaahRestrictionService } from './services/staah-restriction.service';
 import { ItineraryHotelResponseRowService } from './services/itinerary-hotel-response-row.service';
 import { StaahConfirmedBookingOverrideService } from './services/staah-confirmed-booking-override.service';
+import { GuestNationalityService } from './services/guest-nationality.service';
 
 /**
  * This service generates dynamic hotel packages from TBO API
@@ -150,6 +151,7 @@ export class ItineraryHotelDetailsTboService {
   private readonly staahRestrictionService = new StaahRestrictionService();
   private readonly hotelResponseRowService = new ItineraryHotelResponseRowService();
   private readonly staahConfirmedBookingOverrideService = new StaahConfirmedBookingOverrideService();
+  private readonly guestNationalityService = new GuestNationalityService();
 
   private isTboOnlyFetchEnabled(): boolean {
     const raw = String(process.env.HOTEL_FETCH_TBO_ONLY || '').trim().toLowerCase();
@@ -424,28 +426,6 @@ export class ItineraryHotelDetailsTboService {
     return raw === 'true' || raw === '1' || raw === 'yes';
   }
 
-  private extractIso2FromCountryRow(row: any): string | null {
-    if (!row || typeof row !== 'object') return null;
-
-    const candidates = [
-      row.shortname,
-      row.country_code,
-      row.iso2,
-      row.iso_code,
-      row.sortname,
-      row.alpha2,
-      row.code,
-    ];
-
-    for (const value of candidates) {
-      const normalized = String(value ?? '').trim().toUpperCase();
-      if (/^[A-Z]{2}$/.test(normalized)) {
-        return normalized;
-      }
-    }
-
-    return null;
-  }
 
   // Legacy mapping: IDs 101-295 were used by the old hardcoded dropdown list.
   // These do not match dvi_countries IDs, so we map them to country names for name-based lookup.
@@ -498,89 +478,24 @@ export class ItineraryHotelDetailsTboService {
   };
 
   private async resolveGuestNationality(plan: any): Promise<string> {
-    const nationalityId = Number((plan as any)?.nationality ?? 0);
-    const rawNationality = String((plan as any)?.nationality ?? '')
-      .trim()
-      .toUpperCase();
-
-    // Prefer master-country mapping from DB (as requested).
-    if (nationalityId > 0) {
-      try {
-        const country = await this.prisma.dvi_countries.findFirst({
-          where: {
-            id: nationalityId,
-            deleted: 0,
-            status: 1,
-          },
-          select: {
-            shortname: true,
-            name: true,
-          },
-        });
-        const iso2 = this.extractIso2FromCountryRow(country);
-        if (iso2) {
-          this.logger.log(
-            `âœ… Resolved guestNationality from country table: nationality=${nationalityId} -> ${iso2}`,
-          );
-          return iso2;
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        this.logger.warn(
-          `âš ï¸ Could not resolve country mapping from table dvi_countries for nationality=${nationalityId}: ${message}`,
-        );
-      }
-    }
-
-      // Fallback: legacy hardcoded dropdown used IDs 101-295 which differ from dvi_countries IDs.
-      // Resolve by looking up the country name from the legacy map and then querying dvi_countries by name.
-      if (nationalityId >= 101 && nationalityId <= 295) {
-        const legacyName = ItineraryHotelDetailsTboService.LEGACY_NATIONALITY_NAME[nationalityId];
-        if (legacyName) {
-          try {
-            const countryByName = await this.prisma.dvi_countries.findFirst({
-              where: { name: { contains: legacyName }, deleted: 0, status: 1 },
-              select: { shortname: true, name: true },
-            });
-            const iso2 = this.extractIso2FromCountryRow(countryByName);
-            if (iso2) {
-              this.logger.log(
-                `âœ… Resolved guestNationality via legacy name lookup: nationality=${nationalityId} (${legacyName}) -> ${iso2}`,
-              );
-              return iso2;
-            }
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            this.logger.warn(`âš ï¸ Legacy name lookup failed for "${legacyName}": ${msg}`);
-          }
-        }
-      }
-
-    // Some records may directly store ISO-2 code instead of FK id.
-    if (/^[A-Z]{2}$/.test(rawNationality)) {
-      this.logger.warn(
-        `âš ï¸ Using direct ISO-2 nationality from plan value: ${rawNationality}`,
-      );
-      return rawNationality;
-    }
-
-    const envFallback = String(
-      process.env.TBO_DEFAULT_GUEST_NATIONALITY || '',
-    )
-      .trim()
-      .toUpperCase();
-    if (/^[A-Z]{2}$/.test(envFallback)) {
-      this.logger.warn(
-        `âš ï¸ Using TBO_DEFAULT_GUEST_NATIONALITY fallback: ${envFallback}`,
-      );
-      return envFallback;
-    }
-
-    this.logger.warn(
-      'âš ï¸ Unable to resolve guestNationality from plan/country table/env. Falling back to IN.',
-    );
-    return 'IN';
+    return this.guestNationalityService.resolve(plan, {
+      findById: (id) =>
+        this.prisma.dvi_countries.findFirst({
+          where: { id, deleted: 0, status: 1 },
+          select: { shortname: true, name: true },
+        }),
+      findByLegacyName: (name) =>
+        this.prisma.dvi_countries.findFirst({
+          where: { name: { contains: name }, deleted: 0, status: 1 },
+          select: { shortname: true, name: true },
+        }),
+      legacyNameForId: (id) => ItineraryHotelDetailsTboService.LEGACY_NATIONALITY_NAME[id],
+      log: (message) => this.logger.log(message),
+      warn: (message) => this.logger.warn(message),
+    });
   }
+
+
 
   /**
    * Get hotel details with dynamic packages from TBO API
