@@ -56,6 +56,7 @@ import { TimelineDestinationReservationService } from './timeline-destination-re
 import { TimelineCarryForwardAttachmentService } from './timeline-carry-forward-attachment.service';
 import { TimelineMatrixAutobuildService } from './timeline-matrix-autobuild.service';
 import { TimelineCandidateReorderingService } from './timeline-candidate-reordering.service';
+import { TimelineDay1CandidateGateService } from './timeline-day1-candidate-gate.service';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -215,6 +216,7 @@ export class TimelineBuilder {
   private readonly carryForwardAttachmentService = new TimelineCarryForwardAttachmentService();
   private readonly matrixAutobuildService = new TimelineMatrixAutobuildService();
   private readonly candidateReorderingService = new TimelineCandidateReorderingService();
+  private readonly day1CandidateGateService = new TimelineDay1CandidateGateService();
   private readonly candidatePolicyService = new TimelineCandidatePolicyService(
     this.operatingHoursService,
     this.slotPolicyService,
@@ -1198,94 +1200,19 @@ export class TimelineBuilder {
           const isRouteMovementBucket = this.isRouteMovementBucket(bucket);
           const isSourceBucket = this.isSourceBucket(bucket);
 
-          if (!isManualSelection && !isRouteMovementBucket && hotspotPriority === 0) {
-            this.logHotspotCandidateEvaluation({
-              routeId: route.itinerary_route_ID,
-              hotspotId: Number(sh.hotspot_ID || 0),
-              name: `hotspot_${Number(sh.hotspot_ID || 0)}`,
-              matchedBucket: bucket || null,
-              priority: hotspotPriority,
-              isMustVisit: false,
-              distanceFromRoute: Number.isFinite(Number((sh as any).hotspot_distance))
-                ? Number((sh as any).hotspot_distance)
-                : null,
-              openingTime: null,
-              closingTime: null,
-              visitTime: `${currentTime} - ${currentTime}`,
-              isOpenAtVisitTime: false,
-              selected: false,
-              rejectedReasons: ['Rejected: Day1 strict pass skips non-movement priority=0 fillers'],
-            });
-            continue;
-          }
 
-          if (!isManualSelection && !isRouteMovementBucket && hotspotPriority > 3) {
-            this.logHotspotCandidateEvaluation({
-              routeId: route.itinerary_route_ID,
-              hotspotId: Number(sh.hotspot_ID || 0),
-              name: `hotspot_${Number(sh.hotspot_ID || 0)}`,
-              matchedBucket: bucket || null,
-              priority: hotspotPriority,
-              isMustVisit: false,
-              distanceFromRoute: Number.isFinite(Number((sh as any).hotspot_distance))
-                ? Number((sh as any).hotspot_distance)
-                : null,
-              openingTime: null,
-              closingTime: null,
-              visitTime: `${currentTime} - ${currentTime}`,
-              isOpenAtVisitTime: false,
-              selected: false,
-              rejectedReasons: ['Rejected: Day1 strict pass skips non-movement priority>3'],
-            });
-            continue;
-          }
-
-          if (
-            !isManualSelection &&
-            isRouteSourceTerminal &&
-            hasLaterOvernightInSourceCity &&
-            isSourceBucket &&
-            hotspotPriority === 1
-          ) {
-            this.logHotspotCandidateEvaluation({
-              routeId: route.itinerary_route_ID,
-              hotspotId: Number(sh.hotspot_ID || 0),
-              name: `hotspot_${Number(sh.hotspot_ID || 0)}`,
-              matchedBucket: bucket || null,
-              priority: hotspotPriority,
-              isMustVisit: true,
-              distanceFromRoute: Number.isFinite(Number((sh as any).hotspot_distance))
-                ? Number((sh as any).hotspot_distance)
-                : null,
-              openingTime: null,
-              closingTime: null,
-              visitTime: `${currentTime} - ${currentTime}`,
-              isOpenAtVisitTime: false,
-              selected: false,
-              rejectedReasons: ['Rejected: Day1 terminal-arrival source-bucket priority1 suppression with later overnight return/stay'],
-            });
-            continue;
-          }
-
-          // Skip if already added
-          if (isHotspotAlreadyPlanned(sh.hotspot_ID)) {
-            this.logHotspotCandidateEvaluation({
-              routeId: route.itinerary_route_ID,
-              hotspotId: Number(sh.hotspot_ID || 0),
-              name: `hotspot_${Number(sh.hotspot_ID || 0)}`,
-              matchedBucket: (sh as any).matched_bucket ?? null,
-              priority: Number((sh as any).hotspot_priority ?? 0),
-              isMustVisit: Number((sh as any).hotspot_priority ?? 0) > 0,
-              distanceFromRoute: Number.isFinite(Number((sh as any).hotspot_distance))
-                ? Number((sh as any).hotspot_distance)
-                : null,
-              openingTime: null,
-              closingTime: null,
-              visitTime: `${currentTime} - ${currentTime}`,
-              isOpenAtVisitTime: false,
-              selected: false,
-              rejectedReasons: ['Rejected: duplicate'],
-            });
+          if (this.day1CandidateGateService.shouldSkip({
+            route,
+            hotspot: sh,
+            currentTime,
+            isRouteSourceTerminal,
+            hasLaterOvernightInSourceCity,
+            isHotspotAlreadyPlanned,
+            resolveTimelineBucket: (...args) => (this.resolveTimelineBucket as any)(...args),
+            isRouteMovementBucket: (...args) => (this.isRouteMovementBucket as any)(...args),
+            isSourceBucket: (...args) => (this.isSourceBucket as any)(...args),
+            logHotspotCandidateEvaluation: (...args) => (this.logHotspotCandidateEvaluation as any)(...args),
+          })) {
             continue;
           }
 
