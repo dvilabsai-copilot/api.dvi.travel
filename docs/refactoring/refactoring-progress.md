@@ -3314,3 +3314,31 @@
 - `timeline.builder.ts` measured at 6,035 lines after the tier.
 - Travel-data query latency, direct-delegation overhead and remaining scheduler orchestration CPU remain unmeasured.
 - Implementation commit: `api.dvi.travel` `3de2d15`.
+
+### Cycle 106 - Extract itinerary-details time-range policy
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itinerary-details.service.ts`
+- Extracted responsibility: display-time parsing, overnight range ordering, travel-end derivation and display-duration formatting
+- New files: `src/modules/itineraries/services/itinerary-details-time-range-policy.service.ts`, `test/itinerary-details-time-range-policy.test.ts`
+- Workflow: itinerary-details timeline and travel-row response projection
+
+#### Change
+
+- Moved the pure time-range and duration policy behind `ItineraryDetailsTimeRangePolicyService` while retaining facade adapters for existing internal callers.
+- Preserved 12-hour parsing, UTC duration handling, overnight ordering, equal-end travel derivation and duration label formatting.
+- No SQL predicate, index, Redis cache, API route, DTO or response contract changed.
+
+#### Verification
+
+- Time-range policy characterization tests: PASS, 3/3
+- Itinerary characterization collection: PASS, 146/146
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itinerary-details.service.ts` measured at 5,804 lines after the tier; `itinerary-details-time-range-policy.service.ts` is 119 lines.
+- Time-range policy CPU, details response projection latency and duration-source frequency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `bd9ef1e`.

@@ -389,3 +389,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Route selection, Day-1 fallback, travel-data coordinate resolution, anchor calculations and candidate-feasibility arguments remain unchanged.
 - This is not a measured database performance improvement: route/travel query latency, row volume, direct-call overhead and timeline projection CPU remain unmeasured.
 - No index or Redis action is proposed; future work should capture route/travel query plans and timeline traces before batching or caching mutable timing/location data.
+
+## Iteration 103 evidence update
+
+- The itinerary-details time-range extraction changes only pure display-time and duration policy ownership; no SQL, index, Redis cache, predicate, API route or response shape changed.
+- 12-hour parsing, UTC duration conversion, overnight ordering, equal-end travel derivation and duration labels remain unchanged.
+- This is not a measured database performance improvement: policy CPU, duration-source frequency, details projection cost and end-to-end response latency remain unmeasured.
+- No index or Redis action is proposed; future work should profile the itinerary-details read graph and response projection before memoizing policy calls or caching mutable itinerary data.

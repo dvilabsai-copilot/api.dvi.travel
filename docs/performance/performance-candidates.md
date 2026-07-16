@@ -358,6 +358,8 @@ The iteration-101 itinerary-collaborator-wiring boundary is a measurement seam f
 
 The iteration-102 timeline direct-delegation boundary is a measurement seam for travel-data lookup latency, route-selection read latency, anchor-policy CPU, candidate-feasibility call count, wrapper overhead and end-to-end timeline build latency. Capture route-scoped, full-plan, Day-1 fallback, hotel-heavy, matrix-gap and candidate-rejection workloads separately before batching reads or memoizing policy calls; preserve active predicates, route ordering, mutable timing freshness and candidate fields. No index addition/removal or Redis cache is justified by this ownership-only tier.
 
+The iteration-103 itinerary-details time-range boundary is a measurement seam for display-time parsing CPU, overnight-range normalization frequency, duration parsing cost, derived travel-end frequency, duration-label projection CPU and end-to-end details response latency. Capture normal, overnight, equal-end, missing-end, malformed-duration and large-timeline workloads separately before memoizing policy calls or caching responses; preserve UTC duration semantics, mutable itinerary timing freshness and response labels. No index addition/removal or Redis cache is justified by this pure policy-ownership tier without details read-graph and projection traces.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.
