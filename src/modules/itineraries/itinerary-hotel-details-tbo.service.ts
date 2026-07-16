@@ -27,6 +27,7 @@ import { ItineraryHotelDetailsCacheService } from './services/itinerary-hotel-de
 import { ItineraryHotelStayBlockService } from './services/itinerary-hotel-stay-block.service';
 import { ItineraryHotelPricePackageService } from './services/itinerary-hotel-price-package.service';
 import { ItineraryHotelCityCodeService } from './services/itinerary-hotel-city-code.service';
+import { StaahRestrictionService } from './services/staah-restriction.service';
 
 /**
  * This service generates dynamic hotel packages from TBO API
@@ -144,6 +145,7 @@ export class ItineraryHotelDetailsTboService {
   private readonly stayBlockService = new ItineraryHotelStayBlockService();
   private readonly pricePackageService = new ItineraryHotelPricePackageService();
   private readonly cityCodeService = new ItineraryHotelCityCodeService();
+  private readonly staahRestrictionService = new StaahRestrictionService();
 
   private isTboOnlyFetchEnabled(): boolean {
     const raw = String(process.env.HOTEL_FETCH_TBO_ONLY || '').trim().toLowerCase();
@@ -1407,115 +1409,10 @@ export class ItineraryHotelDetailsTboService {
     checkOutDate: Date,
     lengthOfStay: number,
   ): { blocked: boolean; reason: string | null; availableAgainFrom: string | null } {
-    if (!Array.isArray(rows) || rows.length === 0) {
-      return { blocked: false, reason: null, availableAgainFrom: null };
-    }
-
-    const checkInLabel = this.formatDateOnly(checkInDate);
-    const checkOutLabel = this.formatDateOnly(checkOutDate);
-    const stayEndDate = this.addDays(checkOutDate, -1);
-    const stayEndLabel = this.formatDateOnly(stayEndDate);
-
-    const overlapsStay = (row: any): boolean => {
-      const rowStart = this.toIstDateOnly(row.start_date);
-      const rowEnd = this.toIstDateOnly(row.end_date);
-      return rowStart.getTime() <= stayEndDate.getTime() && rowEnd.getTime() >= checkInDate.getTime();
-    };
-
-    const activeOnDate = (row: any, date: Date): boolean => {
-      const rowStart = this.toIstDateOnly(row.start_date);
-      const rowEnd = this.toIstDateOnly(row.end_date);
-      return rowStart.getTime() <= date.getTime() && rowEnd.getTime() >= date.getTime();
-    };
-
-    const numericValuesFor = (type: string, matcher: (row: any) => boolean): number[] =>
-      rows
-        .filter((row) => this.normalizeStaahRestrictionType(row.type) === type && matcher(row))
-        .map((row) => Number(row.value))
-        .filter((value) => Number.isFinite(value));
-
-    for (const row of rows) {
-      const type = this.normalizeStaahRestrictionType(row.type);
-      if (!this.isStaahRestrictionTruthy(row.value)) continue;
-
-      if ((type === 'stopsell' || type === 'status') && overlapsStay(row)) {
-        return {
-          blocked: true,
-          reason:
-            type === 'status'
-              ? `status close active during stay ${checkInLabel} to ${stayEndLabel}`
-              : `stop sell active during stay ${checkInLabel} to ${stayEndLabel}`,
-          availableAgainFrom: this.getStaahRestrictionAvailableAgainFrom(row),
-        };
-      }
-
-      if (type === 'cta' && activeOnDate(row, checkInDate)) {
-        return {
-          blocked: true,
-          reason: `CTA active on check-in date ${checkInLabel}`,
-          availableAgainFrom: this.getStaahRestrictionAvailableAgainFrom(row),
-        };
-      }
-
-      if (type === 'ctd' && activeOnDate(row, checkOutDate)) {
-        return {
-          blocked: true,
-          reason: `CTD active on check-out date ${checkOutLabel}`,
-          availableAgainFrom: this.getStaahRestrictionAvailableAgainFrom(row),
-        };
-      }
-    }
-
-    const minStayValues = numericValuesFor('minstay', (row) => activeOnDate(row, checkInDate));
-    if (minStayValues.length > 0) {
-      const minStay = Math.max(...minStayValues);
-      if (lengthOfStay < minStay) {
-        return {
-          blocked: true,
-          reason: `minimum stay ${minStay} nights required for LOS ${lengthOfStay}`,
-          availableAgainFrom: null,
-        };
-      }
-    }
-
-    const maxStayValues = numericValuesFor('maxstay', (row) => activeOnDate(row, checkInDate));
-    if (maxStayValues.length > 0) {
-      const maxStay = Math.min(...maxStayValues);
-      if (lengthOfStay > maxStay) {
-        return {
-          blocked: true,
-          reason: `maximum stay ${maxStay} nights allows LOS ${lengthOfStay}`,
-          availableAgainFrom: null,
-        };
-      }
-    }
-
-    const minStayThroughValues = numericValuesFor('minstay_through', overlapsStay);
-    if (minStayThroughValues.length > 0) {
-      const minStayThrough = Math.max(...minStayThroughValues);
-      if (lengthOfStay < minStayThrough) {
-        return {
-          blocked: true,
-          reason: `minimum stay through ${minStayThrough} nights required for LOS ${lengthOfStay}`,
-          availableAgainFrom: null,
-        };
-      }
-    }
-
-    const maxStayThroughValues = numericValuesFor('maxstay_through', overlapsStay);
-    if (maxStayThroughValues.length > 0) {
-      const maxStayThrough = Math.min(...maxStayThroughValues);
-      if (lengthOfStay > maxStayThrough) {
-        return {
-          blocked: true,
-          reason: `maximum stay through ${maxStayThrough} nights allows LOS ${lengthOfStay}`,
-          availableAgainFrom: null,
-        };
-      }
-    }
-
-    return { blocked: false, reason: null, availableAgainFrom: null };
+    return this.staahRestrictionService.evaluate(rows, checkInDate, checkOutDate, lengthOfStay);
   }
+
+
 
   /**
    * Load saved meal plan codes for each route in the itinerary
