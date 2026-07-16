@@ -41,6 +41,7 @@ import { ItineraryDetailsAttractionTimingService } from './services/itinerary-de
 import { ItineraryDetailsHotelTravelOriginService } from './services/itinerary-details-hotel-travel-origin.service';
 import { ItineraryDetailsHotelTravelTimeService } from './services/itinerary-details-hotel-travel-time.service';
 import { ItineraryDetailsHotelCheckInService } from './services/itinerary-details-hotel-checkin.service';
+import { ItineraryDetailsDropOffService } from './services/itinerary-details-dropoff.service';
 
 // ---------------------------------------------------------------------------
 // DTOs for Itinerary Details response (shared shape with frontend)
@@ -446,6 +447,7 @@ export class ItineraryDetailsService {
   private readonly hotelTravelOriginService = new ItineraryDetailsHotelTravelOriginService();
   private readonly hotelTravelTimeService = new ItineraryDetailsHotelTravelTimeService();
   private readonly hotelCheckInService = new ItineraryDetailsHotelCheckInService();
+  private readonly dropOffService = new ItineraryDetailsDropOffService();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -1775,47 +1777,36 @@ for (const row of vehicleKmRows) {
 
         if (itemType === 7) {
           // DROP OFF - final travel to airport/departure point
-          const toName = route.next_visiting_location ?? plan.departure_location ?? 'Departure Point';
-
           if (!Number.isNaN(distanceNum)) {
             totalDistanceKm += distanceNum;
           }
-
-          // FIX #2: Validate that DROP_OFF doesn't exceed route end time
-          const dropOffEndMins = endTimeText ? this.timeToMinutes(endTimeText) : 0;
-          
-          if (dropOffEndMins > routeEndMins) {
-            // DROP_OFF row exceeds route end time - suppress it from normal segments
-            if (proofQuoteEnabled) {
-              console.log('[RouteEndValidation][DROPOFF_SUPPRESSED][PROOF]', {
-                quoteId,
-                routeId: route.itinerary_route_ID,
-                routeHotspotId: rh.route_hotspot_ID,
-                dropOffEndTime: endTimeText,
-                dropOffEndMins,
-                routeEndMins,
-                exceedsByMins: dropOffEndMins - routeEndMins,
-                reason: 'DROP_OFF exceeds route end time - segment suppressed',
-              });
-            }
-            // Skip this segment - do not emit
+          const dropOff = this.dropOffService.build({
+            route,
+            plan,
+            previousStopName,
+            startTimeText,
+            endTimeText,
+            travelDistance,
+            travelDuration,
+            routeEndMins,
+            isConflict: (rh as any).isConflict === true,
+            conflictReason: (rh as any).conflictReason ?? null,
+            quoteId: Number(quoteId || 0),
+            routeHotspotId: Number(rh.route_hotspot_ID || 0),
+            proofQuoteEnabled,
+            timeToMinutes: (value) => this.timeToMinutes(value),
+            getTravelTimeRangeWithDuration: (start, end, duration) =>
+              this.getTravelTimeRangeWithDuration(start, end, duration),
+            formatDuration: (value) => this.formatDuration(value),
+          });
+          if (dropOff.shouldSuppress) {
             continue;
           }
 
-          segments.push({
-            type: 'travel' as const,
-            from: previousStopName,
-            to: toName,
-            timeRange: this.getTravelTimeRangeWithDuration(startTimeText, endTimeText, travelDuration),
-            distance: travelDistance,
-            duration: this.formatDuration(travelDuration),
-            note: 'This may vary due to traffic conditions',
-            isConflict: (rh as any).isConflict === true,
-            conflictReason: (rh as any).conflictReason ?? null,
-          });
+          segments.push(dropOff.segment);
           emittedTerminalSegment = true;
 
-          previousStopName = toName;
+          previousStopName = dropOff.toName;
           continue;
         }
       }
