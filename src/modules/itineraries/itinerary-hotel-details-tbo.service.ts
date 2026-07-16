@@ -28,6 +28,7 @@ import { ItineraryHotelStayBlockService } from './services/itinerary-hotel-stay-
 import { ItineraryHotelPricePackageService } from './services/itinerary-hotel-price-package.service';
 import { ItineraryHotelCityCodeService } from './services/itinerary-hotel-city-code.service';
 import { StaahRestrictionService } from './services/staah-restriction.service';
+import { ItineraryHotelResponseRowService } from './services/itinerary-hotel-response-row.service';
 
 /**
  * This service generates dynamic hotel packages from TBO API
@@ -146,6 +147,7 @@ export class ItineraryHotelDetailsTboService {
   private readonly pricePackageService = new ItineraryHotelPricePackageService();
   private readonly cityCodeService = new ItineraryHotelCityCodeService();
   private readonly staahRestrictionService = new StaahRestrictionService();
+  private readonly hotelResponseRowService = new ItineraryHotelResponseRowService();
 
   private isTboOnlyFetchEnabled(): boolean {
     const raw = String(process.env.HOTEL_FETCH_TBO_ONLY || '').trim().toLowerCase();
@@ -2634,139 +2636,41 @@ export class ItineraryHotelDetailsTboService {
 
     for (const pkg of packages) {
       for (const hotel of pkg.hotels) {
-        // Find the route using the routeId attached to the hotel
         const route = routes.find((r: any) => r.itinerary_route_ID === hotel.routeId);
         if (!route) {
-          this.logger.warn(`âš ï¸  Route ${hotel.routeId} not found for hotel ${hotel.hotelName}`);
+          this.logger.warn(`Route ${hotel.routeId} not found for hotel ${hotel.hotelName}`);
           continue;
         }
-        
-        // Skip departure day (last route when routeIndex >= noOfNights)
+
         const routeIndex = routes.indexOf(route);
         const isLastRoute = routeIndex === routes.length - 1;
         if (isLastRoute && routeIndex >= noOfNights) {
-          this.logger.log(`   â­ï¸  Skipping route ${hotel.routeId} from response (departure day)`);
+          this.logger.log(`Skipping route ${hotel.routeId} from response (departure day)`);
           continue;
         }
-        
-        // Use next_visiting_location (where you're staying) for destination display
-        const destination = (route as any).next_visiting_location || (route as any).location_name || '';
-        
-        // Use actual hotel name from TBO API response
-        const displayHotelName = hotel.hotelName;
-        
-        // Handle both TBO (numeric) and HOBSE (UUID string) hotel codes
-        const hotelId = isNaN(parseInt(hotel.hotelCode)) ? 0 : parseInt(hotel.hotelCode);
-        const routeId = (route as any).itinerary_route_ID;
-        const dateLabel = new Date((route as any).itinerary_route_date).toISOString().split('T')[0];
-        
-        // Lookup hotel details ID and voucher status (only for TBO numeric IDs)
-        const lookupKey = hotelId > 0 ? `${routeId}-${hotelId}-${pkg.groupType}` : '';
-        const hotelDetailsId = lookupKey ? detailsMap.get(lookupKey) : undefined;
-        const voucherCancelled = hotelDetailsId ? (voucherStatusMap.get(hotelDetailsId) || false) : false;
 
-        let hotelDistance: string | null = null;
-        const routeLocationId = Number((route as any).location_id || 0);
-        const routeCoords = routeDestinationCoordsByLocationId.get(routeLocationId);
-        const providerCodeKey = `${String(hotel.provider || 'tbo').trim().toLowerCase()}|${String(hotel.hotelCode || '').trim()}`;
-        const hotelCoords = hotelCoordsByProviderCode.get(providerCodeKey);
-        if (routeCoords && hotelCoords) {
-          try {
-            const distanceKm = haversineKm(
-              routeCoords.lat,
-              routeCoords.lon,
-              hotelCoords.lat,
-              hotelCoords.lon,
-            );
-            if (Number.isFinite(distanceKm) && distanceKm > 0) {
-              hotelDistance = `${distanceKm.toFixed(2)} KM`;
-            }
-          } catch {
-            hotelDistance = null;
-          }
-        }
-
-        const pricedHotel = this.enrichHotelWithMasterMargin(hotel, new Map());
-        const baseHotelCost = Number(pricedHotel.price || 0);
-        const totalHotelCost = this.applyInvisibleHotelMargin(baseHotelCost, pricedHotel);
-        const normalizedProvider = String(hotel.provider || 'tbo').trim().toLowerCase();
-        const rawSearchReference = String(hotel.searchReference || '').trim();
-        const parsedStaahReference = this.parseStaahSearchReference(
-          rawSearchReference || (hotel as any).bookingCode || '',
-        );
-        const rawBookingCode =
-          normalizedProvider === 'tbo'
-            ? String(hotel.searchReference || hotel.roomTypes?.[0]?.roomCode || (hotel as any).bookingCode || '').trim()
-            : normalizedProvider === 'staah'
-              ? String(rawSearchReference || (hotel as any).bookingCode || '').trim()
-              : String((hotel as any).bookingCode || hotel.searchReference || hotel.hotelCode || '').trim();
-        const rawHotelCode = String(hotel.hotelCode || '').trim();
-        const isNoHotelsAvailable =
-          String(hotel.hotelName || '').trim().toLowerCase() === 'no hotels available' ||
-          rawHotelCode === '0';
-        const hasSupplierHotel =
-          !isNoHotelsAvailable &&
-          Boolean(rawHotelCode) &&
-          rawHotelCode !== '0' &&
-          Number.isFinite(baseHotelCost) &&
-          baseHotelCost > 0;
-        const hasLiveBookingCode =
-          normalizedProvider !== 'tbo' || rawBookingCode.includes('!TB!');
-        const isPrebookReady = hasSupplierHotel && hasLiveBookingCode;
-
-        hotelRows.push({
+        hotelRows.push(this.hotelResponseRowService.buildSupplierRow({
+          route,
+          routeIndex,
           groupType: pkg.groupType,
-          itineraryRouteId: routeId,
-          day: `Day ${routeIndex + 1} | ${dateLabel}`,
-          destination: destination,
-          hotelId: hotelId,
-          hotelName: displayHotelName,
-          category: hotel.rating ? parseInt(String(hotel.rating)) : 0,
-          roomType: hotel.roomType || '',
-          mealPlan: hotel.mealPlan || '',
-          baseHotelCost,
-          hotelMarginPercentage: this.getHotelMarginPercentage(pricedHotel),
-          totalHotelCost,
-          totalHotelTaxAmount: 0,
-          searchReference: rawSearchReference || undefined,
-          bookingCode: isPrebookReady ? rawBookingCode : undefined,
-          roomId:
-            normalizedProvider === 'staah'
-              ? parsedStaahReference?.roomId || undefined
-              : undefined,
-          rateId:
-            normalizedProvider === 'staah'
-              ? parsedStaahReference?.rateId || undefined
-              : undefined,
-          provider: hasSupplierHotel ? normalizedProvider : 'external',
-          isBookable: hasSupplierHotel,
-          externalStay: !hasSupplierHotel,
-          availabilityStatus: hasSupplierHotel ? 'AVAILABLE' : 'NO_SUPPLIER_AVAILABILITY',
-          availabilityMessage: hasSupplierHotel
-            ? null
-            : 'No supplier hotel rooms are available for this city/date. Customer must arrange stay manually.',
-          voucherCancelled: voucherCancelled,
-          itineraryPlanHotelDetailsId: hotelDetailsId || 0,
-          date: dateLabel,
-          hotelDistance,
-          inclusions: hotel.inclusions && hotel.inclusions.length > 0 ? hotel.inclusions : (hotel.facilities && hotel.facilities.length > 0 ? hotel.facilities : undefined),
-          amenities: hotel.amenities && hotel.amenities.length > 0 ? hotel.amenities : undefined,
-          facilities: hotel.facilities && hotel.facilities.length > 0 ? hotel.facilities : undefined,
-          rateConditions: hotel.rateConditions && hotel.rateConditions.length > 0 ? hotel.rateConditions : undefined,
-          cancellationPolicy: Array.isArray((hotel as any).cancellationPolicy)
-            ? (hotel as any).cancellationPolicy
-            : (typeof (hotel as any).cancellationPolicy === 'string' && String((hotel as any).cancellationPolicy).trim()
-              ? [String((hotel as any).cancellationPolicy).trim()]
-              : undefined),
-          supplementSummary: hotel.supplementSummary,
-        });
-
-        // Log HOBSE hotel codes for debugging
-        if (hotel.provider === 'HOBSE') {
-          this.logger.debug(`âœ… HOBSE Hotel Response: hotelCode="${hotel.hotelCode}", provider="${hotel.provider}"`);
-        }
+          hotel,
+          detailsMap,
+          voucherStatusMap,
+          routeDestinationCoordsByLocationId,
+          hotelCoordsByProviderCode,
+          callbacks: {
+            enrichHotelWithMasterMargin: (value) => this.enrichHotelWithMasterMargin(value, new Map()),
+            applyInvisibleHotelMargin: (amount, value) => this.applyInvisibleHotelMargin(amount, value),
+            getHotelMarginPercentage: (value) => this.getHotelMarginPercentage(value),
+            parseStaahSearchReference: (reference) => this.parseStaahSearchReference(reference),
+            getGroupTypeFromPrice: (price, prices) => this.getGroupTypeFromPrice(price, prices),
+            debug: (message) => this.logger.debug(message),
+          },
+        }));
       }
     }
+
+
 
     // Override only matching routes with confirmed STAAH booking rows
     if (confirmedStaahByRouteId.size > 0) {
@@ -2875,41 +2779,21 @@ export class ItineraryHotelDetailsTboService {
           }
         }
 
-        restrictedHotelRows.push({
-          groupType: this.getGroupTypeFromPrice(Number(hotel.price || 0), allPrices),
-          itineraryRouteId: routeId,
-          day: `Day ${routeIndex + 1} | ${dateLabel}`,
-          destination,
-          hotelId: Number.parseInt(String(hotel.hotelCode || '0'), 10) || 0,
-          hotelName: String(hotel.hotelName || 'Hotel'),
-          category: hotel.rating ? parseInt(String(hotel.rating), 10) : 0,
-          roomType: String(hotel.roomType || ''),
-          mealPlan: String(hotel.mealPlan || ''),
-          baseHotelCost: Number(hotel.price || 0),
-          hotelMarginPercentage: this.getHotelMarginPercentage(hotel),
-          totalHotelCost: this.applyInvisibleHotelMargin(Number(hotel.price || 0), hotel),
-          totalHotelTaxAmount: 0,
-          searchReference: String(hotel.searchReference || '').trim() || undefined,
-          bookingCode: undefined,
-          provider: String(hotel.provider || 'staah').trim().toLowerCase(),
-          isBookable: false,
-          externalStay: false,
-          availabilityStatus: 'NOT_BOOKABLE',
-          availabilityMessage: String((hotel as any).availabilityMessage || '').trim() || 'Restricted for the selected stay.',
-          availableAgainFrom: String((hotel as any).availableAgainFrom || '').trim() || null,
-          voucherCancelled: false,
-          itineraryPlanHotelDetailsId: 0,
-          date: dateLabel,
-          hotelDistance,
-          inclusions: hotel.inclusions && hotel.inclusions.length > 0 ? hotel.inclusions : undefined,
-          amenities: hotel.amenities && hotel.amenities.length > 0 ? hotel.amenities : undefined,
-          facilities: hotel.facilities && hotel.facilities.length > 0 ? hotel.facilities : undefined,
-          rateConditions: hotel.rateConditions && hotel.rateConditions.length > 0 ? hotel.rateConditions : undefined,
-          cancellationPolicy: Array.isArray(hotel.cancellationPolicy)
-            ? hotel.cancellationPolicy
-            : undefined,
-          supplementSummary: hotel.supplementSummary,
-        });
+        restrictedHotelRows.push(this.hotelResponseRowService.buildRestrictedRow({
+          route,
+          routeIndex,
+          hotel,
+          allPrices,
+          routeDestinationCoordsByLocationId,
+          hotelCoordsByProviderCode,
+          callbacks: {
+            enrichHotelWithMasterMargin: (value) => value,
+            applyInvisibleHotelMargin: (amount, value) => this.applyInvisibleHotelMargin(amount, value),
+            getHotelMarginPercentage: (value) => this.getHotelMarginPercentage(value),
+            parseStaahSearchReference: (reference) => this.parseStaahSearchReference(reference),
+            getGroupTypeFromPrice: (price, prices) => this.getGroupTypeFromPrice(price, prices),
+          },
+        }));
       });
     });
 
