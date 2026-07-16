@@ -4186,3 +4186,31 @@
 - `itinerary-hotel-details-tbo.service.ts` measured at 3,281 lines after the tier; `itinerary-hotel-response-row.service.ts` is 178 lines.
 - Row projection CPU, distance lookup hit rate, restricted-row frequency and hotel-details response latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `25ab17e`.
+
+### Cycle 137 - Extract confirmed STAAH booking override
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itinerary-hotel-details-tbo.service.ts`
+- Extracted responsibility: route-matched confirmed STAAH reservation override, booking/reference normalization and voucher projection
+- New files: `src/modules/itineraries/services/staah-confirmed-booking-override.service.ts`, `test/staah-confirmed-booking-override.test.ts`
+- Workflow: hotel-details response assembly
+
+#### Change
+
+- Moved confirmed STAAH row mutation behind `StaahConfirmedBookingOverrideService` while preserving route matching, reservation field precedence, booking code parsing, voucher cancellation status and confirmation metadata.
+- The TBO facade retains the latest-row query, response-row collection and logging adapters; API DTOs and booking behavior are unchanged.
+- No SQL predicate, index, Redis cache, API route, DTO or response contract changed.
+
+#### Verification
+
+- Confirmed-override characterization tests: PASS, 2/2
+- Itinerary characterization collection: PASS, 191/191
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itinerary-hotel-details-tbo.service.ts` measured at 3,226 lines after the tier; `staah-confirmed-booking-override.service.ts` is 75 lines.
+- Confirmed-row cardinality, route-match rate, override projection CPU and hotel-details response latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `f44f098`.

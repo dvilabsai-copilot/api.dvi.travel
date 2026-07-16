@@ -285,3 +285,5 @@ The in-facade legacy route optimizer was removed after verification that `Itiner
 `StaahRestrictionService` now owns STAAH stop-sell/status, CTA/CTD and LOS restriction decisions. `ItineraryHotelDetailsTboService` remains the provider-search facade and adapts the decision to candidate selection. Restriction precedence and availability metadata are unchanged; evaluation/search cost remains pending measurement.
 
 `ItineraryHotelResponseRowService` now owns supplier and restricted hotel row projection, margin/bookability fields, voucher lookup projection and distance display formatting. `ItineraryHotelDetailsTboService` remains the response facade and owns route filtering, preload queries, confirmed overrides and final availability aggregation. Row projection and lookup cost remain pending measurement.
+
+`StaahConfirmedBookingOverrideService` now owns route-matched confirmed STAAH reservation overrides, booking/reference normalization and voucher metadata projection. `ItineraryHotelDetailsTboService` remains the response facade and owns the latest-row query and response collection. Confirmed-row match/projection cost remains pending measurement.

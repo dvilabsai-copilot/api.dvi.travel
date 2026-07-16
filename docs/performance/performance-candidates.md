@@ -420,6 +420,8 @@ The iteration-132 STAAH restriction boundary is a measurement seam for restricti
 
 The iteration-133 hotel response-row boundary is a measurement seam for package-row cardinality, supplier/restricted row ratio, margin projection CPU, voucher-map hit rate, route/hotel coordinate-map hit rate, distance formatting CPU and end-to-end hotel-details response latency. Capture empty, supplier-heavy, restricted-heavy, mixed-provider, missing-coordinate, voucher-heavy and large-package workloads separately before caching row projections or batching coordinate reads; preserve mutable quote data, booking readiness, distance fields and response ordering. No index addition/removal or Redis cache is justified until preload query plans and response traces establish the measured winner.
 
+The iteration-134 confirmed STAAH override boundary is a measurement seam for confirmed-row cardinality, route-match rate, reservation payload size, JSON extraction CPU, voucher-status projection frequency and end-to-end hotel-details response latency. Capture no-confirmation, one-match, multi-route, cancellation, malformed-payload and large-response workloads separately before caching confirmed projections; preserve latest-row ordering, mutable booking freshness and override precedence. No index addition/removal or Redis cache is justified until confirmation query plans and response traces establish the measured winner.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.

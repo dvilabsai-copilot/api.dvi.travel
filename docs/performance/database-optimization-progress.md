@@ -606,3 +606,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - All preload queries remain in the existing facade; the tier changes row projection ownership only and adds no reads.
 - This is not a measured database performance improvement: row cardinality, voucher/coordinate map hit rates, projection CPU and hotel-details latency remain unmeasured.
 - No index addition/removal or Redis action is proposed; future work should capture hotel master, stored-location and voucher query plans plus row-level hit/miss traces before caching or changing preload queries.
+
+## Iteration 134 evidence update
+
+- The confirmed STAAH override extraction preserves latest-row selection supplied by the facade, route matching, reservation payload precedence, booking/reference normalization, cancellation status and confirmation fields; no SQL predicate, index, Redis cache or response shape changed.
+- The tier adds no reads and leaves the confirmation query and hotel-row collection in the existing facade.
+- This is not a measured database performance improvement: confirmed-row cardinality, match rate, payload projection CPU and hotel-details latency remain unmeasured.
+- No index addition/removal or Redis action is proposed; future work should capture the confirmation-table query plan and per-route override hit/miss traces before caching booking projections.
