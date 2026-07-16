@@ -23,6 +23,7 @@ import {
 } from './utils/entry-ticket-breakdown.util';
 import { ItineraryDetailsTimelinePresentationService } from './services/itinerary-details-timeline-presentation.service';
 import { ItineraryDetailsTimeRangePolicyService } from './services/itinerary-details-time-range-policy.service';
+import { ItineraryDetailsDisplayFormattingService } from './services/itinerary-details-display-formatting.service';
 
 // ---------------------------------------------------------------------------
 // DTOs for Itinerary Details response (shared shape with frontend)
@@ -410,6 +411,7 @@ days: {
 export class ItineraryDetailsService {
   private readonly timelinePresentationService = new ItineraryDetailsTimelinePresentationService();
   private readonly timeRangePolicyService = new ItineraryDetailsTimeRangePolicyService();
+  private readonly displayFormattingService = new ItineraryDetailsDisplayFormattingService();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -796,72 +798,20 @@ const foodTypeMap: Record<string, string> = {
     return str;
   }
 
-  private pad2(n: number) {
-    return String(n).padStart(2, '0');
+  private formatDbDateOnly(...args: any[]): any {
+    return (this.displayFormattingService as any).formatDbDateOnly(...args);
   }
 
-  /**
-   * YYYY-MM-DD from MySQL DATETIME without server timezone conversion.
-   *
-   * IMPORTANT:
-   * - MySQL DATETIME is a wall-clock value.
-   * - Prisma returns it as a JS Date like 2026-07-08T20:00:00.000Z.
-   * - Do NOT use getFullYear/getMonth/getDate because that depends on server timezone.
-   * - Use UTC getters so local and production both show the DB date consistently.
-   */
-  private formatDbDateOnly(value?: Date | string | null): string {
-    if (!value) return '';
-
-    // If DB/date value ever comes as string, preserve the YYYY-MM-DD part directly.
-    if (typeof value === 'string') {
-      const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
-      if (match) return `${match[1]}-${match[2]}-${match[3]}`;
-
-      const parsed = new Date(value);
-      if (Number.isNaN(parsed.getTime())) return '';
-
-      return `${parsed.getUTCFullYear()}-${this.pad2(parsed.getUTCMonth() + 1)}-${this.pad2(
-        parsed.getUTCDate(),
-      )}`;
-    }
-
-    if (Number.isNaN(value.getTime())) return '';
-
-    return `${value.getUTCFullYear()}-${this.pad2(value.getUTCMonth() + 1)}-${this.pad2(
-      value.getUTCDate(),
-    )}`;
+  private pad2(...args: any[]): any {
+    return (this.displayFormattingService as any).pad2(...args);
   }
 
-  private formatCreatedOn(d?: Date | string | null) {
-    const dt = d instanceof Date ? d : d ? new Date(d) : null;
-    if (!dt || isNaN(dt.getTime())) return '';
-    const weekday = dt.toLocaleString('en-US', { weekday: 'short' });
-    const month = dt.toLocaleString('en-US', { month: 'short' });
-    return `${weekday}, ${month} ${this.pad2(dt.getDate())}, ${dt.getFullYear()}`;
+  private formatCreatedOn(...args: any[]): any {
+    return (this.displayFormattingService as any).formatCreatedOn(...args);
   }
 
-  /**
-   * Extract TIME from DATETIME field and format as "hh:mm AM/PM".
-   * 
-   * IMPORTANT:
-   * - MySQL DATETIME stores wall-clock time without timezone (e.g., "2025-12-24 12:00:00").
-   * - Prisma reads this as UTC, so "2025-12-24 12:00:00" becomes a JS Date with UTC time.
-   * - We extract the time portion using UTC getters to get the original wall-clock time.
-   * - This prevents timezone conversion (12:00 stays 12:00, not shifted to 17:30 IST).
-   */
-  private formatTripDateTime(d?: Date | string | null) {
-    if (!d) return null;
-    const dt = d instanceof Date ? d : new Date(d);
-    if (isNaN(dt.getTime())) return null;
-
-    let hh = dt.getUTCHours();
-    const mm = this.pad2(dt.getUTCMinutes());
-
-    const ampm = hh >= 12 ? 'PM' : 'AM';
-    hh = hh % 12;
-    if (hh === 0) hh = 12;
-
-    return `${this.pad2(hh)}:${mm} ${ampm}`;
+  private formatTripDateTime(...args: any[]): any {
+    return (this.displayFormattingService as any).formatTripDateTime(...args);
   }
 
 
@@ -874,52 +824,12 @@ const foodTypeMap: Record<string, string> = {
    * - We must use UTC getters to read the time value without timezone conversion.
    * - Using local getters on an IST server would add +5:30 (12:00 → 17:30).
    */
-  public formatTime(d?: Date | string | null): string | null {
-    if (!d) return null;
-    const dt = d instanceof Date ? d : new Date(d);
-    if (isNaN(dt.getTime())) return null;
-
-    let hh = dt.getUTCHours();           // ✅ Read UTC time value
-    const mm = this.pad2(dt.getUTCMinutes());
-
-    const ampm = hh >= 12 ? 'PM' : 'AM';
-    hh = hh % 12;
-    if (hh === 0) hh = 12;
-
-    return `${this.pad2(hh)}:${mm} ${ampm}`;
+  public formatTime(...args: any[]): any {
+    return (this.displayFormattingService as any).formatTime(...args);
   }
 
-  /** Convert a TIME duration (stored as Date) to "X Hours" / "Y Min" */
-  private formatDuration(d?: Date | string | null): string | null {
-    if (!d) return null;
-    let totalMinutes: number | null = null;
-
-    if (d instanceof Date) {
-      if (isNaN(d.getTime())) return null;
-      totalMinutes = d.getUTCHours() * 60 + d.getUTCMinutes();
-    } else if (typeof d === 'string') {
-      const raw = d.trim();
-      const hhmmss = raw.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
-
-      if (hhmmss) {
-        totalMinutes = Number(hhmmss[1]) * 60 + Number(hhmmss[2]);
-      } else {
-        const dt = new Date(raw);
-        if (!isNaN(dt.getTime())) {
-          totalMinutes = dt.getUTCHours() * 60 + dt.getUTCMinutes();
-        }
-      }
-    }
-
-    if (totalMinutes === null) return null;
-    if (totalMinutes <= 0) return null;
-
-    const h = Math.floor(totalMinutes / 60);
-    const m = totalMinutes % 60;
-
-    if (h > 0 && m > 0) return `${h} Hours ${m} Min`;
-    if (h > 0) return `${h} Hours`;
-    return `${m} Min`;
+  private formatDuration(...args: any[]): any {
+    return (this.displayFormattingService as any).formatDuration(...args);
   }
 
   /** Convert time string "HH:MM AM/PM" to minutes since midnight */
