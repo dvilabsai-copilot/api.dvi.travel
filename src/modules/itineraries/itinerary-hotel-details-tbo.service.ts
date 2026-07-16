@@ -33,6 +33,7 @@ import { GuestNationalityService } from './services/guest-nationality.service';
 import { ItineraryHotelPreferenceFilterService } from './services/itinerary-hotel-preference-filter.service';
 import { ItineraryHotelSecondaryProviderFetchService } from './services/itinerary-hotel-secondary-provider-fetch.service';
 import { AxisroomsHotelProjectionService } from './services/axisrooms-hotel-projection.service';
+import { SavedHotelIndicatorService } from './services/saved-hotel-indicator.service';
 
 /**
  * This service generates dynamic hotel packages from TBO API
@@ -157,6 +158,7 @@ export class ItineraryHotelDetailsTboService {
   private readonly preferenceFilterService = new ItineraryHotelPreferenceFilterService();
   private readonly secondaryProviderFetchService = new ItineraryHotelSecondaryProviderFetchService();
   private readonly axisroomsHotelProjectionService = new AxisroomsHotelProjectionService();
+  private readonly savedHotelIndicatorService = new SavedHotelIndicatorService();
 
   private isTboOnlyFetchEnabled(): boolean {
     const raw = String(process.env.HOTEL_FETCH_TBO_ONLY || '').trim().toLowerCase();
@@ -1039,47 +1041,22 @@ export class ItineraryHotelDetailsTboService {
 
 
 
-  /**
-   * Load saved meal plan codes for each route in the itinerary
-   * Maps route IDs to their configured meal plan codes (e.g., "AP", "CP", "EP", "MAP")
-   */
   private async loadSavedMealPlansPerRoute(
     planId: number,
     routes: any[],
   ): Promise<Map<number, string>> {
-    const mealPlansByRoute = new Map<number, string>();
-    
-    try {
-      // Fetch saved hotel details with rateplan_id to determine meal plan
-      const savedHotels = await (this.prisma as any).dvi_itinerary_plan_hotel_details.findMany({
-        where: {
-          itinerary_plan_id: planId,
-          deleted: 0,
-        },
-        select: {
-          itinerary_route_id: true,
-          group_type: true,
-        },
-      });
-
-      // For now, just track that this route has a saved hotel (we'll filter by first rate plan found)
-      for (const hotel of savedHotels as any[]) {
-        const routeId = Number((hotel as any).itinerary_route_id || 0);
-        if (routeId > 0) {
-          mealPlansByRoute.set(routeId, 'SAVED'); // Mark as saved (not a fresh search)
-        }
-      }
-
-      if (mealPlansByRoute.size > 0) {
-        this.logger.log(`âœ… Found ${mealPlansByRoute.size} routes with saved hotels`);
-      }
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      this.logger.warn(`âš ï¸ Failed to load saved hotel indicators: ${errorMsg}`);
-    }
-
-    return mealPlansByRoute;
+    return this.savedHotelIndicatorService.load(planId, {
+      loadRows: () =>
+        (this.prisma as any).dvi_itinerary_plan_hotel_details.findMany({
+          where: { itinerary_plan_id: planId, deleted: 0 },
+          select: { itinerary_route_id: true, group_type: true },
+        }),
+      log: (message) => this.logger.log(message),
+      warn: (message) => this.logger.warn(message),
+    });
   }
+
+
 
   private async fetchAxisroomsHotelsForRoutes(
     routes: any[],
