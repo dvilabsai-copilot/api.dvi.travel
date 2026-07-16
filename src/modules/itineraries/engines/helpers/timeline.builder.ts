@@ -55,6 +55,7 @@ import { TimelineManualPlacementOrderingService } from './timeline-manual-placem
 import { TimelineDestinationReservationService } from './timeline-destination-reservation.service';
 import { TimelineCarryForwardAttachmentService } from './timeline-carry-forward-attachment.service';
 import { TimelineMatrixAutobuildService } from './timeline-matrix-autobuild.service';
+import { TimelineCandidateReorderingService } from './timeline-candidate-reordering.service';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -213,6 +214,7 @@ export class TimelineBuilder {
   private readonly destinationReservationService = new TimelineDestinationReservationService();
   private readonly carryForwardAttachmentService = new TimelineCarryForwardAttachmentService();
   private readonly matrixAutobuildService = new TimelineMatrixAutobuildService();
+  private readonly candidateReorderingService = new TimelineCandidateReorderingService();
   private readonly candidatePolicyService = new TimelineCandidatePolicyService(
     this.operatingHoursService,
     this.slotPolicyService,
@@ -1173,34 +1175,13 @@ export class TimelineBuilder {
 
 
 
-                  // Passed checks — merge (append) as optional candidate
       // Re-order candidates: preserve manual selections and priority>0 first (protected),
       // then sort remaining candidates by matrix_score desc, then distance asc.
-      try {
-        const priorityCandidates: any[] = [];
-        const nonPriorityCandidates: any[] = [];
-        for (const s of selectedHotspots) {
-          const priority = Number((s as any).hotspot_priority ?? 0);
-          const isManualSelection = Boolean((s as any).isManualSelection);
-          if (isManualSelection || priority > 0) priorityCandidates.push(s);
-          else nonPriorityCandidates.push(s);
-        }
 
-        nonPriorityCandidates.sort((a: any, b: any) => {
-          const sa = Number(a.matrix_score ?? 0);
-          const sb = Number(b.matrix_score ?? 0);
-          if (sa !== sb) return sb - sa; // higher score first
-          const da = Number(a.hotspot_distance ?? Number.POSITIVE_INFINITY);
-          const db = Number(b.hotspot_distance ?? Number.POSITIVE_INFINITY);
-          return da - db; // closer first
-        });
-
-        selectedHotspots = [...priorityCandidates, ...nonPriorityCandidates];
-        this.logTimeline('[TIMELINE] Candidates reordered (priority preserved, matrix_score applied)');
-      } catch (e) {
-        this.logTimeline('[TIMELINE] Candidate reorder error', String(e));
-      }
-
+      selectedHotspots = this.candidateReorderingService.reorder(
+        selectedHotspots,
+        (...args) => (this.logTimeline as any)(...args),
+      );
       const routeLoopStart = Date.now();
       let hotspotQueryCount = 0;
       let distanceCalcCount = 0;
