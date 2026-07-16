@@ -278,6 +278,8 @@ The iteration-61 draft guide-assignment deletion boundary is a measurement seam 
 
 The iteration-62 confirmed-guide projection boundary is a measurement seam for confirmed-plan lookup latency, guide/slot/route/master query fan-out, guide and language selectivity, slot-grouping CPU, draft-slot backfill frequency, payload size and response latency. Capture empty-guide, single-guide, multi-slot, missing-master and lazy-backfill workloads separately before batching reads, adding covering indexes or caching immutable labels; preserve query ordering, fallback dates and cancellation-visible slot state.
 
+The iteration-63 confirmed guide-slot cancellation boundary is a measurement seam for cancellation validation rate, confirmed-plan/guide/slot lookup latency, lazy slot-cost backfill, cancellation-row write volume, aggregate query fan-out, route-full and itinerary-full status transition frequency, audit-log latency and transaction duration. Capture first cancellation, repeated cancellation, partial-route, route-full and itinerary-full workloads separately before batching aggregates, adding write-path indexes or caching immutable plan state; preserve financial rounding, status ordering and audit semantics.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.

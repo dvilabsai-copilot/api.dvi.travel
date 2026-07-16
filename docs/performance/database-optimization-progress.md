@@ -109,3 +109,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - The facade delegates the same query sequence and response projection; no predicates, ordering or transaction client semantics changed.
 - This is not a measured performance improvement: read fan-out, master selectivity, grouping CPU, backfill frequency, payload size and response latency remain unmeasured.
 - No index or Redis action is proposed; any future optimization must compare empty/single/multi-slot and backfill query plans while preserving cancellation-visible slot state.
+
+## Iteration 63 evidence update
+
+- The confirmed guide-slot cancellation extraction preserves the existing confirmed-plan/guide/slot reads, cancellation writes, aggregates and audit callback; no SQL, index, Redis cache or query shape was changed.
+- The cancellation transaction still owns the same route and itinerary aggregate predicates, status transitions and financial writes; only orchestration ownership moved.
+- This is not a measured performance improvement: lookup latency, backfill frequency, write volume, aggregate fan-out, audit latency and transaction duration remain unmeasured.
+- No index or Redis action is proposed; any future optimization must compare first/partial/full cancellation query plans and preserve rounding, status order and audit semantics.

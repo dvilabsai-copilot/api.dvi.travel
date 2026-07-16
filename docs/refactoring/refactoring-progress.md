@@ -2146,3 +2146,32 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Confirmed-guide read latency, hydration fan-out, draft-slot backfill frequency and payload size remain unmeasured.
 - Implementation commit: `api.dvi.travel` `df3e866`.
+
+### Cycle 66 - Extract confirmed guide-slot cancellation
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: confirmed guide-slot cancellation, refund/charge calculation and cancellation-state aggregation
+- New files: `src/modules/itineraries/services/itinerary-confirmed-guide-cancellation.service.ts`, `test/itinerary-confirmed-guide-cancellation.test.ts`
+- Workflow: confirmed guide-slot cancellation endpoint after confirmed-plan validation and slot-cost hydration
+
+#### Change
+
+- Moved cancellation validation, lazy slot-cost hydration, cancellation-record creation, cancelled guide/slot copies, refund/charge persistence, route/itinerary aggregation and status updates behind `ItineraryConfirmedGuideCancellationService`.
+- Preserved cancellation percentage clamping, DVI/guest defect mapping, financial rounding, idempotency conflict, transaction ordering, audit logging and response fields.
+- Kept `ItinerariesService` as the controller compatibility facade and retained the existing cancellation audit callback.
+
+#### Verification
+
+- Confirmed guide cancellation characterization tests: PASS, 2/2
+- Combined focused backend/timeline suite: PASS, 139/139
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 11,333 lines after the tier; `ItineraryConfirmedGuideCancellationService` is 377 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Cancellation transaction latency, aggregate fan-out, route-full cancellation frequency and refund payload size remain unmeasured.
+- Implementation commit: `api.dvi.travel` `99e5437`.
