@@ -81,6 +81,7 @@ import { ItineraryManualFitRouteMatrixPersistenceService } from './services/itin
 import { ItineraryManualFitOperatingHoursService } from './services/itinerary-manual-fit-operating-hours.service';
 import { ItineraryManualFitValidationService } from './services/itinerary-manual-fit-validation.service';
 import { ItineraryManualFitScheduleAttemptService } from './services/itinerary-manual-fit-schedule-attempt.service';
+import { ItineraryManualFitCandidateSimulationService } from './services/itinerary-manual-fit-candidate-simulation.service';
 import { ItineraryVehicleBuildStatusService } from './services/itinerary-vehicle-build-status.service';
 import { ItineraryVehicleBuildService } from './services/itinerary-vehicle-build.service';
 import { ItineraryPlanPersistenceService } from './services/itinerary-plan-persistence.service';
@@ -667,6 +668,7 @@ export class ItinerariesService {
     private readonly manualFitOperatingHoursService: ItineraryManualFitOperatingHoursService = new ItineraryManualFitOperatingHoursService(prisma),
     private readonly manualFitValidationService: ItineraryManualFitValidationService = new ItineraryManualFitValidationService(),
     private readonly manualFitScheduleAttemptService: ItineraryManualFitScheduleAttemptService = new ItineraryManualFitScheduleAttemptService(),
+    private readonly manualFitCandidateSimulationService: ItineraryManualFitCandidateSimulationService = new ItineraryManualFitCandidateSimulationService(),
   ) {
     this.manualFitTimelinePolicyService.setCallbacks({
       parseSegmentEndMinutes: (...args) => (this.parseSegmentEndMinutes as any)(...args),
@@ -710,6 +712,22 @@ export class ItinerariesService {
       manualFitTimelinePreservesSelectedAnchor: (...args) => (this.manualFitTimelinePreservesSelectedAnchor as any)(...args),
       parsePreviewTimeToMinutes: (...args) => (this.parsePreviewTimeToMinutes as any)(...args),
       explainManualScheduleAttempt: (...args) => (this.explainManualScheduleAttempt as any)(...args),
+    });
+    this.manualFitCandidateSimulationService.setCallbacks({
+      rebuildManualHotspotSet: (...args) => (this.rebuildManualHotspotSet as any)(...args),
+      buildRouteHotspotInsertionCandidates: (...args) => (this.buildRouteHotspotInsertionCandidates as any)(...args),
+      getManualHotspotScheduleState: (...args) => (this.getManualHotspotScheduleState as any)(...args),
+      getRouteTimelineForScoring: (...args) => (this.getRouteTimelineForScoring as any)(...args),
+      manualFitTimelinePreservesSelectedAnchor: (...args) => (this.manualFitTimelinePreservesSelectedAnchor as any)(...args),
+      buildExactAnchorSequentialTimelineAfterRemoval: (...args) => (this.buildExactAnchorSequentialTimelineAfterRemoval as any)(...args),
+      enrichManualFitPreviewTimelineWithOperatingHours: (...args) => (this.enrichManualFitPreviewTimelineWithOperatingHours as any)(...args),
+      calculateWaitingMinutes: (...args) => (this.calculateWaitingMinutes as any)(...args),
+      calculateTravelMetricsFromTimeline: (...args) => (this.calculateTravelMetricsFromTimeline as any)(...args),
+      detectTopPriorityImpact: (...args) => (this.detectTopPriorityImpact as any)(...args),
+      calculateRouteEndOverflowMinutes: (...args) => (this.calculateRouteEndOverflowMinutes as any)(...args),
+      scoreManualInsertionCandidate: (...args) => (this.scoreManualInsertionCandidate as any)(...args),
+      getManualEffectivePriority: (...args) => (this.getManualEffectivePriority as any)(...args),
+      explainRejectedCandidate: (...args) => (this.explainRejectedCandidate as any)(...args),
     });
     this.vehicleBuildService.setVehicleVendorSelector((data) => this.selectVehicleVendor(data));
     this.activityAvailabilityService.setCalculateActivityPlanPricingCallback(
@@ -3246,205 +3264,10 @@ private getGuideSlotLabel(slotId: number): string {
     return (this.manualFitScheduleAttemptService.compareManualScheduleAttempts as any)(...args);
   }
 
-  private async simulateManualInsertionAtPosition(
-    tx: any,
-    planId: number,
-    routeId: number,
-    route: any,
-    manualHotspotIds: number[],
-    position: ManualInsertionPosition,
-    baselineTopPriorityByHotspotId: Map<number, { id: number; name: string; priority: number }>,
-    masterMap: Map<number, any>,
-    options?: {
-      allowTopPriorityRemoval?: boolean;
-      removedOptionalHotspots?: any[];
-      removedTopPriorityHotspots?: any[];
-      manualTimingPolicy?: ManualHotspotTimingPolicy;
-      preferredHotspotOrder?: number[];
-      exactAnchorMode?: boolean;
-      anchorIntent?: 'AFTER_START' | 'AFTER_ATTRACTION';
-      afterHotspotId?: number;
-      beforeHotspotId?: number;
-      sourceInsertionMode?: boolean;
-      sourceMaxCandidateIndex?: number;
-    },
-  ): Promise<ManualInsertionCandidateResult> {
-    const allowTopPriorityRemoval = options?.allowTopPriorityRemoval === true;
-
-    await this.rebuildManualHotspotSet(
-      tx,
-      Number(planId),
-      Number(routeId),
-      manualHotspotIds,
-      {
-        anchorType: 'after_travel',
-        anchorIndex: Math.max(0, Number(position.anchorOrder) - 1),
-      },
-      {
-        preferredManualPlacementByRoute: {
-          [Number(routeId)]: { hotspotOrder: Number(position.anchorOrder) },
-        },
-        preferredHotspotOrder: options?.preferredHotspotOrder,
-        previewOnly: true,
-      },
-    );
-
-    const afterCandidates = await this.buildRouteHotspotInsertionCandidates(tx, Number(planId), Number(routeId), manualHotspotIds);
-    const scheduleState = await this.getManualHotspotScheduleState(
-      tx,
-      Number(planId),
-      Number(routeId),
-      manualHotspotIds,
-      afterCandidates.masterMap,
-    );
-
-    let fullTimeline = await this.getRouteTimelineForScoring(tx, Number(planId), Number(routeId));
-    let exactAnchorPreserved = true;
-    let exactAnchorFailureReason: string | null = null;
-    if (options?.exactAnchorMode === true) {
-      const selectedHotspotId = Number(manualHotspotIds?.[0] || 0);
-      const preservesAnchor = this.manualFitTimelinePreservesSelectedAnchor({
-        timeline: fullTimeline,
-        selectedHotspotId,
-        afterHotspotId: Number(options?.afterHotspotId || 0) || null,
-        beforeHotspotId: Number(options?.beforeHotspotId || 0) || null,
-        anchorIntent: options?.anchorIntent,
-      });
-
-      exactAnchorPreserved = preservesAnchor === true;
-
-      if (!exactAnchorPreserved && selectedHotspotId > 0) {
-        const rebuiltExactAnchorTimeline = await this.buildExactAnchorSequentialTimelineAfterRemoval(
-          tx,
-          fullTimeline,
-          {
-            removedHotspotIds: [],
-            targetHotspotId: selectedHotspotId,
-            routeId: Number(routeId),
-            planId: Number(planId),
-            anchorIntent: options?.anchorIntent,
-            afterHotspotId: options?.afterHotspotId,
-            beforeHotspotId: options?.beforeHotspotId,
-          },
-        );
-
-        if (Array.isArray(rebuiltExactAnchorTimeline) && rebuiltExactAnchorTimeline.length > 0) {
-          const enrichedExactTimeline = await this.enrichManualFitPreviewTimelineWithOperatingHours(
-            Number(planId),
-            Number(routeId),
-            rebuiltExactAnchorTimeline,
-          );
-
-          const rebuiltPreservesAnchor = this.manualFitTimelinePreservesSelectedAnchor({
-            timeline: enrichedExactTimeline,
-            selectedHotspotId,
-            afterHotspotId: Number(options?.afterHotspotId || 0) || null,
-            beforeHotspotId: Number(options?.beforeHotspotId || 0) || null,
-            anchorIntent: options?.anchorIntent,
-          });
-
-          if (rebuiltPreservesAnchor) {
-            fullTimeline = enrichedExactTimeline;
-            exactAnchorPreserved = true;
-          }
-        }
-      }
-
-      if (!exactAnchorPreserved) {
-        exactAnchorFailureReason =
-          options?.anchorIntent === 'AFTER_START'
-            ? 'Exact-anchor rebuild failed: selected manual hotspot is not the first attraction after route start.'
-            : 'Exact-anchor rebuild failed: selected manual hotspot is not immediately after the clicked anchor attraction.';
-      }
-    }
-    const manualHotspotIdSet = new Set<number>(manualHotspotIds.map((id: number) => Number(id)));
-    const waitingMinutes = this.calculateWaitingMinutes(fullTimeline);
-    const travelMetrics = this.calculateTravelMetricsFromTimeline(fullTimeline, manualHotspotIdSet, masterMap);
-    const timelineAttractionIds = new Set<number>(
-      (fullTimeline || [])
-        .filter((row: any) => Number(row?.item_type || 0) === 4 || String(row?.type || '').toLowerCase() === 'attraction')
-        .map((row: any) => Number(row?.hotspot_ID || row?.hotspotId || row?.locationId || row?.hotspot_id || 0))
-        .filter((id: number) => Number.isFinite(id) && id > 0),
-    );
-    const topPriorityAffected = this.detectTopPriorityImpact(baselineTopPriorityByHotspotId, afterCandidates)
-      .filter((row) => !timelineAttractionIds.has(Number(row.id)));
-
-    const openingHourConflictCount = Number((fullTimeline || []).filter((row: any) => row?.isConflict === true && Number(row?.item_type || 0) === 4).length || 0);
-    const routeEndOverflowMinutes = this.calculateRouteEndOverflowMinutes(
-      fullTimeline,
-      route,
-      options?.manualTimingPolicy?.endTime,
-    );
-
-    const score = this.scoreManualInsertionCandidate({
-      waitingMinutes,
-      extraTravelKm: travelMetrics.extraTravelKm,
-      totalTravelKm: travelMetrics.totalTravelKm,
-      toAndFroPenalty: travelMetrics.toAndFroPenalty,
-      removedOptionalCount: Number(options?.removedOptionalHotspots?.length || 0),
-      topPriorityAffectedCount: Number(topPriorityAffected.length || 0),
-      routeEndOverflowMinutes,
-      openingHourConflictCount,
-    });
-
-    const scheduledManualHotspots = scheduleState.scheduledHotspotIds.map((id: number) => {
-      const master = afterCandidates.masterMap.get(Number(id));
-      return {
-        id: Number(id),
-        name: String(master?.hotspot_name || `Hotspot #${id}`),
-        priorityLabel: `Manual / P${this.getManualEffectivePriority()}`,
-      };
-    });
-
-    const requiresConfirmation = topPriorityAffected.length > 0 && !allowTopPriorityRemoval;
-    const success =
-      exactAnchorPreserved === true
-      && scheduleState.unscheduledManualHotspots.length === 0
-      && routeEndOverflowMinutes === 0
-      && openingHourConflictCount === 0
-      && (!requiresConfirmation || allowTopPriorityRemoval);
-
-    const reason = exactAnchorFailureReason || this.explainRejectedCandidate({
-      unscheduledCount: scheduleState.unscheduledManualHotspots.length,
-      routeEndOverflowMinutes,
-      openingHourConflictCount,
-      topPriorityAffectedCount: topPriorityAffected.length,
-      allowTopPriorityRemoval,
-    });
-
-    console.log('[ManualInsertionOptimizer]', {
-      candidateIndex: position.candidateIndex,
-      positionLabel: position.positionLabel,
-      waitingMinutes,
-      extraTravelKm: travelMetrics.extraTravelKm,
-      toAndFroPenalty: travelMetrics.toAndFroPenalty,
-      removedOptionalCount: Number(options?.removedOptionalHotspots?.length || 0),
-      topPriorityAffectedCount: topPriorityAffected.length,
-      score,
-      chosen: false,
-    });
-
-    return {
-      success,
-      candidateIndex: position.candidateIndex,
-      rows: afterCandidates.hotspotRows,
-      fullTimeline,
-      score,
-      waitingMinutes,
-      totalTravelKm: travelMetrics.totalTravelKm,
-      extraTravelKm: travelMetrics.extraTravelKm,
-      toAndFroPenalty: travelMetrics.toAndFroPenalty,
-      removedOptionalHotspots: [...(options?.removedOptionalHotspots || [])],
-      removedTopPriorityHotspots: [...(options?.removedTopPriorityHotspots || [])],
-      topPriorityAffected,
-      scheduledManualHotspots,
-      unscheduledManualHotspots: scheduleState.unscheduledManualHotspots,
-      requiresConfirmation,
-      reason,
-      routeEndOverflowMinutes,
-      openingHourConflictCount,
-    };
+  private async simulateManualInsertionAtPosition(...args: any[]): Promise<any> {
+    return (this.manualFitCandidateSimulationService.simulateManualInsertionAtPosition as any)(...args);
   }
+
 
   private async findBestManualInsertionCandidate(
     tx: any,
