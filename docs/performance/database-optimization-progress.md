@@ -487,3 +487,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Returned state preserves previous-stop, attraction flag, pre-attraction flag and distance accumulation semantics.
 - This is not a measured database performance improvement: lookahead CPU, conflict frequency, distance latency, row volume and details response latency remain unmeasured.
 - No index addition/removal or Redis action is proposed; future work should capture semantic/distance traces before batching or caching mutable timeline travel data.
+
+## Iteration 117 evidence update
+
+- The attraction-activity extraction preserves the catalog count predicate, route-activity filters/order, activity-master lookup, gallery ordering/filter and response projection; no SQL predicate, index, Redis cache or response shape changed.
+- Empty activity IDs still skip master and gallery reads, while populated IDs preserve route-specific amount/time formatting and gallery URLs.
+- This is not a measured database performance improvement: catalog count frequency, activity/gallery row volume, hydration latency and details response latency remain unmeasured.
+- No index addition/removal or Redis action is proposed; future work should capture activity lookup plans, gallery cardinality and per-attraction query traces before batching or caching catalog data.

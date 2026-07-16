@@ -3706,3 +3706,31 @@
 - `itinerary-details.service.ts` measured at 4,436 lines after the tier; `itinerary-details-regular-travel.service.ts` is 310 lines.
 - Regular-travel distance latency, forced-conflict frequency, lookahead scan cost and timeline response latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `a49a811`.
+
+### Cycle 120 - Extract itinerary-details attraction activity hydration
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itinerary-details.service.ts`
+- Extracted responsibility: attraction activity catalog availability, route-activity hydration, activity master projection and gallery URL mapping
+- New files: `src/modules/itineraries/services/itinerary-details-attraction-activity.service.ts`, `test/itinerary-details-attraction-activity.test.ts`
+- Workflow: per-attraction itinerary-details activity projection
+
+#### Change
+
+- Moved attraction activity count, route-detail reads, master hydration, gallery mapping and response projection behind `ItineraryDetailsAttractionActivityService`.
+- Preserved query predicates, activity ordering, amount/time formatting, gallery URL shape, empty-query short-circuits and attraction response fields.
+- No SQL predicate, index, Redis cache, API route, DTO or response contract changed.
+
+#### Verification
+
+- Attraction-activity characterization tests: PASS, 2/2
+- Itinerary characterization collection: PASS, 169/169
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itinerary-details.service.ts` measured at 4,379 lines after the tier; `itinerary-details-attraction-activity.service.ts` is 95 lines.
+- Activity catalog query cost, gallery volume, master hydration latency and timeline response latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `fc70bb4`.
