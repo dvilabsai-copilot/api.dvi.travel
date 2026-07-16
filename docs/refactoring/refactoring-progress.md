@@ -1739,3 +1739,32 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Arrival-policy decision latency, hotel-coordinate read latency, distance branch volume, suppression frequency and route rebuild latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `56581e0`.
+
+### Cycle 52 - Extract hotel-first insertion
+
+#### Scope
+
+- Original file: `src/modules/itineraries/engines/helpers/timeline.builder.ts`
+- Extracted responsibility: optional hotel travel, check-in, check-in clamp and post-check-in rest-gap row insertion
+- New files: `src/modules/itineraries/engines/helpers/timeline-hotel-first-insertion.service.ts`, `test/timeline-hotel-first-insertion.test.ts`
+- Workflow: Day-1 same-city hotel-first sequence after arrival/hotel decision evaluation
+
+#### Change
+
+- Moved the transaction-aware hotel-first row sequence behind `TimelineHotelFirstInsertionService`.
+- Preserved eligibility gates, hotel travel/check-in builder calls, 14:00 check-in clamp, 60/120-minute rest gap, order increments, booking-rule diagnostics and current-time/location/coordinate updates.
+- Kept route cutoff calculation and hotspot scheduling in `TimelineBuilder`.
+
+#### Verification
+
+- Hotel-first insertion characterization tests: PASS, 2/2
+- Combined focused backend/timeline suite: PASS, 104/104
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `timeline.builder.ts` measured at 7,481 lines after the tier; `TimelineHotelFirstInsertionService` is 155 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Hotel-first invocation rate, hotel-builder/provider latency, inserted-row volume, check-in clamp frequency and rebuild latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `1a13e34`.
