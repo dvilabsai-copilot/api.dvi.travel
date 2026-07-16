@@ -130,3 +130,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Transaction timeout, deletion predicates, rebuild order and vehicle-pricing callback semantics remain unchanged; only orchestration ownership moved.
 - This is not a measured performance improvement: lookup latency, dependent-row volume, rebuild duration, parking refresh duration and vehicle refresh latency remain unmeasured.
 - No index or Redis action is proposed; any future optimization must compare route-hotspot-ID/master-ID fallback plans and preserve cleanup/rebuild ordering.
+
+## Iteration 66 evidence update
+
+- The activity-availability extraction preserves the existing activity, time-slot and pricing reads; no SQL, index, Redis cache or query shape was changed.
+- Activity ordering, slot ordering, pricing callback arguments and response projection remain unchanged; only orchestration ownership moved.
+- This is not a measured performance improvement: activity/slot fan-out, pricing latency, selectivity, empty-catalog rate and payload size remain unmeasured.
+- No index or Redis action is proposed; any future optimization must compare empty/single/multi-activity query plans and preserve response ordering.

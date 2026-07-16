@@ -284,6 +284,8 @@ The iteration-64 manual-fit attempt-store boundary is a measurement seam for tab
 
 The iteration-65 route-hotspot deletion boundary is a measurement seam for route-hotspot identity lookup latency, dependent activity/timeline row volume, exclusion update frequency, transaction duration, hotspot rebuild duration, parking-charge rebuild duration, vehicle-pricing refresh duration and end-to-end delete latency. Capture route-hotspot-ID versus master-ID fallback, empty/dependent-row, repeated-delete and large-plan rebuild workloads separately before adding deletion indexes, batching cleanup or caching route state; preserve dependent-row ordering, rebuild timeout and pricing refresh semantics.
 
+The iteration-66 activity-availability boundary is a measurement seam for activity catalog latency, active-row selectivity, per-activity slot query fan-out, pricing callback latency, slot-row volume, empty-catalog frequency and response serialization cost. Capture empty, single-activity, multi-activity, no-pricing and multi-slot workloads separately before batching slot reads, adding activity/slot indexes or caching immutable catalog data; preserve title/slot ordering and pricing response semantics.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.

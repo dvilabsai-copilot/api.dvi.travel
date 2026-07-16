@@ -2233,3 +2233,32 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Deletion fan-out, rebuild duration, parking refresh duration and vehicle-pricing refresh latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `065f91d`.
+
+### Cycle 69 - Extract activity availability projection
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: activity catalog, time-slot and plan-pricing response projection
+- New files: `src/modules/itineraries/services/itinerary-activity-availability.service.ts`, `test/itinerary-activity-availability.test.ts`
+- Workflow: available-activities read endpoint before activity mutation workflows
+
+#### Change
+
+- Moved active activity lookup, per-activity time-slot lookup and plan-specific pricing projection behind `ItineraryActivityAvailabilityService`.
+- Preserved activity/title ordering, slot ordering, empty-catalog behavior, pricing callback arguments and all response fields.
+- Kept mutation and smart-activity workflows unchanged on the `ItinerariesService` facade.
+
+#### Verification
+
+- Activity-availability characterization tests: PASS, 2/2
+- Combined focused backend/timeline suite: PASS, 145/145
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 11,017 lines after the tier; `ItineraryActivityAvailabilityService` is 97 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Activity/slot fan-out, pricing latency, active-row selectivity and response payload size remain unmeasured.
+- Implementation commit: `api.dvi.travel` `5d01b54`.
