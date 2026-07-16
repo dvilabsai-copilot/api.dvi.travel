@@ -571,3 +571,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - The tier adds no database reads and leaves all provider search calls in the existing facade.
 - This is not a measured database performance improvement: route/stay-block cardinality, grouping CPU, provider search frequency and response latency remain unmeasured.
 - No index addition/removal or Redis action is proposed; future work should capture provider search query plans and route-to-block distributions before caching mutable quote-scoped stay blocks.
+
+## Iteration 129 evidence update
+
+- The TBO price-package extraction preserves four-tier labels, per-route ascending-price assignment, single-hotel overlap, deterministic fallback selection, no-availability placeholders and margin-aware total calculations; no SQL predicate, index, Redis cache or response shape changed.
+- The tier adds no database reads and leaves provider searches and quote-scoped freshness in the existing facade.
+- This is not a measured database performance improvement: supplier hotel cardinality, tier-generation CPU, fallback/placeholder frequency and provider-search response latency remain unmeasured.
+- No index addition/removal or Redis action is proposed; future work should capture provider query plans and package cardinality distributions before memoizing package projections or changing provider batching.

@@ -410,6 +410,8 @@ The iteration-127 route-optimization ownership boundary is a measurement seam fo
 
 The iteration-128 TBO stay-block boundary is a measurement seam for route count, stay-block cardinality, same-destination grouping rate, departure-day skip frequency, grouping CPU and end-to-end provider-search response latency. Capture single-night, consecutive same-city, destination-change, date-gap, zero-night and departure-day workloads separately before caching stay blocks; preserve route-date freshness, provider search windows, route membership and response ordering. No index addition/removal or Redis cache is justified until provider query traces and stay-block distributions establish the measured winner.
 
+The iteration-129 TBO price-package boundary is a measurement seam for route count, supplier hotel cardinality, price-tier assignment CPU, one-hotel overlap rate, deterministic fallback frequency, placeholder-row frequency and end-to-end provider-search response latency. Capture single-hotel, two-to-four-hotel, five-plus-hotel, empty-route, provider-failure and margin-bearing workloads separately before memoizing package projections or changing provider batching; preserve quote-scoped freshness, ascending-price assignment, fallback semantics and response ordering. No index addition/removal or Redis cache is justified until provider traces and package distributions establish the measured winner.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.

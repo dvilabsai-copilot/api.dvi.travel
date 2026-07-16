@@ -275,3 +275,5 @@ This is an evidence-led plan; no production extraction is retained by the baseli
 The in-facade legacy route optimizer was removed after verification that `ItineraryRouteOptimizationService` is the live owner and no production call sites referenced the duplicate helpers. `ItinerariesService` remains the compatibility facade and delegates route ordering to that service; route optimization behavior and response fields are unchanged.
 
 `ItineraryHotelStayBlockService` now owns TBO hotel stay-block grouping, check-in/check-out date projection and departure-day suppression. `ItineraryHotelDetailsTboService` remains the provider-search facade and supplies logging. Route grouping and provider response behavior are unchanged; stay-block/search cost remains pending measurement.
+
+`ItineraryHotelPricePackageService` now owns TBO per-route price-tier assignment, one-hotel overlap, deterministic fallback selection and no-availability placeholders. `ItineraryHotelDetailsTboService` remains the provider-search facade and supplies logging and pricing callbacks. Package membership and response behavior are unchanged; tier-generation/search cost remains pending measurement.

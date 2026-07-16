@@ -4046,3 +4046,31 @@
 - `itinerary-hotel-details-tbo.service.ts` measured at 3,775 lines after the tier; `itinerary-hotel-stay-block.service.ts` is 71 lines.
 - Stay-block cardinality, grouping CPU, departure-day skip frequency and provider-search response latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `5c68514`.
+
+### Cycle 132 - Extract TBO hotel price-package generation
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itinerary-hotel-details-tbo.service.ts`
+- Extracted responsibility: per-route price-tier assignment, deterministic overlap fallback and unavailable-hotel placeholders
+- New files: `src/modules/itineraries/services/itinerary-hotel-price-package.service.ts`, `test/itinerary-hotel-price-package.test.ts`
+- Workflow: provider-search package preparation
+
+#### Change
+
+- Moved price-package generation behind `ItineraryHotelPricePackageService` while preserving four tier labels, ascending-price assignment, one-hotel overlap, fallback selection, placeholders and margin-aware totals.
+- The TBO facade remains the compatibility boundary and supplies logging and pricing callbacks; provider searches, response DTOs and API contracts are unchanged.
+- No SQL predicate, index, Redis cache, API route, DTO or response contract changed.
+
+#### Verification
+
+- Price-package characterization tests: PASS, 2/2
+- Itinerary characterization collection: PASS, 186/186
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itinerary-hotel-details-tbo.service.ts` measured at 3,609 lines after the tier; `itinerary-hotel-price-package.service.ts` is 176 lines.
+- Price-tier cardinality, fallback frequency, grouping CPU and provider-search response latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `9b4a0cd`.
