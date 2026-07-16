@@ -36,6 +36,7 @@ import { ItineraryDetailsHotelFirstPolicyService } from './services/itinerary-de
 import { ItineraryDetailsSourceTravelService } from './services/itinerary-details-source-travel.service';
 import { ItineraryDetailsViaTravelService } from './services/itinerary-details-via-travel.service';
 import { ItineraryDetailsRegularTravelService } from './services/itinerary-details-regular-travel.service';
+import { ItineraryDetailsAttractionActivityService } from './services/itinerary-details-attraction-activity.service';
 
 // ---------------------------------------------------------------------------
 // DTOs for Itinerary Details response (shared shape with frontend)
@@ -436,6 +437,7 @@ export class ItineraryDetailsService {
   private readonly sourceTravelService = new ItineraryDetailsSourceTravelService();
   private readonly viaTravelService = new ItineraryDetailsViaTravelService();
   private readonly regularTravelService = new ItineraryDetailsRegularTravelService();
+  private readonly attractionActivityService = new ItineraryDetailsAttractionActivityService();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -1540,74 +1542,15 @@ for (const row of vehicleKmRows) {
           const rawP = (master as any).hotspot_priority ?? (master as any).priority ?? 0;
           const priority = Number(rawP) === 0 ? 9999 : Number(rawP);
 
-          // Check if master catalog has activities for this hotspot
-          const catalogActivityCount = rh.hotspot_ID
-            ? await this.prisma.dvi_activity.count({
-                where: { hotspot_id: rh.hotspot_ID as number, deleted: 0, status: 1 },
-              })
-            : 0;
-          const hasAvailableActivities = catalogActivityCount > 0;
-
-          // Fetch activities for this hotspot
-          const activities = await this.prisma.dvi_itinerary_route_activity_details.findMany({
-            where: {
-              itinerary_plan_ID: planId,
-              itinerary_route_ID: route.itinerary_route_ID,
-              route_hotspot_ID: rh.route_hotspot_ID,
-              hotspot_ID: rh.hotspot_ID as number,
-              deleted: 0,
-              status: 1,
-            },
-            orderBy: { activity_order: 'asc' },
-          });
-
-          // Fetch activity masters for details
-          const activityIds = activities.map(a => a.activity_ID).filter(id => id > 0);
-          const activityMasters = activityIds.length
-            ? await this.prisma.dvi_activity.findMany({
-                where: {
-                  activity_id: { in: activityIds },
-                  deleted: 0,
-                },
-              })
-            : [];
-
-          const activityMap = new Map(activityMasters.map(a => [a.activity_id, a]));
-
-          // Bulk fetch activity gallery images for this hotspot's activities
-          const activityGalleryRows = activityIds.length
-            ? await this.prisma.dvi_activity_image_gallery_details.findMany({
-                where: { activity_id: { in: activityIds }, deleted: 0 },
-                orderBy: { activity_image_gallery_details_id: 'asc' },
-                select: { activity_id: true, activity_image_gallery_name: true },
-              })
-            : [];
-          const activityGalleryMap = new Map<number, string[]>();
-          for (const g of activityGalleryRows) {
-            const id = g.activity_id ?? 0;
-            const name = (g.activity_image_gallery_name ?? '').toString().trim();
-            if (!name || !id) continue;
-            const urls = activityGalleryMap.get(id) ?? [];
-            urls.push(`/uploads/activity_gallery/${name}`);
-            activityGalleryMap.set(id, urls);
-          }
-
-          const activityList = activities.map(actDetail => {
-            const actMaster = activityMap.get(actDetail.activity_ID);
-            const actGallery = activityGalleryMap.get(actDetail.activity_ID) ?? [];
-            return {
-              id: actDetail.route_activity_ID,
-              activityId: actDetail.activity_ID,
-              title: actMaster?.activity_title ?? '',
-              description: actMaster?.activity_description ?? '',
-              amount: Number(actDetail.activity_amout || 0),
-              startTime: this.formatTime(actDetail.activity_start_time as any),
-              endTime: this.formatTime(actDetail.activity_end_time as any),
-              duration: this.formatDuration(actDetail.activity_traveling_time as any),
-              image: actGallery[0] ?? null,
-              galleryImages: actGallery,
-            };
-          });
+          const { hasAvailableActivities, activityList } =
+            await this.attractionActivityService.build({
+              prisma: this.prisma,
+              planId,
+              route,
+              routeHotspot: rh,
+              formatTime: (value) => this.formatTime(value),
+              formatDuration: (value) => this.formatDuration(value),
+            });
 
           // Check if there's wait time due to opening hours
           const orderedVisitRange = this.orderedTimeRange(startTimeText, endTimeText);
