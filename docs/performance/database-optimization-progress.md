@@ -81,3 +81,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Builder-local static Prisma-call ownership remains 10 matches; this tier performs no database work.
 - This is not a measured performance improvement: cutoff frequency, map misses, logging cost and rebuild latency remain unmeasured.
 - No index or Redis action is proposed; any future cache must preserve route-scope, loopback bypass and absolute-time semantics.
+
+## Iteration 59 evidence update
+
+- The Day-1 travel-projection extraction keeps the existing coordinate fallback and travel/projected-arrival callbacks; no SQL, index, Redis cache or query shape was changed.
+- Builder-local static Prisma-call ownership remains 10 matches; the extracted service performs no direct database work.
+- This is not a measured performance improvement: coordinate fallback frequency, provider latency, projected-arrival rejection volume, evaluation-log cost and rebuild latency remain unmeasured.
+- No index or Redis action is proposed; any future optimization must be supported by route-build traces and query plans while preserving absolute-time projection, wrapped persistence values and rejection order.

@@ -2031,3 +2031,32 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Cutoff rejection frequency, bucket distribution, missing-master rate, evaluation-log volume and route rebuild latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `e1ce0e9`.
+
+### Cycle 62 - Extract Day-1 travel projection and route-end admission
+
+#### Scope
+
+- Original file: `src/modules/itineraries/engines/helpers/timeline.builder.ts`
+- Extracted responsibility: Day-1 coordinate fallback, travel projection, absolute-time visit calculation and route-end admission
+- New files: `src/modules/itineraries/engines/helpers/timeline-day1-travel-projection.service.ts`, `test/timeline-day1-travel-projection.test.ts`
+- Workflow: Day-1 travel state after cutoff/master admission and before operating-hours evaluation
+
+#### Change
+
+- Moved source-coordinate fallback, travel-provider invocation, absolute/wrapped visit-time projection, projected destination arrival and last-route deadline rejection behind `TimelineDay1TravelProjectionService`.
+- Preserved distance-call counting, PHP trace payload, route-end rejection metadata, callback ordering and absolute-time values consumed by operating-hours and wait scheduling.
+- Kept operating-hours checks, wait-until-open policy, timeline row construction and persistence in `TimelineBuilder`.
+
+#### Verification
+
+- Day-1 travel-projection characterization tests: PASS, 3/3
+- Combined focused backend/timeline suite: PASS, 132/132
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `timeline.builder.ts` measured at 6,340 lines after the tier; `TimelineDay1TravelProjectionService` is 141 lines.
+- Static Prisma-call matches in the builder remain 10; no query shape, index, Redis, DTO, route or response contract changed.
+- Coordinate fallback frequency, travel-provider latency, projected-arrival rejection rate, evaluation-log volume and route rebuild latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `ceb3dd0`.

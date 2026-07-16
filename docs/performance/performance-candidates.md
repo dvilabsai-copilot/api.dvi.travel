@@ -270,6 +270,8 @@ The iteration-57 Day-1 candidate-gate boundary is a measurement seam for Day-1 i
 
 The iteration-58 Day-1 cutoff/master boundary is a measurement seam for cutoff invocation count, source/via/destination rejection distribution, loopback bypass frequency, missing-master rate, evaluation-log volume and route rebuild latency. Capture local, loopback, via, destination, cutoff-edge and missing-master workloads separately before changing cutoff precedence or memoizing hotspot maps; preserve absolute-time semantics and rejection ordering.
 
+The iteration-59 Day-1 travel-projection boundary is a measurement seam for coordinate-fallback frequency, coordinate lookup latency, travel-provider calls and latency, absolute-time projection CPU, projected-arrival rejection volume, route-end rejection logging and route rebuild latency. Capture source-coordinate present/missing, last-route, projected-arrival pass/fail and overnight absolute-time workloads separately before adding coordinate indexes, caching route legs, introducing Redis or changing provider concurrency; preserve callback order, wrapped persistence values and absolute-time operating-hour semantics.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.
