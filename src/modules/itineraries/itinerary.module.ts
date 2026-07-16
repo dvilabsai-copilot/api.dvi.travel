@@ -43,6 +43,9 @@ import { ItineraryPdfService } from './itinerary-pdf.service';
 import { ItineraryScenarioSourceController } from './itinerary-scenario-source.controller';
 import { ItineraryScenarioSourceService } from './itinerary-scenario-source.service';
 import { ItineraryGuideAssignmentService } from './services/itinerary-guide-assignment.service';
+import { ItineraryGuideAssignmentWriteService } from './services/itinerary-guide-assignment-write.service';
+import { ItineraryConfirmedGuideAssignmentService } from './services/itinerary-confirmed-guide-assignment.service';
+import { ItineraryConfirmedGuideCancellationService } from './services/itinerary-confirmed-guide-cancellation.service';
 import { ItineraryVehicleBuildStatusService } from './services/itinerary-vehicle-build-status.service';
 import { ItineraryVehicleBuildService } from './services/itinerary-vehicle-build.service';
 import { ItineraryPlanPersistenceService } from './services/itinerary-plan-persistence.service';
@@ -77,6 +80,10 @@ import { ItineraryConfirmedItineraryDetailsService } from './services/itinerary-
 import { ItineraryRouteTimingService } from './services/itinerary-route-timing.service';
 import { ItineraryManualFitTravelReplicaService } from './services/itinerary-manual-fit-travel-replica.service';
 import { ItineraryManualFitGeometryService } from './services/itinerary-manual-fit-geometry.service';
+import { ItineraryManualFitAttemptStoreService } from './services/itinerary-manual-fit-attempt-store.service';
+import { ItineraryActivityAvailabilityService } from './services/itinerary-activity-availability.service';
+import { ItineraryInvoiceReadService } from './services/itinerary-invoice-read.service';
+import { ItineraryHotspotDeletionService } from './services/itinerary-hotspot-deletion.service';
 
 @Module({
   imports: [HotelsModule],
@@ -99,6 +106,9 @@ import { ItineraryManualFitGeometryService } from './services/itinerary-manual-f
     SameCityCrossDayOptimizerService,
     ItineraryRouteNormalizationService,
     ItineraryGuideAssignmentService,
+    ItineraryGuideAssignmentWriteService,
+    ItineraryConfirmedGuideAssignmentService,
+    ItineraryConfirmedGuideCancellationService,
     ItineraryVehicleBuildStatusService,
     ItineraryVehicleBuildService,
     ItineraryPlanPersistenceService,
@@ -133,6 +143,10 @@ import { ItineraryManualFitGeometryService } from './services/itinerary-manual-f
     ItineraryRouteTimingService,
     ItineraryManualFitTravelReplicaService,
     ItineraryManualFitGeometryService,
+    ItineraryManualFitAttemptStoreService,
+    ItineraryActivityAvailabilityService,
+    ItineraryInvoiceReadService,
+    ItineraryHotspotDeletionService,
 
     // existing engines you already had
     HotelEngineService,
