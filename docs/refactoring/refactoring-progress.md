@@ -4270,3 +4270,31 @@
 - `itinerary-hotel-details-tbo.service.ts` measured at 2,989 lines after the tier; `itinerary-hotel-preference-filter.service.ts` is 127 lines.
 - Provider result cardinality, filter rejection rate, meal-alignment CPU and end-to-end search response latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `c2daa9e`.
+
+### Cycle 140 - Extract secondary hotel provider fetches
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itinerary-hotel-details-tbo.service.ts`
+- Extracted responsibility: HOBSE and ResAvenue route iteration, departure-day suppression, provider request construction and per-route failure handling
+- New files: `src/modules/itineraries/services/itinerary-hotel-secondary-provider-fetch.service.ts`, `test/itinerary-hotel-secondary-provider-fetch.test.ts`
+- Workflow: secondary provider search
+
+#### Change
+
+- Moved HOBSE/ResAvenue fetch loops behind `ItineraryHotelSecondaryProviderFetchService` while preserving city/name request fields, occupancy normalization, provider filters, route maps, empty results and error recovery.
+- The TBO facade remains the compatibility boundary and supplies provider callbacks and logging; provider payloads and downstream merge behavior are unchanged.
+- No SQL predicate, index, Redis cache, API route, DTO or response contract changed.
+
+#### Verification
+
+- Secondary-provider characterization tests: PASS, 2/2
+- Itinerary characterization collection: PASS, 195/195
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itinerary-hotel-details-tbo.service.ts` measured at 2,890 lines after the tier; `itinerary-hotel-secondary-provider-fetch.service.ts` is 126 lines.
+- Provider call latency, route success/failure ratio, result cardinality and secondary-provider search response latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `7048926`.

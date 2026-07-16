@@ -426,6 +426,8 @@ The iteration-135 guest-nationality boundary is a measurement seam for country l
 
 The iteration-136 hotel preference boundary is a measurement seam for route hotel cardinality, category rejection rate, meal-plan candidate cardinality, room-alignment frequency, filter CPU and end-to-end provider-search response latency. Capture no-preference, category-only, meal-only, mixed-provider, unknown-category, matching-room, mismatch and large-result workloads separately before memoizing preference projections; preserve provider freshness, room ordering, price alignment and null/failure semantics. No index addition/removal or Redis cache is justified until provider result traces establish the measured winner.
 
+The iteration-137 secondary-provider fetch boundary is a measurement seam for HOBSE/ResAvenue route count, provider call latency, departure-day skip rate, empty-result rate, exception rate, result cardinality and end-to-end secondary-provider search latency. Capture mapped/unmapped HOBSE, no-result, provider-error, ResAvenue occupancy-normalization and multi-route workloads separately before adding concurrency or caching provider responses; preserve route/date freshness, provider request fields and failure isolation. No index addition/removal or Redis cache is justified until provider traces establish the measured winner.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.

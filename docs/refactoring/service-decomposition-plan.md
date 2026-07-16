@@ -291,3 +291,5 @@ The in-facade legacy route optimizer was removed after verification that `Itiner
 `GuestNationalityService` now owns country-table precedence, legacy nationality-ID fallback, direct ISO validation and TBO default fallback. `ItineraryHotelDetailsTboService` remains the search facade and supplies the legacy map plus Prisma/logging callbacks. Nationality lookup and request-preparation cost remain pending measurement.
 
 `ItineraryHotelPreferenceFilterService` now owns category and meal-plan preference filtering, unknown-category handling and matching-room alignment. `ItineraryHotelDetailsTboService` remains the provider facade and supplies logging callbacks. Filter cardinality and search cost remain pending measurement.
+
+`ItineraryHotelSecondaryProviderFetchService` now owns HOBSE and ResAvenue route fetch loops, request construction, departure-day suppression and per-route failure recovery. `ItineraryHotelDetailsTboService` remains the orchestration facade and supplies provider callbacks/logging. Secondary-provider latency remains pending measurement.

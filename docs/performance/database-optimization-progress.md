@@ -627,3 +627,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - The tier adds no database reads and leaves provider result loading in the existing TBO facade.
 - This is not a measured database performance improvement: provider result cardinality, filter CPU, rejection rate, room-alignment frequency and search latency remain unmeasured.
 - No index addition/removal or Redis action is proposed; future work should capture provider result cardinality and preference-hit traces before memoizing filtered results.
+
+## Iteration 137 evidence update
+
+- The secondary-provider extraction preserves HOBSE/ResAvenue request construction, route/date handling, departure-day suppression, empty-result mapping and per-route error recovery; no SQL predicate, index, Redis cache or response shape changed.
+- The tier adds no database reads and leaves provider calls plus downstream merges in the existing facade.
+- This is not a measured database performance improvement: provider latency, call count, exception rate, result cardinality and response latency remain unmeasured.
+- No index addition/removal or Redis action is proposed; future work should capture provider traces and any provider-backed database query plans before adding concurrency or caches.
