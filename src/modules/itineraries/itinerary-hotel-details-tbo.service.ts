@@ -38,6 +38,7 @@ import { StaahCandidateResultService } from './services/staah-candidate-result.s
 import { StaahCandidateSelectionService } from './services/staah-candidate-selection.service';
 import { StaahProviderRowsService } from './services/staah-provider-rows.service';
 import { StaahRoomAdmissionService } from './services/staah-room-admission.service';
+import { ItineraryHotelMarginLookupService } from './services/itinerary-hotel-margin-lookup.service';
 
 /**
  * This service generates dynamic hotel packages from TBO API
@@ -168,6 +169,7 @@ export class ItineraryHotelDetailsTboService {
   private readonly staahCandidateSelectionService = new StaahCandidateSelectionService();
   private readonly staahProviderRowsService = new StaahProviderRowsService();
   private readonly staahRoomAdmissionService = new StaahRoomAdmissionService();
+  private readonly hotelMarginLookupService = new ItineraryHotelMarginLookupService();
 
   private isTboOnlyFetchEnabled(): boolean {
     const raw = String(process.env.HOTEL_FETCH_TBO_ONLY || '').trim().toLowerCase();
@@ -1651,45 +1653,17 @@ export class ItineraryHotelDetailsTboService {
       Number((plan as any)?.hotel_rates_visibility || 0) === 1 ||
       (plan as any)?.hotel_rates_visibility === true;
 
-    // Build hotel tabs (one per package with total cost)
-    const marginProviderCodeSet = new Set<string>();
-    for (const pkg of packages) {
-      for (const hotel of pkg.hotels || []) {
-        const provider = String((hotel as any)?.provider || 'tbo').trim().toLowerCase();
-        const hotelCode = String((hotel as any)?.hotelCode || '').trim();
-        if (provider && hotelCode) {
-          marginProviderCodeSet.add(`${provider}|${hotelCode}`);
-        }
-      }
-    }
-
-    const marginTboCodes = Array.from(marginProviderCodeSet)
-      .filter((k) => k.startsWith('tbo|'))
-      .map((k) => k.slice('tbo|'.length));
-    const marginResavenueCodes = Array.from(marginProviderCodeSet)
-      .filter((k) => k.startsWith('resavenue|'))
-      .map((k) => k.slice('resavenue|'.length));
-    const marginHobseCodes = Array.from(marginProviderCodeSet)
-      .filter((k) => k.startsWith('hobse|'))
-      .map((k) => k.slice('hobse|'.length));
-    const marginAxisroomsHotelIds = Array.from(marginProviderCodeSet)
-      .filter((k) => k.startsWith('axisrooms|'))
-      .map((k) => Number(k.slice('axisrooms|'.length)))
-      .filter((id) => Number.isFinite(id) && id > 0);
-    const marginStaahHotelIds = Array.from(marginProviderCodeSet)
-      .filter((k) => k.startsWith('staah|'))
-      .map((k) => Number(k.slice('staah|'.length)))
-      .filter((id) => Number.isFinite(id) && id > 0);
-
-    const marginHotelMasters = marginProviderCodeSet.size
-      ? await this.prisma.dvi_hotel.findMany({
+    const marginHotelMasterByProviderCode = await this.hotelMarginLookupService.load({
+      packages,
+      loadMasters: ({ tboCodes, resavenueCodes, hobseCodes, axisroomsHotelIds, staahHotelIds }) =>
+        this.prisma.dvi_hotel.findMany({
           where: {
             OR: [
-              ...(marginTboCodes.length ? [{ tbo_hotel_code: { in: marginTboCodes } }] : []),
-              ...(marginResavenueCodes.length ? [{ resavenue_hotel_code: { in: marginResavenueCodes } }] : []),
-              ...(marginHobseCodes.length ? [{ hotel_code: { in: marginHobseCodes } }] : []),
-              ...(marginAxisroomsHotelIds.length ? [{ hotel_id: { in: marginAxisroomsHotelIds } }] : []),
-              ...(marginStaahHotelIds.length ? [{ hotel_id: { in: marginStaahHotelIds } }] : []),
+              ...(tboCodes.length ? [{ tbo_hotel_code: { in: tboCodes } }] : []),
+              ...(resavenueCodes.length ? [{ resavenue_hotel_code: { in: resavenueCodes } }] : []),
+              ...(hobseCodes.length ? [{ hotel_code: { in: hobseCodes } }] : []),
+              ...(axisroomsHotelIds.length ? [{ hotel_id: { in: axisroomsHotelIds } }] : []),
+              ...(staahHotelIds.length ? [{ hotel_id: { in: staahHotelIds } }] : []),
             ],
           },
           select: {
@@ -1701,22 +1675,8 @@ export class ItineraryHotelDetailsTboService {
             hotel_margin_gst_type: true,
             hotel_margin_gst_percentage: true,
           },
-        })
-      : [];
-
-    const marginHotelMasterByProviderCode = new Map<string, any>();
-    for (const hm of marginHotelMasters as any[]) {
-      const tboCode = String((hm as any).tbo_hotel_code || '').trim();
-      const resavenueCode = String((hm as any).resavenue_hotel_code || '').trim();
-      const hobseCode = String((hm as any).hotel_code || '').trim();
-      const hotelId = Number((hm as any).hotel_id || 0);
-
-      if (tboCode) marginHotelMasterByProviderCode.set(`tbo|${tboCode}`, hm);
-      if (resavenueCode) marginHotelMasterByProviderCode.set(`resavenue|${resavenueCode}`, hm);
-      if (hobseCode) marginHotelMasterByProviderCode.set(`hobse|${hobseCode}`, hm);
-      if (hotelId > 0) marginHotelMasterByProviderCode.set(`axisrooms|${hotelId}`, hm);
-      if (hotelId > 0) marginHotelMasterByProviderCode.set(`staah|${hotelId}`, hm);
-    }
+        }),
+    });
 
     const hotelTabs: ItineraryHotelTabDto[] = packages.map((pkg) => {
       const totalAmount = this.money(
