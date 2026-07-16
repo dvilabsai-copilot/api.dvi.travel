@@ -27,6 +27,7 @@ import { ItineraryDetailsDisplayFormattingService } from './services/itinerary-d
 import { ItineraryDetailsRouteHotelMapService } from './services/itinerary-details-route-hotel-map.service';
 import { ItineraryDetailsTravelSemanticsService } from './services/itinerary-details-travel-semantics.service';
 import { ItineraryDetailsRouteHotspotDataService } from './services/itinerary-details-route-hotspot-data.service';
+import { ItineraryDetailsEntryTicketCostService } from './services/itinerary-details-entry-ticket-cost.service';
 
 // ---------------------------------------------------------------------------
 // DTOs for Itinerary Details response (shared shape with frontend)
@@ -418,6 +419,7 @@ export class ItineraryDetailsService {
   private readonly routeHotelMapService = new ItineraryDetailsRouteHotelMapService();
   private readonly travelSemanticsService = new ItineraryDetailsTravelSemanticsService();
   private readonly routeHotspotDataService = new ItineraryDetailsRouteHotspotDataService();
+  private readonly entryTicketCostService = new ItineraryDetailsEntryTicketCostService();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -992,29 +994,7 @@ for (const row of vehicleKmRows) {
       stepStartedAt,
     });
 
-    const entryTicketCostRows = await this.prisma.dvi_itinerary_route_hotspot_entry_cost_details.findMany({
-      where: { itinerary_plan_id: planId, deleted: 0, status: 1 },
-      select: {
-        route_hotspot_id: true,
-        traveller_type: true,
-        entry_ticket_cost: true,
-      },
-      orderBy: { hotspot_cost_detail_id: 'asc' },
-    });
-    const entryTicketRowsByRouteHotspotId = new Map<number, Array<{
-      traveller_type: number;
-      entry_ticket_cost: number;
-    }>>();
-    for (const row of entryTicketCostRows) {
-      const routeHotspotId = Number(row.route_hotspot_id || 0);
-      if (!routeHotspotId) continue;
-      const rows = entryTicketRowsByRouteHotspotId.get(routeHotspotId) || [];
-      rows.push({
-        traveller_type: Number(row.traveller_type || 0),
-        entry_ticket_cost: Number(row.entry_ticket_cost || 0),
-      });
-      entryTicketRowsByRouteHotspotId.set(routeHotspotId, rows);
-    }
+    const entryTicketRowsByRouteHotspotId = await this.entryTicketCostService.load(this.prisma, planId);
 
     const routeHotelMap = await this.routeHotelMapService.build({
       prisma: this.prisma,
