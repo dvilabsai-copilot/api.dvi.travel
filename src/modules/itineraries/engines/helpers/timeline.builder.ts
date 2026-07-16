@@ -245,15 +245,15 @@ export class TimelineBuilder {
       routeSpecificHotspotMatchesRouteChain: (...args) => (this.routeSpecificHotspotMatchesRouteChain as any)(...args),
       routeMovementOrder: (...args) => (this.routeMovementOrder as any)(...args),
       buildRouteLegs: (...args) => (this.buildRouteLegs as any)(...args),
-      resolvePlaceCoords: (...args) => (this.resolvePlaceCoords as any)(...args),
-      getTravelLocationType: (...args) => (this.getTravelLocationType as any)(...args),
+      resolvePlaceCoords: (...args) => (this.travelDataService.resolvePlaceCoords as any)(...args),
+      getTravelLocationType: (...args) => (this.anchorPolicyService.getTravelLocationType as any)(...args),
     });
     this.arrivalHotelDecisionService.setCallbacks({
-      getHotelDetailsForRoute: (...args) => (this.getHotelDetailsForRoute as any)(...args),
+      getHotelDetailsForRoute: (...args) => (this.travelDataService.getHotelDetailsForRoute as any)(...args),
       canonicalCityKey: (...args) => (this.canonicalCityKey as any)(...args),
       toDateOnly: (...args) => (this.dataAccessService.toDateOnly as any)(...args),
       getArrivalPolicyDecisionStateForRoute: (...args) => (this.dataAccessService.getArrivalPolicyDecisionStateForRoute as any)(...args),
-      extractPlanTimeOfDaySeconds: (...args) => (this.extractPlanTimeOfDaySeconds as any)(...args),
+      extractPlanTimeOfDaySeconds: (...args) => (this.anchorPolicyService.extractPlanTimeOfDaySeconds as any)(...args),
       logBookingRule: (...args) => (this.logBookingRule as any)(...args),
       logTimeline: (...args) => (this.logTimeline as any)(...args),
       getCurrentQuoteId: () => this.currentQuoteId,
@@ -265,10 +265,10 @@ export class TimelineBuilder {
       canonicalCityKey: (...args) => (this.canonicalCityKey as any)(...args),
     });
     this.routeHotspotPlanningService.setCallbacks({
-      fetchSelectedHotspots: (...args) => (this.fetchSelectedHotspotsForRoute as any)(...args),
-      fetchDay1TopPrioritySourceHotspots: (...args) => (this.fetchDay1TopPrioritySourceHotspots as any)(...args),
+      fetchSelectedHotspots: (...args) => (this.routeHotspotSelectionService.fetch as any)(...args),
+      fetchDay1TopPrioritySourceHotspots: (...args) => (this.day1SourceFallbackService.fetch as any)(...args),
       canonicalCityKey: (...args) => (this.canonicalCityKey as any)(...args),
-      buildSameCityContinuationContext: (...args) => (this.buildSameCityContinuationContext as any)(...args),
+      buildSameCityContinuationContext: (...args) => (this.anchorPolicyService.buildSameCityContinuationContext as any)(...args),
       logBookingRule: (...args) => (this.logBookingRule as any)(...args),
     });
     this.candidatePolicyService.setCallbacks({
@@ -600,8 +600,8 @@ export class TimelineBuilder {
         // deadline = trip_end_date_and_time (flight/train/etc) - departure buffer.
         // Use route_end_time as fallback, and never exceed it.
         const departureSecondsRaw =
-          this.extractPlanTimeOfDaySeconds((plan as any).trip_end_date_and_time) ??
-          this.extractPlanTimeOfDaySeconds((plan as any).trip_end_date);
+          this.anchorPolicyService.extractPlanTimeOfDaySeconds((plan as any).trip_end_date_and_time) ??
+          this.anchorPolicyService.extractPlanTimeOfDaySeconds((plan as any).trip_end_date);
         if (departureSecondsRaw !== null) {
           let departureSeconds = departureSecondsRaw;
 
@@ -696,17 +696,17 @@ export class TimelineBuilder {
 
       // Fallback for routes where location_id is 0 or the stored row is missing coordinates.
       // This keeps source/destination coordinate resolution anchored to the route cities.
-      if (!this.hasUsableCoords(currentCoords)) {
+      if (!this.travelDataService.hasUsableCoords(currentCoords)) {
         currentCoords =
-          (await this.resolvePlaceCoords(tx, sourceCity, 'source')) ||
-          (await this.resolvePlaceCoords(tx, routeSourceCity, 'source')) ||
+          (await this.travelDataService.resolvePlaceCoords(tx, sourceCity, 'source')) ||
+          (await this.travelDataService.resolvePlaceCoords(tx, routeSourceCity, 'source')) ||
           undefined;
       }
 
-      if (!this.hasUsableCoords(destCityCoords)) {
+      if (!this.travelDataService.hasUsableCoords(destCityCoords)) {
         destCityCoords =
-          (await this.resolvePlaceCoords(tx, destinationCity, 'destination')) ||
-          (await this.resolvePlaceCoords(tx, routeDestinationCity, 'destination')) ||
+          (await this.travelDataService.resolvePlaceCoords(tx, destinationCity, 'destination')) ||
+          (await this.travelDataService.resolvePlaceCoords(tx, routeDestinationCity, 'destination')) ||
           undefined;
       }
       
@@ -1081,8 +1081,8 @@ export class TimelineBuilder {
         minimumReservationCount: MIN_DESTINATION_HOTSPOTS_FOR_RESERVATION,
         estimateRouteHotspotCapacity: (...args) => (this.estimateRouteHotspotCapacity as any)(...args),
         isHotspotAlreadyPlanned,
-        fetchSelectedHotspots: (...args) => (this.fetchSelectedHotspotsForRoute as any)(...args),
-        fetchDay1TopPrioritySourceHotspots: (...args) => (this.fetchDay1TopPrioritySourceHotspots as any)(...args),
+        fetchSelectedHotspots: (...args) => (this.routeHotspotSelectionService.fetch as any)(...args),
+        fetchDay1TopPrioritySourceHotspots: (...args) => (this.day1SourceFallbackService.fetch as any)(...args),
         hotspotLocationMatchesCity: (...args) => (this.hotspotLocationMatchesCity as any)(...args),
         logBookingRule: (...args) => (this.logBookingRule as any)(...args),
       });
@@ -1212,10 +1212,10 @@ export class TimelineBuilder {
             isLastRoute,
             tracePhpIncludeFlow,
             distanceCalcCount,
-            hasUsableCoords: (...args) => (this.hasUsableCoords as any)(...args),
-            resolvePlaceCoords: (...args) => (this.resolvePlaceCoords as any)(...args),
-            calculateTravelTimeWithCoords: (...args) => (this.calculateTravelTimeWithCoords as any)(...args),
-            calculateProjectedArrivalToRouteDestination: (...args) => (this.calculateProjectedArrivalToRouteDestination as any)(...args),
+            hasUsableCoords: (...args) => (this.travelDataService.hasUsableCoords as any)(...args),
+            resolvePlaceCoords: (...args) => (this.travelDataService.resolvePlaceCoords as any)(...args),
+            calculateTravelTimeWithCoords: (...args) => (this.travelDataService.calculateTravelTimeWithCoords as any)(...args),
+            calculateProjectedArrivalToRouteDestination: (...args) => (this.travelDataService.calculateProjectedArrivalToRouteDestination as any)(...args),
             logHotspotCandidateEvaluation: (...args) => (this.logHotspotCandidateEvaluation as any)(...args),
           });
           if (!travelProjection) continue;
@@ -1325,7 +1325,7 @@ export class TimelineBuilder {
               .split('|')[0]
               .trim();
             const candidateCity = hotspotLocationName.split('|')[0].trim();
-            const travelToDepartureType = this.getTravelLocationType(candidateCity, departureTargetName);
+            const travelToDepartureType = this.anchorPolicyService.getTravelLocationType(candidateCity, departureTargetName);
             const travelToDeparture = await this.distanceHelper.fromSourceAndDestination(
               tx,
               candidateCity,
@@ -1378,7 +1378,7 @@ export class TimelineBuilder {
 
           // Add travel segment
           const currentOrder = order;
-          const travelLocationType = this.getTravelLocationType(currentLocationName, hotspotLocationName);
+          const travelLocationType = this.anchorPolicyService.getTravelLocationType(currentLocationName, hotspotLocationName);
 
           if (
             suppressHotelInsertionUntilEndOfDay &&
@@ -1577,7 +1577,7 @@ export class TimelineBuilder {
               };
               
               // Calculate travel from current location to this hotspot
-              const travelToHotspot = await this.calculateTravelTimeWithCoords(
+              const travelToHotspot = await this.travelDataService.calculateTravelTimeWithCoords(
                 tx,
                 currentLocationName,
                 hotspotLocationName,
@@ -1636,7 +1636,7 @@ export class TimelineBuilder {
                   }
                   
                   // Add travel segment
-                  const travelLocationType = this.getTravelLocationType(currentLocationName, hotspotLocationName);
+                  const travelLocationType = this.anchorPolicyService.getTravelLocationType(currentLocationName, hotspotLocationName);
                   const { row: travelRow } = await this.travelBuilder.buildTravelSegment(tx, {
                     planId,
                     routeId: route.itinerary_route_ID,
@@ -1718,7 +1718,7 @@ export class TimelineBuilder {
                       };
                       
                       // Calculate travel from gap-filled hotspot to first hotspot
-                      const travelToFirst = await this.calculateTravelTimeWithCoords(
+                      const travelToFirst = await this.travelDataService.calculateTravelTimeWithCoords(
                         tx,
                         hotspotLocationName,
                         firstHotspotLocation,
@@ -2284,14 +2284,14 @@ export class TimelineBuilder {
         const previousDaySameCityHotspotIds = sameCityContinuationContextForRoute.previousDayHotspotIds;
 
         const buildRemainingGapIntervals = () => {
-          const anchors = this.buildFixedTimelineAnchors(
+          const anchors = this.anchorPolicyService.buildFixedTimelineAnchors(
             hotspotRows,
             Number((route as any).itinerary_route_ID || 0),
             routeStartSeconds,
             routeEndSeconds,
             currentTime,
           );
-          const gaps = this.buildRealGapIntervals(anchors);
+          const gaps = this.anchorPolicyService.buildRealGapIntervals(anchors);
           if (gaps.length > 0) {
             this.logBookingRule({
               rule: 'GAP_INTERVAL_BUILT',
@@ -2518,10 +2518,10 @@ export class TimelineBuilder {
             const bCoords = coordsFor(b);
 
             const [prevToA, aToB, prevToB, bToA] = await Promise.all([
-              this.calculateTravelTimeWithCoords(tx, prevLocation, aLocation, prevCoords, aCoords),
-              this.calculateTravelTimeWithCoords(tx, aLocation, bLocation, aCoords, bCoords),
-              this.calculateTravelTimeWithCoords(tx, prevLocation, bLocation, prevCoords, bCoords),
-              this.calculateTravelTimeWithCoords(tx, bLocation, aLocation, bCoords, aCoords),
+              this.travelDataService.calculateTravelTimeWithCoords(tx, prevLocation, aLocation, prevCoords, aCoords),
+              this.travelDataService.calculateTravelTimeWithCoords(tx, aLocation, bLocation, aCoords, bCoords),
+              this.travelDataService.calculateTravelTimeWithCoords(tx, prevLocation, bLocation, prevCoords, bCoords),
+              this.travelDataService.calculateTravelTimeWithCoords(tx, bLocation, aLocation, bCoords, aCoords),
             ]);
 
             const currentDelta = timeToSeconds(prevToA) + timeToSeconds(aToB);
@@ -3383,7 +3383,7 @@ export class TimelineBuilder {
           sharedDayOfWeek,
         );
 
-        const sharedFeasibility = await this.evaluateCandidateInsertion({
+        const sharedFeasibility = await this.candidateFeasibilityService.evaluateCandidateInsertion({
           tx,
           route,
           isLastRoute,
@@ -3604,7 +3604,7 @@ export class TimelineBuilder {
         }
 
         if (pass === PASS_FILLER_PRIMARY || pass === PASS_FILLER_SECONDARY) {
-          const anchorGapFeasibility = await this.evaluateAnchorGapInsertion(
+          const anchorGapFeasibility = await this.candidateFeasibilityService.evaluateAnchorGapInsertion(
             tx,
             hotspotRows,
             hotspotMap,
@@ -3728,7 +3728,7 @@ export class TimelineBuilder {
           continue;
         }
         
-        const travelLocationType = this.getTravelLocationType(
+        const travelLocationType = this.anchorPolicyService.getTravelLocationType(
           currentLocationName,
           hotspotLocationName,
         );
@@ -3972,7 +3972,7 @@ export class TimelineBuilder {
             lon: Number((hotspotData as any).hotspot_longitude ?? 0),
           };
 
-          const travelTime = await this.calculateTravelTimeWithCoords(
+          const travelTime = await this.travelDataService.calculateTravelTimeWithCoords(
             tx,
             currentLocationName,
             hotspotLocationName,
@@ -3981,7 +3981,7 @@ export class TimelineBuilder {
           );
 
           const travelSeconds = timeToSeconds(travelTime);
-          const currentAbsSeconds = this.toAbsoluteSecondsForRoute(currentTime, routeStartSeconds);
+          const currentAbsSeconds = this.anchorPolicyService.toAbsoluteSecondsForRoute(currentTime, routeStartSeconds);
           const arrivalSeconds = currentAbsSeconds + travelSeconds;
 
           if (arrivalSeconds > slot.startSeconds || slot.endSeconds > routeEndSeconds) {
@@ -4002,7 +4002,7 @@ export class TimelineBuilder {
           }
 
           const currentOrder = order;
-          const travelLocationType = this.getTravelLocationType(currentLocationName, hotspotLocationName);
+          const travelLocationType = this.anchorPolicyService.getTravelLocationType(currentLocationName, hotspotLocationName);
           const { row: routeTravelRow } = await this.travelBuilder.buildTravelSegment(tx, {
             planId,
             routeId: route.itinerary_route_ID,
@@ -4230,7 +4230,7 @@ export class TimelineBuilder {
             lon: Number(hotspotData.hotspot_longitude ?? 0),
           };
 
-          const sharedCycle4Feasibility = await this.evaluateCandidateInsertion({
+          const sharedCycle4Feasibility = await this.candidateFeasibilityService.evaluateCandidateInsertion({
             tx,
             route,
             isLastRoute,
@@ -4289,7 +4289,7 @@ export class TimelineBuilder {
 
           const timeAfterTravel = sharedCycle4Feasibility.timeAfterTravel || currentTime;
           const timeAfterSightseeing = sharedCycle4Feasibility.timeAfterSightseeing || currentTime;
-          const cycle4AnchorGapFeasibility = await this.evaluateAnchorGapInsertion(
+          const cycle4AnchorGapFeasibility = await this.candidateFeasibilityService.evaluateAnchorGapInsertion(
             tx,
             hotspotRows,
             hotspotMap,
@@ -4342,7 +4342,7 @@ export class TimelineBuilder {
           }
 
           const currentOrder = order;
-          const travelLocationType = this.getTravelLocationType(
+          const travelLocationType = this.anchorPolicyService.getTravelLocationType(
             currentLocationName,
             hotspotLocationName,
           );
@@ -4789,7 +4789,7 @@ export class TimelineBuilder {
             lon: Number(hotspotData.hotspot_longitude ?? 0),
           };
 
-          const sharedManualFeasibility = await this.evaluateCandidateInsertion({
+          const sharedManualFeasibility = await this.candidateFeasibilityService.evaluateCandidateInsertion({
             tx,
             route,
             isLastRoute,
@@ -4890,7 +4890,7 @@ export class TimelineBuilder {
               });
 
               // Recalculate timing for manual hotspot after eviction
-              const reevaluatedManualFeasibility = await this.evaluateCandidateInsertion({
+              const reevaluatedManualFeasibility = await this.candidateFeasibilityService.evaluateCandidateInsertion({
                 tx,
                 route,
                 isLastRoute,
@@ -4949,7 +4949,7 @@ export class TimelineBuilder {
               cycle5CurrentSeconds += 86400;
             }
 
-            const travelLocationType = this.getTravelLocationType(currentLocationName, hotspotLocationName);
+          const travelLocationType = this.anchorPolicyService.getTravelLocationType(currentLocationName, hotspotLocationName);
             const { row: travelRow, nextTime: tToHotspot } =
               await this.travelBuilder.buildTravelSegment(tx, {
                 planId,
@@ -5132,9 +5132,9 @@ export class TimelineBuilder {
         }
 
         const hotelOrder = order;
-        const hotelInfo =
+          const hotelInfo =
           hotelInfoForRoute ??
-          (await this.getHotelDetailsForRoute(
+          (await this.travelDataService.getHotelDetailsForRoute(
             tx,
             planId,
             route.itinerary_route_ID,
@@ -5459,7 +5459,7 @@ export class TimelineBuilder {
               currentAbsoluteSeconds += 86400;
             }
 
-            const travelToHotspotTime = await this.calculateTravelTimeWithCoords(
+            const travelToHotspotTime = await this.travelDataService.calculateTravelTimeWithCoords(
               tx,
               currentLocationName,
               hotspotLocationName,
@@ -5578,7 +5578,7 @@ export class TimelineBuilder {
             }
 
             const candidateCity = hotspotLocationName.split('|')[0].trim();
-            const travelToDepartureType = this.getTravelLocationType(
+            const travelToDepartureType = this.anchorPolicyService.getTravelLocationType(
               candidateCity,
               departureCityNameForRescue,
             );
@@ -5623,7 +5623,7 @@ export class TimelineBuilder {
             }
 
             const currentOrder = order;
-            const travelLocationType = this.getTravelLocationType(
+            const travelLocationType = this.anchorPolicyService.getTravelLocationType(
               currentLocationName,
               hotspotLocationName,
             );
@@ -5787,7 +5787,7 @@ export class TimelineBuilder {
             tx,
             currentLocationName,
             departureCityName,
-            this.getTravelLocationType(currentLocationName, departureCityName),
+            this.anchorPolicyService.getTravelLocationType(currentLocationName, departureCityName),
             currentCoords,
             destCityCoords,
           );
@@ -5840,7 +5840,7 @@ export class TimelineBuilder {
             : currentCoords;
 
           for (const row of hotspotRows) {
-            const rowEndTime = this.toStoredTimeString((row as any).hotspot_end_time);
+            const rowEndTime = this.anchorPolicyService.toStoredTimeString((row as any).hotspot_end_time);
             if (rowEndTime) {
               currentTime = rowEndTime;
             }
@@ -5862,7 +5862,7 @@ export class TimelineBuilder {
           returnTrimGuard += 1;
         }
 
-        const returnTravelLocationType = this.getTravelLocationType(currentLocationName, departureCityName);
+        const returnTravelLocationType = this.anchorPolicyService.getTravelLocationType(currentLocationName, departureCityName);
         const estimatedReturn = await this.distanceHelper.fromSourceAndDestination(
           tx,
           currentLocationName,
@@ -6029,265 +6029,7 @@ export class TimelineBuilder {
     return last.itinerary_route_ID === routeId;
   }
 
-  /**
-   * Day-1 special: Fetch top 3 priority hotspots from source city only.
-   * Enforces:
-   * - hotspot_priority > 0 (priority hotspots only)
-   * - normalized location matches source city
-   * - sorted by priority asc, then distance asc
-   * - limited to 3 hotspots
-   */
-  private async fetchDay1TopPrioritySourceHotspots(
-    tx: Tx,
-    planId: number,
-    routeId: number,
-    sourceCity: string,
-    destinationCity: string,
-    excludedHotspotIds?: Set<number>,
-    maxResults: number = 3,
-    includeZeroPriority: boolean = false,
-  ): Promise<SelectedHotspot[]> {
-    return (await this.day1SourceFallbackService.fetch(
-      tx,
-      planId,
-      routeId,
-      sourceCity,
-      destinationCity,
-      excludedHotspotIds,
-      maxResults,
-      includeZeroPriority,
-    )) as SelectedHotspot[];
-  }
 
-  /**
-   * Fetch available hotspots for a given route location.
-   *
-   * In PHP: the `includeHotspotInItinerary()` function is called for each hotspot
-   * that is available at the route's location, in priority order.
-   *
-   * We replicate this by:
-   * 1. Get the route's location_name or next_visiting_location
-   * 2. Query dvi_hotspot_place for hotspots matching that location (by name)
-   * 3. Return them sorted by priority
-   *
-   * NOTE: In the schema, dvi_hotspot_place doesn't have a location_id field.
-   * Instead, it has hotspot_location (text) which must be matched against
-   * the route's location_name or next_visiting_location.
-   * 
-   * @param allHotspots - Pre-fetched array of all active hotspots (performance optimization)
-   * @param maxSourceHotspots - Optional limit for source location hotspots (for Day 1 arrival city)
-   */
-  private async fetchSelectedHotspotsForRoute(
-    tx: Tx,
-    planId: number,
-    routeId: number,
-    allHotspots: any[],
-    maxSourceHotspots?: number,
-    skipDestinationHotspots?: boolean,
-  ): Promise<SelectedHotspot[]> {
-    return (await this.routeHotspotSelectionService.fetch(
-      tx,
-      planId,
-      routeId,
-      allHotspots,
-      maxSourceHotspots,
-      skipDestinationHotspots,
-    )) as SelectedHotspot[];
-  }
-
-  private async getHotspotLocationName(
-    tx: Tx,
-    hotspotId: number,
-  ): Promise<string | null> {
-    return this.travelDataService.getHotspotLocationName(tx, hotspotId);
-  }
-
-  /**
-   * Get the hotel city/location used for travel-to-hotel segment for a route.
-   *
-   * In PHP, this comes from your big hotel-selection query joining:
-   *   dvi_itinerary_route_details + dvi_stored_locations + dvi_hotel + dvi_hotel_rooms
-   *
-   * TODO: Replace this placeholder with the real query and returned city field.
-   */
-  private async getHotelLocationNameForRoute(
-    tx: Tx,
-    planId: number,
-    routeId: number,
-  ): Promise<string | null> {
-    return this.travelDataService.getHotelLocationNameForRoute(tx, planId, routeId);
-  }
-
-  private async getHotelDetailsForRoute(
-    tx: Tx,
-    planId: number,
-    routeId: number,
-  ): Promise<{ hotelId: number; hotelName: string | null; hotelCity: string | null; isHouseboat?: boolean; coords?: { lat: number; lon: number } } | null> {
-    return this.travelDataService.getHotelDetailsForRoute(tx, planId, routeId);
-  }
-
-  /**
-   * Calculate travel time between two locations (matching PHP logic).
-   * Returns HH:MM:SS format string.
-   */
-  private async calculateTravelTime(
-    tx: Tx,
-    sourceLocationName: string,
-    destinationLocationName: string,
-  ): Promise<string> {
-    return this.travelDataService.calculateTravelTime(tx, sourceLocationName, destinationLocationName);
-  }
-
-  private hasUsableCoords(
-    coords?: { lat: number; lon: number } | null,
-  ): coords is { lat: number; lon: number } {
-    return this.travelDataService.hasUsableCoords(coords);
-  }
-
-  private normalizePlaceLookupKey(value: string | null | undefined): string {
-    return this.travelDataService.normalizePlaceLookupKey(value);
-  }
-
-  private async resolvePlaceCoords(
-    tx: Tx,
-    cityName: string | null | undefined,
-    preferredSide: 'source' | 'destination' = 'source',
-  ): Promise<{ lat: number; lon: number } | undefined> {
-    return this.travelDataService.resolvePlaceCoords(tx, cityName, preferredSide);
-  }
-
-  private async resolveCityCoords(
-    tx: Tx,
-    cityName: string | null | undefined,
-    preferredSide: 'source' | 'destination' = 'source',
-  ): Promise<{ lat: number; lon: number } | undefined> {
-    return this.travelDataService.resolveCityCoords(tx, cityName, preferredSide);
-  }
-
-  private async calculateTravelTimeWithCoords(
-    tx: Tx,
-    sourceLocationName: string,
-    destinationLocationName: string,
-    sourceCoords?: { lat: number; lon: number },
-    destCoords?: { lat: number; lon: number },
-  ): Promise<string> {
-    return this.travelDataService.calculateTravelTimeWithCoords(
-      tx,
-      sourceLocationName,
-      destinationLocationName,
-      sourceCoords,
-      destCoords,
-    );
-  }
-
-  private async calculateProjectedArrivalToRouteDestination(
-    tx: Tx,
-    route: RouteRow,
-    hotspotLocationName: string,
-    visitEndSeconds: number,
-    hotspotCoords?: { lat: number; lon: number },
-    destCityCoords?: { lat: number; lon: number },
-  ): Promise<{ projectedArrivalSeconds: number; travelToDestSeconds: number }> {
-    return this.travelDataService.calculateProjectedArrivalToRouteDestination(
-      tx,
-      route,
-      hotspotLocationName,
-      visitEndSeconds,
-      hotspotCoords,
-      destCityCoords,
-    );
-  }
-
-  private toAbsoluteSecondsForRoute(timeValue: string, routeStartSeconds: number): number {
-    return this.anchorPolicyService.toAbsoluteSecondsForRoute(timeValue, routeStartSeconds);
-  }
-
-  private buildFixedTimelineAnchors(
-    hotspotRows: HotspotDetailRow[],
-    routeId: number,
-    routeStartSeconds: number,
-    routeEndSeconds: number,
-    currentTime: string,
-  ): FixedTimelineAnchor[] {
-    return this.anchorPolicyService.buildFixedTimelineAnchors(
-      hotspotRows,
-      routeId,
-      routeStartSeconds,
-      routeEndSeconds,
-      currentTime,
-    );
-  }
-
-  private buildRealGapIntervals(anchors: FixedTimelineAnchor[]): RealGapInterval[] {
-    return this.anchorPolicyService.buildRealGapIntervals(anchors);
-  }
-
-  private buildSameCityContinuationContext(
-    route: RouteRow,
-    previousRoute: RouteRow | undefined,
-    hotspotRows: HotspotDetailRow[],
-  ): SameCityContinuationContext {
-    return this.anchorPolicyService.buildSameCityContinuationContext(route, previousRoute, hotspotRows);
-  }
-
-  private async evaluateCandidateInsertion(
-    input: CandidateFeasibilityInput,
-  ): Promise<CandidateFeasibilityResult> {
-    return this.candidateFeasibilityService.evaluateCandidateInsertion(input);
-  }
-
-  private async evaluateAnchorGapInsertion(
-    tx: Tx,
-    hotspotRows: HotspotDetailRow[],
-    hotspotMap: Map<number, any>,
-    routeId: number,
-    routeStartSeconds: number,
-    routeEndSeconds: number,
-    currentTime: string,
-    candidateLocationName: string,
-    candidateCoords: { lat: number; lon: number },
-    candidateEndSeconds: number,
-    protectedStrictSlots?: ProtectedStrictSlot[],
-  ): Promise<AnchorGapFeasibilityResult> {
-    return this.candidateFeasibilityService.evaluateAnchorGapInsertion(
-      tx,
-      hotspotRows,
-      hotspotMap,
-      routeId,
-      routeStartSeconds,
-      routeEndSeconds,
-      currentTime,
-      candidateLocationName,
-      candidateCoords,
-      candidateEndSeconds,
-      protectedStrictSlots,
-    );
-  }
-
-  private parsePlanDateTime(value: unknown): Date | null {
-    return this.anchorPolicyService.parsePlanDateTime(value);
-  }
-
-  private extractPlanTimeOfDaySeconds(value: unknown): number | null {
-    return this.anchorPolicyService.extractPlanTimeOfDaySeconds(value);
-  }
-
-  private toStoredTimeString(value: unknown): string | null {
-    return this.anchorPolicyService.toStoredTimeString(value);
-  }
-
-  /**
-   * Determine travel location type (matches PHP getTravelLocationType)
-   * @param startLocation - Starting location name (can contain pipe-separated values)
-   * @param endLocation - Ending location name (can contain pipe-separated values)
-   * @returns 1 if same location (local), 2 if different location (outstation)
-   */
-  private getTravelLocationType(
-    startLocation: string,
-    endLocation: string,
-  ): 1 | 2 {
-    return this.anchorPolicyService.getTravelLocationType(startLocation, endLocation);
-  }
 }
 
 // --- RECENT EDITS BELOW --- //
