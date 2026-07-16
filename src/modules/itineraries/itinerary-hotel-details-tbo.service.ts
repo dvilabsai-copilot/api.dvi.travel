@@ -29,6 +29,7 @@ import { ItineraryHotelPricePackageService } from './services/itinerary-hotel-pr
 import { ItineraryHotelCityCodeService } from './services/itinerary-hotel-city-code.service';
 import { StaahRestrictionService } from './services/staah-restriction.service';
 import { ItineraryHotelResponseRowService } from './services/itinerary-hotel-response-row.service';
+import { StaahConfirmedBookingOverrideService } from './services/staah-confirmed-booking-override.service';
 
 /**
  * This service generates dynamic hotel packages from TBO API
@@ -148,6 +149,7 @@ export class ItineraryHotelDetailsTboService {
   private readonly cityCodeService = new ItineraryHotelCityCodeService();
   private readonly staahRestrictionService = new StaahRestrictionService();
   private readonly hotelResponseRowService = new ItineraryHotelResponseRowService();
+  private readonly staahConfirmedBookingOverrideService = new StaahConfirmedBookingOverrideService();
 
   private isTboOnlyFetchEnabled(): boolean {
     const raw = String(process.env.HOTEL_FETCH_TBO_ONLY || '').trim().toLowerCase();
@@ -2672,77 +2674,20 @@ export class ItineraryHotelDetailsTboService {
 
 
 
-    // Override only matching routes with confirmed STAAH booking rows
-    if (confirmedStaahByRouteId.size > 0) {
-      for (let i = 0; i < hotelRows.length; i++) {
-        const row: any = hotelRows[i];
-        const routeId = Number(row?.itineraryRouteId || 0);
-        const confirmedRow: any = confirmedStaahByRouteId.get(routeId);
-        if (!confirmedRow) {
-          console.log('[STAAH_OVERRIDE_MISSED]', {
-            routeId,
-            hotelId: row.hotelId,
-          });
-          continue;
-        }
+    // Override only matching routes with confirmed STAAH booking rows.
+    this.staahConfirmedBookingOverrideService.apply(
+      hotelRows,
+      confirmedStaahByRouteId,
+      quoteId,
+      planId,
+      {
+        parseSearchReference: (reference) => this.parseStaahSearchReference(reference),
+        log: (message) => this.logger.log(message),
+        debug: (value) => console.log('[STAAH_OVERRIDE]', value),
+      },
+    );
 
-        const apiResponse: any = (confirmedRow as any).api_response || {};
-        const isStaahVoucherCancelled = !!apiResponse?.cancellation;
-        const reservation: any =
-          apiResponse?.confirm?.request?.reservations?.reservation?.[0] || {};
-        const reservationRoom: any = reservation?.room?.[0] || {};
-        const reservationPrice: any = reservationRoom?.price?.[0] || {};
 
-        const hotelCodeNum = Number((confirmedRow as any).staah_hotel_code || 0);
-        const safeCheckIn = (confirmedRow as any).check_in_date
-          ? new Date((confirmedRow as any).check_in_date).toISOString().split('T')[0]
-          : row.date;
-
-        const confirmedBookingCode = String((confirmedRow as any).booking_code || '').trim();
-        const confirmedSearchReference =
-          confirmedBookingCode.startsWith('STAAH-')
-            ? confirmedBookingCode
-            : '';
-        const confirmedReferenceParts = this.parseStaahSearchReference(confirmedSearchReference);
-
-        hotelRows[i] = {
-          ...row,
-          provider: 'staah',
-          itineraryRouteId: routeId,
-          hotelId: Number.isFinite(hotelCodeNum) ? hotelCodeNum : 0,
-          hotelName: String(reservation?.propertyname || 'STAAH Hotel'),
-          roomType: String(reservationRoom?.room_name || ''),
-          mealPlan: String(reservationPrice?.rate_name || ''),
-          totalHotelCost: Number((confirmedRow as any).net_amount || 0),
-          totalHotelTaxAmount: Number(reservation?.totaltax || 0),
-          bookingCode: confirmedBookingCode || undefined,
-          searchReference: confirmedSearchReference || undefined,
-          roomId: confirmedReferenceParts?.roomId || undefined,
-          rateId: confirmedReferenceParts?.rateId || undefined,
-          voucherCancelled: isStaahVoucherCancelled,
-          voucherStatus: isStaahVoucherCancelled ? 'cancelled' : 'active',
-          itineraryPlanHotelDetailsId: 0,
-          date: safeCheckIn,
-          checkInDate: (confirmedRow as any).check_in_date || undefined,
-          checkOutDate: (confirmedRow as any).check_out_date || undefined,
-          numberOfRooms: Number((confirmedRow as any).number_of_rooms || 0),
-          guestNationality: String((confirmedRow as any).guest_nationality || ''),
-          totalGuests: Number((confirmedRow as any).total_guests || 0),
-          isConfirmedBooking: true,
-          voucherAvailable: true,
-        } as any;
-
-        this.logger.log(
-          `[HOTEL_DETAILS_CONFIRMED_STAAH_OVERRIDE] quoteId=${quoteId} planId=${planId} routeId=${routeId} staahHotelCode=${String((confirmedRow as any).staah_hotel_code || '')} bookingReference=${String((confirmedRow as any).staah_booking_reference || '')}`,
-        );
-        console.log('[STAAH_OVERRIDE_APPLIED]', {
-          routeId,
-          staahHotelCode: confirmedRow.staah_hotel_code,
-          bookingReference: confirmedRow.staah_booking_reference,
-          voucherCancelled: isStaahVoucherCancelled,
-        });
-      }
-    }
 
     const restrictedHotelRows: ItineraryHotelRowDto[] = [];
     restrictedHotelsByRoute.forEach((restrictedHotels, routeId) => {
