@@ -92,6 +92,7 @@ import { ItineraryManualHotspotConflictService } from './services/itinerary-manu
 import { ItineraryRouteHotspotRebuildService } from './services/itinerary-route-hotspot-rebuild.service';
 import { ItineraryHotelCancellationService } from './services/itinerary-hotel-cancellation.service';
 import { ItineraryHotelRoomCategoryService } from './services/itinerary-hotel-room-category.service';
+import { ItineraryRouteOptimizationService } from './services/itinerary-route-optimization.service';
 import { ItineraryVehicleBuildStatusService } from './services/itinerary-vehicle-build-status.service';
 import { ItineraryVehicleBuildService } from './services/itinerary-vehicle-build.service';
 import { ItineraryPlanPersistenceService } from './services/itinerary-plan-persistence.service';
@@ -689,6 +690,7 @@ export class ItinerariesService {
     private readonly routeHotspotRebuildService: ItineraryRouteHotspotRebuildService = new ItineraryRouteHotspotRebuildService(prisma, hotspotEngine),
     private readonly hotelCancellationService: ItineraryHotelCancellationService = new ItineraryHotelCancellationService(prisma),
     private readonly hotelRoomCategoryService: ItineraryHotelRoomCategoryService = new ItineraryHotelRoomCategoryService(prisma, hotelDetailsTboService),
+    private readonly routeOptimizationService: ItineraryRouteOptimizationService = new ItineraryRouteOptimizationService(prisma, routeNormalization),
   ) {
     this.manualFitTimelinePolicyService.setCallbacks({
       parseSegmentEndMinutes: (...args) => (this.parseSegmentEndMinutes as any)(...args),
@@ -4569,6 +4571,10 @@ private getGuideSlotLabel(slotId: number): string {
    * This finds the optimal or near-optimal route that minimizes total travel distance/time
    */
   private async optimizeRouteOrder(routes: any[]): Promise<any[]> {
+    return this.routeOptimizationService.optimizeRouteOrder(routes);
+  }
+
+  private async legacyOptimizeRouteOrder(routes: any[]): Promise<any[]> {
     if (!routes || routes.length <= 2) return routes;
 
     const debugOptimization = process.env.DEBUG_ROUTE_OPTIMIZER === 'true';

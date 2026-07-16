@@ -103,6 +103,7 @@ import { ItineraryManualHotspotConflictService } from './services/itinerary-manu
 import { ItineraryRouteHotspotRebuildService } from './services/itinerary-route-hotspot-rebuild.service';
 import { ItineraryHotelCancellationService } from './services/itinerary-hotel-cancellation.service';
 import { ItineraryHotelRoomCategoryService } from './services/itinerary-hotel-room-category.service';
+import { ItineraryRouteOptimizationService } from './services/itinerary-route-optimization.service';
 
 @Module({
   imports: [HotelsModule],
@@ -185,6 +186,7 @@ import { ItineraryHotelRoomCategoryService } from './services/itinerary-hotel-ro
     ItineraryRouteHotspotRebuildService,
     ItineraryHotelCancellationService,
     ItineraryHotelRoomCategoryService,
+    ItineraryRouteOptimizationService,
 
     // existing engines you already had
     HotelEngineService,
