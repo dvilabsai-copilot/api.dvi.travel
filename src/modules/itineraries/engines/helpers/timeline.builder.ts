@@ -58,6 +58,7 @@ import { TimelineMatrixAutobuildService } from './timeline-matrix-autobuild.serv
 import { TimelineCandidateReorderingService } from './timeline-candidate-reordering.service';
 import { TimelineDay1CandidateGateService } from './timeline-day1-candidate-gate.service';
 import { TimelineDay1CutoffMasterService } from './timeline-day1-cutoff-master.service';
+import { TimelineDay1TravelProjectionService } from './timeline-day1-travel-projection.service';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -219,6 +220,7 @@ export class TimelineBuilder {
   private readonly candidateReorderingService = new TimelineCandidateReorderingService();
   private readonly day1CandidateGateService = new TimelineDay1CandidateGateService();
   private readonly day1CutoffMasterService = new TimelineDay1CutoffMasterService();
+  private readonly day1TravelProjectionService = new TimelineDay1TravelProjectionService();
   private readonly candidatePolicyService = new TimelineCandidatePolicyService(
     this.operatingHoursService,
     this.slotPolicyService,
@@ -1238,112 +1240,46 @@ export class TimelineBuilder {
             lon: Number(hotspotData.hotspot_longitude ?? 0),
           };
 
-          // Never seed currentCoords from the destination hotspot itself.
-          // If we still do not have usable source coordinates, resolve them from the route city.
-          if (!this.hasUsableCoords(currentCoords)) {
-            currentCoords =
-              (await this.resolvePlaceCoords(tx, currentLocationName, 'source')) ||
-              (await this.resolvePlaceCoords(tx, sourceCity, 'source')) ||
-              undefined;
-          }
-
-          // Calculate travel time
-          distanceCalcCount++;
-          const travelTimeToHotspot = await this.calculateTravelTimeWithCoords(
+          const travelProjection = await this.day1TravelProjectionService.project({
             tx,
+            route,
+            hotspot: sh,
+            hotspotData,
             currentLocationName,
             hotspotLocationName,
             currentCoords,
+            sourceCity,
             destCoords,
-          );
-
-          const travelDurationSeconds = timeToSeconds(travelTimeToHotspot);
-          const currentTimeSeconds = timeToSeconds(currentTime);
-          const hotspotDurationSeconds = timeToSeconds(hotspotDuration);
-          
-          // ⚠️ CRITICAL FIX: Use ABSOLUTE seconds for all validation logic
-          // Do NOT wrap until final DB storage
-          let absoluteVisitStartSeconds = currentTimeSeconds + travelDurationSeconds;
-          let absoluteVisitEndSeconds = absoluteVisitStartSeconds + hotspotDurationSeconds;
-          
-          // Wrapped times are ONLY for display/builder calls (not for tracking state!)
-          // KEY FIX: DO NOT use these for currentTime; keep currentTime in absolute seconds
-          let timeAfterTravelWrapped = secondsToTime(wrapToDay(absoluteVisitStartSeconds));
-          let timeAfterSightseeingWrapped = secondsToTime(wrapToDay(absoluteVisitEndSeconds));
-          
-          // For DB persistence, we need wrapped times
-          let timeAfterTravel = timeAfterTravelWrapped;
-          let timeAfterSightseeing = timeAfterSightseeingWrapped;
-
-          if (tracePhpIncludeFlow) {
-            console.log('[PHP_INCLUDE_TRACE_CANDIDATE]', JSON.stringify({
-              routeId: route.itinerary_route_ID,
-              dayMode: 'day1_different_cities',
-              hotspotId: Number(sh.hotspot_ID || 0),
-              bucket: (sh as any).matched_bucket ?? null,
-              priority: Number((sh as any).hotspot_priority ?? 0),
-              gateCurrentTime: currentTime,
-              gateTravelStart: timeAfterTravel,
-              gateVisitEnd: timeAfterSightseeing,
-              routeEndTime,
-              phpGates: [
-                'duplicate_plan_scope',
-                'bucket_cutoff',
-                'route_end_time',
-                'operating_hours',
-              ],
-            }));
-          }
-
-          // For non-last routes, decide by projected arrival to destination after this visit,
-          // not by a fixed route-wide cutoff. This allows additional hotspots when the candidate
-          // itself is already close to the destination city/hotel.
-          let routeEndRejectionReason: string | null = null;
-          let projectedArrivalSeconds: number | null = null;
-          let travelToDestSeconds: number | null = null;
-
-          {
-            if (!isLastRoute) {
-              const projectedArrival = await this.calculateProjectedArrivalToRouteDestination(
-                tx,
-                route,
-                hotspotLocationName,
-                absoluteVisitEndSeconds,
-                destCoords,
-                destCityCoords,
-              );
-              projectedArrivalSeconds = projectedArrival.projectedArrivalSeconds;
-              travelToDestSeconds = projectedArrival.travelToDestSeconds;
-
-              if (projectedArrivalSeconds > routeEndSeconds) {
-                routeEndRejectionReason = `Rejected: PHP_GATE_ROUTE_END projected arrival ${secondsToTime(wrapToDay(projectedArrivalSeconds))} exceeds route end ${secondsToTime(routeEndSeconds)}`;
-              }
-            } else if (absoluteVisitEndSeconds > routeEndSeconds) {
-              routeEndRejectionReason = `Rejected: PHP_GATE_ROUTE_END hotspot end ${secondsToTime(wrapToDay(absoluteVisitEndSeconds))} exceeds route end ${secondsToTime(routeEndSeconds)}`;
-            }
-          }
-
-          if (routeEndRejectionReason) {
-            this.logHotspotCandidateEvaluation({
-              routeId: route.itinerary_route_ID,
-              hotspotId: Number(sh.hotspot_ID || 0),
-              name: String(hotspotData.hotspot_location || `hotspot_${Number(sh.hotspot_ID || 0)}`),
-              matchedBucket: (sh as any).matched_bucket ?? null,
-              priority: Number((sh as any).hotspot_priority ?? 0),
-              isMustVisit: Number((sh as any).hotspot_priority ?? 0) > 0,
-              distanceFromRoute: Number.isFinite(Number((sh as any).hotspot_distance))
-                ? Number((sh as any).hotspot_distance)
-                : null,
-              openingTime: null,
-              closingTime: null,
-              visitTime: `${timeAfterTravel} - ${timeAfterSightseeing}`,
-              isOpenAtVisitTime: false,
-              selected: false,
-              rejectedReasons: [routeEndRejectionReason],
-            });
-            continue;
-          }
-
+            destCityCoords,
+            currentTime,
+            hotspotDuration,
+            routeStartSeconds,
+            routeEndSeconds,
+            routeEndTime,
+            isLastRoute,
+            tracePhpIncludeFlow,
+            distanceCalcCount,
+            hasUsableCoords: (...args) => (this.hasUsableCoords as any)(...args),
+            resolvePlaceCoords: (...args) => (this.resolvePlaceCoords as any)(...args),
+            calculateTravelTimeWithCoords: (...args) => (this.calculateTravelTimeWithCoords as any)(...args),
+            calculateProjectedArrivalToRouteDestination: (...args) => (this.calculateProjectedArrivalToRouteDestination as any)(...args),
+            logHotspotCandidateEvaluation: (...args) => (this.logHotspotCandidateEvaluation as any)(...args),
+          });
+          if (!travelProjection) continue;
+          currentCoords = travelProjection.currentCoords;
+          distanceCalcCount = travelProjection.distanceCalcCount;
+          let {
+            travelTimeToHotspot,
+            travelDurationSeconds,
+            currentTimeSeconds,
+            hotspotDurationSeconds,
+            absoluteVisitStartSeconds,
+            absoluteVisitEndSeconds,
+            timeAfterTravel,
+            timeAfterSightseeing,
+            projectedArrivalSeconds,
+            travelToDestSeconds,
+          } = travelProjection;
 
           // Get day of week for operating hours check
           const jsDay = route.itinerary_route_date ? new Date(route.itinerary_route_date).getDay() : 0;
