@@ -2498,3 +2498,33 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Raw query latency, route-between row volume, OSRM latency, source-anchor candidate volume and transaction duration remain unmeasured.
 - Implementation commit: `api.dvi.travel` `d150659`.
+
+### Cycle 78 - Extract manual-fit operating-hours policy
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: timing-row enrichment, operating-window evaluation and manual-fit timing conflicts
+- New files: `src/modules/itineraries/services/itinerary-manual-fit-operating-hours.service.ts`, `test/itinerary-manual-fit-operating-hours.test.ts`
+- Workflow: manual-fit preview timing and operating-hours validation callbacks
+
+#### Change
+
+- Moved route timing-row reads, operating-window parsing, attempted visit evaluation, opening-window wait adjustment, selected closing overflow and conflict marking behind `ItineraryManualFitOperatingHoursService`.
+- Preserved timing predicates, route-day selection, overnight-window handling, waiting calculations, conflict reason fields and response metadata.
+- Registered the Prisma-backed service in `ItinerariesModule` and retained facade callback adapters.
+
+#### Verification
+
+- Manual-fit operating-hours characterization tests: PASS, 3/3
+- Combined focused backend/timeline suite: PASS, 169/169
+- Backend build: PASS
+- Nest/OpenAPI initialization: PASS, 499 paths
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 7,696 lines after the tier; `ItineraryManualFitOperatingHoursService` is 596 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Timing-row fan-out, operating-hours selectivity, policy CPU, conflict frequency and preview latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `b3ab21e`.

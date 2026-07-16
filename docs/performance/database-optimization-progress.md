@@ -193,3 +193,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Transaction client usage, mirrored route-key predicates, route-fit thresholds, OSRM callbacks and source-anchor ordering remain unchanged; only orchestration ownership moved.
 - This is not a measured performance improvement: raw query latency, row volume, OSRM latency, geometry CPU, candidate volume and transaction duration remain unmeasured.
 - No index or Redis action is proposed; any future optimization must compare route-map hit/insert and source-anchor traces, including write amplification and lock risk.
+
+## Iteration 75 evidence update
+
+- The manual-fit operating-hours extraction preserves route-date and hotspot-timing reads, active predicates and ordering; no SQL, index, Redis cache or query shape was changed.
+- Overnight-window handling, opening waits, closing overflow, conflict marking and response fields remain unchanged; only policy ownership moved into a Prisma-backed service.
+- This is not a measured performance improvement: timing-row fan-out, selectivity, parsing CPU, conflict frequency, payload size and preview latency remain unmeasured.
+- No index or Redis action is proposed; any future optimization must compare timing-row query plans across no-timing, single-window, multi-window and overnight workloads while preserving mutable-hours freshness.

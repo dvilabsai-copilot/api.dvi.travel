@@ -302,6 +302,8 @@ The iteration-73 saved-rule travel-leg boundary is a measurement seam for hotspo
 
 The iteration-74 route-matrix persistence boundary is a measurement seam for hotspot-place identity selectivity, raw upsert/query latency, route-between row volume, rejection lookup frequency, geometry projection CPU, OSRM latency, source-anchor candidate volume and transaction duration. Capture existing-place, create-place, route-map hit, route-map insert, rejection-hit, OSRM-failure and source-anchor workloads separately before adding indexes, batching writes or caching route geometry; preserve SQL predicates, mirrored-key lookup, route-fit thresholds and transaction ownership.
 
+The iteration-75 manual-fit operating-hours boundary is a measurement seam for route-day lookup latency, timing-row fan-out, operating-window parsing CPU, overnight-window frequency, opening-wait frequency, selected-closing overflow, conflict frequency and preview response latency. Capture no-timing, open-24-hours, closed, single-window, multi-window, overnight, opening-wait and closing-conflict workloads separately before batching timing reads, adding timing indexes or caching mutable hours; preserve route-date predicates, window semantics, wait order and conflict fields.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.
