@@ -394,6 +394,8 @@ The iteration-119 itinerary-details hotel-travel-origin boundary is a measuremen
 
 The iteration-120 itinerary-details hotel-travel-time boundary is a measurement seam for reversed-time frequency, equal-time frequency, duration-backed repair frequency, time-conversion CPU, proof-log volume and end-to-end timeline response latency. Capture normal, reversed, equal, missing-time, malformed-duration and large-route workloads separately before normalizing persisted times in SQL or memoizing duration conversions; preserve mutable hotel-arrival state, display ordering and downstream check-in selection. No index addition/removal or Redis cache is justified until timing traces establish the measured winner.
 
+The iteration-121 itinerary-details hotel-check-in boundary is a measurement seam for check-in row frequency, hotel-label fallback frequency, carried-arrival hit rate, route-end fallback frequency, address projection cost and end-to-end timeline response latency. Capture named-hotel, city-fallback, vehicle-only, carried-arrival, row-time and route-end fallback workloads separately before caching hotel display data; preserve hotel freshness, arrival precedence, terminal-state mutation and check-in response fields. No index addition/removal or Redis cache is justified until hotel lookup traces establish the measured winner.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.

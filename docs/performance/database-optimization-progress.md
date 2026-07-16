@@ -515,3 +515,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - The tier does not add reads or alter database freshness; it only moves post-read timeline projection logic behind a service boundary.
 - This is not a measured database performance improvement: reversal frequency, duration-repair frequency, conversion CPU and details response latency remain unmeasured.
 - No index addition/removal or Redis action is proposed; future work should capture route timing distributions and duration conversion traces before changing persisted-time handling or caching derived ranges.
+
+## Iteration 121 evidence update
+
+- The hotel-check-in extraction preserves hotel fallback precedence, vehicle-only labeling, carried arrival-time preference, row/route-end fallbacks and response fields; no SQL predicate, index, Redis cache or response shape changed.
+- The tier adds no reads and leaves terminal-state mutation in the existing facade loop.
+- This is not a measured database performance improvement: check-in row volume, fallback frequency, hotel-address projection cost and details response latency remain unmeasured.
+- No index addition/removal or Redis action is proposed; future work should capture hotel lookup cardinality and per-route check-in traces before caching hotel display projections.

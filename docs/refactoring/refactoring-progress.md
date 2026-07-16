@@ -3818,3 +3818,31 @@
 - `itinerary-details.service.ts` measured at 4,224 lines after the tier; `itinerary-details-hotel-travel-time.service.ts` is 82 lines.
 - Reversal frequency, equal-time repair frequency, duration derivation cost and timeline response latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `2988c70`.
+
+### Cycle 124 - Extract itinerary-details hotel check-in projection
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itinerary-details.service.ts`
+- Extracted responsibility: item-type-6 hotel label resolution, carried arrival-time precedence and check-in segment projection
+- New files: `src/modules/itineraries/services/itinerary-details-hotel-checkin.service.ts`, `test/itinerary-details-hotel-checkin.test.ts`
+- Workflow: per-route hotel check-in segment projection
+
+#### Change
+
+- Moved hotel label/address selection and hotel-arrival, row-time and route-end fallback precedence behind `ItineraryDetailsHotelCheckInService`.
+- Preserved vehicle-only labels, hotel fallback order, check-in response fields and terminal-state ownership in the facade.
+- No SQL predicate, index, Redis cache, API route, DTO or response contract changed.
+
+#### Verification
+
+- Hotel-check-in characterization tests: PASS, 2/2
+- Itinerary characterization collection: PASS, 177/177
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itinerary-details.service.ts` measured at 4,213 lines after the tier; `itinerary-details-hotel-checkin.service.ts` is 61 lines.
+- Check-in fallback frequency, hotel-address projection cost and timeline response latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `6322ce9`.
