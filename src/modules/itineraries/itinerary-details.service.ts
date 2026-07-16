@@ -29,6 +29,7 @@ import { ItineraryDetailsTravelSemanticsService } from './services/itinerary-det
 import { ItineraryDetailsRouteHotspotDataService } from './services/itinerary-details-route-hotspot-data.service';
 import { ItineraryDetailsEntryTicketCostService } from './services/itinerary-details-entry-ticket-cost.service';
 import { ItineraryLatestDataTableService } from './services/itinerary-latest-data-table.service';
+import { ItineraryDetailsSegmentSanitizerService } from './services/itinerary-details-segment-sanitizer.service';
 
 // ---------------------------------------------------------------------------
 // DTOs for Itinerary Details response (shared shape with frontend)
@@ -422,6 +423,7 @@ export class ItineraryDetailsService {
   private readonly routeHotspotDataService = new ItineraryDetailsRouteHotspotDataService();
   private readonly entryTicketCostService = new ItineraryDetailsEntryTicketCostService();
   private readonly latestDataTableService: ItineraryLatestDataTableService;
+  private readonly segmentSanitizerService = new ItineraryDetailsSegmentSanitizerService();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -2732,43 +2734,15 @@ console.log('[FINAL_DISTANCE_DEBUG]', {
               .filter((id: number) => Number.isFinite(id) && id > 0)
           : [],
       );
-      const excludedNames = new Set<string>();
-      for (const hid of excludedIds.values()) {
-        const m = hotspotMap.get(hid as any);
-        const n = this.normalizePlaceLabel((m as any)?.hotspot_name || '');
-        if (n) excludedNames.add(n);
-      }
-      const textMentionsExcluded = (...values: any[]): boolean => {
-        const hay = this.normalizePlaceLabel(values.filter(Boolean).join(' '));
-        if (!hay) return false;
-        for (const n of excludedNames.values()) {
-          if (n && hay.includes(n)) return true;
-        }
-        return false;
-      };
-      const sanitizeSegments = (rows: any[]): any[] => {
-        const filtered = (Array.isArray(rows) ? rows : []).filter((seg: any) => {
-          const type = String(seg?.type || '').toLowerCase();
-          if (type === 'attraction') {
-            const sid = Number(seg?.hotspotId ?? seg?.locationId ?? 0);
-            if (sid > 0 && excludedIds.has(sid)) return false;
-            if (textMentionsExcluded(seg?.name, seg?.text, seg?.description)) return false;
-            return true;
-          }
-          if (type === 'hotspot') {
-            if (textMentionsExcluded(seg?.anchorFrom, seg?.anchorTo, seg?.text, seg?.name)) return false;
-            return true;
-          }
-          if (type === 'travel') {
-            if (textMentionsExcluded(seg?.from, seg?.to, seg?.fromName, seg?.toName, seg?.displayFromName, seg?.displayToName, seg?.text, seg?.name)) return false;
-            if (this.isGenericHotelLabel(seg?.from) && this.isGenericHotelLabel(seg?.to)) return false;
-            if (this.isSamePlaceLike(seg?.from, seg?.to)) return false;
-            return true;
-          }
-          return true;
+      const sanitizeSegments = (rows: any[]): any[] =>
+        this.segmentSanitizerService.sanitize({
+          segments: rows,
+          excludedIds,
+          hotspotMap,
+          normalizePlaceLabel: (value) => this.normalizePlaceLabel(value),
+          isGenericHotelLabel: (value) => this.isGenericHotelLabel(value),
+          isSamePlaceLike: (a, b) => this.isSamePlaceLike(a, b),
         });
-        return filtered;
-      };
       segments.splice(0, segments.length, ...sanitizeSegments(segments));
 
       const refreshedStartIndex = segments.findIndex((seg: any) => seg?.type === 'start');
