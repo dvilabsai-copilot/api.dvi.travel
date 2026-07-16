@@ -501,3 +501,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Timing rows are still supplied by the existing upstream read and remain fresh per route date; the tier changes ownership only.
 - This is not a measured database performance improvement: timing-row volume, window-evaluation CPU, label frequency and details response latency remain unmeasured.
 - No index addition/removal or Redis action is proposed; future work should capture timing lookup plans and per-route timing cardinality before precomputing or caching day-window projections.
+
+## Iteration 119 evidence update
+
+- The hotel-travel-origin extraction preserves hotel fallback precedence, route-hotspot item-type filtering, chronological end-time comparison, master-name lookup and same-city suppression; no SQL predicate, index, Redis cache or response shape changed.
+- The route-hotspot scan remains in-memory over the existing hydrated collection; no query count or database access pattern changed.
+- This is not a measured database performance improvement: route-hotspot cardinality, chronology scan CPU, fallback frequency and details response latency remain unmeasured.
+- No index addition/removal or Redis action is proposed; future work should capture route-hotspot query plans and per-route row counts before adding chronology indexes or caching mutable route projections.

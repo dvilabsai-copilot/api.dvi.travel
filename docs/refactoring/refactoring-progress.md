@@ -3762,3 +3762,31 @@
 - `itinerary-details.service.ts` measured at 4,309 lines after the tier; `itinerary-details-attraction-timing.service.ts` is 110 lines.
 - Timing-window evaluation CPU, closed/opening frequency, timing-row volume and timeline response latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `0036cee`.
+
+### Cycle 122 - Extract itinerary-details hotel travel origin resolution
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itinerary-details.service.ts`
+- Extracted responsibility: item-type-5 hotel destination selection, chronology-based attraction origin resolution and same-city fallback suppression
+- New files: `src/modules/itineraries/services/itinerary-details-hotel-travel-origin.service.ts`, `test/itinerary-details-hotel-travel-origin.test.ts`
+- Workflow: per-route travel-to-hotel segment projection
+
+#### Change
+
+- Moved hotel/origin label selection, previous-day hotel fallback, latest completed attraction lookup and redundant same-city suppression behind `ItineraryDetailsHotelTravelOriginService`.
+- Preserved vehicle-only labels, route/location fallback precedence, chronological attraction selection and suppression semantics.
+- No SQL predicate, index, Redis cache, API route, DTO or response contract changed.
+
+#### Verification
+
+- Hotel-travel-origin characterization tests: PASS, 2/2
+- Itinerary characterization collection: PASS, 173/173
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itinerary-details.service.ts` measured at 4,257 lines after the tier; `itinerary-details-hotel-travel-origin.service.ts` is 94 lines.
+- Chronology scan length, fallback frequency, same-city suppression rate and timeline response latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `5807988`.

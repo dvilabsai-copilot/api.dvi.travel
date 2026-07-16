@@ -390,6 +390,8 @@ The iteration-117 itinerary-details attraction-activity boundary is a measuremen
 
 The iteration-118 itinerary-details attraction-timing boundary is a measurement seam for timing-row volume, window-fit evaluation count, closed-day frequency, next-opening label frequency, open-all-day frequency, timing projection CPU and end-to-end timeline response latency. Capture missing-range, closed-day, open-all-day, single-window, multi-window, outside-hours and large-route workloads separately before precomputing day windows or caching timing projections; preserve route-date freshness, day-of-week semantics, overnight handling and display labels. No index addition/removal or Redis cache is justified until timing query plans and route traces establish the measured winner.
 
+The iteration-119 itinerary-details hotel-travel-origin boundary is a measurement seam for route-hotspot scan length, completed-attraction hit rate, previous-day hotel fallback frequency, same-city suppression frequency, label-normalization CPU and end-to-end timeline response latency. Capture empty-attraction, one-attraction, many-attraction, future-attraction, previous-hotel, unresolved-hotel and same-city workloads separately before indexing hotspot chronology or memoizing route projections; preserve route-row freshness, hotel precedence and suppression semantics. No index addition/removal or Redis cache is justified until route-hotspot cardinality and chronology traces establish the measured winner.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.
