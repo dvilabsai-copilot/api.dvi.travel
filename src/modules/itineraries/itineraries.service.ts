@@ -96,6 +96,7 @@ import { ItineraryRouteOptimizationService } from './services/itinerary-route-op
 import { ItineraryActivityImpactService } from './services/itinerary-activity-impact.service';
 import { ItineraryTransportFormattingService } from './services/itinerary-transport-formatting.service';
 import { ItineraryActivityPricingService } from './services/itinerary-activity-pricing.service';
+import { ItineraryActivityTimingPolicyService } from './services/itinerary-activity-timing-policy.service';
 import { ItineraryVehicleBuildStatusService } from './services/itinerary-vehicle-build-status.service';
 import { ItineraryVehicleBuildService } from './services/itinerary-vehicle-build.service';
 import { ItineraryPlanPersistenceService } from './services/itinerary-plan-persistence.service';
@@ -697,6 +698,7 @@ export class ItinerariesService {
     private readonly activityImpactService: ItineraryActivityImpactService = new ItineraryActivityImpactService(prisma, hotspotEngine),
     private readonly transportFormattingService: ItineraryTransportFormattingService = new ItineraryTransportFormattingService(),
     private readonly activityPricingService: ItineraryActivityPricingService = new ItineraryActivityPricingService(prisma),
+    private readonly activityTimingPolicyService: ItineraryActivityTimingPolicyService = new ItineraryActivityTimingPolicyService(),
   ) {
     this.manualFitTimelinePolicyService.setCallbacks({
       parseSegmentEndMinutes: (...args) => (this.parseSegmentEndMinutes as any)(...args),
@@ -4911,21 +4913,14 @@ private getGuideSlotLabel(slotId: number): string {
     return (this.activityImpactService.simulateActivityImpactBeforeAdd as any)(...args);
   }
   private timeToMinutes(time: Date | null): number {
-    if (!time) return 0;
-    const d = new Date(time);
-    // TIME columns are stored/handled as UTC values in this codebase.
-    return d.getUTCHours() * 60 + d.getUTCMinutes();
+    return this.activityTimingPolicyService.timeToMinutes(time);
   }
 
   /**
    * Helper: Format time for display
    */
   private formatTime(time: Date | null): string {
-    if (!time) return 'N/A';
-    const d = new Date(time);
-    const hours = d.getUTCHours().toString().padStart(2, '0');
-    const minutes = d.getUTCMinutes().toString().padStart(2, '0');
-    return `${hours}:${minutes}`;
+    return this.activityTimingPolicyService.formatTime(time);
   }
 
   private formatTransportVoucherDate(value: Date | string | null | undefined): string {
@@ -4961,9 +4956,7 @@ private getGuideSlotLabel(slotId: number): string {
   }
 
   private addMinutesToTime(time: Date, minutes: number): Date {
-    const result = new Date(time);
-    result.setUTCMinutes(result.getUTCMinutes() + minutes);
-    return result;
+    return this.activityTimingPolicyService.addMinutesToTime(time, minutes);
   }
 
   /**
@@ -4975,37 +4968,12 @@ private getGuideSlotLabel(slotId: number): string {
     proposedStartTime: Date,
     proposedEndTime: Date
   ): Array<{ reason: string; severity: string }> {
-    const conflicts: Array<{ reason: string; severity: string }> = [];
-
-    if (timeSlots.length === 0) {
-      // No time restrictions
-      return conflicts;
-    }
-
-    const proposedStart = this.timeToMinutes(proposedStartTime);
-    const proposedEnd = this.timeToMinutes(proposedEndTime);
-
-    // Check if proposed slot fits in any available slot.
-    const fitsAnySlot = timeSlots.some((slot: any) => {
-      const slotStart = this.timeToMinutes(slot.start_time);
-      const slotEnd = this.timeToMinutes(slot.end_time);
-      return proposedStart >= slotStart && proposedEnd <= slotEnd;
-    });
-
-    if (!fitsAnySlot) {
-      const slotRanges = timeSlots
-        .map((slot: any) => `${this.formatTime(slot.start_time)} - ${this.formatTime(slot.end_time)}`)
-        .join(', ');
-
-      conflicts.push({
-        reason:
-          `Activity "${activity.activity_title}" is available only at ${slotRanges}, ` +
-          `but it would be inserted at ${this.formatTime(proposedStartTime)} - ${this.formatTime(proposedEndTime)}`,
-        severity: 'warning',
-      });
-    }
-
-    return conflicts;
+    return this.activityTimingPolicyService.checkActivityTimingConflicts(
+      activity,
+      timeSlots,
+      proposedStartTime,
+      proposedEndTime,
+    );
   }
 
 
