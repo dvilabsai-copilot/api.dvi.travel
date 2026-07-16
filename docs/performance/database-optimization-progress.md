@@ -74,3 +74,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Builder-local static Prisma-call ownership remains 10 matches; the gate performs no database work.
 - This is not a measured performance improvement: rejection distribution, logging cost, duplicate frequency and rebuild latency remain unmeasured.
 - No index or Redis action is proposed; any future optimization must preserve gate order, movement exceptions and strict priority semantics.
+
+## Iteration 58 evidence update
+
+- The Day-1 cutoff/master admission extraction uses the existing in-memory hotspot map; no SQL, index, Redis cache or query shape was changed.
+- Builder-local static Prisma-call ownership remains 10 matches; this tier performs no database work.
+- This is not a measured performance improvement: cutoff frequency, map misses, logging cost and rebuild latency remain unmeasured.
+- No index or Redis action is proposed; any future cache must preserve route-scope, loopback bypass and absolute-time semantics.

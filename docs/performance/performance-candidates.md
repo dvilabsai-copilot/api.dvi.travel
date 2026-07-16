@@ -164,6 +164,7 @@ An index, Redis cache, or query rewrite may move from candidate to implementatio
 | Timeline iteration 55 | Matrix-assisted autobuild boundary | `timeline.builder.ts` reduced from 6,698 to 6,535 lines; `TimelineMatrixAutobuildService` is 234 lines | Existing feature flag, route-fit/corridor guards, between-map read, timing admission and matrix candidate ordering preserved; query latency, candidate volume and rebuild latency remain unmeasured |
 | Timeline iteration 56 | Candidate reordering boundary | `timeline.builder.ts` reduced from 6,535 to 6,516 lines; `TimelineCandidateReorderingService` is 30 lines | Existing manual/priority protection, matrix-score ordering and distance tie-break preserved; sort CPU, candidate volume and rebuild latency remain unmeasured |
 | Timeline iteration 57 | Day-1 candidate gate boundary | `timeline.builder.ts` reduced from 6,516 to 6,443 lines; `TimelineDay1CandidateGateService` is 93 lines | Existing strict priority/filler, terminal-source, duplicate and movement-bucket gates preserved; rejection volume, log cost and rebuild latency remain unmeasured |
+| Timeline iteration 58 | Day-1 cutoff/master admission boundary | `timeline.builder.ts` reduced from 6,443 to 6,404 lines; `TimelineDay1CutoffMasterService` is 66 lines | Existing PHP bucket cutoffs, loopback bypass and hotspot-map admission preserved; cutoff frequency, missing-master rate and rebuild latency remain unmeasured |
 
 The iteration-6 and iteration-7 boundaries are measurement seams, not optimization claims. The next safe performance tier should instrument representative itinerary-details, route-rebuild and hotspot-preview requests and attribute calls to `TimelineTravelDataService` and `TimelineCandidateFeasibilityService` before changing query shape or adding a cache.
 
@@ -266,6 +267,8 @@ The iteration-55 matrix-autobuild boundary is a measurement seam for feature-fla
 The iteration-56 candidate-reordering boundary is a measurement seam for selected-candidate count, protected/manual count, matrix-score population, sort CPU, distance tie-break frequency, log volume and route rebuild latency. Capture normal, matrix-augmented, manual-heavy and equal-score workloads separately before changing ordering or memoizing scores; preserve deterministic priority protection and response ordering.
 
 The iteration-57 Day-1 candidate-gate boundary is a measurement seam for Day-1 invocation count, bucket/priority rejection distribution, duplicate frequency, terminal-source suppression frequency, evaluation-log volume and route rebuild latency. Capture normal, movement-first, terminal-arrival, duplicate and filler-heavy workloads separately before changing gate order or caching classification; preserve strict priority and deterministic rejection diagnostics.
+
+The iteration-58 Day-1 cutoff/master boundary is a measurement seam for cutoff invocation count, source/via/destination rejection distribution, loopback bypass frequency, missing-master rate, evaluation-log volume and route rebuild latency. Capture local, loopback, via, destination, cutoff-edge and missing-master workloads separately before changing cutoff precedence or memoizing hotspot maps; preserve absolute-time semantics and rejection ordering.
 
 ## Next profiling order
 

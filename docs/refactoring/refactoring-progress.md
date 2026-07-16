@@ -2002,3 +2002,32 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Day-1 gate invocation rate, rejection distribution, duplicate frequency, evaluation-log volume and route rebuild latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `3694dea`.
+
+### Cycle 61 - Extract Day-1 cutoff/master admission
+
+#### Scope
+
+- Original file: `src/modules/itineraries/engines/helpers/timeline.builder.ts`
+- Extracted responsibility: PHP-compatible Day-1 bucket cutoffs and prefetched hotspot-master admission
+- New files: `src/modules/itineraries/engines/helpers/timeline-day1-cutoff-master.service.ts`, `test/timeline-day1-cutoff-master.test.ts`
+- Workflow: Day-1 candidate admission after strict priority/duplicate gating and before coordinate/travel calculation
+
+#### Change
+
+- Moved source/via/destination cutoff evaluation and missing-master rejection behind `TimelineDay1CutoffMasterService`.
+- Preserved 12:00/19:00/21:00 bucket cutoffs, loopback source-cutoff bypass, rejection metadata and the no-database hotspot-map lookup contract.
+- Kept coordinate resolution, travel calculation, projected-arrival checks, operating hours and timeline mutation in `TimelineBuilder`.
+
+#### Verification
+
+- Day-1 cutoff/master characterization tests: PASS, 3/3
+- Combined focused backend/timeline suite: PASS, 129/129
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `timeline.builder.ts` measured at 6,404 lines after the tier; `TimelineDay1CutoffMasterService` is 66 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Cutoff rejection frequency, bucket distribution, missing-master rate, evaluation-log volume and route rebuild latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `e1ce0e9`.
