@@ -60,3 +60,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Builder-local static Prisma-call ownership decreased from 11 to 10; the extracted service contains the retained route-hotspot `findMany` call.
 - This is not a measured performance improvement: route-attraction rows, between-map duration, rows examined, candidate rejection volume and rebuild latency remain unmeasured.
 - Any index or Redis proposal must first compare flag-off/flag-on traces and query plans for representative slot-pair counts, with the feature flag remaining the rollback control.
+
+## Iteration 56 evidence update
+
+- Candidate reordering is pure in-memory policy code; no SQL, index, Redis cache or query shape was changed.
+- Builder-local static Prisma-call ownership remains 10 matches; this tier performs no database work.
+- This is not a measured performance improvement: candidate count, sort CPU, payload ordering cost and rebuild latency remain unmeasured.
+- No index or Redis action is proposed; any future optimization must preserve deterministic ordering and be supported by representative route-build measurements.

@@ -1944,3 +1944,32 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Matrix flag frequency, route-attraction row volume, between-map latency, candidate rejection/merge volume, timing-check CPU and route rebuild latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `f52f9d3`.
+
+### Cycle 59 - Extract candidate reordering
+
+#### Scope
+
+- Original file: `src/modules/itineraries/engines/helpers/timeline.builder.ts`
+- Extracted responsibility: priority/manual protection and matrix-score/distance ordering of selected candidates
+- New files: `src/modules/itineraries/engines/helpers/timeline-candidate-reordering.service.ts`, `test/timeline-candidate-reordering.test.ts`
+- Workflow: final selected-candidate normalization immediately before Day-1/other-day scheduling loops
+
+#### Change
+
+- Moved candidate reordering behind `TimelineCandidateReorderingService`.
+- Preserved manual and positive-priority protection, matrix-score descending order, distance tie-breaks, reorder diagnostics and logging-failure behavior.
+- Kept route scheduling, operating-hour evaluation, travel rows and persistence in `TimelineBuilder`.
+
+#### Verification
+
+- Candidate reordering characterization tests: PASS, 3/3
+- Combined focused backend/timeline suite: PASS, 123/123
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `timeline.builder.ts` measured at 6,516 lines after the tier; `TimelineCandidateReorderingService` is 30 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Candidate bucket volume, sort CPU, matrix-score population, log volume and route rebuild latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `54dacfe`.
