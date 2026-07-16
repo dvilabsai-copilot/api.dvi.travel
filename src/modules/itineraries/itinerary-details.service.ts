@@ -22,6 +22,7 @@ import {
   type EntryTicketBreakdownDto,
 } from './utils/entry-ticket-breakdown.util';
 import { ItineraryDetailsTimelinePresentationService } from './services/itinerary-details-timeline-presentation.service';
+import { ItineraryDetailsTimeRangePolicyService } from './services/itinerary-details-time-range-policy.service';
 
 // ---------------------------------------------------------------------------
 // DTOs for Itinerary Details response (shared shape with frontend)
@@ -408,6 +409,7 @@ days: {
 @Injectable()
 export class ItineraryDetailsService {
   private readonly timelinePresentationService = new ItineraryDetailsTimelinePresentationService();
+  private readonly timeRangePolicyService = new ItineraryDetailsTimeRangePolicyService();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -920,141 +922,33 @@ const foodTypeMap: Record<string, string> = {
     return `${m} Min`;
   }
 
-  /** Convert a TIME duration value to total minutes. */
-  private durationToMinutes(d?: Date | string | null): number | null {
-    if (!d) return null;
-
-    if (d instanceof Date) {
-      if (isNaN(d.getTime())) return null;
-      const total = d.getUTCHours() * 60 + d.getUTCMinutes();
-      return total > 0 ? total : null;
-    }
-
-    if (typeof d === 'string') {
-      const raw = d.trim();
-      const hhmmss = raw.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
-      if (hhmmss) {
-        const total = Number(hhmmss[1]) * 60 + Number(hhmmss[2]);
-        return total > 0 ? total : null;
-      }
-
-      const dt = new Date(raw);
-      if (!isNaN(dt.getTime())) {
-        const total = dt.getUTCHours() * 60 + dt.getUTCMinutes();
-        return total > 0 ? total : null;
-      }
-    }
-
-    return null;
-  }
-
   /** Convert time string "HH:MM AM/PM" to minutes since midnight */
-  private timeToMinutes(timeStr: string | null): number {
-    if (!timeStr) return 0;
-    
-    const match = timeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
-    if (!match) return 0;
-    
-    let hours = parseInt(match[1]);
-    const minutes = parseInt(match[2]);
-    const ampm = match[3].toUpperCase();
-    
-    if (ampm === 'PM' && hours !== 12) hours += 12;
-    if (ampm === 'AM' && hours === 12) hours = 0;
-    
-    return hours * 60 + minutes;
+  private timeToMinutes(...args: any[]): any {
+    return (this.timeRangePolicyService as any).timeToMinutes(...args);
   }
 
-  private parseDisplayTimeMinutesStrict(timeStr: string | null): number | null {
-    if (!timeStr) return null;
-    const match = timeStr.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
-    if (!match) return null;
-
-    let hours = parseInt(match[1], 10);
-    const minutes = parseInt(match[2], 10);
-    const ampm = match[3].toUpperCase();
-
-    if (ampm === 'PM' && hours !== 12) hours += 12;
-    if (ampm === 'AM' && hours === 12) hours = 0;
-
-    return hours * 60 + minutes;
+  private parseDisplayTimeMinutesStrict(...args: any[]): any {
+    return (this.timeRangePolicyService as any).parseDisplayTimeMinutesStrict(...args);
   }
 
-  private minutesToDisplayTime(minutes: number): string {
-    const normalized = ((Math.round(minutes) % 1440) + 1440) % 1440;
-    let hh = Math.floor(normalized / 60);
-    const mm = normalized % 60;
-    const ampm = hh >= 12 ? 'PM' : 'AM';
-    hh = hh % 12;
-    if (hh === 0) hh = 12;
-    return `${this.pad2(hh)}:${this.pad2(mm)} ${ampm}`;
+  private minutesToDisplayTime(...args: any[]): any {
+    return (this.timeRangePolicyService as any).minutesToDisplayTime(...args);
   }
 
-  private orderedTimeRange(startTimeText: string | null, endTimeText: string | null): string | null {
-    if (!startTimeText || !endTimeText) return null;
-
-    const startMins = this.parseDisplayTimeMinutesStrict(startTimeText);
-    const endMins = this.parseDisplayTimeMinutesStrict(endTimeText);
-
-    if (startMins === null || endMins === null) {
-      return `${startTimeText} - ${endTimeText}`;
-    }
-
-    if (startMins <= endMins) {
-      return `${startTimeText} - ${endTimeText}`;
-    }
-
-    return `${endTimeText} - ${startTimeText}`;
+  private orderedTimeRange(...args: any[]): any {
+    return (this.timeRangePolicyService as any).orderedTimeRange(...args);
   }
 
-  private getTravelTimeRangeWithDuration(
-    startTimeText: string | null,
-    endTimeText: string | null,
-    durationRaw?: Date | string | null,
-  ): string | null {
-    const normalized = this.orderedTimeRange(startTimeText, endTimeText);
-    if (!startTimeText) {
-      return normalized;
-    }
-
-    const durationMinutes = this.durationToMinutes(durationRaw ?? null);
-    if (!durationMinutes || durationMinutes <= 0) {
-      return normalized;
-    }
-
-    const startMinutes = this.parseDisplayTimeMinutesStrict(startTimeText);
-    const endMinutes = endTimeText ? this.parseDisplayTimeMinutesStrict(endTimeText) : null;
-    if (startMinutes === null) {
-      return normalized;
-    }
-
-    // When DB stores equal/blank end time for travel rows, derive the end from duration.
-    if (endMinutes === null || endMinutes === startMinutes) {
-      const computedEnd = this.minutesToDisplayTime(startMinutes + durationMinutes);
-      return this.orderedTimeRange(startTimeText, computedEnd);
-    }
-
-    return normalized;
+  private getTravelTimeRangeWithDuration(...args: any[]): any {
+    return (this.timeRangePolicyService as any).getTravelTimeRangeWithDuration(...args);
   }
 
-  private formatDurationFromDisplayRange(startTimeText: string | null, endTimeText: string | null): string | null {
-    if (!startTimeText || !endTimeText) return null;
+  private durationToMinutes(...args: any[]): any {
+    return (this.timeRangePolicyService as any).durationToMinutes(...args);
+  }
 
-    const startMins = this.parseDisplayTimeMinutesStrict(startTimeText);
-    const endMins = this.parseDisplayTimeMinutesStrict(endTimeText);
-    if (startMins === null || endMins === null) return null;
-
-    let delta = endMins - startMins;
-    if (delta < 0) {
-      delta += 1440;
-    }
-    if (delta <= 0) return null;
-
-    const h = Math.floor(delta / 60);
-    const m = delta % 60;
-    if (h > 0 && m > 0) return `${h} Hours ${m} Min`;
-    if (h > 0) return `${h} Hours`;
-    return `${m} Min`;
+  private formatDurationFromDisplayRange(...args: any[]): any {
+    return (this.timeRangePolicyService as any).formatDurationFromDisplayRange(...args);
   }
 
   private normalizeSegmentChronology(segments: any[]): void {
