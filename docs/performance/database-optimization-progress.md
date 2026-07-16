@@ -298,3 +298,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Small-route exhaustive threshold, larger-route heuristic selection, route date/sequence projection and original-order fallback remain unchanged; the facade retains an untouched compatibility helper copy pending encoding-safe cleanup.
 - This is not a measured performance improvement: stored-distance latency, distance-row fan-out, permutation count, matrix miss rate, annealing CPU and end-to-end optimizer latency remain unmeasured.
 - No index or Redis action is proposed; any future optimization must compare stored-distance query plans and optimizer traces before batching or caching route geometry.
+
+## Iteration 90 evidence update
+
+- The activity-impact extraction preserves activity, route-hotspot, route and downstream-hotspot predicates, hotspot-master priority reads and rollback-only rebuild behavior; no SQL, index, Redis cache or query shape was changed.
+- Activity-duration fallback, extension calculation, priority warning/removal ordering, route-end decision and rollback marker semantics remain unchanged; concrete DI tokens additionally restore Nest startup without changing runtime contracts.
+- This is not a measured performance improvement: activity/hotspot/route read fan-out, downstream row volume, master lookup latency, priority-removal frequency, reroute fallback frequency and simulation latency remain unmeasured.
+- No index or Redis action is proposed; any future optimization must compare impact query plans and downstream simulation traces before batching or caching mutable route state.

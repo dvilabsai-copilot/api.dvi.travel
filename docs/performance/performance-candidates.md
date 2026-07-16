@@ -332,6 +332,8 @@ The iteration-88 hotel room-category boundary is a measurement seam for plan/rou
 
 The iteration-89 route-optimization boundary is a measurement seam for route-context normalization CPU, stored-distance lookup latency, distance-row fan-out, permutation count, missing-distance frequency, annealing iterations and end-to-end optimizer latency. Capture small exhaustive, large heuristic, missing-distance, broken-chain and unchanged-order workloads separately before proposing an index, batching or Redis; preserve exact source/destination predicates, route-order determinism and mutable distance freshness. No index addition/removal or Redis cache is justified by the current evidence because this tier added an active delegate but has no before/after production timings.
 
+The iteration-90 activity-impact boundary is a measurement seam for activity lookup latency, route-hotspot lookup latency, downstream-hotspot row volume, hotspot-master fan-out, projection CPU, optional-removal frequency, priority-warning frequency, rollback-reroute frequency and end-to-end simulation latency. Capture no-route-end, no-downstream, optional-heavy, priority-heavy, route-overflow and reroute-fallback workloads separately before proposing indexes, batching or Redis; preserve activity duration defaults, priority semantics, transaction rollback and mutable timeline freshness. No index addition/removal or Redis cache is justified by the current evidence because this tier changed ownership and DI metadata only and has no before/after production timings.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.

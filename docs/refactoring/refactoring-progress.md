@@ -2941,3 +2941,33 @@
 - This tier is an ownership seam, not a line-count reduction: the legacy helper copy remains to avoid unsafe mojibake-literal edits.
 - Stored-distance latency, matrix row volume, permutation count, annealing CPU and end-to-end optimizer latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `75ae2b0`.
+
+### Cycle 93 - Extract activity impact simulation and repair Nest DI tokens
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: activity-duration impact simulation and rollback-only reroute simulation
+- New files: `src/modules/itineraries/services/itinerary-activity-impact.service.ts`, `test/itinerary-activity-impact.test.ts`
+- Workflow: activity add preflight and Nest provider initialization
+
+#### Change
+
+- Moved activity lookup, route-hotspot/activity projection, priority warning/removal planning and rollback-only reroute simulation behind `ItineraryActivityImpactService`.
+- Replaced `any` constructor tokens in the newly registered extracted services with concrete `PrismaService`, `HotspotEngineService`, `ItineraryHotelDetailsTboService` and normalization-service types so Nest can resolve providers instead of reflecting `Object`.
+- Preserved activity/hotspot/route predicates, duration defaults, route-end decisions, warning payloads, rollback marker and public facade callbacks.
+
+#### Verification
+
+- Activity-impact characterization tests: PASS, 2/2
+- Combined focused backend/timeline suite: PASS, 200/200
+- Backend build: PASS
+- Nest/OpenAPI initialization: PASS, 499 paths
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 5,289 lines after the tier; `ItineraryActivityImpactService` is 299 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Activity impact read fan-out, downstream row volume, priority-removal frequency, reroute fallback frequency and simulation latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `911c91b`.
