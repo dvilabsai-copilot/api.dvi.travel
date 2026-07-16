@@ -3001,3 +3001,33 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Formatting CPU, malformed-payload frequency and transport voucher projection latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `7c0c78e`.
+
+### Cycle 95 - Extract activity pricing policy
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: activity passenger context, nationality classification and pricebook projection
+- New files: `src/modules/itineraries/services/itinerary-activity-pricing.service.ts`, `test/itinerary-activity-pricing.test.ts`
+- Workflow: available-activity pricing and activity workflow pricing callbacks
+
+#### Change
+
+- Moved plan/route context reads, nationality classification, dated pricebook lookup, day-one fallback, rate selection and total calculation behind `ItineraryActivityPricingService`.
+- Preserved the existing facade callback and Prisma/transaction-client argument so activity availability and workflow callers keep their current contracts.
+- Preserved per-adult versus unit precedence, passenger counts, date fallback and response fields.
+
+#### Verification
+
+- Activity-pricing characterization tests: PASS, 2/2
+- Combined focused backend/timeline suite: PASS, 204/204
+- Backend build: PASS
+- Nest/OpenAPI initialization: PASS, 499 paths
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 5,014 lines after the tier; `ItineraryActivityPricingService` is 129 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Pricebook read latency, day-one fallback frequency and per-activity availability fan-out remain unmeasured.
+- Implementation commit: `api.dvi.travel` `5328d45`.

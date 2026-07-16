@@ -312,3 +312,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Voucher date/range formatting, passenger labels, time/location normalization, HTML decoding, JSON/raw parsing and fallback fields remain unchanged; the facade's existing time-format callback remains the source of transport time labels.
 - This is not a measured performance improvement: formatting CPU, payload size, malformed-payload frequency, fallback frequency and transport voucher projection latency remain unmeasured.
 - No index or Redis action is proposed; any future optimization should compare payload-shape traces and projection CPU before adding memoization or caching mutable voucher data.
+
+## Iteration 92 evidence update
+
+- The activity-pricing extraction preserves plan, route, country and activity-pricebook predicates, select fields, dated lookup and day-one fallback; no SQL, index, Redis cache or query shape was changed.
+- Nationality classification, passenger counts, rate precedence, unit/per-adult selection, totals and price-date fields remain unchanged; transaction-client pass-through is preserved.
+- This is not a measured performance improvement: context-read latency, country-read latency, pricebook selectivity, fallback frequency, row count and availability fan-out remain unmeasured.
+- No index or Redis action is proposed; any future optimization should compare pricebook query plans and per-activity read traces before batching or caching mutable pricing data.

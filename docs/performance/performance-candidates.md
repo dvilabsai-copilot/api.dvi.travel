@@ -336,6 +336,8 @@ The iteration-90 activity-impact boundary is a measurement seam for activity loo
 
 The iteration-91 transport-formatting boundary is a measurement seam for voucher date/range formatting CPU, time/location normalization CPU, JSON/raw flight parsing cost, malformed-payload frequency, fallback-label frequency and end-to-end transport voucher projection latency. Capture normal object, valid JSON, raw text, malformed JSON, missing-date and large-payload workloads separately before proposing memoization or Redis; preserve locale formatting, fallback labels, parser tolerance and mutable voucher freshness. No index addition/removal or Redis cache is justified by the current evidence because this tier changed ownership only and has no before/after production timings.
 
+The iteration-92 activity-pricing boundary is a measurement seam for plan/route context read latency, nationality lookup latency, dated pricebook selectivity, day-one fallback frequency, price-row count, per-activity availability fan-out and total-price projection CPU. Capture domestic/foreign, dated-hit, dated-miss, no-plan, no-route, unit-price and per-adult workloads separately before proposing a composite index, batching or Redis; preserve date-sensitive pricebook freshness, passenger counts and mutable pricebook state. No index addition/removal or Redis cache is justified by the current evidence because this tier changed ownership only and has no before/after production timings.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.
