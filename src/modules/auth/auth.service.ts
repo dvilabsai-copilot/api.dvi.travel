@@ -3,13 +3,15 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
 import * as bcrypt from 'bcrypt';
 import { JwtService } from '@nestjs/jwt';
+import { EmailLoginOtpService } from './email-login-otp.service';
 
 @Injectable()
 export class AuthService {
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly jwt: JwtService,
-  ) {}
+  private readonly prisma: PrismaService,
+  private readonly jwt: JwtService,
+  private readonly emailLoginOtp: EmailLoginOtpService,
+) {}
 
   /**
    * Validate user against dvi_users table
@@ -43,32 +45,67 @@ export class AuthService {
    * Login and issue JWT
    */
   async login(email: string, password: string) {
-    const user = await this.validateUser(email, password);
-    // userID is BigInt in Prisma → convert to string for JWT
-    const userId = user.userID.toString();
+  const user = await this.validateUser(email, password);
+  return this.buildLoginResponse(user);
+}
 
-    const payload = {
-      sub: userId,
+async sendEmailLoginOtp(email: string) {
+  const user = await this.prisma.dvi_users.findFirst({
+    where: {
+      useremail: String(email || '').trim(),
+      deleted: 0,
+    },
+  });
+
+  if (!user) {
+    throw new UnauthorizedException('Invalid email address.');
+  }
+
+  return this.emailLoginOtp.createAndSendOtp(user.useremail);
+}
+
+async verifyEmailLoginOtp(email: string, otp: string) {
+  const user = await this.prisma.dvi_users.findFirst({
+    where: {
+      useremail: String(email || '').trim(),
+      deleted: 0,
+    },
+  });
+
+  if (!user) {
+    throw new UnauthorizedException('Invalid email address.');
+  }
+
+  await this.emailLoginOtp.verifyOtp(user.useremail, otp);
+
+  return this.buildLoginResponse(user);
+}
+
+private async buildLoginResponse(user: any) {
+  const userId = user.userID.toString();
+
+  const payload = {
+    sub: userId,
+    email: user.useremail,
+    role: user.roleID,
+    agentId: user.agent_id,
+    staffId: user.staff_id,
+    guideId: user.guide_id,
+  };
+
+  const accessToken = await this.jwt.signAsync(payload);
+
+  return {
+    accessToken,
+    user: {
+      id: userId,
       email: user.useremail,
-      role: user.roleID, // numeric roleID from dvi_users
+      role: user.roleID,
       agentId: user.agent_id,
       staffId: user.staff_id,
       guideId: user.guide_id,
-    };
-
-    const accessToken = await this.jwt.signAsync(payload);
-
-    return {
-      accessToken,
-      user: {
-        id: userId,
-        email: user.useremail,
-        role: user.roleID,
-        agentId: user.agent_id,
-        staffId: user.staff_id,
-        guideId: user.guide_id,
-        fullName: user.username ?? '', // map from username field
-      },
-    };
-  }
+      fullName: user.username ?? '',
+    },
+  };
+}
 }
