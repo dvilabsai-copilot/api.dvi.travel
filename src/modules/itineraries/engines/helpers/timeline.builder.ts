@@ -49,6 +49,7 @@ import { TimelineDay1SourceFallbackService } from './timeline-day1-source-fallba
 import { TimelineRouteHotspotSelectionService } from './timeline-route-hotspot-selection.service';
 import { TimelineArrivalHotelDecisionService } from './timeline-arrival-hotel-decision.service';
 import { TimelineHotelFirstInsertionService } from './timeline-hotel-first-insertion.service';
+import { TimelineNonHotelCutoffService } from './timeline-non-hotel-cutoff.service';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -199,6 +200,7 @@ export class TimelineBuilder {
   private readonly routeHotspotSelectionService = new TimelineRouteHotspotSelectionService(this.distanceHelper);
   private readonly arrivalHotelDecisionService = new TimelineArrivalHotelDecisionService(this.distanceHelper);
   private readonly hotelFirstInsertionService = new TimelineHotelFirstInsertionService(this.hotelBuilder, this.refreshmentBuilder);
+  private readonly nonHotelCutoffService = new TimelineNonHotelCutoffService(this.distanceHelper);
   private readonly candidatePolicyService = new TimelineCandidatePolicyService(
     this.operatingHoursService,
     this.slotPolicyService,
@@ -236,6 +238,9 @@ export class TimelineBuilder {
     });
     this.hotelFirstInsertionService.setCallbacks({
       logBookingRule: (...args) => (this.logBookingRule as any)(...args),
+    });
+    this.nonHotelCutoffService.setCallbacks({
+      canonicalCityKey: (...args) => (this.canonicalCityKey as any)(...args),
     });
     this.candidatePolicyService.setCallbacks({
       canonicalCityKey: (...args) => (this.canonicalCityKey as any)(...args),
@@ -888,54 +893,21 @@ export class TimelineBuilder {
       currentCoords = hotelFirstInsertion.currentCoords;
       didHotelFirstCheckin = hotelFirstInsertion.didHotelFirstCheckin;
 
-      /* legacy hotel-first insertion block removed */
-      // <=20 km and after noon -> allow hotel-first check-in with a 2h rest gap,
-
       // 2) CALCULATE LATEST HOTSPOT END USING ROUTE'S CONFIGURED END TIME
       // Use route_end_time (not hardcoded cutoffs) so users can adjust end time
-      let latestNonHotelEndSeconds = routeEndSeconds; // Default: route end time
-      let latestNonHotelEndTime = routeEndTime; // Default string representation
+      const nonHotelCutoff = await this.nonHotelCutoffService.calculate({
+        tx,
+        route,
+        isLastRoute,
+        routeEndSeconds,
+        routeEndTime,
+        sourceCity,
+        destinationCity,
+        destCityCoords,
+      });
+      let latestNonHotelEndSeconds = nonHotelCutoff.latestNonHotelEndSeconds;
+      let latestNonHotelEndTime = nonHotelCutoff.latestNonHotelEndTime;
       
-        const directToNextForTiming = Number((route as any).direct_to_next_visiting_place || 0);
-        const routeSourceKeyForTiming = this.canonicalCityKey(String(sourceCity || route.location_name || ''));
-        const routeDestinationKeyForTiming = this.canonicalCityKey(String(destinationCity || route.next_visiting_location || ''));
-        const isIntercityDirectRouteForTiming =
-          routeSourceKeyForTiming !== '' &&
-          routeDestinationKeyForTiming !== '' &&
-          routeSourceKeyForTiming !== routeDestinationKeyForTiming &&
-          directToNextForTiming === 1;
-
-        if (!isLastRoute && !isIntercityDirectRouteForTiming) {
-        // Get travel time for the intercity leg: source city → destination city (outstation type=2).
-        // Must use sourceCity→destinationCity, NOT destinationCity→destinationCity,
-        // otherwise same-city lookup returns ~0 and the cutoff is never reduced.
-        const hotelTravelResult = await this.distanceHelper.fromSourceAndDestination(
-          tx,
-          sourceCity,
-          destinationCity,
-          2, // type=2 (outstation travel)
-          undefined, // no coord bias — use DB city-level distance
-          destCityCoords,
-        );
-        
-        const travelPlusBufferSeconds = 
-          timeToSeconds(hotelTravelResult.travelTime) + 
-          timeToSeconds(hotelTravelResult.bufferTime);
-        
-        // Latest hotspot end = route end time - travel to hotel
-        latestNonHotelEndSeconds = routeEndSeconds - travelPlusBufferSeconds;
-        
-        // Convert to time string for logging
-        if (latestNonHotelEndSeconds > 0) {
-          const hours = Math.floor(latestNonHotelEndSeconds / 3600);
-          const minutes = Math.floor((latestNonHotelEndSeconds % 3600) / 60);
-          const seconds = latestNonHotelEndSeconds % 60;
-          latestNonHotelEndTime = `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-        } else {
-          latestNonHotelEndSeconds = 0;
-          latestNonHotelEndTime = "00:00:00";
-        }
-      }
 
       // 2) SELECTED HOTSPOTS FOR THIS ROUTE
       // DAY-1 DIFFERENT CITIES: If Day 1 and source city != destination city, enforce max 3 priority hotspots
