@@ -97,6 +97,16 @@ import { ItineraryActivityImpactService } from './services/itinerary-activity-im
 import { ItineraryTransportFormattingService } from './services/itinerary-transport-formatting.service';
 import { ItineraryActivityPricingService } from './services/itinerary-activity-pricing.service';
 import { ItineraryActivityTimingPolicyService } from './services/itinerary-activity-timing-policy.service';
+import {
+  formatDateOnly,
+  inferMealPlanFromInclusions,
+  normalizeManualHotspotIds,
+  normalizeToArray,
+  normalizeToUniqueStrings,
+  parseCsvNumberList,
+  parseRouteFamilyQuote,
+  toDateOnly,
+} from './services/itinerary-input-normalization.service';
 import { ItineraryVehicleBuildStatusService } from './services/itinerary-vehicle-build-status.service';
 import { ItineraryVehicleBuildService } from './services/itinerary-vehicle-build.service';
 import { ItineraryPlanPersistenceService } from './services/itinerary-plan-persistence.service';
@@ -496,37 +506,6 @@ export class ItinerariesService {
     return now;
   }
 
-  private parseRouteFamilyQuote(quoteId: string | undefined | null): {
-    baseQuoteId: string;
-    routeVariantIndex: number | null;
-  } | null {
-    const raw = String(quoteId || '').trim();
-    if (!raw) return null;
-
-    const match = raw.match(/^(.*)-R(\d+)$/i);
-    if (!match) {
-      return {
-        baseQuoteId: raw,
-        routeVariantIndex: null,
-      };
-    }
-
-    const baseQuoteId = String(match[1] || '').trim();
-    const routeVariantIndex = Number.parseInt(String(match[2] || ''), 10);
-
-    if (!baseQuoteId || !Number.isFinite(routeVariantIndex) || routeVariantIndex <= 0) {
-      return {
-        baseQuoteId: raw,
-        routeVariantIndex: null,
-      };
-    }
-
-    return {
-      baseQuoteId,
-      routeVariantIndex,
-    };
-  }
-
   private async applySameCityCrossDayOptimizerAfterSave(planId: number, quoteId?: string | null): Promise<void> {
     const result = await this.sameCityCrossDayOptimizerService.analyzePlanId(planId, {
       quoteId: quoteId || undefined,
@@ -775,7 +754,7 @@ export class ItinerariesService {
       compareManualScheduleAttempts: (...args) => (this.compareManualScheduleAttempts as any)(...args),
     });
     this.manualFitCandidateDataService.setCallbacks({
-      normalizeManualHotspotIds: (...args) => (this.normalizeManualHotspotIds as any)(...args),
+      normalizeManualHotspotIds: (...args) => normalizeManualHotspotIds((args[0] || []) as any[]),
       normalizeHotspotPriority: (...args) => (this.normalizeHotspotPriority as any)(...args),
       getHotspotDurationMinutes: (...args) => (this.getHotspotDurationMinutes as any)(...args),
       classifyHotspotsForManualInsertion: (...args) => (this.classifyHotspotsForManualInsertion as any)(...args),
@@ -789,7 +768,7 @@ export class ItinerariesService {
       manualRowHasNoOverlap: (...args) => (this.manualHotspotOverlapService.manualRowHasNoOverlap as any)(...args),
     });
     this.manualHotspotRowTimingService.setCallbacks({
-      normalizeManualHotspotIds: (...args) => (this.normalizeManualHotspotIds as any)(...args),
+      normalizeManualHotspotIds: (...args) => normalizeManualHotspotIds((args[0] || []) as any[]),
       computeRowDurationMinutes: (...args) => (this.computeRowDurationMinutes as any)(...args),
       minutesToUtcTimeDate: (...args) => (this.minutesToUtcTimeDate as any)(...args),
     });
@@ -837,7 +816,7 @@ export class ItinerariesService {
     this.confirmationService.setCallbacks({
       syncSelectedHotelDraftRowsForConfirmation: (...args) => (this.syncSelectedHotelDraftRowsForConfirmation as any)(...args),
       getAgentWalletBalance: (...args) => (this.getAgentWalletBalance as any)(...args),
-      formatDateOnly: (...args) => (this.formatDateOnly as any)(...args),
+      formatDateOnly: (...args) => formatDateOnly(args[0] as Date | string | null | undefined),
       copyDraftToConfirmed: (...args) => (this.copyDraftToConfirmed as any)(...args),
     });
     this.hotelConfirmationSupportService.setCallbacks({
@@ -851,9 +830,9 @@ export class ItinerariesService {
       getAgentWalletBalance: (...args) => (this.getAgentWalletBalance as any)(...args),
     });
     this.hotelPrebookService.setCallbacks({
-      normalizeToArray: (...args) => (this.normalizeToArray as any)(...args),
-      normalizeToUniqueStrings: (...args) => (this.normalizeToUniqueStrings as any)(...args),
-      inferMealPlanFromInclusions: (...args) => (this.inferMealPlanFromInclusions as any)(...args),
+      normalizeToArray: (...args) => normalizeToArray(args[0]),
+      normalizeToUniqueStrings: (...args) => normalizeToUniqueStrings((args[0] || []) as any[]),
+      inferMealPlanFromInclusions: (...args) => inferMealPlanFromInclusions((args[0] || []) as string[]),
       getProviderBookableHotelBookings: (...args) => (this.confirmationService.getProviderBookableHotelBookings as any)(...args),
     });
     this.hotelBookingFulfillmentService.setCallbacks({
@@ -867,7 +846,7 @@ export class ItinerariesService {
       getProviderBookableHotelBookings: (...args) => (this.confirmationService.getProviderBookableHotelBookings as any)(...args),
     });
     this.voucherReadService.setCallbacks({
-      toDateOnly: (...args) => (this.toDateOnly as any)(...args),
+      toDateOnly: (...args) => toDateOnly(args[0] as Date | string | null | undefined),
       getInvoiceToLabel: (...args) => (this.getInvoiceToLabel as any)(...args),
       getVoucherStatusLabel: (...args) => (this.getVoucherStatusLabel as any)(...args),
       formatTransportVoucherDate: (...args) => (this.formatTransportVoucherDate as any)(...args),
@@ -885,7 +864,7 @@ export class ItinerariesService {
     });
     this.manualHotspotPreviewService.setCallbacks({
       ensureManualFitAttemptStoreTable: (...args) => (this.manualFitAttemptStoreService.ensureTable as any)(...args),
-      normalizeManualHotspotIds: (...args) => (this.normalizeManualHotspotIds as any)(...args),
+      normalizeManualHotspotIds: (...args) => normalizeManualHotspotIds((args[0] || []) as any[]),
       isRetryableManualPreviewTransactionError: (...args) => (this.isRetryableManualPreviewTransactionError as any)(...args),
       runManualHotspotBatchWithinTransaction: (...args) => (this.manualHotspotBatchService.runManualHotspotBatchWithinTransaction as any)(...args),
     });
@@ -1103,7 +1082,7 @@ export class ItinerariesService {
       computeRowDurationMinutes: (...args) => (this.computeRowDurationMinutes as any)(...args),
       parsePreviewTimeRangeToUtcDates: (...args) => (this.parsePreviewTimeRangeToUtcDates as any)(...args),
       minutesToUtcTimeDate: (...args) => (this.minutesToUtcTimeDate as any)(...args),
-      normalizeManualHotspotIds: (...args) => (this.normalizeManualHotspotIds as any)(...args),
+      normalizeManualHotspotIds: (...args) => normalizeManualHotspotIds((args[0] || []) as any[]),
       isRetryableManualPreviewTransactionError: (...args) => (this.isRetryableManualPreviewTransactionError as any)(...args),
     });
     this.manualFitMatrixPlanningService.setCallbacks({
@@ -1191,20 +1170,6 @@ export class ItinerariesService {
     this.routeLegCacheService.setCallbacks({
       getOsrmRouteGeometry: (...args) => (this.getOsrmRouteGeometry as any)(...args),
     });
-  }
-
-  private parseCsvNumberList(value: unknown): number[] {
-    return String(value ?? '')
-      .split(',')
-      .map((item) => Number(String(item).trim()))
-      .filter((item) => Number.isFinite(item) && item > 0);
-  }
-
-  private formatDateOnly(value?: Date | string | null): string | null {
-    if (!value) return null;
-    const dt = value instanceof Date ? value : new Date(value);
-    if (!Number.isFinite(dt.getTime())) return null;
-    return dt.toISOString().slice(0, 10);
   }
 
   private calculateActivityPlanPricing(...args: any[]) {
@@ -1340,60 +1305,6 @@ private getGuideSlotLabel(slotId: number): string {
 
   async triggerVehicleBuild(planId: number, req: any): Promise<VehicleBuildStatus> {
     return this.vehicleBuildService.triggerVehicleBuild(planId, req);
-  }
-
-  /**
-   * Normalize field values to arrays safely.
-   * Handles string, array, object, null, undefined without spreading strings into characters.
-   */
-  private normalizeToArray(value: any): any[] {
-    if (!value) return [];
-    if (Array.isArray(value)) return value;
-    if (typeof value === 'string' && value.trim()) return [value.trim()];
-    if (value && typeof value === 'object') return [value];
-    return [];
-  }
-
-  private normalizeToUniqueStrings(items: any[]): string[] {
-    const seen = new Set<string>();
-    const out: string[] = [];
-
-    for (const item of items) {
-      let text = '';
-
-      if (typeof item === 'string' || typeof item === 'number' || typeof item === 'boolean') {
-        text = String(item).trim();
-      } else if (item && typeof item === 'object') {
-        text = String(item?.name || item?.text || item?.description || item?.label || '').trim();
-        if (!text) {
-          try {
-            text = JSON.stringify(item);
-          } catch {
-            text = '';
-          }
-        }
-      }
-
-      if (!text) continue;
-      const key = text.toLowerCase();
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push(text);
-    }
-
-    return out;
-  }
-
-  private inferMealPlanFromInclusions(items: string[]): string | null {
-    const haystack = items.join(' ').toLowerCase();
-    if (!haystack) return null;
-
-    if (haystack.includes('full board')) return 'Full Board';
-    if (haystack.includes('half board')) return 'Half Board';
-    if (haystack.includes('room only') || haystack.includes('no meals')) return 'Room Only';
-    if (haystack.includes('breakfast')) return 'Breakfast Included';
-
-    return null;
   }
 
   async createPlan(
@@ -1690,13 +1601,6 @@ private getGuideSlotLabel(slotId: number): string {
   async getTransportVoucherDetails(itineraryPlanId: number): Promise<TransportVoucherDetails> {
     return this.voucherReadService.getTransportVoucherDetails(itineraryPlanId);
   }
-  private toDateOnly(value: Date | string | null | undefined): string {
-    if (!value) return '';
-    const date = value instanceof Date ? value : new Date(value);
-    if (Number.isNaN(date.getTime())) return '';
-    return date.toISOString().split('T')[0];
-  }
-
   private getInvoiceToLabel(invoiceTo: number): string {
     switch (Number(invoiceTo || 0)) {
       case 1:
@@ -1817,16 +1721,6 @@ private getGuideSlotLabel(slotId: number): string {
   async applyManualHotspotsBatch(...args: any[]) {
     return (this.manualHotspotMutationService.applyManualHotspotsBatch as any)(...args);
   }
-  private normalizeManualHotspotIds(ids: any[]): number[] {
-    return Array.from(
-      new Set(
-        (ids || [])
-          .map((id: any) => Number(id))
-          .filter((id: number) => Number.isFinite(id) && id > 0),
-      ),
-    );
-  }
-
   private async inferDetourOptimizedAnchorIndex(...args: any[]) {
     return (this.manualFitMatrixPlanningService.inferDetourOptimizedAnchorIndex as any)(...args);
   }
@@ -2215,7 +2109,7 @@ private getGuideSlotLabel(slotId: number): string {
       },
     });
 
-    return this.normalizeManualHotspotIds([
+    return normalizeManualHotspotIds([
       ...seedHotspotIds,
       ...(rows || []).map((row: any) => Number(row?.hotspot_ID || 0)),
     ]);
@@ -3200,7 +3094,7 @@ private getGuideSlotLabel(slotId: number): string {
       anchorIndex?: number;
     },
   ): Promise<void> {
-    const normalizedManualHotspotIds = this.normalizeManualHotspotIds(manualHotspotIds);
+    const normalizedManualHotspotIds = normalizeManualHotspotIds(manualHotspotIds);
     if (normalizedManualHotspotIds.length === 0) return;
 
     const routeRows = await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
@@ -3223,7 +3117,7 @@ private getGuideSlotLabel(slotId: number): string {
       ],
     });
 
-    const hotspotMasterIds = this.normalizeManualHotspotIds([
+    const hotspotMasterIds = normalizeManualHotspotIds([
       ...normalizedManualHotspotIds,
       ...(routeRows || []).map((row: any) => Number(row?.hotspot_ID || 0)),
     ]);
