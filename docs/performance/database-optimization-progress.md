@@ -494,3 +494,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Empty activity IDs still skip master and gallery reads, while populated IDs preserve route-specific amount/time formatting and gallery URLs.
 - This is not a measured database performance improvement: catalog count frequency, activity/gallery row volume, hydration latency and details response latency remain unmeasured.
 - No index addition/removal or Redis action is proposed; future work should capture activity lookup plans, gallery cardinality and per-attraction query traces before batching or caching catalog data.
+
+## Iteration 118 evidence update
+
+- The attraction-timing extraction preserves route-day filtering, closed/open-all-day predicates, window-fit comparisons, next-opening selection and operating-hours formatting; no SQL predicate, index, Redis cache or response shape changed.
+- Timing rows are still supplied by the existing upstream read and remain fresh per route date; the tier changes ownership only.
+- This is not a measured database performance improvement: timing-row volume, window-evaluation CPU, label frequency and details response latency remain unmeasured.
+- No index addition/removal or Redis action is proposed; future work should capture timing lookup plans and per-route timing cardinality before precomputing or caching day-window projections.

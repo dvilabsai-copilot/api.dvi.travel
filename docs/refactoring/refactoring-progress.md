@@ -3734,3 +3734,31 @@
 - `itinerary-details.service.ts` measured at 4,379 lines after the tier; `itinerary-details-attraction-activity.service.ts` is 95 lines.
 - Activity catalog query cost, gallery volume, master hydration latency and timeline response latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `fc70bb4`.
+
+### Cycle 121 - Extract itinerary-details attraction timing policy
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itinerary-details.service.ts`
+- Extracted responsibility: attraction visit-window validation, closed/opening/outside-hours display and operating-hours projection
+- New files: `src/modules/itineraries/services/itinerary-details-attraction-timing.service.ts`, `test/itinerary-details-attraction-timing.test.ts`
+- Workflow: per-attraction itinerary-details timing projection
+
+#### Change
+
+- Moved route-day timing validation, next-opening/outside-hours labeling and operating-hours formatting behind `ItineraryDetailsAttractionTimingService`.
+- Preserved day-of-week calculation, open-all-day behavior, closed-day behavior, window-fit semantics, callback formatting and attraction response fields.
+- No SQL predicate, index, Redis cache, API route, DTO or response contract changed.
+
+#### Verification
+
+- Attraction-timing characterization tests: PASS, 2/2
+- Itinerary characterization collection: PASS, 171/171
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itinerary-details.service.ts` measured at 4,309 lines after the tier; `itinerary-details-attraction-timing.service.ts` is 110 lines.
+- Timing-window evaluation CPU, closed/opening frequency, timing-row volume and timeline response latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `0036cee`.

@@ -388,6 +388,8 @@ The iteration-116 itinerary-details regular-travel boundary is a measurement sea
 
 The iteration-117 itinerary-details attraction-activity boundary is a measurement seam for catalog-count frequency, route-activity row volume, activity-master hydration latency, gallery row volume, gallery projection CPU, empty-activity short-circuit rate and end-to-end timeline response latency. Capture no-activity, catalog-only, one-activity, multi-activity, missing-master, duplicate-gallery and large-route workloads separately before replacing per-attraction reads with batched hydration or caching immutable catalog media; preserve activity ordering, route-specific amounts/times, gallery URL shape and response freshness. No index addition/removal or Redis cache is justified until activity query plans and gallery traces establish the measured winner.
 
+The iteration-118 itinerary-details attraction-timing boundary is a measurement seam for timing-row volume, window-fit evaluation count, closed-day frequency, next-opening label frequency, open-all-day frequency, timing projection CPU and end-to-end timeline response latency. Capture missing-range, closed-day, open-all-day, single-window, multi-window, outside-hours and large-route workloads separately before precomputing day windows or caching timing projections; preserve route-date freshness, day-of-week semantics, overnight handling and display labels. No index addition/removal or Redis cache is justified until timing query plans and route traces establish the measured winner.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.
