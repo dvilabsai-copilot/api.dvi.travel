@@ -37,6 +37,7 @@ import { ItineraryDetailsSourceTravelService } from './services/itinerary-detail
 import { ItineraryDetailsViaTravelService } from './services/itinerary-details-via-travel.service';
 import { ItineraryDetailsRegularTravelService } from './services/itinerary-details-regular-travel.service';
 import { ItineraryDetailsAttractionActivityService } from './services/itinerary-details-attraction-activity.service';
+import { ItineraryDetailsAttractionTimingService } from './services/itinerary-details-attraction-timing.service';
 
 // ---------------------------------------------------------------------------
 // DTOs for Itinerary Details response (shared shape with frontend)
@@ -438,6 +439,7 @@ export class ItineraryDetailsService {
   private readonly viaTravelService = new ItineraryDetailsViaTravelService();
   private readonly regularTravelService = new ItineraryDetailsRegularTravelService();
   private readonly attractionActivityService = new ItineraryDetailsAttractionActivityService();
+  private readonly attractionTimingService = new ItineraryDetailsAttractionTimingService();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -1552,100 +1554,28 @@ for (const row of vehicleKmRows) {
               formatDuration: (value) => this.formatDuration(value),
             });
 
-          // Check if there's wait time due to opening hours
-          const orderedVisitRange = this.orderedTimeRange(startTimeText, endTimeText);
-          let visitTimeDisplay = orderedVisitRange;
-
-          let timingValidationExecuted = false;
-          let timingValidationPassed = false;
-          let timingValidationSkippedReason: string | null = null;
-
-          if (visitTimeDisplay && rh.hotspot_ID && route.itinerary_route_date) {
-            timingValidationExecuted = true;
-            const timings = hotspotTimingMap.get(rh.hotspot_ID as number) || [];
-            const dayOfWeek = (route.itinerary_route_date.getDay() + 6) % 7; // Mon=0 style
-
-            const dayTimings = timings.filter(t => Number(t.hotspot_timing_day) === dayOfWeek);
-            const todayTimings = dayTimings.filter(t => t.hotspot_closed !== 1);
-
-            if (dayTimings.length > 0 && todayTimings.length === 0) {
-              visitTimeDisplay = orderedVisitRange
-                ? `${orderedVisitRange} (closed on this day)`
-                : null;
-            }
-
-            if (todayTimings.length > 0) {
-              const isOpenAllTime = todayTimings.some(t => t.hotspot_open_all_time === 1);
-              
-              if (!isOpenAllTime) {
-                const visitStartText = orderedVisitRange
-                  ? String(orderedVisitRange).split(' - ')[0]?.trim()
-                  : startTimeText;
-                const visitEndText = orderedVisitRange
-                  ? String(orderedVisitRange).split(' - ')[1]?.trim()
-                  : endTimeText;
-
-                const arrivalMins = this.timeToMinutes(visitStartText);
-                const departureMins = this.timeToMinutes(visitEndText);
-                
-                // Check if visit fits in ANY window
-                const fitsInAnyWindow = todayTimings.some(t => {
-                  const opStart = this.timeToMinutes(this.formatTime(t.hotspot_start_time as any));
-                  const opEnd = this.timeToMinutes(this.formatTime(t.hotspot_end_time as any));
-                  return arrivalMins >= opStart && departureMins <= opEnd;
-                });
-
-                if (!fitsInAnyWindow) {
-                  // Find the next opening time after arrival
-                  const nextOpening = todayTimings
-                    .map(t => this.formatTime(t.hotspot_start_time as any))
-                    .filter(ot => this.timeToMinutes(ot) > arrivalMins)
-                    .sort((a, b) => this.timeToMinutes(a) - this.timeToMinutes(b))[0];
-
-                  if (nextOpening) {
-                    visitTimeDisplay = orderedVisitRange
-                      ? `${orderedVisitRange} (opens at ${nextOpening})`
-                      : null;
-                  } else {
-                    visitTimeDisplay = orderedVisitRange
-                      ? `${orderedVisitRange} (outside operating hours)`
-                      : null;
-                  }
-                }
-                timingValidationPassed = fitsInAnyWindow;
-              } else {
-                timingValidationPassed = true;
-              }
-            } else {
-              timingValidationSkippedReason = 'No open timings configured for the route day';
-            }
-          } else {
-            timingValidationSkippedReason = 'Missing visit range, hotspot id, or route date';
-          }
+          const timingProjection = this.attractionTimingService.build({
+            routeDate: route.itinerary_route_date,
+            hotspotId: rh.hotspot_ID as number,
+            startTimeText,
+            endTimeText,
+            timings: hotspotTimingMap.get(rh.hotspot_ID as number) || [],
+            orderedTimeRange: (start, end) => this.orderedTimeRange(start, end),
+            timeToMinutes: (value) => this.timeToMinutes(value),
+            formatTime: (value) => this.formatTime(value),
+          });
+          const {
+            visitTimeDisplay,
+            operatingHours,
+            timingValidationExecuted,
+            timingValidationPassed,
+            timingValidationSkippedReason,
+          } = timingProjection;
 
           if (isForcedManualConflictAttraction) {
             // These rows are rendered via the synthetic sequence injected before regular travel.
             // Skipping raw rows here prevents duplicate conflict attractions in timeline output.
             continue;
-          }
-
-          // Format operating hours (timings)
-          let operatingHours = '';
-          const timings = rh.hotspot_ID ? hotspotTimingMap.get(rh.hotspot_ID as number) || [] : [];
-          const dayOfWeek = route.itinerary_route_date ? (route.itinerary_route_date.getDay() + 6) % 7 : 0;
-          const dayTimings = timings.filter(t => Number(t.hotspot_timing_day) === dayOfWeek);
-          const todayTimings = dayTimings.filter(t => t.hotspot_closed !== 1);
-
-          if (dayTimings.length > 0 && todayTimings.length === 0) {
-            operatingHours = 'Closed';
-          } else if (todayTimings.length > 0) {
-            if (todayTimings.some(t => t.hotspot_open_all_time === 1)) {
-              operatingHours = 'Open 24 Hours';
-            } else {
-              operatingHours = todayTimings
-                .map(t => `${this.formatTime(t.hotspot_start_time as any)} - ${this.formatTime(t.hotspot_end_time as any)}`)
-                .join(', ');
-            }
           }
 
           const entryTicket = buildEntryTicketBreakdown({
