@@ -417,3 +417,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Attraction sequence ordering, conflict-row suppression, prior-hotel check-in handling, semantic IDs and travel labels remain unchanged.
 - This is not a measured database performance improvement: route-hotspot scan cost, semantic CPU, travel-row volume and details response latency remain unmeasured.
 - No index or Redis action is proposed; future work should profile route timeline row volume and semantic projection before memoizing or caching mutable timeline data.
+
+## Iteration 107 evidence update
+
+- The route-hotspot-data extraction preserves the existing raw SQL fields, route/plan/status/deleted predicates, hotspot master/timing/gallery predicates, ordering and response maps; no SQL predicate, index, Redis cache or response shape changed.
+- Chronological sort tie-breaks, lookup-name normalization, timing grouping, gallery URL construction and empty-route short-circuits remain unchanged.
+- This is not a measured database performance improvement: route-hotspot latency, row volume, reference-data fan-out, map CPU and details response latency remain unmeasured.
+- No index addition/removal or Redis action is proposed; future work should capture route-hotspot query plans and row-volume traces before batching or caching mutable hotspot data.

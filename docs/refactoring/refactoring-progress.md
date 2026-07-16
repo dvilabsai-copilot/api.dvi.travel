@@ -3426,3 +3426,31 @@
 - `itinerary-details.service.ts` measured at 5,447 lines after the tier; `itinerary-details-travel-semantics.service.ts` is 103 lines.
 - Semantic reconstruction CPU, travel-row volume and timeline response projection latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `e0f0aef`.
+
+### Cycle 110 - Extract itinerary-details route hotspot data hydration
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itinerary-details.service.ts`
+- Extracted responsibility: route-hotspot SQL hydration, chronological sorting, hotspot master/name indexing, opening-hour timing indexing and gallery URL indexing
+- New files: `src/modules/itineraries/services/itinerary-details-route-hotspot-data.service.ts`, `test/itinerary-details-route-hotspot-data.test.ts`
+- Workflow: per-route itinerary-details timeline preparation
+
+#### Change
+
+- Moved route-hotspot and related master/timing/gallery reads behind `ItineraryDetailsRouteHotspotDataService` and returned the same maps to the existing projection loop.
+- Preserved raw SQL fields and predicates, chronological tie-break ordering, name normalization, timing grouping, gallery ordering and empty-route read short-circuits.
+- No query predicate, index, Redis cache, API route, DTO or response contract changed.
+
+#### Verification
+
+- Route-hotspot-data characterization tests: PASS, 2/2
+- Itinerary characterization collection: PASS, 155/155
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itinerary-details.service.ts` measured at 5,331 lines after the tier; `itinerary-details-route-hotspot-data.service.ts` is 143 lines.
+- Route-hotspot query latency, row volume, master/timing/gallery fan-out and map-construction CPU remain unmeasured.
+- Implementation commit: `api.dvi.travel` `164db40`.
