@@ -38,6 +38,7 @@ import { ItineraryDetailsViaTravelService } from './services/itinerary-details-v
 import { ItineraryDetailsRegularTravelService } from './services/itinerary-details-regular-travel.service';
 import { ItineraryDetailsAttractionActivityService } from './services/itinerary-details-attraction-activity.service';
 import { ItineraryDetailsAttractionTimingService } from './services/itinerary-details-attraction-timing.service';
+import { ItineraryDetailsHotelTravelOriginService } from './services/itinerary-details-hotel-travel-origin.service';
 
 // ---------------------------------------------------------------------------
 // DTOs for Itinerary Details response (shared shape with frontend)
@@ -440,6 +441,7 @@ export class ItineraryDetailsService {
   private readonly regularTravelService = new ItineraryDetailsRegularTravelService();
   private readonly attractionActivityService = new ItineraryDetailsAttractionActivityService();
   private readonly attractionTimingService = new ItineraryDetailsAttractionTimingService();
+  private readonly hotelTravelOriginService = new ItineraryDetailsHotelTravelOriginService();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -1647,78 +1649,24 @@ for (const row of vehicleKmRows) {
           // place future attractions before this travel-to-hotel row in the array.
           
           const hotelInfo = routeHotelMap.get(route.itinerary_route_ID);
-          const toName =
-            isVehicleOnly
-              ? 'Hotel'
-              : (
-                hotelInfo?.hotel_name ??
-                hotelInfo?.hotel_city ??
-                location?.destination_location ??
-                route.next_visiting_location ??
-                'Hotel'
-              );
+          const hotelTravelOrigin = this.hotelTravelOriginService.resolve({
+            hotelInfo,
+            isVehicleOnly,
+            location,
+            route,
+            plan,
+            previousDayHotelName: index > 0
+              ? routeHotelMap.get(routes[index - 1].itinerary_route_ID)?.hotel_name ?? null
+              : null,
+            routeHotspots,
+            hotspotMap,
+            startTimeText,
+            formatTime: (value) => this.formatTime(value),
+            timeToMinutes: (value) => this.timeToMinutes(value),
+          });
+          const { fromName, toName } = hotelTravelOrigin;
 
-          const normalizeLabel = (value?: string | null) =>
-            String(value ?? '').trim().toLowerCase();
-          const sourceCityName = location?.source_location ?? route.location_name ?? '';
-          const destinationCityName = location?.destination_location ?? route.next_visiting_location ?? '';
-          const isSameCityRoute =
-            normalizeLabel(sourceCityName) !== '' &&
-            normalizeLabel(sourceCityName) === normalizeLabel(destinationCityName);
-          const isCityFallbackDestination =
-            !hotelInfo?.hotel_name &&
-            normalizeLabel(toName) !== '' &&
-            normalizeLabel(toName) === normalizeLabel(destinationCityName);
-
-          const travelStartMins = startTimeText ? this.timeToMinutes(startTimeText) : null;
-
-          // Find the chronologically last attraction that actually happened before this row.
-          // Fallback: use previous day's hotel name (if any), otherwise city name.
-          const prevDayHotelForItem5 = index > 0
-            ? routeHotelMap.get(routes[index - 1].itinerary_route_ID)?.hotel_name ?? null
-            : null;
-
-          let fromName =
-            prevDayHotelForItem5 ??
-            location?.source_location ??
-            route.location_name ??
-            plan.arrival_location ??
-            ""; // Safe fallback
-
-          if (travelStartMins !== null) {
-            let bestAttractionName: string | null = null;
-            let bestAttractionEnd = -1;
-
-            for (const candidate of routeHotspots) {
-              const candidateType = Number((candidate as any).item_type ?? 0);
-              if (candidateType !== 4 || Number(candidate.hotspot_ID ?? 0) <= 0) continue;
-
-              const candidateEndText = this.formatTime((candidate as any).hotspot_end_time ?? null);
-              if (!candidateEndText) continue;
-              const candidateEndMins = this.timeToMinutes(candidateEndText);
-
-              if (candidateEndMins <= travelStartMins && candidateEndMins >= bestAttractionEnd) {
-                const candidateMaster = hotspotMap.get(candidate.hotspot_ID as number);
-                if (candidateMaster?.hotspot_name?.trim()) {
-                  bestAttractionName = candidateMaster.hotspot_name;
-                  bestAttractionEnd = candidateEndMins;
-                }
-              }
-            }
-
-            if (bestAttractionName) {
-              fromName = bestAttractionName;
-            }
-          }
-
-          // Only suppress same-city hotel travel when the segment collapses into a redundant
-          // city-to-same-city label because the hotel could not be resolved beyond the city name.
-          if (
-            isSameCityRoute &&
-            isCityFallbackDestination &&
-            normalizeLabel(fromName) !== '' &&
-            normalizeLabel(fromName) === normalizeLabel(toName)
-          ) {
+          if (hotelTravelOrigin.shouldSuppress) {
             continue;
           }
 
