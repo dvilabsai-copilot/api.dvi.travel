@@ -39,3 +39,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Static Prisma-call ownership remains 11 matches in `timeline.builder.ts`; this tier has no database call to optimize or relocate.
 - This is not a measured performance improvement: selection volume, sort CPU, response payload and rebuild latency remain unmeasured.
 - Any future memoization or Redis proposal must first prove stable placement-input versions and route/preview scope isolation; no cache rollout is approved by this tier.
+
+## Iteration 53 evidence update
+
+- The destination-loopback reservation extraction preserved the existing candidate read callback and transaction ownership; no SQL, index, Redis cache or query shape was changed.
+- Builder-local static Prisma-call ownership remains 11 matches because the extracted policy delegates candidate reads rather than changing their SQL.
+- This is not a measured performance improvement: next-route candidate latency, rows examined, fallback/rescue volume and rebuild latency remain unmeasured.
+- Required evidence before any index or Redis proposal is a route-build trace with eligible/ineligible reservation branches, candidate counts and query plans captured against the same fixture.

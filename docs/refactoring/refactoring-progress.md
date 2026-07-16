@@ -1856,3 +1856,32 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Placement invocation rate, scoped-preview reduction, manual-row volume, ordering CPU and route rebuild latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `39afb12`.
+
+### Cycle 56 - Extract destination-loopback reservation policy
+
+#### Scope
+
+- Original file: `src/modules/itineraries/engines/helpers/timeline.builder.ts`
+- Extracted responsibility: destination reservation feasibility, destination-bucket filtering, source fallback, empty-route rescue and reservation diagnostics
+- New files: `src/modules/itineraries/engines/helpers/timeline-destination-reservation.service.ts`, `test/timeline-destination-reservation.test.ts`
+- Workflow: selected-hotspot reservation policy before explicit via/direct source cleanup and carry-forward attachment
+
+#### Change
+
+- Moved destination-loopback reservation and source-city rescue behind `TimelineDestinationReservationService`.
+- Preserved next-route candidate availability checks, capacity-based minimums, destination filtering, source fallback matching, empty-route rescue, deterministic de-duplication and booking-rule diagnostics.
+- Kept explicit via/direct cleanup, carry-forward merging, matrix augmentation and timeline scheduling in `TimelineBuilder`.
+
+#### Verification
+
+- Destination reservation characterization tests: PASS, 3/3
+- Combined focused backend/timeline suite: PASS, 115/115
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `timeline.builder.ts` measured at 6,754 lines after the tier; `TimelineDestinationReservationService` is 317 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Reservation eligibility frequency, next-route candidate volume, fallback/rescue frequency, de-duplication CPU and route rebuild latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `5dd6ee4`.
