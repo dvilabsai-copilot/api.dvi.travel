@@ -312,6 +312,8 @@ The iteration-78 manual-fit candidate-simulation boundary is a measurement seam 
 
 The iteration-79 manual-fit candidate-search boundary is a measurement seam for position-ordering CPU, candidate count, per-position simulation count, route-read latency, slot-insight projection CPU, selected-position rebuild latency, cluster-strategy count and end-to-end search latency. Capture preferred-order, exact-anchor, source-side, destination-side, empty-position and multi-strategy workloads separately before reducing attempts or caching candidates; preserve position precedence, fallback envelopes, selected strategy metadata and rebuild timing.
 
+The iteration-80 manual-fit candidate-data boundary is a measurement seam for route-hotspot read latency, master read latency, active timing-row fan-out, timing-window formatting CPU, candidate-row count, priority classification CPU and end-to-end input assembly latency. Capture empty-route, manual-only, mixed-priority, open-24-hours, multi-window and missing-master workloads separately before batching reads or caching timing data; preserve active predicates, timing order, UTC labels and candidate fields.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.

@@ -2648,3 +2648,33 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Position count, per-position query fan-out, strategy count, fallback frequency and candidate-search latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `15295d4`.
+
+### Cycle 83 - Extract manual-fit candidate data projection
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: route hotspot/master/timing reads and candidate-row projection
+- New files: `src/modules/itineraries/services/itinerary-manual-fit-candidate-data.service.ts`, `test/itinerary-manual-fit-candidate-data.test.ts`
+- Workflow: manual-fit candidate search input assembly
+
+#### Change
+
+- Moved active route-hotspot reads, hotspot-master reads, active timing-window reads, UTC time formatting, priority projection, duration mapping and candidate classification behind `ItineraryManualFitCandidateDataService`.
+- Preserved route/item/deleted predicates, timing ordering, open-24-hours precedence, priority semantics and candidate response fields.
+- Registered the service in `ItinerariesModule` and retained facade callback adapters for normalization, duration and classification policies.
+
+#### Verification
+
+- Manual-fit candidate-data characterization tests: PASS, 1/1
+- Combined focused backend/timeline suite: PASS, 180/180
+- Backend build: PASS
+- Nest/OpenAPI initialization: PASS, 499 paths
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 6,609 lines after the tier; `ItineraryManualFitCandidateDataService` is 129 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Read fan-out, timing-row selectivity, master lookup latency, candidate-row count and timing-format CPU remain unmeasured.
+- Implementation commit: `api.dvi.travel` `c08143f`.
