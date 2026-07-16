@@ -1283,37 +1283,8 @@ private getGuideSlotLabel(slotId: number): string {
     return this.guideAssignmentWriteService.saveGuideAssignment(planId, payload, userId);
   }
   async deleteGuideAssignment(planId: number, routeGuideId: number, routeId?: number) {
-    if (!(planId > 0)) {
-      throw new BadRequestException('planId is required');
-    }
-    if (!(routeGuideId > 0)) {
-      throw new BadRequestException('routeGuideId is required');
-    }
-
-    const whereGuide: any = {
-      route_guide_ID: routeGuideId,
-      itinerary_plan_ID: planId,
-    };
-    if (routeId && routeId > 0) {
-      whereGuide.itinerary_route_ID = routeId;
-    }
-
-    await this.prisma.$transaction(async (tx) => {
-      await tx.dvi_itinerary_route_guide_slot_cost_details.deleteMany({
-        where: {
-          route_guide_id: routeGuideId,
-          itinerary_plan_id: planId,
-        } as any,
-      });
-
-      await tx.dvi_itinerary_route_guide_details.deleteMany({
-        where: whereGuide,
-      });
-    });
-
-    return { success: true };
+    return this.guideAssignmentWriteService.deleteGuideAssignment(planId, routeGuideId, routeId);
   }
-
   private async ensureConfirmedGuideSlotCostRows(
     tx: any,
     itineraryPlanId: number,

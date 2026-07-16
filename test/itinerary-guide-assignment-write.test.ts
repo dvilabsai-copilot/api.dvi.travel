@@ -61,3 +61,24 @@ test('persists a route guide and rebuilds its slot-cost rows', async () => {
   assert.deepEqual(result, { success: true, routeGuideId: 55, guideCost: 250 });
   assert.deepEqual(calls, ['guide.create:1,2', 'slots.deleteMany', 'slots.createMany:2']);
 });
+
+test('deletes draft slot costs before the route guide row', async () => {
+  const calls: string[] = [];
+  const tx: any = {
+    dvi_itinerary_route_guide_slot_cost_details: {
+      deleteMany: async ({ where }: any) => calls.push(`slots:${where.route_guide_id}:${where.itinerary_plan_id}`),
+    },
+    dvi_itinerary_route_guide_details: {
+      deleteMany: async ({ where }: any) => calls.push(`guide:${where.route_guide_ID}:${where.itinerary_route_ID}`),
+    },
+  };
+  const prisma: any = {
+    $transaction: async (callback: (client: any) => Promise<any>) => callback(tx),
+  };
+
+  const result = await new ItineraryGuideAssignmentWriteService(prisma, {} as any)
+    .deleteGuideAssignment(42, 55, 7);
+
+  assert.deepEqual(result, { success: true });
+  assert.deepEqual(calls, ['slots:55:42', 'guide:55:7']);
+});
