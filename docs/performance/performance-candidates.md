@@ -382,6 +382,8 @@ The iteration-113 itinerary-details hotel-first boundary is a measurement seam f
 
 The iteration-114 itinerary-details source-travel boundary is a measurement seam for source-travel row volume, destination/Hotel fallback frequency, same-place no-op rate, distance-resolver latency, segment/CTA emission cost and end-to-end timeline response latency. Capture normal, Hotel, same-place, missing-destination, coordinate-backed and distance-fallback workloads separately before batching distance reads or caching route legs; preserve mutable route/location data, distance fallback semantics and travel response fields. No index addition/removal or Redis cache is justified until distance traces and route-row evidence establish the measured winner.
 
+The iteration-115 itinerary-details via-travel boundary is a measurement seam for via-row volume, via-location selection frequency, distance-resolver latency, CTA/segment emission cost, pre-attraction travel frequency and end-to-end timeline response latency. Capture normal, missing-via, distance-fallback, attraction-first and large-route workloads separately before batching distance reads or caching route legs; preserve mutable via-route data, distance fallback semantics, CTA anchors and travel response fields. No index addition/removal or Redis cache is justified until via-row and distance traces establish the measured winner.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.

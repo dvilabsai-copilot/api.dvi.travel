@@ -473,3 +473,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Returned distance/previous-stop/pre-attraction state preserves the surrounding loop behavior.
 - This is not a measured database performance improvement: distance latency, no-op frequency, source-travel row volume and details response latency remain unmeasured.
 - No index addition/removal or Redis action is proposed; future work should capture distance lookup plans and route-row traces before batching or caching mutable travel data.
+
+## Iteration 115 evidence update
+
+- The via-travel extraction preserves via-location selection, distance-resolver arguments, CTA insertion, travel fields and accumulation state; no SQL predicate, index, Redis cache or response shape changed.
+- Via-row timing and mutable route-location freshness remain unchanged.
+- This is not a measured database performance improvement: via-row volume, distance latency, CTA frequency and details response latency remain unmeasured.
+- No index addition/removal or Redis action is proposed; future work should capture via-route and distance lookup traces before batching or caching mutable travel data.

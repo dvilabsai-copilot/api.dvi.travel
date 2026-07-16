@@ -3650,3 +3650,31 @@
 - `itinerary-details.service.ts` measured at 4,672 lines after the tier; `itinerary-details-source-travel.service.ts` is 90 lines.
 - Source-travel distance latency, no-op frequency, row volume and timeline response latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `63b9484`.
+
+### Cycle 118 - Extract itinerary-details via-route travel branch
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itinerary-details.service.ts`
+- Extracted responsibility: item-type-3 via-location travel distance resolution, CTA insertion, segment emission and loop-state updates
+- New files: `src/modules/itineraries/services/itinerary-details-via-travel.service.ts`, `test/itinerary-details-via-travel.test.ts`
+- Workflow: per-route itinerary-details timeline row projection
+
+#### Change
+
+- Moved the item-type-3 via-route branch behind `ItineraryDetailsViaTravelService` and returned explicit distance, previous-stop and pre-attraction state.
+- Preserved via-location selection, distance resolver arguments, travel range/duration formatting, CTA insertion, segment fields and accumulation behavior.
+- No SQL predicate, index, Redis cache, API route, DTO or response contract changed.
+
+#### Verification
+
+- Via-travel characterization test: PASS, 1/1
+- Itinerary characterization collection: PASS, 166/166
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itinerary-details.service.ts` measured at 4,658 lines after the tier; `itinerary-details-via-travel.service.ts` is 61 lines.
+- Via-travel distance latency, row volume, CTA frequency and timeline response latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `8e3a51b`.
