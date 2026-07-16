@@ -1681,3 +1681,32 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Fallback query latency, candidate volume, distance CPU, excluded-row volume and first-route rebuild latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `d94d80b`.
+
+### Cycle 50 - Extract route hotspot selection
+
+#### Scope
+
+- Original file: `src/modules/itineraries/engines/helpers/timeline.builder.ts`
+- Extracted responsibility: route context loading, timing-aware candidate bucketing, route-chain matching, distance ranking and final hotspot projection
+- New files: `src/modules/itineraries/engines/helpers/timeline-route-hotspot-selection.service.ts`, `test/timeline-route-hotspot-selection.test.ts`
+- Workflow: route-local hotspot candidate selection before timeline scheduling
+
+#### Change
+
+- Moved the contiguous route-hotspot selection algorithm behind `TimelineRouteHotspotSelectionService`.
+- Preserved source/en-route/via/destination bucket precedence, direct-route and via-route suppression, route-specific matching, timing reads, excluded-hotspot handling, distance fallback, de-duplication and final metadata.
+- Registered explicit city, route, coordinate, distance and logging callbacks while retaining the builder adapter for all existing callers.
+
+#### Verification
+
+- Route-hotspot selection characterization tests: PASS, 2/2
+- Combined focused backend/timeline suite: PASS, 100/100
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `timeline.builder.ts` measured at 7,826 lines after the tier; `TimelineRouteHotspotSelectionService` is 932 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Route-selection query latency, timing-row volume, candidate distance calls, bucket volume, trace I/O and rebuild latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `90152fe`.
