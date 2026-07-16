@@ -2468,3 +2468,33 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Saved-rule endpoint lookup latency, distance-helper latency, fallback frequency and transaction read volume remain unmeasured.
 - Implementation commit: `api.dvi.travel` `0271b24`.
+
+### Cycle 77 - Extract route-matrix persistence boundary
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: hotspot-place identity/upsert, route-between-map persistence, rejection lookup and source-anchor discovery
+- New files: `src/modules/itineraries/services/itinerary-manual-fit-route-matrix-persistence.service.ts`, `test/itinerary-manual-fit-route-matrix-persistence.test.ts`
+- Workflow: manual insertion-fit route intelligence and source-city OSRM anchor callbacks
+
+#### Change
+
+- Moved hotspot-place lookup/upsert, route-between-map SQL, mirrored rejection lookup, route geometry projection and source-city OSRM candidate selection behind `ItineraryManualFitRouteMatrixPersistenceService`.
+- Preserved transaction client usage, SQL predicates/parameters, mirrored route-key behavior, route-fit thresholds, source-anchor ordering and diagnostics.
+- Registered the provider in `ItinerariesModule` and retained facade callback adapters.
+
+#### Verification
+
+- Route-matrix persistence characterization tests: PASS, 3/3
+- Combined focused backend/timeline suite: PASS, 166/166
+- Backend build: PASS
+- Nest/OpenAPI initialization: PASS, 499 paths
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 8,232 lines after the tier; `ItineraryManualFitRouteMatrixPersistenceService` is 741 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Raw query latency, route-between row volume, OSRM latency, source-anchor candidate volume and transaction duration remain unmeasured.
+- Implementation commit: `api.dvi.travel` `d150659`.

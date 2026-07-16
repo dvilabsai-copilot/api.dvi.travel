@@ -300,6 +300,8 @@ The iteration-72 manual-fit travel-replica boundary is a measurement seam for ma
 
 The iteration-73 saved-rule travel-leg boundary is a measurement seam for hotspot endpoint lookup latency, route/hotel endpoint fan-out, distance-helper latency, source/hotspot/hotel leg frequency, buffer inclusion, missing-endpoint rate and transaction read volume. Capture source-to-hotspot, hotspot-to-hotspot, hotspot-to-hotel, missing-master and missing-hotel workloads separately before batching endpoint reads or caching reference data; preserve transaction scope, travel-location classification, buffer rules and response fields.
 
+The iteration-74 route-matrix persistence boundary is a measurement seam for hotspot-place identity selectivity, raw upsert/query latency, route-between row volume, rejection lookup frequency, geometry projection CPU, OSRM latency, source-anchor candidate volume and transaction duration. Capture existing-place, create-place, route-map hit, route-map insert, rejection-hit, OSRM-failure and source-anchor workloads separately before adding indexes, batching writes or caching route geometry; preserve SQL predicates, mirrored-key lookup, route-fit thresholds and transaction ownership.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.

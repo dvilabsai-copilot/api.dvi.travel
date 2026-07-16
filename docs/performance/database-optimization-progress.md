@@ -186,3 +186,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Travel-location classification, endpoint predicates, buffer inclusion and leg response fields remain unchanged; only ownership moved into the existing travel-replica service.
 - This is not a measured performance improvement: endpoint latency, read fan-out, distance-helper latency, missing-endpoint rate, buffer frequency and transaction volume remain unmeasured.
 - No index or Redis action is proposed; any future optimization must compare leg-specific traces and preserve transaction scope and travel semantics.
+
+## Iteration 74 evidence update
+
+- The route-matrix persistence extraction preserves hotspot-place identity reads/upserts, route-between SQL, rejection lookup and source-anchor reads; no SQL, index, Redis cache or query shape was changed.
+- Transaction client usage, mirrored route-key predicates, route-fit thresholds, OSRM callbacks and source-anchor ordering remain unchanged; only orchestration ownership moved.
+- This is not a measured performance improvement: raw query latency, row volume, OSRM latency, geometry CPU, candidate volume and transaction duration remain unmeasured.
+- No index or Redis action is proposed; any future optimization must compare route-map hit/insert and source-anchor traces, including write amplification and lock risk.
