@@ -422,6 +422,8 @@ The iteration-133 hotel response-row boundary is a measurement seam for package-
 
 The iteration-134 confirmed STAAH override boundary is a measurement seam for confirmed-row cardinality, route-match rate, reservation payload size, JSON extraction CPU, voucher-status projection frequency and end-to-end hotel-details response latency. Capture no-confirmation, one-match, multi-route, cancellation, malformed-payload and large-response workloads separately before caching confirmed projections; preserve latest-row ordering, mutable booking freshness and override precedence. No index addition/removal or Redis cache is justified until confirmation query plans and response traces establish the measured winner.
 
+The iteration-135 guest-nationality boundary is a measurement seam for country lookup latency, nationality-ID cardinality, country-row hit rate, legacy-name fallback frequency, direct-ISO frequency, environment-fallback frequency and end-to-end TBO search preparation latency. Capture active-country, missing-country, legacy-ID, direct-ISO, invalid-value and concurrent-search workloads separately before caching country mappings; preserve country-master freshness, status/deleted predicates and fallback precedence. No index addition/removal or Redis cache is justified until country query plans and search traces establish the measured winner.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.

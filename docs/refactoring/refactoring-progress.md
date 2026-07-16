@@ -4214,3 +4214,31 @@
 - `itinerary-hotel-details-tbo.service.ts` measured at 3,226 lines after the tier; `staah-confirmed-booking-override.service.ts` is 75 lines.
 - Confirmed-row cardinality, route-match rate, override projection CPU and hotel-details response latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `f44f098`.
+
+### Cycle 138 - Extract guest nationality resolution
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itinerary-hotel-details-tbo.service.ts`
+- Extracted responsibility: active country lookup, legacy dropdown-ID name fallback, direct ISO handling and environment/default fallback
+- New files: `src/modules/itineraries/services/guest-nationality.service.ts`, `test/guest-nationality.test.ts`
+- Workflow: TBO search request preparation
+
+#### Change
+
+- Moved guest-nationality resolution behind `GuestNationalityService` while preserving country-table precedence, legacy ID range handling, ISO validation, environment fallback and final `IN` default.
+- The TBO facade retains the legacy ID map and supplies Prisma lookup/logging callbacks; provider request fields and API contracts are unchanged.
+- No SQL predicate, index, Redis cache, API route, DTO or response contract changed.
+
+#### Verification
+
+- Guest-nationality characterization tests: PASS, 3/3
+- Itinerary characterization collection: PASS, 191/191
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itinerary-hotel-details-tbo.service.ts` measured at 3,141 lines after the tier; `guest-nationality.service.ts` is 72 lines.
+- Country lookup latency, fallback frequency, nationality-resolution CPU and provider-search response latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `74b976f`.

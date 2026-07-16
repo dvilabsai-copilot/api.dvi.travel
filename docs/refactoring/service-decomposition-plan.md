@@ -287,3 +287,5 @@ The in-facade legacy route optimizer was removed after verification that `Itiner
 `ItineraryHotelResponseRowService` now owns supplier and restricted hotel row projection, margin/bookability fields, voucher lookup projection and distance display formatting. `ItineraryHotelDetailsTboService` remains the response facade and owns route filtering, preload queries, confirmed overrides and final availability aggregation. Row projection and lookup cost remain pending measurement.
 
 `StaahConfirmedBookingOverrideService` now owns route-matched confirmed STAAH reservation overrides, booking/reference normalization and voucher metadata projection. `ItineraryHotelDetailsTboService` remains the response facade and owns the latest-row query and response collection. Confirmed-row match/projection cost remains pending measurement.
+
+`GuestNationalityService` now owns country-table precedence, legacy nationality-ID fallback, direct ISO validation and TBO default fallback. `ItineraryHotelDetailsTboService` remains the search facade and supplies the legacy map plus Prisma/logging callbacks. Nationality lookup and request-preparation cost remain pending measurement.
