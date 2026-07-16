@@ -93,6 +93,7 @@ import { ItineraryHotspotDeletionService } from './services/itinerary-hotspot-de
 import { ItineraryManualFitValidationService } from './services/itinerary-manual-fit-validation.service';
 import { ItineraryManualFitScheduleAttemptService } from './services/itinerary-manual-fit-schedule-attempt.service';
 import { ItineraryManualFitCandidateSimulationService } from './services/itinerary-manual-fit-candidate-simulation.service';
+import { ItineraryManualFitCandidateSearchService } from './services/itinerary-manual-fit-candidate-search.service';
 
 @Module({
   imports: [HotelsModule],
@@ -165,6 +166,7 @@ import { ItineraryManualFitCandidateSimulationService } from './services/itinera
     ItineraryManualFitValidationService,
     ItineraryManualFitScheduleAttemptService,
     ItineraryManualFitCandidateSimulationService,
+    ItineraryManualFitCandidateSearchService,
 
     // existing engines you already had
     HotelEngineService,

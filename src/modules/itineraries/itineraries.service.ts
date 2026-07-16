@@ -82,6 +82,7 @@ import { ItineraryManualFitOperatingHoursService } from './services/itinerary-ma
 import { ItineraryManualFitValidationService } from './services/itinerary-manual-fit-validation.service';
 import { ItineraryManualFitScheduleAttemptService } from './services/itinerary-manual-fit-schedule-attempt.service';
 import { ItineraryManualFitCandidateSimulationService } from './services/itinerary-manual-fit-candidate-simulation.service';
+import { ItineraryManualFitCandidateSearchService } from './services/itinerary-manual-fit-candidate-search.service';
 import { ItineraryVehicleBuildStatusService } from './services/itinerary-vehicle-build-status.service';
 import { ItineraryVehicleBuildService } from './services/itinerary-vehicle-build.service';
 import { ItineraryPlanPersistenceService } from './services/itinerary-plan-persistence.service';
@@ -669,6 +670,7 @@ export class ItinerariesService {
     private readonly manualFitValidationService: ItineraryManualFitValidationService = new ItineraryManualFitValidationService(),
     private readonly manualFitScheduleAttemptService: ItineraryManualFitScheduleAttemptService = new ItineraryManualFitScheduleAttemptService(),
     private readonly manualFitCandidateSimulationService: ItineraryManualFitCandidateSimulationService = new ItineraryManualFitCandidateSimulationService(),
+    private readonly manualFitCandidateSearchService: ItineraryManualFitCandidateSearchService = new ItineraryManualFitCandidateSearchService(),
   ) {
     this.manualFitTimelinePolicyService.setCallbacks({
       parseSegmentEndMinutes: (...args) => (this.parseSegmentEndMinutes as any)(...args),
@@ -728,6 +730,21 @@ export class ItinerariesService {
       scoreManualInsertionCandidate: (...args) => (this.scoreManualInsertionCandidate as any)(...args),
       getManualEffectivePriority: (...args) => (this.getManualEffectivePriority as any)(...args),
       explainRejectedCandidate: (...args) => (this.explainRejectedCandidate as any)(...args),
+    });
+    this.manualFitCandidateSearchService.setCallbacks({
+      findRouteDetails: async (tx, planId, routeId) => (tx as any).dvi_itinerary_route_details.findFirst({
+        where: { itinerary_plan_ID: Number(planId), itinerary_route_ID: Number(routeId), deleted: 0 },
+      }),
+      buildRouteHotspotInsertionCandidates: (...args) => (this.buildRouteHotspotInsertionCandidates as any)(...args),
+      buildManualInsertionPositions: (...args) => (this.buildManualInsertionPositions as any)(...args),
+      buildPreferredManualInsertionIndex: (...args) => (this.buildPreferredManualInsertionIndex as any)(...args),
+      simulateManualInsertionAtPosition: (...args) => (this.simulateManualInsertionAtPosition as any)(...args),
+      buildManualSlotInsights: (...args) => (this.buildManualSlotInsights as any)(...args),
+      chooseBestManualInsertionCandidate: (...args) => (this.chooseBestManualInsertionCandidate as any)(...args),
+      rebuildManualHotspotSet: (...args) => (this.rebuildManualHotspotSet as any)(...args),
+      buildManualClusterCandidateOrders: (...args) => (this.buildManualClusterCandidateOrders as any)(...args),
+      simulateManualClusterOrder: (...args) => (this.simulateManualClusterOrder as any)(...args),
+      compareManualScheduleAttempts: (...args) => (this.compareManualScheduleAttempts as any)(...args),
     });
     this.vehicleBuildService.setVehicleVendorSelector((data) => this.selectVehicleVendor(data));
     this.activityAvailabilityService.setCalculateActivityPlanPricingCallback(
@@ -3269,340 +3286,14 @@ private getGuideSlotLabel(slotId: number): string {
   }
 
 
-  private async findBestManualInsertionCandidate(
-    tx: any,
-    planId: number,
-    routeId: number,
-    manualHotspotIds: number[],
-    options?: {
-      allowP3Removal?: boolean;
-      allowP1P2Removal?: boolean;
-      allowTopPriorityRemoval?: boolean;
-      previewOnly?: boolean;
-      exactAnchorMode?: boolean;
-      anchorIntent?: 'AFTER_START' | 'AFTER_ATTRACTION';
-      afterHotspotId?: number;
-      beforeHotspotId?: number;
-      anchorIndex?: number;
-      anchorType?: 'after_travel' | 'BETWEEN_ROWS';
-      destinationInsertionMode?: boolean;
-      destinationMinCandidateIndex?: number;
-      sourceInsertionMode?: boolean;
-      sourceMaxCandidateIndex?: number;
-      removedOptionalHotspots?: any[];
-      removedTopPriorityHotspots?: any[];
-      baselineTopPriorityByHotspotId?: Map<number, { id: number; name: string; priority: number }>;
-      masterMap?: Map<number, any>;
-      manualTimingPolicy?: ManualHotspotTimingPolicy;
-      preferredHotspotOrder?: number[];
-    },
-  ): Promise<ManualInsertionCandidateResult> {
-    const route = await (tx as any).dvi_itinerary_route_details.findFirst({
-      where: {
-        itinerary_plan_ID: Number(planId),
-        itinerary_route_ID: Number(routeId),
-        deleted: 0,
-      },
-    });
-
-    const baseline = await this.buildRouteHotspotInsertionCandidates(tx, Number(planId), Number(routeId), manualHotspotIds);
-
-    const preferredOrder = Array.isArray(options?.preferredHotspotOrder)
-      ? options.preferredHotspotOrder.map(Number).filter((id) => id > 0)
-      : [];
-
-    const hotspotRowsForPositioning = preferredOrder.length > 1
-      ? (() => {
-          const orderIndex = new Map<number, number>(
-            preferredOrder.map((hotspotId, index) => [hotspotId, index]),
-          );
-
-          const preferredRows = baseline.hotspotRows
-            .filter((row: any) => orderIndex.has(Number(row.hotspotId || 0)))
-            .sort((a: any, b: any) =>
-              Number(orderIndex.get(Number(a.hotspotId || 0))) -
-              Number(orderIndex.get(Number(b.hotspotId || 0))),
-            );
-
-          const preferredIds = new Set(preferredRows.map((row: any) => Number(row.hotspotId || 0)));
-
-          const nonPreferredRows = baseline.hotspotRows
-            .filter((row: any) => !preferredIds.has(Number(row.hotspotId || 0)));
-
-          return [
-            ...preferredRows,
-            ...nonPreferredRows,
-          ];
-        })()
-      : baseline.hotspotRows;
-
-    const allPositions = this.buildManualInsertionPositions(hotspotRowsForPositioning);
-    const preferredCandidateIndex = this.buildPreferredManualInsertionIndex(
-      hotspotRowsForPositioning,
-      options?.preferredHotspotOrder,
-      manualHotspotIds,
-    );
-    const positions = (() => {
-      const base = allPositions;
-      const orderedBase = preferredCandidateIndex === null
-        ? base
-        : [...base].sort((a, b) => {
-            const aDiff = Math.abs(Number(a.candidateIndex) - Number(preferredCandidateIndex));
-            const bDiff = Math.abs(Number(b.candidateIndex) - Number(preferredCandidateIndex));
-            if (aDiff !== bDiff) return aDiff - bDiff;
-            return Number(a.candidateIndex) - Number(b.candidateIndex);
-          });
-
-      if (options?.exactAnchorMode === true && preferredCandidateIndex !== null) {
-        const exactPositions = orderedBase.filter((pos) => (
-          Number(pos.candidateIndex) === Number(preferredCandidateIndex)
-        ));
-        if (exactPositions.length > 0) {
-          return exactPositions;
-        }
-      }
-
-      if (options?.destinationInsertionMode === true) {
-        const minIndex = Math.max(0, Number(options?.destinationMinCandidateIndex || 0));
-        const destinationSide = orderedBase.filter((pos) => Number(pos.candidateIndex) >= minIndex);
-        const sourceSide = orderedBase.filter((pos) => Number(pos.candidateIndex) < minIndex);
-        return [...destinationSide, ...sourceSide];
-      }
-
-      if (options?.sourceInsertionMode === true) {
-        const maxIndex = Math.max(0, Number(options?.sourceMaxCandidateIndex || 0));
-        const sourceSide = orderedBase.filter((pos) => Number(pos.candidateIndex) <= maxIndex);
-        const destinationSide = orderedBase.filter((pos) => Number(pos.candidateIndex) > maxIndex);
-        return [...sourceSide, ...destinationSide];
-      }
-      return orderedBase;
-    })();
-    const baselineTopPriorityByHotspotId = options?.baselineTopPriorityByHotspotId || new Map<number, { id: number; name: string; priority: number }>();
-    const masterMap = options?.masterMap || baseline.masterMap;
-
-    const candidates: ManualInsertionCandidateResult[] = [];
-    for (const position of positions) {
-      const simulated = await this.simulateManualInsertionAtPosition(
-        tx,
-        Number(planId),
-        Number(routeId),
-        route,
-        manualHotspotIds,
-        position,
-        baselineTopPriorityByHotspotId,
-        masterMap,
-        {
-          allowTopPriorityRemoval: options?.allowTopPriorityRemoval === true,
-          removedOptionalHotspots: options?.removedOptionalHotspots || [],
-          removedTopPriorityHotspots: options?.removedTopPriorityHotspots || [],
-          manualTimingPolicy: options?.manualTimingPolicy,
-          preferredHotspotOrder: options?.preferredHotspotOrder,
-          exactAnchorMode: options?.exactAnchorMode === true,
-          anchorIntent: options?.anchorIntent,
-          afterHotspotId: options?.afterHotspotId,
-          beforeHotspotId: options?.beforeHotspotId,
-          sourceInsertionMode: options?.sourceInsertionMode === true,
-          sourceMaxCandidateIndex: Number(options?.sourceMaxCandidateIndex || 0) || undefined,
-        },
-      );
-      candidates.push(simulated);
-    }
-
-    const baselineAttractionsSorted = [...(baseline.hotspotRows || [])]
-      .sort((a: any, b: any) => Number(a?.hotspotOrder ?? a?.hotspot_order ?? 0) - Number(b?.hotspotOrder ?? b?.hotspot_order ?? 0));
-    const slotInsights = this.buildManualSlotInsights(candidates, manualHotspotIds, baselineAttractionsSorted, masterMap);
-
-    const best = this.chooseBestManualInsertionCandidate(candidates);
-    if (!best) {
-      return {
-        success: false,
-        candidateIndex: -1,
-        rows: [],
-        fullTimeline: [],
-        score: Number.MAX_SAFE_INTEGER,
-        waitingMinutes: 0,
-        totalTravelKm: 0,
-        extraTravelKm: 0,
-        toAndFroPenalty: 0,
-        removedOptionalHotspots: [...(options?.removedOptionalHotspots || [])],
-        removedTopPriorityHotspots: [...(options?.removedTopPriorityHotspots || [])],
-        topPriorityAffected: [],
-        scheduledManualHotspots: [],
-        unscheduledManualHotspots: [],
-        requiresConfirmation: false,
-        reason: 'No insertion candidate evaluated.',
-        slotInsights,
-      };
-    }
-
-    best.slotInsights = slotInsights;
-
-    const selectedPosition = positions.find((pos) => pos.candidateIndex === best.candidateIndex) || positions[0];
-    if (selectedPosition) {
-      await this.rebuildManualHotspotSet(
-        tx,
-        Number(planId),
-        Number(routeId),
-        manualHotspotIds,
-        {
-          anchorType: 'after_travel',
-          anchorIndex: Math.max(0, Number(selectedPosition.anchorOrder) - 1),
-        },
-        {
-          preferredManualPlacementByRoute: {
-            [Number(routeId)]: { hotspotOrder: Number(selectedPosition.anchorOrder) },
-          },
-          preferredHotspotOrder: options?.preferredHotspotOrder,
-          previewOnly: options?.previewOnly === true,
-        },
-      );
-    }
-
-    console.log('[ManualInsertionOptimizer]', {
-      candidateIndex: best.candidateIndex,
-      positionLabel: selectedPosition?.positionLabel || 'unknown',
-      waitingMinutes: best.waitingMinutes,
-      extraTravelKm: best.extraTravelKm,
-      toAndFroPenalty: best.toAndFroPenalty,
-      removedOptionalCount: Number(best.removedOptionalHotspots?.length || 0),
-      topPriorityAffectedCount: Number(best.topPriorityAffected?.length || 0),
-      score: best.score,
-      chosen: true,
-    });
-
-    return best;
+  private async findBestManualInsertionCandidate(...args: any[]): Promise<any> {
+    return (this.manualFitCandidateSearchService.findBestManualInsertionCandidate as any)(...args);
   }
 
-  private async runManualClusterOptimizer(
-    tx: any,
-    planId: number,
-    routeId: number,
-    manualHotspotIds: number[],
-    baselineCandidates: any,
-    options?: {
-      allowP3Removal?: boolean;
-      allowP1P2Removal?: boolean;
-      allowTopPriorityRemoval?: boolean;
-      previewOnly?: boolean;
-      exactAnchorMode?: boolean;
-      anchorIntent?: 'AFTER_START' | 'AFTER_ATTRACTION';
-      afterHotspotId?: number;
-      beforeHotspotId?: number;
-      anchorIndex?: number;
-      anchorType?: 'after_travel' | 'BETWEEN_ROWS';
-      destinationInsertionMode?: boolean;
-      destinationMinCandidateIndex?: number;
-      sourceInsertionMode?: boolean;
-      sourceMaxCandidateIndex?: number;
-      removedOptionalHotspots?: any[];
-      removedTopPriorityHotspots?: any[];
-      baselineTopPriorityByHotspotId?: Map<number, { id: number; name: string; priority: number }>;
-      manualTimingPolicy?: ManualHotspotTimingPolicy;
-    },
-  ): Promise<{
-    bestCandidate: ManualInsertionCandidateResult;
-    optimizerLog: ManualOptimizerAttemptLog;
-  }> {
-    const strategies = this.buildManualClusterCandidateOrders({
-      hotspots: baselineCandidates?.hotspotRows || [],
-      manualHotspotIds,
-      anchorIndex: options?.anchorIndex,
-      anchorIntent: options?.anchorIntent,
-      afterHotspotId: options?.afterHotspotId,
-      allowP3Removal: options?.allowP3Removal === true,
-      allowTopPriorityRemoval: options?.allowTopPriorityRemoval === true,
-      exactAnchorMode: options?.exactAnchorMode === true,
-      masterMap: baselineCandidates?.masterMap || new Map<number, any>(),
-    });
-
-    const attempts: Array<{ strategy: ManualCandidateOrder; candidate: ManualInsertionCandidateResult; attempt: ManualScheduleAttempt }> = [];
-    for (const strategy of strategies) {
-      const candidate = await this.findBestManualInsertionCandidate(
-        tx,
-        Number(planId),
-        Number(routeId),
-        manualHotspotIds,
-        {
-          allowP3Removal: options?.allowP3Removal === true,
-          allowP1P2Removal: options?.allowP1P2Removal === true,
-          allowTopPriorityRemoval: options?.allowTopPriorityRemoval === true,
-          previewOnly: options?.previewOnly === true,
-          exactAnchorMode: options?.exactAnchorMode === true,
-          anchorType: options?.anchorType,
-          anchorIndex: options?.anchorIndex,
-          anchorIntent: options?.anchorIntent,
-          afterHotspotId: options?.afterHotspotId,
-          beforeHotspotId: options?.beforeHotspotId,
-          destinationInsertionMode: options?.destinationInsertionMode === true,
-          destinationMinCandidateIndex: Number(options?.destinationMinCandidateIndex || 0) || undefined,
-          sourceInsertionMode: options?.sourceInsertionMode === true,
-          sourceMaxCandidateIndex: Number(options?.sourceMaxCandidateIndex || 0) || undefined,
-          removedOptionalHotspots: options?.removedOptionalHotspots || [],
-          removedTopPriorityHotspots: options?.removedTopPriorityHotspots || [],
-          baselineTopPriorityByHotspotId: options?.baselineTopPriorityByHotspotId,
-          masterMap: baselineCandidates?.masterMap,
-          manualTimingPolicy: options?.manualTimingPolicy,
-          preferredHotspotOrder: strategy.hotspotOrder,
-        },
-      );
-      candidate.strategyKey = strategy.strategyKey;
-      candidate.strategyLabel = strategy.strategyLabel;
-      const attempt = await this.simulateManualClusterOrder({ strategy, candidate });
-      attempts.push({ strategy, candidate, attempt });
-    }
-
-    const selected = [...attempts].sort((a, b) => this.compareManualScheduleAttempts(a.attempt, b.attempt))[0];
-    if (selected) {
-      selected.attempt.selected = true;
-      selected.candidate.strategySummary = selected.attempt.summary;
-    }
-
-    return {
-      bestCandidate: selected?.candidate || await this.findBestManualInsertionCandidate(
-        tx,
-        Number(planId),
-        Number(routeId),
-        manualHotspotIds,
-        {
-          allowP3Removal: options?.allowP3Removal === true,
-          allowP1P2Removal: options?.allowP1P2Removal === true,
-          allowTopPriorityRemoval: options?.allowTopPriorityRemoval === true,
-          previewOnly: options?.previewOnly === true,
-          exactAnchorMode: options?.exactAnchorMode === true,
-          anchorType: options?.anchorType,
-          anchorIndex: options?.anchorIndex,
-          anchorIntent: options?.anchorIntent,
-          afterHotspotId: options?.afterHotspotId,
-          beforeHotspotId: options?.beforeHotspotId,
-          destinationInsertionMode: options?.destinationInsertionMode === true,
-          destinationMinCandidateIndex: Number(options?.destinationMinCandidateIndex || 0) || undefined,
-          sourceInsertionMode: options?.sourceInsertionMode === true,
-          sourceMaxCandidateIndex: Number(options?.sourceMaxCandidateIndex || 0) || undefined,
-          removedOptionalHotspots: options?.removedOptionalHotspots || [],
-          removedTopPriorityHotspots: options?.removedTopPriorityHotspots || [],
-          baselineTopPriorityByHotspotId: options?.baselineTopPriorityByHotspotId,
-          masterMap: baselineCandidates?.masterMap,
-          manualTimingPolicy: options?.manualTimingPolicy,
-          preferredHotspotOrder: selected?.strategy?.hotspotOrder || [],
-        },
-      ),
-      optimizerLog: {
-        decisionOrder: [
-          'opening-hours feasibility',
-          'selected manual hotspot scheduled without conflict',
-          'P1/P2 preserved',
-          'P3 preserved unless confirmed',
-          'route end time',
-          'wait time',
-          'detour as tie-breaker',
-        ],
-        selectedStrategyKey: selected?.attempt.strategyKey || null,
-        selectedStrategyLabel: selected?.attempt.strategyLabel || null,
-        summary: selected?.attempt.summary || null,
-        attempts: attempts.map((row) => row.attempt),
-      },
-    };
+  private async runManualClusterOptimizer(...args: any[]): Promise<any> {
+    return (this.manualFitCandidateSearchService.runManualClusterOptimizer as any)(...args);
   }
+
 
   private scoreManualInsertion(
     sequence: Array<{ hotspotId: number }>,
