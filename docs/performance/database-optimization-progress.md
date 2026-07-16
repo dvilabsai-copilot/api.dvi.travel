@@ -102,3 +102,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - The facade retains the same database-call inventory; this tier changes ownership only and does not alter predicates or transaction boundaries.
 - This is not a measured performance improvement: delete frequency, route selectivity, cleanup volume and transaction duration remain unmeasured.
 - No index or Redis action is proposed; any future optimization must preserve cleanup ordering and route/plan scoping.
+
+## Iteration 62 evidence update
+
+- The confirmed-guide projection extraction preserves the existing confirmed plan, guide, slot, route, guide-master and language reads plus lazy slot-cost backfill; no SQL, index, Redis cache or query shape was changed.
+- The facade delegates the same query sequence and response projection; no predicates, ordering or transaction client semantics changed.
+- This is not a measured performance improvement: read fan-out, master selectivity, grouping CPU, backfill frequency, payload size and response latency remain unmeasured.
+- No index or Redis action is proposed; any future optimization must compare empty/single/multi-slot and backfill query plans while preserving cancellation-visible slot state.

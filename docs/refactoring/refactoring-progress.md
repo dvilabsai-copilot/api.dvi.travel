@@ -2117,3 +2117,32 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Delete frequency, slot-row cleanup volume and transaction latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `8794031`.
+
+### Cycle 65 - Extract confirmed guide assignment projection
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: confirmed guide/slot-cost hydration, draft slot-cost backfill and response projection
+- New files: `src/modules/itineraries/services/itinerary-confirmed-guide-assignment.service.ts`, `test/itinerary-confirmed-guide-assignment.test.ts`
+- Workflow: confirmed itinerary guide-assignment read path used by confirmed-details projection and cancellation flows
+
+#### Change
+
+- Moved confirmed-plan lookup, deterministic guide/slot/route/master reads, label mapping and slot grouping behind `ItineraryConfirmedGuideAssignmentService`.
+- Moved the existing lazy draft-to-confirmed slot-cost backfill into the service while retaining the cancellation caller’s transaction client.
+- Preserved missing-plan validation, route-date fallback, language/slot labels, ordering and response fields.
+
+#### Verification
+
+- Confirmed guide projection characterization tests: PASS, 2/2
+- Combined focused backend/timeline suite: PASS, 137/137
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 11,669 lines after the tier; `ItineraryConfirmedGuideAssignmentService` is 198 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Confirmed-guide read latency, hydration fan-out, draft-slot backfill frequency and payload size remain unmeasured.
+- Implementation commit: `api.dvi.travel` `df3e866`.

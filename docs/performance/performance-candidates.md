@@ -276,6 +276,8 @@ The iteration-60 draft guide-assignment write boundary is a measurement seam for
 
 The iteration-61 draft guide-assignment deletion boundary is a measurement seam for delete invocation rate, slot-row cleanup volume, route-scoped versus plan-scoped selectivity, transaction latency and stale-row frequency. Capture normal deletes, route-filtered deletes, repeated deletes and empty-slot-row cases before batching cleanup or adding write-path indexes; preserve slot cleanup before guide-row deletion and exact success/validation semantics.
 
+The iteration-62 confirmed-guide projection boundary is a measurement seam for confirmed-plan lookup latency, guide/slot/route/master query fan-out, guide and language selectivity, slot-grouping CPU, draft-slot backfill frequency, payload size and response latency. Capture empty-guide, single-guide, multi-slot, missing-master and lazy-backfill workloads separately before batching reads, adding covering indexes or caching immutable labels; preserve query ordering, fallback dates and cancellation-visible slot state.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.
