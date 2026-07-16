@@ -36,6 +36,7 @@ import { SavedHotelIndicatorService } from './services/saved-hotel-indicator.ser
 import { StaahRoomMappingService } from './services/staah-room-mapping.service';
 import { StaahCandidateResultService } from './services/staah-candidate-result.service';
 import { StaahCandidateSelectionService } from './services/staah-candidate-selection.service';
+import { StaahProviderRowsService } from './services/staah-provider-rows.service';
 
 /**
  * This service generates dynamic hotel packages from TBO API
@@ -164,6 +165,7 @@ export class ItineraryHotelDetailsTboService {
   private readonly staahRoomMappingService = new StaahRoomMappingService();
   private readonly staahCandidateResultService = new StaahCandidateResultService();
   private readonly staahCandidateSelectionService = new StaahCandidateSelectionService();
+  private readonly staahProviderRowsService = new StaahProviderRowsService();
 
   private isTboOnlyFetchEnabled(): boolean {
     const raw = String(process.env.HOTEL_FETCH_TBO_ONLY || '').trim().toLowerCase();
@@ -1420,9 +1422,6 @@ export class ItineraryHotelDetailsTboService {
           (value) => this.normalizeLooseRoomCode(value),
         );
         const {
-          activeRoomCodesByHotelId,
-          activeRoomLooseCodesByHotelId,
-          activeRoomLooseExactCodesByHotelId,
           roomTitleByHotelAndCode,
           allowedRoomCodesByPropertyId,
           allowedLooseRoomCodesByPropertyId,
@@ -1474,39 +1473,61 @@ export class ItineraryHotelDetailsTboService {
           return false;
         };
 
-        const [inventoryRowsRaw, ratePlanRowsRaw] = await Promise.all([
-          (this.prisma as any).staah_inventory.findMany({ where: { staah_property_id: { in: propertyIds }, start_date: { lte: dateOnly }, end_date: { gte: dateOnly }, free: { gt: 0 } } }),
-          (this.prisma as any).staah_rateplan.findMany({ where: { staah_property_id: { in: propertyIds } } }),
-        ]);
-        const inventoryRows = (inventoryRowsRaw as any[]).filter((row) =>
-          isAllowedStaahRoom(row.staah_property_id, row.room_id),
-        );
-        const ratePlanRows = (ratePlanRowsRaw as any[]).filter((row) =>
-          isAllowedStaahRoom(row.staah_property_id, row.room_id),
-        );
-        const roomIds = Array.from(new Set(inventoryRows.map((r: any) => String(r.room_id || '').trim()).filter(Boolean)));
-        const ratePlanIds = Array.from(new Set(ratePlanRows.map((r: any) => String(r.rateplan_id || '').trim()).filter(Boolean)));
+        const providerRows = await this.staahProviderRowsService.load({
+          propertyIds,
+          checkInDate: dateOnly,
+          checkOutDate,
+          isAllowedRoom: (property, room) => isAllowedStaahRoom(property, room),
+          queries: {
+            loadInventory: (ids, checkIn) =>
+              (this.prisma as any).staah_inventory.findMany({
+                where: {
+                  staah_property_id: { in: ids },
+                  start_date: { lte: checkIn },
+                  end_date: { gte: checkIn },
+                  free: { gt: 0 },
+                },
+              }),
+            loadRatePlans: (ids) =>
+              (this.prisma as any).staah_rateplan.findMany({
+                where: { staah_property_id: { in: ids } },
+              }),
+            loadRates: ({ propertyIds: ids, roomIds: rooms, ratePlanIds: plans, checkInDate: checkIn }) =>
+              (this.prisma as any).staah_rate.findMany({
+                where: {
+                  staah_property_id: { in: ids },
+                  room_id: { in: rooms },
+                  rateplan_id: { in: plans },
+                  start_date: { lte: checkIn },
+                  end_date: { gte: checkIn },
+                },
+              }),
+            loadRestrictions: ({ propertyIds: ids, roomIds: rooms, ratePlanIds: plans, checkInDate: checkIn, checkOutDate: checkOut }) =>
+              (this.prisma as any).staah_restriction.findMany({
+                where: {
+                  staah_property_id: { in: ids },
+                  room_id: { in: rooms },
+                  rateplan_id: { in: plans },
+                  start_date: { lte: checkOut },
+                  end_date: { gte: checkIn },
+                },
+              }),
+          },
+        });
+        const {
+          inventoryRows,
+          ratePlanRows,
+          rateRows,
+          restrictionRowsByRateKey,
+          roomIds,
+          ratePlanIds,
+        } = providerRows;
         if (!roomIds.length || !ratePlanIds.length) {
           this.logger.debug(
             `[STAAH] routeId=${routeId} propertyIds=${propertyIds.join(',')} inventory=${inventoryRows.length} rateplans=${ratePlanRows.length} rates=0`,
           );
           hotelsByRoute.set(routeId, []);
           continue;
-        }
-        const [rateRowsRaw, restrictionRows] = await Promise.all([
-          (this.prisma as any).staah_rate.findMany({ where: { staah_property_id: { in: propertyIds }, room_id: { in: roomIds }, rateplan_id: { in: ratePlanIds }, start_date: { lte: dateOnly }, end_date: { gte: dateOnly } } }),
-          (this.prisma as any).staah_restriction.findMany({ where: { staah_property_id: { in: propertyIds }, room_id: { in: roomIds }, rateplan_id: { in: ratePlanIds }, start_date: { lte: checkOutDate }, end_date: { gte: dateOnly } } }),
-        ]);
-        const rateRows = (rateRowsRaw as any[]).filter((row) =>
-          isAllowedStaahRoom(row.staah_property_id, row.room_id),
-        );
-        const restrictionRowsByRateKey = new Map<string, any[]>();
-        for (const row of restrictionRows as any[]) {
-          const rateKey = `${row.staah_property_id}|${row.room_id}|${row.rateplan_id}`;
-          if (!restrictionRowsByRateKey.has(rateKey)) {
-            restrictionRowsByRateKey.set(rateKey, []);
-          }
-          restrictionRowsByRateKey.get(rateKey)!.push(row);
         }
         const results: HotelSearchResult[] = [];
         for (const hotel of cityHotels as any[]) {
