@@ -274,6 +274,8 @@ The iteration-59 Day-1 travel-projection boundary is a measurement seam for coor
 
 The iteration-60 draft guide-assignment write boundary is a measurement seam for assignment validation rate, guide-candidate and pricebook query latency, eligible-guide selectivity, route-date fan-out, per-slot cost-resolution calls, slot-row volume, stale-row deletion volume and transaction latency. Capture route-specific versus whole-itinerary assignments, create versus update, single versus multiple slots, unavailable-guide rejection and multi-day workloads separately before adding guide/pricebook indexes, request caching or batching cost reads; preserve payload normalization, transaction order and exact cost/response semantics.
 
+The iteration-61 draft guide-assignment deletion boundary is a measurement seam for delete invocation rate, slot-row cleanup volume, route-scoped versus plan-scoped selectivity, transaction latency and stale-row frequency. Capture normal deletes, route-filtered deletes, repeated deletes and empty-slot-row cases before batching cleanup or adding write-path indexes; preserve slot cleanup before guide-row deletion and exact success/validation semantics.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.

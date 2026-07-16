@@ -2089,3 +2089,31 @@
 - Static DB-call matches in the facade remain 613; no query shape, index, Redis, DTO, route or response contract changed.
 - Guide-cost query latency, route-date fan-out, slot-row volume and assignment transaction latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `19d3cee`.
+
+### Cycle 64 - Complete draft guide-assignment write boundary
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: draft guide-assignment deletion and slot-cost cleanup
+- Existing service extended: `src/modules/itineraries/services/itinerary-guide-assignment-write.service.ts`
+- Workflow: draft guide-assignment delete endpoint
+
+#### Change
+
+- Moved draft slot-cost deletion followed by route-guide deletion behind the existing guide write service.
+- Preserved plan/route scoping, validation messages, transaction ordering and `{ success: true }` response shape.
+
+#### Verification
+
+- Draft guide-assignment write characterization tests: PASS, 3/3
+- Combined focused backend/timeline suite: PASS, 135/135
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` remains at 11,822 lines after the tier; the write service now owns the complete draft guide write boundary.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Delete frequency, slot-row cleanup volume and transaction latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `8794031`.

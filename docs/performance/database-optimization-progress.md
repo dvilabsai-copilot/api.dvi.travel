@@ -95,3 +95,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Static database-call ownership remains 613 matches in the facade inventory; the new service owns the existing write-path calls without changing predicates or projections.
 - This is not a measured performance improvement: guide-candidate selectivity, pricebook latency, route-date fan-out, slot-row volume and transaction duration remain unmeasured.
 - No index or Redis action is proposed; any future optimization must compare route-specific and whole-itinerary query plans and preserve cost resolution, transaction ordering and response semantics.
+
+## Iteration 61 evidence update
+
+- The draft guide-assignment deletion extraction preserves the existing two-step transaction (slot-cost cleanup, then guide-row deletion); no SQL, index, Redis cache or query shape was changed.
+- The facade retains the same database-call inventory; this tier changes ownership only and does not alter predicates or transaction boundaries.
+- This is not a measured performance improvement: delete frequency, route selectivity, cleanup volume and transaction duration remain unmeasured.
+- No index or Redis action is proposed; any future optimization must preserve cleanup ordering and route/plan scoping.
