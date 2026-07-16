@@ -3678,3 +3678,31 @@
 - `itinerary-details.service.ts` measured at 4,658 lines after the tier; `itinerary-details-via-travel.service.ts` is 61 lines.
 - Via-travel distance latency, row volume, CTA frequency and timeline response latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `8e3a51b`.
+
+### Cycle 119 - Extract itinerary-details regular semantic travel branch
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itinerary-details.service.ts`
+- Extracted responsibility: regular item-type-3 semantic travel mapping, forced-manual conflict insertion, Hotel destination correction, distance resolution and segment emission
+- New files: `src/modules/itineraries/services/itinerary-details-regular-travel.service.ts`, `test/itinerary-details-regular-travel.test.ts`
+- Workflow: per-route itinerary-details timeline row projection
+
+#### Change
+
+- Moved the regular semantic travel branch behind `ItineraryDetailsRegularTravelService` and returned explicit previous-stop, attraction-flag and distance state to the route loop.
+- Preserved semantic mapping/fallback precedence, forced-manual conflict injection, lookahead destination resolution, Hotel correction, proof logging, hotspot-ID inference, distance resolver arguments, CTA insertion and travel fields.
+- No SQL predicate, index, Redis cache, API route, DTO or response contract changed.
+
+#### Verification
+
+- Regular-travel characterization test: PASS, 1/1
+- Itinerary characterization collection: PASS, 167/167
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itinerary-details.service.ts` measured at 4,436 lines after the tier; `itinerary-details-regular-travel.service.ts` is 310 lines.
+- Regular-travel distance latency, forced-conflict frequency, lookahead scan cost and timeline response latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `a49a811`.

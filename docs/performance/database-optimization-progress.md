@@ -480,3 +480,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Via-row timing and mutable route-location freshness remain unchanged.
 - This is not a measured database performance improvement: via-row volume, distance latency, CTA frequency and details response latency remain unmeasured.
 - No index addition/removal or Redis action is proposed; future work should capture via-route and distance lookup traces before batching or caching mutable travel data.
+
+## Iteration 116 evidence update
+
+- The regular semantic-travel extraction preserves semantic/fallback precedence, forced-manual conflict injection, Hotel correction, lookahead, hotspot-ID inference, distance resolver arguments, CTA insertion and travel response fields; no SQL predicate, index, Redis cache or response shape changed.
+- Returned state preserves previous-stop, attraction flag, pre-attraction flag and distance accumulation semantics.
+- This is not a measured database performance improvement: lookahead CPU, conflict frequency, distance latency, row volume and details response latency remain unmeasured.
+- No index addition/removal or Redis action is proposed; future work should capture semantic/distance traces before batching or caching mutable timeline travel data.

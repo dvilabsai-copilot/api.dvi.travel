@@ -384,6 +384,8 @@ The iteration-114 itinerary-details source-travel boundary is a measurement seam
 
 The iteration-115 itinerary-details via-travel boundary is a measurement seam for via-row volume, via-location selection frequency, distance-resolver latency, CTA/segment emission cost, pre-attraction travel frequency and end-to-end timeline response latency. Capture normal, missing-via, distance-fallback, attraction-first and large-route workloads separately before batching distance reads or caching route legs; preserve mutable via-route data, distance fallback semantics, CTA anchors and travel response fields. No index addition/removal or Redis cache is justified until via-row and distance traces establish the measured winner.
 
+The iteration-116 itinerary-details regular-travel boundary is a measurement seam for semantic-map hit/miss rate, lookahead scan length, forced-manual conflict frequency, Hotel correction frequency, hotspot-ID inference cost, distance-resolver latency, CTA/segment emission cost and end-to-end timeline response latency. Capture semantic-hit, fallback, same-place lookahead, forced-conflict, upcoming-hotel, missing-master and large-route workloads separately before batching distance reads or memoizing destination scans; preserve mutable timeline conflicts, hotel assignments, distance freshness and travel response fields. No index addition/removal or Redis cache is justified until semantic/distance traces establish the measured winner.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.
