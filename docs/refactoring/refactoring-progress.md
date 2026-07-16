@@ -2060,3 +2060,32 @@
 - Static Prisma-call matches in the builder remain 10; no query shape, index, Redis, DTO, route or response contract changed.
 - Coordinate fallback frequency, travel-provider latency, projected-arrival rejection rate, evaluation-log volume and route rebuild latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `ceb3dd0`.
+
+### Cycle 63 - Extract draft guide-assignment writes
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: draft guide-assignment validation, costing, upsert and slot-cost persistence
+- New files: `src/modules/itineraries/services/itinerary-guide-assignment-write.service.ts`, `test/itinerary-guide-assignment-write.test.ts`
+- Workflow: guide assignment save/update endpoint after guide availability and cost policy resolution
+
+#### Change
+
+- Moved plan/route validation, guide-cost resolution, draft guide-row create/update, stale slot-cost deletion and route/all-itinerary slot-cost creation behind `ItineraryGuideAssignmentWriteService`.
+- Preserved payload normalization, error messages, route-date fallback, per-slot cost resolution, transaction ordering and `{ success, routeGuideId, guideCost }` response shape.
+- Kept guide availability/read projections and controller-facing methods on the `ItinerariesService` compatibility facade.
+
+#### Verification
+
+- Draft guide-assignment write characterization tests: PASS, 2/2
+- Combined focused backend/timeline suite: PASS, 134/134
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 11,852 lines after the tier; `ItineraryGuideAssignmentWriteService` is 235 lines.
+- Static DB-call matches in the facade remain 613; no query shape, index, Redis, DTO, route or response contract changed.
+- Guide-cost query latency, route-date fan-out, slot-row volume and assignment transaction latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `19d3cee`.

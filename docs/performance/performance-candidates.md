@@ -272,6 +272,8 @@ The iteration-58 Day-1 cutoff/master boundary is a measurement seam for cutoff i
 
 The iteration-59 Day-1 travel-projection boundary is a measurement seam for coordinate-fallback frequency, coordinate lookup latency, travel-provider calls and latency, absolute-time projection CPU, projected-arrival rejection volume, route-end rejection logging and route rebuild latency. Capture source-coordinate present/missing, last-route, projected-arrival pass/fail and overnight absolute-time workloads separately before adding coordinate indexes, caching route legs, introducing Redis or changing provider concurrency; preserve callback order, wrapped persistence values and absolute-time operating-hour semantics.
 
+The iteration-60 draft guide-assignment write boundary is a measurement seam for assignment validation rate, guide-candidate and pricebook query latency, eligible-guide selectivity, route-date fan-out, per-slot cost-resolution calls, slot-row volume, stale-row deletion volume and transaction latency. Capture route-specific versus whole-itinerary assignments, create versus update, single versus multiple slots, unavailable-guide rejection and multi-day workloads separately before adding guide/pricebook indexes, request caching or batching cost reads; preserve payload normalization, transaction order and exact cost/response semantics.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.

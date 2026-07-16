@@ -88,3 +88,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Builder-local static Prisma-call ownership remains 10 matches; the extracted service performs no direct database work.
 - This is not a measured performance improvement: coordinate fallback frequency, provider latency, projected-arrival rejection volume, evaluation-log cost and rebuild latency remain unmeasured.
 - No index or Redis action is proposed; any future optimization must be supported by route-build traces and query plans while preserving absolute-time projection, wrapped persistence values and rejection order.
+
+## Iteration 60 evidence update
+
+- The draft guide-assignment write extraction preserves the existing plan, route, guide and pricebook reads plus guide-row/slot-row transaction; no SQL, index, Redis cache or query shape was changed.
+- Static database-call ownership remains 613 matches in the facade inventory; the new service owns the existing write-path calls without changing predicates or projections.
+- This is not a measured performance improvement: guide-candidate selectivity, pricebook latency, route-date fan-out, slot-row volume and transaction duration remain unmeasured.
+- No index or Redis action is proposed; any future optimization must compare route-specific and whole-itinerary query plans and preserve cost resolution, transaction ordering and response semantics.
