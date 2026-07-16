@@ -40,6 +40,7 @@ import { ItineraryDetailsAttractionActivityService } from './services/itinerary-
 import { ItineraryDetailsAttractionTimingService } from './services/itinerary-details-attraction-timing.service';
 import { ItineraryDetailsHotelTravelOriginService } from './services/itinerary-details-hotel-travel-origin.service';
 import { ItineraryDetailsHotelTravelTimeService } from './services/itinerary-details-hotel-travel-time.service';
+import { ItineraryDetailsHotelCheckInService } from './services/itinerary-details-hotel-checkin.service';
 
 // ---------------------------------------------------------------------------
 // DTOs for Itinerary Details response (shared shape with frontend)
@@ -444,6 +445,7 @@ export class ItineraryDetailsService {
   private readonly attractionTimingService = new ItineraryDetailsAttractionTimingService();
   private readonly hotelTravelOriginService = new ItineraryDetailsHotelTravelOriginService();
   private readonly hotelTravelTimeService = new ItineraryDetailsHotelTravelTimeService();
+  private readonly hotelCheckInService = new ItineraryDetailsHotelCheckInService();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -1728,26 +1730,18 @@ for (const row of vehicleKmRows) {
         if (itemType === 6) {
           // HOTEL CHECK-IN / RETURN segment
           const hotelInfo = routeHotelMap.get(route.itinerary_route_ID);
-          const hotelName =
-            isVehicleOnly
-              ? 'Hotel'
-              : (
-                hotelInfo?.hotel_name ??
-                hotelInfo?.hotel_city ??
-                location?.destination_location ??
-                route.next_visiting_location ??
-                'Hotel'
-              );
-          const hotelAddress = hotelInfo?.hotel_address ?? "";
-
-          // FIX #3: Use hotel arrival time (from travel-to-hotel) if available
-          // Otherwise fallback to endTimeText from this checkin row, then startTimeText, then route end time
-          const checkInTime =
-            hotelArrivalTime ??
-            endTimeText ??
-            startTimeText ??
-            this.formatTime(route.route_end_time as any) ??
-            null;
+          const hotelCheckIn = this.hotelCheckInService.build({
+            hotelInfo,
+            isVehicleOnly,
+            location,
+            route,
+            hotelArrivalTime,
+            endTimeText,
+            startTimeText,
+            formatTime: (value) => this.formatTime(value),
+          });
+          const { hotelName, segment: hotelCheckInSegment } = hotelCheckIn;
+          const checkInTime = hotelCheckInSegment.time;
 
           // [PROOF] Log checkin derivation
           if (proofQuoteEnabled) {
@@ -1772,12 +1766,7 @@ for (const row of vehicleKmRows) {
             });
           }
 
-          segments.push({
-            type: "checkin" as const,
-            hotelName: hotelName,
-            hotelAddress: hotelAddress,
-            time: checkInTime,
-          });
+          segments.push(hotelCheckInSegment);
           emittedTerminalSegment = true;
 
           previousStopName = hotelName;
