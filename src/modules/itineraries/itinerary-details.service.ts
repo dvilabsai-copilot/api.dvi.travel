@@ -25,6 +25,7 @@ import { ItineraryDetailsTimelinePresentationService } from './services/itinerar
 import { ItineraryDetailsTimeRangePolicyService } from './services/itinerary-details-time-range-policy.service';
 import { ItineraryDetailsDisplayFormattingService } from './services/itinerary-details-display-formatting.service';
 import { ItineraryDetailsRouteHotelMapService } from './services/itinerary-details-route-hotel-map.service';
+import { ItineraryDetailsTravelSemanticsService } from './services/itinerary-details-travel-semantics.service';
 
 // ---------------------------------------------------------------------------
 // DTOs for Itinerary Details response (shared shape with frontend)
@@ -414,6 +415,7 @@ export class ItineraryDetailsService {
   private readonly timeRangePolicyService = new ItineraryDetailsTimeRangePolicyService();
   private readonly displayFormattingService = new ItineraryDetailsDisplayFormattingService();
   private readonly routeHotelMapService = new ItineraryDetailsRouteHotelMapService();
+  private readonly travelSemanticsService = new ItineraryDetailsTravelSemanticsService();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -1342,133 +1344,20 @@ for (const row of vehicleKmRows) {
         (rh) => Number((rh as any).item_type ?? 0) === 1,
       );
 
-      // ====== SEMANTIC RECONSTRUCTION ALGORITHM ======
-      // Reconstruct true origin/destination for each travel row by analyzing:
-      // 1. The hotspot_ID in the travel row (destination)
-      // 2. The sequence of visits and their times
-      // 3. Looking back for the actual "from" location
-      //
-      // Key insight: item_type=3 rows appear in DB after their corresponding  
-      // item_type=4 attractions (due to hotspot_order sorting), but chronologically
-      // they represent TRAVEL TO those attractions. The "from" is the previous
-      // different location we visited.
-      
-      const buildTravelSegmentSemantics = (): Map<number, {
-        from: string;
-        to: string;
-        fromHotspotId: number | null;
-        toHotspotId: number | null;
-      }> => {
-        const travelSemantics = new Map<number, {
-          from: string;
-          to: string;
-          fromHotspotId: number | null;
-          toHotspotId: number | null;
-        }>();
-        
-        // First pass: collect all attractions and their visit order
-        const visitSequence: Array<{hotspotId: number; hotspotName: string}> = [];
-        let routeStartLoc =
-          location?.source_location ??
-          route.location_name ??
-          plan.arrival_location ??
-          '';
-
-        // If this day starts from "Hotel" (previous-night stay), resolve the
-        // actual hotel name so the first travel segment reads
-        // "From PLA Residency, Thanjavur" instead of the bare city name.
-        if (index > 0) {
-          const prevRouteHotelInfo = routeHotelMap.get(
-            routes[index - 1].itinerary_route_ID,
-          );
-          if (prevRouteHotelInfo?.hotel_name) {
-            routeStartLoc = prevRouteHotelInfo.hotel_name;
-          }
-        }
-        
-        // Track the last unique location we're at
-        let lastUniqueLocation = routeStartLoc;
-
-        const getHotelCheckinTimeMinutes = (row: any): number | null => {
-          const start = this.formatTime((row as any)?.hotspot_start_time ?? null);
-          const end = this.formatTime((row as any)?.hotspot_end_time ?? null);
-          const checkInTime = end || start;
-          return checkInTime ? this.timeToMinutes(checkInTime) : null;
-        };
-
-        const hasPriorHotelCheckinBeforeTravel = (travelRow: any): boolean => {
-          const travelStart = this.formatTime((travelRow as any)?.hotspot_start_time ?? null);
-          if (!travelStart) return false;
-          const travelStartMins = this.timeToMinutes(travelStart);
-
-          return routeHotspots.some((candidate) => {
-            const candidateType = Number((candidate as any).item_type ?? 0);
-            if (candidateType !== 6) return false;
-            const checkInMins = getHotelCheckinTimeMinutes(candidate);
-            return checkInMins !== null && checkInMins <= travelStartMins;
-          });
-        };
-        
-        // Build visit sequence by collecting all attractions
-        for (const row of routeHotspots) {
-          const itemType = Number((row as any).item_type ?? 0);
-          const hotspotId = Number(row.hotspot_ID ?? 0);
-          
-          if (itemType === 4 && hotspotId > 0) {
-            if (isForcedManualConflictAttractionRow(row)) {
-              continue;
-            }
-            const master = hotspotMap.get(hotspotId);
-            if (master?.hotspot_name?.trim()) {
-              visitSequence.push({hotspotId, hotspotName: master.hotspot_name});
-              lastUniqueLocation = master.hotspot_name;
-            }
-          }
-        }
-        
-        // Second pass: determine origin for each travel row
-        for (const row of routeHotspots) {
-          const itemType = Number((row as any).item_type ?? 0);
-          const hotspotId = Number(row.hotspot_ID ?? 0);
-          
-          if (itemType === 3 && hotspotId > 0) {
-            // This is a travel row - determine its origin and destination
-            const destMaster = hotspotMap.get(hotspotId);
-            const destination = destMaster?.hotspot_name ?? lastUniqueLocation;
-            
-            // Find the origin by looking at what comes before this destination in visit sequence
-            let origin = routeStartLoc;  // Safe fallback
-            
-            // Find this hotspotId in the visit sequence
-            const destIndex = visitSequence.findIndex(v => v.hotspotId === hotspotId);
-            
-            if (destIndex > 0) {
-              // There's a previous visit - that's where we came from
-              origin = visitSequence[destIndex - 1].hotspotName;
-            } else if (destIndex === 0 && visitSequence.length > 0) {
-              // First destination: in hotel-first flows, first sightseeing starts from hotel.
-              origin = hasPriorHotelCheckinBeforeTravel(row)
-                ? getRouteHotelName()
-                : routeStartLoc;
-            } else {
-              // Destination not found in visits (shouldn't happen, but safe)
-              origin = routeStartLoc;
-            }
-            
-            travelSemantics.set(row.route_hotspot_ID, {
-              from: origin,
-              to: destination,
-              fromHotspotId: destIndex > 0 ? visitSequence[destIndex - 1].hotspotId : null,
-              toHotspotId: hotspotId > 0 ? hotspotId : null,
-            });
-          }
-        }
-        
-        return travelSemantics;
-      };
-      
-      // Build the semantic map once, before main loop
-      const travelSegmentSemantics = buildTravelSegmentSemantics();
+      const travelSegmentSemantics = this.travelSemanticsService.build({
+        routeHotspots,
+        hotspotMap,
+        location,
+        route,
+        plan,
+        index,
+        routes,
+        routeHotelMap,
+        formatTime: (value) => this.formatTime(value),
+        timeToMinutes: (value) => this.timeToMinutes(value),
+        isForcedManualConflictAttractionRow,
+        getRouteHotelName,
+      });
 
       // Only add START segment if item_type 1 exists (match PHP behavior)
       // Exception: suppress START on late-arrival Day 1 that has no attractions
