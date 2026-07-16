@@ -4158,3 +4158,31 @@
 - `itinerary-hotel-details-tbo.service.ts` measured at 3,397 lines after the tier; `staah-restriction.service.ts` is 127 lines.
 - Restriction-row cardinality, date-overlap CPU, blocked-candidate frequency and STAAH search response latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `57e149b`.
+
+### Cycle 136 - Extract hotel response-row projection
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itinerary-hotel-details-tbo.service.ts`
+- Extracted responsibility: supplier and restricted hotel DTO row projection, margin/bookability fields and distance display
+- New files: `src/modules/itineraries/services/itinerary-hotel-response-row.service.ts`, `test/itinerary-hotel-response-row.test.ts`
+- Workflow: hotel-details response assembly
+
+#### Change
+
+- Moved supplier/restricted row construction behind `ItineraryHotelResponseRowService` while preserving provider normalization, booking readiness, voucher lookup, margins, distance formatting, restriction metadata and response fields.
+- The TBO facade retains route filtering, confirmed STAAH overrides, database preloads and final availability aggregation; API DTOs and provider behavior are unchanged.
+- No SQL predicate, index, Redis cache, API route, DTO or response contract changed.
+
+#### Verification
+
+- Response-row characterization tests: PASS, 2/2
+- Itinerary characterization collection: PASS, 191/191
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itinerary-hotel-details-tbo.service.ts` measured at 3,281 lines after the tier; `itinerary-hotel-response-row.service.ts` is 178 lines.
+- Row projection CPU, distance lookup hit rate, restricted-row frequency and hotel-details response latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `25ab17e`.

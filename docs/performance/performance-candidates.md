@@ -418,6 +418,8 @@ The iteration-131 HOBSE city-code boundary is a measurement seam for unique-dest
 
 The iteration-132 STAAH restriction boundary is a measurement seam for restriction-row cardinality, date-normalization CPU, overlap checks, blocked-candidate rate, `availableAgainFrom` projection frequency and end-to-end STAAH search response latency. Capture no-restriction, stop-sell, status, CTA, CTD, min-stay, max-stay, through-stay and overlapping-row workloads separately before memoizing restriction decisions; preserve quote/date freshness, precedence and candidate visibility. No index addition/removal or Redis cache is justified until STAAH restriction query traces and candidate distributions establish the measured winner.
 
+The iteration-133 hotel response-row boundary is a measurement seam for package-row cardinality, supplier/restricted row ratio, margin projection CPU, voucher-map hit rate, route/hotel coordinate-map hit rate, distance formatting CPU and end-to-end hotel-details response latency. Capture empty, supplier-heavy, restricted-heavy, mixed-provider, missing-coordinate, voucher-heavy and large-package workloads separately before caching row projections or batching coordinate reads; preserve mutable quote data, booking readiness, distance fields and response ordering. No index addition/removal or Redis cache is justified until preload query plans and response traces establish the measured winner.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.

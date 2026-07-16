@@ -599,3 +599,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - The tier adds no database reads and leaves provider restriction loading and candidate selection in the existing facade.
 - This is not a measured database performance improvement: restriction-row cardinality, evaluation CPU, blocked-candidate frequency and STAAH response latency remain unmeasured.
 - No index addition/removal or Redis action is proposed; future work should capture STAAH restriction query plans and per-rate restriction distributions before caching decisions or changing provider reads.
+
+## Iteration 133 evidence update
+
+- The hotel response-row extraction preserves supplier/restricted row fields, margin/bookability calculations, voucher status projection, distance formatting and provider metadata; no SQL predicate, index, Redis cache or response shape changed.
+- All preload queries remain in the existing facade; the tier changes row projection ownership only and adds no reads.
+- This is not a measured database performance improvement: row cardinality, voucher/coordinate map hit rates, projection CPU and hotel-details latency remain unmeasured.
+- No index addition/removal or Redis action is proposed; future work should capture hotel master, stored-location and voucher query plans plus row-level hit/miss traces before caching or changing preload queries.

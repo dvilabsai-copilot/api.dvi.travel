@@ -283,3 +283,5 @@ The in-facade legacy route optimizer was removed after verification that `Itiner
 `ItineraryHotelCityCodeService` also owns HOBSE exact destination and comma-qualified prefix lookup. `ItineraryHotelDetailsTboService` remains the provider-search facade and supplies the HOBSE Prisma loader and logging callbacks. HOBSE city-code precedence and provider behavior are unchanged; lookup/search cost remains pending measurement.
 
 `StaahRestrictionService` now owns STAAH stop-sell/status, CTA/CTD and LOS restriction decisions. `ItineraryHotelDetailsTboService` remains the provider-search facade and adapts the decision to candidate selection. Restriction precedence and availability metadata are unchanged; evaluation/search cost remains pending measurement.
+
+`ItineraryHotelResponseRowService` now owns supplier and restricted hotel row projection, margin/bookability fields, voucher lookup projection and distance display formatting. `ItineraryHotelDetailsTboService` remains the response facade and owns route filtering, preload queries, confirmed overrides and final availability aggregation. Row projection and lookup cost remain pending measurement.
