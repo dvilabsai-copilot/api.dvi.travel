@@ -378,6 +378,8 @@ The iteration-111 itinerary-details destination-resolution boundary is a measure
 
 The iteration-112 itinerary-details segment-ordering boundary is a measurement seam for segment count, CTA count, clock parsing CPU, same-minute tie-break frequency, overlap/reversed-range frequency, sort cost and end-to-end timeline response latency. Capture empty, travel-only, attraction/travel tie, CTA-heavy, overlap-heavy and large-segment workloads separately before memoizing ordering keys or caching projections; preserve mutable segment timing, CTA anchors and response order. No index addition/removal or Redis cache is justified by this pure presentation-ownership tier without timeline traces.
 
+The iteration-113 itinerary-details hotel-first boundary is a measurement seam for hotel-first detection frequency, check-in/travel segment scans, clock conversion CPU, start/check-in reorder frequency and end-to-end timeline response latency. Capture no-hotel, check-in-only, hotel-first, non-hotel-first, missing-time and overlap workloads separately before memoizing segment clocks or caching projections; preserve mutable hotel assignments, timing freshness and response ordering. No index addition/removal or Redis cache is justified by this pure policy-ownership tier without timeline traces.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.

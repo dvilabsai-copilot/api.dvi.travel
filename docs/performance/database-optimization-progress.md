@@ -459,3 +459,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Clock parsing, type precedence, same-minute travel/attraction tie-breaks and CTA reinsertion remain unchanged.
 - This is not a measured database performance improvement: ordering CPU, CTA volume, overlap frequency and details response latency remain unmeasured.
 - No index or Redis action is proposed; future work should profile timeline segment counts and ordering hot paths before memoizing or caching mutable itinerary data.
+
+## Iteration 113 evidence update
+
+- The hotel-first placement extraction changes only pure timeline presentation ownership; no SQL, index, Redis cache, predicate, API route or response shape changed.
+- Hotel-name normalization, check-in/travel clock comparison, start placement and fallback insertion remain unchanged.
+- This is not a measured database performance improvement: policy CPU, reorder frequency, segment volume and details response latency remain unmeasured.
+- No index or Redis action is proposed; future work should profile hotel-first timeline traces before memoizing or caching mutable itinerary data.

@@ -3594,3 +3594,31 @@
 - `itinerary-details.service.ts` measured at 4,766 lines after the tier; `itinerary-details-segment-ordering.service.ts` is 85 lines.
 - Ordering CPU, CTA count, overlap frequency and timeline response latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `05262ac`.
+
+### Cycle 116 - Extract itinerary-details hotel-first placement policy
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itinerary-details.service.ts`
+- Extracted responsibility: hotel-first detection, check-in/departure clock comparison and start-segment placement relative to check-in
+- New files: `src/modules/itineraries/services/itinerary-details-hotel-first-policy.service.ts`, `test/itinerary-details-hotel-first-policy.test.ts`
+- Workflow: post-order itinerary-details timeline presentation
+
+#### Change
+
+- Moved hotel-first placement calculations behind `ItineraryDetailsHotelFirstPolicyService` while retaining the same segment mutation boundary.
+- Preserved route-hotel normalization, start/travel/check-in time extraction, hotel-departure detection, check-in comparison and fallback insertion behavior.
+- No SQL predicate, index, Redis cache, API route, DTO or response contract changed.
+
+#### Verification
+
+- Hotel-first policy characterization test: PASS, 1/1
+- Itinerary characterization collection: PASS, 163/163
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itinerary-details.service.ts` measured at 4,705 lines after the tier; `itinerary-details-hotel-first-policy.service.ts` is 46 lines.
+- Hotel-first detection CPU, check-in/departure frequency and timeline response latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `6d73561`.
