@@ -326,3 +326,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - UTC conversion, display formatting, minute arithmetic, no-slot handling, slot-fit checks, warning text and severity remain unchanged.
 - This is not a measured performance improvement: timing-policy CPU, activity-slot row count, conflict frequency and warning projection latency remain unmeasured.
 - No index or Redis action is proposed; any future optimization should compare timing-row counts and conflict traces before batching or caching mutable timing data.
+
+## Iteration 94 evidence update
+
+- The timeline build-context extraction preserves plan, route, hotspot and timing predicates, route ordering, timing-map construction and global-settings lookup; no SQL, index, Redis cache or query shape was changed.
+- Route scoping, previous-route mapping, hotspot lookup projection, permanently-closed filtering, evidence logging and early-return behavior remain unchanged.
+- This is not a measured performance improvement: context-read latency, row volume, global-settings latency, map-build CPU and closed-hotspot filtering latency remain unmeasured.
+- No index or Redis action is proposed; any future optimization should compare query plans and context traces before batching or caching mutable timing/hotspot state.

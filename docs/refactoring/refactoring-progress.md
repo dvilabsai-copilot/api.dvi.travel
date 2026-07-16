@@ -3061,3 +3061,33 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Timing-policy CPU and activity conflict-evaluation frequency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `46ece38`.
+
+### Cycle 97 - Extract timeline build-context hydration
+
+#### Scope
+
+- Original file: `src/modules/itineraries/engines/helpers/timeline.builder.ts`
+- Extracted responsibility: plan/route context, hotspot/timing hydration, lookup-map construction and closed-hotspot prefiltering
+- New files: `src/modules/itineraries/engines/helpers/timeline-build-context.service.ts`, `test/timeline-build-context.test.ts`
+- Workflow: full-plan and route-scoped timeline builds
+
+#### Change
+
+- Moved plan and route reads, scope filtering, previous-route indexing, all-hotspot/timing reads, global-settings preload, hotspot lookup-map construction and permanently-closed filtering behind `TimelineBuildContextService`.
+- Preserved active predicates, route ordering, timing-map shape, global-settings initialization, closed-hotspot evidence logging and the scheduling facade's context fields.
+- Kept the transaction client explicit and retained the existing early-return behavior for missing plans, empty plans and missing scoped routes.
+
+#### Verification
+
+- Build-context characterization tests: PASS, 2/2
+- Combined focused backend/timeline suite: PASS, 208/208
+- Backend build: PASS
+- Nest/OpenAPI initialization: PASS, 501 paths
+- `git diff --check`: PASS
+
+#### Result
+
+- `timeline.builder.ts` measured at 6,293 lines after the tier; `TimelineBuildContextService` is 126 lines.
+- No query predicate, index, Redis, DTO, route or response contract changed.
+- Context-read fan-out, global-settings read latency, lookup-map CPU and closed-hotspot prefilter latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `b6e5e40`.

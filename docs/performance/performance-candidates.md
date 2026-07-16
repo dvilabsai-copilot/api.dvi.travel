@@ -340,6 +340,8 @@ The iteration-92 activity-pricing boundary is a measurement seam for plan/route 
 
 The iteration-93 activity-timing boundary is a measurement seam for UTC conversion CPU, display-formatting CPU, minute-arithmetic calls, activity-slot row count, conflict-evaluation frequency and warning projection latency. Capture no-slot, fitting-slot, conflicting-slot, multi-window and overnight-time workloads separately before proposing memoization or shared cache state; preserve UTC semantics, warning text, slot precedence and mutable timing-row freshness. No index addition/removal or Redis cache is justified by the current evidence because this tier changed ownership only and has no before/after production timings.
 
+The iteration-94 timeline-build-context boundary is a measurement seam for plan-read latency, route-read latency, route-scope filtering, all-hotspot row volume, all-timing row volume, global-settings read latency, lookup-map construction CPU, permanently-closed filtering frequency and end-to-end context hydration latency. Capture full-plan, route-scoped, empty-plan, missing-scope, large-hotspot and large-timing workloads separately before proposing composite indexes, batching or Redis; preserve active predicates, route ordering, mutable timing freshness and global-settings freshness. No index addition/removal or Redis cache is justified by the current evidence because this tier moved ownership only and has no before/after production timings.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.
