@@ -4810,7 +4810,6 @@ sightseeingDistance,       // local sightseeing separately
       const dayWiseRentalTotal = dayWisePricing.reduce((s, d) => s + Number(d.rentalCharges || 0), 0);
       const dayWiseTollTotal = dayWisePricing.reduce((s, d) => s + Number(d.tollCharges || 0), 0);
       const dayWiseParkingTotal = dayWisePricing.reduce((s, d) => s + Number(d.parkingCharges || 0), 0);
-      const dayWiseDriverTotal = dayWisePricing.reduce((s, d) => s + Number(d.driverCharges || 0), 0);
       const dayWisePermitTotal = dayWisePricing.reduce((s, d) => s + Number(d.permitCharges || 0), 0);
       const dayWiseExtraHourCountTotal = dayWisePricing.reduce((s, d) => s + Number(d.extraHourCount || 0), 0);
       const dayWiseExtraHourRate = Number(dayWisePricing.find((d) => Number(d.extraHourRate || 0) > 0)?.extraHourRate || 0);
@@ -4826,8 +4825,15 @@ sightseeingDistance,       // local sightseeing separately
       if (dayWiseParkingTotal > 0) {
         parkingCharges = dayWiseParkingTotal;
       }
-      if (dayWiseDriverTotal > 0) {
-        driverCharges = dayWiseDriverTotal;
+      // day-wise driverCharges includes the before-6AM/after-8PM driver and
+      // vehicle surcharges for display. The vehicle-level driver component
+      // must contain only the base vehicle_driver_charges value; the timing
+      // surcharge fields are added separately below, matching PHP.
+      if (dayWiseDetails.length > 0) {
+        driverCharges = dayWiseDetails.reduce(
+          (sum: number, vd: any) => sum + Number(vd.vehicle_driver_charges || 0),
+          0,
+        );
       }
       if (dayWisePermitTotal > 0) {
         permitCharges = dayWisePermitTotal;
@@ -4971,7 +4977,16 @@ sightseeingDistance,       // local sightseeing separately
       const vendorMarginAmount = roundCurrency(
         ((subtotal + vehicleGstAmount) * vendorMarginPercentage) / 100,
       );
-      const vendorMarginGstPercentage = parseFloat(String(eligAny.vendor_margin_gst_percentage || 0)) || 0;
+      const configuredVendorMarginGstPercentage =
+        parseFloat(String(eligAny.vendor_margin_gst_percentage || 0)) || 0;
+      // PHP uses the vendor-branch GST percentage when the vendor-specific
+      // margin GST percentage is missing/zero.
+      const vendorBranchGstPercentage =
+        parseFloat(String((branch as any)?.vendor_branch_gst || 0)) || 0;
+      const vendorMarginGstPercentage =
+        configuredVendorMarginGstPercentage >= 1
+          ? configuredVendorMarginGstPercentage
+          : vendorBranchGstPercentage;
       const vendorMarginGstType = parseFloat(String(eligAny.vendor_margin_gst_type || 0)) || 0;
       const vendorMarginGstAmount =
         vendorMarginGstType === 2
