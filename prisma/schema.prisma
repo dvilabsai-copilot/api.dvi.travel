@@ -6380,3 +6380,31 @@ model hotspot_route_between_rejections {
 
   @@unique([from_hotspot_id, to_hotspot_id, between_hotspot_id], map: "uniq_hotspot_route_between_rejection")
 }
+
+model dvi_email_login_otps {
+  id           BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  email        String   @unique(map: "uq_dvi_email_login_otps_email") @db.VarChar(320)
+  otp_hash     String   @db.Char(64)
+  expires_at   DateTime @db.DateTime(3)
+  resend_after DateTime @db.DateTime(3)
+  attempts     Int      @default(0) @db.UnsignedTinyInt
+  created_at   DateTime @default(now()) @db.DateTime(3)
+  updated_at   DateTime @default(now()) @updatedAt @db.DateTime(3)
+
+  @@index([expires_at], map: "idx_dvi_email_login_otps_expires_at")
+  @@map("dvi_email_login_otps")
+}
+
+model dvi_registration_email_otps {
+  id           BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  email        String   @unique(map: "uq_dvi_registration_email_otps_email") @db.VarChar(320)
+  otp_hash     String   @db.Char(64)
+  expires_at   DateTime @db.DateTime(3)
+  resend_after DateTime @db.DateTime(3)
+  attempts     Int      @default(0) @db.UnsignedTinyInt
+  created_at   DateTime @default(now()) @db.DateTime(3)
+  updated_at   DateTime @default(now()) @updatedAt @db.DateTime(3)
+
+  @@index([expires_at], map: "idx_dvi_registration_email_otps_expires_at")
+  @@map("dvi_registration_email_otps")
+}
