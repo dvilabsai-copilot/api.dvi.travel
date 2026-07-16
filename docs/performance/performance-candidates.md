@@ -448,6 +448,8 @@ The iteration-146 hotel-margin lookup boundary is a measurement seam for unique 
 
 The iteration-147 hotel booking-detail lookup boundary is a measurement seam for persisted detail-row cardinality, voucher-row cardinality, voucher-hit rate, duplicate-key rate, lookup latency, map construction CPU and hotel-detail response latency. Capture empty, one-row, duplicate-route/group, voucher-heavy, no-voucher and large-plan workloads separately before adding covering indexes or caching lookup maps; preserve deleted-row freshness, route/hotel/group identity and cancellation status. No index addition/removal or Redis cache is justified until query plans and traces establish the measured winner.
 
+The iteration-148 hotel-coordinate lookup boundary is a measurement seam for unique route-location count, provider-code cardinality, valid-coordinate hit rate, TBO fallback rate, coordinate query latency, map construction CPU and hotel-detail response latency. Capture empty, duplicate-location, invalid-coordinate, TBO-fallback, multi-provider and large-package workloads separately before adding covering indexes or caching coordinate maps; preserve coordinate freshness, zero-coordinate rejection and provider-key precedence. No index addition/removal or Redis cache is justified until query plans and coordinate traces establish the measured winner.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.

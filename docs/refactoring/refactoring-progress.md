@@ -4579,3 +4579,31 @@
 - `itinerary-hotel-details-tbo.service.ts` measured at 2,489 lines after the tier; `itinerary-hotel-booking-detail-lookup.service.ts` is 34 lines.
 - Hotel-detail row cardinality, voucher-hit rate, lookup latency and map construction CPU remain unmeasured.
 - Implementation commit: `api.dvi.travel` `fcc4105`.
+
+### Cycle 151 - Extract hotel coordinate lookup
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itinerary-hotel-details-tbo.service.ts`
+- Extracted responsibility: stored route-coordinate lookup, provider hotel-coordinate indexing and TBO static-master fallback
+- New files: `src/modules/itineraries/services/itinerary-hotel-coordinate-lookup.service.ts`, `test/itinerary-hotel-coordinate-lookup.test.ts`
+- Workflow: hotel-detail response distance-preload context
+
+#### Change
+
+- Moved route and provider coordinate preparation behind `ItineraryHotelCoordinateLookupService` while preserving location deduplication, valid-coordinate filtering, provider-key coverage and missing-TBO fallback behavior.
+- The response facade retains Prisma adapters, distance calculation, row projection and response aggregation; provider payloads and API DTOs are unchanged.
+- No SQL predicate, index, Redis cache, API route, DTO or response contract changed.
+
+#### Verification
+
+- Hotel-coordinate lookup characterization tests: PASS, 2/2
+- Itinerary characterization collection: PASS, 201/201
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itinerary-hotel-details-tbo.service.ts` measured at 2,391 lines after the tier; `itinerary-hotel-coordinate-lookup.service.ts` is 106 lines.
+- Coordinate-row cardinality, fallback rate, invalid-coordinate rate, lookup latency and map construction CPU remain unmeasured.
+- Implementation commit: `api.dvi.travel` `b9dce7d`.

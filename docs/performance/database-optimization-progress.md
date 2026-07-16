@@ -704,3 +704,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - The existing facade still supplies both Prisma query adapters, and the tier adds no database access beyond the same reads.
 - This is not a measured database performance improvement: detail/voucher cardinality, voucher-hit rate, query latency and map construction CPU remain unmeasured.
 - No index addition/removal or Redis action is proposed; future work should capture plan-detail and voucher query plans before indexing or caching response lookup maps.
+
+## Iteration 148 evidence update
+
+- The hotel-coordinate lookup extraction preserves route-location deduplication, stored-location predicates, provider master filters, valid-coordinate checks and TBO fallback precedence; no SQL predicate, index, Redis cache or response shape changed.
+- The existing facade still supplies all three Prisma query adapters, and the tier adds no database access beyond the same reads.
+- This is not a measured database performance improvement: location/provider cardinality, coordinate hit/fallback rates, query latency and map construction CPU remain unmeasured.
+- No index addition/removal or Redis action is proposed; future work should capture stored-location, `dvi_hotel` and `tbo_hotel_master` query plans before indexing or caching coordinate maps.
