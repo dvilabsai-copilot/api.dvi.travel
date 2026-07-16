@@ -24,6 +24,7 @@ import {
   type StaahPricingPaxInput,
 } from './helpers/staah-occupancy-pricing';
 import { ItineraryHotelDetailsCacheService } from './services/itinerary-hotel-details-cache.service';
+import { ItineraryHotelStayBlockService } from './services/itinerary-hotel-stay-block.service';
 
 /**
  * This service generates dynamic hotel packages from TBO API
@@ -138,6 +139,7 @@ export class ItineraryHotelDetailsTboService {
   private static readonly ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
   private readonly hotelDetailsCacheService = new ItineraryHotelDetailsCacheService();
+  private readonly stayBlockService = new ItineraryHotelStayBlockService();
 
   private isTboOnlyFetchEnabled(): boolean {
     const raw = String(process.env.HOTEL_FETCH_TBO_ONLY || '').trim().toLowerCase();
@@ -983,92 +985,8 @@ export class ItineraryHotelDetailsTboService {
     return hotelsByRoute;
   }
 
-  private buildStayBlocks(
-    routes: any[],
-    noOfNights: number,
-  ): Array<{
-    destination: string;
-    checkInDate: string;
-    checkOutDate: string;
-    routeIds: number[];
-  }> {
-    const blocks: Array<{
-      destination: string;
-      checkInDate: string;
-      checkOutDate: string;
-      routeIds: number[];
-    }> = [];
-
-    const totalRoutes = routes.length;
-    let currentBlock: {
-      destination: string;
-      checkInDate: string;
-      checkOutDate: string;
-      routeIds: number[];
-      lastDate: Date;
-    } | null = null;
-
-    for (let routeIndex = 0; routeIndex < routes.length; routeIndex++) {
-      const route = routes[routeIndex];
-      const isLastRoute = routeIndex === totalRoutes - 1;
-      if (isLastRoute && routeIndex >= noOfNights) {
-        this.logger.log(`   â­ï¸  Skipping route ${routeIndex + 1} (last route - departure day, no hotel needed)`);
-        continue;
-      }
-
-      const routeId = Number((route as any).itinerary_route_ID);
-      const destination = String((route as any).next_visiting_location || '').trim();
-      const routeDate = new Date((route as any).itinerary_route_date);
-      const checkInDate = routeDate.toISOString().split('T')[0];
-      const nextDay = new Date(routeDate.getTime() + ItineraryHotelDetailsTboService.ONE_DAY_MS);
-      const checkOutDate = nextDay.toISOString().split('T')[0];
-
-      if (!currentBlock) {
-        currentBlock = {
-          destination,
-          checkInDate,
-          checkOutDate,
-          routeIds: [routeId],
-          lastDate: routeDate,
-        };
-        continue;
-      }
-
-      const isSameDestination = destination === currentBlock.destination;
-      const isConsecutiveDay =
-        routeDate.getTime() - currentBlock.lastDate.getTime() === ItineraryHotelDetailsTboService.ONE_DAY_MS;
-
-      if (isSameDestination && isConsecutiveDay) {
-        currentBlock.checkOutDate = checkOutDate;
-        currentBlock.routeIds.push(routeId);
-        currentBlock.lastDate = routeDate;
-      } else {
-        blocks.push({
-          destination: currentBlock.destination,
-          checkInDate: currentBlock.checkInDate,
-          checkOutDate: currentBlock.checkOutDate,
-          routeIds: currentBlock.routeIds,
-        });
-        currentBlock = {
-          destination,
-          checkInDate,
-          checkOutDate,
-          routeIds: [routeId],
-          lastDate: routeDate,
-        };
-      }
-    }
-
-    if (currentBlock) {
-      blocks.push({
-        destination: currentBlock.destination,
-        checkInDate: currentBlock.checkInDate,
-        checkOutDate: currentBlock.checkOutDate,
-        routeIds: currentBlock.routeIds,
-      });
-    }
-
-    return blocks;
+  private buildStayBlocks(routes: any[], noOfNights: number): Array<{ destination: string; checkInDate: string; checkOutDate: string; routeIds: number[] }> {
+    return this.stayBlockService.build(routes, noOfNights, (message) => this.logger.log(message));
   }
 
   /**
