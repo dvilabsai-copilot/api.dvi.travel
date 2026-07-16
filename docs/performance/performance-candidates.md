@@ -338,6 +338,8 @@ The iteration-91 transport-formatting boundary is a measurement seam for voucher
 
 The iteration-92 activity-pricing boundary is a measurement seam for plan/route context read latency, nationality lookup latency, dated pricebook selectivity, day-one fallback frequency, price-row count, per-activity availability fan-out and total-price projection CPU. Capture domestic/foreign, dated-hit, dated-miss, no-plan, no-route, unit-price and per-adult workloads separately before proposing a composite index, batching or Redis; preserve date-sensitive pricebook freshness, passenger counts and mutable pricebook state. No index addition/removal or Redis cache is justified by the current evidence because this tier changed ownership only and has no before/after production timings.
 
+The iteration-93 activity-timing boundary is a measurement seam for UTC conversion CPU, display-formatting CPU, minute-arithmetic calls, activity-slot row count, conflict-evaluation frequency and warning projection latency. Capture no-slot, fitting-slot, conflicting-slot, multi-window and overnight-time workloads separately before proposing memoization or shared cache state; preserve UTC semantics, warning text, slot precedence and mutable timing-row freshness. No index addition/removal or Redis cache is justified by the current evidence because this tier changed ownership only and has no before/after production timings.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.

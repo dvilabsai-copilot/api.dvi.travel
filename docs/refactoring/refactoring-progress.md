@@ -3031,3 +3031,33 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Pricebook read latency, day-one fallback frequency and per-activity availability fan-out remain unmeasured.
 - Implementation commit: `api.dvi.travel` `5328d45`.
+
+### Cycle 96 - Extract shared activity timing policy
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: UTC time conversion, display formatting, minute arithmetic and activity-slot conflict policy
+- New files: `src/modules/itineraries/services/itinerary-activity-timing-policy.service.ts`, `test/itinerary-activity-timing-policy.test.ts`
+- Workflows: activity workflow, smart activity, activity impact simulation and transport time formatting
+
+#### Change
+
+- Moved shared UTC minute conversion, `HH:mm` formatting, UTC minute addition and activity-slot conflict evaluation behind `ItineraryActivityTimingPolicyService`.
+- Preserved the existing facade callbacks consumed by activity workflow, smart activity and impact services, including warning text and severity.
+- Preserved no-slot permissive behavior, half-open slot fit checks and date immutability.
+
+#### Verification
+
+- Activity-timing characterization tests: PASS, 2/2
+- Combined focused backend/timeline suite: PASS, 206/206
+- Backend build: PASS
+- Nest/OpenAPI initialization: PASS, 499 paths
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 4,982 lines after the tier; `ItineraryActivityTimingPolicyService` is 46 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Timing-policy CPU and activity conflict-evaluation frequency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `46ece38`.

@@ -319,3 +319,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Nationality classification, passenger counts, rate precedence, unit/per-adult selection, totals and price-date fields remain unchanged; transaction-client pass-through is preserved.
 - This is not a measured performance improvement: context-read latency, country-read latency, pricebook selectivity, fallback frequency, row count and availability fan-out remain unmeasured.
 - No index or Redis action is proposed; any future optimization should compare pricebook query plans and per-activity read traces before batching or caching mutable pricing data.
+
+## Iteration 93 evidence update
+
+- The activity-timing extraction changes only policy ownership and callback delegation; no SQL, index, Redis cache or query shape was changed.
+- UTC conversion, display formatting, minute arithmetic, no-slot handling, slot-fit checks, warning text and severity remain unchanged.
+- This is not a measured performance improvement: timing-policy CPU, activity-slot row count, conflict frequency and warning projection latency remain unmeasured.
+- No index or Redis action is proposed; any future optimization should compare timing-row counts and conflict traces before batching or caching mutable timing data.
