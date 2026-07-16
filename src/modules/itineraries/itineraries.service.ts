@@ -95,6 +95,7 @@ import { ItineraryHotelRoomCategoryService } from './services/itinerary-hotel-ro
 import { ItineraryRouteOptimizationService } from './services/itinerary-route-optimization.service';
 import { ItineraryActivityImpactService } from './services/itinerary-activity-impact.service';
 import { ItineraryTransportFormattingService } from './services/itinerary-transport-formatting.service';
+import { ItineraryActivityPricingService } from './services/itinerary-activity-pricing.service';
 import { ItineraryVehicleBuildStatusService } from './services/itinerary-vehicle-build-status.service';
 import { ItineraryVehicleBuildService } from './services/itinerary-vehicle-build.service';
 import { ItineraryPlanPersistenceService } from './services/itinerary-plan-persistence.service';
@@ -695,6 +696,7 @@ export class ItinerariesService {
     private readonly routeOptimizationService: ItineraryRouteOptimizationService = new ItineraryRouteOptimizationService(prisma, routeNormalization),
     private readonly activityImpactService: ItineraryActivityImpactService = new ItineraryActivityImpactService(prisma, hotspotEngine),
     private readonly transportFormattingService: ItineraryTransportFormattingService = new ItineraryTransportFormattingService(),
+    private readonly activityPricingService: ItineraryActivityPricingService = new ItineraryActivityPricingService(prisma),
   ) {
     this.manualFitTimelinePolicyService.setCallbacks({
       parseSegmentEndMinutes: (...args) => (this.parseSegmentEndMinutes as any)(...args),
@@ -1203,192 +1205,9 @@ export class ItinerariesService {
     return dt.toISOString().slice(0, 10);
   }
 
-  private async calculateActivityPlanPricing(
-  params: {
-    planId?: number | null;
-    routeId?: number | null;
-    activityId: number;
-    hotspotId?: number | null;
-  },
-  db: any = this.prisma,
-): Promise<{
-  pricingUnitType: 'PER_ADULT' | 'UNIT';
-  priceUnitLabel: string;
-  nationalityType: number;
-  adults: number;
-  children: number;
-  adultRate: number;
-  childRate: number;
-  unitRate: number;
-  totalAmount: number;
-  priceDate: string | null;
-}> {
-  const empty = {
-    pricingUnitType: 'PER_ADULT' as const,
-    priceUnitLabel: 'per adult',
-    nationalityType: 1,
-    adults: 0,
-    children: 0,
-    adultRate: 0,
-    childRate: 0,
-    unitRate: 0,
-    totalAmount: 0,
-    priceDate: null as string | null,
-  };
-
-  const activityId = Number(params.activityId || 0);
-  if (!activityId) return empty;
-
-  const planId = Number(params.planId || 0);
-  const routeId = Number(params.routeId || 0);
-
-  const plan = planId
-    ? await (db as any).dvi_itinerary_plan_details.findFirst({
-        where: { itinerary_plan_ID: planId, deleted: 0 },
-        select: {
-          total_adult: true,
-          total_children: true,
-          nationality: true,
-          trip_start_date_and_time: true,
-        },
-      })
-    : null;
-
-  const route =
-    planId && routeId
-      ? await (db as any).dvi_itinerary_route_details.findFirst({
-          where: {
-            itinerary_plan_ID: planId,
-            itinerary_route_ID: routeId,
-            deleted: 0,
-          },
-          select: { itinerary_route_date: true },
-        })
-      : null;
-
-  const adults = Math.max(Number(plan?.total_adult || 0), 0);
-  const children = Math.max(Number(plan?.total_children || 0), 0);
-
-  const rawDate =
-    route?.itinerary_route_date ||
-    plan?.trip_start_date_and_time ||
-    new Date();
-
-  const priceDate = this.formatDateOnly(rawDate);
-  const [yearText, monthText, dayText] = String(priceDate || '').split('-');
-
-  const year = Number(yearText || 0);
-  const month = Number(monthText || 0);
-  const day = Number(dayText || 0);
-
-  let nationalityType = 1;
-
-  const nationalityId = Number(plan?.nationality || 0);
-  if (nationalityId > 0) {
-    const country = await (db as any).dvi_countries.findFirst({
-      where: { id: nationalityId, deleted: 0, status: 1 },
-      select: { shortname: true },
-    });
-
-    const iso2 = String(country?.shortname || '').trim().toUpperCase();
-
-    if (iso2 && iso2 !== 'IN') {
-      nationalityType = 2;
-    } else if (!iso2 && nationalityId === 2) {
-      nationalityType = 2;
-    }
+  private calculateActivityPlanPricing(...args: any[]) {
+    return (this.activityPricingService.calculateActivityPlanPricing as any)(...args);
   }
-
-  const monthNames = [
-    'January',
-    'February',
-    'March',
-    'April',
-    'May',
-    'June',
-    'July',
-    'August',
-    'September',
-    'October',
-    'November',
-    'December',
-  ];
-
-  const monthName = month >= 1 && month <= 12 ? monthNames[month - 1] : '';
-  const dayKey = day >= 1 && day <= 31 ? `day_${day}` : 'day_1';
-
-  const priceSelect = {
-    price_type: true,
-    [dayKey]: true,
-  } as any;
-
-  let priceRows =
-    year && monthName
-      ? await (db as any).dvi_activity_pricebook.findMany({
-          where: {
-            activity_id: activityId,
-            nationality: nationalityType,
-            year: String(year),
-            month: monthName,
-            deleted: 0,
-            status: 1,
-          },
-          select: priceSelect,
-        })
-      : [];
-
-  let effectiveDayKey = dayKey;
-
-  if (!priceRows.length) {
-    priceRows = await (db as any).dvi_activity_pricebook.findMany({
-      where: {
-        activity_id: activityId,
-        nationality: nationalityType,
-        deleted: 0,
-        status: 1,
-      },
-      select: {
-        price_type: true,
-        day_1: true,
-      },
-    });
-
-    effectiveDayKey = 'day_1';
-  }
-
-  const getRate = (priceType: number) => {
-    const row = priceRows.find(
-      (item: any) => Number(item?.price_type || 0) === priceType,
-    );
-
-    return Number(row?.[effectiveDayKey] || 0);
-  };
-
-  const adultRate = getRate(1);
-  const childRate = getRate(2);
-  const unitRate = getRate(4);
-
-  const pricingUnitType: 'PER_ADULT' | 'UNIT' =
-    unitRate > 0 ? 'UNIT' : 'PER_ADULT';
-
-  const totalAmount =
-    pricingUnitType === 'UNIT'
-      ? unitRate
-      : adultRate * adults + childRate * children;
-
-  return {
-    pricingUnitType,
-    priceUnitLabel: pricingUnitType === 'UNIT' ? 'per unit' : 'per adult',
-    nationalityType,
-    adults,
-    children,
-    adultRate,
-    childRate,
-    unitRate,
-    totalAmount,
-    priceDate,
-  };
-}
 
 private getGuideSlotLabel(slotId: number): string {
     return this.guideAssignmentService.getGuideSlotLabel(slotId);

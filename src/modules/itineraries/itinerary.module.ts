@@ -106,6 +106,7 @@ import { ItineraryHotelRoomCategoryService } from './services/itinerary-hotel-ro
 import { ItineraryRouteOptimizationService } from './services/itinerary-route-optimization.service';
 import { ItineraryActivityImpactService } from './services/itinerary-activity-impact.service';
 import { ItineraryTransportFormattingService } from './services/itinerary-transport-formatting.service';
+import { ItineraryActivityPricingService } from './services/itinerary-activity-pricing.service';
 
 @Module({
   imports: [HotelsModule],
@@ -191,6 +192,7 @@ import { ItineraryTransportFormattingService } from './services/itinerary-transp
     ItineraryRouteOptimizationService,
     ItineraryActivityImpactService,
     ItineraryTransportFormattingService,
+    ItineraryActivityPricingService,
 
     // existing engines you already had
     HotelEngineService,
