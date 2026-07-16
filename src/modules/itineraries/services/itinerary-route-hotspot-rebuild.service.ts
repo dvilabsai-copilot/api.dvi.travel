@@ -1,4 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { PrismaService } from '../../../prisma.service';
+import { HotspotEngineService } from '../engines/hotspot-engine.service';
 
 type RebuildCallbacks = {
   applySameCityCrossDayOptimizerAfterSave: (...args: any[]) => Promise<any>;
@@ -13,8 +15,8 @@ export class ItineraryRouteHotspotRebuildService {
   };
 
   constructor(
-    private readonly prisma: any,
-    private readonly hotspotEngine: any,
+    private readonly prisma: PrismaService,
+    private readonly hotspotEngine: HotspotEngineService,
   ) {}
 
   setCallbacks(callbacks: Partial<RebuildCallbacks>) {

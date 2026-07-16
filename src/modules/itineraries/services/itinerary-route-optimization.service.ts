@@ -1,10 +1,11 @@
 import { Injectable } from '@nestjs/common';
+import { PrismaService } from '../../../prisma.service';
 import { ItineraryRouteNormalizationService } from './itinerary-route-normalization.service';
 
 @Injectable()
 export class ItineraryRouteOptimizationService {
   constructor(
-    private readonly prisma: any,
+    private readonly prisma: PrismaService,
     private readonly routeNormalization: ItineraryRouteNormalizationService,
   ) {}
 

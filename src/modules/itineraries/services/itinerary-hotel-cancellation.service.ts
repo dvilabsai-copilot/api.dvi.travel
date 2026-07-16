@@ -1,8 +1,9 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { PrismaService } from '../../../prisma.service';
 
 @Injectable()
 export class ItineraryHotelCancellationService {
-  constructor(private readonly prisma: any) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async getConfirmedItineraryForCancellation(confirmedPlanId: number) {
     const plan = await this.prisma.dvi_confirmed_itinerary_plan_details.findUnique({

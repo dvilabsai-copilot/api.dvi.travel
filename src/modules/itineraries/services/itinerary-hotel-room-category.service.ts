@@ -1,8 +1,13 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { PrismaService } from '../../../prisma.service';
+import { ItineraryHotelDetailsTboService } from '../itinerary-hotel-details-tbo.service';
 
 @Injectable()
 export class ItineraryHotelRoomCategoryService {
-  constructor(private readonly prisma: any, private readonly hotelDetailsTboService: any) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly hotelDetailsTboService: ItineraryHotelDetailsTboService,
+  ) {}
 
   async getHotelRoomCategories(params: {
     itinerary_plan_hotel_details_ID: number;
