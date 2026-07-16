@@ -92,6 +92,18 @@ export class StaahRestrictionService {
     return { blocked: false, reason: null, availableAgainFrom: null };
   }
 
+  buildAvailabilityMessage(reason: string | null, availableAgainFrom: string | null): string {
+    const rawReason = String(reason || '').trim();
+    let baseReason = rawReason || 'This room is not available for the selected stay.';
+    const ctaMatch = rawReason.match(/CTA active on check-in date\s+(\d{4}-\d{2}-\d{2})/i);
+    if (ctaMatch) baseReason = `This room cannot be booked for arrival on ${ctaMatch[1]}. Check-in is closed for that date.`;
+    const ctdMatch = rawReason.match(/CTD active on check-out date\s+(\d{4}-\d{2}-\d{2})/i);
+    if (ctdMatch) baseReason = `This room cannot be booked for departure on ${ctdMatch[1]}. Check-out is closed for that date.`;
+    if (/stopsell/i.test(rawReason)) baseReason = 'This room is closed for sale for the selected stay dates.';
+    if (/minimum stay/i.test(rawReason)) baseReason = rawReason;
+    return availableAgainFrom ? `${baseReason} You can try booking it again from ${availableAgainFrom}.` : baseReason;
+  }
+
   private availableAgainFrom(row: any): string | null {
     if (!row?.end_date) return null;
     return this.formatDateOnly(this.addDays(this.toIstDateOnly(row.end_date), 1));

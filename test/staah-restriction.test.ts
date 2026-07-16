@@ -48,3 +48,15 @@ test('applies CTA, CTD and length-of-stay restrictions in the existing precedenc
   );
   assert.equal(minStay.reason, 'minimum stay 3 nights required for LOS 2');
 });
+
+test('formats customer-facing restriction messages with optional retry dates', () => {
+  const service = new StaahRestrictionService();
+  assert.equal(
+    service.buildAvailabilityMessage('CTA active on check-in date 2026-07-20', '2026-07-23'),
+    'This room cannot be booked for arrival on 2026-07-20. Check-in is closed for that date. You can try booking it again from 2026-07-23.',
+  );
+  assert.equal(
+    service.buildAvailabilityMessage('stopsell active during stay', null),
+    'This room is closed for sale for the selected stay dates.',
+  );
+});

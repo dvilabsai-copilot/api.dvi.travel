@@ -995,59 +995,14 @@ export class ItineraryHotelDetailsTboService {
     return next;
   }
 
-  private getStaahRestrictionAvailableAgainFrom(row: any): string | null {
-    if (!row?.end_date) return null;
-    return this.formatDateOnly(this.addDays(this.toIstDateOnly(row.end_date), 1));
-  }
-
   private buildStaahRestrictionAvailabilityMessage(
     reason: string | null,
     availableAgainFrom: string | null,
   ): string {
-    const rawReason = String(reason || '').trim();
-    let baseReason = rawReason || 'This room is not available for the selected stay.';
-
-    const ctaMatch = rawReason.match(/CTA active on check-in date\s+(\d{4}-\d{2}-\d{2})/i);
-    if (ctaMatch) {
-      baseReason = `This room cannot be booked for arrival on ${ctaMatch[1]}. Check-in is closed for that date.`;
-    }
-
-    const ctdMatch = rawReason.match(/CTD active on check-out date\s+(\d{4}-\d{2}-\d{2})/i);
-    if (ctdMatch) {
-      baseReason = `This room cannot be booked for departure on ${ctdMatch[1]}. Check-out is closed for that date.`;
-    }
-
-    if (/stopsell/i.test(rawReason)) {
-      baseReason = 'This room is closed for sale for the selected stay dates.';
-    }
-
-    if (/minimum stay/i.test(rawReason)) {
-      baseReason = rawReason;
-    }
-
-    if (!availableAgainFrom) {
-      return baseReason;
-    }
-    return `${baseReason} You can try booking it again from ${availableAgainFrom}.`;
+    return this.staahRestrictionService.buildAvailabilityMessage(reason, availableAgainFrom);
   }
 
-  private isStaahRestrictionTruthy(value: unknown): boolean {
-    const normalized = String(value ?? '').trim().toLowerCase();
-    return ['1', 'true', 'yes', 'y', 'close', 'closed'].includes(normalized);
-  }
 
-  private normalizeStaahRestrictionType(value: unknown): string {
-    const normalized = String(value ?? '').trim().toLowerCase();
-    if (normalized === 'status') return 'status';
-    if (normalized.includes('stopsell') || normalized.includes('stop_sell')) return 'stopsell';
-    if (normalized === 'cta') return 'cta';
-    if (normalized === 'ctd') return 'ctd';
-    if (normalized === 'minstay') return 'minstay';
-    if (normalized === 'maxstay') return 'maxstay';
-    if (normalized === 'minstay_through') return 'minstay_through';
-    if (normalized === 'maxstay_through') return 'maxstay_through';
-    return normalized;
-  }
 
   private getStaahStayWindow(
     routes: any[],
