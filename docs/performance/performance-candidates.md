@@ -344,6 +344,8 @@ The iteration-94 timeline-build-context boundary is a measurement seam for plan-
 
 The iteration-95 itinerary-details timeline-presentation boundary is a measurement seam for segment count, chronology-normalization CPU, break/travel overlap-adjustment frequency, semantic-stop scan work, label-reconstruction CPU and end-to-end response projection latency. Capture attraction-safe, overnight, overlapping-break, multi-stop, missing-hotel and large-timeline workloads separately before proposing memoization or response caching; preserve mutable itinerary timing and segment response freshness. No index addition/removal or Redis cache is justified by the current evidence because this tier changed pure presentation ownership only and has no before/after production timings.
 
+The iteration-96 TBO hotel-details cache boundary is a measurement seam for cache hit rate, miss rate, expiry frequency, bounded-eviction frequency, quote invalidation frequency, room/detail key cardinality, provider-call reduction and end-to-end hotel response latency. Capture base-key, route-key, expired, invalidated, high-cardinality and provider-failure workloads separately before changing TTLs or adding Redis; preserve mutable provider freshness and explicit invalidation behavior. No database index addition/removal is justified by this tier, and Redis remains unproposed until in-memory hit/miss and provider-latency traces establish the measured winner.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.

@@ -340,3 +340,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Attraction visit-time protection, overnight handling, break/travel chronology adjustment, semantic-stop precedence and travel response fields remain unchanged.
 - This is not a measured performance improvement: segment count, normalization CPU, adjustment frequency, label-reconstruction CPU and response projection latency remain unmeasured.
 - No index or Redis action is proposed; any future optimization should profile the details read graph and segment projection before batching database reads or caching mutable itinerary responses.
+
+## Iteration 96 evidence update
+
+- The TBO cache extraction preserves cache key construction, five-minute TTL behavior, bounded eviction, quote invalidation and stats; no SQL, index or query shape was changed.
+- Provider request construction, response projection and explicit cache invalidation entry points remain unchanged; Redis was not introduced.
+- This is not a measured performance improvement: hit rate, expiry rate, eviction frequency, provider-call reduction and hotel response latency remain unmeasured.
+- No index addition/removal or Redis action is proposed until cache/provider traces justify a measured change.

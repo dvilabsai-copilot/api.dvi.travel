@@ -3121,3 +3121,33 @@
 - No query predicate, index, Redis, DTO, route or response contract changed.
 - Presentation CPU, segment count, chronology-adjustment frequency and label-reconstruction latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `09bc30e`.
+
+### Cycle 99 - Extract TBO hotel-details cache policy
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itinerary-hotel-details-tbo.service.ts`
+- Extracted responsibility: hotel-detail/room-detail cache keys, TTL, bounded eviction, invalidation and stats
+- New files: `src/modules/itineraries/services/itinerary-hotel-details-cache.service.ts`, `test/itinerary-hotel-details-cache.test.ts`
+- Workflow: TBO hotel details and room details reads plus controller/provider cache invalidation
+
+#### Change
+
+- Moved room/detail cache maps, quote/route key construction, five-minute expiry, oldest-entry eviction, cache hit/set logging, quote invalidation and stats projection behind `ItineraryHotelDetailsCacheService`.
+- Preserved `clearHotelCacheForQuote`, `clearCacheForQuote` and `getCacheStats` contracts, route-specific key behavior and provider response payloads.
+- No hotel provider request, SQL predicate or pricing transformation changed.
+
+#### Verification
+
+- Hotel-cache characterization tests: PASS, 2/2
+- Combined focused backend/timeline suite: PASS, 212/212
+- Backend build: PASS
+- Nest/OpenAPI initialization: PASS, 501 paths
+- `git diff --check`: PASS
+
+#### Result
+
+- `itinerary-hotel-details-tbo.service.ts` measured at 3,857 lines after the tier; `ItineraryHotelDetailsCacheService` is 93 lines.
+- No query predicate, index, Redis, DTO, provider or response contract changed.
+- Cache hit rate, eviction frequency, invalidation frequency and provider-call reduction remain unmeasured.
+- Implementation commit: `api.dvi.travel` `8f6a025`.
