@@ -31,6 +31,7 @@ import { ItineraryHotelResponseRowService } from './services/itinerary-hotel-res
 import { StaahConfirmedBookingOverrideService } from './services/staah-confirmed-booking-override.service';
 import { GuestNationalityService } from './services/guest-nationality.service';
 import { ItineraryHotelPreferenceFilterService } from './services/itinerary-hotel-preference-filter.service';
+import { ItineraryHotelSecondaryProviderFetchService } from './services/itinerary-hotel-secondary-provider-fetch.service';
 
 /**
  * This service generates dynamic hotel packages from TBO API
@@ -153,6 +154,7 @@ export class ItineraryHotelDetailsTboService {
   private readonly staahConfirmedBookingOverrideService = new StaahConfirmedBookingOverrideService();
   private readonly guestNationalityService = new GuestNationalityService();
   private readonly preferenceFilterService = new ItineraryHotelPreferenceFilterService();
+  private readonly secondaryProviderFetchService = new ItineraryHotelSecondaryProviderFetchService();
 
   private isTboOnlyFetchEnabled(): boolean {
     const raw = String(process.env.HOTEL_FETCH_TBO_ONLY || '').trim().toLowerCase();
@@ -886,71 +888,14 @@ export class ItineraryHotelDetailsTboService {
     noOfNights: number,
     cityCodeMap: Record<string, string>,
   ): Promise<Map<number, HotelSearchResult[]>> {
-    const hotelsByRoute = new Map<number, HotelSearchResult[]>();
-    const totalRoutes = routes.length;
-
-    this.logger.log(`\nðŸ¨ HOBSE HOTEL FETCH: Attempting to fetch HOBSE hotels for ${routes.length} routes`);
-
-    try {
-      for (let routeIndex = 0; routeIndex < routes.length; routeIndex++) {
-        const route = routes[routeIndex];
-        const routeId = (route as any).itinerary_route_ID;
-        
-        // Skip hotel generation for the last route (departure day) if routeIndex >= noOfNights
-        const isLastRoute = routeIndex === totalRoutes - 1;
-        if (isLastRoute && routeIndex >= noOfNights) {
-          this.logger.log(`   â­ï¸  Skipping HOBSE route ${routeIndex + 1} (last route - departure day)`);
-          continue;
-        }
-        
-        const destination = (route as any).next_visiting_location;
-        // Get the HOBSE city code from the pre-built map
-        const cityCode = cityCodeMap[destination];
-        
-        if (!cityCode) {
-          this.logger.warn(`   âš ï¸  No HOBSE city code for destination "${destination}" - skipping HOBSE search`);
-          hotelsByRoute.set(routeId, []);
-          continue;
-        }
-        const routeDate = new Date((route as any).itinerary_route_date);
-        const checkOutDate = new Date(routeDate);
-        checkOutDate.setDate(checkOutDate.getDate() + 1);
-
-        try {
-          // Pass city code (number) instead of destination name (string)
-          const hobseHotels = await this.hobseProvider.search({
-            cityCode: cityCode,
-            checkInDate: routeDate.toISOString().split('T')[0],
-            checkOutDate: checkOutDate.toISOString().split('T')[0],
-            roomCount: 1,
-            guestCount: 2,
-          });
-
-          if (hobseHotels && hobseHotels.length > 0) {
-            this.logger.log(`   âœ… HOBSE Route ${routeId}: Found ${hobseHotels.length} hotels in ${destination}`);
-            hotelsByRoute.set(routeId, hobseHotels);
-          } else {
-            this.logger.log(`   â„¹ï¸  HOBSE Route ${routeId}: No hotels found in ${destination}`);
-            hotelsByRoute.set(routeId, []);
-          }
-        } catch (error) {
-          const errorMsg = error instanceof Error ? error.message : String(error);
-          this.logger.warn(`   âš ï¸  HOBSE Route ${routeId} search failed: ${errorMsg}`);
-          hotelsByRoute.set(routeId, []);
-        }
-      }
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      this.logger.error(`âŒ HOBSE HOTEL FETCH FAILED: ${errorMsg}`);
-    }
-
-    return hotelsByRoute;
+    return this.secondaryProviderFetchService.fetchHobse(routes, noOfNights, cityCodeMap, {
+      searchHobse: (input) => this.hobseProvider.search(input),
+      log: (message) => this.logger.log(message),
+      warn: (message) => this.logger.warn(message),
+      error: (message) => this.logger.error(message),
+    });
   }
 
-  /**
-   * Fetch ResAvenue hotels for each route
-   * Searches for properties using destination city names
-   */
   private async fetchResavenueHotelsForRoutes(
     routes: any[],
     noOfNights: number,
@@ -959,67 +904,23 @@ export class ItineraryHotelDetailsTboService {
     adultCount: number = 2,
     childCount: number = 0,
   ): Promise<Map<number, HotelSearchResult[]>> {
-    const hotelsByRoute = new Map<number, HotelSearchResult[]>();
-    const totalRoutes = routes.length;
-
-    this.logger.log(`\nðŸ¨ RESAVENUE HOTEL FETCH: Attempting to fetch ResAvenue hotels for ${routes.length} routes`);
-
-    try {
-      const safeAdultCount = adultCount > 0 ? adultCount : 1;
-      const safeChildCount = childCount >= 0 ? childCount : 0;
-      const safeRoomCount = Math.max(Number(roomCount || 1), 1);
-      const guestCount = safeAdultCount + safeChildCount;
-
-      for (let routeIndex = 0; routeIndex < totalRoutes; routeIndex++) {
-        const route = routes[routeIndex];
-        const routeId = (route as any).itinerary_route_ID;
-        
-        // Skip hotel generation for the last route (departure day) if routeIndex >= noOfNights
-        const isLastRoute = routeIndex === totalRoutes - 1;
-        if (isLastRoute && routeIndex >= noOfNights) {
-          this.logger.log(`   â­ï¸  Skipping ResAvenue route ${routeIndex + 1} (last route - departure day)`);
-          continue;
-        }
-        
-        const destination = (route as any).next_visiting_location;
-        const routeDate = new Date((route as any).itinerary_route_date);
-        const checkOutDate = new Date(routeDate);
-        checkOutDate.setDate(checkOutDate.getDate() + 1);
-
-        try {
-          // Search ResAvenue hotels using city name directly
-          const resavenueHotels = await this.hotelSearchService.searchHotels({
-            cityCode: destination, // ResAvenue provider accepts city names
-            checkInDate: routeDate.toISOString().split('T')[0],
-            checkOutDate: checkOutDate.toISOString().split('T')[0],
-            roomCount: safeRoomCount,
-            guestCount,
-            adultCount: safeAdultCount,
-            childCount: safeChildCount,
-            guestNationality,
-            providers: ['resavenue'], // Only ResAvenue
-          });
-
-          if (resavenueHotels && resavenueHotels.length > 0) {
-            this.logger.log(`   âœ… ResAvenue Route ${routeId}: Found ${resavenueHotels.length} hotels in ${destination}`);
-            hotelsByRoute.set(routeId, resavenueHotels);
-          } else {
-            this.logger.log(`   â„¹ï¸  ResAvenue Route ${routeId}: No hotels found in ${destination}`);
-            hotelsByRoute.set(routeId, []);
-          }
-        } catch (error) {
-          const errorMsg = error instanceof Error ? error.message : String(error);
-          this.logger.warn(`   âš ï¸  ResAvenue Route ${routeId} search failed: ${errorMsg}`);
-          hotelsByRoute.set(routeId, []);
-        }
-      }
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      this.logger.error(`âŒ RESAVENUE HOTEL FETCH FAILED: ${errorMsg}`);
-    }
-
-    return hotelsByRoute;
+    return this.secondaryProviderFetchService.fetchResavenue(
+      routes,
+      noOfNights,
+      guestNationality,
+      roomCount,
+      adultCount,
+      childCount,
+      {
+        searchResavenue: (input) => this.hotelSearchService.searchHotels(input),
+        log: (message) => this.logger.log(message),
+        warn: (message) => this.logger.warn(message),
+        error: (message) => this.logger.error(message),
+      },
+    );
   }
+
+
 
   private normalizeCityToken(value: string): string {
     const token = String(value || '')
