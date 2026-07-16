@@ -4355,3 +4355,31 @@
 - `itinerary-hotel-details-tbo.service.ts` measured at 2,751 lines after the tier; `axisrooms-hotel-projection.service.ts` is 100 lines.
 - Occupancy-row cardinality, rate-plan gate hit rate, projection CPU and AxisRooms response latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `b000adc`.
+
+### Cycle 143 - Extract saved hotel indicators
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itinerary-hotel-details-tbo.service.ts`
+- Extracted responsibility: plan-scoped saved hotel row lookup, unique route indicator mapping and query-failure fallback
+- New files: `src/modules/itineraries/services/saved-hotel-indicator.service.ts`, `test/saved-hotel-indicator.test.ts`
+- Workflow: provider filtering preparation
+
+#### Change
+
+- Moved saved-hotel indicator loading behind `SavedHotelIndicatorService` while preserving the plan/deleted predicates, route deduplication, `SAVED` marker and empty-map error recovery.
+- The TBO facade remains the Prisma adapter and supplies logging callbacks; provider request and response behavior are unchanged.
+- No SQL predicate, index, Redis cache, API route, DTO or response contract changed.
+
+#### Verification
+
+- Saved-indicator characterization tests: PASS, 2/2
+- Itinerary characterization collection: PASS, 195/195
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itinerary-hotel-details-tbo.service.ts` measured at 2,728 lines after the tier; `saved-hotel-indicator.service.ts` is 25 lines.
+- Saved-row cardinality, query latency, route hit rate and provider-filter response latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `8c82f5b`.

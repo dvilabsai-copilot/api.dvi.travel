@@ -297,3 +297,5 @@ The in-facade legacy route optimizer was removed after verification that `Itiner
 `StaahRestrictionService` now also owns customer-facing restriction availability-message formatting; obsolete duplicate truthiness/type/date helpers were removed from `ItineraryHotelDetailsTboService`. Restriction wording and provider behavior are unchanged; formatting cost remains pending measurement.
 
 `AxisroomsHotelProjectionService` now owns available occupancy grouping, preferred/fallback rate-plan selection and AxisRooms hotel-result projection. `ItineraryHotelDetailsTboService` remains the provider facade and owns AxisRooms reads, city matching and route orchestration. Occupancy/projection cost remains pending measurement.
+
+`SavedHotelIndicatorService` now owns plan-scoped saved-hotel route markers and query-failure fallback. `ItineraryHotelDetailsTboService` remains the Prisma adapter and provider facade. Saved-row lookup cost remains pending measurement.

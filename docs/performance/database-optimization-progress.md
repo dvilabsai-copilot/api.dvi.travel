@@ -648,3 +648,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - All AxisRooms reads remain in the existing facade and the tier adds no database access.
 - This is not a measured database performance improvement: occupancy-row volume, preferred/fallback hit rates, projection CPU and AxisRooms latency remain unmeasured.
 - No index addition/removal or Redis action is proposed; future work should capture AxisRooms occupancy, rate-plan, room and amenity query plans before batching or caching local projections.
+
+## Iteration 140 evidence update
+
+- The saved-hotel indicator extraction preserves the plan/deleted predicates, route deduplication, `SAVED` marker and failure-to-empty behavior; no SQL predicate, index, Redis cache or response shape changed.
+- The Prisma read remains in the facade and the tier adds no database access.
+- This is not a measured database performance improvement: saved-row cardinality, query latency, duplicate rate and provider-filter latency remain unmeasured.
+- No index addition/removal or Redis action is proposed; future work should capture the hotel-detail query plan and saved-route distributions before indexing or caching indicators.

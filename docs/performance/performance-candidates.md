@@ -432,6 +432,8 @@ The iteration-138 STAAH restriction-policy cleanup is a measurement seam for res
 
 The iteration-139 AxisRooms projection boundary is a measurement seam for city-hotel cardinality, available-room cardinality, occupancy-row volume, preferred-rate-plan hit rate, lowest-rate fallback rate, projection CPU and end-to-end AxisRooms search latency. Capture no-room, no-rate, preferred-hit, fallback, multi-rate-plan, amenities-heavy and large-hotel workloads separately before batching occupancy reads or caching local projections; preserve date freshness, rate-plan validity and response ordering. No index addition/removal or Redis cache is justified until occupancy/rate-plan query plans and traces establish the measured winner.
 
+The iteration-140 saved-hotel indicator boundary is a measurement seam for plan hotel-row cardinality, unique route count, indicator query latency, duplicate-row rate, query-error frequency and provider-filter preparation latency. Capture empty, one-row, duplicate-route, large-plan and query-failure workloads separately before adding a covering index or caching indicators; preserve deleted-row filtering and mutable plan freshness. No index addition/removal or Redis cache is justified until query plans and provider traces establish the measured winner.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.
