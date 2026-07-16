@@ -1478,3 +1478,32 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Query count, rows examined, provider payload size, callback CPU, transaction duration and latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `2f0925d`.
+
+### Cycle 43 - Consolidate matrix baseline merge into preview service
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: matrix baseline/engine preview merge, selected-row preparation, slot validation and finalization handoff
+- Updated file: `src/modules/itineraries/services/itinerary-matrix-rescheduled-preview.service.ts`
+- Workflow: matrix-safe insertion and manual-hotspot batch preview reconstruction
+
+#### Change
+
+- Moved the 302-line `buildMatrixMergedPreviewTimeline` helper into the existing matrix preview service.
+- Preserved no-fit fallback, selected-row projection, source/destination slot replacement and finalization behavior.
+- Removed the facade callback seam for this helper so the matrix preview service now owns the complete merge-to-reschedule flow.
+
+#### Verification
+
+- Matrix preview merge characterization test: PASS, 1/1
+- Combined focused backend suite: PASS, 67/67
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 13,251 lines after the tier; `ItineraryMatrixRescheduledPreviewService` is 1,100 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Merge CPU, row churn, duration-policy callback volume, response size and latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `b4cab2a`.
