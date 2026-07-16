@@ -676,3 +676,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Inventory, rate-plan, rate and restriction reads remain in the existing facade, and the tier adds no database access.
 - This is not a measured database performance improvement: rate-row cardinality, rate-plan comparison cost, preferred/blocked hit rates, selection CPU and STAAH latency remain unmeasured.
 - No index addition/removal or Redis action is proposed; future work should capture STAAH rate/rate-plan/restriction query plans and candidate traces before indexing or caching selection decisions.
+
+## Iteration 144 evidence update
+
+- The STAAH provider-row extraction preserves inventory date/free predicates, rate-plan and rate ID derivation, active-room filtering and restriction grouping; no SQL predicate, index, Redis cache or response shape changed.
+- The existing facade still supplies all Prisma query adapters, and the tier adds no database access beyond the same reads.
+- This is not a measured database performance improvement: provider-row cardinality, stale-room rejection, restriction-group volume, query latency and preparation CPU remain unmeasured.
+- No index addition/removal or Redis action is proposed; future work should capture STAAH inventory, rate-plan, rate and restriction query plans before indexing or caching provider rows.

@@ -4467,3 +4467,31 @@
 - `itinerary-hotel-details-tbo.service.ts` measured at 2,565 lines after the tier; `staah-candidate-selection.service.ts` is 194 lines.
 - Candidate cardinality, preferred-plan hit rate, blocked-display rate, selection CPU and STAAH response latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `e640cd8`.
+
+### Cycle 147 - Extract STAAH provider row loading
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itinerary-hotel-details-tbo.service.ts`
+- Extracted responsibility: inventory/rate-plan reads, active-room filtering, rate/restriction reads and restriction grouping
+- New files: `src/modules/itineraries/services/staah-provider-rows.service.ts`, `test/staah-provider-rows.test.ts`
+- Workflow: STAAH provider data preparation before per-property selection
+
+#### Change
+
+- Moved STAAH provider-row preparation behind `StaahProviderRowsService` while preserving date predicates, positive-inventory filtering, active-room admission, rate-plan/rate IDs and restriction grouping.
+- The TBO facade retains Prisma adapters, stale-room policy, route orchestration, candidate selection and result projection; provider payloads and API DTOs are unchanged.
+- No SQL predicate, index, Redis cache, API route, DTO or response contract changed.
+
+#### Verification
+
+- STAAH provider-row characterization tests: PASS, 2/2
+- Itinerary characterization collection: PASS, 195/195
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itinerary-hotel-details-tbo.service.ts` measured at 2,585 lines after the tier; `staah-provider-rows.service.ts` is 101 lines.
+- Provider-row cardinality, stale-room filtering rate, restriction-group size, query latency and preparation CPU remain unmeasured.
+- Implementation commit: `api.dvi.travel` `3136d9f`.

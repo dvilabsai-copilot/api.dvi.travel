@@ -305,3 +305,5 @@ The in-facade legacy route optimizer was removed after verification that `Itiner
 `StaahCandidateResultService` now owns duplicate-key suppression, stale-room admission and bookable/restricted STAAH result projection. `ItineraryHotelDetailsTboService` remains the candidate-selection facade and owns ordering/decision flow. Result projection cost remains pending measurement.
 
 `StaahCandidateSelectionService` now owns STAAH rate-plan matching, positive-price filtering, restriction decisions and preferred/blocked candidate selection. `ItineraryHotelDetailsTboService` remains the provider facade and supplies Prisma results, active-room admission, occupancy pricing and restriction callbacks. Selection cardinality and decision cost remain pending measurement.
+
+`StaahProviderRowsService` now owns STAAH inventory, rate-plan, rate and restriction row preparation, including active-room filtering and restriction grouping. `ItineraryHotelDetailsTboService` remains the Prisma adapter and owns stale-room logging, route orchestration and candidate/result callbacks. Provider-row query and preparation cost remain pending measurement.
