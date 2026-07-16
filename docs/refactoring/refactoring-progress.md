@@ -4130,3 +4130,31 @@
 - `itinerary-hotel-details-tbo.service.ts` measured at 3,500 lines after the tier; `itinerary-hotel-city-code.service.ts` is 157 lines.
 - HOBSE city lookup latency, destination cardinality, exact/prefix hit rate and provider-search response latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `fa7a6d6`.
+
+### Cycle 135 - Extract STAAH restriction evaluation
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itinerary-hotel-details-tbo.service.ts`
+- Extracted responsibility: STAAH stop-sell/status, CTA/CTD and minimum/maximum stay restriction decisions
+- New files: `src/modules/itineraries/services/staah-restriction.service.ts`, `test/staah-restriction.test.ts`
+- Workflow: STAAH candidate selection
+
+#### Change
+
+- Moved restriction evaluation behind `StaahRestrictionService` while preserving date-only conversion, overlap rules, restriction precedence, LOS comparisons and `availableAgainFrom` projection.
+- The TBO facade remains the provider-search compatibility boundary and adapts the decision object without changing candidate fields, provider calls or response DTOs.
+- No SQL predicate, index, Redis cache, API route, DTO or response contract changed.
+
+#### Verification
+
+- STAAH restriction characterization tests: PASS, 2/2
+- Itinerary characterization collection: PASS, 189/189
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itinerary-hotel-details-tbo.service.ts` measured at 3,397 lines after the tier; `staah-restriction.service.ts` is 127 lines.
+- Restriction-row cardinality, date-overlap CPU, blocked-candidate frequency and STAAH search response latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `57e149b`.

@@ -416,6 +416,8 @@ The iteration-130 TBO city-code boundary is a measurement seam for unique-destin
 
 The iteration-131 HOBSE city-code boundary is a measurement seam for unique-destination cardinality, HOBSE city-row count, exact-hit rate, comma-qualified prefix-fallback rate, map-construction CPU and end-to-end HOBSE provider-search response latency. Capture empty, exact-name, comma-qualified, duplicate-destination, missing-code and large-route workloads separately before adding a city lookup index or caching mutable provider mappings; preserve destination-keyed output, city freshness and provider fallback behavior. No index addition/removal or Redis cache is justified until the HOBSE query plan and provider traces establish the measured winner.
 
+The iteration-132 STAAH restriction boundary is a measurement seam for restriction-row cardinality, date-normalization CPU, overlap checks, blocked-candidate rate, `availableAgainFrom` projection frequency and end-to-end STAAH search response latency. Capture no-restriction, stop-sell, status, CTA, CTD, min-stay, max-stay, through-stay and overlapping-row workloads separately before memoizing restriction decisions; preserve quote/date freshness, precedence and candidate visibility. No index addition/removal or Redis cache is justified until STAAH restriction query traces and candidate distributions establish the measured winner.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.

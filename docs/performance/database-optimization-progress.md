@@ -592,3 +592,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - The Prisma read remains in the TBO facade and the tier only moves HOBSE normalization/map construction behind the shared city-code service.
 - This is not a measured database performance improvement: HOBSE destination cardinality, city-row volume, lookup/fallback frequency and provider-search response latency remain unmeasured.
 - No index addition/removal or Redis action is proposed; future work should capture the HOBSE `dvi_cities` query plan and provider hit/miss traces before indexing or caching mappings.
+
+## Iteration 132 evidence update
+
+- The STAAH restriction extraction preserves stop-sell/status overlap, CTA/CTD date checks, minimum/maximum stay comparisons, through-stay rules, reason text and availability-date projection; no SQL predicate, index, Redis cache or response shape changed.
+- The tier adds no database reads and leaves provider restriction loading and candidate selection in the existing facade.
+- This is not a measured database performance improvement: restriction-row cardinality, evaluation CPU, blocked-candidate frequency and STAAH response latency remain unmeasured.
+- No index addition/removal or Redis action is proposed; future work should capture STAAH restriction query plans and per-rate restriction distributions before caching decisions or changing provider reads.
