@@ -543,3 +543,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - The settings read remains in the same transaction and the tier only moves projection/state logic behind a service boundary.
 - This is not a measured database performance improvement: settings read latency, refreshment frequency, fit rejection frequency and timeline response latency remain unmeasured.
 - No index addition/removal or Redis action is proposed; future work should capture `dvi_global_settings` query plans and per-build read counts before caching the immutable-looking setting.
+
+## Iteration 125 evidence update
+
+- The route-coordinate extraction preserves the `dvi_stored_locations` predicate, route-city precedence, coordinate mapping, source/destination fallback order and downstream state; no SQL predicate, index, Redis cache or response shape changed.
+- The same transaction and travel-data resolver are still used; the tier changes ownership only.
+- This is not a measured database performance improvement: stored-location query latency, location-id coverage, fallback frequency and timeline response latency remain unmeasured.
+- No index addition/removal or Redis action is proposed; future work should capture the `location_ID/deleted/status` query plan and per-build fallback counts before adding an index or coordinate cache.

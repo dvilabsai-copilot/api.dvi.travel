@@ -3931,3 +3931,32 @@
 - `timeline.builder.ts` measured at 5,990 lines after the tier; `timeline-initial-refreshment.service.ts` is 91 lines.
 - Global-settings read latency, refreshment fit frequency, strict early-arrival frequency and timeline response latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `d18477d`.
+
+### Cycle 128 - Extract timeline route coordinate resolution
+
+#### Scope
+
+- Original file: `src/modules/itineraries/engines/helpers/timeline.builder.ts`
+- Extracted responsibility: route start-location initialization, stored-location lookup, route-city precedence and source/destination coordinate fallback
+- New files: `src/modules/itineraries/engines/helpers/timeline-route-coordinate-resolution.service.ts`, `test/timeline-route-coordinate-resolution.test.ts`
+- Workflow: per-route timeline coordinate and city context initialization
+
+#### Change
+
+- Moved route coordinate/city resolution and stored-location fallback reads behind `TimelineRouteCoordinateResolutionService`.
+- Preserved route-field precedence, location predicates, coordinate normalization, source/destination fallback order and downstream mutable state initialization.
+- No SQL predicate, index, Redis cache, API route, DTO or response contract changed.
+
+#### Verification
+
+- Route-coordinate characterization tests: PASS, 2/2
+- Timeline characterization collection: PASS, 69/69
+- Itinerary characterization collection: PASS, 182/182
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `timeline.builder.ts` measured at 5,934 lines after the tier; `timeline-route-coordinate-resolution.service.ts` is 70 lines.
+- Stored-location lookup latency, fallback hit rate, route-row cardinality and timeline response latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `25bee0e`.

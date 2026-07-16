@@ -402,6 +402,8 @@ The iteration-123 itinerary-details terminal-return boundary is a measurement se
 
 The iteration-124 timeline-initial-refreshment boundary is a measurement seam for global-settings read latency, refreshment-row frequency, route-fit rejection frequency, strict early-arrival override frequency, last-route buffer advancement frequency and end-to-end timeline response latency. Capture normal non-last, skipped, strict early-arrival, last-route, transfer-only and route-end-tight workloads separately before request-scoped settings caching; preserve transaction freshness, buffer precedence, UTC conversion, order/current-time state and route-fit behavior. No index addition/removal or Redis cache is justified until settings read plans and timeline traces establish the measured winner.
 
+The iteration-125 timeline-route-coordinate boundary is a measurement seam for stored-location lookup latency, route-row location-id coverage, usable-coordinate hit rate, source/destination fallback frequency, duplicate place-resolution calls and end-to-end timeline response latency. Capture stored-coordinate, missing-row, zero-location-id, route-label-only and large-route workloads separately before adding stored-location indexes or caching place coordinates; preserve transaction freshness, route-field precedence, coordinate fallback order and mutable route state. No index addition/removal or Redis cache is justified until query plans and fallback traces establish the measured winner.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.
