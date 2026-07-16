@@ -86,6 +86,7 @@ import { ItineraryManualFitCandidateSearchService } from './services/itinerary-m
 import { ItineraryManualFitCandidateDataService } from './services/itinerary-manual-fit-candidate-data.service';
 import { ItineraryManualHotspotRowService } from './services/itinerary-manual-hotspot-row.service';
 import { ItineraryManualHotspotScheduleStateService } from './services/itinerary-manual-hotspot-schedule-state.service';
+import { ItineraryManualHotspotRowTimingService } from './services/itinerary-manual-hotspot-row-timing.service';
 import { ItineraryVehicleBuildStatusService } from './services/itinerary-vehicle-build-status.service';
 import { ItineraryVehicleBuildService } from './services/itinerary-vehicle-build.service';
 import { ItineraryPlanPersistenceService } from './services/itinerary-plan-persistence.service';
@@ -677,6 +678,7 @@ export class ItinerariesService {
     private readonly manualFitCandidateDataService: ItineraryManualFitCandidateDataService = new ItineraryManualFitCandidateDataService(),
     private readonly manualHotspotRowService: ItineraryManualHotspotRowService = new ItineraryManualHotspotRowService(),
     private readonly manualHotspotScheduleStateService: ItineraryManualHotspotScheduleStateService = new ItineraryManualHotspotScheduleStateService(),
+    private readonly manualHotspotRowTimingService: ItineraryManualHotspotRowTimingService = new ItineraryManualHotspotRowTimingService(),
   ) {
     this.manualFitTimelinePolicyService.setCallbacks({
       parseSegmentEndMinutes: (...args) => (this.parseSegmentEndMinutes as any)(...args),
@@ -765,6 +767,11 @@ export class ItinerariesService {
       computeRowDurationMinutes: (...args) => (this.computeRowDurationMinutes as any)(...args),
       hasAnyNonOverlappingManualRow: (...args) => (this.hasAnyNonOverlappingManualRow as any)(...args),
       manualRowHasNoOverlap: (...args) => (this.manualRowHasNoOverlap as any)(...args),
+    });
+    this.manualHotspotRowTimingService.setCallbacks({
+      normalizeManualHotspotIds: (...args) => (this.normalizeManualHotspotIds as any)(...args),
+      computeRowDurationMinutes: (...args) => (this.computeRowDurationMinutes as any)(...args),
+      minutesToUtcTimeDate: (...args) => (this.minutesToUtcTimeDate as any)(...args),
     });
     this.vehicleBuildService.setVehicleVendorSelector((data) => this.selectVehicleVendor(data));
     this.activityAvailabilityService.setCalculateActivityPlanPricingCallback(
@@ -4248,153 +4255,12 @@ private getGuideSlotLabel(slotId: number): string {
     return Math.round((end.getTime() - start.getTime()) / 60000);
   }
 
-  private async cleanupStaleManualHotspotRows(
-    planId: number,
-    routeId: number,
-    hotspotIds: number[],
-  ): Promise<void> {
-    const normalizedHotspotIds = this.normalizeManualHotspotIds(hotspotIds);
-    if (normalizedHotspotIds.length === 0) return;
-
-    const rows = await this.prisma.dvi_itinerary_route_hotspot_details.findMany({
-      where: {
-        itinerary_plan_ID: Number(planId),
-        itinerary_route_ID: Number(routeId),
-        hotspot_ID: { in: normalizedHotspotIds },
-        item_type: 4,
-        hotspot_plan_own_way: 1,
-        deleted: 0,
-        status: 1,
-      },
-      select: {
-        route_hotspot_ID: true,
-        hotspot_start_time: true,
-        hotspot_end_time: true,
-      },
-    });
-
-    const staleIds = (rows || [])
-      .filter((row: any) => this.computeRowDurationMinutes(row) <= 0)
-      .map((row: any) => Number(row?.route_hotspot_ID || 0))
-      .filter((id: number) => id > 0);
-
-    if (staleIds.length === 0) return;
-
-    await this.prisma.dvi_itinerary_route_hotspot_details.updateMany({
-      where: {
-        route_hotspot_ID: { in: staleIds },
-      },
-      data: {
-        status: 0,
-        deleted: 1,
-        updatedon: new Date(),
-      },
-    });
+  private async cleanupStaleManualHotspotRows(...args: any[]): Promise<void> {
+    return (this.manualHotspotRowTimingService.cleanupStaleManualHotspotRows as any)(this.prisma, ...args);
   }
 
-  private async activateManualHotspotRowWithTimes(
-    tx: any,
-    params: {
-      planId: number;
-      routeId: number;
-      hotspotId: number;
-      userId: number;
-      start: Date;
-      end: Date;
-      hotspotOrder?: number;
-    },
-  ): Promise<number> {
-    const durationMinutes = Math.round((params.end.getTime() - params.start.getTime()) / 60000);
-    if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) {
-      throw new ConflictException({
-        success: false,
-        inserted: false,
-        code: 'MANUAL_HOTSPOT_INVALID_TIMING_WINDOW',
-        message: 'Cannot activate manual hotspot row with zero/negative duration.',
-      });
-    }
-
-    const existingRows = await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
-      where: {
-        itinerary_plan_ID: Number(params.planId),
-        itinerary_route_ID: Number(params.routeId),
-        hotspot_ID: Number(params.hotspotId),
-        item_type: 4,
-      },
-      orderBy: [
-        { route_hotspot_ID: 'desc' },
-      ],
-      select: {
-        route_hotspot_ID: true,
-      },
-    });
-
-    const keepRowId = Number(existingRows?.[0]?.route_hotspot_ID || 0);
-    if (keepRowId > 0) {
-      await (tx as any).dvi_itinerary_route_hotspot_details.update({
-        where: { route_hotspot_ID: keepRowId },
-        data: {
-          hotspot_plan_own_way: 1,
-          hotspot_start_time: params.start,
-          hotspot_end_time: params.end,
-          hotspot_traveling_time: this.minutesToUtcTimeDate(Math.max(1, durationMinutes)),
-          hotspot_order: Number.isFinite(Number(params.hotspotOrder || 0)) && Number(params.hotspotOrder || 0) > 0
-            ? Number(params.hotspotOrder)
-            : undefined,
-          status: 1,
-          deleted: 0,
-          is_conflict: 0,
-          conflict_reason: null,
-          updatedon: new Date(),
-        },
-      });
-
-      const staleIds = (existingRows || [])
-        .slice(1)
-        .map((row: any) => Number(row?.route_hotspot_ID || 0))
-        .filter((id: number) => id > 0);
-      if (staleIds.length > 0) {
-        await (tx as any).dvi_itinerary_route_hotspot_details.updateMany({
-          where: {
-            route_hotspot_ID: { in: staleIds },
-          },
-          data: {
-            status: 0,
-            deleted: 1,
-            updatedon: new Date(),
-          },
-        });
-      }
-
-      return keepRowId;
-    }
-
-    const created = await (tx as any).dvi_itinerary_route_hotspot_details.create({
-      data: {
-        itinerary_plan_ID: Number(params.planId),
-        itinerary_route_ID: Number(params.routeId),
-        hotspot_ID: Number(params.hotspotId),
-        hotspot_plan_own_way: 1,
-        item_type: 4,
-        hotspot_order: Number.isFinite(Number(params.hotspotOrder || 0)) && Number(params.hotspotOrder || 0) > 0
-          ? Number(params.hotspotOrder)
-          : 999,
-        hotspot_start_time: params.start,
-        hotspot_end_time: params.end,
-        hotspot_traveling_time: this.minutesToUtcTimeDate(Math.max(1, durationMinutes)),
-        createdby: Number(params.userId || 1),
-        createdon: new Date(),
-        status: 1,
-        deleted: 0,
-        is_conflict: 0,
-        conflict_reason: null,
-      },
-      select: {
-        route_hotspot_ID: true,
-      },
-    });
-
-    return Number(created?.route_hotspot_ID || 0);
+  private async activateManualHotspotRowWithTimes(...args: any[]): Promise<number> {
+    return (this.manualHotspotRowTimingService.activateManualHotspotRowWithTimes as any)(...args);
   }
 
   private minutesToUtcTimeDate(minutes: number): Date {
