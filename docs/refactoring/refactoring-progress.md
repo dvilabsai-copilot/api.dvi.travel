@@ -3790,3 +3790,31 @@
 - `itinerary-details.service.ts` measured at 4,257 lines after the tier; `itinerary-details-hotel-travel-origin.service.ts` is 94 lines.
 - Chronology scan length, fallback frequency, same-city suppression rate and timeline response latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `5807988`.
+
+### Cycle 123 - Extract itinerary-details hotel travel time normalization
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itinerary-details.service.ts`
+- Extracted responsibility: item-type-5 time-range normalization, equal-time duration derivation and hotel-arrival state assignment
+- New files: `src/modules/itineraries/services/itinerary-details-hotel-travel-time.service.ts`, `test/itinerary-details-hotel-travel-time.test.ts`
+- Workflow: per-route travel-to-hotel segment projection
+
+#### Change
+
+- Moved reversed-time handling, duration-backed equal-time repair, proof logging and hotel-arrival assignment behind `ItineraryDetailsHotelTravelTimeService`.
+- Preserved emitted range ordering, arrival-time semantics, duration callback behavior and existing proof logs.
+- No SQL predicate, index, Redis cache, API route, DTO or response contract changed.
+
+#### Verification
+
+- Hotel-travel-time characterization tests: PASS, 2/2
+- Itinerary characterization collection: PASS, 175/175
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itinerary-details.service.ts` measured at 4,224 lines after the tier; `itinerary-details-hotel-travel-time.service.ts` is 82 lines.
+- Reversal frequency, equal-time repair frequency, duration derivation cost and timeline response latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `2988c70`.

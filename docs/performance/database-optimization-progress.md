@@ -508,3 +508,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - The route-hotspot scan remains in-memory over the existing hydrated collection; no query count or database access pattern changed.
 - This is not a measured database performance improvement: route-hotspot cardinality, chronology scan CPU, fallback frequency and details response latency remain unmeasured.
 - No index addition/removal or Redis action is proposed; future work should capture route-hotspot query plans and per-route row counts before adding chronology indexes or caching mutable route projections.
+
+## Iteration 120 evidence update
+
+- The hotel-travel-time extraction preserves in-memory time conversion, reversed/equal-time branches, duration callback usage, hotel-arrival assignment and proof logging; no SQL predicate, index, Redis cache or response shape changed.
+- The tier does not add reads or alter database freshness; it only moves post-read timeline projection logic behind a service boundary.
+- This is not a measured database performance improvement: reversal frequency, duration-repair frequency, conversion CPU and details response latency remain unmeasured.
+- No index addition/removal or Redis action is proposed; future work should capture route timing distributions and duration conversion traces before changing persisted-time handling or caching derived ranges.
