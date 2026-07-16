@@ -342,6 +342,8 @@ The iteration-93 activity-timing boundary is a measurement seam for UTC conversi
 
 The iteration-94 timeline-build-context boundary is a measurement seam for plan-read latency, route-read latency, route-scope filtering, all-hotspot row volume, all-timing row volume, global-settings read latency, lookup-map construction CPU, permanently-closed filtering frequency and end-to-end context hydration latency. Capture full-plan, route-scoped, empty-plan, missing-scope, large-hotspot and large-timing workloads separately before proposing composite indexes, batching or Redis; preserve active predicates, route ordering, mutable timing freshness and global-settings freshness. No index addition/removal or Redis cache is justified by the current evidence because this tier moved ownership only and has no before/after production timings.
 
+The iteration-95 itinerary-details timeline-presentation boundary is a measurement seam for segment count, chronology-normalization CPU, break/travel overlap-adjustment frequency, semantic-stop scan work, label-reconstruction CPU and end-to-end response projection latency. Capture attraction-safe, overnight, overlapping-break, multi-stop, missing-hotel and large-timeline workloads separately before proposing memoization or response caching; preserve mutable itinerary timing and segment response freshness. No index addition/removal or Redis cache is justified by the current evidence because this tier changed pure presentation ownership only and has no before/after production timings.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.

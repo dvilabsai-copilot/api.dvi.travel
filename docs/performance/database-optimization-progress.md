@@ -333,3 +333,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Route scoping, previous-route mapping, hotspot lookup projection, permanently-closed filtering, evidence logging and early-return behavior remain unchanged.
 - This is not a measured performance improvement: context-read latency, row volume, global-settings latency, map-build CPU and closed-hotspot filtering latency remain unmeasured.
 - No index or Redis action is proposed; any future optimization should compare query plans and context traces before batching or caching mutable timing/hotspot state.
+
+## Iteration 95 evidence update
+
+- The itinerary-details timeline-presentation extraction changes only pure segment transformation ownership; no SQL, index, Redis cache or query shape was changed.
+- Attraction visit-time protection, overnight handling, break/travel chronology adjustment, semantic-stop precedence and travel response fields remain unchanged.
+- This is not a measured performance improvement: segment count, normalization CPU, adjustment frequency, label-reconstruction CPU and response projection latency remain unmeasured.
+- No index or Redis action is proposed; any future optimization should profile the details read graph and segment projection before batching database reads or caching mutable itinerary responses.

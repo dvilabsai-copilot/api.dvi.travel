@@ -3091,3 +3091,33 @@
 - No query predicate, index, Redis, DTO, route or response contract changed.
 - Context-read fan-out, global-settings read latency, lookup-map CPU and closed-hotspot prefilter latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `b6e5e40`.
+
+### Cycle 98 - Extract itinerary-details timeline presentation
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itinerary-details.service.ts`
+- Extracted responsibility: confirmed timeline chronology normalization and semantic travel-label reconstruction
+- New files: `src/modules/itineraries/services/itinerary-details-timeline-presentation.service.ts`, `test/itinerary-details-timeline-presentation.test.ts`
+- Workflow: draft/confirmed itinerary details timeline projection
+
+#### Change
+
+- Moved attraction-safe chronology normalization, break/travel overlap correction and adjacent semantic-stop travel-label reconstruction behind `ItineraryDetailsTimelinePresentationService`.
+- Preserved the facade method names, segment mutation contract, attraction visit-time source of truth, overnight handling, fallback hotel label and display fields.
+- No Prisma read or write moved in this tier; the database read graph remains the next details boundary.
+
+#### Verification
+
+- Details-presentation characterization tests: PASS, 2/2
+- Combined focused backend/timeline suite: PASS, 210/210
+- Backend build: PASS
+- Nest/OpenAPI initialization: PASS, 501 paths
+- `git diff --check`: PASS
+
+#### Result
+
+- `itinerary-details.service.ts` measured at 5,910 lines after the tier; `ItineraryDetailsTimelinePresentationService` is 161 lines.
+- No query predicate, index, Redis, DTO, route or response contract changed.
+- Presentation CPU, segment count, chronology-adjustment frequency and label-reconstruction latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `09bc30e`.
