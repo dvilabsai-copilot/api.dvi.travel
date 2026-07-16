@@ -1973,3 +1973,32 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Candidate bucket volume, sort CPU, matrix-score population, log volume and route rebuild latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `54dacfe`.
+
+### Cycle 60 - Extract Day-1 candidate gate
+
+#### Scope
+
+- Original file: `src/modules/itineraries/engines/helpers/timeline.builder.ts`
+- Extracted responsibility: Day-1 strict priority/filler filtering, terminal-arrival source suppression, duplicate protection and candidate rejection diagnostics
+- New files: `src/modules/itineraries/engines/helpers/timeline-day1-candidate-gate.service.ts`, `test/timeline-day1-candidate-gate.test.ts`
+- Workflow: first gate inside the Day-1 different-city scheduling loop
+
+#### Change
+
+- Moved Day-1 candidate gate decisions behind `TimelineDay1CandidateGateService`.
+- Preserved movement-bucket exceptions, priority 0/>3 suppression, terminal source priority-one suppression with later overnight return, duplicate checks and rejection diagnostics.
+- Kept cutoff evaluation, hotspot-master reads, travel calculation, operating-hour scheduling and timeline row mutation in `TimelineBuilder`.
+
+#### Verification
+
+- Day-1 candidate gate characterization tests: PASS, 3/3
+- Combined focused backend/timeline suite: PASS, 126/126
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `timeline.builder.ts` measured at 6,443 lines after the tier; `TimelineDay1CandidateGateService` is 93 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Day-1 gate invocation rate, rejection distribution, duplicate frequency, evaluation-log volume and route rebuild latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `3694dea`.

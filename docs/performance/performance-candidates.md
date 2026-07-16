@@ -163,6 +163,7 @@ An index, Redis cache, or query rewrite may move from candidate to implementatio
 | Timeline iteration 54 | Carry-forward attachment boundary | `timeline.builder.ts` reduced from 6,754 to 6,698 lines; `TimelineCarryForwardAttachmentService` is 66 lines | Existing same-city gating, carry-forward merge and source-fallback flag preserved; queue size, merge work and rebuild latency remain unmeasured |
 | Timeline iteration 55 | Matrix-assisted autobuild boundary | `timeline.builder.ts` reduced from 6,698 to 6,535 lines; `TimelineMatrixAutobuildService` is 234 lines | Existing feature flag, route-fit/corridor guards, between-map read, timing admission and matrix candidate ordering preserved; query latency, candidate volume and rebuild latency remain unmeasured |
 | Timeline iteration 56 | Candidate reordering boundary | `timeline.builder.ts` reduced from 6,535 to 6,516 lines; `TimelineCandidateReorderingService` is 30 lines | Existing manual/priority protection, matrix-score ordering and distance tie-break preserved; sort CPU, candidate volume and rebuild latency remain unmeasured |
+| Timeline iteration 57 | Day-1 candidate gate boundary | `timeline.builder.ts` reduced from 6,516 to 6,443 lines; `TimelineDay1CandidateGateService` is 93 lines | Existing strict priority/filler, terminal-source, duplicate and movement-bucket gates preserved; rejection volume, log cost and rebuild latency remain unmeasured |
 
 The iteration-6 and iteration-7 boundaries are measurement seams, not optimization claims. The next safe performance tier should instrument representative itinerary-details, route-rebuild and hotspot-preview requests and attribute calls to `TimelineTravelDataService` and `TimelineCandidateFeasibilityService` before changing query shape or adding a cache.
 
@@ -263,6 +264,8 @@ The iteration-54 carry-forward attachment boundary is a measurement seam for con
 The iteration-55 matrix-autobuild boundary is a measurement seam for feature-flag adoption, route-attraction read latency and row volume, between-map lookup latency, slot-pair count, fit/corridor rejection volume, timing-gate CPU, candidate merge rate and route rebuild latency. Capture flag-off, flag-on/no-slot, route-fit rejection, corridor rejection and successful merge workloads separately before adding matrix indexes, caching route pairs or increasing concurrency; preserve transaction consistency, candidate ordering and feature-flag rollback.
 
 The iteration-56 candidate-reordering boundary is a measurement seam for selected-candidate count, protected/manual count, matrix-score population, sort CPU, distance tie-break frequency, log volume and route rebuild latency. Capture normal, matrix-augmented, manual-heavy and equal-score workloads separately before changing ordering or memoizing scores; preserve deterministic priority protection and response ordering.
+
+The iteration-57 Day-1 candidate-gate boundary is a measurement seam for Day-1 invocation count, bucket/priority rejection distribution, duplicate frequency, terminal-source suppression frequency, evaluation-log volume and route rebuild latency. Capture normal, movement-first, terminal-arrival, duplicate and filler-heavy workloads separately before changing gate order or caching classification; preserve strict priority and deterministic rejection diagnostics.
 
 ## Next profiling order
 

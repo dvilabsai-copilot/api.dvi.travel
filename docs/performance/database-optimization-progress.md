@@ -67,3 +67,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Builder-local static Prisma-call ownership remains 10 matches; this tier performs no database work.
 - This is not a measured performance improvement: candidate count, sort CPU, payload ordering cost and rebuild latency remain unmeasured.
 - No index or Redis action is proposed; any future optimization must preserve deterministic ordering and be supported by representative route-build measurements.
+
+## Iteration 57 evidence update
+
+- The Day-1 candidate gate is pure in-memory policy code; no SQL, index, Redis cache or query shape was changed.
+- Builder-local static Prisma-call ownership remains 10 matches; the gate performs no database work.
+- This is not a measured performance improvement: rejection distribution, logging cost, duplicate frequency and rebuild latency remain unmeasured.
+- No index or Redis action is proposed; any future optimization must preserve gate order, movement exceptions and strict priority semantics.
