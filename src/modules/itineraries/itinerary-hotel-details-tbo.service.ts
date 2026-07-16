@@ -17,7 +17,6 @@ import {
   HOTEL_RATE_PLAN_BY_CODE,
   inferCanonicalHotelRatePlanCode,
   inferCanonicalHotelRatePlanCodeFromMealFlags,
-  inferCanonicalHotelRatePlanCodeFromMealText,
 } from '../hotels/hotel-rate-plans';
 import {
   calculateStaahOccupancyAmount,
@@ -31,6 +30,7 @@ import { StaahRestrictionService } from './services/staah-restriction.service';
 import { ItineraryHotelResponseRowService } from './services/itinerary-hotel-response-row.service';
 import { StaahConfirmedBookingOverrideService } from './services/staah-confirmed-booking-override.service';
 import { GuestNationalityService } from './services/guest-nationality.service';
+import { ItineraryHotelPreferenceFilterService } from './services/itinerary-hotel-preference-filter.service';
 
 /**
  * This service generates dynamic hotel packages from TBO API
@@ -152,6 +152,7 @@ export class ItineraryHotelDetailsTboService {
   private readonly hotelResponseRowService = new ItineraryHotelResponseRowService();
   private readonly staahConfirmedBookingOverrideService = new StaahConfirmedBookingOverrideService();
   private readonly guestNationalityService = new GuestNationalityService();
+  private readonly preferenceFilterService = new ItineraryHotelPreferenceFilterService();
 
   private isTboOnlyFetchEnabled(): boolean {
     const raw = String(process.env.HOTEL_FETCH_TBO_ONLY || '').trim().toLowerCase();
@@ -193,172 +194,19 @@ export class ItineraryHotelDetailsTboService {
       .map((n) => Math.trunc(n));
   }
 
-  private getHotelCategoryCandidates(hotel: HotelSearchResult): number[] {
-    const candidates = new Set<number>();
-
-    const ratingNum = Number((hotel as any).rating);
-    if (Number.isFinite(ratingNum) && ratingNum > 0) {
-      candidates.add(Math.trunc(ratingNum));
-    }
-
-    const categoryRaw = String((hotel as any).category ?? '').trim();
-    if (categoryRaw) {
-      const match = categoryRaw.match(/\d+/);
-      if (match) {
-        const categoryNum = Number(match[0]);
-        if (Number.isFinite(categoryNum) && categoryNum > 0) {
-          candidates.add(Math.trunc(categoryNum));
-        }
-      }
-    }
-
-    return Array.from(candidates);
-  }
-
-  private inferMealPlanCodeFromHotel(hotel: HotelSearchResult): string | null {
-    const direct = inferCanonicalHotelRatePlanCode(String((hotel as any).mealPlan ?? ''));
-    if (direct) return direct;
-    return inferCanonicalHotelRatePlanCodeFromMealText(String((hotel as any).mealPlan ?? ''));
-  }
-
-  private collectMealPlanCodesFromText(
-    rawValue: unknown,
-    collector: Set<string>,
-  ): void {
-    const raw = String(rawValue ?? '').trim();
-    if (!raw) return;
-
-    const direct = inferCanonicalHotelRatePlanCode(raw);
-    if (direct) collector.add(direct);
-
-    const inferred = inferCanonicalHotelRatePlanCodeFromMealText(raw);
-    if (inferred) collector.add(inferred);
-  }
-
-  private getMealPlanCandidatesFromHotel(hotel: HotelSearchResult): string[] {
-    const candidates = new Set<string>();
-
-    this.collectMealPlanCodesFromText((hotel as any).mealPlan, candidates);
-    this.collectMealPlanCodesFromText((hotel as any).roomType, candidates);
-
-    for (const roomType of hotel.roomTypes || []) {
-      this.collectMealPlanCodesFromText((roomType as any).roomName, candidates);
-    }
-
-    return Array.from(candidates);
-  }
-
-  private alignHotelToPreferredMealPlan(
-    hotel: HotelSearchResult,
-    preferredMealPlanCode: string,
-  ): HotelSearchResult {
-    const roomTypes = Array.isArray(hotel.roomTypes) ? hotel.roomTypes : [];
-    const matchedRoomType = roomTypes.find((roomType) => {
-      const roomCandidates = new Set<string>();
-      this.collectMealPlanCodesFromText((roomType as any).roomName, roomCandidates);
-      return roomCandidates.has(preferredMealPlanCode);
-    });
-
-    if (!matchedRoomType) {
-      return hotel;
-    }
-
-    const normalizedRoomTypeName = String((matchedRoomType as any).roomName || '')
-      .replace(/\s*-\s*(EP|CP|MAP|AP)\b.*$/i, '')
-      .trim();
-
-    return {
-      ...hotel,
-      price: Number((matchedRoomType as any).price || hotel.price || 0),
-      roomType: normalizedRoomTypeName || hotel.roomType || String((matchedRoomType as any).roomName || ''),
-      mealPlan: preferredMealPlanCode,
-      roomTypes: [
-        matchedRoomType,
-        ...roomTypes.filter((roomType) => roomType !== matchedRoomType),
-      ],
-    };
-  }
-
   private applyPlanPreferenceFilters(
     hotelsByRoute: Map<number, HotelSearchResult[] | null>,
     preferredCategories: number[],
     preferredMealPlanCode: string | null,
   ): Map<number, HotelSearchResult[] | null> {
-    const shouldFilterByCategory = preferredCategories.length > 0;
-    const shouldFilterByMeal = !!preferredMealPlanCode;
-
-    if (!shouldFilterByCategory && !shouldFilterByMeal) {
-      return hotelsByRoute;
-    }
-
-    const preferredCategorySet = new Set(preferredCategories);
-    const filteredMap = new Map<number, HotelSearchResult[] | null>();
-
-    hotelsByRoute.forEach((hotels, routeId) => {
-      if (!Array.isArray(hotels)) {
-        filteredMap.set(routeId, hotels);
-        return;
-      }
-
-      const filteredHotels: HotelSearchResult[] = [];
-
-      for (const hotel of hotels) {
-        let included = true;
-        let filterReason = '';
-        let nextHotel = hotel;
-        
-        if (shouldFilterByCategory) {
-          const categoryCandidates = this.getHotelCategoryCandidates(hotel);
-          const categoryMatch = categoryCandidates.some((cat) => preferredCategorySet.has(cat));
-          const isResavenueUnknownCategory =
-            String((hotel as any).provider || '').toLowerCase() === 'resavenue' &&
-            categoryCandidates.length === 0;
-
-          if (!categoryMatch && !isResavenueUnknownCategory) {
-            included = false;
-            filterReason = `Category mismatch: ${categoryCandidates.join(',') || 'UNKNOWN'} not in ${preferredCategories.join(',')}`;
-          } else if (isResavenueUnknownCategory) {
-            this.logger.debug(
-              `   ℹ️  Keeping ResAvenue hotel with unknown category: ${hotel.hotelName}`,
-            );
-          }
-        }
-
-        if (included && shouldFilterByMeal) {
-          const mealPlanCandidates = this.getMealPlanCandidatesFromHotel(hotel);
-          const hasMatchingMeal = mealPlanCandidates.includes(preferredMealPlanCode!);
-
-          // Only reject when we can positively infer available meal plan(s) and none match.
-          if (mealPlanCandidates.length > 0 && !hasMatchingMeal) {
-            included = false;
-            filterReason = `Meal plan mismatch: ${mealPlanCandidates.join(',')} != ${preferredMealPlanCode}`;
-          } else if (hasMatchingMeal) {
-            nextHotel = this.alignHotelToPreferredMealPlan(hotel, preferredMealPlanCode!);
-          }
-        }
-        
-        if (!included && hotel.provider === 'resavenue') {
-          this.logger.warn(`   ⚠️  Filtering out ResAvenue: ${hotel.hotelName} - Reason: ${filterReason}`);
-        }
-        if (!included && hotel.provider === 'staah') {
-          this.logger.warn(`[STAAH FILTERED] ${hotel.hotelName} (${hotel.hotelCode}) - ${filterReason}`);
-        }
-
-        if (included) {
-          filteredHotels.push(nextHotel);
-        }
-      }
-
-      this.logger.log(
-        `   Preference filter route ${routeId}: before=${hotels.length}, after=${filteredHotels.length}, ` +
-          `category=${shouldFilterByCategory ? preferredCategories.join(',') : 'ANY'}, meal=${preferredMealPlanCode || 'ANY'}`,
-      );
-
-      filteredMap.set(routeId, filteredHotels);
+    return this.preferenceFilterService.apply(hotelsByRoute, preferredCategories, preferredMealPlanCode, {
+      log: (message) => this.logger.log(message),
+      warn: (message) => this.logger.warn(message),
+      debug: (message) => this.logger.debug(message),
     });
-
-    return filteredMap;
   }
+
+
 
   constructor(
     private readonly prisma: PrismaService,
