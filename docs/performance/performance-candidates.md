@@ -350,6 +350,8 @@ The iteration-97 frontend hotel-list normalization boundary is a measurement sea
 
 The iteration-98 vehicle-pricing-policy boundary is a measurement seam for numeric coercion CPU, time-limit title parsing frequency, slab sort cost, selected-slab upgrade frequency, no-higher-slab frequency, local pricebook row count and end-to-end vehicle-cost latency. Capture exact-selected, covering-selected, upgrade, over-range, malformed-title and empty-slab workloads separately before memoizing slabs or changing pricebook queries; preserve slab precedence, fallback behavior and mutable pricing freshness. No index addition/removal or Redis cache is justified by this pure ownership tier without query-plan and pricing trace evidence.
 
+The iteration-99 vendor-pricebook-policy boundary is a measurement seam for kilometre/time-limit title parsing CPU, explicit-value fallback frequency, soft-delete marker scan volume, pricebook row count, limit lookup latency and write amplification. Capture explicit-limit, title-only, malformed-title, duplicate-marker, empty-sibling and repeated-soft-delete workloads separately before caching limit metadata or batching writes; preserve title/value precedence, active predicates and deletion sequencing. No index addition/removal or Redis cache is justified by this pure ownership tier without query-plan and mutation traces.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.

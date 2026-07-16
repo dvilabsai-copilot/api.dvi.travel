@@ -3205,3 +3205,30 @@
 - `vehicle-calculation.helpers.ts` measured at 3,448 lines after the tier; `vehicle-pricing-policy.ts` is 99 lines.
 - Pricing CPU, local pricebook row counts and selection-query latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `fc4a39e`.
+
+### Cycle 102 - Extract vendor pricebook policy
+
+#### Scope
+
+- Original file: `src/modules/vendors/vendors.service.ts`
+- Extracted responsibility: outstation kilometre normalization, local time-limit normalization and soft-delete marker allocation
+- New files: `src/modules/vendors/vendor-pricebook-policy.ts`, `test/vendor-pricebook-policy.test.ts`
+- Workflow: vendor pricebook and limit maintenance
+
+#### Change
+
+- Moved pure pricebook signature parsing and deletion-marker allocation behind `vendor-pricebook-policy.ts`; Prisma reads, writes, branch/location resolution and vendor orchestration remain in `VendorsService`.
+- Preserved explicit-value precedence, title-derived fallback, normalized labels and positive soft-delete sequencing.
+- No SQL predicate, index, Redis cache, provider request or vendor response contract changed.
+
+#### Verification
+
+- Vendor pricebook policy characterization tests: PASS, 3/3
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `vendors.service.ts` measured at 3,469 lines after the tier; `vendor-pricebook-policy.ts` is 47 lines.
+- Pricebook query latency, row volume, normalization CPU and soft-delete write amplification remain unmeasured.
+- Implementation commit: `api.dvi.travel` `c571775`.

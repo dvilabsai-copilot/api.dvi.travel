@@ -361,3 +361,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Numeric coercion, title-derived time limits, deterministic slab ordering, selected-slab coverage, upgrade flags and over-range fallback remain unchanged.
 - This is not a measured database performance improvement: local pricebook row counts, pricebook query latency, slab CPU and vehicle-cost projection latency remain unmeasured.
 - No index or Redis action is proposed; future work should capture pricebook query plans and slab-selection traces before batching, memoizing or caching mutable pricing data.
+
+## Iteration 99 evidence update
+
+- The vendor pricebook policy extraction changes only pure normalization and soft-delete marker ownership; no SQL, index, Redis cache, active predicate or vendor response shape changed.
+- Explicit limit precedence, title-derived fallback, normalized title preservation and positive soft-delete sequencing remain unchanged.
+- This is not a measured database performance improvement: limit lookup latency, pricebook row counts, sibling-row scan volume and write amplification remain unmeasured.
+- No index or Redis action is proposed; future work should capture vendor pricebook query plans and deletion mutation traces before batching or caching mutable limit state.
