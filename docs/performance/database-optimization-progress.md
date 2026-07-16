@@ -277,3 +277,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Plan-wide existing-hotspot snapshotting, clean-route skip behavior, transaction timeout/wait settings, parking rebuild and vehicle-pricing refresh remain unchanged; only workflow ownership moved.
 - This is not a measured performance improvement: route/date/hotspot read fan-out, transaction duration, rebuild row volume, skipped-route frequency, parking-charge latency and pricing-refresh latency remain unmeasured.
 - No index or Redis action is proposed; any future optimization must compare route-rebuild query plans and transaction traces before batching or caching mutable itinerary state.
+
+## Iteration 87 evidence update
+
+- The hotel-cancellation extraction preserves confirmed-plan, route, hotel and room predicates, audit fallback, soft-delete ordering, plan financial updates and account refund updates; no SQL, index, Redis cache or query shape was changed.
+- Cancellation projection fields, percentage rounding, refund clamp, transaction scope and missing-plan/hotel errors remain unchanged; only cancellation ownership moved.
+- This is not a measured performance improvement: route/hotel/room read fan-out, row volume, audit fallback frequency, soft-delete write volume, transaction duration and refund-accounting latency remain unmeasured.
+- No index or Redis action is proposed; any future optimization must compare cancellation read/write traces and lock duration before batching or caching mutable confirmed-itinerary state.

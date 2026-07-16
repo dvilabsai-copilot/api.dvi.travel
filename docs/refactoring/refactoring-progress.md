@@ -2853,3 +2853,32 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Route/hotspot read fan-out, transaction duration, rebuild row volume, skipped-route frequency, parking rebuild latency and pricing refresh latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `35973b7`.
+
+### Cycle 90 - Extract hotel cancellation workflow
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: confirmed-hotel cancellation read, charge projection and refund transaction
+- New files: `src/modules/itineraries/services/itinerary-hotel-cancellation.service.ts`, `test/itinerary-hotel-cancellation.test.ts`
+- Workflow: confirmed itinerary hotel cancellation
+
+#### Change
+
+- Moved confirmed-plan hotel/room projection, day-level cancellation charge calculation and transactional hotel cancellation/refund accounting behind `ItineraryHotelCancellationService`.
+- Preserved plan/hotel/room predicates, response fields, audit-table fallback, hotel/room soft-delete ordering, plan financial decrements and account refund increments.
+- Registered the service in `ItinerariesModule`; the unrelated concurrent `itinerary-details.service.ts` vehicle-charge/GST edit was not staged or changed.
+
+#### Verification
+
+- Hotel-cancellation characterization tests: PASS, 2/2
+- Combined focused backend/timeline suite: PASS, 194/194
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 5,752 lines after the tier; `ItineraryHotelCancellationService` is 164 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Cancellation read fan-out, hotel/room row volume, audit-table fallback frequency, transaction duration and refund-accounting latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `4d2a12d`.

@@ -326,6 +326,8 @@ The iteration-85 manual-hotspot conflict-persistence boundary is a measurement s
 
 The iteration-86 route-hotspot rebuild boundary is a measurement seam for route validation latency, plan-wide route/date/hotspot read fan-out, manual-row and activity retirement volume, rebuild transaction duration, hotspot-engine row volume, clean-route skip frequency, parking-charge latency and vehicle-pricing refresh latency. Capture clean, manual-heavy, exclusion-heavy, multi-route and large-plan rebuilds separately before proposing indexes, batching or Redis; preserve plan-wide allocation, transaction consistency, timeout settings and mutable route state. No index addition/removal or Redis cache is justified by the current evidence because this tier changed ownership only and has no before/after production timings.
 
+The iteration-87 hotel-cancellation boundary is a measurement seam for confirmed-plan lookup latency, route/hotel/room read fan-out, hotel and room row volume, audit-table fallback frequency, soft-delete write volume, financial-update latency and transaction duration. Capture missing-plan, empty-hotel, single-hotel, multi-room and refund-bearing cancellation workloads separately before proposing indexes, batching or Redis; preserve financial rounding, soft-delete ordering, audit fallback and mutable confirmed-plan state. No index addition/removal or Redis cache is justified by the current evidence because this tier changed ownership only and has no before/after production timings.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.
