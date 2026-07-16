@@ -1275,3 +1275,32 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Timeline row volume, transformation CPU, payload size, cache effects and latency remain unmeasured.
 - Commit: `api.dvi.travel` `3241ea7`.
+
+### Cycle 36 - Extract route-leg cache and provider fallback
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: OSRM leg runtime cache, TTL/key normalization, reverse-leg reuse, stored-coordinate reads and distance/duration fallback helpers
+- New files: `src/modules/itineraries/services/itinerary-route-leg-cache.service.ts`, `test/itinerary-route-leg-cache.test.ts`
+- Workflow: route-leg resolution used by manual matrix and preview/rebuild paths
+
+#### Change
+
+- Moved the contiguous route-leg/cache boundary behind `ItineraryRouteLegCacheService`.
+- Preserved runtime cache freshness, direct/reverse geometry behavior, endpoint-coordinate lookup, OSRM fallback, route-matrix leg normalization and conservative duration/distance fallbacks.
+- Registered the provider and retained facade adapters with the existing route-geometry callback.
+
+#### Verification
+
+- Route-leg cache characterization tests: PASS, 2/2
+- Combined focused backend suite: PASS, 59/59
+- Backend build: PASS
+- `git diff --check`: PASS before documentation changes
+
+#### Result
+
+- `itineraries.service.ts` measured at 22,058 lines after the tier; `ItineraryRouteLegCacheService` is 263 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Cache hit/miss/expiry, provider latency, route-leg volume, geometry payload size and process memory remain unmeasured.
+- Implementation commit: `api.dvi.travel` `cde303a`.
