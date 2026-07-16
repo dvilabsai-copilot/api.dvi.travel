@@ -69,6 +69,7 @@ import { ItineraryMatrixSafeInsertionService } from './services/itinerary-matrix
 import { ItineraryPreviewTimelineApplicationService } from './services/itinerary-preview-timeline-application.service';
 import { ItineraryRouteLegCacheService } from './services/itinerary-route-leg-cache.service';
 import { ItineraryManualHotspotBatchService } from './services/itinerary-manual-hotspot-batch.service';
+import { ItineraryManualInsertionFitService } from './services/itinerary-manual-insertion-fit.service';
 
 @Module({
   imports: [HotelsModule],
@@ -117,6 +118,7 @@ import { ItineraryManualHotspotBatchService } from './services/itinerary-manual-
     ItineraryPreviewTimelineApplicationService,
     ItineraryRouteLegCacheService,
     ItineraryManualHotspotBatchService,
+    ItineraryManualInsertionFitService,
 
     // existing engines you already had
     HotelEngineService,
