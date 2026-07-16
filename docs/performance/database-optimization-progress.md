@@ -655,3 +655,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - The Prisma read remains in the facade and the tier adds no database access.
 - This is not a measured database performance improvement: saved-row cardinality, query latency, duplicate rate and provider-filter latency remain unmeasured.
 - No index addition/removal or Redis action is proposed; future work should capture the hotel-detail query plan and saved-route distributions before indexing or caching indicators.
+
+## Iteration 141 evidence update
+
+- The STAAH room-mapping extraction preserves active/deleted/status room-row semantics, exact/loose code maps, ambiguity tracking, room titles and property ownership; no SQL predicate, index, Redis cache or response shape changed.
+- Room reads remain in the existing facade and the tier adds no database access.
+- This is not a measured database performance improvement: active-room volume, exact/loose hit rates, ambiguity frequency, mapping CPU and STAAH latency remain unmeasured.
+- No index addition/removal or Redis action is proposed; future work should capture `dvi_hotel_rooms` query plans and STAAH room-code match traces before indexing or caching mappings.

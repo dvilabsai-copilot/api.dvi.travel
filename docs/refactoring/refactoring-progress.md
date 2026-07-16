@@ -4383,3 +4383,31 @@
 - `itinerary-hotel-details-tbo.service.ts` measured at 2,728 lines after the tier; `saved-hotel-indicator.service.ts` is 25 lines.
 - Saved-row cardinality, query latency, route hit rate and provider-filter response latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `8c82f5b`.
+
+### Cycle 144 - Extract STAAH room mapping
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itinerary-hotel-details-tbo.service.ts`
+- Extracted responsibility: active-room exact/loose normalization, room-title lookup and property-to-hotel allowed-room maps
+- New files: `src/modules/itineraries/services/staah-room-mapping.service.ts`, `test/staah-room-mapping.test.ts`
+- Workflow: STAAH inventory/rate filtering
+
+#### Change
+
+- Moved active admin-room and property mapping behind `StaahRoomMappingService` while preserving exact-code admission data, normalized-code ambiguity tracking, room titles and property ownership maps.
+- The TBO facade retains room-read queries, stale-room warning policy, inventory/rate filtering and provider result behavior; no provider payload or API DTO changed.
+- No SQL predicate, index, Redis cache, API route, DTO or response contract changed.
+
+#### Verification
+
+- STAAH room-mapping characterization tests: PASS, 2/2
+- Itinerary characterization collection: PASS, 195/195
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itinerary-hotel-details-tbo.service.ts` measured at 2,691 lines after the tier; `staah-room-mapping.service.ts` is 77 lines.
+- Active-room cardinality, exact/loose ambiguity rate, mapping CPU and STAAH query latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `364f4e2`.

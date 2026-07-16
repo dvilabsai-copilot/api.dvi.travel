@@ -434,6 +434,8 @@ The iteration-139 AxisRooms projection boundary is a measurement seam for city-h
 
 The iteration-140 saved-hotel indicator boundary is a measurement seam for plan hotel-row cardinality, unique route count, indicator query latency, duplicate-row rate, query-error frequency and provider-filter preparation latency. Capture empty, one-row, duplicate-route, large-plan and query-failure workloads separately before adding a covering index or caching indicators; preserve deleted-row filtering and mutable plan freshness. No index addition/removal or Redis cache is justified until query plans and provider traces establish the measured winner.
 
+The iteration-141 STAAH room-mapping boundary is a measurement seam for active-room row count, city-hotel count, exact-code hit rate, loose-code ambiguity rate, room-title map size, mapping CPU and end-to-end STAAH inventory/rate query latency. Capture empty-room, exact-match, normalized-only, ambiguous-normalized, multi-property and large-room workloads separately before changing room-code predicates or caching mappings; preserve active/deleted/status freshness and stale-room rejection. No index addition/removal or Redis cache is justified until room-table query plans and provider traces establish the measured winner.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.
