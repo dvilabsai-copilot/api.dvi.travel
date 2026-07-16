@@ -86,6 +86,7 @@ import { ItineraryMatrixPreviewTimelinePolicyService } from './services/itinerar
 import { ItineraryManualFitRemovalExplanationService } from './services/itinerary-manual-fit-removal-explanation.service';
 import { ItineraryManualFitRoutePolicyService } from './services/itinerary-manual-fit-route-policy.service';
 import { ItineraryManualFitRouteMatrixPersistenceService } from './services/itinerary-manual-fit-route-matrix-persistence.service';
+import { ItineraryManualFitOperatingHoursService } from './services/itinerary-manual-fit-operating-hours.service';
 import { ItineraryActivityAvailabilityService } from './services/itinerary-activity-availability.service';
 import { ItineraryInvoiceReadService } from './services/itinerary-invoice-read.service';
 import { ItineraryHotspotDeletionService } from './services/itinerary-hotspot-deletion.service';
@@ -154,6 +155,7 @@ import { ItineraryHotspotDeletionService } from './services/itinerary-hotspot-de
     ItineraryManualFitRemovalExplanationService,
     ItineraryManualFitRoutePolicyService,
     ItineraryManualFitRouteMatrixPersistenceService,
+    ItineraryManualFitOperatingHoursService,
     ItineraryActivityAvailabilityService,
     ItineraryInvoiceReadService,
     ItineraryHotspotDeletionService,
