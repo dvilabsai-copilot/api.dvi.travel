@@ -62,6 +62,7 @@ import { TimelineDay1CutoffMasterService } from './timeline-day1-cutoff-master.s
 import { TimelineDay1TravelProjectionService } from './timeline-day1-travel-projection.service';
 import { TimelineInitialRefreshmentService } from './timeline-initial-refreshment.service';
 import { TimelineRouteCoordinateResolutionService } from './timeline-route-coordinate-resolution.service';
+import { TimelineCandidatePreparationService } from './timeline-candidate-preparation.service';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -227,6 +228,7 @@ export class TimelineBuilder {
   private readonly day1TravelProjectionService = new TimelineDay1TravelProjectionService();
   private readonly initialRefreshmentService = new TimelineInitialRefreshmentService();
   private readonly routeCoordinateResolutionService = new TimelineRouteCoordinateResolutionService();
+  private readonly candidatePreparationService: TimelineCandidatePreparationService;
   private readonly candidatePolicyService = new TimelineCandidatePolicyService(
     this.operatingHoursService,
     this.slotPolicyService,
@@ -235,6 +237,13 @@ export class TimelineBuilder {
   );
 
   constructor() {
+    this.candidatePreparationService = new TimelineCandidatePreparationService(
+      this.manualPlacementOrderingService,
+      this.destinationReservationService,
+      this.carryForwardAttachmentService,
+      this.matrixAutobuildService,
+      this.candidateReorderingService,
+    );
     this.day1SourceFallbackService.setCallbacks({
       normalizeCityName: (...args) => (this.normalizeCityName as any)(...args),
       hotspotLocationMatchesCity: (...args) => (this.hotspotLocationMatchesCity as any)(...args),
@@ -950,23 +959,15 @@ export class TimelineBuilder {
       // STRATEGY: For Day-1 different cities, process hotspots with strict priority walk
       // For other days, use multi-pass scheduling to fill gaps with deferred hotspots
       
-      const manualPlacementOrdering = this.manualPlacementOrderingService.apply({
+      const candidatePreparation = await this.candidatePreparationService.prepare({
         options,
         route,
         plan,
         planId,
         selectedHotspots,
         existingHotspots,
-      });
-      selectedHotspots = manualPlacementOrdering.selectedHotspots;
-      const { routeDesiredMovableSet, desiredMovableOrderRank, routePreferredAdjacencyPairs } = manualPlacementOrdering;
-
-      selectedHotspots = await this.destinationReservationService.apply({
         tx,
-        planId,
         routeIndex,
-        route,
-        plan,
         nextRoute,
         sourceCity,
         destinationCity,
@@ -975,7 +976,6 @@ export class TimelineBuilder {
         isIntercityMovementFirstTransfer,
         allHotspots,
         addedHotspotIds,
-        selectedHotspots,
         hotspotMap,
         minimumReservationCount: MIN_DESTINATION_HOTSPOTS_FOR_RESERVATION,
         estimateRouteHotspotCapacity: (...args) => (this.estimateRouteHotspotCapacity as any)(...args),
@@ -984,62 +984,27 @@ export class TimelineBuilder {
         fetchDay1TopPrioritySourceHotspots: (...args) => (this.day1SourceFallbackService.fetch as any)(...args),
         hotspotLocationMatchesCity: (...args) => (this.hotspotLocationMatchesCity as any)(...args),
         logBookingRule: (...args) => (this.logBookingRule as any)(...args),
-      });
-
-
-
-
-
-      const carryForwardAttachment = this.carryForwardAttachmentService.apply({
-        route,
-        plan,
-        planId,
-        routeIndex,
-        sourceCity,
-        destinationCity,
-        selectedHotspots,
         carryForwardHotspots,
-        addedHotspotIds,
         forceNoSightseeingOnThisRoute,
         sameCityChainContinuation: sameCityContinuationContextForRoute.isSameCityChainContinuation,
         mergeCarryForwardIntoCandidates: (...args) => (this.mergeCarryForwardIntoCandidates as any)(...args),
-        logBookingRule: (...args) => (this.logBookingRule as any)(...args),
-      });
-      selectedHotspots = carryForwardAttachment.selectedHotspots;
-      const { hasOnlySourceFallbackCandidates } = carryForwardAttachment;
-      this.logTimeline('[TIMELINE] Selected hotspots for route:', selectedHotspots.length);
-      // Matrix-assisted auto-build merge (optional, behind feature flag)
-      selectedHotspots = await this.matrixAutobuildService.apply({
-        tx,
-        route,
-        plan,
-        planId,
-        sourceCity,
-        destinationCity,
+        logTimeline: (...args) => (this.logTimeline as any)(...args),
         currentTime,
         routeStartSeconds,
         routeEndSeconds,
         timingMap,
-        hotspotMap,
-        selectedHotspots,
-        isHotspotAlreadyPlanned,
         getBetweenCandidatesForRouteSlots: (...args) => (this.dataAccessService.getBetweenCandidatesForRouteSlots as any)(...args),
-        logTimeline: (...args) => (this.logTimeline as any)(...args),
-        logBookingRule: (...args) => (this.logBookingRule as any)(...args),
         canonicalCityKey: (...args) => (this.canonicalCityKey as any)(...args),
-        hotspotLocationMatchesCity: (...args) => (this.hotspotLocationMatchesCity as any)(...args),
         checkHotspotOperatingHoursFromMap: (...args) => (this.checkHotspotOperatingHoursFromMap as any)(...args),
       });
+      selectedHotspots = candidatePreparation.selectedHotspots;
+      const {
+        routeDesiredMovableSet,
+        desiredMovableOrderRank,
+        routePreferredAdjacencyPairs,
+        hasOnlySourceFallbackCandidates,
+      } = candidatePreparation;
 
-
-
-      // Re-order candidates: preserve manual selections and priority>0 first (protected),
-      // then sort remaining candidates by matrix_score desc, then distance asc.
-
-      selectedHotspots = this.candidateReorderingService.reorder(
-        selectedHotspots,
-        (...args) => (this.logTimeline as any)(...args),
-      );
       const routeLoopStart = Date.now();
       let hotspotQueryCount = 0;
       let distanceCalcCount = 0;
