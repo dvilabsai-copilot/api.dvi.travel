@@ -2795,3 +2795,32 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Overlap query latency, active-row fan-out, conflict-row frequency and selection CPU remain unmeasured.
 - Implementation commit: `api.dvi.travel` `222b197`.
+
+### Cycle 88 - Extract manual-hotspot conflict persistence
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: forced manual-row conflict update/create persistence
+- New files: `src/modules/itineraries/services/itinerary-manual-hotspot-conflict.service.ts`, `test/itinerary-manual-hotspot-conflict.test.ts`
+- Workflow: confirmed manual-fit conflict fallback
+
+#### Change
+
+- Moved existing-row conflict marking, route-time fallback, next-order allocation and conflict-row creation behind `ItineraryManualHotspotConflictService`.
+- Preserved existing-row predicates, preferred-time precedence, fallback timing, duration representation, conflict reason, timestamps and created-by fields.
+- Registered the service in `ItinerariesModule` and retained the facade UTC-duration-date callback.
+
+#### Verification
+
+- Manual-hotspot conflict characterization tests: PASS, 2/2
+- Combined focused backend/timeline suite: PASS, 190/190
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 6,134 lines after the tier; `ItineraryManualHotspotConflictService` is 89 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Existing-row lookup latency, route-order lookup latency, conflict-write volume, fallback frequency and transaction duration remain unmeasured.
+- Implementation commit: `api.dvi.travel` `144dd71`.

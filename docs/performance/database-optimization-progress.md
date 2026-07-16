@@ -263,3 +263,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Non-overlapping-row short-circuiting and existing transaction-client usage remain unchanged; only overlap-policy ownership moved.
 - This is not a measured performance improvement: overlap query latency, active-row fan-out, conflict-row frequency, candidate short-circuit rate and selection CPU remain unmeasured.
 - No index or Redis action is proposed; any future optimization must compare overlap query plans and row-count traces before batching or caching mutable route state.
+
+## Iteration 85 evidence update
+
+- The forced manual-hotspot conflict extraction preserves existing-row lookup predicates, route-time fallback reads, order lookup, update/create fields and transaction client usage; no SQL, index, Redis cache or query shape was changed.
+- Preferred timing precedence, minimum fallback duration, conflict reason, status/deleted fields, timestamps and created-by semantics remain unchanged; only conflict persistence ownership moved.
+- This is not a measured performance improvement: existing-row lookup latency, route-order lookup latency, update/create ratio, fallback frequency, conflict-write volume and transaction duration remain unmeasured.
+- No index or Redis action is proposed; any future optimization must compare conflict lookup/order query plans and write traces before batching or caching mutable route state.

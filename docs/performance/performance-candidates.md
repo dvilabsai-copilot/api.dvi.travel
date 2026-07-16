@@ -322,6 +322,8 @@ The iteration-83 manual-hotspot row-timing boundary is a measurement seam for st
 
 The iteration-84 manual-hotspot overlap boundary is a measurement seam for overlap-query latency, active-row fan-out, conflict-row frequency, invalid-window frequency, non-overlap short-circuit rate and selection CPU. Capture isolated, touching-boundary, overlapping, conflict-only, invalid-window and multi-row workloads separately before proposing a composite index, batching or Redis; preserve the existing route/plan/item/deleted predicates, conflict semantics and mutable schedule freshness. No index addition/removal or Redis cache is justified by the current evidence because this tier changed ownership only and has no before/after production timings.
 
+The iteration-85 manual-hotspot conflict-persistence boundary is a measurement seam for existing-row lookup latency, route-time lookup latency, current-order scan volume, update/create ratio, fallback timing frequency, conflict-write volume and transaction duration. Capture existing-row, preferred-time, route-fallback, empty-route and repeated-confirmation workloads separately before proposing an index, write batching or Redis; preserve conflict metadata, timing precedence, timestamps and mutable route state. No index addition/removal or Redis cache is justified by the current evidence because this tier changed ownership only and has no before/after production timings.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.
