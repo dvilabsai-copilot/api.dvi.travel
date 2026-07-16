@@ -33,6 +33,7 @@ import { ItineraryDetailsSegmentSanitizerService } from './services/itinerary-de
 import { ItineraryDetailsDestinationResolutionService } from './services/itinerary-details-destination-resolution.service';
 import { ItineraryDetailsSegmentOrderingService } from './services/itinerary-details-segment-ordering.service';
 import { ItineraryDetailsHotelFirstPolicyService } from './services/itinerary-details-hotel-first-policy.service';
+import { ItineraryDetailsSourceTravelService } from './services/itinerary-details-source-travel.service';
 
 // ---------------------------------------------------------------------------
 // DTOs for Itinerary Details response (shared shape with frontend)
@@ -430,6 +431,7 @@ export class ItineraryDetailsService {
   private readonly destinationResolutionService = new ItineraryDetailsDestinationResolutionService();
   private readonly segmentOrderingService = new ItineraryDetailsSegmentOrderingService();
   private readonly hotelFirstPolicyService = new ItineraryDetailsHotelFirstPolicyService();
+  private readonly sourceTravelService = new ItineraryDetailsSourceTravelService();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -1312,65 +1314,30 @@ for (const row of vehicleKmRows) {
         }
 
         if (itemType === 2) {
-          // TRAVEL row (from source to next location)
-          let toName =
-            route.next_visiting_location ??
-            location?.destination_location ??
-            plan.departure_location ??
-            "";
-
-          if (toName === "Hotel") {
-            const hotelInfo = routeHotelMap.get(route.itinerary_route_ID);
-            if (hotelInfo?.hotel_name) {
-              toName = hotelInfo.hotel_name;
-            }
-          }
-
-          // Skip travel segment if from and to locations are the same
-          if (previousStopName.trim() === toName.trim()) {
-            // Still update previousStopName to maintain consistency
-            previousStopName = toName;
-            continue;
-          }
-
-          const resolvedDistanceKm = await this.resolveTravelDistanceKm({
+          const sourceTravelResult = await this.sourceTravelService.append({
             row: rh,
-            itemType,
             location,
             route,
-            fromName: previousStopName,
-            toName,
             hotspotMap,
+            routeHotelMap,
+            previousStopName,
+            startTimeText,
+            endTimeText,
+            travelDuration,
+            segments,
+            seenAttraction,
+            resolveTravelDistanceKm: (params) => this.resolveTravelDistanceKm(params),
+            formatTravelDistance: (value) => this.formatTravelDistance(value),
+            getTravelTimeRangeWithDuration: (start, end, duration) =>
+              this.getTravelTimeRangeWithDuration(start, end, duration),
+            formatDuration: (value) => this.formatDuration(value),
+            pushHotspotAnchorPlaceholder,
           });
-          distanceNum = resolvedDistanceKm ?? 0;
-          travelDistance = this.formatTravelDistance(resolvedDistanceKm);
-
-          if (Number.isFinite(distanceNum) && distanceNum > 0) {
-            totalDistanceKm += distanceNum;
-          }
-
-          const travelRange = this.getTravelTimeRangeWithDuration(startTimeText, endTimeText, travelDuration);
-
-          pushHotspotAnchorPlaceholder({
-            from: previousStopName,
-            to: toName,
-            timeRange: travelRange,
-          });
-          segments.push({
-            type: "travel" as const,
-            from: previousStopName,
-            to: toName,
-            timeRange: travelRange,
-            distance: travelDistance,
-            duration: this.formatDuration(travelDuration),
-            note: "This may vary due to traffic conditions",
-          });
-
-          if (!seenAttraction) {
+          totalDistanceKm += sourceTravelResult.totalDistanceKm;
+          previousStopName = sourceTravelResult.previousStopName;
+          if (sourceTravelResult.emittedTravelBeforeFirstAttraction) {
             emittedTravelBeforeFirstAttraction = true;
           }
-
-          previousStopName = toName;
           continue;
         }
 
