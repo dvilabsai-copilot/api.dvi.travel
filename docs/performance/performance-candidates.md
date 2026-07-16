@@ -156,6 +156,7 @@ An index, Redis cache, or query rewrite may move from candidate to implementatio
 | Timeline iteration 47 | Route-hotspot selection boundary | `timeline.builder.ts` reduced from 8,696 to 7,826 lines; `TimelineRouteHotspotSelectionService` is 932 lines | Existing route context, timing reads, source/en-route/via/destination buckets, route-chain matching, distance ranking and final projection preserved; query latency, timing-row volume, candidate calls and rebuild latency remain unmeasured |
 | Timeline iteration 48 | Arrival/hotel decision boundary | `timeline.builder.ts` reduced from 7,826 to 7,563 lines; `TimelineArrivalHotelDecisionService` is 421 lines | Existing arrival policy, hotel distance branch, early/late arrival timing, report cutoff and suppression decisions preserved; policy latency, hotel-coordinate reads, branch volume and rebuild latency remain unmeasured |
 | Timeline iteration 49 | Hotel-first insertion boundary | `timeline.builder.ts` reduced from 7,563 to 7,481 lines; `TimelineHotelFirstInsertionService` is 155 lines | Existing hotel travel/check-in/rest rows, clamp and state updates preserved; invocation rate, builder/provider latency, row volume and rebuild latency remain unmeasured |
+| Timeline iteration 50 | Non-hotel sightseeing cutoff boundary | `timeline.builder.ts` reduced from 7,481 to 7,453 lines; `TimelineNonHotelCutoffService` is 69 lines | Existing route-end, travel/buffer subtraction, direct/final bypass and formatted cutoff behavior preserved; provider latency, cutoff frequency and candidate-window impact remain unmeasured |
 
 The iteration-6 and iteration-7 boundaries are measurement seams, not optimization claims. The next safe performance tier should instrument representative itinerary-details, route-rebuild and hotspot-preview requests and attribute calls to `TimelineTravelDataService` and `TimelineCandidateFeasibilityService` before changing query shape or adding a cache.
 
@@ -242,6 +243,8 @@ The timeline iteration-47 route-hotspot selection boundary is a measurement seam
 The timeline iteration-48 arrival/hotel decision boundary is a measurement seam for arrival-policy evaluation time, previous-day billing-state reads, hotel-coordinate lookup latency, distance-branch frequency, late-arrival/report-cutoff suppression and route-clock adjustments. Capture early, same-day, late, houseboat and final-transfer workloads before caching mutable hotel state or changing policy ordering; preserve returned flags and absolute time semantics.
 
 The timeline iteration-49 hotel-first insertion boundary is a measurement seam for eligible-route frequency, hotel travel/check-in builder latency, coordinate fallback rate, check-in clamp count, rest-row volume and route rebuild latency. Capture early-arrival, 1 PM, distance-qualified and suppressed flows before caching hotel legs or batching row writes; preserve transaction ordering and row metadata.
+
+The timeline iteration-50 cutoff boundary is a measurement seam for cutoff invocation rate, distance-provider latency, travel/buffer row freshness, negative-clamp frequency and candidate-window reduction. Capture local, direct intercity, non-direct intercity and final-route workloads before caching travel results or changing cutoff precedence; preserve route-end and buffer semantics.
 
 ## Next profiling order
 

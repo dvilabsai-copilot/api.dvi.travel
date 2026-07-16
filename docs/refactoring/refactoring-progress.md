@@ -1768,3 +1768,32 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Hotel-first invocation rate, hotel-builder/provider latency, inserted-row volume, check-in clamp frequency and rebuild latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `1a13e34`.
+
+### Cycle 53 - Extract non-hotel sightseeing cutoff
+
+#### Scope
+
+- Original file: `src/modules/itineraries/engines/helpers/timeline.builder.ts`
+- Extracted responsibility: route-end minus intercity travel/buffer cutoff calculation and formatted cutoff projection
+- New files: `src/modules/itineraries/engines/helpers/timeline-non-hotel-cutoff.service.ts`, `test/timeline-non-hotel-cutoff.test.ts`
+- Workflow: latest allowable non-hotel sightseeing end before route hotspot selection
+
+#### Change
+
+- Moved the distance-backed cutoff calculation behind `TimelineNonHotelCutoffService`.
+- Preserved direct intercity and last-route bypasses, travel-location type, coordinate fallback, buffer subtraction, non-negative clamp and HH:MM:SS formatting.
+- Kept the returned cutoff values as explicit builder locals used by later candidate feasibility checks.
+
+#### Verification
+
+- Non-hotel cutoff characterization tests: PASS, 2/2
+- Combined focused backend/timeline suite: PASS, 106/106
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `timeline.builder.ts` measured at 7,453 lines after the tier; `TimelineNonHotelCutoffService` is 69 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Cutoff invocation rate, distance-provider latency, travel/buffer data freshness and candidate-window impact remain unmeasured.
+- Implementation commit: `api.dvi.travel` `425567a`.
