@@ -42,6 +42,7 @@ import { ItineraryDetailsHotelTravelOriginService } from './services/itinerary-d
 import { ItineraryDetailsHotelTravelTimeService } from './services/itinerary-details-hotel-travel-time.service';
 import { ItineraryDetailsHotelCheckInService } from './services/itinerary-details-hotel-checkin.service';
 import { ItineraryDetailsDropOffService } from './services/itinerary-details-dropoff.service';
+import { ItineraryDetailsTerminalReturnService } from './services/itinerary-details-terminal-return.service';
 
 // ---------------------------------------------------------------------------
 // DTOs for Itinerary Details response (shared shape with frontend)
@@ -448,6 +449,7 @@ export class ItineraryDetailsService {
   private readonly hotelTravelTimeService = new ItineraryDetailsHotelTravelTimeService();
   private readonly hotelCheckInService = new ItineraryDetailsHotelCheckInService();
   private readonly dropOffService = new ItineraryDetailsDropOffService();
+  private readonly terminalReturnService = new ItineraryDetailsTerminalReturnService();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -1811,47 +1813,20 @@ for (const row of vehicleKmRows) {
         }
       }
 
-      // RETURN block at the end of the day (only if no item_type 6 or 7 exists)
-      const hasReturnOrDropOff = emittedTerminalSegment;
       const dayStartTimeText = this.formatTime(route.route_start_time as any);
       const dayEndTimeText = this.formatTime(route.route_end_time as any);
-      const terminalDestinationName = String(
-        route.next_visiting_location ??
-        plan.departure_location ??
-        'Departure Point',
-      ).trim();
-      const isTerminalDeparture =
-        /(airport|air\s*port|railway|rail\s*way|station|bus\s*stand|bus\s*station|terminal|terminus|junction|stn)\b/i
-          .test(terminalDestinationName);
-
-      if (!hasReturnOrDropOff) {
-        if (isTerminalDeparture) {
-          segments.push({
-            type: 'travel' as const,
-            from: previousStopName,
-            to: terminalDestinationName,
-            timeRange:
-              dayStartTimeText && dayEndTimeText
-                ? `${dayStartTimeText} -> ${dayEndTimeText}`
-                : dayEndTimeText || dayStartTimeText || '',
-            distance: this.formatTravelDistance(Number(route.no_of_km ?? 0) || null),
-            duration:
-              dayStartTimeText && dayEndTimeText
-                ? this.formatDurationFromDisplayRange(dayStartTimeText, dayEndTimeText) ??
-                  this.formatDuration('00:00:00')
-                : this.formatDuration('00:00:00'),
-            note: 'Airport transfer',
-            isConflict: false,
-            conflictReason: null,
-          });
-        } else {
-          segments.push({
-            type: 'return' as const,
-            time: dayEndTimeText,
-            note: null,
-          });
-        }
-      }
+      const terminalReturn = this.terminalReturnService.build({
+        emittedTerminalSegment,
+        previousStopName,
+        route,
+        plan,
+        formatTime: (value) => this.formatTime(value),
+        formatTravelDistance: (value) => this.formatTravelDistance(value),
+        formatDuration: (value) => this.formatDuration(value),
+        formatDurationFromDisplayRange: (start, end) =>
+          this.formatDurationFromDisplayRange(start, end),
+      });
+      if (terminalReturn) segments.push(terminalReturn);
 
 
 
