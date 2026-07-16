@@ -403,3 +403,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - UTC wall-clock labels, date-only extraction, created-on formatting, duration fallbacks and two-digit padding remain unchanged.
 - This is not a measured database performance improvement: formatter CPU, invalid-input frequency, response projection cost and end-to-end details latency remain unmeasured.
 - No index or Redis action is proposed; future work should profile details response projection and formatter hot paths before memoizing or caching mutable itinerary data.
+
+## Iteration 105 evidence update
+
+- The route-hotel-map extraction preserves the existing draft/confirmed hotel queries, active/deleted predicates, group selection, TBO fallback reads and response-map precedence; no SQL predicate, index, Redis cache or response shape changed.
+- Local master enrichment, provider-code fallback, route-map construction and vehicle-only labeling remain behaviorally unchanged.
+- This is not a measured database performance improvement: hotel lookup latency, row selectivity, TBO fan-out, map CPU and details response latency remain unmeasured.
+- No index addition/removal or Redis action is proposed; future work should capture query plans and hotel lookup traces before batching or caching mutable hotel assignments.

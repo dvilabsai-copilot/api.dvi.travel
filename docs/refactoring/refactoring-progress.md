@@ -3370,3 +3370,31 @@
 - `itinerary-details.service.ts` measured at 5,714 lines after the tier; `itinerary-details-display-formatting.service.ts` is 88 lines.
 - Formatting CPU, duration-source frequency and details response projection latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `5a7e86a`.
+
+### Cycle 108 - Extract itinerary-details route hotel map hydration
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itinerary-details.service.ts`
+- Extracted responsibility: draft/confirmed hotel reads, local/TBO master enrichment, route-code fallback and vehicle-only hotel labeling
+- New files: `src/modules/itineraries/services/itinerary-details-route-hotel-map.service.ts`, `test/itinerary-details-route-hotel-map.test.ts`
+- Workflow: itinerary-details route timeline hotel lookup and display-map construction
+
+#### Change
+
+- Moved route-to-hotel map hydration behind `ItineraryDetailsRouteHotelMapService` while retaining the same facade map consumed by timeline projection.
+- Preserved draft group selection, confirmed/draft predicates, TBO confirmation fallback, master-name precedence, route fallback behavior and vehicle-only labels.
+- No query predicate, selected field, index, Redis cache, API route, DTO or response contract changed.
+
+#### Verification
+
+- Route-hotel map characterization tests: PASS, 2/2
+- Itinerary characterization collection: PASS, 151/151
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itinerary-details.service.ts` measured at 5,558 lines after the tier; `itinerary-details-route-hotel-map.service.ts` is 135 lines.
+- Hotel lookup fan-out, master selectivity, TBO fallback frequency and map-construction latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `32003ca`.
