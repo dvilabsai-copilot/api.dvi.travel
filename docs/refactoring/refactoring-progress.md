@@ -3342,3 +3342,31 @@
 - `itinerary-details.service.ts` measured at 5,804 lines after the tier; `itinerary-details-time-range-policy.service.ts` is 119 lines.
 - Time-range policy CPU, details response projection latency and duration-source frequency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `bd9ef1e`.
+
+### Cycle 107 - Extract itinerary-details display formatting policy
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itinerary-details.service.ts`
+- Extracted responsibility: UTC-safe date-only formatting, created-on labels, trip/time labels, duration labels and two-digit padding
+- New files: `src/modules/itineraries/services/itinerary-details-display-formatting.service.ts`, `test/itinerary-details-display-formatting.test.ts`
+- Workflow: itinerary-details timeline, route and confirmed-itinerary response projection
+
+#### Change
+
+- Moved the pure date, clock and duration formatting cluster behind `ItineraryDetailsDisplayFormattingService` while retaining facade adapters for existing callers.
+- Preserved UTC wall-clock semantics, date-only extraction, locale-shaped created-on labels, 12-hour formatting and duration fallback behavior.
+- No SQL predicate, index, Redis cache, API route, DTO or response contract changed.
+
+#### Verification
+
+- Display-formatting characterization tests: PASS, 3/3
+- Itinerary characterization collection: PASS, 149/149
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itinerary-details.service.ts` measured at 5,714 lines after the tier; `itinerary-details-display-formatting.service.ts` is 88 lines.
+- Formatting CPU, duration-source frequency and details response projection latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `5a7e86a`.

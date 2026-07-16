@@ -396,3 +396,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - 12-hour parsing, UTC duration conversion, overnight ordering, equal-end travel derivation and duration labels remain unchanged.
 - This is not a measured database performance improvement: policy CPU, duration-source frequency, details projection cost and end-to-end response latency remain unmeasured.
 - No index or Redis action is proposed; future work should profile the itinerary-details read graph and response projection before memoizing policy calls or caching mutable itinerary data.
+
+## Iteration 104 evidence update
+
+- The itinerary-details display-formatting extraction changes only pure date, clock and duration presentation ownership; no SQL, index, Redis cache, predicate, API route or response shape changed.
+- UTC wall-clock labels, date-only extraction, created-on formatting, duration fallbacks and two-digit padding remain unchanged.
+- This is not a measured database performance improvement: formatter CPU, invalid-input frequency, response projection cost and end-to-end details latency remain unmeasured.
+- No index or Redis action is proposed; future work should profile details response projection and formatter hot paths before memoizing or caching mutable itinerary data.

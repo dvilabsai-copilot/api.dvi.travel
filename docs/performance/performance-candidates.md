@@ -360,6 +360,8 @@ The iteration-102 timeline direct-delegation boundary is a measurement seam for 
 
 The iteration-103 itinerary-details time-range boundary is a measurement seam for display-time parsing CPU, overnight-range normalization frequency, duration parsing cost, derived travel-end frequency, duration-label projection CPU and end-to-end details response latency. Capture normal, overnight, equal-end, missing-end, malformed-duration and large-timeline workloads separately before memoizing policy calls or caching responses; preserve UTC duration semantics, mutable itinerary timing freshness and response labels. No index addition/removal or Redis cache is justified by this pure policy-ownership tier without details read-graph and projection traces.
 
+The iteration-104 itinerary-details display-formatting boundary is a measurement seam for UTC date/time formatting CPU, date-only fallback frequency, created-on locale formatting cost, duration-label projection, padding calls and end-to-end details response latency. Capture valid/invalid dates, string/Date inputs, midnight/noon, zero-duration, mixed-duration and large-timeline workloads separately before memoizing formatters or caching responses; preserve wall-clock semantics, locale output, mutable itinerary timing freshness and response labels. No index addition/removal or Redis cache is justified by this pure presentation-ownership tier without details projection traces.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.
