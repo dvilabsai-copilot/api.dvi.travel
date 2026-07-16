@@ -34,6 +34,7 @@ import { ItineraryHotelPreferenceFilterService } from './services/itinerary-hote
 import { ItineraryHotelSecondaryProviderFetchService } from './services/itinerary-hotel-secondary-provider-fetch.service';
 import { AxisroomsHotelProjectionService } from './services/axisrooms-hotel-projection.service';
 import { SavedHotelIndicatorService } from './services/saved-hotel-indicator.service';
+import { StaahRoomMappingService } from './services/staah-room-mapping.service';
 
 /**
  * This service generates dynamic hotel packages from TBO API
@@ -159,6 +160,7 @@ export class ItineraryHotelDetailsTboService {
   private readonly secondaryProviderFetchService = new ItineraryHotelSecondaryProviderFetchService();
   private readonly axisroomsHotelProjectionService = new AxisroomsHotelProjectionService();
   private readonly savedHotelIndicatorService = new SavedHotelIndicatorService();
+  private readonly staahRoomMappingService = new StaahRoomMappingService();
 
   private isTboOnlyFetchEnabled(): boolean {
     const raw = String(process.env.HOTEL_FETCH_TBO_ONLY || '').trim().toLowerCase();
@@ -1408,62 +1410,23 @@ export class ItineraryHotelDetailsTboService {
               } as any,
             })
           : [];
-        const activeRoomCodesByHotelId = new Map<number, Set<string>>();
-        const activeRoomLooseCodesByHotelId = new Map<number, Set<string>>();
-        const activeRoomLooseExactCodesByHotelId = new Map<number, Map<string, Set<string>>>();
-        const roomTitleByHotelAndCode = new Map<string, string>();
-        for (const room of activeAdminRooms as any[]) {
-          const hotelId = Number(room.hotel_id || 0);
-          const exactCode = this.normalizeExactRoomCode(room.room_ref_code);
-          const looseCode = this.normalizeLooseRoomCode(room.room_ref_code);
-          const roomTitle = String(room.room_title || '').trim();
-          if (!hotelId || !exactCode) continue;
+        const roomMappings = this.staahRoomMappingService.build(
+          activeAdminRooms,
+          cityHotels,
+          (value) => this.normalizeExactRoomCode(value),
+          (value) => this.normalizeLooseRoomCode(value),
+        );
+        const {
+          activeRoomCodesByHotelId,
+          activeRoomLooseCodesByHotelId,
+          activeRoomLooseExactCodesByHotelId,
+          roomTitleByHotelAndCode,
+          allowedRoomCodesByPropertyId,
+          allowedLooseRoomCodesByPropertyId,
+          allowedLooseExactCodesByPropertyId,
+          hotelIdByPropertyId,
+        } = roomMappings;
 
-          if (!activeRoomCodesByHotelId.has(hotelId)) {
-            activeRoomCodesByHotelId.set(hotelId, new Set<string>());
-          }
-          if (!activeRoomLooseCodesByHotelId.has(hotelId)) {
-            activeRoomLooseCodesByHotelId.set(hotelId, new Set<string>());
-          }
-          if (!activeRoomLooseExactCodesByHotelId.has(hotelId)) {
-            activeRoomLooseExactCodesByHotelId.set(hotelId, new Map<string, Set<string>>());
-          }
-
-          activeRoomCodesByHotelId.get(hotelId)!.add(exactCode);
-          activeRoomLooseCodesByHotelId.get(hotelId)!.add(looseCode);
-
-          const looseMap = activeRoomLooseExactCodesByHotelId.get(hotelId)!;
-          if (!looseMap.has(looseCode)) {
-            looseMap.set(looseCode, new Set<string>());
-          }
-          looseMap.get(looseCode)!.add(exactCode);
-
-          roomTitleByHotelAndCode.set(`${hotelId}|${exactCode}`, roomTitle);
-          roomTitleByHotelAndCode.set(`${hotelId}|${looseCode}`, roomTitle);
-        }
-        const allowedRoomCodesByPropertyId = new Map<string, Set<string>>();
-        const allowedLooseRoomCodesByPropertyId = new Map<string, Set<string>>();
-        const allowedLooseExactCodesByPropertyId = new Map<string, Map<string, Set<string>>>();
-        const hotelIdByPropertyId = new Map<string, number>();
-        for (const hotel of cityHotels as any[]) {
-          const propertyId = String(hotel.staah_property_id || '').trim();
-          const hotelId = Number(hotel.hotel_id || 0);
-          if (!propertyId || !hotelId) continue;
-
-          hotelIdByPropertyId.set(propertyId, hotelId);
-          allowedRoomCodesByPropertyId.set(
-            propertyId,
-            activeRoomCodesByHotelId.get(hotelId) || new Set<string>(),
-          );
-          allowedLooseRoomCodesByPropertyId.set(
-            propertyId,
-            activeRoomLooseCodesByHotelId.get(hotelId) || new Set<string>(),
-          );
-          allowedLooseExactCodesByPropertyId.set(
-            propertyId,
-            activeRoomLooseExactCodesByHotelId.get(hotelId) || new Map<string, Set<string>>(),
-          );
-        }
         const loggedStaahSkippedRooms = new Set<string>();
         const isAllowedStaahRoom = (propertyIdValue: unknown, roomIdValue: unknown): boolean => {
           const propertyId = String(propertyIdValue || '').trim();
