@@ -13,6 +13,11 @@ import {
   resolveCityRecordByName,
 } from '../itineraries/utils/city-normalization.util';
 import { VendorListItemDto } from './dto/vendor-list-item.dto';
+import {
+  nextSoftDeleteValue,
+  normalizeLocalTimeLimitSignature,
+  normalizeOutstationKmSignature,
+} from './vendor-pricebook-policy';
 
 type DropdownItem = {
   id: string;
@@ -718,30 +723,12 @@ export class VendorsService {
     return byBaseType?.vendor_vehicle_type_ID ?? null;
   }
 
-  private normalizeOutstationKmSignature(limit: number | null, title: string | null | undefined): { normalizedLimit: number; normalizedTitle: string } {
-    const normalizedTitle = String(title ?? '').trim();
-    const numericFromLimit = Number(limit ?? 0);
-    if (Number.isFinite(numericFromLimit) && numericFromLimit > 0) {
-      return {
-        normalizedLimit: numericFromLimit,
-        normalizedTitle,
-      };
-    }
-
-    const titleMatch = normalizedTitle.match(/(\d+(?:\.\d+)?)/);
-    const numericFromTitle = titleMatch ? Number(titleMatch[1]) : 0;
-    return {
-      normalizedLimit: Number.isFinite(numericFromTitle) ? numericFromTitle : 0,
-      normalizedTitle,
-    };
-  }
-
   private async findCanonicalActiveOutstationKmLimit(
     vendorId: number,
     vendorVehicleTypeId: number,
     input: { kmsLimitId?: number | null; kmsLimit?: number | null; kmsLimitTitle?: string | null },
   ): Promise<{ kms_limit_id: number; kms_limit: number; kms_limit_title: string | null } | null> {
-    const normalized = this.normalizeOutstationKmSignature(
+    const normalized = normalizeOutstationKmSignature(
       input.kmsLimit ?? null,
       input.kmsLimitTitle ?? null,
     );
@@ -809,10 +796,6 @@ export class VendorsService {
     }
 
     return null;
-  }
-
-  private nextSoftDeleteValue(deletedValues: Array<number | null | undefined>): number {
-    return Math.max(1, ...deletedValues.map((value) => Number(value ?? 0))) + 1;
   }
 
   private async getActiveOutstationKmsLimitIds(
@@ -892,7 +875,7 @@ export class VendorsService {
         select: { deleted: true },
       });
 
-      const nextDeletedValue = this.nextSoftDeleteValue(siblingRows.map((row: { deleted: number }) => row.deleted));
+      const nextDeletedValue = nextSoftDeleteValue(siblingRows.map((row: { deleted: number }) => row.deleted));
 
       await client.dvi_vehicle_outstation_price_book.update({
         where: { vehicle_outstation_price_book_id: pricebook.vehicle_outstation_price_book_id },
@@ -906,34 +889,6 @@ export class VendorsService {
     }
 
     return deletedCount;
-  }
-
-  private normalizeLocalTimeLimitSignature(
-    hours: number | null,
-    kmLimit: number | null,
-    title: string | null | undefined,
-  ): { normalizedHours: number; normalizedKm: number; normalizedTitle: string } {
-    const normalizedTitle = String(title ?? '').trim();
-    const numericHours = Number(hours ?? 0);
-    const numericKm = Number(kmLimit ?? 0);
-
-    if (Number.isFinite(numericHours) && numericHours > 0 && Number.isFinite(numericKm) && numericKm > 0) {
-      return {
-        normalizedHours: numericHours,
-        normalizedKm: numericKm,
-        normalizedTitle,
-      };
-    }
-
-    const matches = normalizedTitle.match(/(\d+(?:\.\d+)?)/g) ?? [];
-    const parsedHours = Number(matches[0] ?? 0);
-    const parsedKm = Number(matches[1] ?? 0);
-
-    return {
-      normalizedHours: Number.isFinite(parsedHours) ? parsedHours : 0,
-      normalizedKm: Number.isFinite(parsedKm) ? parsedKm : 0,
-      normalizedTitle,
-    };
   }
 
   /**
@@ -2318,7 +2273,7 @@ const resolution = await this.resolveVehicleLocationIdFromBranch({
     const activeCanonicalTimeLimitByVehicleAndSignature = new Map<string, typeof timeLimits[number]>();
     for (const row of timeLimits) {
       if (Number(row.deleted || 0) !== 0 || Number(row.status || 0) === 0) continue;
-      const normalized = this.normalizeLocalTimeLimitSignature(
+      const normalized = normalizeLocalTimeLimitSignature(
         row.hours_limit ?? null,
         row.km_limit ?? null,
         row.time_limit_title ?? null,
@@ -2342,7 +2297,7 @@ const resolution = await this.resolveVehicleLocationIdFromBranch({
       const activeVendorType = activeVendorTypeByBaseType.get(sourceVendorType.vehicle_type_id);
       if (!activeVendorType) continue;
 
-      const normalized = this.normalizeLocalTimeLimitSignature(
+      const normalized = normalizeLocalTimeLimitSignature(
         sourceTimeLimit.hours_limit ?? null,
         sourceTimeLimit.km_limit ?? null,
         sourceTimeLimit.time_limit_title ?? null,
