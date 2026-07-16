@@ -84,6 +84,7 @@ import { ItineraryManualFitScheduleAttemptService } from './services/itinerary-m
 import { ItineraryManualFitCandidateSimulationService } from './services/itinerary-manual-fit-candidate-simulation.service';
 import { ItineraryManualFitCandidateSearchService } from './services/itinerary-manual-fit-candidate-search.service';
 import { ItineraryManualFitCandidateDataService } from './services/itinerary-manual-fit-candidate-data.service';
+import { ItineraryManualHotspotRowService } from './services/itinerary-manual-hotspot-row.service';
 import { ItineraryVehicleBuildStatusService } from './services/itinerary-vehicle-build-status.service';
 import { ItineraryVehicleBuildService } from './services/itinerary-vehicle-build.service';
 import { ItineraryPlanPersistenceService } from './services/itinerary-plan-persistence.service';
@@ -673,6 +674,7 @@ export class ItinerariesService {
     private readonly manualFitCandidateSimulationService: ItineraryManualFitCandidateSimulationService = new ItineraryManualFitCandidateSimulationService(),
     private readonly manualFitCandidateSearchService: ItineraryManualFitCandidateSearchService = new ItineraryManualFitCandidateSearchService(),
     private readonly manualFitCandidateDataService: ItineraryManualFitCandidateDataService = new ItineraryManualFitCandidateDataService(),
+    private readonly manualHotspotRowService: ItineraryManualHotspotRowService = new ItineraryManualHotspotRowService(),
   ) {
     this.manualFitTimelinePolicyService.setCallbacks({
       parseSegmentEndMinutes: (...args) => (this.parseSegmentEndMinutes as any)(...args),
@@ -753,6 +755,9 @@ export class ItinerariesService {
       normalizeHotspotPriority: (...args) => (this.normalizeHotspotPriority as any)(...args),
       getHotspotDurationMinutes: (...args) => (this.getHotspotDurationMinutes as any)(...args),
       classifyHotspotsForManualInsertion: (...args) => (this.classifyHotspotsForManualInsertion as any)(...args),
+    });
+    this.manualHotspotRowService.setCallbacks({
+      computeRowDurationMinutes: (...args) => (this.computeRowDurationMinutes as any)(...args),
     });
     this.vehicleBuildService.setVehicleVendorSelector((data) => this.selectVehicleVendor(data));
     this.activityAvailabilityService.setCalculateActivityPlanPricingCallback(
@@ -4196,141 +4201,18 @@ private getGuideSlotLabel(slotId: number): string {
   }
 
 
-  private async removeRouteHotspotFromExcludedList(
-    tx: any,
-    routeId: number,
-    hotspotId: number,
-    routeRow?: any,
-  ) {
-    const route = routeRow || await (tx as any).dvi_itinerary_route_details.findUnique({
-      where: { itinerary_route_ID: Number(routeId) },
-    });
-
-    const rawExcluded = Array.isArray(route?.excluded_hotspot_ids) ? route.excluded_hotspot_ids : [];
-    const filteredExcluded = rawExcluded
-      .map((id: any) => Number(id))
-      .filter((id: number) => Number.isFinite(id) && id > 0 && id !== Number(hotspotId));
-
-    if (filteredExcluded.length !== rawExcluded.length) {
-      await (tx as any).dvi_itinerary_route_details.update({
-        where: { itinerary_route_ID: Number(routeId) },
-        data: {
-          excluded_hotspot_ids: filteredExcluded,
-          updatedon: new Date(),
-        },
-      });
-    }
+  private async removeRouteHotspotFromExcludedList(...args: any[]): Promise<void> {
+    return (this.manualHotspotRowService.removeRouteHotspotFromExcludedList as any)(...args);
   }
 
-  private async addRouteHotspotToExcludedList(tx: any, routeId: number, hotspotId: number) {
-    const route = await (tx as any).dvi_itinerary_route_details.findUnique({
-      where: { itinerary_route_ID: Number(routeId) },
-    });
-
-    const current = Array.isArray(route?.excluded_hotspot_ids)
-      ? route.excluded_hotspot_ids.map((id: any) => Number(id)).filter((id: number) => Number.isFinite(id) && id > 0)
-      : [];
-
-    if (!current.includes(Number(hotspotId))) {
-      current.push(Number(hotspotId));
-      await (tx as any).dvi_itinerary_route_details.update({
-        where: { itinerary_route_ID: Number(routeId) },
-        data: {
-          excluded_hotspot_ids: current,
-          updatedon: new Date(),
-        },
-      });
-    }
+  private async addRouteHotspotToExcludedList(...args: any[]): Promise<void> {
+    return (this.manualHotspotRowService.addRouteHotspotToExcludedList as any)(...args);
   }
 
-  private async ensureManualHotspotRow(
-    tx: any,
-    planId: number,
-    routeId: number,
-    hotspotId: number,
-    userId: number,
-  ): Promise<{ alreadyExisted: boolean }> {
-    const existingRows = await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
-      where: {
-        itinerary_plan_ID: Number(planId),
-        itinerary_route_ID: Number(routeId),
-        hotspot_ID: Number(hotspotId),
-        item_type: 4,
-        deleted: 0,
-      },
-      orderBy: [
-        { route_hotspot_ID: 'desc' },
-      ],
-      select: {
-        route_hotspot_ID: true,
-        hotspot_plan_own_way: true,
-        hotspot_start_time: true,
-        hotspot_end_time: true,
-        status: true,
-        is_conflict: true,
-      },
-    });
-
-    const validExisting = (existingRows || []).find((row: any) => {
-      const isActive = Number(row?.status || 0) === 1;
-      const hasPositiveDuration = this.computeRowDurationMinutes(row) > 0;
-      const isConflict = Number(row?.is_conflict || 0) === 1;
-      return isActive && hasPositiveDuration && !isConflict;
-    });
-
-    if (validExisting) {
-      if (Number(validExisting.hotspot_plan_own_way || 0) !== 1) {
-        await (tx as any).dvi_itinerary_route_hotspot_details.update({
-          where: { route_hotspot_ID: Number(validExisting.route_hotspot_ID) },
-          data: {
-            hotspot_plan_own_way: 1,
-            updatedon: new Date(),
-          },
-        });
-      }
-      return { alreadyExisted: true };
-    }
-
-    const staleActiveIds = (existingRows || [])
-      .filter((row: any) => {
-        const isActive = Number(row?.status || 0) === 1;
-        const isManual = Number(row?.hotspot_plan_own_way || 0) === 1;
-        return isActive && isManual && this.computeRowDurationMinutes(row) <= 0;
-      })
-      .map((row: any) => Number(row?.route_hotspot_ID || 0))
-      .filter((id: number) => id > 0);
-
-    if (staleActiveIds.length > 0) {
-      await (tx as any).dvi_itinerary_route_hotspot_details.updateMany({
-        where: { route_hotspot_ID: { in: staleActiveIds } },
-        data: {
-          status: 0,
-          deleted: 1,
-          updatedon: new Date(),
-        },
-      });
-    }
-
-    const placeholderTime = new Date('1970-01-01T00:00:00Z');
-    await (tx as any).dvi_itinerary_route_hotspot_details.create({
-      data: {
-        itinerary_plan_ID: Number(planId),
-        itinerary_route_ID: Number(routeId),
-        hotspot_ID: Number(hotspotId),
-        hotspot_plan_own_way: 1,
-        item_type: 4,
-        hotspot_order: 999,
-        hotspot_start_time: placeholderTime,
-        hotspot_end_time: placeholderTime,
-        createdby: Number(userId || 1),
-        createdon: new Date(),
-        status: 0,
-        deleted: 1,
-      },
-    });
-
-    return { alreadyExisted: false };
+  private async ensureManualHotspotRow(...args: any[]): Promise<any> {
+    return (this.manualHotspotRowService.ensureManualHotspotRow as any)(...args);
   }
+
 
   private async isManualHotspotScheduled(
     tx: any,
