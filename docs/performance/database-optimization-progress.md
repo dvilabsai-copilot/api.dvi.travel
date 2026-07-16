@@ -214,3 +214,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Travel totals, protected-priority detection, exact-anchor overlap handling, attempt category precedence and tie-breakers remain unchanged; only policy ownership moved.
 - This is not a measured performance improvement: scan CPU, distance-helper calls, attempt volume, comparison latency, overlap frequency and strategy-selection latency remain unmeasured.
 - No index or Redis action is proposed; any future optimization must compare attempt traces and distance-call counts before memoizing candidate metrics while preserving schedule semantics.
+
+## Iteration 78 evidence update
+
+- The manual-fit candidate-simulation extraction preserves the existing transaction-scoped rebuild, candidate, schedule-state and timeline reads; no SQL, index, Redis cache or query shape was changed.
+- Exact-anchor recovery order, operating-hours enrichment, score inputs, priority confirmation, timing counts and candidate response fields remain unchanged; only orchestration ownership moved.
+- This is not a measured performance improvement: per-position query fan-out, rebuild latency, timeline read latency, enrichment latency, score CPU, unscheduled frequency and preview latency remain unmeasured.
+- No index or Redis action is proposed; any future optimization must compare per-position traces and transaction duration before batching or caching mutable timeline data.

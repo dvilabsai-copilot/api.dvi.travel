@@ -308,6 +308,8 @@ The iteration-76 manual-fit validation boundary is a measurement seam for slot-i
 
 The iteration-77 manual-fit schedule-attempt boundary is a measurement seam for timeline scan CPU, distance-helper calls, travel-metric calculation, protected-priority impact volume, exact-anchor overlap checks, attempt comparison CPU and strategy-selection latency. Capture empty, no-manual, exact-anchor, overlap, protected-priority, confirmation-required and ready-to-apply workloads separately before caching metrics or changing comparison precedence; preserve attempt categories, tie-breakers, reasons and readiness fields.
 
+The iteration-78 manual-fit candidate-simulation boundary is a measurement seam for rebuild latency, candidate-position query fan-out, route-timeline read latency, exact-anchor recovery frequency, operating-hours enrichment latency, score calculation CPU, unscheduled frequency and preview response latency. Capture normal, exact-anchor-preserved, exact-anchor-recovery, exact-anchor-failure, unscheduled, timing-conflict and priority-confirmation workloads separately before batching reads or caching timeline state; preserve transaction ordering, result fields and failure reasons.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.

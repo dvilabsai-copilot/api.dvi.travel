@@ -2588,3 +2588,33 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Candidate metric CPU, attempt comparison CPU, candidate volume, overlap frequency and strategy-selection latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `fbbeb3a`.
+
+### Cycle 81 - Extract manual-fit candidate simulation
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: one-position manual candidate simulation and exact-anchor recovery
+- New files: `src/modules/itineraries/services/itinerary-manual-fit-candidate-simulation.service.ts`, `test/itinerary-manual-fit-candidate-simulation.test.ts`
+- Workflow: manual-fit candidate evaluation before best-position selection
+
+#### Change
+
+- Moved manual row rebuild, candidate/timeline reads, exact-anchor recovery, operating-hours enrichment, score assembly, schedule-state projection and rejection reason selection behind `ItineraryManualFitCandidateSimulationService`.
+- Preserved transaction callback ordering, exact-anchor failure messages, score inputs, timing conflict counts, priority confirmation and candidate result fields.
+- Registered the service in `ItinerariesModule` and retained facade callback adapters for existing orchestration and policy methods.
+
+#### Verification
+
+- Manual-fit candidate simulation characterization tests: PASS, 2/2
+- Combined focused backend/timeline suite: PASS, 177/177
+- Backend build: PASS
+- Nest/OpenAPI initialization: PASS, 499 paths
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 7,051 lines after the tier; `ItineraryManualFitCandidateSimulationService` is 196 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Per-position query fan-out, route rebuild latency, timeline enrichment latency, candidate volume and score distribution remain unmeasured.
+- Implementation commit: `api.dvi.travel` `2f8f44d`.
