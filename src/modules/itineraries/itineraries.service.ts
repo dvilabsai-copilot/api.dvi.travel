@@ -87,6 +87,7 @@ import { ItineraryManualFitCandidateDataService } from './services/itinerary-man
 import { ItineraryManualHotspotRowService } from './services/itinerary-manual-hotspot-row.service';
 import { ItineraryManualHotspotScheduleStateService } from './services/itinerary-manual-hotspot-schedule-state.service';
 import { ItineraryManualHotspotRowTimingService } from './services/itinerary-manual-hotspot-row-timing.service';
+import { ItineraryManualHotspotOverlapService } from './services/itinerary-manual-hotspot-overlap.service';
 import { ItineraryVehicleBuildStatusService } from './services/itinerary-vehicle-build-status.service';
 import { ItineraryVehicleBuildService } from './services/itinerary-vehicle-build.service';
 import { ItineraryPlanPersistenceService } from './services/itinerary-plan-persistence.service';
@@ -679,6 +680,7 @@ export class ItinerariesService {
     private readonly manualHotspotRowService: ItineraryManualHotspotRowService = new ItineraryManualHotspotRowService(),
     private readonly manualHotspotScheduleStateService: ItineraryManualHotspotScheduleStateService = new ItineraryManualHotspotScheduleStateService(),
     private readonly manualHotspotRowTimingService: ItineraryManualHotspotRowTimingService = new ItineraryManualHotspotRowTimingService(),
+    private readonly manualHotspotOverlapService: ItineraryManualHotspotOverlapService = new ItineraryManualHotspotOverlapService(),
   ) {
     this.manualFitTimelinePolicyService.setCallbacks({
       parseSegmentEndMinutes: (...args) => (this.parseSegmentEndMinutes as any)(...args),
@@ -765,8 +767,8 @@ export class ItinerariesService {
     });
     this.manualHotspotScheduleStateService.setCallbacks({
       computeRowDurationMinutes: (...args) => (this.computeRowDurationMinutes as any)(...args),
-      hasAnyNonOverlappingManualRow: (...args) => (this.hasAnyNonOverlappingManualRow as any)(...args),
-      manualRowHasNoOverlap: (...args) => (this.manualRowHasNoOverlap as any)(...args),
+      hasAnyNonOverlappingManualRow: (...args) => (this.manualHotspotOverlapService.hasAnyNonOverlappingManualRow as any)(...args),
+      manualRowHasNoOverlap: (...args) => (this.manualHotspotOverlapService.manualRowHasNoOverlap as any)(...args),
     });
     this.manualHotspotRowTimingService.setCallbacks({
       normalizeManualHotspotIds: (...args) => (this.normalizeManualHotspotIds as any)(...args),
@@ -4270,59 +4272,12 @@ private getGuideSlotLabel(slotId: number): string {
     return d;
   }
 
-  private async hasAnyNonOverlappingManualRow(
-    tx: any,
-    planId: number,
-    routeId: number,
-    rows: any[],
-  ): Promise<boolean> {
-    for (const row of rows) {
-      const ok = await this.manualRowHasNoOverlap(tx, planId, routeId, row);
-      if (ok) return true;
-    }
-    return false;
+  private async hasAnyNonOverlappingManualRow(...args: any[]): Promise<boolean> {
+    return (this.manualHotspotOverlapService.hasAnyNonOverlappingManualRow as any)(...args);
   }
 
-  private async manualRowHasNoOverlap(
-    tx: any,
-    planId: number,
-    routeId: number,
-    row: any,
-  ): Promise<boolean> {
-    const startSec = this.hmsToSeconds(TimeConverter.toTimeString(row?.hotspot_start_time));
-    const endSec = this.hmsToSeconds(TimeConverter.toTimeString(row?.hotspot_end_time));
-
-    if (!Number.isFinite(startSec) || !Number.isFinite(endSec) || endSec <= startSec) {
-      return false;
-    }
-
-    const otherRows = await (tx as any).dvi_itinerary_route_hotspot_details.findMany({
-      where: {
-        itinerary_plan_ID: Number(planId),
-        itinerary_route_ID: Number(routeId),
-        item_type: 4,
-        deleted: 0,
-        route_hotspot_ID: { not: Number(row?.route_hotspot_ID || 0) },
-      },
-      select: {
-        hotspot_start_time: true,
-        hotspot_end_time: true,
-        is_conflict: true,
-      },
-    });
-
-    return !(otherRows || []).some((other: any) => {
-      if (Number(other?.is_conflict || 0) === 1) return false;
-
-      const otherStart = this.hmsToSeconds(TimeConverter.toTimeString(other?.hotspot_start_time));
-      const otherEnd = this.hmsToSeconds(TimeConverter.toTimeString(other?.hotspot_end_time));
-
-      if (!Number.isFinite(otherStart) || !Number.isFinite(otherEnd) || otherEnd <= otherStart) {
-        return false;
-      }
-
-      return startSec < otherEnd && endSec > otherStart;
-    });
+  private async manualRowHasNoOverlap(...args: any[]): Promise<boolean> {
+    return (this.manualHotspotOverlapService.manualRowHasNoOverlap as any)(...args);
   }
 
   private async runAdaptiveManualHotspotInsertion(
