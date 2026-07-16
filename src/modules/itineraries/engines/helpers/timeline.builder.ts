@@ -47,6 +47,7 @@ import { TimelineCandidateFeasibilityService } from './timeline-candidate-feasib
 import { TimelineCandidatePolicyService } from './timeline-candidate-policy.service';
 import { TimelineDay1SourceFallbackService } from './timeline-day1-source-fallback.service';
 import { TimelineRouteHotspotSelectionService } from './timeline-route-hotspot-selection.service';
+import { TimelineArrivalHotelDecisionService } from './timeline-arrival-hotel-decision.service';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -195,6 +196,7 @@ export class TimelineBuilder {
   private readonly candidateFeasibilityService = new TimelineCandidateFeasibilityService(this.distanceHelper);
   private readonly day1SourceFallbackService = new TimelineDay1SourceFallbackService();
   private readonly routeHotspotSelectionService = new TimelineRouteHotspotSelectionService(this.distanceHelper);
+  private readonly arrivalHotelDecisionService = new TimelineArrivalHotelDecisionService(this.distanceHelper);
   private readonly candidatePolicyService = new TimelineCandidatePolicyService(
     this.operatingHoursService,
     this.slotPolicyService,
@@ -219,6 +221,16 @@ export class TimelineBuilder {
       buildRouteLegs: (...args) => (this.buildRouteLegs as any)(...args),
       resolvePlaceCoords: (...args) => (this.resolvePlaceCoords as any)(...args),
       getTravelLocationType: (...args) => (this.getTravelLocationType as any)(...args),
+    });
+    this.arrivalHotelDecisionService.setCallbacks({
+      getHotelDetailsForRoute: (...args) => (this.getHotelDetailsForRoute as any)(...args),
+      canonicalCityKey: (...args) => (this.canonicalCityKey as any)(...args),
+      toDateOnly: (...args) => (this.dataAccessService.toDateOnly as any)(...args),
+      getArrivalPolicyDecisionStateForRoute: (...args) => (this.dataAccessService.getArrivalPolicyDecisionStateForRoute as any)(...args),
+      extractPlanTimeOfDaySeconds: (...args) => (this.extractPlanTimeOfDaySeconds as any)(...args),
+      logBookingRule: (...args) => (this.logBookingRule as any)(...args),
+      logTimeline: (...args) => (this.logTimeline as any)(...args),
+      getCurrentQuoteId: () => this.currentQuoteId,
     });
     this.candidatePolicyService.setCallbacks({
       canonicalCityKey: (...args) => (this.canonicalCityKey as any)(...args),
@@ -718,338 +730,63 @@ export class TimelineBuilder {
         : null;
 
       // Route-level hotel context is reused for both hotspot gating and final hotel segment.
-      const hotelInfoForRoute = await this.getHotelDetailsForRoute(
+      const arrivalHotelDecision = await this.arrivalHotelDecisionService.evaluate({
         tx,
         planId,
-        route.itinerary_route_ID,
-      );
-
-      const normalizedArrivalCity = this.canonicalCityKey(arrivalPoint);
-      const isArrivalCityStayRoute =
-        isFirstRoute &&
-        this.canonicalCityKey(sourceCity) === normalizedArrivalCity &&
-        this.canonicalCityKey(destinationCity) === normalizedArrivalCity;
-
-      const routeDateForPolicy = route.itinerary_route_date
-        ? this.dataAccessService.toDateOnly(new Date(route.itinerary_route_date))
-        : this.dataAccessService.toDateOnly(new Date(plan.trip_start_date_and_time || plan.trip_start_date));
-
-      const tripStartForPolicy =
-        plan.trip_start_date_and_time instanceof Date
-          ? plan.trip_start_date_and_time
-          : null;
-
-      const arrivalMinutesForPolicy = tripStartForPolicy
-        ? tripStartForPolicy.getUTCHours() * 60 + tripStartForPolicy.getUTCMinutes()
-        : 0;
-
-      const arrivalDayForPolicy = tripStartForPolicy
-        ? this.dataAccessService.toDateOnly(tripStartForPolicy).getTime() === routeDateForPolicy.getTime()
-        : false;
-
-      const decisionState =
-        isFirstRoute
-          ? await this.dataAccessService.getArrivalPolicyDecisionStateForRoute(
-              tx,
-              planId,
-              route.itinerary_route_ID,
-              routeDateForPolicy,
-            )
-          : {
-              previousDayBillingDecisionProvided: false,
-              previousDayBillingConfirmed: false,
-            };
-
-      const evaluatedArrivalPolicy =
-        isFirstRoute && tripStartForPolicy
-          ? evaluateArrivalHotelPolicy({
-              isArrivalDay: arrivalDayForPolicy,
-              arrivalMinutes: arrivalMinutesForPolicy,
-              routeDate: routeDateForPolicy,
-              previousDayBillingDecisionProvided:
-                decisionState.previousDayBillingDecisionProvided,
-              previousDayBillingConfirmed: decisionState.previousDayBillingConfirmed,
-            })
-          : null;
-
-      const arrivalPolicyWantsHotelDeferredToEnd =
-        !!evaluatedArrivalPolicy &&
-        evaluatedArrivalPolicy.resolutionStatus ===
-          PolicyResolutionStatus.RESOLVED &&
-        evaluatedArrivalPolicy.hotelFlowAction ===
-          HotelFlowAction.DIRECT_SIGHTSEEING &&
-        evaluatedArrivalPolicy.deferHotelToEndOfDay === true &&
-        evaluatedArrivalPolicy.goToHotelImmediately !== true &&
-        evaluatedArrivalPolicy.hotelSearchMode === HotelSearchMode.SAME_DAY;
-
-      const isEarlyArrivalAwaitingDecisionSameDayFlow =
-        !!evaluatedArrivalPolicy &&
-        evaluatedArrivalPolicy.arrivalWindow === ArrivalWindow.EARLY_01_TO_0759 &&
-        evaluatedArrivalPolicy.resolutionStatus ===
-          PolicyResolutionStatus.AWAITING_PREVIOUS_DAY_BILLING_CONFIRMATION &&
-        evaluatedArrivalPolicy.deferHotelToEndOfDay &&
-        evaluatedArrivalPolicy.hotelSearchMode === HotelSearchMode.SAME_DAY;
-
-      const suppressHotelInsertionUntilEndOfDay =
-        isFirstRoute &&
-        (arrivalPolicyWantsHotelDeferredToEnd ||
-          isEarlyArrivalAwaitingDecisionSameDayFlow);
-
-      const isEarlyArrivalResolvedSameDayDeferredFlow =
-        !!evaluatedArrivalPolicy &&
-        evaluatedArrivalPolicy.arrivalWindow === ArrivalWindow.EARLY_01_TO_0759 &&
-        evaluatedArrivalPolicy.resolutionStatus ===
-          PolicyResolutionStatus.RESOLVED &&
-        evaluatedArrivalPolicy.hotelFlowAction ===
-          HotelFlowAction.DIRECT_SIGHTSEEING &&
-        evaluatedArrivalPolicy.deferHotelToEndOfDay === true &&
-        evaluatedArrivalPolicy.goToHotelImmediately !== true &&
-        evaluatedArrivalPolicy.hotelSearchMode === HotelSearchMode.SAME_DAY;
-
-      const arrivalPolicyAllowsHotelFirst =
-        !evaluatedArrivalPolicy ||
-        evaluatedArrivalPolicy.hotelFlowAction ===
-          HotelFlowAction.DIRECT_HOTEL ||
-        evaluatedArrivalPolicy.goToHotelImmediately === true ||
-        evaluatedArrivalPolicy.deferHotelToEndOfDay !== true;
-
-      // Only true early-arrival deferred-hotel flows should force the legacy
-      // 08:00 AM -> 09:00 AM Day 1 buffer. Later arrivals (for example 10 AM)
-      // still may defer hotel check-in, but they must retain the saved route start.
-      const enforceStrictDay1EarlyArrivalDeferredFlow =
-        isFirstRoute &&
-        (
-          isEarlyArrivalResolvedSameDayDeferredFlow ||
-          isEarlyArrivalAwaitingDecisionSameDayFlow
-        );
-      const firstSightseeingMovementTime =
-        enforceStrictDay1EarlyArrivalDeferredFlow ? '09:00:00' : null;
-
-      const isEarlyArrivalPrevDayConfirmed =
-        !!evaluatedArrivalPolicy &&
-        evaluatedArrivalPolicy.arrivalWindow === ArrivalWindow.EARLY_01_TO_0759 &&
-        evaluatedArrivalPolicy.resolutionStatus === PolicyResolutionStatus.RESOLVED &&
-        evaluatedArrivalPolicy.hotelFlowAction === HotelFlowAction.DIRECT_HOTEL &&
-        evaluatedArrivalPolicy.hotelSearchMode === HotelSearchMode.PREVIOUS_DAY;
-
-      if (enforceStrictDay1EarlyArrivalDeferredFlow) {
-        // Hard policy rule: Day-1 deferred hotel flow must begin with 08:00-09:00 buffer.
-        effectiveRouteStartTime = '08:00:00';
-        currentTime = effectiveRouteStartTime;
-        routeStartSeconds = timeToSeconds(effectiveRouteStartTime);
-        routeEndSeconds = computeRouteEndSeconds(routeStartSeconds);
-        if (isLastRoute) {
-          const departureSecondsRaw =
-            this.extractPlanTimeOfDaySeconds((plan as any).trip_end_date_and_time) ??
-            this.extractPlanTimeOfDaySeconds((plan as any).trip_end_date);
-          if (departureSecondsRaw !== null) {
-            let departureSeconds = departureSecondsRaw;
-
-            if (departureSeconds < routeStartSeconds) {
-              departureSeconds += 86400;
-            }
-
-            const departureBufferSeconds =
-              Number((plan as any).departure_type || 0) === 1
-                ? 2 * 3600
-                : Number((plan as any).departure_type || 0) === 2
-                  ? 1 * 3600
-                  : 0;
-
-            const reportDeadlineSeconds = Math.max(
-              routeStartSeconds,
-              departureSeconds - departureBufferSeconds,
-            );
-
-            lastRouteArrivalDeadlineSeconds = Math.min(routeEndSeconds, reportDeadlineSeconds);
-          } else {
-            lastRouteArrivalDeadlineSeconds = routeEndSeconds;
-          }
-        }
-      }
-
-      const arrivalHour =
-        isFirstRoute && plan.trip_start_date_and_time instanceof Date
-          ? plan.trip_start_date_and_time.getUTCHours()
-          : null;
-      const isArrivalAfterNoon =
-        isFirstRoute && arrivalHour !== null && arrivalHour >= 12;
-      const isSpecialDay1OnePmHotelFirstFlow =
-        isFirstRoute &&
-        isArrivalCityStayRoute &&
-        arrivalHour === 13;
-
-      const fullDayMarkerRaw =
-        (route as any).is_full_day_trip ??
-        (route as any).full_day_trip ??
-        (route as any).day_trip ??
-        (route as any).is_day_trip ??
-        null;
-
-      const hasReliableFullDayMarker =
-        fullDayMarkerRaw !== null && fullDayMarkerRaw !== undefined;
-
-      const isFullDayTrip = hasReliableFullDayMarker
-        ? (typeof fullDayMarkerRaw === "boolean"
-            ? fullDayMarkerRaw
-            : Number(fullDayMarkerRaw) === 1)
-        : false;
-
-      const fallbackHotelCoords = hotelInfoForRoute?.coords || destCityCoords;
-
-      let hotelDistanceFromArrivalKm: number | null = null;
-      if (
-        isFirstRoute &&
-        isArrivalCityStayRoute &&
-        currentCoords &&
-        fallbackHotelCoords
-      ) {
-        hotelDistanceFromArrivalKm = this.distanceHelper.calculateHaversine(
-          Number(currentCoords.lat || 0),
-          Number(currentCoords.lon || 0),
-          Number(fallbackHotelCoords.lat || 0),
-          Number(fallbackHotelCoords.lon || 0),
-        );
-      }
-
-      const shouldHotelFirstByDistance =
-        isFirstRoute &&
-        isArrivalCityStayRoute &&
-        isArrivalAfterNoon &&
-        arrivalPolicyAllowsHotelFirst &&
-        hotelDistanceFromArrivalKm != null &&
-        hotelDistanceFromArrivalKm <= 20;
-
-      const shouldHotelLastByDistance =
-        isFirstRoute &&
-        isArrivalCityStayRoute &&
-        hotelDistanceFromArrivalKm != null &&
-        hotelDistanceFromArrivalKm > 20;
-
-      this.logBookingRule({
-        rule: 'HOTEL_DISTANCE_BRANCH',
-        quoteId:
-          (plan as any).quote_id ??
-          (plan as any).quoteId ??
-          (plan as any).quote_ID ??
-          null,
-        planId,
-        routeId: route.itinerary_route_ID,
+        route,
+        plan,
         isFirstRoute,
-        sameCityStay: isArrivalCityStayRoute,
-        arrivalAfterNoon: isArrivalAfterNoon,
-        hotelDistanceFromArrivalKm:
-          hotelDistanceFromArrivalKm != null
-            ? Number(hotelDistanceFromArrivalKm.toFixed(2))
-            : null,
+        isLastRoute,
+        sourceCity,
+        destinationCity,
+        arrivalPoint,
+        currentCoords,
+        destCityCoords,
+        routeStartTime,
+        routeEndTime,
+        effectiveRouteStartTime,
+        currentTime,
+        routeStartSeconds,
+        routeEndSeconds,
+        lastRouteArrivalDeadlineSeconds,
+        computeRouteEndSeconds,
+      });
+
+      effectiveRouteStartTime = arrivalHotelDecision.effectiveRouteStartTime;
+      currentTime = arrivalHotelDecision.currentTime;
+      routeStartSeconds = arrivalHotelDecision.routeStartSeconds;
+      routeEndSeconds = arrivalHotelDecision.routeEndSeconds;
+      lastRouteArrivalDeadlineSeconds = arrivalHotelDecision.lastRouteArrivalDeadlineSeconds;
+      const {
+        hotelInfoForRoute,
+        normalizedArrivalCity,
+        isArrivalCityStayRoute,
+        evaluatedArrivalPolicy,
+        arrivalPolicyWantsHotelDeferredToEnd,
+        isEarlyArrivalAwaitingDecisionSameDayFlow,
+        suppressHotelInsertionUntilEndOfDay,
+        isEarlyArrivalResolvedSameDayDeferredFlow,
+        arrivalPolicyAllowsHotelFirst,
+        enforceStrictDay1EarlyArrivalDeferredFlow,
+        firstSightseeingMovementTime,
+        isEarlyArrivalPrevDayConfirmed,
+        arrivalHour,
+        isArrivalAfterNoon,
+        isSpecialDay1OnePmHotelFirstFlow,
+        fullDayMarkerRaw,
+        hasReliableFullDayMarker,
+        isFullDayTrip,
+        fallbackHotelCoords,
+        hotelDistanceFromArrivalKm,
         shouldHotelFirstByDistance,
         shouldHotelLastByDistance,
-      });
+        forceNoSightseeingOnThisRoute,
+        wrappedLastRouteArrivalDeadlineSeconds,
+        isTransferOnlyLastRouteByReportDeadline,
+        skipInitialRefreshmentForImmediateHotelCheckin,
+      } = arrivalHotelDecision;
 
       let didHotelFirstCheckin = false;
-
-      // PHP parity:
-      // - Keep houseboat suppression.
-      // - Do NOT suppress sightseeing based on full-day marker heuristics.
-      let forceNoSightseeingOnThisRoute =
-        !!hotelInfoForRoute?.isHouseboat;
-
-      const wrappedLastRouteArrivalDeadlineSeconds = wrapToDay(lastRouteArrivalDeadlineSeconds);
-      const isTransferOnlyLastRouteByReportDeadline =
-        isLastRoute &&
-        wrappedLastRouteArrivalDeadlineSeconds <= 12 * 3600;
-
-      // Final transfer routes (airport/station) are allowed to include sightseeing.
-      // The effective route_end_time already represents the latest allowable sightseeing cutoff
-      // after subtracting departure buffer and travel-to-terminal duration.
-
-      // ✅ LATE ARRIVAL RULE: If arrival is 5 PM (17:00) or later on Day 1, skip all sightseeing
-      // User goes directly to hotel check-in (no time for sightseeing same day).
-      // Uses trip_start_date_and_time if available, falls back to route_start_time.
-      if (isFirstRoute) {
-        // Determine arrival hour: prefer plan-level field, fall back to route start time
-        const lateArrivalHour = (plan.trip_start_date_and_time instanceof Date)
-          ? plan.trip_start_date_and_time.getUTCHours()
-          : parseInt(routeStartTime.split(':')[0], 10);
-
-        // Hours 17-23 = 5 PM to midnight, hour 0 = midnight (treated as very late)
-        const isLateOrNightArrival = lateArrivalHour >= 17 || lateArrivalHour === 0;
-
-        if (isLateOrNightArrival) {
-          forceNoSightseeingOnThisRoute = true;
-          this.logTimeline('[TIMELINE] LATE_ARRIVAL_SKIP_SIGHTSEEING', {
-            quoteId: this.currentQuoteId,
-            routeId: route.itinerary_route_ID,
-            lateArrivalHour,
-            routeStartTime,
-            message: 'Late arrival (5PM or later) - skipping Day 1 sightseeing, direct hotel check-in',
-          });
-        }
-      }
-
-      if (isTransferOnlyLastRouteByReportDeadline) {
-        forceNoSightseeingOnThisRoute = true;
-        this.logTimeline('[TIMELINE] LAST_ROUTE_REPORT_CUTOFF_SKIP_SIGHTSEEING', {
-          quoteId: this.currentQuoteId,
-          routeId: route.itinerary_route_ID,
-          routeStartTime,
-          routeEndTime,
-          wrappedLastRouteArrivalDeadline: secondsToTime(wrappedLastRouteArrivalDeadlineSeconds),
-          message: 'Last-route airport report deadline is 12:00 PM or earlier - transfer only, no sightseeing.',
-        });
-      }
-
-      if (!!hotelInfoForRoute?.isHouseboat) {
-        this.logBookingRule({
-          rule: 'HOUSEBOAT_SUPPRESSION',
-          quoteId:
-            (plan as any).quote_id ??
-            (plan as any).quoteId ??
-            (plan as any).quote_ID ??
-            null,
-          planId,
-          routeId: route.itinerary_route_ID,
-          triggered: true,
-        });
-      }
-
-      if (hasReliableFullDayMarker) {
-        this.logBookingRule({
-          rule: 'FULL_DAY_MARKER_DETECTED',
-          quoteId:
-            (plan as any).quote_id ??
-            (plan as any).quoteId ??
-            (plan as any).quote_ID ??
-            null,
-          planId,
-          routeId: route.itinerary_route_ID,
-          markerRaw: fullDayMarkerRaw,
-          isFullDayTrip,
-          suppressionTriggered: isFullDayTrip,
-        });
-      }
-
-      this.logBookingRule({
-        rule: 'DAY1_BRANCH_SELECTED',
-        quoteId:
-          (plan as any).quote_id ??
-          (plan as any).quoteId ??
-          (plan as any).quote_ID ??
-          null,
-        planId,
-        routeId: route.itinerary_route_ID,
-        isFirstRoute,
-        arrivalHour,
-        arrivalAfterNoon: isArrivalAfterNoon,
-        sameCityStay: isArrivalCityStayRoute,
-        forceNoSightseeingOnThisRoute,
-        arrivalPolicyWantsHotelDeferredToEnd,
-        earlyArrivalPrevDayConfirmed: isEarlyArrivalPrevDayConfirmed,
-        specialDay1OnePmHotelFirstFlow: isSpecialDay1OnePmHotelFirstFlow,
-      });
-
-      const skipInitialRefreshmentForImmediateHotelCheckin =
-        isEarlyArrivalPrevDayConfirmed || isSpecialDay1OnePmHotelFirstFlow;
 
       // 1) ADD REFRESHMENT BREAK (PHP line 969-993)
       // PHP adds 1-hour refreshment at route start EXCEPT for last route
