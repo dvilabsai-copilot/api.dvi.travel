@@ -32,6 +32,7 @@ import { StaahConfirmedBookingOverrideService } from './services/staah-confirmed
 import { GuestNationalityService } from './services/guest-nationality.service';
 import { ItineraryHotelPreferenceFilterService } from './services/itinerary-hotel-preference-filter.service';
 import { ItineraryHotelSecondaryProviderFetchService } from './services/itinerary-hotel-secondary-provider-fetch.service';
+import { AxisroomsHotelProjectionService } from './services/axisrooms-hotel-projection.service';
 
 /**
  * This service generates dynamic hotel packages from TBO API
@@ -155,6 +156,7 @@ export class ItineraryHotelDetailsTboService {
   private readonly guestNationalityService = new GuestNationalityService();
   private readonly preferenceFilterService = new ItineraryHotelPreferenceFilterService();
   private readonly secondaryProviderFetchService = new ItineraryHotelSecondaryProviderFetchService();
+  private readonly axisroomsHotelProjectionService = new AxisroomsHotelProjectionService();
 
   private isTboOnlyFetchEnabled(): boolean {
     const raw = String(process.env.HOTEL_FETCH_TBO_ONLY || '').trim().toLowerCase();
@@ -1303,126 +1305,30 @@ export class ItineraryHotelDetailsTboService {
       }
 
       const axisroomsRouteHotels: HotelSearchResult[] = [];
-
       for (const hotel of cityHotels as any[]) {
-        const hid = Number((hotel as any).hotel_id);
-        const roomSet = availableRoomByHotel.get(hid);
-        if (!roomSet || roomSet.size === 0) {
-          continue;
-        }
-
-        // Group occupancy rows by rateplan_id and extract rate from each plan
-        const ratesByPlan = new Map<string, { rate: number; roomId: number }>();
-
-        for (const occ of occupancyRows as any[]) {
-          if (Number((occ as any).hotel_id) !== hid) continue;
-          const rid = Number((occ as any).room_id);
-          if (!roomSet.has(rid)) continue;
-
-          const rateplanId = String((occ as any).rateplan_id || '').trim();
-          if (!rateplanId) continue;
-
-          // Only extract rate if we haven't found one for this rate plan yet
-          if (!ratesByPlan.has(rateplanId)) {
-            const extractedRate = this.extractAxisroomsRate((occ as any).occupancy_rates);
-            if (extractedRate > 0) {
-              ratesByPlan.set(rateplanId, { rate: extractedRate, roomId: rid });
-            }
-          }
-        }
-
-        if (ratesByPlan.size === 0) {
-          this.logger.warn(
-            `   ??  AxisRooms Route ${routeId}: Hotel ${hid} - No valid rates found in any occupancy row for this hotel/room (checked ${occupancyRows.filter((o: any) => Number((o as any).hotel_id) === hid).length} rows)`
-          );
-          continue; // No valid rates found for any meal plan
-        }
-
-        const preferredCode = String(preferredMealPlanCode || '').trim().toUpperCase();
-        const preferredDef = preferredCode
-          ? HOTEL_RATE_PLAN_BY_CODE.get(preferredCode as any)
-          : undefined;
-        const preferredRatePlanCandidates = [
-          String(preferredDef?.defaultRateplanId || '').trim(),
-          String(preferredDef?.externalRateplanId || '').trim(),
-        ].filter((x) => !!x);
-
-        let selectedRateplanId = '';
-        let selectedRate = Number.POSITIVE_INFINITY;
-        let selectedRoomId = 0;
-
-        for (const candidate of preferredRatePlanCandidates) {
-          const hit = ratesByPlan.get(candidate);
-          if (hit) {
-            selectedRateplanId = candidate;
-            selectedRate = Number(hit.rate);
-            selectedRoomId = Number(hit.roomId);
-            break;
-          }
-        }
-
-        // Fallback: if preferred meal plan isn't present for this hotel, pick the lowest available rate plan.
-        if (!selectedRateplanId) {
-          for (const [rpid, hit] of ratesByPlan.entries()) {
-            const rateVal = Number(hit.rate);
-            if (Number.isFinite(rateVal) && rateVal > 0 && rateVal < selectedRate) {
-              selectedRateplanId = rpid;
-              selectedRate = rateVal;
-              selectedRoomId = Number(hit.roomId);
-            }
-          }
-        }
-
-        if (!selectedRateplanId || !Number.isFinite(selectedRate) || selectedRate <= 0 || !selectedRoomId) {
-          continue;
-        }
-
-        const rate = selectedRate;
-
-        const roomName = roomTitleMap.get(selectedRoomId) || 'Room';
-        const hotelAmenities = Array.from(new Set(amenitiesByHotel.get(hid) || []));
-        const rateMeta = ratePlanMetaByHotelRoom.get(`${hid}|${selectedRoomId}`) || {
-
-          rateConditions: [],
-          inclusions: [],
-        };
-        const rateConditions = Array.from(new Set(rateMeta.rateConditions));
-        const inclusions = Array.from(new Set(rateMeta.inclusions));
-        const cancelPolicyText = String((hotel as any).hotel_cancel_policy || '').trim();
-
-        const selectedMealPlan = mealPlanByRatePlan.get(selectedRateplanId) || '-';
-
-        axisroomsRouteHotels.push({
-          provider: 'axisrooms',
-          hotelCode: String(hid),
-          hotelName: String((hotel as any).hotel_name || `Hotel ${hid}`),
-          cityCode: String((hotel as any).hotel_city || destinationRaw),
-          address: String((hotel as any).hotel_address || ''),
-          rating: Number((hotel as any).hotel_category || 0),
-          facilities: hotelAmenities,
-          amenities: hotelAmenities,
-          inclusions,
-          rateConditions,
-          cancellationPolicy: cancelPolicyText ? [cancelPolicyText] : [],
-          images: [],
-          price: Number(rate),
-          currency: 'INR',
-          roomTypes: [
-            {
-              roomCode: String(selectedRoomId),
-              roomName,
-              bedType: '',
-              capacity: 0,
-              price: Number(rate),
-              cancellationPolicy: cancelPolicyText,
-            },
-          ],
-          roomType: roomName,
-          mealPlan: selectedMealPlan,
-          searchReference: `AX-${hid}-${dateStamp}`,
-          expiresAt: new Date(Date.now() + 15 * 60 * 1000),
+        const hotelId = Number(hotel.hotel_id);
+        const roomSet = availableRoomByHotel.get(hotelId);
+        if (!roomSet || roomSet.size === 0) continue;
+        const projected = this.axisroomsHotelProjectionService.build({
+          hotel,
+          availableRoomIds: roomSet,
+          occupancyRows,
+          amenities: amenitiesByHotel.get(hotelId) || [],
+          ratePlanMetaByHotelRoom,
+          mealPlanByRatePlan,
+          roomTitleMap,
+          preferredMealPlanCode,
+          dateStamp,
+          destination: destinationRaw,
+          callbacks: {
+            extractRate: (value) => this.extractAxisroomsRate(value),
+            warn: (message) => this.logger.warn(`   AxisRooms Route ${routeId}: Hotel ${hotelId} - ${message}`),
+          },
         });
+        if (projected) axisroomsRouteHotels.push(projected);
       }
+
+
 
       hotelsByRoute.set(routeId, axisroomsRouteHotels);
       const droppedByRatePlanGate = Math.max(occupancyRowsRaw.length - occupancyRows.length, 0);
