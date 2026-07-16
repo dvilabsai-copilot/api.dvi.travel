@@ -26,6 +26,7 @@ import {
 import { ItineraryHotelDetailsCacheService } from './services/itinerary-hotel-details-cache.service';
 import { ItineraryHotelStayBlockService } from './services/itinerary-hotel-stay-block.service';
 import { ItineraryHotelPricePackageService } from './services/itinerary-hotel-price-package.service';
+import { ItineraryHotelCityCodeService } from './services/itinerary-hotel-city-code.service';
 
 /**
  * This service generates dynamic hotel packages from TBO API
@@ -142,6 +143,7 @@ export class ItineraryHotelDetailsTboService {
   private readonly hotelDetailsCacheService = new ItineraryHotelDetailsCacheService();
   private readonly stayBlockService = new ItineraryHotelStayBlockService();
   private readonly pricePackageService = new ItineraryHotelPricePackageService();
+  private readonly cityCodeService = new ItineraryHotelCityCodeService();
 
   private isTboOnlyFetchEnabled(): boolean {
     const raw = String(process.env.HOTEL_FETCH_TBO_ONLY || '').trim().toLowerCase();
@@ -996,98 +998,18 @@ export class ItineraryHotelDetailsTboService {
    * Reduces database queries from NÃ—3 (N routes Ã— 3 attempts) to 1 query
    */
   private async batchMapDestinationsToCityCodes(routes: any[]): Promise<Record<string, string>> {
-    const cityCodeMap: Record<string, string> = {};
-    const cityAliases: Record<string, string[]> = {
-      cochin: ['kochi'],
-      alleppey: ['alappuzha'],
-      alleppe: ['alappuzha'],
-      calicut: ['kozhikode'],
-      trivandrum: ['thiruvananthapuram'],
-      pondicherry: ['puducherry'],
-      bangalore: ['bengaluru'],
-    };
-    
-    // Extract unique destinations from all routes
-    const uniqueDestinations = [...new Set(routes.map(r => (r as any).next_visiting_location))];
-    this.logger.log(`ðŸ“ Extracting city codes for ${uniqueDestinations.length} unique destinations`);
-
-    if (uniqueDestinations.length === 0) return cityCodeMap;
-
-    // âš¡ Load ALL cities from database in ONE query instead of per-route queries
-    const allCities = await this.prisma.dvi_cities.findMany({
-      select: { id: true, name: true, tbo_city_code: true, status: true },
-      orderBy: [{ status: 'desc' }, { id: 'asc' }],
+    return this.cityCodeService.map(routes, {
+      loadCities: () =>
+        this.prisma.dvi_cities.findMany({
+          select: { id: true, name: true, tbo_city_code: true, status: true },
+          orderBy: [{ status: 'desc' }, { id: 'asc' }],
+        }),
+      log: (message) => this.logger.log(message),
+      warn: (message) => this.logger.warn(message),
     });
-    this.logger.log(`âœ… Loaded ${allCities.length} cities from database in single query`);
-
-    // Build a map for fast lookup
-    const cityNameMap: Record<string, string> = {};
-    const cityPrefixMap: Record<string, string> = {};
-    
-    allCities.forEach(city => {
-      if (city.tbo_city_code) {
-        const lowerName = city.name.toLowerCase();
-        if (!cityNameMap[lowerName]) {
-          cityNameMap[lowerName] = city.tbo_city_code;
-        }
-        const prefix = city.name.split(',')[0].trim().toUpperCase();
-        if (!cityPrefixMap[prefix]) {
-          cityPrefixMap[prefix] = city.tbo_city_code;
-        }
-      }
-    });
-
-    // Map each destination to city code
-    uniqueDestinations.forEach(destination => {
-      if (!destination) return;
-
-      const rawDestination = String(destination).trim();
-      const firstPart = rawDestination.split(/[,\(\-]/)[0].trim();
-      const normalizedToken = this.normalizeCityToken(rawDestination);
-      const aliasTokens = cityAliases[normalizedToken] || [];
-      const lookupTerms = Array.from(
-        new Set(
-          [
-            normalizedToken,
-            ...aliasTokens,
-            rawDestination.toLowerCase(),
-            firstPart.toLowerCase(),
-          ].filter(Boolean),
-        ),
-      );
-
-      let cityCode = '';
-      for (const term of lookupTerms) {
-        cityCode = cityNameMap[term];
-        if (cityCode) break;
-      }
-
-      if (!cityCode) {
-        const prefixTerms = Array.from(
-          new Set([firstPart, normalizedToken, ...aliasTokens].map((value) => value.toUpperCase())),
-        );
-        for (const prefix of prefixTerms) {
-          cityCode = cityPrefixMap[prefix];
-          if (cityCode) break;
-        }
-      }
-
-      if (cityCode) {
-        if (normalizedToken !== firstPart.toLowerCase() || aliasTokens.length > 0) {
-          this.logger.log(
-            `âœ… "${destination}" â†’ TBO Code: ${cityCode} (preferred lookup: ${[normalizedToken, ...aliasTokens].join(' -> ')})`,
-          );
-        } else {
-          this.logger.log(`âœ… "${destination}" â†’ TBO Code: ${cityCode}`);
-        }
-        cityCodeMap[destination] = cityCode;
-      } else {
-        this.logger.warn(`âŒ No city code found for: "${destination}"`);
-      }
-    });
-
-    return cityCodeMap;
   }
+
+
 
   /**
      * Batch load HOBSE city codes for all destinations using hobse_city_code field.
