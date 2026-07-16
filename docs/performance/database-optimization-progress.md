@@ -424,3 +424,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Chronological sort tie-breaks, lookup-name normalization, timing grouping, gallery URL construction and empty-route short-circuits remain unchanged.
 - This is not a measured database performance improvement: route-hotspot latency, row volume, reference-data fan-out, map CPU and details response latency remain unmeasured.
 - No index addition/removal or Redis action is proposed; future work should capture route-hotspot query plans and row-volume traces before batching or caching mutable hotspot data.
+
+## Iteration 108 evidence update
+
+- The entry-ticket cost extraction preserves the plan-scoped active/status/deleted predicates, selected fields, ascending order, numeric normalization and grouped response map; no SQL predicate, index, Redis cache or response shape changed.
+- Positive route-hotspot filtering and traveller-cost ordering remain unchanged.
+- This is not a measured database performance improvement: cost-row latency, row volume, grouping CPU and entry-ticket response projection latency remain unmeasured.
+- No index addition/removal or Redis action is proposed; future work should capture cost-row query plans and row-volume traces before batching or caching mutable entry-ticket data.

@@ -368,6 +368,8 @@ The iteration-106 itinerary-details travel-semantics boundary is a measurement s
 
 The iteration-107 itinerary-details route-hotspot-data boundary is a measurement seam for raw route-hotspot query latency, hotspot-row volume, chronological sort CPU, master lookup selectivity, timing/gallery fan-out, map construction CPU and end-to-end details response latency. Capture empty, single-row, large-route, duplicate-hotspot, missing-master, timing-heavy and gallery-heavy workloads separately before proposing composite indexes, batching reads or caching hotspot reference data; preserve active/status/deleted predicates, order semantics, mutable timing freshness and response fields. No index addition/removal or Redis cache is justified until query plans and route-row traces establish the measured winner.
 
+The iteration-108 itinerary-details entry-ticket boundary is a measurement seam for plan-scoped cost-row latency, active-row selectivity, route-hotspot row volume, numeric normalization CPU, grouped-map cardinality and entry-ticket response projection latency. Capture empty, one-hotspot, multi-traveller, zero-ID, duplicate-row and large-plan workloads separately before proposing a covering index, batching or caching mutable cost rows; preserve active/status/deleted predicates, persistence ordering and financial response fields. No index addition/removal or Redis cache is justified by this narrow ownership tier without query-plan and row-volume evidence.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.

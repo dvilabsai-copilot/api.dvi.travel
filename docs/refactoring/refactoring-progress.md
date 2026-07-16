@@ -3454,3 +3454,31 @@
 - `itinerary-details.service.ts` measured at 5,331 lines after the tier; `itinerary-details-route-hotspot-data.service.ts` is 143 lines.
 - Route-hotspot query latency, row volume, master/timing/gallery fan-out and map-construction CPU remain unmeasured.
 - Implementation commit: `api.dvi.travel` `164db40`.
+
+### Cycle 111 - Extract itinerary-details entry-ticket cost indexing
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itinerary-details.service.ts`
+- Extracted responsibility: plan-scoped entry-ticket cost read, numeric normalization and route-hotspot grouping
+- New files: `src/modules/itineraries/services/itinerary-details-entry-ticket-cost.service.ts`, `test/itinerary-details-entry-ticket-cost.test.ts`
+- Workflow: entry-ticket breakdown projection for itinerary-details response rows
+
+#### Change
+
+- Moved entry-ticket cost hydration and grouping behind `ItineraryDetailsEntryTicketCostService` while retaining the same map consumed by the route loop.
+- Preserved active/status/deleted predicates, selected fields, ascending persistence order, positive-ID filtering and numeric fallback behavior.
+- No query predicate, index, Redis cache, API route, DTO or response contract changed.
+
+#### Verification
+
+- Entry-ticket cost characterization test: PASS, 1/1
+- Itinerary characterization collection: PASS, 156/156
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itinerary-details.service.ts` measured at 5,311 lines after the tier; `itinerary-details-entry-ticket-cost.service.ts` is 32 lines.
+- Entry-ticket row volume, grouping CPU and details response projection latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `8c94662`.
