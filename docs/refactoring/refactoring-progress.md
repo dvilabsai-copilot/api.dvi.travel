@@ -3566,3 +3566,31 @@
 - `itinerary-details.service.ts` measured at 4,884 lines after the tier; `itinerary-details-destination-resolution.service.ts` is 73 lines.
 - Destination scan CPU, label-match frequency and timeline response projection latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `cdbb2a7`.
+
+### Cycle 115 - Extract itinerary-details segment ordering
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itinerary-details.service.ts`
+- Extracted responsibility: non-CTA chronological sorting, same-minute travel/attraction tie-breaks and travel-anchor CTA reinsertion
+- New files: `src/modules/itineraries/services/itinerary-details-segment-ordering.service.ts`, `test/itinerary-details-segment-ordering.test.ts`
+- Workflow: per-route itinerary-details timeline presentation ordering
+
+#### Change
+
+- Moved CTA-aware segment ordering behind `ItineraryDetailsSegmentOrderingService` while preserving the existing segment array replacement boundary.
+- Preserved start/end clock parsing, type precedence, same-minute location tie-breaks, CTA reference selection and reverse-order insertion.
+- No SQL predicate, index, Redis cache, API route, DTO or response contract changed.
+
+#### Verification
+
+- Segment-ordering characterization test: PASS, 1/1
+- Itinerary characterization collection: PASS, 162/162
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itinerary-details.service.ts` measured at 4,766 lines after the tier; `itinerary-details-segment-ordering.service.ts` is 85 lines.
+- Ordering CPU, CTA count, overlap frequency and timeline response latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `05262ac`.

@@ -376,6 +376,8 @@ The iteration-110 itinerary-details segment-sanitizer boundary is a measurement 
 
 The iteration-111 itinerary-details destination-resolution boundary is a measurement seam for forward-row scan length, attraction/master lookup frequency, conflict-row skip frequency, via-route fallback frequency, Hotel substitution frequency, exact/partial label-match CPU and end-to-end timeline response latency. Capture attraction-only, hotel-heavy, via-route, conflict-row, missing-master, exact-label, partial-label and large-route workloads separately before memoizing destination maps or caching projections; preserve mutable route timing, hotel assignments and response labels. No index addition/removal or Redis cache is justified by this pure policy-ownership tier without route timeline traces.
 
+The iteration-112 itinerary-details segment-ordering boundary is a measurement seam for segment count, CTA count, clock parsing CPU, same-minute tie-break frequency, overlap/reversed-range frequency, sort cost and end-to-end timeline response latency. Capture empty, travel-only, attraction/travel tie, CTA-heavy, overlap-heavy and large-segment workloads separately before memoizing ordering keys or caching projections; preserve mutable segment timing, CTA anchors and response order. No index addition/removal or Redis cache is justified by this pure presentation-ownership tier without timeline traces.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.

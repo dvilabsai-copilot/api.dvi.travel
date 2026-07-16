@@ -452,3 +452,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Conflict/attraction/hotel skipping, via-route fallback, Hotel substitution, exact matching and partial matching remain unchanged.
 - This is not a measured database performance improvement: destination scan CPU, master lookup frequency, label-match CPU and details response latency remain unmeasured.
 - No index or Redis action is proposed; future work should profile route timeline scans and hotspot-label match frequency before memoizing or caching mutable itinerary data.
+
+## Iteration 112 evidence update
+
+- The segment-ordering extraction changes only pure timeline presentation ownership; no SQL, index, Redis cache, predicate, API route or response shape changed.
+- Clock parsing, type precedence, same-minute travel/attraction tie-breaks and CTA reinsertion remain unchanged.
+- This is not a measured database performance improvement: ordering CPU, CTA volume, overlap frequency and details response latency remain unmeasured.
+- No index or Redis action is proposed; future work should profile timeline segment counts and ordering hot paths before memoizing or caching mutable itinerary data.
