@@ -57,6 +57,7 @@ import { TimelineCarryForwardAttachmentService } from './timeline-carry-forward-
 import { TimelineMatrixAutobuildService } from './timeline-matrix-autobuild.service';
 import { TimelineCandidateReorderingService } from './timeline-candidate-reordering.service';
 import { TimelineDay1CandidateGateService } from './timeline-day1-candidate-gate.service';
+import { TimelineDay1CutoffMasterService } from './timeline-day1-cutoff-master.service';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -217,6 +218,7 @@ export class TimelineBuilder {
   private readonly matrixAutobuildService = new TimelineMatrixAutobuildService();
   private readonly candidateReorderingService = new TimelineCandidateReorderingService();
   private readonly day1CandidateGateService = new TimelineDay1CandidateGateService();
+  private readonly day1CutoffMasterService = new TimelineDay1CutoffMasterService();
   private readonly candidatePolicyService = new TimelineCandidatePolicyService(
     this.operatingHoursService,
     this.slotPolicyService,
@@ -1216,58 +1218,17 @@ export class TimelineBuilder {
             continue;
           }
 
-          // PHP CUTOFF TIME PARITY (config.php)
-          {
-            const currentSecs = timeToSeconds(currentTime);
-            const sourceCutoffSecs = timeToSeconds('12:00:00');
-            const viaCutoffSecs    = timeToSeconds('19:00:00');
-            const destCutoffSecs   = timeToSeconds('21:00:00');
-            let cutoffHit = false;
-            if (bucket === 'source'      && shouldApplySourceHotspotCutoff && currentSecs >= sourceCutoffSecs) cutoffHit = true;
-            if (bucket === 'via'         && currentSecs >= viaCutoffSecs)    cutoffHit = true;
-            if (bucket === 'destination' && currentSecs >= destCutoffSecs)   cutoffHit = true;
-            if (cutoffHit) {
-              this.logHotspotCandidateEvaluation({
-                routeId: route.itinerary_route_ID,
-                hotspotId: Number(sh.hotspot_ID || 0),
-                name: `hotspot_${Number(sh.hotspot_ID || 0)}`,
-                matchedBucket: bucket || null,
-                priority: Number((sh as any).hotspot_priority ?? 0),
-                isMustVisit: false,
-                distanceFromRoute: null,
-                openingTime: null,
-                closingTime: null,
-                visitTime: `${currentTime} - ${currentTime}`,
-                isOpenAtVisitTime: false,
-                selected: false,
-                rejectedReasons: [`Rejected: PHP ${bucket}_cutoff_time breached (currentTime=${currentTime})`],
-              });
-              continue;
-            }
-          }
 
-          // Get hotspot details from pre-fetched map (NO DB QUERY)
-          const hotspotData = hotspotMap.get(sh.hotspot_ID);
-          if (!hotspotData) {
-            this.logHotspotCandidateEvaluation({
-              routeId: route.itinerary_route_ID,
-              hotspotId: Number(sh.hotspot_ID || 0),
-              name: `hotspot_${Number(sh.hotspot_ID || 0)}`,
-              matchedBucket: (sh as any).matched_bucket ?? null,
-              priority: Number((sh as any).hotspot_priority ?? 0),
-              isMustVisit: Number((sh as any).hotspot_priority ?? 0) > 0,
-              distanceFromRoute: Number.isFinite(Number((sh as any).hotspot_distance))
-                ? Number((sh as any).hotspot_distance)
-                : null,
-              openingTime: null,
-              closingTime: null,
-              visitTime: `${currentTime} - ${currentTime}`,
-              isOpenAtVisitTime: false,
-              selected: false,
-              rejectedReasons: ['Rejected: hotspot master missing'],
-            });
-            continue;
-          }
+          const hotspotData = this.day1CutoffMasterService.resolve({
+            route,
+            hotspot: sh,
+            hotspotMap,
+            bucket,
+            currentTime,
+            shouldApplySourceHotspotCutoff,
+            logHotspotCandidateEvaluation: (...args) => (this.logHotspotCandidateEvaluation as any)(...args),
+          });
+          if (!hotspotData) continue;
 
           const hotspotLocationName = hotspotData.hotspot_location as string || currentLocationName;
           const hotspotDuration = hotspotData.hotspot_duration || '01:00:00';
