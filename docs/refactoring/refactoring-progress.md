@@ -1420,3 +1420,32 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Candidate volume, optimizer CPU, rebuild rows, excluded-list write volume, transaction duration, rollback rate and latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `c7effd0`.
+
+### Cycle 41 - Extract matrix-rescheduled preview assembly
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: matrix-rescheduled preview assembly, source/anchor/hotel leg reconstruction, timing rescheduling and duplicate-travel cleanup
+- New files: `src/modules/itineraries/services/itinerary-matrix-rescheduled-preview.service.ts`, `test/itinerary-matrix-rescheduled-preview.test.ts`
+- Workflow: manual-hotspot batch and matrix-safe insertion preview reconstruction
+
+#### Change
+
+- Moved the contiguous 782-line matrix-rescheduled preview boundary behind `ItineraryMatrixRescheduledPreviewService`.
+- Preserved baseline merge behavior, source/destination/hotel saved-rule resolution, matrix split-leg ordering, timing labels, duplicate-travel cleanup and final arrival metadata.
+- Registered the provider and routed matrix-safe and batch preview callbacks through the new service with explicit facade callbacks.
+
+#### Verification
+
+- Matrix-rescheduled preview characterization test: PASS, 1/1
+- Combined focused backend suite: PASS, 65/65
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 14,076 lines after the tier; `ItineraryMatrixRescheduledPreviewService` is 797 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Callback CPU, route-leg cache hit rate, rebuilt rows, invariant warnings, transaction duration, response size and latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `a2f6f92`.
