@@ -3622,3 +3622,31 @@
 - `itinerary-details.service.ts` measured at 4,705 lines after the tier; `itinerary-details-hotel-first-policy.service.ts` is 46 lines.
 - Hotel-first detection CPU, check-in/departure frequency and timeline response latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `6d73561`.
+
+### Cycle 117 - Extract itinerary-details source travel branch
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itinerary-details.service.ts`
+- Extracted responsibility: item-type-2 source travel destination resolution, Hotel substitution, no-op suppression, distance lookup and travel-segment emission
+- New files: `src/modules/itineraries/services/itinerary-details-source-travel.service.ts`, `test/itinerary-details-source-travel.test.ts`
+- Workflow: per-route itinerary-details timeline row projection
+
+#### Change
+
+- Moved the source-to-location travel branch behind `ItineraryDetailsSourceTravelService` and returned explicit loop state for distance, previous stop and pre-attraction travel flags.
+- Preserved destination fallback, Hotel-name substitution, same-place no-op behavior, distance resolver arguments, CTA insertion, segment fields and duration labels.
+- No SQL predicate, index, Redis cache, API route, DTO or response contract changed.
+
+#### Verification
+
+- Source-travel characterization tests: PASS, 2/2
+- Itinerary characterization collection: PASS, 165/165
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itinerary-details.service.ts` measured at 4,672 lines after the tier; `itinerary-details-source-travel.service.ts` is 90 lines.
+- Source-travel distance latency, no-op frequency, row volume and timeline response latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `63b9484`.

@@ -380,6 +380,8 @@ The iteration-112 itinerary-details segment-ordering boundary is a measurement s
 
 The iteration-113 itinerary-details hotel-first boundary is a measurement seam for hotel-first detection frequency, check-in/travel segment scans, clock conversion CPU, start/check-in reorder frequency and end-to-end timeline response latency. Capture no-hotel, check-in-only, hotel-first, non-hotel-first, missing-time and overlap workloads separately before memoizing segment clocks or caching projections; preserve mutable hotel assignments, timing freshness and response ordering. No index addition/removal or Redis cache is justified by this pure policy-ownership tier without timeline traces.
 
+The iteration-114 itinerary-details source-travel boundary is a measurement seam for source-travel row volume, destination/Hotel fallback frequency, same-place no-op rate, distance-resolver latency, segment/CTA emission cost and end-to-end timeline response latency. Capture normal, Hotel, same-place, missing-destination, coordinate-backed and distance-fallback workloads separately before batching distance reads or caching route legs; preserve mutable route/location data, distance fallback semantics and travel response fields. No index addition/removal or Redis cache is justified until distance traces and route-row evidence establish the measured winner.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.

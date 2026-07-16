@@ -466,3 +466,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Hotel-name normalization, check-in/travel clock comparison, start placement and fallback insertion remain unchanged.
 - This is not a measured database performance improvement: policy CPU, reorder frequency, segment volume and details response latency remain unmeasured.
 - No index or Redis action is proposed; future work should profile hotel-first timeline traces before memoizing or caching mutable itinerary data.
+
+## Iteration 114 evidence update
+
+- The source-travel extraction preserves destination fallback, Hotel substitution, same-place suppression, distance-resolver arguments, CTA insertion and travel response fields; no SQL predicate, index, Redis cache or response shape changed.
+- Returned distance/previous-stop/pre-attraction state preserves the surrounding loop behavior.
+- This is not a measured database performance improvement: distance latency, no-op frequency, source-travel row volume and details response latency remain unmeasured.
+- No index addition/removal or Redis action is proposed; future work should capture distance lookup plans and route-row traces before batching or caching mutable travel data.
