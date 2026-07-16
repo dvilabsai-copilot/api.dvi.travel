@@ -43,11 +43,53 @@ import { ItineraryPdfService } from './itinerary-pdf.service';
 import { ItineraryScenarioSourceController } from './itinerary-scenario-source.controller';
 import { ItineraryScenarioSourceService } from './itinerary-scenario-source.service';
 import { ItineraryGuideAssignmentService } from './services/itinerary-guide-assignment.service';
+import { ItineraryGuideAssignmentWriteService } from './services/itinerary-guide-assignment-write.service';
+import { ItineraryConfirmedGuideAssignmentService } from './services/itinerary-confirmed-guide-assignment.service';
+import { ItineraryConfirmedGuideCancellationService } from './services/itinerary-confirmed-guide-cancellation.service';
 import { ItineraryVehicleBuildStatusService } from './services/itinerary-vehicle-build-status.service';
 import { ItineraryVehicleBuildService } from './services/itinerary-vehicle-build.service';
 import { ItineraryPlanPersistenceService } from './services/itinerary-plan-persistence.service';
 import { ItineraryActivityWorkflowService } from './services/itinerary-activity-workflow.service';
 import { ItinerarySmartActivityService } from './services/itinerary-smart-activity.service';
+import { ItineraryHotspotWorkflowService } from './services/itinerary-hotspot-workflow.service';
+import { ItinerarySelectionWorkflowService } from './services/itinerary-selection-workflow.service';
+import { ItineraryQuoteContextService } from './services/itinerary-quote-context.service';
+import { ItineraryConfirmationService } from './services/itinerary-confirmation.service';
+import { ItineraryHotelConfirmationSupportService } from './services/itinerary-hotel-confirmation-support.service';
+import { ItineraryHotelPrebookService } from './services/itinerary-hotel-prebook.service';
+import { ItineraryHotelBookingFulfillmentService } from './services/itinerary-hotel-booking-fulfillment.service';
+import { ItineraryConfirmedPlanCopyService } from './services/itinerary-confirmed-plan-copy.service';
+import { ItineraryCancellationService } from './services/itinerary-cancellation.service';
+import { ItineraryListingService } from './services/itinerary-listing.service';
+import { ItineraryVoucherReadService } from './services/itinerary-voucher-read.service';
+import { ItineraryManualHotspotMatrixService } from './services/itinerary-manual-hotspot-matrix.service';
+import { ItineraryManualHotspotPreviewService } from './services/itinerary-manual-hotspot-preview.service';
+import { ItineraryManualHotspotMutationService } from './services/itinerary-manual-hotspot-mutation.service';
+import { ItineraryManualFitMatrixPlanningService } from './services/itinerary-manual-fit-matrix-planning.service';
+import { ItineraryExactAnchorRebuildService } from './services/itinerary-exact-anchor-rebuild.service';
+import { ItineraryLowPriorityRemovalService } from './services/itinerary-low-priority-removal.service';
+import { ItineraryMatrixSafeInsertionService } from './services/itinerary-matrix-safe-insertion.service';
+import { ItineraryPreviewTimelineApplicationService } from './services/itinerary-preview-timeline-application.service';
+import { ItineraryRouteLegCacheService } from './services/itinerary-route-leg-cache.service';
+import { ItineraryManualHotspotBatchService } from './services/itinerary-manual-hotspot-batch.service';
+import { ItineraryManualInsertionFitService } from './services/itinerary-manual-insertion-fit.service';
+import { ItineraryProgressivePriorityRemovalService } from './services/itinerary-progressive-priority-removal.service';
+import { ItineraryAdaptiveManualHotspotInsertionService } from './services/itinerary-adaptive-manual-hotspot-insertion.service';
+import { ItineraryMatrixRescheduledPreviewService } from './services/itinerary-matrix-rescheduled-preview.service';
+import { ItineraryConfirmedItineraryDetailsService } from './services/itinerary-confirmed-itinerary-details.service';
+import { ItineraryRouteTimingService } from './services/itinerary-route-timing.service';
+import { ItineraryManualFitTravelReplicaService } from './services/itinerary-manual-fit-travel-replica.service';
+import { ItineraryManualFitGeometryService } from './services/itinerary-manual-fit-geometry.service';
+import { ItineraryManualFitAttemptStoreService } from './services/itinerary-manual-fit-attempt-store.service';
+import { ItineraryManualFitTimelinePolicyService } from './services/itinerary-manual-fit-timeline-policy.service';
+import { ItineraryMatrixPreviewTimelinePolicyService } from './services/itinerary-matrix-preview-timeline-policy.service';
+import { ItineraryManualFitRemovalExplanationService } from './services/itinerary-manual-fit-removal-explanation.service';
+import { ItineraryManualFitRoutePolicyService } from './services/itinerary-manual-fit-route-policy.service';
+import { ItineraryManualFitRouteMatrixPersistenceService } from './services/itinerary-manual-fit-route-matrix-persistence.service';
+import { ItineraryManualFitOperatingHoursService } from './services/itinerary-manual-fit-operating-hours.service';
+import { ItineraryActivityAvailabilityService } from './services/itinerary-activity-availability.service';
+import { ItineraryInvoiceReadService } from './services/itinerary-invoice-read.service';
+import { ItineraryHotspotDeletionService } from './services/itinerary-hotspot-deletion.service';
 
 @Module({
   imports: [HotelsModule],
@@ -70,11 +112,53 @@ import { ItinerarySmartActivityService } from './services/itinerary-smart-activi
     SameCityCrossDayOptimizerService,
     ItineraryRouteNormalizationService,
     ItineraryGuideAssignmentService,
+    ItineraryGuideAssignmentWriteService,
+    ItineraryConfirmedGuideAssignmentService,
+    ItineraryConfirmedGuideCancellationService,
     ItineraryVehicleBuildStatusService,
     ItineraryVehicleBuildService,
     ItineraryPlanPersistenceService,
     ItineraryActivityWorkflowService,
     ItinerarySmartActivityService,
+    ItineraryHotspotWorkflowService,
+    ItinerarySelectionWorkflowService,
+    ItineraryQuoteContextService,
+    ItineraryConfirmationService,
+    ItineraryHotelConfirmationSupportService,
+    ItineraryHotelPrebookService,
+    ItineraryHotelBookingFulfillmentService,
+    ItineraryConfirmedPlanCopyService,
+    ItineraryCancellationService,
+    ItineraryListingService,
+    ItineraryVoucherReadService,
+    ItineraryManualHotspotMatrixService,
+    ItineraryManualHotspotPreviewService,
+    ItineraryManualHotspotMutationService,
+    ItineraryManualFitMatrixPlanningService,
+    ItineraryExactAnchorRebuildService,
+    ItineraryLowPriorityRemovalService,
+    ItineraryMatrixSafeInsertionService,
+    ItineraryPreviewTimelineApplicationService,
+    ItineraryRouteLegCacheService,
+    ItineraryManualHotspotBatchService,
+    ItineraryManualInsertionFitService,
+    ItineraryProgressivePriorityRemovalService,
+    ItineraryAdaptiveManualHotspotInsertionService,
+    ItineraryMatrixRescheduledPreviewService,
+    ItineraryConfirmedItineraryDetailsService,
+    ItineraryRouteTimingService,
+    ItineraryManualFitTravelReplicaService,
+    ItineraryManualFitGeometryService,
+    ItineraryManualFitAttemptStoreService,
+    ItineraryManualFitTimelinePolicyService,
+    ItineraryMatrixPreviewTimelinePolicyService,
+    ItineraryManualFitRemovalExplanationService,
+    ItineraryManualFitRoutePolicyService,
+    ItineraryManualFitRouteMatrixPersistenceService,
+    ItineraryManualFitOperatingHoursService,
+    ItineraryActivityAvailabilityService,
+    ItineraryInvoiceReadService,
+    ItineraryHotspotDeletionService,
 
     // existing engines you already had
     HotelEngineService,

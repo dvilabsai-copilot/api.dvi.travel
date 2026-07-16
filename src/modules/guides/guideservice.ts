@@ -203,7 +203,8 @@ export class GuidesService {
   constructor(private readonly prisma: PrismaService) {}
 
   private async hashGuidePassword(password: string): Promise<string> {
-    // Legacy PHP PwdHash output in this DB is bcrypt-compatible.
+    // New guide passwords are stored as bcrypt. Legacy PHP hashes are
+    // upgraded by AuthService after a successful login.
     return bcrypt.hash(password, 10);
   }
 
