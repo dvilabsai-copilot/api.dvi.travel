@@ -1710,3 +1710,32 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Route-selection query latency, timing-row volume, candidate distance calls, bucket volume, trace I/O and rebuild latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `90152fe`.
+
+### Cycle 51 - Extract arrival and hotel decisions
+
+#### Scope
+
+- Original file: `src/modules/itineraries/engines/helpers/timeline.builder.ts`
+- Extracted responsibility: arrival-window policy evaluation, hotel-first/distance branch, early-arrival clock adjustment, late-arrival/report-cutoff suppression and Day-1 branch logging
+- New files: `src/modules/itineraries/engines/helpers/timeline-arrival-hotel-decision.service.ts`, `test/timeline-arrival-hotel-decision.test.ts`
+- Workflow: per-route arrival/hotel policy before refreshment and hotspot row assembly
+
+#### Change
+
+- Moved the decision-only arrival/hotel phase behind `TimelineArrivalHotelDecisionService`.
+- Preserved arrival policy resolution, previous-day billing state, hotel distance thresholds, early-arrival 08:00/09:00 behavior, report deadlines, late-arrival suppression, houseboat/full-day diagnostics and returned route-clock updates.
+- Kept refreshment, hotel travel/check-in rows and hotspot scheduling in `TimelineBuilder`; the service returns explicit flags and adjusted timing state.
+
+#### Verification
+
+- Arrival/hotel decision characterization tests: PASS, 2/2
+- Combined focused backend/timeline suite: PASS, 102/102
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `timeline.builder.ts` measured at 7,563 lines after the tier; `TimelineArrivalHotelDecisionService` is 421 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Arrival-policy decision latency, hotel-coordinate read latency, distance branch volume, suppression frequency and route rebuild latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `56581e0`.
