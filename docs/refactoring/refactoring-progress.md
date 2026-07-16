@@ -1304,3 +1304,32 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Cache hit/miss/expiry, provider latency, route-leg volume, geometry payload size and process memory remain unmeasured.
 - Implementation commit: `api.dvi.travel` `cde303a`.
+
+### Cycle 37 - Extract manual-hotspot batch transaction workflow
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: manual-hotspot batch transaction, matrix-fit scheduling, preview reconstruction, priority-removal rescue and final response assembly
+- New files: `src/modules/itineraries/services/itinerary-manual-hotspot-batch.service.ts`, `test/itinerary-manual-hotspot-batch.test.ts`
+- Workflow: manual-hotspot preview/apply batch orchestration
+
+#### Change
+
+- Moved the contiguous manual-hotspot batch boundary behind `ItineraryManualHotspotBatchService`.
+- Preserved route/hotspot validation, matrix-slot selection, adaptive scheduling, transaction rollback, exact-anchor and destination-side rescue, opening-hours handling, response projections and persistence-row enrichment.
+- Registered the provider and routed existing preview/mutation callers through the new service with explicit policy callbacks.
+
+#### Verification
+
+- Manual-hotspot batch characterization tests: PASS, 2/2
+- Combined focused backend suite: PASS, 61/61
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 19,183 lines after the tier; `ItineraryManualHotspotBatchService` is 2,967 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Transaction duration, row churn, matrix/OSRM callback volume, adaptive simulation CPU, rollback frequency, payload size and latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `f2c914d`.
