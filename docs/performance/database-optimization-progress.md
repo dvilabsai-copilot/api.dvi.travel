@@ -662,3 +662,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Room reads remain in the existing facade and the tier adds no database access.
 - This is not a measured database performance improvement: active-room volume, exact/loose hit rates, ambiguity frequency, mapping CPU and STAAH latency remain unmeasured.
 - No index addition/removal or Redis action is proposed; future work should capture `dvi_hotel_rooms` query plans and STAAH room-code match traces before indexing or caching mappings.
+
+## Iteration 142 evidence update
+
+- The STAAH candidate-result extraction preserves duplicate suppression, room admission, bookable/restricted fields, cancellation metadata, search references and availability messages; no SQL predicate, index, Redis cache or response shape changed.
+- The tier adds no reads and leaves inventory/rate/restriction queries in the existing facade.
+- This is not a measured database performance improvement: candidate cardinality, duplicate/stale-room rates, projection CPU and STAAH latency remain unmeasured.
+- No index addition/removal or Redis action is proposed; future work should capture STAAH candidate and room-map traces before caching derived results.

@@ -4411,3 +4411,31 @@
 - `itinerary-hotel-details-tbo.service.ts` measured at 2,691 lines after the tier; `staah-room-mapping.service.ts` is 77 lines.
 - Active-room cardinality, exact/loose ambiguity rate, mapping CPU and STAAH query latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `364f4e2`.
+
+### Cycle 145 - Extract STAAH candidate result projection
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itinerary-hotel-details-tbo.service.ts`
+- Extracted responsibility: duplicate candidate-key suppression, stale-room admission, room-title lookup and bookable/restricted STAAH result projection
+- New files: `src/modules/itineraries/services/staah-candidate-result.service.ts`, `test/staah-candidate-result.test.ts`
+- Workflow: STAAH provider result emission
+
+#### Change
+
+- Moved STAAH candidate result construction behind `StaahCandidateResultService` while preserving duplicate suppression, exact/loose room admission, provider metadata, cancellation fields, search references and restriction messages.
+- The TBO facade retains candidate selection, restriction decisions, route iteration and result ordering; provider payloads and API DTOs are unchanged.
+- No SQL predicate, index, Redis cache, API route, DTO or response contract changed.
+
+#### Verification
+
+- STAAH candidate-result characterization tests: PASS, 2/2
+- Itinerary characterization collection: PASS, 195/195
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itinerary-hotel-details-tbo.service.ts` measured at 2,643 lines after the tier; `staah-candidate-result.service.ts` is 83 lines.
+- Candidate cardinality, duplicate rate, stale-room rejection rate, projection CPU and STAAH response latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `d22de00`.

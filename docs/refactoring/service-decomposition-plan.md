@@ -301,3 +301,5 @@ The in-facade legacy route optimizer was removed after verification that `Itiner
 `SavedHotelIndicatorService` now owns plan-scoped saved-hotel route markers and query-failure fallback. `ItineraryHotelDetailsTboService` remains the Prisma adapter and provider facade. Saved-row lookup cost remains pending measurement.
 
 `StaahRoomMappingService` now owns active-room exact/loose normalization and property-to-hotel room maps. `ItineraryHotelDetailsTboService` remains the provider facade and owns room reads, stale-room warnings and inventory/rate filtering. Mapping/query cost remains pending measurement.
+
+`StaahCandidateResultService` now owns duplicate-key suppression, stale-room admission and bookable/restricted STAAH result projection. `ItineraryHotelDetailsTboService` remains the candidate-selection facade and owns ordering/decision flow. Result projection cost remains pending measurement.

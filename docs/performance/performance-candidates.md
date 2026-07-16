@@ -436,6 +436,8 @@ The iteration-140 saved-hotel indicator boundary is a measurement seam for plan 
 
 The iteration-141 STAAH room-mapping boundary is a measurement seam for active-room row count, city-hotel count, exact-code hit rate, loose-code ambiguity rate, room-title map size, mapping CPU and end-to-end STAAH inventory/rate query latency. Capture empty-room, exact-match, normalized-only, ambiguous-normalized, multi-property and large-room workloads separately before changing room-code predicates or caching mappings; preserve active/deleted/status freshness and stale-room rejection. No index addition/removal or Redis cache is justified until room-table query plans and provider traces establish the measured winner.
 
+The iteration-142 STAAH candidate-result boundary is a measurement seam for candidate cardinality, duplicate-key rate, stale-room rejection rate, bookable/restricted ratio, room-title lookup hit rate, result projection CPU and end-to-end STAAH response latency. Capture empty, duplicate, stale-room, bookable, restricted, mixed-provider and large-candidate workloads separately before caching result projections; preserve mutable availability, restriction messages, provider metadata and response ordering. No index addition/removal or Redis cache is justified until provider traces establish the measured winner.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.
