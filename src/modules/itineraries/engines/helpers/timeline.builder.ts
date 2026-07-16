@@ -48,6 +48,7 @@ import { TimelineCandidatePolicyService } from './timeline-candidate-policy.serv
 import { TimelineDay1SourceFallbackService } from './timeline-day1-source-fallback.service';
 import { TimelineRouteHotspotSelectionService } from './timeline-route-hotspot-selection.service';
 import { TimelineArrivalHotelDecisionService } from './timeline-arrival-hotel-decision.service';
+import { TimelineHotelFirstInsertionService } from './timeline-hotel-first-insertion.service';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -197,6 +198,7 @@ export class TimelineBuilder {
   private readonly day1SourceFallbackService = new TimelineDay1SourceFallbackService();
   private readonly routeHotspotSelectionService = new TimelineRouteHotspotSelectionService(this.distanceHelper);
   private readonly arrivalHotelDecisionService = new TimelineArrivalHotelDecisionService(this.distanceHelper);
+  private readonly hotelFirstInsertionService = new TimelineHotelFirstInsertionService(this.hotelBuilder, this.refreshmentBuilder);
   private readonly candidatePolicyService = new TimelineCandidatePolicyService(
     this.operatingHoursService,
     this.slotPolicyService,
@@ -231,6 +233,9 @@ export class TimelineBuilder {
       logBookingRule: (...args) => (this.logBookingRule as any)(...args),
       logTimeline: (...args) => (this.logTimeline as any)(...args),
       getCurrentQuoteId: () => this.currentQuoteId,
+    });
+    this.hotelFirstInsertionService.setCallbacks({
+      logBookingRule: (...args) => (this.logBookingRule as any)(...args),
     });
     this.candidatePolicyService.setCallbacks({
       canonicalCityKey: (...args) => (this.canonicalCityKey as any)(...args),
@@ -855,123 +860,36 @@ export class TimelineBuilder {
         }
       }
 
-      // Day-1 same-city distance rule:
+      const hotelFirstInsertion = await this.hotelFirstInsertionService.insert({
+        tx,
+        planId,
+        routeId: route.itinerary_route_ID,
+        plan,
+        currentTime,
+        currentLocationName,
+        currentCoords,
+        destinationLocationName: ((route.next_visiting_location as string) || currentLocationName).split('|')[0].trim(),
+        destinationCoords: destCityCoords,
+        hotelInfo: hotelInfoForRoute,
+        order,
+        createdByUserId,
+        isLastRoute,
+        suppressHotelInsertionUntilEndOfDay,
+        isEarlyArrivalPrevDayConfirmed,
+        isSpecialDay1OnePmHotelFirstFlow,
+        shouldHotelFirstByDistance,
+        hotelDistanceFromArrivalKm,
+        isArrivalAfterNoon,
+      });
+      hotspotRows.push(...hotelFirstInsertion.rows);
+      order = hotelFirstInsertion.order;
+      currentTime = hotelFirstInsertion.currentTime;
+      currentLocationName = hotelFirstInsertion.currentLocationName;
+      currentCoords = hotelFirstInsertion.currentCoords;
+      didHotelFirstCheckin = hotelFirstInsertion.didHotelFirstCheckin;
+
+      /* legacy hotel-first insertion block removed */
       // <=20 km and after noon -> allow hotel-first check-in with a 2h rest gap,
-      // then continue current hotspot selection logic.
-      // PHP parity: do not pre-empt hotspot selection with hotel-first check-in/rest flow.
-      if (
-        !isLastRoute &&
-        !suppressHotelInsertionUntilEndOfDay &&
-        (isEarlyArrivalPrevDayConfirmed || isSpecialDay1OnePmHotelFirstFlow || shouldHotelFirstByDistance)
-      ) {
-        const hotelOrder = order;
-        const sourceCityForHotel = currentLocationName.split("|")[0].trim();
-        const destinationCityForHotel =
-          ((route.next_visiting_location as string) || currentLocationName)
-            .split("|")[0]
-            .trim();
-        const resolvedHotelCoords = hotelInfoForRoute?.coords || destCityCoords || currentCoords;
-
-        const { row: toHotelRow, nextTime: hotelArrivalTime } =
-          await this.hotelBuilder.buildToHotel(tx, {
-            planId,
-            routeId: route.itinerary_route_ID,
-            order: hotelOrder,
-            startTime: currentTime,
-            travelLocationType: 1,
-            userId: createdByUserId,
-            sourceLocationName: sourceCityForHotel,
-            destinationLocationName: destinationCityForHotel,
-            sourceCoords: currentCoords,
-            destCoords: resolvedHotelCoords,
-          });
-
-        this.logBookingRule({
-          rule: 'HOTEL_FIRST_SELECTED',
-          quoteId:
-            (plan as any).quote_id ??
-            (plan as any).quoteId ??
-            (plan as any).quote_ID ??
-            null,
-          planId,
-          routeId: route.itinerary_route_ID,
-          hotelDistanceFromArrivalKm:
-            hotelDistanceFromArrivalKm != null
-              ? Number(hotelDistanceFromArrivalKm.toFixed(2))
-              : null,
-          arrivalAfterNoon: isArrivalAfterNoon,
-          sameCityStay: isArrivalCityStayRoute,
-        });
-
-        const checkInClampApplied =
-          !isEarlyArrivalPrevDayConfirmed &&
-          !isSpecialDay1OnePmHotelFirstFlow &&
-          timeToSeconds(hotelArrivalTime) < timeToSeconds("14:00:00");
-        const checkInTime = isSpecialDay1OnePmHotelFirstFlow
-          ? "14:00:00"
-          : (checkInClampApplied ? "14:00:00" : hotelArrivalTime);
-
-        if (checkInClampApplied) {
-          this.logBookingRule({
-            rule: 'CHECKIN_CLAMP_APPLIED',
-            quoteId:
-              (plan as any).quote_id ??
-              (plan as any).quoteId ??
-              (plan as any).quote_ID ??
-              null,
-            planId,
-            routeId: route.itinerary_route_ID,
-            clampTo: '14:00:00',
-            context: 'hotel_first',
-          });
-        }
-
-        hotspotRows.push({
-          ...toHotelRow,
-          hotspot_end_time: TimeConverter.toDate(checkInTime),
-        });
-
-        const { row: hotelCheckinRow, nextTime: checkinCloseTime } =
-          await this.hotelBuilder.buildReturnToHotel(tx, {
-            planId,
-            routeId: route.itinerary_route_ID,
-            order: hotelOrder,
-            startTime: checkInTime,
-            userId: createdByUserId,
-          });
-
-        hotspotRows.push(hotelCheckinRow);
-        order++;
-
-        const restGap = isSpecialDay1OnePmHotelFirstFlow ? '01:00:00' : HOTEL_FIRST_REST_GAP;
-        const { row: restRow, nextTime: afterRestTime } = this.refreshmentBuilder.build(
-          planId,
-          route.itinerary_route_ID,
-          order++,
-          checkinCloseTime,
-          restGap,
-          createdByUserId,
-        );
-
-        hotspotRows.push(restRow);
-        this.logBookingRule({
-          rule: 'REST_GAP_INSERTED',
-          quoteId:
-            (plan as any).quote_id ??
-            (plan as any).quoteId ??
-            (plan as any).quote_ID ??
-            null,
-          planId,
-          routeId: route.itinerary_route_ID,
-          restMinutes: isSpecialDay1OnePmHotelFirstFlow ? 60 : 120,
-          insertedAfter: 'hotel_checkin',
-          hotelCoordsResolved: !!resolvedHotelCoords,
-        });
-        currentTime = afterRestTime;
-        currentLocationName = hotelInfoForRoute?.hotelName ? "Hotel" : destinationCityForHotel;
-        currentCoords = resolvedHotelCoords || currentCoords;
-        didHotelFirstCheckin = true;
-      }
 
       // 2) CALCULATE LATEST HOTSPOT END USING ROUTE'S CONFIGURED END TIME
       // Use route_end_time (not hardcoded cutoffs) so users can adjust end time
