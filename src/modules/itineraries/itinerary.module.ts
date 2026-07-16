@@ -68,6 +68,7 @@ import { ItineraryLowPriorityRemovalService } from './services/itinerary-low-pri
 import { ItineraryMatrixSafeInsertionService } from './services/itinerary-matrix-safe-insertion.service';
 import { ItineraryPreviewTimelineApplicationService } from './services/itinerary-preview-timeline-application.service';
 import { ItineraryRouteLegCacheService } from './services/itinerary-route-leg-cache.service';
+import { ItineraryManualHotspotBatchService } from './services/itinerary-manual-hotspot-batch.service';
 
 @Module({
   imports: [HotelsModule],
@@ -115,6 +116,7 @@ import { ItineraryRouteLegCacheService } from './services/itinerary-route-leg-ca
     ItineraryMatrixSafeInsertionService,
     ItineraryPreviewTimelineApplicationService,
     ItineraryRouteLegCacheService,
+    ItineraryManualHotspotBatchService,
 
     // existing engines you already had
     HotelEngineService,
