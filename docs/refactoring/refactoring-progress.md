@@ -4018,3 +4018,31 @@
 - `itineraries.service.ts` measured at 3,884 lines after the tier; 503 duplicate legacy lines were removed.
 - Live route-optimization query latency and distance lookup frequency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `b804eec`.
+
+### Cycle 131 - Extract TBO hotel stay-block grouping
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itinerary-hotel-details-tbo.service.ts`
+- Extracted responsibility: consecutive same-destination route grouping, hotel check-in/check-out date projection and departure-day suppression
+- New files: `src/modules/itineraries/services/itinerary-hotel-stay-block.service.ts`, `test/itinerary-hotel-stay-block.test.ts`
+- Workflow: provider-search stay-block preparation
+
+#### Change
+
+- Moved stay-block grouping behind `ItineraryHotelStayBlockService` while preserving route order, date arithmetic, destination equality, route IDs and skip logging.
+- Provider search orchestration remains in the TBO facade; no provider API payload, cache key or response field changed.
+- No SQL predicate, index, Redis cache, API route, DTO or response contract changed.
+
+#### Verification
+
+- Stay-block characterization tests: PASS, 2/2
+- Itinerary characterization collection: PASS, 184/184
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itinerary-hotel-details-tbo.service.ts` measured at 3,775 lines after the tier; `itinerary-hotel-stay-block.service.ts` is 71 lines.
+- Stay-block cardinality, grouping CPU, departure-day skip frequency and provider-search response latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `5c68514`.

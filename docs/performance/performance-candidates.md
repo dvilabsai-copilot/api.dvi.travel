@@ -408,6 +408,8 @@ The iteration-126 timeline-candidate-preparation boundary is a measurement seam 
 
 The iteration-127 route-optimization ownership boundary is a measurement seam for live optimizer invocation frequency, route-count distribution, stored-location distance lookup latency, exhaustive versus annealing branch frequency and end-to-end route-order response latency. Capture small, large, broken-chain, duplicate-anchor and missing-distance workloads separately before caching distance lookups or changing query predicates; preserve route normalization, exact distance semantics, mutable route ordering and public response fields. No index addition/removal or Redis cache is justified until live optimizer traces and `dvi_stored_locations` plans establish the measured winner.
 
+The iteration-128 TBO stay-block boundary is a measurement seam for route count, stay-block cardinality, same-destination grouping rate, departure-day skip frequency, grouping CPU and end-to-end provider-search response latency. Capture single-night, consecutive same-city, destination-change, date-gap, zero-night and departure-day workloads separately before caching stay blocks; preserve route-date freshness, provider search windows, route membership and response ordering. No index addition/removal or Redis cache is justified until provider query traces and stay-block distributions establish the measured winner.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.

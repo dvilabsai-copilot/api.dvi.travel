@@ -564,3 +564,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - The duplicate optimizer had no production call sites, so database query count and transaction freshness for the live path are unchanged.
 - This is not a measured database performance improvement: live optimizer frequency, distance lookup latency, route-count branch distribution and response latency remain unmeasured.
 - No index addition/removal or Redis action is proposed; future work should capture the live optimizer’s `dvi_stored_locations` query plan and lookup cardinality before caching or indexing.
+
+## Iteration 128 evidence update
+
+- The TBO stay-block extraction preserves route iteration, destination grouping, consecutive-day comparison, date projection and departure-day skip behavior; no SQL predicate, index, Redis cache or response shape changed.
+- The tier adds no database reads and leaves all provider search calls in the existing facade.
+- This is not a measured database performance improvement: route/stay-block cardinality, grouping CPU, provider search frequency and response latency remain unmeasured.
+- No index addition/removal or Redis action is proposed; future work should capture provider search query plans and route-to-block distributions before caching mutable quote-scoped stay blocks.
