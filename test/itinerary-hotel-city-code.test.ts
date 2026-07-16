@@ -49,3 +49,25 @@ test('preserves first city code for duplicate names and skips empty destinations
   assert.deepEqual(result, { 'Jaipur, Rajasthan': 'JAI-1' });
   assert.deepEqual(warnings, []);
 });
+
+test('maps HOBSE codes by exact destination and comma-qualified prefix', async () => {
+  const service = new ItineraryHotelCityCodeService();
+
+  const result = await service.mapHobse(
+    [
+      { next_visiting_location: 'Kochi' },
+      { next_visiting_location: 'Jaipur, Rajasthan' },
+    ],
+    {
+      loadCities: async () => [
+        { name: 'Kochi', hobse_city_code: 'H-COK' },
+        { name: 'Jaipur', hobse_city_code: 'H-JAI' },
+      ],
+    },
+  );
+
+  assert.deepEqual(result, {
+    Kochi: 'H-COK',
+    'Jaipur, Rajasthan': 'H-JAI',
+  });
+});

@@ -6,6 +6,12 @@ export interface HotelCityCodeCallbacks {
   warn?: (message: string) => void;
 }
 
+export interface HobseCityCodeCallbacks {
+  loadCities: () => Promise<Array<{ name: string; hobse_city_code?: string | null }>>;
+  log?: (message: string) => void;
+  warn?: (message: string) => void;
+}
+
 /** Resolves itinerary destinations to TBO city codes with the legacy aliases and fallbacks. */
 @Injectable()
 export class ItineraryHotelCityCodeService {
@@ -89,6 +95,51 @@ export class ItineraryHotelCityCodeService {
         cityCodeMap[destination] = cityCode;
       } else {
         warn(`No city code found for: "${destination}"`);
+      }
+    }
+
+    return cityCodeMap;
+  }
+
+  async mapHobse(
+    routes: any[],
+    callbacks: HobseCityCodeCallbacks,
+  ): Promise<Record<string, string>> {
+    const cityCodeMap: Record<string, string> = {};
+    const log = callbacks.log || (() => undefined);
+    const warn = callbacks.warn || (() => undefined);
+    const uniqueDestinations = [...new Set(routes.map((route) => route?.next_visiting_location))] as string[];
+
+    log(`Loading HOBSE city codes for ${uniqueDestinations.length} unique destinations`);
+    if (uniqueDestinations.length === 0) return cityCodeMap;
+
+    const allCities = await callbacks.loadCities();
+    log(`Loaded ${allCities.length} cities for HOBSE code lookup`);
+
+    const cityNameMap: Record<string, string> = {};
+    const cityPrefixMap: Record<string, string> = {};
+    for (const city of allCities) {
+      if (!city.hobse_city_code) continue;
+      cityNameMap[String(city.name || '').toLowerCase()] = String(city.hobse_city_code);
+      const prefix = String(city.name || '').split(',')[0].trim().toLowerCase();
+      cityPrefixMap[prefix] = String(city.hobse_city_code);
+    }
+
+    for (const destination of uniqueDestinations) {
+      if (!destination) continue;
+      const lower = destination.toLowerCase();
+      let code = cityNameMap[lower];
+
+      if (!code) {
+        const firstPart = destination.split(/[,\(\-]/)[0].trim().toLowerCase();
+        code = cityNameMap[firstPart] || cityPrefixMap[firstPart];
+      }
+
+      if (code) {
+        log(`HOBSE "${destination}" -> code: ${code}`);
+        cityCodeMap[destination] = code;
+      } else {
+        warn(`No HOBSE city code found for: "${destination}"`);
       }
     }
 

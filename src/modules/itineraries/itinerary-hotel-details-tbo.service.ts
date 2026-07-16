@@ -1014,49 +1014,18 @@ export class ItineraryHotelDetailsTboService {
   /**
      * Batch load HOBSE city codes for all destinations using hobse_city_code field.
      */
-    private async batchMapDestinationsToHobseCityCodes(routes: any[]): Promise<Record<string, string>> {
-      const cityCodeMap: Record<string, string> = {};
-      const uniqueDestinations = [...new Set(routes.map(r => (r as any).next_visiting_location))] as string[];
-
-      this.logger.log(`ðŸ“ Loading HOBSE city codes for ${uniqueDestinations.length} unique destinations`);
-      if (uniqueDestinations.length === 0) return cityCodeMap;
-
-      const allCities = await this.prisma.dvi_cities.findMany({
-        select: { name: true, hobse_city_code: true } as any,
-      });
-      this.logger.log(`âœ… Loaded ${allCities.length} cities for HOBSE code lookup`);
-
-      const cityNameMap: Record<string, string> = {};
-      const cityPrefixMap: Record<string, string> = {};
-
-      allCities.forEach((city: any) => {
-        if (city.hobse_city_code) {
-          cityNameMap[city.name.toLowerCase()] = String(city.hobse_city_code);
-          const prefix = city.name.split(',')[0].trim().toLowerCase();
-          cityPrefixMap[prefix] = String(city.hobse_city_code);
-        }
-      });
-
-      uniqueDestinations.forEach(destination => {
-        if (!destination) return;
-        const lower = destination.toLowerCase();
-        let code = cityNameMap[lower];
-
-        if (!code) {
-          const firstPart = destination.split(/[,\(\-]/)[0].trim().toLowerCase();
-          code = cityNameMap[firstPart] || cityPrefixMap[firstPart];
-        }
-
-        if (code) {
-          this.logger.log(`âœ… HOBSE "${destination}" -> code: ${code}`);
-          cityCodeMap[destination] = code;
-        } else {
-          this.logger.warn(`âŒ No HOBSE city code found for: "${destination}"`);
-        }
-      });
-
-      return cityCodeMap;
+  private async batchMapDestinationsToHobseCityCodes(routes: any[]): Promise<Record<string, string>> {
+    return this.cityCodeService.mapHobse(routes, {
+      loadCities: () =>
+        this.prisma.dvi_cities.findMany({
+          select: { name: true, hobse_city_code: true } as any,
+        }) as any,
+      log: (message) => this.logger.log(message),
+      warn: (message) => this.logger.warn(message),
+    });
   }
+
+
 
   /**
    * Search hotels for a single route (used in parallel execution)
