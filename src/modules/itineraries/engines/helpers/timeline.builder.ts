@@ -44,6 +44,7 @@ import { TimelineRejectionPolicyService } from './timeline-rejection-policy.serv
 import { ArrivalPolicyDecisionState, TimelineDataAccessService } from './timeline-data-access.service';
 import { TimelineTravelDataService } from './timeline-travel-data.service';
 import { TimelineCandidateFeasibilityService } from './timeline-candidate-feasibility.service';
+import { TimelineCandidatePolicyService } from './timeline-candidate-policy.service';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -190,9 +191,21 @@ export class TimelineBuilder {
   private readonly dataAccessService = new TimelineDataAccessService();
   private readonly travelDataService = new TimelineTravelDataService(this.distanceHelper);
   private readonly candidateFeasibilityService = new TimelineCandidateFeasibilityService(this.distanceHelper);
+  private readonly candidatePolicyService = new TimelineCandidatePolicyService(
+    this.operatingHoursService,
+    this.slotPolicyService,
+    this.rejectionPolicyService,
+    this.routePolicyService,
+  );
 
   constructor() {
-    // Logging removed for performance
+    this.candidatePolicyService.setCallbacks({
+      canonicalCityKey: (...args) => (this.canonicalCityKey as any)(...args),
+      logBookingRule: (...args) => (this.logBookingRule as any)(...args),
+      appendProofTrace: (...args) => (this.appendProofTrace as any)(...args),
+      getCurrentQuoteId: () => this.currentQuoteId,
+      isVerboseTimelineProofLogs: () => this.verboseTimelineProofLogs,
+    });
   }
 
   private logTimeline(...args: any[]): void {
@@ -226,412 +239,43 @@ export class TimelineBuilder {
     }
   }
 
-  private formatTimingTime(value: any): string | null {
-    return this.operatingHoursService.formatTimingTime(value);
-  }
+  private formatTimingTime(...args: any[]) { return (this.candidatePolicyService.formatTimingTime as any)(...args); }
+  private getTimingWindowSummary(...args: any[]) { return (this.candidatePolicyService.getTimingWindowSummary as any)(...args); }
+  private isHotspotClosedOnDay(...args: any[]) { return (this.candidatePolicyService.isHotspotClosedOnDay as any)(...args); }
+  private isHotspotClosedOnAllDays(...args: any[]) { return (this.candidatePolicyService.isHotspotClosedOnAllDays as any)(...args); }
+  private getRouteVisitDaysForClosedFilter(...args: any[]): Set<number> { return (this.candidatePolicyService.getRouteVisitDaysForClosedFilter as any)(...args) as Set<number>; }
+  private getDayTimeSlot(...args: any[]) { return (this.candidatePolicyService.getDayTimeSlot as any)(...args); }
+  private resolveTimelineBucket(...args: any[]) { return (this.candidatePolicyService.resolveTimelineBucket as any)(...args); }
+  private isRouteMovementBucket(...args: any[]) { return (this.candidatePolicyService.isRouteMovementBucket as any)(...args); }
+  private isSourceBucket(...args: any[]) { return (this.candidatePolicyService.isSourceBucket as any)(...args); }
+  private shouldSkipWaitForOpening(...args: any[]) { return (this.candidatePolicyService.shouldSkipWaitForOpening as any)(...args); }
+  private shouldAllowWaitUntilOpenForCandidate(...args: any[]) { return (this.candidatePolicyService.shouldAllowWaitUntilOpenForCandidate as any)(...args); }
+  private getNextSlotStart(...args: any[]) { return (this.candidatePolicyService.getNextSlotStart as any)(...args); }
+  private maxTimeString(...args: any[]) { return (this.candidatePolicyService.maxTimeString as any)(...args); }
+  private buildFreeTimeBreakRow(...args: any[]) { return (this.candidatePolicyService.buildFreeTimeBreakRow as any)(...args); }
+  private getCarryPriorityBucket(...args: any[]) { return (this.candidatePolicyService.getCarryPriorityBucket as any)(...args); }
+  private sortCarryForwardHotspots(...args: any[]) { return (this.candidatePolicyService.sortCarryForwardHotspots as any)(...args); }
+  private mergeCarryForwardIntoCandidates(...args: any[]) { return (this.candidatePolicyService.mergeCarryForwardIntoCandidates as any)(...args); }
+  private logHotspotCandidateEvaluation(...args: any[]) { return (this.candidatePolicyService.logHotspotCandidateEvaluation as any)(...args); }
+  private shouldApplyRouteEndBuffer(...args: any[]) { return (this.candidatePolicyService.shouldApplyRouteEndBuffer as any)(...args); }
+  private getRouteEndBufferSeconds(...args: any[]) { return (this.candidatePolicyService.getRouteEndBufferSeconds as any)(...args); }
+  private classifyRejectionReason(...args: any[]) { return (this.candidatePolicyService.classifyRejectionReason as any)(...args); }
+  private buildRejectionGateBreakdown(...args: any[]) { return (this.candidatePolicyService.buildRejectionGateBreakdown as any)(...args); }
+  private recordHotspotCandidateEvaluation(...args: any[]) { return (this.candidatePolicyService.recordHotspotCandidateEvaluation as any)(...args); }
+  private normalizeCityName(...args: any[]) { return (this.candidatePolicyService.normalizeCityName as any)(...args); }
+  private canonicalCityKey(...args: any[]) { return (this.candidatePolicyService.canonicalCityKey as any)(...args); }
+  private isSameCity(...args: any[]) { return (this.candidatePolicyService.isSameCity as any)(...args); }
+  private getSameCityRouteKey(...args: any[]) { return (this.candidatePolicyService.getSameCityRouteKey as any)(...args); }
+  private buildReservedSameCityHotspotIdsByRoute(...args: any[]) { return (this.candidatePolicyService.buildReservedSameCityHotspotIdsByRoute as any)(...args); }
+  private hotspotLocationMatchesCity(...args: any[]) { return (this.candidatePolicyService.hotspotLocationMatchesCity as any)(...args); }
+  private buildRouteLegs(...args: any[]) { return (this.candidatePolicyService.buildRouteLegs as any)(...args); }
+  private routeSpecificHotspotMatchesRouteChain(...args: any[]) { return (this.candidatePolicyService.routeSpecificHotspotMatchesRouteChain as any)(...args); }
+  private routeMovementOrder(...args: any[]) { return (this.candidatePolicyService.routeMovementOrder as any)(...args); }
+  private hotspotNameMatchesLocation(...args: any[]) { return (this.candidatePolicyService.hotspotNameMatchesLocation as any)(...args); }
+  private isCarryForwardHotspotCompatibleWithRoute(...args: any[]) { return (this.candidatePolicyService.isCarryForwardHotspotCompatibleWithRoute as any)(...args); }
+  private estimateRouteHotspotCapacity(...args: any[]) { return (this.candidatePolicyService.estimateRouteHotspotCapacity as any)(...args); }
+  private checkHotspotOperatingHoursFromMap(...args: any[]) { return (this.candidatePolicyService.checkHotspotOperatingHoursFromMap as any)(...args); }
 
-  private getTimingWindowSummary(
-    timingMap: Map<number, Map<number, any[]>>,
-    hotspotId: number,
-    dayOfWeek: number,
-  ): { openingTime: string | null; closingTime: string | null } {
-    return this.operatingHoursService.getTimingWindowSummary(timingMap, hotspotId, dayOfWeek);
-  }
-
-  private isHotspotClosedOnDay(
-    timingMap: Map<number, Map<number, any[]>>,
-    hotspotId: number,
-    dayOfWeek: number,
-  ): boolean {
-    return this.operatingHoursService.isHotspotClosedOnDay(timingMap, hotspotId, dayOfWeek);
-  }
-
-  private isHotspotClosedOnAllDays(
-    timingMap: Map<number, Map<number, any[]>>,
-    hotspotId: number,
-  ): boolean {
-    return this.operatingHoursService.isHotspotClosedOnAllDays(timingMap, hotspotId);
-  }
-
-  private getRouteVisitDaysForClosedFilter(
-    route: RouteRow,
-    previousRoute: RouteRow | undefined,
-  ): Set<number> {
-    const visitDays = new Set<number>();
-
-    if (route.itinerary_route_date) {
-      const jsDay = new Date(route.itinerary_route_date).getDay();
-      visitDays.add((jsDay + 6) % 7); // PHP convention: Monday=0
-    }
-
-    if (!previousRoute?.itinerary_route_date) {
-      return visitDays;
-    }
-
-    const currentCityKey = this.canonicalCityKey(
-      String((route as any).location_name || (route as any).next_visiting_location || ''),
-    );
-    const prevDestKey = this.canonicalCityKey(String((previousRoute as any).next_visiting_location || ''));
-    const prevSourceKey = this.canonicalCityKey(String((previousRoute as any).location_name || ''));
-
-    const isSameCityStayAcrossDays = !!currentCityKey && (currentCityKey === prevDestKey || currentCityKey === prevSourceKey);
-    if (!isSameCityStayAcrossDays) {
-      return visitDays;
-    }
-
-    const prevJsDay = new Date(previousRoute.itinerary_route_date).getDay();
-    visitDays.add((prevJsDay + 6) % 7);
-
-    return visitDays;
-  }
-
-  private getDayTimeSlot(timeValue: string): DayTimeSlot {
-    return this.slotPolicyService.getDayTimeSlot(timeValue);
-  }
-
-  private resolveTimelineBucket(hotspot: any): string {
-    return String(
-      hotspot?.matched_bucket ||
-      hotspot?.__bucket ||
-      hotspot?.bucket ||
-      '',
-    )
-      .trim()
-      .toLowerCase();
-  }
-
-  private isRouteMovementBucket(bucket: string): boolean {
-    return (
-      bucket === 'via' ||
-      bucket === 'en_route' ||
-      bucket === 'enroute' ||
-      bucket === 'boundary'
-    );
-  }
-
-  private isSourceBucket(bucket: string): boolean {
-    return (
-      bucket === 'source' ||
-      bucket === 'source_local' ||
-      bucket === 'source_hotspot' ||
-      bucket === 'source_fallback'
-    );
-  }
-
-  private shouldSkipWaitForOpening(hotspotType?: string | null): boolean {
-    return this.slotPolicyService.shouldSkipWaitForOpening(hotspotType);
-  }
-
-  private shouldAllowWaitUntilOpenForCandidate(
-    hotspotPriority?: number | null,
-    hotspotType?: string | null,
-  ): boolean {
-    return this.slotPolicyService.shouldAllowWaitUntilOpenForCandidate(hotspotPriority, hotspotType);
-  }
-
-  private getNextSlotStart(currentSlot: DayTimeSlot): string | null {
-    return this.slotPolicyService.getNextSlotStart(currentSlot);
-  }
-
-  private maxTimeString(a: string | null, b: string | null): string | null {
-    return this.slotPolicyService.maxTimeString(a, b);
-  }
-
-  private buildFreeTimeBreakRow(params: {
-    planId: number;
-    routeId: number;
-    order: number;
-    startTime: string;
-    endTime: string;
-    userId: number;
-  }): HotspotDetailRow {
-    return this.slotPolicyService.buildFreeTimeBreakRow(params);
-  }
-
-  private getCarryPriorityBucket(priority: number): number {
-    if (priority >= 1 && priority <= 3) return 0;
-    if (priority > 3) return 1;
-    return 2;
-  }
-
-  private sortCarryForwardHotspots(list: CarryForwardHotspot[]): CarryForwardHotspot[] {
-    return [...list].sort((a, b) => {
-      const ap = Number(a.hotspot_priority ?? 0);
-      const bp = Number(b.hotspot_priority ?? 0);
-      const ab = this.getCarryPriorityBucket(ap);
-      const bb = this.getCarryPriorityBucket(bp);
-      if (ab !== bb) return ab - bb;
-
-      const apr = ap > 0 ? ap : 9999;
-      const bpr = bp > 0 ? bp : 9999;
-      if (apr !== bpr) return apr - bpr;
-
-      if (a.carryOrder !== b.carryOrder) return a.carryOrder - b.carryOrder;
-      return Number(a.hotspot_ID ?? 0) - Number(b.hotspot_ID ?? 0);
-    });
-  }
-
-  private mergeCarryForwardIntoCandidates(
-    carryForwardHotspots: CarryForwardHotspot[],
-    selectedHotspots: SelectedHotspot[],
-    addedHotspotIds: Set<number>,
-    routeContext: CarryForwardRouteContext,
-  ): SelectedHotspot[] {
-    const merged: SelectedHotspot[] = [];
-    const seen = new Set<number>();
-
-    const appendIfUnique = (hotspot: SelectedHotspot) => {
-      const hotspotId = Number(hotspot.hotspot_ID ?? 0);
-      if (!hotspotId) return;
-      if (addedHotspotIds.has(hotspotId)) return;
-      if (seen.has(hotspotId)) return;
-      seen.add(hotspotId);
-      merged.push(hotspot);
-    };
-
-    const sortedCarry = this.sortCarryForwardHotspots(carryForwardHotspots);
-    for (const hotspot of sortedCarry) {
-      const compatibility = this.isCarryForwardHotspotCompatibleWithRoute(hotspot as any, routeContext);
-      if (!compatibility.compatible) {
-        this.logBookingRule({
-          rule: 'CARRY_FORWARD_MERGE_REJECTED_ROUTE_MISMATCH',
-          quoteId: this.currentQuoteId,
-          routeId: routeContext.routeId,
-          routeDay: routeContext.routeDay,
-          sourceCity: routeContext.sourceCity,
-          destinationCity: routeContext.destinationCity,
-          hotspotId: Number((hotspot as any).hotspot_ID || 0),
-          hotspotName: String((hotspot as any).hotspot_name || ''),
-          hotspotLocation: compatibility.hotspotLocation,
-          hotspotToLocation: compatibility.hotspotToLocation,
-          carriedFromRouteId: Number((hotspot as any).carriedFromRouteId || 0) || null,
-          carriedFromRouteDay: Number((hotspot as any).carriedFromRouteDay || 0) || null,
-          reason: compatibility.reason,
-        });
-        continue;
-      }
-
-      appendIfUnique({
-        ...hotspot,
-        matched_bucket: hotspot.matched_bucket || 'carry_forward',
-      });
-    }
-
-    for (const hotspot of selectedHotspots) {
-      appendIfUnique(hotspot);
-    }
-
-    return merged;
-  }
-
-  private logHotspotCandidateEvaluation(payload: {
-    routeId: number;
-    hotspotId: number;
-    name: string;
-    matchedBucket?: string | null;
-    priority: number;
-    isMustVisit: boolean;
-    distanceFromRoute: number | null;
-    openingTime: string | null;
-    closingTime: string | null;
-    visitTime: string;
-    isOpenAtVisitTime: boolean;
-    selected: boolean;
-    rejectedReasons: string[];
-  }): void {
-    this.rejectionPolicyService.recordHotspotCandidateEvaluation(payload);
-
-    const rejectionGateBreakdown = this.rejectionPolicyService.buildRejectionGateBreakdown(payload.rejectedReasons);
-
-    const rejectedReason = payload.rejectedReasons.length
-      ? payload.rejectedReasons.join('; ')
-      : null;
-
-    const evalPayload = JSON.stringify({
-      routeId: payload.routeId,
-      hotspotId: payload.hotspotId,
-      name: payload.name,
-      matchedBucket: payload.matchedBucket ?? null,
-      priority: payload.priority,
-      isMustVisit: payload.isMustVisit,
-      distanceFromRoute: payload.distanceFromRoute,
-      openingTime: payload.openingTime,
-      closingTime: payload.closingTime,
-      visitTime: payload.visitTime,
-      isOpenAtVisitTime: payload.isOpenAtVisitTime,
-      selected: payload.selected,
-      rejectedReason,
-      rejectedReasons: payload.rejectedReasons,
-      rejectionGateBreakdown,
-    });
-
-    if (this.verboseTimelineProofLogs) {
-      console.log('[HOTSPOT_CANDIDATE_EVAL]', evalPayload);
-      this.appendProofTrace(`[HOTSPOT_CANDIDATE_EVAL] ${evalPayload}`);
-    }
-  }
-
-  private shouldApplyRouteEndBuffer(routeId: number): boolean {
-    return this.rejectionPolicyService.getRouteEndBufferSeconds(routeId) > 0;
-  }
-
-  private getRouteEndBufferSeconds(routeId: number): number {
-    return this.rejectionPolicyService.getRouteEndBufferSeconds(routeId);
-  }
-
-  private classifyRejectionReason(reason: string): keyof RouteRejectionSummary {
-    return this.rejectionPolicyService.classifyRejectionReason(reason);
-  }
-
-  private buildRejectionGateBreakdown(rejectedReasons: string[]): {
-    alreadyUsedOnAnotherRoute: boolean;
-    outsideOperatingHours: boolean;
-    routeEndDeadline: boolean;
-    duplicateSuppression: boolean;
-    noRemainingWindow: boolean;
-    other: boolean;
-  } {
-    return this.rejectionPolicyService.buildRejectionGateBreakdown(rejectedReasons);
-  }
-
-  private recordHotspotCandidateEvaluation(payload: {
-    routeId: number;
-    selected: boolean;
-    rejectedReasons: string[];
-  }): void {
-    this.rejectionPolicyService.recordHotspotCandidateEvaluation(payload);
-  }
-
-  /**
-   * Normalize city names for comparison (single source of truth)
-   * Removes airport, railway, station, etc. and normalizes to lowercase
-   */
-  private normalizeCityName(name: string): string {
-    return this.routePolicyService.normalizeCityName(name);
-  }
-
-  /**
-   * Canonical city key used for branch decisions.
-   * Examples:
-   * - "Hyderabad, Telangana, India" -> "hyderabad"
-   * - "Hyderabad, Rajiv Gandhi International Airport" -> "hyderabad"
-   * - "Chennai International Airport" -> "chennai"
-   */
-  private canonicalCityKey(name: string): string {
-    return this.routePolicyService.canonicalCityKey(name);
-  }
-
-  private isSameCity(a: string, b: string): boolean {
-    return this.routePolicyService.isSameCity(a, b);
-  }
-
-  private getSameCityRouteKey(route: Partial<RouteRow> | null | undefined): string {
-    return this.routePolicyService.getSameCityRouteKey(route);
-  }
-
-  private buildReservedSameCityHotspotIdsByRoute(
-    routes: RouteRow[],
-    existingHotspots: any[] | undefined,
-    scopeToRouteId?: number,
-  ): Map<number, Set<number>> {
-    return this.routePolicyService.buildReservedSameCityHotspotIdsByRoute(routes, existingHotspots);
-  }
-
-  // Match a hotspot location token to a route city using normalized city keys.
-  // This is intentionally broader than strict token equality so entries like
-  // "Chennai Egmore Station" can match route city "Chennai" globally.
-  private hotspotLocationMatchesCity(
-    hotspotLocation: string | null | undefined,
-    targetCity: string | null | undefined,
-  ): boolean {
-    return this.routePolicyService.hotspotLocationMatchesCity(hotspotLocation, targetCity);
-  }
-
-  private buildRouteLegs(
-    sourceCity: string | null | undefined,
-    viaLocationNames: string[],
-    destinationCity: string | null | undefined,
-  ): string[] {
-    return this.routePolicyService.buildRouteLegs(sourceCity, viaLocationNames, destinationCity);
-  }
-
-  private routeSpecificHotspotMatchesRouteChain(
-    hotspotLocation: string | null | undefined,
-    hotspotToLocation: string | null | undefined,
-    routeLegs: string[],
-  ): { matches: boolean; fromIndex: number; toIndex: number } {
-    return this.routePolicyService.routeSpecificHotspotMatchesRouteChain(hotspotLocation, hotspotToLocation, routeLegs);
-  }
-
-  private routeMovementOrder(
-    fromIndex: number,
-    toIndex: number,
-    kind: 'en_route' | 'via_stop' | 'via_city' = 'en_route',
-  ): number {
-    return this.routePolicyService.routeMovementOrder(fromIndex, toIndex, kind);
-  }
-
-  private hotspotNameMatchesLocation(
-    hotspot: any,
-    locationName: string | null | undefined,
-  ): boolean {
-    return this.routePolicyService.hotspotNameMatchesLocation(hotspot, locationName);
-  }
-
-  private isCarryForwardHotspotCompatibleWithRoute(
-    hotspot: Partial<SelectedHotspot> & Record<string, any>,
-    routeContext: CarryForwardRouteContext,
-  ): { compatible: boolean; reason: string; hotspotLocation: string; hotspotToLocation: string } {
-    return this.routePolicyService.isCarryForwardHotspotCompatibleWithRoute(hotspot, routeContext);
-  }
-
-  // Estimate how many hotspots a route can realistically absorb based on the
-  // available route window. Used for reservation feasibility checks.
-  private estimateRouteHotspotCapacity(route: RouteRow | null | undefined): number {
-    return this.routePolicyService.estimateRouteHotspotCapacity(route);
-  }
-
-  /**
-   * Check if hotspot operating hours allow visit during the specified time window.
-   * PHP: checkHOTSPOTOPERATINGHOURS() in sql_functions.php line 10388-10429
-   * 
-   * ⚠️ CRITICAL FIX (2026-04-12):
-   * Uses ABSOLUTE seconds for all validation logic, not wrapped display times.
-   * Handles overnight windows correctly by normalizing time ranges.
-   * 
-   * PHP Logic (line 10419-10423):
-   * if (($start_timestamp >= $operating_start_timestamp) && ($end_timestamp <= $operating_end_timestamp))
-   * 
-   * Returns object with:
-   * - canVisitNow: true if BOTH start AND end time fall within THE SAME operating hours window
-   * - nextWindowStart: start time of next available window (if canVisitNow is false)
-   * 
-   * @param timingMap - Pre-fetched timing data map for all hotspots (performance optimization)
-   * @param hotspotId - Hotspot ID
-   * @param dayOfWeek - Day of week (0=Monday, 6=Sunday)
-   * @param visitStartSeconds - ABSOLUTE visit start time in seconds (not wrapped)
-   * @param visitEndSeconds - ABSOLUTE visit end time in seconds (may exceed 86400 if overnight)
-   */
-  private checkHotspotOperatingHoursFromMap(
-    timingMap: Map<number, Map<number, any[]>>,
-    hotspotId: number,
-    dayOfWeek: number,
-    visitStartSeconds: number,
-    visitEndSeconds: number,
-  ): { canVisitNow: boolean; nextWindowStart: string | null; isClosedForDay: boolean } {
-    return this.operatingHoursService.checkHotspotOperatingHoursFromMap(
-      timingMap,
-      hotspotId,
-      dayOfWeek,
-      visitStartSeconds,
-      visitEndSeconds,
-    );
-  }
-
-  /**
-   * Main orchestrator for one plan.
-   * Returns in-memory arrays that hotspot-engine.service.ts will insert.
-   */
   async buildTimelineForPlan(
     tx: Tx,
     planId: number,
