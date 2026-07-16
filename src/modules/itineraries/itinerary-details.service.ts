@@ -34,6 +34,7 @@ import { ItineraryDetailsDestinationResolutionService } from './services/itinera
 import { ItineraryDetailsSegmentOrderingService } from './services/itinerary-details-segment-ordering.service';
 import { ItineraryDetailsHotelFirstPolicyService } from './services/itinerary-details-hotel-first-policy.service';
 import { ItineraryDetailsSourceTravelService } from './services/itinerary-details-source-travel.service';
+import { ItineraryDetailsViaTravelService } from './services/itinerary-details-via-travel.service';
 
 // ---------------------------------------------------------------------------
 // DTOs for Itinerary Details response (shared shape with frontend)
@@ -432,6 +433,7 @@ export class ItineraryDetailsService {
   private readonly segmentOrderingService = new ItineraryDetailsSegmentOrderingService();
   private readonly hotelFirstPolicyService = new ItineraryDetailsHotelFirstPolicyService();
   private readonly sourceTravelService = new ItineraryDetailsSourceTravelService();
+  private readonly viaTravelService = new ItineraryDetailsViaTravelService();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -1379,45 +1381,29 @@ for (const row of vehicleKmRows) {
               timeRange: breakRange,
             });
           } else if (allowViaRoute === 1 && viaLocationName) {
-            // VIA ROUTE (Travel via a location)
-            const toName = viaLocationName;
-            const resolvedDistanceKm = await this.resolveTravelDistanceKm({
+            const viaTravelResult = await this.viaTravelService.append({
               row: rh,
-              itemType,
               location,
               route,
-              fromName: previousStopName,
-              toName,
               hotspotMap,
+              previousStopName,
+              startTimeText,
+              endTimeText,
+              travelDuration,
+              segments,
+              seenAttraction,
+              resolveTravelDistanceKm: (params) => this.resolveTravelDistanceKm(params),
+              formatTravelDistance: (value) => this.formatTravelDistance(value),
+              getTravelTimeRangeWithDuration: (start, end, duration) =>
+                this.getTravelTimeRangeWithDuration(start, end, duration),
+              formatDuration: (value) => this.formatDuration(value),
+              pushHotspotAnchorPlaceholder,
             });
-            distanceNum = resolvedDistanceKm ?? 0;
-            travelDistance = this.formatTravelDistance(resolvedDistanceKm);
-            const travelRange = this.getTravelTimeRangeWithDuration(startTimeText, endTimeText, travelDuration);
-
-            if (Number.isFinite(distanceNum) && distanceNum > 0) {
-              totalDistanceKm += distanceNum;
-            }
-
-            pushHotspotAnchorPlaceholder({
-              from: previousStopName,
-              to: toName,
-              timeRange: travelRange,
-            });
-            segments.push({
-              type: 'travel' as const,
-              from: previousStopName,
-              to: toName,
-              timeRange: travelRange,
-              distance: travelDistance,
-              duration: this.formatDuration(travelDuration),
-              note: 'This may vary due to traffic conditions',
-            });
-
-            if (!seenAttraction) {
+            totalDistanceKm += viaTravelResult.totalDistanceKm;
+            previousStopName = viaTravelResult.previousStopName;
+            if (viaTravelResult.emittedTravelBeforeFirstAttraction) {
               emittedTravelBeforeFirstAttraction = true;
             }
-
-            previousStopName = toName;
           } else {
             if (suppressedLastRouteOrders.has(Number((rh as any).hotspot_order || 0))) {
               continue;
