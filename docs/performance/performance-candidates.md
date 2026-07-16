@@ -296,6 +296,8 @@ The iteration-70 manual-fit removal-explanation boundary is a measurement seam f
 
 The iteration-71 manual-fit route-policy boundary is a measurement seam for route-fit classification CPU, candidate/slot volume, valid-slot rejection distribution, empty-route scheduler frequency, city-context classification and response latency. Capture on-route, minor-detour, relaxed-manual, empty-route, source-city, destination-city and unknown-context workloads separately before changing fit precedence or memoizing city keys; preserve route-fit labels, eligibility rules, city classification and suggestion metadata.
 
+The iteration-72 manual-fit travel-replica boundary is a measurement seam for main-timeline scan CPU, replica-map key count, explicit-id versus sequence-id versus label lookup hit rates, distance/duration fallback frequency, check-in label normalization and end-to-end preview latency. Capture explicit-id, sequence-id, label-only, destination-key, missing-replica and fallback-duration workloads separately before adding memoization or changing key precedence; preserve lookup ordering, duration rules and display fields.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.

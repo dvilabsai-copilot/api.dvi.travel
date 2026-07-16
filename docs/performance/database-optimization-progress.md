@@ -172,3 +172,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Route-fit ranks/labels, relaxed manual timing rules, empty-route eligibility, normalized city keys and source/destination classification remain unchanged; only policy ownership moved.
 - This is not a measured performance improvement: policy CPU, candidate volume, classification frequency, suggestion generation and response latency remain unmeasured.
 - No index or Redis action is proposed; any future optimization must use representative route-fit traces and preserve eligibility precedence and metadata contracts.
+
+## Iteration 72 evidence update
+
+- The travel-replica helper consolidation preserves in-memory timeline scans and existing callback reads; no SQL, index, Redis cache or query shape was changed.
+- Replica key precedence, duration fallbacks, distance parsing and check-in label extraction remain unchanged; only ownership moved into the existing travel-replica service.
+- This is not a measured performance improvement: map-build CPU, key hit/miss rates, fallback frequency, payload size and preview latency remain unmeasured.
+- No index or Redis action is proposed; any future optimization must compare representative replica traces and preserve key precedence and display contracts.
