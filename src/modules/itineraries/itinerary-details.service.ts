@@ -24,6 +24,7 @@ import {
 import { ItineraryDetailsTimelinePresentationService } from './services/itinerary-details-timeline-presentation.service';
 import { ItineraryDetailsTimeRangePolicyService } from './services/itinerary-details-time-range-policy.service';
 import { ItineraryDetailsDisplayFormattingService } from './services/itinerary-details-display-formatting.service';
+import { ItineraryDetailsRouteHotelMapService } from './services/itinerary-details-route-hotel-map.service';
 
 // ---------------------------------------------------------------------------
 // DTOs for Itinerary Details response (shared shape with frontend)
@@ -412,6 +413,7 @@ export class ItineraryDetailsService {
   private readonly timelinePresentationService = new ItineraryDetailsTimelinePresentationService();
   private readonly timeRangePolicyService = new ItineraryDetailsTimeRangePolicyService();
   private readonly displayFormattingService = new ItineraryDetailsDisplayFormattingService();
+  private readonly routeHotelMapService = new ItineraryDetailsRouteHotelMapService();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -1010,172 +1012,14 @@ for (const row of vehicleKmRows) {
       entryTicketRowsByRouteHotspotId.set(routeHotspotId, rows);
     }
 
-    // ------------------------- HOTELS FOR TIMELINE ----------------------
-    let timelineHotelRows: any[] = [];
-    
-    if (confirmedPlan) {
-      // If confirmed, fetch from confirmed hotels table
-      const confirmedHotelWhere: any = { itinerary_plan_id: planId, deleted: 0 };
-      
-      timelineHotelRows = await this.prisma.dvi_confirmed_itinerary_plan_hotel_details.findMany({
-        where: confirmedHotelWhere,
-        select: {
-          hotel_id: true,
-          hotel_code: true,
-          itinerary_route_id: true,
-          group_type: true,
-        }
-      });
-      
-      console.log(`[Timeline Hotels] Fetched ${timelineHotelRows.length} hotels from CONFIRMED table`);
-    } else {
-      // If draft, fetch from draft hotels table
-      const timelineHotelWhere: any = { itinerary_plan_id: planId, deleted: 0 };
-      if (groupType !== undefined) {
-        timelineHotelWhere.group_type = groupType;
-      } else {
-        timelineHotelWhere.group_type = 1; // Default to first recommendation
-      }
-
-      timelineHotelRows = await this.prisma.dvi_itinerary_plan_hotel_details.findMany({
-        where: timelineHotelWhere,
-        select: {
-          hotel_id: true,
-          hotel_code: true,
-          itinerary_route_id: true,
-          group_type: true,
-        }
-      });
-      
-      console.log(`[Timeline Hotels] Fetched ${timelineHotelRows.length} hotels from DRAFT table with group_type=${timelineHotelWhere.group_type}`);
-    }
-
-    // Build route -> hotel map
-    // For TBO/ResAvenue hotels, we'll get names from the live search API later
-    const routeHotelRowMap = new Map(
-      timelineHotelRows.map((h) => [h.itinerary_route_id, h]),
-    );
-    
-    // Try to get hotel names from dvi_hotel master (for local hotels)
-    const hotelIds = Array.from(
-      new Set(
-        timelineHotelRows
-          .map((h) => Number(h.hotel_id ?? 0))
-          .filter((id) => id > 0),
-      ),
-    );
-    const hotelMasters = hotelIds.length > 0
-      ? await this.prisma.dvi_hotel.findMany({
-          where: { hotel_id: { in: hotelIds } },
-          select: { hotel_id: true, hotel_name: true, hotel_address: true },
-        })
-      : [];
-    
-    const hotelMasterMap = new Map(hotelMasters.map(h => [h.hotel_id, h]));
-
-    // For TBO hotels, also try to look up from tbo_hotel_booking_confirmation
-    const tboConfirmationRows = await this.prisma.tbo_hotel_booking_confirmation.findMany({
-      where: {
-        itinerary_plan_ID: planId,
-        status: 1,
-        deleted: 0,
-      },
-      select: {
-        itinerary_route_ID: true,
-        tbo_hotel_code: true,
-      },
-      distinct: ['itinerary_route_ID'],
+    const routeHotelMap = await this.routeHotelMapService.build({
+      prisma: this.prisma,
+      planId,
+      confirmedPlan,
+      groupType,
+      routes,
+      isVehicleOnly,
     });
-
-    const tboConfirmationMap = new Map(
-      tboConfirmationRows.map((r: any) => [Number(r.itinerary_route_ID), r.tbo_hotel_code]),
-    );
-
-    const tboHotelCodes = Array.from(
-      new Set(
-        [
-          ...timelineHotelRows.map((h: any) => String(h?.hotel_code ?? '').trim()),
-          ...tboConfirmationRows.map((r: any) => String(r?.tbo_hotel_code ?? '').trim()),
-        ].filter((code) => code.length > 0),
-      ),
-    );
-
-    const tboHotelMasters = tboHotelCodes.length
-      ? await this.prisma.tbo_hotel_master.findMany({
-          where: { tbo_hotel_code: { in: tboHotelCodes } },
-          select: {
-            tbo_hotel_code: true,
-            hotel_name: true,
-            hotel_address: true,
-          },
-        })
-      : [];
-
-    const tboHotelMasterMap = new Map(
-      tboHotelMasters.map((h) => [h.tbo_hotel_code, h]),
-    );
-
-    const liveRouteHotelFallbackMap = new Map<
-      number,
-      { hotel_name: string; hotel_address: string | null; hotel_code: string | null; price: number }
-    >();
-    
-    // Build final map with hotel info
-    // If hotel not in master, we'll fetch from TBO/ResAvenue search results
-    const routeHotelMap = new Map();
-    for (const [routeId, hotelRow] of routeHotelRowMap.entries()) {
-      const hotelIdNum = Number((hotelRow as any)?.hotel_id ?? 0);
-      const masterInfo = hotelMasterMap.get(hotelIdNum);
-      
-      let hotelCode = String((hotelRow as any)?.hotel_code ?? '').trim();
-      // Fallback: check if there's a TBO confirmation for this route
-      if (!hotelCode && tboConfirmationMap.has(routeId)) {
-        hotelCode = String(tboConfirmationMap.get(routeId) ?? '').trim();
-      }
-
-      const liveFallback = liveRouteHotelFallbackMap.get(Number(routeId));
-      if (!hotelCode && liveFallback?.hotel_code) {
-        hotelCode = String(liveFallback.hotel_code).trim();
-      }
-      
-      const tboInfo = hotelCode.length ? tboHotelMasterMap.get(hotelCode) : null;
-
-      routeHotelMap.set(routeId, {
-        hotel_id: hotelIdNum,
-        hotel_name: liveFallback?.hotel_name ?? masterInfo?.hotel_name ?? tboInfo?.hotel_name ?? null,
-        hotel_address: liveFallback?.hotel_address ?? masterInfo?.hotel_address ?? tboInfo?.hotel_address ?? null,
-        hotel_code: hotelCode,
-      });
-    }
-
-    // Some quotes have no persisted hotel rows in plan tables; use live fallback by route.
-    for (const route of routes) {
-      const routeIdNum = Number((route as any)?.itinerary_route_ID ?? 0);
-      if (!routeIdNum || routeHotelMap.has(routeIdNum)) continue;
-
-      const liveFallback = liveRouteHotelFallbackMap.get(routeIdNum);
-      if (!liveFallback) continue;
-
-      routeHotelMap.set(routeIdNum, {
-        hotel_id: 0,
-        hotel_name: liveFallback.hotel_name,
-        hotel_address: liveFallback.hotel_address,
-        hotel_code: liveFallback.hotel_code ?? '',
-      });
-    }
-
-    if (isVehicleOnly) {
-      for (const route of routes) {
-        const routeIdNum = Number((route as any)?.itinerary_route_ID ?? 0);
-        if (!routeIdNum) continue;
-        const existing = routeHotelMap.get(routeIdNum) || {};
-        routeHotelMap.set(routeIdNum, {
-          ...existing,
-          hotel_name: 'Hotel',
-          hotel_address: null,
-        });
-      }
-    }
     stepStartedAt = this.logItineraryApiTiming({
       api: 'itinerary_details',
       planId,
