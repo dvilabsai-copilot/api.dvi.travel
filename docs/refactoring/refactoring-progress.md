@@ -1652,3 +1652,32 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Query latency, rows examined, timing-map memory, hotspot prefilter volume and end-to-end rebuild latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `9207539`.
+
+### Cycle 49 - Extract Day-1 source fallback selection
+
+#### Scope
+
+- Original file: `src/modules/itineraries/engines/helpers/timeline.builder.ts`
+- Extracted responsibility: Day-1 source-city priority fallback query, city filter, distance ranking and bounded result projection
+- New files: `src/modules/itineraries/engines/helpers/timeline-day1-source-fallback.service.ts`, `test/timeline-day1-source-fallback.test.ts`
+- Workflow: arrival-city fallback selection for first-route scheduling
+
+#### Change
+
+- Moved the independent Day-1 source fallback boundary behind `TimelineDay1SourceFallbackService`.
+- Preserved active/priority predicates, route-coordinate lookup, source-city matching, Haversine distance multiplier, priority-then-distance ordering, exclusion handling and fallback error behavior.
+- Registered explicit city-policy callbacks and retained the builder adapter for existing scheduler callers.
+
+#### Verification
+
+- Day-1 source fallback characterization tests: PASS, 2/2
+- Combined focused backend/timeline suite: PASS, 98/98
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `timeline.builder.ts` measured at 8,696 lines after the tier; `TimelineDay1SourceFallbackService` is 124 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Fallback query latency, candidate volume, distance CPU, excluded-row volume and first-route rebuild latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `d94d80b`.
