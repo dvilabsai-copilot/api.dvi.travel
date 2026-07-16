@@ -522,3 +522,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - The tier adds no reads and leaves terminal-state mutation in the existing facade loop.
 - This is not a measured database performance improvement: check-in row volume, fallback frequency, hotel-address projection cost and details response latency remain unmeasured.
 - No index addition/removal or Redis action is proposed; future work should capture hotel lookup cardinality and per-route check-in traces before caching hotel display projections.
+
+## Iteration 122 evidence update
+
+- The drop-off extraction preserves departure destination fallback, route-end comparison, suppression proof logging, duration/range formatting and segment fields; no SQL predicate, index, Redis cache or response shape changed.
+- Distance accumulation and terminal-state mutation remain in the facade, and the tier adds no database reads.
+- This is not a measured database performance improvement: drop-off row volume, suppression frequency, validation CPU and details response latency remain unmeasured.
+- No index addition/removal or Redis action is proposed; future work should capture terminal route-row cardinality and route-end traces before caching or changing terminal projection work.

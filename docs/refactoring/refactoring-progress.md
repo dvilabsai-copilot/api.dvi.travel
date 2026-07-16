@@ -3846,3 +3846,31 @@
 - `itinerary-details.service.ts` measured at 4,213 lines after the tier; `itinerary-details-hotel-checkin.service.ts` is 61 lines.
 - Check-in fallback frequency, hotel-address projection cost and timeline response latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `6322ce9`.
+
+### Cycle 125 - Extract itinerary-details drop-off projection
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itinerary-details.service.ts`
+- Extracted responsibility: item-type-7 departure destination resolution, route-end suppression and final travel segment projection
+- New files: `src/modules/itineraries/services/itinerary-details-dropoff.service.ts`, `test/itinerary-details-dropoff.test.ts`
+- Workflow: per-route terminal departure segment projection
+
+#### Change
+
+- Moved drop-off destination selection, route-end validation, suppression proof logging and travel-segment construction behind `ItineraryDetailsDropOffService`.
+- Preserved distance accumulation ownership, terminal-state mutation, destination fallback, conflict fields and duration/range formatting.
+- No SQL predicate, index, Redis cache, API route, DTO or response contract changed.
+
+#### Verification
+
+- Drop-off characterization tests: PASS, 2/2
+- Itinerary characterization collection: PASS, 179/179
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itinerary-details.service.ts` measured at 4,204 lines after the tier; `itinerary-details-dropoff.service.ts` is 89 lines.
+- Drop-off suppression frequency, route-end validation cost, terminal fallback frequency and timeline response latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `3dcca46`.
