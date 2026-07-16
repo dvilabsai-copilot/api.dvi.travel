@@ -90,6 +90,7 @@ import { ItineraryManualFitOperatingHoursService } from './services/itinerary-ma
 import { ItineraryActivityAvailabilityService } from './services/itinerary-activity-availability.service';
 import { ItineraryInvoiceReadService } from './services/itinerary-invoice-read.service';
 import { ItineraryHotspotDeletionService } from './services/itinerary-hotspot-deletion.service';
+import { ItineraryManualFitValidationService } from './services/itinerary-manual-fit-validation.service';
 
 @Module({
   imports: [HotelsModule],
@@ -159,6 +160,7 @@ import { ItineraryHotspotDeletionService } from './services/itinerary-hotspot-de
     ItineraryActivityAvailabilityService,
     ItineraryInvoiceReadService,
     ItineraryHotspotDeletionService,
+    ItineraryManualFitValidationService,
 
     // existing engines you already had
     HotelEngineService,
