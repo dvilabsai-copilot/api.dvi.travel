@@ -35,20 +35,48 @@ export class ItineraryPdfService {
     });
   }
 
-  private formatDateTime(value?: string | Date | null): string {
-    if (!value) return '--';
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return '--';
-    return date.toLocaleString('en-IN', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+ private formatDateTime(value?: string | Date | null): string {
+  if (!value) return '--';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '--';
+  return date.toLocaleString('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+private formatPluckCardDateTime(
+  value?: string | Date | null,
+): string {
+  if (!value) return '--';
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return '--';
   }
 
-  private sanitizeFileName(value: string): string {
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = date.getFullYear();
+
+  let hours = date.getHours();
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  const period = hours >= 12 ? 'PM' : 'AM';
+
+  hours %= 12;
+  hours = hours || 12;
+
+  return `${day}-${month}-${year} ${String(hours).padStart(
+    2,
+    '0',
+  )}:${minutes} ${period}`;
+}
+
+private sanitizeFileName(value: string): string {
     return String(value || 'document')
       .replace(/[^\w.-]+/g, '-')
       .replace(/-+/g, '-')
@@ -100,16 +128,86 @@ export class ItineraryPdfService {
     return fs.existsSync(path.join(candidate, 'package.json')) ? candidate : process.cwd();
   }
 
-  private resolveLogoPath(raw?: string | null): string | null {
-    const normalized = String(raw || '').trim();
-    if (!normalized || /^https?:\/\//i.test(normalized)) {
+private resolveLogoPath(raw?: string | null): string | null {
+  const normalized = String(raw || '').trim();
+
+  if (!normalized) {
+    return null;
+  }
+
+  let requestedPath = normalized;
+
+  if (/^https?:\/\//i.test(requestedPath)) {
+    try {
+      requestedPath = new URL(requestedPath).pathname;
+    } catch {
       return null;
     }
-
-    const relative = normalized.replace(/^\/+/, '');
-    const absolute = path.join(this.resolveBackendRoot(), 'public', relative.replace(/^uploads[\\/]/, 'uploads/'));
-    return fs.existsSync(absolute) ? absolute : null;
   }
+
+  requestedPath = requestedPath
+    .replace(/\\/g, '/')
+    .replace(/^\/?api\/v1\//i, '/');
+
+  const relativePath = requestedPath
+    .replace(/^\/+/, '')
+    .replace(/^public\//i, '');
+
+  const backendRoot = this.resolveBackendRoot();
+  const fileName = path.basename(relativePath);
+
+  const candidates = [
+    path.resolve(backendRoot, 'public', relativePath),
+    path.resolve(backendRoot, relativePath),
+
+    path.resolve(
+      backendRoot,
+      'public',
+      'uploads',
+      'logo',
+      fileName,
+    ),
+
+    path.resolve(
+      backendRoot,
+      'uploads',
+      'logo',
+      fileName,
+    ),
+
+    path.resolve(
+      backendRoot,
+      'public',
+      'uploads',
+      'logos',
+      fileName,
+    ),
+
+    path.resolve(
+      backendRoot,
+      'uploads',
+      'logos',
+      fileName,
+    ),
+
+    path.resolve(
+      backendRoot,
+      'public',
+      'assets',
+      fileName,
+    ),
+
+    path.resolve(
+      backendRoot,
+      'assets',
+      fileName,
+    ),
+  ];
+
+  return candidates.find((candidate) =>
+    fs.existsSync(candidate),
+  ) || null;
+}
 
   private drawLabelValue(
     doc: PDFKit.PDFDocument,
@@ -193,61 +291,190 @@ export class ItineraryPdfService {
     return doc;
   }
 
-  async downloadPluckCardPdf(itineraryPlanId: number, res: Response) {
-    const data: any = await this.itinerariesService.getPluckCardData(itineraryPlanId);
-    const safeName = this.sanitizeFileName(`pluck-card-${data?.guestName || itineraryPlanId}.pdf`);
-    const doc = this.createPdfResponse(res, safeName);
+private async resolvePluckCardLogoPath(
+  companyLogoUrl?: string | null,
+): Promise<string | null> {
+  const settings =
+    await this.prisma.dvi_global_settings.findFirst({
+      where: {
+        status: 1,
+        deleted: 0,
+      },
+    });
 
-    doc.roundedRect(24, 24, doc.page.width - 48, doc.page.height - 48, 28).fillAndStroke('#FFFDF6', '#E7D9C4');
+  const configuredLogo = String(
+    settings?.company_logo || '',
+  ).trim();
 
-    const logoPath = this.resolveLogoPath(data?.companyLogoUrl);
-    if (logoPath) {
-      try {
-        doc.image(logoPath, 380, 48, { fit: [150, 60], align: 'right' });
-      } catch {
-        // Ignore image rendering failures and keep PDF generation successful.
-      }
+  const configuredFileName = configuredLogo
+    ? path.basename(configuredLogo.replace(/\\/g, '/'))
+    : 'logo.png';
+
+  const candidates = [
+    String(companyLogoUrl || '').trim(),
+    configuredLogo,
+    `/uploads/logo/${configuredFileName}`,
+    `/uploads/logos/${configuredFileName}`,
+    '/uploads/logo/logo.png',
+    '/uploads/logos/logo.png',
+    '/assets/dvi-logo.png',
+    '/assets/logo.png',
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    const resolvedPath = this.resolveLogoPath(candidate);
+
+    if (resolvedPath) {
+      return resolvedPath;
     }
-
-    doc.fillColor('#8A6AB0').font('Helvetica-Bold').fontSize(14).text('ARRIVAL WELCOME CARD', 48, 52);
-    doc.fillColor('#3E3050').font('Helvetica-Bold').fontSize(20).text(data?.companyName || 'Doview Holidays India Pvt Ltd', 48, 76);
-
-    doc
-      .fillColor('#B98D22')
-      .font('Helvetica-Bold')
-      .fontSize(24)
-      .text('WELCOME', 48, 150, { align: 'center', width: doc.page.width - 96 });
-    doc
-      .fillColor('#432A57')
-      .font('Helvetica-Bold')
-      .fontSize(30)
-      .text(data?.guestName || '--', 48, 188, { align: 'center', width: doc.page.width - 96 });
-
-    doc.roundedRect(48, 270, 240, 150, 16).fillAndStroke('#FFFFFF', '#EADFF3');
-    doc.roundedRect(307, 270, 240, 150, 16).fillAndStroke('#FFFFFF', '#EADFF3');
-
-    doc.fillColor('#8A6AB0').font('Helvetica-Bold').fontSize(12).text('ARRIVAL', 64, 288);
-    doc.fillColor('#342B40').font('Helvetica-Bold').fontSize(18).text(data?.arrivalLocation || '--', 64, 314, { width: 200 });
-    doc.fillColor('#655B75').font('Helvetica').fontSize(11).text(this.formatDateTime(data?.arrivalDateTime), 64, 350, { width: 200 });
-    doc.text(data?.arrivalFlightDetails || '--', 64, 378, { width: 200 });
-
-    doc.fillColor('#8A6AB0').font('Helvetica-Bold').fontSize(12).text('DEPARTURE', 323, 288);
-    doc.fillColor('#342B40').font('Helvetica-Bold').fontSize(18).text(data?.departureLocation || '--', 323, 314, { width: 200 });
-    doc.fillColor('#655B75').font('Helvetica').fontSize(11).text(this.formatDateTime(data?.departureDateTime), 323, 350, { width: 200 });
-    doc.text(data?.departureFlightDetails || '--', 323, 378, { width: 200 });
-
-    doc.roundedRect(48, 460, doc.page.width - 96, 70, 16).fillAndStroke('#FFF9F1', '#E8D7B0');
-    doc.fillColor('#8A6AB0').font('Helvetica-Bold').fontSize(11).text('CONTACT NUMBER', 48, 478, {
-      align: 'center',
-      width: doc.page.width - 96,
-    });
-    doc.fillColor('#342B40').font('Helvetica-Bold').fontSize(24).text(data?.contactNo || '--', 48, 500, {
-      align: 'center',
-      width: doc.page.width - 96,
-    });
-
-    doc.end();
   }
+
+  console.warn('[PLUCK_CARD_LOGO_NOT_FOUND]', {
+    companyLogoUrl,
+    configuredLogo,
+    backendRoot: this.resolveBackendRoot(),
+    checkedCandidates: candidates,
+  });
+
+  return null;
+}
+
+async downloadPluckCardPdf(
+  itineraryPlanId: number,
+  res: Response,
+) {
+  const data: any =
+    await this.itinerariesService.getPluckCardData(
+      itineraryPlanId,
+    );
+
+  const safeName = this.sanitizeFileName(
+    `pluck-card-${
+      data?.guestName || itineraryPlanId
+    }.pdf`,
+  );
+
+ /*
+ * Resolve and validate the logo before starting
+ * the PDF response stream.
+ */
+const logoPath =
+  await this.resolvePluckCardLogoPath(
+    data?.companyLogoUrl,
+  );
+
+if (!logoPath) {
+  throw new Error(
+    `Pluck Card logo not found. Expected the logo inside public/uploads/logo. Backend root: ${this.resolveBackendRoot()}`,
+  );
+}
+
+res.setHeader(
+  'Content-Type',
+  'application/pdf',
+);
+
+res.setHeader(
+  'Content-Disposition',
+  `attachment; filename="${safeName}"`,
+);
+
+const doc = new PDFDocument({
+  size: 'A4',
+  layout: 'landscape',
+  margin: 0,
+  compress: true,
+});
+
+doc.pipe(res);
+
+const pageWidth = doc.page.width;
+const pageHeight = doc.page.height;
+
+// Plain white background matching the B2B Pluck Card.
+doc
+  .rect(0, 0, pageWidth, pageHeight)
+  .fill('#FFFFFF');
+
+doc.image(logoPath, 42.52, 42.52, {
+  fit: [127.56, 113.39],
+});
+
+  // Large centred WELCOME heading.
+doc
+  .fillColor('#000000')
+  .font('Helvetica-Bold')
+  .fontSize(60)
+  .text('WELCOME', 0, 127.9, {
+    width: pageWidth,
+    align: 'center',
+    lineBreak: false,
+  });
+
+  const guestName =
+    String(data?.guestName || '--').trim() || '--';
+
+const guestNameFontSize =
+  guestName.length > 34
+    ? 44
+    : guestName.length > 27
+      ? 52
+      : 60;
+
+doc
+  .fillColor('#000000')
+  .font('Helvetica-Bold')
+  .fontSize(guestNameFontSize)
+  .text(guestName, 0, 212.94, {
+    width: pageWidth,
+    align: 'center',
+    lineBreak: false,
+  });
+
+  const contactNumber =
+    String(data?.contactNo || '--').trim() || '--';
+
+  const arrivalLocation =
+    String(data?.arrivalLocation || '--').trim() ||
+    '--';
+
+  const arrivalDateTime =
+    this.formatPluckCardDateTime(
+      data?.arrivalDateTime,
+    );
+
+  const arrivalText =
+    arrivalDateTime === '--'
+      ? arrivalLocation
+      : `${arrivalLocation}, ${arrivalDateTime}`;
+
+doc
+  .fillColor('#000000')
+  .font('Helvetica-Bold')
+  .fontSize(25)
+  .text(contactNumber, 31.18, 423.25, {
+    width: pageWidth - 62.36,
+    lineBreak: false,
+  });
+
+doc
+  .moveTo(28.35, 462.12)
+  .lineTo(pageWidth - 28.35, 462.12)
+  .lineWidth(0.57)
+  .strokeColor('#000000')
+  .stroke();
+
+doc
+  .fillColor('#405AAF')
+  .font('Helvetica-Bold')
+  .fontSize(14)
+  .text(arrivalText, 36.13, 473.52, {
+    width: pageWidth - 72.26,
+    lineBreak: false,
+  });
+
+  doc.end();
+}
 
   async downloadInvoicePdf(
     itineraryPlanId: number,

@@ -1128,8 +1128,8 @@ const finalKm = pairChanged
       vehicleId: number;
     },
   ): Promise<number | null> {
-    const vehicle = await (tx as any).dvi_vehicle.findUnique({
-      where: { vehicle_id: args.vehicleId },
+    const vehicle = await (tx as any).dvi_vehicle.findFirst({
+      where: { vehicle_id: args.vehicleId, status: 1, deleted: 0 },
       select: {
         registration_number: true,
       },

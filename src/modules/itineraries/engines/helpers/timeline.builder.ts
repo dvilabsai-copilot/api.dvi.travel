@@ -28,7 +28,6 @@ import { timeToSeconds, addSeconds, secondsToTime, wrapToDay, normalizeTimeRange
 import { DistanceHelper } from "./distance.helper";
 import { TimeConverter } from "./time-converter";
 import { queueDeferredMustVisitHotspot } from "./deferred-retry.helper";
-import { normalizeCityName as normalizeCityNameShared } from '../../utils/city-normalization.util';
 import {
   evaluateArrivalHotelPolicy,
   ArrivalWindow,
@@ -37,7 +36,14 @@ import {
   PolicyResolutionStatus,
 } from '../../services/arrival-hotel-policy.service';
 import type { SameCityAllocationPlan } from '../../services/same-city-cross-day-optimizer.service';
-import { normalizeRouteCityKey } from '../../services/same-city-cross-day-optimizer.shared';
+import { CarryForwardRouteContext, TimelineRoutePolicyService } from './timeline-route-policy.service';
+import { FixedTimelineAnchor, RealGapInterval, SameCityContinuationContext, TimelineAnchorPolicyService } from './timeline-anchor-policy.service';
+import { TimelineOperatingHoursService } from './timeline-operating-hours.service';
+import { DayTimeSlot, TimelineSlotPolicyService } from './timeline-slot-policy.service';
+import { TimelineRejectionPolicyService } from './timeline-rejection-policy.service';
+import { ArrivalPolicyDecisionState, TimelineDataAccessService } from './timeline-data-access.service';
+import { TimelineTravelDataService } from './timeline-travel-data.service';
+import { TimelineCandidateFeasibilityService } from './timeline-candidate-feasibility.service';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -73,11 +79,6 @@ interface RouteRow {
   location_id: number | null;
 }
 
-interface ArrivalPolicyDecisionState {
-  previousDayBillingDecisionProvided: boolean;
-  previousDayBillingConfirmed: boolean;
-}
-
 // Minimal view of a selected hotspot row.
 // ⚠️ You MUST adjust table/field names in fetchSelectedHotspotsForRoute().
 interface SelectedHotspot {
@@ -92,8 +93,6 @@ interface SelectedHotspot {
   hotspot_type?: string;
 }
 
-type DayTimeSlot = 'MORNING' | 'EVENING';
-
 interface CarryForwardHotspot extends SelectedHotspot {
   carryOrder: number;
   carriedFromRouteId: number;
@@ -103,31 +102,6 @@ interface CarryForwardHotspot extends SelectedHotspot {
   carriedFromRouteDestinationCity?: string;
   carriedProtectedSlotStartSeconds?: number;
   carriedProtectedSlotEndSeconds?: number;
-}
-
-interface CarryForwardRouteContext {
-  routeId: number;
-  routeDay: number;
-  sourceCity: string;
-  destinationCity: string;
-}
-
-interface FixedTimelineAnchor {
-  kind: 'route_start' | 'hotspot' | 'route_end';
-  startSeconds: number;
-  endSeconds: number;
-  hotspotId?: number;
-}
-
-interface RealGapInterval {
-  start: number;
-  end: number;
-  durationSeconds: number;
-}
-
-interface SameCityContinuationContext {
-  isSameCityChainContinuation: boolean;
-  previousDayHotspotIds: Set<number>;
 }
 
 interface CandidateFeasibilityInput {
@@ -193,8 +167,6 @@ const LARGE_WAIT_DEFER_THRESHOLD_SECONDS = 90 * 60;
 const MIN_DESTINATION_HOTSPOTS_FOR_RESERVATION = 4;
 const MAX_SCHEDULER_OPTIMIZATION_CYCLES = 4;
 const MAX_MUST_VISIT_REPAIR_ATTEMPTS = 2;
-const NO_WAIT_HOTSPOT_TYPES = new Set<string>(['restaurant', 'shopping_mall']);
-
 export class TimelineBuilder {
   private currentQuoteId: string | null = null;
   private readonly verboseTimelineLogs =
@@ -210,197 +182,14 @@ export class TimelineBuilder {
   // Make parkingBuilder public so HotspotEngineService can use it for rebuilding parking charges
   public readonly parkingBuilder = new ParkingChargeBuilder();
   private readonly distanceHelper = new DistanceHelper();
-  private readonly routeRejectionSummaryByRoute = new Map<number, RouteRejectionSummary>();
-  private readonly routeEndBufferMinutes = Math.max(
-    0,
-    Number.parseInt(process.env.HOTSPOT_ROUTE_END_BUFFER_MINUTES || '0', 10) || 0,
-  );
-  private readonly routeEndBufferRouteIds = new Set<number>(
-    String(process.env.HOTSPOT_ROUTE_END_BUFFER_ROUTE_IDS || '')
-      .split(',')
-      .map((value) => Number.parseInt(value.trim(), 10))
-      .filter((value) => Number.isFinite(value) && value > 0),
-  );
-
-  private normalizeTravelRowDistance(
-    row: HotspotDetailRow,
-    sourceLocationName: string,
-    destinationLocationName: string,
-  ): HotspotDetailRow {
-    const normalizePlace = (value: string) =>
-      String(value || '')
-        .split('|')[0]
-        .replace(/\s+/g, ' ')
-        .trim()
-        .toLowerCase();
-
-    const namesDiffer =
-      normalizePlace(sourceLocationName) !== normalizePlace(destinationLocationName);
-    const distanceKm = Number(row?.hotspot_travelling_distance ?? 0);
-
-    if (
-      Number(row?.item_type || 0) === 3 &&
-      namesDiffer &&
-      Number.isFinite(distanceKm) &&
-      distanceKm <= 0.01
-    ) {
-      return {
-        ...row,
-        hotspot_travelling_distance: null,
-      };
-    }
-
-    return row;
-  }
-
-  private toDateOnly(value: Date): Date {
-    return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()));
-  }
-
-  // Batch-query precomputed between-map rows for many slot pairs.
-  // Returns Map keyed by `${fromId}_${toId}` -> Array<row>
-  private async getBetweenCandidatesForRouteSlots(tx: Tx, slotPairs: Array<{ fromId: number; toId: number }>) {
-    const result = new Map<string, any[]>();
-    if (!Array.isArray(slotPairs) || slotPairs.length === 0) return result;
-
-    const whereClauses: string[] = [];
-    const params: any[] = [];
-    for (const p of slotPairs) {
-      const a = Number(p.fromId || 0);
-      const b = Number(p.toId || 0);
-      if (!a || !b || a === b) continue;
-      // accept either direction on read
-      whereClauses.push(`((from_hotspot_id = ? AND to_hotspot_id = ?) OR (from_hotspot_id = ? AND to_hotspot_id = ?))`);
-      params.push(a, b, b, a);
-    }
-
-    if (whereClauses.length === 0) return result;
-
-    const sql = `
-      SELECT
-        from_hotspot_id,
-        to_hotspot_id,
-        between_hotspot_id,
-        route_fit_type,
-        route_decision_reason,
-        road_detour_km,
-        road_detour_ratio,
-        ab_osrm_distance_km,
-        ac_osrm_distance_km,
-        cb_osrm_distance_km,
-        inserted_route_distance_km,
-        candidate_distance_from_ab_route_meters,
-        destination_distance_from_ac_route_meters
-      FROM hotspot_route_between_map
-      WHERE (${whereClauses.join(' OR ')})
-        AND route_fit_type IN ('ON_ROUTE','MINOR_DETOUR')
-    `;
-
-    try {
-      const rows: any[] = await (tx as any).$queryRawUnsafe(sql, ...params);
-      if (!Array.isArray(rows) || rows.length === 0) return result;
-
-      // Index rows by both canonical and reverse slot keys, but make them available
-      for (const r of rows) {
-        const f = Number(r.from_hotspot_id || 0);
-        const t = Number(r.to_hotspot_id || 0);
-        const between = Number(r.between_hotspot_id || 0);
-        if (!f || !t || !between) continue;
-
-        const exactKey = `${f}_${t}`;
-        const reverseKey = `${t}_${f}`;
-        const rowCopy = { ...r };
-
-        if (!result.has(exactKey)) result.set(exactKey, []);
-        result.get(exactKey)!.push(rowCopy);
-
-        if (!result.has(reverseKey)) result.set(reverseKey, []);
-        result.get(reverseKey)!.push(rowCopy);
-      }
-    } catch (err) {
-      console.error('[getBetweenCandidatesForRouteSlots] query error:', err);
-    }
-
-    return result;
-  }
-
-  private async getBetweenCandidatesForSlot(tx: Tx, fromId: number, toId: number) {
-    const map = await this.getBetweenCandidatesForRouteSlots(tx, [{ fromId, toId }]);
-    return map.get(`${fromId}_${toId}`) || [];
-  }
-
-  private async getArrivalPolicyDecisionStateForRoute(
-    tx: Tx,
-    planId: number,
-    routeId: number,
-    routeDate: Date,
-  ): Promise<ArrivalPolicyDecisionState> {
-    const markerRows = await (tx as any).dvi_itinerary_plan_hotel_details?.findMany({
-      where: {
-        itinerary_plan_id: planId,
-        itinerary_route_id: routeId,
-        hotel_required: 2,
-        hotel_id: 0,
-        deleted: 0,
-        status: 1,
-      },
-      select: {
-        group_type: true,
-        itinerary_route_date: true,
-      },
-    });
-
-    // Source-of-truth: explicit marker rows created by updateRouteTimes() when user clicks YES.
-    // They are persisted as one row per recommendation group (group_type 1..4), so presence
-    // of any active marker row means previous-day billing is confirmed.
-    if (Array.isArray(markerRows) && markerRows.length > 0) {
-      return {
-        previousDayBillingDecisionProvided: true,
-        previousDayBillingConfirmed: true,
-      };
-    }
-
-    // Fallback for legacy rows where marker is absent.
-    const hotelSelection = await (tx as any).dvi_itinerary_plan_hotel_details?.findFirst({
-      where: {
-        itinerary_plan_id: planId,
-        itinerary_route_id: routeId,
-        group_type: 1,
-        deleted: 0,
-        status: 1,
-      },
-      orderBy: {
-        itinerary_plan_hotel_details_ID: 'desc',
-      },
-      select: {
-        itinerary_route_date: true,
-      },
-    });
-
-    if (!hotelSelection?.itinerary_route_date) {
-      return {
-        previousDayBillingDecisionProvided: false,
-        previousDayBillingConfirmed: false,
-      };
-    }
-
-    const selectedHotelDate = this.toDateOnly(new Date(hotelSelection.itinerary_route_date));
-    const normalizedRouteDate = this.toDateOnly(routeDate);
-    const selectedHotelDateMs = selectedHotelDate.getTime();
-    const routeDateMs = normalizedRouteDate.getTime();
-
-    if (selectedHotelDateMs < routeDateMs) {
-      return {
-        previousDayBillingDecisionProvided: true,
-        previousDayBillingConfirmed: true,
-      };
-    }
-
-    return {
-      previousDayBillingDecisionProvided: true,
-      previousDayBillingConfirmed: false,
-    };
-  }
+  private readonly operatingHoursService = new TimelineOperatingHoursService();
+  private readonly slotPolicyService = new TimelineSlotPolicyService();
+  private readonly rejectionPolicyService = new TimelineRejectionPolicyService();
+  private readonly routePolicyService = new TimelineRoutePolicyService();
+  private readonly anchorPolicyService = new TimelineAnchorPolicyService();
+  private readonly dataAccessService = new TimelineDataAccessService();
+  private readonly travelDataService = new TimelineTravelDataService(this.distanceHelper);
+  private readonly candidateFeasibilityService = new TimelineCandidateFeasibilityService(this.distanceHelper);
 
   constructor() {
     // Logging removed for performance
@@ -438,25 +227,7 @@ export class TimelineBuilder {
   }
 
   private formatTimingTime(value: any): string | null {
-    if (!value) return null;
-    if (typeof value === 'string' && value.trim()) {
-      const trimmed = value.trim();
-      const hhmmss = trimmed.match(/(\d{2}:\d{2}:\d{2})/);
-      if (hhmmss?.[1]) return hhmmss[1];
-
-      const parsed = new Date(trimmed);
-      if (!Number.isNaN(parsed.getTime())) {
-        return `${String(parsed.getUTCHours()).padStart(2, '0')}:${String(parsed.getUTCMinutes()).padStart(2, '0')}:${String(parsed.getUTCSeconds()).padStart(2, '0')}`;
-      }
-      return null;
-    }
-    if (value instanceof Date) {
-      return `${String(value.getUTCHours()).padStart(2, '0')}:${String(value.getUTCMinutes()).padStart(2, '0')}:${String(value.getUTCSeconds()).padStart(2, '0')}`;
-    }
-    if (typeof value === 'object' && typeof value.getUTCHours === 'function') {
-      return `${String(value.getUTCHours()).padStart(2, '0')}:${String(value.getUTCMinutes()).padStart(2, '0')}:${String(value.getUTCSeconds()).padStart(2, '0')}`;
-    }
-    return null;
+    return this.operatingHoursService.formatTimingTime(value);
   }
 
   private getTimingWindowSummary(
@@ -464,33 +235,7 @@ export class TimelineBuilder {
     hotspotId: number,
     dayOfWeek: number,
   ): { openingTime: string | null; closingTime: string | null } {
-    const timingRecords = timingMap.get(hotspotId)?.get(dayOfWeek) || [];
-    if (!timingRecords.length) {
-      return { openingTime: null, closingTime: null };
-    }
-
-    let openingTime: string | null = null;
-    let closingTime: string | null = null;
-
-    for (const timing of timingRecords) {
-      if (Number(timing?.hotspot_closed || 0) === 1) continue;
-      if (Number(timing?.hotspot_open_all_time || 0) === 1) {
-        return { openingTime: '00:00:00', closingTime: '23:59:59' };
-      }
-
-      const start = this.formatTimingTime(timing?.hotspot_start_time);
-      const end = this.formatTimingTime(timing?.hotspot_end_time);
-      if (!start || !end) continue;
-
-      if (!openingTime || timeToSeconds(start) < timeToSeconds(openingTime)) {
-        openingTime = start;
-      }
-      if (!closingTime || timeToSeconds(end) > timeToSeconds(closingTime)) {
-        closingTime = end;
-      }
-    }
-
-    return { openingTime, closingTime };
+    return this.operatingHoursService.getTimingWindowSummary(timingMap, hotspotId, dayOfWeek);
   }
 
   private isHotspotClosedOnDay(
@@ -498,23 +243,14 @@ export class TimelineBuilder {
     hotspotId: number,
     dayOfWeek: number,
   ): boolean {
-    const timingRecords = timingMap.get(hotspotId)?.get(dayOfWeek) || [];
-    if (!timingRecords.length) return false;
-
-    return timingRecords.every((timing) => Number((timing as any)?.hotspot_closed || 0) === 1);
+    return this.operatingHoursService.isHotspotClosedOnDay(timingMap, hotspotId, dayOfWeek);
   }
 
   private isHotspotClosedOnAllDays(
     timingMap: Map<number, Map<number, any[]>>,
     hotspotId: number,
   ): boolean {
-    const dayMap = timingMap.get(hotspotId);
-    if (!dayMap || dayMap.size === 0) return false;
-
-    const allRows = Array.from(dayMap.values()).flat();
-    if (!allRows.length) return false;
-
-    return allRows.every((timing) => Number((timing as any)?.hotspot_closed || 0) === 1);
+    return this.operatingHoursService.isHotspotClosedOnAllDays(timingMap, hotspotId);
   }
 
   private getRouteVisitDaysForClosedFilter(
@@ -550,8 +286,7 @@ export class TimelineBuilder {
   }
 
   private getDayTimeSlot(timeValue: string): DayTimeSlot {
-    const seconds = timeToSeconds(timeValue);
-    return seconds < timeToSeconds('12:00:00') ? 'MORNING' : 'EVENING';
+    return this.slotPolicyService.getDayTimeSlot(timeValue);
   }
 
   private resolveTimelineBucket(hotspot: any): string {
@@ -584,30 +319,22 @@ export class TimelineBuilder {
   }
 
   private shouldSkipWaitForOpening(hotspotType?: string | null): boolean {
-    const normalizedType = String(hotspotType || '').trim().toLowerCase();
-    return NO_WAIT_HOTSPOT_TYPES.has(normalizedType);
+    return this.slotPolicyService.shouldSkipWaitForOpening(hotspotType);
   }
 
   private shouldAllowWaitUntilOpenForCandidate(
     hotspotPriority?: number | null,
     hotspotType?: string | null,
   ): boolean {
-    const priority = Number(hotspotPriority ?? 0);
-    if (priority <= 0) {
-      return false;
-    }
-    return !this.shouldSkipWaitForOpening(hotspotType);
+    return this.slotPolicyService.shouldAllowWaitUntilOpenForCandidate(hotspotPriority, hotspotType);
   }
 
   private getNextSlotStart(currentSlot: DayTimeSlot): string | null {
-    if (currentSlot === 'MORNING') return '12:00:00';
-    return null;
+    return this.slotPolicyService.getNextSlotStart(currentSlot);
   }
 
   private maxTimeString(a: string | null, b: string | null): string | null {
-    if (!a) return b;
-    if (!b) return a;
-    return timeToSeconds(a) >= timeToSeconds(b) ? a : b;
+    return this.slotPolicyService.maxTimeString(a, b);
   }
 
   private buildFreeTimeBreakRow(params: {
@@ -618,43 +345,7 @@ export class TimelineBuilder {
     endTime: string;
     userId: number;
   }): HotspotDetailRow {
-    const durationSeconds = Math.max(0, timeToSeconds(params.endTime) - timeToSeconds(params.startTime));
-    const duration = secondsToTime(durationSeconds);
-    const now = new Date();
-
-    return {
-      itinerary_plan_ID: params.planId,
-      itinerary_route_ID: params.routeId,
-      item_type: 3,
-      hotspot_order: params.order,
-      hotspot_ID: 0,
-
-      hotspot_adult_entry_cost: 0,
-      hotspot_child_entry_cost: 0,
-      hotspot_infant_entry_cost: 0,
-      hotspot_foreign_adult_entry_cost: 0,
-      hotspot_foreign_child_entry_cost: 0,
-      hotspot_foreign_infant_entry_cost: 0,
-      hotspot_amout: 0,
-
-      hotspot_traveling_time: TimeConverter.toDate(duration),
-      itinerary_travel_type_buffer_time: TimeConverter.toDate('00:00:00'),
-      hotspot_travelling_distance: null,
-
-      hotspot_start_time: TimeConverter.toDate(params.startTime),
-      hotspot_end_time: TimeConverter.toDate(params.endTime),
-
-      allow_break_hours: 1,
-      allow_via_route: 0,
-      via_location_name: null,
-      hotspot_plan_own_way: 0,
-
-      createdby: params.userId,
-      createdon: now,
-      updatedon: null,
-      status: 1,
-      deleted: 0,
-    };
+    return this.slotPolicyService.buildFreeTimeBreakRow(params);
   }
 
   private getCarryPriorityBucket(priority: number): number {
@@ -748,9 +439,9 @@ export class TimelineBuilder {
     selected: boolean;
     rejectedReasons: string[];
   }): void {
-    this.recordHotspotCandidateEvaluation(payload);
+    this.rejectionPolicyService.recordHotspotCandidateEvaluation(payload);
 
-    const rejectionGateBreakdown = this.buildRejectionGateBreakdown(payload.rejectedReasons);
+    const rejectionGateBreakdown = this.rejectionPolicyService.buildRejectionGateBreakdown(payload.rejectedReasons);
 
     const rejectedReason = payload.rejectedReasons.length
       ? payload.rejectedReasons.join('; ')
@@ -781,33 +472,15 @@ export class TimelineBuilder {
   }
 
   private shouldApplyRouteEndBuffer(routeId: number): boolean {
-    if (this.routeEndBufferMinutes <= 0) return false;
-    if (this.routeEndBufferRouteIds.size === 0) return true;
-    return this.routeEndBufferRouteIds.has(routeId);
+    return this.rejectionPolicyService.getRouteEndBufferSeconds(routeId) > 0;
   }
 
   private getRouteEndBufferSeconds(routeId: number): number {
-    if (!this.shouldApplyRouteEndBuffer(routeId)) {
-      return 0;
-    }
-    return this.routeEndBufferMinutes * 60;
+    return this.rejectionPolicyService.getRouteEndBufferSeconds(routeId);
   }
 
   private classifyRejectionReason(reason: string): keyof RouteRejectionSummary {
-    const normalized = String(reason || '').toLowerCase();
-    if (normalized.includes('php_gate_route_end') || normalized.includes('route end')) {
-      return 'routeEnd';
-    }
-    if (normalized.includes('operating hours') || normalized.includes('closed')) {
-      return 'operatingHours';
-    }
-    if (normalized.includes('duplicate')) {
-      return 'duplicate';
-    }
-    if (normalized.includes('no remaining day window')) {
-      return 'noRemainingWindow';
-    }
-    return 'other';
+    return this.rejectionPolicyService.classifyRejectionReason(reason);
   }
 
   private buildRejectionGateBreakdown(rejectedReasons: string[]): {
@@ -818,26 +491,7 @@ export class TimelineBuilder {
     noRemainingWindow: boolean;
     other: boolean;
   } {
-    const normalizedReasons = (Array.isArray(rejectedReasons) ? rejectedReasons : [])
-      .map((reason) => String(reason || '').toLowerCase());
-
-    const hasMatch = (...needles: string[]) =>
-      normalizedReasons.some((reason) => needles.some((needle) => reason.includes(needle)));
-
-    const alreadyUsedOnAnotherRoute = hasMatch('duplicate_plan_scope', 'already used on another route', 'already on another day');
-    const outsideOperatingHours = hasMatch('operating hours', 'outside operating hours', 'closed on this day');
-    const routeEndDeadline = hasMatch('php_gate_route_end', 'route end', 'exceeds route end');
-    const duplicateSuppression = hasMatch('duplicate', 'dedup', 'de-dup');
-    const noRemainingWindow = hasMatch('no remaining day window', 'no remaining window');
-
-    return {
-      alreadyUsedOnAnotherRoute,
-      outsideOperatingHours,
-      routeEndDeadline,
-      duplicateSuppression,
-      noRemainingWindow,
-      other: !alreadyUsedOnAnotherRoute && !outsideOperatingHours && !routeEndDeadline && !duplicateSuppression && !noRemainingWindow,
-    };
+    return this.rejectionPolicyService.buildRejectionGateBreakdown(rejectedReasons);
   }
 
   private recordHotspotCandidateEvaluation(payload: {
@@ -845,40 +499,7 @@ export class TimelineBuilder {
     selected: boolean;
     rejectedReasons: string[];
   }): void {
-    const routeId = Number(payload.routeId || 0);
-    if (!routeId) return;
-
-    const existing = this.routeRejectionSummaryByRoute.get(routeId) || {
-      totalRejectedCandidates: 0,
-      totalSelectedCandidates: 0,
-      routeEnd: 0,
-      operatingHours: 0,
-      duplicate: 0,
-      noRemainingWindow: 0,
-      other: 0,
-    };
-
-    if (payload.selected) {
-      existing.totalSelectedCandidates += 1;
-      this.routeRejectionSummaryByRoute.set(routeId, existing);
-      return;
-    }
-
-    if (!Array.isArray(payload.rejectedReasons) || payload.rejectedReasons.length === 0) {
-      this.routeRejectionSummaryByRoute.set(routeId, existing);
-      return;
-    }
-
-    existing.totalRejectedCandidates += 1;
-    const matchedCategories = new Set<keyof RouteRejectionSummary>();
-    for (const reason of payload.rejectedReasons) {
-      const category = this.classifyRejectionReason(reason);
-      if (matchedCategories.has(category)) continue;
-      matchedCategories.add(category);
-      existing[category] += 1;
-    }
-
-    this.routeRejectionSummaryByRoute.set(routeId, existing);
+    this.rejectionPolicyService.recordHotspotCandidateEvaluation(payload);
   }
 
   /**
@@ -886,7 +507,7 @@ export class TimelineBuilder {
    * Removes airport, railway, station, etc. and normalizes to lowercase
    */
   private normalizeCityName(name: string): string {
-    return normalizeCityNameShared(name);
+    return this.routePolicyService.normalizeCityName(name);
   }
 
   /**
@@ -897,29 +518,15 @@ export class TimelineBuilder {
    * - "Chennai International Airport" -> "chennai"
    */
   private canonicalCityKey(name: string): string {
-    const raw = String(name ?? '').split('|')[0]?.trim() ?? '';
-    if (!raw) return '';
-
-    const beforeComma = raw.split(',')[0]?.trim() ?? '';
-    const normalizedPrimary = this.normalizeCityName(beforeComma);
-    if (normalizedPrimary) return normalizedPrimary;
-
-    return this.normalizeCityName(raw);
+    return this.routePolicyService.canonicalCityKey(name);
   }
 
   private isSameCity(a: string, b: string): boolean {
-    const aa = this.canonicalCityKey(a);
-    const bb = this.canonicalCityKey(b);
-    return !!aa && !!bb && aa === bb;
+    return this.routePolicyService.isSameCity(a, b);
   }
 
   private getSameCityRouteKey(route: Partial<RouteRow> | null | undefined): string {
-    return this.canonicalCityKey(
-      normalizeRouteCityKey(
-        String((route as any)?.location_name || ''),
-        String((route as any)?.next_visiting_location || ''),
-      ),
-    );
+    return this.routePolicyService.getSameCityRouteKey(route);
   }
 
   private buildReservedSameCityHotspotIdsByRoute(
@@ -927,74 +534,7 @@ export class TimelineBuilder {
     existingHotspots: any[] | undefined,
     scopeToRouteId?: number,
   ): Map<number, Set<number>> {
-    const routeCityKeyById = new Map<number, string>();
-    for (const route of routes) {
-      const routeId = Number((route as any)?.itinerary_route_ID || 0);
-      if (!routeId) continue;
-
-      const cityKey = this.getSameCityRouteKey(route);
-      if (!cityKey) continue;
-
-      routeCityKeyById.set(routeId, cityKey);
-    }
-
-    if (routeCityKeyById.size === 0 || !Array.isArray(existingHotspots) || existingHotspots.length === 0) {
-      return new Map<number, Set<number>>();
-    }
-
-    const cityReservedIds = new Map<string, Set<number>>();
-    const routeReservedIds = new Map<number, Set<number>>();
-
-    for (const row of existingHotspots) {
-      if (Number((row as any)?.deleted || 0) !== 0) continue;
-
-      const routeId = Number((row as any)?.itinerary_route_ID || 0);
-      const hotspotId = Number((row as any)?.hotspot_ID || 0);
-      if (!routeId || !hotspotId) continue;
-      if (Number((row as any)?.item_type || 0) !== 4) continue;
-
-      const cityKey = routeCityKeyById.get(routeId);
-      if (!cityKey) continue;
-
-      // Full rebuilds should preserve active same-city route ownership so a later day
-      // keeps its already-selected hotspot set instead of an earlier sibling route
-      // re-pulling those visits during candidate selection.
-
-      if (!cityReservedIds.has(cityKey)) {
-        cityReservedIds.set(cityKey, new Set<number>());
-      }
-      cityReservedIds.get(cityKey)!.add(hotspotId);
-
-      if (!routeReservedIds.has(routeId)) {
-        routeReservedIds.set(routeId, new Set<number>());
-      }
-      routeReservedIds.get(routeId)!.add(hotspotId);
-    }
-
-    const reservedByRoute = new Map<number, Set<number>>();
-    for (const route of routes) {
-      const routeId = Number((route as any)?.itinerary_route_ID || 0);
-      if (!routeId) continue;
-
-      const cityKey = routeCityKeyById.get(routeId);
-      if (!cityKey) continue;
-
-      const cityIds = cityReservedIds.get(cityKey);
-      if (!cityIds || cityIds.size === 0) continue;
-
-      const ownIds = routeReservedIds.get(routeId) || new Set<number>();
-      const reservedIds = new Set<number>();
-      for (const hotspotId of cityIds) {
-        if (ownIds.has(hotspotId)) continue;
-        reservedIds.add(hotspotId);
-      }
-
-      if (reservedIds.size > 0) {
-        reservedByRoute.set(routeId, reservedIds);
-      }
-    }
-
-    return reservedByRoute;
+    return this.routePolicyService.buildReservedSameCityHotspotIdsByRoute(routes, existingHotspots);
   }
 
   // Match a hotspot location token to a route city using normalized city keys.
@@ -1004,25 +544,7 @@ export class TimelineBuilder {
     hotspotLocation: string | null | undefined,
     targetCity: string | null | undefined,
   ): boolean {
-    const targetKey = this.canonicalCityKey(String(targetCity || ''));
-    if (!targetKey) return false;
-
-    const parts = String(hotspotLocation || '')
-      .split('|')
-      .flatMap((part) => String(part || '').split(','))
-      .map((p) => this.canonicalCityKey(p))
-      .filter(Boolean);
-
-    if (!parts.length) return false;
-
-    for (const part of parts) {
-      if (part === targetKey) return true;
-      if (part.startsWith(`${targetKey} `)) return true;
-      if (part.includes(` ${targetKey} `)) return true;
-      if (part.endsWith(` ${targetKey}`)) return true;
-    }
-
-    return false;
+    return this.routePolicyService.hotspotLocationMatchesCity(hotspotLocation, targetCity);
   }
 
   private buildRouteLegs(
@@ -1030,26 +552,7 @@ export class TimelineBuilder {
     viaLocationNames: string[],
     destinationCity: string | null | undefined,
   ): string[] {
-    const rawLegs = [
-      String(sourceCity || '').trim(),
-      ...(Array.isArray(viaLocationNames) ? viaLocationNames : [])
-        .map((x) => String(x || '').trim())
-        .filter(Boolean),
-      String(destinationCity || '').trim(),
-    ].filter(Boolean);
-
-    const legs: string[] = [];
-
-    for (const leg of rawLegs) {
-      const prev = legs[legs.length - 1];
-      if (prev && this.canonicalCityKey(prev) === this.canonicalCityKey(leg)) {
-        continue;
-      }
-
-      legs.push(leg);
-    }
-
-    return legs;
+    return this.routePolicyService.buildRouteLegs(sourceCity, viaLocationNames, destinationCity);
   }
 
   private routeSpecificHotspotMatchesRouteChain(
@@ -1057,25 +560,7 @@ export class TimelineBuilder {
     hotspotToLocation: string | null | undefined,
     routeLegs: string[],
   ): { matches: boolean; fromIndex: number; toIndex: number } {
-    const legs = Array.isArray(routeLegs) ? routeLegs.filter(Boolean) : [];
-
-    if (legs.length < 2) {
-      return { matches: false, fromIndex: -1, toIndex: -1 };
-    }
-
-    for (let toIndex = 1; toIndex < legs.length; toIndex++) {
-      if (!this.hotspotLocationMatchesCity(hotspotToLocation, legs[toIndex])) {
-        continue;
-      }
-
-      for (let fromIndex = toIndex - 1; fromIndex >= 0; fromIndex--) {
-        if (this.hotspotLocationMatchesCity(hotspotLocation, legs[fromIndex])) {
-          return { matches: true, fromIndex, toIndex };
-        }
-      }
-    }
-
-    return { matches: false, fromIndex: -1, toIndex: -1 };
+    return this.routePolicyService.routeSpecificHotspotMatchesRouteChain(hotspotLocation, hotspotToLocation, routeLegs);
   }
 
   private routeMovementOrder(
@@ -1083,111 +568,27 @@ export class TimelineBuilder {
     toIndex: number,
     kind: 'en_route' | 'via_stop' | 'via_city' = 'en_route',
   ): number {
-    const safeFrom = Number.isFinite(fromIndex) && fromIndex >= 0 ? fromIndex : 999;
-    const safeTo = Number.isFinite(toIndex) && toIndex >= 0 ? toIndex : safeFrom + 1;
-
-    if (kind === 'en_route') return safeFrom * 100 + 20;
-    if (kind === 'via_stop') return Math.max(0, safeTo - 1) * 100 + 90;
-    return Math.max(0, safeTo - 1) * 100 + 95;
+    return this.routePolicyService.routeMovementOrder(fromIndex, toIndex, kind);
   }
 
   private hotspotNameMatchesLocation(
     hotspot: any,
     locationName: string | null | undefined,
   ): boolean {
-    const targetKey = this.canonicalCityKey(String(locationName || ''));
-    if (!targetKey) return false;
-
-    const candidates = [
-      hotspot?.hotspot_name,
-      hotspot?.hotspot_landmark,
-      hotspot?.hotspot_address,
-      hotspot?.address,
-    ]
-      .map((x) => this.canonicalCityKey(String(x || '')))
-      .filter(Boolean);
-
-    return candidates.some((candidateKey) => {
-      return (
-        candidateKey === targetKey ||
-        candidateKey.includes(targetKey) ||
-        targetKey.includes(candidateKey)
-      );
-    });
+    return this.routePolicyService.hotspotNameMatchesLocation(hotspot, locationName);
   }
 
   private isCarryForwardHotspotCompatibleWithRoute(
     hotspot: Partial<SelectedHotspot> & Record<string, any>,
     routeContext: CarryForwardRouteContext,
   ): { compatible: boolean; reason: string; hotspotLocation: string; hotspotToLocation: string } {
-    const hotspotLocation = String(
-      hotspot.hotspot_location ??
-        hotspot.hotspotLocation ??
-        hotspot.location_name ??
-        '',
-    );
-
-    const hotspotToLocation = String(
-      hotspot.hotspot_to_location ??
-        hotspot.hotspotToLocation ??
-        hotspotLocation ??
-        '',
-    );
-
-    const sourceKey = this.canonicalCityKey(routeContext.sourceCity);
-    const destinationKey = this.canonicalCityKey(routeContext.destinationCity);
-    const sameCityRoute = !!sourceKey && !!destinationKey && sourceKey === destinationKey;
-
-    const sourceMatch = this.hotspotLocationMatchesCity(hotspotLocation, routeContext.sourceCity);
-    const sourceToMatch = this.hotspotLocationMatchesCity(hotspotToLocation, routeContext.sourceCity);
-    const destinationMatch = this.hotspotLocationMatchesCity(hotspotLocation, routeContext.destinationCity);
-    const destinationToMatch = this.hotspotLocationMatchesCity(hotspotToLocation, routeContext.destinationCity);
-
-    if (sameCityRoute) {
-      const compatible = sourceMatch || sourceToMatch || destinationMatch || destinationToMatch;
-
-      return {
-        compatible,
-        reason: compatible ? 'same_city_compatible' : 'same_city_location_mismatch',
-        hotspotLocation,
-        hotspotToLocation,
-      };
-    }
-
-    const compatible = sourceMatch || sourceToMatch || destinationMatch || destinationToMatch;
-
-    return {
-      compatible,
-      reason: compatible ? 'intercity_endpoint_compatible' : 'intercity_location_mismatch',
-      hotspotLocation,
-      hotspotToLocation,
-    };
+    return this.routePolicyService.isCarryForwardHotspotCompatibleWithRoute(hotspot, routeContext);
   }
 
   // Estimate how many hotspots a route can realistically absorb based on the
   // available route window. Used for reservation feasibility checks.
   private estimateRouteHotspotCapacity(route: RouteRow | null | undefined): number {
-    if (!route) return 0;
-
-    const startRaw = typeof (route as any).route_start_time === 'string'
-      ? String((route as any).route_start_time)
-      : '09:00:00';
-    const endRaw = typeof (route as any).route_end_time === 'string'
-      ? String((route as any).route_end_time)
-      : '18:00:00';
-
-    let startSecs = timeToSeconds(startRaw);
-    let endSecs = timeToSeconds(endRaw);
-    if (endSecs < startSecs) endSecs += 86400;
-
-    const availableSecs = Math.max(0, endSecs - startSecs);
-    const routeBufferSecs = 60 * 60;
-    const effectiveSecs = Math.max(0, availableSecs - routeBufferSecs);
-
-    // Heuristic per hotspot block: travel + visit + transition.
-    const avgPerHotspotSecs = 100 * 60;
-    const estimated = Math.floor(effectiveSecs / avgPerHotspotSecs);
-    return Math.max(1, estimated);
+    return this.routePolicyService.estimateRouteHotspotCapacity(route);
   }
 
   /**
@@ -1218,59 +619,13 @@ export class TimelineBuilder {
     visitStartSeconds: number,
     visitEndSeconds: number,
   ): { canVisitNow: boolean; nextWindowStart: string | null; isClosedForDay: boolean } {
-    // Get timing records from pre-fetched map (NO DB QUERY)
-    const timingRecords = timingMap.get(hotspotId)?.get(dayOfWeek) || [];
-
-    if (!timingRecords || timingRecords.length === 0) {
-      // Hotspots with no timing configured should not be auto-scheduled.
-      return { canVisitNow: false, nextWindowStart: null, isClosedForDay: true };
-    }
-
-    let nextWindowStart: string | null = null;
-    let hasUsableOpenWindow = false;
-
-    // Check if any timing window allows the full visit (start AND end within same window)
-    for (const timing of timingRecords) {
-      // Skip if hotspot is closed
-      if (Number(timing?.hotspot_closed || 0) === 1) {
-        continue;
-      }
-
-      hasUsableOpenWindow = true;
-      
-      // Open all time = always available
-      if (Number(timing?.hotspot_open_all_time || 0) === 1) {
-        return { canVisitNow: true, nextWindowStart: null, isClosedForDay: false };
-      }
-      
-      // Get operating window times (in absolute seconds)
-      const operatingStart = this.formatTimingTime(timing?.hotspot_start_time) || '00:00:00';
-      const operatingEnd = this.formatTimingTime(timing?.hotspot_end_time) || '23:59:59';
-      
-      const opStartSeconds = timeToSeconds(operatingStart);
-      const opEndSeconds = timeToSeconds(operatingEnd);
-      
-      // ⚠️ CRITICAL: Handle overnight operating windows (e.g., 18:00-08:00)
-      const { isOvernight: opOvernight, absoluteEndSeconds: opAbsoluteEnd } = 
-        normalizeTimeRange(opStartSeconds, opEndSeconds);
-      
-      // ⚠️ CRITICAL: Compare ABSOLUTE visit times against ABSOLUTE operating window
-      // Do NOT wrap times before comparison
-      // PHP Logic: BOTH start and end must fall within the SAME operating window
-      if (visitStartSeconds >= opStartSeconds && visitEndSeconds <= opAbsoluteEnd) {
-        return { canVisitNow: true, nextWindowStart: null, isClosedForDay: false };
-      }
-      
-      // Track next available window that's after current start time
-      if (opStartSeconds > visitStartSeconds) {
-        if (nextWindowStart === null || opStartSeconds < timeToSeconds(nextWindowStart)) {
-          nextWindowStart = operatingStart;
-        }
-      }
-    }
-    
-    // No timing window accommodates the current visit, but return next window if available
-    return { canVisitNow: false, nextWindowStart, isClosedForDay: !hasUsableOpenWindow };
+    return this.operatingHoursService.checkHotspotOperatingHoursFromMap(
+      timingMap,
+      hotspotId,
+      dayOfWeek,
+      visitStartSeconds,
+      visitEndSeconds,
+    );
   }
 
   /**
@@ -1294,7 +649,7 @@ export class TimelineBuilder {
     parkingRows: ParkingChargeRow[];
     routeRejectionSummaryByRoute: Record<number, RouteRejectionSummary>;
   }> {
-    this.routeRejectionSummaryByRoute.clear();
+    this.rejectionPolicyService.clear();
 
     const buildStart = Date.now();
     this.logTimeline('[TIMELINE] buildTimelineForPlan started for planId:', planId, existingHotspots ? `with ${existingHotspots.length} pre-loaded hotspots` : '');
@@ -1743,8 +1098,8 @@ export class TimelineBuilder {
         this.canonicalCityKey(destinationCity) === normalizedArrivalCity;
 
       const routeDateForPolicy = route.itinerary_route_date
-        ? this.toDateOnly(new Date(route.itinerary_route_date))
-        : this.toDateOnly(new Date(plan.trip_start_date_and_time || plan.trip_start_date));
+        ? this.dataAccessService.toDateOnly(new Date(route.itinerary_route_date))
+        : this.dataAccessService.toDateOnly(new Date(plan.trip_start_date_and_time || plan.trip_start_date));
 
       const tripStartForPolicy =
         plan.trip_start_date_and_time instanceof Date
@@ -1756,12 +1111,12 @@ export class TimelineBuilder {
         : 0;
 
       const arrivalDayForPolicy = tripStartForPolicy
-        ? this.toDateOnly(tripStartForPolicy).getTime() === routeDateForPolicy.getTime()
+        ? this.dataAccessService.toDateOnly(tripStartForPolicy).getTime() === routeDateForPolicy.getTime()
         : false;
 
       const decisionState =
         isFirstRoute
-          ? await this.getArrivalPolicyDecisionStateForRoute(
+          ? await this.dataAccessService.getArrivalPolicyDecisionStateForRoute(
               tx,
               planId,
               route.itinerary_route_ID,
@@ -3308,7 +2663,7 @@ export class TimelineBuilder {
           }
 
           if (slotPairs.length > 0) {
-            const matrixMap = await this.getBetweenCandidatesForRouteSlots(tx, slotPairs);
+            const matrixMap = await this.dataAccessService.getBetweenCandidatesForRouteSlots(tx, slotPairs);
 
             for (const slot of slotPairs) {
               const key = `${slot.fromId}_${slot.toId}`;
@@ -3963,7 +3318,7 @@ export class TimelineBuilder {
           });
 
           hotspotRows.push(
-            this.normalizeTravelRowDistance(
+            this.dataAccessService.normalizeTravelRowDistance(
               travelRow,
               currentLocationName,
               hotspotLocationName,
@@ -4199,7 +3554,7 @@ export class TimelineBuilder {
                   });
                   
                   hotspotRows.push(
-                    this.normalizeTravelRowDistance(
+                    this.dataAccessService.normalizeTravelRowDistance(
                       travelRow,
                       currentLocationName,
                       hotspotLocationName,
@@ -6295,7 +5650,7 @@ export class TimelineBuilder {
           });
 
         hotspotRows.push(
-          this.normalizeTravelRowDistance(
+          this.dataAccessService.normalizeTravelRowDistance(
             travelRow,
             currentLocationName,
             hotspotLocationName,
@@ -6923,7 +6278,7 @@ export class TimelineBuilder {
             });
 
           hotspotRows.push(
-            this.normalizeTravelRowDistance(
+            this.dataAccessService.normalizeTravelRowDistance(
               travelRow,
               currentLocationName,
               hotspotLocationName,
@@ -7513,7 +6868,7 @@ export class TimelineBuilder {
               });
 
             hotspotRows.push(
-              this.normalizeTravelRowDistance(
+              this.dataAccessService.normalizeTravelRowDistance(
                 travelRow,
                 currentLocationName,
                 hotspotLocationName,
@@ -8191,7 +7546,7 @@ export class TimelineBuilder {
               });
 
             hotspotRows.push(
-              this.normalizeTravelRowDistance(
+              this.dataAccessService.normalizeTravelRowDistance(
                 travelRow,
                 currentLocationName,
                 hotspotLocationName,
@@ -8549,7 +7904,7 @@ export class TimelineBuilder {
       });
     }
 
-    const routeRejectionSummaryByRoute = Object.fromEntries(this.routeRejectionSummaryByRoute.entries());
+    const routeRejectionSummaryByRoute = this.rejectionPolicyService.getSummaryByRoute();
 
     return { hotspotRows, parkingRows, routeRejectionSummaryByRoute };
   }
@@ -9633,21 +8988,7 @@ export class TimelineBuilder {
     tx: Tx,
     hotspotId: number,
   ): Promise<string | null> {
-    if (!hotspotId) return null;
-
-    const hs = await (tx as any).dvi_hotspot_place?.findFirst({
-      where: { hotspot_ID: hotspotId, deleted: 0, status: 1 },
-    });
-
-    if (!hs) return null;
-
-    return (
-      hs.hotspot_location ??
-      hs.hotspot_city ??
-      hs.city ??
-      hs.location_name ??
-      null
-    );
+    return this.travelDataService.getHotspotLocationName(tx, hotspotId);
   }
 
   /**
@@ -9663,31 +9004,7 @@ export class TimelineBuilder {
     planId: number,
     routeId: number,
   ): Promise<string | null> {
-    // Example placeholder:
-    //  - It tries to find a hotel row for this plan/route/date and returns
-    //    hotel_city_name (adjust field names).
-    const hotel = await (tx as any).dvi_itinerary_plan_hotel_details?.findFirst(
-      {
-        where: {
-          itinerary_plan_id: planId,
-          itinerary_route_id: routeId,
-          deleted: 0,
-          status: 1,
-        },
-      },
-    );
-
-    if (!hotel) return null;
-
-    const h = hotel.hotel || hotel;
-
-    return (
-      h.hotel_city ??
-      h.city ??
-      h.hotel_location ??
-      h.hotel_name ??
-      null
-    );
+    return this.travelDataService.getHotelLocationNameForRoute(tx, planId, routeId);
   }
 
   private async getHotelDetailsForRoute(
@@ -9695,91 +9012,7 @@ export class TimelineBuilder {
     planId: number,
     routeId: number,
   ): Promise<{ hotelId: number; hotelName: string | null; hotelCity: string | null; isHouseboat?: boolean; coords?: { lat: number; lon: number } } | null> {
-    const details = await (tx as any).dvi_itinerary_plan_hotel_details?.findFirst({
-      where: {
-        itinerary_plan_id: planId,
-        itinerary_route_id: routeId,
-        group_type: 1,
-        deleted: 0,
-        status: 1,
-      },
-      select: {
-        hotel_id: true,
-      },
-    });
-
-    const hotelId = Number(details?.hotel_id ?? 0) || 0;
-    if (!hotelId) return null;
-
-    const hotel = await (tx as any).dvi_hotel?.findFirst({
-      where: {
-        hotel_id: hotelId,
-      },
-      select: {
-        hotel_name: true,
-        hotel_city: true,
-        hotel_category: true,
-        hotel_latitude: true,
-        hotel_longitude: true,
-      },
-    });
-
-    if (!hotel) {
-      return { hotelId, hotelName: null, hotelCity: null };
-    }
-
-    // Try to get the location name if hotel_city is a location_id
-    let hotelCity: string | null = null;
-    const citySafe = Number(hotel.hotel_city) || 0;
-    if (citySafe > 0) {
-      // hotel_city is a location_id reference, look it up
-      try {
-        const location = await (tx as any).dvi_stored_locations?.findFirst({
-          where: { location_id: citySafe },
-          select: { location_name: true },
-        });
-        hotelCity = (location?.location_name as string) ?? null;
-      } catch {
-        hotelCity = null;
-      }
-    } else {
-      // hotel_city is a direct string
-      hotelCity = (hotel.hotel_city as string) ?? null;
-    }
-
-    const lat = Number(hotel.hotel_latitude);
-    const lon = Number(hotel.hotel_longitude);
-    const hasCoords = Number.isFinite(lat) && Number.isFinite(lon);
-
-    let categoryTitle: string | null = null;
-    const categoryId = Number((hotel as any).hotel_category ?? 0);
-    if (categoryId > 0) {
-      const category = await (tx as any).dvi_hotel_category?.findFirst({
-        where: {
-          hotel_category_id: categoryId,
-          deleted: 0,
-          status: 1,
-        },
-        select: {
-          hotel_category_title: true,
-          hotel_category_code: true,
-        },
-      });
-
-      categoryTitle =
-        String(category?.hotel_category_title || category?.hotel_category_code || "").trim() || null;
-    }
-
-    const houseboatTag = `${String(hotel.hotel_name || "")} ${String(categoryTitle || "")}`;
-    const isHouseboat = /house\s*boat/i.test(houseboatTag);
-
-    return {
-      hotelId,
-      hotelName: (hotel.hotel_name as string) ?? null,
-      hotelCity,
-      isHouseboat,
-      coords: hasCoords ? { lat, lon } : undefined,
-    };
+    return this.travelDataService.getHotelDetailsForRoute(tx, planId, routeId);
   }
 
   /**
@@ -9791,47 +9024,17 @@ export class TimelineBuilder {
     sourceLocationName: string,
     destinationLocationName: string,
   ): Promise<string> {
-    const distanceResult = await this.distanceHelper.fromSourceAndDestination(
-      tx,
-      sourceLocationName,
-      destinationLocationName,
-      1, // travelLocationType: 1 = local
-    );
-    
-    // PHP parity for hotspot timeline checks: use pure travel time (no buffer).
-    const totalSeconds = timeToSeconds(distanceResult.travelTime);
-    return addSeconds('00:00:00', totalSeconds);
+    return this.travelDataService.calculateTravelTime(tx, sourceLocationName, destinationLocationName);
   }
 
   private hasUsableCoords(
     coords?: { lat: number; lon: number } | null,
   ): coords is { lat: number; lon: number } {
-    if (!coords) return false;
-
-    const lat = Number(coords.lat);
-    const lon = Number(coords.lon);
-
-    return (
-      Number.isFinite(lat) &&
-      Number.isFinite(lon) &&
-      (lat !== 0 || lon !== 0)
-    );
+    return this.travelDataService.hasUsableCoords(coords);
   }
 
   private normalizePlaceLookupKey(value: string | null | undefined): string {
-    return String(value || '')
-      .split('|')[0]
-      .split(',')[0]
-      .replace(/\binternational\b/gi, ' ')
-      .replace(/\bdomestic\b/gi, ' ')
-      .replace(/\bair\s*port\b/gi, ' ')
-      .replace(/\bairport\b/gi, ' ')
-      .replace(/\brailway\b/gi, ' ')
-      .replace(/\bstation\b/gi, ' ')
-      .replace(/\bterminal\b/gi, ' ')
-      .replace(/\s+/g, ' ')
-      .trim()
-      .toLowerCase();
+    return this.travelDataService.normalizePlaceLookupKey(value);
   }
 
   private async resolvePlaceCoords(
@@ -9839,86 +9042,7 @@ export class TimelineBuilder {
     cityName: string | null | undefined,
     preferredSide: 'source' | 'destination' = 'source',
   ): Promise<{ lat: number; lon: number } | undefined> {
-    const city = String(cityName || '')
-      .split('|')[0]
-      .replace(/\s+/g, ' ')
-      .trim();
-
-    if (!city || city.toLowerCase() === 'hotel') {
-      return undefined;
-    }
-
-    const normalizedCity = city.toLowerCase();
-    const normalizedKey = this.normalizePlaceLookupKey(city);
-    const cityLike = `%${normalizedCity}%`;
-    const keyLike = `%${normalizedKey}%`;
-
-    const rows = (await (tx as any).$queryRaw(Prisma.sql`
-      SELECT
-        location_ID,
-        source_location,
-        source_location_city,
-        source_location_lattitude,
-        source_location_longitude,
-        destination_location,
-        destination_location_city,
-        destination_location_lattitude,
-        destination_location_longitude
-      FROM dvi_stored_locations
-      WHERE deleted = 0
-        AND status = 1
-        AND (
-          LOWER(TRIM(source_location)) = ${normalizedCity}
-          OR LOWER(TRIM(source_location_city)) = ${normalizedCity}
-          OR LOWER(TRIM(destination_location)) = ${normalizedCity}
-          OR LOWER(TRIM(destination_location_city)) = ${normalizedCity}
-          OR LOWER(source_location) LIKE ${cityLike}
-          OR LOWER(source_location_city) LIKE ${cityLike}
-          OR LOWER(destination_location) LIKE ${cityLike}
-          OR LOWER(destination_location_city) LIKE ${cityLike}
-          OR LOWER(source_location) LIKE ${keyLike}
-          OR LOWER(source_location_city) LIKE ${keyLike}
-          OR LOWER(destination_location) LIKE ${keyLike}
-          OR LOWER(destination_location_city) LIKE ${keyLike}
-        )
-      ORDER BY
-        CASE
-          WHEN LOWER(TRIM(source_location)) = ${normalizedCity} THEN 0
-          WHEN LOWER(TRIM(source_location_city)) = ${normalizedCity} THEN 1
-          WHEN LOWER(TRIM(destination_location)) = ${normalizedCity} THEN 2
-          WHEN LOWER(TRIM(destination_location_city)) = ${normalizedCity} THEN 3
-          WHEN LOWER(TRIM(source_location)) = ${normalizedKey} THEN 4
-          WHEN LOWER(TRIM(source_location_city)) = ${normalizedKey} THEN 5
-          WHEN LOWER(TRIM(destination_location)) = ${normalizedKey} THEN 6
-          WHEN LOWER(TRIM(destination_location_city)) = ${normalizedKey} THEN 7
-          ELSE 8
-        END,
-        location_ID DESC
-      LIMIT 1
-    `)) as any[];
-
-    const row = rows?.[0];
-    if (!row) return undefined;
-
-    const sourceCoords = {
-      lat: Number(row.source_location_lattitude ?? 0),
-      lon: Number(row.source_location_longitude ?? 0),
-    };
-
-    const destinationCoords = {
-      lat: Number(row.destination_location_lattitude ?? 0),
-      lon: Number(row.destination_location_longitude ?? 0),
-    };
-
-    if (preferredSide === 'destination') {
-      if (this.hasUsableCoords(destinationCoords)) return destinationCoords;
-      if (this.hasUsableCoords(sourceCoords)) return sourceCoords;
-    }
-
-    if (this.hasUsableCoords(sourceCoords)) return sourceCoords;
-    if (this.hasUsableCoords(destinationCoords)) return destinationCoords;
-
-    return undefined;
+    return this.travelDataService.resolvePlaceCoords(tx, cityName, preferredSide);
   }
 
   private async resolveCityCoords(
@@ -9926,7 +9050,7 @@ export class TimelineBuilder {
     cityName: string | null | undefined,
     preferredSide: 'source' | 'destination' = 'source',
   ): Promise<{ lat: number; lon: number } | undefined> {
-    return this.resolvePlaceCoords(tx, cityName, preferredSide);
+    return this.travelDataService.resolveCityCoords(tx, cityName, preferredSide);
   }
 
   private async calculateTravelTimeWithCoords(
@@ -9936,22 +9060,13 @@ export class TimelineBuilder {
     sourceCoords?: { lat: number; lon: number },
     destCoords?: { lat: number; lon: number },
   ): Promise<string> {
-    const travelLocationType = this.getTravelLocationType(
-      sourceLocationName,
-      destinationLocationName,
-    );
-    const distanceResult = await this.distanceHelper.fromSourceAndDestination(
+    return this.travelDataService.calculateTravelTimeWithCoords(
       tx,
       sourceLocationName,
       destinationLocationName,
-      travelLocationType,
       sourceCoords,
       destCoords,
     );
-    
-    // PHP parity for hotspot timeline checks: use pure travel time (no buffer).
-    const totalSeconds = timeToSeconds(distanceResult.travelTime);
-    return addSeconds('00:00:00', totalSeconds);
   }
 
   private async calculateProjectedArrivalToRouteDestination(
@@ -9962,43 +9077,18 @@ export class TimelineBuilder {
     hotspotCoords?: { lat: number; lon: number },
     destCityCoords?: { lat: number; lon: number },
   ): Promise<{ projectedArrivalSeconds: number; travelToDestSeconds: number }> {
-    const parsedHotspotLocation = hotspotLocationName.split('|')[0].trim();
-    const rawDestination = (route.next_visiting_location as string) || parsedHotspotLocation;
-    const destinationCity = rawDestination.split('|')[0].trim();
-    const travelLocationType = this.getTravelLocationType(parsedHotspotLocation, destinationCity);
-
-    const usableHotspotCoords = hotspotCoords && hotspotCoords.lat !== 0 && hotspotCoords.lon !== 0
-      ? hotspotCoords
-      : undefined;
-    const usableDestCoords = destCityCoords && destCityCoords.lat !== 0 && destCityCoords.lon !== 0
-      ? destCityCoords
-      : undefined;
-
-    const travelToDestResult = await this.distanceHelper.fromSourceAndDestination(
+    return this.travelDataService.calculateProjectedArrivalToRouteDestination(
       tx,
-      parsedHotspotLocation,
-      destinationCity,
-      travelLocationType,
-      usableHotspotCoords,
-      usableDestCoords,
+      route,
+      hotspotLocationName,
+      visitEndSeconds,
+      hotspotCoords,
+      destCityCoords,
     );
-
-    const travelToDestSeconds =
-      timeToSeconds(travelToDestResult.travelTime) +
-      timeToSeconds(travelToDestResult.bufferTime);
-
-    return {
-      projectedArrivalSeconds: visitEndSeconds + travelToDestSeconds,
-      travelToDestSeconds,
-    };
   }
 
   private toAbsoluteSecondsForRoute(timeValue: string, routeStartSeconds: number): number {
-    let seconds = timeToSeconds(timeValue);
-    if (seconds < routeStartSeconds) {
-      seconds += 86400;
-    }
-    return seconds;
+    return this.anchorPolicyService.toAbsoluteSecondsForRoute(timeValue, routeStartSeconds);
   }
 
   private buildFixedTimelineAnchors(
@@ -10008,62 +9098,17 @@ export class TimelineBuilder {
     routeEndSeconds: number,
     currentTime: string,
   ): FixedTimelineAnchor[] {
-    const currentAbs = this.toAbsoluteSecondsForRoute(currentTime, routeStartSeconds);
-    const anchors: FixedTimelineAnchor[] = [
-      {
-        kind: 'route_start',
-        startSeconds: Math.max(routeStartSeconds, currentAbs),
-        endSeconds: Math.max(routeStartSeconds, currentAbs),
-      },
-    ];
-
-    const routeVisits = hotspotRows
-      .filter((row) => Number((row as any).itinerary_route_ID || 0) === routeId && Number((row as any).item_type || 0) === 4)
-      .map((row) => {
-        const start = this.toStoredTimeString((row as any).hotspot_start_time) || '00:00:00';
-        const end = this.toStoredTimeString((row as any).hotspot_end_time) || start;
-        const absStart = this.toAbsoluteSecondsForRoute(start, routeStartSeconds);
-        const absEndRaw = this.toAbsoluteSecondsForRoute(end, routeStartSeconds);
-        const absEnd = absEndRaw < absStart ? absEndRaw + 86400 : absEndRaw;
-
-        return {
-          kind: 'hotspot' as const,
-          startSeconds: absStart,
-          endSeconds: absEnd,
-          hotspotId: Number((row as any).hotspot_ID || 0),
-        };
-      })
-      .sort((a, b) => a.startSeconds - b.startSeconds);
-
-    anchors.push(...routeVisits);
-    anchors.push({
-      kind: 'route_end',
-      startSeconds: routeEndSeconds,
-      endSeconds: routeEndSeconds,
-    });
-
-    return anchors;
+    return this.anchorPolicyService.buildFixedTimelineAnchors(
+      hotspotRows,
+      routeId,
+      routeStartSeconds,
+      routeEndSeconds,
+      currentTime,
+    );
   }
 
   private buildRealGapIntervals(anchors: FixedTimelineAnchor[]): RealGapInterval[] {
-    if (!anchors.length) return [];
-
-    const sorted = [...anchors].sort((a, b) => a.startSeconds - b.startSeconds);
-    const gaps: RealGapInterval[] = [];
-
-    for (let i = 0; i < sorted.length - 1; i++) {
-      const current = sorted[i];
-      const next = sorted[i + 1];
-      const gapStart = Math.max(current.endSeconds, current.startSeconds);
-      const gapEnd = Math.max(next.startSeconds, gapStart);
-      const durationSeconds = Math.max(0, gapEnd - gapStart);
-
-      if (durationSeconds > 0) {
-        gaps.push({ start: gapStart, end: gapEnd, durationSeconds });
-      }
-    }
-
-    return gaps;
+    return this.anchorPolicyService.buildRealGapIntervals(anchors);
   }
 
   private buildSameCityContinuationContext(
@@ -10071,166 +9116,13 @@ export class TimelineBuilder {
     previousRoute: RouteRow | undefined,
     hotspotRows: HotspotDetailRow[],
   ): SameCityContinuationContext {
-    const previousDayHotspotIds = new Set<number>();
-    if (!previousRoute) {
-      return { isSameCityChainContinuation: false, previousDayHotspotIds };
-    }
-
-    const currentCityKey = this.canonicalCityKey(String((route as any).location_name || (route as any).next_visiting_location || ''));
-    const prevDestKey = this.canonicalCityKey(String((previousRoute as any).next_visiting_location || ''));
-    const prevSourceKey = this.canonicalCityKey(String((previousRoute as any).location_name || ''));
-    const isSameCityChainContinuation = !!currentCityKey && (currentCityKey === prevDestKey || currentCityKey === prevSourceKey);
-
-    if (isSameCityChainContinuation) {
-      const prevRouteId = Number((previousRoute as any).itinerary_route_ID || 0);
-      for (const row of hotspotRows) {
-        if (Number((row as any).itinerary_route_ID || 0) !== prevRouteId) continue;
-        if (Number((row as any).item_type || 0) !== 4) continue;
-        const hotspotId = Number((row as any).hotspot_ID || 0);
-        if (hotspotId > 0) {
-          previousDayHotspotIds.add(hotspotId);
-        }
-      }
-    }
-
-    return {
-      isSameCityChainContinuation,
-      previousDayHotspotIds,
-    };
+    return this.anchorPolicyService.buildSameCityContinuationContext(route, previousRoute, hotspotRows);
   }
 
   private async evaluateCandidateInsertion(
     input: CandidateFeasibilityInput,
   ): Promise<CandidateFeasibilityResult> {
-    const travelTimeToHotspot = await this.calculateTravelTimeWithCoords(
-      input.tx,
-      input.currentLocationName,
-      input.hotspotLocationName,
-      input.currentCoords,
-      input.hotspotCoords,
-    );
-
-    const travelDurationSeconds = timeToSeconds(travelTimeToHotspot);
-    const currentTimeSeconds = this.toAbsoluteSecondsForRoute(input.currentTime, input.routeStartSeconds);
-    const hotspotDurationSeconds = timeToSeconds(input.hotspotDuration || '01:00:00');
-    const hotspotType = String(input.hotspotType || '').trim().toLowerCase();
-
-    let startSeconds = currentTimeSeconds + travelDurationSeconds;
-    let endSeconds = startSeconds + hotspotDurationSeconds;
-    let usedWaitUntilOpen = false;
-    let waitGapSeconds = 0;
-
-    let operatingHoursCheck = this.checkHotspotOperatingHoursFromMap(
-      input.timingMap,
-      input.hotspotId,
-      input.dayOfWeek,
-      startSeconds,
-      endSeconds,
-    );
-
-    if (
-      !operatingHoursCheck.canVisitNow &&
-      input.allowWaitUntilOpen &&
-      operatingHoursCheck.nextWindowStart &&
-      this.shouldAllowWaitUntilOpenForCandidate(input.hotspotPriority, hotspotType)
-    ) {
-      let nextWindowStartSeconds = timeToSeconds(operatingHoursCheck.nextWindowStart);
-      while (nextWindowStartSeconds < startSeconds) {
-        nextWindowStartSeconds += 86400;
-      }
-
-      const waitedEndSeconds = nextWindowStartSeconds + hotspotDurationSeconds;
-      if (waitedEndSeconds <= input.routeEndSeconds) {
-        const waitedCheck = this.checkHotspotOperatingHoursFromMap(
-          input.timingMap,
-          input.hotspotId,
-          input.dayOfWeek,
-          nextWindowStartSeconds,
-          waitedEndSeconds,
-        );
-        if (waitedCheck.canVisitNow) {
-          waitGapSeconds = Math.max(0, nextWindowStartSeconds - startSeconds);
-          startSeconds = nextWindowStartSeconds;
-          endSeconds = waitedEndSeconds;
-          operatingHoursCheck = { canVisitNow: true, nextWindowStart: null, isClosedForDay: false };
-          usedWaitUntilOpen = true;
-        }
-      }
-    }
-
-    if (input.rejectIfOutsideOperatingWindow && (operatingHoursCheck.isClosedForDay || !operatingHoursCheck.canVisitNow)) {
-      return {
-        feasible: false,
-        reason: operatingHoursCheck.isClosedForDay
-          ? 'closed_for_day_at_visit_time'
-          : 'outside_operating_hours_for_visit_window',
-      };
-    }
-
-    if (endSeconds > input.routeEndSeconds) {
-      return {
-        feasible: false,
-        reason: 'visit_overflows_route_end_after_travel_and_duration',
-      };
-    }
-
-    if (!input.isLastRoute) {
-      const projectedArrival = await this.calculateProjectedArrivalToRouteDestination(
-        input.tx,
-        input.route,
-        input.hotspotLocationName,
-        endSeconds,
-        input.hotspotCoords,
-        input.destinationCoords,
-      );
-
-      if (projectedArrival.projectedArrivalSeconds > input.routeEndSeconds) {
-        return {
-          feasible: false,
-          reason: 'route_end_return_check_failed',
-          rejectedByDayEndReturnCheck: true,
-        };
-      }
-    }
-
-    if (input.isLastRoute) {
-      const departureTargetName = String((input.plan.departure_location as string) || input.destinationCity || input.currentLocationName)
-        .split('|')[0]
-        .trim();
-      const candidateCity = input.hotspotLocationName.split('|')[0].trim();
-      const travelToDepartureType = this.getTravelLocationType(candidateCity, departureTargetName);
-      const travelToDeparture = await this.distanceHelper.fromSourceAndDestination(
-        input.tx,
-        candidateCity,
-        departureTargetName,
-        travelToDepartureType,
-        input.hotspotCoords,
-        input.destinationCoords,
-      );
-      const toDepartureSeconds =
-        timeToSeconds(travelToDeparture.travelTime) +
-        timeToSeconds(travelToDeparture.bufferTime);
-
-      const projectedArrivalAtDeparture = endSeconds + toDepartureSeconds;
-      if (projectedArrivalAtDeparture > input.lastRouteArrivalDeadlineSeconds) {
-        return {
-          feasible: false,
-          reason: 'last_route_departure_deadline_failed',
-          rejectedByDayEndReturnCheck: true,
-        };
-      }
-    }
-
-    return {
-      feasible: true,
-      startSeconds,
-      endSeconds,
-      timeAfterTravel: secondsToTime(startSeconds),
-      timeAfterSightseeing: secondsToTime(endSeconds),
-      travelTimeToHotspot,
-      usedWaitUntilOpen,
-      waitGapSeconds,
-    };
+    return this.candidateFeasibilityService.evaluateCandidateInsertion(input);
   }
 
   private async evaluateAnchorGapInsertion(
@@ -10246,128 +9138,31 @@ export class TimelineBuilder {
     candidateEndSeconds: number,
     protectedStrictSlots?: ProtectedStrictSlot[],
   ): Promise<AnchorGapFeasibilityResult> {
-    const anchors = this.buildFixedTimelineAnchors(
+    return this.candidateFeasibilityService.evaluateAnchorGapInsertion(
+      tx,
       hotspotRows,
+      hotspotMap,
       routeId,
       routeStartSeconds,
       routeEndSeconds,
       currentTime,
-    );
-
-    const currentAbsSeconds = this.toAbsoluteSecondsForRoute(currentTime, routeStartSeconds);
-    const nextHotspotAnchor = anchors
-      .filter((a) => a.kind === 'hotspot' && a.startSeconds >= currentAbsSeconds)
-      .sort((a, b) => a.startSeconds - b.startSeconds)[0];
-
-    const nextProtectedSlot = (protectedStrictSlots || [])
-      .filter((slot) => slot.routeId === routeId && slot.startSeconds >= currentAbsSeconds)
-      .sort((a, b) => a.startSeconds - b.startSeconds)[0];
-
-    let nextAnchorHotspotId: number | null = null;
-    let nextAnchorStartSeconds: number | null = null;
-    if (nextHotspotAnchor && nextHotspotAnchor.hotspotId) {
-      nextAnchorHotspotId = nextHotspotAnchor.hotspotId;
-      nextAnchorStartSeconds = nextHotspotAnchor.startSeconds;
-    }
-    if (
-      nextProtectedSlot &&
-      (nextAnchorStartSeconds === null || nextProtectedSlot.startSeconds < nextAnchorStartSeconds)
-    ) {
-      nextAnchorHotspotId = nextProtectedSlot.hotspotId;
-      nextAnchorStartSeconds = nextProtectedSlot.startSeconds;
-    }
-
-    if (!nextAnchorHotspotId || nextAnchorStartSeconds === null) {
-      return { feasible: true };
-    }
-
-    const nextHotspotData = hotspotMap.get(nextAnchorHotspotId);
-    if (!nextHotspotData) {
-      return {
-        feasible: false,
-        reason: 'next_anchor_hotspot_metadata_missing',
-        nextAnchorHotspotId,
-        nextAnchorStartSeconds,
-      };
-    }
-
-    const nextAnchorLocationName = String(nextHotspotData.hotspot_location || '').trim();
-    const nextAnchorCoords = {
-      lat: Number(nextHotspotData.hotspot_latitude ?? 0),
-      lon: Number(nextHotspotData.hotspot_longitude ?? 0),
-    };
-
-    const travelToNextAnchor = await this.calculateTravelTimeWithCoords(
-      tx,
       candidateLocationName,
-      nextAnchorLocationName,
       candidateCoords,
-      nextAnchorCoords,
+      candidateEndSeconds,
+      protectedStrictSlots,
     );
-    const travelToNextAnchorSeconds = timeToSeconds(travelToNextAnchor);
-    const arrivalAtNextAnchorSeconds = candidateEndSeconds + travelToNextAnchorSeconds;
-
-    if (arrivalAtNextAnchorSeconds > nextAnchorStartSeconds) {
-      return {
-        feasible: false,
-        reason: 'next_anchor_timing_broken',
-        nextAnchorHotspotId,
-        nextAnchorStartSeconds,
-        arrivalAtNextAnchorSeconds,
-        travelToNextAnchorSeconds,
-      };
-    }
-
-    return {
-      feasible: true,
-      nextAnchorHotspotId,
-      nextAnchorStartSeconds,
-      arrivalAtNextAnchorSeconds,
-      travelToNextAnchorSeconds,
-    };
   }
 
   private parsePlanDateTime(value: unknown): Date | null {
-    if (value instanceof Date) {
-      return Number.isNaN(value.getTime()) ? null : value;
-    }
-    if (typeof value === 'string' && value.trim()) {
-      const parsed = new Date(value);
-      return Number.isNaN(parsed.getTime()) ? null : parsed;
-    }
-    return null;
+    return this.anchorPolicyService.parsePlanDateTime(value);
   }
 
   private extractPlanTimeOfDaySeconds(value: unknown): number | null {
-    if (typeof value === 'string' && value.trim()) {
-      const isoTimeMatch = value.match(/T(\d{2}):(\d{2})(?::(\d{2}))?/);
-      if (isoTimeMatch) {
-        return (
-          Number(isoTimeMatch[1]) * 3600 +
-          Number(isoTimeMatch[2]) * 60 +
-          Number(isoTimeMatch[3] ?? 0)
-        );
-      }
-    }
-
-    const parsed = this.parsePlanDateTime(value);
-    if (!parsed) return null;
-
-    return (
-      parsed.getUTCHours() * 3600 +
-      parsed.getUTCMinutes() * 60 +
-      parsed.getUTCSeconds()
-    );
+    return this.anchorPolicyService.extractPlanTimeOfDaySeconds(value);
   }
 
   private toStoredTimeString(value: unknown): string | null {
-    if (typeof value === 'string' && value.trim()) {
-      return value.trim();
-    }
-    if (value instanceof Date && !Number.isNaN(value.getTime())) {
-      return `${String(value.getUTCHours()).padStart(2, '0')}:${String(value.getUTCMinutes()).padStart(2, '0')}:${String(value.getUTCSeconds()).padStart(2, '0')}`;
-    }
-    return null;
+    return this.anchorPolicyService.toStoredTimeString(value);
   }
 
   /**
@@ -10380,18 +9175,7 @@ export class TimelineBuilder {
     startLocation: string,
     endLocation: string,
   ): 1 | 2 {
-    const startLocations = startLocation.split('|').map((s) => s.trim());
-    const endLocations = endLocation.split('|').map((e) => e.trim());
-
-    // Check if any start location matches any end location
-    for (const start of startLocations) {
-      for (const end of endLocations) {
-        if (start === end) {
-          return 1; // Same location (local)
-        }
-      }
-    }
-    return 2; // Different location (outstation)
+    return this.anchorPolicyService.getTravelLocationType(startLocation, endLocation);
   }
 }
 

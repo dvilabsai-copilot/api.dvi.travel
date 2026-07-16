@@ -92,19 +92,19 @@ export class DashboardHotelsV2Type {
 
 @ObjectType()
 export class DashboardDailyMomentV2Type {
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   quoteId?: string;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   location?: string;
 }
 
 @ObjectType()
 export class DashboardStarPerformerV2Type {
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   name?: string;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   phone?: string;
 
   @Field(() => Float, { nullable: true })

@@ -4,6 +4,12 @@ import { PrismaService } from '../../prisma.service';
 import * as bcrypt from 'bcrypt';
 import { JwtService } from '@nestjs/jwt';
 import { EmailLoginOtpService } from './email-login-otp.service';
+import {
+  isBcryptPasswordHash,
+  verifyLegacyPhpPassword,
+} from '../../common/utils/password-migration.util';
+
+const BCRYPT_ROUNDS = 10;
 
 @Injectable()
 export class AuthService {
@@ -16,7 +22,7 @@ export class AuthService {
   /**
    * Validate user against dvi_users table
    * - email param maps to dvi_users.useremail
-   * - password in DB is a bcrypt hash
+   * - supports bcrypt and the legacy PHP PwdHash format during migration
    */
   async validateUser(email: string, password: string) {
     // Map email → useremail (Prisma model: dvi_users)
@@ -28,14 +34,40 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    // bcrypt-compare plain password vs stored hash
-    const ok =
-      user.password != null && user.password !== ''
-        ? await bcrypt.compare(password, user.password)
-        : false;
+    const storedHash = user.password ?? '';
+    let ok = false;
+    let shouldUpgradeLegacyHash = false;
+
+    if (isBcryptPasswordHash(storedHash)) {
+      // Compare the submitted password with the current bcrypt hash.
+      try {
+        ok = await bcrypt.compare(password, storedHash);
+      } catch {
+        ok = false;
+      }
+    } else if (verifyLegacyPhpPassword(password, storedHash)) {
+      // PHP hashes cannot be decrypted. A successful legacy verification is
+      // immediately upgraded using the submitted password.
+      ok = true;
+      shouldUpgradeLegacyHash = true;
+    }
 
     if (!ok) {
       throw new UnauthorizedException('Invalid credentials');
+    }
+
+    if (shouldUpgradeLegacyHash) {
+      const upgradedHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+
+      // Only replace the hash if it is still the legacy value. This avoids
+      // overwriting a password reset that happened concurrently.
+      await this.prisma.dvi_users.updateMany({
+        where: {
+          userID: user.userID,
+          password: storedHash,
+        },
+        data: { password: upgradedHash },
+      });
     }
 
     return user;

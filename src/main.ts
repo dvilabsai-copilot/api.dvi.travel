@@ -9,6 +9,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { PrismaService } from './prisma.service';
 import { BigIntSerializerInterceptor } from './common/interceptors/bigint-serializer.interceptor';
 import { RequestMethod, ValidationPipe } from '@nestjs/common';
+import { ensureUniqueOpenApiOperationIds } from './common/swagger/normalize-openapi';
 import * as express from 'express';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -102,7 +103,7 @@ async function bootstrap() {
     }) // <-- default name = 'bearer'
     .build();
 
-  const doc = SwaggerModule.createDocument(app, config);
+  const doc = ensureUniqueOpenApiOperationIds(SwaggerModule.createDocument(app, config));
 
   SwaggerModule.setup('api/v1/docs', app, doc, {
     swaggerOptions: {
