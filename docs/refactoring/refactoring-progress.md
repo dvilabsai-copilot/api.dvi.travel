@@ -1507,3 +1507,32 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Merge CPU, row churn, duration-policy callback volume, response size and latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `b4cab2a`.
+
+### Cycle 44 - Extract route timing and rebuild workflow
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: route-time validation, itinerary-boundary recalculation, previous-day billing markers, timeline rebuild and post-rebuild pricing refresh
+- New files: `src/modules/itineraries/services/itinerary-route-timing.service.ts`, `test/itinerary-route-timing.test.ts`
+- Workflow: route start/end update and plan-wide hotspot rebuild
+
+#### Change
+
+- Moved the contiguous route-timing transaction behind `ItineraryRouteTimingService`.
+- Preserved route ownership validation, date-boundary calculations, early-arrival billing decisions, marker writes, hotspot rebuild ordering and post-transaction pricing refresh.
+- Registered the Prisma/hotspot-backed provider and routed the controller-facing facade method through it.
+
+#### Verification
+
+- Route timing characterization test: PASS, 1/1
+- Combined focused backend suite: PASS, 68/68
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 12,931 lines after the tier; `ItineraryRouteTimingService` is 367 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Transaction duration, lock wait, rebuild rows, marker-row churn, pricing callback CPU and latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `2ed84cb`.
