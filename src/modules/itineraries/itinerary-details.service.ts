@@ -21,6 +21,7 @@ import {
   buildEntryTicketBreakdown,
   type EntryTicketBreakdownDto,
 } from './utils/entry-ticket-breakdown.util';
+import { ItineraryDetailsTimelinePresentationService } from './services/itinerary-details-timeline-presentation.service';
 
 // ---------------------------------------------------------------------------
 // DTOs for Itinerary Details response (shared shape with frontend)
@@ -406,6 +407,8 @@ days: {
 
 @Injectable()
 export class ItineraryDetailsService {
+  private readonly timelinePresentationService = new ItineraryDetailsTimelinePresentationService();
+
   constructor(
     private readonly prisma: PrismaService,
   ) {}
@@ -1054,287 +1057,15 @@ const foodTypeMap: Record<string, string> = {
     return `${m} Min`;
   }
 
-  private extractRangeFromSegment(seg: any): {
-    field: 'timeRange' | 'visitTime';
-    suffix: string;
-    start: number;
-    end: number;
-  } | null {
-    if (!seg) return null;
-
-    const field: 'timeRange' | 'visitTime' | null =
-      seg.type === 'attraction' ? 'visitTime' :
-      (seg.type === 'start' || seg.type === 'travel' || seg.type === 'return' || seg.type === 'break') ? 'timeRange' :
-      null;
-
-    if (!field || typeof seg[field] !== 'string') return null;
-
-    const raw = String(seg[field]);
-    const suffixStart = raw.indexOf(' (');
-    const core = (suffixStart >= 0 ? raw.slice(0, suffixStart) : raw).trim();
-    const suffix = suffixStart >= 0 ? raw.slice(suffixStart) : '';
-    const parts = core.split(' - ').map((p) => p.trim());
-    if (parts.length !== 2) return null;
-
-    const start = this.parseDisplayTimeMinutesStrict(parts[0]);
-    const end = this.parseDisplayTimeMinutesStrict(parts[1]);
-    if (start === null || end === null) return null;
-
-    return { field, suffix, start, end };
+  private normalizeSegmentChronology(segments: any[]): void {
+    this.timelinePresentationService.normalizeSegmentChronology(segments);
   }
-
- private normalizeSegmentChronology(segments: any[]): void {
-  let previousEnd: number | null = null;
-
-  for (const seg of segments) {
-    /**
-     * Check-in rows have only `time`, not `timeRange` / `visitTime`.
-     * Keep the old behavior for check-in, but do not let it affect attraction DB times.
-     */
-    if (seg?.type === 'checkin' && typeof seg.time === 'string') {
-      const checkinTime = this.parseDisplayTimeMinutesStrict(String(seg.time).trim());
-
-      if (checkinTime !== null) {
-        const normalizedCheckinTime =
-          previousEnd !== null && checkinTime < previousEnd
-            ? previousEnd
-            : checkinTime;
-
-        seg.time = this.minutesToDisplayTime(normalizedCheckinTime);
-        previousEnd = normalizedCheckinTime;
-      }
-
-      continue;
-    }
-
-    const parsed = this.extractRangeFromSegment(seg);
-    if (!parsed) continue;
-
-    let start = parsed.start;
-    let end = parsed.end;
-
-    /**
-     * Do NOT swap start/end blindly.
-     * If end < start, treat it as an overnight segment.
-     * Example:
-     * 11:30 PM - 12:35 AM
-     */
-    if (end < start) {
-      end += 24 * 60;
-    }
-
-    /**
-     * VERY IMPORTANT FIX:
-     *
-     * Attraction visitTime comes from:
-     * dvi_itinerary_route_hotspot_details.hotspot_start_time
-     * dvi_itinerary_route_hotspot_details.hotspot_end_time
-     *
-     * This is already the source of truth.
-     *
-     * Do NOT mutate attraction visitTime here.
-     *
-     * Earlier bug:
-     * Mullakkal was correctly stored as 05:00 PM - 06:00 PM,
-     * but normalizeSegmentChronology shifted it to 10:30 PM - 11:30 PM
-     * because a previous travel/break segment ended later.
-     */
-    if (seg?.type === 'attraction') {
-      previousEnd = end;
-      continue;
-    }
-
-    /**
-     * For break rows:
-     * If a break overlaps a previous segment, adjust only the break start.
-     * Do NOT preserve the original break duration and push the break forward,
-     * because that can push later priority hotspots outside valid timing.
-     *
-     * Example:
-     * Revi Museum ends at 02:13 PM.
-     * Break row starts at 12:51 PM and ends at 05:00 PM.
-     *
-     * Correct normalized break:
-     * 02:13 PM - 05:00 PM
-     *
-     * Wrong old behavior:
-     * 02:13 PM - 06:22 PM
-     */
-    if (seg?.type === 'break') {
-      if (previousEnd !== null && start < previousEnd) {
-        start = previousEnd;
-      }
-
-      if (end < start) {
-        end = start;
-      }
-
-      seg[parsed.field] = `${this.minutesToDisplayTime(start)} - ${this.minutesToDisplayTime(end)}${parsed.suffix}`;
-      previousEnd = end;
-      continue;
-    }
-
-    /**
-     * For travel/start/return rows:
-     * Keep chronology normalization, because these rows are display helper rows.
-     * If they overlap a previous segment, preserve their duration and move forward.
-     */
-    if (previousEnd !== null && start < previousEnd) {
-      const duration = Math.max(0, end - start);
-      start = previousEnd;
-      end = start + duration;
-    }
-
-    seg[parsed.field] = `${this.minutesToDisplayTime(start)} - ${this.minutesToDisplayTime(end)}${parsed.suffix}`;
-    previousEnd = end;
-  }
-}
 
   private normalizeConfirmedTravelLabelsFromSequence(
     segments: any[],
     fallbackHotelName?: string | null,
   ): any[] {
-    const rows = Array.isArray(segments) ? segments : [];
-    if (rows.length === 0) return rows;
-
-    const cleanName = (value?: string | null): string => String(value ?? '').trim();
-    const lower = (value?: string | null): string => cleanName(value).toLowerCase();
-    const canonicalStopName = (value?: string | null): string => {
-      const raw = cleanName(value);
-      if (!raw) return '';
-      return raw
-        .replace(/&amp;/gi, '&')
-        .replace(/&quot;/gi, '"')
-        .replace(/&#39;/gi, "'")
-        .replace(/&lt;/gi, '<')
-        .replace(/&gt;/gi, '>')
-        .replace(/\s*\([^)]*\)\s*$/g, '')
-        .trim();
-    };
-
-    const getAttractionName = (row: any): string => canonicalStopName(row?.name || row?.text);
-    const getCheckinName = (row: any): string => cleanName(row?.hotelName) || cleanName(fallbackHotelName) || 'Hotel';
-    const getTravelFrom = (row: any): string =>
-      cleanName(row?.from)
-      || cleanName(row?.fromName)
-      || cleanName(row?.displayFromName);
-    const getTravelTo = (row: any): string =>
-      cleanName(row?.to)
-      || cleanName(row?.toName)
-      || cleanName(row?.displayToName);
-
-    const isAttraction = (row: any): boolean => row?.type === 'attraction';
-    const isTravel = (row: any): boolean => row?.type === 'travel';
-    const isCheckin = (row: any): boolean => row?.type === 'checkin';
-
-    const findPreviousVisibleStopName = (fromIndex: number): string => {
-      for (let i = fromIndex - 1; i >= 0; i -= 1) {
-        const row = rows[i];
-        if (isAttraction(row)) {
-          const name = getAttractionName(row);
-          if (name) return name;
-        }
-        if (isCheckin(row)) {
-          const name = getCheckinName(row);
-          if (name) return name;
-        }
-      }
-      return '';
-    };
-
-    const findNextSemanticStop = (fromIndex: number): { type: 'attraction' | 'checkin'; name: string } | null => {
-      for (let i = fromIndex + 1; i < rows.length; i += 1) {
-        const row = rows[i];
-        if (isAttraction(row)) {
-          const name = getAttractionName(row);
-          if (name) return { type: 'attraction', name };
-        }
-        if (isCheckin(row)) {
-          const name = getCheckinName(row);
-          if (name) return { type: 'checkin', name };
-        }
-      }
-      return null;
-    };
-
-    let previousStopName = '';
-
-    for (let index = 0; index < rows.length; index += 1) {
-      const row = rows[index];
-
-      if (isAttraction(row)) {
-        const attractionName = getAttractionName(row);
-        if (attractionName) {
-          previousStopName = attractionName;
-        }
-        continue;
-      }
-
-      if (isCheckin(row)) {
-        const checkinName = getCheckinName(row);
-        if (checkinName) {
-          previousStopName = checkinName;
-        }
-        continue;
-      }
-
-      if (!isTravel(row)) continue;
-
-      const persistedFrom = getTravelFrom(row);
-      const persistedTo = getTravelTo(row);
-
-      if (!previousStopName) {
-        previousStopName = persistedFrom || findPreviousVisibleStopName(index) || '';
-      }
-
-      const nextStop = findNextSemanticStop(index);
-      const nextName = cleanName(nextStop?.name);
-
-      let resolvedFrom = cleanName(previousStopName) || persistedFrom || 'Route Start';
-      let resolvedTo = '';
-
-      if (nextStop?.type === 'attraction' && nextName) {
-        resolvedTo = nextName;
-      } else if (nextStop?.type === 'checkin' && nextName) {
-        resolvedTo = nextName;
-      } else {
-        resolvedTo = persistedTo || cleanName(fallbackHotelName) || 'Hotel';
-      }
-
-      // Guard: non-final travel should not keep destination as route/city/hotel label
-      // when the immediate next visible stop is an attraction.
-      if (
-        nextStop?.type === 'attraction'
-        && nextName
-        && lower(resolvedTo) === lower(cleanName(fallbackHotelName) || '')
-      ) {
-        resolvedTo = nextName;
-      }
-
-      // First-leg guard: if the persisted origin is only the city label (for example "Munnar")
-      // but the route hotel is more specific (for example "Munnar Queen"), prefer hotel label.
-      if (
-        nextStop?.type === 'attraction'
-        && cleanName(fallbackHotelName)
-        && resolvedFrom
-        && lower(resolvedFrom) !== lower(cleanName(fallbackHotelName))
-        && lower(cleanName(fallbackHotelName)).includes(lower(resolvedFrom))
-      ) {
-        resolvedFrom = cleanName(fallbackHotelName);
-      }
-
-      row.from = resolvedFrom;
-      row.to = resolvedTo;
-      row.fromName = resolvedFrom;
-      row.toName = resolvedTo;
-      row.displayFromName = resolvedFrom;
-      row.displayToName = resolvedTo;
-      row.text = `Travelling from ${resolvedFrom} to ${resolvedTo}`;
-
-      previousStopName = resolvedTo;
-    }
-
-    return rows;
+    return this.timelinePresentationService.normalizeConfirmedTravelLabelsFromSequence(segments, fallbackHotelName);
   }
 
   // ---------------------------------------------------------------------------
