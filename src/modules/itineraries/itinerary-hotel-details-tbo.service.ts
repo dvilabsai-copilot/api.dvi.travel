@@ -25,6 +25,7 @@ import {
 } from './helpers/staah-occupancy-pricing';
 import { ItineraryHotelDetailsCacheService } from './services/itinerary-hotel-details-cache.service';
 import { ItineraryHotelStayBlockService } from './services/itinerary-hotel-stay-block.service';
+import { ItineraryHotelPricePackageService } from './services/itinerary-hotel-price-package.service';
 
 /**
  * This service generates dynamic hotel packages from TBO API
@@ -140,6 +141,7 @@ export class ItineraryHotelDetailsTboService {
 
   private readonly hotelDetailsCacheService = new ItineraryHotelDetailsCacheService();
   private readonly stayBlockService = new ItineraryHotelStayBlockService();
+  private readonly pricePackageService = new ItineraryHotelPricePackageService();
 
   private isTboOnlyFetchEnabled(): boolean {
     const raw = String(process.env.HOTEL_FETCH_TBO_ONLY || '').trim().toLowerCase();
@@ -2503,188 +2505,20 @@ export class ItineraryHotelDetailsTboService {
 
 
   private generatePricePackages(
-    hotelsByRoute: Map<number, HotelSearchResult[]>,
+    hotelsByRoute: Map<number, HotelSearchResult[] | null>,
     routes: any[],
   ): Array<{ groupType: number; label: string; hotels: Array<HotelSearchResult & { routeId: number }> }> {
-    const packages: Array<{
-      groupType: number;
-      label: string;
-      hotels: Array<HotelSearchResult & { routeId: number }>;
-    }> = [];
-
-    const labels = [
-      'Budget Hotels',
-      'Mid-Range Hotels',
-      'Premium Hotels',
-      'Luxury Hotels',
-    ];
-
-    // Debug: Log all available hotels
-    this.logger.log(`\n   ðŸ“Š PRICE TIER GENERATION DEBUG (PER-DESTINATION):`);
-    this.logger.log(`   Total routes: ${routes.length}`);
-    hotelsByRoute.forEach((hotels, routeId) => {
-      const prices = hotels.map(h => h.price).join(', ');
-      this.logger.log(`   Route ${routeId}: ${hotels.length} hotels (Prices: ${prices})`);
+    return this.pricePackageService.generate(hotelsByRoute, routes, {
+      log: (message) => this.logger.log(message),
+      warn: (message) => this.logger.warn(message),
+      debug: (message) => this.logger.debug(message),
+      money: (value) => this.money(value),
+      applyInvisibleHotelMargin: (amount, hotel) =>
+        this.applyInvisibleHotelMargin(amount, hotel),
     });
-
-    // NEW LOGIC: Assign hotels to groups PER DESTINATION (per route)
-    // Rule: If 1 hotel -> put in all 4 groups
-    //       If 2+ hotels -> distribute in ascending price order across groups
-    
-    // First pass: Determine groupType for each hotel based on its destination
-    const hotelGroupAssignments = new Map<string, number>(); // key: "routeId-hotelCode" -> groupType
-    
-    for (const route of routes) {
-      const routeId = (route as any).itinerary_route_ID;
-      const availableHotels = hotelsByRoute.get(routeId);
-
-      if (availableHotels === null) {
-        this.logger.warn(`      ðŸš¨ Provider/system failure for route ${routeId} â€” skipping placeholder row. See previous logs for error.`);
-        continue;
-      }
-      if (!Array.isArray(availableHotels) || availableHotels.length === 0) {
-        this.logger.warn(`      âš ï¸  No hotels available for route ${routeId}`);
-        continue;
-      }
-
-      // Sort hotels by price (ascending) for this destination
-      const sortedHotels = [...availableHotels].sort((a, b) => a.price - b.price);
-
-      if (sortedHotels.length === 1) {
-        // Single hotel: assign to ALL 4 groups
-        const hotel = sortedHotels[0];
-        for (let groupType = 1; groupType <= 4; groupType++) {
-          const key = `${routeId}-${hotel.hotelCode || hotel.hotelName}`;
-          hotelGroupAssignments.set(`${key}:${groupType}`, groupType);
-        }
-        this.logger.debug(`   Route ${routeId}: 1 hotel - "${hotel.hotelName}" (â‚¹${hotel.price}) assigned to ALL groups`);
-      } else {
-        // Multiple hotels: distribute across groups by price order
-        const numHotels = sortedHotels.length;
-        const groupsNeeded = Math.min(numHotels, 4);
-        
-        sortedHotels.forEach((hotel, index) => {
-          // Map hotels to groups in ascending price order
-          let groupType = 1;
-          if (numHotels <= 4) {
-            // Fewer hotels than groups: distribute evenly
-            groupType = Math.min(index + 1, 4);
-          } else {
-            // More hotels than groups: distribute proportionally
-            groupType = Math.floor((index / numHotels) * 4) + 1;
-            groupType = Math.min(groupType, 4);
-          }
-          
-          const key = `${routeId}-${hotel.hotelCode || hotel.hotelName}`;
-          hotelGroupAssignments.set(`${key}:${groupType}`, groupType);
-        });
-        
-        this.logger.debug(`   Route ${routeId}: ${numHotels} hotels - Distributed across groups by price order`);
-        sortedHotels.forEach((h, i) => {
-          const key = `${routeId}-${h.hotelCode || h.hotelName}`;
-          let groupType = 1;
-          if (numHotels <= 4) {
-            groupType = Math.min(i + 1, 4);
-          } else {
-            groupType = Math.floor((i / numHotels) * 4) + 1;
-            groupType = Math.min(groupType, 4);
-          }
-       //   this.logger.debug(`      "${h.hotelName}" (â‚¹${h.price}) -> Group ${groupType}`);
-        });
-      }
-    }
-
-    // Second pass: Build packages from the assignments
-    for (let tier = 0; tier < 4; tier++) {
-      const groupType = tier + 1;
-      const tieredHotels: Array<HotelSearchResult & { routeId: number }> = [];
-
-      for (const route of routes) {
-        const routeId = (route as any).itinerary_route_ID;
-        const availableHotels = hotelsByRoute.get(routeId);
-
-        if (availableHotels === null) {
-          this.logger.warn(`   ðŸš¨ Provider/system failure for route ${routeId} â€” not inserting placeholder row. See previous logs for error.`);
-          continue;
-        }
-        if (!Array.isArray(availableHotels) || availableHotels.length === 0) {
-          this.logger.debug(`   Tier ${groupType}, Route ${routeId}: No hotels available`);
-          // CREATE PLACEHOLDER FOR NO HOTELS - price 0
-          const placeholderHotel: any = {
-            hotelCode: '0',
-            hotelName: 'No Hotels Available',
-            roomType: '-',
-            mealPlan: '-',
-            price: 0,
-            rating: 0,
-            routeId: routeId,
-            provider: 'external',
-            isBookable: false,
-            externalStay: true,
-            availabilityStatus: 'NO_SUPPLIER_AVAILABILITY',
-            availabilityMessage:
-              'No supplier hotel rooms are available for this city/date. Customer must arrange stay manually.',
-          };
-          tieredHotels.push(placeholderHotel);
-          continue;
-        }
-
-        let foundForGroup = false;
-
-        // Get hotels that belong to this tier for this route
-        for (const hotel of availableHotels) {
-          const key = `${routeId}-${hotel.hotelCode || hotel.hotelName}`;
-          const assignedGroupType = hotelGroupAssignments.get(`${key}:${groupType}`);
-          
-          if (assignedGroupType === groupType) {
-            const hotelWithRoute = { ...hotel, routeId } as HotelSearchResult & { routeId: number };
-            tieredHotels.push(hotelWithRoute);
-            foundForGroup = true;
-          }
-        }
-
-        // Overlap fallback: if this route has hotels but none mapped to current tier,
-        // pick deterministic fallback by sorted price index so every tier has data.
-        if (!foundForGroup && availableHotels.length > 0) {
-          const sortedHotels = [...availableHotels].sort((a, b) => (a.price || 0) - (b.price || 0));
-          const fallbackIndex = Math.min(groupType - 1, sortedHotels.length - 1);
-          const fallbackHotel = sortedHotels[fallbackIndex];
-          if (fallbackHotel) {
-            const fallbackWithRoute = {
-              ...fallbackHotel,
-              routeId,
-              __fallbackAssigned: true,
-            } as HotelSearchResult & { routeId: number };
-            tieredHotels.push(fallbackWithRoute);
-            this.logger.debug(
-              `   Tier ${groupType}, Route ${routeId}: overlap fallback -> ${fallbackHotel.hotelName}`,
-            );
-          }
-        }
-      }
-
-      // Add package with ALL matching hotels for this tier
-      if (tieredHotels.length > 0) {
-        const totalPrice = this.money(
-          tieredHotels.reduce(
-            (sum, h) => sum + this.applyInvisibleHotelMargin(Number(h.price || 0), h),
-            0,
-          ),
-        );
-        packages.push({
-          groupType: groupType,
-          label: labels[tier],
-          hotels: tieredHotels,
-        });
-        this.logger.log(`   âœ… Group ${groupType} (${labels[tier]}): ${tieredHotels.length} hotels total, â‚¹${totalPrice} combined`);
-      } else {
-        this.logger.log(`   âš ï¸  Group ${groupType} (${labels[tier]}): No hotels found for any route`);
-      }
-    }
-
-    this.logger.log(`ðŸ“¦ Generated ${packages.length} price tier packages\n`);
-    return packages;
   }
+
+
 
   /**
    * Build the response DTO
