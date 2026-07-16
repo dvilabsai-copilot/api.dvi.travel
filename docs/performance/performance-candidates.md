@@ -282,6 +282,8 @@ The iteration-63 confirmed guide-slot cancellation boundary is a measurement sea
 
 The iteration-64 manual-fit attempt-store boundary is a measurement seam for table-setup invocation, attempt upsert latency, raw lookup latency, cache-hit/miss rate, payload serialization/deserialization cost, expiry fallback frequency, parse failures and delete latency. Capture first-use, cache-hit, DB-fallback, repeated-save and delete workloads separately before adding a dedicated cache or changing table/index definitions; preserve attempt identity, expiry behavior, SQL contract and helper callback semantics.
 
+The iteration-65 route-hotspot deletion boundary is a measurement seam for route-hotspot identity lookup latency, dependent activity/timeline row volume, exclusion update frequency, transaction duration, hotspot rebuild duration, parking-charge rebuild duration, vehicle-pricing refresh duration and end-to-end delete latency. Capture route-hotspot-ID versus master-ID fallback, empty/dependent-row, repeated-delete and large-plan rebuild workloads separately before adding deletion indexes, batching cleanup or caching route state; preserve dependent-row ordering, rebuild timeout and pricing refresh semantics.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.

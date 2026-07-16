@@ -2204,3 +2204,32 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Table-setup frequency, raw query latency, cache-hit rate, payload size and parse-failure frequency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `5bae62f`.
+
+### Cycle 68 - Extract route-hotspot deletion
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: route-hotspot deletion, dependent-row cleanup, exclusion update and downstream rebuild sequencing
+- New files: `src/modules/itineraries/services/itinerary-hotspot-deletion.service.ts`, `test/itinerary-hotspot-deletion.test.ts`
+- Workflow: route hotspot delete endpoint through full itinerary rebuild and vehicle-pricing refresh
+
+#### Change
+
+- Moved route-hotspot ID/master resolution, activity/timeline cleanup, route exclusion persistence, hotspot rebuild, parking rebuild and vehicle-pricing refresh behind `ItineraryHotspotDeletionService`.
+- Preserved fallback identity lookup, dependent-row predicates, 60-second transaction timeout, rebuild order, logging and response metadata.
+- Kept `ItinerariesService` as the controller compatibility facade with an explicit pricing callback.
+
+#### Verification
+
+- Route-hotspot deletion characterization tests: PASS, 2/2
+- Combined focused backend/timeline suite: PASS, 143/143
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 11,086 lines after the tier; `ItineraryHotspotDeletionService` is 166 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Deletion fan-out, rebuild duration, parking refresh duration and vehicle-pricing refresh latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `065f91d`.

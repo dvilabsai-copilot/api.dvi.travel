@@ -123,3 +123,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - The facade remains a compatibility adapter for the manual-fit helper, while the service owns the same SQL and cache ordering.
 - This is not a measured performance improvement: table setup, raw query latency, cache-hit rate, serialization cost, payload size and delete latency remain unmeasured.
 - No index or Redis action is proposed; any future optimization must compare first-use/cache-hit/DB-fallback traces and preserve expiry and SQL semantics.
+
+## Iteration 65 evidence update
+
+- The route-hotspot deletion extraction preserves the existing identity lookups, dependent activity/timeline deletes, exclusion update and rebuild calls; no SQL, index, Redis cache or query shape was changed.
+- Transaction timeout, deletion predicates, rebuild order and vehicle-pricing callback semantics remain unchanged; only orchestration ownership moved.
+- This is not a measured performance improvement: lookup latency, dependent-row volume, rebuild duration, parking refresh duration and vehicle refresh latency remain unmeasured.
+- No index or Redis action is proposed; any future optimization must compare route-hotspot-ID/master-ID fallback plans and preserve cleanup/rebuild ordering.
