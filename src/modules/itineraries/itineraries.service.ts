@@ -90,6 +90,7 @@ import { ItineraryManualHotspotRowTimingService } from './services/itinerary-man
 import { ItineraryManualHotspotOverlapService } from './services/itinerary-manual-hotspot-overlap.service';
 import { ItineraryManualHotspotConflictService } from './services/itinerary-manual-hotspot-conflict.service';
 import { ItineraryRouteHotspotRebuildService } from './services/itinerary-route-hotspot-rebuild.service';
+import { ItineraryHotelCancellationService } from './services/itinerary-hotel-cancellation.service';
 import { ItineraryVehicleBuildStatusService } from './services/itinerary-vehicle-build-status.service';
 import { ItineraryVehicleBuildService } from './services/itinerary-vehicle-build.service';
 import { ItineraryPlanPersistenceService } from './services/itinerary-plan-persistence.service';
@@ -685,6 +686,7 @@ export class ItinerariesService {
     private readonly manualHotspotOverlapService: ItineraryManualHotspotOverlapService = new ItineraryManualHotspotOverlapService(),
     private readonly manualHotspotConflictService: ItineraryManualHotspotConflictService = new ItineraryManualHotspotConflictService(),
     private readonly routeHotspotRebuildService: ItineraryRouteHotspotRebuildService = new ItineraryRouteHotspotRebuildService(prisma, hotspotEngine),
+    private readonly hotelCancellationService: ItineraryHotelCancellationService = new ItineraryHotelCancellationService(prisma),
   ) {
     this.manualFitTimelinePolicyService.setCallbacks({
       parseSegmentEndMinutes: (...args) => (this.parseSegmentEndMinutes as any)(...args),
@@ -4447,72 +4449,7 @@ private getGuideSlotLabel(slotId: number): string {
   }
 
   async getConfirmedItineraryForCancellation(confirmedPlanId: number) {
-    const plan = await this.prisma.dvi_confirmed_itinerary_plan_details.findUnique({
-      where: { confirmed_itinerary_plan_ID: confirmedPlanId },
-    });
-
-    if (!plan) {
-      throw new NotFoundException('Confirmed itinerary not found');
-    }
-
-    // Get routes with dates
-    const routes = await this.prisma.dvi_confirmed_itinerary_route_details.findMany({
-      where: { itinerary_plan_ID: plan.itinerary_plan_ID, deleted: 0 },
-      orderBy: { itinerary_route_date: 'asc' },
-    });
-
-    // Get hotels for each route
-    const hotelsData = await Promise.all(routes.map(async (route) => {
-      const hotels = await this.prisma.dvi_confirmed_itinerary_plan_hotel_details.findMany({
-        where: {
-          itinerary_plan_id: plan.itinerary_plan_ID,
-          itinerary_route_id: route.itinerary_route_ID,
-          deleted: 0,
-        },
-      });
-
-      const enrichedHotels = await Promise.all(hotels.map(async (h) => {
-        const hotelInfo = await this.prisma.dvi_hotel.findUnique({
-          where: { hotel_id: h.hotel_id },
-          select: { hotel_name: true },
-        });
-
-        const rooms = await this.prisma.dvi_confirmed_itinerary_plan_hotel_room_details.findMany({
-          where: {
-            confirmed_itinerary_plan_hotel_details_id: h.confirmed_itinerary_plan_hotel_details_ID,
-            deleted: 0,
-          },
-        });
-
-        return {
-          hotel_id: h.hotel_id,
-          hotel_name: hotelInfo?.hotel_name || 'N/A',
-          date: route.itinerary_route_date,
-          total_cost: h.total_hotel_cost || 0,
-          rooms: rooms.map(r => ({
-            room_qty: r.room_qty,
-            room_rate: r.room_rate,
-            extra_bed_count: r.extra_bed_count,
-            extra_bed_rate: r.extra_bed_rate,
-            child_with_bed_count: r.child_with_bed_count,
-            child_with_bed_charges: r.child_with_bed_charges,
-            child_without_bed_count: r.child_without_bed_count,
-            child_without_bed_charges: r.child_without_bed_charges,
-          })),
-        };
-      }));
-
-      return { route_id: route.itinerary_route_ID, date: route.itinerary_route_date, hotels: enrichedHotels };
-    }));
-
-    return {
-      plan: {
-        itinerary_plan_ID: plan.itinerary_plan_ID,
-        confirmed_itinerary_plan_ID: confirmedPlanId,
-        booking_id: plan.itinerary_quote_ID,
-      },
-      routes_with_hotels: hotelsData,
-    };
+    return this.hotelCancellationService.getConfirmedItineraryForCancellation(confirmedPlanId);
   }
 
   /**
@@ -4524,43 +4461,9 @@ private getGuideSlotLabel(slotId: number): string {
     date: string,
     cancellationPercentage: number = 10,
   ) {
-    const plan = await this.prisma.dvi_confirmed_itinerary_plan_details.findUnique({
-      where: { confirmed_itinerary_plan_ID: confirmedPlanId },
-    });
-
-    if (!plan) {
-      throw new NotFoundException('Confirmed itinerary not found');
-    }
-
-    // Get the hotel details for the specific day
-    const hotelDetails = await this.prisma.dvi_confirmed_itinerary_plan_hotel_details.findFirst({
-      where: {
-        itinerary_plan_id: plan.itinerary_plan_ID,
-        hotel_id: hotelId,
-        deleted: 0,
-      },
-    });
-
-    if (!hotelDetails) {
-      throw new NotFoundException('Hotel not found for this itinerary');
-    }
-
-    const totalCost = hotelDetails.total_hotel_cost || 0;
-    const cancellationCharge = Math.round((totalCost * cancellationPercentage) / 100);
-    const refundAmount = totalCost - cancellationCharge;
-
-    return {
-      total_cost: totalCost,
-      cancellation_percentage: cancellationPercentage,
-      cancellation_charge: cancellationCharge,
-      refund_amount: Math.max(0, refundAmount),
-      breakdown: {
-        room_cost: hotelDetails.total_room_cost || 0,
-        meal_plan_cost: hotelDetails.total_hotel_meal_plan_cost || 0,
-        amenities_cost: hotelDetails.total_amenities_cost || 0,
-        tax_amount: hotelDetails.total_hotel_tax_amount || 0,
-      },
-    };
+    return this.hotelCancellationService.getEntireDayCancellationCharges(
+      confirmedPlanId, hotelId, date, cancellationPercentage,
+    );
   }
 
   /**
@@ -4574,98 +4477,14 @@ private getGuideSlotLabel(slotId: number): string {
     totalRefundAmount: number,
     defectType: string = 'dvi',
   ) {
-    const userId = 1; // TODO: Get from authenticated user
-
-    const plan = await this.prisma.dvi_confirmed_itinerary_plan_details.findUnique({
-      where: { confirmed_itinerary_plan_ID: confirmedPlanId },
-    });
-
-    if (!plan) {
-      throw new NotFoundException('Confirmed itinerary not found');
-    }
-
-    return await this.prisma.$transaction(async (tx) => {
-      // 1. Create hotel cancellation record (if table exists)
-      // This is for audit trail
-      try {
-        await (tx as any).dvi_hotel_cancellations.create({
-          data: {
-            confirmed_itinerary_plan_ID: confirmedPlanId,
-            hotel_id: hotelId,
-            cancellation_date: new Date(date),
-            total_cancellation_charge: totalCancellationCharge,
-            total_refund_amount: totalRefundAmount,
-            defect_type: defectType,
-            createdby: userId,
-            createdon: new Date(),
-            status: 1,
-            deleted: 0,
-          },
-        });
-      } catch (error) {
-        console.log('Hotel cancellation table not found, skipping audit record');
-      }
-
-      // 2. Soft delete the hotel details
-      const hotelDetails = await (tx as any).dvi_confirmed_itinerary_plan_hotel_details.findFirst({
-        where: {
-          itinerary_plan_id: plan.itinerary_plan_ID,
-          hotel_id: hotelId,
-          deleted: 0,
-        },
-      });
-
-      if (hotelDetails) {
-        await (tx as any).dvi_confirmed_itinerary_plan_hotel_details.update({
-          where: { confirmed_itinerary_plan_hotel_details_ID: hotelDetails.confirmed_itinerary_plan_hotel_details_ID },
-          data: {
-            deleted: 1,
-            updatedon: new Date(),
-          },
-        });
-
-        // Soft delete related room details
-        await (tx as any).dvi_confirmed_itinerary_plan_hotel_room_details.updateMany({
-          where: { confirmed_itinerary_plan_hotel_details_id: hotelDetails.confirmed_itinerary_plan_hotel_details_ID },
-          data: { deleted: 1 },
-        });
-      }
-
-      // 3. Update plan total amounts
-      if (totalRefundAmount > 0) {
-        await (tx as any).dvi_confirmed_itinerary_plan_details.update({
-          where: { confirmed_itinerary_plan_ID: confirmedPlanId },
-          data: {
-            total_hotel_charges: {
-              decrement: totalCancellationCharge + totalRefundAmount,
-            },
-            itinerary_total_net_payable_amount: {
-              decrement: totalCancellationCharge,
-            },
-            updatedon: new Date(),
-          },
-        });
-
-        // Record refund in accounts
-        await (tx as any).dvi_accounts_itinerary_details.updateMany({
-          where: { confirmed_itinerary_plan_ID: confirmedPlanId },
-          data: {
-            total_received_amount: {
-              decrement: totalCancellationCharge,
-            },
-            total_payout_amount: {
-              increment: totalRefundAmount,
-            },
-          },
-        });
-      }
-
-      return {
-        success: true,
-        message: 'Hotel cancelled successfully',
-        refund_amount: totalRefundAmount,
-      };
-    });
+    return this.hotelCancellationService.cancelHotel(
+      confirmedPlanId,
+      hotelId,
+      date,
+      totalCancellationCharge,
+      totalRefundAmount,
+      defectType,
+    );
   }
 
   /** Compatibility facade for confirmed itinerary hotel projection. */
