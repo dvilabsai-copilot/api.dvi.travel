@@ -428,6 +428,8 @@ The iteration-136 hotel preference boundary is a measurement seam for route hote
 
 The iteration-137 secondary-provider fetch boundary is a measurement seam for HOBSE/ResAvenue route count, provider call latency, departure-day skip rate, empty-result rate, exception rate, result cardinality and end-to-end secondary-provider search latency. Capture mapped/unmapped HOBSE, no-result, provider-error, ResAvenue occupancy-normalization and multi-route workloads separately before adding concurrency or caching provider responses; preserve route/date freshness, provider request fields and failure isolation. No index addition/removal or Redis cache is justified until provider traces establish the measured winner.
 
+The iteration-138 STAAH restriction-policy cleanup is a measurement seam for restriction-message frequency, message-formatting CPU, retry-date suffix frequency and end-to-end STAAH response latency. Capture CTA, CTD, stopsell, minimum-stay, no-retry-date and mixed-restriction workloads separately before memoizing messages; preserve mutable restriction freshness, exact wording and candidate visibility. No index addition/removal or Redis cache is justified until restriction traces establish the measured winner.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.

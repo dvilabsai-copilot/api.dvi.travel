@@ -634,3 +634,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - The tier adds no database reads and leaves provider calls plus downstream merges in the existing facade.
 - This is not a measured database performance improvement: provider latency, call count, exception rate, result cardinality and response latency remain unmeasured.
 - No index addition/removal or Redis action is proposed; future work should capture provider traces and any provider-backed database query plans before adding concurrency or caches.
+
+## Iteration 138 evidence update
+
+- The STAAH restriction-policy cleanup preserves restriction message wording, CTA/CTD/stopsell transformations, retry-date suffixes and evaluator behavior; no SQL predicate, index, Redis cache or response shape changed.
+- The tier removes dead facade helpers and adds no database reads.
+- This is not a measured database performance improvement: restriction-message frequency, formatting CPU and STAAH response latency remain unmeasured.
+- No index addition/removal or Redis action is proposed; future work should capture restriction-row and message traces before caching derived wording.

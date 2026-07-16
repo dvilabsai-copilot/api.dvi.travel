@@ -4298,3 +4298,32 @@
 - `itinerary-hotel-details-tbo.service.ts` measured at 2,890 lines after the tier; `itinerary-hotel-secondary-provider-fetch.service.ts` is 126 lines.
 - Provider call latency, route success/failure ratio, result cardinality and secondary-provider search response latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `7048926`.
+
+### Cycle 141 - Consolidate STAAH restriction policy
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itinerary-hotel-details-tbo.service.ts`
+- Extracted responsibility: customer-facing restriction availability-message formatting and removal of facade-only duplicate restriction helpers
+- Updated files: `src/modules/itineraries/services/staah-restriction.service.ts`, `test/staah-restriction.test.ts`
+- Workflow: STAAH candidate and response metadata
+
+#### Change
+
+- Moved restriction message formatting into `StaahRestrictionService` and removed the now-unused facade copies of restriction truthiness/type/date helpers after the evaluator extraction.
+- Preserved CTA/CTD/stopsell wording, retry-date suffixes and all remaining stay-window behavior; no provider payloads or response fields changed.
+- No SQL predicate, index, Redis cache, API route, DTO or response contract changed.
+
+#### Verification
+
+- STAAH restriction characterization tests: PASS, 3/3
+- Itinerary characterization collection: PASS, 195/195
+- Backend build: PASS
+- `git diff --check`: PASS
+- Removed-symbol scan: PASS for the deleted facade-only restriction helpers.
+
+#### Result
+
+- `itinerary-hotel-details-tbo.service.ts` measured at 2,845 lines after the tier; `staah-restriction.service.ts` is 139 lines.
+- Restriction-message frequency, formatting CPU and end-to-end STAAH response latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `96b7659`.

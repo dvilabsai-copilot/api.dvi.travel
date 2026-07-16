@@ -293,3 +293,5 @@ The in-facade legacy route optimizer was removed after verification that `Itiner
 `ItineraryHotelPreferenceFilterService` now owns category and meal-plan preference filtering, unknown-category handling and matching-room alignment. `ItineraryHotelDetailsTboService` remains the provider facade and supplies logging callbacks. Filter cardinality and search cost remain pending measurement.
 
 `ItineraryHotelSecondaryProviderFetchService` now owns HOBSE and ResAvenue route fetch loops, request construction, departure-day suppression and per-route failure recovery. `ItineraryHotelDetailsTboService` remains the orchestration facade and supplies provider callbacks/logging. Secondary-provider latency remains pending measurement.
+
+`StaahRestrictionService` now also owns customer-facing restriction availability-message formatting; obsolete duplicate truthiness/type/date helpers were removed from `ItineraryHotelDetailsTboService`. Restriction wording and provider behavior are unchanged; formatting cost remains pending measurement.
