@@ -26,6 +26,7 @@ import { ItineraryDetailsTimeRangePolicyService } from './services/itinerary-det
 import { ItineraryDetailsDisplayFormattingService } from './services/itinerary-details-display-formatting.service';
 import { ItineraryDetailsRouteHotelMapService } from './services/itinerary-details-route-hotel-map.service';
 import { ItineraryDetailsTravelSemanticsService } from './services/itinerary-details-travel-semantics.service';
+import { ItineraryDetailsRouteHotspotDataService } from './services/itinerary-details-route-hotspot-data.service';
 
 // ---------------------------------------------------------------------------
 // DTOs for Itinerary Details response (shared shape with frontend)
@@ -416,6 +417,7 @@ export class ItineraryDetailsService {
   private readonly displayFormattingService = new ItineraryDetailsDisplayFormattingService();
   private readonly routeHotelMapService = new ItineraryDetailsRouteHotelMapService();
   private readonly travelSemanticsService = new ItineraryDetailsTravelSemanticsService();
+  private readonly routeHotspotDataService = new ItineraryDetailsRouteHotspotDataService();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -1048,140 +1050,22 @@ for (const row of vehicleKmRows) {
             })
           : null;
 
-      // route-hotspot rows
-      const routeHotspots =
-        await this.prisma.$queryRawUnsafe(`
-          SELECT 
-            route_hotspot_ID,
-            itinerary_plan_ID,
-            itinerary_route_ID,
-            item_type,
-            hotspot_order,
-            hotspot_ID,
-            hotspot_adult_entry_cost,
-            hotspot_child_entry_cost,
-            hotspot_infant_entry_cost,
-            hotspot_foreign_adult_entry_cost,
-            hotspot_foreign_child_entry_cost,
-            hotspot_foreign_infant_entry_cost,
-            hotspot_amout,
-            CAST(hotspot_traveling_time AS CHAR) as hotspot_traveling_time,
-            CAST(itinerary_travel_type_buffer_time AS CHAR) as itinerary_travel_type_buffer_time,
-            hotspot_travelling_distance,
-            hotspot_start_time,
-            hotspot_end_time,
-            allow_break_hours,
-            allow_via_route,
-            via_location_name,
-            hotspot_plan_own_way,
-            is_conflict,
-            conflict_reason,
-            createdby,
-            createdon,
-            updatedon,
-            status,
-            deleted
-          FROM dvi_itinerary_route_hotspot_details
-          WHERE itinerary_plan_ID = ${planId}
-            AND itinerary_route_ID = ${route.itinerary_route_ID}
-            AND deleted = 0
-            AND status = 1
-          ORDER BY hotspot_order ASC
-        `) as any[];
-
-      // Build response segments in actual chronological order.
-      // hotspot_order is a persistence grouping key, not a reliable presentation order,
-      // because travel rows are often stored after their attraction rows.
-      routeHotspots.sort((a: any, b: any) => {
-        const aStart = this.formatTime((a as any).hotspot_start_time ?? null);
-        const bStart = this.formatTime((b as any).hotspot_start_time ?? null);
-        const aStartMins = aStart ? this.timeToMinutes(aStart) : Number.MAX_SAFE_INTEGER;
-        const bStartMins = bStart ? this.timeToMinutes(bStart) : Number.MAX_SAFE_INTEGER;
-        if (aStartMins !== bStartMins) return aStartMins - bStartMins;
-
-        const aEnd = this.formatTime((a as any).hotspot_end_time ?? null);
-        const bEnd = this.formatTime((b as any).hotspot_end_time ?? null);
-        const aEndMins = aEnd ? this.timeToMinutes(aEnd) : Number.MAX_SAFE_INTEGER;
-        const bEndMins = bEnd ? this.timeToMinutes(bEnd) : Number.MAX_SAFE_INTEGER;
-        if (aEndMins !== bEndMins) return aEndMins - bEndMins;
-
-        const itemDiff = Number(a.item_type ?? 0) - Number(b.item_type ?? 0);
-        if (itemDiff !== 0) return itemDiff;
-
-        return Number(a.hotspot_order ?? 0) - Number(b.hotspot_order ?? 0);
+      const routeHotspotData = await this.routeHotspotDataService.load({
+        prisma: this.prisma,
+        planId,
+        routeId: Number(route.itinerary_route_ID),
+        formatTime: (value) => this.formatTime(value),
+        timeToMinutes: (value) => this.timeToMinutes(value),
       });
-
-      const hotspotIds = Array.from(
-        new Set(
-          routeHotspots
-            .map((h) => h.hotspot_ID)
-            .filter((id) => typeof id === 'number' && id > 0),
-        ),
-      );
-
-      const hotspotMasters = hotspotIds.length
-        ? await this.prisma.dvi_hotspot_place.findMany({
-            where: {
-              hotspot_ID: { in: hotspotIds },
-              deleted: 0,
-            },
-          })
-        : [];
-
-      const hotspotMap = new Map(hotspotMasters.map((h) => [h.hotspot_ID, h]));
-      const normalizeLookupName = (value?: string | null): string =>
-        String(value ?? '')
-          .replace(/&amp;/gi, '&')
-          .replace(/&quot;/gi, '"')
-          .replace(/&#39;/gi, "'")
-          .replace(/&lt;/gi, '<')
-          .replace(/&gt;/gi, '>')
-          .replace(/\s*\([^)]*\)\s*$/g, '')
-          .trim()
-          .toLowerCase();
-      const hotspotNameToIdMap = new Map<string, number>();
-      for (const hotspot of hotspotMasters) {
-        const name = normalizeLookupName((hotspot as any)?.hotspot_name);
-        if (name && !hotspotNameToIdMap.has(name)) {
-          hotspotNameToIdMap.set(name, Number((hotspot as any)?.hotspot_ID || 0));
-        }
-      }
-
-      // Fetch hotspot timing data for opening hours
-      const hotspotTimings = hotspotIds.length
-        ? await this.prisma.dvi_hotspot_timing.findMany({
-            where: {
-              hotspot_ID: { in: hotspotIds },
-              deleted: 0,
-              status: 1,
-            },
-          })
-        : [];
-
-      const hotspotTimingMap = new Map<number, any[]>();
-      for (const t of hotspotTimings) {
-        if (!hotspotTimingMap.has(t.hotspot_ID)) {
-          hotspotTimingMap.set(t.hotspot_ID, []);
-        }
-        hotspotTimingMap.get(t.hotspot_ID)!.push(t);
-      }
-
-      // Bulk fetch hotspot gallery images
-      const hotspotGalleryRows = hotspotIds.length
-        ? await this.prisma.dvi_hotspot_gallery_details.findMany({
-            where: { hotspot_ID: { in: hotspotIds }, deleted: 0 },
-            orderBy: { hotspot_gallery_details_id: 'asc' },
-            select: { hotspot_ID: true, hotspot_gallery_name: true },
-          })
-        : [];
-      const hotspotGalleryMap = new Map<number, string[]>();
-      for (const g of hotspotGalleryRows) {
-        const name = (g.hotspot_gallery_name ?? '').toString().trim();
-        if (!name) continue;
-        const urls = hotspotGalleryMap.get(g.hotspot_ID) ?? [];
-        urls.push(`/uploads/hotspot_gallery/${name}`);
-        hotspotGalleryMap.set(g.hotspot_ID, urls);
-      }
+      const {
+        routeHotspots,
+        hotspotIds,
+        hotspotMap,
+        normalizeLookupName,
+        hotspotNameToIdMap,
+        hotspotTimingMap,
+        hotspotGalleryMap,
+      } = routeHotspotData;
 
       const segments: any[] = [];
       let travelAnchorIndex = 0;
