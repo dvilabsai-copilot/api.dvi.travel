@@ -51,6 +51,7 @@ import { TimelineArrivalHotelDecisionService } from './timeline-arrival-hotel-de
 import { TimelineHotelFirstInsertionService } from './timeline-hotel-first-insertion.service';
 import { TimelineNonHotelCutoffService } from './timeline-non-hotel-cutoff.service';
 import { TimelineRouteHotspotPlanningService } from './timeline-route-hotspot-planning.service';
+import { TimelineManualPlacementOrderingService } from './timeline-manual-placement-ordering.service';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -203,6 +204,9 @@ export class TimelineBuilder {
   private readonly hotelFirstInsertionService = new TimelineHotelFirstInsertionService(this.hotelBuilder, this.refreshmentBuilder);
   private readonly nonHotelCutoffService = new TimelineNonHotelCutoffService(this.distanceHelper);
   private readonly routeHotspotPlanningService = new TimelineRouteHotspotPlanningService();
+  private readonly manualPlacementOrderingService = new TimelineManualPlacementOrderingService(
+    (...args) => (this.logBookingRule as any)(...args),
+  );
   private readonly candidatePolicyService = new TimelineCandidatePolicyService(
     this.operatingHoursService,
     this.slotPolicyService,
@@ -1080,197 +1084,16 @@ export class TimelineBuilder {
       // STRATEGY: For Day-1 different cities, process hotspots with strict priority walk
       // For other days, use multi-pass scheduling to fill gaps with deferred hotspots
       
-      const manualPlacementByRoute = options?.manualPlacementByRoute || {};
-      const sameCityAllocationPlan = options?.sameCityAllocationPlan || null;
-      const routeDesiredMovableOrder = Array.isArray(
-        sameCityAllocationPlan?.desiredMovableOrderByRoute?.[Number(route.itinerary_route_ID)],
-      )
-        ? (sameCityAllocationPlan?.desiredMovableOrderByRoute?.[Number(route.itinerary_route_ID)] || [])
-            .map((id) => Number(id || 0))
-            .filter((id) => id > 0)
-        : [];
-      const routeDesiredMovableSet = new Set<number>(routeDesiredMovableOrder);
-      const routePreferredAdjacencyPairs = Array.isArray(
-        sameCityAllocationPlan?.preferredAdjacencyPairsByRoute?.[Number(route.itinerary_route_ID)],
-      )
-        ? (sameCityAllocationPlan?.preferredAdjacencyPairsByRoute?.[Number(route.itinerary_route_ID)] || [])
-            .map((pair) => [Number(pair?.[0] || 0), Number(pair?.[1] || 0)] as [number, number])
-            .filter(([anchorId, movedId]) => anchorId > 0 && movedId > 0)
-        : [];
-      const desiredMovableOrderRank = new Map<number, number>();
-      routeDesiredMovableOrder.forEach((hotspotId, index) => {
-        if (!desiredMovableOrderRank.has(hotspotId)) {
-          desiredMovableOrderRank.set(hotspotId, index);
-        }
+      const manualPlacementOrdering = this.manualPlacementOrderingService.apply({
+        options,
+        route,
+        plan,
+        planId,
+        selectedHotspots,
+        existingHotspots,
       });
-      const scopedPreviewAllowedHotspotIds = new Set<number>();
-      if (options?.scopeToRouteId && Array.isArray(existingHotspots) && existingHotspots.length > 0) {
-        for (const row of (existingHotspots || []) as any[]) {
-          if (Number((row as any)?.itinerary_route_ID || 0) !== Number(route.itinerary_route_ID || 0)) continue;
-          if (Number((row as any)?.item_type || 0) !== 4) continue;
-
-          const hotspotId = Number((row as any)?.hotspot_ID || 0);
-          if (!(hotspotId > 0)) continue;
-
-          const isActiveRouteRow = Number((row as any)?.deleted || 0) === 0;
-          const isManualPlaceholder = Number((row as any)?.hotspot_plan_own_way || 0) === 1;
-          if (isActiveRouteRow || isManualPlaceholder) {
-            scopedPreviewAllowedHotspotIds.add(hotspotId);
-          }
-        }
-      }
-
-      if (options?.scopeToRouteId && scopedPreviewAllowedHotspotIds.size > 0) {
-        const beforeScopedPreviewFilterCount = selectedHotspots.length;
-        selectedHotspots = selectedHotspots.filter((hotspot: any) => {
-          const hotspotId = Number((hotspot as any)?.hotspot_ID || 0);
-          return hotspotId > 0 && scopedPreviewAllowedHotspotIds.has(hotspotId);
-        });
-
-        if (selectedHotspots.length !== beforeScopedPreviewFilterCount) {
-          this.logBookingRule({
-            rule: 'SCOPED_PREVIEW_ROUTE_HOTSPOT_FILTER',
-            quoteId:
-              (plan as any).quote_id ??
-              (plan as any).quoteId ??
-              (plan as any).quote_ID ??
-              null,
-            planId,
-            routeId: route.itinerary_route_ID,
-            beforeCount: beforeScopedPreviewFilterCount,
-            afterCount: selectedHotspots.length,
-            allowedHotspotIds: Array.from(scopedPreviewAllowedHotspotIds.values()),
-            reason:
-              'Route-scoped manual preview must preserve only the current route hotspot set plus selected manual placeholders; sibling-route auto hotspots are not allowed to leak into this day.',
-          });
-        }
-      }
-
-      const existingRouteOrderByHotspotId = new Map<number, number>();
-      for (const row of (existingHotspots || []) as any[]) {
-        if (Number((row as any)?.itinerary_route_ID || 0) !== Number(route.itinerary_route_ID || 0)) continue;
-        if (Number((row as any)?.deleted || 0) !== 0) continue;
-        if (Number((row as any)?.item_type || 0) !== 4) continue;
-
-        const hotspotId = Number((row as any)?.hotspot_ID || 0);
-        const hotspotOrder = Number((row as any)?.hotspot_order || 0);
-        if (!(hotspotId > 0) || !(hotspotOrder > 0)) continue;
-
-        const existingOrder = Number(existingRouteOrderByHotspotId.get(hotspotId) || 0);
-        if (!existingOrder || hotspotOrder < existingOrder) {
-          existingRouteOrderByHotspotId.set(hotspotId, hotspotOrder);
-        }
-      }
-
-      if (existingRouteOrderByHotspotId.size > 0) {
-        selectedHotspots = [...selectedHotspots].map((hotspot: any) => {
-          const hotspotId = Number((hotspot as any)?.hotspot_ID || 0);
-          const existingOrder = Number(existingRouteOrderByHotspotId.get(hotspotId) || 0);
-          if (!(existingOrder > 0)) {
-            return hotspot;
-          }
-
-          return {
-            ...hotspot,
-            display_order: existingOrder,
-          };
-        }).sort((a: any, b: any) => {
-          const ao = Number((a as any).display_order || Number.MAX_SAFE_INTEGER);
-          const bo = Number((b as any).display_order || Number.MAX_SAFE_INTEGER);
-          if (ao !== bo) return ao - bo;
-          return Number((a as any).hotspot_ID || 0) - Number((b as any).hotspot_ID || 0);
-        });
-      }
-
-      if (desiredMovableOrderRank.size > 0) {
-        const desiredBaseOrder = 1000;
-        selectedHotspots = [...selectedHotspots]
-          .map((hotspot: any) => {
-            const hotspotId = Number((hotspot as any)?.hotspot_ID || 0);
-            const desiredRank = desiredMovableOrderRank.get(hotspotId);
-            if (desiredRank == null) return hotspot;
-
-            return {
-              ...hotspot,
-              display_order: desiredBaseOrder + desiredRank,
-              __sameCityDesiredOrderRank: desiredRank,
-              __sameCityDesiredMovable: true,
-            };
-          })
-          .sort((a: any, b: any) => {
-            const ar = Number((a as any).__sameCityDesiredOrderRank ?? Number.MAX_SAFE_INTEGER);
-            const br = Number((b as any).__sameCityDesiredOrderRank ?? Number.MAX_SAFE_INTEGER);
-            if (ar !== br) return ar - br;
-
-            const ao = Number((a as any).display_order || Number.MAX_SAFE_INTEGER);
-            const bo = Number((b as any).display_order || Number.MAX_SAFE_INTEGER);
-            if (ao !== bo) return ao - bo;
-
-            return Number((a as any).hotspot_ID || 0) - Number((b as any).hotspot_ID || 0);
-          });
-
-        this.logBookingRule({
-          rule: 'SAME_CITY_DESIRED_MOVABLE_ORDER_APPLIED',
-          quoteId:
-            (plan as any).quote_id ??
-            (plan as any).quoteId ??
-            (plan as any).quote_ID ??
-            null,
-          planId,
-          routeId: route.itinerary_route_ID,
-          desiredMovableOrder: routeDesiredMovableOrder,
-          preferredAdjacencyPairs: routePreferredAdjacencyPairs,
-        });
-      }
-
-      const manualExistingForRoute = (existingHotspots || []).filter((row: any) =>
-        Number(row?.itinerary_route_ID || 0) === Number(route.itinerary_route_ID) &&
-        Number(row?.hotspot_plan_own_way || 0) === 1 &&
-        Number(row?.deleted || 0) === 0 &&
-        Number(row?.hotspot_ID || 0) > 0,
-      );
-
-      if (manualExistingForRoute.length > 0) {
-        const selectedById = new Map<number, any>();
-        for (const sh of selectedHotspots as any[]) {
-          const id = Number((sh as any).hotspot_ID || 0);
-          if (id > 0 && !selectedById.has(id)) {
-            selectedById.set(id, sh);
-          }
-        }
-
-        const mergedManuals = manualExistingForRoute.map((manual: any, index: number) => {
-          const hotspotId = Number(manual?.hotspot_ID || 0);
-          const preferredOrder = Number((manualPlacementByRoute as any)?.[Number(route.itinerary_route_ID)]?.hotspotOrder || 0);
-          const manualOrder = preferredOrder > 0
-            ? preferredOrder
-            : Number(manual?.hotspot_order || index + 1 || 1);
-          const existing = selectedById.get(hotspotId) || {};
-
-          return {
-            ...existing,
-            hotspot_ID: hotspotId,
-            display_order: manualOrder,
-            hotspot_priority: Number((existing as any)?.hotspot_priority ?? (manualOrder || 0)),
-            matched_bucket: 'manual',
-            isManualSelection: true,
-          } as any;
-        });
-
-        for (const manual of mergedManuals) {
-          selectedById.set(Number((manual as any).hotspot_ID || 0), manual);
-        }
-
-        selectedHotspots = Array.from(selectedById.values()).sort((a: any, b: any) => {
-          const ao = Number((a as any).display_order || Number.MAX_SAFE_INTEGER);
-          const bo = Number((b as any).display_order || Number.MAX_SAFE_INTEGER);
-          if (ao !== bo) return ao - bo;
-          const am = (a as any).isManualSelection ? 0 : 1;
-          const bm = (b as any).isManualSelection ? 0 : 1;
-          if (am !== bm) return am - bm;
-          return Number((a as any).hotspot_ID || 0) - Number((b as any).hotspot_ID || 0);
-        });
-      }
+      selectedHotspots = manualPlacementOrdering.selectedHotspots;
+      const { routeDesiredMovableSet, desiredMovableOrderRank, routePreferredAdjacencyPairs } = manualPlacementOrdering;
 
       let shouldReserveDestinationHotspotsForNextLoopbackDay = false;
       let nextLoopbackAvailableCount = 0;
