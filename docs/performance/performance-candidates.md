@@ -286,6 +286,8 @@ The iteration-65 route-hotspot deletion boundary is a measurement seam for route
 
 The iteration-66 activity-availability boundary is a measurement seam for activity catalog latency, active-row selectivity, per-activity slot query fan-out, pricing callback latency, slot-row volume, empty-catalog frequency and response serialization cost. Capture empty, single-activity, multi-activity, no-pricing and multi-slot workloads separately before batching slot reads, adding activity/slot indexes or caching immutable catalog data; preserve title/slot ordering and pricing response semantics.
 
+The iteration-67 confirmed invoice/pluck-card boundary is a measurement seam for confirmed-plan lookup latency, customer/settings lookup fan-out, hotel/vehicle/service child-row volume, GST/line-item assembly CPU, totals calculation, response serialization cost and end-to-end read latency. Capture missing-plan, pluck-card, empty-component, hotel-heavy, vehicle-heavy and multi-service invoice workloads separately before adding covering indexes, batching reads or introducing Redis; preserve financial rounding, line-item ordering, missing-plan validation and response fields.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.

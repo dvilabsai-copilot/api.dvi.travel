@@ -137,3 +137,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Activity ordering, slot ordering, pricing callback arguments and response projection remain unchanged; only orchestration ownership moved.
 - This is not a measured performance improvement: activity/slot fan-out, pricing latency, selectivity, empty-catalog rate and payload size remain unmeasured.
 - No index or Redis action is proposed; any future optimization must compare empty/single/multi-activity query plans and preserve response ordering.
+
+## Iteration 67 evidence update
+
+- The confirmed invoice/pluck-card extraction preserves the existing confirmed-plan, customer, settings, agent, account and component reads; no SQL, index, Redis cache or query shape was changed.
+- Parallel read ordering, GST state labeling, line-item ordering, financial totals and missing-plan validation remain unchanged; only presentation-read orchestration ownership moved.
+- This is not a measured performance improvement: lookup latency, child-row volume, assembly CPU, payload size, cacheability and end-to-end response latency remain unmeasured.
+- No index or Redis action is proposed; any future optimization must compare pluck-card/invoice query plans and preserve financial and response contracts.

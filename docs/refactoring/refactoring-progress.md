@@ -2262,3 +2262,32 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Activity/slot fan-out, pricing latency, active-row selectivity and response payload size remain unmeasured.
 - Implementation commit: `api.dvi.travel` `5d01b54`.
+
+### Cycle 70 - Extract confirmed invoice/pluck-card read projection
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: confirmed itinerary pluck-card and invoice presentation reads
+- New files: `src/modules/itineraries/services/itinerary-invoice-read.service.ts`, `test/itinerary-invoice-read.test.ts`
+- Workflow: confirmed itinerary read projection after activity availability and before mutation workflows
+
+#### Change
+
+- Moved pluck-card reads, invoice reads, GST state labeling and invoice line-item/totals assembly behind `ItineraryInvoiceReadService`.
+- Preserved plan/customer/settings predicates, parallel read ordering, financial arithmetic, missing-plan validation and response fields.
+- Kept the three existing facade methods and controller/API contract unchanged.
+
+#### Verification
+
+- Invoice/pluck-card characterization tests: PASS, 2/2
+- Combined focused backend/timeline suite: PASS, 147/147
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 10,654 lines after the tier; `ItineraryInvoiceReadService` is 383 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Confirmed-plan/customer/settings fan-out, line-item assembly CPU, payload size and end-to-end latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `8e7228b`.
