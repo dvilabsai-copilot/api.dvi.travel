@@ -14,7 +14,6 @@ import {
 } from './itinerary-hotel-details.service';
 import { haversineKm } from './utils/distance-utils';
 import {
-  HOTEL_RATE_PLAN_BY_CODE,
   inferCanonicalHotelRatePlanCode,
   inferCanonicalHotelRatePlanCodeFromMealFlags,
 } from '../hotels/hotel-rate-plans';
@@ -36,6 +35,7 @@ import { AxisroomsHotelProjectionService } from './services/axisrooms-hotel-proj
 import { SavedHotelIndicatorService } from './services/saved-hotel-indicator.service';
 import { StaahRoomMappingService } from './services/staah-room-mapping.service';
 import { StaahCandidateResultService } from './services/staah-candidate-result.service';
+import { StaahCandidateSelectionService } from './services/staah-candidate-selection.service';
 
 /**
  * This service generates dynamic hotel packages from TBO API
@@ -163,6 +163,7 @@ export class ItineraryHotelDetailsTboService {
   private readonly savedHotelIndicatorService = new SavedHotelIndicatorService();
   private readonly staahRoomMappingService = new StaahRoomMappingService();
   private readonly staahCandidateResultService = new StaahCandidateResultService();
+  private readonly staahCandidateSelectionService = new StaahCandidateSelectionService();
 
   private isTboOnlyFetchEnabled(): boolean {
     const raw = String(process.env.HOTEL_FETCH_TBO_ONLY || '').trim().toLowerCase();
@@ -1524,134 +1525,54 @@ export class ItineraryHotelDetailsTboService {
           if (!propertyInventoryRows.length || !propertyRatePlanRows.length || !rows.length) {
             continue;
           }
-          let selected: any = null;
-          let selectedMatchedPreferred = false;
-          let selectedReason = 'no valid rate';
-          let best = Number.POSITIVE_INFINITY;
-          const validDisplayCandidates: Array<{
-            rate: any;
-            rp: any;
-            price: number;
-          }> = [];
-          const blockedDisplayCandidates: Array<{
-            rate: any;
-            rp: any;
-            price: number;
-            reason: string;
-            availableAgainFrom: string | null;
-          }> = [];
-          for (const rate of rows) {
-            const rateKey = `${rate.staah_property_id}|${rate.room_id}|${rate.rateplan_id}`;
-            const rp = (ratePlanRows as any[]).find(
-              (x) =>
-                String(x.staah_property_id) === String(rate.staah_property_id) &&
-                String(x.rateplan_id) === String(rate.rateplan_id),
-            );
-            const roomId = String((rate as any).room_id || '');
-            if (!isAllowedStaahRoom(propertyId, roomId)) {
-              this.logger.warn(
-                `[STAAH STALE ROOM SKIPPED IN RATE LOOP] routeId=${routeId} propertyId=${propertyId} roomId=${roomId}`,
-              );
-              continue;
-            }
-            const exactRoomCode = this.normalizeExactRoomCode(roomId);
-            const looseRoomCode = this.normalizeLooseRoomCode(roomId);
-            const roomName =
-              roomTitleByHotelAndCode.get(`${hotelId}|${exactRoomCode}`) ||
-              roomTitleByHotelAndCode.get(`${hotelId}|${looseRoomCode}`) ||
-              `Room ${roomId}`;
-            const rateplanId = String((rate as any).rateplan_id || '');
-            const rateplanName = String((rp as any)?.rateplan_name || '').trim();
-            const mealPlanDescription = String((rp as any)?.meal_plan_description || '').trim();
-            const candidatePrice =
-              paxProfile && Object.keys(paxProfile).length > 0
-                ? calculateStaahOccupancyAmount((rate as any).occupancy_rates, paxProfile).finalCalculatedAmount
-                : this.extractStaahRate((rate as any).occupancy_rates);
-            const restrictionDecision = this.evaluateStaahRestrictions(
-              restrictionRowsByRateKey.get(rateKey) || [],
-              dateOnly,
-              checkOutDate,
-              lengthOfStay,
-            );
-            this.logger.debug(
-              `[STAAH CANDIDATE] routeId=${routeId} propertyId=${propertyId} hotelId=${String((hotel as any).hotel_id || '')} roomId=${roomId} roomName="${roomName}" rateplanId=${rateplanId} rateplanName="${rateplanName}" mealPlan="${mealPlanDescription}" price=${candidatePrice} blocked=${restrictionDecision.blocked ? 'true' : 'false'} reason="${restrictionDecision.reason || ''}" availableAgainFrom=${restrictionDecision.availableAgainFrom || ''} searchReference=STAAH-${propertyId}-${roomId}-${rateplanId}-${dateStamp}`,
-            );
-            if (restrictionDecision.blocked) {
-              selectedReason = restrictionDecision.reason || `restriction blocked rateplan ${String((rate as any).rateplan_id || '')}`;
-              this.logger.warn(
-                `[STAAH RESTRICTION] routeId=${routeId} propertyId=${propertyId} hotelId=${String((hotel as any).hotel_id || '')} roomId=${String((rate as any).room_id || '')} rateplanId=${String((rate as any).rateplan_id || '')} checkIn=${this.formatDateOnly(dateOnly)} checkOut=${this.formatDateOnly(checkOutDate)} los=${lengthOfStay} blocked=true reason="${selectedReason}"`,
-              );
-              if (includeRestrictedForDisplay) {
-                blockedDisplayCandidates.push({
-                  rate,
-                  rp,
-                  price: candidatePrice,
-                  reason: selectedReason,
-                  availableAgainFrom: restrictionDecision.availableAgainFrom,
-                });
-              }
-              continue;
-            }
-            const price = candidatePrice;
-            if (price <= 0) {
-              selectedReason = `no positive price for rateplan ${String((rate as any).rateplan_id || '')}`;
-              continue;
-            }
-            validDisplayCandidates.push({ rate, rp, price });
-            const preferredCode = String(preferredMealPlanCode || '').trim().toUpperCase();
-            const preferredDef = preferredCode ? HOTEL_RATE_PLAN_BY_CODE.get(preferredCode as any) : undefined;
-            const preferredIds = [String(preferredDef?.defaultRateplanId || ''), String(preferredDef?.externalRateplanId || '')].filter(Boolean);
-            const mealText = `${String((rp as any)?.rateplan_name || '')} ${String((rp as any)?.meal_plan_description || '')}`.toLowerCase();
-            const preferHit = preferredCode && (preferredIds.includes(String((rate as any).rateplan_id || '')) || mealText.includes(preferredCode.toLowerCase()));
-            if (preferHit || price < best) {
-              if (!selected || price < best) {
-                selected = { rate, rp, price };
-                best = price;
-                selectedMatchedPreferred = Boolean(preferHit);
-                selectedReason = preferHit ? `matched preferred meal plan ${preferredCode}` : 'selected cheapest valid rate';
-              }
-            }
-          }
-          const preferredCode = String(preferredMealPlanCode || '').trim().toUpperCase();
-          const preferredDef = preferredCode ? HOTEL_RATE_PLAN_BY_CODE.get(preferredCode as any) : undefined;
-          const preferredIds = [
-            String(preferredDef?.defaultRateplanId || ''),
-            String(preferredDef?.externalRateplanId || ''),
-          ].filter(Boolean);
-          const preferredBlocked = blockedDisplayCandidates.find((candidate) => {
-            if (!preferredCode) return false;
-            const mealText = `${String(candidate.rp?.rateplan_name || '')} ${String(candidate.rp?.meal_plan_description || '')}`.toLowerCase();
-            return preferredIds.includes(String((candidate.rate as any).rateplan_id || '')) || mealText.includes(preferredCode.toLowerCase());
+          const selection = this.staahCandidateSelectionService.select({
+            routeId,
+            propertyId,
+            hotel,
+            rows,
+            ratePlanRows: propertyRatePlanRows,
+            restrictionRowsByRateKey,
+            preferredMealPlanCode,
+            includeRestrictedForDisplay,
+            checkInDate: dateOnly,
+            checkOutDate,
+            lengthOfStay,
+            dateStamp,
+            callbacks: {
+              isAllowedRoom: (property, room) => isAllowedStaahRoom(property, room),
+              roomName: (roomId) => {
+                const exactRoomCode = this.normalizeExactRoomCode(roomId);
+                const looseRoomCode = this.normalizeLooseRoomCode(roomId);
+                return (
+                  roomTitleByHotelAndCode.get(`${hotelId}|${exactRoomCode}`) ||
+                  roomTitleByHotelAndCode.get(`${hotelId}|${looseRoomCode}`) ||
+                  `Room ${String(roomId || '')}`
+                );
+              },
+              calculatePrice: (rate) =>
+                paxProfile && Object.keys(paxProfile).length > 0
+                  ? calculateStaahOccupancyAmount(rate.occupancy_rates, paxProfile).finalCalculatedAmount
+                  : this.extractStaahRate(rate.occupancy_rates),
+              evaluateRestrictions: (rateKey) =>
+                this.evaluateStaahRestrictions(
+                  restrictionRowsByRateKey.get(rateKey) || [],
+                  dateOnly,
+                  checkOutDate,
+                  lengthOfStay,
+                ),
+              formatDate: (date) => this.formatDateOnly(date),
+              debug: (message) => this.logger.debug(message),
+              warn: (message) => this.logger.warn(message),
+            },
           });
-          const cheapestBlocked =
-            blockedDisplayCandidates.length > 0
-              ? [...blockedDisplayCandidates].sort((a, b) => {
-                  const priceA = Number.isFinite(Number(a.price)) && Number(a.price) > 0 ? Number(a.price) : Number.POSITIVE_INFINITY;
-                  const priceB = Number.isFinite(Number(b.price)) && Number(b.price) > 0 ? Number(b.price) : Number.POSITIVE_INFINITY;
-                  return priceA - priceB;
-                })[0]
-              : null;
-          const blockedCandidate =
-            preferredBlocked ||
-            cheapestBlocked;
-
-          const shouldSurfaceBlockedPreferred =
-            includeRestrictedForDisplay &&
-            Boolean(blockedCandidate) &&
-            (
-              !selected ||
-              (Boolean(preferredCode) && Boolean(preferredBlocked) && !selectedMatchedPreferred)
-            );
-
-          const shouldSurfaceBlockedVariant =
-            includeRestrictedForDisplay &&
-            !preferredCode &&
-            Boolean(blockedCandidate) &&
-            Boolean(selected);
-
-          this.logger.debug(
-            `[STAAH DECISION] routeId=${routeId} propertyId=${propertyId} hotelId=${String((hotel as any).hotel_id || '')} selectedRoomId=${String((selected as any)?.rate?.room_id || '')} selectedRateplanId=${String((selected as any)?.rate?.rateplan_id || '')} selectedMealPlan="${String((selected as any)?.rp?.meal_plan_description || (selected as any)?.rp?.rateplan_name || '').trim()}" selectedPrice=${Number((selected as any)?.price || 0)} selectedMatchedPreferred=${selectedMatchedPreferred ? 'true' : 'false'} blockedCandidateRoomId=${String((blockedCandidate as any)?.rate?.room_id || '')} blockedCandidateRateplanId=${String((blockedCandidate as any)?.rate?.rateplan_id || '')} blockedCandidateMealPlan="${String((blockedCandidate as any)?.rp?.meal_plan_description || (blockedCandidate as any)?.rp?.rateplan_name || '').trim()}" blockedCandidatePrice=${Number((blockedCandidate as any)?.price || 0)} shouldSurfaceBlockedPreferred=${shouldSurfaceBlockedPreferred ? 'true' : 'false'} shouldSurfaceBlockedVariant=${shouldSurfaceBlockedVariant ? 'true' : 'false'} selectedReason="${selectedReason}"`,
-          );
+          const {
+            selected,
+            selectedReason,
+            validDisplayCandidates,
+            blockedCandidate,
+            shouldSurfaceBlockedPreferred,
+            shouldSurfaceBlockedVariant,
+          } = selection;
 
           const pushedStaahResultKeys = new Set<string>();
           const pushStaahResult = (
