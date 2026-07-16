@@ -76,6 +76,7 @@ import { ItineraryMatrixRescheduledPreviewService } from './services/itinerary-m
 import { ItineraryConfirmedItineraryDetailsService } from './services/itinerary-confirmed-itinerary-details.service';
 import { ItineraryRouteTimingService } from './services/itinerary-route-timing.service';
 import { ItineraryManualFitTravelReplicaService } from './services/itinerary-manual-fit-travel-replica.service';
+import { ItineraryManualFitGeometryService } from './services/itinerary-manual-fit-geometry.service';
 
 @Module({
   imports: [HotelsModule],
@@ -131,6 +132,7 @@ import { ItineraryManualFitTravelReplicaService } from './services/itinerary-man
     ItineraryConfirmedItineraryDetailsService,
     ItineraryRouteTimingService,
     ItineraryManualFitTravelReplicaService,
+    ItineraryManualFitGeometryService,
 
     // existing engines you already had
     HotelEngineService,
