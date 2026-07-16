@@ -854,6 +854,7 @@ export class ItinerariesService {
       getHotspotDurationMinutesFromMasterFirst: (...args) => (this.getHotspotDurationMinutesFromMasterFirst as any)(...args),
       getPreviewRowDurationFromDurationFieldsOnly: (...args) => (this.getPreviewRowDurationFromDurationFieldsOnly as any)(...args),
       getPreviewRowDurationMinutes: (...args) => (this.getPreviewRowDurationMinutes as any)(...args),
+      hmsToSeconds: (...args) => (this.hmsToSeconds as any)(...args),
       minutesRangeToTimeString: (...args) => (this.minutesRangeToTimeString as any)(...args),
       minutesToUtcTimeDate: (...args) => (this.minutesToUtcTimeDate as any)(...args),
       parsePreviewTimeToMinutes: (...args) => (this.parsePreviewTimeToMinutes as any)(...args),
@@ -887,6 +888,8 @@ export class ItinerariesService {
       parseSegmentStartMinutes: (...args) => (this.parseSegmentStartMinutes as any)(...args),
       getPreviewRowDurationMinutes: (...args) => (this.getPreviewRowDurationMinutes as any)(...args),
       resolveRouteSourceEndpoint: (...args) => (this.resolveRouteSourceEndpoint as any)(...args),
+      resolveRouteDestinationCityEndpoint: (...args) => (this.resolveRouteDestinationCityEndpoint as any)(...args),
+      resolveSelectedHotelEndpoint: (...args) => (this.resolveSelectedHotelEndpoint as any)(...args),
       resolveSavedRuleHotspotToRouteHotelLeg: (...args) => (this.resolveSavedRuleHotspotToRouteHotelLeg as any)(...args),
     });
     this.manualFitGeometryService.setCallbacks({
@@ -2910,273 +2913,36 @@ private getGuideSlotLabel(slotId: number): string {
   private haversineKmForRouteProjection(...args: any[]) {
     return (this.manualFitGeometryService.haversineKmForRouteProjection as any)(...args);
   }
-
-  private getSavedRuleTravelLocationType(
-    startLocation: string,
-    endLocation: string,
-  ): 1 | 2 {
-    const startLocations = String(startLocation || '').split('|').map((s) => s.trim()).filter(Boolean);
-    const endLocations = String(endLocation || '').split('|').map((e) => e.trim()).filter(Boolean);
-
-    for (const start of startLocations) {
-      for (const end of endLocations) {
-        if (start === end) return 1;
-      }
-    }
-
-    return 2;
+  private getSavedRuleTravelLocationType(...args: any[]): 1 | 2 {
+    return (this.manualFitTravelReplicaService.getSavedRuleTravelLocationType as any)(...args);
   }
 
-  private getPrimaryTravelLocationLabel(value: unknown): string {
-    return String(value || '').split('|')[0].trim();
+  private getPrimaryTravelLocationLabel(...args: any[]): string {
+    return (this.manualFitTravelReplicaService.getPrimaryTravelLocationLabel as any)(...args);
   }
 
-  private hmsToMinutes(value: string | null | undefined): number {
-    return Math.max(
-      0,
-      Math.round(
-        this.hmsToSeconds(
-          TimeConverter.toTimeString(value || '00:00:00'),
-        ) / 60,
-      ),
-    );
+  private hmsToMinutes(...args: any[]): number {
+    return (this.manualFitTravelReplicaService.hmsToMinutes as any)(...args);
   }
 
-  private async resolveHotspotPreviewEndpoint(
-    tx: any,
-    hotspotId: number,
-  ): Promise<{
-    hotspotId: number;
-    hotspotName: string;
-    travelLocationName: string;
-    latitude: number | null;
-    longitude: number | null;
-  } | null> {
-    if (!(Number(hotspotId) > 0)) return null;
-
-    const hotspot = await (tx as any).dvi_hotspot_place.findFirst({
-      where: {
-        hotspot_ID: Number(hotspotId),
-        deleted: 0,
-      },
-      select: {
-        hotspot_ID: true,
-        hotspot_name: true,
-        hotspot_location: true,
-        hotspot_latitude: true,
-        hotspot_longitude: true,
-      },
-    });
-
-    if (!hotspot) return null;
-
-    const travelLocationName = String(
-      hotspot?.hotspot_location ||
-      hotspot?.hotspot_name ||
-      `Hotspot #${Number(hotspotId)}`,
-    ).trim();
-    const hotspotName = String(
-      hotspot?.hotspot_name ||
-      travelLocationName ||
-      `Hotspot #${Number(hotspotId)}`,
-    ).trim();
-
-    const latitude = Number(hotspot?.hotspot_latitude);
-    const longitude = Number(hotspot?.hotspot_longitude);
-
-    return {
-      hotspotId: Number(hotspot?.hotspot_ID || hotspotId),
-      hotspotName,
-      travelLocationName,
-      latitude: Number.isFinite(latitude) ? latitude : null,
-      longitude: Number.isFinite(longitude) ? longitude : null,
-    };
+  private resolveHotspotPreviewEndpoint(...args: any[]): any {
+    return (this.manualFitTravelReplicaService.resolveHotspotPreviewEndpoint as any)(...args);
   }
 
-  private async resolveSavedRuleTravelLeg(params: {
-    tx: any;
-    fromLocationName: string;
-    toLocationName: string;
-    sourceCoords?: { lat: number; lon: number } | null;
-    destCoords?: { lat: number; lon: number } | null;
-    includeBuffer: boolean;
-  }): Promise<{
-    distanceKm: number | null;
-    travelMinutes: number;
-    bufferMinutes: number;
-    durationMin: number;
-    travelLocationType: 1 | 2;
-  }> {
-    const fromLocationName = String(params.fromLocationName || '').trim();
-    const toLocationName = String(params.toLocationName || '').trim();
-    const travelLocationType = this.getSavedRuleTravelLocationType(fromLocationName, toLocationName);
-
-    const sourceCoords = params.sourceCoords
-      && Number.isFinite(Number(params.sourceCoords.lat))
-      && Number.isFinite(Number(params.sourceCoords.lon))
-      ? { lat: Number(params.sourceCoords.lat), lon: Number(params.sourceCoords.lon) }
-      : undefined;
-    const destCoords = params.destCoords
-      && Number.isFinite(Number(params.destCoords.lat))
-      && Number.isFinite(Number(params.destCoords.lon))
-      ? { lat: Number(params.destCoords.lat), lon: Number(params.destCoords.lon) }
-      : undefined;
-
-    const result = await this.previewDistanceHelper.fromSourceAndDestination(
-      params.tx,
-      fromLocationName,
-      toLocationName,
-      travelLocationType,
-      sourceCoords,
-      destCoords,
-    );
-
-    const travelMinutes = this.hmsToMinutes(result?.travelTime || '00:00:00');
-    const bufferMinutes = this.hmsToMinutes(result?.bufferTime || '00:00:00');
-    const durationMin = Math.max(1, travelMinutes + (params.includeBuffer ? bufferMinutes : 0));
-    const distanceKm = Number.isFinite(Number(result?.distanceKm))
-      ? Number(result.distanceKm)
-      : null;
-
-    return {
-      distanceKm,
-      travelMinutes,
-      bufferMinutes,
-      durationMin,
-      travelLocationType,
-    };
+  private resolveSavedRuleTravelLeg(...args: any[]): any {
+    return (this.manualFitTravelReplicaService.resolveSavedRuleTravelLeg as any)(...args);
   }
 
-  private async resolveSavedRuleSourceToHotspotLeg(
-    tx: any,
-    routeId: number,
-    hotspotId: number,
-  ): Promise<{
-    distanceKm: number | null;
-    durationMin: number;
-    sourceName: string;
-    destinationName: string;
-  } | null> {
-    const source = await this.resolveRouteSourceEndpoint(tx, Number(routeId));
-    const hotspot = await this.resolveHotspotPreviewEndpoint(tx, Number(hotspotId));
-    if (!source?.sourceName || !hotspot?.travelLocationName) return null;
-
-    const savedLeg = await this.resolveSavedRuleTravelLeg({
-      tx,
-      fromLocationName: source.sourceName,
-      toLocationName: hotspot.travelLocationName,
-      sourceCoords: Number.isFinite(Number(source.latitude)) && Number.isFinite(Number(source.longitude))
-        ? { lat: Number(source.latitude), lon: Number(source.longitude) }
-        : null,
-      destCoords: hotspot.latitude != null && hotspot.longitude != null
-        ? { lat: Number(hotspot.latitude), lon: Number(hotspot.longitude) }
-        : null,
-      includeBuffer: false,
-    });
-
-    return {
-      distanceKm: savedLeg.distanceKm,
-      durationMin: savedLeg.durationMin,
-      sourceName: source.sourceName,
-      destinationName: hotspot.hotspotName,
-    };
+  private resolveSavedRuleSourceToHotspotLeg(...args: any[]): any {
+    return (this.manualFitTravelReplicaService.resolveSavedRuleSourceToHotspotLeg as any)(...args);
   }
 
-  private async resolveSavedRuleHotspotToHotspotLeg(
-    tx: any,
-    fromHotspotId: number,
-    toHotspotId: number,
-  ): Promise<{
-    distanceKm: number | null;
-    durationMin: number;
-    fromName: string;
-    toName: string;
-  } | null> {
-    const fromHotspot = await this.resolveHotspotPreviewEndpoint(tx, Number(fromHotspotId));
-    const toHotspot = await this.resolveHotspotPreviewEndpoint(tx, Number(toHotspotId));
-    if (!fromHotspot?.travelLocationName || !toHotspot?.travelLocationName) return null;
-
-    const savedLeg = await this.resolveSavedRuleTravelLeg({
-      tx,
-      fromLocationName: fromHotspot.travelLocationName,
-      toLocationName: toHotspot.travelLocationName,
-      sourceCoords: fromHotspot.latitude != null && fromHotspot.longitude != null
-        ? { lat: Number(fromHotspot.latitude), lon: Number(fromHotspot.longitude) }
-        : null,
-      destCoords: toHotspot.latitude != null && toHotspot.longitude != null
-        ? { lat: Number(toHotspot.latitude), lon: Number(toHotspot.longitude) }
-        : null,
-      includeBuffer: false,
-    });
-
-    return {
-      distanceKm: savedLeg.distanceKm,
-      durationMin: savedLeg.durationMin,
-      fromName: fromHotspot.hotspotName,
-      toName: toHotspot.hotspotName,
-    };
+  private resolveSavedRuleHotspotToHotspotLeg(...args: any[]): any {
+    return (this.manualFitTravelReplicaService.resolveSavedRuleHotspotToHotspotLeg as any)(...args);
   }
 
-  private async resolveSavedRuleHotspotToRouteHotelLeg(
-    tx: any,
-    planId: number,
-    routeId: number,
-    hotspotId: number,
-  ): Promise<{
-    distanceKm: number | null;
-    durationMin: number;
-    fromName: string;
-    hotelLabel: string;
-    sourceCity: string;
-    destinationCity: string;
-  } | null> {
-    const hotspot = await this.resolveHotspotPreviewEndpoint(tx, Number(hotspotId));
-    const destinationCityEndpoint = await this.resolveRouteDestinationCityEndpoint(tx, Number(routeId));
-    const selectedHotelEndpoint = await this.resolveSelectedHotelEndpoint(tx, Number(planId), Number(routeId));
-    const route = await (tx as any).dvi_itinerary_route_details.findFirst({
-      where: {
-        itinerary_route_ID: Number(routeId),
-        deleted: 0,
-      },
-      select: {
-        next_visiting_location: true,
-      },
-    });
-
-    if (!hotspot?.travelLocationName || !destinationCityEndpoint) return null;
-
-    const sourceCity = this.getPrimaryTravelLocationLabel(hotspot.travelLocationName) || hotspot.travelLocationName;
-    const destinationCity = this.getPrimaryTravelLocationLabel(
-      route?.next_visiting_location ||
-      destinationCityEndpoint.hotelName ||
-      '',
-    ) || String(route?.next_visiting_location || destinationCityEndpoint.hotelName || 'Destination').trim();
-
-    const savedLeg = await this.resolveSavedRuleTravelLeg({
-      tx,
-      fromLocationName: sourceCity,
-      toLocationName: destinationCity,
-      sourceCoords: hotspot.latitude != null && hotspot.longitude != null
-        ? { lat: Number(hotspot.latitude), lon: Number(hotspot.longitude) }
-        : null,
-      destCoords: Number.isFinite(Number(destinationCityEndpoint.latitude)) && Number.isFinite(Number(destinationCityEndpoint.longitude))
-        ? { lat: Number(destinationCityEndpoint.latitude), lon: Number(destinationCityEndpoint.longitude) }
-        : null,
-      includeBuffer: true,
-    });
-
-    return {
-      distanceKm: savedLeg.distanceKm,
-      durationMin: savedLeg.durationMin,
-      fromName: hotspot.hotspotName,
-      hotelLabel: String(
-        selectedHotelEndpoint?.hotelName ||
-        destinationCityEndpoint?.hotelName ||
-        'Hotel',
-      ).trim(),
-      sourceCity,
-      destinationCity,
-    };
+  private resolveSavedRuleHotspotToRouteHotelLeg(...args: any[]): any {
+    return (this.manualFitTravelReplicaService.resolveSavedRuleHotspotToRouteHotelLeg as any)(...args);
   }
   private extractPreviewCheckinHotelName(...args: any[]): string {
     return (this.manualFitTravelReplicaService.extractPreviewCheckinHotelName as any)(...args);

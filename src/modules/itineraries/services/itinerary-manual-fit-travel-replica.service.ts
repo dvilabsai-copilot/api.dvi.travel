@@ -2,12 +2,15 @@
 
 import { Injectable } from '@nestjs/common';
 import { haversineKm } from '../utils/distance-utils';
+import { DistanceHelper } from '../engines/helpers/distance.helper';
+import { TimeConverter } from '../engines/helpers/time-converter';
 
 type ManualFitTravelReplicaCallbacks = Record<string, (...args: any[]) => any>;
 
 @Injectable()
 export class ItineraryManualFitTravelReplicaService {
   private callbacks: ManualFitTravelReplicaCallbacks = {};
+  private readonly previewDistanceHelper = new DistanceHelper();
 
   setCallbacks(callbacks: ManualFitTravelReplicaCallbacks): void {
     this.callbacks = { ...this.callbacks, ...callbacks };
@@ -23,6 +26,21 @@ export class ItineraryManualFitTravelReplicaService {
 
   private parseSegmentEndMinutes(segment: any): number | null {
     return this.callbacks.parseSegmentEndMinutes?.(segment) ?? null;
+  }
+
+  private hmsToSeconds(value: string): number {
+    const callbackValue = this.callbacks.hmsToSeconds?.(value);
+    if (callbackValue != null) return Number(callbackValue);
+    const [hours, minutes, seconds] = TimeConverter.toTimeString(value).split(':').map(Number);
+    return (Number(hours || 0) * 3600) + (Number(minutes || 0) * 60) + Number(seconds || 0);
+  }
+
+  private resolveRouteDestinationCityEndpoint(...args: any[]): any {
+    return this.callbacks.resolveRouteDestinationCityEndpoint?.(...args);
+  }
+
+  private resolveSelectedHotelEndpoint(...args: any[]): any {
+    return this.callbacks.resolveSelectedHotelEndpoint?.(...args);
   }
 
   public buildManualFitTravelReplicaDisplayFields(
@@ -706,6 +724,275 @@ export class ItineraryManualFitTravelReplicaService {
     }
 
     return null;
+  }
+
+
+  public getSavedRuleTravelLocationType(
+    startLocation: string,
+    endLocation: string,
+  ): 1 | 2 {
+    const startLocations = String(startLocation || '').split('|').map((s) => s.trim()).filter(Boolean);
+    const endLocations = String(endLocation || '').split('|').map((e) => e.trim()).filter(Boolean);
+
+    for (const start of startLocations) {
+      for (const end of endLocations) {
+        if (start === end) return 1;
+      }
+    }
+
+    return 2;
+  }
+
+  public getPrimaryTravelLocationLabel(value: unknown): string {
+    return String(value || '').split('|')[0].trim();
+  }
+
+  public hmsToMinutes(value: string | null | undefined): number {
+    return Math.max(
+      0,
+      Math.round(
+        this.hmsToSeconds(
+          TimeConverter.toTimeString(value || '00:00:00'),
+        ) / 60,
+      ),
+    );
+  }
+
+  public async resolveHotspotPreviewEndpoint(
+    tx: any,
+    hotspotId: number,
+  ): Promise<{
+    hotspotId: number;
+    hotspotName: string;
+    travelLocationName: string;
+    latitude: number | null;
+    longitude: number | null;
+  } | null> {
+    if (!(Number(hotspotId) > 0)) return null;
+
+    const hotspot = await (tx as any).dvi_hotspot_place.findFirst({
+      where: {
+        hotspot_ID: Number(hotspotId),
+        deleted: 0,
+      },
+      select: {
+        hotspot_ID: true,
+        hotspot_name: true,
+        hotspot_location: true,
+        hotspot_latitude: true,
+        hotspot_longitude: true,
+      },
+    });
+
+    if (!hotspot) return null;
+
+    const travelLocationName = String(
+      hotspot?.hotspot_location ||
+      hotspot?.hotspot_name ||
+      `Hotspot #${Number(hotspotId)}`,
+    ).trim();
+    const hotspotName = String(
+      hotspot?.hotspot_name ||
+      travelLocationName ||
+      `Hotspot #${Number(hotspotId)}`,
+    ).trim();
+
+    const latitude = Number(hotspot?.hotspot_latitude);
+    const longitude = Number(hotspot?.hotspot_longitude);
+
+    return {
+      hotspotId: Number(hotspot?.hotspot_ID || hotspotId),
+      hotspotName,
+      travelLocationName,
+      latitude: Number.isFinite(latitude) ? latitude : null,
+      longitude: Number.isFinite(longitude) ? longitude : null,
+    };
+  }
+
+  public async resolveSavedRuleTravelLeg(params: {
+    tx: any;
+    fromLocationName: string;
+    toLocationName: string;
+    sourceCoords?: { lat: number; lon: number } | null;
+    destCoords?: { lat: number; lon: number } | null;
+    includeBuffer: boolean;
+  }): Promise<{
+    distanceKm: number | null;
+    travelMinutes: number;
+    bufferMinutes: number;
+    durationMin: number;
+    travelLocationType: 1 | 2;
+  }> {
+    const fromLocationName = String(params.fromLocationName || '').trim();
+    const toLocationName = String(params.toLocationName || '').trim();
+    const travelLocationType = this.getSavedRuleTravelLocationType(fromLocationName, toLocationName);
+
+    const sourceCoords = params.sourceCoords
+      && Number.isFinite(Number(params.sourceCoords.lat))
+      && Number.isFinite(Number(params.sourceCoords.lon))
+      ? { lat: Number(params.sourceCoords.lat), lon: Number(params.sourceCoords.lon) }
+      : undefined;
+    const destCoords = params.destCoords
+      && Number.isFinite(Number(params.destCoords.lat))
+      && Number.isFinite(Number(params.destCoords.lon))
+      ? { lat: Number(params.destCoords.lat), lon: Number(params.destCoords.lon) }
+      : undefined;
+
+    const result = await this.previewDistanceHelper.fromSourceAndDestination(
+      params.tx,
+      fromLocationName,
+      toLocationName,
+      travelLocationType,
+      sourceCoords,
+      destCoords,
+    );
+
+    const travelMinutes = this.hmsToMinutes(result?.travelTime || '00:00:00');
+    const bufferMinutes = this.hmsToMinutes(result?.bufferTime || '00:00:00');
+    const durationMin = Math.max(1, travelMinutes + (params.includeBuffer ? bufferMinutes : 0));
+    const distanceKm = Number.isFinite(Number(result?.distanceKm))
+      ? Number(result.distanceKm)
+      : null;
+
+    return {
+      distanceKm,
+      travelMinutes,
+      bufferMinutes,
+      durationMin,
+      travelLocationType,
+    };
+  }
+
+  public async resolveSavedRuleSourceToHotspotLeg(
+    tx: any,
+    routeId: number,
+    hotspotId: number,
+  ): Promise<{
+    distanceKm: number | null;
+    durationMin: number;
+    sourceName: string;
+    destinationName: string;
+  } | null> {
+    const source = await this.resolveRouteSourceEndpoint(tx, Number(routeId));
+    const hotspot = await this.resolveHotspotPreviewEndpoint(tx, Number(hotspotId));
+    if (!source?.sourceName || !hotspot?.travelLocationName) return null;
+
+    const savedLeg = await this.resolveSavedRuleTravelLeg({
+      tx,
+      fromLocationName: source.sourceName,
+      toLocationName: hotspot.travelLocationName,
+      sourceCoords: Number.isFinite(Number(source.latitude)) && Number.isFinite(Number(source.longitude))
+        ? { lat: Number(source.latitude), lon: Number(source.longitude) }
+        : null,
+      destCoords: hotspot.latitude != null && hotspot.longitude != null
+        ? { lat: Number(hotspot.latitude), lon: Number(hotspot.longitude) }
+        : null,
+      includeBuffer: false,
+    });
+
+    return {
+      distanceKm: savedLeg.distanceKm,
+      durationMin: savedLeg.durationMin,
+      sourceName: source.sourceName,
+      destinationName: hotspot.hotspotName,
+    };
+  }
+
+  public async resolveSavedRuleHotspotToHotspotLeg(
+    tx: any,
+    fromHotspotId: number,
+    toHotspotId: number,
+  ): Promise<{
+    distanceKm: number | null;
+    durationMin: number;
+    fromName: string;
+    toName: string;
+  } | null> {
+    const fromHotspot = await this.resolveHotspotPreviewEndpoint(tx, Number(fromHotspotId));
+    const toHotspot = await this.resolveHotspotPreviewEndpoint(tx, Number(toHotspotId));
+    if (!fromHotspot?.travelLocationName || !toHotspot?.travelLocationName) return null;
+
+    const savedLeg = await this.resolveSavedRuleTravelLeg({
+      tx,
+      fromLocationName: fromHotspot.travelLocationName,
+      toLocationName: toHotspot.travelLocationName,
+      sourceCoords: fromHotspot.latitude != null && fromHotspot.longitude != null
+        ? { lat: Number(fromHotspot.latitude), lon: Number(fromHotspot.longitude) }
+        : null,
+      destCoords: toHotspot.latitude != null && toHotspot.longitude != null
+        ? { lat: Number(toHotspot.latitude), lon: Number(toHotspot.longitude) }
+        : null,
+      includeBuffer: false,
+    });
+
+    return {
+      distanceKm: savedLeg.distanceKm,
+      durationMin: savedLeg.durationMin,
+      fromName: fromHotspot.hotspotName,
+      toName: toHotspot.hotspotName,
+    };
+  }
+
+  public async resolveSavedRuleHotspotToRouteHotelLeg(
+    tx: any,
+    planId: number,
+    routeId: number,
+    hotspotId: number,
+  ): Promise<{
+    distanceKm: number | null;
+    durationMin: number;
+    fromName: string;
+    hotelLabel: string;
+    sourceCity: string;
+    destinationCity: string;
+  } | null> {
+    const hotspot = await this.resolveHotspotPreviewEndpoint(tx, Number(hotspotId));
+    const destinationCityEndpoint = await this.resolveRouteDestinationCityEndpoint(tx, Number(routeId));
+    const selectedHotelEndpoint = await this.resolveSelectedHotelEndpoint(tx, Number(planId), Number(routeId));
+    const route = await (tx as any).dvi_itinerary_route_details.findFirst({
+      where: {
+        itinerary_route_ID: Number(routeId),
+        deleted: 0,
+      },
+      select: {
+        next_visiting_location: true,
+      },
+    });
+
+    if (!hotspot?.travelLocationName || !destinationCityEndpoint) return null;
+
+    const sourceCity = this.getPrimaryTravelLocationLabel(hotspot.travelLocationName) || hotspot.travelLocationName;
+    const destinationCity = this.getPrimaryTravelLocationLabel(
+      route?.next_visiting_location ||
+      destinationCityEndpoint.hotelName ||
+      '',
+    ) || String(route?.next_visiting_location || destinationCityEndpoint.hotelName || 'Destination').trim();
+
+    const savedLeg = await this.resolveSavedRuleTravelLeg({
+      tx,
+      fromLocationName: sourceCity,
+      toLocationName: destinationCity,
+      sourceCoords: hotspot.latitude != null && hotspot.longitude != null
+        ? { lat: Number(hotspot.latitude), lon: Number(hotspot.longitude) }
+        : null,
+      destCoords: Number.isFinite(Number(destinationCityEndpoint.latitude)) && Number.isFinite(Number(destinationCityEndpoint.longitude))
+        ? { lat: Number(destinationCityEndpoint.latitude), lon: Number(destinationCityEndpoint.longitude) }
+        : null,
+      includeBuffer: true,
+    });
+
+    return {
+      distanceKm: savedLeg.distanceKm,
+      durationMin: savedLeg.durationMin,
+      fromName: hotspot.hotspotName,
+      hotelLabel: String(
+        selectedHotelEndpoint?.hotelName ||
+        destinationCityEndpoint?.hotelName ||
+        'Hotel',
+      ).trim(),
+      sourceCity,
+      destinationCity,
+    };
   }
 
 }
