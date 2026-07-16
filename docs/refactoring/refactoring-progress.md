@@ -3482,3 +3482,31 @@
 - `itinerary-details.service.ts` measured at 5,311 lines after the tier; `itinerary-details-entry-ticket-cost.service.ts` is 32 lines.
 - Entry-ticket row volume, grouping CPU and details response projection latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `8c94662`.
+
+### Cycle 112 - Extract itinerary latest DataTable query
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itinerary-details.service.ts`
+- Extracted responsibility: latest-itinerary DataTable parameter normalization, role/search filtering, plan/user/staff/agent hydration, confirmed-plan exclusion and row projection
+- New files: `src/modules/itineraries/services/itinerary-latest-data-table.service.ts`, `test/itinerary-latest-data-table.test.ts`
+- Workflow: `getLatestItinerariesDataTable` API endpoint
+
+#### Change
+
+- Moved the complete DataTable query and projection workflow behind `ItineraryLatestDataTableService`; the facade now supplies Prisma and existing date/display helpers.
+- Preserved request/query fallback precedence, role scoping, search branches, confirmed-plan filtering, pagination, user-label rules, date labels and response keys.
+- No SQL predicate, index, Redis cache, API route, DTO or response contract changed.
+
+#### Verification
+
+- Latest DataTable characterization tests: PASS, 2/2
+- Itinerary characterization collection: PASS, 158/158
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itinerary-details.service.ts` measured at 4,975 lines after the tier; `itinerary-latest-data-table.service.ts` is 361 lines.
+- DataTable query latency, search fan-out, hydration row volume and projection serialization cost remain unmeasured.
+- Implementation commit: `api.dvi.travel` `2398e4c`.

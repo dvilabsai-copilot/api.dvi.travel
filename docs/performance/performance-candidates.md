@@ -370,6 +370,8 @@ The iteration-107 itinerary-details route-hotspot-data boundary is a measurement
 
 The iteration-108 itinerary-details entry-ticket boundary is a measurement seam for plan-scoped cost-row latency, active-row selectivity, route-hotspot row volume, numeric normalization CPU, grouped-map cardinality and entry-ticket response projection latency. Capture empty, one-hotspot, multi-traveller, zero-ID, duplicate-row and large-plan workloads separately before proposing a covering index, batching or caching mutable cost rows; preserve active/status/deleted predicates, persistence ordering and financial response fields. No index addition/removal or Redis cache is justified by this narrow ownership tier without query-plan and row-volume evidence.
 
+The iteration-109 latest-itinerary DataTable boundary is a measurement seam for role-scope lookup latency, search fan-out, staff/agent/user selectivity, confirmed-plan exclusion volume, plan-row count, pagination slice CPU, label formatting CPU and end-to-end table response latency. Capture unfiltered, role-scoped, text-search, date-filtered, location-filtered, confirmed-heavy and large-plan workloads separately before proposing composite indexes, batching or Redis; preserve search predicates, role semantics, confirmation freshness, pagination and response labels. No index addition/removal or Redis cache is justified until query plans and endpoint traces establish the measured winner.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.
