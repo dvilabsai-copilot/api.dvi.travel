@@ -3178,3 +3178,30 @@
 - `HotelList.tsx` measured at 3,586 lines after the tier; `hotel-list-normalization.ts` is 155 lines.
 - Build warnings retained for stale Browserslist data, large chunks, ambiguous Tailwind utility and mixed dynamic/static imports; none are caused by this extraction.
 - Implementation commit: `dvi_frontend` `5841480`.
+
+### Cycle 101 - Extract vehicle pricing slab policy
+
+#### Scope
+
+- Original file: `src/modules/itineraries/engines/vehicle-calculation.helpers.ts`
+- Extracted responsibility: numeric coercion, local time-limit signature parsing, slab ordering, coverage and selected-slab upgrade policy
+- New files: `src/modules/itineraries/engines/vehicle-pricing-policy.ts`, `test/vehicle-pricing-policy.test.ts`
+- Workflow: local vehicle pricebook selection and vehicle cost calculation
+
+#### Change
+
+- Moved the pure slab-selection boundary behind `vehicle-pricing-policy.ts`; database-backed location, toll, parking, distance and cost orchestration remain in the existing helper.
+- Preserved numeric fallbacks, title parsing, deterministic ordering, selected-slab retention, largest-slab fallback and upgrade/no-higher-slab flags.
+- No SQL predicate, index, Redis cache, provider request or vehicle-cost response contract changed.
+
+#### Verification
+
+- Vehicle-pricing policy characterization tests: PASS, 4/4
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `vehicle-calculation.helpers.ts` measured at 3,448 lines after the tier; `vehicle-pricing-policy.ts` is 99 lines.
+- Pricing CPU, local pricebook row counts and selection-query latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `fc4a39e`.

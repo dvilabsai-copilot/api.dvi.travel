@@ -354,3 +354,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Meal-plan precedence, amount rounding, date locale, inclusion-list parsing, star-category parsing and supplier fallback behavior remain unchanged.
 - This is not a measured database performance improvement: component render time, normalization CPU, bundle contribution and supplier-row projection cost remain unmeasured.
 - No index or Redis action is proposed; future work should profile HotelList render boundaries and bundle composition before memoization or additional UI extraction.
+
+## Iteration 98 evidence update
+
+- The vehicle-pricing policy extraction changes only pure slab-selection ownership; no SQL, index, Redis cache, stored-location predicate or vehicle-cost response shape changed.
+- Numeric coercion, title-derived time limits, deterministic slab ordering, selected-slab coverage, upgrade flags and over-range fallback remain unchanged.
+- This is not a measured database performance improvement: local pricebook row counts, pricebook query latency, slab CPU and vehicle-cost projection latency remain unmeasured.
+- No index or Redis action is proposed; future work should capture pricebook query plans and slab-selection traces before batching, memoizing or caching mutable pricing data.
