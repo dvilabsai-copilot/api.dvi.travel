@@ -61,6 +61,7 @@ import { TimelineDay1CandidateGateService } from './timeline-day1-candidate-gate
 import { TimelineDay1CutoffMasterService } from './timeline-day1-cutoff-master.service';
 import { TimelineDay1TravelProjectionService } from './timeline-day1-travel-projection.service';
 import { TimelineInitialRefreshmentService } from './timeline-initial-refreshment.service';
+import { TimelineRouteCoordinateResolutionService } from './timeline-route-coordinate-resolution.service';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -225,6 +226,7 @@ export class TimelineBuilder {
   private readonly day1CutoffMasterService = new TimelineDay1CutoffMasterService();
   private readonly day1TravelProjectionService = new TimelineDay1TravelProjectionService();
   private readonly initialRefreshmentService = new TimelineInitialRefreshmentService();
+  private readonly routeCoordinateResolutionService = new TimelineRouteCoordinateResolutionService();
   private readonly candidatePolicyService = new TimelineCandidatePolicyService(
     this.operatingHoursService,
     this.slotPolicyService,
@@ -633,18 +635,26 @@ export class TimelineBuilder {
       // Maintain current logical location name for distance calculations.
       // Start with the route's location_name (same as PHP "route start city").
       // Parse pipe-separated location to get first/main location only
-      const rawStartLocation = (route.location_name as string) ||
-        (route.next_visiting_location as string) ||
-        (plan.departure_location as string) ||
-        "";
-      let currentLocationName: string = rawStartLocation.split('|')[0].trim();
+      const routeCoordinates = await this.routeCoordinateResolutionService.resolve({
+        tx,
+        route,
+        plan,
+        hasUsableCoords: (value) => this.travelDataService.hasUsableCoords(value),
+        resolvePlaceCoords: (contextTx, place, side) =>
+          this.travelDataService.resolvePlaceCoords(contextTx, place, side),
+      });
+      let currentLocationName = routeCoordinates.currentLocationName;
+      let currentCoords = routeCoordinates.currentCoords;
+      const destCityCoords = routeCoordinates.destCityCoords;
+      const sourceCity = routeCoordinates.sourceCity;
+      const destinationCity = routeCoordinates.destinationCity;
+      const routeStartLocationName = currentLocationName;
+      const routeStartCoords = currentCoords
+        ? { lat: Number(currentCoords.lat ?? 0), lon: Number(currentCoords.lon ?? 0) }
+        : null;
       
       // Get starting coordinates from stored_locations using location_id (PHP: getITINEARYROUTE_DETAILS + getSTOREDLOCATIONDETAILS)
       // PHP line 1108-1109: $staring_location_latitude = getSTOREDLOCATIONDETAILS($start_location_id, 'source_location_lattitude');
-      let currentCoords: { lat: number; lon: number } | undefined = undefined;
-      let destCityCoords: { lat: number; lon: number } | undefined = undefined;
-      let sourceCity = "";
-      let destinationCity = "";
       
       // ✅ RULE 1: ENFORCE 22:00 CUTOFF (destination arrival deadline)
       // Calculate: latestAllowedHotspotEnd = 22:00 - (travel to destination + buffer)
@@ -654,72 +664,6 @@ export class TimelineBuilder {
       
       // Route fields are the source of truth for scheduling/candidate matching.
       // location_id/stored_locations may be stale or reused, so use it only for coordinates.
-      const routeSourceCity = String((route as any).location_name || '')
-        .split('|')[0]
-        .trim();
-
-      const routeDestinationCity = String((route as any).next_visiting_location || '')
-        .split('|')[0]
-        .trim();
-
-      sourceCity = routeSourceCity;
-      destinationCity = routeDestinationCity;
-
-      if (route.location_id) {
-        const storedLoc = await (tx as any).dvi_stored_locations?.findFirst({
-          where: {
-            location_ID: Number(route.location_id),
-            deleted: 0,
-            status: 1,
-          },
-        });
-        
-        if (storedLoc) {
-          // Use stored_locations only for coordinates.
-          // Do NOT overwrite sourceCity/destinationCity when route fields already exist.
-          currentCoords = {
-            lat: Number(storedLoc.source_location_lattitude ?? 0),
-            lon: Number(storedLoc.source_location_longitude ?? 0),
-          };
-          destCityCoords = {
-            lat: Number(storedLoc.destination_location_lattitude ?? 0),
-            lon: Number(storedLoc.destination_location_longitude ?? 0),
-          };
-
-          if (!sourceCity) {
-            sourceCity = String(storedLoc.source_location || '').split('|')[0].trim();
-          }
-
-          if (!destinationCity) {
-            destinationCity = String(storedLoc.destination_location || '').split('|')[0].trim();
-          }
-        }
-      }
-
-      // Fallback for routes where location_id is 0 or the stored row is missing coordinates.
-      // This keeps source/destination coordinate resolution anchored to the route cities.
-      if (!this.travelDataService.hasUsableCoords(currentCoords)) {
-        currentCoords =
-          (await this.travelDataService.resolvePlaceCoords(tx, sourceCity, 'source')) ||
-          (await this.travelDataService.resolvePlaceCoords(tx, routeSourceCity, 'source')) ||
-          undefined;
-      }
-
-      if (!this.travelDataService.hasUsableCoords(destCityCoords)) {
-        destCityCoords =
-          (await this.travelDataService.resolvePlaceCoords(tx, destinationCity, 'destination')) ||
-          (await this.travelDataService.resolvePlaceCoords(tx, routeDestinationCity, 'destination')) ||
-          undefined;
-      }
-      
-      // Final fallback only if route fields and stored_locations are both missing.
-      if (!sourceCity) sourceCity = String((route as any).location_name || '').split('|')[0].trim();
-      if (!destinationCity) destinationCity = String((route as any).next_visiting_location || '').split('|')[0].trim();
-
-      const routeStartLocationName = currentLocationName;
-      const routeStartCoords = currentCoords
-        ? { lat: Number(currentCoords.lat ?? 0), lon: Number(currentCoords.lon ?? 0) }
-        : null;
 
       // Route-level hotel context is reused for both hotspot gating and final hotel segment.
       const arrivalHotelDecision = await this.arrivalHotelDecisionService.evaluate({
