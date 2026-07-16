@@ -1827,3 +1827,32 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - Planning invocation rate, via-route query latency, candidate/fallback volume, carry-forward expiry frequency, reservation selectivity and route rebuild latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `005eaef`.
+
+### Cycle 55 - Extract manual/same-city placement ordering
+
+#### Scope
+
+- Original file: `src/modules/itineraries/engines/helpers/timeline.builder.ts`
+- Extracted responsibility: route-scoped preview membership, persisted route-order application, desired same-city movable ordering and manual hotspot merge
+- New files: `src/modules/itineraries/engines/helpers/timeline-manual-placement-ordering.service.ts`, `test/timeline-manual-placement-ordering.test.ts`
+- Workflow: selected-hotspot normalization after policy filtering and before reservation/scheduling evaluation
+
+#### Change
+
+- Moved route-scoped filtering and manual/same-city placement ordering behind `TimelineManualPlacementOrderingService`.
+- Preserved sibling-route isolation, existing order precedence, desired movable order and adjacency metadata, manual placeholder merge, deterministic tie ordering and booking-rule diagnostics.
+- Returned the ordering maps still required by later scheduling logic; timeline feasibility, travel rows and persistence remain in `TimelineBuilder`.
+
+#### Verification
+
+- Manual placement ordering characterization tests: PASS, 3/3
+- Combined focused backend/timeline suite: PASS, 112/112
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `timeline.builder.ts` measured at 6,995 lines after the tier; `TimelineManualPlacementOrderingService` is 210 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- Placement invocation rate, scoped-preview reduction, manual-row volume, ordering CPU and route rebuild latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `39afb12`.
