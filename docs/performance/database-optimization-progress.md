@@ -382,3 +382,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Callback names, service ordering, facade-bound helper dispatch and mutable service instances remain unchanged.
 - This is not a measured database performance improvement: initialization time, callback fan-out, downstream query latency and first-request readiness remain unmeasured.
 - No index or Redis action is proposed; future work should profile dependency initialization and callback invocation traces before changing service boundaries.
+
+## Iteration 102 evidence update
+
+- The timeline direct-delegation extraction changes only ownership of existing service calls; no SQL, index, Redis cache, predicate, transaction boundary or response shape changed.
+- Route selection, Day-1 fallback, travel-data coordinate resolution, anchor calculations and candidate-feasibility arguments remain unchanged.
+- This is not a measured database performance improvement: route/travel query latency, row volume, direct-call overhead and timeline projection CPU remain unmeasured.
+- No index or Redis action is proposed; future work should capture route/travel query plans and timeline traces before batching or caching mutable timing/location data.

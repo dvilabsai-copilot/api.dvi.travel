@@ -356,6 +356,8 @@ The iteration-100 itinerary-input-normalization boundary is a measurement seam f
 
 The iteration-101 itinerary-collaborator-wiring boundary is a measurement seam for constructor initialization time, callback registration count, callback invocation frequency, service dependency fan-out and first-request readiness latency. Capture cold module initialization, manual-fit-heavy, preview-heavy, route-cache-heavy and hotel-confirmation-heavy startup/workloads before consolidating callbacks or changing dependency ownership; preserve callback names, closure binding and mutable service state. No index addition/removal or Redis cache is justified by this wiring-only tier.
 
+The iteration-102 timeline direct-delegation boundary is a measurement seam for travel-data lookup latency, route-selection read latency, anchor-policy CPU, candidate-feasibility call count, wrapper overhead and end-to-end timeline build latency. Capture route-scoped, full-plan, Day-1 fallback, hotel-heavy, matrix-gap and candidate-rejection workloads separately before batching reads or memoizing policy calls; preserve active predicates, route ordering, mutable timing freshness and candidate fields. No index addition/removal or Redis cache is justified by this ownership-only tier.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.

@@ -3287,3 +3287,30 @@
 - `itineraries.service.ts` measured at 4,387 lines after the tier; `itinerary-service-collaborator-wiring.ts` is 505 lines.
 - Callback initialization time, fan-out and downstream service query effects remain unmeasured.
 - Implementation commit: `api.dvi.travel` `040a68c`.
+
+### Cycle 105 - Remove timeline compatibility wrapper layer
+
+#### Scope
+
+- Original file: `src/modules/itineraries/engines/helpers/timeline.builder.ts`
+- Extracted responsibility: direct delegation to route selection, day-one fallback, travel-data, anchor-policy and candidate-feasibility services
+- New files: none; existing policy services become the direct owners
+- Workflow: timeline route hydration, travel projection, anchor-gap feasibility and hotspot candidate scheduling
+
+#### Change
+
+- Removed redundant bottom-of-file wrappers and redirected existing build/callback call sites to the already-registered owning services.
+- Preserved database client arguments, callback names, service ordering, route-clock semantics, candidate rejection fields and response projection.
+- No SQL predicate, index, Redis cache, API route, DTO or response contract changed.
+
+#### Verification
+
+- Timeline characterization collection: PASS, 64/64
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `timeline.builder.ts` measured at 6,035 lines after the tier.
+- Travel-data query latency, direct-delegation overhead and remaining scheduler orchestration CPU remain unmeasured.
+- Implementation commit: `api.dvi.travel` `3de2d15`.
