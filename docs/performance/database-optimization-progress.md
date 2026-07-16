@@ -410,3 +410,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Local master enrichment, provider-code fallback, route-map construction and vehicle-only labeling remain behaviorally unchanged.
 - This is not a measured database performance improvement: hotel lookup latency, row selectivity, TBO fan-out, map CPU and details response latency remain unmeasured.
 - No index addition/removal or Redis action is proposed; future work should capture query plans and hotel lookup traces before batching or caching mutable hotel assignments.
+
+## Iteration 106 evidence update
+
+- The travel-semantics extraction changes only pure timeline projection ownership; no SQL, index, Redis cache, predicate, API route or response shape changed.
+- Attraction sequence ordering, conflict-row suppression, prior-hotel check-in handling, semantic IDs and travel labels remain unchanged.
+- This is not a measured database performance improvement: route-hotspot scan cost, semantic CPU, travel-row volume and details response latency remain unmeasured.
+- No index or Redis action is proposed; future work should profile route timeline row volume and semantic projection before memoizing or caching mutable timeline data.

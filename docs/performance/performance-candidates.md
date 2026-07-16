@@ -364,6 +364,8 @@ The iteration-104 itinerary-details display-formatting boundary is a measurement
 
 The iteration-105 itinerary-details route-hotel-map boundary is a measurement seam for draft/confirmed hotel lookup latency, hotel-row selectivity, local-master fan-out, TBO confirmation/master lookup latency, route-map construction CPU, vehicle-only labeling frequency and end-to-end details response latency. Capture draft group variants, confirmed plans, local-only, TBO-only, missing-master, empty-hotel and vehicle-only workloads separately before adding composite indexes, batching reads or caching mutable hotel assignments; preserve active/deleted predicates, group selection, provider fallback precedence and response freshness. No index addition/removal or Redis cache is justified until query plans and lookup traces establish the measured winner.
 
+The iteration-106 itinerary-details travel-semantics boundary is a measurement seam for route-hotspot scan CPU, attraction-sequence size, travel-row count, prior-hotel check-in scan frequency, semantic-map construction CPU and end-to-end timeline response latency. Capture empty, attraction-only, hotel-first, overnight, conflict-row, missing-master and large-route workloads separately before memoizing sequence maps or caching timeline projections; preserve conflict suppression, semantic ID precedence, mutable timing freshness and travel labels. No index addition/removal or Redis cache is justified by this pure projection-ownership tier without route timeline traces.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.

@@ -3398,3 +3398,31 @@
 - `itinerary-details.service.ts` measured at 5,558 lines after the tier; `itinerary-details-route-hotel-map.service.ts` is 135 lines.
 - Hotel lookup fan-out, master selectivity, TBO fallback frequency and map-construction latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `32003ca`.
+
+### Cycle 109 - Extract itinerary-details travel semantics policy
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itinerary-details.service.ts`
+- Extracted responsibility: chronological attraction sequence, travel-row origin/destination reconstruction and prior-hotel check-in origin resolution
+- New files: `src/modules/itineraries/services/itinerary-details-travel-semantics.service.ts`, `test/itinerary-details-travel-semantics.test.ts`
+- Workflow: itinerary-details timeline travel-segment projection
+
+#### Change
+
+- Moved the semantic travel reconstruction algorithm behind `ItineraryDetailsTravelSemanticsService` and passed the existing display/callback boundaries explicitly.
+- Preserved conflict-row suppression, attraction ordering, prior-hotel check-in detection, fallback origins, semantic IDs and travel labels.
+- No SQL predicate, index, Redis cache, API route, DTO or response contract changed.
+
+#### Verification
+
+- Travel-semantics characterization tests: PASS, 2/2
+- Itinerary characterization collection: PASS, 153/153
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itinerary-details.service.ts` measured at 5,447 lines after the tier; `itinerary-details-travel-semantics.service.ts` is 103 lines.
+- Semantic reconstruction CPU, travel-row volume and timeline response projection latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `e0f0aef`.
