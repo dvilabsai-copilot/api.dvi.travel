@@ -536,3 +536,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - The tier adds no reads and leaves final day assembly in the facade.
 - This is not a measured database performance improvement: fallback frequency, classification CPU, duration formatting cost and details response latency remain unmeasured.
 - No index addition/removal or Redis action is proposed; future work should capture per-route terminal fallback traces before caching terminal projections.
+
+## Iteration 124 evidence update
+
+- The timeline refreshment extraction preserves the global-settings predicate, buffer fallback/formatting, route-end fit gate, strict early-arrival override, last-route no-row behavior and row fields; no SQL predicate, index, Redis cache or response shape changed.
+- The settings read remains in the same transaction and the tier only moves projection/state logic behind a service boundary.
+- This is not a measured database performance improvement: settings read latency, refreshment frequency, fit rejection frequency and timeline response latency remain unmeasured.
+- No index addition/removal or Redis action is proposed; future work should capture `dvi_global_settings` query plans and per-build read counts before caching the immutable-looking setting.

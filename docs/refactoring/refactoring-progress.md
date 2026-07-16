@@ -3902,3 +3902,32 @@
 - `itinerary-details.service.ts` measured at 4,179 lines after the tier; `itinerary-details-terminal-return.service.ts` is 76 lines.
 - Terminal fallback frequency, destination classification cost, duration formatting cost and timeline response latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `a07384c`.
+
+### Cycle 127 - Extract timeline initial refreshment policy
+
+#### Scope
+
+- Original file: `src/modules/itineraries/engines/helpers/timeline.builder.ts`
+- Extracted responsibility: initial refreshment row creation, global buffer resolution, route-fit gating and last-route time advancement
+- New files: `src/modules/itineraries/engines/helpers/timeline-initial-refreshment.service.ts`, `test/timeline-initial-refreshment.test.ts`
+- Workflow: per-route timeline initialization
+
+#### Change
+
+- Moved non-last-route refreshment insertion and last-route buffer advancement behind `TimelineInitialRefreshmentService`.
+- Preserved global-settings predicates, UTC buffer formatting, strict early-arrival override, route-end fit gate, order/current-time state and skip/transfer-only policies.
+- No SQL predicate, index, Redis cache, API route, DTO or response contract changed.
+
+#### Verification
+
+- Initial-refreshment characterization tests: PASS, 3/3
+- Timeline characterization collection: PASS, 67/67
+- Itinerary characterization collection: PASS, 182/182
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `timeline.builder.ts` measured at 5,990 lines after the tier; `timeline-initial-refreshment.service.ts` is 91 lines.
+- Global-settings read latency, refreshment fit frequency, strict early-arrival frequency and timeline response latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `d18477d`.

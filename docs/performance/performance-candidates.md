@@ -400,6 +400,8 @@ The iteration-122 itinerary-details drop-off boundary is a measurement seam for 
 
 The iteration-123 itinerary-details terminal-return boundary is a measurement seam for fallback-row frequency, terminal-destination regex classification cost, airport-transfer frequency, ordinary-return frequency, day-range duration formatting cost and end-to-end timeline response latency. Capture explicit-terminal, ordinary-hotel, missing-destination, missing-time and multi-day workloads separately before caching terminal projections; preserve emitted-terminal precedence, day start/end freshness, distance/duration labels and final day response fields. No index addition/removal or Redis cache is justified until terminal fallback traces establish the measured winner.
 
+The iteration-124 timeline-initial-refreshment boundary is a measurement seam for global-settings read latency, refreshment-row frequency, route-fit rejection frequency, strict early-arrival override frequency, last-route buffer advancement frequency and end-to-end timeline response latency. Capture normal non-last, skipped, strict early-arrival, last-route, transfer-only and route-end-tight workloads separately before request-scoped settings caching; preserve transaction freshness, buffer precedence, UTC conversion, order/current-time state and route-fit behavior. No index addition/removal or Redis cache is justified until settings read plans and timeline traces establish the measured winner.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.
