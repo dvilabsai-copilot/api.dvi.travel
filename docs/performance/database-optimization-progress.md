@@ -291,3 +291,10 @@ The broader candidate register, including index-addition/removal evidence gates,
 - Preferred-room slot fallback, room-rate assignment, meal-plan flags, GST defaults, deleted/status fields and response fields remain unchanged; only room-category ownership moved.
 - This is not a measured performance improvement: TBO latency, room-type count, existing-room fan-out, preferred-slot frequency, update/create ratio and selection write latency remain unmeasured.
 - No index or Redis action is proposed; any future optimization must compare TBO and room-row traces before batching or caching mutable room selections.
+
+## Iteration 89 evidence update
+
+- The route-optimization extraction preserves exact stored-distance predicates, missing-distance Infinity fallback, route-normalization inputs and active permutation/annealing policy; no SQL, index, Redis cache or query shape was changed.
+- Small-route exhaustive threshold, larger-route heuristic selection, route date/sequence projection and original-order fallback remain unchanged; the facade retains an untouched compatibility helper copy pending encoding-safe cleanup.
+- This is not a measured performance improvement: stored-distance latency, distance-row fan-out, permutation count, matrix miss rate, annealing CPU and end-to-end optimizer latency remain unmeasured.
+- No index or Redis action is proposed; any future optimization must compare stored-distance query plans and optimizer traces before batching or caching route geometry.

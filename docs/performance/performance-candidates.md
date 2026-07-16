@@ -330,6 +330,8 @@ The iteration-87 hotel-cancellation boundary is a measurement seam for confirmed
 
 The iteration-88 hotel room-category boundary is a measurement seam for plan/route lookup latency, TBO call latency, available-room-type count, existing-room fan-out, preferred-slot creation frequency, update/create ratio and selection write latency. Capture missing-plan, missing-route, missing-hotel, empty-room-type, existing-room and preferred-slot workloads separately before proposing indexes, batching or Redis; preserve TBO freshness, room-type matching, meal flags and mutable room-selection state. No index addition/removal or Redis cache is justified by the current evidence because this tier changed ownership only and has no before/after production timings.
 
+The iteration-89 route-optimization boundary is a measurement seam for route-context normalization CPU, stored-distance lookup latency, distance-row fan-out, permutation count, missing-distance frequency, annealing iterations and end-to-end optimizer latency. Capture small exhaustive, large heuristic, missing-distance, broken-chain and unchanged-order workloads separately before proposing an index, batching or Redis; preserve exact source/destination predicates, route-order determinism and mutable distance freshness. No index addition/removal or Redis cache is justified by the current evidence because this tier added an active delegate but has no before/after production timings.
+
 ## Next profiling order
 
 1. Itinerary-details read graph and response projection.

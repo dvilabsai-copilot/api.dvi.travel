@@ -2911,3 +2911,33 @@
 - No query shape, index, Redis, DTO, route or response contract changed.
 - TBO lookup latency, available-room count, existing-room fan-out, preferred-slot frequency and selection write latency remain unmeasured.
 - Implementation commit: `api.dvi.travel` `1a41ca5`.
+
+### Cycle 92 - Extract route optimization policy
+
+#### Scope
+
+- Original file: `src/modules/itineraries/itineraries.service.ts`
+- Extracted responsibility: PHP-parity route ordering, stored-distance reads and route DTO projection
+- New files: `src/modules/itineraries/services/itinerary-route-optimization.service.ts`, `test/itinerary-route-optimization.test.ts`
+- Workflow: route-order optimization during itinerary persistence
+
+#### Change
+
+- Added `ItineraryRouteOptimizationService` containing the active exhaustive-permutation/nearest-neighbor/annealing policy, exact stored-distance lookup and optimized route projection.
+- Preserved route-normalization callbacks, exact-distance predicates, PHP-parity thresholds, deterministic small-route ordering and route date/sequence projection.
+- Registered the service in `ItinerariesModule`; the facade delegates optimization while retaining the old helper block as an untouched compatibility copy pending an encoding-safe removal pass.
+
+#### Verification
+
+- Route-optimization characterization tests: PASS, 2/2
+- Combined focused backend/timeline suite: PASS, 198/198
+- Backend build: PASS
+- `git diff --check`: PASS
+
+#### Result
+
+- `itineraries.service.ts` measured at 5,553 lines after the tier; `ItineraryRouteOptimizationService` is 515 lines.
+- No query shape, index, Redis, DTO, route or response contract changed.
+- This tier is an ownership seam, not a line-count reduction: the legacy helper copy remains to avoid unsafe mojibake-literal edits.
+- Stored-distance latency, matrix row volume, permutation count, annealing CPU and end-to-end optimizer latency remain unmeasured.
+- Implementation commit: `api.dvi.travel` `75ae2b0`.
