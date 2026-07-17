@@ -1,6 +1,8 @@
+import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../../prisma.service';
 
 /** Owns activity catalog, slot and plan-pricing response projection. */
+@Injectable()
 export class ItineraryActivityAvailabilityService {
   private calculateActivityPlanPricingCallback: ((params: any) => Promise<any>) | null = null;
 
