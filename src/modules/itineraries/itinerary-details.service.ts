@@ -21,6 +21,7 @@ import {
   buildEntryTicketBreakdown,
   type EntryTicketBreakdownDto,
 } from './utils/entry-ticket-breakdown.util';
+import { ItineraryDetailsVehicleKmService } from './services/itinerary-details-vehicle-km.service';
 
 // ---------------------------------------------------------------------------
 // DTOs for Itinerary Details response (shared shape with frontend)
@@ -406,6 +407,8 @@ days: {
 
 @Injectable()
 export class ItineraryDetailsService {
+  private readonly vehicleKmService = new ItineraryDetailsVehicleKmService();
+
   constructor(
     private readonly prisma: PrismaService,
   ) {}
@@ -1397,51 +1400,7 @@ const foodTypeMap: Record<string, string> = {
   orderBy: { itinerary_route_ID: 'asc' },
 });
 
-const vehicleKmRows =
-  await this.prisma.$queryRawUnsafe(`
-    SELECT
-      itinerary_route_id,
-      total_running_km,
-      total_siteseeing_km,
-      total_travelled_km
-    FROM dvi_itinerary_plan_vendor_vehicle_details
-    WHERE itinerary_plan_id = ${planId}
-      AND deleted = 0
-  `) as any[];
-
-const vehicleKmByRouteId = new Map<
-  number,
-  { runningKm: number; sightseeingKm: number; totalKm: number }
->();
-
-for (const row of vehicleKmRows) {
-  const routeId = Number((row as any).itinerary_route_id || 0);
-  if (!routeId) continue;
-
-  const runningKm =
-    parseFloat(String((row as any).total_running_km || 0)) || 0;
-  const sightseeingKm =
-    parseFloat(String((row as any).total_siteseeing_km || 0)) || 0;
-  const totalKm =
-    parseFloat(String((row as any).total_travelled_km || 0)) || 0;
-
-  const existing = vehicleKmByRouteId.get(routeId);
-
-  if (!existing) {
-    vehicleKmByRouteId.set(routeId, {
-      runningKm,
-      sightseeingKm,
-      totalKm,
-    });
-    continue;
-  }
-
-  vehicleKmByRouteId.set(routeId, {
-    runningKm: Math.max(existing.runningKm, runningKm),
-    sightseeingKm: Math.max(existing.sightseeingKm, sightseeingKm),
-    totalKm: Math.max(existing.totalKm, totalKm),
-  });
-}
+const vehicleKmByRouteId = await this.vehicleKmService.load(this.prisma, planId);
     stepStartedAt = this.logItineraryApiTiming({
       api: 'itinerary_details',
       planId,
