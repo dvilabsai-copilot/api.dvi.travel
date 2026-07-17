@@ -5,11 +5,18 @@ import { ItineraryConfirmedGuideAssignmentService } from './itinerary-confirmed-
 /** Owns confirmed guide-slot cancellation persistence and financial state transitions. */
 @Injectable()
 export class ItineraryConfirmedGuideCancellationService {
+  private logCancellationActionCallback: (...args: any[]) => Promise<any> = async () => {
+    throw new Error('Confirmed guide cancellation logging callback is not configured');
+  };
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly confirmedGuideAssignmentService: ItineraryConfirmedGuideAssignmentService,
-    private readonly logCancellationActionCallback: (...args: any[]) => Promise<any>,
   ) {}
+
+  setLogCancellationActionCallback(callback: (...args: any[]) => Promise<any>): void {
+    this.logCancellationActionCallback = callback;
+  }
 
   private getGuideCancellationDefectTypeId(defectType?: string): number {
     return String(defectType || 'dvi').trim().toLowerCase() === 'guest' ? 2 : 1;
