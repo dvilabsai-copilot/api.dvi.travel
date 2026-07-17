@@ -1,7 +1,8 @@
-import { NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma.service';
 
 /** Owns confirmed itinerary pluck-card and invoice presentation reads. */
+@Injectable()
 export class ItineraryInvoiceReadService {
   constructor(private readonly prisma: PrismaService) {}
     private buildPluckCardData(plan: any, customer: any, settings: any) {

@@ -1,8 +1,9 @@
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma.service';
 import { ItineraryConfirmedGuideAssignmentService } from './itinerary-confirmed-guide-assignment.service';
 
 /** Owns confirmed guide-slot cancellation persistence and financial state transitions. */
+@Injectable()
 export class ItineraryConfirmedGuideCancellationService {
   constructor(
     private readonly prisma: PrismaService,

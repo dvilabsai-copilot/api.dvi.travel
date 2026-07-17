@@ -1,6 +1,8 @@
+import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../../prisma.service';
 
 /** Owns the manual-fit preview attempt table and its bounded in-memory cache. */
+@Injectable()
 export class ItineraryManualFitAttemptStoreService {
   private readonly cache = new Map<string, any>();
   private tableEnsured = false;
