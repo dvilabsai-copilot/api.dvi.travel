@@ -1,4 +1,4 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma.service';
 import { ItineraryGuideAssignmentService } from './itinerary-guide-assignment.service';
 
@@ -12,6 +12,7 @@ export type SaveGuideAssignmentPayload = {
 };
 
 /** Owns draft guide assignment validation, costing and slot-cost persistence. */
+@Injectable()
 export class ItineraryGuideAssignmentWriteService {
   constructor(
     private readonly prisma: PrismaService,

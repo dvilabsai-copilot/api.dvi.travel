@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma.service';
 import { ItineraryGuideAssignmentService } from './itinerary-guide-assignment.service';
 
@@ -34,6 +34,7 @@ export type ConfirmedGuideAssignmentRow = {
 };
 
 /** Owns confirmed guide slot-cost hydration and response projection. */
+@Injectable()
 export class ItineraryConfirmedGuideAssignmentService {
   constructor(
     private readonly prisma: PrismaService,

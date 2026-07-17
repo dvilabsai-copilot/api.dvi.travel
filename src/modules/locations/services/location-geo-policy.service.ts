@@ -1,6 +1,9 @@
+import { Injectable } from '@nestjs/common';
+
 export type CoordinatePair = { latitude: number; longitude: number };
 export type CoordinateInput = { latitude: number | null; longitude: number | null };
 
+@Injectable()
 export class LocationGeoPolicyService {
   parseCoordinatePair(value: unknown): CoordinatePair | null {
     const text = String(value ?? '').trim();

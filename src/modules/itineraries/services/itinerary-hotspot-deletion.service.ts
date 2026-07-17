@@ -1,8 +1,9 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../../prisma.service';
 import { HotspotEngineService } from '../engines/hotspot-engine.service';
 
 /** Owns route-scoped hotspot deletion and dependent itinerary rebuilds. */
+@Injectable()
 export class ItineraryHotspotDeletionService {
   private forceRebuildVehiclePricingCallback: ((planId: number, routeId?: number) => Promise<any>) | null = null;
 
