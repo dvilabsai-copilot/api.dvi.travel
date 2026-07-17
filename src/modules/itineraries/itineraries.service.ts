@@ -649,7 +649,6 @@ export class ItinerariesService {
     private readonly confirmedGuideCancellationService: ItineraryConfirmedGuideCancellationService = new ItineraryConfirmedGuideCancellationService(
       prisma,
       confirmedGuideAssignmentService,
-      (...args) => (cancellationService.logCancellationAction as any)(...args),
     ),
     private readonly listingService: ItineraryListingService = new ItineraryListingService(prisma),
     private readonly voucherReadService: ItineraryVoucherReadService = new ItineraryVoucherReadService(prisma),
@@ -700,6 +699,9 @@ export class ItinerariesService {
     private readonly activityPricingService: ItineraryActivityPricingService = new ItineraryActivityPricingService(prisma),
     private readonly activityTimingPolicyService: ItineraryActivityTimingPolicyService = new ItineraryActivityTimingPolicyService(),
   ) {
+    this.confirmedGuideCancellationService.setLogCancellationActionCallback(
+      (...args) => (this.cancellationService.logCancellationAction as any)(...args),
+    );
     this.manualFitTimelinePolicyService.setCallbacks({
       parseSegmentEndMinutes: (...args) => (this.parseSegmentEndMinutes as any)(...args),
     });
