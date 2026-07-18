@@ -5375,6 +5375,14 @@ sightseeingDistance,       // local sightseeing separately
     let totalMealCost = 0;
 
     costHotelRows.forEach(h => {
+      // An early-morning hotel check-in blocks the room from the previous
+      // night. The stored hotel amount is the normal stay amount, so the
+      // extra-payment flow must bill one additional room night.
+      const earlyCheckInBillingMultiplier =
+        Number((h as any).early_checkin || 0) === 1 &&
+        Number((h as any).early_checkin_extra_payment_applicable || 0) === 1
+          ? 2
+          : 1;
       const detailedRoomCost =
         Number(h.total_room_cost || 0) +
         Number(h.hotel_margin_rate || 0) +
@@ -5382,12 +5390,12 @@ sightseeingDistance,       // local sightseeing separately
       const fallbackRoomCost = Number(h.total_hotel_cost || 0);
 
       // TBO/cache rows often populate only total_hotel_cost; fallback keeps room totals non-zero.
-      totalRoomCost += detailedRoomCost > 0 ? detailedRoomCost : fallbackRoomCost;
-      totalAmenitiesCost += Number(h.total_amenities_cost || 0);
-      extraBedCost += Number(h.total_extra_bed_cost || 0);
-      childWithBedCost += Number(h.total_childwith_bed_cost || 0);
-      childWithoutBedCost += Number(h.total_childwithout_bed_cost || 0);
-      totalMealCost += Number(h.total_hotel_meal_plan_cost || 0);
+      totalRoomCost += (detailedRoomCost > 0 ? detailedRoomCost : fallbackRoomCost) * earlyCheckInBillingMultiplier;
+      totalAmenitiesCost += Number(h.total_amenities_cost || 0) * earlyCheckInBillingMultiplier;
+      extraBedCost += Number(h.total_extra_bed_cost || 0) * earlyCheckInBillingMultiplier;
+      childWithBedCost += Number(h.total_childwith_bed_cost || 0) * earlyCheckInBillingMultiplier;
+      childWithoutBedCost += Number(h.total_childwithout_bed_cost || 0) * earlyCheckInBillingMultiplier;
+      totalMealCost += Number(h.total_hotel_meal_plan_cost || 0) * earlyCheckInBillingMultiplier;
     });
 
     // For selected recommendation tabs, derive room total from live group-specific hotel details

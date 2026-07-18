@@ -2796,7 +2796,10 @@ export class ItineraryHotelDetailsTboService {
   ): Promise<ItineraryHotelDetailsResponseDto> {
     const plan = await this.prisma.dvi_itinerary_plan_details.findFirst({
       where: { itinerary_plan_ID: planId, deleted: 0 },
-      select: { hotel_rates_visibility: true },
+      select: {
+        hotel_rates_visibility: true,
+        trip_start_date_and_time: true,
+      },
     });
 
     const hotelRatesVisible =
@@ -2892,6 +2895,14 @@ export class ItineraryHotelDetailsTboService {
         itinerary_route_id: true,
         hotel_id: true,
         group_type: true,
+        hotel_required: true,
+        hotel_check_in_date: true,
+        actual_guest_arrival_at: true,
+        hotel_check_out_date: true,
+        early_checkin: true,
+        early_checkin_extra_payment_applicable: true,
+        early_checkin_payment_status: true,
+        early_checkin_note: true,
       },
     });
 
@@ -2915,9 +2926,50 @@ export class ItineraryHotelDetailsTboService {
     const detailsMap = new Map(
       hotelDetailsInDb.map(d => [
         `${d.itinerary_route_id}-${d.hotel_id}-${d.group_type}`,
-        d.itinerary_plan_hotel_details_ID
+        d,
       ])
     );
+
+    // The details endpoint returns live supplier/package rows, so those rows
+    // do not carry the policy columns themselves. Join the saved early-arrival
+    // decision (or its previous-night marker) by route and recommendation.
+    const earlyArrivalMap = new Map<string, any>();
+    for (const detail of hotelDetailsInDb as any[]) {
+      const routeId = Number(detail.itinerary_route_id || 0);
+      const groupType = Number(detail.group_type || 0);
+      if (!routeId || !groupType) continue;
+      const isPreviousNightMarker = Number(detail.hotel_required || 0) === 2 && Number(detail.hotel_id || 0) === 0;
+      const hasStructuredMetadata = Number(detail.early_checkin || 0) === 1;
+      if (isPreviousNightMarker || hasStructuredMetadata) {
+        earlyArrivalMap.set(`${routeId}-${groupType}`, detail);
+      }
+    }
+
+    const toDateOnly = (value: unknown): string | null => {
+      if (!value) return null;
+      const parsed = value instanceof Date ? value : new Date(value as any);
+      return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString().slice(0, 10);
+    };
+
+    const toIsoDateTime = (value: unknown): string | null => {
+      if (!value) return null;
+      const parsed = value instanceof Date ? value : new Date(value as any);
+      return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+    };
+
+    const addUtcDays = (dateOnly: string, days: number): string => {
+      const parsed = new Date(`${dateOnly}T00:00:00.000Z`);
+      parsed.setUTCDate(parsed.getUTCDate() + days);
+      return parsed.toISOString().slice(0, 10);
+    };
+
+    const getRouteStartTime = (route: any): string => {
+      const raw = route?.route_start_time;
+      if (raw instanceof Date) return raw.toISOString().slice(11, 19);
+      const text = String(raw || '').trim();
+      const match = text.match(/(?:T|\s)(\d{2}:\d{2}(?::\d{2})?)/);
+      return match?.[1]?.length === 5 ? `${match[1]}:00` : match?.[1] || '00:00:00';
+    };
     
     const voucherStatusMap = new Map(
       voucherStatuses.map(v => [
@@ -3136,8 +3188,36 @@ export class ItineraryHotelDetailsTboService {
         
         // Lookup hotel details ID and voucher status (only for TBO numeric IDs)
         const lookupKey = hotelId > 0 ? `${routeId}-${hotelId}-${pkg.groupType}` : '';
-        const hotelDetailsId = lookupKey ? detailsMap.get(lookupKey) : undefined;
+        const hotelDetails = lookupKey ? detailsMap.get(lookupKey) : undefined;
+        const hotelDetailsId = Number((hotelDetails as any)?.itinerary_plan_hotel_details_ID || 0) || undefined;
         const voucherCancelled = hotelDetailsId ? (voucherStatusMap.get(hotelDetailsId) || false) : false;
+
+        const earlyArrival = earlyArrivalMap.get(`${routeId}-${pkg.groupType}`);
+        const earlyCheckIn = Boolean(earlyArrival);
+        const previousDayDate = addUtcDays(dateLabel, -1);
+        const fallbackActualArrivalAt = new Date(
+          `${dateLabel}T${getRouteStartTime(route)}.000Z`,
+        ).toISOString();
+        const hotelCheckInDate = earlyCheckIn
+          ? toDateOnly(earlyArrival?.hotel_check_in_date) || previousDayDate
+          : null;
+        const actualGuestArrivalAt = earlyCheckIn
+          ? toIsoDateTime(earlyArrival?.actual_guest_arrival_at) || fallbackActualArrivalAt
+          : null;
+        const checkOutDate = earlyCheckIn
+          ? toDateOnly(earlyArrival?.hotel_check_out_date) || addUtcDays(dateLabel, 1)
+          : null;
+        const earlyCheckInExtraPaymentApplicable = earlyCheckIn && (
+          Number(earlyArrival?.early_checkin_extra_payment_applicable || 0) === 1 ||
+          Number(earlyArrival?.hotel_required || 0) === 2
+        );
+        const earlyCheckInPaymentStatus = earlyCheckIn
+          ? String(earlyArrival?.early_checkin_payment_status || 'EXTRA_PAYMENT_APPLICABLE')
+          : null;
+        const hotelierEarlyCheckInNote = earlyCheckIn
+          ? String(earlyArrival?.early_checkin_note || '').trim() ||
+            'Guest has opted for early morning check-in with extra payment. Room to be blocked from the previous night, with actual guest arrival/check-in on the next day early morning.'
+          : null;
 
         let hotelDistance: string | null = null;
         const routeLocationId = Number((route as any).location_id || 0);
@@ -3163,6 +3243,9 @@ export class ItineraryHotelDetailsTboService {
         const pricedHotel = this.enrichHotelWithMasterMargin(hotel, new Map());
         const baseHotelCost = Number(pricedHotel.price || 0);
         const totalHotelCost = this.applyInvisibleHotelMargin(baseHotelCost, pricedHotel);
+        const billableHotelCost = earlyCheckInExtraPaymentApplicable
+          ? this.money(totalHotelCost * 2)
+          : totalHotelCost;
         const normalizedProvider = String(hotel.provider || 'tbo').trim().toLowerCase();
         const rawSearchReference = String(hotel.searchReference || '').trim();
         const parsedStaahReference = this.parseStaahSearchReference(
@@ -3200,7 +3283,7 @@ export class ItineraryHotelDetailsTboService {
           mealPlan: hotel.mealPlan || '',
           baseHotelCost,
           hotelMarginPercentage: this.getHotelMarginPercentage(pricedHotel),
-          totalHotelCost,
+          totalHotelCost: billableHotelCost,
           totalHotelTaxAmount: 0,
           searchReference: rawSearchReference || undefined,
           bookingCode: isPrebookReady ? rawBookingCode : undefined,
@@ -3222,6 +3305,14 @@ export class ItineraryHotelDetailsTboService {
           voucherCancelled: voucherCancelled,
           itineraryPlanHotelDetailsId: hotelDetailsId || 0,
           date: dateLabel,
+          hotelCheckInDate,
+          actualGuestArrivalAt,
+          checkOutDate,
+          earlyCheckIn,
+          earlyCheckInExtraPaymentApplicable,
+          earlyCheckInPaymentStatus,
+          hotelierEarlyCheckInNote,
+          previousDayBillingSynthetic: false,
           hotelDistance,
           inclusions: hotel.inclusions && hotel.inclusions.length > 0 ? hotel.inclusions : (hotel.facilities && hotel.facilities.length > 0 ? hotel.facilities : undefined),
           amenities: hotel.amenities && hotel.amenities.length > 0 ? hotel.amenities : undefined,

@@ -848,6 +848,10 @@ export class TimelineBuilder {
         currentLocationName = transportEarlyArrivalResult.currentLocationName;
         currentCoords = undefined;
       }
+      const isVehicleHotelRestEarlyArrival =
+        transportEarlyArrivalResult.handled &&
+        Number(plan.itinerary_preference || 0) === 2 &&
+        String((plan as any).transport_early_arrival_option || '').trim().toUpperCase() === 'HOTEL_REST';
 
       // 1) ADD REFRESHMENT BREAK (PHP line 969-993)
       // PHP adds 1-hour refreshment at route start EXCEPT for last route
@@ -946,6 +950,11 @@ export class TimelineBuilder {
       currentLocationName = hotelFirstInsertion.currentLocationName;
       currentCoords = hotelFirstInsertion.currentCoords;
       didHotelFirstCheckin = hotelFirstInsertion.didHotelFirstCheckin;
+      const isHotelPreferenceEarlyArrival =
+        Number(plan.itinerary_preference || 0) === 1 &&
+        isFirstRoute &&
+        arrivalHour !== null &&
+        arrivalHour < 8;
 
       // 2) CALCULATE LATEST HOTSPOT END USING ROUTE'S CONFIGURED END TIME
       // Use route_end_time (not hardcoded cutoffs) so users can adjust end time
@@ -1327,6 +1336,7 @@ export class TimelineBuilder {
             absoluteVisitStartSeconds,
             absoluteVisitEndSeconds,
           );
+          let openingWindowStartSeconds: number | null = null;
 
           // If hotspot opens later today, wait and schedule in the opening window only
           // for wait-friendly hotspot types.
@@ -1353,6 +1363,7 @@ export class TimelineBuilder {
               if (waitedCheck.canVisitNow) {
                 absoluteVisitStartSeconds = nextWindowStartSeconds;
                 absoluteVisitEndSeconds = waitedVisitEndSeconds;
+                openingWindowStartSeconds = nextWindowStartSeconds;
                 timeAfterTravel = secondsToTime(wrapToDay(absoluteVisitStartSeconds));
                 timeAfterSightseeing = secondsToTime(wrapToDay(absoluteVisitEndSeconds));
                 operatingCheck = { canVisitNow: true, nextWindowStart: null, isClosedForDay: false };
@@ -1450,8 +1461,56 @@ export class TimelineBuilder {
             continue;
           }
 
-          // Add travel segment
+          const isEarlyArrivalHotelDeparture =
+            (isHotelPreferenceEarlyArrival || isVehicleHotelRestEarlyArrival) &&
+            lastAddedHotspotId === null;
           const currentOrder = order;
+          let travelStartTime = currentTime;
+          let travelStartSeconds = currentTimeSeconds;
+          let alignedDepartureFromHotel = false;
+
+          if (isEarlyArrivalHotelDeparture && openingWindowStartSeconds !== null) {
+            const desiredDepartureSeconds = openingWindowStartSeconds - travelDurationSeconds;
+            if (desiredDepartureSeconds > currentTimeSeconds) {
+              travelStartSeconds = desiredDepartureSeconds;
+              travelStartTime = secondsToTime(wrapToDay(desiredDepartureSeconds));
+              alignedDepartureFromHotel = true;
+
+              const hotelWaitSeconds = desiredDepartureSeconds - currentTimeSeconds;
+              if (hotelWaitSeconds >= FREE_TIME_THRESHOLD_SECONDS) {
+                const hotelWaitRow = this.buildFreeTimeBreakRow({
+                  planId,
+                  routeId: route.itinerary_route_ID,
+                  order: currentOrder,
+                  startTime: currentTime,
+                  endTime: travelStartTime,
+                  userId: createdByUserId,
+                });
+                hotelWaitRow.via_location_name =
+                  `Wait at ${currentLocationName} before ${hotspotLocationName} opens`;
+                hotspotRows.push(hotelWaitRow);
+
+                this.logBookingRule({
+                  rule: 'EARLY_ARRIVAL_HOTEL_DEPARTURE_ALIGNED_TO_OPENING',
+                  quoteId:
+                    (plan as any).quote_id ??
+                    (plan as any).quoteId ??
+                    (plan as any).quote_ID ??
+                    null,
+                  planId,
+                  routeId: route.itinerary_route_ID,
+                  hotspotId: sh.hotspot_ID,
+                  sourceLocationName: currentLocationName,
+                  destinationLocationName: hotspotLocationName,
+                  departureTime: travelStartTime,
+                  arrivalTime: timeAfterTravel,
+                  waitMinutes: Math.floor(hotelWaitSeconds / 60),
+                });
+              }
+            }
+          }
+
+          // Add travel segment
           const travelLocationType = this.getTravelLocationType(currentLocationName, hotspotLocationName);
 
           if (
@@ -1481,7 +1540,7 @@ export class TimelineBuilder {
             order: currentOrder,
             item_type: 3,
             travelLocationType,
-            startTime: currentTime,
+            startTime: travelStartTime,
             userId: createdByUserId,
             sourceLocationName: currentLocationName,
             destinationLocationName: hotspotLocationName,
@@ -1498,8 +1557,10 @@ export class TimelineBuilder {
               hotspotLocationName,
             ),
           );
-          const travelArrivalTime = secondsToTime(wrapToDay(currentTimeSeconds + travelDurationSeconds));
-          const waitGapSeconds = Math.max(0, timeToSeconds(timeAfterTravel) - timeToSeconds(travelArrivalTime));
+          const travelArrivalTime = secondsToTime(wrapToDay(travelStartSeconds + travelDurationSeconds));
+          const waitGapSeconds = alignedDepartureFromHotel
+            ? 0
+            : Math.max(0, timeToSeconds(timeAfterTravel) - timeToSeconds(travelArrivalTime));
 
           if (waitGapSeconds >= FREE_TIME_THRESHOLD_SECONDS) {
             hotspotRows.push(
@@ -3781,6 +3842,59 @@ export class TimelineBuilder {
         // PHP BEHAVIOR: Travel and Visit segments share the SAME hotspot_order
         const currentOrder = order;
 
+        const isEarlyArrivalHotelDeparture =
+          (isHotelPreferenceEarlyArrival || isVehicleHotelRestEarlyArrival) &&
+          lastAddedHotspotId === null;
+        let travelStartTime = currentTime;
+        let alignedDepartureFromHotel = false;
+
+        if (
+          isEarlyArrivalHotelDeparture &&
+          sharedFeasibility.startSeconds !== undefined &&
+          sharedFeasibility.travelTimeToHotspot
+        ) {
+          const travelDurationSeconds = timeToSeconds(sharedFeasibility.travelTimeToHotspot);
+          const currentAbsoluteSeconds = this.toAbsoluteSecondsForRoute(currentTime, routeStartSeconds);
+          const desiredDepartureSeconds = sharedFeasibility.startSeconds - travelDurationSeconds;
+
+          if (desiredDepartureSeconds > currentAbsoluteSeconds) {
+            travelStartTime = secondsToTime(wrapToDay(desiredDepartureSeconds));
+            alignedDepartureFromHotel = true;
+
+            const hotelWaitSeconds = desiredDepartureSeconds - currentAbsoluteSeconds;
+            if (hotelWaitSeconds >= FREE_TIME_THRESHOLD_SECONDS) {
+              const hotelWaitRow = this.buildFreeTimeBreakRow({
+                planId,
+                routeId: route.itinerary_route_ID,
+                order: currentOrder,
+                startTime: currentTime,
+                endTime: travelStartTime,
+                userId: createdByUserId,
+              });
+              hotelWaitRow.via_location_name =
+                `Wait at ${currentLocationName} before ${hotspotLocationName} opens`;
+              hotspotRows.push(hotelWaitRow);
+
+              this.logBookingRule({
+                rule: 'EARLY_ARRIVAL_HOTEL_DEPARTURE_ALIGNED_TO_OPENING',
+                quoteId:
+                  (plan as any).quote_id ??
+                  (plan as any).quoteId ??
+                  (plan as any).quote_ID ??
+                  null,
+                planId,
+                routeId: route.itinerary_route_ID,
+                hotspotId,
+                sourceLocationName: currentLocationName,
+                destinationLocationName: hotspotLocationName,
+                departureTime: travelStartTime,
+                arrivalTime: sharedFeasibility.timeAfterTravel,
+                waitMinutes: Math.floor(hotelWaitSeconds / 60),
+              });
+            }
+          }
+        }
+
         if (
           suppressHotelInsertionUntilEndOfDay &&
           this.normalizeCityName(hotspotLocationName) === 'hotel'
@@ -3813,7 +3927,7 @@ export class TimelineBuilder {
             order: currentOrder, // Use current order without incrementing
             item_type: 3, // Site Seeing Traveling
             travelLocationType,
-            startTime: currentTime,
+            startTime: travelStartTime,
             userId: createdByUserId,
             sourceLocationName: currentLocationName,
             destinationLocationName: hotspotLocationName,
@@ -3832,7 +3946,9 @@ export class TimelineBuilder {
         );
         currentTime = tToHotspot;
 
-        const gapBeforeVisitSeconds = Math.max(0, timeToSeconds(timeAfterTravel) - timeToSeconds(currentTime));
+        const gapBeforeVisitSeconds = alignedDepartureFromHotel
+          ? 0
+          : Math.max(0, timeToSeconds(timeAfterTravel) - timeToSeconds(currentTime));
         if (gapBeforeVisitSeconds >= FREE_TIME_THRESHOLD_SECONDS) {
           const freeTimeRow = this.buildFreeTimeBreakRow({
             planId,
@@ -4076,6 +4192,34 @@ export class TimelineBuilder {
           }
 
           const currentOrder = order;
+          const isEarlyArrivalHotelDeparture =
+            (isHotelPreferenceEarlyArrival || isVehicleHotelRestEarlyArrival) &&
+            lastAddedHotspotId === null;
+          let travelStartTime = currentTime;
+          let alignedDepartureFromHotel = false;
+
+          if (isEarlyArrivalHotelDeparture) {
+            const desiredDepartureSeconds = slot.startSeconds - travelSeconds;
+            if (desiredDepartureSeconds > currentAbsSeconds) {
+              travelStartTime = secondsToTime(wrapToDay(desiredDepartureSeconds));
+              alignedDepartureFromHotel = true;
+
+              const hotelWaitSeconds = desiredDepartureSeconds - currentAbsSeconds;
+              if (hotelWaitSeconds >= FREE_TIME_THRESHOLD_SECONDS) {
+                const hotelWaitRow = this.buildFreeTimeBreakRow({
+                  planId,
+                  routeId: route.itinerary_route_ID,
+                  order: currentOrder,
+                  startTime: currentTime,
+                  endTime: travelStartTime,
+                  userId: createdByUserId,
+                });
+                hotelWaitRow.via_location_name =
+                  `Wait at ${currentLocationName} before ${hotspotLocationName} opens`;
+                hotspotRows.push(hotelWaitRow);
+              }
+            }
+          }
           const travelLocationType = this.getTravelLocationType(currentLocationName, hotspotLocationName);
           const { row: routeTravelRow } = await this.travelBuilder.buildTravelSegment(tx, {
             planId,
@@ -4083,7 +4227,7 @@ export class TimelineBuilder {
             order: currentOrder,
             item_type: 3,
             travelLocationType,
-            startTime: currentTime,
+            startTime: travelStartTime,
             userId: createdByUserId,
             sourceLocationName: currentLocationName,
             destinationLocationName: hotspotLocationName,
@@ -4095,7 +4239,7 @@ export class TimelineBuilder {
           hotspotRows.push(routeTravelRow);
 
           const alignStartTime = secondsToTime(slot.startSeconds);
-          if (arrivalSeconds < slot.startSeconds) {
+          if (!alignedDepartureFromHotel && arrivalSeconds < slot.startSeconds) {
             const travelEnd = secondsToTime(currentAbsSeconds + travelSeconds);
             const waitGapSeconds = slot.startSeconds - arrivalSeconds;
             if (waitGapSeconds >= FREE_TIME_THRESHOLD_SECONDS) {
@@ -5588,6 +5732,7 @@ export class TimelineBuilder {
               visitStartSeconds,
               visitEndSeconds,
             );
+            let openingWindowStartSeconds: number | null = null;
 
             if (
               !operatingCheck.canVisitNow &&
@@ -5613,6 +5758,7 @@ export class TimelineBuilder {
                 if (waitedCheck.canVisitNow) {
                   visitStartSeconds = nextWindowStartSeconds;
                   visitEndSeconds = waitedVisitEndSeconds;
+                  openingWindowStartSeconds = nextWindowStartSeconds;
                   operatingCheck = {
                     canVisitNow: true,
                     nextWindowStart: null,
@@ -5696,7 +5842,53 @@ export class TimelineBuilder {
               continue;
             }
 
+            const isEarlyArrivalHotelDeparture =
+              isHotelPreferenceEarlyArrival ||
+              isVehicleHotelRestEarlyArrival;
             const currentOrder = order;
+            let travelStartTime = currentTime;
+            let alignedDepartureFromHotel = false;
+
+            if (isEarlyArrivalHotelDeparture && openingWindowStartSeconds !== null) {
+              const desiredDepartureSeconds = openingWindowStartSeconds - travelToHotspotSeconds;
+              if (desiredDepartureSeconds > currentAbsoluteSeconds) {
+                travelStartTime = secondsToTime(wrapToDay(desiredDepartureSeconds));
+                alignedDepartureFromHotel = true;
+
+                const hotelWaitSeconds = desiredDepartureSeconds - currentAbsoluteSeconds;
+                if (hotelWaitSeconds >= FREE_TIME_THRESHOLD_SECONDS) {
+                  const hotelWaitRow = this.buildFreeTimeBreakRow({
+                    planId,
+                    routeId: currentRouteId,
+                    order: currentOrder,
+                    startTime: currentTime,
+                    endTime: travelStartTime,
+                    userId: createdByUserId,
+                  });
+                  hotelWaitRow.via_location_name =
+                    `Wait at ${currentLocationName} before ${hotspotLocationName} opens`;
+                  hotspotRows.push(hotelWaitRow);
+
+                  this.logBookingRule({
+                    rule: 'EARLY_ARRIVAL_HOTEL_DEPARTURE_ALIGNED_TO_OPENING',
+                    quoteId:
+                      (plan as any).quote_id ??
+                      (plan as any).quoteId ??
+                      (plan as any).quote_ID ??
+                      null,
+                    planId,
+                    routeId: currentRouteId,
+                    hotspotId,
+                    sourceLocationName: currentLocationName,
+                    destinationLocationName: hotspotLocationName,
+                    departureTime: travelStartTime,
+                    arrivalTime: secondsToTime(wrapToDay(visitStartSeconds)),
+                    waitMinutes: Math.floor(hotelWaitSeconds / 60),
+                  });
+                }
+              }
+            }
+
             const travelLocationType = this.getTravelLocationType(
               currentLocationName,
               hotspotLocationName,
@@ -5709,7 +5901,7 @@ export class TimelineBuilder {
                 order: currentOrder,
                 item_type: 3,
                 travelLocationType,
-                startTime: currentTime,
+                startTime: travelStartTime,
                 userId: createdByUserId,
                 sourceLocationName: currentLocationName,
                 destinationLocationName: hotspotLocationName,
@@ -5734,7 +5926,7 @@ export class TimelineBuilder {
             const travelArrivalSeconds = timeToSeconds(tToHotspot);
             const visitStartWrappedSeconds = timeToSeconds(visitStartTime);
 
-            if (visitStartWrappedSeconds > travelArrivalSeconds) {
+            if (!alignedDepartureFromHotel && visitStartWrappedSeconds > travelArrivalSeconds) {
               const waitGapSeconds = visitStartWrappedSeconds - travelArrivalSeconds;
 
               if (waitGapSeconds >= FREE_TIME_THRESHOLD_SECONDS) {
