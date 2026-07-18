@@ -441,6 +441,7 @@ export class ItineraryHotelConfirmationSupportService {
             itinerary_plan_id: dto.itinerary_plan_ID,
             itinerary_route_id: routeId,
             group_type: groupType,
+            hotel_required: { not: 2 },
             deleted: 0,
           } as any,
           orderBy: {

@@ -308,15 +308,72 @@ export class ItineraryRouteTimingService {
                 data: markerRows,
               });
             }
+
+            const hotelCheckOutDate = new Date(Date.UTC(
+              firstRouteDate.getUTCFullYear(),
+              firstRouteDate.getUTCMonth(),
+              firstRouteDate.getUTCDate(),
+              0,
+              0,
+              0,
+            ));
+            hotelCheckOutDate.setUTCDate(hotelCheckOutDate.getUTCDate() + 1);
+            const actualArrivalDateIso = itineraryStartDateTime.toISOString().slice(0, 10);
+            const earlyCheckInNote =
+              `Guest has opted for early morning check-in with extra payment. ` +
+              `Room to be blocked from ${expectedDateIso}, with actual guest arrival/check-in ` +
+              `on ${actualArrivalDateIso} at ${firstRouteStartTime}.`;
+
+            await (tx as any).dvi_itinerary_plan_hotel_details.updateMany({
+              where: {
+                itinerary_plan_id: normalizedPlanId,
+                itinerary_route_id: normalizedRouteId,
+                hotel_required: 1,
+                hotel_id: { gt: 0 },
+                deleted: 0,
+              },
+              data: {
+                hotel_check_in_date: previousDayDate,
+                actual_guest_arrival_at: itineraryStartDateTime,
+                hotel_check_out_date: hotelCheckOutDate,
+                early_checkin: 1,
+                early_checkin_extra_payment_applicable: 1,
+                early_checkin_payment_status: 'EXTRA_PAYMENT_APPLICABLE',
+                early_checkin_note: earlyCheckInNote,
+                updatedon: new Date(),
+              },
+            });
           }
-        } else if (existingMarkerRows.length > 0) {
-          await (tx as any).dvi_itinerary_plan_hotel_details.deleteMany({
+        } else {
+          if (existingMarkerRows.length > 0) {
+            await (tx as any).dvi_itinerary_plan_hotel_details.deleteMany({
+              where: {
+                itinerary_plan_id: normalizedPlanId,
+                itinerary_route_id: normalizedRouteId,
+                hotel_required: 2,
+                hotel_id: 0,
+                deleted: 0,
+              },
+            });
+          }
+
+          await (tx as any).dvi_itinerary_plan_hotel_details.updateMany({
             where: {
               itinerary_plan_id: normalizedPlanId,
               itinerary_route_id: normalizedRouteId,
-              hotel_required: 2,
-              hotel_id: 0,
+              hotel_required: 1,
+              hotel_id: { gt: 0 },
               deleted: 0,
+            },
+            data: {
+              hotel_check_in_date: null,
+              actual_guest_arrival_at: null,
+              hotel_check_out_date: null,
+              early_checkin: 0,
+              early_checkin_extra_payment_applicable: 0,
+              early_checkin_payment_status: null,
+              early_checkin_note: null,
+              updatedon: new Date(),
             },
           });
         }

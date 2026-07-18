@@ -412,6 +412,111 @@ export class ItineraryPlanPersistenceService {
           userId,
           
         );
+
+        const firstHotelRoute = (routes || [])[0] as any;
+        const arrivalTimeMatch = String(dto.plan.trip_start_date || '').match(
+          /T(\d{2}):(\d{2})(?::(\d{2}))?/,
+        );
+        const arrivalSeconds = arrivalTimeMatch
+          ? (Number(arrivalTimeMatch[1]) * 3600) +
+            (Number(arrivalTimeMatch[2]) * 60) +
+            Number(arrivalTimeMatch[3] || 0)
+          : -1;
+        const shouldApplyPreviousDayBilling =
+          (Number(dto.plan.itinerary_preference) === 1 ||
+            Number(dto.plan.itinerary_preference) === 3) &&
+          Boolean(dto.previousDayBillingDecisionProvided) &&
+          Boolean(dto.previousDayBillingConfirmed) &&
+          arrivalSeconds >= 3600 &&
+          arrivalSeconds < 28800 &&
+          Number(firstHotelRoute?.itinerary_route_ID || 0) > 0;
+
+        if (shouldApplyPreviousDayBilling) {
+          const firstRouteDate = new Date(firstHotelRoute.itinerary_route_date);
+          if (!Number.isNaN(firstRouteDate.getTime())) {
+            const actualGuestArrivalAt = new Date(Date.UTC(
+              firstRouteDate.getUTCFullYear(),
+              firstRouteDate.getUTCMonth(),
+              firstRouteDate.getUTCDate(),
+              Number(arrivalTimeMatch?.[1] || 0),
+              Number(arrivalTimeMatch?.[2] || 0),
+              Number(arrivalTimeMatch?.[3] || 0),
+            ));
+            const previousDayDate = new Date(Date.UTC(
+              firstRouteDate.getUTCFullYear(),
+              firstRouteDate.getUTCMonth(),
+              firstRouteDate.getUTCDate(),
+              0,
+              0,
+              0,
+            ));
+            previousDayDate.setUTCDate(previousDayDate.getUTCDate() - 1);
+
+            const hotelCheckOutDate = new Date(Date.UTC(
+              firstRouteDate.getUTCFullYear(),
+              firstRouteDate.getUTCMonth(),
+              firstRouteDate.getUTCDate(),
+              0,
+              0,
+              0,
+            ));
+            hotelCheckOutDate.setUTCDate(hotelCheckOutDate.getUTCDate() + 1);
+
+            const routeLocation = String(
+              firstHotelRoute.next_visiting_location ||
+              firstHotelRoute.location_name ||
+              '',
+            ).trim();
+            const blockedFromDateIso = previousDayDate.toISOString().slice(0, 10);
+            const actualArrivalDateIso = String(dto.plan.trip_start_date).slice(0, 10);
+            const actualArrivalTime = arrivalTimeMatch
+              ? `${arrivalTimeMatch[1]}:${arrivalTimeMatch[2]}:${arrivalTimeMatch[3] || '00'}`
+              : '';
+            const earlyCheckInNote =
+              `Guest has opted for early morning check-in with extra payment. ` +
+              `Room to be blocked from ${blockedFromDateIso}, with actual guest arrival/check-in ` +
+              `on ${actualArrivalDateIso} at ${actualArrivalTime}.`;
+
+            await (tx as any).dvi_itinerary_plan_hotel_details.createMany({
+              data: [1, 2, 3, 4].map((groupType) => ({
+                group_type: groupType,
+                itinerary_plan_id: planId,
+                itinerary_route_id: Number(firstHotelRoute.itinerary_route_ID),
+                itinerary_route_date: previousDayDate,
+                itinerary_route_location: routeLocation || null,
+                hotel_required: 2,
+                hotel_id: 0,
+                total_no_of_rooms: 0,
+                total_hotel_cost: 0,
+                total_hotel_tax_amount: 0,
+                createdby: userId,
+                createdon: new Date(),
+                status: 1,
+                deleted: 0,
+              })),
+            });
+
+            await (tx as any).dvi_itinerary_plan_hotel_details.updateMany({
+              where: {
+                itinerary_plan_id: planId,
+                itinerary_route_id: Number(firstHotelRoute.itinerary_route_ID),
+                hotel_required: 1,
+                hotel_id: { gt: 0 },
+                deleted: 0,
+              },
+              data: {
+                hotel_check_in_date: previousDayDate,
+                actual_guest_arrival_at: actualGuestArrivalAt,
+                hotel_check_out_date: hotelCheckOutDate,
+                early_checkin: 1,
+                early_checkin_extra_payment_applicable: 1,
+                early_checkin_payment_status: 'EXTRA_PAYMENT_APPLICABLE',
+                early_checkin_note: earlyCheckInNote,
+                updatedon: new Date(),
+              },
+            });
+          }
+        }
         stepStartedAt = this.logItineraryApiTiming({
           api: 'save_basic_info',
           step: 'hotel_details_lookup_rebuild',
