@@ -1672,6 +1672,18 @@
         "properties": {},
         "type": "object"
       },
+      "SendEmailLoginOtpDto": {
+        "properties": {
+          "email": {
+            "example": "admin@dvi.co.in",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "type": "object"
+      },
       "StateConfigUpdateDto": {
         "properties": {},
         "type": "object"
@@ -2163,6 +2175,23 @@
       },
       "VendorListItemDto": {
         "properties": {},
+        "type": "object"
+      },
+      "VerifyEmailLoginOtpDto": {
+        "properties": {
+          "email": {
+            "example": "admin@dvi.co.in",
+            "type": "string"
+          },
+          "otp": {
+            "example": "123456",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "otp"
+        ],
         "type": "object"
       },
       "ViaRouteResponseDto": {
@@ -4265,6 +4294,56 @@
         "summary": "Test ResAvenue get confirmation details",
         "tags": [
           "ResAvenue Testing"
+        ]
+      }
+    },
+    "/api/v1/auth/email-login/send-otp": {
+      "post": {
+        "operationId": "AuthController_sendEmailLoginOtp",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SendEmailLoginOtpDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "summary": "Send email OTP for login",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/email-login/verify-otp": {
+      "post": {
+        "operationId": "AuthController_verifyEmailLoginOtp",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyEmailLoginOtpDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "summary": "Verify email OTP and receive JWT",
+        "tags": [
+          "auth"
         ]
       }
     },
