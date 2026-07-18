@@ -1634,6 +1634,13 @@ model dvi_confirmed_itinerary_plan_hotel_details {
   status                                    Int       @default(0) @db.TinyInt
   deleted                                   Int       @default(0) @db.TinyInt
   hotel_code                                String?   @db.VarChar(50)
+  hotel_check_in_date                       DateTime? @db.Date
+  actual_guest_arrival_at                   DateTime? @db.DateTime(0)
+  hotel_check_out_date                      DateTime? @db.Date
+  early_checkin                             Int       @default(0) @db.TinyInt
+  early_checkin_extra_payment_applicable    Int       @default(0) @db.TinyInt
+  early_checkin_payment_status              String?   @db.VarChar(40)
+  early_checkin_note                        String?   @db.Text
 
   @@index([createdby], map: "idx_cnf_iti_pln_htl_dls_createdby")
   @@index([createdon], map: "idx_cnf_iti_pln_htl_dls_createdon")
@@ -3948,6 +3955,13 @@ model dvi_itinerary_plan_hotel_details {
   deleted                                Int       @default(0) @db.TinyInt
   hotel_cancellation_status              Int       @default(0)
   hotel_code                             String?   @db.VarChar(50)
+  hotel_check_in_date                    DateTime? @db.Date
+  actual_guest_arrival_at                DateTime? @db.DateTime(0)
+  hotel_check_out_date                   DateTime? @db.Date
+  early_checkin                          Int       @default(0) @db.TinyInt
+  early_checkin_extra_payment_applicable Int       @default(0) @db.TinyInt
+  early_checkin_payment_status           String?   @db.VarChar(40)
+  early_checkin_note                     String?   @db.Text
 
   @@index([createdon], map: "idx_itinerary_plan_hotel_createdon")
   @@index([deleted], map: "idx_itinerary_plan_hotel_deleted")

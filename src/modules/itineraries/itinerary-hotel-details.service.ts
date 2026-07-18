@@ -43,6 +43,14 @@ export interface ItineraryHotelRowDto {
   voucherCancelled?: boolean;
   itineraryPlanHotelDetailsId?: number;
   date?: string;
+  hotelCheckInDate?: string | null;
+  actualGuestArrivalAt?: string | null;
+  checkOutDate?: string | null;
+  earlyCheckIn?: boolean;
+  earlyCheckInExtraPaymentApplicable?: boolean;
+  earlyCheckInPaymentStatus?: string | null;
+  hotelierEarlyCheckInNote?: string | null;
+  previousDayBillingSynthetic?: boolean;
   // Distance from route location to hotel (in kilometers) - calculated using Haversine formula
   hotelDistance?: string | null;
   facilities?: string[];
@@ -464,6 +472,7 @@ async getHotelRoomDetailsByQuoteId(
           itinerary_route_date: markerRow.itinerary_route_date,
           itinerary_route_location:
             markerRow.itinerary_route_location || actualRow.itinerary_route_location,
+          __actualHotelDate: actualRow.itinerary_route_date,
           __previousDayBillingSynthetic: true,
         });
       }
@@ -623,6 +632,60 @@ async getHotelRoomDetailsByQuoteId(
       const routeId = Number((h as any).itinerary_route_id ?? 0);
       const routeDayNumber = routeDayNumberMap.get(routeId) || 0;
       const isSyntheticPreviousDayBilling = Boolean((h as any).__previousDayBillingSynthetic);
+      const routeAndGroupKey = `${routeId}-${Number((h as any).group_type ?? 0)}`;
+      const hasPreviousDayBillingMarker =
+        previousDayBillingMarkerRowsByRouteAndGroup.has(routeAndGroupKey);
+      const storedEarlyCheckIn = Number((h as any).early_checkin ?? 0) === 1;
+      const showEarlyCheckInDetails =
+        isSyntheticPreviousDayBilling ||
+        (storedEarlyCheckIn && !hasPreviousDayBillingMarker);
+
+      const toDateOnly = (value: unknown): string | null => {
+        if (!value) return null;
+        const parsed = value instanceof Date ? value : new Date(value as any);
+        return Number.isNaN(parsed.getTime())
+          ? null
+          : parsed.toISOString().slice(0, 10);
+      };
+
+      const toIsoDateTime = (value: unknown): string | null => {
+        if (!value) return null;
+        const parsed = value instanceof Date ? value : new Date(value as any);
+        return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+      };
+
+      const actualHotelDate = toDateOnly((h as any).__actualHotelDate);
+      const fallbackCheckOutDate = actualHotelDate
+        ? (() => {
+            const parsed = new Date(`${actualHotelDate}T00:00:00.000Z`);
+            parsed.setUTCDate(parsed.getUTCDate() + 1);
+            return parsed.toISOString().slice(0, 10);
+          })()
+        : null;
+      const hotelCheckInDate = showEarlyCheckInDetails
+        ? toDateOnly((h as any).hotel_check_in_date) || dateLabel
+        : null;
+      const actualGuestArrivalAt = showEarlyCheckInDetails
+        ? toIsoDateTime((h as any).actual_guest_arrival_at) ||
+          toIsoDateTime((plan as any).trip_start_date_and_time)
+        : null;
+      const checkOutDate = showEarlyCheckInDetails
+        ? toDateOnly((h as any).hotel_check_out_date) || fallbackCheckOutDate
+        : null;
+      const earlyCheckInExtraPaymentApplicable =
+        showEarlyCheckInDetails &&
+        (Number((h as any).early_checkin_extra_payment_applicable ?? 0) === 1 ||
+          isSyntheticPreviousDayBilling);
+      const earlyCheckInPaymentStatus = showEarlyCheckInDetails
+        ? String(
+            (h as any).early_checkin_payment_status ||
+              'EXTRA_PAYMENT_APPLICABLE',
+          )
+        : null;
+      const hotelierEarlyCheckInNote = showEarlyCheckInDetails
+        ? String((h as any).early_checkin_note || '').trim() ||
+          'Guest has opted for early morning check-in with extra payment. Room to be blocked from the previous night, with actual guest arrival/check-in on the next day early morning.'
+        : null;
 
       // Calculate distance from route location to hotel using Haversine formula
       let hotelDistance: string | null = null;
@@ -680,6 +743,14 @@ async getHotelRoomDetailsByQuoteId(
         voucherCancelled: voucherStatusMap.get(hotelDetailsId) || false,
         itineraryPlanHotelDetailsId: hotelDetailsId,
         date: dateLabel,
+        hotelCheckInDate,
+        actualGuestArrivalAt,
+        checkOutDate,
+        earlyCheckIn: showEarlyCheckInDetails,
+        earlyCheckInExtraPaymentApplicable,
+        earlyCheckInPaymentStatus,
+        hotelierEarlyCheckInNote,
+        previousDayBillingSynthetic: isSyntheticPreviousDayBilling,
         hotelDistance,
       };
     });

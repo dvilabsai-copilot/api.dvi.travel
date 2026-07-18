@@ -91,19 +91,89 @@ export class ItinerarySelectionWorkflowService {
   }) {
     const userId = 1;
 
-    // Get the quote ID to clear the cache
-    const plan = await this.prisma.dvi_itinerary_plan_details.findUnique({
-      where: { itinerary_plan_ID: data.planId },
-    });
+    // Get the quote ID and Day 1 early-check-in metadata.
+    const [plan, route, previousDayMarker] = await Promise.all([
+      this.prisma.dvi_itinerary_plan_details.findUnique({
+        where: { itinerary_plan_ID: data.planId },
+      }),
+      (this.prisma as any).dvi_itinerary_route_details.findFirst({
+        where: {
+          itinerary_plan_ID: data.planId,
+          itinerary_route_ID: data.routeId,
+          deleted: 0,
+        },
+      }),
+      (this.prisma as any).dvi_itinerary_plan_hotel_details.findFirst({
+        where: {
+          itinerary_plan_id: data.planId,
+          itinerary_route_id: data.routeId,
+          group_type: data.groupType || 1,
+          hotel_required: 2,
+          hotel_id: 0,
+          deleted: 0,
+          status: 1,
+        },
+      }),
+    ]);
     const quoteId = (plan as any)?.itinerary_quote_ID || '';
+
+    const actualGuestArrivalAt = (plan as any)?.trip_start_date_and_time
+      ? new Date((plan as any).trip_start_date_and_time)
+      : null;
+    const routeDate = route?.itinerary_route_date
+      ? new Date(route.itinerary_route_date)
+      : null;
+    const hotelCheckOutDate = routeDate && !Number.isNaN(routeDate.getTime())
+      ? new Date(Date.UTC(
+          routeDate.getUTCFullYear(),
+          routeDate.getUTCMonth(),
+          routeDate.getUTCDate() + 1,
+          0,
+          0,
+          0,
+        ))
+      : null;
+    const shouldApplyEarlyCheckIn =
+      Boolean(previousDayMarker?.itinerary_route_date) &&
+      Boolean(actualGuestArrivalAt && !Number.isNaN(actualGuestArrivalAt.getTime())) &&
+      (Number((plan as any)?.itinerary_preference || 0) === 1 ||
+        Number((plan as any)?.itinerary_preference || 0) === 3);
+    const earlyCheckInNote = shouldApplyEarlyCheckIn
+      ? `Guest has opted for early morning check-in with extra payment. ` +
+        `Room to be blocked from ${new Date(previousDayMarker.itinerary_route_date).toISOString().slice(0, 10)}, ` +
+        `with actual guest arrival/check-in on ${actualGuestArrivalAt!.toISOString().slice(0, 10)} ` +
+        `at ${actualGuestArrivalAt!.toISOString().slice(11, 19)}.`
+      : null;
+    const earlyCheckInData = shouldApplyEarlyCheckIn
+      ? {
+          hotel_check_in_date: previousDayMarker.itinerary_route_date,
+          actual_guest_arrival_at: actualGuestArrivalAt,
+          hotel_check_out_date: hotelCheckOutDate,
+          early_checkin: 1,
+          early_checkin_extra_payment_applicable: 1,
+          early_checkin_payment_status: 'EXTRA_PAYMENT_APPLICABLE',
+          early_checkin_note: earlyCheckInNote,
+        }
+      : {
+          hotel_check_in_date: null,
+          actual_guest_arrival_at: null,
+          hotel_check_out_date: null,
+          early_checkin: 0,
+          early_checkin_extra_payment_applicable: 0,
+          early_checkin_payment_status: null,
+          early_checkin_note: null,
+        };
 
     // Check if hotel assignment already exists in hotel_details
     const existingHotelDetails = await (this.prisma as any).dvi_itinerary_plan_hotel_details.findFirst({
       where: {
         itinerary_plan_id: data.planId,
         itinerary_route_id: data.routeId,
+        group_type: data.groupType || 1,
+        hotel_required: { not: 2 },
         deleted: 0,
       },
+      orderBy: { itinerary_plan_hotel_details_ID: 'desc' },
     });
 
     const mealBreakfast = data.mealPlan?.breakfast || data.mealPlan?.all ? 1 : 0;
@@ -119,6 +189,8 @@ export class ItinerarySelectionWorkflowService {
         where: { itinerary_plan_hotel_details_ID: existingHotelDetails.itinerary_plan_hotel_details_ID },
         data: {
           hotel_id: data.hotelId,
+          hotel_required: 1,
+          ...earlyCheckInData,
           group_type: data.groupType || 1,  // âœ… Save groupType
           updatedon: new Date(),
         },
@@ -135,7 +207,12 @@ export class ItinerarySelectionWorkflowService {
         data: {
           itinerary_plan_id: data.planId,
           itinerary_route_id: data.routeId,
+          itinerary_route_date: route?.itinerary_route_date || null,
+          itinerary_route_location:
+            route?.next_visiting_location || route?.location_name || null,
           hotel_id: data.hotelId,
+          hotel_required: 1,
+          ...earlyCheckInData,
           group_type: data.groupType || 1,  // âœ… Save groupType
           createdby: userId,
           createdon: new Date(),

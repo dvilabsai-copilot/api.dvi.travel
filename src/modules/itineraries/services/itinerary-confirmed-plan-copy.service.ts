@@ -88,6 +88,7 @@ export class ItineraryConfirmedPlanCopyService {
       // 5. Hotels
       const hotelWhere: any = {
         itinerary_plan_id: draftPlanId,
+        hotel_required: { not: 2 },
         deleted: 0,
         status: 1,
       };
@@ -146,6 +147,14 @@ export class ItineraryConfirmedPlanCopyService {
             total_amenities_gst_amount: h.total_amenities_gst_amount,
             total_hotel_tax_amount: h.total_hotel_tax_amount,
             hotel_code: h.hotel_code,
+            hotel_check_in_date: h.hotel_check_in_date,
+            actual_guest_arrival_at: h.actual_guest_arrival_at,
+            hotel_check_out_date: h.hotel_check_out_date,
+            early_checkin: h.early_checkin,
+            early_checkin_extra_payment_applicable:
+              h.early_checkin_extra_payment_applicable,
+            early_checkin_payment_status: h.early_checkin_payment_status,
+            early_checkin_note: h.early_checkin_note,
           },
         });
 
