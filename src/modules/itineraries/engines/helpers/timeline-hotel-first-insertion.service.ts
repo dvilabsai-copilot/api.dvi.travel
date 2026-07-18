@@ -147,7 +147,7 @@ export class TimelineHotelFirstInsertionService {
       hotelCoordsResolved: !!resolvedHotelCoords,
     });
     result.currentTime = afterRestTime;
-    result.currentLocationName = input.hotelInfo?.hotelName ? 'Hotel' : input.destinationLocationName;
+    result.currentLocationName = String(input.hotelInfo?.hotelName || '').trim() || 'Hotel';
     result.currentCoords = resolvedHotelCoords || input.currentCoords;
     result.didHotelFirstCheckin = true;
     return result;

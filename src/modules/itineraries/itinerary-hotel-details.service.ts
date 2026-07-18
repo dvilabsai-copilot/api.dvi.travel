@@ -632,13 +632,14 @@ async getHotelRoomDetailsByQuoteId(
       const routeId = Number((h as any).itinerary_route_id ?? 0);
       const routeDayNumber = routeDayNumberMap.get(routeId) || 0;
       const isSyntheticPreviousDayBilling = Boolean((h as any).__previousDayBillingSynthetic);
-      const routeAndGroupKey = `${routeId}-${Number((h as any).group_type ?? 0)}`;
-      const hasPreviousDayBillingMarker =
-        previousDayBillingMarkerRowsByRouteAndGroup.has(routeAndGroupKey);
       const storedEarlyCheckIn = Number((h as any).early_checkin ?? 0) === 1;
+      // The marker row represents the extra night; it must not hide the
+      // structured metadata stored on the real selected hotel row. The
+      // details page needs both rows to explain the billing date and the
+      // guest's actual arrival/check-in date.
       const showEarlyCheckInDetails =
         isSyntheticPreviousDayBilling ||
-        (storedEarlyCheckIn && !hasPreviousDayBillingMarker);
+        storedEarlyCheckIn;
 
       const toDateOnly = (value: unknown): string | null => {
         if (!value) return null;
@@ -676,6 +677,7 @@ async getHotelRoomDetailsByQuoteId(
         showEarlyCheckInDetails &&
         (Number((h as any).early_checkin_extra_payment_applicable ?? 0) === 1 ||
           isSyntheticPreviousDayBilling);
+      const earlyCheckInBillingMultiplier = earlyCheckInExtraPaymentApplicable ? 2 : 1;
       const earlyCheckInPaymentStatus = showEarlyCheckInDetails
         ? String(
             (h as any).early_checkin_payment_status ||
@@ -738,8 +740,8 @@ async getHotelRoomDetailsByQuoteId(
         category: master ? ((master as any).hotel_category ?? 0) : 0,
         roomType: '', // room/meal details can be wired later
         mealPlan: '',
-        totalHotelCost: Number((h as any).total_hotel_cost ?? 0),
-        totalHotelTaxAmount: Number((h as any).total_hotel_tax_amount ?? 0),
+        totalHotelCost: Number((h as any).total_hotel_cost ?? 0) * earlyCheckInBillingMultiplier,
+        totalHotelTaxAmount: Number((h as any).total_hotel_tax_amount ?? 0) * earlyCheckInBillingMultiplier,
         voucherCancelled: voucherStatusMap.get(hotelDetailsId) || false,
         itineraryPlanHotelDetailsId: hotelDetailsId,
         date: dateLabel,
