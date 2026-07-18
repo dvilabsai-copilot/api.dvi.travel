@@ -50,7 +50,7 @@ export class HotelSearchDTO {
 
   @IsNumber()
   @Min(1)
-  @Max(6)
+  @Max(25)
   @IsNotEmpty()
   roomCount: number;
 
