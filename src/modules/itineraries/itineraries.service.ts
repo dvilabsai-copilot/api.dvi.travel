@@ -101,6 +101,7 @@ import { ItineraryVehicleBuildStatusService } from './services/itinerary-vehicle
 import { ItineraryVehicleBuildService } from './services/itinerary-vehicle-build.service';
 import { ItineraryPlanPersistenceService } from './services/itinerary-plan-persistence.service';
 import { TransportEarlyArrivalValidationService } from './validation/transport-early-arrival-validation.service';
+import { TransportEarlyArrivalOption } from './transport-early-arrival';
 import { ItineraryActivityWorkflowService } from './services/itinerary-activity-workflow.service';
 import { ItineraryActivityAvailabilityService } from './services/itinerary-activity-availability.service';
 import { ItineraryInvoiceReadService } from './services/itinerary-invoice-read.service';
@@ -4273,6 +4274,9 @@ private getGuideSlotLabel(slotId: number): string {
     endTime: string,
     previousDayBillingDecisionProvided?: boolean,
     previousDayBillingConfirmed?: boolean,
+    transportEarlyArrivalOption?: TransportEarlyArrivalOption | null,
+    transportEarlyArrivalHotelName?: string | null,
+    transportEarlyArrivalRestMinutes?: number | null,
     userId: number = 1,
   ) {
     return this.routeTimingService.updateRouteTimes(
@@ -4282,6 +4286,9 @@ private getGuideSlotLabel(slotId: number): string {
       endTime,
       previousDayBillingDecisionProvided,
       previousDayBillingConfirmed,
+      transportEarlyArrivalOption,
+      transportEarlyArrivalHotelName,
+      transportEarlyArrivalRestMinutes,
       userId,
     );
   }

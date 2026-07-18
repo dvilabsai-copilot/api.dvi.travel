@@ -4,6 +4,12 @@ import { Injectable, BadRequestException, NotFoundException } from '@nestjs/comm
 import { PrismaService } from '../../../prisma.service';
 import { HotspotEngineService } from '../engines/hotspot-engine.service';
 import { TimeConverter } from '../engines/helpers/time-converter';
+import {
+  DEFAULT_TRANSPORT_EARLY_ARRIVAL_CUTOFF,
+  TransportEarlyArrivalOption,
+  getTransportEarlyArrivalSetting,
+  wallClockMinutes,
+} from '../transport-early-arrival';
 
 type RouteTimingCallbacks = Record<string, (...args: any[]) => any>;
 
@@ -27,6 +33,9 @@ export class ItineraryRouteTimingService {
     endTime: string,
     previousDayBillingDecisionProvided?: boolean,
     previousDayBillingConfirmed?: boolean,
+    transportEarlyArrivalOption?: TransportEarlyArrivalOption | null,
+    transportEarlyArrivalHotelName?: string | null,
+    transportEarlyArrivalRestMinutes?: number | null,
     userId: number = 1,
   ) {
     console.log(`[updateRouteTimes] planId=${planId}, routeId=${routeId}, startTime=${startTime}, endTime=${endTime}`);
@@ -84,6 +93,11 @@ export class ItineraryRouteTimingService {
     })();
     const isEarlyArrivalWindow = startTimeSeconds >= 3600 && startTimeSeconds < 28800; // 01:00:00–07:59:59
 
+    const transportCutoffMinutes = wallClockMinutes(
+      getTransportEarlyArrivalSetting('TRANSPORT_EARLY_ARRIVAL_CUTOFF', DEFAULT_TRANSPORT_EARLY_ARRIVAL_CUTOFF),
+    ) ?? 8 * 60;
+    const isTransportEarlyArrival = startTimeSeconds < transportCutoffMinutes * 60;
+
     const transactionResult = await this.prisma.$transaction(async (tx) => {
       // 1) Verify target route belongs to this plan
       const targetRoute = await (tx as any).dvi_itinerary_route_details.findFirst({
@@ -112,6 +126,20 @@ export class ItineraryRouteTimingService {
           );
         }
         throw new BadRequestException(`Route ${normalizedRouteId} not found`);
+      }
+
+      const plan = await (tx as any).dvi_itinerary_plan_details.findFirst({
+        where: { itinerary_plan_ID: normalizedPlanId, deleted: 0 },
+        select: {
+          itinerary_preference: true,
+          transport_early_arrival_option: true,
+          transport_early_arrival_hotel_name: true,
+          transport_early_arrival_rest_minutes: true,
+        },
+      });
+
+      if (!plan) {
+        throw new NotFoundException(`Itinerary plan ${normalizedPlanId} not found`);
       }
 
       // 2) Persist requested route start/end times
@@ -302,6 +330,31 @@ export class ItineraryRouteTimingService {
       if (isDay1RouteUpdated) {
         planUpdateData.trip_start_date_and_time = itineraryStartDateTime;
         planUpdateData.pick_up_date_and_time = itineraryStartDateTime;
+
+        const isTransportOnly = Number(plan.itinerary_preference) === 2;
+        if (isTransportOnly && isTransportEarlyArrival) {
+          const nextOption = transportEarlyArrivalOption ?? plan.transport_early_arrival_option;
+          if (!Object.values(TransportEarlyArrivalOption).includes(nextOption)) {
+            throw new BadRequestException({
+              code: 'TRANSPORT_EARLY_ARRIVAL_PREFERENCE_REQUIRED',
+              message: 'Select an early-arrival preference before updating Day 1.',
+            });
+          }
+
+          planUpdateData.transport_early_arrival_option = nextOption;
+          planUpdateData.transport_early_arrival_hotel_name =
+            nextOption === TransportEarlyArrivalOption.HOTEL_REST
+              ? String(transportEarlyArrivalHotelName ?? plan.transport_early_arrival_hotel_name ?? '').trim() || null
+              : null;
+          planUpdateData.transport_early_arrival_rest_minutes =
+            nextOption === TransportEarlyArrivalOption.HOTEL_REST
+              ? Number(transportEarlyArrivalRestMinutes ?? plan.transport_early_arrival_rest_minutes ?? 180)
+              : 60;
+        } else if (!isTransportEarlyArrival) {
+          planUpdateData.transport_early_arrival_option = null;
+          planUpdateData.transport_early_arrival_hotel_name = null;
+          planUpdateData.transport_early_arrival_rest_minutes = null;
+        }
       }
 
       await (tx as any).dvi_itinerary_plan_details.updateMany({

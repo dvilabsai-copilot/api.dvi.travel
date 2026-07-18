@@ -97,8 +97,8 @@ export class TransportEarlyArrivalTimelineService {
         allow_via_route: 0,
         via_location_name: isHotelRest
           ? hotelName
-            ? `Hotel rest and refreshment: ${hotelName}`
-            : 'Hotel rest and refreshment'
+            ? `Visit to ${hotelName} for rest and refreshment`
+            : 'Visit to Hotel for rest and refreshment'
           : 'Refreshment / waiting break before sightseeing',
         hotspot_plan_own_way: 0,
         createdby: options.createdByUserId,

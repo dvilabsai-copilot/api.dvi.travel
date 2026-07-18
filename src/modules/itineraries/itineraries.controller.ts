@@ -37,6 +37,7 @@ import {
   CreateTravellerDto,
   CreateVehicleDto,
 } from './dto/create-itinerary.dto';
+import { TransportEarlyArrivalOption } from './transport-early-arrival';
 import { LatestItineraryQueryDto } from './dto/latest-itinerary-query.dto';
 import { ConfirmQuotationDto } from './dto/confirm-quotation.dto';
 import { CancelItineraryDto } from './dto/cancel-itinerary.dto';
@@ -1952,6 +1953,9 @@ async exportToExcel(
       endTime: string;
       previousDayBillingDecisionProvided?: boolean;
       previousDayBillingConfirmed?: boolean;
+      transportEarlyArrivalOption?: TransportEarlyArrivalOption | null;
+      transportEarlyArrivalHotelName?: string | null;
+      transportEarlyArrivalRestMinutes?: number | null;
     },
     @Req() req: any,
   ) {
@@ -1963,6 +1967,9 @@ async exportToExcel(
       body.endTime,
       body.previousDayBillingDecisionProvided,
       body.previousDayBillingConfirmed,
+      body.transportEarlyArrivalOption,
+      body.transportEarlyArrivalHotelName,
+      body.transportEarlyArrivalRestMinutes,
       userId,
     );
   }
