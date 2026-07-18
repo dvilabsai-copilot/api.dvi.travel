@@ -359,8 +359,20 @@ export class ArrivalHotelPolicyService {
       routeDate,
     );
 
-    const routeDateOnly = toDateOnly(routeDate);
-    const arrivalDateOnly = toDateOnly(arrivalDateTime);
+    // Compare the calendar dates supplied by the itinerary request, rather than
+    // the server-local date of the parsed instant. An ISO value such as
+    // 2026-07-29T02:00:00+05:30 is 2026-07-28 in UTC, but it is still an
+    // arrival on 2026-07-29 for the itinerary.
+    const routeDateOnly = toCalendarDateOnly(
+      request.routeDate,
+      route?.itinerary_route_date,
+      routeDate,
+    );
+    const arrivalDateOnly = toCalendarDateOnly(
+      request.arrivalDateTime,
+      plan?.trip_start_date_and_time,
+      arrivalDateTime,
+    );
 
     const arrivalCityName =
       request.arrivalCityName ||
@@ -471,4 +483,19 @@ function toDateOnly(date: Date): string {
   const m = String(date.getMonth() + 1).padStart(2, '0');
   const d = String(date.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
+}
+
+export function toCalendarDateOnly(
+  primary: unknown,
+  secondary: unknown,
+  fallback: Date,
+): string {
+  for (const value of [primary, secondary]) {
+    if (typeof value !== 'string') continue;
+
+    const match = value.trim().match(/^(\d{4}-\d{2}-\d{2})(?:$|[T\s])/);
+    if (match) return match[1];
+  }
+
+  return toDateOnly(fallback);
 }

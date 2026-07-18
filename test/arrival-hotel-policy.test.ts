@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import {
   ArrivalWindow,
+  ArrivalHotelPolicyService,
   HotelSearchMode,
   evaluateArrivalHotelPolicy,
+  toCalendarDateOnly,
 } from '../src/modules/itineraries/services/arrival-hotel-policy.service';
 import {
   areCitiesEquivalent,
@@ -13,7 +15,7 @@ function makeDate(date: string): Date {
   return new Date(`${date}T00:00:00`);
 }
 
-function runPolicyTests() {
+async function runPolicyTests() {
   const routeDate = makeDate('2026-05-15');
 
   const earlyConfirmYes = evaluateArrivalHotelPolicy({
@@ -110,7 +112,38 @@ function runPolicyTests() {
     cityNameB: 'Madurai',
   });
   assert.equal(differentCity, false);
+
+  // The payload's calendar date must win over the server-local date of the
+  // parsed instant. This is the production failure when the process runs UTC.
+  assert.equal(
+    toCalendarDateOnly(
+      '2026-07-29T02:00:00+05:30',
+      undefined,
+      new Date('2026-07-28T20:30:00.000Z'),
+    ),
+    '2026-07-29',
+  );
+
+  const service = new ArrivalHotelPolicyService({} as any);
+  const requestResult = await service.resolvePolicy({
+    routeDayNumber: 1,
+    routeDate: '2026-07-29',
+    arrivalDateTime: '2026-07-29T02:00:00+05:30',
+    arrivalCityName: 'Chennai International Airport',
+    routeSourceCityName: 'Chennai International Airport',
+    nightStayCityName: 'Chennai Domestic Airport',
+    previousDayBillingDecisionProvided: false,
+    previousDayBillingConfirmed: false,
+  });
+  assert.equal(requestResult.resolutionStatus, 'AWAITING_PREVIOUS_DAY_BILLING_CONFIRMATION');
+  assert.equal(requestResult.arrivalWindow, ArrivalWindow.EARLY_01_TO_0759);
+  assert.equal(requestResult.requiresPreviousDayBillingConfirmation, true);
+  assert.equal(requestResult.debug?.isArrivalDay, true);
 }
 
-runPolicyTests();
-console.log('arrival-hotel-policy tests passed');
+runPolicyTests()
+  .then(() => console.log('arrival-hotel-policy tests passed'))
+  .catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
