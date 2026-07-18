@@ -3,6 +3,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma.service';
 import { TransportVoucherDetails } from '../dto/transport-voucher-details.dto';
+import { getTransportEarlyArrivalMessage } from '../transport-early-arrival';
 
 type VoucherReadCallbacks = Partial<Record<
   'toDateOnly'
@@ -780,6 +781,9 @@ export class ItineraryVoucherReadService {
         checkInDate: this.formatTransportVoucherDate(plan.trip_start_date_and_time),
         checkOutDate: this.formatTransportVoucherDate(plan.trip_end_date_and_time),
         duration: `${Number(plan.no_of_days || 0)} Days / ${Number(plan.no_of_nights || 0)} Nights`,
+        earlyArrivalPreferenceMessage: getTransportEarlyArrivalMessage(
+          (plan as any).transport_early_arrival_option,
+        ),
       },
         flight: {
           arrival: flightArrival,

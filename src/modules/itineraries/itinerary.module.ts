@@ -108,6 +108,7 @@ import { ItineraryActivityImpactService } from './services/itinerary-activity-im
 import { ItineraryTransportFormattingService } from './services/itinerary-transport-formatting.service';
 import { ItineraryActivityPricingService } from './services/itinerary-activity-pricing.service';
 import { ItineraryActivityTimingPolicyService } from './services/itinerary-activity-timing-policy.service';
+import { TransportEarlyArrivalValidationService } from './validation/transport-early-arrival-validation.service';
 
 @Module({
   imports: [HotelsModule],
@@ -195,6 +196,7 @@ import { ItineraryActivityTimingPolicyService } from './services/itinerary-activ
     ItineraryTransportFormattingService,
     ItineraryActivityPricingService,
     ItineraryActivityTimingPolicyService,
+    TransportEarlyArrivalValidationService,
 
     // existing engines you already had
     HotelEngineService,

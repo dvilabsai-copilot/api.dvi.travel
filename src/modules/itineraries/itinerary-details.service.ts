@@ -22,6 +22,7 @@ import {
   type EntryTicketBreakdownDto,
 } from './utils/entry-ticket-breakdown.util';
 import { ItineraryDetailsVehicleKmService } from './services/itinerary-details-vehicle-km.service';
+import { getTransportEarlyArrivalMessage } from './transport-early-arrival';
 
 // ---------------------------------------------------------------------------
 // DTOs for Itinerary Details response (shared shape with frontend)
@@ -348,6 +349,10 @@ export interface ItineraryDetailsResponseDto {
   specialInstructions?: string | null;
   special_instruction?: string | null;
   specialInstruction?: string | null;
+  transport_early_arrival_option?: string | null;
+  transport_early_arrival_hotel_name?: string | null;
+  transport_early_arrival_rest_minutes?: number | null;
+  earlyArrivalPreferenceMessage?: string | null;
   dateRange: string;
   dayCount: number;
   nightCount: number;
@@ -5661,6 +5666,12 @@ const response: ItineraryDetailsResponseDto = {
       specialInstructions,
       special_instruction: specialInstructions,
       specialInstruction: specialInstructions,
+      transport_early_arrival_option: (plan as any).transport_early_arrival_option ?? null,
+      transport_early_arrival_hotel_name: (plan as any).transport_early_arrival_hotel_name ?? null,
+      transport_early_arrival_rest_minutes: (plan as any).transport_early_arrival_rest_minutes ?? null,
+      earlyArrivalPreferenceMessage: getTransportEarlyArrivalMessage(
+        (plan as any).transport_early_arrival_option,
+      ),
       dateRange,
       dayCount: Number((plan as any).no_of_days || days.length || 0),
       nightCount: Number((plan as any).no_of_nights || 0),

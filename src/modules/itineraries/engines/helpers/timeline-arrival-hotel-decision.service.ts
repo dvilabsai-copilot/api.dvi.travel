@@ -416,6 +416,7 @@ export class TimelineArrivalHotelDecisionService {
       routeStartSeconds,
       routeEndSeconds,
       lastRouteArrivalDeadlineSeconds,
+      skipInitialRefreshmentForImmediateHotelCheckin,
     };
   }
 }

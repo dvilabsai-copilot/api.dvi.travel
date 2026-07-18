@@ -2,6 +2,7 @@
 import { PrismaService } from '../../prisma.service';
 import { ItineraryDetailsService } from './itinerary-details.service';
 import { ItineraryHotelDetailsService } from './itinerary-hotel-details.service';
+import { getTransportEarlyArrivalMessage } from './transport-early-arrival';
 
 type ClipboardMode = 'recommended' | 'highlights' | 'para';
 
@@ -139,6 +140,9 @@ export class ItineraryClipboardService {
     const entryTicketRequired = Number(plan.entry_ticket_required || 0) === 1 ? 'Yes' : 'No';
     const nights = Number(plan.no_of_nights || 0);
     const days = Number(plan.no_of_days || 0);
+    const earlyArrivalMessage = getTransportEarlyArrivalMessage(
+      plan.transport_early_arrival_option,
+    );
 
     return `
       <table width="700" align="left" border="1" cellpadding="0" cellspacing="0" style="border-collapse: collapse; background-color:#fff; font-family:Calibri; font-size:11px; color:#302c6e;">
@@ -148,6 +152,10 @@ export class ItineraryClipboardService {
           </td>
         </tr>
       </table>
+      ${earlyArrivalMessage ? `
+        <table width="700" align="left" border="1" cellpadding="0" cellspacing="0" style="border-collapse:collapse; background:#fff8e7; font-size:11px; font-family:Calibri; color:#6b4500;">
+          <tr><td style="padding:8px; font-weight:700;">Early-arrival preference</td><td style="padding:8px;">${this.escapeHtml(earlyArrivalMessage)}</td></tr>
+        </table>` : ''}
       <table width="700" align="left" border="1" cellpadding="0" cellspacing="0" style="border-collapse:collapse; background:#fff; font-size:11px; line-height:1.2; font-family:Calibri; color:#302c6e;">
         <tr>
           <td width="25%" style="text-align:center; padding:3px; border:1px solid #b1b1b1;">
