@@ -18,7 +18,12 @@ import { HobseHotelProvider } from '../providers/hobse-hotel.provider';
 
 @Injectable()
 export class HotelSearchService {
-  private static readonly MAX_ROOMS = 6;
+  // General room limit for AxisRooms and other channel managers.
+  private static readonly MAX_ROOMS = 25;
+
+  // TBO supports only a maximum of 6 rooms per search.
+  private static readonly TBO_MAX_ROOMS = 6;
+
   private static readonly MAX_ADULTS_PER_ROOM = 8;
   private static readonly MAX_CHILDREN_PER_ROOM = 4;
   private static readonly DEFAULT_CHILD_AGE = 6;
@@ -90,13 +95,44 @@ export class HotelSearchService {
         throw new BadRequestException('City code is required');
       }
 
-      const normalizedProviders = (providers || []).map((provider) => String(provider).toLowerCase());
-      const isTboRequested = normalizedProviders.length === 0 || normalizedProviders.includes('tbo');
-      if (isTboRequested && (!guestNationality || !/^[A-Z]{2}$/i.test(String(guestNationality).trim()))) {
-        throw new BadRequestException(
-          'guestNationality is required as ISO-2 code when searching TBO hotels (example: IN).',
-        );
-      }
+     const requestedProviderKeys = (
+  Array.isArray(providers) && providers.length > 0
+    ? providers
+    : ['tbo', 'resavenue', 'hobse']
+)
+  .map((provider) => String(provider || '').trim().toLowerCase())
+  .filter(
+    (provider, index, items) =>
+      Boolean(provider) && items.indexOf(provider) === index,
+  );
+
+// For 7–25 rooms, do not send the search to TBO.
+// Other registered channel managers will continue handling the search.
+const providerKeysToSearch =
+  Number(roomCount) > HotelSearchService.TBO_MAX_ROOMS
+    ? requestedProviderKeys.filter((provider) => provider !== 'tbo')
+    : requestedProviderKeys;
+
+if (
+  Number(roomCount) > HotelSearchService.TBO_MAX_ROOMS &&
+  requestedProviderKeys.includes('tbo')
+) {
+  this.logger.log(
+    `Skipping TBO because roomCount ${roomCount} exceeds the TBO limit of ${HotelSearchService.TBO_MAX_ROOMS}.`,
+  );
+}
+
+const isTboRequested = providerKeysToSearch.includes('tbo');
+
+if (
+  isTboRequested &&
+  (!guestNationality ||
+    !/^[A-Z]{2}$/i.test(String(guestNationality).trim()))
+) {
+  throw new BadRequestException(
+    'guestNationality is required as ISO-2 code when searching TBO hotels (example: IN).',
+  );
+}
 
       const checkIn = this.parseDateOnly(checkInDate);
       const checkOut = this.parseDateOnly(checkOutDate);
@@ -112,11 +148,22 @@ export class HotelSearchService {
         throw new BadRequestException('Check-in date cannot be in the past');
       }
 
-      if (roomCount > HotelSearchService.MAX_ROOMS) {
-        throw new BadRequestException(
-          `roomCount cannot exceed ${HotelSearchService.MAX_ROOMS}`,
-        );
-      }
+  const normalizedRoomCount = Number(roomCount);
+
+if (
+  !Number.isInteger(normalizedRoomCount) ||
+  normalizedRoomCount < 1
+) {
+  throw new BadRequestException(
+    'roomCount must be a positive integer',
+  );
+}
+
+if (normalizedRoomCount > HotelSearchService.MAX_ROOMS) {
+  throw new BadRequestException(
+    `roomCount cannot exceed ${HotelSearchService.MAX_ROOMS}`,
+  );
+}
 
       let normalizedOccupancies = occupancies;
 
@@ -162,15 +209,26 @@ export class HotelSearchService {
       }
 
       this.validateOccupancies(roomCount, guestCount, normalizedOccupancies);
+// Get only providers eligible for the requested room count.
+const activeProviders = providerKeysToSearch
+  .map((providerKey) => this.providers.get(providerKey))
+  .filter(
+    (provider): provider is IHotelProvider =>
+      provider !== undefined,
+  );
 
-      // Get eligible providers
-      const activeProviders = providers
-        .map((p) => this.providers.get(p))
-        .filter((p) => p !== undefined);
+if (activeProviders.length === 0) {
+  if (Number(roomCount) > HotelSearchService.TBO_MAX_ROOMS) {
+    throw new BadRequestException(
+      `No eligible non-TBO hotel provider is available for ${roomCount} rooms. ` +
+        `TBO supports a maximum of ${HotelSearchService.TBO_MAX_ROOMS} rooms.`,
+    );
+  }
 
-      if (activeProviders.length === 0) {
-        throw new BadRequestException('No valid hotel providers specified');
-      }
+  throw new BadRequestException(
+    'No valid hotel providers specified',
+  );
+}
 
       this.logger.log(`🔄 Searching across ${activeProviders.length} provider(s): ${activeProviders.map(p => p.getName()).join(', ')}`);
 
