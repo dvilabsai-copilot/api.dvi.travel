@@ -59,6 +59,7 @@ import { TimelineCandidateReorderingService } from './timeline-candidate-reorder
 import { TimelineDay1CandidateGateService } from './timeline-day1-candidate-gate.service';
 import { TimelineDay1CutoffMasterService } from './timeline-day1-cutoff-master.service';
 import { TimelineDay1TravelProjectionService } from './timeline-day1-travel-projection.service';
+import { TransportEarlyArrivalTimelineService } from './transport-early-arrival-timeline.service';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -221,6 +222,7 @@ export class TimelineBuilder {
   private readonly day1CandidateGateService = new TimelineDay1CandidateGateService();
   private readonly day1CutoffMasterService = new TimelineDay1CutoffMasterService();
   private readonly day1TravelProjectionService = new TimelineDay1TravelProjectionService();
+  private readonly transportEarlyArrivalTimelineService = new TransportEarlyArrivalTimelineService();
   private readonly candidatePolicyService = new TimelineCandidatePolicyService(
     this.operatingHoursService,
     this.slotPolicyService,
@@ -825,11 +827,36 @@ export class TimelineBuilder {
 
       let didHotelFirstCheckin = false;
 
+      const transportEarlyArrivalResult =
+        await this.transportEarlyArrivalTimelineService.apply({
+          tx,
+          planId,
+          routeId: route.itinerary_route_ID,
+          plan,
+          isFirstRoute,
+          isLastRoute,
+          routeEndSeconds,
+          currentTime,
+          currentLocationName,
+          order,
+          createdByUserId,
+        });
+      hotspotRows.push(...transportEarlyArrivalResult.rows);
+      if (transportEarlyArrivalResult.handled) {
+        order += transportEarlyArrivalResult.rows.length;
+        currentTime = transportEarlyArrivalResult.currentTime;
+        currentLocationName = transportEarlyArrivalResult.currentLocationName;
+        currentCoords = undefined;
+      }
+
       // 1) ADD REFRESHMENT BREAK (PHP line 969-993)
       // PHP adds 1-hour refreshment at route start EXCEPT for last route
       // Last route starts directly with hotspots (order 2) and skips refreshment ROW
       // BUT PHP still advances currentTime by buffer amount for last route (without creating row)
-      if (!isLastRoute && !skipInitialRefreshmentForImmediateHotelCheckin) {
+      const skipInitialRefreshment =
+        transportEarlyArrivalResult.skipGenericRefreshment ||
+        skipInitialRefreshmentForImmediateHotelCheckin;
+      if (!isLastRoute && !skipInitialRefreshment) {
         const globalSettings = await (tx as any).dvi_global_settings?.findFirst({
           where: { status: 1, deleted: 0 },
           select: { itinerary_common_buffer_time: true },
@@ -873,7 +900,7 @@ export class TimelineBuilder {
             currentTime = firstSightseeingMovementTime;
           }
         }
-      } else if (isLastRoute) {
+      } else if (isLastRoute && !transportEarlyArrivalResult.handled) {
         // PHP BEHAVIOR: Last route doesn't create refreshment ROW but still advances time
         if (!isTransferOnlyLastRouteByReportDeadline) {
           const globalSettings = await (tx as any).dvi_global_settings?.findFirst({

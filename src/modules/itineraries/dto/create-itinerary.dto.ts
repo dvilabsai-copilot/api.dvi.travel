@@ -5,12 +5,17 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  IsEnum,
   ValidateNested,
   IsISO8601,
   Min,
   Matches,
+  Max,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { TransportEarlyArrivalOption } from '../transport-early-arrival';
+
+export { TransportEarlyArrivalOption } from '../transport-early-arrival';
 
 export class CreatePlanDto {
   @ApiProperty({
@@ -118,6 +123,23 @@ export class CreatePlanDto {
   @ApiProperty({ example: '' })
   @IsString()
   special_instructions!: string;
+
+  @ApiProperty({ enum: TransportEarlyArrivalOption, required: false })
+  @IsOptional()
+  @IsEnum(TransportEarlyArrivalOption)
+  transport_early_arrival_option?: TransportEarlyArrivalOption;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  transport_early_arrival_hotel_name?: string;
+
+  @ApiProperty({ required: false, example: 180, minimum: 30, maximum: 720 })
+  @IsOptional()
+  @IsInt()
+  @Min(30)
+  @Max(720)
+  transport_early_arrival_rest_minutes?: number;
 
   @ApiProperty({
     example: 'DVI20260710',

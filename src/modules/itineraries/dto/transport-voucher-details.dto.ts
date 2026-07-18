@@ -28,6 +28,7 @@ export interface TransportVoucherDetails {
     checkInDate: string;
     checkOutDate: string;
     duration: string;
+    earlyArrivalPreferenceMessage?: string | null;
   };
   flight: {
     arrival: {

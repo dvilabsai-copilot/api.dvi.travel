@@ -100,6 +100,7 @@ import { ItineraryActivityTimingPolicyService } from './services/itinerary-activ
 import { ItineraryVehicleBuildStatusService } from './services/itinerary-vehicle-build-status.service';
 import { ItineraryVehicleBuildService } from './services/itinerary-vehicle-build.service';
 import { ItineraryPlanPersistenceService } from './services/itinerary-plan-persistence.service';
+import { TransportEarlyArrivalValidationService } from './validation/transport-early-arrival-validation.service';
 import { ItineraryActivityWorkflowService } from './services/itinerary-activity-workflow.service';
 import { ItineraryActivityAvailabilityService } from './services/itinerary-activity-availability.service';
 import { ItineraryInvoiceReadService } from './services/itinerary-invoice-read.service';
@@ -593,6 +594,7 @@ export class ItinerariesService {
       viaRoutesEngine,
       routeValidation,
       vehicleBuildService,
+      new TransportEarlyArrivalValidationService(),
     ),
     private readonly activityWorkflowService: ItineraryActivityWorkflowService = new ItineraryActivityWorkflowService(
       prisma,

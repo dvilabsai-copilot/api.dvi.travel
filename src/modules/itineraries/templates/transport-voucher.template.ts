@@ -227,6 +227,7 @@ export function renderTransportVoucherHtml(
         ${renderDetailRow('Check-in Date', truncateWithEllipsis(data.trip.checkInDate, 30))}
         ${renderDetailRow('Check-out Date', truncateWithEllipsis(data.trip.checkOutDate, 30))}
         ${renderDetailRow('Total Duration', truncateWithEllipsis(data.trip.duration, 34))}
+        ${data.trip.earlyArrivalPreferenceMessage ? renderDetailRow('Early arrival', truncateWithEllipsis(data.trip.earlyArrivalPreferenceMessage, 34)) : ''}
       </div>
 
       <div class="info-card flight-card">

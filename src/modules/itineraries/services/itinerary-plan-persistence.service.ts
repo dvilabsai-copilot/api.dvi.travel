@@ -9,6 +9,7 @@ import { TravellersEngineService } from '../engines/travellers-engine.service';
 import { ViaRoutesEngine } from '../engines/via-routes.engine';
 import { RouteValidationService } from '../validation/route-validation.service';
 import { ItineraryVehicleBuildService } from './itinerary-vehicle-build.service';
+import { TransportEarlyArrivalValidationService } from '../validation/transport-early-arrival-validation.service';
 
 type RouteFamilyQuote = {
   baseQuoteId: string;
@@ -31,6 +32,7 @@ export class ItineraryPlanPersistenceService {
     private readonly viaRoutesEngine: ViaRoutesEngine,
     private readonly routeValidation: RouteValidationService,
     private readonly vehicleBuildService: ItineraryVehicleBuildService,
+    private readonly transportEarlyArrivalValidation: TransportEarlyArrivalValidationService,
   ) {}
 
   setCallbacks(callbacks: {
@@ -161,6 +163,8 @@ export class ItineraryPlanPersistenceService {
 
     const perfStart = Date.now();
     createPlanStage = 'pre_transaction_validation';
+
+    this.transportEarlyArrivalValidation.validate(dto.plan);
 
     // Validate hotel availability BEFORE starting the transaction
     // Only validate if hotels are needed (itinerary_preference 1 or 3)

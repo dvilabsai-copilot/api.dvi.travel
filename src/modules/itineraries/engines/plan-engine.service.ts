@@ -9,6 +9,7 @@ import {
   CreatePlanDto,
   CreateTravellerDto,
 } from "../dto/create-itinerary.dto";
+import { TransportEarlyArrivalOption } from "../transport-early-arrival";
 import {
   inferCanonicalHotelRatePlanCode,
   inferCanonicalHotelRatePlanCodeFromMealFlags,
@@ -574,6 +575,19 @@ export class PlanEngineService {
 
       // Misc
       special_instructions: plan.special_instructions ?? "",
+      transport_early_arrival_option: plan.transport_early_arrival_option ?? null,
+      transport_early_arrival_hotel_name:
+        plan.transport_early_arrival_option === TransportEarlyArrivalOption.HOTEL_REST
+          ? String(plan.transport_early_arrival_hotel_name || '').trim()
+          : null,
+      transport_early_arrival_rest_minutes: plan.transport_early_arrival_option
+        ? Number(
+            plan.transport_early_arrival_rest_minutes ||
+              (plan.transport_early_arrival_option === TransportEarlyArrivalOption.HOTEL_REST
+                ? 180
+                : 60),
+          )
+        : null,
 
       // Hotel extra fields
       hotel_rates_visibility,

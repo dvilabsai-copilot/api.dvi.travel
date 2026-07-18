@@ -2,6 +2,7 @@
 
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma.service';
+import { getTransportEarlyArrivalMessage } from '../transport-early-arrival';
 
 type ConfirmedItineraryDetailsCallbacks = Record<string, (...args: any[]) => any>;
 
@@ -535,7 +536,13 @@ export class ItineraryConfirmedItineraryDetailsService {
       plan: {
         itinerary_plan_ID: originalPlan.itinerary_plan_ID,
         confirmed_itinerary_plan_ID: confirmedPlanId,
+        transport_early_arrival_option: (plan as any).transport_early_arrival_option ?? null,
+        transport_early_arrival_hotel_name: (plan as any).transport_early_arrival_hotel_name ?? null,
+        transport_early_arrival_rest_minutes: (plan as any).transport_early_arrival_rest_minutes ?? null,
       },
+      earlyArrivalPreferenceMessage: getTransportEarlyArrivalMessage(
+        (plan as any).transport_early_arrival_option,
+      ),
       guideAssignments,
     };
   }
