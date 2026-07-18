@@ -73,7 +73,7 @@ jobs:
 
             echo "Running Prisma DB push..."
             set +e
-            npx prisma db push
+            npx prisma db push --accept-data-loss
             PRISMA_EXIT=$?
             set -e
 
