@@ -5279,34 +5279,64 @@ export class TimelineBuilder {
           currentSeconds += 86400;
         }
 
-        const remainingGapSeconds = routeEndSeconds - currentSeconds;
         const hasScheduledVisitOnRoute = hotspotRows.some(
           (row) =>
             Number((row as any).itinerary_route_ID || 0) === Number(route.itinerary_route_ID || 0) &&
             Number((row as any).item_type || 0) === 4,
         );
-        // For non-last intercity routes, cap the trailing gap end to latestNonHotelEndSeconds
-        // so currentTime stops at the hotel departure window, not at routeEnd.
-        // This prevents hotelStartTime = routeEndTime which causes 08:00 PM - 08:00 PM travel rows.
-        const trailingGapEndSeconds = !isLastRoute ? Math.min(routeEndSeconds, latestNonHotelEndSeconds) : routeEndSeconds;
+        let trailingGapEndSeconds = routeEndSeconds;
+
+        if (!isLastRoute) {
+          const trailingSourceCity = currentLocationName.split('|')[0].trim();
+          const trailingDestinationCity = String(
+            (route.next_visiting_location as string) || currentLocationName,
+          ).split('|')[0].trim();
+          const trailingHotelTravel = await this.distanceHelper.fromSourceAndDestination(
+            tx,
+            trailingSourceCity,
+            trailingDestinationCity,
+            2,
+            addedHotspotIds.size > 0 ? currentCoords : undefined,
+            addedHotspotIds.size > 0 ? destCityCoords : undefined,
+          );
+          const trailingHotelTravelSeconds =
+            timeToSeconds(trailingHotelTravel.travelTime) +
+            timeToSeconds(trailingHotelTravel.bufferTime);
+
+          trailingGapEndSeconds = Math.max(
+            currentSeconds,
+            routeEndSeconds - trailingHotelTravelSeconds,
+          );
+        }
+
         const trailingRemainingGapSeconds = trailingGapEndSeconds - currentSeconds;
-        if (trailingRemainingGapSeconds >= FREE_TIME_THRESHOLD_SECONDS && hasScheduledVisitOnRoute) {
-          this.logBookingRule({
-            rule: 'FREE_TIME_SKIPPED_TRAILING_GAP_PHP_PARITY',
-            quoteId:
-              (plan as any).quote_id ??
-              (plan as any).quoteId ??
-              (plan as any).quote_ID ??
-              null,
+
+        const canAddTrailingLeisure =
+          !isLastRoute &&
+          !forceNoSightseeingOnThisRoute &&
+          !isVehicleHotelRestEarlyArrival &&
+          (!didHotelFirstCheckin || shouldHotelLastByDistance) &&
+          (hasScheduledVisitOnRoute || selectedHotspots.length > 0);
+
+        if (
+          trailingRemainingGapSeconds >= FREE_TIME_THRESHOLD_SECONDS &&
+          canAddTrailingLeisure
+        ) {
+          const leisureEndTime = secondsToTime(wrapToDay(trailingGapEndSeconds));
+          const leisureRow = this.buildFreeTimeBreakRow({
             planId,
             routeId: route.itinerary_route_ID,
-            reason: 'PHP parity: skip explicit trailing free-time segment and continue directly to end-of-day travel/hotel flow.',
-            gapStart: currentTime,
-            gapMinutes: Math.floor(trailingRemainingGapSeconds / 60),
+            order: order++,
+            startTime: currentTime,
+            endTime: leisureEndTime,
+            userId: createdByUserId,
           });
-        } else if (trailingRemainingGapSeconds >= FREE_TIME_THRESHOLD_SECONDS && !hasScheduledVisitOnRoute) {
+          leisureRow.via_location_name = 'Leisure / Shopping Time';
+          hotspotRows.push(leisureRow);
+          currentTime = leisureEndTime;
+
           this.logBookingRule({
-            rule: 'FREE_TIME_SKIPPED_EMPTY_DAY',
+            rule: 'FREE_TIME_INSERTED_BEFORE_HOTEL',
             quoteId:
               (plan as any).quote_id ??
               (plan as any).quoteId ??
@@ -5314,9 +5344,10 @@ export class TimelineBuilder {
               null,
             planId,
             routeId: route.itinerary_route_ID,
-            reason: 'No hotspots scheduled for this route; skip explicit all-day free-time block.',
-            gapStart: currentTime,
-            gapMinutes: Math.floor(remainingGapSeconds / 60),
+            gapStart: leisureRow.hotspot_start_time,
+            gapEnd: leisureRow.hotspot_end_time,
+            gapMinutes: Math.floor(trailingRemainingGapSeconds / 60),
+            routeEndTime,
           });
         }
       }
