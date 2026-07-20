@@ -38,6 +38,7 @@ import { VehicleVoucherEmailNotifierService } from './services/vehicle-voucher-e
 import { SameCityCrossDayOptimizerService } from './services/same-city-cross-day-optimizer.service';
 import { ItineraryRouteNormalizationService } from './services/itinerary-route-normalization.service';
 import { HotelsModule } from '../hotels/hotels.module';
+import { RouteVehicleRestrictionsModule } from '../route-vehicle-restrictions/route-vehicle-restrictions.module';
 import { ItineraryClipboardService } from './itinerary-clipboard.service';
 import { ItineraryPdfService } from './itinerary-pdf.service';
 import { ItineraryScenarioSourceController } from './itinerary-scenario-source.controller';
@@ -111,7 +112,7 @@ import { ItineraryActivityTimingPolicyService } from './services/itinerary-activ
 import { TransportEarlyArrivalValidationService } from './validation/transport-early-arrival-validation.service';
 
 @Module({
-  imports: [HotelsModule],
+  imports: [HotelsModule, RouteVehicleRestrictionsModule],
   controllers: [ItinerariesController, ResAvenueTestController, ItineraryScenarioSourceController],
   providers: [
     // core services

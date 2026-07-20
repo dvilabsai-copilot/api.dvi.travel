@@ -5599,6 +5599,75 @@ model dvi_vehicle_type {
   @@index([vehicle_type_title(length: 768)], map: "idx_dvi_vehicle_type_vehicle_type_title")
 }
 
+model dvi_route_vehicle_restrictions {
+  route_vehicle_restriction_id BigInt                                        @id @default(autoincrement())
+  rule_code                    String                                        @unique(map: "uq_route_vehicle_restriction_rule_code") @db.VarChar(100)
+  title                        String                                        @db.VarChar(200)
+  description                  String?                                       @db.Text
+  applies_to_all_vehicle_types Int                                           @default(0) @db.TinyInt
+  location_id                  BigInt
+  via_route_location_id        BigInt?
+  direction                    String                                        @default("FORWARD") @db.VarChar(20)
+  restriction_action           String                                        @default("BLOCK") @db.VarChar(30)
+  is_all_day                   Int                                           @default(0) @db.TinyInt
+  start_local_time             DateTime?                                     @db.Time(0)
+  end_local_time               DateTime?                                     @db.Time(0)
+  timezone_name                String                                        @default("Asia/Kolkata") @db.VarChar(80)
+  days_of_week_mask            Int?
+  effective_from               DateTime?                                     @db.Date
+  effective_to                 DateTime?                                     @db.Date
+  priority                     Int                                           @default(100)
+  enforcement_mode             String                                        @default("SHADOW") @db.VarChar(20)
+  source_reference             String?                                       @db.Text
+  last_verified_on             DateTime?                                     @db.Date
+  verified_by                  BigInt?
+  status                       Int                                           @default(1) @db.TinyInt
+  deleted                      Int                                           @default(0) @db.TinyInt
+  createdby                    BigInt?
+  updatedby                    BigInt?
+  createdon                    DateTime                                      @default(now()) @db.DateTime(0)
+  updatedon                    DateTime                                      @updatedAt @db.DateTime(0)
+  vehicle_types                dvi_route_vehicle_restriction_vehicle_types[]
+
+  @@index([location_id, status, deleted], map: "idx_route_vehicle_restriction_location")
+  @@index([via_route_location_id, status, deleted], map: "idx_route_vehicle_restriction_via")
+  @@index([effective_from, effective_to], map: "idx_route_vehicle_restriction_dates")
+}
+
+model dvi_route_vehicle_restriction_vehicle_types {
+  route_vehicle_restriction_vehicle_type_id BigInt                         @id @default(autoincrement())
+  route_vehicle_restriction_id              BigInt
+  vehicle_type_id                           Int
+  status                                    Int                            @default(1) @db.TinyInt
+  deleted                                   Int                            @default(0) @db.TinyInt
+  createdon                                 DateTime                       @default(now()) @db.DateTime(0)
+  restriction                               dvi_route_vehicle_restrictions @relation(fields: [route_vehicle_restriction_id], references: [route_vehicle_restriction_id], onDelete: Cascade)
+
+  @@unique([route_vehicle_restriction_id, vehicle_type_id], map: "uq_route_vehicle_restriction_vehicle_type")
+  @@index([vehicle_type_id, status, deleted], map: "idx_route_vehicle_restriction_vehicle_lookup")
+}
+
+model dvi_itinerary_vehicle_restriction_audit {
+  itinerary_vehicle_restriction_audit_id BigInt    @id @default(autoincrement())
+  itinerary_plan_id                      Int?
+  itinerary_route_id                     Int?
+  route_vehicle_restriction_id           BigInt
+  location_id                            BigInt
+  vehicle_type_id                        Int
+  source_location                        String    @db.VarChar(255)
+  destination_location                   String    @db.VarChar(255)
+  evaluated_departure_at                 DateTime  @db.DateTime(0)
+  evaluated_arrival_at                   DateTime? @db.DateTime(0)
+  timezone_name                          String    @db.VarChar(80)
+  decision                               String    @db.VarChar(30)
+  evaluation_reference                   String    @db.VarChar(80)
+  rule_snapshot_json                     Json
+  createdon                              DateTime  @default(now())
+
+  @@index([itinerary_plan_id, itinerary_route_id], map: "idx_vehicle_restriction_audit_plan")
+  @@index([route_vehicle_restriction_id], map: "idx_vehicle_restriction_audit_rule")
+}
+
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model dvi_vendor_branches {
   vendor_branch_id                        Int       @id @default(autoincrement())

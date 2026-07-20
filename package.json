@@ -12,6 +12,7 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev --name init",
     "seed": "ts-node prisma/seed.ts",
+    "seed:ooty-ghat": "tsx scripts/seed-ooty-ghat-geofence.ts",
     "seed:vendor:php": "node scripts/seed-vendor-from-php.js",
     "seed:hotel-rateplans": "tsx scripts/sync-hotel-rate-plan-master.ts",
     "backfill:hotel-rateplans": "tsx scripts/backfill-hotel-room-rate-plans.ts",

@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../../prisma.service';
 import { HotspotEngineService } from '../engines/hotspot-engine.service';
+import { RouteVehicleRestrictionService } from '../../route-vehicle-restrictions/route-vehicle-restriction.service';
 
 type RebuildCallbacks = {
   applySameCityCrossDayOptimizerAfterSave: (...args: any[]) => Promise<any>;
@@ -17,6 +18,7 @@ export class ItineraryRouteHotspotRebuildService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly hotspotEngine: HotspotEngineService,
+    private readonly routeVehicleRestrictions: RouteVehicleRestrictionService,
   ) {}
 
   setCallbacks(callbacks: Partial<RebuildCallbacks>) {
@@ -27,6 +29,7 @@ export class ItineraryRouteHotspotRebuildService {
     const normalizedPlanId = Number(planId);
     const normalizedRouteId = Number(routeId);
     let planQuoteId = '';
+    await this.routeVehicleRestrictions.assertPersistedPlan(normalizedPlanId);
     const rebuildResult = await this.prisma.$transaction(async (tx: any) => {
       const route = await tx.dvi_itinerary_route_details.findFirst({
         where: {
@@ -145,6 +148,11 @@ export class ItineraryRouteHotspotRebuildService {
       });
 
       const engineResult = await this.hotspotEngine.rebuildRouteHotspots(tx, normalizedPlanId, existingHotspotsWithDates);
+      await this.routeVehicleRestrictions.assertPersistedPlan(
+        normalizedPlanId,
+        `hotspot-rebuild:${normalizedPlanId}:${normalizedRouteId}`,
+        tx,
+      );
       const postRouteVisitCount = await tx.dvi_itinerary_route_hotspot_details.count({
         where: {
           itinerary_plan_ID: normalizedPlanId,
