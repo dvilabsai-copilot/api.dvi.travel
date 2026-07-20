@@ -4306,6 +4306,7 @@ private getGuideSlotLabel(slotId: number): string {
     transportEarlyArrivalOption?: TransportEarlyArrivalOption | null,
     transportEarlyArrivalHotelName?: string | null,
     transportEarlyArrivalRestMinutes?: number | null,
+    changeType?: 'ROUTE_START' | 'ROUTE_END' | 'FINAL_DAY_DEPARTURE',
     userId: number = 1,
   ) {
     return this.routeTimingService.updateRouteTimes(
@@ -4318,6 +4319,7 @@ private getGuideSlotLabel(slotId: number): string {
       transportEarlyArrivalOption,
       transportEarlyArrivalHotelName,
       transportEarlyArrivalRestMinutes,
+      changeType,
       userId,
     );
   }

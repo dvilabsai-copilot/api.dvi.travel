@@ -38,14 +38,15 @@ export class ItineraryRouteTimingService {
     transportEarlyArrivalOption?: TransportEarlyArrivalOption | null,
     transportEarlyArrivalHotelName?: string | null,
     transportEarlyArrivalRestMinutes?: number | null,
+    changeType?: 'ROUTE_START' | 'ROUTE_END' | 'FINAL_DAY_DEPARTURE',
     userId: number = 1,
   ) {
-    console.log(`[updateRouteTimes] planId=${planId}, routeId=${routeId}, startTime=${startTime}, endTime=${endTime}`);
+    console.log(`[updateRouteTimes] planId=${planId}, routeId=${routeId}, startTime=${startTime}, endTime=${endTime}, changeType=${changeType}`);
 
     const normalizedPlanId = Number(planId || 0);
     const normalizedRouteId = Number(routeId || 0);
-    const normalizedStartTime = String(startTime || '').trim();
-    const normalizedEndTime = String(endTime || '').trim();
+    let normalizedStartTime = String(startTime || '').trim();
+    let normalizedEndTime = String(endTime || '').trim();
     const normalizedDecisionProvided = Boolean(previousDayBillingDecisionProvided);
     const normalizedDecisionConfirmed = Boolean(previousDayBillingConfirmed);
     const hhmmss = /^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/;
@@ -134,6 +135,8 @@ export class ItineraryRouteTimingService {
         where: { itinerary_plan_ID: normalizedPlanId, deleted: 0 },
         select: {
           itinerary_preference: true,
+          trip_end_date_and_time: true,
+          departure_type: true,
           transport_early_arrival_option: true,
           transport_early_arrival_hotel_name: true,
           transport_early_arrival_rest_minutes: true,
@@ -144,12 +147,96 @@ export class ItineraryRouteTimingService {
         throw new NotFoundException(`Itinerary plan ${normalizedPlanId} not found`);
       }
 
+      const lastActiveRoute = await (tx as any).dvi_itinerary_route_details.findFirst({
+        where: {
+          itinerary_plan_ID: normalizedPlanId,
+          deleted: 0,
+          status: 1,
+        },
+        orderBy: [
+          { no_of_days: 'desc' },
+          { itinerary_route_date: 'desc' },
+          { itinerary_route_ID: 'desc' },
+        ],
+        select: {
+          itinerary_route_ID: true,
+          route_end_time: true,
+        },
+      });
+
+      const isLastRouteUpdated =
+        Number(lastActiveRoute?.itinerary_route_ID || 0) === normalizedRouteId;
+
+      const currentPlanDepartureTime = plan.trip_end_date_and_time
+        ? toTimeString(plan.trip_end_date_and_time)
+        : '';
+
+      const currentLastRouteEndTime = lastActiveRoute?.route_end_time
+        ? toTimeString(lastActiveRoute.route_end_time)
+        : '';
+
+      const departureType = Number(plan.departure_type || 0);
+
+      // Earlier route-time updates could incorrectly copy the buffered last-route
+      // end into trip_end_date_and_time. Treat that known flight/train state as
+      // equivalent to the untouched default so existing affected plans self-heal.
+      const hasLegacyBufferedDepartureCorruption =
+        (departureType === 1 || departureType === 2) &&
+        currentPlanDepartureTime !== '' &&
+        currentPlanDepartureTime === currentLastRouteEndTime;
+
+      const shouldAutoExpandFinalDay =
+        changeType === 'ROUTE_START' &&
+        isLastRouteUpdated &&
+        (
+          currentPlanDepartureTime === '12:00:00' ||
+          hasLegacyBufferedDepartureCorruption
+        );
+
+      // The actual departure and the route scheduling cutoff are different values.
+      // A final-day start edit expands an untouched/default departure to 23:00.
+      let effectiveEndTime = normalizedEndTime;
+      let departureTimeForPlan: string | null = null;
+      let autoExpandedFinalDayDeparture = false;
+
+      if (changeType === 'FINAL_DAY_DEPARTURE' || shouldAutoExpandFinalDay) {
+        departureTimeForPlan = shouldAutoExpandFinalDay
+          ? '23:00:00'
+          : normalizedEndTime;
+        autoExpandedFinalDayDeparture = shouldAutoExpandFinalDay;
+
+        const bufferSeconds = (() => {
+          switch (departureType) {
+            case 1: return 2 * 3600; // flight
+            case 2: return 1 * 3600; // train
+            default: return 0;        // road
+          }
+        })();
+
+        const [h, m, s] = departureTimeForPlan.split(':').map(Number);
+        const totalSec = h * 3600 + m * 60 + s - bufferSeconds;
+
+        if (totalSec < 0) {
+          throw new BadRequestException(
+            `Departure time ${departureTimeForPlan} is too early for the selected departure type (buffer ${bufferSeconds}s)`,
+          );
+        }
+
+        const newH = Math.floor(totalSec / 3600);
+        const newM = Math.floor((totalSec % 3600) / 60);
+        const newS = totalSec % 60;
+        effectiveEndTime =
+          String(newH).padStart(2, '0') + ':' +
+          String(newM).padStart(2, '0') + ':' +
+          String(newS).padStart(2, '0');
+      }
+
       // 2) Persist requested route start/end times
       await (tx as any).dvi_itinerary_route_details.update({
         where: { itinerary_route_ID: normalizedRouteId },
         data: {
           route_start_time: TimeConverter.toDate(normalizedStartTime),
-          route_end_time: TimeConverter.toDate(normalizedEndTime),
+          route_end_time: TimeConverter.toDate(effectiveEndTime),
           updatedon: new Date(),
         },
       });
@@ -382,9 +469,15 @@ export class ItineraryRouteTimingService {
       }
 
       const planUpdateData: any = {
-        trip_end_date_and_time: itineraryEndDateTime,
         updatedon: new Date(),
       };
+
+      if (departureTimeForPlan) {
+        planUpdateData.trip_end_date_and_time = combineDateAndTimeUtc(
+          lastRoute.itinerary_route_date,
+          departureTimeForPlan,
+        );
+      }
 
       if (isDay1RouteUpdated) {
         planUpdateData.trip_start_date_and_time = itineraryStartDateTime;
@@ -438,12 +531,22 @@ export class ItineraryRouteTimingService {
         routeId: normalizedRouteId,
         routeTimes: {
           startTime: normalizedStartTime,
-          endTime: normalizedEndTime,
+          endTime: effectiveEndTime,
+          departureTime: departureTimeForPlan,
         },
         itineraryBoundaries: {
           tripStartDateTime: isDay1RouteUpdated ? itineraryStartDateTime.toISOString() : null,
-          tripEndDateTime: itineraryEndDateTime.toISOString(),
+          tripEndDateTime: departureTimeForPlan
+            ? combineDateAndTimeUtc(lastRoute.itinerary_route_date, departureTimeForPlan).toISOString()
+            : plan.trip_end_date_and_time
+              ? new Date(plan.trip_end_date_and_time).toISOString()
+              : itineraryEndDateTime.toISOString(),
           day1RouteUpdated: isDay1RouteUpdated,
+        },
+        finalDayDeparture: {
+          autoExpanded: autoExpandedFinalDayDeparture,
+          departureTime: departureTimeForPlan,
+          routeEndTime: effectiveEndTime,
         },
         rebuildSummary: rebuildResult.rebuildSummary,
         warnings: rebuildResult.warnings,

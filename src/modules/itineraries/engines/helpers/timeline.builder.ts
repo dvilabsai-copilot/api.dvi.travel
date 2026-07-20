@@ -177,7 +177,7 @@ interface ProtectedStrictSlot {
 }
 
 const HOTEL_FIRST_REST_GAP = "02:00:00";
-const FREE_TIME_THRESHOLD_SECONDS = 45 * 60;
+const FREE_TIME_THRESHOLD_SECONDS = 30 * 60;
 // If a hotspot won't open for this long, defer it (pass 1 only) so other hotspots fill the gap first.
 const LARGE_WAIT_DEFER_THRESHOLD_SECONDS = 90 * 60;
 const MIN_DESTINATION_HOTSPOTS_FOR_RESERVATION = 4;
@@ -6145,6 +6145,21 @@ export class TimelineBuilder {
           lastRouteArrivalDeadlineSeconds - estimatedReturnSeconds,
         );
         const returnStartTime = secondsToTime(wrapToDay(anchoredReturnStartSeconds));
+        const preDepartureLeisureSeconds =
+          anchoredReturnStartSeconds - timeToSeconds(currentTime);
+
+        if (preDepartureLeisureSeconds >= FREE_TIME_THRESHOLD_SECONDS) {
+          const leisureRow = this.buildFreeTimeBreakRow({
+            planId,
+            routeId: route.itinerary_route_ID,
+            order: order++,
+            startTime: currentTime,
+            endTime: returnStartTime,
+            userId: createdByUserId,
+          });
+          leisureRow.via_location_name = 'Leisure / Shopping Time';
+          hotspotRows.push(leisureRow);
+        }
 
         const { row: returnRow, nextTime: tAfterReturn } =
           await this.returnBuilder.buildReturnToDeparture(tx, {

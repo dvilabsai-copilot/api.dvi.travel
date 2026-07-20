@@ -1033,6 +1033,8 @@ export class HotspotEngineService {
     const isInvalidNoOpTravel = (row: any): boolean => {
       const itemType = Number(row?.item_type || 0);
       if (itemType !== 3 && itemType !== 5) return false;
+      const hotspotId = Number(row?.hotspot_ID || 0);
+      if (itemType === 3 && hotspotId === 0) return false; // free-time/leisure, not travel
       const fromLabel = row?.from ?? row?.fromName ?? row?.displayFromName ?? row?.hotspot_name ?? row?.via_location_name ?? '';
       const toLabel = row?.to ?? row?.toName ?? row?.displayToName ?? row?.hotspot_name ?? row?.via_location_name ?? '';
       if (!fromLabel || !toLabel) return false;

@@ -3671,8 +3671,9 @@ console.log('[FINAL_DISTANCE_DEBUG]', {
   distance: dayDistance,
 intercityDistance,
 sightseeingDistance,       // local sightseeing separately
-  startTime: dayStartTimeText,
+      startTime: dayStartTimeText,
   endTime: dayEndTimeText,
+  departureTime: this.formatTime(plan.trip_end_date_and_time as any),
   viaRoutes: viaRoutesList,
   needsRebuild: excludedIds.size > 0,
   excludedHotspotIds: Array.from(excludedIds.values()),
