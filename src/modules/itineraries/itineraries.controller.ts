@@ -1956,6 +1956,7 @@ async exportToExcel(
       transportEarlyArrivalOption?: TransportEarlyArrivalOption | null;
       transportEarlyArrivalHotelName?: string | null;
       transportEarlyArrivalRestMinutes?: number | null;
+      changeType?: 'ROUTE_START' | 'ROUTE_END' | 'FINAL_DAY_DEPARTURE';
     },
     @Req() req: any,
   ) {
@@ -1970,6 +1971,7 @@ async exportToExcel(
       body.transportEarlyArrivalOption,
       body.transportEarlyArrivalHotelName,
       body.transportEarlyArrivalRestMinutes,
+      body.changeType,
       userId,
     );
   }
