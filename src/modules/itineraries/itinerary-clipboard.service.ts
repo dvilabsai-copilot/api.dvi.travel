@@ -419,7 +419,7 @@ export class ItineraryClipboardService {
       for (const segment of segments) {
         if (mode === 'highlights') {
           if (segment.type === 'attraction') {
-            lines.push(`<div><b>${this.escapeHtml(segment.name || '')}</b> ${this.escapeHtml(segment.description || '')}</div>`);
+lines.push(`<div style="margin:0 0 14px 0;line-height:1.45;"><b>${this.escapeHtml(segment.name || '')}</b> ${this.escapeHtml(segment.description || '')}</div>`);
           }
           continue;
         }
@@ -430,8 +430,8 @@ export class ItineraryClipboardService {
               ? firstDayStartLabel
               : otherDayStartLabel;
           const range = this.escapeHtml(segment.timeRange || '');
-          lines.push(
-            `<div>${this.escapeHtml(startLabel)}${range ? ` ${range}` : ''}</div>`,
+lines.push(
+            `<div style="margin:0 0 14px 0;line-height:1.45;">${this.escapeHtml(startLabel)}${range ? ` ${range}` : ''}</div>`,
           );
           continue;
         }
@@ -448,7 +448,7 @@ export class ItineraryClipboardService {
             .join(', ');
 
           lines.push(
-            `<div>Travelling from ${this.escapeHtml(segment.from || '')} to ${this.escapeHtml(segment.to || '')}${range ? ` - ${range}` : ''}${metrics ? ` [${metrics}]` : ''}</div>`,
+            `<div style="margin:0 0 14px 0;line-height:1.45;">Travelling from ${this.escapeHtml(segment.from || '')} to ${this.escapeHtml(segment.to || '')}${range ? ` - ${range}` : ''}${metrics ? ` [${metrics}]` : ''}</div>`,
           );
           continue;
         }
@@ -456,8 +456,8 @@ export class ItineraryClipboardService {
         if (segment.type === 'break') {
           const duration = this.escapeHtml(segment.duration || '');
           const range = this.escapeHtml(segment.timeRange || '');
-          lines.push(
-            `<div>Expect a waiting time of approximately ${duration} at this location ${this.escapeHtml(segment.location || '')}${range ? ` - ${range}` : ''}${duration ? ` [<span style="color:#7e7d88; margin: 0px 5px;">Duration:</span> ${duration}]` : ''}</div>`,
+lines.push(
+            `<div style="margin:0 0 14px 0;line-height:1.45;">Expect a waiting time of approximately ${duration} at this location ${this.escapeHtml(segment.location || '')}${range ? ` - ${range}` : ''}${duration ? ` [<span style="color:#7e7d88; margin: 0px 5px;">Duration:</span> ${duration}]` : ''}</div>`,
           );
           continue;
         }
@@ -465,22 +465,22 @@ export class ItineraryClipboardService {
         if (segment.type === 'attraction') {
           const range = this.escapeHtml(segment.visitTime || segment.timeRange || '');
           const duration = this.escapeHtml(segment.duration || '');
-          lines.push(
-            `<div>${range ? `${range} - ` : ''}${duration ? `${duration} - ` : ''}<b>${this.escapeHtml(segment.name || '')}</b></div>`,
+lines.push(
+            `<div style="margin:0 0 14px 0;line-height:1.45;">${range ? `${range} - ` : ''}${duration ? `${duration} - ` : ''}<b>${this.escapeHtml(segment.name || '')}</b></div>`,
           );
           if (segment.description) {
-            lines.push(`<div>${this.escapeHtml(segment.description)}</div>`);
+lines.push(`<div style="margin:0 0 14px 0;line-height:1.45;">${this.escapeHtml(segment.description)}</div>`);
           }
           continue;
         }
 
         if (segment.type === 'checkin' && mode === 'para') {
-          lines.push(`<div>Check-in: ${this.escapeHtml(segment.hotelName || 'Hotel')} ${this.escapeHtml(segment.time || '')}</div>`);
+          lines.push(`<div style="margin:0 0 14px 0;line-height:1.45;">Check-in: ${this.escapeHtml(segment.hotelName || 'Hotel')} ${this.escapeHtml(segment.time || '')}</div>`);
           continue;
         }
 
         if (segment.type === 'return') {
-          lines.push(`<div>Return: ${this.escapeHtml(segment.time || '')}</div>`);
+lines.push(`<div style="margin:0 0 14px 0;line-height:1.45;">Return: ${this.escapeHtml(segment.time || '')}</div>`);
         }
       }
 
