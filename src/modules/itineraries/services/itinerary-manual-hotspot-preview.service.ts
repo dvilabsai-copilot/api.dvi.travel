@@ -22,7 +22,33 @@ type ManualHotspotPreviewCallbacks = Partial<Record<
   | 'ensureManualFitAttemptStoreTable'
   | 'normalizeManualHotspotIds'
   | 'isRetryableManualPreviewTransactionError'
-  | 'runManualHotspotBatchWithinTransaction',
+  | 'runManualHotspotBatchWithinTransaction'
+  | 'activateManualHotspotRowWithTimes'
+  | 'applyMatrixSafeManualHotspotInsertionInTx'
+  | 'buildManualFitTravelReplicaDisplayFields'
+  | 'cleanupStaleManualHotspotRows'
+  | 'deleteManualFitAttemptEntry'
+  | 'getActiveRouteManualFitRemovalEvidence'
+  | 'getPreviewRowDurationMinutes'
+  | 'getRouteTimelineForScoring'
+  | 'loadManualFitAttemptEntry'
+  | 'manualFitTimelinePreservesSelectedAnchor'
+  | 'buildExactAnchorSequentialTimelineAfterRemoval'
+  | 'buildManualFitChangesRequiredDisplay'
+  | 'buildManualFitFinalizedPreviewTimeline'
+  | 'buildRemovedPrioritySummary'
+  | 'enrichManualFitPreviewTimelineWithOperatingHours'
+  | 'formatManualDurationMinutes'
+  | 'formatTime'
+  | 'getManualFitRemovalHotspotId'
+  | 'markSelectedManualOperatingHourConflicts'
+  | 'minutesToUtcTimeDate'
+  | 'normalizeExactAnchorManualInsertionFit'
+  | 'parseManualHotspotLatestClosingMinute'
+  | 'parsePreviewTimeToMinutes'
+  | 'parsePreviewTimeRangeToUtcDates'
+  | 'sanitizeUserFacingManualFitRemovals'
+  | 'saveManualFitAttemptEntry',
   (...args: any[]) => any
 >>;
 
@@ -56,6 +82,32 @@ export class ItineraryManualHotspotPreviewService {
   private normalizeManualHotspotIds(...args: any[]) { return this.call('normalizeManualHotspotIds', ...args); }
   private isRetryableManualPreviewTransactionError(...args: any[]) { return this.call('isRetryableManualPreviewTransactionError', ...args); }
   private runManualHotspotBatchWithinTransaction(...args: any[]) { return this.call('runManualHotspotBatchWithinTransaction', ...args); }
+  private activateManualHotspotRowWithTimes(...args: any[]) { return this.call('activateManualHotspotRowWithTimes', ...args); }
+  private applyMatrixSafeManualHotspotInsertionInTx(...args: any[]) { return this.call('applyMatrixSafeManualHotspotInsertionInTx', ...args); }
+  private buildManualFitTravelReplicaDisplayFields(...args: any[]) { return this.call('buildManualFitTravelReplicaDisplayFields', ...args); }
+  private cleanupStaleManualHotspotRows(...args: any[]) { return this.call('cleanupStaleManualHotspotRows', ...args); }
+  private deleteManualFitAttemptEntry(...args: any[]) { return this.call('deleteManualFitAttemptEntry', ...args); }
+  private getActiveRouteManualFitRemovalEvidence(...args: any[]) { return this.call('getActiveRouteManualFitRemovalEvidence', ...args); }
+  private getPreviewRowDurationMinutes(...args: any[]) { return this.call('getPreviewRowDurationMinutes', ...args); }
+  private getRouteTimelineForScoring(...args: any[]) { return this.call('getRouteTimelineForScoring', ...args); }
+  private loadManualFitAttemptEntry(...args: any[]) { return this.call('loadManualFitAttemptEntry', ...args); }
+  private manualFitTimelinePreservesSelectedAnchor(...args: any[]) { return this.call('manualFitTimelinePreservesSelectedAnchor', ...args); }
+  private buildExactAnchorSequentialTimelineAfterRemoval(...args: any[]) { return this.call('buildExactAnchorSequentialTimelineAfterRemoval', ...args); }
+  private buildManualFitChangesRequiredDisplay(...args: any[]) { return this.call('buildManualFitChangesRequiredDisplay', ...args); }
+  private buildManualFitFinalizedPreviewTimeline(...args: any[]) { return this.call('buildManualFitFinalizedPreviewTimeline', ...args); }
+  private buildRemovedPrioritySummary(...args: any[]) { return this.call('buildRemovedPrioritySummary', ...args); }
+  private enrichManualFitPreviewTimelineWithOperatingHours(...args: any[]) { return this.call('enrichManualFitPreviewTimelineWithOperatingHours', ...args); }
+  private formatManualDurationMinutes(...args: any[]) { return this.call('formatManualDurationMinutes', ...args); }
+  private formatTime(...args: any[]) { return this.call('formatTime', ...args); }
+  private getManualFitRemovalHotspotId(...args: any[]) { return this.call('getManualFitRemovalHotspotId', ...args); }
+  private markSelectedManualOperatingHourConflicts(...args: any[]) { return this.call('markSelectedManualOperatingHourConflicts', ...args); }
+  private minutesToUtcTimeDate(...args: any[]) { return this.call('minutesToUtcTimeDate', ...args); }
+  private normalizeExactAnchorManualInsertionFit(...args: any[]) { return this.call('normalizeExactAnchorManualInsertionFit', ...args); }
+  private parseManualHotspotLatestClosingMinute(...args: any[]) { return this.call('parseManualHotspotLatestClosingMinute', ...args); }
+  private parsePreviewTimeToMinutes(...args: any[]) { return this.call('parsePreviewTimeToMinutes', ...args); }
+  private parsePreviewTimeRangeToUtcDates(...args: any[]) { return this.call('parsePreviewTimeRangeToUtcDates', ...args); }
+  private sanitizeUserFacingManualFitRemovals(...args: any[]) { return this.call('sanitizeUserFacingManualFitRemovals', ...args); }
+  private saveManualFitAttemptEntry(...args: any[]) { return this.call('saveManualFitAttemptEntry', ...args); }
 
   async previewManualHotspot(
     planId: number,

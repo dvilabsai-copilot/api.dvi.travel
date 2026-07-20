@@ -145,7 +145,7 @@ export class ItineraryManualFitTravelReplicaService {
     };
   }
 
-  private async ensurePreviewTimelineHasComputedHotelTravel(
+  public async ensurePreviewTimelineHasComputedHotelTravel(
     tx: any,
     planId: number,
     routeId: number,

@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, InternalServerErrorException, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma.service';
 import { CreateItineraryDto } from '../dto/create-itinerary.dto';
 import { PlanEngineService } from '../engines/plan-engine.service';
@@ -10,6 +10,7 @@ import { ViaRoutesEngine } from '../engines/via-routes.engine';
 import { RouteValidationService } from '../validation/route-validation.service';
 import { ItineraryVehicleBuildService } from './itinerary-vehicle-build.service';
 import { TransportEarlyArrivalValidationService } from '../validation/transport-early-arrival-validation.service';
+import { RouteVehicleRestrictionService } from '../../route-vehicle-restrictions/route-vehicle-restriction.service';
 
 type RouteFamilyQuote = {
   baseQuoteId: string;
@@ -33,6 +34,7 @@ export class ItineraryPlanPersistenceService {
     private readonly routeValidation: RouteValidationService,
     private readonly vehicleBuildService: ItineraryVehicleBuildService,
     private readonly transportEarlyArrivalValidation: TransportEarlyArrivalValidationService,
+    private readonly routeVehicleRestrictions: RouteVehicleRestrictionService,
   ) {}
 
   setCallbacks(callbacks: {
@@ -165,6 +167,7 @@ export class ItineraryPlanPersistenceService {
     createPlanStage = 'pre_transaction_validation';
 
     this.transportEarlyArrivalValidation.validate(dto.plan);
+    await this.routeVehicleRestrictions.assertCreateRequest(dto);
 
     // Validate hotel availability BEFORE starting the transaction
     // Only validate if hotels are needed (itinerary_preference 1 or 3)
@@ -529,6 +532,7 @@ export class ItineraryPlanPersistenceService {
 
       opStart2 = Date.now();
       await this.hotspotEngine.rebuildRouteHotspots(tx, planId, existingHotspotsWithDates);
+      await this.routeVehicleRestrictions.assertPersistedPlan(planId, 'create-itinerary-timeline', tx);
       stepStartedAt = this.logItineraryApiTiming({
         api: 'save_basic_info',
         step: 'hotspot_details_lookup_rebuild',
@@ -680,7 +684,7 @@ export class ItineraryPlanPersistenceService {
     };
     } catch (error: any) {
       const message = String(error?.message || error || 'Unknown createPlan failure');
-      if (error instanceof BadRequestException || error instanceof NotFoundException || error instanceof ConflictException) {
+      if (error instanceof BadRequestException || error instanceof NotFoundException || error instanceof ConflictException || error instanceof UnprocessableEntityException) {
         throw error;
       }
 

@@ -101,6 +101,7 @@ import { ItineraryVehicleBuildStatusService } from './services/itinerary-vehicle
 import { ItineraryVehicleBuildService } from './services/itinerary-vehicle-build.service';
 import { ItineraryPlanPersistenceService } from './services/itinerary-plan-persistence.service';
 import { TransportEarlyArrivalValidationService } from './validation/transport-early-arrival-validation.service';
+import { RouteVehicleRestrictionService } from '../route-vehicle-restrictions/route-vehicle-restriction.service';
 import { TransportEarlyArrivalOption } from './transport-early-arrival';
 import { ItineraryActivityWorkflowService } from './services/itinerary-activity-workflow.service';
 import { ItineraryActivityAvailabilityService } from './services/itinerary-activity-availability.service';
@@ -596,6 +597,7 @@ export class ItinerariesService {
       routeValidation,
       vehicleBuildService,
       new TransportEarlyArrivalValidationService(),
+      new RouteVehicleRestrictionService(prisma),
     ),
     private readonly activityWorkflowService: ItineraryActivityWorkflowService = new ItineraryActivityWorkflowService(
       prisma,
@@ -662,7 +664,7 @@ export class ItinerariesService {
     private readonly adaptiveManualHotspotInsertionService: ItineraryAdaptiveManualHotspotInsertionService = new ItineraryAdaptiveManualHotspotInsertionService(),
     private readonly matrixRescheduledPreviewService: ItineraryMatrixRescheduledPreviewService = new ItineraryMatrixRescheduledPreviewService(),
     private readonly confirmedItineraryDetailsService: ItineraryConfirmedItineraryDetailsService = new ItineraryConfirmedItineraryDetailsService(null as any),
-    private readonly routeTimingService: ItineraryRouteTimingService = new ItineraryRouteTimingService(null as any, null as any),
+    private readonly routeTimingService: ItineraryRouteTimingService = new ItineraryRouteTimingService(null as any, null as any, new RouteVehicleRestrictionService(prisma)),
     private readonly manualFitTravelReplicaService: ItineraryManualFitTravelReplicaService = new ItineraryManualFitTravelReplicaService(),
     private readonly manualFitGeometryService: ItineraryManualFitGeometryService = new ItineraryManualFitGeometryService(),
     private readonly manualHotspotBatchService: ItineraryManualHotspotBatchService = new ItineraryManualHotspotBatchService(hotspotEngine),
@@ -693,7 +695,7 @@ export class ItinerariesService {
     private readonly manualHotspotRowTimingService: ItineraryManualHotspotRowTimingService = new ItineraryManualHotspotRowTimingService(),
     private readonly manualHotspotOverlapService: ItineraryManualHotspotOverlapService = new ItineraryManualHotspotOverlapService(),
     private readonly manualHotspotConflictService: ItineraryManualHotspotConflictService = new ItineraryManualHotspotConflictService(),
-    private readonly routeHotspotRebuildService: ItineraryRouteHotspotRebuildService = new ItineraryRouteHotspotRebuildService(prisma, hotspotEngine),
+    private readonly routeHotspotRebuildService: ItineraryRouteHotspotRebuildService = new ItineraryRouteHotspotRebuildService(prisma, hotspotEngine, new RouteVehicleRestrictionService(prisma)),
     private readonly hotelCancellationService: ItineraryHotelCancellationService = new ItineraryHotelCancellationService(prisma),
     private readonly hotelRoomCategoryService: ItineraryHotelRoomCategoryService = new ItineraryHotelRoomCategoryService(prisma, hotelDetailsTboService),
     private readonly routeOptimizationService: ItineraryRouteOptimizationService = new ItineraryRouteOptimizationService(prisma, routeNormalization),
@@ -893,6 +895,32 @@ export class ItinerariesService {
       normalizeManualHotspotIds: (...args) => (this.normalizeManualHotspotIds as any)(...args),
       isRetryableManualPreviewTransactionError: (...args) => (this.isRetryableManualPreviewTransactionError as any)(...args),
       runManualHotspotBatchWithinTransaction: (...args) => (this.manualHotspotBatchService.runManualHotspotBatchWithinTransaction as any)(...args),
+      activateManualHotspotRowWithTimes: (...args) => (this.activateManualHotspotRowWithTimes as any)(...args),
+      applyMatrixSafeManualHotspotInsertionInTx: (...args) => (this.applyMatrixSafeManualHotspotInsertionInTx as any)(...args),
+      buildManualFitTravelReplicaDisplayFields: (...args) => (this.manualFitTravelReplicaService.buildManualFitTravelReplicaDisplayFields as any)(...args),
+      cleanupStaleManualHotspotRows: (...args) => (this.cleanupStaleManualHotspotRows as any)(...args),
+      deleteManualFitAttemptEntry: (...args) => (this.deleteManualFitAttemptEntry as any)(...args),
+      getActiveRouteManualFitRemovalEvidence: (...args) => (this.getActiveRouteManualFitRemovalEvidence as any)(...args),
+      getPreviewRowDurationMinutes: (...args) => (this.getPreviewRowDurationMinutes as any)(...args),
+      getRouteTimelineForScoring: (...args) => (this.getRouteTimelineForScoring as any)(...args),
+      loadManualFitAttemptEntry: (...args) => (this.loadManualFitAttemptEntry as any)(...args),
+      manualFitTimelinePreservesSelectedAnchor: (...args) => (this.manualFitTimelinePreservesSelectedAnchor as any)(...args),
+      buildExactAnchorSequentialTimelineAfterRemoval: (...args) => (this.buildExactAnchorSequentialTimelineAfterRemoval as any)(...args),
+      buildManualFitChangesRequiredDisplay: (...args) => (this.buildManualFitChangesRequiredDisplay as any)(...args),
+      buildManualFitFinalizedPreviewTimeline: (...args) => (this.buildManualFitFinalizedPreviewTimeline as any)(...args),
+      buildRemovedPrioritySummary: (...args) => (this.buildRemovedPrioritySummary as any)(...args),
+      enrichManualFitPreviewTimelineWithOperatingHours: (...args) => (this.enrichManualFitPreviewTimelineWithOperatingHours as any)(...args),
+      formatManualDurationMinutes: (...args) => (this.formatManualDurationMinutes as any)(...args),
+      formatTime: (...args) => (this.formatTime as any)(...args),
+      getManualFitRemovalHotspotId: (...args) => (this.getManualFitRemovalHotspotId as any)(...args),
+      markSelectedManualOperatingHourConflicts: (...args) => (this.markSelectedManualOperatingHourConflicts as any)(...args),
+      minutesToUtcTimeDate: (...args) => (this.minutesToUtcTimeDate as any)(...args),
+      normalizeExactAnchorManualInsertionFit: (...args) => (this.normalizeExactAnchorManualInsertionFit as any)(...args),
+      parseManualHotspotLatestClosingMinute: (...args) => (this.parseManualHotspotLatestClosingMinute as any)(...args),
+      parsePreviewTimeToMinutes: (...args) => (this.parsePreviewTimeToMinutes as any)(...args),
+      parsePreviewTimeRangeToUtcDates: (...args) => (this.parsePreviewTimeRangeToUtcDates as any)(...args),
+      sanitizeUserFacingManualFitRemovals: (...args) => (this.sanitizeUserFacingManualFitRemovals as any)(...args),
+      saveManualFitAttemptEntry: (...args) => (this.saveManualFitAttemptEntry as any)(...args),
     });
     const manualInsertionFitCallbackNames = [
       'timeToMinutes',
@@ -1098,6 +1126,7 @@ export class ItinerariesService {
       resolveProgressivePriorityRemovalForManualFitInTx: (...args) => (this.progressivePriorityRemovalService.resolveProgressivePriorityRemovalForManualFitInTx as any)(...args),
       runAdaptiveManualHotspotSetInsertion: (...args) => (this.adaptiveManualHotspotInsertionService.runAdaptiveManualHotspotSetInsertion as any)(...args),
       buildMatrixRescheduledPreviewTimeline: (...args) => (this.matrixRescheduledPreviewService.buildMatrixRescheduledPreviewTimeline as any)(...args),
+      ensurePreviewTimelineHasComputedHotelTravel: (...args) => (this.manualFitTravelReplicaService.ensurePreviewTimelineHasComputedHotelTravel as any)(...args),
     });
     this.manualHotspotMutationService.setCallbacks({
       timeToMinutes: (...args) => (this.timeToMinutes as any)(...args),

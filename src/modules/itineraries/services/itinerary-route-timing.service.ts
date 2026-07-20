@@ -10,6 +10,7 @@ import {
   getTransportEarlyArrivalSetting,
   wallClockMinutes,
 } from '../transport-early-arrival';
+import { RouteVehicleRestrictionService } from '../../route-vehicle-restrictions/route-vehicle-restriction.service';
 
 type RouteTimingCallbacks = Record<string, (...args: any[]) => any>;
 
@@ -20,6 +21,7 @@ export class ItineraryRouteTimingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly hotspotEngine: HotspotEngineService,
+    private readonly routeVehicleRestrictions: RouteVehicleRestrictionService,
   ) {}
 
   setCallbacks(callbacks: RouteTimingCallbacks): void {
@@ -424,6 +426,11 @@ export class ItineraryRouteTimingService {
 
       // 4) Rebuild itinerary timeline rows (same core build as createPlan hotspot stage)
       const rebuildResult = await this.hotspotEngine.rebuildRouteHotspots(tx, normalizedPlanId);
+      await this.routeVehicleRestrictions.assertPersistedPlan(
+        normalizedPlanId,
+        `route-time:${normalizedPlanId}:${normalizedRouteId}`,
+        tx,
+      );
 
       return {
         success: true,
