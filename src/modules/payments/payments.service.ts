@@ -154,6 +154,86 @@ export class PaymentsService {
       metadata: { source: 'wallet_topup' },
     });
   }
+private async applyFreeSubscriptionRenewal(
+  plan: any,
+  agentId: number,
+  userId: number,
+) {
+  const validityDays = Number(plan.validity_in_days || 0);
+
+  if (validityDays <= 0) {
+    throw new BadRequestException(
+      'Invalid validity configured for the free subscription plan',
+    );
+  }
+
+  const validityStart = new Date();
+  const validityEnd = new Date(validityStart);
+  validityEnd.setDate(validityEnd.getDate() + validityDays);
+
+  const transactionId = `free_${agentId}_${Date.now()}`;
+
+  const subscribedPlan = await this.prisma.$transaction(async (tx) => {
+    const createdSubscription =
+      await tx.dvi_agent_subscribed_plans.create({
+        data: {
+          agent_ID: agentId,
+          subscription_plan_ID: plan.agent_subscription_plan_ID,
+          subscription_plan_title: plan.agent_subscription_plan_title,
+          itinerary_allowed: plan.itinerary_allowed,
+          subscription_type: plan.subscription_type,
+        subscription_amount: 0,
+joining_bonus: plan.joining_bonus,
+admin_count: plan.admin_count,
+staff_count: plan.staff_count,
+additional_charge_for_per_staff:
+  plan.additional_charge_for_per_staff,
+per_itinerary_cost: plan.per_itinerary_cost,
+validity_start: validityStart,
+validity_end: validityEnd,
+subscription_notes: plan.subscription_notes,
+
+// Free plan does not have a paid Razorpay transaction.
+subscription_payment_status: 0,
+
+transaction_id: transactionId,
+subscription_status: 1,
+          status: 1,
+          deleted: 0,
+          createdby: userId,
+          createdon: new Date(),
+        },
+      });
+
+    await tx.dvi_agent.update({
+      where: {
+        agent_ID: agentId,
+      },
+      data: {
+        subscription_plan_id: plan.agent_subscription_plan_ID,
+      },
+    });
+
+    return createdSubscription;
+  });
+
+  this.logger.log(
+    `Free subscription renewed agentId=${agentId} planId=${plan.agent_subscription_plan_ID}`,
+  );
+
+  return {
+    id: transactionId,
+    orderId: transactionId,
+    amount: 0,
+    currency: 'INR',
+    key: '',
+    freeRenewal: true,
+    subscribedPlanId: subscribedPlan.agent_subscribed_plan_ID,
+    message: 'Free subscription renewed successfully',
+  };
+}
+
+
 
   async createSubscriptionRenewalOrder(
     dto: CreateSubscriptionRenewalOrderDto,
@@ -180,18 +260,27 @@ export class PaymentsService {
       }
     }
 
-    const amountPaise = this.inrToPaise(totalAmountInr);
-    return this.createGatewayOrder({
-      amountPaise,
-      flow: PAYMENT_FLOW.SUBSCRIPTION_RENEWAL,
-      entityId: agentId,
-      planId: plan.agent_subscription_plan_ID,
-      createdBy: userId,
-      metadata: {
-        source: 'subscription_renewal',
-        agentSubscribedPlanId: dto.agentSubscribedPlanId ?? 0,
-      },
-    });
+   if (totalAmountInr <= 0) {
+  return this.applyFreeSubscriptionRenewal(
+    plan,
+    agentId,
+    userId,
+  );
+}
+
+const amountPaise = this.inrToPaise(totalAmountInr);
+
+return this.createGatewayOrder({
+  amountPaise,
+  flow: PAYMENT_FLOW.SUBSCRIPTION_RENEWAL,
+  entityId: agentId,
+  planId: plan.agent_subscription_plan_ID,
+  createdBy: userId,
+  metadata: {
+    source: 'subscription_renewal',
+    agentSubscribedPlanId: dto.agentSubscribedPlanId ?? 0,
+  },
+});
   }
 
   async createAgentRegistrationOrder(
