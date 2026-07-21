@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../../prisma.service';
 import { HotspotEngineService } from '../engines/hotspot-engine.service';
 import { TimeConverter } from '../engines/helpers/time-converter';
+import { formatClosedDaysLabel, getClosedDays } from '../utils/route-hotspot-operating-hours.util';
 
 type HotspotWorkflowCallbacks = {
   classifyManualHotspotCityContext: (...args: any[]) => any;
@@ -245,9 +246,23 @@ export class ItineraryHotspotWorkflowService {
     }
 
     // 7) Timings
+    const routeDate = route?.itinerary_route_date ? new Date(route.itinerary_route_date) : null;
+    const routeDayOfWeek = routeDate && Number.isFinite(routeDate.getTime())
+      ? (routeDate.getDay() + 6) % 7
+      : null;
+    const routeDayLabel = routeDate && Number.isFinite(routeDate.getTime())
+      ? ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][routeDate.getDay()]
+      : null;
     const timings = await (this.prisma as any).dvi_hotspot_timing.findMany({
-      where: { hotspot_ID: { in: hotspotIds }, deleted: 0, status: 1 },
-      orderBy: { hotspot_start_time: "asc" },
+      where: {
+        hotspot_ID: { in: hotspotIds },
+        deleted: 0,
+        status: 1,
+      },
+      orderBy: [
+        { hotspot_start_time: "asc" },
+        { hotspot_timing_ID: "asc" },
+      ],
     });
 
     const timingMap = new Map<number, string>();
@@ -262,8 +277,21 @@ export class ItineraryHotspotWorkflowService {
 
     // Collect all distinct open windows per hotspot (ordered by start time)
     const timingWindowsMap = new Map<number, Set<string>>();
+    const timingRowsByHotspot = new Map<number, any[]>();
+    const routeDayTimingCountMap = new Map<number, number>();
+    const routeDayOpenTimingCountMap = new Map<number, number>();
     for (const t of timings) {
-      if (t.hotspot_closed === 1) continue;
+      const hotspotId = Number(t?.hotspot_ID || 0);
+      if (!hotspotId) continue;
+      const allRows = timingRowsByHotspot.get(hotspotId) || [];
+      allRows.push(t);
+      timingRowsByHotspot.set(hotspotId, allRows);
+
+      if (routeDayOfWeek !== null && Number(t?.hotspot_timing_day) !== routeDayOfWeek) continue;
+      routeDayTimingCountMap.set(hotspotId, (routeDayTimingCountMap.get(hotspotId) || 0) + 1);
+
+      if (Number(t.hotspot_closed || 0) === 1) continue;
+      routeDayOpenTimingCountMap.set(hotspotId, (routeDayOpenTimingCountMap.get(hotspotId) || 0) + 1);
 
       let timeStr = "";
       if (t.hotspot_open_all_time === 1) {
@@ -305,10 +333,18 @@ export class ItineraryHotspotWorkflowService {
         const isActiveOtherRoute = !isActiveThisRoute && otherRouteAddedIds.has(hotspotId);
         const isExcludedByRoute = excludedIds.has(hotspotId);
 
-        let availabilityStatus: 'AVAILABLE' | 'ACTIVE_THIS_ROUTE' | 'ACTIVE_OTHER_ROUTE' | 'EXCLUDED_BY_ROUTE' | 'MASTER_INACTIVE' = 'AVAILABLE';
+        const isClosedOnRouteDate = routeDayOfWeek !== null
+          && (routeDayTimingCountMap.get(hotspotId) || 0) > 0
+          && (routeDayOpenTimingCountMap.get(hotspotId) || 0) === 0;
+        const closedDays = getClosedDays(timingRowsByHotspot.get(hotspotId) || []);
+        const closedDaysLabel = formatClosedDaysLabel(closedDays);
+        let availabilityStatus: 'AVAILABLE' | 'ACTIVE_THIS_ROUTE' | 'ACTIVE_OTHER_ROUTE' | 'EXCLUDED_BY_ROUTE' | 'MASTER_INACTIVE' | 'CLOSED_ON_ROUTE_DATE' = 'AVAILABLE';
         let availabilityReason = 'Hotspot is available for preview and add.';
 
-        if (isActiveThisRoute) {
+        if (isClosedOnRouteDate) {
+          availabilityStatus = 'CLOSED_ON_ROUTE_DATE';
+          availabilityReason = `Hotspot is closed on ${closedDaysLabel || routeDayLabel || 'this route date'}. Preview and insertion are disabled.`;
+        } else if (isActiveThisRoute) {
           availabilityStatus = 'ACTIVE_THIS_ROUTE';
           availabilityReason = 'Hotspot is already active on this route.';
         } else if (isExcludedByRoute) {
@@ -319,7 +355,9 @@ export class ItineraryHotspotWorkflowService {
           availabilityReason = 'Hotspot is also active on another route in this plan.';
         }
 
-        const actionDisabled = availabilityStatus === 'ACTIVE_THIS_ROUTE' || availabilityStatus === 'EXCLUDED_BY_ROUTE';
+        const actionDisabled = isClosedOnRouteDate
+          || availabilityStatus === 'ACTIVE_THIS_ROUTE'
+          || availabilityStatus === 'EXCLUDED_BY_ROUTE';
         const activeRouteRow = thisRouteAddedRowByHotspotId.get(hotspotId) || null;
         const cityContext = this.classifyManualHotspotCityContext({
           location_name: sourceName,
@@ -339,7 +377,12 @@ export class ItineraryHotspotWorkflowService {
           locationMap: h.hotspot_location || null,
           hotspot_location: h.hotspot_location || null,
           hotspot_to_location: h.hotspot_to_location || h.hotspot_location || null,
-          timings: timingMap.get(h.hotspot_ID) || "No timings available",
+          timings: isClosedOnRouteDate ? 'Closed' : (timingMap.get(h.hotspot_ID) || "No timings available"),
+          isClosedOnRouteDate,
+          closedDays,
+          closedDaysLabel,
+          routeDayLabel,
+          routeDate: routeDate && Number.isFinite(routeDate.getTime()) ? routeDate.toISOString() : null,
           image: (hotspotGalleryMap.get(hotspotId) || [])[0] || null,
           galleryImages: hotspotGalleryMap.get(hotspotId) || [],
           videoUrl: h.hotspot_video_url || null,
@@ -352,7 +395,7 @@ export class ItineraryHotspotWorkflowService {
           availabilityStatus,
           availabilityReason,
           actionDisabled,
-          buttonLabel: actionDisabled ? 'Already added' : 'Preview',
+          buttonLabel: isClosedOnRouteDate ? 'Closed' : (actionDisabled ? 'Already added' : 'Preview'),
           cityContext,
         };
       });

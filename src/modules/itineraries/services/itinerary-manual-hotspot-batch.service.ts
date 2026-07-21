@@ -3,6 +3,7 @@
 import { Injectable, BadRequestException, NotFoundException, ConflictException } from '@nestjs/common';
 import { HotspotEngineService } from '../engines/hotspot-engine.service';
 import { TimeConverter } from '../engines/helpers/time-converter';
+import { getRouteHotspotOperatingStatus } from '../utils/route-hotspot-operating-hours.util';
 
 type ManualHotspotBatchCallbacks = Record<string, (...args: any[]) => any>;
 type ManualHotspotTimingPolicy = any;
@@ -73,6 +74,37 @@ export class ItineraryManualHotspotBatchService {
 
     if (!route) {
       throw new NotFoundException('Route not found for this itinerary plan');
+    }
+
+    // This check must happen before any route-row rewrite. A stale UI or a
+    // direct API caller must not be able to insert a hotspot that is closed
+    // for the route's actual calendar day.
+    for (const requestedHotspotId of requestedHotspotIds) {
+      const operatingStatus = await getRouteHotspotOperatingStatus(
+        tx,
+        Number(planId),
+        Number(routeId),
+        Number(requestedHotspotId),
+      );
+      if (operatingStatus.isClosedOnRouteDate) {
+        return {
+          success: false,
+          inserted: false,
+          noChangesRequired: true,
+          isClosedOnRouteDate: true,
+          code: 'MANUAL_HOTSPOT_CLOSED_ON_ROUTE_DATE',
+          message: `The selected hotspot is closed on ${operatingStatus.closedDaysLabel || operatingStatus.routeDayLabel || 'this route date'}. No changes were made.`,
+          planId: Number(planId),
+          routeId: Number(routeId),
+          hotspotId: Number(requestedHotspotId),
+          hotspotIds: requestedHotspotIds,
+          routeDate: operatingStatus.routeDate?.toISOString() || null,
+          routeDayLabel: operatingStatus.routeDayLabel,
+          closedDays: operatingStatus.closedDays,
+          closedDaysLabel: operatingStatus.closedDaysLabel,
+          operatingHours: 'Closed',
+        };
+      }
     }
 
     if (options?.previewOnly !== true && requestedHotspotIds.length === 1) {
