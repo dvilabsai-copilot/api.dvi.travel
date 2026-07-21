@@ -1,8 +1,12 @@
 // FILE: src/modules/itineraries/services/itinerary-manual-hotspot-preview.service.ts
 
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, ConflictException } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { PrismaService } from '../../../prisma.service';
+import {
+  getRouteHotspotOperatingStatus,
+  RouteHotspotOperatingStatus,
+} from '../utils/route-hotspot-operating-hours.util';
 import {
   applyManualFitAttemptWithinTransactionImpl,
   assertConfirmedManualHotspotPersistedImpl,
@@ -62,6 +66,13 @@ type ManualFitAttemptCacheEntry = any;
 export class ItineraryManualHotspotPreviewService {
   private readonly exactAnchorSequentialTimelineCache = new Map<string, any[]>();
   private readonly manualFitAttemptCache = new Map<string, any>();
+  /**
+   * Preview transactions temporarily rewrite the same route and then restore
+   * its snapshot. Keep previews for one route serialized across requests too;
+   * serializing anchors inside a single request is not enough when the UI
+   * submits a duplicate preview before the first one has finished restoring.
+   */
+  private readonly routePreviewLocks = new Map<string, Promise<void>>();
   private callbacks: ManualHotspotPreviewCallbacks = {};
 
   constructor(private readonly prisma: PrismaService) {}
@@ -76,6 +87,93 @@ export class ItineraryManualHotspotPreviewService {
       throw new Error(`Manual hotspot preview callback is not configured: ${String(name)}`);
     }
     return callback(...args);
+  }
+
+  private async withRoutePreviewLock<T>(
+    planId: number,
+    routeId: number,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    const key = `${Number(planId)}:${Number(routeId)}`;
+    const previous = this.routePreviewLocks.get(key) || Promise.resolve();
+    let release!: () => void;
+    const current = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const tail = previous.then(() => current);
+    this.routePreviewLocks.set(key, tail);
+
+    await previous;
+    try {
+      return await operation();
+    } finally {
+      release();
+      if (this.routePreviewLocks.get(key) === tail) {
+        this.routePreviewLocks.delete(key);
+      }
+    }
+  }
+
+  private async getRouteHotspotOperatingStatus(
+    planId: number,
+    routeId: number,
+    hotspotId: number,
+  ): Promise<RouteHotspotOperatingStatus> {
+    return getRouteHotspotOperatingStatus(this.prisma, planId, routeId, hotspotId);
+  }
+
+  private buildClosedPreviewResponse(
+    planId: number,
+    routeId: number,
+    hotspotId: number,
+    status: RouteHotspotOperatingStatus,
+  ) {
+    const dayLabel = status.routeDayLabel || 'this route date';
+    const closureLabel = status.closedDaysLabel || dayLabel;
+    const message = `The selected hotspot is closed on ${closureLabel}. No preview changes were made.`;
+    const changesRequiredDisplay = {
+      hasRemovals: false,
+      title: 'No changes required',
+      removalOrderLabel: '',
+      removedItems: [],
+      noRemovalText: message,
+    };
+
+    return {
+      success: false,
+      inserted: false,
+      canConfirm: false,
+      resultType: 'SELECTED_HOTSPOT_CLOSED_ON_ROUTE_DATE',
+      code: 'MANUAL_HOTSPOT_CLOSED_ON_ROUTE_DATE',
+      message,
+      planId: Number(planId),
+      routeId: Number(routeId),
+      selectedHotspotId: Number(hotspotId),
+      selectedHotspotPreserved: false,
+      selectedAnchorPreserved: false,
+      noChangesRequired: true,
+      isClosedOnRouteDate: true,
+      routeDate: status.routeDate?.toISOString() || null,
+      routeDayLabel: status.routeDayLabel,
+      closedDays: status.closedDays,
+      closedDaysLabel: status.closedDaysLabel,
+      operatingHours: 'Closed',
+      selectedOpeningConflict: {
+        hotspotId: Number(hotspotId),
+        operatingHours: 'Closed',
+        reason: `Selected hotspot is closed on ${closureLabel}.`,
+      },
+      removedHotspots: [],
+      removedHotspotIds: [],
+      changesRequiredDisplay,
+      resolution: {
+        removedHotspots: [],
+        removedHotspotIds: [],
+        changesRequiredDisplay,
+      },
+      proposedTimeline: [],
+      finalizedTimeline: [],
+    };
   }
 
   private ensureManualFitAttemptStoreTable(...args: any[]) { return this.call('ensureManualFitAttemptStoreTable', ...args); }
@@ -162,6 +260,23 @@ export class ItineraryManualHotspotPreviewService {
       };
     },
   ) {
+    const normalizedRequestedHotspotIds = this.normalizeManualHotspotIds(hotspotIds);
+    for (const requestedHotspotId of normalizedRequestedHotspotIds) {
+      const status = await this.getRouteHotspotOperatingStatus(
+        Number(planId),
+        Number(routeId),
+        Number(requestedHotspotId),
+      );
+      if (status.isClosedOnRouteDate) {
+        return this.buildClosedPreviewResponse(
+          Number(planId),
+          Number(routeId),
+          Number(requestedHotspotId),
+          status,
+        );
+      }
+    }
+
     const previewStateSnapshot = await this.captureManualPreviewRouteState(Number(planId), Number(routeId));
     const manualHotspotTxTimeoutMs = 180000;
     const previewRollbackError = new Error('__PREVIEW_MANUAL_HOTSPOT_BATCH_ROLLBACK__');
@@ -582,7 +697,25 @@ export class ItineraryManualHotspotPreviewService {
       allowP1P2Removal?: boolean;
     },
   ) {
-    return previewManualHotspotFitHereImpl.call(this, planId, data);
+    const status = await this.getRouteHotspotOperatingStatus(
+      Number(planId),
+      Number(data?.routeId),
+      Number(data?.selectedHotspotId),
+    );
+    if (status.isClosedOnRouteDate) {
+      return this.buildClosedPreviewResponse(
+        Number(planId),
+        Number(data?.routeId),
+        Number(data?.selectedHotspotId),
+        status,
+      );
+    }
+
+    return this.withRoutePreviewLock(
+      planId,
+      Number(data?.routeId),
+      () => previewManualHotspotFitHereImpl.call(this, planId, data),
+    );
   }
 
   async previewManualHotspotAutoFitHere(
@@ -595,7 +728,40 @@ export class ItineraryManualHotspotPreviewService {
       allowP1P2Removal?: boolean;
     },
   ) {
-    return previewManualHotspotAutoFitHereImpl.call(this, planId, data);
+    const status = await this.getRouteHotspotOperatingStatus(
+      Number(planId),
+      Number(data?.routeId),
+      Number(data?.selectedHotspotId),
+    );
+    if (status.isClosedOnRouteDate) {
+      return {
+        planId: Number(planId),
+        routeId: Number(data?.routeId),
+        selectedHotspotId: Number(data?.selectedHotspotId),
+        totalPositions: 0,
+        completedPositions: 0,
+        failedPositions: 0,
+        selectedBestAttemptId: null,
+        bestAnchorKey: null,
+        status: 'CLOSED_ON_ROUTE_DATE',
+        code: 'MANUAL_HOTSPOT_CLOSED_ON_ROUTE_DATE',
+        message: `The selected hotspot is closed on ${status.closedDaysLabel || status.routeDayLabel || 'this route date'}. No preview changes were made.`,
+        noChangesRequired: true,
+        isClosedOnRouteDate: true,
+        routeDate: status.routeDate?.toISOString() || null,
+        routeDayLabel: status.routeDayLabel,
+        closedDays: status.closedDays,
+        closedDaysLabel: status.closedDaysLabel,
+        operatingHours: 'Closed',
+        results: [],
+      };
+    }
+
+    return this.withRoutePreviewLock(
+      planId,
+      Number(data?.routeId),
+      () => previewManualHotspotAutoFitHereImpl.call(this, planId, data),
+    );
   }
 
   private async applyManualFitAttemptWithinTransaction(
@@ -629,6 +795,25 @@ export class ItineraryManualHotspotPreviewService {
     allowClosedHotspotConflict?: boolean;
     acknowledgedRemovedHotspotIds?: number[];
   }, userId: number) {
+    const entry = await this.loadManualFitAttemptEntry(String(payload?.attemptId || '').trim());
+    if (entry && Number(entry.planId) === Number(planId)) {
+      const status = await this.getRouteHotspotOperatingStatus(
+        Number(planId),
+        Number(entry.routeId),
+        Number(entry.selectedHotspotId),
+      );
+      if (status.isClosedOnRouteDate) {
+        throw new ConflictException({
+          ...this.buildClosedPreviewResponse(
+            Number(planId),
+            Number(entry.routeId),
+            Number(entry.selectedHotspotId),
+            status,
+          ),
+          code: 'MANUAL_HOTSPOT_CLOSED_ON_ROUTE_DATE',
+        });
+      }
+    }
     return confirmManualHotspotFitHereImpl.call(this, planId, payload, userId);
   }
 

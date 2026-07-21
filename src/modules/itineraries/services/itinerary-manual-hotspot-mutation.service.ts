@@ -3,6 +3,7 @@
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma.service';
 import { HotspotEngineService } from '../engines/hotspot-engine.service';
+import { getRouteHotspotOperatingStatus } from '../utils/route-hotspot-operating-hours.util';
 
 type ManualHotspotMutationCallbacks = Partial<Record<
   'timeToMinutes'
@@ -64,6 +65,31 @@ export class ItineraryManualHotspotMutationService {
       allowTopPriorityRemoval?: boolean;
     },
   ) {
+    const operatingStatus = await getRouteHotspotOperatingStatus(
+      this.prisma,
+      Number(planId),
+      Number(routeId),
+      Number(hotspotId),
+    );
+    if (operatingStatus.isClosedOnRouteDate) {
+      return {
+        success: false,
+        inserted: false,
+        noChangesRequired: true,
+        isClosedOnRouteDate: true,
+        code: 'MANUAL_HOTSPOT_CLOSED_ON_ROUTE_DATE',
+        message: `The selected hotspot is closed on ${operatingStatus.closedDaysLabel || operatingStatus.routeDayLabel || 'this route date'}. No changes were made.`,
+        planId: Number(planId),
+        routeId: Number(routeId),
+        hotspotId: Number(hotspotId),
+        routeDate: operatingStatus.routeDate?.toISOString() || null,
+        routeDayLabel: operatingStatus.routeDayLabel,
+        closedDays: operatingStatus.closedDays,
+        closedDaysLabel: operatingStatus.closedDaysLabel,
+        operatingHours: 'Closed',
+      };
+    }
+
     const existing = await this.prisma.dvi_itinerary_route_hotspot_details.findFirst({
       where: {
         itinerary_plan_ID: Number(planId),
@@ -127,6 +153,35 @@ export class ItineraryManualHotspotMutationService {
     },
   ) {
     const normalizedApplyHotspotIds = this.normalizeManualHotspotIds(hotspotIds);
+
+    for (const normalizedHotspotId of normalizedApplyHotspotIds) {
+      const operatingStatus = await getRouteHotspotOperatingStatus(
+        this.prisma,
+        Number(planId),
+        Number(routeId),
+        Number(normalizedHotspotId),
+      );
+      if (operatingStatus.isClosedOnRouteDate) {
+        return {
+          success: false,
+          inserted: false,
+          noChangesRequired: true,
+          isClosedOnRouteDate: true,
+          code: 'MANUAL_HOTSPOT_CLOSED_ON_ROUTE_DATE',
+          message: `The selected hotspot is closed on ${operatingStatus.closedDaysLabel || operatingStatus.routeDayLabel || 'this route date'}. No changes were made.`,
+          planId: Number(planId),
+          routeId: Number(routeId),
+          hotspotId: Number(normalizedHotspotId),
+          hotspotIds: normalizedApplyHotspotIds,
+          routeDate: operatingStatus.routeDate?.toISOString() || null,
+          routeDayLabel: operatingStatus.routeDayLabel,
+          closedDays: operatingStatus.closedDays,
+          closedDaysLabel: operatingStatus.closedDaysLabel,
+          operatingHours: 'Closed',
+        };
+      }
+    }
+
     await this.cleanupStaleManualHotspotRows(Number(planId), Number(routeId), normalizedApplyHotspotIds);
 
     const manualHotspotTxTimeoutMs = 180000;
