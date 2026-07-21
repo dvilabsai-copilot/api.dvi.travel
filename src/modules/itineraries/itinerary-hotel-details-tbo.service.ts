@@ -3804,6 +3804,10 @@ export class ItineraryHotelDetailsTboService {
               ? 0
               : parseInt(hotel.hotelCode) || 0,
           provider: String(hotel.provider || 'tbo').toLowerCase(),
+          providerDisplayName:
+            String(hotel.provider || 'tbo').toLowerCase() === 'tbo'
+              ? 'VSR'
+              : (hotel as any).providerDisplayName || undefined,
           availableRoomTypes: (hotel.roomTypes || []).map((rt, idx) => ({
             roomTypeId: rt.roomTypeId || idx + 1,
             roomTypeTitle: rt.roomName,

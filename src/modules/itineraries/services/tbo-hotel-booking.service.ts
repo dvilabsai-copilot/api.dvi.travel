@@ -279,7 +279,7 @@ export class TboHotelBookingService {
       if (error?.response?.data?.Message) {
         errorMsg = error.response.data.Message;
       } else if (error?.response?.data) {
-        errorMsg = `TBO API Error: ${JSON.stringify(error.response.data)}`;
+        errorMsg = `VSR API Error: ${JSON.stringify(error.response.data)}`;
       } else if (error?.message) {
         errorMsg = error.message;
       } else if (typeof error === 'string') {
@@ -857,7 +857,7 @@ export class TboHotelBookingService {
     }
 
     throw new BadRequestException(
-      'GuestNationality is required. Provide guestNationality in request or set TBO_DEFAULT_GUEST_NATIONALITY.',
+      'GuestNationality is required. Provide guestNationality in request or set the configured default guest nationality.',
     );
   }
 
@@ -1053,7 +1053,7 @@ export class TboHotelBookingService {
     const elapsedMs = Date.now() - parsed.getTime();
     if (elapsedMs > TboHotelBookingService.SEARCH_SESSION_VALIDITY_MS) {
       throw new BadRequestException(
-        'TBO search session exceeded 35 minutes. Please run a fresh hotel search before prebook/booking.',
+        'VSR search session exceeded 35 minutes. Please run a fresh hotel search before prebook/booking.',
       );
     }
   }
@@ -1224,7 +1224,7 @@ export class TboHotelBookingService {
 
       if (response.data?.Status !== 1 || !response.data?.TokenId) {
         throw new InternalServerErrorException(
-          `TBO authentication failed: ${response.data?.Error?.ErrorMessage || 'Unknown error'}`,
+          `VSR authentication failed: ${response.data?.Error?.ErrorMessage || 'Unknown error'}`,
         );
       }
 
@@ -1242,7 +1242,7 @@ export class TboHotelBookingService {
         error?.message ||
         'Unknown error';
       this.logger.error(`❌ TBO authentication failed: ${message}`);
-      throw new InternalServerErrorException('Failed to authenticate with TBO before booking.');
+      throw new InternalServerErrorException('Failed to authenticate with VSR before booking.');
     }
   }
 
@@ -1418,7 +1418,7 @@ export class TboHotelBookingService {
     } catch (error) {
       this.logger.error(`❌ Error cancelling itinerary hotels: ${error.message}`);
       throw new BadRequestException(
-        `Failed to cancel TBO hotels: ${error.message}`,
+        `Failed to cancel VSR hotels: ${error.message}`,
       );
     }
   }
@@ -1514,7 +1514,7 @@ export class TboHotelBookingService {
     } catch (error) {
       this.logger.error(`❌ Error cancelling TBO hotel routes: ${error.message}`);
       throw new BadRequestException(
-        `Failed to cancel TBO hotel routes: ${error.message}`,
+        `Failed to cancel VSR hotel routes: ${error.message}`,
       );
     }
   }

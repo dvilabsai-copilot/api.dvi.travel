@@ -257,6 +257,7 @@ export class ItineraryConfirmedItineraryDetailsService {
 
     tboRows.forEach((row: any) => setProviderBooking(Number(row.itinerary_route_ID || 0), {
       provider: 'tbo',
+      providerDisplayName: 'VSR',
       hotelCode: String(row.tbo_hotel_code || '').trim(),
       bookingCode: String(row.booking_code || '').trim(),
       hotelName:

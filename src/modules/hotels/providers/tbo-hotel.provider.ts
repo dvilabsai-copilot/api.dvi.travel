@@ -354,6 +354,7 @@ export class TBOHotelProvider implements IHotelProvider {
 
           results.push({
             provider: 'tbo',
+            providerDisplayName: 'VSR',
             hotelCode: hotel.HotelCode,
             hotelName: hotelDisplayName, // Real hotel name from database
             cityCode: criteria.cityCode,
@@ -405,7 +406,7 @@ export class TBOHotelProvider implements IHotelProvider {
       
       // CRITICAL: Throw so service can distinguish provider/system failure from genuine empty result
       const { ServiceUnavailableException } = require('@nestjs/common');
-      throw new ServiceUnavailableException(`TBO provider failed: ${errorMsg}`);
+      throw new ServiceUnavailableException(`VSR provider failed: ${errorMsg}`);
     }
   }
 
@@ -966,6 +967,7 @@ export class TBOHotelProvider implements IHotelProvider {
       // Step 7: Return confirmation
       return {
         provider: 'tbo',
+        providerDisplayName: 'VSR',
         confirmationReference: bookingRefId,
         hotelCode: bookingDetails.hotelCode,
         hotelName: bookingDetails.hotelCode, // Would come from API response
@@ -978,7 +980,7 @@ export class TBOHotelProvider implements IHotelProvider {
           taxes: 0,
           discounts: 0,
         },
-        cancellationPolicy: 'As per TBO policy',
+        cancellationPolicy: 'As per VSR policy',
         status: 'confirmed',
         bookingDeadline: new Date().toISOString(),
       };
@@ -988,7 +990,7 @@ export class TBOHotelProvider implements IHotelProvider {
         error.stack
       );
       throw new InternalServerErrorException(
-        `TBO confirmation failed: ${error.message || 'Unknown error'}`
+        `VSR confirmation failed: ${error.message || 'Unknown error'}`
       );
     }
   }
@@ -1040,7 +1042,7 @@ export class TBOHotelProvider implements IHotelProvider {
         roomCount: response.data.RoomCount || 1,
         totalPrice: parseFloat(response.data.TotalPrice) || 0,
         status: response.data.BookingStatus || 'confirmed',
-        cancellationPolicy: response.data.CancellationPolicy || 'As per TBO',
+        cancellationPolicy: response.data.CancellationPolicy || 'As per VSR',
       };
     } catch (error) {
       this.logger.error(

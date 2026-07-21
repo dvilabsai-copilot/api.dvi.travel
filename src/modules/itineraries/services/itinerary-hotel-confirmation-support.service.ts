@@ -653,6 +653,7 @@ export class ItineraryHotelConfirmationSupportService {
       alreadySuccessKeys.add(key);
       alreadyConfirmedResults.push({
         provider: 'tbo',
+        providerDisplayName: 'VSR',
         routeId: Number(row.itinerary_route_ID || 0),
         hotelCode: row.tbo_hotel_code,
         status: 'already_confirmed',

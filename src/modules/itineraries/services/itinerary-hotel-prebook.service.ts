@@ -115,7 +115,7 @@ export class ItineraryHotelPrebookService {
     if (tboHotels.length === 0) {
       return {
         success: true,
-        message: 'No TBO hotels selected for prebook',
+        message: 'No VSR hotels selected for prebook',
         itinerary_plan_ID: payload.itinerary_plan_ID,
         hotels: [],
         skippedExternalStayCount,
