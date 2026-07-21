@@ -22,6 +22,8 @@ export interface IHotelProvider {
 
 export interface HotelSearchResult {
   provider: string;
+  /** User-facing provider label; keep provider unchanged for internal routing. */
+  providerDisplayName?: string;
   hotelCode: string;
   hotelName: string;
   cityCode: string;
@@ -140,6 +142,8 @@ export interface RoomSelection {
 
 export interface HotelConfirmationResult {
   provider: string;
+  /** User-facing provider label; keep provider unchanged for internal routing. */
+  providerDisplayName?: string;
   confirmationReference: string;
   hotelCode: string;
   hotelName: string;

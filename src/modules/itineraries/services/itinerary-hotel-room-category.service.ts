@@ -29,9 +29,9 @@ export class ItineraryHotelRoomCategoryService {
 
     const tboRoomDetails = await this.hotelDetailsTboService.getHotelRoomDetailsFromTbo(plan.itinerary_quote_ID, params.itinerary_route_id);
     const hotelRoom = (tboRoomDetails.rooms || []).find((room: any) => room.hotelId === params.hotel_id && room.groupType === params.group_type);
-    if (!hotelRoom) throw new NotFoundException('Hotel not found in TBO results');
+    if (!hotelRoom) throw new NotFoundException('Hotel not found in VSR results');
     const availableRoomTypes = hotelRoom.availableRoomTypes || [];
-    if (availableRoomTypes.length === 0) throw new NotFoundException('No room types available for this hotel from TBO');
+    if (availableRoomTypes.length === 0) throw new NotFoundException('No room types available for this hotel from VSR');
 
     const existingRooms = await this.prisma.dvi_itinerary_plan_hotel_room_details.findMany({
       where: {
@@ -98,9 +98,9 @@ export class ItineraryHotelRoomCategoryService {
 
     const tboRoomDetails = await this.hotelDetailsTboService.getHotelRoomDetailsFromTbo(planDetails.itinerary_quote_ID, params.itinerary_route_id);
     const hotelRoom = (tboRoomDetails.rooms || []).find((room: any) => room.hotelId === params.hotel_id && room.groupType === params.group_type);
-    if (!hotelRoom) throw new NotFoundException('Hotel not found in TBO results');
+    if (!hotelRoom) throw new NotFoundException('Hotel not found in VSR results');
     const selectedRoomType = (hotelRoom.availableRoomTypes || []).find((roomType: any) => roomType.roomTypeId === params.room_type_id);
-    if (!selectedRoomType) throw new NotFoundException('Selected room type not available from TBO');
+    if (!selectedRoomType) throw new NotFoundException('Selected room type not available from VSR');
 
     const roomRate = hotelRoom.pricePerNight || 0;
     const now = new Date();

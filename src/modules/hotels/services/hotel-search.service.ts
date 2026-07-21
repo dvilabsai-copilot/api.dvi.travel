@@ -130,7 +130,7 @@ if (
     !/^[A-Z]{2}$/i.test(String(guestNationality).trim()))
 ) {
   throw new BadRequestException(
-    'guestNationality is required as ISO-2 code when searching TBO hotels (example: IN).',
+    'guestNationality is required as ISO-2 code when searching VSR hotels (example: IN).',
   );
 }
 
