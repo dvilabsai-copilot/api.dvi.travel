@@ -272,31 +272,236 @@ export class AuthService {
     };
   }
 
+  private normalizeAccessKey(value: unknown) {
+    return String(value ?? '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '');
+  }
+
+  private async resolveStaffLoginContext(
+    user: any,
+  ) {
+    const linkedStaffId = Number(
+      user.staff_id || 0,
+    );
+
+    const email = this.normalizeEmail(
+      user.useremail || '',
+    );
+
+    const staff =
+      await this.prisma.dvi_staff_details.findFirst({
+        where:
+          linkedStaffId > 0
+            ? {
+                staff_id: linkedStaffId,
+                status: 1,
+                deleted: 0,
+              }
+            : {
+                staff_email: email,
+                status: 1,
+                deleted: 0,
+              },
+        select: {
+          staff_id: true,
+          staff_name: true,
+          roleID: true,
+        },
+      });
+
+    if (!staff) {
+      throw new UnauthorizedException(
+        'This Staff login is not linked to an active staff record.',
+      );
+    }
+
+    const permissionRoleId = Number(
+      staff.roleID || 0,
+    );
+
+    if (permissionRoleId <= 0) {
+      return {
+        staffId: Number(staff.staff_id),
+        staffName:
+          staff.staff_name ||
+          user.username ||
+          'Staff',
+        permissionRoleId: 0,
+        allowedAccessKeys: [] as string[],
+        configuredAccessKeys: [] as string[],
+      };
+    }
+
+    const roleAccessRows =
+      await this.prisma.dvi_role_access.findMany({
+        where: {
+          role_ID: permissionRoleId,
+          status: 1,
+          deleted: 0,
+        },
+        select: {
+          page_menu_id: true,
+          read_access: true,
+          write_access: true,
+          modify_access: true,
+          full_access: true,
+        },
+      });
+
+    const pageMenuIds = Array.from(
+      new Set(
+        roleAccessRows.map((row) =>
+          Number(row.page_menu_id),
+        ),
+      ),
+    ).filter((id) => id > 0);
+
+    const pageRows = pageMenuIds.length
+      ? await this.prisma.dvi_pagemenu.findMany({
+          where: {
+            page_menu_id: {
+              in: pageMenuIds,
+            },
+            status: 1,
+            deleted: 0,
+          },
+          select: {
+            page_menu_id: true,
+            page_name: true,
+            page_title: true,
+          },
+        })
+      : [];
+
+    const pageById = new Map(
+      pageRows.map((page) => [
+        Number(page.page_menu_id),
+        page,
+      ]),
+    );
+
+    const configuredKeys = new Set<string>();
+    const allowedKeys = new Set<string>();
+
+    for (const access of roleAccessRows) {
+      const page = pageById.get(
+        Number(access.page_menu_id),
+      );
+
+      if (!page) continue;
+
+      const pageKeys = [
+        page.page_name,
+        page.page_title,
+      ]
+        .map((value) =>
+          this.normalizeAccessKey(value),
+        )
+        .filter(Boolean);
+
+      for (const key of pageKeys) {
+        configuredKeys.add(key);
+      }
+
+      const hasAccess =
+        Number(access.read_access || 0) === 1 ||
+        Number(access.write_access || 0) === 1 ||
+        Number(access.modify_access || 0) === 1 ||
+        Number(access.full_access || 0) === 1;
+
+      if (hasAccess) {
+        for (const key of pageKeys) {
+          allowedKeys.add(key);
+        }
+      }
+    }
+
+    return {
+      staffId: Number(staff.staff_id),
+      staffName:
+        staff.staff_name ||
+        user.username ||
+        'Staff',
+      permissionRoleId,
+      allowedAccessKeys:
+        Array.from(allowedKeys),
+      configuredAccessKeys:
+        Array.from(configuredKeys),
+    };
+  }
+
   private async buildLoginResponse(user: any) {
     const userId = user.userID.toString();
-    const email = this.normalizeEmail(user.useremail || '');
+
+    const email = this.normalizeEmail(
+      user.useremail || '',
+    );
+
+    const roleID = Number(user.roleID || 0);
+
+    const staffContext =
+      roleID === 3
+        ? await this.resolveStaffLoginContext(user)
+        : null;
+
+    const agentId = Number(user.agent_id || 0);
+
+    const staffId =
+      staffContext?.staffId ??
+      Number(user.staff_id || 0);
+
+    const guideId = Number(user.guide_id || 0);
+
+    const fullName =
+      staffContext?.staffName ||
+      user.username ||
+      '';
 
     const payload = {
       sub: userId,
       email,
-      role: user.roleID,
-      agentId: user.agent_id,
-      staffId: user.staff_id,
-      guideId: user.guide_id,
+      role: roleID,
+      roleID,
+      agentId,
+      staffId,
+      guideId,
+      name: fullName,
+      ...(staffContext
+        ? {
+            permissionRoleId:
+              staffContext.permissionRoleId,
+            allowedAccessKeys:
+              staffContext.allowedAccessKeys,
+            configuredAccessKeys:
+              staffContext.configuredAccessKeys,
+          }
+        : {}),
     };
 
-    const accessToken = await this.jwt.signAsync(payload);
+    const accessToken =
+      await this.jwt.signAsync(payload);
 
     return {
       accessToken,
+      roleID,
+      staffId,
       user: {
         id: userId,
         email,
-        role: user.roleID,
-        agentId: user.agent_id,
-        staffId: user.staff_id,
-        guideId: user.guide_id,
-        fullName: user.username ?? '',
+        role: roleID,
+        roleID,
+        agentId,
+        staffId,
+        guideId,
+        fullName,
+        permissionRoleId:
+          staffContext?.permissionRoleId ?? null,
+        allowedAccessKeys:
+          staffContext?.allowedAccessKeys ?? [],
+        configuredAccessKeys:
+          staffContext?.configuredAccessKeys ?? [],
       },
     };
   }

@@ -10,33 +10,64 @@ export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}
 
   @UseGuards(JwtAuthGuard)
-  @Get('stats')
-  @ApiOperation({ summary: 'Get dashboard statistics' })
-  async getDashboardStats(@Req() req: any) {
-    const user = req.user;
-    // Role 4 is Agent
-    if (user.role === 4) {
-      return this.dashboardService.getAgentDashboardStats(Number(user.agentId));
-    }
-    // Role 6 is Accounts
-    if (user.role === 6) {
-      return this.dashboardService.getAccountsDashboardStats();
-    }
-    // Role 2 is Vendor
-    if (user.role === 2 || (user.vendorId && user.vendorId > 0)) {
-      return this.dashboardService.getVendorDashboardStats(Number(user.vendorId));
-    }
-    // Role 3 or 8 is Travel Expert / Staff
-    if (user.role === 3 || user.role === 8 || (user.staffId && user.staffId > 0)) {
-      return this.dashboardService.getTravelExpertDashboardStats(Number(user.staffId));
-    }
-    // Role 5 is Guide
-    if (user.role === 5 || (user.guideId && user.guideId > 0)) {
-      return this.dashboardService.getGuideDashboardStats(Number(user.guideId));
-    }
-        return this.dashboardService.getDashboardStats();
+@Get('stats')
+@ApiOperation({ summary: 'Get dashboard statistics' })
+async getDashboardStats(@Req() req: any) {
+  const user = req.user;
+
+    const role = Number(
+    user?.roleID ?? user?.role ?? 0,
+  );
+
+  const agentId = Number(
+    user?.agentId ?? user?.agent_id ?? 0,
+  );
+
+  const vendorId = Number(
+    user?.vendorId ?? user?.vendor_id ?? 0,
+  );
+
+  const staffId = Number(
+    user?.staffId ?? user?.staff_id ?? 0,
+  );
+
+  const guideId = Number(
+    user?.guideId ?? user?.guide_id ?? 0,
+  );
+  // Role 4 is Agent
+  if (role === 4) {
+    return this.dashboardService.getAgentDashboardStats(agentId);
   }
 
+  // Role 6 is Accounts
+  if (role === 6) {
+    return this.dashboardService.getAccountsDashboardStats();
+  }
+
+  // Role 2 is Vendor
+  if (role === 2 || vendorId > 0) {
+    return this.dashboardService.getVendorDashboardStats(vendorId);
+  }
+
+  // Role 5 is Guide
+  if (role === 5 || guideId > 0) {
+    return this.dashboardService.getGuideDashboardStats(guideId);
+  }
+
+  // Role 3 is Staff.
+  // Staff must receive the same complete dashboard response as Admin.
+  if (role === 3) {
+    return this.dashboardService.getDashboardStats();
+  }
+
+  // Role 8 retains the limited Travel Expert dashboard.
+  if (role === 8) {
+    return this.dashboardService.getTravelExpertDashboardStats(staffId);
+  }
+
+  // Admin and other permitted internal users use the full dashboard.
+  return this.dashboardService.getDashboardStats();
+}
   @UseGuards(JwtAuthGuard)
   @Get('most-visited-hotels')
   @ApiOperation({ summary: 'Get most visited hotels for dashboard' })
