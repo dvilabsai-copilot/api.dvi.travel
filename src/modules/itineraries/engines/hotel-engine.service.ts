@@ -8,6 +8,90 @@ type Tx = Prisma.TransactionClient;
 export class HotelEngineService {
   constructor(private readonly hotelPricing: HotelPricingService) {}
 
+  private normalizeFacilityCode(value: unknown): string {
+    return String(value ?? "").trim().toLowerCase();
+  }
+
+  private async filterHotelsBySelectedFacilities(
+    hotels: any[],
+    selectedFacilities: string[],
+    tx: Tx,
+  ): Promise<any[]> {
+    if (!Array.isArray(hotels) || hotels.length === 0) {
+      return [];
+    }
+
+    const requiredFacilities = Array.from(
+      new Set(
+        (selectedFacilities || [])
+          .map((facility) => this.normalizeFacilityCode(facility))
+          .filter(Boolean),
+      ),
+    );
+
+    // No facility selected: preserve the existing hotel-selection behaviour.
+    if (requiredFacilities.length === 0) {
+      return hotels;
+    }
+
+    const hotelIds = Array.from(
+      new Set(
+        hotels
+          .map((hotel) => Number(hotel?.hotel_id || 0))
+          .filter((hotelId) => hotelId > 0),
+      ),
+    );
+
+    if (hotelIds.length === 0) {
+      return [];
+    }
+
+    const amenityRows = await (tx as any).dvi_hotel_amenities.findMany({
+      where: {
+        hotel_id: { in: hotelIds },
+        amenities_code: { not: null },
+        OR: [{ deleted: 0 }, { deleted: null }],
+      },
+      select: {
+        hotel_id: true,
+        amenities_code: true,
+      },
+    });
+
+    const facilityCodesByHotelId = new Map<number, Set<string>>();
+
+    for (const amenityRow of amenityRows || []) {
+      const hotelId = Number(amenityRow?.hotel_id || 0);
+      const facilityCode = this.normalizeFacilityCode(
+        amenityRow?.amenities_code,
+      );
+
+      if (hotelId <= 0 || !facilityCode) {
+        continue;
+      }
+
+      const hotelFacilityCodes =
+        facilityCodesByHotelId.get(hotelId) || new Set<string>();
+
+      hotelFacilityCodes.add(facilityCode);
+      facilityCodesByHotelId.set(hotelId, hotelFacilityCodes);
+    }
+
+    // A hotel must contain every facility selected by the user.
+    return hotels.filter((hotel) => {
+      const hotelId = Number(hotel?.hotel_id || 0);
+      const hotelFacilityCodes = facilityCodesByHotelId.get(hotelId);
+
+      if (!hotelFacilityCodes) {
+        return false;
+      }
+
+      return requiredFacilities.every((requiredFacility) =>
+        hotelFacilityCodes.has(requiredFacility),
+      );
+    });
+  }
+
   async rebuildPlanHotels(
     planId: number,
     tx: Tx,
@@ -41,6 +125,7 @@ export class HotelEngineService {
         total_children: true,
         total_infants: true,
         preferred_hotel_category: true,
+        hotel_facilities: true,
         no_of_nights: true,
       },
     });
@@ -51,12 +136,23 @@ export class HotelEngineService {
       Number(plan?.total_infants || 0);
 
     // Parse preferred hotel categories (can be comma-separated string)
-    const categoryStr = String(plan?.preferred_hotel_category || '');
+    const categoryStr = String(plan?.preferred_hotel_category || "");
     const categories = categoryStr
-      .split(',')
+      .split(",")
       .map((c) => Number(c.trim()))
       .filter((c) => c > 0);
+
     const preferredCategory = categories[0] || 2; // Default to category 2
+
+    // Hotel facilities are stored as comma-separated amenities codes.
+    const selectedHotelFacilities: string[] = Array.from(
+      new Set(
+        String(plan?.hotel_facilities || "")
+          .split(",")
+          .map((facility) => this.normalizeFacilityCode(facility))
+          .filter(Boolean),
+      ),
+    );
 
     const routes = await (tx as any).dvi_itinerary_route_details.findMany({
       where: { itinerary_plan_ID: planId },
@@ -120,21 +216,32 @@ export class HotelEngineService {
       hotelTasks.map(async (task) => {
         hotelPickCount++;
         const routeDateKey = task.routeDate.toISOString().slice(0, 10);
-        const hotelCacheKey = `${preferredCategory}|${task.city}|${routeDateKey}`;
+        const hotelCacheKey =
+          `${preferredCategory}|${task.city}|${routeDateKey}`;
 
-        // Route hotel search is identical across group tabs, so share one in-flight lookup.
+        // Keep the existing four-argument HotelPricingService method.
+        // Facility matching is performed below using dvi_hotel_amenities.
         let hotelsPromise = hotelSearchCache.get(hotelCacheKey);
+
         if (!hotelsPromise) {
           hotelsPromise = this.hotelPricing.getHotelsByCategory(
             preferredCategory,
             task.city,
             task.routeDate,
-            10
+            100,
           );
+
           hotelSearchCache.set(hotelCacheKey, hotelsPromise);
         }
 
-        const hotels = await hotelsPromise;
+        const candidateHotels = await hotelsPromise;
+        const hotels = (
+          await this.filterHotelsBySelectedFacilities(
+            candidateHotels,
+            selectedHotelFacilities,
+            tx,
+          )
+        ).slice(0, 10);
 
         if (!hotels || hotels.length === 0) {
           return {
