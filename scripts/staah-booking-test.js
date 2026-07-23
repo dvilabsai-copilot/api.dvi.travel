@@ -6,9 +6,9 @@
  *   node scripts/staah-booking-test.js
  *
  * Optional env overrides:
- *   STAAH_PROPERTY_ID=STAAHTESTHOTEL1
- *   STAAH_FETCH_URL=https://channelconnect.otaswitch.com/common-cgi/dviholidays/test/services.pl
- *   STAAH_BOOKING_URL=https://channels-stage.staah.net/booking/getapi/reservation/v2
+ *   STAAH_PROPERTY_ID=STAAHTESTHOTELPROD
+ *   STAAH_FETCH_URL=https://channelconnect.otaswitch.com/common-cgi/dviholidays/services.pl
+ *   STAAH_BOOKING_URL=https://reservation.otaswitch.com/getapi/reservation/v2
  *   STAAH_ROOM_ID=DELUXEROOM
  *   STAAH_RATE_ID=CPPLAN
  */
@@ -32,11 +32,11 @@ if (fs.existsSync(envPath)) {
   }
 }
 
-const PROPERTY_ID = process.env.STAAH_PROPERTY_ID || 'STAAHTESTHOTEL1';
-const API_KEY     = process.env.STAAH_API_KEY || 'Le4-E6F-1F2RB-xZ8a-Oms-jrXIQ-7w73FIH';
+const PROPERTY_ID = process.env.STAAH_PROPERTY_ID || 'STAAHTESTHOTELPROD';
+const API_KEY     = process.env.STAAH_API_KEY || '';
 const ROOM_ID     = process.env.STAAH_ROOM_ID || 'DELUXEROOM';
 const RATE_ID     = process.env.STAAH_RATE_ID || 'CPPLAN';
-const FETCH_URL   = process.env.STAAH_FETCH_URL || 'https://channelconnect.otaswitch.com/common-cgi/dviholidays/test/services.pl';
+const FETCH_URL   = process.env.STAAH_FETCH_URL || 'https://channelconnect.otaswitch.com/common-cgi/dviholidays/services.pl';
 const BOOKING_URL = process.env.STAAH_BOOKING_URL || 'https://reservation.otaswitch.com/getapi/reservation/v2';
 
 const OUT_DIR = path.join(process.cwd(), `staah-booking-cert-${Date.now()}`);
@@ -79,10 +79,19 @@ function postJson(url, payload) {
 function saveEvidence(name, request, response) {
   const reqFile = path.join(OUT_DIR, `${name}_request.json`);
   const resFile = path.join(OUT_DIR, `${name}_response.json`);
-  fs.writeFileSync(reqFile, JSON.stringify(request, null, 2), 'utf8');
+  fs.writeFileSync(reqFile, JSON.stringify(maskPayload(request), null, 2), 'utf8');
   fs.writeFileSync(resFile, JSON.stringify({ status: response.status, body: response.body }, null, 2), 'utf8');
   console.log(`  Request  → ${reqFile}`);
   console.log(`  Response → ${resFile}`);
+}
+
+function maskPayload(payload) {
+  if (!payload || typeof payload !== 'object') return payload;
+  const masked = JSON.parse(JSON.stringify(payload));
+  if (Object.prototype.hasOwnProperty.call(masked, 'apikey')) {
+    masked.apikey = '***MASKED***';
+  }
+  return masked;
 }
 
 function nowIsoSeconds() {
@@ -111,6 +120,58 @@ function toMoneyString(value) {
 
 function makeBookingId(label) {
   return `DVI-CERT-${label.toUpperCase().replace(/\s+/g, '-')}-${Date.now()}`;
+}
+
+function addDays(dateString, days) {
+  const date = new Date(`${dateString}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) {
+    throw new Error(`Invalid ISO date: ${dateString}`);
+  }
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function futureDate(daysFromToday) {
+  return addDays(new Date().toISOString().slice(0, 10), daysFromToday);
+}
+
+function dateRange(arrivalDate, departureDate) {
+  const dates = [];
+  let date = arrivalDate;
+  while (date < departureDate) {
+    dates.push(date);
+    date = addDays(date, 1);
+  }
+  if (dates.length === 0) {
+    throw new Error(`Departure date must be after arrival date: ${arrivalDate} -> ${departureDate}`);
+  }
+  return dates;
+}
+
+function allocateCents(total, count) {
+  const totalCents = Math.round(Number(total || 0) * 100);
+  const baseCents = Math.floor(totalCents / count);
+  const remainder = totalCents - (baseCents * count);
+  return Array.from({ length: count }, (_, index) => baseCents + (index < remainder ? 1 : 0));
+}
+
+function buildNightlyPrices({
+  arrivalDate,
+  departureDate,
+  totalBasePriceAfterTax,
+  rateId,
+  rateName,
+  extraGuests,
+}) {
+  const dates = dateRange(arrivalDate, departureDate);
+  const nightlyCents = allocateCents(totalBasePriceAfterTax, dates.length);
+  return dates.map((date, index) => ({
+    date,
+    rate_id: rateId,
+    rate_name: rateName,
+    amountaftertax: toMoneyString(nightlyCents[index] / 100),
+    extraGuests,
+  }));
 }
 
 function buildGuestCount({
@@ -188,20 +249,19 @@ function buildRoomPayload(roomOptions) {
       departure_date: departureDate,
       room_id: roomId,
       room_name: roomName,
-      price: [
-        {
-          date: arrivalDate,
-          rate_id: rateId,
-          rate_name: rateName,
-          amountaftertax: toMoneyString(effectiveBasePriceAfterTaxNum),
-          extraGuests: {
-            extraAdult: String(extraAdult),
-            extraChild: String(extraChild),
-            extraAdultRate: String(extraAdultRate),
-            extraChildRate: String(extraChildRate),
-          },
+      price: buildNightlyPrices({
+        arrivalDate,
+        departureDate,
+        totalBasePriceAfterTax: effectiveBasePriceAfterTaxNum,
+        rateId,
+        rateName,
+        extraGuests: {
+          extraAdult: String(extraAdult),
+          extraChild: String(extraChild),
+          extraAdultRate: String(extraAdultRate),
+          extraChildRate: String(extraChildRate),
         },
-      ],
+      }),
       salutation: salutation,
       first_name: firstName,
       last_name: lastName,
@@ -352,7 +412,7 @@ async function runTest({ label, excelRow, endpointName, url, payload, bookingId 
 
   console.log(`\n=== ${label} ===`);
   console.log(`POST ${url}`);
-  console.log('Payload:', JSON.stringify(payload, null, 2));
+  console.log('Payload:', JSON.stringify(maskPayload(payload), null, 2));
   const requestedAt = nowIsoSeconds();
   try {
     const res = await postJson(url, payload);
@@ -366,7 +426,7 @@ async function runTest({ label, excelRow, endpointName, url, payload, bookingId 
       endpointName,
       requestedAt,
       bookingId: bookingId || '',
-      request: payload,
+      request: maskPayload(payload),
       response: { status: res.status, body: res.body },
       status: res.status,
       pass,
@@ -381,7 +441,7 @@ async function runTest({ label, excelRow, endpointName, url, payload, bookingId 
       endpointName,
       requestedAt,
       bookingId: bookingId || '',
-      request: payload,
+      request: maskPayload(payload),
       response: { status: 'ERR', body: err.message },
       status: 'ERR',
       pass: false,
@@ -391,10 +451,14 @@ async function runTest({ label, excelRow, endpointName, url, payload, bookingId 
 }
 
 async function main() {
+  if (!API_KEY) {
+    throw new Error('STAAH_API_KEY is not set. Configure it in api.dvi.travel/.env or the environment.');
+  }
+
   console.log('STAAH Booking Certification Test');
   console.log('==================================');
   console.log(`Property ID : ${PROPERTY_ID}`);
-  console.log(`API Key     : ${API_KEY}`);
+  console.log('API Key     : ***set***');
   console.log(`Fetch URL   : ${FETCH_URL}`);
   console.log(`Booking URL : ${BOOKING_URL}`);
   console.log(`Room ID     : ${ROOM_ID}`);
@@ -410,32 +474,45 @@ async function main() {
   const bookingId5 = makeBookingId('S5');
   const bookingId6 = makeBookingId('S6');
 
+  // The certification sheet requires future availability dates. Keep the suite
+  // runnable after the sheet's original fixed dates have passed.
+  const s1Arrival = futureDate(7);
+  const s1ModifiedArrival = addDays(s1Arrival, 1);
+  const s2Arrival = futureDate(14);
+  const s2ModifiedArrival = addDays(s2Arrival, 1);
+  const s3Arrival = futureDate(21);
+  const s3ModifiedArrival = addDays(s3Arrival, 1);
+  const s4Arrival = futureDate(28);
+  const s4ModifiedArrival = addDays(s4Arrival, 1);
+  const s5Arrival = futureDate(35);
+  const s6Arrival = futureDate(42);
+
   const plan = [
-    { label: 'S1_01_Pre-Book', row: 5, endpointName: 'fetch', url: FETCH_URL, bookingId: bookingId1, payload: buildArrInfoPayload('2026-07-20', '2026-07-20') },
-    { label: 'S1_02_Confirm', row: 6, endpointName: 'booking', url: BOOKING_URL, bookingId: bookingId1, payload: buildReservationPayload({ reservationId: bookingId1, arrivalDate: '2026-07-20', departureDate: '2026-07-21', status: 'Confirm' }) },
-    { label: 'S1_03_Pre-Modify', row: 7, endpointName: 'fetch', url: FETCH_URL, bookingId: bookingId1, payload: buildArrInfoPayload('2026-07-21', '2026-07-21') },
-    { label: 'S1_04_Modify', row: 8, endpointName: 'booking', url: BOOKING_URL, bookingId: bookingId1, payload: buildReservationPayload({ reservationId: bookingId1, arrivalDate: '2026-07-21', departureDate: '2026-07-22', status: 'Modified' }) },
-    { label: 'S1_05_Cancel', row: 9, endpointName: 'booking', url: BOOKING_URL, bookingId: bookingId1, payload: buildReservationPayload({ reservationId: bookingId1, arrivalDate: '2026-07-21', departureDate: '2026-07-22', status: 'Cancel' }) },
+    { label: 'S1_01_Pre-Book', row: 5, endpointName: 'fetch', url: FETCH_URL, bookingId: bookingId1, payload: buildArrInfoPayload(s1Arrival, s1Arrival) },
+    { label: 'S1_02_Confirm', row: 6, endpointName: 'booking', url: BOOKING_URL, bookingId: bookingId1, payload: buildReservationPayload({ reservationId: bookingId1, arrivalDate: s1Arrival, departureDate: addDays(s1Arrival, 1), status: 'Confirm' }) },
+    { label: 'S1_03_Pre-Modify', row: 7, endpointName: 'fetch', url: FETCH_URL, bookingId: bookingId1, payload: buildArrInfoPayload(s1ModifiedArrival, s1ModifiedArrival) },
+    { label: 'S1_04_Modify', row: 8, endpointName: 'booking', url: BOOKING_URL, bookingId: bookingId1, payload: buildReservationPayload({ reservationId: bookingId1, arrivalDate: s1ModifiedArrival, departureDate: addDays(s1ModifiedArrival, 1), status: 'Modified' }) },
+    { label: 'S1_05_Cancel', row: 9, endpointName: 'booking', url: BOOKING_URL, bookingId: bookingId1, payload: buildReservationPayload({ reservationId: bookingId1, arrivalDate: s1ModifiedArrival, departureDate: addDays(s1ModifiedArrival, 1), status: 'Cancel' }) },
 
-    { label: 'S2_01_Pre-Book', row: 10, endpointName: 'fetch', url: FETCH_URL, bookingId: bookingId2, payload: buildArrInfoPayload('2026-08-10', '2026-08-10') },
-    { label: 'S2_02_Confirm', row: 11, endpointName: 'booking', url: BOOKING_URL, bookingId: bookingId2, payload: buildReservationPayload({ reservationId: bookingId2, arrivalDate: '2026-08-10', departureDate: '2026-08-11', status: 'Confirm', amountAfterTax: '1300', totalTax: '140', basePriceAmountAfterTax: '1100', extraAdult: '1', extraChild: '1', extraAdultRate: '100', extraChildRate: '100', adultCount: '3' }) },
-    { label: 'S2_03_Pre-Modify', row: 12, endpointName: 'fetch', url: FETCH_URL, bookingId: bookingId2, payload: buildArrInfoPayload('2026-08-11', '2026-08-11') },
-    { label: 'S2_04_Modify', row: 13, endpointName: 'booking', url: BOOKING_URL, bookingId: bookingId2, payload: buildReservationPayload({ reservationId: bookingId2, arrivalDate: '2026-08-11', departureDate: '2026-08-12', status: 'Modified', amountAfterTax: '1300', totalTax: '140', basePriceAmountAfterTax: '1100', extraAdult: '1', extraChild: '1', extraAdultRate: '100', extraChildRate: '100', adultCount: '3' }) },
-    { label: 'S2_05_Cancel', row: 14, endpointName: 'booking', url: BOOKING_URL, bookingId: bookingId2, payload: buildReservationPayload({ reservationId: bookingId2, arrivalDate: '2026-08-11', departureDate: '2026-08-12', status: 'Cancel', amountAfterTax: '1300', totalTax: '140', basePriceAmountAfterTax: '1100', extraAdult: '1', extraChild: '1', extraAdultRate: '100', extraChildRate: '100', adultCount: '3' }) },
+    { label: 'S2_01_Pre-Book', row: 10, endpointName: 'fetch', url: FETCH_URL, bookingId: bookingId2, payload: buildArrInfoPayload(s2Arrival, s2Arrival) },
+    { label: 'S2_02_Confirm', row: 11, endpointName: 'booking', url: BOOKING_URL, bookingId: bookingId2, payload: buildReservationPayload({ reservationId: bookingId2, arrivalDate: s2Arrival, departureDate: addDays(s2Arrival, 1), status: 'Confirm', amountAfterTax: '1300', totalTax: '140', basePriceAmountAfterTax: '1100', extraAdult: '1', extraChild: '1', extraAdultRate: '100', extraChildRate: '100', adultCount: '3' }) },
+    { label: 'S2_03_Pre-Modify', row: 12, endpointName: 'fetch', url: FETCH_URL, bookingId: bookingId2, payload: buildArrInfoPayload(s2ModifiedArrival, s2ModifiedArrival) },
+    { label: 'S2_04_Modify', row: 13, endpointName: 'booking', url: BOOKING_URL, bookingId: bookingId2, payload: buildReservationPayload({ reservationId: bookingId2, arrivalDate: s2ModifiedArrival, departureDate: addDays(s2ModifiedArrival, 1), status: 'Modified', amountAfterTax: '1300', totalTax: '140', basePriceAmountAfterTax: '1100', extraAdult: '1', extraChild: '1', extraAdultRate: '100', extraChildRate: '100', adultCount: '3' }) },
+    { label: 'S2_05_Cancel', row: 14, endpointName: 'booking', url: BOOKING_URL, bookingId: bookingId2, payload: buildReservationPayload({ reservationId: bookingId2, arrivalDate: s2ModifiedArrival, departureDate: addDays(s2ModifiedArrival, 1), status: 'Cancel', amountAfterTax: '1300', totalTax: '140', basePriceAmountAfterTax: '1100', extraAdult: '1', extraChild: '1', extraAdultRate: '100', extraChildRate: '100', adultCount: '3' }) },
 
-    { label: 'S3_01_Pre-Book', row: 15, endpointName: 'fetch', url: FETCH_URL, bookingId: bookingId3, payload: buildArrInfoPayload('2026-09-01', '2026-09-03') },
-    { label: 'S3_02_Confirm', row: 16, endpointName: 'booking', url: BOOKING_URL, bookingId: bookingId3, payload: buildReservationPayload({ reservationId: bookingId3, arrivalDate: '2026-09-01', departureDate: '2026-09-03', status: 'Confirm', amountAfterTax: '2100', totalTax: '220', basePriceAmountAfterTax: '1900', adultCount: '2' }) },
-    { label: 'S3_03_Pre-Modify', row: 17, endpointName: 'fetch', url: FETCH_URL, bookingId: bookingId3, payload: buildArrInfoPayload('2026-09-02', '2026-09-04') },
-    { label: 'S3_04_Modify', row: 18, endpointName: 'booking', url: BOOKING_URL, bookingId: bookingId3, payload: buildReservationPayload({ reservationId: bookingId3, arrivalDate: '2026-09-02', departureDate: '2026-09-04', status: 'Modified', amountAfterTax: '2200', totalTax: '240', basePriceAmountAfterTax: '2000', adultCount: '2' }) },
-    { label: 'S3_05_Cancel', row: 19, endpointName: 'booking', url: BOOKING_URL, bookingId: bookingId3, payload: buildReservationPayload({ reservationId: bookingId3, arrivalDate: '2026-09-02', departureDate: '2026-09-04', status: 'Cancel', amountAfterTax: '2200', totalTax: '240', basePriceAmountAfterTax: '2000', adultCount: '2' }) },
+    { label: 'S3_01_Pre-Book', row: 15, endpointName: 'fetch', url: FETCH_URL, bookingId: bookingId3, payload: buildArrInfoPayload(s3Arrival, addDays(s3Arrival, 2)) },
+    { label: 'S3_02_Confirm', row: 16, endpointName: 'booking', url: BOOKING_URL, bookingId: bookingId3, payload: buildReservationPayload({ reservationId: bookingId3, arrivalDate: s3Arrival, departureDate: addDays(s3Arrival, 2), status: 'Confirm', amountAfterTax: '2100', totalTax: '220', basePriceAmountAfterTax: '1900', adultCount: '2' }) },
+    { label: 'S3_03_Pre-Modify', row: 17, endpointName: 'fetch', url: FETCH_URL, bookingId: bookingId3, payload: buildArrInfoPayload(s3ModifiedArrival, addDays(s3ModifiedArrival, 2)) },
+    { label: 'S3_04_Modify', row: 18, endpointName: 'booking', url: BOOKING_URL, bookingId: bookingId3, payload: buildReservationPayload({ reservationId: bookingId3, arrivalDate: s3ModifiedArrival, departureDate: addDays(s3ModifiedArrival, 2), status: 'Modified', amountAfterTax: '2200', totalTax: '240', basePriceAmountAfterTax: '2000', adultCount: '2' }) },
+    { label: 'S3_05_Cancel', row: 19, endpointName: 'booking', url: BOOKING_URL, bookingId: bookingId3, payload: buildReservationPayload({ reservationId: bookingId3, arrivalDate: s3ModifiedArrival, departureDate: addDays(s3ModifiedArrival, 2), status: 'Cancel', amountAfterTax: '2200', totalTax: '240', basePriceAmountAfterTax: '2000', adultCount: '2' }) },
 
-    { label: 'S4_01_Pre-Book', row: 20, endpointName: 'fetch', url: FETCH_URL, bookingId: bookingId4, payload: buildArrInfoPayload('2026-10-05', '2026-10-05') },
-    { label: 'S4_02_Confirm', row: 21, endpointName: 'booking', url: BOOKING_URL, bookingId: bookingId4, payload: buildReservationPayload({ reservationId: bookingId4, arrivalDate: '2026-10-05', departureDate: '2026-10-06', status: 'Confirm', amountAfterTax: '2400', totalTax: '260', basePriceAmountAfterTax: '2200', adultCount: '4' }) },
-    { label: 'S4_03_Pre-Modify', row: 22, endpointName: 'fetch', url: FETCH_URL, bookingId: bookingId4, payload: buildArrInfoPayload('2026-10-06', '2026-10-06') },
-    { label: 'S4_04_Modify', row: 23, endpointName: 'booking', url: BOOKING_URL, bookingId: bookingId4, payload: buildReservationPayload({ reservationId: bookingId4, arrivalDate: '2026-10-06', departureDate: '2026-10-07', status: 'Modified', amountAfterTax: '2500', totalTax: '280', basePriceAmountAfterTax: '2300', adultCount: '4' }) },
-    { label: 'S4_05_Cancel', row: 24, endpointName: 'booking', url: BOOKING_URL, bookingId: bookingId4, payload: buildReservationPayload({ reservationId: bookingId4, arrivalDate: '2026-10-06', departureDate: '2026-10-07', status: 'Cancel', amountAfterTax: '2500', totalTax: '280', basePriceAmountAfterTax: '2300', adultCount: '4' }) },
+    { label: 'S4_01_Pre-Book', row: 20, endpointName: 'fetch', url: FETCH_URL, bookingId: bookingId4, payload: buildArrInfoPayload(s4Arrival, s4Arrival) },
+    { label: 'S4_02_Confirm', row: 21, endpointName: 'booking', url: BOOKING_URL, bookingId: bookingId4, payload: buildReservationPayload({ reservationId: bookingId4, arrivalDate: s4Arrival, departureDate: addDays(s4Arrival, 1), status: 'Confirm', amountAfterTax: '2400', totalTax: '260', basePriceAmountAfterTax: '2200', adultCount: '4' }) },
+    { label: 'S4_03_Pre-Modify', row: 22, endpointName: 'fetch', url: FETCH_URL, bookingId: bookingId4, payload: buildArrInfoPayload(s4ModifiedArrival, s4ModifiedArrival) },
+    { label: 'S4_04_Modify', row: 23, endpointName: 'booking', url: BOOKING_URL, bookingId: bookingId4, payload: buildReservationPayload({ reservationId: bookingId4, arrivalDate: s4ModifiedArrival, departureDate: addDays(s4ModifiedArrival, 1), status: 'Modified', amountAfterTax: '2500', totalTax: '280', basePriceAmountAfterTax: '2300', adultCount: '4' }) },
+    { label: 'S4_05_Cancel', row: 24, endpointName: 'booking', url: BOOKING_URL, bookingId: bookingId4, payload: buildReservationPayload({ reservationId: bookingId4, arrivalDate: s4ModifiedArrival, departureDate: addDays(s4ModifiedArrival, 1), status: 'Cancel', amountAfterTax: '2500', totalTax: '280', basePriceAmountAfterTax: '2300', adultCount: '4' }) },
 
-    { label: 'S5_01_Pre-Book', row: 25, endpointName: 'fetch', url: FETCH_URL, bookingId: bookingId5, payload: buildArrInfoPayload('2026-07-15', '2026-07-16') },
+    { label: 'S5_01_Pre-Book', row: 25, endpointName: 'fetch', url: FETCH_URL, bookingId: bookingId5, payload: buildArrInfoPayload(s5Arrival, addDays(s5Arrival, 1)) },
     {
       label: 'S5_02_Confirm_MultiRoom_Child_Infant',
       row: 26,
@@ -444,13 +521,13 @@ async function main() {
       bookingId: bookingId5,
       payload: buildReservationPayload({
         reservationId: bookingId5,
-        arrivalDate: '2026-07-15',
-        departureDate: '2026-07-16',
+        arrivalDate: s5Arrival,
+        departureDate: addDays(s5Arrival, 1),
         status: 'Confirm',
         rooms: [
           {
-            arrivalDate: '2026-07-15',
-            departureDate: '2026-07-16',
+            arrivalDate: s5Arrival,
+            departureDate: addDays(s5Arrival, 1),
             amountAfterTax: '1200',
             totalTax: '120',
             basePriceAmountAfterTax: '1100',
@@ -465,8 +542,8 @@ async function main() {
             remarks: 'Room 1: child with extra bed',
           },
           {
-            arrivalDate: '2026-07-15',
-            departureDate: '2026-07-16',
+            arrivalDate: s5Arrival,
+            departureDate: addDays(s5Arrival, 1),
             amountAfterTax: '1100',
             totalTax: '110',
             basePriceAmountAfterTax: '1100',
@@ -491,13 +568,13 @@ async function main() {
       bookingId: bookingId5,
       payload: buildReservationPayload({
         reservationId: bookingId5,
-        arrivalDate: '2026-07-15',
-        departureDate: '2026-07-16',
+        arrivalDate: s5Arrival,
+        departureDate: addDays(s5Arrival, 1),
         status: 'Cancel',
         rooms: [
           {
-            arrivalDate: '2026-07-15',
-            departureDate: '2026-07-16',
+            arrivalDate: s5Arrival,
+            departureDate: addDays(s5Arrival, 1),
             amountAfterTax: '1200',
             totalTax: '120',
             basePriceAmountAfterTax: '1100',
@@ -512,8 +589,8 @@ async function main() {
             remarks: 'Room 1: child with extra bed',
           },
           {
-            arrivalDate: '2026-07-15',
-            departureDate: '2026-07-16',
+            arrivalDate: s5Arrival,
+            departureDate: addDays(s5Arrival, 1),
             amountAfterTax: '1100',
             totalTax: '110',
             basePriceAmountAfterTax: '1100',
@@ -531,7 +608,7 @@ async function main() {
       }),
     },
 
-    { label: 'S6_01_Pre-Book', row: 28, endpointName: 'fetch', url: FETCH_URL, bookingId: bookingId6, payload: buildArrInfoPayload('2026-07-15', '2026-07-16') },
+    { label: 'S6_01_Pre-Book', row: 28, endpointName: 'fetch', url: FETCH_URL, bookingId: bookingId6, payload: buildArrInfoPayload(s6Arrival, addDays(s6Arrival, 2)) },
     {
       label: 'S6_02_Confirm_MultiDay_2Adults',
       row: 29,
@@ -540,8 +617,8 @@ async function main() {
       bookingId: bookingId6,
       payload: buildReservationPayload({
         reservationId: bookingId6,
-        arrivalDate: '2026-07-15',
-        departureDate: '2026-07-17',
+        arrivalDate: s6Arrival,
+        departureDate: addDays(s6Arrival, 2),
         status: 'Confirm',
         amountAfterTax: '2200',
         totalTax: '240',
@@ -562,8 +639,8 @@ async function main() {
       bookingId: bookingId6,
       payload: buildReservationPayload({
         reservationId: bookingId6,
-        arrivalDate: '2026-07-15',
-        departureDate: '2026-07-17',
+        arrivalDate: s6Arrival,
+        departureDate: addDays(s6Arrival, 2),
         status: 'Cancel',
         amountAfterTax: '2200',
         totalTax: '240',
