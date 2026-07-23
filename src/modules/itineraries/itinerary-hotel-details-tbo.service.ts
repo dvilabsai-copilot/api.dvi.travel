@@ -279,86 +279,633 @@ export class ItineraryHotelDetailsTboService {
     };
   }
 
-  private applyPlanPreferenceFilters(
-    hotelsByRoute: Map<number, HotelSearchResult[] | null>,
-    preferredCategories: number[],
-    preferredMealPlanCode: string | null,
-  ): Map<number, HotelSearchResult[] | null> {
-    const shouldFilterByCategory = preferredCategories.length > 0;
-    const shouldFilterByMeal = !!preferredMealPlanCode;
+ private async applyPlanPreferenceFilters(
+  hotelsByRoute: Map<number, HotelSearchResult[] | null>,
+  preferredCategories: number[],
+  preferredMealPlanCode: string | null,
+  preferredFacilities: string[],
+): Promise<Map<number, HotelSearchResult[] | null>> {
+  const normalizeFacility = (value: unknown): string => {
+    const rawValue = String(value ?? '').trim().toLowerCase();
 
-    if (!shouldFilterByCategory && !shouldFilterByMeal) {
-      return hotelsByRoute;
+    if (!rawValue) {
+      return '';
     }
 
-    const preferredCategorySet = new Set(preferredCategories);
-    const filteredMap = new Map<number, HotelSearchResult[] | null>();
+    const normalizedValue = rawValue
+      .replace(/&/g, ' and ')
+      .replace(/[^a-z0-9]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
 
-    hotelsByRoute.forEach((hotels, routeId) => {
-      if (!Array.isArray(hotels)) {
-        filteredMap.set(routeId, hotels);
-        return;
+    if (
+      normalizedValue.includes('wifi') ||
+      normalizedValue.includes('wi fi')
+    ) {
+      return 'wifi';
+    }
+
+    if (normalizedValue.includes('parking')) {
+      return 'parking';
+    }
+
+    if (
+      normalizedValue.includes('swimming pool') ||
+      /\bpool\b/.test(normalizedValue)
+    ) {
+      return 'pool';
+    }
+
+    if (/\bspa\b/.test(normalizedValue)) {
+      return 'spa';
+    }
+
+    if (normalizedValue.includes('restaurant')) {
+      return 'restaurant';
+    }
+
+    if (
+      normalizedValue.includes('business center') ||
+      normalizedValue.includes('business centre')
+    ) {
+      return '24hr-business-center';
+    }
+
+    if (
+      normalizedValue.includes('check in') ||
+      normalizedValue.includes('checkin')
+    ) {
+      return '24hr-checkin';
+    }
+
+    if (
+      normalizedValue.includes('front desk') ||
+      normalizedValue.includes('frontdesk')
+    ) {
+      return '24hr-frontdesk';
+    }
+
+    if (normalizedValue.includes('room service')) {
+      return '24hr-room-service';
+    }
+
+    if (
+      normalizedValue.includes('fitness') ||
+      normalizedValue.includes('gym')
+    ) {
+      return 'fitness-centre';
+    }
+
+    return normalizedValue;
+  };
+
+  const addFacilityValue = (
+    collector: Set<string>,
+    value: unknown,
+  ): void => {
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        addFacilityValue(collector, item);
       }
+      return;
+    }
 
-      const filteredHotels: HotelSearchResult[] = [];
+    if (value && typeof value === 'object') {
+      const objectValue = value as any;
 
-      for (const hotel of hotels) {
-        let included = true;
-        let filterReason = '';
-        let nextHotel = hotel;
-        
-        if (shouldFilterByCategory) {
-          const categoryCandidates = this.getHotelCategoryCandidates(hotel);
-          const categoryMatch = categoryCandidates.some((cat) => preferredCategorySet.has(cat));
-          const isResavenueUnknownCategory =
-            String((hotel as any).provider || '').toLowerCase() === 'resavenue' &&
-            categoryCandidates.length === 0;
-
-          if (!categoryMatch && !isResavenueUnknownCategory) {
-            included = false;
-            filterReason = `Category mismatch: ${categoryCandidates.join(',') || 'UNKNOWN'} not in ${preferredCategories.join(',')}`;
-          } else if (isResavenueUnknownCategory) {
-            this.logger.debug(
-              `   ℹ️  Keeping ResAvenue hotel with unknown category: ${hotel.hotelName}`,
-            );
-          }
-        }
-
-        if (included && shouldFilterByMeal) {
-          const mealPlanCandidates = this.getMealPlanCandidatesFromHotel(hotel);
-          const hasMatchingMeal = mealPlanCandidates.includes(preferredMealPlanCode!);
-
-          // Only reject when we can positively infer available meal plan(s) and none match.
-          if (mealPlanCandidates.length > 0 && !hasMatchingMeal) {
-            included = false;
-            filterReason = `Meal plan mismatch: ${mealPlanCandidates.join(',')} != ${preferredMealPlanCode}`;
-          } else if (hasMatchingMeal) {
-            nextHotel = this.alignHotelToPreferredMealPlan(hotel, preferredMealPlanCode!);
-          }
-        }
-        
-        if (!included && hotel.provider === 'resavenue') {
-          this.logger.warn(`   ⚠️  Filtering out ResAvenue: ${hotel.hotelName} - Reason: ${filterReason}`);
-        }
-        if (!included && hotel.provider === 'staah') {
-          this.logger.warn(`[STAAH FILTERED] ${hotel.hotelName} (${hotel.hotelCode}) - ${filterReason}`);
-        }
-
-        if (included) {
-          filteredHotels.push(nextHotel);
-        }
-      }
-
-      this.logger.log(
-        `   Preference filter route ${routeId}: before=${hotels.length}, after=${filteredHotels.length}, ` +
-          `category=${shouldFilterByCategory ? preferredCategories.join(',') : 'ANY'}, meal=${preferredMealPlanCode || 'ANY'}`,
+      addFacilityValue(
+        collector,
+        objectValue.name ??
+          objectValue.title ??
+          objectValue.description ??
+          objectValue.code,
       );
 
-      filteredMap.set(routeId, filteredHotels);
-    });
+      return;
+    }
 
-    return filteredMap;
+    const normalizedFacility = normalizeFacility(value);
+
+    if (normalizedFacility) {
+      collector.add(normalizedFacility);
+    }
+  };
+
+  const getProviderKey = (
+    hotel: HotelSearchResult,
+  ): string => {
+    const provider = String(
+      (hotel as any).provider || '',
+    )
+      .trim()
+      .toLowerCase();
+
+    const hotelCode = String(
+      (hotel as any).hotelCode || '',
+    ).trim();
+
+    return `${provider}|${hotelCode}`;
+  };
+
+  const normalizedPreferredFacilities = Array.from(
+    new Set(
+      (preferredFacilities || [])
+        .map((facility) => normalizeFacility(facility))
+        .filter(Boolean),
+    ),
+  );
+
+  const shouldFilterByCategory =
+    preferredCategories.length > 0;
+
+  const shouldFilterByMeal =
+    !!preferredMealPlanCode;
+
+  const shouldFilterByFacilities =
+    normalizedPreferredFacilities.length > 0;
+
+  if (
+    !shouldFilterByCategory &&
+    !shouldFilterByMeal &&
+    !shouldFilterByFacilities
+  ) {
+    return hotelsByRoute;
   }
+
+  const preferredCategorySet =
+    new Set(preferredCategories);
+
+  /*
+   * Collect the provider hotel codes so that live TBO/other-provider
+   * results can be matched with dvi_hotel and dvi_hotel_amenities.
+   */
+  const allHotels = Array.from(
+    hotelsByRoute.values(),
+  ).flatMap((hotels) =>
+    Array.isArray(hotels) ? hotels : [],
+  );
+
+  const tboCodes = Array.from(
+    new Set(
+      allHotels
+        .filter(
+          (hotel) =>
+            String(hotel.provider || '')
+              .trim()
+              .toLowerCase() === 'tbo',
+        )
+        .map((hotel) =>
+          String(hotel.hotelCode || '').trim(),
+        )
+        .filter(Boolean),
+    ),
+  );
+
+  const resavenueCodes = Array.from(
+    new Set(
+      allHotels
+        .filter(
+          (hotel) =>
+            String(hotel.provider || '')
+              .trim()
+              .toLowerCase() === 'resavenue',
+        )
+        .map((hotel) =>
+          String(hotel.hotelCode || '').trim(),
+        )
+        .filter(Boolean),
+    ),
+  );
+
+  const hobseCodes = Array.from(
+    new Set(
+      allHotels
+        .filter(
+          (hotel) =>
+            String(hotel.provider || '')
+              .trim()
+              .toLowerCase() === 'hobse',
+        )
+        .map((hotel) =>
+          String(hotel.hotelCode || '').trim(),
+        )
+        .filter(Boolean),
+    ),
+  );
+
+  const axisroomsHotelIds = Array.from(
+    new Set(
+      allHotels
+        .filter(
+          (hotel) =>
+            String(hotel.provider || '')
+              .trim()
+              .toLowerCase() === 'axisrooms',
+        )
+        .map((hotel) => Number(hotel.hotelCode))
+        .filter(
+          (hotelId) =>
+            Number.isFinite(hotelId) && hotelId > 0,
+        ),
+    ),
+  );
+
+  const staahHotelIds = Array.from(
+    new Set(
+      allHotels
+        .filter(
+          (hotel) =>
+            String(hotel.provider || '')
+              .trim()
+              .toLowerCase() === 'staah',
+        )
+        .map((hotel) => Number(hotel.hotelCode))
+        .filter(
+          (hotelId) =>
+            Number.isFinite(hotelId) && hotelId > 0,
+        ),
+    ),
+  );
+
+  const hotelLookupConditions: any[] = [];
+
+  if (tboCodes.length > 0) {
+    hotelLookupConditions.push({
+      tbo_hotel_code: {
+        in: tboCodes,
+      },
+    });
+  }
+
+  if (resavenueCodes.length > 0) {
+    hotelLookupConditions.push({
+      resavenue_hotel_code: {
+        in: resavenueCodes,
+      },
+    });
+  }
+
+  if (hobseCodes.length > 0) {
+    hotelLookupConditions.push({
+      hotel_code: {
+        in: hobseCodes,
+      },
+    });
+  }
+
+  if (axisroomsHotelIds.length > 0) {
+    hotelLookupConditions.push({
+      hotel_id: {
+        in: axisroomsHotelIds,
+      },
+    });
+  }
+
+  if (staahHotelIds.length > 0) {
+    hotelLookupConditions.push({
+      hotel_id: {
+        in: staahHotelIds,
+      },
+    });
+  }
+
+  const hotelMasters =
+    shouldFilterByFacilities &&
+    hotelLookupConditions.length > 0
+      ? await this.prisma.dvi_hotel.findMany({
+          where: {
+            status: 1,
+            deleted: false,
+            OR: hotelLookupConditions,
+          },
+          select: {
+            hotel_id: true,
+            tbo_hotel_code: true,
+            resavenue_hotel_code: true,
+            hotel_code: true,
+          },
+        })
+      : [];
+
+  const hotelIdByProviderKey =
+    new Map<string, number>();
+
+  for (const hotelMaster of hotelMasters as any[]) {
+    const hotelId = Number(
+      hotelMaster.hotel_id || 0,
+    );
+
+    if (hotelId <= 0) {
+      continue;
+    }
+
+    const tboCode = String(
+      hotelMaster.tbo_hotel_code || '',
+    ).trim();
+
+    const resavenueCode = String(
+      hotelMaster.resavenue_hotel_code || '',
+    ).trim();
+
+    const hobseCode = String(
+      hotelMaster.hotel_code || '',
+    ).trim();
+
+    if (tboCode) {
+      hotelIdByProviderKey.set(
+        `tbo|${tboCode}`,
+        hotelId,
+      );
+    }
+
+    if (resavenueCode) {
+      hotelIdByProviderKey.set(
+        `resavenue|${resavenueCode}`,
+        hotelId,
+      );
+    }
+
+    if (hobseCode) {
+      hotelIdByProviderKey.set(
+        `hobse|${hobseCode}`,
+        hotelId,
+      );
+    }
+
+    hotelIdByProviderKey.set(
+      `axisrooms|${hotelId}`,
+      hotelId,
+    );
+
+    hotelIdByProviderKey.set(
+      `staah|${hotelId}`,
+      hotelId,
+    );
+  }
+
+  const hotelMasterIds = Array.from(
+    new Set(hotelIdByProviderKey.values()),
+  );
+
+  const amenityRows =
+    shouldFilterByFacilities &&
+    hotelMasterIds.length > 0
+      ? await this.prisma.dvi_hotel_amenities.findMany({
+          where: {
+            hotel_id: {
+              in: hotelMasterIds,
+            },
+            status: 1,
+            OR: [
+              { deleted: 0 },
+              { deleted: null },
+            ],
+          },
+          select: {
+            hotel_id: true,
+            amenities_title: true,
+            amenities_code: true,
+          },
+        })
+      : [];
+
+  const facilitiesByHotelId =
+    new Map<number, Set<string>>();
+
+  for (const amenityRow of amenityRows as any[]) {
+    const hotelId = Number(
+      amenityRow.hotel_id || 0,
+    );
+
+    if (hotelId <= 0) {
+      continue;
+    }
+
+    const facilitySet =
+      facilitiesByHotelId.get(hotelId) ||
+      new Set<string>();
+
+    addFacilityValue(
+      facilitySet,
+      amenityRow.amenities_title,
+    );
+
+    addFacilityValue(
+      facilitySet,
+      amenityRow.amenities_code,
+    );
+
+    facilitiesByHotelId.set(
+      hotelId,
+      facilitySet,
+    );
+  }
+
+  const filteredMap =
+    new Map<number, HotelSearchResult[] | null>();
+
+  hotelsByRoute.forEach((hotels, routeId) => {
+    if (!Array.isArray(hotels)) {
+      filteredMap.set(routeId, hotels);
+      return;
+    }
+
+    const filteredHotels: HotelSearchResult[] = [];
+
+    for (const hotel of hotels) {
+      let included = true;
+      let filterReason = '';
+      let nextHotel = hotel;
+
+      if (shouldFilterByCategory) {
+        const categoryCandidates =
+          this.getHotelCategoryCandidates(hotel);
+
+        const categoryMatch =
+          categoryCandidates.some((category) =>
+            preferredCategorySet.has(category),
+          );
+
+        const isResavenueUnknownCategory =
+          String(
+            (hotel as any).provider || '',
+          ).toLowerCase() === 'resavenue' &&
+          categoryCandidates.length === 0;
+
+        if (
+          !categoryMatch &&
+          !isResavenueUnknownCategory
+        ) {
+          included = false;
+          filterReason =
+            `Category mismatch: ` +
+            `${categoryCandidates.join(',') || 'UNKNOWN'} ` +
+            `not in ${preferredCategories.join(',')}`;
+        } else if (isResavenueUnknownCategory) {
+          this.logger.debug(
+            `   ℹ️ Keeping ResAvenue hotel with unknown category: ${hotel.hotelName}`,
+          );
+        }
+      }
+
+      if (included && shouldFilterByMeal) {
+        const mealPlanCandidates =
+          this.getMealPlanCandidatesFromHotel(hotel);
+
+        const hasMatchingMeal =
+          mealPlanCandidates.includes(
+            preferredMealPlanCode!,
+          );
+
+        if (
+          mealPlanCandidates.length > 0 &&
+          !hasMatchingMeal
+        ) {
+          included = false;
+          filterReason =
+            `Meal plan mismatch: ` +
+            `${mealPlanCandidates.join(',')} != ` +
+            `${preferredMealPlanCode}`;
+        } else if (hasMatchingMeal) {
+          nextHotel =
+            this.alignHotelToPreferredMealPlan(
+              hotel,
+              preferredMealPlanCode!,
+            );
+        }
+      }
+
+      if (
+        included &&
+        shouldFilterByFacilities
+      ) {
+        const providerKey =
+          getProviderKey(hotel);
+
+        const hotelMasterId =
+          hotelIdByProviderKey.get(providerKey);
+
+      const availableFacilities =
+  new Set<string>();
+
+/*
+ * Always include facilities returned by the live provider.
+ * TBO results already contain facilities, amenities and
+ * inclusions when that information is available.
+ */
+addFacilityValue(
+  availableFacilities,
+  (hotel as any).facilities,
+);
+
+addFacilityValue(
+  availableFacilities,
+  (hotel as any).amenities,
+);
+
+addFacilityValue(
+  availableFacilities,
+  (hotel as any).inclusions,
+);
+
+/*
+ * When the provider hotel is mapped to dvi_hotel,
+ * merge the locally saved amenities as well.
+ */
+if (hotelMasterId) {
+  const databaseFacilities =
+    facilitiesByHotelId.get(
+      hotelMasterId,
+    );
+
+  for (
+    const facility of
+    databaseFacilities || []
+  ) {
+    availableFacilities.add(facility);
+  }
+}
+
+        const missingFacilities =
+          normalizedPreferredFacilities.filter(
+            (requiredFacility) =>
+              !availableFacilities.has(
+                requiredFacility,
+              ),
+          );
+
+        if (missingFacilities.length > 0) {
+          included = false;
+          filterReason =
+            `Facility mismatch: missing ` +
+            `${missingFacilities.join(',')}`;
+        }
+      }
+
+      if (
+        !included &&
+        hotel.provider === 'resavenue'
+      ) {
+        this.logger.warn(
+          `   ⚠️ Filtering out ResAvenue: ` +
+            `${hotel.hotelName} - Reason: ` +
+            `${filterReason}`,
+        );
+      }
+
+      if (
+        !included &&
+        hotel.provider === 'staah'
+      ) {
+        this.logger.warn(
+          `[STAAH FILTERED] ` +
+            `${hotel.hotelName} ` +
+            `(${hotel.hotelCode}) - ` +
+            `${filterReason}`,
+        );
+      }
+
+      if (
+        !included &&
+        shouldFilterByFacilities
+      ) {
+        this.logger.debug(
+          `[HOTEL-FACILITY-FILTER] ` +
+            `${hotel.hotelName} ` +
+            `(${hotel.hotelCode}) rejected: ` +
+            `${filterReason}`,
+        );
+      }
+
+      if (included) {
+        filteredHotels.push(nextHotel);
+      }
+    }
+
+    this.logger.log(
+      `   Preference filter route ${routeId}: ` +
+        `before=${hotels.length}, ` +
+        `after=${filteredHotels.length}, ` +
+        `category=${
+          shouldFilterByCategory
+            ? preferredCategories.join(',')
+            : 'ANY'
+        }, ` +
+        `meal=${
+          preferredMealPlanCode || 'ANY'
+        }, ` +
+        `facilities=${
+          shouldFilterByFacilities
+            ? normalizedPreferredFacilities.join(',')
+            : 'ANY'
+        }`,
+    );
+
+    filteredMap.set(routeId, filteredHotels);
+  });
+
+  return filteredMap;
+}
 
   constructor(
     private readonly prisma: PrismaService,
@@ -628,29 +1175,80 @@ export class ItineraryHotelDetailsTboService {
     //     : cached;
     // }
 
-    const planId = plan.itinerary_plan_ID;
-    const guestNationality = await this.resolveGuestNationality(plan);
-    const preferredCategories = this.normalizeNumberList((plan as any).preferred_hotel_category);
-    const explicitMealPlanCode = inferCanonicalHotelRatePlanCode(String((plan as any).meal_plan_code || ''));
-    const mealPlanBreakfast = Number((plan as any).meal_plan_breakfast ?? 0) ? 1 : 0;
-    const mealPlanLunch = Number((plan as any).meal_plan_lunch ?? 0) ? 1 : 0;
-    const mealPlanDinner = Number((plan as any).meal_plan_dinner ?? 0) ? 1 : 0;
-    const hasExplicitMealFlags =
-      mealPlanBreakfast === 1 || mealPlanLunch === 1 || mealPlanDinner === 1;
-    const fallbackMealPlanCode = hasExplicitMealFlags
-      ? inferCanonicalHotelRatePlanCodeFromMealFlags(
-          mealPlanBreakfast,
-          mealPlanLunch,
-          mealPlanDinner,
-        )
-      : null;
-    const preferredMealPlanCode = explicitMealPlanCode || fallbackMealPlanCode;
+ const planId = plan.itinerary_plan_ID;
+const guestNationality = await this.resolveGuestNationality(plan);
 
-    this.logger.log(`âœ… Found plan ID: ${planId}`);
-    this.logger.log(
-      `ðŸŽ›ï¸ Plan hotel prefs: categories=${preferredCategories.length ? preferredCategories.join(',') : 'ANY'}, ` +
-        `mealPlan=${preferredMealPlanCode || 'ANY'}`,
-    );
+const preferredCategories = this.normalizeNumberList(
+  (plan as any).preferred_hotel_category,
+);
+
+const preferredFacilities = Array.from(
+  new Set(
+    String((plan as any).hotel_facilities || '')
+      .split(',')
+      .map((facility) => facility.trim())
+      .filter(Boolean),
+  ),
+);
+
+const explicitMealPlanCode =
+  inferCanonicalHotelRatePlanCode(
+    String((plan as any).meal_plan_code || ''),
+  );
+
+const mealPlanBreakfast =
+  Number((plan as any).meal_plan_breakfast ?? 0)
+    ? 1
+    : 0;
+
+const mealPlanLunch =
+  Number((plan as any).meal_plan_lunch ?? 0)
+    ? 1
+    : 0;
+
+const mealPlanDinner =
+  Number((plan as any).meal_plan_dinner ?? 0)
+    ? 1
+    : 0;
+
+const hasExplicitMealFlags =
+  mealPlanBreakfast === 1 ||
+  mealPlanLunch === 1 ||
+  mealPlanDinner === 1;
+
+const fallbackMealPlanCode =
+  hasExplicitMealFlags
+    ? inferCanonicalHotelRatePlanCodeFromMealFlags(
+        mealPlanBreakfast,
+        mealPlanLunch,
+        mealPlanDinner,
+      )
+    : null;
+
+const preferredMealPlanCode =
+  explicitMealPlanCode ||
+  fallbackMealPlanCode;
+
+this.logger.log(
+  `âœ… Found plan ID: ${planId}`,
+);
+
+this.logger.log(
+  `ðŸŽ›ï¸ Plan hotel prefs: ` +
+    `categories=${
+      preferredCategories.length
+        ? preferredCategories.join(',')
+        : 'ANY'
+    }, ` +
+    `mealPlan=${
+      preferredMealPlanCode || 'ANY'
+    }, ` +
+    `facilities=${
+      preferredFacilities.length
+        ? preferredFacilities.join(',')
+        : 'ANY'
+    }`,
+);
 
     // Step 2: Get itinerary routes (days and destinations)
     const routes = await this.prisma.dvi_itinerary_route_details.findMany({
@@ -839,11 +1437,13 @@ export class ItineraryHotelDetailsTboService {
       this.logger.log(`   Route ${routeId}: STAAH before filter = ${staahCount}`);
     });
     
-    const filteredHotelsByRoute = this.applyPlanPreferenceFilters(
-      hotelsByRoute,
-      preferredCategories,
-      preferredMealPlanCode,
-    );
+  const filteredHotelsByRoute =
+  await this.applyPlanPreferenceFilters(
+    hotelsByRoute,
+    preferredCategories,
+    preferredMealPlanCode,
+    preferredFacilities,
+  );
 
     this.logger.log(`[STAAH DEBUG] Counts after preference filters:`);
     Array.from(filteredHotelsByRoute.entries()).forEach(([routeId, hotels]) => {
