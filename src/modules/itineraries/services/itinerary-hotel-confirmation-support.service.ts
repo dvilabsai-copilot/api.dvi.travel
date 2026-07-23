@@ -74,6 +74,23 @@ export class ItineraryHotelConfirmationSupportService {
 
     this.assertConsistentMultiNightHotelSelection(providerHotelBookings);
 
+    // Confirmation must use the same backend-selected rate snapshot as the
+    // draft preview. Monetary values sent by the browser are deliberately not
+    // trusted for persistence or wallet calculations.
+    const authoritativePreview = providerHotelBookings.length > 0
+      ? await this.itineraryDetails.previewHotelSelectionCost({
+          planId: dto.itinerary_plan_ID,
+          selections: incomingHotelBookings,
+          groupType: this.getConfirmHotelGroupType(dto),
+        })
+      : null;
+    const authoritativePricingByRoute = new Map<number, any>(
+      (authoritativePreview?.selectedHotelBreakdown || []).map((row: any) => [
+        Number(row.routeId || 0),
+        row,
+      ]),
+    );
+
     const manualMismatchOverrideRows = providerHotelBookings.filter((booking: any) =>
       Boolean(booking?.manualRoomMealMismatchOverride),
     );
@@ -397,7 +414,7 @@ export class ItineraryHotelConfirmationSupportService {
           : 0;
       const hotelCodeForSave = shouldUseHotelCodeOnly ? hotelCodeRaw : null;
 
-      const bookingAmount = Number(
+      let bookingAmount = Number(
         (booking as any).prebookContext?.prebookNetAmount ??
           (booking as any).prebookContext?.finalPrice ??
           (booking as any).netAmount ??
@@ -406,7 +423,7 @@ export class ItineraryHotelConfirmationSupportService {
           0,
       );
 
-      const bookingTaxAmount = Number(
+      let bookingTaxAmount = Number(
         (booking as any).totalHotelTaxAmount ??
           (booking as any).taxAmount ??
           0,
@@ -420,6 +437,19 @@ export class ItineraryHotelConfirmationSupportService {
       const routeId = Number((booking as any).routeId || 0);
       if (!routeId) {
         continue;
+      }
+
+      const authoritativeRate = authoritativePricingByRoute.get(routeId);
+      if (providerHotelBookings.length > 0 && !authoritativeRate) {
+        throw new BadRequestException(`Selected hotel rate could not be revalidated for route ${routeId}`);
+      }
+      if (authoritativeRate) {
+        const authoritativeTax = Number(authoritativeRate.roomGstAmount || 0)
+          + Number(authoritativeRate.marginGstAmount || 0);
+        bookingTaxAmount = Number(authoritativeTax.toFixed(2));
+        bookingAmount = Number(
+          Math.max(0, Number(authoritativeRate.totalAmount || 0) - authoritativeTax).toFixed(2),
+        );
       }
 
       const route = await this.prisma.dvi_itinerary_route_details.findFirst({
@@ -458,6 +488,24 @@ export class ItineraryHotelConfirmationSupportService {
           route?.next_visiting_location || route?.location_name || undefined,
         total_hotel_cost: bookingAmount,
         total_hotel_tax_amount: bookingTaxAmount,
+        total_room_cost: authoritativeRate
+          ? Number(authoritativeRate.baseAmount || 0)
+          : undefined,
+        total_room_gst_amount: authoritativeRate
+          ? Number(authoritativeRate.roomGstAmount || 0)
+          : undefined,
+        hotel_margin_rate: authoritativeRate
+          ? Number(authoritativeRate.marginAmount || 0)
+          : undefined,
+        hotel_margin_rate_tax_amt: authoritativeRate
+          ? Number(authoritativeRate.marginGstAmount || 0)
+          : undefined,
+        total_hotel_meal_plan_cost: 0,
+        total_hotel_meal_plan_cost_gst_amount: 0,
+        total_amenities_cost: 0,
+        total_extra_bed_cost: 0,
+        total_childwith_bed_cost: 0,
+        total_childwithout_bed_cost: 0,
         total_no_of_rooms: bookingRoomCount,
         hotel_id: hotelId,
         hotel_code: hotelCodeForSave,

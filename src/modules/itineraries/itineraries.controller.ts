@@ -1340,6 +1340,19 @@ async exportToExcel(
     };
   }
 
+  @Post(':planId/hotels/selection-cost-preview')
+  @ApiOperation({ summary: 'Preview temporary hotel selection costs without saving draft rows' })
+  async previewHotelSelectionCost(
+    @Param('planId', ParseIntPipe) planId: number,
+    @Body() body: { selections?: Record<string, any> | any[]; groupType?: number },
+  ) {
+    return this.detailsService.previewHotelSelectionCost({
+      planId,
+      selections: body?.selections || {},
+      groupType: body?.groupType ? Number(body.groupType) : undefined,
+    });
+  }
+
   @Post('cancel')
   @ApiOperation({ summary: 'Cancel a confirmed itinerary' })
   @ApiBody({ type: CancelItineraryDto })

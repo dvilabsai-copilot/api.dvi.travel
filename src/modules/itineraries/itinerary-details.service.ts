@@ -1,5 +1,5 @@
 // FILE: src/modules/itineraries/itinerary-details.service.ts
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import {
   canViewItineraryCostBreakdown,
   isAgentRole,
@@ -23,6 +23,7 @@ import {
 } from './utils/entry-ticket-breakdown.util';
 import { ItineraryDetailsVehicleKmService } from './services/itinerary-details-vehicle-km.service';
 import { getTransportEarlyArrivalMessage } from './transport-early-arrival';
+import { ItineraryHotelDetailsTboService } from './itinerary-hotel-details-tbo.service';
 
 // ---------------------------------------------------------------------------
 // DTOs for Itinerary Details response (shared shape with frontend)
@@ -277,6 +278,29 @@ export interface CostBreakdownDto {
   extraBedCost?: number;
   childWithBedCost?: number;
   childWithoutBedCost?: number;
+  hotelPricingSource?: 'selected_hotel_rate' | 'persisted_draft';
+  selectedHotelRateTotal?: number;
+  hotelRateBreakdown?: Array<{
+    routeId: number;
+    date?: string | null;
+    provider: string;
+    hotelCode: string;
+    hotelName: string;
+    roomType?: string;
+    mealPlan?: string;
+    baseAmount: number;
+    roomGstAmount: number;
+    marginAmount: number;
+    marginGstAmount: number;
+    totalAmount: number;
+  }>;
+  hotelRoomBaseCost?: number;
+  hotelRoomGstCost?: number;
+  hotelMarginCost?: number;
+  hotelMarginGstCost?: number;
+  hotelMealPlanCost?: number;
+  hotelMealPlanGstCost?: number;
+  hotelMealPlanAllocatedCost?: number;
   totalHotelAmount?: number;
   
   // Vehicle costs
@@ -410,13 +434,211 @@ days: {
   costBreakdown: CostBreakdownDto;
 }
 
+interface HotelCostOverride {
+  source: 'selected_hotel_rate' | 'persisted_draft';
+  rows: any[];
+  breakdown?: CostBreakdownDto['hotelRateBreakdown'];
+}
+
 @Injectable()
 export class ItineraryDetailsService {
   private readonly vehicleKmService = new ItineraryDetailsVehicleKmService();
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly hotelDetailsTboService: ItineraryHotelDetailsTboService,
   ) {}
+
+  private normalizeHotelSelectionEntries(
+    selections: Record<string, any> | any[],
+  ): any[] {
+    return (Array.isArray(selections)
+      ? selections
+      : Object.entries(selections || {}).map(([routeId, selection]) => ({
+          ...(selection || {}),
+          routeId: Number((selection as any)?.routeId || routeId),
+        })))
+      .filter((selection: any) => selection && typeof selection === 'object');
+  }
+
+  private normalizeIdentity(value: unknown): string {
+    return String(value ?? '').trim().toLowerCase();
+  }
+
+  private async buildSelectedHotelCostOverride(params: {
+    planId: number;
+    quoteId: string;
+    selections: Record<string, any> | any[];
+    groupType?: number;
+  }): Promise<HotelCostOverride> {
+    const selectedEntries = this.normalizeHotelSelectionEntries(params.selections)
+      .filter((selection: any) => selection && !selection.__coveredByMultiNight);
+    const hotelDetails = await this.hotelDetailsTboService.getHotelDetailsByQuoteIdFromTbo(
+      params.quoteId,
+    );
+    const availableRows = Array.isArray(hotelDetails.hotels) ? hotelDetails.hotels : [];
+    const selectedRows: any[] = [];
+    const breakdown: NonNullable<CostBreakdownDto['hotelRateBreakdown']> = [];
+    const usedRouteIds = new Set<number>();
+
+    for (const selection of selectedEntries) {
+      const routeIds = Array.isArray(selection.routeIds) && selection.routeIds.length > 0
+        ? selection.routeIds.map(Number).filter((id: number) => Number.isFinite(id) && id > 0)
+        : [Number(selection.routeId || 0)].filter((id: number) => Number.isFinite(id) && id > 0);
+      if (routeIds.length === 0) continue;
+
+      for (const routeId of routeIds) {
+        if (usedRouteIds.has(routeId)) continue;
+
+        const provider = this.normalizeIdentity(selection.provider);
+        const hotelCode = this.normalizeIdentity(selection.hotelCode);
+        const bookingCode = this.normalizeIdentity(selection.bookingCode);
+        const searchReference = this.normalizeIdentity(selection.searchReference);
+        const roomId = this.normalizeIdentity(selection.roomId);
+        const rateId = this.normalizeIdentity(selection.rateId);
+        const roomType = this.normalizeIdentity(selection.roomType);
+        const mealPlan = this.normalizeIdentity(selection.mealPlan);
+        const candidates = availableRows
+          .filter((row: any) => Number(row.itineraryRouteId || 0) === routeId)
+          .filter((row: any) => !params.groupType || Number(row.groupType || 0) === Number(params.groupType))
+          .filter((row: any) => !provider || this.normalizeIdentity(row.provider) === provider)
+          .filter((row: any) => {
+            if (!hotelCode) return true;
+            const rowCodes = [row.hotelCode, row.hotelId].map((value) => this.normalizeIdentity(value));
+            return rowCodes.includes(hotelCode);
+          })
+          .map((row: any) => {
+            const rowBookingCode = this.normalizeIdentity(row.bookingCode);
+            const rowSearchReference = this.normalizeIdentity(row.searchReference);
+            const rowRoomId = this.normalizeIdentity(row.roomId);
+            const rowRateId = this.normalizeIdentity(row.rateId);
+            const rowRoomType = this.normalizeIdentity(row.roomType);
+            const rowMealPlan = this.normalizeIdentity(row.mealPlan);
+            let score = 0;
+            if (bookingCode && bookingCode === rowBookingCode) score += 16;
+            if (searchReference && searchReference === rowSearchReference) score += 16;
+            if (roomId && roomId === rowRoomId) score += 8;
+            if (rateId && rateId === rowRateId) score += 8;
+            if (roomType && roomType === rowRoomType) score += 4;
+            if (mealPlan && mealPlan === rowMealPlan) score += 2;
+            return { row, score };
+          })
+          .sort((a: any, b: any) => b.score - a.score);
+
+        const match = candidates[0]?.row;
+        if (!match) {
+          throw new BadRequestException({
+            message: 'Selected hotel rate is stale or does not belong to this itinerary route',
+            routeId,
+            provider: selection.provider,
+            hotelCode: selection.hotelCode,
+          });
+        }
+
+        const baseAmount = roundCurrency(Number(match.baseHotelCost ?? match.totalHotelCost ?? 0));
+        const marginAmount = roundCurrency(Number(
+          match.hotelMarginAmount ??
+          (baseAmount * Number(match.hotelMarginPercentage || 0)) / 100,
+        ));
+        const roomGstAmount = roundCurrency(Number(match.hotelRoomGstAmount ?? 0));
+        const marginGstAmount = roundCurrency(Number(match.hotelMarginGstAmount ?? 0));
+        const mealPlanAmount = roundCurrency(Number(match.hotelMealPlanCost ?? 0));
+        const mealPlanGstAmount = roundCurrency(Number(match.hotelMealPlanGstAmount ?? 0));
+        const totalAmount = roundCurrency(
+          Number(match.totalHotelCost || 0) + Number(match.totalHotelTaxAmount || 0),
+        );
+
+        selectedRows.push({
+          itinerary_plan_id: params.planId,
+          itinerary_route_id: routeId,
+          group_type: Number(match.groupType || selection.groupType || params.groupType || 0),
+          hotel_required: 1,
+          deleted: 0,
+          status: 1,
+          total_hotel_cost: Number(match.totalHotelCost || 0),
+          total_hotel_tax_amount: Number(match.totalHotelTaxAmount || 0),
+          total_room_cost: baseAmount,
+          total_room_gst_amount: roomGstAmount,
+          hotel_margin_rate: marginAmount,
+          hotel_margin_rate_tax_amt: marginGstAmount,
+          total_hotel_meal_plan_cost: mealPlanAmount,
+          total_hotel_meal_plan_cost_gst_amount: mealPlanGstAmount,
+          total_amenities_cost: 0,
+          total_extra_bed_cost: 0,
+          total_childwith_bed_cost: 0,
+          total_childwithout_bed_cost: 0,
+          early_checkin: match.earlyCheckIn ? 1 : 0,
+          early_checkin_extra_payment_applicable: match.earlyCheckInExtraPaymentApplicable ? 1 : 0,
+        });
+        breakdown.push({
+          routeId,
+          date: match.date || null,
+          provider: String(match.provider || selection.provider || '').trim().toLowerCase(),
+          hotelCode: String(match.hotelCode || match.hotelId || selection.hotelCode || '').trim(),
+          hotelName: String(match.hotelName || selection.hotelName || '').trim(),
+          roomType: String(match.roomType || selection.roomType || '').trim() || undefined,
+          mealPlan: String(match.mealPlan || selection.mealPlan || '').trim() || undefined,
+          baseAmount,
+          roomGstAmount,
+          marginAmount,
+          marginGstAmount,
+          totalAmount,
+        });
+        usedRouteIds.add(routeId);
+      }
+    }
+
+    if (selectedRows.length === 0) {
+      throw new BadRequestException('At least one current hotel rate must be selected before previewing pricing');
+    }
+
+    return {
+      source: 'selected_hotel_rate',
+      rows: selectedRows,
+      breakdown,
+    };
+  }
+
+  /** Calculate temporary totals from the backend-selected hotel-rate snapshot only. */
+  async previewHotelSelectionCost(params: {
+    planId: number;
+    selections: Record<string, any> | any[];
+    groupType?: number;
+  }) {
+    const plan = await this.prisma.dvi_itinerary_plan_details.findFirst({
+      where: { itinerary_plan_ID: Number(params.planId), deleted: 0 },
+      select: { itinerary_quote_ID: true },
+    });
+
+    if (!plan) throw new NotFoundException('Itinerary not found');
+
+    const quoteId = String(plan.itinerary_quote_ID || '').trim();
+    if (!quoteId) throw new NotFoundException('Itinerary quote not found');
+
+    const override = await this.buildSelectedHotelCostOverride({
+      planId: Number(params.planId),
+      quoteId,
+      selections: params.selections,
+      groupType: params.groupType,
+    });
+    const itinerary = await this.getItineraryDetails(
+      quoteId,
+      params.groupType,
+      undefined,
+      override,
+    );
+    const projectedHotelAmount = Number(
+      itinerary.costBreakdown.totalHotelAmount ?? itinerary.costBreakdown.totalRoomCost ?? 0,
+    );
+
+    return {
+      temporary: true,
+      pricingSource: override.source,
+      projectedHotelAmount,
+      selectedHotelBreakdown: override.breakdown,
+      itinerary,
+    };
+  }
 
   private parseRouteFamilyQuote(quoteId: string | undefined | null): {
     baseQuoteId: string;
@@ -1365,6 +1587,7 @@ const foodTypeMap: Record<string, string> = {
     quoteId: string,
     groupType?: number,
     viewerRole?: unknown,
+    hotelCostOverride?: HotelCostOverride,
   ): Promise<ItineraryDetailsResponseDto> {
     const apiStartedAt = Date.now();
     let stepStartedAt = apiStartedAt;
@@ -5358,7 +5581,7 @@ sightseeingDistance,       // local sightseeing separately
     if (groupType !== undefined) {
       hotelWhere.group_type = groupType;
     }
-    const hotelRows = await this.prisma.dvi_itinerary_plan_hotel_details.findMany({
+    const hotelRows = hotelCostOverride?.rows ?? await this.prisma.dvi_itinerary_plan_hotel_details.findMany({
       where: hotelWhere,
     });
 
@@ -5374,6 +5597,13 @@ sightseeingDistance,       // local sightseeing separately
     let childWithBedCost = 0;
     let childWithoutBedCost = 0;
     let totalMealCost = 0;
+    let hotelListTotal = 0;
+    let hotelRoomBaseCost = 0;
+    let hotelRoomGstCost = 0;
+    let hotelMarginCost = 0;
+    let hotelMarginGstCost = 0;
+    let hotelMealPlanCost = 0;
+    let hotelMealPlanGstCost = 0;
 
     costHotelRows.forEach(h => {
       // An early-morning hotel check-in blocks the room from the previous
@@ -5387,16 +5617,27 @@ sightseeingDistance,       // local sightseeing separately
       const detailedRoomCost =
         Number(h.total_room_cost || 0) +
         Number(h.hotel_margin_rate || 0) +
-        Number(h.total_room_gst_amount || 0);
+        Number(h.total_room_gst_amount || 0) +
+        Number(h.hotel_margin_rate_tax_amt || 0);
       const fallbackRoomCost = Number(h.total_hotel_cost || 0);
+      const rowMultiplier = earlyCheckInBillingMultiplier;
 
+      hotelListTotal += (
+        Number(h.total_hotel_cost || 0) + Number(h.total_hotel_tax_amount || 0)
+      ) * rowMultiplier;
+      hotelRoomBaseCost += Number(h.total_room_cost || 0) * rowMultiplier;
+      hotelRoomGstCost += Number(h.total_room_gst_amount || 0) * rowMultiplier;
+      hotelMarginCost += Number(h.hotel_margin_rate || 0) * rowMultiplier;
+      hotelMarginGstCost += Number(h.hotel_margin_rate_tax_amt || 0) * rowMultiplier;
+      hotelMealPlanCost += Number(h.total_hotel_meal_plan_cost || 0) * rowMultiplier;
+      hotelMealPlanGstCost += Number(h.total_hotel_meal_plan_cost_gst_amount || 0) * rowMultiplier;
       // TBO/cache rows often populate only total_hotel_cost; fallback keeps room totals non-zero.
-      totalRoomCost += (detailedRoomCost > 0 ? detailedRoomCost : fallbackRoomCost) * earlyCheckInBillingMultiplier;
-      totalAmenitiesCost += Number(h.total_amenities_cost || 0) * earlyCheckInBillingMultiplier;
-      extraBedCost += Number(h.total_extra_bed_cost || 0) * earlyCheckInBillingMultiplier;
-      childWithBedCost += Number(h.total_childwith_bed_cost || 0) * earlyCheckInBillingMultiplier;
-      childWithoutBedCost += Number(h.total_childwithout_bed_cost || 0) * earlyCheckInBillingMultiplier;
-      totalMealCost += Number(h.total_hotel_meal_plan_cost || 0) * earlyCheckInBillingMultiplier;
+      totalRoomCost += (detailedRoomCost > 0 ? detailedRoomCost : fallbackRoomCost) * rowMultiplier;
+      totalAmenitiesCost += Number(h.total_amenities_cost || 0) * rowMultiplier;
+      extraBedCost += Number(h.total_extra_bed_cost || 0) * rowMultiplier;
+      childWithBedCost += Number(h.total_childwith_bed_cost || 0) * rowMultiplier;
+      childWithoutBedCost += Number(h.total_childwithout_bed_cost || 0) * rowMultiplier;
+      totalMealCost += Number(h.total_hotel_meal_plan_cost || 0) * rowMultiplier;
     });
 
     // For selected recommendation tabs, derive room total from live group-specific hotel details
@@ -5437,8 +5678,9 @@ sightseeingDistance,       // local sightseeing separately
     const paxMealCost = (totalAdults + totalChildren) > 0 
       ? totalMealCost / (totalAdults + totalChildren)
       : 0;
-    
-    const totalRoomCostUpdated = totalRoomCost + (hotelPaxCount * paxMealCost);
+    const hotelMealPlanAllocatedCost = hotelPaxCount * paxMealCost;
+
+    const totalRoomCostUpdated = totalRoomCost + hotelMealPlanAllocatedCost;
     const roomCostPerPerson = hotelPaxCount > 0 
       ? totalRoomCostUpdated / hotelPaxCount
       : 0;
@@ -5544,6 +5786,22 @@ sightseeingDistance,       // local sightseeing separately
       extraBedCost: shouldIncludeHotels && updatedExtraBedCost > 0 ? updatedExtraBedCost : undefined,
       childWithBedCost: shouldIncludeHotels && updatedChildWithBedCost > 0 ? updatedChildWithBedCost : undefined,
       childWithoutBedCost: shouldIncludeHotels && updatedChildWithoutBedCost > 0 ? updatedChildWithoutBedCost : undefined,
+      hotelPricingSource: shouldIncludeHotels
+        ? (hotelCostOverride?.source ?? 'persisted_draft')
+        : undefined,
+      selectedHotelRateTotal: shouldIncludeHotels && hotelListTotal > 0
+        ? Number(hotelListTotal.toFixed(2))
+        : undefined,
+      hotelRateBreakdown: shouldIncludeHotels
+        ? hotelCostOverride?.breakdown
+        : undefined,
+      hotelRoomBaseCost: shouldIncludeHotels && hotelRoomBaseCost > 0 ? Number(hotelRoomBaseCost.toFixed(2)) : undefined,
+      hotelRoomGstCost: shouldIncludeHotels && hotelRoomGstCost > 0 ? Number(hotelRoomGstCost.toFixed(2)) : undefined,
+      hotelMarginCost: shouldIncludeHotels && hotelMarginCost > 0 ? Number(hotelMarginCost.toFixed(2)) : undefined,
+      hotelMarginGstCost: shouldIncludeHotels && hotelMarginGstCost > 0 ? Number(hotelMarginGstCost.toFixed(2)) : undefined,
+      hotelMealPlanCost: shouldIncludeHotels && hotelMealPlanCost > 0 ? Number(hotelMealPlanCost.toFixed(2)) : undefined,
+      hotelMealPlanGstCost: shouldIncludeHotels && hotelMealPlanGstCost > 0 ? Number(hotelMealPlanGstCost.toFixed(2)) : undefined,
+      hotelMealPlanAllocatedCost: shouldIncludeHotels && hotelMealPlanAllocatedCost > 0 ? Number(hotelMealPlanAllocatedCost.toFixed(2)) : undefined,
       totalHotelAmount: shouldIncludeHotels && effectiveHotelAmount > 0 ? effectiveHotelAmount : undefined,
       
       // Vehicle costs
