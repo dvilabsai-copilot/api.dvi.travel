@@ -9,6 +9,10 @@ type Tx = Prisma.TransactionClient;
 // In-memory cache for distance lookups
 const distanceCache = new Map<string, any>();
 
+export function clearDistanceCache(): void {
+  distanceCache.clear();
+}
+
 export interface DistanceResult {
   distanceKm: number; // e.g. 8.42
   travelTime: string; // HH:MM:SS

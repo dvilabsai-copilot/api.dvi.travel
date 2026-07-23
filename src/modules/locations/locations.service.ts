@@ -5,6 +5,7 @@ import {
   normalizeCityName,
   resolveCityRecordByName,
 } from '../itineraries/utils/city-normalization.util';
+import { clearDistanceCache } from '../itineraries/engines/helpers/distance.helper';
 import { clearStoredLocationCache as clearStoredLocationLookupCache } from './stored-location-cache.helper';
 import {
   BetweenHotspotFiltersQueryDto,
@@ -817,7 +818,11 @@ if (citySeed) {
   }
 
   async update(id: number, payload: any) {
-    const existing = await this.get(id);
+    const existing = await this.prisma.dvi_stored_locations.findFirst({
+      where: { location_ID: BigInt(id), deleted: 0 },
+    });
+
+    if (!existing) throw new NotFoundException('Location not found');
 
     const nextSource = this.normalizeLocationName(
       payload?.source_location ?? existing.source_location,
@@ -828,7 +833,18 @@ if (citySeed) {
     const nextDistance =
       payload?.distance_km !== undefined
         ? Number(payload.distance_km)
-        : Number(existing.distance_km ?? 0);
+        : payload?.distance !== undefined
+          ? Number(payload.distance)
+          : Number(existing.distance ?? 0);
+
+    const distanceProvided =
+      payload?.distance_km !== undefined || payload?.distance !== undefined;
+    const durationProvided =
+      payload?.duration_text !== undefined || payload?.duration !== undefined;
+
+    if (distanceProvided && (!Number.isFinite(nextDistance) || nextDistance < 0)) {
+      throw new BadRequestException('Distance must be a valid non-negative number');
+    }
 
     if (
       nextSource &&
@@ -855,11 +871,100 @@ if (citySeed) {
         payload?.destination_city ?? payload?.destination_location_city,
       );
     }
-    const updated = await this.prisma.dvi_stored_locations.update({
-      where: { location_ID: BigInt(id) },
-      data: { ...data, updatedon: new Date() },
+
+    // A route distance is symmetric in the stored-location master. Keep the
+    // manually edited row and its reverse row in sync in one transaction.
+    const nextDuration = durationProvided
+      ? String(payload?.duration_text ?? payload?.duration ?? '').trim()
+      : distanceProvided
+        ? this.estimateDurationText(nextDistance)
+        : String(existing.duration ?? '');
+
+    if (distanceProvided) data.distance = nextDistance;
+    if (distanceProvided || durationProvided) data.duration = nextDuration;
+
+    const nextSourceName = String(data.source_location ?? nextSource).trim();
+    const nextDestinationName = String(data.destination_location ?? nextDestination).trim();
+    const shouldSyncReverse =
+      (distanceProvided || durationProvided) &&
+      nextSourceName.toLowerCase() !== nextDestinationName.toLowerCase();
+
+    let updated: any;
+    await this.prisma.$transaction(async (tx) => {
+      const now = new Date();
+
+      updated = await tx.dvi_stored_locations.update({
+        where: { location_ID: BigInt(id) },
+        data: { ...data, updatedon: now },
+      });
+
+      if (!shouldSyncReverse) return;
+
+      const reverseWhere = {
+        deleted: 0,
+        source_location: nextDestinationName,
+        destination_location: nextSourceName,
+      };
+
+      const reverseUpdate: any = {
+        distance: nextDistance,
+        updatedon: now,
+      };
+      if (distanceProvided || durationProvided) reverseUpdate.duration = nextDuration;
+
+      const reverseResult = await tx.dvi_stored_locations.updateMany({
+        where: reverseWhere,
+        data: reverseUpdate,
+      });
+
+      if (reverseResult.count > 0) return;
+
+      const reverseData = {
+        source_location: nextDestinationName,
+        source_location_lattitude:
+          data.destination_location_lattitude ?? existing.destination_location_lattitude,
+        source_location_longitude:
+          data.destination_location_longitude ?? existing.destination_location_longitude,
+        source_location_city:
+          data.destination_location_city ?? existing.destination_location_city,
+        source_city_id:
+          data.destination_city_id !== undefined
+            ? data.destination_city_id
+            : existing.destination_city_id,
+        source_location_state:
+          data.destination_location_state ?? existing.destination_location_state,
+        destination_location: nextSourceName,
+        destination_location_lattitude:
+          data.source_location_lattitude ?? existing.source_location_lattitude,
+        destination_location_longitude:
+          data.source_location_longitude ?? existing.source_location_longitude,
+        destination_location_city:
+          data.source_location_city ?? existing.source_location_city,
+        destination_city_id:
+          data.source_city_id !== undefined
+            ? data.source_city_id
+            : existing.source_city_id,
+        destination_location_state:
+          data.source_location_state ?? existing.source_location_state,
+        distance: nextDistance,
+        duration: nextDuration,
+        location_description:
+          data.location_description !== undefined
+            ? data.location_description
+            : existing.location_description,
+        created_from: existing.created_from ?? 0,
+        createdby: existing.createdby ?? 0,
+        createdon: now,
+        updatedon: now,
+        status: existing.status ?? 1,
+        deleted: 0,
+      };
+
+      await tx.dvi_stored_locations.create({ data: reverseData });
     });
+
     this.clearStoredLocationCache(`locations.update:${id}`);
+    clearDistanceCache();
     return this.mapRowToResponse(updated);
   }
 
