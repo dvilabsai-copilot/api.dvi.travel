@@ -824,6 +824,58 @@ if (citySeed) {
 
     if (!existing) throw new NotFoundException('Location not found');
 
+    const normalizeIdentityValue = (value: unknown) =>
+      this.normalizeLocationName(value).toLowerCase();
+    const immutableIdentityFields: Array<{
+      keys: string[];
+      existingValue: unknown;
+      label: string;
+    }> = [
+      {
+        keys: ['source_location'],
+        existingValue: existing.source_location,
+        label: 'source location',
+      },
+      {
+        keys: ['source_city', 'source_location_city'],
+        existingValue: existing.source_location_city,
+        label: 'source city',
+      },
+      {
+        keys: ['source_state', 'source_location_state'],
+        existingValue: existing.source_location_state,
+        label: 'source state',
+      },
+      {
+        keys: ['destination_location'],
+        existingValue: existing.destination_location,
+        label: 'destination location',
+      },
+      {
+        keys: ['destination_city', 'destination_location_city'],
+        existingValue: existing.destination_location_city,
+        label: 'destination city',
+      },
+      {
+        keys: ['destination_state', 'destination_location_state'],
+        existingValue: existing.destination_location_state,
+        label: 'destination state',
+      },
+    ];
+
+    for (const field of immutableIdentityFields) {
+      const providedKey = field.keys.find((key) => payload?.[key] !== undefined);
+      if (
+        providedKey &&
+        normalizeIdentityValue(payload[providedKey]) !==
+          normalizeIdentityValue(field.existingValue)
+      ) {
+        throw new BadRequestException(
+          `The ${field.label} cannot be changed while editing a route`,
+        );
+      }
+    }
+
     const nextSource = this.normalizeLocationName(
       payload?.source_location ?? existing.source_location,
     );

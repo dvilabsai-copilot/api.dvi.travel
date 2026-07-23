@@ -139,3 +139,17 @@ test('editing a route creates the reverse route when it is missing', async () =>
   assert.equal(reverse.distance, 300);
   assert.equal(reverse.duration, '12 hours 0 mins');
 });
+
+test('editing a route rejects source or destination identity changes', async () => {
+  const rows = new Map<bigint, any>([
+    [1n, makeRow(1, 'Bangalore', 'Coorg', 280)],
+  ]);
+  const prisma = makePrisma(rows);
+  const service = new LocationsService(prisma as any);
+
+  await assert.rejects(
+    () => service.update(1, { source_location: 'Mysore', distance_km: 300 }),
+    /source location cannot be changed while editing a route/,
+  );
+  assert.equal(rows.get(1n)?.distance, 280);
+});
