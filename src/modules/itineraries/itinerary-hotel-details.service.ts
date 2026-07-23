@@ -17,6 +17,7 @@ export interface ItineraryHotelRowDto {
   day: string;
   destination: string;
   hotelId: number;
+  hotelCode?: string;
   hotelName: string;
   category: number;
   roomType: string;
@@ -24,6 +25,11 @@ export interface ItineraryHotelRowDto {
   baseHotelCost?: number;
   basePricePerNight?: number;
   hotelMarginPercentage?: number;
+  hotelMarginAmount?: number;
+  hotelMarginGstAmount?: number;
+  hotelRoomGstAmount?: number;
+  hotelMealPlanCost?: number;
+  hotelMealPlanGstAmount?: number;
   totalHotelCost: number;
   totalHotelTaxAmount: number;
   noOfRooms?: number;
