@@ -30,6 +30,7 @@ The service builds hotel packages in this order:
 
 Relevant environment flags from local `.env`:
 
+- `HOTEL_FETCH_AXIS_ONLY=false`
 - `HOTEL_FETCH_TBO_ONLY=false`
 - `HOBSE_SEARCH_ENABLED=1`
 - `SHOW_HOTEL_MARGINS=false`

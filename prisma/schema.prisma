@@ -1641,6 +1641,29 @@ model dvi_confirmed_itinerary_plan_hotel_details {
   early_checkin_extra_payment_applicable    Int       @default(0) @db.TinyInt
   early_checkin_payment_status              String?   @db.VarChar(40)
   early_checkin_note                        String?   @db.Text
+  hotel_provider                            String?   @db.VarChar(32)
+  hotel_booking_mode                        String?   @db.VarChar(32)
+  price_source                              String?   @db.VarChar(32)
+  is_live_rate                              Boolean?
+  selected_rate_option_id                   String?   @db.VarChar(255)
+  selected_price_per_night                  Float?    @db.Float
+  selected_total_price                      Float?    @db.Float
+  selected_currency                         String?   @db.VarChar(8)
+  selected_price_snapshot                   String?   @db.LongText
+  hotel_approval_status                     String    @default("NOT_REQUESTED") @db.VarChar(32)
+  hotel_approval_requested_at               DateTime? @db.DateTime(0)
+  hotel_approval_requested_by               Int?
+  hotel_approved_at                         DateTime? @db.DateTime(0)
+  hotel_approved_by                         Int?
+  hotel_rejected_at                         DateTime? @db.DateTime(0)
+  hotel_rejected_by                         Int?
+  hotel_approval_notes                      String?   @db.Text
+  manual_confirmation_status                String    @default("NOT_STARTED") @db.VarChar(32)
+  manual_confirmation_requested_at          DateTime? @db.DateTime(0)
+  manually_confirmed_at                     DateTime? @db.DateTime(0)
+  manually_confirmed_by                     Int?
+  manual_confirmation_notes                 String?   @db.Text
+  requires_price_reacceptance               Boolean   @default(false)
 
   @@index([createdby], map: "idx_cnf_iti_pln_htl_dls_createdby")
   @@index([createdon], map: "idx_cnf_iti_pln_htl_dls_createdon")
@@ -1681,6 +1704,8 @@ model dvi_confirmed_itinerary_plan_hotel_details {
   @@index([itinerary_route_id], map: "idx_cnf_iti_pln_htl_dls_route_id")
   @@index([itinerary_route_location(length: 768)], map: "idx_cnf_iti_pln_htl_dls_route_loc")
   @@index([status], map: "idx_cnf_iti_pln_htl_dls_status")
+  @@index([hotel_approval_status], map: "idx_cnf_itinerary_plan_hotel_approval_status")
+  @@index([manual_confirmation_status], map: "idx_cnf_itinerary_plan_hotel_manual_confirmation_status")
   @@index([updatedon], map: "idx_cnf_iti_pln_htl_dls_updatedon")
 }
 
@@ -3822,53 +3847,53 @@ model dvi_inbuilt_amenities {
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model dvi_itinerary_plan_details {
-  itinerary_plan_ID        Int       @id @default(autoincrement())
-  agent_id                 Int       @default(0)
-  staff_id                 Int       @default(0)
-  location_id              BigInt    @default(0)
-  arrival_location         String?   @db.Text
-  departure_location       String?   @db.Text
-  itinerary_quote_ID       String?   @db.Text
-  trip_start_date_and_time DateTime? @db.DateTime(0)
-  trip_end_date_and_time   DateTime? @db.DateTime(0)
-  arrival_type             Int       @default(0)
-  departure_type           Int       @default(0)
-  expecting_budget         Float     @default(0) @db.Float
-  itinerary_type           Int       @default(0)
-  entry_ticket_required    Int       @default(0)
-  no_of_routes             Int       @default(0)
-  no_of_days               Int       @default(0)
-  no_of_nights             Int       @default(0)
-  total_adult              Int       @default(0)
-  total_children           Int       @default(0)
-  total_infants            Int       @default(0)
-  nationality              Int       @default(0)
-  itinerary_preference     Int       @default(0)
-  meal_plan_breakfast      Int       @default(0)
-  meal_plan_lunch          Int       @default(0)
-  meal_plan_dinner         Int       @default(0)
-  preferred_room_count     Int?      @default(0)
-  hotel_facilities         String    @db.Text
-  preferred_hotel_category String    @db.Text
-  total_extra_bed          Int       @default(0)
-  total_child_with_bed     Int       @default(0)
-  total_child_without_bed  Int       @default(0)
-  guide_for_itinerary      Int       @default(0)
-  food_type                Int       @default(0)
-  special_instructions     String?   @db.Text
-  transport_early_arrival_option String? @db.VarChar(50)
-  transport_early_arrival_hotel_name String? @db.VarChar(255)
+  itinerary_plan_ID                    Int       @id @default(autoincrement())
+  agent_id                             Int       @default(0)
+  staff_id                             Int       @default(0)
+  location_id                          BigInt    @default(0)
+  arrival_location                     String?   @db.Text
+  departure_location                   String?   @db.Text
+  itinerary_quote_ID                   String?   @db.Text
+  trip_start_date_and_time             DateTime? @db.DateTime(0)
+  trip_end_date_and_time               DateTime? @db.DateTime(0)
+  arrival_type                         Int       @default(0)
+  departure_type                       Int       @default(0)
+  expecting_budget                     Float     @default(0) @db.Float
+  itinerary_type                       Int       @default(0)
+  entry_ticket_required                Int       @default(0)
+  no_of_routes                         Int       @default(0)
+  no_of_days                           Int       @default(0)
+  no_of_nights                         Int       @default(0)
+  total_adult                          Int       @default(0)
+  total_children                       Int       @default(0)
+  total_infants                        Int       @default(0)
+  nationality                          Int       @default(0)
+  itinerary_preference                 Int       @default(0)
+  meal_plan_breakfast                  Int       @default(0)
+  meal_plan_lunch                      Int       @default(0)
+  meal_plan_dinner                     Int       @default(0)
+  preferred_room_count                 Int?      @default(0)
+  hotel_facilities                     String    @db.Text
+  preferred_hotel_category             String    @db.Text
+  total_extra_bed                      Int       @default(0)
+  total_child_with_bed                 Int       @default(0)
+  total_child_without_bed              Int       @default(0)
+  guide_for_itinerary                  Int       @default(0)
+  food_type                            Int       @default(0)
+  special_instructions                 String?   @db.Text
+  transport_early_arrival_option       String?   @db.VarChar(50)
+  transport_early_arrival_hotel_name   String?   @db.VarChar(255)
   transport_early_arrival_rest_minutes Int?
-  pick_up_date_and_time    DateTime? @db.DateTime(0)
-  hotel_rates_visibility   Int       @default(0)
-  quotation_status         Int       @default(0)
-  agent_margin             Int       @default(0)
-  createdby                Int       @default(0)
-  createdon                DateTime? @db.DateTime(0)
-  updatedon                DateTime? @db.DateTime(0)
-  status                   Int       @default(0)
-  deleted                  Int       @default(0) @db.TinyInt
-  meal_plan_code           String?   @db.VarChar(16)
+  pick_up_date_and_time                DateTime? @db.DateTime(0)
+  hotel_rates_visibility               Int       @default(0)
+  quotation_status                     Int       @default(0)
+  agent_margin                         Int       @default(0)
+  createdby                            Int       @default(0)
+  createdon                            DateTime? @db.DateTime(0)
+  updatedon                            DateTime? @db.DateTime(0)
+  status                               Int       @default(0)
+  deleted                              Int       @default(0) @db.TinyInt
+  meal_plan_code                       String?   @db.VarChar(16)
 
   @@index([agent_id], map: "idx_itinerary_plan_agent_id")
   @@index([arrival_location(length: 768)], map: "idx_itinerary_plan_arrival_location")
@@ -3962,6 +3987,29 @@ model dvi_itinerary_plan_hotel_details {
   early_checkin_extra_payment_applicable Int       @default(0) @db.TinyInt
   early_checkin_payment_status           String?   @db.VarChar(40)
   early_checkin_note                     String?   @db.Text
+  hotel_provider                         String?   @db.VarChar(32)
+  hotel_booking_mode                     String?   @db.VarChar(32)
+  price_source                           String?   @db.VarChar(32)
+  is_live_rate                           Boolean?
+  selected_rate_option_id                String?   @db.VarChar(255)
+  selected_price_per_night               Float?    @db.Float
+  selected_total_price                   Float?    @db.Float
+  selected_currency                      String?   @db.VarChar(8)
+  selected_price_snapshot                String?   @db.LongText
+  hotel_approval_status                  String    @default("NOT_REQUESTED") @db.VarChar(32)
+  hotel_approval_requested_at            DateTime? @db.DateTime(0)
+  hotel_approval_requested_by            Int?
+  hotel_approved_at                      DateTime? @db.DateTime(0)
+  hotel_approved_by                      Int?
+  hotel_rejected_at                      DateTime? @db.DateTime(0)
+  hotel_rejected_by                      Int?
+  hotel_approval_notes                   String?   @db.Text
+  manual_confirmation_status             String    @default("NOT_STARTED") @db.VarChar(32)
+  manual_confirmation_requested_at       DateTime? @db.DateTime(0)
+  manually_confirmed_at                  DateTime? @db.DateTime(0)
+  manually_confirmed_by                  Int?
+  manual_confirmation_notes              String?   @db.Text
+  requires_price_reacceptance            Boolean   @default(false)
 
   @@index([createdon], map: "idx_itinerary_plan_hotel_createdon")
   @@index([deleted], map: "idx_itinerary_plan_hotel_deleted")
@@ -3985,6 +4033,8 @@ model dvi_itinerary_plan_hotel_details {
   @@index([itinerary_route_id], map: "idx_itinerary_plan_hotel_itinerary_route_id")
   @@index([itinerary_route_location(length: 768)], map: "idx_itinerary_plan_hotel_itinerary_route_location")
   @@index([status], map: "idx_itinerary_plan_hotel_status")
+  @@index([hotel_approval_status], map: "idx_itinerary_plan_hotel_approval_status")
+  @@index([manual_confirmation_status], map: "idx_itinerary_plan_hotel_manual_confirmation_status")
   @@index([total_amenities_cost], map: "idx_itinerary_plan_hotel_total_amenities_cost")
   @@index([total_amenities_gst_amount], map: "idx_itinerary_plan_hotel_total_amenities_gst_amount")
   @@index([total_childwith_bed_cost], map: "idx_itinerary_plan_hotel_total_childwith_bed_cost")
@@ -6523,4 +6573,23 @@ model dvi_registration_email_otps {
 
   @@index([expires_at], map: "idx_dvi_registration_email_otps_expires_at")
   @@map("dvi_registration_email_otps")
+}
+
+model dvi_itinerary_plan_hotel_approval_history {
+  id                              Int      @id @default(autoincrement())
+  itinerary_plan_hotel_details_id Int
+  previous_approval_status        String?  @db.VarChar(32)
+  new_approval_status             String   @db.VarChar(32)
+  previous_confirmation_status    String?  @db.VarChar(32)
+  new_confirmation_status         String   @db.VarChar(32)
+  price                           Float?   @db.Float
+  currency                        String?  @db.VarChar(8)
+  notes                           String?  @db.Text
+  acted_by                        Int?
+  acted_at                        DateTime @default(now()) @db.DateTime(0)
+  metadata                        String?  @db.LongText
+
+  @@index([itinerary_plan_hotel_details_id], map: "idx_hotel_approval_history_selection")
+  @@index([new_approval_status], map: "idx_hotel_approval_history_status")
+  @@map("dvi_itinerary_plan_hotel_approval_history")
 }

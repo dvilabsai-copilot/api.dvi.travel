@@ -67,6 +67,11 @@ export class ItineraryHotelConfirmationSupportService {
     );
     (dto as any).hotel_bookings = incomingHotelBookings;
     const providerHotelBookings = this.getProviderBookableHotelBookings(incomingHotelBookings);
+    const manualApprovalHotelBookings = incomingHotelBookings.filter((hotel: any) => {
+      const provider = String(hotel?.provider || '').trim().toLowerCase();
+      const bookingMode = String(hotel?.bookingMode || '').trim().toUpperCase();
+      return provider === 'offline' || hotel?.requiresHotelApproval === true || bookingMode === 'MANUAL_APPROVAL';
+    });
     const groupType = this.getConfirmHotelGroupType(dto);
     console.debug(
       `[CONFIRM_HOTELS] normalized hotel_bookings count=${incomingHotelBookings.length}`,
@@ -80,7 +85,7 @@ export class ItineraryHotelConfirmationSupportService {
     const authoritativePreview = providerHotelBookings.length > 0
       ? await this.itineraryDetails.previewHotelSelectionCost({
           planId: dto.itinerary_plan_ID,
-          selections: incomingHotelBookings,
+          selections: providerHotelBookings,
           groupType: this.getConfirmHotelGroupType(dto),
         })
       : null;
@@ -121,14 +126,21 @@ export class ItineraryHotelConfirmationSupportService {
 
         return routeIds;
       }),
+      ...manualApprovalHotelBookings.flatMap((hotel: any) => {
+        const routeIds = Array.isArray(hotel?.routeIds) && hotel.routeIds.length > 0
+          ? hotel.routeIds
+          : [hotel?.routeId];
+
+        return routeIds;
+      }),
     ]);
 
     const externalRouteIds = this.uniquePositiveNumbers(
       (dto as any).external_stay_route_ids || [],
-    );
+    ).filter((routeId) => !selectedRouteIds.includes(routeId));
 
     const skippedExternalStayCount =
-      incomingHotelBookings.length - providerHotelBookings.length;
+      incomingHotelBookings.length - providerHotelBookings.length - manualApprovalHotelBookings.length;
 
     const explicitHotelStateProvided =
       selectedRouteIds.length > 0 ||
@@ -326,7 +338,12 @@ export class ItineraryHotelConfirmationSupportService {
       return parsed.toISOString().slice(0, 10);
     };
 
-    const expandedDraftBookings = providerHotelBookings.flatMap((booking: any) => {
+    const selectedHotelBookingsForDraft = [
+      ...providerHotelBookings,
+      ...manualApprovalHotelBookings.filter((booking: any) => !providerHotelBookings.includes(booking)),
+    ];
+
+    const expandedDraftBookings = selectedHotelBookingsForDraft.flatMap((booking: any) => {
       const isMultiNightBooking = Boolean(booking?.multiNightBooking);
 
       const routeIds = isMultiNightBooking && Array.isArray(booking?.routeIds) && booking.routeIds.length > 0
@@ -394,6 +411,9 @@ export class ItineraryHotelConfirmationSupportService {
       const normalizedProvider = String((booking as any).provider || '')
         .trim()
         .toLowerCase();
+      const isManualApproval = normalizedProvider === 'offline' ||
+        Boolean((booking as any).requiresHotelApproval) ||
+        String((booking as any).bookingMode || '').trim().toUpperCase() === 'MANUAL_APPROVAL';
 
       const hotelCodeRaw = String((booking as any).hotelCode || '').trim();
       const providerUsesHotelCodeOnly = new Set([
@@ -440,7 +460,7 @@ export class ItineraryHotelConfirmationSupportService {
       }
 
       const authoritativeRate = authoritativePricingByRoute.get(routeId);
-      if (providerHotelBookings.length > 0 && !authoritativeRate) {
+      if (providerHotelBookings.length > 0 && !isManualApproval && !authoritativeRate) {
         throw new BadRequestException(`Selected hotel rate could not be revalidated for route ${routeId}`);
       }
       if (authoritativeRate) {
@@ -509,6 +529,27 @@ export class ItineraryHotelConfirmationSupportService {
         total_no_of_rooms: bookingRoomCount,
         hotel_id: hotelId,
         hotel_code: hotelCodeForSave,
+        hotel_provider: normalizedProvider || null,
+        hotel_booking_mode: isManualApproval ? 'MANUAL_APPROVAL' : 'LIVE_API',
+        price_source: isManualApproval ? String((booking as any).priceSource || 'DATABASE') : String((booking as any).priceSource || 'LIVE_API'),
+        is_live_rate: !isManualApproval,
+        selected_rate_option_id: (booking as any).selectedRateOptionId || (booking as any).rateOptionId || null,
+        selected_price_per_night: (booking as any).selectedPricePerNight || (booking as any).pricePerNight || null,
+        selected_total_price: (booking as any).selectedTotalPrice || (booking as any).totalStayPrice || bookingAmount,
+        selected_currency: (booking as any).selectedCurrency || (booking as any).currency || 'INR',
+        selected_price_snapshot: (booking as any).selectedPriceSnapshot || null,
+        hotel_approval_status: isManualApproval
+          ? existing?.hotel_approval_status || (booking as any).approvalStatus || 'PENDING_APPROVAL'
+          : 'NOT_REQUIRED',
+        hotel_approval_requested_at: isManualApproval
+          ? existing?.hotel_approval_requested_at || new Date()
+          : null,
+        hotel_approval_requested_by: isManualApproval
+          ? existing?.hotel_approval_requested_by || userId
+          : null,
+        manual_confirmation_status: isManualApproval
+          ? existing?.manual_confirmation_status || (booking as any).manualConfirmationStatus || 'NOT_STARTED'
+          : 'NOT_STARTED',
         hotel_required: 1,
         status: 1,
         deleted: 0,

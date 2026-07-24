@@ -259,6 +259,56 @@ export class HotelSelectionDto {
   @IsString()
   availabilityMessage?: string | null;
 
+  @ApiProperty({ example: 'MANUAL_APPROVAL', required: false })
+  @IsOptional()
+  @IsString()
+  bookingMode?: string;
+
+  @ApiProperty({ example: 'DATABASE', required: false })
+  @IsOptional()
+  @IsString()
+  priceSource?: string;
+
+  @ApiProperty({ example: true, required: false })
+  @IsOptional()
+  @IsBoolean()
+  requiresHotelApproval?: boolean;
+
+  @ApiProperty({ example: 'PENDING_APPROVAL', required: false })
+  @IsOptional()
+  @IsString()
+  approvalStatus?: string;
+
+  @ApiProperty({ example: 'NOT_STARTED', required: false })
+  @IsOptional()
+  @IsString()
+  manualConfirmationStatus?: string;
+
+  @ApiProperty({ example: '123-ROOM-CP-20260726', required: false })
+  @IsOptional()
+  @IsString()
+  selectedRateOptionId?: string;
+
+  @ApiProperty({ example: 2500, required: false })
+  @IsOptional()
+  @IsNumber()
+  selectedPricePerNight?: number;
+
+  @ApiProperty({ example: 5000, required: false })
+  @IsOptional()
+  @IsNumber()
+  selectedTotalPrice?: number;
+
+  @ApiProperty({ example: 'INR', required: false })
+  @IsOptional()
+  @IsString()
+  selectedCurrency?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  selectedPriceSnapshot?: string;
+
   @ApiProperty({ example: true, required: false })
   @IsOptional()
   @IsBoolean()

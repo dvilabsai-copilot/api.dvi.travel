@@ -5,6 +5,7 @@ import { PrismaService } from '../../prisma.service';
 import { HotelSearchService } from '../hotels/services/hotel-search.service';
 import { HobseHotelProvider } from '../hotels/providers/hobse-hotel.provider';
 import { HotelSearchResult } from '../hotels/interfaces/hotel-provider.interface';
+import { OfflineHotelCatalogService } from './services/offline-hotel-catalog.service';
 import {
   ItineraryHotelTabDto,
   ItineraryHotelRowDto,
@@ -62,6 +63,15 @@ export class ItineraryHotelDetailsTboService {
   private static readonly HOTEL_DETAILS_CACHE_TTL_MS = 5 * 60 * 1000;
   private static readonly HOTEL_ROOM_DETAILS_CACHE_TTL_MS = 5 * 60 * 1000;
   private static readonly MAX_CACHE_ENTRIES = 200;
+
+  private parseBooleanEnv(name: string): boolean {
+    const raw = String(process.env[name] || '').trim().toLowerCase();
+    return raw === 'true' || raw === '1' || raw === 'yes';
+  }
+
+  private isAxisOnlyFetchEnabled(): boolean {
+    return this.parseBooleanEnv('HOTEL_FETCH_AXIS_ONLY');
+  }
 
     /**
      * Fetch hotels for all routes, retrying ONCE if any provider/system failure (null) is detected.
@@ -154,8 +164,23 @@ export class ItineraryHotelDetailsTboService {
   }>();
 
   private isTboOnlyFetchEnabled(): boolean {
-    const raw = String(process.env.HOTEL_FETCH_TBO_ONLY || '').trim().toLowerCase();
-    return raw === 'true' || raw === '1' || raw === 'yes';
+    return this.parseBooleanEnv('HOTEL_FETCH_TBO_ONLY');
+  }
+
+  private resolveHotelFetchMode(): {
+    axisOnly: boolean;
+    tboOnly: boolean;
+  } {
+    const axisOnly = this.isAxisOnlyFetchEnabled();
+    const tboOnly = this.isTboOnlyFetchEnabled();
+
+    if (axisOnly && tboOnly) {
+      throw new BadRequestException(
+        'HOTEL_FETCH_AXIS_ONLY and HOTEL_FETCH_TBO_ONLY cannot both be enabled.',
+      );
+    }
+
+    return { axisOnly, tboOnly };
   }
 
   private isHobseSearchEnabled(): boolean {
@@ -717,7 +742,12 @@ export class ItineraryHotelDetailsTboService {
       let filterReason = '';
       let nextHotel = hotel;
 
-      if (shouldFilterByCategory) {
+      // Keep priced offline options visible for manual approval even when
+      // the itinerary's preferred category is narrower than the catalog.
+      if (
+        shouldFilterByCategory &&
+        hotel.provider !== 'offline'
+      ) {
         const categoryCandidates =
           this.getHotelCategoryCandidates(hotel);
 
@@ -775,9 +805,12 @@ export class ItineraryHotelDetailsTboService {
         }
       }
 
+      // Offline options are manual-approval candidates. Their catalog rows
+      // may not carry the supplier amenity payload needed for this filter.
       if (
         included &&
-        shouldFilterByFacilities
+        shouldFilterByFacilities &&
+        hotel.provider !== 'offline'
       ) {
         const providerKey =
           getProviderKey(hotel);
@@ -911,6 +944,7 @@ if (hotelMasterId) {
     private readonly prisma: PrismaService,
     private readonly hotelSearchService: HotelSearchService,
     private readonly hobseProvider: HobseHotelProvider,
+    private readonly offlineHotelCatalogService: OfflineHotelCatalogService,
   ) {}
 
   private getHotelMarginPercentage(hotel: any, globalMargin = 0): number {
@@ -1320,83 +1354,36 @@ this.logger.log(
     }
 
     const restrictedHotelsByRoute = new Map<number, HotelSearchResult[]>();
+    const fetchMode = this.resolveHotelFetchMode();
+    let hotelsByRoute = new Map<number, HotelSearchResult[] | null>();
 
-    // Step 3: Fetch hotels from TBO for each route (except last route if it's departure day)
-    const hotelsByRoute = await this.fetchHotelsForRoutesWithRetry(
-      routes,
-      noOfNights,
-      guestNationality,
-      planRoomCount,
-      planAdultCount,
-      planChildCount,
-      planChildAges,
-    );
-    
-    const tboOnlyFetch = this.isTboOnlyFetchEnabled();
-    if (tboOnlyFetch) {
+    if (fetchMode.axisOnly) {
       this.logger.warn(
-        'âš ï¸ HOTEL_FETCH_TBO_ONLY enabled: skipping HOBSE/ResAvenue/AxisRooms provider fetch and returning only TBO hotels',
+        'HOTEL_FETCH_AXIS_ONLY enabled: fetching Offline + AxisRooms only; skipping TBO/VSR, STAAH, ResAvenue and HOBSE.',
       );
-    } else {
-      if (this.isHobseSearchEnabled()) {
-        // Step 3.5: Fetch HOBSE hotels and merge with TBO hotels
-        // First, create a HOBSE-specific city code map using hobse_city_code
-        const hobseCityCodeMap = await this.batchMapDestinationsToHobseCityCodes(routes);
-        const hobseHotelsByRoute = await this.fetchHobseHotelsForRoutes(routes, noOfNights, hobseCityCodeMap);
 
-        // Merge HOBSE hotels into the TBO hotel map
-        hobseHotelsByRoute.forEach((hobseHotels, routeId) => {
-          const existingHotels = hotelsByRoute.get(routeId) || [];
-          hotelsByRoute.set(routeId, [...existingHotels, ...hobseHotels]);
-        });
-      } else {
-        this.logger.warn('âš ï¸ HOBSE_SEARCH_ENABLED=0: skipping HOBSE hotel search results');
-      }
+      routes.forEach((route) => {
+        const routeId = Number((route as any).itinerary_route_ID || 0);
+        if (routeId > 0) {
+          hotelsByRoute.set(routeId, []);
+        }
+      });
 
-      // Step 3.6: Fetch ResAvenue hotels explicitly (in case they weren't included in TBO search)
-      this.logger.log(`\n🏨 STEP 3.6: Starting ResAvenue hotel fetch for ${routes.length} routes...`);
-      const resavenueHotelsByRoute = await this.fetchResavenueHotelsForRoutes(
+      const offlineHotelsByRoute = await this.offlineHotelCatalogService.fetchOfflineHotelsForRoutes(
         routes,
         noOfNights,
         guestNationality,
         planRoomCount,
         planAdultCount,
         planChildCount,
+        planChildAges,
       );
-      
-      // Debug: Check what ResAvenue returned
-      let totalResavenueHotels = 0;
-      resavenueHotelsByRoute.forEach((hotels, routeId) => {
-        totalResavenueHotels += hotels.length;
-        if (hotels.length > 0) {
-          this.logger.log(`   ✅ Route ${routeId} has ${hotels.length} ResAvenue hotels: ${hotels.map(h => `${h.hotelName} (${h.hotelCode})`).join(', ')}`);
-        }
-      });
-      this.logger.log(`🏨 ResAvenue Total: ${totalResavenueHotels} hotels across all routes`);
-
-      // Merge ResAvenue hotels into the hotel map
-      resavenueHotelsByRoute.forEach((resavenueHotels, routeId) => {
+      offlineHotelsByRoute.forEach((offlineHotels, routeId) => {
         const existingHotels = hotelsByRoute.get(routeId) || [];
-        // Avoid duplicates: check if hotel already exists by hotel code + provider
-        const hotelStrs = existingHotels.map(h => `${h.hotelCode}|${h.provider}`);
-        const newHotels = resavenueHotels.filter(h => !hotelStrs.includes(`${h.hotelCode}|${h.provider}`));
-        if (newHotels.length > 0) {
-          this.logger.log(`   ✅ Added ${newHotels.length} new ResAvenue hotel(s) to route ${routeId}`);
-          newHotels.forEach(h => {
-            this.logger.log(`      - ${h.hotelName} (${h.hotelCode}, Category: ${h.category}, Meal: ${h.mealPlan}, Price: ₹${h.price})`);
-          });
-        } else if (resavenueHotels.length > 0) {
-          this.logger.log(`   ℹ️  No new ResAvenue hotels (duplicates: ${resavenueHotels.length})`);
-        }
-        const merged = [...existingHotels, ...newHotels];
-        this.logger.log(`   Route ${routeId}: Total hotels now = ${merged.length}`);
-        hotelsByRoute.set(routeId, merged);
+        hotelsByRoute.set(routeId, [...existingHotels, ...offlineHotels]);
       });
 
-      // Step 3.7: Load saved meal plans per route for AxisRooms filtering
       const savedMealPlansByRoute = await this.loadSavedMealPlansPerRoute(planId, routes);
-
-      // Step 3.8: Fetch AxisRooms-enabled hotels from local DB and merge with existing providers.
       const axisroomsHotelsByRoute = await this.fetchAxisroomsHotelsForRoutes(
         routes,
         noOfNights,
@@ -1414,47 +1401,162 @@ this.logger.log(
         }
         hotelsByRoute.set(routeId, [...existingHotels, ...newHotels]);
       });
-
-      const staahHotelsByRoute = await this.fetchStaahHotelsForRoutes(
+    } else {
+      // Step 3: Fetch hotels from TBO for each route (except last route if it's departure day)
+      hotelsByRoute = await this.fetchHotelsForRoutesWithRetry(
         routes,
         noOfNights,
-        savedMealPlansByRoute,
-        preferredMealPlanCode,
-        true,
-        {
-          roomCount: planRoomCount,
-          adults: planAdultCount,
-          children: planChildCount,
-          extraBedCount: Number((plan as any).total_extra_bed || 0),
-          childWithBedCount: Number((plan as any).total_child_with_bed || 0),
-          childWithoutBedCount: Number((plan as any).total_child_without_bed || 0),
-        },
+        guestNationality,
+        planRoomCount,
+        planAdultCount,
+        planChildCount,
+        planChildAges,
       );
-      staahHotelsByRoute.forEach((staahHotels, routeId) => {
-        const existingHotels = hotelsByRoute.get(routeId) || [];
-        const hotelStrs = existingHotels.map((h) =>
-          String((h as any).searchReference || `${String(h.hotelCode)}|${String(h.provider).toLowerCase()}`).trim(),
+
+      const tboOnlyFetch = this.isTboOnlyFetchEnabled();
+      if (tboOnlyFetch) {
+        this.logger.warn(
+          'âš ï¸ HOTEL_FETCH_TBO_ONLY enabled: skipping HOBSE/ResAvenue/AxisRooms provider fetch and returning only TBO hotels',
         );
-        const selectableStaahHotels = staahHotels.filter(
-          (h) => String((h as any).availabilityStatus || '').trim().toUpperCase() !== 'NOT_BOOKABLE',
+      } else {
+        const offlineHotelsByRoute = await this.offlineHotelCatalogService.fetchOfflineHotelsForRoutes(
+          routes,
+          noOfNights,
+          guestNationality,
+          planRoomCount,
+          planAdultCount,
+          planChildCount,
+          planChildAges,
         );
-        const restrictedStaahHotels = staahHotels.filter(
-          (h) => String((h as any).availabilityStatus || '').trim().toUpperCase() === 'NOT_BOOKABLE',
-        );
-        if (restrictedStaahHotels.length > 0) {
-          restrictedHotelsByRoute.set(routeId, restrictedStaahHotels);
+        offlineHotelsByRoute.forEach((offlineHotels, routeId) => {
+          const existingHotels = hotelsByRoute.get(routeId) || [];
+          const hotelKeys = new Set(
+            existingHotels.map((hotel) => `${String(hotel.hotelCode)}|${String(hotel.provider).toLowerCase()}`),
+          );
+          const newHotels = offlineHotels.filter(
+            (hotel) => !hotelKeys.has(`${String(hotel.hotelCode)}|${String(hotel.provider).toLowerCase()}`),
+          );
+          hotelsByRoute.set(routeId, [...existingHotels, ...newHotels]);
+        });
+
+        if (this.isHobseSearchEnabled()) {
+          // Step 3.5: Fetch HOBSE hotels and merge with TBO hotels
+          // First, create a HOBSE-specific city code map using hobse_city_code
+          const hobseCityCodeMap = await this.batchMapDestinationsToHobseCityCodes(routes);
+          const hobseHotelsByRoute = await this.fetchHobseHotelsForRoutes(routes, noOfNights, hobseCityCodeMap);
+
+          // Merge HOBSE hotels into the TBO hotel map
+          hobseHotelsByRoute.forEach((hobseHotels, routeId) => {
+            const existingHotels = hotelsByRoute.get(routeId) || [];
+            hotelsByRoute.set(routeId, [...existingHotels, ...hobseHotels]);
+          });
+        } else {
+          this.logger.warn('âš ï¸ HOBSE_SEARCH_ENABLED=0: skipping HOBSE hotel search results');
         }
-        const newHotels = selectableStaahHotels.filter(
-          (h) =>
-            !hotelStrs.includes(
-              String((h as any).searchReference || `${String(h.hotelCode)}|${String(h.provider).toLowerCase()}`).trim(),
-            ),
+
+        // Step 3.6: Fetch ResAvenue hotels explicitly (in case they weren't included in TBO search)
+        this.logger.log(`\n🏨 STEP 3.6: Starting ResAvenue hotel fetch for ${routes.length} routes...`);
+        const resavenueHotelsByRoute = await this.fetchResavenueHotelsForRoutes(
+          routes,
+          noOfNights,
+          guestNationality,
+          planRoomCount,
+          planAdultCount,
+          planChildCount,
         );
-        if (newHotels.length > 0) {
-          this.logger.log(`   ✅ Added ${newHotels.length} new STAAH hotel(s) to route ${routeId}`);
-        }
-        hotelsByRoute.set(routeId, [...existingHotels, ...newHotels]);
-      });
+
+        // Debug: Check what ResAvenue returned
+        let totalResavenueHotels = 0;
+        resavenueHotelsByRoute.forEach((hotels, routeId) => {
+          totalResavenueHotels += hotels.length;
+          if (hotels.length > 0) {
+            this.logger.log(`   ✅ Route ${routeId} has ${hotels.length} ResAvenue hotels: ${hotels.map(h => `${h.hotelName} (${h.hotelCode})`).join(', ')}`);
+          }
+        });
+        this.logger.log(`🏨 ResAvenue Total: ${totalResavenueHotels} hotels across all routes`);
+
+        // Merge ResAvenue hotels into the hotel map
+        resavenueHotelsByRoute.forEach((resavenueHotels, routeId) => {
+          const existingHotels = hotelsByRoute.get(routeId) || [];
+          // Avoid duplicates: check if hotel already exists by hotel code + provider
+          const hotelStrs = existingHotels.map(h => `${h.hotelCode}|${h.provider}`);
+          const newHotels = resavenueHotels.filter(h => !hotelStrs.includes(`${h.hotelCode}|${h.provider}`));
+          if (newHotels.length > 0) {
+            this.logger.log(`   ✅ Added ${newHotels.length} new ResAvenue hotel(s) to route ${routeId}`);
+            newHotels.forEach(h => {
+              this.logger.log(`      - ${h.hotelName} (${h.hotelCode}, Category: ${h.category}, Meal: ${h.mealPlan}, Price: ₹${h.price})`);
+            });
+          } else if (resavenueHotels.length > 0) {
+            this.logger.log(`   ℹ️  No new ResAvenue hotels (duplicates: ${resavenueHotels.length})`);
+          }
+          const merged = [...existingHotels, ...newHotels];
+          this.logger.log(`   Route ${routeId}: Total hotels now = ${merged.length}`);
+          hotelsByRoute.set(routeId, merged);
+        });
+
+        // Step 3.7: Load saved meal plans per route for AxisRooms filtering
+        const savedMealPlansByRoute = await this.loadSavedMealPlansPerRoute(planId, routes);
+
+        // Step 3.8: Fetch AxisRooms-enabled hotels from local DB and merge with existing providers.
+        const axisroomsHotelsByRoute = await this.fetchAxisroomsHotelsForRoutes(
+          routes,
+          noOfNights,
+          savedMealPlansByRoute,
+          preferredMealPlanCode,
+        );
+        axisroomsHotelsByRoute.forEach((axisroomsHotels, routeId) => {
+          const existingHotels = hotelsByRoute.get(routeId) || [];
+          const hotelStrs = existingHotels.map((h) => `${String(h.hotelCode)}|${String(h.provider).toLowerCase()}`);
+          const newHotels = axisroomsHotels.filter(
+            (h) => !hotelStrs.includes(`${String(h.hotelCode)}|${String(h.provider).toLowerCase()}`),
+          );
+          if (newHotels.length > 0) {
+            this.logger.log(`   âœ… Added ${newHotels.length} new AxisRooms hotel(s) to route ${routeId}`);
+          }
+          hotelsByRoute.set(routeId, [...existingHotels, ...newHotels]);
+        });
+
+        const staahHotelsByRoute = await this.fetchStaahHotelsForRoutes(
+          routes,
+          noOfNights,
+          savedMealPlansByRoute,
+          preferredMealPlanCode,
+          true,
+          {
+            roomCount: planRoomCount,
+            adults: planAdultCount,
+            children: planChildCount,
+            extraBedCount: Number((plan as any).total_extra_bed || 0),
+            childWithBedCount: Number((plan as any).total_child_with_bed || 0),
+            childWithoutBedCount: Number((plan as any).total_child_without_bed || 0),
+          },
+        );
+        staahHotelsByRoute.forEach((staahHotels, routeId) => {
+          const existingHotels = hotelsByRoute.get(routeId) || [];
+          const hotelStrs = existingHotels.map((h) =>
+            String((h as any).searchReference || `${String(h.hotelCode)}|${String(h.provider).toLowerCase()}`).trim(),
+          );
+          const selectableStaahHotels = staahHotels.filter(
+            (h) => String((h as any).availabilityStatus || '').trim().toUpperCase() !== 'NOT_BOOKABLE',
+          );
+          const restrictedStaahHotels = staahHotels.filter(
+            (h) => String((h as any).availabilityStatus || '').trim().toUpperCase() === 'NOT_BOOKABLE',
+          );
+          if (restrictedStaahHotels.length > 0) {
+            restrictedHotelsByRoute.set(routeId, restrictedStaahHotels);
+          }
+          const newHotels = selectableStaahHotels.filter(
+            (h) =>
+              !hotelStrs.includes(
+                String((h as any).searchReference || `${String(h.hotelCode)}|${String(h.provider).toLowerCase()}`).trim(),
+              ),
+          );
+          if (newHotels.length > 0) {
+            this.logger.log(`   ✅ Added ${newHotels.length} new STAAH hotel(s) to route ${routeId}`);
+          }
+          hotelsByRoute.set(routeId, [...existingHotels, ...newHotels]);
+        });
+      }
     }
 
     this.logger.log(`[STAAH DEBUG] Counts before preference filters:`);
@@ -2411,6 +2513,7 @@ this.logger.log(
         hotel_city: true,
         hotel_address: true,
         hotel_category: true,
+        axisrooms_property_id: true,
         hotel_cancel_policy: true,
       },
     });
@@ -2418,6 +2521,22 @@ this.logger.log(
     if (!axisroomsHotels.length) {
       this.logger.log('   â„¹ï¸  No axisrooms-enabled hotels found in local DB');
       return hotelsByRoute;
+    }
+
+    const axisPropertyToHotelIds = new Map<string, Set<number>>();
+    for (const hotel of axisroomsHotels as any[]) {
+      const propertyId = String(hotel.axisrooms_property_id || '').trim();
+      if (!propertyId) continue;
+      const ids = axisPropertyToHotelIds.get(propertyId) || new Set<number>();
+      ids.add(Number(hotel.hotel_id));
+      axisPropertyToHotelIds.set(propertyId, ids);
+    }
+    const ambiguousAxisMappings = Array.from(axisPropertyToHotelIds.entries()).filter(([, ids]) => ids.size > 1);
+    if (ambiguousAxisMappings.length > 0) {
+      throw new BadRequestException({
+        message: 'AxisRooms property mapping is ambiguous; each property must map to one canonical hotel.',
+        properties: ambiguousAxisMappings.map(([propertyId, ids]) => ({ propertyId, hotelIds: Array.from(ids) })),
+      });
     }
 
     // hotel_city may be stored as a numeric city ID string (e.g. "1979") or a plain name.
@@ -2703,6 +2822,19 @@ this.logger.log(
 
         axisroomsRouteHotels.push({
           provider: 'axisrooms',
+          providerDisplayName: 'AxisRooms',
+          canonicalHotelId: hid,
+          providerHotelCode: String((hotel as any).axisrooms_property_id || hid),
+          rateOptionId: `axisrooms:${hid}:${selectedRoomId}:${selectedRateplanId}:${dateOnly.toISOString().slice(0, 10)}`,
+          bookingMode: 'LIVE_API',
+          priceSource: 'LIVE_API',
+          isLiveRate: true,
+          isLiveBookable: true,
+          isSelectable: true,
+          requiresHotelApproval: false,
+          approvalStatus: 'NOT_REQUIRED',
+          manualConfirmationStatus: 'NOT_STARTED',
+          availabilityStatus: 'LIVE_AVAILABLE',
           hotelCode: String(hid),
           hotelName: String((hotel as any).hotel_name || `Hotel ${hid}`),
           cityCode: String((hotel as any).hotel_city || destinationRaw),
@@ -3822,8 +3954,8 @@ this.logger.log(
         // Use actual hotel name from TBO API response
         const displayHotelName = hotel.hotelName;
         
-        // Handle both TBO (numeric) and HOBSE (UUID string) hotel codes
-        const hotelId = isNaN(parseInt(hotel.hotelCode)) ? 0 : parseInt(hotel.hotelCode);
+        // Canonical hotel id when available, otherwise fall back to numeric provider code.
+        const hotelId = Number((hotel as any).canonicalHotelId ?? (hotel as any).hotelId ?? Number.parseInt(String(hotel.hotelCode || '0'), 10)) || 0;
         const routeId = (route as any).itinerary_route_ID;
         const dateLabel = new Date((route as any).itinerary_route_date).toISOString().split('T')[0];
         
@@ -3928,6 +4060,7 @@ this.logger.log(
           day: `Day ${routeIndex + 1} | ${dateLabel}`,
           destination: destination,
           hotelId: hotelId,
+          canonicalHotelId: Number((hotel as any).canonicalHotelId ?? hotelId) || null,
           hotelCode: rawHotelCode,
           hotelName: displayHotelName,
           category: hotel.rating ? parseInt(String(hotel.rating)) : 0,
@@ -3953,6 +4086,28 @@ this.logger.log(
               ? parsedStaahReference?.rateId || undefined
               : undefined,
           provider: hasSupplierHotel ? normalizedProvider : 'external',
+          providerDisplayName: normalizedProvider === 'offline'
+            ? 'Offline'
+            : normalizedProvider === 'axisrooms'
+              ? 'AxisRooms'
+              : normalizedProvider === 'tbo'
+                ? 'VSR'
+                : undefined,
+          providerHotelCode: (hotel as any).providerHotelCode || rawHotelCode,
+          rateOptionId: (hotel as any).rateOptionId || rawSearchReference || rawBookingCode || undefined,
+          bookingMode: (hotel as any).bookingMode || (normalizedProvider === 'offline' ? 'MANUAL_APPROVAL' : 'LIVE_API'),
+          priceSource: (hotel as any).priceSource || (normalizedProvider === 'offline' ? 'DATABASE' : 'LIVE_API'),
+          priceLabel: (hotel as any).priceLabel,
+          pricePerNight: Number((hotel as any).pricePerNight ?? totalHotelCost),
+          totalStayPrice: Number((hotel as any).totalStayPrice ?? billableHotelCost * Math.max(Number((hotel as any).numberOfNights || noOfNights || 1), 1)),
+          numberOfNights: Number((hotel as any).numberOfNights || noOfNights || 1),
+          nightlyRates: (hotel as any).nightlyRates,
+          requiresHotelApproval: normalizedProvider === 'offline',
+          isLiveRate: normalizedProvider !== 'offline',
+          isLiveBookable: normalizedProvider !== 'offline' && hasSupplierHotel,
+          isSelectable: true,
+          approvalStatus: normalizedProvider === 'offline' ? 'NOT_REQUESTED' : 'NOT_REQUIRED',
+          manualConfirmationStatus: normalizedProvider === 'offline' ? 'NOT_STARTED' : 'NOT_STARTED',
           isBookable: hasSupplierHotel,
           externalStay: !hasSupplierHotel,
           availabilityStatus: hasSupplierHotel ? 'AVAILABLE' : 'NO_SUPPLIER_AVAILABILITY',
@@ -4102,7 +4257,7 @@ this.logger.log(
           itineraryRouteId: routeId,
           day: `Day ${routeIndex + 1} | ${dateLabel}`,
           destination,
-          hotelId: Number.parseInt(String(hotel.hotelCode || '0'), 10) || 0,
+          hotelId: Number((hotel as any).canonicalHotelId ?? (hotel as any).hotelId ?? Number.parseInt(String(hotel.hotelCode || '0'), 10)) || 0,
           hotelName: String(hotel.hotelName || 'Hotel'),
           category: hotel.rating ? parseInt(String(hotel.rating), 10) : 0,
           roomType: String(hotel.roomType || ''),
@@ -4324,47 +4479,35 @@ this.logger.log(
     }
 
     const guestNationality = await this.resolveGuestNationality(plan);
-    const hotelsByRoute = await this.fetchHotelsForRoutes(
-      routesToProcess,
-      noOfNights,
-      guestNationality,
-      planRoomCount2,
-      planAdultCount2,
-      planChildCount2,
-      planChildAges2,
-    );
+    const fetchMode = this.resolveHotelFetchMode();
+    let hotelsByRoute = new Map<number, HotelSearchResult[] | null>();
 
-    // Merge non-TBO providers (HOBSE, ResAvenue, AxisRooms) â€” same logic as getHotelDetails
-    const tboOnlyFetch = this.isTboOnlyFetchEnabled();
-    if (!tboOnlyFetch) {
-      if (this.isHobseSearchEnabled()) {
-        const hobseCityCodeMap = await this.batchMapDestinationsToHobseCityCodes(routesToProcess);
-        const hobseHotelsByRoute = await this.fetchHobseHotelsForRoutes(routesToProcess, noOfNights, hobseCityCodeMap);
-        hobseHotelsByRoute.forEach((hobseHotels, routeId) => {
-          const existing = hotelsByRoute.get(routeId) || [];
-          hotelsByRoute.set(routeId, [...existing, ...hobseHotels]);
-        });
-      } else {
-        this.logger.warn('âš ï¸ HOBSE_SEARCH_ENABLED=0: skipping HOBSE hotel search results');
-      }
+    if (fetchMode.axisOnly) {
+      this.logger.warn(
+        'HOTEL_FETCH_AXIS_ONLY enabled: fetching Offline + AxisRooms only; skipping TBO/VSR, STAAH, ResAvenue and HOBSE.',
+      );
 
-      // ResAvenue
-      const resavenueHotelsByRoute = await this.fetchResavenueHotelsForRoutes(
+      routesToProcess.forEach((route) => {
+        const routeId = Number((route as any).itinerary_route_ID || 0);
+        if (routeId > 0) {
+          hotelsByRoute.set(routeId, []);
+        }
+      });
+
+      const offlineHotelsByRoute = await this.offlineHotelCatalogService.fetchOfflineHotelsForRoutes(
         routesToProcess,
         noOfNights,
         guestNationality,
         planRoomCount2,
         planAdultCount2,
         planChildCount2,
+        planChildAges2,
       );
-      resavenueHotelsByRoute.forEach((resavenueHotels, routeId) => {
+      offlineHotelsByRoute.forEach((offlineHotels, routeId) => {
         const existing = hotelsByRoute.get(routeId) || [];
-        const hotelStrs = existing.map(h => `${h.hotelCode}|${h.provider}`);
-        const newHotels = resavenueHotels.filter(h => !hotelStrs.includes(`${h.hotelCode}|${h.provider}`));
-        hotelsByRoute.set(routeId, [...existing, ...newHotels]);
+        hotelsByRoute.set(routeId, [...existing, ...offlineHotels]);
       });
 
-      // AxisRooms
       const axisroomsHotelsByRoute = await this.fetchAxisroomsHotelsForRoutes(routesToProcess, noOfNights);
       axisroomsHotelsByRoute.forEach((axisroomsHotels, routeId) => {
         const existing = hotelsByRoute.get(routeId) || [];
@@ -4372,37 +4515,109 @@ this.logger.log(
         const newHotels = axisroomsHotels.filter(h => !hotelStrs.includes(`${String(h.hotelCode)}|${String(h.provider).toLowerCase()}`));
         hotelsByRoute.set(routeId, [...existing, ...newHotels]);
       });
-
-      const savedMealPlansByRoute2 = await this.loadSavedMealPlansPerRoute(planId, routesToProcess);
-      const staahHotelsByRoute = await this.fetchStaahHotelsForRoutes(
+    } else {
+      hotelsByRoute = await this.fetchHotelsForRoutes(
         routesToProcess,
         noOfNights,
-        savedMealPlansByRoute2,
-        preferredMealPlanCode2,
-        true,
-        {
-          roomCount: planRoomCount2,
-          adults: planAdultCount2,
-          children: planChildCount2,
-          extraBedCount: Number((plan as any).total_extra_bed || 0),
-          childWithBedCount: Number((plan as any).total_child_with_bed || 0),
-          childWithoutBedCount: Number((plan as any).total_child_without_bed || 0),
-        },
+        guestNationality,
+        planRoomCount2,
+        planAdultCount2,
+        planChildCount2,
+        planChildAges2,
       );
-      staahHotelsByRoute.forEach((staahHotels, routeId) => {
-        const existing = hotelsByRoute.get(routeId) || [];
-        const hotelStrs = existing.map((h) =>
-          String((h as any).searchReference || `${String(h.hotelCode)}|${String(h.provider).toLowerCase()}`).trim(),
+
+      // Merge non-TBO providers (HOBSE, ResAvenue, AxisRooms) â€” same logic as getHotelDetails
+      const tboOnlyFetch = this.isTboOnlyFetchEnabled();
+      if (!tboOnlyFetch) {
+        const offlineHotelsByRoute = await this.offlineHotelCatalogService.fetchOfflineHotelsForRoutes(
+          routesToProcess,
+          noOfNights,
+          guestNationality,
+          planRoomCount2,
+          planAdultCount2,
+          planChildCount2,
+          planChildAges2,
         );
-        const newHotels = staahHotels.filter(
-          (h) =>
-            !hotelStrs.includes(
-              String((h as any).searchReference || `${String(h.hotelCode)}|${String(h.provider).toLowerCase()}`).trim(),
-            ),
+        offlineHotelsByRoute.forEach((offlineHotels, routeId) => {
+          const existing = hotelsByRoute.get(routeId) || [];
+          const hotelKeys = new Set(
+            existing.map((hotel) => `${String(hotel.hotelCode)}|${String(hotel.provider).toLowerCase()}`),
+          );
+          const newHotels = offlineHotels.filter(
+            (hotel) => !hotelKeys.has(`${String(hotel.hotelCode)}|${String(hotel.provider).toLowerCase()}`),
+          );
+          hotelsByRoute.set(routeId, [...existing, ...newHotels]);
+        });
+
+        if (this.isHobseSearchEnabled()) {
+          const hobseCityCodeMap = await this.batchMapDestinationsToHobseCityCodes(routesToProcess);
+          const hobseHotelsByRoute = await this.fetchHobseHotelsForRoutes(routesToProcess, noOfNights, hobseCityCodeMap);
+          hobseHotelsByRoute.forEach((hobseHotels, routeId) => {
+            const existing = hotelsByRoute.get(routeId) || [];
+            hotelsByRoute.set(routeId, [...existing, ...hobseHotels]);
+          });
+        } else {
+          this.logger.warn('âš ï¸ HOBSE_SEARCH_ENABLED=0: skipping HOBSE hotel search results');
+        }
+
+        // ResAvenue
+        const resavenueHotelsByRoute = await this.fetchResavenueHotelsForRoutes(
+          routesToProcess,
+          noOfNights,
+          guestNationality,
+          planRoomCount2,
+          planAdultCount2,
+          planChildCount2,
         );
-        hotelsByRoute.set(routeId, [...existing, ...newHotels]);
-      });
+        resavenueHotelsByRoute.forEach((resavenueHotels, routeId) => {
+          const existing = hotelsByRoute.get(routeId) || [];
+          const hotelStrs = existing.map(h => `${h.hotelCode}|${h.provider}`);
+          const newHotels = resavenueHotels.filter(h => !hotelStrs.includes(`${h.hotelCode}|${h.provider}`));
+          hotelsByRoute.set(routeId, [...existing, ...newHotels]);
+        });
+
+        // AxisRooms
+        const axisroomsHotelsByRoute = await this.fetchAxisroomsHotelsForRoutes(routesToProcess, noOfNights);
+        axisroomsHotelsByRoute.forEach((axisroomsHotels, routeId) => {
+          const existing = hotelsByRoute.get(routeId) || [];
+          const hotelStrs = existing.map(h => `${String(h.hotelCode)}|${String(h.provider).toLowerCase()}`);
+          const newHotels = axisroomsHotels.filter(h => !hotelStrs.includes(`${String(h.hotelCode)}|${String(h.provider).toLowerCase()}`));
+          hotelsByRoute.set(routeId, [...existing, ...newHotels]);
+        });
+      }
     }
+
+      if (!fetchMode.axisOnly) {
+        const savedMealPlansByRoute2 = await this.loadSavedMealPlansPerRoute(planId, routesToProcess);
+        const staahHotelsByRoute = await this.fetchStaahHotelsForRoutes(
+          routesToProcess,
+          noOfNights,
+          savedMealPlansByRoute2,
+          preferredMealPlanCode2,
+          true,
+          {
+            roomCount: planRoomCount2,
+            adults: planAdultCount2,
+            children: planChildCount2,
+            extraBedCount: Number((plan as any).total_extra_bed || 0),
+            childWithBedCount: Number((plan as any).total_child_with_bed || 0),
+            childWithoutBedCount: Number((plan as any).total_child_without_bed || 0),
+          },
+        );
+        staahHotelsByRoute.forEach((staahHotels, routeId) => {
+          const existing = hotelsByRoute.get(routeId) || [];
+          const hotelStrs = existing.map((h) =>
+            String((h as any).searchReference || `${String(h.hotelCode)}|${String(h.provider).toLowerCase()}`).trim(),
+          );
+          const newHotels = staahHotels.filter(
+            (h) =>
+              !hotelStrs.includes(
+                String((h as any).searchReference || `${String(h.hotelCode)}|${String(h.provider).toLowerCase()}`).trim(),
+              ),
+          );
+          hotelsByRoute.set(routeId, [...existing, ...newHotels]);
+        });
+      }
 
     // Step 4: Transform fresh data into room details format
     const roomDetailsList: ItineraryHotelRoomDto[] = [];
@@ -4537,7 +4752,7 @@ this.logger.log(
           itineraryPlanId: planId,
           itineraryRouteId: routeId,
           itineraryPlanHotelRoomDetailsId: roomDetailsId++,
-          hotelId: parseInt(hotel.hotelCode) || 0,
+          hotelId: Number((hotel as any).canonicalHotelId ?? (hotel as any).hotelId ?? Number.parseInt(String(hotel.hotelCode || '0'), 10)) || 0,
           hotelCode: String(hotel.hotelCode || '').trim(),
           hotelName: hotel.hotelName || 'Hotel',
           hotelCategory: this.getCategoryFromRating(hotel.category || hotel.rating),
@@ -4547,7 +4762,7 @@ this.logger.log(
           roomId:
             String(hotel.provider || 'tbo').toLowerCase() === 'staah'
               ? 0
-              : parseInt(hotel.hotelCode) || 0,
+              : Number((hotel as any).canonicalHotelId ?? (hotel as any).hotelId ?? Number.parseInt(String(hotel.hotelCode || '0'), 10)) || 0,
           provider: String(hotel.provider || 'tbo').toLowerCase(),
           providerDisplayName:
             String(hotel.provider || 'tbo').toLowerCase() === 'tbo'

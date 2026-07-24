@@ -6,6 +6,7 @@ import { HobseHotelBookingService } from './services/hobse-hotel-booking.service
 import { AxisRoomsBookingPushService } from './services/axisrooms-booking-push.service';
 import { StaahBookingPushService } from './services/staah-booking-push.service';
 import { CancelHotelVouchersDto } from './dto/cancel-hotel-vouchers.dto';
+import { ItineraryHotelApprovalService } from './services/itinerary-hotel-approval.service';
 
 export interface AddCancellationPolicyDto {
   itineraryPlanId: number;
@@ -57,6 +58,7 @@ export class HotelVoucherService {
     private hobseHotelBooking: HobseHotelBookingService,
     private axisroomsBookingPushService: AxisRoomsBookingPushService,
     private staahBookingPushService: StaahBookingPushService,
+    private hotelApprovalService: ItineraryHotelApprovalService,
   ) {}
 
   /**
@@ -233,6 +235,8 @@ export class HotelVoucherService {
    */
   async createHotelVouchers(dto: CreateVoucherDto, userId: number = 1) {
     this.logger.log(`Creating ${dto.vouchers.length} hotel vouchers for plan ${dto.itineraryPlanId}`);
+    const selectionIds = dto.vouchers.flatMap((voucher) => voucher.hotelDetailsIds || []).map(Number).filter((id) => id > 0);
+    await this.hotelApprovalService.assertSelectionsCanCreateVoucher(selectionIds);
     this.logger.debug(`Voucher data: ${JSON.stringify(dto.vouchers, null, 2)}`);
     this.logger.log(
       `[HOTEL_VOUCHER_CREATE_REQUEST] ${JSON.stringify({
