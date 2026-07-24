@@ -7,6 +7,7 @@ import { ConfirmQuotationDto } from '../dto/confirm-quotation.dto';
 import { ItineraryDetailsService } from '../itinerary-details.service';
 import { HotelStayBlockValidationService } from './hotel-stay-block-validation.service';
 import { normalizePassengerTitle } from '../../../common/utils/passenger-title.util';
+import { ItineraryHotelApprovalService } from './itinerary-hotel-approval.service';
 
 type ConfirmQuotationCallbacks = Partial<Record<
   'syncSelectedHotelDraftRowsForConfirmation'
@@ -25,6 +26,7 @@ export class ItineraryConfirmationService {
     private readonly prisma: PrismaService,
     private readonly itineraryDetails: ItineraryDetailsService,
     private readonly hotelStayBlockValidationService: HotelStayBlockValidationService,
+    private readonly hotelApprovalService?: ItineraryHotelApprovalService,
   ) {}
 
   setCallbacks(callbacks: ConfirmQuotationCallbacks) {

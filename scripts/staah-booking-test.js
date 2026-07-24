@@ -7,10 +7,12 @@
  *
  * Optional env overrides:
  *   STAAH_PROPERTY_ID=STAAHTESTHOTELPROD
- *   STAAH_FETCH_URL=https://channelconnect.otaswitch.com/common-cgi/dviholidays/services.pl
+ *   STAAH_FETCH_URL=https://channelconnect.otaswitch.com/common-cgi/dviholidays/services/services.pl
  *   STAAH_BOOKING_URL=https://reservation.otaswitch.com/getapi/reservation/v2
  *   STAAH_ROOM_ID=DELUXEROOM
+ *   STAAH_ROOM_ID_2=SUITEROOM
  *   STAAH_RATE_ID=CPPLAN
+ *   STAAH_RATE_ID_2=MAPPLAN
  */
 
 const https = require('https');
@@ -35,8 +37,11 @@ if (fs.existsSync(envPath)) {
 const PROPERTY_ID = process.env.STAAH_PROPERTY_ID || 'STAAHTESTHOTELPROD';
 const API_KEY     = process.env.STAAH_API_KEY || '';
 const ROOM_ID     = process.env.STAAH_ROOM_ID || 'DELUXEROOM';
+const ROOM_ID_2   = process.env.STAAH_ROOM_ID_2 || 'SUITEROOM';
 const RATE_ID     = process.env.STAAH_RATE_ID || 'CPPLAN';
-const FETCH_URL   = process.env.STAAH_FETCH_URL || 'https://channelconnect.otaswitch.com/common-cgi/dviholidays/services.pl';
+const RATE_ID_2   = process.env.STAAH_RATE_ID_2 || 'MAPPLAN';
+const RATE_NAME_2 = process.env.STAAH_RATE_NAME_2 || 'Suite Room - Modified American Plan';
+const FETCH_URL   = process.env.STAAH_FETCH_URL || 'https://channelconnect.otaswitch.com/common-cgi/dviholidays/services/services.pl';
 const BOOKING_URL = process.env.STAAH_BOOKING_URL || 'https://reservation.otaswitch.com/getapi/reservation/v2';
 
 const OUT_DIR = path.join(process.cwd(), `staah-booking-cert-${Date.now()}`);
@@ -118,6 +123,10 @@ function toMoneyString(value) {
   return Number(value || 0).toFixed(2);
 }
 
+function toCents(value) {
+  return Math.round(Number(value || 0) * 100);
+}
+
 function makeBookingId(label) {
   return `DVI-CERT-${label.toUpperCase().replace(/\s+/g, '-')}-${Date.now()}`;
 }
@@ -161,17 +170,21 @@ function buildNightlyPrices({
   totalBasePriceAfterTax,
   rateId,
   rateName,
+  ratePlans = [],
   extraGuests,
 }) {
   const dates = dateRange(arrivalDate, departureDate);
   const nightlyCents = allocateCents(totalBasePriceAfterTax, dates.length);
-  return dates.map((date, index) => ({
-    date,
-    rate_id: rateId,
-    rate_name: rateName,
-    amountaftertax: toMoneyString(nightlyCents[index] / 100),
-    extraGuests,
-  }));
+  return dates.map((date, index) => {
+    const ratePlan = ratePlans[index] || {};
+    return {
+      date,
+      rate_id: ratePlan.rateId || rateId,
+      rate_name: ratePlan.rateName || rateName,
+      amountaftertax: toMoneyString(nightlyCents[index] / 100),
+      extraGuests,
+    };
+  });
 }
 
 function buildGuestCount({
@@ -209,6 +222,7 @@ function buildRoomPayload(roomOptions) {
     roomName = 'Studio',
     rateId = RATE_ID,
     rateName = 'Test MK',
+    ratePlans = [],
     amountAfterTax = '1200',
     totalTax = '120',
     basePriceAmountAfterTax = '1100',
@@ -233,15 +247,21 @@ function buildRoomPayload(roomOptions) {
   const extraChildNum = Number(extraChild || 0);
   const extraAdultRateNum = Number(extraAdultRate || 0);
   const extraChildRateNum = Number(extraChildRate || 0);
-  const configuredBasePriceNum = Number(basePriceAmountAfterTax || 0);
-  const extrasTotalNum = (extraAdultNum * extraAdultRateNum) + (extraChildNum * extraChildRateNum);
-  const derivedBasePriceNum = Math.max(roomAmountAfterTaxNum - extrasTotalNum, 0);
-  const configuredIsConsistent = Math.abs((configuredBasePriceNum + extrasTotalNum) - roomAmountAfterTaxNum) < 0.01;
-  const effectiveBasePriceAfterTaxNum = configuredIsConsistent
-    ? configuredBasePriceNum
-    : derivedBasePriceNum;
-
-  const roomTotalAmountAfterTaxNum = roomAmountAfterTaxNum + totalTaxNum;
+  const nights = dateRange(arrivalDate, departureDate).length;
+  const extraGuestAmountPerNightCents = toCents(
+    (extraAdultNum * extraAdultRateNum) + (extraChildNum * extraChildRateNum),
+  );
+  const extraGuestAmountForStayCents = extraGuestAmountPerNightCents * nights;
+  const configuredBasePriceCents = toCents(basePriceAmountAfterTax);
+  const legacyRoomAmountCents = toCents(roomAmountAfterTaxNum);
+  const effectiveBasePriceCents = configuredBasePriceCents > 0
+    ? configuredBasePriceCents
+    : Math.max(legacyRoomAmountCents - extraGuestAmountForStayCents, 0);
+  const roomSubtotalAfterTaxCents = effectiveBasePriceCents + extraGuestAmountForStayCents;
+  const roomTotalAmountAfterTaxCents = roomSubtotalAfterTaxCents + toCents(totalTaxNum);
+  const effectiveBasePriceAfterTaxNum = effectiveBasePriceCents / 100;
+  const roomSubtotalAfterTaxNum = roomSubtotalAfterTaxCents / 100;
+  const roomTotalAmountAfterTaxNum = roomTotalAmountAfterTaxCents / 100;
 
   return {
     room: {
@@ -253,8 +273,9 @@ function buildRoomPayload(roomOptions) {
         arrivalDate,
         departureDate,
         totalBasePriceAfterTax: effectiveBasePriceAfterTaxNum,
-        rateId,
-        rateName,
+          rateId,
+          rateName,
+          ratePlans,
         extraGuests: {
           extraAdult: String(extraAdult),
           extraChild: String(extraChild),
@@ -282,9 +303,10 @@ function buildRoomPayload(roomOptions) {
       }),
     },
     totals: {
-      roomAmountAfterTaxNum,
+      roomAmountAfterTaxNum: roomSubtotalAfterTaxNum,
       totalTaxNum,
       roomTotalAmountAfterTaxNum,
+      extraGuestAmountForStayNum: extraGuestAmountForStayCents / 100,
     },
   };
 }
@@ -303,6 +325,7 @@ function buildReservationPayload(options) {
     extraChild = '0',
     extraAdultRate = '100',
     extraChildRate = '0',
+    ratePlans = [],
     adultCount = '2',
     remarks = 'Please Provide Wine Upon Checking and Do not Disturb',
     roomRemarks = 'No Smoking',
@@ -322,6 +345,7 @@ function buildReservationPayload(options) {
           extraChild,
           extraAdultRate,
           extraChildRate,
+          ratePlans,
           adultCount,
           remarks: roomRemarks,
         }),
@@ -386,6 +410,21 @@ function buildReservationPayload(options) {
       ],
     },
   };
+}
+
+function assertMultiRoomAndRateConfiguration() {
+  if (!ROOM_ID_2 || !RATE_ID_2) {
+    throw new Error(
+      'STAAH_ROOM_ID_2 and STAAH_RATE_ID_2 are required for the multi-room/multi-rate certification cases. ' +
+      'Set them to the second room/rate IDs returned by STAAH mapping_info before running the suite.',
+    );
+  }
+  if (ROOM_ID_2 === ROOM_ID) {
+    throw new Error('STAAH_ROOM_ID_2 must be different from STAAH_ROOM_ID for the multiple-room test.');
+  }
+  if (RATE_ID_2 === RATE_ID) {
+    throw new Error('STAAH_RATE_ID_2 must be different from STAAH_RATE_ID for the multi-rate test.');
+  }
 }
 
 function buildArrInfoPayload(fromDate, toDate) {
@@ -454,6 +493,7 @@ async function main() {
   if (!API_KEY) {
     throw new Error('STAAH_API_KEY is not set. Configure it in api.dvi.travel/.env or the environment.');
   }
+  assertMultiRoomAndRateConfiguration();
 
   console.log('STAAH Booking Certification Test');
   console.log('==================================');
@@ -462,7 +502,9 @@ async function main() {
   console.log(`Fetch URL   : ${FETCH_URL}`);
   console.log(`Booking URL : ${BOOKING_URL}`);
   console.log(`Room ID     : ${ROOM_ID}`);
+  console.log(`Room ID 2   : ${ROOM_ID_2}`);
   console.log(`Rate ID     : ${RATE_ID}`);
+  console.log(`Rate ID 2   : ${RATE_ID_2}`);
   console.log(`Output dir  : ${OUT_DIR}`);
 
   const results = [];
@@ -501,16 +543,16 @@ async function main() {
     { label: 'S2_05_Cancel', row: 14, endpointName: 'booking', url: BOOKING_URL, bookingId: bookingId2, payload: buildReservationPayload({ reservationId: bookingId2, arrivalDate: s2ModifiedArrival, departureDate: addDays(s2ModifiedArrival, 1), status: 'Cancel', amountAfterTax: '1300', totalTax: '140', basePriceAmountAfterTax: '1100', extraAdult: '1', extraChild: '1', extraAdultRate: '100', extraChildRate: '100', adultCount: '3' }) },
 
     { label: 'S3_01_Pre-Book', row: 15, endpointName: 'fetch', url: FETCH_URL, bookingId: bookingId3, payload: buildArrInfoPayload(s3Arrival, addDays(s3Arrival, 2)) },
-    { label: 'S3_02_Confirm', row: 16, endpointName: 'booking', url: BOOKING_URL, bookingId: bookingId3, payload: buildReservationPayload({ reservationId: bookingId3, arrivalDate: s3Arrival, departureDate: addDays(s3Arrival, 2), status: 'Confirm', amountAfterTax: '2100', totalTax: '220', basePriceAmountAfterTax: '1900', adultCount: '2' }) },
+    { label: 'S3_02_Confirm', row: 16, endpointName: 'booking', url: BOOKING_URL, bookingId: bookingId3, payload: buildReservationPayload({ reservationId: bookingId3, arrivalDate: s3Arrival, departureDate: addDays(s3Arrival, 2), status: 'Confirm', amountAfterTax: '2200', totalTax: '220', basePriceAmountAfterTax: '2000', adultCount: '2', ratePlans: [{ rateId: RATE_ID, rateName: 'Test MK' }, { rateId: RATE_ID_2, rateName: RATE_NAME_2 }] }) },
     { label: 'S3_03_Pre-Modify', row: 17, endpointName: 'fetch', url: FETCH_URL, bookingId: bookingId3, payload: buildArrInfoPayload(s3ModifiedArrival, addDays(s3ModifiedArrival, 2)) },
-    { label: 'S3_04_Modify', row: 18, endpointName: 'booking', url: BOOKING_URL, bookingId: bookingId3, payload: buildReservationPayload({ reservationId: bookingId3, arrivalDate: s3ModifiedArrival, departureDate: addDays(s3ModifiedArrival, 2), status: 'Modified', amountAfterTax: '2200', totalTax: '240', basePriceAmountAfterTax: '2000', adultCount: '2' }) },
-    { label: 'S3_05_Cancel', row: 19, endpointName: 'booking', url: BOOKING_URL, bookingId: bookingId3, payload: buildReservationPayload({ reservationId: bookingId3, arrivalDate: s3ModifiedArrival, departureDate: addDays(s3ModifiedArrival, 2), status: 'Cancel', amountAfterTax: '2200', totalTax: '240', basePriceAmountAfterTax: '2000', adultCount: '2' }) },
+    { label: 'S3_04_Modify', row: 18, endpointName: 'booking', url: BOOKING_URL, bookingId: bookingId3, payload: buildReservationPayload({ reservationId: bookingId3, arrivalDate: s3ModifiedArrival, departureDate: addDays(s3ModifiedArrival, 2), status: 'Modified', amountAfterTax: '2200', totalTax: '240', basePriceAmountAfterTax: '2000', adultCount: '2', ratePlans: [{ rateId: RATE_ID, rateName: 'Test MK' }, { rateId: RATE_ID_2, rateName: RATE_NAME_2 }] }) },
+    { label: 'S3_05_Cancel', row: 19, endpointName: 'booking', url: BOOKING_URL, bookingId: bookingId3, payload: buildReservationPayload({ reservationId: bookingId3, arrivalDate: s3ModifiedArrival, departureDate: addDays(s3ModifiedArrival, 2), status: 'Cancel', amountAfterTax: '2200', totalTax: '240', basePriceAmountAfterTax: '2000', adultCount: '2', ratePlans: [{ rateId: RATE_ID, rateName: 'Test MK' }, { rateId: RATE_ID_2, rateName: RATE_NAME_2 }] }) },
 
     { label: 'S4_01_Pre-Book', row: 20, endpointName: 'fetch', url: FETCH_URL, bookingId: bookingId4, payload: buildArrInfoPayload(s4Arrival, s4Arrival) },
-    { label: 'S4_02_Confirm', row: 21, endpointName: 'booking', url: BOOKING_URL, bookingId: bookingId4, payload: buildReservationPayload({ reservationId: bookingId4, arrivalDate: s4Arrival, departureDate: addDays(s4Arrival, 1), status: 'Confirm', amountAfterTax: '2400', totalTax: '260', basePriceAmountAfterTax: '2200', adultCount: '4' }) },
+    { label: 'S4_02_Confirm', row: 21, endpointName: 'booking', url: BOOKING_URL, bookingId: bookingId4, payload: buildReservationPayload({ reservationId: bookingId4, arrivalDate: s4Arrival, departureDate: addDays(s4Arrival, 1), status: 'Confirm', rooms: [{ arrivalDate: s4Arrival, departureDate: addDays(s4Arrival, 1), roomId: ROOM_ID, rateId: RATE_ID, amountAfterTax: '1200', totalTax: '130', basePriceAmountAfterTax: '1200', adultCount: '2', roomName: 'Room 1 - Deluxe' }, { arrivalDate: s4Arrival, departureDate: addDays(s4Arrival, 1), roomId: ROOM_ID_2, rateId: RATE_ID_2, rateName: RATE_NAME_2, amountAfterTax: '1200', totalTax: '130', basePriceAmountAfterTax: '1200', adultCount: '2', roomName: 'Room 2 - Second room type' }] }) },
     { label: 'S4_03_Pre-Modify', row: 22, endpointName: 'fetch', url: FETCH_URL, bookingId: bookingId4, payload: buildArrInfoPayload(s4ModifiedArrival, s4ModifiedArrival) },
-    { label: 'S4_04_Modify', row: 23, endpointName: 'booking', url: BOOKING_URL, bookingId: bookingId4, payload: buildReservationPayload({ reservationId: bookingId4, arrivalDate: s4ModifiedArrival, departureDate: addDays(s4ModifiedArrival, 1), status: 'Modified', amountAfterTax: '2500', totalTax: '280', basePriceAmountAfterTax: '2300', adultCount: '4' }) },
-    { label: 'S4_05_Cancel', row: 24, endpointName: 'booking', url: BOOKING_URL, bookingId: bookingId4, payload: buildReservationPayload({ reservationId: bookingId4, arrivalDate: s4ModifiedArrival, departureDate: addDays(s4ModifiedArrival, 1), status: 'Cancel', amountAfterTax: '2500', totalTax: '280', basePriceAmountAfterTax: '2300', adultCount: '4' }) },
+    { label: 'S4_04_Modify', row: 23, endpointName: 'booking', url: BOOKING_URL, bookingId: bookingId4, payload: buildReservationPayload({ reservationId: bookingId4, arrivalDate: s4ModifiedArrival, departureDate: addDays(s4ModifiedArrival, 1), status: 'Modified', rooms: [{ arrivalDate: s4ModifiedArrival, departureDate: addDays(s4ModifiedArrival, 1), roomId: ROOM_ID, rateId: RATE_ID, amountAfterTax: '1250', totalTax: '140', basePriceAmountAfterTax: '1250', adultCount: '2', roomName: 'Room 1 - Deluxe' }, { arrivalDate: s4ModifiedArrival, departureDate: addDays(s4ModifiedArrival, 1), roomId: ROOM_ID_2, rateId: RATE_ID_2, rateName: RATE_NAME_2, amountAfterTax: '1250', totalTax: '140', basePriceAmountAfterTax: '1250', adultCount: '2', roomName: 'Room 2 - Second room type' }] }) },
+    { label: 'S4_05_Cancel', row: 24, endpointName: 'booking', url: BOOKING_URL, bookingId: bookingId4, payload: buildReservationPayload({ reservationId: bookingId4, arrivalDate: s4ModifiedArrival, departureDate: addDays(s4ModifiedArrival, 1), status: 'Cancel', rooms: [{ arrivalDate: s4ModifiedArrival, departureDate: addDays(s4ModifiedArrival, 1), roomId: ROOM_ID, rateId: RATE_ID, amountAfterTax: '1250', totalTax: '140', basePriceAmountAfterTax: '1250', adultCount: '2', roomName: 'Room 1 - Deluxe' }, { arrivalDate: s4ModifiedArrival, departureDate: addDays(s4ModifiedArrival, 1), roomId: ROOM_ID_2, rateId: RATE_ID_2, rateName: RATE_NAME_2, amountAfterTax: '1250', totalTax: '140', basePriceAmountAfterTax: '1250', adultCount: '2', roomName: 'Room 2 - Second room type' }] }) },
 
     { label: 'S5_01_Pre-Book', row: 25, endpointName: 'fetch', url: FETCH_URL, bookingId: bookingId5, payload: buildArrInfoPayload(s5Arrival, addDays(s5Arrival, 1)) },
     {
@@ -554,7 +596,10 @@ async function main() {
             adultCount: '2',
             childCount: '1',
             infantCount: '1',
-            roomName: 'Studio',
+            roomId: ROOM_ID_2,
+            rateId: RATE_ID_2,
+            rateName: RATE_NAME_2,
+            roomName: 'Room 2 - Second room type',
             remarks: 'Room 2: child without extra bed and infant',
           },
         ],
@@ -601,7 +646,10 @@ async function main() {
             adultCount: '2',
             childCount: '1',
             infantCount: '1',
-            roomName: 'Studio',
+            roomId: ROOM_ID_2,
+            rateId: RATE_ID_2,
+            rateName: RATE_NAME_2,
+            roomName: 'Room 2 - Second room type',
             remarks: 'Room 2: child without extra bed and infant',
           },
         ],

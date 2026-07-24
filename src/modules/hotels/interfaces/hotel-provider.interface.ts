@@ -24,6 +24,12 @@ export interface HotelSearchResult {
   provider: string;
   /** User-facing provider label; keep provider unchanged for internal routing. */
   providerDisplayName?: string;
+  canonicalHotelId?: number | null;
+  providerHotelCode?: string;
+  rateOptionId?: string;
+  roomId?: string | number;
+  roomTypeId?: number;
+  rateOptions?: Array<Record<string, unknown>>;
   hotelCode: string;
   hotelName: string;
   cityCode: string;
@@ -46,7 +52,25 @@ export interface HotelSearchResult {
   roomType?: string; // Current room type name
   mealPlan?: string; // Meal plan info (if available)
   searchReference: string; // Used for confirmation
+  bookingCode?: string;
   expiresAt: Date; // When search result expires
+  pricePerNight?: number;
+  totalStayPrice?: number;
+  numberOfNights?: number;
+  nightlyRates?: Array<{
+    date: string;
+    baseAmount: number;
+    sellAmount: number;
+  }>;
+  priceLabel?: string;
+  priceSource?: 'LIVE_API' | 'DATABASE' | 'LEGACY_UNKNOWN';
+  bookingMode?: 'LIVE_API' | 'MANUAL_APPROVAL';
+  requiresHotelApproval?: boolean;
+  isLiveRate?: boolean;
+  isLiveBookable?: boolean;
+  isSelectable?: boolean;
+  approvalStatus?: 'NOT_REQUESTED' | 'NOT_REQUIRED' | 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED';
+  manualConfirmationStatus?: 'NOT_STARTED' | 'PENDING_CONFIRMATION' | 'CONFIRMED' | 'FAILED' | 'CANCELLED';
   // Supplement summary at hotel level
   supplementSummary?: {
     hasSupplements: boolean;
@@ -56,7 +80,7 @@ export interface HotelSearchResult {
   };
   isBookable?: boolean;
   externalStay?: boolean;
-  availabilityStatus?: 'AVAILABLE' | 'NO_SUPPLIER_AVAILABILITY' | 'NOT_BOOKABLE';
+  availabilityStatus?: 'AVAILABLE' | 'LIVE_AVAILABLE' | 'OFFLINE_APPROVAL_REQUIRED' | 'NO_SUPPLIER_AVAILABILITY' | 'NO_AVAILABILITY' | 'NOT_BOOKABLE';
   availabilityMessage?: string | null;
   availableAgainFrom?: string | null;
 }

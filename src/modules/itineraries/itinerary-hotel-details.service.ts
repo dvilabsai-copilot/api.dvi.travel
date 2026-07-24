@@ -17,6 +17,7 @@ export interface ItineraryHotelRowDto {
   day: string;
   destination: string;
   hotelId: number;
+  canonicalHotelId?: number | null;
   hotelCode?: string;
   hotelName: string;
   category: number;
@@ -40,9 +41,29 @@ export interface ItineraryHotelRowDto {
   rateId?: string;
   // Provider source (tbo, resavenue, hobse)
   provider?: string;
+  providerDisplayName?: string;
+  providerHotelCode?: string;
+  rateOptionId?: string;
+  bookingMode?: 'LIVE_API' | 'MANUAL_APPROVAL';
+  priceSource?: 'LIVE_API' | 'DATABASE' | 'LEGACY_UNKNOWN';
+  priceLabel?: string;
+  pricePerNight?: number;
+  totalStayPrice?: number;
+  numberOfNights?: number;
+  nightlyRates?: Array<{
+    date: string;
+    baseAmount: number;
+    sellAmount: number;
+  }>;
+  requiresHotelApproval?: boolean;
+  isLiveRate?: boolean;
+  isLiveBookable?: boolean;
+  isSelectable?: boolean;
+  approvalStatus?: 'NOT_REQUESTED' | 'NOT_REQUIRED' | 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED';
+  manualConfirmationStatus?: 'NOT_STARTED' | 'PENDING_CONFIRMATION' | 'CONFIRMED' | 'FAILED' | 'CANCELLED';
   isBookable?: boolean;
   externalStay?: boolean;
-  availabilityStatus?: 'AVAILABLE' | 'NO_SUPPLIER_AVAILABILITY' | 'NOT_BOOKABLE';
+  availabilityStatus?: 'AVAILABLE' | 'LIVE_AVAILABLE' | 'OFFLINE_APPROVAL_REQUIRED' | 'NO_SUPPLIER_AVAILABILITY' | 'NO_AVAILABILITY' | 'NOT_BOOKABLE';
   availabilityMessage?: string | null;
   availableAgainFrom?: string | null;
   // Voucher cancellation status
@@ -132,6 +153,7 @@ export interface ItineraryHotelRoomDto {
   itineraryRouteId: number;
   itineraryPlanHotelRoomDetailsId: number;
   hotelId: number;
+  canonicalHotelId?: number | null;
   hotelName: string;
   hotelCategory: number | null;
   groupType: number;
@@ -139,6 +161,7 @@ export interface ItineraryHotelRoomDto {
   roomTypeName: string;
   roomId: number;
   provider?: string;
+  providerDisplayName?: string;
   bookingCode?: string;
   searchReference?: string;
   availableRoomTypes: RoomTypeOptionDto[];
@@ -151,6 +174,11 @@ export interface ItineraryHotelRoomDto {
   inclusions?: string[];
   rateConditions?: string[];
   cancellationPolicy?: string[];
+  pricePerNight?: number;
+  totalStayPrice?: number;
+  priceSource?: 'LIVE_API' | 'DATABASE' | 'LEGACY_UNKNOWN';
+  bookingMode?: 'LIVE_API' | 'MANUAL_APPROVAL';
+  priceLabel?: string;
   supplementSummary?: {
     hasSupplements: boolean;
     supplementCount: number;
@@ -160,12 +188,17 @@ export interface ItineraryHotelRoomDto {
   mandatorySupplements?: string[];
   isBookable?: boolean;
   externalStay?: boolean;
-  availabilityStatus?: 'AVAILABLE' | 'NO_SUPPLIER_AVAILABILITY' | 'NOT_BOOKABLE';
+  availabilityStatus?: 'AVAILABLE' | 'LIVE_AVAILABLE' | 'OFFLINE_APPROVAL_REQUIRED' | 'NO_SUPPLIER_AVAILABILITY' | 'NO_AVAILABILITY' | 'NOT_BOOKABLE';
   availabilityMessage?: string | null;
   availableAgainFrom?: string | null;
+  requiresHotelApproval?: boolean;
+  isLiveRate?: boolean;
+  isLiveBookable?: boolean;
+  isSelectable?: boolean;
+  approvalStatus?: 'NOT_REQUESTED' | 'NOT_REQUIRED' | 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED';
+  manualConfirmationStatus?: 'NOT_STARTED' | 'PENDING_CONFIRMATION' | 'CONFIRMED' | 'FAILED' | 'CANCELLED';
 
   // Pricing & tax
-  pricePerNight: number;
   gstType: string | null;
   gstPercentage: number;
 

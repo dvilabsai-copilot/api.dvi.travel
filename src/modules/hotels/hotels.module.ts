@@ -25,6 +25,8 @@ import { TboApiSyncService } from './services/tbo-api-sync.service';
 import { HobseHotelMasterSyncService } from './services/hobse-hotel-master-sync.service';
 import { HobseHotelCsvImportService } from './services/hobse-hotel-csv-import.service';
 import { SupplementNormalizerService } from './services/supplement-normalizer.service';
+import { OfflineHotelCatalogService } from '../itineraries/services/offline-hotel-catalog.service';
+import { HotelPricingService } from '../itineraries/hotels/hotel-pricing.service';
 
 @Module({
   imports: [],
@@ -53,6 +55,8 @@ import { SupplementNormalizerService } from './services/supplement-normalizer.se
     HobseHotelMasterSyncService, // ✅ NEW
     HobseHotelCsvImportService,
     SupplementNormalizerService, // ✅ NEW: For supplement normalization
+    HotelPricingService,
+    OfflineHotelCatalogService,
   ],
   exports: [
     HotelsService,
