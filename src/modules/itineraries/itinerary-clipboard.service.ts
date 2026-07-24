@@ -431,121 +431,361 @@ export class ItineraryClipboardService {
   }
 
   private buildHotspotSection(
-    mode: ClipboardMode,
-    days: any[],
-    labels?: {
-      firstDayStartLabel: string;
-      otherDayStartLabel: string;
-    },
-  ): string {
-    const firstDayStartLabel =
-      labels?.firstDayStartLabel?.trim() || 'Start your Journey';
-    const otherDayStartLabel =
-      labels?.otherDayStartLabel?.trim() || 'Start Your Day';
+  mode: ClipboardMode,
+  days: any[],
+  labels?: {
+    firstDayStartLabel: string;
+    otherDayStartLabel: string;
+  },
+): string {
+  const firstDayStartLabel =
+    labels?.firstDayStartLabel?.trim() || 'Start your Journey';
 
-    let html = `
-      <table width="700" align="center" border="1" cellpadding="0" cellspacing="0" style="border-collapse: collapse; background-color:#fff; font-family:Calibri; font-size:11px; color:#302c6e;">
-        <tr><td align="center" valign="middle" style="color:#302c6e; font-size:18px; line-height:40px; font-weight:600;">Hotspot Details</td></tr>
-      </table>
-    `;
+  const otherDayStartLabel =
+    labels?.otherDayStartLabel?.trim() || 'Start Your Day';
 
-    for (const day of days || []) {
-      const dayTitle = `Day ${this.escapeHtml(day.dayNumber)} - ${this.escapeHtml(this.formatDateWithWeekday(day.date) || this.formatDate(day.date))}`;
-      const routeTitle = `${this.escapeHtml(day.departure || '')} to ${this.escapeHtml(day.arrival || '')}`;
-      const dayTimeRange = day.startTime && day.endTime
-        ? ` (${this.escapeHtml(day.startTime)} - ${this.escapeHtml(day.endTime)})`
-        : '';
-      const dayDistance = this.escapeHtml(
-        day.distance || day.intercityDistance || '',
-      );
-      const dayDistancePart = dayDistance ? ` - (${dayDistance})` : '';
-
-      const lines: string[] = [];
-      const segments = Array.isArray(day.segments) ? day.segments : [];
-
-      for (const segment of segments) {
-        if (mode === 'highlights') {
-          if (segment.type === 'attraction') {
-lines.push(`<div style="margin:0 0 14px 0;line-height:1.45;"><b>${this.escapeHtml(segment.name || '')}</b> ${this.escapeHtml(segment.description || '')}</div>`);
-          }
-          continue;
-        }
-
-        if (segment.type === 'start') {
-          const startLabel =
-            Number(day.dayNumber) === 1
-              ? firstDayStartLabel
-              : otherDayStartLabel;
-          const range = this.escapeHtml(segment.timeRange || '');
-lines.push(
-            `<div style="margin:0 0 14px 0;line-height:1.45;">${this.escapeHtml(startLabel)}${range ? ` ${range}` : ''}</div>`,
-          );
-          continue;
-        }
-
-        if (segment.type === 'travel') {
-          const distance = this.escapeHtml(segment.distance || '');
-          const duration = this.escapeHtml(segment.duration || '');
-          const range = this.escapeHtml(segment.timeRange || '');
-          const metrics = [
-            distance ? `<span style="color:#7e7d88; margin-right: 5px;">Distance:</span> ${distance}` : '',
-            duration ? `<span style="color:#7e7d88; margin: 0px 5px;">Duration:</span> ${duration}` : '',
-          ]
-            .filter(Boolean)
-            .join(', ');
-
-          lines.push(
-            `<div style="margin:0 0 14px 0;line-height:1.45;">Travelling from ${this.escapeHtml(segment.from || '')} to ${this.escapeHtml(segment.to || '')}${range ? ` - ${range}` : ''}${metrics ? ` [${metrics}]` : ''}</div>`,
-          );
-          continue;
-        }
-
-        if (segment.type === 'break') {
-          const duration = this.escapeHtml(segment.duration || '');
-          const range = this.escapeHtml(segment.timeRange || '');
-lines.push(
-            `<div style="margin:0 0 14px 0;line-height:1.45;">Expect a waiting time of approximately ${duration} at this location ${this.escapeHtml(segment.location || '')}${range ? ` - ${range}` : ''}${duration ? ` [<span style="color:#7e7d88; margin: 0px 5px;">Duration:</span> ${duration}]` : ''}</div>`,
-          );
-          continue;
-        }
-
-        if (segment.type === 'attraction') {
-          const range = this.escapeHtml(segment.visitTime || segment.timeRange || '');
-          const duration = this.escapeHtml(segment.duration || '');
-lines.push(
-            `<div style="margin:0 0 14px 0;line-height:1.45;">${range ? `${range} - ` : ''}${duration ? `${duration} - ` : ''}<b>${this.escapeHtml(segment.name || '')}</b></div>`,
-          );
-          if (segment.description) {
-lines.push(`<div style="margin:0 0 14px 0;line-height:1.45;">${this.escapeHtml(segment.description)}</div>`);
-          }
-          continue;
-        }
-
-        if (segment.type === 'checkin' && mode === 'para') {
-          lines.push(`<div style="margin:0 0 14px 0;line-height:1.45;">Check-in: ${this.escapeHtml(segment.hotelName || 'Hotel')} ${this.escapeHtml(segment.time || '')}</div>`);
-          continue;
-        }
-
-        if (segment.type === 'return') {
-lines.push(`<div style="margin:0 0 14px 0;line-height:1.45;">Return: ${this.escapeHtml(segment.time || '')}</div>`);
-        }
-      }
-
-      if (!lines.length) {
-        continue;
-      }
-
-      html += `
-        <table width="700" align="left" border="1" cellpadding="0" cellspacing="0" style="border-collapse: collapse; background-color:#fff; font-family:Calibri; font-size:11px; color:#302c6e; margin-top:8px;">
-          <tr><td style="padding:3px; border:1px solid #b1b1b1;"><b>${dayTitle}${dayTimeRange} - ${routeTitle}${dayDistancePart}</b></td></tr>
-          <tr><td style="padding:3px; border:1px solid #b1b1b1;">${lines.join('')}</td></tr>
-        </table>
+  /**
+   * Recommended mode:
+   * Each hotspot/travel/description item becomes a separate table row,
+   * matching the B2B Copy to Recommended output.
+   *
+   * Highlights and Para:
+   * Continue using the existing paragraph-based output.
+   */
+  const buildLine = (content: string): string => {
+    if (mode === 'recommended') {
+      return `
+        <tr>
+          <td style="padding:3px; border:1px solid #b1b1b1; line-height:1.45;">
+            ${content}
+          </td>
+        </tr>
       `;
     }
 
-    return html;
+    return `
+      <div style="margin:0 0 14px 0; line-height:1.45;">
+        ${content}
+      </div>
+    `;
+  };
+
+  let html = `
+    <table
+      width="700"
+      align="center"
+      border="1"
+      cellpadding="0"
+      cellspacing="0"
+      style="
+        border-collapse:collapse;
+        background-color:#fff;
+        font-family:Calibri;
+        font-size:11px;
+        color:#302c6e;
+      "
+    >
+      <tr>
+        <td
+          align="center"
+          valign="middle"
+          style="
+            color:#302c6e;
+            font-size:18px;
+            line-height:40px;
+            font-weight:600;
+          "
+        >
+          Hotspot Details
+        </td>
+      </tr>
+    </table>
+  `;
+
+  for (const day of days || []) {
+    const dayTitle =
+      `Day ${this.escapeHtml(day.dayNumber)} - ` +
+      `${this.escapeHtml(
+        this.formatDateWithWeekday(day.date) ||
+          this.formatDate(day.date),
+      )}`;
+
+    const routeTitle =
+      `${this.escapeHtml(day.departure || '')} to ` +
+      `${this.escapeHtml(day.arrival || '')}`;
+
+    const dayTimeRange =
+      day.startTime && day.endTime
+        ? ` (${this.escapeHtml(day.startTime)} - ${this.escapeHtml(
+            day.endTime,
+          )})`
+        : '';
+
+    const dayDistance = this.escapeHtml(
+      day.distance || day.intercityDistance || '',
+    );
+
+    const dayDistancePart = dayDistance
+      ? ` - (${dayDistance})`
+      : '';
+
+    const lines: string[] = [];
+
+    const segments = Array.isArray(day.segments)
+      ? day.segments
+      : [];
+
+    for (const segment of segments) {
+      /*
+       * Keep Copy to Highlights unchanged.
+       */
+      if (mode === 'highlights') {
+        if (segment.type === 'attraction') {
+          lines.push(
+            buildLine(
+              `<b>${this.escapeHtml(
+                segment.name || '',
+              )}</b> ${this.escapeHtml(
+                segment.description || '',
+              )}`,
+            ),
+          );
+        }
+
+        continue;
+      }
+
+      if (segment.type === 'start') {
+        const startLabel =
+          Number(day.dayNumber) === 1
+            ? firstDayStartLabel
+            : otherDayStartLabel;
+
+        const range = this.escapeHtml(
+          segment.timeRange || '',
+        );
+
+        lines.push(
+          buildLine(
+            `${this.escapeHtml(startLabel)}${
+              range ? ` ${range}` : ''
+            }`,
+          ),
+        );
+
+        continue;
+      }
+
+      if (segment.type === 'travel') {
+        const distance = this.escapeHtml(
+          segment.distance || '',
+        );
+
+        const duration = this.escapeHtml(
+          segment.duration || '',
+        );
+
+        const range = this.escapeHtml(
+          segment.timeRange || '',
+        );
+
+        const metrics = [
+          distance
+            ? `<span style="color:#7e7d88; margin-right:5px;">Distance:</span> ${distance}`
+            : '',
+          duration
+            ? `<span style="color:#7e7d88; margin:0 5px;">Duration:</span> ${duration}`
+            : '',
+        ]
+          .filter(Boolean)
+          .join(', ');
+
+        lines.push(
+          buildLine(
+            `Travelling from ${this.escapeHtml(
+              segment.from || '',
+            )} to ${this.escapeHtml(
+              segment.to || '',
+            )}${range ? ` - ${range}` : ''}${
+              metrics ? ` [${metrics}]` : ''
+            }`,
+          ),
+        );
+
+        continue;
+      }
+
+      if (segment.type === 'break') {
+        const duration = this.escapeHtml(
+          segment.duration || '',
+        );
+
+        const range = this.escapeHtml(
+          segment.timeRange || '',
+        );
+
+        lines.push(
+          buildLine(
+            `Expect a waiting time of approximately ${duration} ` +
+              `at this location ${this.escapeHtml(
+                segment.location || '',
+              )}` +
+              `${range ? ` - ${range}` : ''}` +
+              `${
+                duration
+                  ? ` [<span style="color:#7e7d88; margin:0 5px;">Duration:</span> ${duration}]`
+                  : ''
+              }`,
+          ),
+        );
+
+        continue;
+      }
+
+      if (segment.type === 'attraction') {
+        const range = this.escapeHtml(
+          segment.visitTime ||
+            segment.timeRange ||
+            '',
+        );
+
+        const duration = this.escapeHtml(
+          segment.duration || '',
+        );
+
+        /*
+         * First recommended table row:
+         * hotspot timing, duration and hotspot name.
+         */
+        lines.push(
+          buildLine(
+            `${range ? `${range} - ` : ''}` +
+              `${duration ? `${duration} - ` : ''}` +
+              `<b>${this.escapeHtml(
+                segment.name || '',
+              )}</b>`,
+          ),
+        );
+
+        /*
+         * Second recommended table row:
+         * hotspot description.
+         */
+        if (segment.description) {
+          lines.push(
+            buildLine(
+              this.escapeHtml(segment.description),
+            ),
+          );
+        }
+
+        continue;
+      }
+
+      /*
+       * Keep Copy to Para check-in logic unchanged.
+       */
+      if (
+        segment.type === 'checkin' &&
+        mode === 'para'
+      ) {
+        lines.push(
+          buildLine(
+            `Check-in: ${this.escapeHtml(
+              segment.hotelName || 'Hotel',
+            )} ${this.escapeHtml(
+              segment.time || '',
+            )}`,
+          ),
+        );
+
+        continue;
+      }
+
+      if (segment.type === 'return') {
+        lines.push(
+          buildLine(
+            `Return: ${this.escapeHtml(
+              segment.time || '',
+            )}`,
+          ),
+        );
+      }
+    }
+
+    if (!lines.length) {
+      continue;
+    }
+
+    /*
+     * Recommended mode receives a light-grey day heading,
+     * matching the B2B copied table appearance.
+     *
+     * Highlights and Para retain the existing day heading.
+     */
+    const dayHeaderStyle =
+      mode === 'recommended'
+        ? `
+          padding:3px;
+          border:1px solid #b1b1b1;
+          background-color:#f2f2f2;
+        `
+        : `
+          padding:3px;
+          border:1px solid #b1b1b1;
+        `;
+
+    /*
+     * Recommended:
+     * lines already contain individual <tr><td> rows.
+     *
+     * Highlights and Para:
+     * keep all paragraph lines inside the existing single table cell.
+     */
+    const dayBody =
+      mode === 'recommended'
+        ? lines.join('')
+        : `
+          <tr>
+            <td style="padding:3px; border:1px solid #b1b1b1;">
+              ${lines.join('')}
+            </td>
+          </tr>
+        `;
+
+    html += `
+      <table
+        width="700"
+        align="left"
+        border="1"
+        cellpadding="0"
+        cellspacing="0"
+        style="
+          border-collapse:collapse;
+          background-color:#fff;
+          font-family:Calibri;
+          font-size:11px;
+          color:#302c6e;
+          margin-top:8px;
+          table-layout:fixed;
+        "
+      >
+        <tr>
+          <td style="${dayHeaderStyle}">
+            <b>
+              ${dayTitle}${dayTimeRange} -
+              ${routeTitle}${dayDistancePart}
+            </b>
+          </td>
+        </tr>
+
+        ${dayBody}
+      </table>
+    `;
   }
 
+  return html;
+}
   private buildTermsSection(plan: any, globalSettings: any): string {
     const preference = Number(plan?.itinerary_preference || 0);
 
